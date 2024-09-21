@@ -14,7 +14,7 @@ void unregisterKeyCodeToStringCallback()
 std::string keyCodeToString(uint32 key)
 {
 	if (!s_key_code_to_string)
-		return "";
+		return fmt::format("key {}", key);
 	return s_key_code_to_string(key);
 }
 
