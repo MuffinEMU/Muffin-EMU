@@ -1,0 +1,46 @@
+name: Deploy experimental android release
+on:
+  workflow_dispatch:
+
+
+jobs:
+  call-release-build:
+    uses: ./.github/workflows/android_build.yml
+    secrets: inherit
+  deploy:
+    name: Deploy experimental release
+    runs-on: ubuntu-22.04
+    needs: [call-release-build]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: cemu-android
+          path: cemu-android
+
+      - name: Initialize
+        run: |
+          mkdir upload
+          sudo apt install zip
+
+      - name: Set version dependent vars
+        run: |
+          echo "CEMU_VERSION=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Create release from apk
+        run: |
+          VERSION=${{ env.CEMU_VERSION }}
+          echo "Cemu Version is $VERSION"
+          ls cemu-android
+          mv cemu-android/*.apk upload/Cemu-$VERSION.apk
+
+      - name: Create release
+        run: |
+          wget -O ghr.tar.gz https://github.com/tcnksm/ghr/releases/download/v0.15.0/ghr_v0.15.0_linux_amd64.tar.gz
+          tar xvzf ghr.tar.gz; rm ghr.tar.gz
+          echo "[INFO] Release tag: v${{ env.CEMU_VERSION }}"
+          RELEASE_BODY=$(printf "Experimental release\n%s" "Latest commit ${{ env.CEMU_VERSION }}")
+          ghr_v0.15.0_linux_amd64/ghr -b "$RELEASE_BODY" -t ${{ secrets.GITHUB_TOKEN }} -n "Cemu ${{ env.CEMU_VERSION }}" "${{ env.CEMU_VERSION }}" ./upload
