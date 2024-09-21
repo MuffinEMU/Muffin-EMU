@@ -17,7 +17,7 @@ class AndroidGameTitleLoadedCallback : public GameTitleLoadedCallback
 	{
 		JNIUtils::ScopedJNIENV env;
 		jstring name = env->NewStringUTF(game.name.c_str());
-		jlong titleId = static_cast<const jlong>(game.titleId);
+		jstring path = game.path.has_value() ? env->NewStringUTF(game.path->c_str()) : nullptr;
 		int width = -1, height = -1;
 		jintArray jIconData = nullptr;
 		if (icon)
@@ -27,9 +27,11 @@ class AndroidGameTitleLoadedCallback : public GameTitleLoadedCallback
 			jIconData = env->NewIntArray(width * height);
 			env->SetIntArrayRegion(jIconData, 0, width * height, reinterpret_cast<const jint*>(icon->intColors()));
 		}
-		env->CallVoidMethod(*m_gameTitleLoadedCallbackObj, m_onGameTitleLoadedMID, static_cast<jlong>(titleId), name, jIconData, width, height);
+		env->CallVoidMethod(*m_gameTitleLoadedCallbackObj, m_onGameTitleLoadedMID, path, name, jIconData, width, height);
 		if (jIconData != nullptr)
 			env->DeleteLocalRef(jIconData);
+		if (path != nullptr)
+			env->DeleteLocalRef(path);
 		env->DeleteLocalRef(name);
 	}
 };

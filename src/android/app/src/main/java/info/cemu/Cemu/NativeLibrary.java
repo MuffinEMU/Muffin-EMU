@@ -22,14 +22,29 @@ public class NativeLibrary {
 
     public static native void initializerRenderer(Surface surface);
 
-    public static native void startGame(long titleId);
+    public static class GameFilesException extends RuntimeException {
+    }
+
+    public static class GameBaseFilesNotFoundException extends GameFilesException {
+    }
+
+    public static class NoDiscKeyException extends GameFilesException {
+    }
+
+    public static class NoTitleTikException extends GameFilesException {
+    }
+
+    public static class UnknownGameFilesException extends GameFilesException {
+    }
+
+    public static native void startGame(String launchPath);
 
     public static native void setReplaceTVWithPadView(boolean swapped);
 
     public static native void recreateRenderSurface(boolean isMainCanvas);
 
     public interface GameTitleLoadedCallback {
-        void onGameTitleLoaded(long titleId, String title, int[] colors, int width, int height);
+        void onGameTitleLoaded(String path, String title, int[] colors, int width, int height);
     }
 
     public static native void setGameTitleLoadedCallback(GameTitleLoadedCallback gameTitleLoadedCallback);

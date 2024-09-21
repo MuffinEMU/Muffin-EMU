@@ -25,11 +25,11 @@ public class GameViewModel extends ViewModel {
 
     public GameViewModel() {
         this.gamesData = new MutableLiveData<>();
-        NativeLibrary.setGameTitleLoadedCallback((titleId, title, colors, width, height) -> {
+        NativeLibrary.setGameTitleLoadedCallback((path, title, colors, width, height) -> {
             Bitmap icon = null;
             if (colors != null)
                 icon = Bitmap.createBitmap(colors, width, height, Bitmap.Config.ARGB_8888);
-            Game game = new Game(titleId, title, icon);
+            Game game = new Game(path, title, icon);
             synchronized (GameViewModel.this) {
                 games.add(game);
                 gamesData.postValue(new ArrayList<>(games));

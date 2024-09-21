@@ -168,4 +168,10 @@
     <string name="remove_game_path">Remove game path</string>
     <string name="game_paths_settings">Game paths</string>
     <string name="game_path_already_added">Game path already added</string>
+    <string name="quit">Quit</string>
+    <string name="error">Error</string>
+    <string name="game_files_unknown_error">Unable to launch game\nPath: %1$s</string>
+    <string name="no_disk_key">Could not decrypt title. Make sure that keys.txt contains the correct disc key for this title.</string>
+    <string name="no_title_tik">Could not decrypt title because title.tik is missing.</string>
+    <string name="game_not_found">Unable to launch game because the base files were not found.</string>
 </resources>

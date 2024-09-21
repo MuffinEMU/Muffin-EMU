@@ -8,6 +8,7 @@
 struct Game
 {
 	std::string name;
+	std::optional<fs::path> path;
 	uint32 secondsPlayed;
 	uint16 dlc;
 	uint16 version;
@@ -41,7 +42,6 @@ class GameTitleLoader
 	void reloadGameTitles();
 	~GameTitleLoader();
 	void titleRefresh(TitleId titleId);
-	void addGamePath(const fs::path& path);
 
   private:
 	void loadGameTitles();

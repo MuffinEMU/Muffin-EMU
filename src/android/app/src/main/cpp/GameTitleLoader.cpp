@@ -72,6 +72,8 @@ void GameTitleLoader::titleRefresh(TitleId titleId)
 	Game& game = m_gameInfos[baseTitleId];
 	std::optional<TitleInfo> titleInfo = getFirstTitleInfoByTitleId(titleId);
 	game.titleId = baseTitleId;
+	if (titleInfo.has_value())
+		game.path = titleInfo->GetPath();
 	game.name = getNameByTitleId(baseTitleId, titleInfo);
 	game.version = gameInfo.GetVersion();
 	game.region = gameInfo.GetRegion();

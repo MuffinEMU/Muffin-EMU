@@ -26,9 +26,29 @@ Java_info_cemu_Cemu_NativeLibrary_setSurfaceSize([[maybe_unused]] JNIEnv* env, [
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_NativeLibrary_startGame([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong title_id)
+Java_info_cemu_Cemu_NativeLibrary_startGame([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jstring launchPath)
 {
-	s_emulationState.startGame(static_cast<TitleId>(title_id));
+	using namespace CafeSystemUtils;
+	try
+	{
+		s_emulationState.startGame(JNIUtils::JStringToString(env, launchPath));
+	} catch (const GameBaseFilesNotFoundException& exception)
+	{
+		jclass exceptionClass = env->FindClass("info/cemu/Cemu/NativeLibrary$GameBaseFilesNotFoundException");
+		env->ThrowNew(exceptionClass, exception.what());
+	} catch (const NoDiscKeyException& exception)
+	{
+		jclass exceptionClass = env->FindClass("info/cemu/Cemu/NativeLibrary$NoDiscKeyException");
+		env->ThrowNew(exceptionClass, exception.what());
+	} catch (const NoTitleTikException& exception)
+	{
+		jclass exceptionClass = env->FindClass("info/cemu/Cemu/NativeLibrary$NoTitleTikException");
+		env->ThrowNew(exceptionClass, exception.what());
+	} catch (const std::exception& exception)
+	{
+		jclass exceptionClass = env->FindClass("info/cemu/Cemu/NativeLibrary$UnknownGameFilesException");
+		env->ThrowNew(exceptionClass, exception.what());
+	}
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
@@ -40,7 +60,7 @@ Java_info_cemu_Cemu_NativeLibrary_setGameTitleLoadedCallback(JNIEnv* env, [[mayb
 		return;
 	}
 	jclass gameTitleLoadedCallbackClass = env->GetObjectClass(game_title_loaded_callback);
-	jmethodID onGameTitleLoadedMID = env->GetMethodID(gameTitleLoadedCallbackClass, "onGameTitleLoaded", "(JLjava/lang/String;[III)V");
+	jmethodID onGameTitleLoadedMID = env->GetMethodID(gameTitleLoadedCallbackClass, "onGameTitleLoaded", "(Ljava/lang/String;Ljava/lang/String;[III)V");
 	env->DeleteLocalRef(gameTitleLoadedCallbackClass);
 	s_emulationState.setOnGameTitleLoaded(std::make_shared<AndroidGameTitleLoadedCallback>(onGameTitleLoadedMID, game_title_loaded_callback));
 }

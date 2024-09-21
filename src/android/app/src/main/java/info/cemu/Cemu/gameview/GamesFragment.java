@@ -27,7 +27,7 @@ public class GamesFragment extends Fragment {
         super.onCreate(savedInstanceState);
         gameAdapter = new GameAdapter(titleId -> {
             Intent intent = new Intent(getContext(), EmulationActivity.class);
-            intent.putExtra(EmulationActivity.GAME_TITLE_ID, titleId);
+            intent.putExtra(EmulationActivity.LAUNCH_PATH, titleId);
             startActivity(intent);
         });
         gameViewModel = new ViewModelProvider(this).get(GameViewModel.class);

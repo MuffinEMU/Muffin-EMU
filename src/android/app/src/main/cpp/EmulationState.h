@@ -268,11 +268,11 @@ class EmulationState
 		m_gameTitleLoader.reloadGameTitles();
 	}
 
-	void startGame(TitleId titleId)
+	void startGame(const fs::path& gamePath)
 	{
 		GuiSystem::getWindowInfo().set_keystates_up();
 		initializeAudioDevices();
-		CafeSystemUtils::startGame(titleId);
+		CafeSystemUtils::startGame(gamePath);
 	}
 
 	void refreshGraphicPacks()
