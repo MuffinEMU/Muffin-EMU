@@ -6,6 +6,11 @@
 
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <uses-feature
+        android:name="android.hardware.vulkan.version"
+        android:required="true"
+        android:version="0x401000" />
+
     <application
         android:name="info.cemu.Cemu.CemuApplication"
         android:allowBackup="true"

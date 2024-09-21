@@ -64,6 +64,22 @@ jobject JNIUtils::createJavaLongArrayList(JNIEnv* env, const std::vector<uint64_
 	return JNIUtils::createArrayList(env, valuesJava);
 }
 
+void JNIUtils::handleNativeException(JNIEnv* env, const std::function<void()>& fn)
+{
+	try
+	{
+		fn();
+	} catch (const std::exception& exception)
+	{
+		jclass exceptionClass = env->FindClass("info/cemu/Cemu/nativeinterface/NativeException");
+		env->ThrowNew(exceptionClass, exception.what());
+	} catch (...)
+	{
+		jclass exceptionClass = env->FindClass("info/cemu/Cemu/nativeinterface/NativeException");
+		env->ThrowNew(exceptionClass, "Unknown native exception");
+	}
+}
+
 jobject JNIUtils::createJavaStringArrayList(JNIEnv* env, const std::vector<std::wstring>& strings)
 {
 	jclass arrayListClass = env->FindClass("java/util/ArrayList");

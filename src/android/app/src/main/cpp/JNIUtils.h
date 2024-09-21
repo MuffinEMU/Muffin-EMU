@@ -13,6 +13,8 @@ namespace JNIUtils
 
 	jobject createJavaStringArrayList(JNIEnv* env, const std::vector<std::wstring>& stringList);
 
+	void handleNativeException(JNIEnv* env, const std::function<void()>& fn);
+
 	class ScopedJNIENV
 	{
 	  public:

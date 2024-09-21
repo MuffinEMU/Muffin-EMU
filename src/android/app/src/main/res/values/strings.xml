@@ -174,4 +174,6 @@
     <string name="no_disk_key">Could not decrypt title. Make sure that keys.txt contains the correct disc key for this title.</string>
     <string name="no_title_tik">Could not decrypt title because title.tik is missing.</string>
     <string name="game_not_found">Unable to launch game because the base files were not found.</string>
+    <string name="failed_create_surface_error">Failed creating surface: %1$s</string>
+    <string name="failed_initialize_renderer_error">Failed to initialize renderer: %1$s</string>
 </resources>

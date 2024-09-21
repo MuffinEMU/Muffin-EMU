@@ -459,6 +459,12 @@ private:
 
 		struct
 		{
+			bool geometry_shader;
+			bool logic_op;
+		} deviceFeatures;
+
+		struct
+		{
 			bool shaderRoundingModeRTEFloat32{ false };
 		}shaderFloatControls; // from VK_KHR_shader_float_controls
 

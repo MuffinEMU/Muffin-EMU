@@ -16,7 +16,9 @@ extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, [[mayb
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_NativeLibrary_setSurface(JNIEnv* env, [[maybe_unused]] jclass clazz, jobject surface, jboolean is_main_canvas)
 {
-	s_emulationState.setSurface(env, surface, is_main_canvas);
+	JNIUtils::handleNativeException(env, [&]() {
+		s_emulationState.setSurface(env, surface, is_main_canvas);
+	});
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
@@ -86,7 +88,9 @@ Java_info_cemu_Cemu_NativeLibrary_initializeEmulation([[maybe_unused]] JNIEnv* e
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_NativeLibrary_initializerRenderer(JNIEnv* env, [[maybe_unused]] jclass clazz, jobject testSurface)
 {
-	s_emulationState.initializeRenderer(env, testSurface);
+	JNIUtils::handleNativeException(env, [&]() {
+		s_emulationState.initializeRenderer(env, testSurface);
+	});
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL

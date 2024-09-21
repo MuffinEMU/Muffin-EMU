@@ -1,7 +1,5 @@
 package info.cemu.Cemu.emulation;
 
-import static androidx.core.app.ActivityCompat.finishAffinity;
-
 import android.annotation.SuppressLint;
 import android.content.res.Configuration;
 import android.graphics.SurfaceTexture;
@@ -24,14 +22,13 @@ import androidx.appcompat.widget.PopupMenu;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-
 import info.cemu.Cemu.NativeLibrary;
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.FragmentEmulationBinding;
 import info.cemu.Cemu.input.SensorManager;
 import info.cemu.Cemu.inputoverlay.InputOverlaySettingsProvider;
 import info.cemu.Cemu.inputoverlay.InputOverlaySurfaceView;
+import info.cemu.Cemu.nativeinterface.NativeException;
 
 @SuppressLint("ClickableViewAccessibility")
 public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemClickListener {
@@ -71,7 +68,7 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
         }
     }
 
-    private static class SurfaceHolderCallback implements SurfaceHolder.Callback {
+    private class SurfaceHolderCallback implements SurfaceHolder.Callback {
         final boolean isMainCanvas;
         boolean surfaceSet;
 
@@ -85,12 +82,16 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
 
         @Override
         public void surfaceChanged(@NonNull SurfaceHolder surfaceHolder, int format, int width, int height) {
-            NativeLibrary.setSurfaceSize(width, height, isMainCanvas);
-            if (surfaceSet) {
-                return;
+            try {
+                NativeLibrary.setSurfaceSize(width, height, isMainCanvas);
+                if (surfaceSet) {
+                    return;
+                }
+                NativeLibrary.setSurface(surfaceHolder.getSurface(), isMainCanvas);
+                surfaceSet = true;
+            } catch (NativeException exception) {
+                onEmulationError(getString(R.string.failed_create_surface_error, exception.getMessage()));
             }
-            surfaceSet = true;
-            NativeLibrary.setSurface(surfaceHolder.getSurface(), isMainCanvas);
         }
 
         @Override
@@ -112,6 +113,7 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
     private InputOverlaySurfaceView inputOverlaySurfaceView;
     private SensorManager sensorManager;
     private EmulationViewModel viewModel;
+    private boolean hasEmulationError;
 
     public EmulationFragment(String launchPath) {
         this.launchPath = launchPath;
@@ -230,13 +232,9 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
     }
 
     @Override
-    public void onViewCreated(@NonNull View view, Bundle savedInstanceState) {
-        super.onViewCreated(view, savedInstanceState);
-        viewModel = new ViewModelProvider(requireActivity()).get(EmulationViewModel.class);
-    }
-
-    @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        viewModel = new ViewModelProvider(requireActivity()).get(EmulationViewModel.class);
+
         binding = FragmentEmulationBinding.inflate(inflater, container, false);
         inputOverlaySurfaceView = binding.inputOverlay;
 
@@ -271,8 +269,12 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
             inputOverlaySurfaceView.setVisibility(View.GONE);
         }
         SurfaceView mainCanvas = binding.mainCanvas;
-
-        NativeLibrary.initializerRenderer(testSurface);
+        try {
+            NativeLibrary.initializerRenderer(testSurface);
+        } catch (NativeException exception) {
+            onEmulationError(getString(R.string.failed_initialize_renderer_error, exception.getMessage()));
+            return binding.getRoot();
+        }
 
         var mainCanvasHolder = mainCanvas.getHolder();
         mainCanvasHolder.addCallback(new SurfaceHolderCallback(true));
@@ -283,6 +285,8 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
 
             @Override
             public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
+                if (hasEmulationError)
+                    return;
                 if (!isGameRunning) {
                     isGameRunning = true;
                     startGame();
@@ -312,6 +316,7 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
     }
 
     private void onEmulationError(String errorMessage) {
+        hasEmulationError = true;
         if (viewModel == null)
             return;
         viewModel.setEmulationError(new EmulationError(errorMessage));
