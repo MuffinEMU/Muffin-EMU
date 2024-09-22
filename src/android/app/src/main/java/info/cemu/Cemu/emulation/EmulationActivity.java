@@ -1,6 +1,5 @@
 package info.cemu.Cemu.emulation;
 
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -53,7 +52,8 @@ public class EmulationActivity extends AppCompatActivity implements Observer<Emu
         String launchPath = null;
         if (extras != null) {
             launchPath = extras.getString(LAUNCH_PATH);
-        } else if (data != null) {
+        }
+        if (launchPath == null && data != null) {
             launchPath = data.toString();
         }
         if (launchPath == null) {

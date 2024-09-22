@@ -22,11 +22,15 @@ public class FileUtil {
     private static String toCppPath(Uri uri) {
         String uriPath = uri.toString();
         int delimiterPos = uriPath.lastIndexOf(COLON_ENCODED);
+        if (delimiterPos == -1)
+            return uriPath;
         return uriPath.substring(0, delimiterPos) + uriPath.substring(delimiterPos).replace(PATH_SEPARATOR_ENCODED, PATH_SEPARATOR_DECODED);
     }
 
     private static Uri fromCppPath(String cppPath) {
         int delimiterPos = cppPath.lastIndexOf(COLON_ENCODED);
+        if (delimiterPos == -1)
+            return Uri.parse(cppPath);
         return Uri.parse(cppPath.substring(0, delimiterPos) + cppPath.substring(delimiterPos).replace(PATH_SEPARATOR_DECODED, PATH_SEPARATOR_ENCODED));
     }
 
