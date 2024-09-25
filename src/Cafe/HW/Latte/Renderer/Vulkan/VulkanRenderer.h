@@ -462,6 +462,10 @@ private:
 		{
 			bool geometry_shader;
 			bool logic_op;
+			bool sampler_anisotropy;
+			bool occlusion_query_precise;
+			bool depth_clamp;
+			bool vertex_pipeline_stores_and_atomics;
 		} deviceFeatures;
 
 		struct

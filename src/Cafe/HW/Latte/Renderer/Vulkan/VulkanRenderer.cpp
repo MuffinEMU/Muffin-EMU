@@ -276,7 +276,10 @@ void VulkanRenderer::GetDeviceFeatures()
 	cemuLog_log(LogType::Force, "Vulkan: present_wait extension: {}", (pwf.presentWait && pidf.presentId) ? "supported" : "unsupported");
 	m_featureControl.deviceFeatures.geometry_shader = physicalDeviceFeatures2.features.geometryShader;
 	m_featureControl.deviceFeatures.logic_op = physicalDeviceFeatures2.features.logicOp;
-
+	m_featureControl.deviceFeatures.sampler_anisotropy = physicalDeviceFeatures2.features.samplerAnisotropy;
+	m_featureControl.deviceFeatures.occlusion_query_precise = physicalDeviceFeatures2.features.occlusionQueryPrecise;
+	m_featureControl.deviceFeatures.depth_clamp = physicalDeviceFeatures2.features.depthClamp;
+	m_featureControl.deviceFeatures.vertex_pipeline_stores_and_atomics = physicalDeviceFeatures2.features.vertexPipelineStoresAndAtomics;
 	/* Get Vulkan device properties and limits */
 	VkPhysicalDeviceFloatControlsPropertiesKHR pfcp{};
 	prevStruct = nullptr;
@@ -465,12 +468,12 @@ VulkanRenderer::VulkanRenderer()
 	VkPhysicalDeviceFeatures deviceFeatures = {};
 
 	deviceFeatures.independentBlend = VK_TRUE;
-	deviceFeatures.samplerAnisotropy = VK_TRUE;
+	deviceFeatures.samplerAnisotropy = m_featureControl.deviceFeatures.sampler_anisotropy;
 	deviceFeatures.imageCubeArray = VK_TRUE;
 	deviceFeatures.geometryShader = m_featureControl.deviceFeatures.geometry_shader;
 	deviceFeatures.logicOp = m_featureControl.deviceFeatures.logic_op;
-	deviceFeatures.occlusionQueryPrecise = VK_TRUE;
-	deviceFeatures.depthClamp = VK_TRUE;
+	deviceFeatures.occlusionQueryPrecise = m_featureControl.deviceFeatures.occlusion_query_precise;
+	deviceFeatures.depthClamp = m_featureControl.deviceFeatures.depth_clamp;
 	deviceFeatures.depthBiasClamp = VK_TRUE;
 	if (m_vendor == GfxVendor::AMD)
 	{
@@ -479,7 +482,7 @@ VulkanRenderer::VulkanRenderer()
 	}
 	if (m_featureControl.mode.useTFEmulationViaSSBO)
 	{
-		deviceFeatures.vertexPipelineStoresAndAtomics = true;
+		m_featureControl.mode.useTFEmulationViaSSBO = deviceFeatures.vertexPipelineStoresAndAtomics = m_featureControl.deviceFeatures.vertex_pipeline_stores_and_atomics;
 	}
 
 	void* deviceExtensionFeatures = nullptr;
