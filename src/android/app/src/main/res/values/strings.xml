@@ -176,4 +176,6 @@
     <string name="game_not_found">Unable to launch game because the base files were not found.</string>
     <string name="failed_create_surface_error">Failed creating surface: %1$s</string>
     <string name="failed_initialize_renderer_error">Failed to initialize renderer: %1$s</string>
+    <string name="open_cemu_folder">Open Cemu folder</string>
+    <string name="failed_to_open_cemu_folder">Could not open Cemu folder</string>
 </resources>
