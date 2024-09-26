@@ -18,8 +18,8 @@ import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.HeaderRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
+import info.cemu.Cemu.guibasecomponents.SliderRecyclerViewItem;
 import info.cemu.Cemu.nativeinterface.NativeSettings;
-
 
 public class OverlaySettingsFragment extends Fragment {
     private static int overlayScreenPositionToResourceNameId(int overlayScreenPosition) {
@@ -71,6 +71,15 @@ public class OverlaySettingsFragment extends Fragment {
                 });
         genericRecyclerViewAdapter.addRecyclerViewItem(overlayPositionSelection);
 
+        SliderRecyclerViewItem overlayTextScale = new SliderRecyclerViewItem(getString(R.string.overlay_text_scale),
+                NativeSettings.OVERLAY_TEXT_SCALE_MIN,
+                NativeSettings.OVERLAY_TEXT_SCALE_MAX,
+                NativeSettings.getOverlayTextScalePercentage(),
+                25.0f,
+                value -> NativeSettings.setOverlayTextScalePercentage((int) value),
+                value -> (int) value + "%");
+        genericRecyclerViewAdapter.addRecyclerViewItem(overlayTextScale);
+
         CheckboxRecyclerViewItem overlayFps = new CheckboxRecyclerViewItem(getString(R.string.fps),
                 getString(R.string.fps_overlay_description), NativeSettings.isOverlayFPSEnabled(),
                 NativeSettings::setOverlayFPSEnabled);
@@ -106,6 +115,15 @@ public class OverlaySettingsFragment extends Fragment {
                     selectionRecyclerViewItem.setDescription(getString(overlayScreenPositionToResourceNameId(position)));
                 });
         genericRecyclerViewAdapter.addRecyclerViewItem(notificationsPositionSelection);
+
+        SliderRecyclerViewItem notificationTextScale = new SliderRecyclerViewItem(getString(R.string.notifications_text_scale),
+                NativeSettings.OVERLAY_TEXT_SCALE_MIN,
+                NativeSettings.OVERLAY_TEXT_SCALE_MAX,
+                NativeSettings.getNotificationsTextScalePercentage(),
+                25.0f,
+                value -> NativeSettings.setNotificationsTextScalePercentage((int) value),
+                value -> (int) value + "%");
+        genericRecyclerViewAdapter.addRecyclerViewItem(notificationTextScale);
 
         CheckboxRecyclerViewItem controllerProfiles = new CheckboxRecyclerViewItem(getString(R.string.controller_profiles),
                 getString(R.string.controller_profiles_notification_description), NativeSettings.isNotificationControllerProfilesEnabled(),

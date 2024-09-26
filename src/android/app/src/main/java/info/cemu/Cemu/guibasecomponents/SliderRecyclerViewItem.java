@@ -34,12 +34,23 @@ public class SliderRecyclerViewItem implements RecyclerViewItem {
     private float currentValue;
     private final OnChangeListener onChangeListener;
     private LabelFormatter labelFormatter;
+    private float stepSize = 1.0f;
 
     public SliderRecyclerViewItem(String label, float valueFrom, float valueTo, float currentValue, OnChangeListener onChangeListener, LabelFormatter labelFormatter) {
         this.label = label;
         this.valueFrom = valueFrom;
         this.valueTo = valueTo;
         this.currentValue = currentValue;
+        this.onChangeListener = onChangeListener;
+        this.labelFormatter = labelFormatter;
+    }
+
+    public SliderRecyclerViewItem(String label, float valueFrom, float valueTo, float currentValue, float stepSize, OnChangeListener onChangeListener, LabelFormatter labelFormatter) {
+        this.label = label;
+        this.valueFrom = valueFrom;
+        this.valueTo = valueTo;
+        this.currentValue = currentValue;
+        this.stepSize = stepSize;
         this.onChangeListener = onChangeListener;
         this.labelFormatter = labelFormatter;
     }
@@ -64,7 +75,6 @@ public class SliderRecyclerViewItem implements RecyclerViewItem {
         if (labelFormatter != null) sliderViewHolder.slider.setLabelFormatter(labelFormatter);
         sliderViewHolder.slider.setValueFrom(valueFrom);
         sliderViewHolder.slider.setValueTo(valueTo);
-        float stepSize = 1.0f;
         sliderViewHolder.slider.setStepSize(stepSize);
         sliderViewHolder.slider.setValue(currentValue);
         sliderViewHolder.slider.addOnChangeListener((slider, value, fromUser) -> {

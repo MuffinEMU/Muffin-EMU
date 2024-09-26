@@ -178,4 +178,15 @@
     <string name="failed_initialize_renderer_error">Failed to initialize renderer: %1$s</string>
     <string name="open_cemu_folder">Open Cemu folder</string>
     <string name="failed_to_open_cemu_folder">Could not open Cemu folder</string>
+    <string name="stretch">Stretch</string>
+    <string name="keep_aspect_ratio">Keep aspect ratio</string>
+    <string name="bilinear">Bilinear</string>
+    <string name="bicubic">Bicubic</string>
+    <string name="hermite">Hermite</string>
+    <string name="nearest_neighbor">Nearest neighbor</string>
+    <string name="fullscreen_scaling">Fullscreen scaling</string>
+    <string name="upscale_filter">Upscale filter</string>
+    <string name="downscale_filter">Downscale filter</string>
+    <string name="overlay_text_scale">Overlay text scale</string>
+    <string name="notifications_text_scale">Notifications text scale</string>
 </resources>
