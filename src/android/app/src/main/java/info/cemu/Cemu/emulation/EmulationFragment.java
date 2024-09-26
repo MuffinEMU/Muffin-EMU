@@ -228,6 +228,20 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
             else
                 sensorManager.pauseListening();
             item.setChecked(isMotionEnabled);
+            return true;
+        }
+        if (itemId == R.id.exit_emulation) {
+            requireActivity().getOnBackPressedDispatcher().onBackPressed();
+            return true;
+        }
+        if (itemId == R.id.show_input_overlay) {
+            boolean showInputOverlay = !item.isChecked();
+            var menu = settingsMenu.getMenu();
+            menu.findItem(R.id.edit_inputs).setEnabled(showInputOverlay);
+            menu.findItem(R.id.reset_inputs).setEnabled(showInputOverlay);
+            item.setChecked(showInputOverlay);
+            inputOverlaySurfaceView.setVisibility(showInputOverlay ? View.VISIBLE : View.GONE);
+            return true;
         }
         return false;
     }
@@ -265,8 +279,11 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
         settingsMenu.getMenuInflater().inflate(R.menu.menu_emulation_in_game, settingsMenu.getMenu());
         settingsMenu.setOnMenuItemClickListener(EmulationFragment.this);
         binding.emulationSettingsButton.setOnClickListener(v -> settingsMenu.show());
-
+        var menu = settingsMenu.getMenu();
+        menu.findItem(R.id.show_input_overlay).setChecked(overlaySettings.isOverlayEnabled());
         if (!overlaySettings.isOverlayEnabled()) {
+            menu.findItem(R.id.reset_inputs).setEnabled(false);
+            menu.findItem(R.id.edit_inputs).setEnabled(false);
             inputOverlaySurfaceView.setVisibility(View.GONE);
         }
         SurfaceView mainCanvas = binding.mainCanvas;

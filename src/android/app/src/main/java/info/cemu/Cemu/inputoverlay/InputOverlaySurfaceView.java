@@ -26,6 +26,7 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
     private InputMode inputMode = InputMode.DEFAULT;
 
     public void resetInputs() {
+        if (inputs == null) return;
         int width = getWidth();
         int height = getHeight();
         for (var input : InputOverlaySettingsProvider.Input.values()) {

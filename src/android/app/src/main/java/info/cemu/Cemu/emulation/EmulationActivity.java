@@ -6,6 +6,7 @@ import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -44,6 +45,13 @@ public class EmulationActivity extends AppCompatActivity implements Observer<Emu
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                showExitConfirmationDialog();
+            }
+        });
+
         viewModel = new ViewModelProvider(this).get(EmulationViewModel.class);
         viewModel.getEmulationData().observe(this, this);
         Intent intent = getIntent();
@@ -70,11 +78,7 @@ public class EmulationActivity extends AppCompatActivity implements Observer<Emu
                     .add(R.id.emulation_frame, emulationFragment)
                     .commit();
         }
-    }
 
-    @Override
-    public void onBackPressed() {
-        showExitConfirmationDialog();
     }
 
     private void showExitConfirmationDialog() {

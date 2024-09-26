@@ -17,5 +17,12 @@
         android:title="@string/edit_inputs" />
     <item
         android:id="@+id/reset_inputs"
-        android:title="@string/reset_overlay_inputs" />
+        android:title="@string/reset_input_overlay" />
+    <item
+        android:id="@+id/show_input_overlay"
+        android:checkable="true"
+        android:title="@string/show_input_overlay" />
+    <item
+        android:id="@+id/exit_emulation"
+        android:title="@string/exit" />
 </menu>

@@ -158,7 +158,7 @@
     <string name="input_finish_edit_label">Done</string>
     <string name="move_inputs_description">Move inputs</string>
     <string name="resize_inputs_description">Resize inputs</string>
-    <string name="reset_overlay_inputs">Reset overlay inputs</string>
+    <string name="reset_input_overlay">Reset input overlay</string>
     <string name="edit_inputs">Edit inputs</string>
     <string name="show_pad">Show pad</string>
     <string name="replace_tv_with_pad">Replace TV with PAD</string>
@@ -189,4 +189,6 @@
     <string name="downscale_filter">Downscale filter</string>
     <string name="overlay_text_scale">Overlay text scale</string>
     <string name="notifications_text_scale">Notifications text scale</string>
+    <string name="exit">Exit</string>
+    <string name="show_input_overlay">Show input overlay</string>
 </resources>
