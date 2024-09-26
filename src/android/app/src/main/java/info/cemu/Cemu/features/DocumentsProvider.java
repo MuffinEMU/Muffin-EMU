@@ -112,8 +112,29 @@ public class DocumentsProvider extends android.provider.DocumentsProvider {
     @Override
     public void deleteDocument(String documentId) throws FileNotFoundException {
         var file = getFile(documentId);
+        if (file.isDirectory()) {
+            deleteFolder(file);
+            return;
+        }
         if (!file.delete())
-            throw new FileNotFoundException("Couldn't delete document with ID '$documentId'");
+            throw new FileNotFoundException("Couldn't delete document with ID " + documentId);
+    }
+
+    private void deleteFolder(File dirFile) throws FileNotFoundException {
+        if (!dirFile.isDirectory())
+            return;
+        var files = dirFile.listFiles();
+        if (files == null) return;
+        for (var file : files) {
+            if (file.isDirectory()) {
+                deleteFolder(file);
+                continue;
+            }
+            if (!file.delete())
+                throw new FileNotFoundException("Couldn't delete file " + file.getPath());
+        }
+        if (!dirFile.delete())
+            throw new FileNotFoundException("Couldn't delete file " + dirFile.getPath());
     }
 
     @Override
@@ -121,30 +142,32 @@ public class DocumentsProvider extends android.provider.DocumentsProvider {
         var parent = getFile(parentDocumentId);
         var file = getFile(documentId);
 
-        if (parent.equals(file) || file.getParentFile() == null || file.getParentFile().equals(parent)) {
-            if (!file.delete())
-                throw new FileNotFoundException("Couldn't delete document with ID '$documentId'");
-        } else {
-            throw new FileNotFoundException("Couldn't delete document with ID '$documentId'");
+        if (!(parent.equals(file) || file.getParentFile() == null || file.getParentFile().equals(parent)))
+            throw new FileNotFoundException("Couldn't delete document with ID " + documentId);
+        if (file.isDirectory()) {
+            deleteFolder(file);
+            return;
         }
+        if (!file.delete())
+            throw new FileNotFoundException("Couldn't delete document with ID " + documentId);
     }
 
     @Override
     public String renameDocument(String documentId, String displayName) throws FileNotFoundException {
         if (displayName == null)
-            throw new FileNotFoundException("Couldn't rename document '$documentId' as the new name is null");
+            throw new FileNotFoundException("Couldn't rename document " + documentId + " as the new name is null");
 
         var sourceFile = getFile(documentId);
         var sourceParentFile = sourceFile.getParentFile();
         if (sourceParentFile == null)
-            throw new FileNotFoundException("Couldn't rename document '$documentId' as it has no parent");
+            throw new FileNotFoundException("Couldn't rename document '" + documentId + "' as it has no parent");
         var destFile = resolve(sourceParentFile, displayName);
 
         try {
             if (!sourceFile.renameTo(destFile))
-                throw new FileNotFoundException("Couldn't rename document from '${sourceFile.name}' to '${destFile.name}'");
+                throw new FileNotFoundException("Couldn't rename document from '" + sourceFile.getName() + "' to '" + destFile.getName() + "'");
         } catch (Exception exception) {
-            throw new FileNotFoundException("Couldn't rename document from '${sourceFile.name}' to '${destFile.name}': ${e.message}");
+            throw new FileNotFoundException("Couldn't rename document from '" + sourceFile.getName() + "' to '" + destFile.getName() + "':" + exception.getMessage());
         }
 
         return getDocumentId(destFile);
@@ -167,7 +190,7 @@ public class DocumentsProvider extends android.provider.DocumentsProvider {
                 }
             }
         } catch (IOException exception) {
-            throw new FileNotFoundException("Couldn't copy document '$sourceDocumentId': ${e.message}");
+            throw new FileNotFoundException("Couldn't copy document '" + sourceDocumentId + "': " + exception.getMessage());
         }
         return getDocumentId(newFile);
     }
@@ -179,7 +202,7 @@ public class DocumentsProvider extends android.provider.DocumentsProvider {
             removeDocument(sourceDocumentId, sourceParentDocumentId);
             return newDocumentId;
         } catch (FileNotFoundException e) {
-            throw new FileNotFoundException("Couldn't move document '$sourceDocumentId'");
+            throw new FileNotFoundException("Couldn't move document '" + sourceDocumentId + "'");
         }
     }
 
@@ -208,7 +231,7 @@ public class DocumentsProvider extends android.provider.DocumentsProvider {
 
     private String copyDocument(String sourceDocumentId, String sourceParentDocumentId, String targetParentDocumentId) throws FileNotFoundException {
         if (!isChildDocument(sourceParentDocumentId, sourceDocumentId))
-            throw new FileNotFoundException("Couldn't copy document '$sourceDocumentId' as its parent is not '$sourceParentDocumentId'");
+            throw new FileNotFoundException("Couldn't copy document '" + sourceDocumentId + "' as its parent is not '" + sourceParentDocumentId + "'");
         return copyDocument(sourceDocumentId, targetParentDocumentId);
     }
 
