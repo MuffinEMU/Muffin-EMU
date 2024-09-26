@@ -14,7 +14,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import info.cemu.Cemu.R;
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeInput;
 
 public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouchListener {
     public enum InputMode {
@@ -110,94 +110,94 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
 
     int overlayButtonToVPADButton(OverlayButton button) {
         return switch (button) {
-            case A -> NativeLibrary.VPAD_BUTTON_A;
-            case B -> NativeLibrary.VPAD_BUTTON_B;
-            case X -> NativeLibrary.VPAD_BUTTON_X;
-            case Y -> NativeLibrary.VPAD_BUTTON_Y;
-            case PLUS -> NativeLibrary.VPAD_BUTTON_PLUS;
-            case MINUS -> NativeLibrary.VPAD_BUTTON_MINUS;
-            case DPAD_UP -> NativeLibrary.VPAD_BUTTON_UP;
-            case DPAD_DOWN -> NativeLibrary.VPAD_BUTTON_DOWN;
-            case DPAD_LEFT -> NativeLibrary.VPAD_BUTTON_LEFT;
-            case DPAD_RIGHT -> NativeLibrary.VPAD_BUTTON_RIGHT;
-            case L_STICK -> NativeLibrary.VPAD_BUTTON_STICKL;
-            case R_STICK -> NativeLibrary.VPAD_BUTTON_STICKR;
-            case L -> NativeLibrary.VPAD_BUTTON_L;
-            case R -> NativeLibrary.VPAD_BUTTON_R;
-            case ZR -> NativeLibrary.VPAD_BUTTON_ZR;
-            case ZL -> NativeLibrary.VPAD_BUTTON_ZL;
+            case A -> NativeInput.VPAD_BUTTON_A;
+            case B -> NativeInput.VPAD_BUTTON_B;
+            case X -> NativeInput.VPAD_BUTTON_X;
+            case Y -> NativeInput.VPAD_BUTTON_Y;
+            case PLUS -> NativeInput.VPAD_BUTTON_PLUS;
+            case MINUS -> NativeInput.VPAD_BUTTON_MINUS;
+            case DPAD_UP -> NativeInput.VPAD_BUTTON_UP;
+            case DPAD_DOWN -> NativeInput.VPAD_BUTTON_DOWN;
+            case DPAD_LEFT -> NativeInput.VPAD_BUTTON_LEFT;
+            case DPAD_RIGHT -> NativeInput.VPAD_BUTTON_RIGHT;
+            case L_STICK -> NativeInput.VPAD_BUTTON_STICKL;
+            case R_STICK -> NativeInput.VPAD_BUTTON_STICKR;
+            case L -> NativeInput.VPAD_BUTTON_L;
+            case R -> NativeInput.VPAD_BUTTON_R;
+            case ZR -> NativeInput.VPAD_BUTTON_ZR;
+            case ZL -> NativeInput.VPAD_BUTTON_ZL;
             default -> -1;
         };
     }
 
     int overlayButtonToClassicButton(OverlayButton button) {
         return switch (button) {
-            case A -> NativeLibrary.CLASSIC_BUTTON_A;
-            case B -> NativeLibrary.CLASSIC_BUTTON_B;
-            case X -> NativeLibrary.CLASSIC_BUTTON_X;
-            case Y -> NativeLibrary.CLASSIC_BUTTON_Y;
-            case PLUS -> NativeLibrary.CLASSIC_BUTTON_PLUS;
-            case MINUS -> NativeLibrary.CLASSIC_BUTTON_MINUS;
-            case DPAD_UP -> NativeLibrary.CLASSIC_BUTTON_UP;
-            case DPAD_DOWN -> NativeLibrary.CLASSIC_BUTTON_DOWN;
-            case DPAD_LEFT -> NativeLibrary.CLASSIC_BUTTON_LEFT;
-            case DPAD_RIGHT -> NativeLibrary.CLASSIC_BUTTON_RIGHT;
-            case L -> NativeLibrary.CLASSIC_BUTTON_L;
-            case R -> NativeLibrary.CLASSIC_BUTTON_R;
-            case ZR -> NativeLibrary.CLASSIC_BUTTON_ZR;
-            case ZL -> NativeLibrary.CLASSIC_BUTTON_ZL;
+            case A -> NativeInput.CLASSIC_BUTTON_A;
+            case B -> NativeInput.CLASSIC_BUTTON_B;
+            case X -> NativeInput.CLASSIC_BUTTON_X;
+            case Y -> NativeInput.CLASSIC_BUTTON_Y;
+            case PLUS -> NativeInput.CLASSIC_BUTTON_PLUS;
+            case MINUS -> NativeInput.CLASSIC_BUTTON_MINUS;
+            case DPAD_UP -> NativeInput.CLASSIC_BUTTON_UP;
+            case DPAD_DOWN -> NativeInput.CLASSIC_BUTTON_DOWN;
+            case DPAD_LEFT -> NativeInput.CLASSIC_BUTTON_LEFT;
+            case DPAD_RIGHT -> NativeInput.CLASSIC_BUTTON_RIGHT;
+            case L -> NativeInput.CLASSIC_BUTTON_L;
+            case R -> NativeInput.CLASSIC_BUTTON_R;
+            case ZR -> NativeInput.CLASSIC_BUTTON_ZR;
+            case ZL -> NativeInput.CLASSIC_BUTTON_ZL;
             default -> -1;
         };
     }
 
     int overlayButtonToProButton(OverlayButton button) {
         return switch (button) {
-            case A -> NativeLibrary.PRO_BUTTON_A;
-            case B -> NativeLibrary.PRO_BUTTON_B;
-            case X -> NativeLibrary.PRO_BUTTON_X;
-            case Y -> NativeLibrary.PRO_BUTTON_Y;
-            case PLUS -> NativeLibrary.PRO_BUTTON_PLUS;
-            case MINUS -> NativeLibrary.PRO_BUTTON_MINUS;
-            case DPAD_UP -> NativeLibrary.PRO_BUTTON_UP;
-            case DPAD_DOWN -> NativeLibrary.PRO_BUTTON_DOWN;
-            case DPAD_LEFT -> NativeLibrary.PRO_BUTTON_LEFT;
-            case DPAD_RIGHT -> NativeLibrary.PRO_BUTTON_RIGHT;
-            case L_STICK -> NativeLibrary.PRO_BUTTON_STICKL;
-            case R_STICK -> NativeLibrary.PRO_BUTTON_STICKR;
-            case L -> NativeLibrary.PRO_BUTTON_L;
-            case R -> NativeLibrary.PRO_BUTTON_R;
-            case ZR -> NativeLibrary.PRO_BUTTON_ZR;
-            case ZL -> NativeLibrary.PRO_BUTTON_ZL;
+            case A -> NativeInput.PRO_BUTTON_A;
+            case B -> NativeInput.PRO_BUTTON_B;
+            case X -> NativeInput.PRO_BUTTON_X;
+            case Y -> NativeInput.PRO_BUTTON_Y;
+            case PLUS -> NativeInput.PRO_BUTTON_PLUS;
+            case MINUS -> NativeInput.PRO_BUTTON_MINUS;
+            case DPAD_UP -> NativeInput.PRO_BUTTON_UP;
+            case DPAD_DOWN -> NativeInput.PRO_BUTTON_DOWN;
+            case DPAD_LEFT -> NativeInput.PRO_BUTTON_LEFT;
+            case DPAD_RIGHT -> NativeInput.PRO_BUTTON_RIGHT;
+            case L_STICK -> NativeInput.PRO_BUTTON_STICKL;
+            case R_STICK -> NativeInput.PRO_BUTTON_STICKR;
+            case L -> NativeInput.PRO_BUTTON_L;
+            case R -> NativeInput.PRO_BUTTON_R;
+            case ZR -> NativeInput.PRO_BUTTON_ZR;
+            case ZL -> NativeInput.PRO_BUTTON_ZL;
             default -> -1;
         };
     }
 
     int overlayButtonToWiimoteButton(OverlayButton button) {
         return switch (button) {
-            case A -> NativeLibrary.WIIMOTE_BUTTON_A;
-            case B -> NativeLibrary.WIIMOTE_BUTTON_B;
-            case ONE -> NativeLibrary.WIIMOTE_BUTTON_1;
-            case TWO -> NativeLibrary.WIIMOTE_BUTTON_2;
-            case PLUS -> NativeLibrary.WIIMOTE_BUTTON_PLUS;
-            case MINUS -> NativeLibrary.WIIMOTE_BUTTON_MINUS;
-            case HOME -> NativeLibrary.WIIMOTE_BUTTON_HOME;
-            case DPAD_UP -> NativeLibrary.WIIMOTE_BUTTON_UP;
-            case DPAD_DOWN -> NativeLibrary.WIIMOTE_BUTTON_DOWN;
-            case DPAD_LEFT -> NativeLibrary.WIIMOTE_BUTTON_LEFT;
-            case DPAD_RIGHT -> NativeLibrary.WIIMOTE_BUTTON_RIGHT;
-            case C -> NativeLibrary.WIIMOTE_BUTTON_NUNCHUCK_C;
-            case Z -> NativeLibrary.WIIMOTE_BUTTON_NUNCHUCK_Z;
+            case A -> NativeInput.WIIMOTE_BUTTON_A;
+            case B -> NativeInput.WIIMOTE_BUTTON_B;
+            case ONE -> NativeInput.WIIMOTE_BUTTON_1;
+            case TWO -> NativeInput.WIIMOTE_BUTTON_2;
+            case PLUS -> NativeInput.WIIMOTE_BUTTON_PLUS;
+            case MINUS -> NativeInput.WIIMOTE_BUTTON_MINUS;
+            case HOME -> NativeInput.WIIMOTE_BUTTON_HOME;
+            case DPAD_UP -> NativeInput.WIIMOTE_BUTTON_UP;
+            case DPAD_DOWN -> NativeInput.WIIMOTE_BUTTON_DOWN;
+            case DPAD_LEFT -> NativeInput.WIIMOTE_BUTTON_LEFT;
+            case DPAD_RIGHT -> NativeInput.WIIMOTE_BUTTON_RIGHT;
+            case C -> NativeInput.WIIMOTE_BUTTON_NUNCHUCK_C;
+            case Z -> NativeInput.WIIMOTE_BUTTON_NUNCHUCK_Z;
             default -> -1;
         };
     }
 
     void onButtonStateChange(OverlayButton button, boolean state) {
         int nativeButtonId = switch (nativeControllerType) {
-            case NativeLibrary.EMULATED_CONTROLLER_TYPE_VPAD -> overlayButtonToVPADButton(button);
-            case NativeLibrary.EMULATED_CONTROLLER_TYPE_CLASSIC ->
+            case NativeInput.EMULATED_CONTROLLER_TYPE_VPAD -> overlayButtonToVPADButton(button);
+            case NativeInput.EMULATED_CONTROLLER_TYPE_CLASSIC ->
                     overlayButtonToClassicButton(button);
-            case NativeLibrary.EMULATED_CONTROLLER_TYPE_PRO -> overlayButtonToProButton(button);
-            case NativeLibrary.EMULATED_CONTROLLER_TYPE_WIIMOTE ->
+            case NativeInput.EMULATED_CONTROLLER_TYPE_PRO -> overlayButtonToProButton(button);
+            case NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE ->
                     overlayButtonToWiimoteButton(button);
             default -> -1;
         };
@@ -207,61 +207,61 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
         if (vibrateOnTouch && state) {
             vibrator.vibrate(buttonTouchVibrationEffect);
         }
-        NativeLibrary.onOverlayButton(controllerIndex, nativeButtonId, state);
+        NativeInput.onOverlayButton(controllerIndex, nativeButtonId, state);
     }
 
     void onOverlayAxis(int axis, float value) {
-        NativeLibrary.onOverlayAxis(controllerIndex, axis, value);
+        NativeInput.onOverlayAxis(controllerIndex, axis, value);
     }
 
     void onVPADJoystickStateChange(OverlayJoystick joystick, float up, float down, float left, float right) {
         if (joystick == OverlayJoystick.LEFT) {
-            onOverlayAxis(NativeLibrary.VPAD_BUTTON_STICKL_UP, up);
-            onOverlayAxis(NativeLibrary.VPAD_BUTTON_STICKL_DOWN, down);
-            onOverlayAxis(NativeLibrary.VPAD_BUTTON_STICKL_LEFT, left);
-            onOverlayAxis(NativeLibrary.VPAD_BUTTON_STICKL_RIGHT, right);
+            onOverlayAxis(NativeInput.VPAD_BUTTON_STICKL_UP, up);
+            onOverlayAxis(NativeInput.VPAD_BUTTON_STICKL_DOWN, down);
+            onOverlayAxis(NativeInput.VPAD_BUTTON_STICKL_LEFT, left);
+            onOverlayAxis(NativeInput.VPAD_BUTTON_STICKL_RIGHT, right);
         } else {
-            onOverlayAxis(NativeLibrary.VPAD_BUTTON_STICKR_UP, up);
-            onOverlayAxis(NativeLibrary.VPAD_BUTTON_STICKR_DOWN, down);
-            onOverlayAxis(NativeLibrary.VPAD_BUTTON_STICKR_LEFT, left);
-            onOverlayAxis(NativeLibrary.VPAD_BUTTON_STICKR_RIGHT, right);
+            onOverlayAxis(NativeInput.VPAD_BUTTON_STICKR_UP, up);
+            onOverlayAxis(NativeInput.VPAD_BUTTON_STICKR_DOWN, down);
+            onOverlayAxis(NativeInput.VPAD_BUTTON_STICKR_LEFT, left);
+            onOverlayAxis(NativeInput.VPAD_BUTTON_STICKR_RIGHT, right);
         }
     }
 
     void onProJoystickStateChange(OverlayJoystick joystick, float up, float down, float left, float right) {
         if (joystick == OverlayJoystick.LEFT) {
-            onOverlayAxis(NativeLibrary.PRO_BUTTON_STICKL_UP, up);
-            onOverlayAxis(NativeLibrary.PRO_BUTTON_STICKL_DOWN, down);
-            onOverlayAxis(NativeLibrary.PRO_BUTTON_STICKL_LEFT, left);
-            onOverlayAxis(NativeLibrary.PRO_BUTTON_STICKL_RIGHT, right);
+            onOverlayAxis(NativeInput.PRO_BUTTON_STICKL_UP, up);
+            onOverlayAxis(NativeInput.PRO_BUTTON_STICKL_DOWN, down);
+            onOverlayAxis(NativeInput.PRO_BUTTON_STICKL_LEFT, left);
+            onOverlayAxis(NativeInput.PRO_BUTTON_STICKL_RIGHT, right);
         } else {
-            onOverlayAxis(NativeLibrary.PRO_BUTTON_STICKR_UP, up);
-            onOverlayAxis(NativeLibrary.PRO_BUTTON_STICKR_DOWN, down);
-            onOverlayAxis(NativeLibrary.PRO_BUTTON_STICKR_LEFT, left);
-            onOverlayAxis(NativeLibrary.PRO_BUTTON_STICKR_RIGHT, right);
+            onOverlayAxis(NativeInput.PRO_BUTTON_STICKR_UP, up);
+            onOverlayAxis(NativeInput.PRO_BUTTON_STICKR_DOWN, down);
+            onOverlayAxis(NativeInput.PRO_BUTTON_STICKR_LEFT, left);
+            onOverlayAxis(NativeInput.PRO_BUTTON_STICKR_RIGHT, right);
         }
     }
 
     void onClassicJoystickStateChange(OverlayJoystick joystick, float up, float down, float left, float right) {
         if (joystick == OverlayJoystick.LEFT) {
-            onOverlayAxis(NativeLibrary.CLASSIC_BUTTON_STICKL_UP, up);
-            onOverlayAxis(NativeLibrary.CLASSIC_BUTTON_STICKL_DOWN, down);
-            onOverlayAxis(NativeLibrary.CLASSIC_BUTTON_STICKL_LEFT, left);
-            onOverlayAxis(NativeLibrary.CLASSIC_BUTTON_STICKL_RIGHT, right);
+            onOverlayAxis(NativeInput.CLASSIC_BUTTON_STICKL_UP, up);
+            onOverlayAxis(NativeInput.CLASSIC_BUTTON_STICKL_DOWN, down);
+            onOverlayAxis(NativeInput.CLASSIC_BUTTON_STICKL_LEFT, left);
+            onOverlayAxis(NativeInput.CLASSIC_BUTTON_STICKL_RIGHT, right);
         } else {
-            onOverlayAxis(NativeLibrary.CLASSIC_BUTTON_STICKR_UP, up);
-            onOverlayAxis(NativeLibrary.CLASSIC_BUTTON_STICKR_DOWN, down);
-            onOverlayAxis(NativeLibrary.CLASSIC_BUTTON_STICKR_LEFT, left);
-            onOverlayAxis(NativeLibrary.CLASSIC_BUTTON_STICKR_RIGHT, right);
+            onOverlayAxis(NativeInput.CLASSIC_BUTTON_STICKR_UP, up);
+            onOverlayAxis(NativeInput.CLASSIC_BUTTON_STICKR_DOWN, down);
+            onOverlayAxis(NativeInput.CLASSIC_BUTTON_STICKR_LEFT, left);
+            onOverlayAxis(NativeInput.CLASSIC_BUTTON_STICKR_RIGHT, right);
         }
     }
 
     void onWiimoteJoystickStateChange(OverlayJoystick joystick, float up, float down, float left, float right) {
         if (joystick == OverlayJoystick.LEFT) {
-            onOverlayAxis(NativeLibrary.WIIMOTE_BUTTON_NUNCHUCK_UP, up);
-            onOverlayAxis(NativeLibrary.WIIMOTE_BUTTON_NUNCHUCK_DOWN, down);
-            onOverlayAxis(NativeLibrary.WIIMOTE_BUTTON_NUNCHUCK_LEFT, left);
-            onOverlayAxis(NativeLibrary.WIIMOTE_BUTTON_NUNCHUCK_RIGHT, right);
+            onOverlayAxis(NativeInput.WIIMOTE_BUTTON_NUNCHUCK_UP, up);
+            onOverlayAxis(NativeInput.WIIMOTE_BUTTON_NUNCHUCK_DOWN, down);
+            onOverlayAxis(NativeInput.WIIMOTE_BUTTON_NUNCHUCK_LEFT, left);
+            onOverlayAxis(NativeInput.WIIMOTE_BUTTON_NUNCHUCK_RIGHT, right);
         }
     }
 
@@ -271,13 +271,13 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
         float left = x < 0 ? -x : 0;
         float right = x > 0 ? x : 0;
         switch (nativeControllerType) {
-            case NativeLibrary.EMULATED_CONTROLLER_TYPE_VPAD ->
+            case NativeInput.EMULATED_CONTROLLER_TYPE_VPAD ->
                     onVPADJoystickStateChange(joystick, up, down, left, right);
-            case NativeLibrary.EMULATED_CONTROLLER_TYPE_PRO ->
+            case NativeInput.EMULATED_CONTROLLER_TYPE_PRO ->
                     onProJoystickStateChange(joystick, up, down, left, right);
-            case NativeLibrary.EMULATED_CONTROLLER_TYPE_CLASSIC ->
+            case NativeInput.EMULATED_CONTROLLER_TYPE_CLASSIC ->
                     onClassicJoystickStateChange(joystick, up, down, left, right);
-            case NativeLibrary.EMULATED_CONTROLLER_TYPE_WIIMOTE ->
+            case NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE ->
                     onWiimoteJoystickStateChange(joystick, up, down, left, right);
         }
     }
@@ -291,11 +291,11 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
             return;
         }
         inputs = new ArrayList<>();
-        if (NativeLibrary.isControllerDisabled(controllerIndex)) {
+        if (NativeInput.isControllerDisabled(controllerIndex)) {
             return;
         }
         var resources = getResources();
-        nativeControllerType = NativeLibrary.getControllerType(controllerIndex);
+        nativeControllerType = NativeInput.getControllerType(controllerIndex);
 
         inputs.add(new RoundButton(
                 resources,
@@ -314,7 +314,7 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
                 getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.B)
         ));
 
-        if (nativeControllerType != NativeLibrary.EMULATED_CONTROLLER_TYPE_WIIMOTE) {
+        if (nativeControllerType != NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE) {
             inputs.add(new RoundButton(
                     resources,
                     R.drawable.button_x_pressed,
@@ -409,7 +409,7 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
                 getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.LEFT_AXIS)
         ));
 
-        if (nativeControllerType == NativeLibrary.EMULATED_CONTROLLER_TYPE_WIIMOTE) {
+        if (nativeControllerType == NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE) {
             inputs.add(new RoundButton(
                     resources,
                     R.drawable.button_c_pressed,
@@ -435,8 +435,8 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
                     getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.HOME)
             ));
         }
-        if (nativeControllerType != NativeLibrary.EMULATED_CONTROLLER_TYPE_CLASSIC
-                && nativeControllerType != NativeLibrary.EMULATED_CONTROLLER_TYPE_WIIMOTE) {
+        if (nativeControllerType != NativeInput.EMULATED_CONTROLLER_TYPE_CLASSIC
+                && nativeControllerType != NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE) {
             inputs.add(new RoundButton(
                     resources,
                     R.drawable.button_stick_pressed,

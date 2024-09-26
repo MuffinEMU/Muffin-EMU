@@ -22,13 +22,14 @@ import androidx.appcompat.widget.PopupMenu;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeEmulation;
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.FragmentEmulationBinding;
 import info.cemu.Cemu.input.SensorManager;
 import info.cemu.Cemu.inputoverlay.InputOverlaySettingsProvider;
 import info.cemu.Cemu.inputoverlay.InputOverlaySurfaceView;
 import info.cemu.Cemu.nativeinterface.NativeException;
+import info.cemu.Cemu.nativeinterface.NativeInput;
 
 @SuppressLint("ClickableViewAccessibility")
 public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemClickListener {
@@ -51,16 +52,16 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
             int y = (int) event.getY(pointerIndex);
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    NativeLibrary.onTouchDown(x, y, isTV);
+                    NativeInput.onTouchDown(x, y, isTV);
                     return true;
                 }
                 case MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                     currentPointerId = -1;
-                    NativeLibrary.onTouchUp(x, y, isTV);
+                    NativeInput.onTouchUp(x, y, isTV);
                     return true;
                 }
                 case MotionEvent.ACTION_MOVE -> {
-                    NativeLibrary.onTouchMove(x, y, isTV);
+                    NativeInput.onTouchMove(x, y, isTV);
                     return true;
                 }
             }
@@ -83,11 +84,11 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
         @Override
         public void surfaceChanged(@NonNull SurfaceHolder surfaceHolder, int format, int width, int height) {
             try {
-                NativeLibrary.setSurfaceSize(width, height, isMainCanvas);
+                NativeEmulation.setSurfaceSize(width, height, isMainCanvas);
                 if (surfaceSet) {
                     return;
                 }
-                NativeLibrary.setSurface(surfaceHolder.getSurface(), isMainCanvas);
+                NativeEmulation.setSurface(surfaceHolder.getSurface(), isMainCanvas);
                 surfaceSet = true;
             } catch (NativeException exception) {
                 onEmulationError(getString(R.string.failed_create_surface_error, exception.getMessage()));
@@ -96,7 +97,7 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
 
         @Override
         public void surfaceDestroyed(@NonNull SurfaceHolder surfaceHolder) {
-            NativeLibrary.clearSurface(isMainCanvas);
+            NativeEmulation.clearSurface(isMainCanvas);
             surfaceSet = false;
         }
     }
@@ -212,7 +213,7 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
         }
         if (itemId == R.id.replace_tv_with_pad) {
             boolean replaceTVWithPad = !item.isChecked();
-            NativeLibrary.setReplaceTVWithPadView(replaceTVWithPad);
+            NativeEmulation.setReplaceTVWithPadView(replaceTVWithPad);
             item.setChecked(replaceTVWithPad);
             return true;
         }
@@ -270,7 +271,7 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
         }
         SurfaceView mainCanvas = binding.mainCanvas;
         try {
-            NativeLibrary.initializerRenderer(testSurface);
+            NativeEmulation.initializerRenderer(testSurface);
         } catch (NativeException exception) {
             onEmulationError(getString(R.string.failed_initialize_renderer_error, exception.getMessage()));
             return binding.getRoot();
@@ -302,17 +303,17 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
     }
 
     private void startGame() {
-        try {
-            NativeLibrary.startGame(launchPath);
-        } catch (NativeLibrary.GameBaseFilesNotFoundException exception) {
-            onEmulationError(getString(R.string.game_not_found));
-        } catch (NativeLibrary.NoDiscKeyException exception) {
-            onEmulationError(getString(R.string.no_disk_key));
-        } catch (NativeLibrary.NoTitleTikException exception) {
-            onEmulationError(getString(R.string.no_title_tik));
-        } catch (NativeLibrary.GameFilesException exception) {
-            onEmulationError(getString(R.string.game_files_unknown_error, launchPath));
-        }
+        int result = NativeEmulation.startGame(launchPath);
+        if (result == NativeEmulation.START_GAME_SUCCESSFUL)
+            return;
+        int errorMessageId = switch (result) {
+            case NativeEmulation.START_GAME_ERROR_GAME_BASE_FILES_NOT_FOUND ->
+                    R.string.game_not_found;
+            case NativeEmulation.START_GAME_ERROR_NO_DISC_KEY -> R.string.no_disk_key;
+            case NativeEmulation.START_GAME_ERROR_NO_TITLE_TIK -> R.string.no_title_tik;
+            default -> R.string.game_files_unknown_error;
+        };
+        onEmulationError(getString(errorMessageId));
     }
 
     private void onEmulationError(String errorMessage) {

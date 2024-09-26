@@ -11,7 +11,7 @@ import com.google.android.material.checkbox.MaterialCheckBox;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.guibasecomponents.RecyclerViewItem;
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeGraphicPacks;
 
 public class GraphicPackRecyclerViewItem implements RecyclerViewItem {
     private static class GraphicPackViewHolder extends RecyclerView.ViewHolder {
@@ -28,9 +28,9 @@ public class GraphicPackRecyclerViewItem implements RecyclerViewItem {
     }
 
 
-    private final NativeLibrary.GraphicPack graphicPack;
+    private final NativeGraphicPacks.GraphicPack graphicPack;
 
-    public GraphicPackRecyclerViewItem(NativeLibrary.GraphicPack graphicPack) {
+    public GraphicPackRecyclerViewItem(NativeGraphicPacks.GraphicPack graphicPack) {
         this.graphicPack = graphicPack;
     }
 

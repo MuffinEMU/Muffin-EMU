@@ -1,7 +1,6 @@
 package info.cemu.Cemu.gameview;
 
 import android.graphics.Bitmap;
-import android.util.Log;
 
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
@@ -9,10 +8,8 @@ import androidx.lifecycle.ViewModel;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeGameTitles;
 
 public class GameViewModel extends ViewModel {
     private final MutableLiveData<List<Game>> gamesData;
@@ -25,7 +22,7 @@ public class GameViewModel extends ViewModel {
 
     public GameViewModel() {
         this.gamesData = new MutableLiveData<>();
-        NativeLibrary.setGameTitleLoadedCallback((path, title, colors, width, height) -> {
+        NativeGameTitles.setGameTitleLoadedCallback((path, title, colors, width, height) -> {
             Bitmap icon = null;
             if (colors != null)
                 icon = Bitmap.createBitmap(colors, width, height, Bitmap.Config.ARGB_8888);
@@ -39,12 +36,12 @@ public class GameViewModel extends ViewModel {
 
     @Override
     protected void onCleared() {
-        NativeLibrary.setGameTitleLoadedCallback(null);
+        NativeGameTitles.setGameTitleLoadedCallback(null);
     }
 
     public void refreshGames() {
         games.clear();
         gamesData.setValue(null);
-        NativeLibrary.reloadGameTitles();
+        NativeGameTitles.reloadGameTitles();
     }
 }

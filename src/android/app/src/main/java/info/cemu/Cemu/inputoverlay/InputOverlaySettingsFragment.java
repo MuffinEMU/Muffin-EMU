@@ -1,8 +1,6 @@
 package info.cemu.Cemu.inputoverlay;
 
 
-import android.content.Context;
-import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -17,13 +15,12 @@ import java.util.stream.IntStream;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
-import info.cemu.Cemu.guibasecomponents.ButtonRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.CheckboxRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.SliderRecyclerViewItem;
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeInput;
 
 
 public class InputOverlaySettingsFragment extends Fragment {
@@ -75,7 +72,7 @@ public class InputOverlaySettingsFragment extends Fragment {
         genericRecyclerViewAdapter.addRecyclerViewItem(alphaSlider);
 
         SelectionAdapter<Integer> controllerAdapter = new SelectionAdapter<>(
-                IntStream.range(0, NativeLibrary.MAX_CONTROLLERS)
+                IntStream.range(0, NativeInput.MAX_CONTROLLERS)
                         .mapToObj(i -> new SelectionAdapter.ChoiceItem<>(t -> t.setText(getString(R.string.controller_numbered, i + 1)), i))
                         .collect(Collectors.toList()),
                 overlaySettings.getControllerIndex()

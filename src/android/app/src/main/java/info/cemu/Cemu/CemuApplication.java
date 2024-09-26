@@ -4,12 +4,15 @@ import android.app.Application;
 import android.util.DisplayMetrics;
 
 import java.io.File;
-import java.util.Objects;
 
-import info.cemu.Cemu.NativeLibrary;
-import info.cemu.Cemu.utils.FileUtil;
+import info.cemu.Cemu.nativeinterface.NativeEmulation;
+import info.cemu.Cemu.nativeinterface.NativeGraphicPacks;
 
 public class CemuApplication extends Application {
+    static {
+        System.loadLibrary("CemuAndroid");
+    }
+
     private static CemuApplication application;
 
     public CemuApplication() {
@@ -31,8 +34,9 @@ public class CemuApplication extends Application {
     public void onCreate() {
         super.onCreate();
         DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
-        NativeLibrary.setDPI(displayMetrics.density);
-        NativeLibrary.initializeActiveSettings(getInternalFolder().toString(), getInternalFolder().toString());
-        NativeLibrary.initializeEmulation();
+        NativeEmulation.setDPI(displayMetrics.density);
+        NativeEmulation.initializeActiveSettings(getInternalFolder().toString(), getInternalFolder().toString());
+        NativeEmulation.initializeEmulation();
+        NativeGraphicPacks.refreshGraphicPacks();
     }
 }

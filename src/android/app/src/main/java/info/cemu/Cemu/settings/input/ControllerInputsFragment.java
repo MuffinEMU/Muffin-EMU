@@ -21,7 +21,7 @@ import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.HeaderRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
 import info.cemu.Cemu.input.InputManager;
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeInput;
 
 public class ControllerInputsFragment extends Fragment {
     public static final String CONTROLLER_INDEX = "ControllerIndex";
@@ -35,14 +35,14 @@ public class ControllerInputsFragment extends Fragment {
     private void onTypeChanged(int controllerType) {
         if (this.controllerType == controllerType) return;
         this.controllerType = controllerType;
-        NativeLibrary.setControllerType(controllerIndex, controllerType);
+        NativeInput.setControllerType(controllerIndex, controllerType);
         genericRecyclerViewAdapter.clearRecyclerViewItems();
         setControllerInputs(new HashMap<>());
     }
 
     private void setControllerInputs(Map<Integer, String> inputs) {
         emulatedControllerTypeAdapter.setSelectedValue(controllerType);
-        emulatedControllerTypeAdapter.setControllerTypeCounts(NativeLibrary.getVPADControllersCount(), NativeLibrary.getWPADControllersCount());
+        emulatedControllerTypeAdapter.setControllerTypeCounts(NativeInput.getVPADControllersCount(), NativeInput.getWPADControllersCount());
         String controllerTypeName = getString(ControllerTypeResourceNameMapper.controllerTypeToResourceNameId(controllerType));
 
         SingleSelectionRecyclerViewItem<Integer> emulatedControllerSelection = new SingleSelectionRecyclerViewItem<>(getString(R.string.emulated_controller_label),
@@ -59,21 +59,21 @@ public class ControllerInputsFragment extends Fragment {
                     MotionDialog inputDialog = new MotionDialog(getContext());
                     inputDialog.setOnKeyListener((dialog, keyCode, keyEvent) -> {
                         if (inputManager.mapKeyEventToMappingId(controllerIndex, buttonId, keyEvent)) {
-                            inputItem.setBoundInput(NativeLibrary.getControllerMapping(controllerIndex, buttonId));
+                            inputItem.setBoundInput(NativeInput.getControllerMapping(controllerIndex, buttonId));
                             inputDialog.dismiss();
                         }
                         return true;
                     });
                     inputDialog.setOnMotionListener(motionEvent -> {
                         if (inputManager.mapMotionEventToMappingId(controllerIndex, buttonId, motionEvent)) {
-                            inputItem.setBoundInput(NativeLibrary.getControllerMapping(controllerIndex, buttonId));
+                            inputItem.setBoundInput(NativeInput.getControllerMapping(controllerIndex, buttonId));
                             inputDialog.dismiss();
                         }
                         return true;
                     });
                     inputDialog.setMessage(getString(R.string.inputBindingDialogMessage, getString(buttonResourceIdName)));
                     inputDialog.setButton(AlertDialog.BUTTON_NEUTRAL, getString(R.string.clear), (dialogInterface, i) -> {
-                        NativeLibrary.clearControllerMapping(controllerIndex, buttonId);
+                        NativeInput.clearControllerMapping(controllerIndex, buttonId);
                         inputItem.clearBoundInput();
                         dialogInterface.dismiss();
                     });
@@ -94,11 +94,11 @@ public class ControllerInputsFragment extends Fragment {
         ActionBar actionBar = ((AppCompatActivity) requireActivity()).getSupportActionBar();
         if (actionBar != null)
             actionBar.setTitle(getString(R.string.controller_numbered, controllerIndex + 1));
-        if (NativeLibrary.isControllerDisabled(controllerIndex))
-            controllerType = NativeLibrary.EMULATED_CONTROLLER_TYPE_DISABLED;
-        else controllerType = NativeLibrary.getControllerType(controllerIndex);
+        if (NativeInput.isControllerDisabled(controllerIndex))
+            controllerType = NativeInput.EMULATED_CONTROLLER_TYPE_DISABLED;
+        else controllerType = NativeInput.getControllerType(controllerIndex);
 
-        setControllerInputs(NativeLibrary.getControllerMappings(controllerIndex));
+        setControllerInputs(NativeInput.getControllerMappings(controllerIndex));
 
         var binding = GenericRecyclerViewLayoutBinding.inflate(inflater, container, false);
         binding.recyclerView.setAdapter(genericRecyclerViewAdapter);

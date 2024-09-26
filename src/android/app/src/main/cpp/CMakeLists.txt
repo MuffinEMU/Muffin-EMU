@@ -1,24 +1,16 @@
 add_library(CemuAndroid SHARED
         AndroidAudio.cpp
-        AndroidAudio.h
         AndroidEmulatedController.cpp
-        AndroidEmulatedController.h
-        AndroidFilesystemCallbacks.h
-        AndroidGameTitleLoadedCallback.h
         CMakeLists.txt
-        CafeSystemUtils.cpp
-        CafeSystemUtils.h
-        EmulationState.h
         GameTitleLoader.cpp
-        GameTitleLoader.h
         Image.cpp
-        Image.h
         JNIUtils.cpp
-        JNIUtils.h
-        Utils.cpp
-        Utils.h
-        native-lib.cpp
-        stb_image.h
+        NativeEmulation.cpp
+        NativeGameTitles.cpp
+        NativeGraphicPacks.cpp
+        NativeInput.cpp
+        NativeLib.cpp
+        NativeSettings.cpp
 )
 
 target_link_libraries(CemuAndroid PRIVATE

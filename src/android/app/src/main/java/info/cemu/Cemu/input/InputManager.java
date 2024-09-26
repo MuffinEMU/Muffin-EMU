@@ -1,11 +1,10 @@
 package info.cemu.Cemu.input;
 
-import android.util.Log;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeInput;
 
 public class InputManager {
     private static class InvalidAxisException extends Exception {
@@ -17,58 +16,59 @@ public class InputManager {
     private int getNativeAxisKey(int axis, boolean isPositive) throws InvalidAxisException {
         if (isPositive) {
             return switch (axis) {
-                case MotionEvent.AXIS_X -> NativeLibrary.AXIS_X_POS;
-                case MotionEvent.AXIS_Y -> NativeLibrary.AXIS_Y_POS;
-                case MotionEvent.AXIS_RX, MotionEvent.AXIS_Z -> NativeLibrary.ROTATION_X_POS;
-                case MotionEvent.AXIS_RY, MotionEvent.AXIS_RZ -> NativeLibrary.ROTATION_Y_POS;
-                case MotionEvent.AXIS_LTRIGGER -> NativeLibrary.TRIGGER_X_POS;
-                case MotionEvent.AXIS_RTRIGGER -> NativeLibrary.TRIGGER_Y_POS;
-                case MotionEvent.AXIS_HAT_X -> NativeLibrary.DPAD_RIGHT;
-                case MotionEvent.AXIS_HAT_Y -> NativeLibrary.DPAD_DOWN;
+                case MotionEvent.AXIS_X -> NativeInput.AXIS_X_POS;
+                case MotionEvent.AXIS_Y -> NativeInput.AXIS_Y_POS;
+                case MotionEvent.AXIS_RX, MotionEvent.AXIS_Z -> NativeInput.ROTATION_X_POS;
+                case MotionEvent.AXIS_RY, MotionEvent.AXIS_RZ -> NativeInput.ROTATION_Y_POS;
+                case MotionEvent.AXIS_LTRIGGER -> NativeInput.TRIGGER_X_POS;
+                case MotionEvent.AXIS_RTRIGGER -> NativeInput.TRIGGER_Y_POS;
+                case MotionEvent.AXIS_HAT_X -> NativeInput.DPAD_RIGHT;
+                case MotionEvent.AXIS_HAT_Y -> NativeInput.DPAD_DOWN;
                 default -> throw new InvalidAxisException(axis);
             };
         } else {
             return switch (axis) {
-                case MotionEvent.AXIS_X -> NativeLibrary.AXIS_X_NEG;
-                case MotionEvent.AXIS_Y -> NativeLibrary.AXIS_Y_NEG;
-                case MotionEvent.AXIS_RX, MotionEvent.AXIS_Z -> NativeLibrary.ROTATION_X_NEG;
-                case MotionEvent.AXIS_RY, MotionEvent.AXIS_RZ -> NativeLibrary.ROTATION_Y_NEG;
-                case MotionEvent.AXIS_HAT_X -> NativeLibrary.DPAD_LEFT;
-                case MotionEvent.AXIS_HAT_Y -> NativeLibrary.DPAD_UP;
+                case MotionEvent.AXIS_X -> NativeInput.AXIS_X_NEG;
+                case MotionEvent.AXIS_Y -> NativeInput.AXIS_Y_NEG;
+                case MotionEvent.AXIS_RX, MotionEvent.AXIS_Z -> NativeInput.ROTATION_X_NEG;
+                case MotionEvent.AXIS_RY, MotionEvent.AXIS_RZ -> NativeInput.ROTATION_Y_NEG;
+                case MotionEvent.AXIS_HAT_X -> NativeInput.DPAD_LEFT;
+                case MotionEvent.AXIS_HAT_Y -> NativeInput.DPAD_UP;
                 default -> throw new InvalidAxisException(axis);
             };
         }
     }
 
-    private boolean isMotionEventFromJoystick(MotionEvent event) {
-        return (event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK && event.getAction() == MotionEvent.ACTION_MOVE;
+    private boolean isMotionEventFromJoystickOrGamepad(MotionEvent event) {
+        return (event.getSource() & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK || (event.getSource() & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD;
     }
 
     private static final float MIN_ABS_AXIS_VALUE = 0.33f;
 
     public boolean mapMotionEventToMappingId(int controllerIndex, int mappingId, MotionEvent event) {
-        if (isMotionEventFromJoystick(event)) {
-            InputDevice device = event.getDevice();
-            float maxAbsAxisValue = 0.0f;
-            int maxAxis = -1;
-            int actionPointerIndex = event.getActionIndex();
-            for (InputDevice.MotionRange motionRange : device.getMotionRanges()) {
-                float axisValue = event.getAxisValue(motionRange.getAxis(), actionPointerIndex);
-                int axis;
-                try {
-                    axis = getNativeAxisKey(motionRange.getAxis(), axisValue > 0);
-                } catch (InvalidAxisException e) {
-                    continue;
-                }
-                if (Math.abs(axisValue) > maxAbsAxisValue) {
-                    maxAxis = axis;
-                    maxAbsAxisValue = Math.abs(axisValue);
-                }
+        if (!isMotionEventFromJoystickOrGamepad(event)) {
+            return false;
+        }
+        InputDevice device = event.getDevice();
+        float maxAbsAxisValue = 0.0f;
+        int maxAxis = -1;
+        int actionPointerIndex = event.getActionIndex();
+        for (InputDevice.MotionRange motionRange : device.getMotionRanges()) {
+            float axisValue = event.getAxisValue(motionRange.getAxis(), actionPointerIndex);
+            int axis;
+            try {
+                axis = getNativeAxisKey(motionRange.getAxis(), axisValue > 0);
+            } catch (InvalidAxisException e) {
+                continue;
             }
-            if (maxAbsAxisValue > MIN_ABS_AXIS_VALUE) {
-                NativeLibrary.setControllerMapping(device.getDescriptor(), device.getName(), controllerIndex, mappingId, maxAxis);
-                return true;
+            if (Math.abs(axisValue) > maxAbsAxisValue) {
+                maxAxis = axis;
+                maxAbsAxisValue = Math.abs(axisValue);
             }
+        }
+        if (maxAbsAxisValue > MIN_ABS_AXIS_VALUE) {
+            NativeInput.setControllerMapping(device.getDescriptor(), device.getName(), controllerIndex, mappingId, maxAxis);
+            return true;
         }
         return false;
     }
@@ -98,26 +98,26 @@ public class InputManager {
         InputDevice device = event.getDevice();
         if (!isController(device))
             return false;
-        NativeLibrary.onNativeKey(device.getDescriptor(), device.getName(), event.getKeyCode(), event.getAction() == KeyEvent.ACTION_DOWN);
+        NativeInput.onNativeKey(device.getDescriptor(), device.getName(), event.getKeyCode(), event.getAction() == KeyEvent.ACTION_DOWN);
         return true;
     }
 
     public boolean onMotionEvent(MotionEvent event) {
-        if (!isMotionEventFromJoystick(event))
+        if (!isMotionEventFromJoystickOrGamepad(event))
             return false;
         InputDevice device = event.getDevice();
         int actionPointerIndex = event.getActionIndex();
         for (InputDevice.MotionRange motionRange : device.getMotionRanges()) {
             float axisValue = event.getAxisValue(motionRange.getAxis(), actionPointerIndex);
             int axis = motionRange.getAxis();
-            NativeLibrary.onNativeAxis(device.getDescriptor(), device.getName(), axis, axisValue);
+            NativeInput.onNativeAxis(device.getDescriptor(), device.getName(), axis, axisValue);
         }
         return true;
     }
 
     public boolean mapKeyEventToMappingId(int controllerIndex, int mappingId, KeyEvent event) {
         InputDevice device = event.getDevice();
-        NativeLibrary.setControllerMapping(device.getDescriptor(), device.getName(), controllerIndex, mappingId, event.getKeyCode());
+        NativeInput.setControllerMapping(device.getDescriptor(), device.getName(), controllerIndex, mappingId, event.getKeyCode());
         return true;
     }
 }

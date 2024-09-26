@@ -1,4 +1,4 @@
-package info.cemu.Cemu.utils;
+package info.cemu.Cemu.nativeinterface;
 
 import android.database.Cursor;
 import android.net.Uri;
@@ -13,7 +13,7 @@ import java.util.ArrayList;
 
 import info.cemu.Cemu.CemuApplication;
 
-public class FileUtil {
+public class FileCallbacks {
     private static final String PATH_SEPARATOR_ENCODED = "%2F";
     private static final String PATH_SEPARATOR_DECODED = "/";
     private static final String COLON_ENCODED = "%3A";
@@ -46,7 +46,7 @@ public class FileUtil {
                 return fd;
             }
         } catch (Exception e) {
-            Log.e("FileUtil", "Cannot open content uri, error: " + e.getMessage());
+            Log.e("FileCallbacks", "Cannot open content uri, error: " + e.getMessage());
         }
         return -1;
     }
@@ -62,7 +62,7 @@ public class FileUtil {
                 files.add(toCppPath(documentUri));
             }
         } catch (Exception e) {
-            Log.e("FileUtil", "Cannot list files: " + e.getMessage());
+            Log.e("FileCallbacks", "Cannot list files: " + e.getMessage());
         }
         String[] filesArray = new String[files.size()];
         filesArray = files.toArray(filesArray);
@@ -82,7 +82,7 @@ public class FileUtil {
         try (Cursor cursor = CemuApplication.getApplication().getApplicationContext().getContentResolver().query(fromCppPath(uri), null, null, null, null)) {
             return cursor != null && cursor.moveToFirst();
         } catch (Exception e) {
-            Log.e("FileUtil", "Failed checking if file exists: " + e.getMessage());
+            Log.e("FileCallbacks", "Failed checking if file exists: " + e.getMessage());
             return false;
         }
     }

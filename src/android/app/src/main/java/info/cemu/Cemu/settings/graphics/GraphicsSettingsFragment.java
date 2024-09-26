@@ -6,7 +6,6 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.StringRes;
 import androidx.fragment.app.Fragment;
 
 import java.util.stream.Collectors;
@@ -18,14 +17,14 @@ import info.cemu.Cemu.guibasecomponents.CheckboxRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeSettings;
 
 public class GraphicsSettingsFragment extends Fragment {
     private static int vsyncModeToResourceNameId(int vsyncMode) {
         return switch (vsyncMode) {
-            case NativeLibrary.VSYNC_MODE_OFF -> R.string.off;
-            case NativeLibrary.VSYNC_MODE_DOUBLE_BUFFERING -> R.string.double_buffering;
-            case NativeLibrary.VSYNC_MODE_TRIPLE_BUFFERING -> R.string.triple_buffering;
+            case NativeSettings.VSYNC_MODE_OFF -> R.string.off;
+            case NativeSettings.VSYNC_MODE_DOUBLE_BUFFERING -> R.string.double_buffering;
+            case NativeSettings.VSYNC_MODE_TRIPLE_BUFFERING -> R.string.triple_buffering;
             default -> throw new IllegalArgumentException("Invalid vsync mode: " + vsyncMode);
         };
     }
@@ -36,23 +35,23 @@ public class GraphicsSettingsFragment extends Fragment {
 
         GenericRecyclerViewAdapter genericRecyclerViewAdapter = new GenericRecyclerViewAdapter();
 
-        CheckboxRecyclerViewItem asyncShaderCheckbox = new CheckboxRecyclerViewItem(getString(R.string.async_shader_compile), getString(R.string.async_shader_compile_description), NativeLibrary.getAsyncShaderCompile(), NativeLibrary::setAsyncShaderCompile);
+        CheckboxRecyclerViewItem asyncShaderCheckbox = new CheckboxRecyclerViewItem(getString(R.string.async_shader_compile), getString(R.string.async_shader_compile_description), NativeSettings.getAsyncShaderCompile(), NativeSettings::setAsyncShaderCompile);
         genericRecyclerViewAdapter.addRecyclerViewItem(asyncShaderCheckbox);
 
-        int vsyncMode = NativeLibrary.getVSyncMode();
-        var vsyncChoices = Stream.of(NativeLibrary.VSYNC_MODE_OFF, NativeLibrary.VSYNC_MODE_DOUBLE_BUFFERING, NativeLibrary.VSYNC_MODE_TRIPLE_BUFFERING)
+        int vsyncMode = NativeSettings.getVSyncMode();
+        var vsyncChoices = Stream.of(NativeSettings.VSYNC_MODE_OFF, NativeSettings.VSYNC_MODE_DOUBLE_BUFFERING, NativeSettings.VSYNC_MODE_TRIPLE_BUFFERING)
                 .map(vsync -> new SelectionAdapter.ChoiceItem<>(t -> t.setText(vsyncModeToResourceNameId(vsync)), vsync))
                 .collect(Collectors.toList());
         SelectionAdapter<Integer> vsyncSelectionAdapter = new SelectionAdapter<>(vsyncChoices, vsyncMode);
         SingleSelectionRecyclerViewItem<Integer> vsyncModeSelection = new SingleSelectionRecyclerViewItem<>(getString(R.string.vsync),
                 getString(vsyncModeToResourceNameId(vsyncMode)), vsyncSelectionAdapter,
                 (vsync, selectionRecyclerViewItem) -> {
-                    NativeLibrary.setVSyncMode(vsync);
+                    NativeSettings.setVSyncMode(vsync);
                     selectionRecyclerViewItem.setDescription(getString(vsyncModeToResourceNameId(vsync)));
                 });
         genericRecyclerViewAdapter.addRecyclerViewItem(vsyncModeSelection);
 
-        CheckboxRecyclerViewItem accurateBarriersCheckbox = new CheckboxRecyclerViewItem(getString(R.string.accurate_barriers), getString(R.string.accurate_barriers_description), NativeLibrary.getAccurateBarriers(), NativeLibrary::setAccurateBarriers);
+        CheckboxRecyclerViewItem accurateBarriersCheckbox = new CheckboxRecyclerViewItem(getString(R.string.accurate_barriers), getString(R.string.accurate_barriers_description), NativeSettings.getAccurateBarriers(), NativeSettings::setAccurateBarriers);
         genericRecyclerViewAdapter.addRecyclerViewItem(accurateBarriersCheckbox);
 
         binding.recyclerView.setAdapter(genericRecyclerViewAdapter);

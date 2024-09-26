@@ -16,7 +16,7 @@ import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
 import info.cemu.Cemu.guibasecomponents.ButtonRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.SimpleButtonRecyclerViewItem;
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeInput;
 
 public class InputSettingsFragment extends Fragment {
 
@@ -27,9 +27,9 @@ public class InputSettingsFragment extends Fragment {
         GenericRecyclerViewAdapter genericRecyclerViewAdapter = new GenericRecyclerViewAdapter();
         genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.input_overlay_settings), () -> NavHostFragment.findNavController(InputSettingsFragment.this).navigate(R.id.action_inputSettingsFragment_to_inputOverlaySettingsFragment)));
 
-        for (int index = 0; index < NativeLibrary.MAX_CONTROLLERS; index++) {
+        for (int index = 0; index < NativeInput.MAX_CONTROLLERS; index++) {
             int controllerIndex = index;
-            int controllerType = NativeLibrary.isControllerDisabled(controllerIndex) ? NativeLibrary.EMULATED_CONTROLLER_TYPE_DISABLED : NativeLibrary.getControllerType(controllerIndex);
+            int controllerType = NativeInput.isControllerDisabled(controllerIndex) ? NativeInput.EMULATED_CONTROLLER_TYPE_DISABLED : NativeInput.getControllerType(controllerIndex);
             String controllerTypeName = getString(ControllerTypeResourceNameMapper.controllerTypeToResourceNameId(controllerType));
             ButtonRecyclerViewItem buttonRecyclerViewItem = new ButtonRecyclerViewItem(
                     getString(R.string.controller_numbered, controllerIndex + 1),

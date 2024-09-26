@@ -5,7 +5,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeInput;
 
 public class SensorManager implements SensorEventListener {
     private final android.hardware.SensorManager sensorManager;
@@ -28,7 +28,7 @@ public class SensorManager implements SensorEventListener {
         if (!hasMotionData) {
             return;
         }
-        NativeLibrary.setMotionEnabled(true);
+        NativeInput.setMotionEnabled(true);
         sensorManager.registerListener(this, gyroscope, android.hardware.SensorManager.SENSOR_DELAY_GAME);
         sensorManager.registerListener(this, accelerometer, android.hardware.SensorManager.SENSOR_DELAY_GAME);
     }
@@ -41,7 +41,7 @@ public class SensorManager implements SensorEventListener {
         if (!hasMotionData) {
             return;
         }
-        NativeLibrary.setMotionEnabled(false);
+        NativeInput.setMotionEnabled(false);
         sensorManager.unregisterListener(this);
     }
 
@@ -65,10 +65,10 @@ public class SensorManager implements SensorEventListener {
         hasAccelData = false;
         hasGyroData = false;
         if (isLandscape) {
-            NativeLibrary.onMotion(event.timestamp, gyroY, gyroZ, gyroX, accelY, accelZ, accelX);
+            NativeInput.onMotion(event.timestamp, gyroY, gyroZ, gyroX, accelY, accelZ, accelX);
             return;
         }
-        NativeLibrary.onMotion(event.timestamp, gyroX, gyroY, gyroZ, accelX, accelY, accelZ);
+        NativeInput.onMotion(event.timestamp, gyroX, gyroY, gyroZ, accelX, accelY, accelZ);
     }
 
     @Override

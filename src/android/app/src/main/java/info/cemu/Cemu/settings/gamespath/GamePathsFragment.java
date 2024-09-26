@@ -27,7 +27,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeSettings;
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
 
@@ -56,12 +56,12 @@ public class GamePathsFragment extends Fragment {
                 Toast.makeText(requireContext(), R.string.game_path_already_added, Toast.LENGTH_LONG).show();
                 return;
             }
-            NativeLibrary.addGamesPath(gamesPath);
+            NativeSettings.addGamesPath(gamesPath);
             gamesPaths = Stream.concat(Stream.of(gamesPath), gamesPaths.stream()).collect(Collectors.toList());
             gamePathAdapter.submitList(gamesPaths);
         });
         gamePathAdapter = new GamePathAdapter(path -> {
-            NativeLibrary.removeGamesPath(path);
+            NativeSettings.removeGamesPath(path);
             gamesPaths = gamesPaths.stream().filter(p -> !p.equals(path)).collect(Collectors.toList());
             gamePathAdapter.submitList(gamesPaths);
         });
@@ -71,7 +71,7 @@ public class GamePathsFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         GenericRecyclerViewLayoutBinding binding = GenericRecyclerViewLayoutBinding.inflate(inflater, container, false);
         binding.recyclerView.setAdapter(gamePathAdapter);
-        gamesPaths = NativeLibrary.getGamesPaths();
+        gamesPaths = NativeSettings.getGamesPaths();
         gamePathAdapter.submitList(gamesPaths);
         requireActivity().addMenuProvider(new MenuProvider() {
             @Override

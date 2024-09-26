@@ -1,4 +1,4 @@
-package info.cemu.Cemu.utils;
+package info.cemu.Cemu.zip;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -8,7 +8,7 @@ import java.nio.file.Paths;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-public class ZipUtil {
+public class Zip {
 
     public static void unzip(InputStream stream, String targetDir) throws IOException {
         try (ZipInputStream zipInputStream = new ZipInputStream(stream)) {
@@ -34,7 +34,7 @@ public class ZipUtil {
     private static void createDir(String dir) {
         File f = new File(dir);
         if (!f.isDirectory()) {
-            f.mkdirs();
+            var ignored = f.mkdirs();
         }
     }
 }

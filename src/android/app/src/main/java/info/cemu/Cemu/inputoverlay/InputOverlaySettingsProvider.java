@@ -8,7 +8,7 @@ import android.graphics.Rect;
 import java.util.Optional;
 import java.util.function.Consumer;
 
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeInput;
 
 public class InputOverlaySettingsProvider {
     public enum Input {
@@ -129,7 +129,7 @@ public class InputOverlaySettingsProvider {
         int leftJoystickCentreX = (int) (width * 0.25f);
         int joystickCentreY = (int) (height * 0.55f);
         int joystickClickRadius = (int) (joystickRadius * 0.7f);
-
+        // TODO: move this to res?
         return switch (input) {
             case A -> new Rect(abxyButtonsCentreX + roundButtonRadius,
                     abxyButtonsCentreY - roundButtonRadius,
@@ -222,7 +222,7 @@ public class InputOverlaySettingsProvider {
         }
 
         public void setControllerIndex(int controllerIndex) {
-            this.controllerIndex = Math.min(Math.max(controllerIndex, 0), NativeLibrary.MAX_CONTROLLERS - 1);
+            this.controllerIndex = Math.min(Math.max(controllerIndex, 0), NativeInput.MAX_CONTROLLERS - 1);
         }
 
         public int getControllerIndex() {

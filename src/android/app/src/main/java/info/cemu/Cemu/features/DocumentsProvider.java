@@ -34,7 +34,6 @@ public class DocumentsProvider extends android.provider.DocumentsProvider {
         }
     }
 
-
     private final String[] DEFAULT_ROOT_PROJECTION = {
             DocumentsContract.Root.COLUMN_ROOT_ID,
             DocumentsContract.Root.COLUMN_MIME_TYPES,

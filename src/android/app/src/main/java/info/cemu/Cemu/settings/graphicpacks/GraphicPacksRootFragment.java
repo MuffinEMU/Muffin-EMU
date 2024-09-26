@@ -41,10 +41,10 @@ import java.util.Optional;
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
 import info.cemu.Cemu.guibasecomponents.FilterableRecyclerViewAdapter;
-import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
-import info.cemu.Cemu.NativeLibrary;
-import info.cemu.Cemu.utils.FileUtil;
-import info.cemu.Cemu.utils.ZipUtil;
+import info.cemu.Cemu.nativeinterface.FileCallbacks;
+import info.cemu.Cemu.nativeinterface.NativeGameTitles;
+import info.cemu.Cemu.nativeinterface.NativeGraphicPacks;
+import info.cemu.Cemu.zip.Zip;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.OkHttpClient;
@@ -144,7 +144,7 @@ public class GraphicPacksRootFragment extends Fragment {
         }
     }
 
-    private final ArrayList<Long> installedTitleIds = NativeLibrary.getInstalledGamesTitleIds();
+    private final ArrayList<Long> installedTitleIds = NativeGameTitles.getInstalledGamesTitleIds();
     private final GraphicPackSectionNode graphicPackSectionRootNode = new GraphicPackSectionNode();
     private final FilterableRecyclerViewAdapter<GraphicPackItemRecyclerViewItem> genericRecyclerViewAdapter = new FilterableRecyclerViewAdapter<>();
     private GraphicPackViewModel graphicPackViewModel;
@@ -240,7 +240,7 @@ public class GraphicPacksRootFragment extends Fragment {
     }
 
     private void fillGraphicPacks() {
-        var nativeGraphicPacks = NativeLibrary.getGraphicPackBasicInfos();
+        var nativeGraphicPacks = NativeGraphicPacks.getGraphicPackBasicInfos();
         graphicPackSectionRootNode.clear();
         List<GraphicPackDataNode> graphicPackDataNodes = new ArrayList<>();
         nativeGraphicPacks.forEach(graphicPack -> {
@@ -329,13 +329,13 @@ public class GraphicPacksRootFragment extends Fragment {
             public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                 try (ResponseBody responseBody = response.body()) {
                     Path graphicPacksTempDirPath = graphicPacksDirPath.resolve("downloadedGraphicPacksTemp");
-                    FileUtil.delete(graphicPacksTempDirPath);
-                    ZipUtil.unzip(Objects.requireNonNull(responseBody).byteStream(), graphicPacksTempDirPath.toString());
+                    FileCallbacks.delete(graphicPacksTempDirPath);
+                    Zip.unzip(Objects.requireNonNull(responseBody).byteStream(), graphicPacksTempDirPath.toString());
                     Files.write(graphicPacksTempDirPath.resolve("version.txt"), version.getBytes(StandardCharsets.UTF_8));
                     Path downloadedGraphicPacksDirPath = graphicPacksDirPath.resolve("downloadedGraphicPacks");
-                    FileUtil.delete(downloadedGraphicPacksDirPath);
+                    FileCallbacks.delete(downloadedGraphicPacksDirPath);
                     Files.move(graphicPacksTempDirPath, downloadedGraphicPacksDirPath);
-                    NativeLibrary.refreshGraphicPacks();
+                    NativeGraphicPacks.refreshGraphicPacks();
                     requireActivity().runOnUiThread(() -> fillGraphicPacks());
                     onDownloadFinish(dialog);
                 }

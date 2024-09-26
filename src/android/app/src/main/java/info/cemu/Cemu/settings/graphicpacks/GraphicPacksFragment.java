@@ -21,7 +21,7 @@ import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.StringSelectionAdapter;
-import info.cemu.Cemu.NativeLibrary;
+import info.cemu.Cemu.nativeinterface.NativeGraphicPacks;
 
 public class GraphicPacksFragment extends Fragment {
     private final GenericRecyclerViewAdapter genericRecyclerViewAdapter = new GenericRecyclerViewAdapter();
@@ -78,12 +78,12 @@ public class GraphicPacksFragment extends Fragment {
 
     private void fillData(GraphicPacksRootFragment.GraphicPackDataNode graphicPackDataNode) {
         genericRecyclerViewAdapter.clearRecyclerViewItems();
-        var graphicPack = NativeLibrary.getGraphicPack(graphicPackDataNode.getId());
+        var graphicPack = NativeGraphicPacks.getGraphicPack(graphicPackDataNode.getId());
         genericRecyclerViewAdapter.addRecyclerViewItem(new GraphicPackRecyclerViewItem(graphicPack));
         fillPresets(graphicPack);
     }
 
-    private void fillPresets(NativeLibrary.GraphicPack graphicPack) {
+    private void fillPresets(NativeGraphicPacks.GraphicPack graphicPack) {
         var recyclerViewItems = new ArrayList<SingleSelectionRecyclerViewItem<String>>();
         IntStream.range(0, graphicPack.presets.size()).forEach(index -> {
             var graphicPackPreset = graphicPack.presets.get(index);
