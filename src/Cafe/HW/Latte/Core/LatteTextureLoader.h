@@ -46,6 +46,7 @@ void decodeBC3Block_UNORM(uint8* inputData, float* imageRGBA);
 void decodeBC4Block_UNORM(uint8* blockStorage, float* rOutput);
 void decodeBC5Block_UNORM(uint8* blockStorage, float* rgOutput);
 void decodeBC5Block_SNORM(uint8* blockStorage, float* rgOutput);
+using decodingFn = void (uint8 *, float *);
 
 inline void BC1_GetPixel(uint8* inputData, sint32 x, sint32 y, uint8 rgba[4])
 {
@@ -2171,8 +2172,8 @@ public:
 		*(outputPixel + 3) = 255;
 	}
 };
-
-class TextureDecoder_BC5_To_R8G8 : public TextureDecoder, public SingletonClass<TextureDecoder_BC5_To_R8G8>
+template<decodingFn fn>
+class TextureDecoder_BC5_To_R8G8 : public TextureDecoder, public SingletonClass<TextureDecoder_BC5_To_R8G8<fn>>
 {
 public:
 
@@ -2192,7 +2193,7 @@ public:
 				sint32 blockSizeY = (std::min)(4, textureLoader->height - y);
 				// decode 4x4 pixels at once
 				float rgBlock[4 * 4 * 2];
-				decodeBC5Block_UNORM(blockData, rgBlock);
+				fn(blockData, rgBlock);
 
 				for (sint32 py = 0; py < blockSizeY; py++)
 				{
