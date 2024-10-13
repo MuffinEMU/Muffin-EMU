@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
-import info.cemu.Cemu.guibasecomponents.CheckboxRecyclerViewItem;
+import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
@@ -55,8 +55,8 @@ public class GraphicsSettingsFragment extends Fragment {
 
         GenericRecyclerViewAdapter genericRecyclerViewAdapter = new GenericRecyclerViewAdapter();
 
-        CheckboxRecyclerViewItem asyncShaderCheckbox = new CheckboxRecyclerViewItem(getString(R.string.async_shader_compile), getString(R.string.async_shader_compile_description), NativeSettings.getAsyncShaderCompile(), NativeSettings::setAsyncShaderCompile);
-        genericRecyclerViewAdapter.addRecyclerViewItem(asyncShaderCheckbox);
+        ToggleRecyclerViewItem asyncShaderToggle = new ToggleRecyclerViewItem(getString(R.string.async_shader_compile), getString(R.string.async_shader_compile_description), NativeSettings.getAsyncShaderCompile(), NativeSettings::setAsyncShaderCompile);
+        genericRecyclerViewAdapter.addRecyclerViewItem(asyncShaderToggle);
 
         int vsyncMode = NativeSettings.getVSyncMode();
         var vsyncChoices = Stream.of(NativeSettings.VSYNC_MODE_OFF, NativeSettings.VSYNC_MODE_DOUBLE_BUFFERING, NativeSettings.VSYNC_MODE_TRIPLE_BUFFERING)
@@ -71,8 +71,8 @@ public class GraphicsSettingsFragment extends Fragment {
                 });
         genericRecyclerViewAdapter.addRecyclerViewItem(vsyncModeSelection);
 
-        CheckboxRecyclerViewItem accurateBarriersCheckbox = new CheckboxRecyclerViewItem(getString(R.string.accurate_barriers), getString(R.string.accurate_barriers_description), NativeSettings.getAccurateBarriers(), NativeSettings::setAccurateBarriers);
-        genericRecyclerViewAdapter.addRecyclerViewItem(accurateBarriersCheckbox);
+        ToggleRecyclerViewItem accurateBarriersToggle = new ToggleRecyclerViewItem(getString(R.string.accurate_barriers), getString(R.string.accurate_barriers_description), NativeSettings.getAccurateBarriers(), NativeSettings::setAccurateBarriers);
+        genericRecyclerViewAdapter.addRecyclerViewItem(accurateBarriersToggle);
 
         int fullscreenScalingMode = NativeSettings.getFullscreenScaling();
         var fullscreenScalingChoices = Stream.of(NativeSettings.FULLSCREEN_SCALING_KEEP_ASPECT_RATIO, NativeSettings.FULLSCREEN_SCALING_STRETCH)

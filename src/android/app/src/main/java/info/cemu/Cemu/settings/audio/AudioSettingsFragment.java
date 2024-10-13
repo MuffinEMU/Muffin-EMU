@@ -14,7 +14,7 @@ import java.util.stream.Stream;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
-import info.cemu.Cemu.guibasecomponents.CheckboxRecyclerViewItem;
+import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
@@ -37,10 +37,10 @@ public class AudioSettingsFragment extends Fragment {
 
         GenericRecyclerViewAdapter genericRecyclerViewAdapter = new GenericRecyclerViewAdapter();
 
-        CheckboxRecyclerViewItem tvDeviceCheckbox = new CheckboxRecyclerViewItem(getString(R.string.tv),
+        ToggleRecyclerViewItem tvDeviceToggle = new ToggleRecyclerViewItem(getString(R.string.tv),
                 getString(R.string.tv_audio_description), NativeSettings.getAudioDeviceEnabled(true),
                 checked -> NativeSettings.setAudioDeviceEnabled(checked, true));
-        genericRecyclerViewAdapter.addRecyclerViewItem(tvDeviceCheckbox);
+        genericRecyclerViewAdapter.addRecyclerViewItem(tvDeviceToggle);
 
         var tvChannelsChoices = Stream.of(NativeSettings.AUDIO_CHANNELS_MONO, NativeSettings.AUDIO_CHANNELS_STEREO, NativeSettings.AUDIO_CHANNELS_SURROUND)
                 .map(channels -> new SelectionAdapter.ChoiceItem<>(t -> t.setText(channelsToResourceNameId(channels)), channels))
@@ -63,10 +63,10 @@ public class AudioSettingsFragment extends Fragment {
                 value -> (int) value + "%");
         genericRecyclerViewAdapter.addRecyclerViewItem(tvVolumeSlider);
 
-        CheckboxRecyclerViewItem padDeviceCheckbox = new CheckboxRecyclerViewItem(getString(R.string.gamepad),
+        ToggleRecyclerViewItem padDeviceToggle = new ToggleRecyclerViewItem(getString(R.string.gamepad),
                 getString(R.string.gamepad_audio_description), NativeSettings.getAudioDeviceEnabled(false),
                 checked -> NativeSettings.setAudioDeviceEnabled(checked, false));
-        genericRecyclerViewAdapter.addRecyclerViewItem(padDeviceCheckbox);
+        genericRecyclerViewAdapter.addRecyclerViewItem(padDeviceToggle);
 
         var gamepadChannelsChoices = List.of(new SelectionAdapter.ChoiceItem<>(t -> t.setText(channelsToResourceNameId(NativeSettings.AUDIO_CHANNELS_STEREO)), NativeSettings.AUDIO_CHANNELS_STEREO));
         int gamepadChannels = NativeSettings.getAudioDeviceChannels(false);

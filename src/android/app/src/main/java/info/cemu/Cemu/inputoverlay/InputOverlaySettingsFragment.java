@@ -15,7 +15,7 @@ import java.util.stream.IntStream;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
-import info.cemu.Cemu.guibasecomponents.CheckboxRecyclerViewItem;
+import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
@@ -40,7 +40,7 @@ public class InputOverlaySettingsFragment extends Fragment {
         var binding = GenericRecyclerViewLayoutBinding.inflate(inflater, container, false);
         GenericRecyclerViewAdapter genericRecyclerViewAdapter = new GenericRecyclerViewAdapter();
 
-        CheckboxRecyclerViewItem inputOverlayCheckbox = new CheckboxRecyclerViewItem(
+        ToggleRecyclerViewItem inputOverlayToggle = new ToggleRecyclerViewItem(
                 getString(R.string.input_overlay),
                 getString(R.string.enable_input_overlay),
                 overlaySettings.isOverlayEnabled(),
@@ -48,9 +48,9 @@ public class InputOverlaySettingsFragment extends Fragment {
                     overlaySettings.setOverlayEnabled(checked);
                     overlaySettings.saveSettings();
                 });
-        genericRecyclerViewAdapter.addRecyclerViewItem(inputOverlayCheckbox);
+        genericRecyclerViewAdapter.addRecyclerViewItem(inputOverlayToggle);
 
-        CheckboxRecyclerViewItem vibrateOnTouchCheckbox = new CheckboxRecyclerViewItem(
+        ToggleRecyclerViewItem vibrateOnTouchToggle = new ToggleRecyclerViewItem(
                 getString(R.string.vibrate),
                 getString(R.string.enable_vibrate_on_touch),
                 overlaySettings.isVibrateOnTouchEnabled(),
@@ -58,7 +58,7 @@ public class InputOverlaySettingsFragment extends Fragment {
                     overlaySettings.setVibrateOnTouchEnabled(checked);
                     overlaySettings.saveSettings();
                 });
-        genericRecyclerViewAdapter.addRecyclerViewItem(vibrateOnTouchCheckbox);
+        genericRecyclerViewAdapter.addRecyclerViewItem(vibrateOnTouchToggle);
 
         SliderRecyclerViewItem alphaSlider = new SliderRecyclerViewItem(
                 getString(R.string.alpha_slider),

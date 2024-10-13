@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
-import info.cemu.Cemu.guibasecomponents.CheckboxRecyclerViewItem;
+import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.HeaderRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
@@ -80,30 +80,30 @@ public class OverlaySettingsFragment extends Fragment {
                 value -> (int) value + "%");
         genericRecyclerViewAdapter.addRecyclerViewItem(overlayTextScale);
 
-        CheckboxRecyclerViewItem overlayFps = new CheckboxRecyclerViewItem(getString(R.string.fps),
+        ToggleRecyclerViewItem overlayFps = new ToggleRecyclerViewItem(getString(R.string.fps),
                 getString(R.string.fps_overlay_description), NativeSettings.isOverlayFPSEnabled(),
                 NativeSettings::setOverlayFPSEnabled);
         genericRecyclerViewAdapter.addRecyclerViewItem(overlayFps);
 
-        CheckboxRecyclerViewItem drawCallsCheckbox = new CheckboxRecyclerViewItem(getString(R.string.draw_calls_per_frame),
+        ToggleRecyclerViewItem drawCallsToggle = new ToggleRecyclerViewItem(getString(R.string.draw_calls_per_frame),
                 getString(R.string.draw_calls_per_frame_overlay_description), NativeSettings.isOverlayDrawCallsPerFrameEnabled(),
                 NativeSettings::setOverlayDrawCallsPerFrameEnabled);
-        genericRecyclerViewAdapter.addRecyclerViewItem(drawCallsCheckbox);
+        genericRecyclerViewAdapter.addRecyclerViewItem(drawCallsToggle);
 
-        CheckboxRecyclerViewItem cpuUsageCheckbox = new CheckboxRecyclerViewItem(getString(R.string.cpu_usage),
+        ToggleRecyclerViewItem cpuUsageToggle = new ToggleRecyclerViewItem(getString(R.string.cpu_usage),
                 getString(R.string.cpu_usage_overlay_description), NativeSettings.isOverlayCPUUsageEnabled(),
                 NativeSettings::setOverlayCPUUsageEnabled);
-        genericRecyclerViewAdapter.addRecyclerViewItem(cpuUsageCheckbox);
+        genericRecyclerViewAdapter.addRecyclerViewItem(cpuUsageToggle);
 
-        CheckboxRecyclerViewItem ramUsageCheckbox = new CheckboxRecyclerViewItem(getString(R.string.ram_usage),
+        ToggleRecyclerViewItem ramUsageToggle = new ToggleRecyclerViewItem(getString(R.string.ram_usage),
                 getString(R.string.ram_usage_overlay_description), NativeSettings.isOverlayRAMUsageEnabled(),
                 NativeSettings::setOverlayRAMUsageEnabled);
-        genericRecyclerViewAdapter.addRecyclerViewItem(ramUsageCheckbox);
+        genericRecyclerViewAdapter.addRecyclerViewItem(ramUsageToggle);
 
-        CheckboxRecyclerViewItem debugCheckbox = new CheckboxRecyclerViewItem(getString(R.string.debug),
+        ToggleRecyclerViewItem debugToggle = new ToggleRecyclerViewItem(getString(R.string.debug),
                 getString(R.string.debug_overlay_description), NativeSettings.isOverlayDebugEnabled(),
                 NativeSettings::setOverlayDebugEnabled);
-        genericRecyclerViewAdapter.addRecyclerViewItem(debugCheckbox);
+        genericRecyclerViewAdapter.addRecyclerViewItem(debugToggle);
 
         genericRecyclerViewAdapter.addRecyclerViewItem(new HeaderRecyclerViewItem(R.string.notifications));
         int notificationsPosition = NativeSettings.getNotificationsPosition();
@@ -125,17 +125,17 @@ public class OverlaySettingsFragment extends Fragment {
                 value -> (int) value + "%");
         genericRecyclerViewAdapter.addRecyclerViewItem(notificationTextScale);
 
-        CheckboxRecyclerViewItem controllerProfiles = new CheckboxRecyclerViewItem(getString(R.string.controller_profiles),
+        ToggleRecyclerViewItem controllerProfiles = new ToggleRecyclerViewItem(getString(R.string.controller_profiles),
                 getString(R.string.controller_profiles_notification_description), NativeSettings.isNotificationControllerProfilesEnabled(),
                 NativeSettings::setNotificationControllerProfilesEnabled);
         genericRecyclerViewAdapter.addRecyclerViewItem(controllerProfiles);
 
-        CheckboxRecyclerViewItem shaderCompiler = new CheckboxRecyclerViewItem(getString(R.string.shader_compiler),
+        ToggleRecyclerViewItem shaderCompiler = new ToggleRecyclerViewItem(getString(R.string.shader_compiler),
                 getString(R.string.shader_compiler_notification_description), NativeSettings.isNotificationShaderCompilerEnabled(),
                 NativeSettings::setNotificationShaderCompilerEnabled);
         genericRecyclerViewAdapter.addRecyclerViewItem(shaderCompiler);
 
-        CheckboxRecyclerViewItem friendList = new CheckboxRecyclerViewItem(getString(R.string.friend_list),
+        ToggleRecyclerViewItem friendList = new ToggleRecyclerViewItem(getString(R.string.friend_list),
                 getString(R.string.friend_list_notification_description), NativeSettings.isNotificationFriendListEnabled(),
                 NativeSettings::setNotificationFriendListEnabled);
         genericRecyclerViewAdapter.addRecyclerViewItem(friendList);
