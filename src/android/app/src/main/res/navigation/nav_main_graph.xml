@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/games_fragment">
+    <fragment
+        android:id="@+id/games_fragment"
+        android:name="info.cemu.Cemu.gameview.GamesFragment"
+        tools:layout="@layout/fragment_games">
+        <action
+            android:id="@+id/action_games_fragment_to_game_details_fragment"
+            app:destination="@id/game_details_fragment" />
+        <action
+            android:id="@+id/action_games_fragment_to_game_edit_profile"
+            app:destination="@id/game_edit_profile" />
+    </fragment>
+    <fragment
+        android:id="@+id/game_details_fragment"
+        android:name="info.cemu.Cemu.gameview.GameDetailsFragment"
+        android:label="@string/about_title"
+        tools:layout="@layout/fragment_game_details" />
+    <fragment
+        android:id="@+id/game_edit_profile"
+        android:name="info.cemu.Cemu.gameview.GameProfileEditFragment"
+        android:label="@string/edit_game_profile"
+        tools:layout="@layout/fragment_game_profile_edit" />
+</navigation>

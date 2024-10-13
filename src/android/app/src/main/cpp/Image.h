@@ -2,7 +2,7 @@
 
 struct Image
 {
-	uint8_t* m_image = nullptr;
+	sint32* m_colors = nullptr;
 	int m_width = 0;
 	int m_height = 0;
 	int m_channels = 0;
@@ -12,8 +12,6 @@ struct Image
 	Image(const std::vector<uint8>& imageBytes);
 
 	bool isOk() const;
-
-	int* intColors() const;
 
 	~Image();
 };

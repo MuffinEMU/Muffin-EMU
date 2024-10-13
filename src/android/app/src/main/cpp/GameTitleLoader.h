@@ -9,10 +9,12 @@ struct Game
 {
 	std::string name;
 	std::optional<fs::path> path;
-	uint32 secondsPlayed;
-	uint16 dlc;
+	bool isFavorite;
 	uint16 version;
+	uint16 dlc;
 	TitleId titleId;
+	std::optional<std::chrono::year_month_day> lastPlayed;
+	uint32 minutesPlayed;
 	CafeConsoleRegion region;
 };
 

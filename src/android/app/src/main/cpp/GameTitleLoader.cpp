@@ -56,6 +56,7 @@ GameTitleLoader::~GameTitleLoader()
 
 void GameTitleLoader::titleRefresh(TitleId titleId)
 {
+	using namespace std::chrono;
 	GameInfo2 gameInfo = CafeTitleList::GetGameInfo(titleId);
 	if (!gameInfo.IsValid())
 	{
@@ -74,26 +75,28 @@ void GameTitleLoader::titleRefresh(TitleId titleId)
 	game.titleId = baseTitleId;
 	if (titleInfo.has_value())
 		game.path = titleInfo->GetPath();
+	game.isFavorite = GetConfig().IsGameListFavorite(baseTitleId);
 	game.name = getNameByTitleId(baseTitleId, titleInfo);
 	game.version = gameInfo.GetVersion();
 	game.region = gameInfo.GetRegion();
+	game.dlc = gameInfo.GetAOCVersion();
 	std::shared_ptr<Image> icon = loadIcon(baseTitleId, titleInfo);
-	if (gameInfo.HasAOC())
+	if (!isNewEntry)
 	{
-		game.dlc = gameInfo.GetAOCVersion();
+		// TOOD: update?
+		return;
 	}
-	if (isNewEntry)
+	iosu::pdm::GameListStat playTimeStat{};
+	if (iosu::pdm::GetStatForGamelist(baseTitleId, playTimeStat))
 	{
-		iosu::pdm::GameListStat playTimeStat{};
-		if (iosu::pdm::GetStatForGamelist(baseTitleId, playTimeStat))
-			game.secondsPlayed = playTimeStat.numMinutesPlayed * 60;
-		if (m_gameTitleLoadedCallback)
-			m_gameTitleLoadedCallback->onTitleLoaded(game, icon);
+		game.minutesPlayed = playTimeStat.numMinutesPlayed;
+		if (playTimeStat.last_played.year != 0)
+		{
+			game.lastPlayed = year_month_day(year(playTimeStat.last_played.year), month(playTimeStat.last_played.month), day(playTimeStat.last_played.day));
+		}
 	}
-	else
-	{
-		// TODO: Update
-	}
+	if (m_gameTitleLoadedCallback)
+		m_gameTitleLoadedCallback->onTitleLoaded(game, icon);
 }
 
 void GameTitleLoader::loadGameTitles()

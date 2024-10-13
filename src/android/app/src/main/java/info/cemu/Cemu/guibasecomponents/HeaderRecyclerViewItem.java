@@ -7,6 +7,8 @@ import android.widget.TextView;
 
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.util.Optional;
+
 import info.cemu.Cemu.R;
 
 public class HeaderRecyclerViewItem implements RecyclerViewItem {
@@ -20,10 +22,17 @@ public class HeaderRecyclerViewItem implements RecyclerViewItem {
         }
     }
 
-    private final int headerResourceIdText;
+    private final Optional<Integer> headerResourceIdText;
+    private final String headerText;
 
     public HeaderRecyclerViewItem(int headerResourceIdText) {
-        this.headerResourceIdText = headerResourceIdText;
+        this.headerResourceIdText = Optional.of(headerResourceIdText);
+        this.headerText = null;
+    }
+
+    public HeaderRecyclerViewItem(String headerText) {
+        this.headerResourceIdText = Optional.empty();
+        this.headerText = headerText;
     }
 
     @Override
@@ -34,6 +43,10 @@ public class HeaderRecyclerViewItem implements RecyclerViewItem {
     @Override
     public void onBindViewHolder(RecyclerView.ViewHolder viewHolder, RecyclerView.Adapter<RecyclerView.ViewHolder> adapter) {
         HeaderViewHolder headerViewHolder = (HeaderViewHolder) viewHolder;
-        headerViewHolder.header.setText(headerResourceIdText);
+        if (headerResourceIdText.isEmpty()) {
+            headerViewHolder.header.setText(headerText);
+            return;
+        }
+        headerViewHolder.header.setText(headerResourceIdText.get());
     }
 }

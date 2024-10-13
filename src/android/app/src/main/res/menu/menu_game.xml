@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/favorite"
+        android:checkable="true"
+        android:title="Favorite" />
+    <item
+        android:id="@+id/game_profile"
+        android:title="Edit game profile" />
+    <item
+        android:id="@+id/remove_shader_caches"
+        android:title="Remove shader caches" />
+    <item
+        android:id="@+id/about_title"
+        android:title="About title" />
+</menu>

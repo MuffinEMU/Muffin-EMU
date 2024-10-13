@@ -2,34 +2,68 @@
 
 #include "GameTitleLoader.h"
 #include "JNIUtils.h"
+#include <android/bitmap.h>
 
 class AndroidGameTitleLoadedCallback : public GameTitleLoadedCallback
 {
 	jmethodID m_onGameTitleLoadedMID;
 	JNIUtils::Scopedjobject m_gameTitleLoadedCallbackObj;
+	jmethodID m_gameConstructorMID;
+	JNIUtils::Scopedjclass m_gamejclass{"info/cemu/Cemu/nativeinterface/NativeGameTitles$Game"};
+	jmethodID m_createBitmapMID;
+	JNIUtils::Scopedjclass m_bitmapClass{"android/graphics/Bitmap"};
+	JNIUtils::Scopedjobject m_bitmapFormat;
 
   public:
 	AndroidGameTitleLoadedCallback(jmethodID onGameTitleLoadedMID, jobject gameTitleLoadedCallbackObj)
 		: m_onGameTitleLoadedMID(onGameTitleLoadedMID),
-		  m_gameTitleLoadedCallbackObj(gameTitleLoadedCallbackObj) {}
+		  m_gameTitleLoadedCallbackObj(gameTitleLoadedCallbackObj)
+	{
+		JNIUtils::ScopedJNIENV env;
+		m_bitmapFormat = JNIUtils::getEnumValue(*env, "android/graphics/Bitmap$Config", "ARGB_8888");
+		m_gameConstructorMID = env->GetMethodID(*m_gamejclass, "<init>", "(JLjava/lang/String;Ljava/lang/String;SSISSSIZLandroid/graphics/Bitmap;)V");
+		m_createBitmapMID = env->GetStaticMethodID(*m_bitmapClass, "createBitmap", "([IIILandroid/graphics/Bitmap$Config;)Landroid/graphics/Bitmap;");
+	}
 
 	void onTitleLoaded(const Game& game, const std::shared_ptr<Image>& icon) override
 	{
-		JNIUtils::ScopedJNIENV env;
+		static JNIUtils::ScopedJNIENV env;
 		jstring name = env->NewStringUTF(game.name.c_str());
 		jstring path = game.path.has_value() ? env->NewStringUTF(game.path->c_str()) : nullptr;
-		int width = -1, height = -1;
-		jintArray jIconData = nullptr;
+		jobject bitmap = nullptr;
+		sint32 lastPlayedYear = 0, lastPlayedMonth = 0, lastPlayedDay = 0;
+		if (game.lastPlayed.has_value())
+		{
+			lastPlayedYear = static_cast<int>(game.lastPlayed->year());
+			lastPlayedMonth = static_cast<unsigned int>(game.lastPlayed->month());
+			lastPlayedDay = static_cast<unsigned int>(game.lastPlayed->day());
+		}
 		if (icon)
 		{
-			width = icon->m_width;
-			height = icon->m_height;
-			jIconData = env->NewIntArray(width * height);
-			env->SetIntArrayRegion(jIconData, 0, width * height, reinterpret_cast<const jint*>(icon->intColors()));
-		}
-		env->CallVoidMethod(*m_gameTitleLoadedCallbackObj, m_onGameTitleLoadedMID, path, name, jIconData, width, height);
-		if (jIconData != nullptr)
+			jintArray jIconData = env->NewIntArray(icon->m_width * icon->m_height);
+			env->SetIntArrayRegion(jIconData, 0, icon->m_width * icon->m_height, icon->m_colors);
+			bitmap = env->CallStaticObjectMethod(*m_bitmapClass, m_createBitmapMID, jIconData, icon->m_width, icon->m_height, *m_bitmapFormat);
 			env->DeleteLocalRef(jIconData);
+		}
+		jobject gamejobject = env->NewObject(
+			*m_gamejclass,
+			m_gameConstructorMID,
+			game.titleId,
+			path,
+			name,
+			game.version,
+			game.dlc,
+			static_cast<sint32>(game.region),
+			lastPlayedYear,
+			lastPlayedMonth,
+			lastPlayedDay,
+			game.minutesPlayed,
+			game.isFavorite,
+			bitmap);
+		env->CallVoidMethod(*m_gameTitleLoadedCallbackObj, m_onGameTitleLoadedMID, gamejobject);
+		env->DeleteLocalRef(gamejobject);
+		if (bitmap != nullptr)
+			env->DeleteLocalRef(bitmap);
 		if (path != nullptr)
 			env->DeleteLocalRef(path);
 		env->DeleteLocalRef(name);

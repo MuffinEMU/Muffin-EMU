@@ -1,10 +1,12 @@
 package info.cemu.Cemu.gameview;
 
+import android.opengl.Visibility;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -18,24 +20,34 @@ import java.util.stream.Collectors;
 
 import info.cemu.Cemu.R;
 
+import info.cemu.Cemu.nativeinterface.NativeGameTitles.Game;
+
 public class GameAdapter extends ListAdapter<Game, GameAdapter.ViewHolder> {
     private final GameTitleClickAction gameTitleClickAction;
     private List<Game> orignalGameList;
     private String filterText;
+    private Game selectedGame;
+
+    public Game getSelectedGame() {
+        return selectedGame;
+    }
+
     public static final DiffUtil.ItemCallback<Game> DIFF_CALLBACK = new DiffUtil.ItemCallback<>() {
         @Override
         public boolean areItemsTheSame(@NonNull Game oldItem, @NonNull Game newItem) {
-            return oldItem.path().equals(newItem.path());
+            return oldItem.titleId() == newItem.titleId();
         }
 
         @Override
         public boolean areContentsTheSame(@NonNull Game oldItem, @NonNull Game newItem) {
-            return oldItem.path().equals(newItem.path());
+            return oldItem.path().equals(newItem.path()) &&
+                    oldItem.titleId() == newItem.titleId() &&
+                    oldItem.isFavorite() == newItem.isFavorite();
         }
     };
 
     public interface GameTitleClickAction {
-        void action(String gamePath);
+        void action(Game game);
     }
 
     public GameAdapter(GameTitleClickAction gameTitleClickAction) {
@@ -50,7 +62,7 @@ public class GameAdapter extends ListAdapter<Game, GameAdapter.ViewHolder> {
             super.submitList(orignalGameList);
             return;
         }
-        super.submitList(orignalGameList.stream().filter(g -> g.title().toLowerCase(Locale.US).contains(this.filterText)).collect(Collectors.toList()));
+        super.submitList(orignalGameList.stream().filter(g -> g.name().toLowerCase(Locale.US).contains(this.filterText)).collect(Collectors.toList()));
     }
 
     @NonNull
@@ -63,14 +75,15 @@ public class GameAdapter extends ListAdapter<Game, GameAdapter.ViewHolder> {
     @Override
     public void onBindViewHolder(@NonNull GameAdapter.ViewHolder holder, int position) {
         Game game = getItem(position);
-        if (game != null) {
-            holder.icon.setImageBitmap(game.icon());
-            holder.text.setText(game.title());
-            holder.itemView.setOnClickListener(v -> {
-                String gamePath = game.path();
-                gameTitleClickAction.action(gamePath);
-            });
-        }
+        if (game == null) return;
+        holder.icon.setImageBitmap(game.icon());
+        holder.favoriteIcon.setVisibility(game.isFavorite() ? View.VISIBLE : View.GONE);
+        holder.text.setText(game.name());
+        holder.itemView.setOnClickListener(v -> gameTitleClickAction.action(game));
+        holder.itemView.setOnLongClickListener(v -> {
+            selectedGame = game;
+            return false;
+        });
     }
 
     public void setFilterText(String filterText) {
@@ -82,17 +95,19 @@ public class GameAdapter extends ListAdapter<Game, GameAdapter.ViewHolder> {
             super.submitList(orignalGameList);
             return;
         }
-        super.submitList(orignalGameList.stream().filter(g -> g.title().toLowerCase(Locale.US).contains(this.filterText)).collect(Collectors.toList()));
+        super.submitList(orignalGameList.stream().filter(g -> g.name().toLowerCase(Locale.US).contains(this.filterText)).collect(Collectors.toList()));
     }
 
     public static class ViewHolder extends RecyclerView.ViewHolder {
         ImageView icon;
         TextView text;
+        ImageView favoriteIcon;
 
         public ViewHolder(View itemView) {
             super(itemView);
             icon = itemView.findViewById(R.id.game_icon);
             text = itemView.findViewById(R.id.game_title);
+            favoriteIcon = itemView.findViewById(R.id.game_favorite_icon);
         }
     }
 }

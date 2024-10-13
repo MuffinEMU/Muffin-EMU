@@ -1,6 +1,5 @@
 package info.cemu.Cemu.inputoverlay;
 
-
 import android.content.Context;
 import android.graphics.Canvas;
 import android.os.VibrationEffect;
@@ -41,18 +40,19 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
     }
 
     public void setInputMode(InputMode inputMode) {
-        if (inputs != null) {
-            if (this.inputMode != InputMode.DEFAULT) {
-                for (var input : inputs) {
-                    input.saveConfiguration();
-                }
-            } else {
-                for (var input : inputs) {
-                    input.reset();
-                }
-            }
-        }
         this.inputMode = inputMode;
+        if (inputs == null) {
+            return;
+        }
+        if (this.inputMode != InputMode.DEFAULT) {
+            for (var input : inputs) {
+                input.saveConfiguration();
+            }
+            return;
+        }
+        for (var input : inputs) {
+            input.reset();
+        }
     }
 
     public InputMode getInputMode() {
@@ -267,10 +267,21 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
     }
 
     void onJoystickStateChange(OverlayJoystick joystick, float x, float y) {
-        float up = y < 0 ? -y : 0;
-        float down = y > 0 ? y : 0;
-        float left = x < 0 ? -x : 0;
-        float right = x > 0 ? x : 0;
+        float up, down, left, right;
+        if (y < 0) {
+            up = -y;
+            down = 0;
+        } else {
+            up = 0;
+            down = y;
+        }
+        if (x < 0) {
+            left = -x;
+            right = 0;
+        } else {
+            left = 0;
+            right = x;
+        }
         switch (nativeControllerType) {
             case NativeInput.EMULATED_CONTROLLER_TYPE_VPAD ->
                     onVPADJoystickStateChange(joystick, up, down, left, right);
