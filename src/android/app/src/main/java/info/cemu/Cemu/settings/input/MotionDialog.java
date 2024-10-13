@@ -3,7 +3,6 @@ package info.cemu.Cemu.settings.input;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.view.MotionEvent;
-import android.view.View;
 
 import androidx.annotation.NonNull;
 

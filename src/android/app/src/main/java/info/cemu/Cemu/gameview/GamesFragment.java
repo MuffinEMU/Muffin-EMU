@@ -16,7 +16,6 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -33,7 +32,6 @@ import info.cemu.Cemu.nativeinterface.NativeGameTitles;
 import info.cemu.Cemu.nativeinterface.NativeGameTitles.Game;
 import info.cemu.Cemu.nativeinterface.NativeSettings;
 import info.cemu.Cemu.settings.SettingsActivity;
-import info.cemu.Cemu.settings.SettingsFragment;
 
 public class GamesFragment extends Fragment {
     private GameAdapter gameAdapter;

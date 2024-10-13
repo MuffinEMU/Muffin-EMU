@@ -3,7 +3,6 @@ package info.cemu.Cemu.inputoverlay;
 import android.content.res.Resources;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
-import android.util.Log;
 import android.view.MotionEvent;
 
 import androidx.annotation.DrawableRes;
