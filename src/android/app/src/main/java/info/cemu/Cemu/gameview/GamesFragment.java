@@ -24,11 +24,14 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.util.HashSet;
+
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.FragmentGamesBinding;
 import info.cemu.Cemu.emulation.EmulationActivity;
 import info.cemu.Cemu.nativeinterface.NativeGameTitles;
 import info.cemu.Cemu.nativeinterface.NativeGameTitles.Game;
+import info.cemu.Cemu.nativeinterface.NativeSettings;
 import info.cemu.Cemu.settings.SettingsActivity;
 import info.cemu.Cemu.settings.SettingsFragment;
 
@@ -38,10 +41,12 @@ public class GamesFragment extends Fragment {
     private GameViewModel gameViewModel;
     private boolean refreshing = false;
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private HashSet<String> currentGamePaths = new HashSet<>();
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        currentGamePaths = new HashSet<>(NativeSettings.getGamesPaths());
         gameAdapter = new GameAdapter(game -> {
             Intent intent = new Intent(getContext(), EmulationActivity.class);
             intent.putExtra(EmulationActivity.LAUNCH_PATH, game.path());
@@ -56,6 +61,11 @@ public class GamesFragment extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
+        var gamePaths = new HashSet<>(NativeSettings.getGamesPaths());
+        if (!currentGamePaths.equals(gamePaths)) {
+            currentGamePaths = gamePaths;
+            NativeGameTitles.reloadGameTitles();
+        }
     }
 
     @Override

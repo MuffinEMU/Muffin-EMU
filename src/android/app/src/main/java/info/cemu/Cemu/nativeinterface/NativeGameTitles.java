@@ -39,6 +39,9 @@ public class NativeGameTitles {
             if (!isFavorite && other.isFavorite) {
                 return 1;
             }
+            if (name.equals(other.name)) {
+                return Long.compare(titleId, other.titleId);
+            }
             return name.compareTo(other.name);
         }
     }

@@ -7,7 +7,7 @@ import android.widget.TextView;
 
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.google.android.material.checkbox.MaterialCheckBox;
+import com.google.android.material.materialswitch.MaterialSwitch;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.guibasecomponents.RecyclerViewItem;
@@ -16,13 +16,13 @@ import info.cemu.Cemu.nativeinterface.NativeGraphicPacks;
 public class GraphicPackRecyclerViewItem implements RecyclerViewItem {
     private static class GraphicPackViewHolder extends RecyclerView.ViewHolder {
         TextView name;
-        MaterialCheckBox enableCheckBox;
+        MaterialSwitch enableToggle;
         TextView description;
 
         public GraphicPackViewHolder(View itemView) {
             super(itemView);
             name = itemView.findViewById(R.id.graphic_pack_name);
-            enableCheckBox = itemView.findViewById(R.id.graphic_pack_enable_checkbox);
+            enableToggle = itemView.findViewById(R.id.graphic_pack_enable_toggle);
             description = itemView.findViewById(R.id.graphic_pack_description);
         }
     }
@@ -48,7 +48,7 @@ public class GraphicPackRecyclerViewItem implements RecyclerViewItem {
         } else {
             graphicPackViewHolder.description.setText(R.string.graphic_pack_no_description);
         }
-        graphicPackViewHolder.enableCheckBox.setChecked(graphicPack.isActive());
-        graphicPackViewHolder.enableCheckBox.addOnCheckedStateChangedListener((materialCheckBox, i) -> graphicPack.setActive(materialCheckBox.isChecked()));
+        graphicPackViewHolder.enableToggle.setChecked(graphicPack.isActive());
+        graphicPackViewHolder.enableToggle.setOnCheckedChangeListener((materialCheckBox, isChecked) -> graphicPack.setActive(isChecked));
     }
 }

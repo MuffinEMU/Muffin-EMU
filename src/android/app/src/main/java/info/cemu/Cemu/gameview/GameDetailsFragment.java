@@ -37,7 +37,7 @@ public class GameDetailsFragment extends Fragment {
             binding.titleDlc.setText(String.valueOf(game.dlc()));
         binding.titleTimePlayed.setText(getTimePlayed(game));
         binding.titleLastPlayed.setText(getLastPlayedDate(game));
-        binding.titleId.setText(String.valueOf(game.titleId()));
+        binding.titleId.setText(String.format("%016x", game.titleId()));
         binding.titleRegion.setText(getRegionName(game));
         NavigationUI.setupWithNavController(binding.gameDetailsToolbar, NavHostFragment.findNavController(this), new AppBarConfiguration.Builder().build());
         return binding.getRoot();
