@@ -140,25 +140,25 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_getControllerMappings(JNIEnv* en
 	return hashMapObj;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeInput_onTouchDown([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint x, jint y, jboolean isTV)
 {
 	NativeInput::onTouchEvent(x, y, isTV, true);
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeInput_onTouchUp([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint x, jint y, jboolean isTV)
 {
 	NativeInput::onTouchEvent(x, y, isTV, false);
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeInput_onTouchMove([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint x, jint y, jboolean isTV)
 {
 	NativeInput::onTouchEvent(x, y, isTV);
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeInput_onMotion([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong timestamp, jfloat gyroX, jfloat gyroY, jfloat gyroZ, jfloat accelX, jfloat accelY, jfloat accelZ)
 {
 	float deltaTime = (timestamp - NativeInput::s_lastMotionTimestamp) * 1e-9f;
@@ -169,7 +169,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_onMotion([[maybe_unused]] JNIEnv
 	deviceMotion.m_motion_sample = NativeInput::s_wiiUMotionHandler.getMotionSample();
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeInput_setMotionEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean motionEnabled)
 {
 	auto& deviceMotion = InputManager::instance().m_device_motion;
@@ -177,13 +177,13 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_setMotionEnabled([[maybe_unused]
 	deviceMotion.m_device_motion_enabled = motionEnabled;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeInput_onOverlayButton([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint controllerIndex, jint mappingId, jboolean state)
 {
 	AndroidEmulatedController::getAndroidEmulatedController(controllerIndex).setButtonValue(mappingId, state);
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeInput_onOverlayAxis([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint controllerIndex, jint mappingId, jfloat value)
 {
 	AndroidEmulatedController::getAndroidEmulatedController(controllerIndex).setAxisValue(mappingId, value);

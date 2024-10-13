@@ -151,7 +151,7 @@ namespace NativeEmulation
 	}
 } // namespace NativeEmulation
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeEmulation_setReplaceTVWithPadView([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean swapped)
 {
 	// Emulate pressing the TAB key for showing DRC instead of TV
@@ -178,9 +178,8 @@ Java_info_cemu_Cemu_nativeinterface_NativeEmulation_initializeEmulation([[maybe_
 	LatteOverlay_init();
 	CemuCommonInit();
 	InitializeGlobalVulkan();
-	// TODO: move this
-	//	fillGraphicPacks();
 }
+
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeEmulation_initializerRenderer(JNIEnv* env, [[maybe_unused]] jclass clazz, jobject testSurface)
 {

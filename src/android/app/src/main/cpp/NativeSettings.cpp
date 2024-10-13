@@ -1,182 +1,182 @@
 #include "JNIUtils.h"
 #include "config/CemuConfig.h"
 
-extern "C" JNIEXPORT jint JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_getOverlayPosition([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return static_cast<jint>(g_config.data().overlay.position);
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setOverlayPosition([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint position)
 {
 	g_config.data().overlay.position = static_cast<ScreenPosition>(position);
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jint JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_getOverlayTextScalePercentage([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().overlay.text_scale;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setOverlayTextScalePercentage([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint scalePercentage)
 {
 	g_config.data().overlay.text_scale = scalePercentage;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_isOverlayFPSEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().overlay.fps;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setOverlayFPSEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.fps = enabled;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_isOverlayDrawCallsPerFrameEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().overlay.drawcalls;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setOverlayDrawCallsPerFrameEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.drawcalls = enabled;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_isOverlayCPUUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().overlay.cpu_usage;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setOverlayCPUUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.cpu_usage = enabled;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_isOverlayCPUPerCoreUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().overlay.cpu_per_core_usage;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setOverlayCPUPerCoreUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.cpu_per_core_usage = enabled;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_isOverlayRAMUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().overlay.ram_usage;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setOverlayRAMUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.ram_usage = enabled;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_isOverlayVRAMUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().overlay.vram_usage;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setOverlayVRAMUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.vram_usage = enabled;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_isOverlayDebugEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().overlay.debug;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setOverlayDebugEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.debug = enabled;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jint JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_getNotificationsPosition([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return static_cast<jint>(g_config.data().notification.position);
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setNotificationsPosition([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint position)
 {
 	g_config.data().notification.position = static_cast<ScreenPosition>(position);
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jint JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_getNotificationsTextScalePercentage([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().notification.text_scale;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setNotificationsTextScalePercentage([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint scalePercentage)
 {
 	g_config.data().notification.text_scale = scalePercentage;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_isNotificationControllerProfilesEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().notification.controller_profiles;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setNotificationControllerProfilesEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().notification.controller_profiles = enabled;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_isNotificationShaderCompilerEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().notification.shader_compiling;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setNotificationShaderCompilerEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().notification.shader_compiling = enabled;
 	g_config.Save();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_isNotificationFriendListEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().notification.friends;
 }
 
-extern "C" JNIEXPORT void JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeSettings_setNotificationFriendListEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().notification.friends = enabled;
