@@ -334,3 +334,16 @@ Java_info_cemu_Cemu_nativeinterface_NativeSettings_setAudioDeviceVolume([[maybe_
 	deviceVolume = volume;
 	g_config.Save();
 }
+
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
+Java_info_cemu_Cemu_nativeinterface_NativeSettings_getAudioLatency([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+{
+	return g_config.data().audio_delay;
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_Cemu_nativeinterface_NativeSettings_setAudioLatency([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint latency)
+{
+	g_config.data().audio_delay = latency;
+	g_config.Save();
+}

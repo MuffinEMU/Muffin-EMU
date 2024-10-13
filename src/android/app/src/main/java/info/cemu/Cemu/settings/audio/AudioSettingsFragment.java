@@ -37,6 +37,14 @@ public class AudioSettingsFragment extends Fragment {
 
         GenericRecyclerViewAdapter genericRecyclerViewAdapter = new GenericRecyclerViewAdapter();
 
+        SliderRecyclerViewItem latencySlider = new SliderRecyclerViewItem(getString(R.string.audio_latency),
+                0,
+                NativeSettings.AUDIO_BLOCK_COUNT - 1,
+                NativeSettings.getAudioLatency(),
+                value -> NativeSettings.setAudioLatency((int) value),
+                value -> (int) (value * 12) + "ms");
+        genericRecyclerViewAdapter.addRecyclerViewItem(latencySlider);
+
         ToggleRecyclerViewItem tvDeviceToggle = new ToggleRecyclerViewItem(getString(R.string.tv),
                 getString(R.string.tv_audio_description), NativeSettings.getAudioDeviceEnabled(true),
                 checked -> NativeSettings.setAudioDeviceEnabled(checked, true));

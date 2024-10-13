@@ -64,6 +64,12 @@ public class NativeSettings {
 
     public static native int getAudioDeviceVolume(boolean tv);
 
+    public static final int AUDIO_BLOCK_COUNT = 24;
+
+    public static native void setAudioLatency(int latency);
+
+    public static native int getAudioLatency();
+
     public static final int OVERLAY_SCREEN_POSITION_DISABLED = 0;
     public static final int OVERLAY_SCREEN_POSITION_TOP_LEFT = 1;
     public static final int OVERLAY_SCREEN_POSITION_TOP_CENTER = 2;

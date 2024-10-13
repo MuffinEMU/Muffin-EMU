@@ -222,4 +222,5 @@
     <string name="cpu_mode_multi_core_recompiler">Multi-core recompiler</string>
     <string name="cpu_mode">CPU mode</string>
     <string name="thread_quantum">Thread quantum</string>
+    <string name="audio_latency">Latency</string>
 </resources>
