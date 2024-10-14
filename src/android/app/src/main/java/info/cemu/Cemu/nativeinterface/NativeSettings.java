@@ -133,4 +133,21 @@ public class NativeSettings {
     public static native boolean isNotificationFriendListEnabled();
 
     public static native void setNotificationFriendListEnabled(boolean enabled);
+
+    public static final int CONSOLE_LANGUAGE_JAPANESE = 0;
+    public static final int CONSOLE_LANGUAGE_ENGLISH = 1;
+    public static final int CONSOLE_LANGUAGE_FRENCH = 2;
+    public static final int CONSOLE_LANGUAGE_GERMAN = 3;
+    public static final int CONSOLE_LANGUAGE_ITALIAN = 4;
+    public static final int CONSOLE_LANGUAGE_SPANISH = 5;
+    public static final int CONSOLE_LANGUAGE_CHINESE = 6;
+    public static final int CONSOLE_LANGUAGE_KOREAN = 7;
+    public static final int CONSOLE_LANGUAGE_DUTCH = 8;
+    public static final int CONSOLE_LANGUAGE_PORTUGUESE = 9;
+    public static final int CONSOLE_LANGUAGE_RUSSIAN = 10;
+    public static final int CONSOLE_LANGUAGE_TAIWANESE = 11;
+
+    public static native int getConsoleLanguage();
+
+    public static native void setConsoleLanguage(int consoleLanguage);
 }

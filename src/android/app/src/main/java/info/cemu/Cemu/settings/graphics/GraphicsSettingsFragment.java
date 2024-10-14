@@ -38,14 +38,14 @@ public class GraphicsSettingsFragment extends Fragment {
         };
     }
 
-    private static int scalingFilterToResourceNameId(int fullscreenScaling) {
-        return switch (fullscreenScaling) {
+    private static int scalingFilterToResourceNameId(int scalingFilter) {
+        return switch (scalingFilter) {
             case NativeSettings.SCALING_FILTER_BILINEAR_FILTER -> R.string.bilinear;
             case NativeSettings.SCALING_FILTER_BICUBIC_FILTER -> R.string.bicubic;
             case NativeSettings.SCALING_FILTER_BICUBIC_HERMITE_FILTER -> R.string.hermite;
             case NativeSettings.SCALING_FILTER_NEAREST_NEIGHBOR_FILTER -> R.string.nearest_neighbor;
             default ->
-                    throw new IllegalArgumentException("Invalid fullscreen scaling mode:  " + fullscreenScaling);
+                    throw new IllegalArgumentException("Invalid scaling filter:  " + scalingFilter);
         };
     }
 

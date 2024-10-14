@@ -347,3 +347,16 @@ Java_info_cemu_Cemu_nativeinterface_NativeSettings_setAudioLatency([[maybe_unuse
 	g_config.data().audio_delay = latency;
 	g_config.Save();
 }
+
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
+Java_info_cemu_Cemu_nativeinterface_NativeSettings_getConsoleLanguage([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+{
+	return static_cast<jint>(g_config.data().console_language.GetValue());
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_Cemu_nativeinterface_NativeSettings_setConsoleLanguage([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint console_language)
+{
+	g_config.data().console_language = static_cast<CafeConsoleLanguage>(console_language);
+	g_config.Save();
+}

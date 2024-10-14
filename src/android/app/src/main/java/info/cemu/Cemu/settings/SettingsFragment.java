@@ -16,7 +16,6 @@ import androidx.navigation.fragment.NavHostFragment;
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.LayoutGenericRecyclerViewBinding;
 import info.cemu.Cemu.features.DocumentsProvider;
-import info.cemu.Cemu.guibasecomponents.ButtonRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.SimpleButtonRecyclerViewItem;
 
@@ -27,12 +26,13 @@ public class SettingsFragment extends Fragment {
         GenericRecyclerViewAdapter genericRecyclerViewAdapter = new GenericRecyclerViewAdapter();
 
         genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.open_cemu_folder), this::openCemuFolder));
-        genericRecyclerViewAdapter.addRecyclerViewItem(new ButtonRecyclerViewItem(getString(R.string.add_game_path), getString(R.string.games_folder_description), () -> NavHostFragment.findNavController(SettingsFragment.this).navigate(R.id.action_settingsFragment_to_gamePathsFragment)));
-        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.input_settings), () -> NavHostFragment.findNavController(SettingsFragment.this).navigate(R.id.action_settingsFragment_to_inputSettingsFragment)));
-        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.graphics_settings), () -> NavHostFragment.findNavController(SettingsFragment.this).navigate(R.id.action_settingsFragment_to_graphicSettingsFragment)));
-        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.audio_settings), () -> NavHostFragment.findNavController(SettingsFragment.this).navigate(R.id.action_settingsFragment_to_audioSettingsFragment)));
-        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.graphic_packs), () -> NavHostFragment.findNavController(SettingsFragment.this).navigate(R.id.action_settingsFragment_to_graphicPacksRootFragment)));
-        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.overlay), () -> NavHostFragment.findNavController(SettingsFragment.this).navigate(R.id.action_settingsFragment_to_overlaySettingsFragment)));
+        var navController = NavHostFragment.findNavController(this);
+        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.general_settings), () -> navController.navigate(R.id.action_settingsFragment_to_generalSettingsFragment)));
+        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.input_settings), () -> navController.navigate(R.id.action_settingsFragment_to_inputSettingsFragment)));
+        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.graphics_settings), () -> navController.navigate(R.id.action_settingsFragment_to_graphicSettingsFragment)));
+        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.audio_settings), () -> navController.navigate(R.id.action_settingsFragment_to_audioSettingsFragment)));
+        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.graphic_packs), () -> navController.navigate(R.id.action_settingsFragment_to_graphicPacksRootFragment)));
+        genericRecyclerViewAdapter.addRecyclerViewItem(new SimpleButtonRecyclerViewItem(getString(R.string.overlay), () -> navController.navigate(R.id.action_settingsFragment_to_overlaySettingsFragment)));
         binding.recyclerView.setAdapter(genericRecyclerViewAdapter);
 
         return binding.getRoot();
