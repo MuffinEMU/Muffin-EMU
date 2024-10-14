@@ -276,7 +276,7 @@ public class EmulationFragment extends Fragment implements PopupMenu.OnMenuItemC
             toastMessage(R.string.input_mode_default);
         });
         settingsMenu = new PopupMenu(requireContext(), binding.emulationSettingsButton);
-        settingsMenu.getMenuInflater().inflate(R.menu.menu_emulation_in_game, settingsMenu.getMenu());
+        settingsMenu.getMenuInflater().inflate(R.menu.emulation, settingsMenu.getMenu());
         settingsMenu.setOnMenuItemClickListener(EmulationFragment.this);
         binding.emulationSettingsButton.setOnClickListener(v -> settingsMenu.show());
         var menu = settingsMenu.getMenu();

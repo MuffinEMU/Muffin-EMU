@@ -29,7 +29,7 @@ import java.util.stream.Stream;
 
 import info.cemu.Cemu.nativeinterface.NativeSettings;
 import info.cemu.Cemu.R;
-import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
+import info.cemu.Cemu.databinding.LayoutGenericRecyclerViewBinding;
 
 public class GamePathsFragment extends Fragment {
     private ActivityResultLauncher<Intent> folderSelectionLauncher;
@@ -69,14 +69,14 @@ public class GamePathsFragment extends Fragment {
 
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
-        GenericRecyclerViewLayoutBinding binding = GenericRecyclerViewLayoutBinding.inflate(inflater, container, false);
+        LayoutGenericRecyclerViewBinding binding = LayoutGenericRecyclerViewBinding.inflate(inflater, container, false);
         binding.recyclerView.setAdapter(gamePathAdapter);
         gamesPaths = NativeSettings.getGamesPaths();
         gamePathAdapter.submitList(gamesPaths);
         requireActivity().addMenuProvider(new MenuProvider() {
             @Override
             public void onCreateMenu(@NonNull Menu menu, @NonNull MenuInflater menuInflater) {
-                menuInflater.inflate(R.menu.menu_game_paths, menu);
+                menuInflater.inflate(R.menu.game_paths, menu);
             }
 
             @Override

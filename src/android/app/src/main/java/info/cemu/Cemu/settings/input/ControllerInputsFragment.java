@@ -16,7 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import info.cemu.Cemu.R;
-import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
+import info.cemu.Cemu.databinding.LayoutGenericRecyclerViewBinding;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.HeaderRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
@@ -100,7 +100,7 @@ public class ControllerInputsFragment extends Fragment {
 
         setControllerInputs(NativeInput.getControllerMappings(controllerIndex));
 
-        var binding = GenericRecyclerViewLayoutBinding.inflate(inflater, container, false);
+        var binding = LayoutGenericRecyclerViewBinding.inflate(inflater, container, false);
         binding.recyclerView.setAdapter(genericRecyclerViewAdapter);
 
         return binding.getRoot();

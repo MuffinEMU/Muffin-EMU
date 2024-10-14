@@ -17,7 +17,7 @@ import java.util.Objects;
 import java.util.stream.IntStream;
 
 import info.cemu.Cemu.R;
-import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
+import info.cemu.Cemu.databinding.LayoutGenericRecyclerViewBinding;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.StringSelectionAdapter;
@@ -42,7 +42,7 @@ public class GraphicPacksFragment extends Fragment {
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-        var binding = GenericRecyclerViewLayoutBinding.inflate(inflater, container, false);
+        var binding = LayoutGenericRecyclerViewBinding.inflate(inflater, container, false);
         binding.recyclerView.setAdapter(genericRecyclerViewAdapter);
 
         return binding.getRoot();

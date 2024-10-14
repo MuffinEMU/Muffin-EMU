@@ -39,7 +39,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import info.cemu.Cemu.R;
-import info.cemu.Cemu.databinding.GenericRecyclerViewLayoutBinding;
+import info.cemu.Cemu.databinding.LayoutGenericRecyclerViewBinding;
 import info.cemu.Cemu.guibasecomponents.FilterableRecyclerViewAdapter;
 import info.cemu.Cemu.nativeinterface.FileCallbacks;
 import info.cemu.Cemu.nativeinterface.NativeGameTitles;
@@ -173,12 +173,12 @@ public class GraphicPacksRootFragment extends Fragment {
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-        var binding = GenericRecyclerViewLayoutBinding.inflate(inflater, container, false);
+        var binding = LayoutGenericRecyclerViewBinding.inflate(inflater, container, false);
         binding.recyclerView.setAdapter(this.genericRecyclerViewAdapter);
         requireActivity().addMenuProvider(new MenuProvider() {
             @Override
             public void onCreateMenu(@NonNull Menu menu, @NonNull MenuInflater menuInflater) {
-                menuInflater.inflate(R.menu.menu_graphic_packs, menu);
+                menuInflater.inflate(R.menu.graphic_packs, menu);
                 var searchMenuItem = menu.findItem(R.id.action_graphic_packs_search);
                 SearchView searchView = (SearchView) Objects.requireNonNull(searchMenuItem.getActionView());
                 searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {

@@ -12,6 +12,8 @@ import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.ListAdapter;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.card.MaterialCardView;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -103,7 +105,7 @@ public class GameAdapter extends ListAdapter<Game, GameAdapter.ViewHolder> {
     public static class ViewHolder extends RecyclerView.ViewHolder {
         ImageView icon;
         TextView text;
-        ImageView favoriteIcon;
+        MaterialCardView favoriteIcon;
 
         public ViewHolder(View itemView) {
             super(itemView);

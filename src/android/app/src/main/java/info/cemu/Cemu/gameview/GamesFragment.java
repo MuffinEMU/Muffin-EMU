@@ -1,11 +1,10 @@
 package info.cemu.Cemu.gameview;
 
 import android.content.Intent;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.view.ContextMenu;
 import android.view.LayoutInflater;
 import android.view.MenuInflater;
@@ -16,6 +15,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.widget.SearchView;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -24,6 +24,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.HashSet;
+import java.util.Objects;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.FragmentGamesBinding;
@@ -64,13 +65,14 @@ public class GamesFragment extends Fragment {
             currentGamePaths = gamePaths;
             NativeGameTitles.reloadGameTitles();
         }
+        gameAdapter.setFilterText(null);
     }
 
     @Override
     public void onCreateContextMenu(@NonNull ContextMenu menu, @NonNull View v, @Nullable ContextMenu.ContextMenuInfo menuInfo) {
         super.onCreateContextMenu(menu, v, menuInfo);
         MenuInflater inflater = requireActivity().getMenuInflater();
-        inflater.inflate(R.menu.menu_game, menu);
+        inflater.inflate(R.menu.game, menu);
         Game selectedGame = gameAdapter.getSelectedGame();
         menu.findItem(R.id.favorite).setChecked(selectedGame.isFavorite());
         menu.findItem(R.id.remove_shader_caches).setEnabled(NativeGameTitles.titleHasShaderCacheFiles(selectedGame.titleId()));
@@ -125,7 +127,28 @@ public class GamesFragment extends Fragment {
             Intent intent = new Intent(requireActivity(), SettingsActivity.class);
             startActivity(intent);
         });
-        View rootView = binding.getRoot();
+        binding.searchBar.inflateMenu(R.menu.game_list);
+        var searchMenuItem = binding.searchBar.getMenu().findItem(R.id.action_search);
+        binding.searchBar.setOnClickListener(v -> searchMenuItem.expandActionView());
+        SearchView searchView = (SearchView) Objects.requireNonNull(searchMenuItem.getActionView());
+        View searchPlate = searchView.findViewById(androidx.appcompat.R.id.search_plate);
+        if (searchPlate != null) {
+            searchPlate.setBackgroundColor(Color.TRANSPARENT);
+        }
+        searchView.setQueryHint(getString(R.string.search_games));
+        searchView.setOnQueryTextListener(new SearchView.OnQueryTextListener() {
+            @Override
+            public boolean onQueryTextSubmit(String query) {
+                gameAdapter.setFilterText(query);
+                return true;
+            }
+
+            @Override
+            public boolean onQueryTextChange(String newText) {
+                gameAdapter.setFilterText(newText);
+                return true;
+            }
+        });
 
         binding.gamesSwipeRefresh.setOnRefreshListener(() -> {
             if (refreshing) return;
@@ -137,22 +160,9 @@ public class GamesFragment extends Fragment {
             gameListViewModel.refreshGames();
         });
         recyclerView.setAdapter(gameAdapter);
-        binding.searchText.addTextChangedListener(new TextWatcher() {
-            @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-            }
 
-            @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-                gameAdapter.setFilterText(charSequence.toString());
-            }
 
-            @Override
-            public void afterTextChanged(Editable editable) {
-            }
-        });
-
-        return rootView;
+        return binding.getRoot();
     }
 
 }

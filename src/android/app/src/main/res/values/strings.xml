@@ -223,4 +223,5 @@
     <string name="cpu_mode">CPU mode</string>
     <string name="thread_quantum">Thread quantum</string>
     <string name="audio_latency">Latency</string>
+    <string name="game_favorite">Favorite</string>
 </resources>

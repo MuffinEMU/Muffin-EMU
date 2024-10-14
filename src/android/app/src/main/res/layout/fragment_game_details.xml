@@ -7,10 +7,16 @@
     android:orientation="vertical"
     tools:context=".gameview.GameDetailsFragment">
 
-    <com.google.android.material.appbar.MaterialToolbar
-        android:id="@+id/game_details_toolbar"
+
+    <com.google.android.material.appbar.AppBarLayout
         android:layout_width="match_parent"
-        android:layout_height="?attr/actionBarSize" />
+        android:layout_height="wrap_content">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/game_details_toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize" />
+    </com.google.android.material.appbar.AppBarLayout>
 
     <ScrollView
         android:layout_width="match_parent"
