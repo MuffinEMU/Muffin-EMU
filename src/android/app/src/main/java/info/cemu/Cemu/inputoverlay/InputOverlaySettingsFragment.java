@@ -15,11 +15,10 @@ import java.util.stream.IntStream;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.LayoutGenericRecyclerViewBinding;
-import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
-import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.SliderRecyclerViewItem;
+import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.nativeinterface.NativeInput;
 
 
@@ -71,21 +70,12 @@ public class InputOverlaySettingsFragment extends Fragment {
                 });
         genericRecyclerViewAdapter.addRecyclerViewItem(alphaSlider);
 
-        SelectionAdapter<Integer> controllerAdapter = new SelectionAdapter<>(
-                IntStream.range(0, NativeInput.MAX_CONTROLLERS)
-                        .mapToObj(i -> new SelectionAdapter.ChoiceItem<>(t -> t.setText(getString(R.string.controller_numbered, i + 1)), i))
-                        .collect(Collectors.toList()),
-                overlaySettings.getControllerIndex()
-        );
         SingleSelectionRecyclerViewItem<Integer> controllerSelection = new SingleSelectionRecyclerViewItem<>(
                 getString(R.string.overlay_controller),
-                getString(R.string.controller_numbered, overlaySettings.getControllerIndex() + 1),
-                controllerAdapter,
-                (controllerIndex, selectionRecyclerViewItem) -> {
-                    overlaySettings.setControllerIndex(controllerIndex);
-                    selectionRecyclerViewItem.setDescription(getString(R.string.controller_numbered, controllerIndex + 1));
-                    overlaySettings.saveSettings();
-                });
+                overlaySettings.getControllerIndex(),
+                IntStream.range(0, NativeInput.MAX_CONTROLLERS).boxed().collect(Collectors.toList()),
+                controllerIndex -> getString(R.string.controller_numbered, controllerIndex + 1),
+                (controllerIndex) -> overlaySettings.setControllerIndex(controllerIndex));
         genericRecyclerViewAdapter.addRecyclerViewItem(controllerSelection);
 
         binding.recyclerView.setAdapter(genericRecyclerViewAdapter);

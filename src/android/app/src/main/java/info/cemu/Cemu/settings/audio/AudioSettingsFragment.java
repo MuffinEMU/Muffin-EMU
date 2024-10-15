@@ -9,28 +9,27 @@ import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
 
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.LayoutGenericRecyclerViewBinding;
-import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
-import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.SliderRecyclerViewItem;
+import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.nativeinterface.NativeSettings;
 
 public class AudioSettingsFragment extends Fragment {
 
-    private static int channelsToResourceNameId(int channels) {
-        return switch (channels) {
+    private String channelsToString(int channels) {
+        int resourceNameId = switch (channels) {
             case NativeSettings.AUDIO_CHANNELS_MONO -> R.string.mono;
             case NativeSettings.AUDIO_CHANNELS_STEREO -> R.string.stereo;
             case NativeSettings.AUDIO_CHANNELS_SURROUND -> R.string.surround;
             default -> throw new IllegalArgumentException("Invalid channels type: " + channels);
         };
+        return getString(resourceNameId);
     }
+
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
         var binding = LayoutGenericRecyclerViewBinding.inflate(inflater, container, false);
@@ -50,17 +49,13 @@ public class AudioSettingsFragment extends Fragment {
                 checked -> NativeSettings.setAudioDeviceEnabled(checked, true));
         genericRecyclerViewAdapter.addRecyclerViewItem(tvDeviceToggle);
 
-        var tvChannelsChoices = Stream.of(NativeSettings.AUDIO_CHANNELS_MONO, NativeSettings.AUDIO_CHANNELS_STEREO, NativeSettings.AUDIO_CHANNELS_SURROUND)
-                .map(channels -> new SelectionAdapter.ChoiceItem<>(t -> t.setText(channelsToResourceNameId(channels)), channels))
-                .collect(Collectors.toList());
-        int tvChannels = NativeSettings.getAudioDeviceChannels(true);
-        SelectionAdapter<Integer> tvChannelsSelectionAdapter = new SelectionAdapter<>(tvChannelsChoices, tvChannels);
         SingleSelectionRecyclerViewItem<Integer> tvChannelsModeSelection = new SingleSelectionRecyclerViewItem<>(getString(R.string.tv_channels),
-                getString(channelsToResourceNameId(tvChannels)), tvChannelsSelectionAdapter,
-                (channels, selectionRecyclerViewItem) -> {
-                    NativeSettings.setAudioDeviceChannels(channels, true);
-                    selectionRecyclerViewItem.setDescription(getString(channelsToResourceNameId(channels)));
-                });
+                NativeSettings.getAudioDeviceChannels(true),
+                List.of(NativeSettings.AUDIO_CHANNELS_MONO,
+                        NativeSettings.AUDIO_CHANNELS_STEREO,
+                        NativeSettings.AUDIO_CHANNELS_SURROUND),
+                this::channelsToString,
+                channels -> NativeSettings.setAudioDeviceChannels(channels, true));
         genericRecyclerViewAdapter.addRecyclerViewItem(tvChannelsModeSelection);
 
         SliderRecyclerViewItem tvVolumeSlider = new SliderRecyclerViewItem(getString(R.string.tv_volume),
@@ -76,15 +71,12 @@ public class AudioSettingsFragment extends Fragment {
                 checked -> NativeSettings.setAudioDeviceEnabled(checked, false));
         genericRecyclerViewAdapter.addRecyclerViewItem(padDeviceToggle);
 
-        var gamepadChannelsChoices = List.of(new SelectionAdapter.ChoiceItem<>(t -> t.setText(channelsToResourceNameId(NativeSettings.AUDIO_CHANNELS_STEREO)), NativeSettings.AUDIO_CHANNELS_STEREO));
-        int gamepadChannels = NativeSettings.getAudioDeviceChannels(false);
-        SelectionAdapter<Integer> gamepadChannelsSelectionAdapter = new SelectionAdapter<>(gamepadChannelsChoices, gamepadChannels);
         SingleSelectionRecyclerViewItem<Integer> gamepadChannelsModeSelection = new SingleSelectionRecyclerViewItem<>(getString(R.string.gamepad_channels),
-                getString(channelsToResourceNameId(gamepadChannels)), gamepadChannelsSelectionAdapter,
-                (channels, selectionRecyclerViewItem) -> {
-                    NativeSettings.setAudioDeviceChannels(channels, false);
-                    selectionRecyclerViewItem.setDescription(getString(channelsToResourceNameId(channels)));
-                });
+                NativeSettings.getAudioDeviceChannels(false),
+                List.of(NativeSettings.AUDIO_CHANNELS_STEREO),
+                this::channelsToString,
+                channels -> NativeSettings.setAudioDeviceChannels(channels, false)
+        );
         genericRecyclerViewAdapter.addRecyclerViewItem(gamepadChannelsModeSelection);
 
         SliderRecyclerViewItem padVolumeSlider = new SliderRecyclerViewItem(getString(R.string.pad_volume),

@@ -10,6 +10,10 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.util.List;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 import info.cemu.Cemu.R;
 
 public class SingleSelectionRecyclerViewItem<T> implements RecyclerViewItem {
@@ -28,6 +32,10 @@ public class SingleSelectionRecyclerViewItem<T> implements RecyclerViewItem {
         void onItemSelected(T selectedValue, SingleSelectionRecyclerViewItem<T> selectionRecyclerViewItem);
     }
 
+    public interface OnChoiceSelectedListener<T> {
+        void onChoiceSelected(T selectedValue);
+    }
+
     private final BaseSelectionAdapter<T> selectionAdapter;
     private final String label;
     private String description;
@@ -35,6 +43,19 @@ public class SingleSelectionRecyclerViewItem<T> implements RecyclerViewItem {
     private SingleSelectionViewHolder singleSelectionViewHolder;
     private RecyclerView.Adapter<RecyclerView.ViewHolder> recyclerViewAdapter;
     private AlertDialog selectAlertDialog;
+
+    public SingleSelectionRecyclerViewItem(String label, T currentChoice, List<T> choicesList, Function<T, String> choiceValueToNameFunction, OnChoiceSelectedListener<T> onChoiceSelectedListener) {
+        this(label,
+                choiceValueToNameFunction.apply(currentChoice),
+                new SelectionAdapter<>(choicesList.stream()
+                        .map(channels -> new SelectionAdapter.ChoiceItem<>(t -> t.setText(choiceValueToNameFunction.apply(channels)), channels))
+                        .collect(Collectors.toList()), currentChoice),
+                (selectedValue, selectionRecyclerViewItem) -> {
+                    onChoiceSelectedListener.onChoiceSelected(selectedValue);
+                    selectionRecyclerViewItem.setDescription(choiceValueToNameFunction.apply(selectedValue));
+                }
+        );
+    }
 
     public SingleSelectionRecyclerViewItem(String label, String description, BaseSelectionAdapter<T> selectionAdapter, OnItemSelectedListener<T> onItemSelectedListener) {
         this.label = label;

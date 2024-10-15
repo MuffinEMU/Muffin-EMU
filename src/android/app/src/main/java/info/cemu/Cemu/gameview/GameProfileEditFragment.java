@@ -6,7 +6,6 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.StringRes;
 import androidx.fragment.app.Fragment;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.navigation.fragment.NavHostFragment;
@@ -14,22 +13,21 @@ import androidx.navigation.ui.AppBarConfiguration;
 import androidx.navigation.ui.NavigationUI;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.FragmentGameProfileEditBinding;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.HeaderRecyclerViewItem;
-import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.nativeinterface.NativeGameTitles;
 
 public class GameProfileEditFragment extends Fragment {
 
-    private static @StringRes() int cpuModeToResourceNameId(int cpuMode) {
-        return switch (cpuMode) {
+    private String cpuModeToString(int cpuMode) {
+        int resourceId = switch (cpuMode) {
             case NativeGameTitles.CPU_MODE_SINGLECOREINTERPRETER ->
                     R.string.cpu_mode_single_core_interpreter;
             case NativeGameTitles.CPU_MODE_SINGLECORERECOMPILER ->
@@ -38,6 +36,7 @@ public class GameProfileEditFragment extends Fragment {
                     R.string.cpu_mode_multi_core_recompiler;
             default -> R.string.cpu_mode_auto;
         };
+        return getString(resourceId);
     }
 
     @Override
@@ -60,33 +59,21 @@ public class GameProfileEditFragment extends Fragment {
                 checked -> NativeGameTitles.setShaderMultiplicationAccuracyForTitleEnabled(titleId, checked));
         genericRecyclerViewAdapter.addRecyclerViewItem(shaderMultiplicationAccuracyToggle);
 
-        int currentCpuMode = NativeGameTitles.getCpuModeForTitle(titleId);
-        var cpuModeChoices = Stream.of(NativeGameTitles.CPU_MODE_SINGLECOREINTERPRETER,
+        SingleSelectionRecyclerViewItem<Integer> cpuModeSelection = new SingleSelectionRecyclerViewItem<>(getString(R.string.cpu_mode),
+                NativeGameTitles.getCpuModeForTitle(titleId),
+                List.of(NativeGameTitles.CPU_MODE_SINGLECOREINTERPRETER,
                         NativeGameTitles.CPU_MODE_SINGLECORERECOMPILER,
                         NativeGameTitles.CPU_MODE_MULTICORERECOMPILER,
-                        NativeGameTitles.CPU_MODE_AUTO)
-                .map(cpuMode -> new SelectionAdapter.ChoiceItem<>(t -> t.setText(cpuModeToResourceNameId(cpuMode)), cpuMode))
-                .collect(Collectors.toList());
-        SelectionAdapter<Integer> cpuSelectionAdapter = new SelectionAdapter<>(cpuModeChoices, currentCpuMode);
-        SingleSelectionRecyclerViewItem<Integer> cpuModeSelection = new SingleSelectionRecyclerViewItem<>(getString(R.string.cpu_mode),
-                getString(cpuModeToResourceNameId(currentCpuMode)), cpuSelectionAdapter,
-                (cpuMode, selectionRecyclerViewItem) -> {
-                    NativeGameTitles.setCpuModeForTitle(titleId, cpuMode);
-                    selectionRecyclerViewItem.setDescription(getString(cpuModeToResourceNameId(cpuMode)));
-                });
+                        NativeGameTitles.CPU_MODE_AUTO),
+                this::cpuModeToString,
+                cpuMode -> NativeGameTitles.setCpuModeForTitle(titleId, cpuMode));
         genericRecyclerViewAdapter.addRecyclerViewItem(cpuModeSelection);
 
-        int currentThreadQuantum = NativeGameTitles.getThreadQuantumForTitle(titleId);
-        var threadQuantumChoices = Arrays.stream(NativeGameTitles.THREAD_QUANTUM_VALUES)
-                .mapToObj(threadQuantum -> new SelectionAdapter.ChoiceItem<>(t -> t.setText(String.valueOf(threadQuantum)), threadQuantum))
-                .collect(Collectors.toList());
-        SelectionAdapter<Integer> threadQuantumSelectionAdapter = new SelectionAdapter<>(threadQuantumChoices, currentThreadQuantum);
         SingleSelectionRecyclerViewItem<Integer> threadQuantumSelection = new SingleSelectionRecyclerViewItem<>(getString(R.string.thread_quantum),
-                String.valueOf(currentThreadQuantum), threadQuantumSelectionAdapter,
-                (threadQuantum, selectionRecyclerViewItem) -> {
-                    NativeGameTitles.setThreadQuantumForTitle(titleId, threadQuantum);
-                    selectionRecyclerViewItem.setDescription(String.valueOf(threadQuantum));
-                });
+                NativeGameTitles.getThreadQuantumForTitle(titleId),
+                Arrays.stream(NativeGameTitles.THREAD_QUANTUM_VALUES).boxed().collect(Collectors.toList()),
+                String::valueOf,
+                threadQuantum -> NativeGameTitles.setThreadQuantumForTitle(titleId, threadQuantum));
         genericRecyclerViewAdapter.addRecyclerViewItem(threadQuantumSelection);
 
         binding.recyclerView.setAdapter(genericRecyclerViewAdapter);

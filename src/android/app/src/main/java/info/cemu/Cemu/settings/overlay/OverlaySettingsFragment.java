@@ -8,22 +8,20 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.fragment.app.Fragment;
 
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.List;
 
 import info.cemu.Cemu.R;
 import info.cemu.Cemu.databinding.LayoutGenericRecyclerViewBinding;
-import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.GenericRecyclerViewAdapter;
 import info.cemu.Cemu.guibasecomponents.HeaderRecyclerViewItem;
-import info.cemu.Cemu.guibasecomponents.SelectionAdapter;
 import info.cemu.Cemu.guibasecomponents.SingleSelectionRecyclerViewItem;
 import info.cemu.Cemu.guibasecomponents.SliderRecyclerViewItem;
+import info.cemu.Cemu.guibasecomponents.ToggleRecyclerViewItem;
 import info.cemu.Cemu.nativeinterface.NativeSettings;
 
 public class OverlaySettingsFragment extends Fragment {
-    private static int overlayScreenPositionToResourceNameId(int overlayScreenPosition) {
-        return switch (overlayScreenPosition) {
+    private String overlayScreenPositionToString(int overlayScreenPosition) {
+        int resourceId = switch (overlayScreenPosition) {
             case NativeSettings.OVERLAY_SCREEN_POSITION_DISABLED ->
                     R.string.overlay_position_disabled;
             case NativeSettings.OVERLAY_SCREEN_POSITION_TOP_LEFT ->
@@ -41,6 +39,7 @@ public class OverlaySettingsFragment extends Fragment {
             default ->
                     throw new IllegalArgumentException("Invalid overlay position: " + overlayScreenPosition);
         };
+        return getString(resourceId);
     }
 
     @Override
@@ -49,26 +48,20 @@ public class OverlaySettingsFragment extends Fragment {
 
         GenericRecyclerViewAdapter genericRecyclerViewAdapter = new GenericRecyclerViewAdapter();
 
-        var overlayPositionChoices = Stream.of(
-                        NativeSettings.OVERLAY_SCREEN_POSITION_DISABLED,
-                        NativeSettings.OVERLAY_SCREEN_POSITION_TOP_LEFT,
-                        NativeSettings.OVERLAY_SCREEN_POSITION_TOP_CENTER,
-                        NativeSettings.OVERLAY_SCREEN_POSITION_TOP_RIGHT,
-                        NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_LEFT,
-                        NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_CENTER,
-                        NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_RIGHT)
-                .map(position -> new SelectionAdapter.ChoiceItem<>(t -> t.setText(overlayScreenPositionToResourceNameId(position)), position))
-                .collect(Collectors.toList());
-        int overlayPosition = NativeSettings.getOverlayPosition();
+        var overlayPositionChoices = List.of(
+                NativeSettings.OVERLAY_SCREEN_POSITION_DISABLED,
+                NativeSettings.OVERLAY_SCREEN_POSITION_TOP_LEFT,
+                NativeSettings.OVERLAY_SCREEN_POSITION_TOP_CENTER,
+                NativeSettings.OVERLAY_SCREEN_POSITION_TOP_RIGHT,
+                NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_LEFT,
+                NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_CENTER,
+                NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_RIGHT);
 
-        genericRecyclerViewAdapter.addRecyclerViewItem(new HeaderRecyclerViewItem(R.string.overlay));
-        SelectionAdapter<Integer> overlayPositionSelectionAdapter = new SelectionAdapter<>(overlayPositionChoices, overlayPosition);
         SingleSelectionRecyclerViewItem<Integer> overlayPositionSelection = new SingleSelectionRecyclerViewItem<>(getString(R.string.overlay_position),
-                getString(overlayScreenPositionToResourceNameId(overlayPosition)), overlayPositionSelectionAdapter,
-                (position, selectionRecyclerViewItem) -> {
-                    NativeSettings.setOverlayPosition(position);
-                    selectionRecyclerViewItem.setDescription(getString(overlayScreenPositionToResourceNameId(position)));
-                });
+                NativeSettings.getOverlayPosition(),
+                overlayPositionChoices,
+                this::overlayScreenPositionToString,
+                NativeSettings::setOverlayPosition);
         genericRecyclerViewAdapter.addRecyclerViewItem(overlayPositionSelection);
 
         SliderRecyclerViewItem overlayTextScale = new SliderRecyclerViewItem(getString(R.string.overlay_text_scale),
@@ -106,14 +99,12 @@ public class OverlaySettingsFragment extends Fragment {
         genericRecyclerViewAdapter.addRecyclerViewItem(debugToggle);
 
         genericRecyclerViewAdapter.addRecyclerViewItem(new HeaderRecyclerViewItem(R.string.notifications));
-        int notificationsPosition = NativeSettings.getNotificationsPosition();
-        SelectionAdapter<Integer> notificationsPositionSelectionAdapter = new SelectionAdapter<>(overlayPositionChoices, notificationsPosition);
+
         SingleSelectionRecyclerViewItem<Integer> notificationsPositionSelection = new SingleSelectionRecyclerViewItem<>(getString(R.string.overlay_position),
-                getString(overlayScreenPositionToResourceNameId(notificationsPosition)), notificationsPositionSelectionAdapter,
-                (position, selectionRecyclerViewItem) -> {
-                    NativeSettings.setNotificationsPosition(position);
-                    selectionRecyclerViewItem.setDescription(getString(overlayScreenPositionToResourceNameId(position)));
-                });
+                NativeSettings.getNotificationsPosition(),
+                overlayPositionChoices,
+                this::overlayScreenPositionToString,
+                NativeSettings::setNotificationsPosition);
         genericRecyclerViewAdapter.addRecyclerViewItem(notificationsPositionSelection);
 
         SliderRecyclerViewItem notificationTextScale = new SliderRecyclerViewItem(getString(R.string.notifications_text_scale),
