@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.view.MotionEvent;
@@ -26,7 +27,9 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
     private InputMode inputMode = InputMode.DEFAULT;
 
     public void resetInputs() {
-        if (inputs == null) return;
+        if (inputs == null) {
+            return;
+        }
         int width = getWidth();
         int height = getHeight();
         for (var input : InputOverlaySettingsProvider.Input.values()) {
@@ -99,11 +102,18 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
     private static final int INPUTS_MIN_WIDTH_HEIGHT_DP = 40;
     private final int inputsMinWidthHeight;
 
+    private Vibrator getVibrator(Context context) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            VibratorManager vibratorManager = (VibratorManager) context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
+            return vibratorManager.getDefaultVibrator();
+        }
+        return (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+    }
+
     public InputOverlaySurfaceView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        context.getSystemService(Context.VIBRATOR_SERVICE);
         inputsMinWidthHeight = Math.round(INPUTS_MIN_WIDTH_HEIGHT_DP * ((float) context.getResources().getDisplayMetrics().densityDpi / DisplayMetrics.DENSITY_DEFAULT));
-        vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
+        vibrator = getVibrator(context);
         setOnTouchListener(this);
         settingsProvider = new InputOverlaySettingsProvider(context);
         var overlaySettings = settingsProvider.getOverlaySettings();
@@ -549,7 +559,9 @@ public class InputOverlaySurfaceView extends SurfaceView implements View.OnTouch
         boolean touchEventProcessed = false;
         if (inputMode == InputMode.DEFAULT) {
             for (var input : inputs) {
-                if (input.onTouch(event)) touchEventProcessed = true;
+                if (input.onTouch(event)) {
+                    touchEventProcessed = true;
+                }
             }
         } else if (inputMode == InputMode.EDIT_POSITION) {
             touchEventProcessed = onEditPosition(event);

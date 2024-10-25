@@ -22,22 +22,14 @@ import info.cemu.Cemu.nativeinterface.NativeSettings;
 public class OverlaySettingsFragment extends Fragment {
     private String overlayScreenPositionToString(int overlayScreenPosition) {
         int resourceId = switch (overlayScreenPosition) {
-            case NativeSettings.OVERLAY_SCREEN_POSITION_DISABLED ->
-                    R.string.overlay_position_disabled;
-            case NativeSettings.OVERLAY_SCREEN_POSITION_TOP_LEFT ->
-                    R.string.overlay_position_top_left;
-            case NativeSettings.OVERLAY_SCREEN_POSITION_TOP_CENTER ->
-                    R.string.overlay_position_top_center;
-            case NativeSettings.OVERLAY_SCREEN_POSITION_TOP_RIGHT ->
-                    R.string.overlay_position_top_right;
-            case NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_LEFT ->
-                    R.string.overlay_position_bottom_left;
-            case NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_CENTER ->
-                    R.string.overlay_position_bottom_center;
-            case NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_RIGHT ->
-                    R.string.overlay_position_bottom_right;
-            default ->
-                    throw new IllegalArgumentException("Invalid overlay position: " + overlayScreenPosition);
+            case NativeSettings.OVERLAY_SCREEN_POSITION_DISABLED -> R.string.overlay_position_disabled;
+            case NativeSettings.OVERLAY_SCREEN_POSITION_TOP_LEFT -> R.string.overlay_position_top_left;
+            case NativeSettings.OVERLAY_SCREEN_POSITION_TOP_CENTER -> R.string.overlay_position_top_center;
+            case NativeSettings.OVERLAY_SCREEN_POSITION_TOP_RIGHT -> R.string.overlay_position_top_right;
+            case NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_LEFT -> R.string.overlay_position_bottom_left;
+            case NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_CENTER -> R.string.overlay_position_bottom_center;
+            case NativeSettings.OVERLAY_SCREEN_POSITION_BOTTOM_RIGHT -> R.string.overlay_position_bottom_right;
+            default -> throw new IllegalArgumentException("Invalid overlay position: " + overlayScreenPosition);
         };
         return getString(resourceId);
     }

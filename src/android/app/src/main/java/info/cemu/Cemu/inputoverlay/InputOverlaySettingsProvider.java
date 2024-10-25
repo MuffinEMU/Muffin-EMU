@@ -185,16 +185,14 @@ public class InputOverlaySettingsProvider {
                     joystickCentreY - joystickRadius,
                     rightJoystickCentreX + joystickRadius,
                     joystickCentreY + joystickRadius);
-            case L_STICK ->
-                    new Rect((int) (leftJoystickCentreX + joystickRadius * 1.5f - joystickClickRadius),
-                            (int) (joystickCentreY + joystickRadius * 1.5f - joystickClickRadius),
-                            (int) (leftJoystickCentreX + joystickRadius * 1.5f + joystickClickRadius),
-                            (int) (joystickCentreY + joystickRadius * 1.5f + joystickClickRadius));
-            case R_STICK ->
-                    new Rect((int) (rightJoystickCentreX - joystickRadius * 1.5f - joystickClickRadius),
-                            (int) (joystickCentreY + joystickRadius * 1.5f - joystickClickRadius),
-                            (int) (rightJoystickCentreX - joystickRadius * 1.5f + joystickClickRadius),
-                            (int) (joystickCentreY + joystickRadius * 1.5f + joystickClickRadius));
+            case L_STICK -> new Rect((int) (leftJoystickCentreX + joystickRadius * 1.5f - joystickClickRadius),
+                    (int) (joystickCentreY + joystickRadius * 1.5f - joystickClickRadius),
+                    (int) (leftJoystickCentreX + joystickRadius * 1.5f + joystickClickRadius),
+                    (int) (joystickCentreY + joystickRadius * 1.5f + joystickClickRadius));
+            case R_STICK -> new Rect((int) (rightJoystickCentreX - joystickRadius * 1.5f - joystickClickRadius),
+                    (int) (joystickCentreY + joystickRadius * 1.5f - joystickClickRadius),
+                    (int) (rightJoystickCentreX - joystickRadius * 1.5f + joystickClickRadius),
+                    (int) (joystickCentreY + joystickRadius * 1.5f + joystickClickRadius));
         };
     }
 

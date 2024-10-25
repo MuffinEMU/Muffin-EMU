@@ -11,7 +11,7 @@ import androidx.core.content.res.ResourcesCompat;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-import info.cemu.Cemu.drawable.DrawableExtensions;
+import info.cemu.Cemu.drawable.Drawables;
 
 public class DPadInput extends Input {
     Drawable iconDpadUp;
@@ -105,7 +105,7 @@ public class DPadInput extends Input {
         background = Objects.requireNonNull(ResourcesCompat.getDrawable(resources, backgroundId, null));
 
         Supplier<Drawable> getNotPressedButtonIcon = () -> Objects.requireNonNull(ResourcesCompat.getDrawable(resources, buttonId, null));
-        Supplier<Drawable> getPressedButtonIcon = () -> DrawableExtensions.applyInvertedColorTransform(ResourcesCompat.getDrawable(resources, buttonId, null));
+        Supplier<Drawable> getPressedButtonIcon = () -> Drawables.applyInvertedColorTransform(ResourcesCompat.getDrawable(resources, buttonId, null));
 
         iconDpadUpPressed = getPressedButtonIcon.get();
         iconDpadUpNotPressed = getNotPressedButtonIcon.get();
@@ -270,13 +270,27 @@ public class DPadInput extends Input {
     }
 
     private DpadState getStateByAngle(double angle) {
-        if (-0.125 * Math.PI <= angle && angle < 0.125 * Math.PI) return DpadState.RIGHT;
-        if (0.125 * Math.PI <= angle && angle < 0.375 * Math.PI) return DpadState.DOWN_RIGHT;
-        if (0.375 * Math.PI <= angle && angle < 0.625 * Math.PI) return DpadState.DOWN;
-        if (0.625 * Math.PI <= angle && angle < 0.875 * Math.PI) return DpadState.DOWN_LEFT;
-        if (-0.875 * Math.PI <= angle && angle < -0.625 * Math.PI) return DpadState.UP_LEFT;
-        if (-0.625 * Math.PI <= angle && angle < -0.375 * Math.PI) return DpadState.UP;
-        if (-0.375 * Math.PI <= angle && angle < -0.125 * Math.PI) return DpadState.UP_RIGHT;
+        if (-0.125 * Math.PI <= angle && angle < 0.125 * Math.PI) {
+            return DpadState.RIGHT;
+        }
+        if (0.125 * Math.PI <= angle && angle < 0.375 * Math.PI) {
+            return DpadState.DOWN_RIGHT;
+        }
+        if (0.375 * Math.PI <= angle && angle < 0.625 * Math.PI) {
+            return DpadState.DOWN;
+        }
+        if (0.625 * Math.PI <= angle && angle < 0.875 * Math.PI) {
+            return DpadState.DOWN_LEFT;
+        }
+        if (-0.875 * Math.PI <= angle && angle < -0.625 * Math.PI) {
+            return DpadState.UP_LEFT;
+        }
+        if (-0.625 * Math.PI <= angle && angle < -0.375 * Math.PI) {
+            return DpadState.UP;
+        }
+        if (-0.375 * Math.PI <= angle && angle < -0.125 * Math.PI) {
+            return DpadState.UP_RIGHT;
+        }
         return DpadState.LEFT;
     }
 

@@ -10,7 +10,7 @@ import androidx.core.content.res.ResourcesCompat;
 
 import java.util.Objects;
 
-import info.cemu.Cemu.drawable.DrawableExtensions;
+import info.cemu.Cemu.drawable.Drawables;
 
 public class Joystick extends Input {
     private final Drawable iconPressed;
@@ -36,7 +36,7 @@ public class Joystick extends Input {
         super(settings);
         joystickBackground = Objects.requireNonNull(ResourcesCompat.getDrawable(resources, joystickBackgroundId, null));
         iconNotPressed = Objects.requireNonNull(ResourcesCompat.getDrawable(resources, innerStickId, null));
-        iconPressed = DrawableExtensions.getInvertedDrawable(iconNotPressed, resources);
+        iconPressed = Drawables.getInvertedDrawable(iconNotPressed, resources);
         icon = iconNotPressed;
         this.stickStateChangeListener = stickStateChangeListener;
         this.joystick = joystick;
