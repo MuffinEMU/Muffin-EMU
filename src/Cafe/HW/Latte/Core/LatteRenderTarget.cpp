@@ -983,7 +983,9 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	g_renderer->HandleScreenshotRequest(textureView, isPadView);
 	if (!g_renderer->ImguiBegin(!isPadView))
 		return;
-	swkbd_render(!isPadView);
+#if !__ANDROID__
+	swkbd::render(!isPadView);
+#endif
 	nn::erreula::render(!isPadView);
 	LatteOverlay_render(isPadView);
 	g_renderer->ImguiEnd();
@@ -1003,7 +1005,7 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 	const bool tabPressed = GuiSystem::isKeyDown(GuiSystem::PlatformKeyCodes::TAB);
 	const bool ctrlPressed = GuiSystem::isKeyDown(GuiSystem::PlatformKeyCodes::LCONTROL);
 
-	bool showDRC = swkbd_hasKeyboardInputHook() == false && tabPressed;
+	bool showDRC = swkbd::hasKeyboardInputHook() == false && tabPressed;
 	bool& alwaysDisplayDRC = LatteGPUState.alwaysDisplayDRC;
 
 	if (ctrlPressed && tabPressed)
