@@ -9,7 +9,7 @@ jobs:
     secrets: inherit
   deploy:
     name: Deploy experimental release
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     needs: [call-release-build]
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
           VERSION=${{ env.CEMU_VERSION }}
           echo "Cemu Version is $VERSION"
           ls cemu-android
-          mv cemu-android/*.apk upload/Cemu-$VERSION.apk
+          mv cemu-android/**/*.apk upload/Cemu-$VERSION.apk
 
       - name: Create release
         run: |

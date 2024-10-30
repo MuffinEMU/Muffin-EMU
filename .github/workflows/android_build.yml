@@ -10,12 +10,13 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
         with:
+          token: ${{ secrets.GH_PAT }}
           submodules: "recursive"
           fetch-depth: 0
 
