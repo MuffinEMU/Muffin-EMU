@@ -92,7 +92,7 @@ void GameTitleLoader::titleRefresh(TitleId titleId)
 		game.minutesPlayed = playTimeStat.numMinutesPlayed;
 		if (playTimeStat.last_played.year != 0)
 		{
-			game.lastPlayed = year_month_day(year(playTimeStat.last_played.year), month(playTimeStat.last_played.month), day(playTimeStat.last_played.day));
+			game.lastPlayed = year_month_day(year(playTimeStat.last_played.year), month(playTimeStat.last_played.month + 1), day(playTimeStat.last_played.day));
 		}
 	}
 	if (m_gameTitleLoadedCallback)
