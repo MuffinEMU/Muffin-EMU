@@ -4,17 +4,18 @@
 #undef CSIZE
 #include <xbyak_aarch64.h>
 #pragma pop_macro("CSIZE")
+#include <xbyak_aarch64_util.h>
 
 #include <cstddef>
 
 #include "../PPCRecompiler.h"
+#include "asm/x64util.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
 #include "Common/precompiled.h"
+#include "Common/cpu_features.h"
 #include "HW/Espresso/Interpreter/PPCInterpreterInternal.h"
+#include "HW/Espresso/Interpreter/PPCInterpreterHelper.h"
 #include "HW/Espresso/PPCState.h"
-
-#include <HW/Espresso/Interpreter/PPCInterpreterHelper.h>
-#include <asm/x64util.h>
 
 using namespace Xbyak_aarch64;
 
@@ -38,6 +39,8 @@ static const SReg tempSReg{TEMP_VECTOR_REGISTER_ID};
 static const QReg tempQReg{TEMP_VECTOR_REGISTER_ID};
 static const WReg lrWReg{TEMP_REGISTER_2_ID};
 static const XReg lrXReg{TEMP_REGISTER_2_ID};
+
+static const util::Cpu s_cpu;
 
 struct AArch64GenContext_t : Xbyak_aarch64::CodeGenerator, CodeContext
 {
@@ -925,23 +928,34 @@ void AArch64GenContext_t::atomic_cmp_store(IMLInstruction* imlInstruction)
 	WReg valReg = WReg(imlInstruction->op_atomic_compare_store.regWriteValue.GetRegID());
 	WReg cmpValReg = WReg(imlInstruction->op_atomic_compare_store.regCompareValue.GetRegID());
 
-	Label endCmpStore;
-	Label notEqual;
-	Label storeFailed;
+	if (s_cpu.isAtomicSupported())
+	{
+		mov(temp2WReg, cmpValReg);
+		add(tempXReg, memBase, eaReg, ExtMod::UXTW);
+		casal(temp2WReg, valReg, AdrNoOfs(tempXReg));
+		cmp(temp2WReg, cmpValReg);
+		cset(outReg, Cond::EQ);
+	}
+	else
+	{
+		Label endCmpStore;
+		Label notEqual;
+		Label storeFailed;
 
-	add(tempXReg, memBase, eaReg, ExtMod::UXTW);
-	L(storeFailed);
-	ldaxr(temp2WReg, AdrNoOfs(tempXReg));
-	cmp(temp2WReg, cmpValReg);
-	bne(notEqual);
-	stlxr(temp2WReg, valReg, AdrNoOfs(tempXReg));
-	cbnz(temp2WReg, storeFailed);
-	mov(outReg, 1);
-	b(endCmpStore);
+		add(tempXReg, memBase, eaReg, ExtMod::UXTW);
+		L(storeFailed);
+		ldaxr(temp2WReg, AdrNoOfs(tempXReg));
+		cmp(temp2WReg, cmpValReg);
+		bne(notEqual);
+		stlxr(temp2WReg, valReg, AdrNoOfs(tempXReg));
+		cbnz(temp2WReg, storeFailed);
+		mov(outReg, 1);
+		b(endCmpStore);
 
-	L(notEqual);
-	mov(outReg, 0);
-	L(endCmpStore);
+		L(notEqual);
+		mov(outReg, 0);
+		L(endCmpStore);
+	}
 }
 
 void AArch64GenContext_t::gqr_generateScaleCode(VReg& dataReg, bool isLoad, bool scalePS1, IMLReg registerGQR)
