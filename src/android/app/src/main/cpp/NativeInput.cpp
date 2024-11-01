@@ -91,6 +91,24 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_getVPADControllersCount([[maybe_
 	return vpadCount;
 }
 
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_Cemu_nativeinterface_NativeInput_setVPADScreenToggle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index, jboolean enabled)
+{
+	auto emulatedController = AndroidEmulatedController::getAndroidEmulatedController(index).getEmulatedController();
+	if (emulatedController == nullptr || emulatedController->type() != EmulatedController::Type::VPAD)
+		throw std::runtime_error(fmt::format("Invalid controller type for controller {}, expected VPAD", index));
+	static_cast<VPADController*>(emulatedController.get())->set_screen_toggle(enabled);
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
+Java_info_cemu_Cemu_nativeinterface_NativeInput_getVPADScreenToggle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index)
+{
+	auto emulatedController = AndroidEmulatedController::getAndroidEmulatedController(index).getEmulatedController();
+	if (emulatedController == nullptr || emulatedController->type() != EmulatedController::Type::VPAD)
+		throw std::runtime_error(fmt::format("Invalid controller type for controller {}, expected VPAD", index));
+	return static_cast<VPADController*>(emulatedController.get())->is_screen_active_toggle();
+}
+
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
 Java_info_cemu_Cemu_nativeinterface_NativeInput_isControllerDisabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index)
 {

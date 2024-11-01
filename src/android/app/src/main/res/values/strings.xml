@@ -244,4 +244,6 @@
     <string name="shortcut_not_supported">Device doesn\'t support creating shortcuts</string>
     <string name="enabled_graphic_packs_count">Enabled graphic packs count</string>
     <string name="graphic_pack_is_enabled">Graphic pack is enabled</string>
+    <string name="toggle_screen">Toggle screen</string>
+    <string name="toggle_screen_description">Makes the \"show screen\" button toggle between the TV and gamepad screens</string>
 </resources>

@@ -8,14 +8,14 @@
     android:orientation="vertical"
     android:padding="8dp">
 
-    <TextView
+    <com.google.android.material.textview.MaterialTextView
         android:id="@+id/controller_input_name"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="8dp"
         android:textSize="18sp" />
 
-    <TextView
+    <com.google.android.material.textview.MaterialTextView
         android:id="@+id/controller_button_name"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

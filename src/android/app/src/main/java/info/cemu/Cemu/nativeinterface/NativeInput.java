@@ -146,6 +146,10 @@ public class NativeInput {
 
     public static native int getVPADControllersCount();
 
+    public static native void setVPADScreenToggle(int index, boolean enabled);
+
+    public static native boolean getVPADScreenToggle(int index);
+
     public static native void setControllerMapping(String deviceDescriptor, String deviceName, int index, int mappingId, int buttonId);
 
     public static native void clearControllerMapping(int index, int mappingId);
