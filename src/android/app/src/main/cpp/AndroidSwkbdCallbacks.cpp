@@ -4,7 +4,7 @@
 AndroidSwkbdCallbacks::AndroidSwkbdCallbacks()
 {
 	JNIUtils::ScopedJNIENV env;
-	m_emulationActivityClass = JNIUtils::Scopedjclass("info/cemu/Cemu/emulation/EmulationActivity");
+	m_emulationActivityClass = JNIUtils::Scopedjclass("info/cemu/cemu/emulation/EmulationActivity");
 	m_showSoftwareKeyboardMethodID = env->GetStaticMethodID(*m_emulationActivityClass, "showEmulationTextInput", "(Ljava/lang/String;I)V");
 	m_hideSoftwareKeyboardMethodID = env->GetStaticMethodID(*m_emulationActivityClass, "hideEmulationTextInput", "()V");
 }

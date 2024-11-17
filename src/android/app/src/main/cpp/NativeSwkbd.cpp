@@ -23,7 +23,7 @@ namespace NativeSwkbd
 } // namespace NativeSwkbd
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeSwkbd_initializeSwkbd([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+Java_info_cemu_cemu_nativeinterface_NativeSwkbd_initializeSwkbd([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	if (NativeSwkbd::s_swkbdCallbacks != nullptr)
 		return;
@@ -32,13 +32,13 @@ Java_info_cemu_Cemu_nativeinterface_NativeSwkbd_initializeSwkbd([[maybe_unused]]
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeSwkbd_setCurrentInputText([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jstring initial_text)
+Java_info_cemu_cemu_nativeinterface_NativeSwkbd_setCurrentInputText([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jstring initial_text)
 {
 	NativeSwkbd::s_currentInputText = JNIUtils::JStringToString(env, initial_text);
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeSwkbd_onTextChanged([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jstring j_text)
+Java_info_cemu_cemu_nativeinterface_NativeSwkbd_onTextChanged([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jstring j_text)
 {
 	std::string text = JNIUtils::JStringToString(env, j_text);
 	auto stringDiff = NativeSwkbd::getStringDiffs(text, NativeSwkbd::s_currentInputText);
@@ -50,7 +50,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeSwkbd_onTextChanged([[maybe_unused]] J
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeSwkbd_onFinishedInputEdit([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+Java_info_cemu_cemu_nativeinterface_NativeSwkbd_onFinishedInputEdit([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	swkbd::keyInput(swkbd::RETURN_KEYCODE);
 }

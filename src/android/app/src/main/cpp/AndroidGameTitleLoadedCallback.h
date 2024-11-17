@@ -9,7 +9,7 @@ class AndroidGameTitleLoadedCallback : public GameTitleLoadedCallback
 	jmethodID m_onGameTitleLoadedMID;
 	JNIUtils::Scopedjobject m_gameTitleLoadedCallbackObj;
 	jmethodID m_gameConstructorMID;
-	JNIUtils::Scopedjclass m_gamejclass{"info/cemu/Cemu/nativeinterface/NativeGameTitles$Game"};
+	JNIUtils::Scopedjclass m_gamejclass{"info/cemu/cemu/nativeinterface/NativeGameTitles$Game"};
 	jmethodID m_createBitmapMID;
 	JNIUtils::Scopedjclass m_bitmapClass{"android/graphics/Bitmap"};
 	JNIUtils::Scopedjobject m_bitmapFormat;

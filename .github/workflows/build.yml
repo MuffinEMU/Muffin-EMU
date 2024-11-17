@@ -261,3 +261,42 @@ jobs:
       with:
         name: cemu-bin-macos-x64
         path: ./bin/Cemu.dmg
+
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+      with:
+        submodules: "recursive"
+        fetch-depth: 0
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: "17"
+        distribution: "temurin"
+
+    - name: Build Cemu
+      env:
+        ANDROID_STORE_FILE_BASE64: ${{ secrets.ANDROID_STORE_FILE_BASE64 }}
+        ANDROID_KEY_STORE_PASSWORD: ${{ secrets.ANDROID_KEY_STORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        EMULATOR_VERSION_MAJOR: ${{ inputs.next_version_major }}
+        EMULATOR_VERSION_MINOR: ${{ inputs.next_version_minor }}
+        VERSION_CODE: ${{ github.run_number }}
+      run: |
+        cd ./src/android
+        if [[ -z "$ANDROID_STORE_FILE_BASE64" ]]; then
+          base64 --decode <<< "${ANDROID_STORE_FILE_BASE64}" > store.jks
+          export ANDROID_STORE_FILE=$(pwd)/store.jks
+        fi
+        ./gradlew assembleRelease
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cemu-bin-android
+        path: |
+          ./src/android/app/build/outputs/apk/*/*.apk

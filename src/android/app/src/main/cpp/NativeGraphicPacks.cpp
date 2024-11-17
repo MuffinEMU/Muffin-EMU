@@ -43,7 +43,7 @@ namespace NativeGraphicPacks
 
 	jobject getGraphicPresets(JNIEnv* env, GraphicPackPtr graphicPack, sint64 id)
 	{
-		auto graphicPackPresetClass = env->FindClass("info/cemu/Cemu/nativeinterface/NativeGraphicPacks$GraphicPackPreset");
+		auto graphicPackPresetClass = env->FindClass("info/cemu/cemu/nativeinterface/NativeGraphicPacks$GraphicPackPreset");
 		auto graphicPackPresetCtorId = env->GetMethodID(graphicPackPresetClass, "<init>", "(JLjava/lang/String;Ljava/util/ArrayList;Ljava/lang/String;)V");
 
 		std::vector<std::string> order;
@@ -86,7 +86,7 @@ namespace NativeGraphicPacks
 } // namespace NativeGraphicPacks
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_refreshGraphicPacks([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+Java_info_cemu_cemu_nativeinterface_NativeGraphicPacks_refreshGraphicPacks([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	if (!CafeSystem::IsTitleRunning())
 	{
@@ -97,9 +97,9 @@ Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_refreshGraphicPacks([[may
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jobject JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_getGraphicPackBasicInfos(JNIEnv* env, [[maybe_unused]] jclass clazz)
+Java_info_cemu_cemu_nativeinterface_NativeGraphicPacks_getGraphicPackBasicInfos(JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
-	auto graphicPackInfoClass = env->FindClass("info/cemu/Cemu/nativeinterface/NativeGraphicPacks$GraphicPackBasicInfo");
+	auto graphicPackInfoClass = env->FindClass("info/cemu/cemu/nativeinterface/NativeGraphicPacks$GraphicPackBasicInfo");
 	auto graphicPackInfoCtorId = env->GetMethodID(graphicPackInfoClass, "<init>", "(JLjava/lang/String;ZLjava/util/ArrayList;)V");
 
 	std::vector<jobject> graphicPackInfoJObjects;
@@ -115,9 +115,9 @@ Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_getGraphicPackBasicInfos(
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jobject JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_getGraphicPack(JNIEnv* env, [[maybe_unused]] jclass clazz, jlong id)
+Java_info_cemu_cemu_nativeinterface_NativeGraphicPacks_getGraphicPack(JNIEnv* env, [[maybe_unused]] jclass clazz, jlong id)
 {
-	auto graphicPackClass = env->FindClass("info/cemu/Cemu/nativeinterface/NativeGraphicPacks$GraphicPack");
+	auto graphicPackClass = env->FindClass("info/cemu/cemu/nativeinterface/NativeGraphicPacks$GraphicPack");
 	auto graphicPackCtorId = env->GetMethodID(graphicPackClass, "<init>", "(JZLjava/lang/String;Ljava/lang/String;Ljava/util/ArrayList;)V");
 	auto graphicPack = NativeGraphicPacks::s_graphicPacks.at(id);
 
@@ -134,7 +134,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_getGraphicPack(JNIEnv* en
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_setGraphicPackActive([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong id, jboolean active)
+Java_info_cemu_cemu_nativeinterface_NativeGraphicPacks_setGraphicPackActive([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong id, jboolean active)
 {
 	auto graphicPack = NativeGraphicPacks::s_graphicPacks.at(id);
 	graphicPack->SetEnabled(active);
@@ -142,7 +142,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_setGraphicPackActive([[ma
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_setGraphicPackActivePreset([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong id, jstring category, jstring preset)
+Java_info_cemu_cemu_nativeinterface_NativeGraphicPacks_setGraphicPackActivePreset([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong id, jstring category, jstring preset)
 {
 	std::string presetCategory = category == nullptr ? "" : JNIUtils::JStringToString(env, category);
 	auto graphicPack = NativeGraphicPacks::s_graphicPacks.at(id);
@@ -151,7 +151,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_setGraphicPackActivePrese
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jobject JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeGraphicPacks_getGraphicPackPresets(JNIEnv* env, [[maybe_unused]] jclass clazz, jlong id)
+Java_info_cemu_cemu_nativeinterface_NativeGraphicPacks_getGraphicPackPresets(JNIEnv* env, [[maybe_unused]] jclass clazz, jlong id)
 {
 	return NativeGraphicPacks::getGraphicPresets(env, NativeGraphicPacks::s_graphicPacks.at(id), id);
 }

@@ -19,7 +19,7 @@
             android:layout_weight="1" />
     </LinearLayout>
 
-    <info.cemu.Cemu.inputoverlay.InputOverlaySurfaceView
+    <info.cemu.cemu.inputoverlay.InputOverlaySurfaceView
         android:id="@+id/input_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />

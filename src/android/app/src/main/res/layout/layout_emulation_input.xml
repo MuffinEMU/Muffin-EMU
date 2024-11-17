@@ -5,7 +5,7 @@
     android:layout_height="wrap_content"
     android:padding="16dp">
 
-    <info.cemu.Cemu.emulation.EmulationTextInputEditText
+    <info.cemu.cemu.emulation.EmulationTextInputEditText
         android:id="@+id/emulation_input_text"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

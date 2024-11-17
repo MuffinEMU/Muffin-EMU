@@ -22,7 +22,7 @@ namespace NativeInput
 } // namespace NativeInput
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_onNativeKey(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring device_descriptor, jstring device_name, jint key, jboolean is_pressed)
+Java_info_cemu_cemu_nativeinterface_NativeInput_onNativeKey(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring device_descriptor, jstring device_name, jint key, jboolean is_pressed)
 {
 	auto deviceDescriptor = JNIUtils::JStringToString(env, device_descriptor);
 	auto deviceName = JNIUtils::JStringToString(env, device_name);
@@ -32,7 +32,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_onNativeKey(JNIEnv* env, [[maybe
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_onNativeAxis(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring device_descriptor, jstring device_name, jint axis, jfloat value)
+Java_info_cemu_cemu_nativeinterface_NativeInput_onNativeAxis(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring device_descriptor, jstring device_name, jint axis, jfloat value)
 {
 	auto deviceDescriptor = JNIUtils::JStringToString(env, device_descriptor);
 	auto deviceName = JNIUtils::JStringToString(env, device_name);
@@ -42,7 +42,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_onNativeAxis(JNIEnv* env, [[mayb
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_setControllerType([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index, jint emulated_controller_type)
+Java_info_cemu_cemu_nativeinterface_NativeInput_setControllerType([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index, jint emulated_controller_type)
 {
 	auto type = static_cast<EmulatedController::Type>(emulated_controller_type);
 	auto& androidEmulatedController = AndroidEmulatedController::getAndroidEmulatedController(index);
@@ -53,7 +53,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_setControllerType([[maybe_unused
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_getControllerType([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index)
+Java_info_cemu_cemu_nativeinterface_NativeInput_getControllerType([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index)
 {
 	auto emulatedController = AndroidEmulatedController::getAndroidEmulatedController(index).getEmulatedController();
 	if (emulatedController)
@@ -62,7 +62,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_getControllerType([[maybe_unused
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_getWPADControllersCount([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+Java_info_cemu_cemu_nativeinterface_NativeInput_getWPADControllersCount([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	int wpadCount = 0;
 	for (size_t i = 0; i < InputManager::kMaxController; i++)
@@ -77,7 +77,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_getWPADControllersCount([[maybe_
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_getVPADControllersCount([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+Java_info_cemu_cemu_nativeinterface_NativeInput_getVPADControllersCount([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	int vpadCount = 0;
 	for (size_t i = 0; i < InputManager::kMaxController; i++)
@@ -92,7 +92,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_getVPADControllersCount([[maybe_
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_setVPADScreenToggle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index, jboolean enabled)
+Java_info_cemu_cemu_nativeinterface_NativeInput_setVPADScreenToggle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index, jboolean enabled)
 {
 	auto emulatedController = AndroidEmulatedController::getAndroidEmulatedController(index).getEmulatedController();
 	if (emulatedController == nullptr || emulatedController->type() != EmulatedController::Type::VPAD)
@@ -101,7 +101,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_setVPADScreenToggle([[maybe_unus
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_getVPADScreenToggle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index)
+Java_info_cemu_cemu_nativeinterface_NativeInput_getVPADScreenToggle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index)
 {
 	auto emulatedController = AndroidEmulatedController::getAndroidEmulatedController(index).getEmulatedController();
 	if (emulatedController == nullptr || emulatedController->type() != EmulatedController::Type::VPAD)
@@ -110,13 +110,13 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_getVPADScreenToggle([[maybe_unus
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_isControllerDisabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index)
+Java_info_cemu_cemu_nativeinterface_NativeInput_isControllerDisabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index)
 {
 	return AndroidEmulatedController::getAndroidEmulatedController(index).getEmulatedController() == nullptr;
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_setControllerMapping(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring device_descriptor, jstring device_name, jint index, jint mapping_id, jint button_id)
+Java_info_cemu_cemu_nativeinterface_NativeInput_setControllerMapping(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring device_descriptor, jstring device_name, jint index, jint mapping_id, jint button_id)
 {
 	auto deviceName = JNIUtils::JStringToString(env, device_name);
 	auto deviceDescriptor = JNIUtils::JStringToString(env, device_descriptor);
@@ -126,20 +126,20 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_setControllerMapping(JNIEnv* env
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jstring JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_getControllerMapping(JNIEnv* env, [[maybe_unused]] jclass clazz, jint index, jint mapping_id)
+Java_info_cemu_cemu_nativeinterface_NativeInput_getControllerMapping(JNIEnv* env, [[maybe_unused]] jclass clazz, jint index, jint mapping_id)
 {
 	auto mapping = AndroidEmulatedController::getAndroidEmulatedController(index).getMapping(mapping_id);
 	return env->NewStringUTF(mapping.value_or("").c_str());
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_clearControllerMapping([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index, jint mapping_id)
+Java_info_cemu_cemu_nativeinterface_NativeInput_clearControllerMapping([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint index, jint mapping_id)
 {
 	AndroidEmulatedController::getAndroidEmulatedController(index).clearMapping(mapping_id);
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jobject JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_getControllerMappings(JNIEnv* env, [[maybe_unused]] jclass clazz, jint index)
+Java_info_cemu_cemu_nativeinterface_NativeInput_getControllerMappings(JNIEnv* env, [[maybe_unused]] jclass clazz, jint index)
 {
 	jclass hashMapClass = env->FindClass("java/util/HashMap");
 	jmethodID hashMapConstructor = env->GetMethodID(hashMapClass, "<init>", "()V");
@@ -159,25 +159,25 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_getControllerMappings(JNIEnv* en
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_onTouchDown([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint x, jint y, jboolean isTV)
+Java_info_cemu_cemu_nativeinterface_NativeInput_onTouchDown([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint x, jint y, jboolean isTV)
 {
 	NativeInput::onTouchEvent(x, y, isTV, true);
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_onTouchUp([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint x, jint y, jboolean isTV)
+Java_info_cemu_cemu_nativeinterface_NativeInput_onTouchUp([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint x, jint y, jboolean isTV)
 {
 	NativeInput::onTouchEvent(x, y, isTV, false);
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_onTouchMove([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint x, jint y, jboolean isTV)
+Java_info_cemu_cemu_nativeinterface_NativeInput_onTouchMove([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint x, jint y, jboolean isTV)
 {
 	NativeInput::onTouchEvent(x, y, isTV);
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_onMotion([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong timestamp, jfloat gyroX, jfloat gyroY, jfloat gyroZ, jfloat accelX, jfloat accelY, jfloat accelZ)
+Java_info_cemu_cemu_nativeinterface_NativeInput_onMotion([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong timestamp, jfloat gyroX, jfloat gyroY, jfloat gyroZ, jfloat accelX, jfloat accelY, jfloat accelZ)
 {
 	float deltaTime = (timestamp - NativeInput::s_lastMotionTimestamp) * 1e-9f;
 	NativeInput::s_wiiUMotionHandler.processMotionSample(deltaTime, gyroX, gyroY, gyroZ, accelX * 0.098066f, -accelY * 0.098066f, -accelZ * 0.098066f);
@@ -188,7 +188,7 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_onMotion([[maybe_unused]] JNIEnv
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_setMotionEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean motionEnabled)
+Java_info_cemu_cemu_nativeinterface_NativeInput_setMotionEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean motionEnabled)
 {
 	auto& deviceMotion = InputManager::instance().m_device_motion;
 	std::scoped_lock lock{deviceMotion.m_mutex};
@@ -196,13 +196,13 @@ Java_info_cemu_Cemu_nativeinterface_NativeInput_setMotionEnabled([[maybe_unused]
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_onOverlayButton([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint controllerIndex, jint mappingId, jboolean state)
+Java_info_cemu_cemu_nativeinterface_NativeInput_onOverlayButton([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint controllerIndex, jint mappingId, jboolean state)
 {
 	AndroidEmulatedController::getAndroidEmulatedController(controllerIndex).setButtonValue(mappingId, state);
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_Cemu_nativeinterface_NativeInput_onOverlayAxis([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint controllerIndex, jint mappingId, jfloat value)
+Java_info_cemu_cemu_nativeinterface_NativeInput_onOverlayAxis([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint controllerIndex, jint mappingId, jfloat value)
 {
 	AndroidEmulatedController::getAndroidEmulatedController(controllerIndex).setAxisValue(mappingId, value);
 }

@@ -139,6 +139,9 @@ jobs:
       - name: Create release from macos-bin
         run: cp cemu-bin-macos-x64/Cemu.dmg upload/cemu-${{ env.CEMU_VERSION }}-macos-12-x64.dmg
 
+      - name: Create release from android-bin
+        run: cp cemu-bin-android/*.apk upload/cemu-${{ env.CEMU_VERSION }}.apk
+
       - name: Create release
         run: |
           wget -O ghr.tar.gz https://github.com/tcnksm/ghr/releases/download/v0.15.0/ghr_v0.15.0_linux_amd64.tar.gz

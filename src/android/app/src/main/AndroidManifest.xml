@@ -12,7 +12,7 @@
         android:version="0x401000" />
 
     <application
-        android:name="info.cemu.Cemu.CemuApplication"
+        android:name="info.cemu.cemu.CemuApplication"
         android:allowBackup="true"
         android:appCategory="game"
         android:dataExtractionRules="@xml/data_extraction_rules"

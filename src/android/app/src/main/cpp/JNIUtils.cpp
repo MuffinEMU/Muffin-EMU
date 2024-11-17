@@ -73,11 +73,11 @@ void JNIUtils::handleNativeException(JNIEnv* env, const std::function<void()>& f
 		fn();
 	} catch (const std::exception& exception)
 	{
-		jclass exceptionClass = env->FindClass("info/cemu/Cemu/nativeinterface/NativeException");
+		jclass exceptionClass = env->FindClass("info/cemu/cemu/nativeinterface/NativeException");
 		env->ThrowNew(exceptionClass, exception.what());
 	} catch (...)
 	{
-		jclass exceptionClass = env->FindClass("info/cemu/Cemu/nativeinterface/NativeException");
+		jclass exceptionClass = env->FindClass("info/cemu/cemu/nativeinterface/NativeException");
 		env->ThrowNew(exceptionClass, "Unknown native exception");
 	}
 }
