@@ -8,9 +8,5 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">?attr/isLightTheme</item>
-        <item name="enterAnim">@anim/nav_default_enter_anim</item>
-        <item name="exitAnim">@anim/nav_default_exit_anim</item>
-        <item name="popEnterAnim">@anim/nav_default_pop_enter_anim</item>
-        <item name="popExitAnim">@anim/nav_default_pop_exit_anim</item>
     </style>
 </resources>

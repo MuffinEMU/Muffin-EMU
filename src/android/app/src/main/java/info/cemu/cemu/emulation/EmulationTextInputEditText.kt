@@ -9,14 +9,13 @@ import android.util.AttributeSet
 import android.view.inputmethod.EditorInfo
 import com.google.android.material.R
 import com.google.android.material.textfield.TextInputEditText
-import info.cemu.cemu.nativeinterface.NativeSwkbd.onFinishedInputEdit
-import info.cemu.cemu.nativeinterface.NativeSwkbd.onTextChanged
+import info.cemu.cemu.nativeinterface.NativeSwkbd
 import java.util.regex.Pattern
 
 class EmulationTextInputEditText @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-    defStyleAttr: Int = R.attr.editTextStyle
+    defStyleAttr: Int = R.attr.editTextStyle,
 ) :
     TextInputEditText(context, attrs, defStyleAttr) {
     fun appendFilter(inputFilter: InputFilter) {
@@ -60,7 +59,7 @@ class EmulationTextInputEditText @JvmOverloads constructor(
                 if (onTextChangedListener != null) {
                     onTextChangedListener!!.onTextChanged(text)
                 }
-                onTextChanged(text.toString())
+                NativeSwkbd.onTextChanged(text.toString())
             }
 
             override fun afterTextChanged(s: Editable) {
@@ -77,7 +76,7 @@ class EmulationTextInputEditText @JvmOverloads constructor(
     }
 
     fun onFinishedEdit() {
-        onFinishedInputEdit()
+        NativeSwkbd.onFinishedInputEdit()
     }
 
     fun setOnTextChangedListener(onTextChangedListener: OnTextChangedListener) {

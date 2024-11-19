@@ -1,4 +1,5 @@
 #include "JNIUtils.h"
+#include "audio/IAudioAPI.h"
 #include "config/CemuConfig.h"
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -223,13 +224,13 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_setAsyncShaderCompile([[maybe
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
-Java_info_cemu_cemu_nativeinterface_NativeSettings_getVSyncMode([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+Java_info_cemu_cemu_nativeinterface_NativeSettings_getVsyncMode([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().vsync;
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_cemu_nativeinterface_NativeSettings_setVSyncMode([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint vsync_mode)
+Java_info_cemu_cemu_nativeinterface_NativeSettings_setVsyncMode([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint vsync_mode)
 {
 	g_config.data().vsync = vsync_mode;
 	g_config.Save();
@@ -248,7 +249,7 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_setUpscalingFilter([[maybe_un
 	g_config.Save();
 }
 
-extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_getUpscalingFilter([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().upscale_filter;
@@ -261,7 +262,7 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_setDownscalingFilter([[maybe_
 	g_config.Save();
 }
 
-extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_getDownscalingFilter([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().downscale_filter;
@@ -274,7 +275,7 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_setFullscreenScaling([[maybe_
 	g_config.Save();
 }
 
-extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
+extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_getFullscreenScaling([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	return g_config.data().fullscreen_scaling;
@@ -338,13 +339,14 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_setAudioDeviceVolume([[maybe_
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_getAudioLatency([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
-	return g_config.data().audio_delay;
+	return g_config.data().audio_delay * 12;
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setAudioLatency([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint latency)
 {
-	g_config.data().audio_delay = latency;
+	g_config.data().audio_delay = latency / 12;
+	IAudioAPI::SetAudioDelay(g_config.data().audio_delay);
 	g_config.Save();
 }
 

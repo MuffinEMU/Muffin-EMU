@@ -182,10 +182,10 @@ object NativeInput {
     external fun clearControllerMapping(index: Int, mappingId: Int)
 
     @JvmStatic
-    external fun getControllerMapping(index: Int, mappingId: Int): String?
+    external fun getControllerMapping(index: Int, mappingId: Int): String
 
     @JvmStatic
-    external fun getControllerMappings(index: Int): Map<Int?, String?>?
+    external fun getControllerMappings(index: Int): Map<Int, String>
 
     @JvmStatic
     external fun onTouchDown(x: Int, y: Int, isTV: Boolean)

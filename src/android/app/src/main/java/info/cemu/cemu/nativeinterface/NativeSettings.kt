@@ -8,30 +8,32 @@ object NativeSettings {
     external fun removeGamesPath(uri: String?)
 
     @JvmStatic
-    val gamesPaths: ArrayList<String>
-        external get
+    external fun getGamesPaths(): ArrayList<String>
 
     @JvmStatic
-    var asyncShaderCompile: Boolean
-        external get
-        external set
+    external fun getAsyncShaderCompile(): Boolean
+
+    @JvmStatic
+    external fun setAsyncShaderCompile(value: Boolean)
 
     const val VSYNC_MODE_OFF: Int = 0
     const val VSYNC_MODE_DOUBLE_BUFFERING: Int = 1
     const val VSYNC_MODE_TRIPLE_BUFFERING: Int = 2
 
     @JvmStatic
-    var vSyncMode: Int
-        external get
-        external set
+    external fun getVsyncMode(): Int
+
+    @JvmStatic
+    external fun setVsyncMode(value: Int)
 
     const val FULLSCREEN_SCALING_KEEP_ASPECT_RATIO: Int = 0
     const val FULLSCREEN_SCALING_STRETCH: Int = 1
 
     @JvmStatic
-    var fullscreenScaling: Int
-        external get
-        external set
+    external fun getFullscreenScaling(): Int
+
+    @JvmStatic
+    external fun setFullscreenScaling(value: Int)
 
     const val SCALING_FILTER_BILINEAR_FILTER: Int = 0
     const val SCALING_FILTER_BICUBIC_FILTER: Int = 1
@@ -39,19 +41,22 @@ object NativeSettings {
     const val SCALING_FILTER_NEAREST_NEIGHBOR_FILTER: Int = 3
 
     @JvmStatic
-    var upscalingFilter: Int
-        external get
-        external set
+    external fun getUpscalingFilter(): Int
 
     @JvmStatic
-    var downscalingFilter: Int
-        external get
-        external set
+    external fun setUpscalingFilter(value: Int)
 
     @JvmStatic
-    var accurateBarriers: Boolean
-        external get
-        external set
+    external fun getDownscalingFilter(): Int
+
+    @JvmStatic
+    external fun setDownscalingFilter(value: Int)
+
+    @JvmStatic
+    external fun getAccurateBarriers(): Boolean
+
+    @JvmStatic
+    external fun setAccurateBarriers(value: Boolean)
 
     @JvmStatic
     external fun getAudioDeviceEnabled(tv: Boolean): Boolean
@@ -78,12 +83,13 @@ object NativeSettings {
     @JvmStatic
     external fun getAudioDeviceVolume(tv: Boolean): Int
 
-    const val AUDIO_BLOCK_COUNT: Int = 24
+    const val AUDIO_LATENCY_MS_MAX: Int = 276
 
     @JvmStatic
-    var audioLatency: Int
-        external get
-        external set
+    external fun getAudioLatency(): Int
+
+    @JvmStatic
+    external fun setAudioLatency(value: Int)
 
     const val OVERLAY_SCREEN_POSITION_DISABLED: Int = 0
     const val OVERLAY_SCREEN_POSITION_TOP_LEFT: Int = 1
@@ -94,72 +100,79 @@ object NativeSettings {
     const val OVERLAY_SCREEN_POSITION_BOTTOM_RIGHT: Int = 6
 
     @JvmStatic
-    var overlayPosition: Int
-        external get
-        external set
+    external fun getOverlayPosition(): Int
+
+    @JvmStatic
+    external fun setOverlayPosition(value: Int)
 
     const val OVERLAY_TEXT_SCALE_MIN: Int = 50
     const val OVERLAY_TEXT_SCALE_MAX: Int = 300
 
     @JvmStatic
-    var overlayTextScalePercentage: Int
-        external get
-        external set
-
+    external fun getOverlayTextScalePercentage(): Int
 
     @JvmStatic
-    var isOverlayFPSEnabled: Boolean
-        external get
-        external set
+    external fun setOverlayTextScalePercentage(value: Int)
 
     @JvmStatic
-    var isOverlayDrawCallsPerFrameEnabled: Boolean
-        external get
-        external set
+    external fun isOverlayFPSEnabled(): Boolean
 
     @JvmStatic
-    var isOverlayCPUUsageEnabled: Boolean
-        external get
-        external set
-
-    var isOverlayCPUPerCoreUsageEnabled: Boolean
-        external get
-        external set
+    external fun setOverlayFPSEnabled(value: Boolean)
 
     @JvmStatic
-    var isOverlayRAMUsageEnabled: Boolean
-        external get
-        external set
+    external fun isOverlayDrawCallsPerFrameEnabled(): Boolean
 
     @JvmStatic
-    var isOverlayDebugEnabled: Boolean
-        external get
-        external set
+    external fun setOverlayDrawCallsPerFrameEnabled(value: Boolean)
 
     @JvmStatic
-    var notificationsPosition: Int
-        external get
-        external set
+    external fun isOverlayCPUUsageEnabled(): Boolean
 
     @JvmStatic
-    var notificationsTextScalePercentage: Int
-        external get
-        external set
+    external fun setOverlayCPUUsageEnabled(value: Boolean)
 
     @JvmStatic
-    var isNotificationControllerProfilesEnabled: Boolean
-        external get
-        external set
+    external fun isOverlayRAMUsageEnabled(): Boolean
 
     @JvmStatic
-    var isNotificationShaderCompilerEnabled: Boolean
-        external get
-        external set
+    external fun setOverlayRAMUsageEnabled(value: Boolean)
 
     @JvmStatic
-    var isNotificationFriendListEnabled: Boolean
-        external get
-        external set
+    external fun isOverlayDebugEnabled(): Boolean
+
+    @JvmStatic
+    external fun setOverlayDebugEnabled(value: Boolean)
+
+    @JvmStatic
+    external fun getNotificationsPosition(): Int
+
+    @JvmStatic
+    external fun setNotificationsPosition(value: Int)
+
+    @JvmStatic
+    external fun getNotificationsTextScalePercentage(): Int
+
+    @JvmStatic
+    external fun setNotificationsTextScalePercentage(value: Int)
+
+    @JvmStatic
+    external fun isNotificationControllerProfilesEnabled(): Boolean
+
+    @JvmStatic
+    external fun setNotificationControllerProfilesEnabled(value: Boolean)
+
+    @JvmStatic
+    external fun isNotificationShaderCompilerEnabled(): Boolean
+
+    @JvmStatic
+    external fun setNotificationShaderCompilerEnabled(value: Boolean)
+
+    @JvmStatic
+    external fun isNotificationFriendListEnabled(): Boolean
+
+    @JvmStatic
+    external fun setNotificationFriendListEnabled(value: Boolean)
 
     const val CONSOLE_LANGUAGE_JAPANESE: Int = 0
     const val CONSOLE_LANGUAGE_ENGLISH: Int = 1
@@ -175,7 +188,8 @@ object NativeSettings {
     const val CONSOLE_LANGUAGE_TAIWANESE: Int = 11
 
     @JvmStatic
-    var consoleLanguage: Int
-        external get
-        external set
+    external fun getConsoleLanguage(): Int
+
+    @JvmStatic
+    external fun setConsoleLanguage(value: Int)
 }

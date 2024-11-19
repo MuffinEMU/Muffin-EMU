@@ -13,7 +13,7 @@ import java.io.StringWriter
 
 class CemuApplication : Application() {
     init {
-        application = this
+        Application = this
     }
 
     val internalFolder: File
@@ -27,8 +27,8 @@ class CemuApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        if (defaultUncaughtExceptionHandler == null) {
-            defaultUncaughtExceptionHandler = Thread.getDefaultUncaughtExceptionHandler()
+        if (DefaultUncaughtExceptionHandler == null) {
+            DefaultUncaughtExceptionHandler = Thread.getDefaultUncaughtExceptionHandler()
         }
         Thread.setDefaultUncaughtExceptionHandler { thread: Thread, exception: Throwable ->
             val stringWriter = StringWriter()
@@ -36,7 +36,7 @@ class CemuApplication : Application() {
             exception.printStackTrace(printWriter)
             val stacktrace = stringWriter.toString()
             crashLog(stacktrace)
-            defaultUncaughtExceptionHandler!!.uncaughtException(
+            DefaultUncaughtExceptionHandler!!.uncaughtException(
                 thread,
                 exception
             )
@@ -54,10 +54,10 @@ class CemuApplication : Application() {
             System.loadLibrary("CemuAndroid")
         }
 
-        private var defaultUncaughtExceptionHandler: Thread.UncaughtExceptionHandler? = null
+        private var DefaultUncaughtExceptionHandler: Thread.UncaughtExceptionHandler? = null
 
         @JvmStatic
-        lateinit var application: CemuApplication
+        lateinit var Application: CemuApplication
             private set
     }
 }

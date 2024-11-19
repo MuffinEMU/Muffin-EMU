@@ -1,6 +1,9 @@
 package info.cemu.cemu.nativeinterface
 
 import android.graphics.Bitmap
+import androidx.annotation.Keep
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 
 object NativeGameTitles {
     const val CONSOLE_REGION_JPN: Int = 0x1
@@ -29,7 +32,6 @@ object NativeGameTitles {
     @JvmStatic
     external fun setCpuModeForTitle(gameTitleId: Long, cpuMode: Int)
 
-    @JvmField
     val THREAD_QUANTUM_VALUES: IntArray = intArrayOf(
         20000,
         45000,
@@ -66,23 +68,22 @@ object NativeGameTitles {
     external fun reloadGameTitles()
 
     @JvmStatic
-    val installedGamesTitleIds: ArrayList<Long?>?
-        external get
+    external fun getInstalledGamesTitleIds(): List<Long>
 
-    @JvmRecord
+    @Keep
     data class Game(
-        @JvmField val titleId: Long,
-        @JvmField val path: String?,
-        @JvmField val name: String?,
-        @JvmField val version: Short,
-        @JvmField val dlc: Short,
-        @JvmField val region: Int,
-        @JvmField val lastPlayedYear: Short,
-        @JvmField val lastPlayedMonth: Short,
-        @JvmField val lastPlayedDay: Short,
-        @JvmField val minutesPlayed: Int,
-        @JvmField val isFavorite: Boolean,
-        @JvmField val icon: Bitmap?
+        val titleId: Long,
+        val path: String?,
+        val name: String?,
+        val version: Short,
+        val dlc: Short,
+        val region: Int,
+        val lastPlayedYear: Short,
+        val lastPlayedMonth: Short,
+        val lastPlayedDay: Short,
+        val minutesPlayed: Int,
+        val isFavorite: Boolean,
+        private val _icon: Bitmap?,
     ) : Comparable<Game> {
         override fun compareTo(other: Game): Int {
             if (titleId == other.titleId) {
@@ -99,8 +100,11 @@ object NativeGameTitles {
             }
             return name?.compareTo(other.name ?: "") ?: 0
         }
+
+        val icon: ImageBitmap? = _icon?.asImageBitmap()
     }
 
+    @Keep
     fun interface GameTitleLoadedCallback {
         fun onGameTitleLoaded(game: Game?)
     }

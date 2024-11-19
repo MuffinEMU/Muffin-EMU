@@ -3,15 +3,64 @@ package info.cemu.cemu.inputoverlay
 import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Rect
+import androidx.annotation.IntRange
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
+import info.cemu.cemu.CemuApplication
 import info.cemu.cemu.nativeinterface.NativeInput
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.util.Optional
-import java.util.function.Consumer
-import kotlin.math.max
-import kotlin.math.min
 
+private const val INPUT_DATA_STORE_NAME = "input-settings22"
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = INPUT_DATA_STORE_NAME)
+private fun <T> Preferences.get(key: Preferences.Key<T>, default: T) =
+    this[key] ?: default
+
+class OverlaySettings(
+    var isVibrateOnTouchEnabled: Boolean,
+    var isOverlayEnabled: Boolean,
+    @IntRange(0, (NativeInput.MAX_CONTROLLERS - 1L))
+    var controllerIndex: Int,
+    @IntRange(0, 255)
+    var alpha: Int,
+) {
+    companion object {
+        private const val DEFAULT_ALPHA: Int = 64
+        private const val IS_VIBRATE_ON_TOUCH_ENABLED_KEY = "IS_VIBRATE_ON_TOUCH_ENABLED"
+        private const val IS_OVERLAY_ENABLED_KEY = "IS_OVERLAY_ENABLED"
+        private const val CONTROLLER_INDEX_KEY = "CONTROLLER_INDEX"
+        private const val ALPHA_KEY = "ALPHA"
+    }
+
+    internal constructor(sharedPreferences: SharedPreferences) : this(
+        isVibrateOnTouchEnabled = sharedPreferences.getBoolean(
+            IS_VIBRATE_ON_TOUCH_ENABLED_KEY,
+            false
+        ),
+        isOverlayEnabled = sharedPreferences.getBoolean(IS_OVERLAY_ENABLED_KEY, false),
+        controllerIndex = sharedPreferences.getInt(CONTROLLER_INDEX_KEY, 0),
+        alpha = sharedPreferences.getInt(ALPHA_KEY, DEFAULT_ALPHA),
+    )
+
+    internal fun save(sharedPreferences: SharedPreferences) {
+        sharedPreferences.edit().apply {
+            putBoolean(IS_VIBRATE_ON_TOUCH_ENABLED_KEY, isVibrateOnTouchEnabled)
+            putBoolean(IS_OVERLAY_ENABLED_KEY, isOverlayEnabled)
+            putInt(CONTROLLER_INDEX_KEY, controllerIndex)
+            putInt(ALPHA_KEY, alpha)
+            apply()
+        }
+    }
+}
 
 class InputOverlaySettingsProvider(context: Context) {
-    enum class Input {
+    enum class OverlayInput {
         A,
         B,
         ONE,
@@ -35,80 +84,51 @@ class InputOverlaySettingsProvider(context: Context) {
         RIGHT_AXIS,
     }
 
-    private val sharedPreferences: SharedPreferences
+    val sharedPreferences: SharedPreferences =
+        context.getSharedPreferences("input-overlay-settings", Context.MODE_PRIVATE);
 
-    init {
-        this.sharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    }
+    var overlaySettings: OverlaySettings
+        get() = OverlaySettings(sharedPreferences)
+        set(value) = value.save(sharedPreferences)
 
-    val overlaySettings: OverlaySettings
-        get() = OverlaySettings(
-            isVibrateOnTouchEnabled,
-            isOverlayEnabled,
-            controllerIndex,
-            alpha,
-            { settings: OverlaySettings ->
-                val editor: SharedPreferences.Editor = sharedPreferences.edit()
-                editor.putInt("controllerIndex", settings.controllerIndex)
-                editor.putInt("alpha", settings.alpha)
-                editor.putBoolean("overlayEnabled", settings.isOverlayEnabled)
-                editor.putBoolean("vibrateOnTouchEnabled", settings.isVibrateOnTouchEnabled)
-                editor.apply()
-            }
-        )
 
-    fun getOverlaySettingsForInput(input: Input, width: Int, height: Int): InputOverlaySettings {
+//    private val sharedPreferences: SharedPreferences =
+//        context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+
+    fun getOverlaySettingsForInput(
+        input: OverlayInput,
+        width: Int,
+        height: Int
+    ): InputOverlaySettings {
         return InputOverlaySettings(
             getRectangle(input).orElseGet({ getDefaultRectangle(input, width, height) }),
-            alpha,
+            100,
             { settings: InputOverlaySettings ->
-                val editor: SharedPreferences.Editor = sharedPreferences.edit()
-                val rect: Rect? = settings.rect
-                editor.putInt(input.toString() + "left", rect!!.left)
-                editor.putInt(input.toString() + "top", rect.top)
-                editor.putInt(input.toString() + "right", rect.right)
-                editor.putInt(input.toString() + "bottom", rect.bottom)
-                editor.putInt(input.toString() + "alpha", settings.alpha)
-                editor.apply()
+//                val editor: SharedPreferences.Editor = sharedPreferences.edit()
+//                val rect: Rect? = settings.rect
+//                editor.putInt(input.toString() + "left", rect!!.left)
+//                editor.putInt(input.toString() + "top", rect.top)
+//                editor.putInt(input.toString() + "right", rect.right)
+//                editor.putInt(input.toString() + "bottom", rect.bottom)
+//                editor.putInt(input.toString() + "alpha", settings.alpha)
+//                editor.apply()
             }
         )
     }
 
-    private val isOverlayEnabled: Boolean
-        get() {
-            return sharedPreferences.getBoolean("overlayEnabled", true)
-        }
 
-    private val isVibrateOnTouchEnabled: Boolean
-        get() {
-            return sharedPreferences.getBoolean("vibrateOnTouchEnabled", true)
-        }
-
-    private val controllerIndex: Int
-        get() {
-            return sharedPreferences.getInt("controllerIndex", 0)
-        }
-
-    private val alpha: Int
-        get() {
-            return sharedPreferences.getInt(
-                "alpha",
-                DEFAULT_ALPHA
-            )
-        }
-
-    private fun getRectangle(input: Input): Optional<Rect> {
-        val left: Int = sharedPreferences.getInt(input.toString() + "left", -1)
-        val top: Int = sharedPreferences.getInt(input.toString() + "top", -1)
-        val right: Int = sharedPreferences.getInt(input.toString() + "right", -1)
-        val bottom: Int = sharedPreferences.getInt(input.toString() + "bottom", -1)
-        if (left == -1 || top == -1 || right == -1 || bottom == -1) {
-            return Optional.empty()
-        }
-        return Optional.of(Rect(left, top, right, bottom))
+    private fun getRectangle(input: OverlayInput): Optional<Rect> {
+//        val left: Int = sharedPreferences.getInt(input.toString() + "left", -1)
+//        val top: Int = sharedPreferences.getInt(input.toString() + "top", -1)
+//        val right: Int = sharedPreferences.getInt(input.toString() + "right", -1)
+//        val bottom: Int = sharedPreferences.getInt(input.toString() + "bottom", -1)
+//        if (left == -1 || top == -1 || right == -1 || bottom == -1) {
+//        }
+        return Optional.empty()
+//        return Optional.of(Rect(left, top, right, bottom))
     }
 
-    fun getDefaultRectangle(input: Input, width: Int, height: Int): Rect {
+    fun getDefaultRectangle(input: OverlayInput, width: Int, height: Int): Rect {
         val pmButtonRadius: Int = (height * 0.065f).toInt()
         val pmButtonsCentreX: Int = (width * 0.5f).toInt()
         val pmButtonsCentreY: Int = (height * 0.875f).toInt()
@@ -135,106 +155,106 @@ class InputOverlaySettingsProvider(context: Context) {
         val joystickClickRadius: Int = (joystickRadius * 0.7f).toInt()
         // TODO: move this to res?
         return when (input) {
-            Input.A -> Rect(
+            OverlayInput.A -> Rect(
                 abxyButtonsCentreX + roundButtonRadius,
                 abxyButtonsCentreY - roundButtonRadius,
                 abxyButtonsCentreX + roundButtonRadius * 3,
                 abxyButtonsCentreY + roundButtonRadius
             )
 
-            Input.B -> Rect(
+            OverlayInput.B -> Rect(
                 abxyButtonsCentreX - roundButtonRadius,
                 abxyButtonsCentreY + roundButtonRadius,
                 abxyButtonsCentreX + roundButtonRadius,
                 abxyButtonsCentreY + roundButtonRadius * 3
             )
 
-            Input.X, Input.ONE -> Rect(
+            OverlayInput.X, OverlayInput.ONE -> Rect(
                 abxyButtonsCentreX - roundButtonRadius,
                 abxyButtonsCentreY - roundButtonRadius * 3,
                 abxyButtonsCentreX + roundButtonRadius,
                 abxyButtonsCentreY - roundButtonRadius
             )
 
-            Input.Y, Input.TWO -> Rect(
+            OverlayInput.Y, OverlayInput.TWO -> Rect(
                 abxyButtonsCentreX - roundButtonRadius * 3,
                 abxyButtonsCentreY - roundButtonRadius,
                 abxyButtonsCentreX - roundButtonRadius,
                 abxyButtonsCentreY + roundButtonRadius
             )
 
-            Input.MINUS -> Rect(
+            OverlayInput.MINUS -> Rect(
                 pmButtonsCentreX - pmButtonRadius * 3,
                 pmButtonsCentreY - pmButtonRadius,
                 pmButtonsCentreX - pmButtonRadius,
                 pmButtonsCentreY + pmButtonRadius
             )
 
-            Input.PLUS -> Rect(
+            OverlayInput.PLUS -> Rect(
                 pmButtonsCentreX + pmButtonRadius,
                 pmButtonsCentreY - pmButtonRadius,
                 pmButtonsCentreX + pmButtonRadius * 3,
                 pmButtonsCentreY + pmButtonRadius
             )
 
-            Input.L -> Rect(
+            OverlayInput.L -> Rect(
                 triggersLLeft,
                 triggersTop,
                 triggersLLeft + rectangleButtonsWidth,
                 triggersTop + rectangleButtonsHeight
             )
 
-            Input.ZL -> Rect(
+            OverlayInput.ZL -> Rect(
                 triggersLLeft,
                 (triggersTop + rectangleButtonsHeight * 1.5f).toInt(),
                 triggersLLeft + rectangleButtonsWidth,
                 (triggersTop + rectangleButtonsHeight * 2.5f).toInt()
             )
 
-            Input.R -> Rect(
+            OverlayInput.R -> Rect(
                 triggersRLeft,
                 triggersTop,
                 triggersRLeft + rectangleButtonsWidth,
                 triggersTop + rectangleButtonsHeight
             )
 
-            Input.ZR -> Rect(
+            OverlayInput.ZR -> Rect(
                 triggersRLeft,
                 (triggersTop + rectangleButtonsHeight * 1.5f).toInt(),
                 triggersRLeft + rectangleButtonsWidth,
                 (triggersTop + rectangleButtonsHeight * 2.5f).toInt()
             )
 
-            Input.C, Input.HOME, Input.Z, Input.NUN_CHUCK_AXIS -> Rect()
-            Input.DPAD -> Rect(
+            OverlayInput.C, OverlayInput.HOME, OverlayInput.Z, OverlayInput.NUN_CHUCK_AXIS -> Rect()
+            OverlayInput.DPAD -> Rect(
                 dpadCentreX - dpadRadius,
                 dpadCentreY - dpadRadius,
                 dpadCentreX + dpadRadius,
                 dpadCentreY + dpadRadius
             )
 
-            Input.LEFT_AXIS -> Rect(
+            OverlayInput.LEFT_AXIS -> Rect(
                 leftJoystickCentreX - joystickRadius,
                 joystickCentreY - joystickRadius,
                 leftJoystickCentreX + joystickRadius,
                 joystickCentreY + joystickRadius
             )
 
-            Input.RIGHT_AXIS -> Rect(
+            OverlayInput.RIGHT_AXIS -> Rect(
                 rightJoystickCentreX - joystickRadius,
                 joystickCentreY - joystickRadius,
                 rightJoystickCentreX + joystickRadius,
                 joystickCentreY + joystickRadius
             )
 
-            Input.L_STICK -> Rect(
+            OverlayInput.L_STICK -> Rect(
                 (leftJoystickCentreX + joystickRadius * 1.5f - joystickClickRadius).toInt(),
                 (joystickCentreY + joystickRadius * 1.5f - joystickClickRadius).toInt(),
                 (leftJoystickCentreX + joystickRadius * 1.5f + joystickClickRadius).toInt(),
                 (joystickCentreY + joystickRadius * 1.5f + joystickClickRadius).toInt()
             )
 
-            Input.R_STICK -> Rect(
+            OverlayInput.R_STICK -> Rect(
                 (rightJoystickCentreX - joystickRadius * 1.5f - joystickClickRadius).toInt(),
                 (joystickCentreY + joystickRadius * 1.5f - joystickClickRadius).toInt(),
                 (rightJoystickCentreX - joystickRadius * 1.5f + joystickClickRadius).toInt(),
@@ -243,33 +263,34 @@ class InputOverlaySettingsProvider(context: Context) {
         }
     }
 
-    class OverlaySettings internal constructor(
-        var isVibrateOnTouchEnabled: Boolean,
-        var isOverlayEnabled: Boolean,
-        controllerIndex: Int,
-        alpha: Int,
-        private val overlaySettingsConsumer: (OverlaySettings) -> Unit
-    ) {
-        var controllerIndex: Int = 0
-            set(controllerIndex) {
-                require(controllerIndex in 0..<NativeInput.MAX_CONTROLLERS) { "Invalid controller index $controllerIndex" }
-                field = controllerIndex
-            }
-        var alpha: Int = 0
-            set(alpha) {
-                field = max(0, min(255, alpha))
-            }
 
-
-        init {
-            this.controllerIndex = controllerIndex
-            this.alpha = alpha
-        }
-
-        fun saveSettings() {
-            overlaySettingsConsumer(this)
-        }
-    }
+//    class OverlaySettings internal constructor(
+//        var isVibrateOnTouchEnabled: Boolean,
+//        var isOverlayEnabled: Boolean,
+//        controllerIndex: Int,
+//        alpha: Int,
+//        private val overlaySettingsConsumer: (OverlaySettings) -> Unit
+//    ) {
+//        var controllerIndex: Int = 0
+//            set(controllerIndex) {
+//                require(controllerIndex in 0..<NativeInput.MAX_CONTROLLERS) { "Invalid controller index $controllerIndex" }
+//                field = controllerIndex
+//            }
+//        var alpha: Int = 0
+//            set(alpha) {
+//                field = max(0, min(255, alpha))
+//            }
+//
+//
+//        init {
+//            this.controllerIndex = controllerIndex
+//            this.alpha = alpha
+//        }
+//
+//        fun saveSettings() {
+//            overlaySettingsConsumer(this)
+//        }
+//    }
 
     class InputOverlaySettings(
         var rect: Rect,
@@ -281,7 +302,5 @@ class InputOverlaySettingsProvider(context: Context) {
         }
     }
 
-    companion object {
-        private const val DEFAULT_ALPHA: Int = 64
-    }
+
 }

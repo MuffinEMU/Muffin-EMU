@@ -7,6 +7,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import androidx.activity.OnBackPressedCallback
+import androidx.annotation.Keep
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
@@ -17,7 +18,6 @@ import info.cemu.cemu.BuildConfig
 import info.cemu.cemu.R
 import info.cemu.cemu.databinding.ActivityEmulationBinding
 import info.cemu.cemu.emulation.EmulationFragment.OnEmulationErrorCallback
-import info.cemu.cemu.emulation.EmulationTextInputEditText.OnTextChangedListener
 import info.cemu.cemu.input.InputManager
 import info.cemu.cemu.nativeinterface.NativeSwkbd.setCurrentInputText
 import java.util.Objects
@@ -89,8 +89,8 @@ class EmulationActivity : AppCompatActivity() {
         val builder = MaterialAlertDialogBuilder(this)
         builder.setTitle(R.string.exit_confirmation_title)
             .setMessage(R.string.exit_confirm_message)
-            .setPositiveButton(R.string.yes) { _: DialogInterface?, _: Int -> quit() }
-            .setNegativeButton(R.string.no) { dialog: DialogInterface, _: Int -> dialog.cancel() }
+            .setPositiveButton(R.string.yes) { _, _ -> quit() }
+            .setNegativeButton(R.string.no) { _, _ -> }
             .show()
     }
 
@@ -102,10 +102,8 @@ class EmulationActivity : AppCompatActivity() {
         val builder = MaterialAlertDialogBuilder(this)
         builder.setTitle(R.string.error)
             .setMessage(emulationError)
-            .setNeutralButton(
-                R.string.quit
-            ) { dialog: DialogInterface, which: Int -> dialog.dismiss() }
-            .setOnDismissListener { dialog: DialogInterface? -> quit() }
+            .setNeutralButton(R.string.quit) { _, _ -> }
+            .setOnDismissListener { _ -> quit() }
             .show()
     }
 
@@ -129,7 +127,7 @@ class EmulationActivity : AppCompatActivity() {
         /**
          * This method is called by swkbd using JNI.
          */
-        @Suppress("unused")
+        @Keep
         @JvmStatic
         fun showEmulationTextInput(initialText: String?, maxLength: Int) {
             if (emulationActivityInstance == null || emulationActivityInstance!!.emulationTextInputDialog != null) {
@@ -171,7 +169,7 @@ class EmulationActivity : AppCompatActivity() {
         /**
          * This method is called by swkbd using JNI.
          */
-        @Suppress("unused")
+        @Keep
         @JvmStatic
         fun hideEmulationTextInput() {
             if (emulationActivityInstance?.emulationTextInputDialog == null) {

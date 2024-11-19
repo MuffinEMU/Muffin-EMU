@@ -22,7 +22,6 @@ import info.cemu.cemu.R
 import info.cemu.cemu.databinding.FragmentEmulationBinding
 import info.cemu.cemu.input.SensorManager
 import info.cemu.cemu.inputoverlay.InputOverlaySettingsProvider
-import info.cemu.cemu.inputoverlay.InputOverlaySettingsProvider.OverlaySettings
 import info.cemu.cemu.inputoverlay.InputOverlaySurfaceView
 import info.cemu.cemu.nativeinterface.NativeEmulation
 import info.cemu.cemu.nativeinterface.NativeEmulation.clearSurface
@@ -81,7 +80,7 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
             surfaceHolder: SurfaceHolder,
             format: Int,
             width: Int,
-            height: Int
+            height: Int,
         ) {
             try {
                 setSurfaceSize(width, height, isMainCanvas)
@@ -115,7 +114,6 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
     private var sensorManager: SensorManager? = null
     private var onEmulationErrorCallback: OnEmulationErrorCallback? = null
     private var hasEmulationError = false
-    private var overlaySettings: OverlaySettings? = null
 
     fun setOnEmulationErrorCallback(onEmulationErrorCallback: OnEmulationErrorCallback) {
         this.onEmulationErrorCallback = onEmulationErrorCallback
@@ -128,7 +126,6 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
             sensorManager = SensorManager(requireContext())
         }
         sensorManager!!.setIsLandscape(resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
-        overlaySettings = inputOverlaySettingsProvider.overlaySettings
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -248,7 +245,7 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
-        savedInstanceState: Bundle?
+        savedInstanceState: Bundle?,
     ): View {
         binding = FragmentEmulationBinding.inflate(inflater, container, false)
         inputOverlaySurfaceView = binding!!.inputOverlay
@@ -282,12 +279,12 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
         settingsMenu!!.setOnMenuItemClickListener(this@EmulationFragment)
         binding!!.emulationSettingsButton.setOnClickListener { v: View? -> settingsMenu!!.show() }
         val menu = settingsMenu!!.menu
-        menu.findItem(R.id.show_input_overlay).setChecked(overlaySettings!!.isOverlayEnabled)
-        if (!overlaySettings!!.isOverlayEnabled) {
-            menu.findItem(R.id.reset_inputs).setEnabled(false)
-            menu.findItem(R.id.edit_inputs).setEnabled(false)
-            inputOverlaySurfaceView!!.visibility = View.GONE
-        }
+//        menu.findItem(R.id.show_input_overlay).setChecked(overlaySettings!!.isOverlayEnabled)
+//        if (!overlaySettings!!.isOverlayEnabled) {
+//            menu.findItem(R.id.reset_inputs).setEnabled(false)
+//            menu.findItem(R.id.edit_inputs).setEnabled(false)
+//            inputOverlaySurfaceView!!.visibility = View.GONE
+//        }
         val mainCanvas = binding!!.mainCanvas
         try {
             val testSurfaceTexture = SurfaceTexture(0)
@@ -315,7 +312,7 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
                 holder: SurfaceHolder,
                 format: Int,
                 width: Int,
-                height: Int
+                height: Int,
             ) {
                 if (hasEmulationError) {
                     return

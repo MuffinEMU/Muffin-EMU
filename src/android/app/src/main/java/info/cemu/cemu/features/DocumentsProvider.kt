@@ -22,45 +22,29 @@ import java.io.IOException
 import java.util.Objects
 
 class DocumentsProvider : DocumentsProvider() {
-    private var baseDirectory: File? = null
-    private val applicationName =
-        CemuApplication.application.applicationInfo.loadLabel(CemuApplication.application.packageManager)
-            .toString()
-
-    private val DEFAULT_ROOT_PROJECTION = arrayOf(
-        DocumentsContract.Root.COLUMN_ROOT_ID,
-        DocumentsContract.Root.COLUMN_MIME_TYPES,
-        DocumentsContract.Root.COLUMN_FLAGS,
-        DocumentsContract.Root.COLUMN_ICON,
-        DocumentsContract.Root.COLUMN_TITLE,
-        DocumentsContract.Root.COLUMN_SUMMARY,
-        DocumentsContract.Root.COLUMN_DOCUMENT_ID,
-        DocumentsContract.Root.COLUMN_AVAILABLE_BYTES
-    )
-
-    private val DEFAULT_DOCUMENT_PROJECTION = arrayOf(
-        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-        DocumentsContract.Document.COLUMN_MIME_TYPE,
-        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-        DocumentsContract.Document.COLUMN_LAST_MODIFIED,
-        DocumentsContract.Document.COLUMN_FLAGS,
-        DocumentsContract.Document.COLUMN_SIZE
-    )
-
-    init {
-        try {
-            baseDirectory = CemuApplication.application.internalFolder.canonicalFile
-        } catch (e: IOException) {
-            throw RuntimeException(e)
+    private var _baseDirectory: File? = null
+    private val baseDirectory: File
+        get() {
+            if (_baseDirectory == null) {
+                try {
+                    _baseDirectory = CemuApplication.Application.internalFolder.canonicalFile
+                } catch (e: IOException) {
+                    throw RuntimeException(e)
+                }
+            }
+            return _baseDirectory!!
         }
-    }
+
+    private val applicationName =
+        CemuApplication.Application.applicationInfo.loadLabel(CemuApplication.Application.packageManager)
+            .toString()
 
     override fun onCreate(): Boolean {
         return true
     }
 
     override fun queryRoots(projection: Array<String>?): Cursor {
-        val cursor = MatrixCursor(projection ?: DEFAULT_ROOT_PROJECTION)
+        val cursor = MatrixCursor(projection ?: DefaultRootProjection)
         cursor.newRow().add(DocumentsContract.Root.COLUMN_ROOT_ID, ROOT_ID)
             .add(DocumentsContract.Root.COLUMN_SUMMARY, null)
             .add(
@@ -68,16 +52,16 @@ class DocumentsProvider : DocumentsProvider() {
                 DocumentsContract.Root.FLAG_SUPPORTS_CREATE or DocumentsContract.Root.FLAG_SUPPORTS_IS_CHILD
             )
             .add(DocumentsContract.Root.COLUMN_TITLE, applicationName)
-            .add(DocumentsContract.Root.COLUMN_DOCUMENT_ID, getDocumentId(baseDirectory!!))
+            .add(DocumentsContract.Root.COLUMN_DOCUMENT_ID, getDocumentId(baseDirectory))
             .add(DocumentsContract.Root.COLUMN_MIME_TYPES, "*/*")
-            .add(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES, baseDirectory!!.freeSpace)
+            .add(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES, baseDirectory.freeSpace)
             .add(DocumentsContract.Root.COLUMN_ICON, R.mipmap.ic_launcher)
         return cursor
     }
 
     @Throws(FileNotFoundException::class)
     override fun queryDocument(documentId: String, projection: Array<String>?): Cursor {
-        val cursor = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
+        val cursor = MatrixCursor(projection ?: DefaultDocumentProjection)
         includeFile(cursor, documentId, null)
         return cursor
     }
@@ -139,11 +123,11 @@ class DocumentsProvider : DocumentsProvider() {
                 continue
             }
             if (!file.delete()) {
-                throw FileNotFoundException("Couldn't delete file " + file.path)
+                throw FileNotFoundException("Couldn't delete file ${file.path}")
             }
         }
         if (!dirFile.delete()) {
-            throw FileNotFoundException("Couldn't delete file " + dirFile.path)
+            throw FileNotFoundException("Couldn't delete file ${dirFile.path}")
         }
     }
 
@@ -177,10 +161,10 @@ class DocumentsProvider : DocumentsProvider() {
 
         try {
             if (!sourceFile.renameTo(destFile)) {
-                throw FileNotFoundException("Couldn't rename document from '" + sourceFile.name + "' to '" + destFile.name + "'")
+                throw FileNotFoundException("Couldn't rename document from '${sourceFile.name}' to '${destFile.name}'")
             }
         } catch (exception: Exception) {
-            throw FileNotFoundException("Couldn't rename document from '" + sourceFile.name + "' to '" + destFile.name + "':" + exception.message)
+            throw FileNotFoundException("Couldn't rename document from '${sourceFile.name}' to 'destFile.name': ${exception.message}")
         }
 
         return getDocumentId(destFile)
@@ -206,7 +190,7 @@ class DocumentsProvider : DocumentsProvider() {
                 }
             }
         } catch (exception: IOException) {
-            throw FileNotFoundException("Couldn't copy document '" + sourceDocumentId + "': " + exception.message)
+            throw FileNotFoundException("Couldn't copy document '$sourceDocumentId': ${exception.message}")
         }
         return getDocumentId(newFile)
     }
@@ -233,7 +217,7 @@ class DocumentsProvider : DocumentsProvider() {
         projection: Array<String>?,
         sortOrder: String
     ): Cursor {
-        val cursor = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
+        val cursor = MatrixCursor(projection ?: DefaultDocumentProjection)
         val parent = getFile(parentDocumentId)
         val files = parent.listFiles() ?: return cursor
         for (file in files) {
@@ -306,18 +290,19 @@ class DocumentsProvider : DocumentsProvider() {
         }
         flags = (flags or DocumentsContract.Document.FLAG_SUPPORTS_DELETE
                 or DocumentsContract.Document.FLAG_SUPPORTS_REMOVE)
-        val curorRowBuilder =
-            cursor.newRow().add(DocumentsContract.Document.COLUMN_DOCUMENT_ID, localDocumentId)
-                .add(
-                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                    if (localFile == baseDirectory) applicationName else localFile.name
-                )
-                .add(DocumentsContract.Document.COLUMN_SIZE, localFile.length())
-                .add(DocumentsContract.Document.COLUMN_MIME_TYPE, getTypeForFile(localFile))
-                .add(DocumentsContract.Document.COLUMN_LAST_MODIFIED, localFile.lastModified())
-                .add(DocumentsContract.Document.COLUMN_FLAGS, flags)
-        if (localFile == baseDirectory) {
-            curorRowBuilder.add(DocumentsContract.Root.COLUMN_ICON, R.mipmap.ic_launcher)
+        cursor.newRow().apply {
+            add(DocumentsContract.Document.COLUMN_DOCUMENT_ID, localDocumentId)
+            add(
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                if (localFile == baseDirectory) applicationName else localFile.name
+            )
+            add(DocumentsContract.Document.COLUMN_SIZE, localFile.length())
+            add(DocumentsContract.Document.COLUMN_MIME_TYPE, getTypeForFile(localFile))
+            add(DocumentsContract.Document.COLUMN_LAST_MODIFIED, localFile.lastModified())
+            add(DocumentsContract.Document.COLUMN_FLAGS, flags)
+            if (localFile == baseDirectory) {
+                add(DocumentsContract.Root.COLUMN_ICON, R.mipmap.ic_launcher)
+            }
         }
     }
 
@@ -344,7 +329,7 @@ class DocumentsProvider : DocumentsProvider() {
     private fun getFile(documentId: String?): File {
         Objects.requireNonNull(documentId)
         if (documentId!!.startsWith(ROOT_ID)) {
-            val file = resolve(baseDirectory!!, documentId.substring(ROOT_ID.length + 1))
+            val file = resolve(baseDirectory, documentId.substring(ROOT_ID.length + 1))
             if (!file.exists()) {
                 throw FileNotFoundException(file.absolutePath + " " + documentId + " not found")
             }
@@ -355,11 +340,29 @@ class DocumentsProvider : DocumentsProvider() {
     }
 
     private fun getDocumentId(file: File): String {
-        return ROOT_ID + "/" + baseDirectory!!.toPath().relativize(file.toPath()).toString()
+        return ROOT_ID + "/" + baseDirectory.toPath().relativize(file.toPath()).toString()
     }
 
     companion object {
         const val ROOT_ID: String = "root"
         const val AUTHORITY: String = BuildConfig.APPLICATION_ID + ".provider"
+        private val DefaultRootProjection = arrayOf(
+            DocumentsContract.Root.COLUMN_ROOT_ID,
+            DocumentsContract.Root.COLUMN_MIME_TYPES,
+            DocumentsContract.Root.COLUMN_FLAGS,
+            DocumentsContract.Root.COLUMN_ICON,
+            DocumentsContract.Root.COLUMN_TITLE,
+            DocumentsContract.Root.COLUMN_SUMMARY,
+            DocumentsContract.Root.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Root.COLUMN_AVAILABLE_BYTES
+        )
+        private val DefaultDocumentProjection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED,
+            DocumentsContract.Document.COLUMN_FLAGS,
+            DocumentsContract.Document.COLUMN_SIZE
+        )
     }
 }

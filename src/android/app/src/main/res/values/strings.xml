@@ -78,9 +78,9 @@
     <string name="vsync">VSync</string>
     <string name="accurate_barriers">Accurate barriers</string>
     <string name="accurate_barriers_description">Disabling the accurate barriers option will lead to flickering graphics but may improve performance. It is highly recommended to leave it turned on</string>
-    <string name="tv">TV</string>
+    <string name="tv_audio">TV</string>
     <string name="tv_audio_description">Enable audio output for the Wii U TV</string>
-    <string name="gamepad">Gamepad</string>
+    <string name="gamepad_audio">Gamepad</string>
     <string name="gamepad_audio_description">Enable audio output for the Wii U Gamepad</string>
     <string name="audio_settings">Audio settings</string>
     <string name="mono">Mono</string>
@@ -89,12 +89,12 @@
     <string name="tv_channels">TV channels</string>
     <string name="gamepad_channels">Gamepad channels</string>
     <string name="tv_volume">TV volume</string>
-    <string name="pad_volume">Gamepad volume</string>
+    <string name="gamepad_volume">Gamepad volume</string>
     <string name="search_games">Search games</string>
     <string name="no_games_found">No games were found</string>
     <string name="graphic_packs">Graphic packs</string>
     <string name="download_graphic_packs_description">Download latest community graphic packs</string>
-    <string name="download_graphic_packs_title">Download graphic packs</string>
+    <string name="download_graphic_packs">Download graphic packs</string>
     <string name="search_graphic_packs_title">Search</string>
     <string name="checking_version_download_text">Checking version</string>
     <string name="graphic_packs_download_text">Downloading graphic packs</string>
@@ -110,7 +110,7 @@
     <string name="graphic_pack_description">Graphic pack description</string>
     <string name="graphic_pack_no_description">This graphic pack has no description</string>
     <string name="graphic_pack_icon_description">Graphic pack icon</string>
-    <string name="search_graphic_packs_action">Search graphic packs</string>
+    <string name="search_graphic_packs">Search graphic packs</string>
     <string name="input_mode_edit_size">Edit input size</string>
     <string name="input_mode_edit_position">Edit input positions</string>
     <string name="input_mode_default">Exited input edit mode</string>
@@ -167,7 +167,7 @@
     <string name="add_game_path">Add game path</string>
     <string name="remove_game_path">Remove game path</string>
     <string name="game_paths_settings">Game paths</string>
-    <string name="game_path_already_added">Game path already added</string>
+    <string name="games_path_already_added">Games path already added</string>
     <string name="quit">Quit</string>
     <string name="error">Error</string>
     <string name="game_files_unknown_error">Unable to launch game\nPath: %1$s</string>
@@ -246,4 +246,25 @@
     <string name="graphic_pack_is_enabled">Graphic pack is enabled</string>
     <string name="toggle_screen">Toggle screen</string>
     <string name="toggle_screen_description">Makes the \"show screen\" button toggle between the TV and gamepad screens</string>
+    <string name="load_shared_libraries">Load shared libraries</string>
+    <string name="load_shared_libraries_description">Load libraries from the cafeLibs directory</string>
+    <string name="shader_multiplication_accuracy">Shader multiplication accuracy</string>
+    <string name="shader_multiplication_accuracy_description">Controls the accuracy of floating point multiplication in shaders</string>
+    <string name="exit_search_description">Exit search</string>
+    <string name="clear_search">Clear search</string>
+    <string name="nav_back">Navigate back</string>
+    <string name="title_path">Path</string>
+    <string name="game_icon_empty">No icon found for game available</string>
+    <string name="graphic_packs_installed_only">Installed only</string>
+    <string name="title_activity_graphic_packs2">GraphicPacksActivity2</string>
+    <string name="about_cemu">About Cemu</string>
+    <string name="cemu_version">Version: %s</string>
+    <string name="cemu" translatable="false">Cemu</string>
+    <string name="cemu_description">Cemu is a Wii U emulator.\n\nWii and Wii U are trademarks of Nintendo.\nCemu is not affiliated with Nintendo.</string>
+    <string name="original_authors">Original authors: %s</string>
+    <string name="cemu_original_authors" translatable="false">Exzap, Petergov</string>
+    <string name="used_libraries">Used libraries:</string>
+    <string name="website">Website:</string>
+    <string name="ih264_library_description">Modified ih264 from Android project</string>
+    <string name="more_options">More options</string>
 </resources>

@@ -37,7 +37,7 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
         val width = width
         val height = height
 
-        for (input in InputOverlaySettingsProvider.Input.entries) {
+        for (input in InputOverlaySettingsProvider.OverlayInput.entries) {
             val inputSettings = settingsProvider.getOverlaySettingsForInput(input, width, height)
             inputSettings.rect = settingsProvider.getDefaultRectangle(input, width, height)
             inputSettings.saveSettings()
@@ -89,23 +89,22 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
         ZL,
         ZR,
     }
-
-
+    
     enum class OverlayJoystick {
         LEFT,
         RIGHT,
     }
 
     private var nativeControllerType = -1
-    var controllerIndex: Int
+    var controllerIndex: Int = 0
 
     private var inputs: MutableList<Input>? = null
     private val settingsProvider: InputOverlaySettingsProvider
     private val vibrator: Vibrator?
     private val buttonTouchVibrationEffect =
         VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
-    private val vibrateOnTouch: Boolean
-    private val inputsMinWidthHeight: Int
+    private var vibrateOnTouch: Boolean = false
+    private var inputsMinWidthHeight: Int = 24
 
     private fun getVibrator(context: Context): Vibrator {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -113,6 +112,7 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
                 context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
             return vibratorManager.defaultVibrator
         }
+        @Suppress("DEPRECATION")
         return context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
     }
 
@@ -311,7 +311,7 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
         onJoystickChange(joystick, up, down, left, right)
     }
 
-    private fun getOverlaySettingsForInput(input: InputOverlaySettingsProvider.Input): InputOverlaySettings {
+    private fun getOverlaySettingsForInput(input: InputOverlaySettingsProvider.OverlayInput): InputOverlaySettings {
         return settingsProvider.getOverlaySettingsForInput(input, width, height)
     }
 
@@ -334,21 +334,21 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
                 R.drawable.button_minus,
                 ::onButtonStateChange,
                 OverlayButton.MINUS,
-                getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.MINUS)
+                getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.MINUS)
             ),
             RoundButton(
                 resources,
                 R.drawable.button_plus,
                 ::onButtonStateChange,
                 OverlayButton.PLUS,
-                getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.PLUS)
+                getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.PLUS)
             ),
             DPadInput(
                 resources,
                 R.drawable.dpad_background,
                 R.drawable.dpad_button,
                 ::onButtonStateChange,
-                getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.DPAD)
+                getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.DPAD)
             ),
             Joystick(
                 resources,
@@ -356,21 +356,21 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
                 R.drawable.stick_inner,
                 ::onJoystickStateChange,
                 OverlayJoystick.LEFT,
-                getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.LEFT_AXIS)
+                getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.LEFT_AXIS)
             ),
             RoundButton(
                 resources,
                 R.drawable.button_a,
                 ::onButtonStateChange,
                 OverlayButton.A,
-                getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.A)
+                getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.A)
             ),
             RoundButton(
                 resources,
                 R.drawable.button_b,
                 ::onButtonStateChange,
                 OverlayButton.B,
-                getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.B)
+                getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.B)
             )
         ).apply {
             if (nativeControllerType != NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE) {
@@ -380,42 +380,42 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
                         R.drawable.button_x,
                         ::onButtonStateChange,
                         OverlayButton.X,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.X)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.X)
                     ),
                     RoundButton(
                         resources,
                         R.drawable.button_y,
                         ::onButtonStateChange,
                         OverlayButton.Y,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.Y)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.Y)
                     ),
                     RectangleButton(
                         resources,
                         R.drawable.button_zl,
                         ::onButtonStateChange,
                         OverlayButton.ZL,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.ZL)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.ZL)
                     ),
                     RectangleButton(
                         resources,
                         R.drawable.button_l,
                         ::onButtonStateChange,
                         OverlayButton.L,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.L)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.L)
                     ),
                     RectangleButton(
                         resources,
                         R.drawable.button_zr,
                         ::onButtonStateChange,
                         OverlayButton.ZR,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.ZR)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.ZR)
                     ),
                     RectangleButton(
                         resources,
                         R.drawable.button_r,
                         ::onButtonStateChange,
                         OverlayButton.R,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.R)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.R)
                     ),
                     Joystick(
                         resources,
@@ -423,7 +423,7 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
                         R.drawable.stick_inner,
                         ::onJoystickStateChange,
                         OverlayJoystick.RIGHT,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.RIGHT_AXIS)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.RIGHT_AXIS)
                     )
                 )
             }
@@ -434,21 +434,21 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
                         R.drawable.button_c,
                         ::onButtonStateChange,
                         OverlayButton.C,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.C)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.C)
                     ),
                     RoundButton(
                         resources,
                         R.drawable.button_z,
                         ::onButtonStateChange,
                         OverlayButton.Z,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.Z)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.Z)
                     ),
                     RoundButton(
                         resources,
                         R.drawable.button_home,
                         ::onButtonStateChange,
                         OverlayButton.HOME,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.HOME)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.HOME)
                     )
                 )
             }
@@ -461,14 +461,14 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
                         R.drawable.button_stick,
                         ::onButtonStateChange,
                         OverlayButton.L_STICK,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.L_STICK)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.L_STICK)
                     ),
                     RoundButton(
                         resources,
                         R.drawable.button_stick,
                         ::onButtonStateChange,
                         OverlayButton.R_STICK,
-                        getOverlaySettingsForInput(InputOverlaySettingsProvider.Input.R_STICK)
+                        getOverlaySettingsForInput(InputOverlaySettingsProvider.OverlayInput.R_STICK)
                     )
                 )
             }

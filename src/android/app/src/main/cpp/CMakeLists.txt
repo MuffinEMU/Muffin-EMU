@@ -6,6 +6,7 @@ add_library(CemuAndroid SHARED
         GameTitleLoader.cpp
         Image.cpp
         JNIUtils.cpp
+        NativeActiveSettings.cpp
         NativeEmulation.cpp
         NativeGameTitles.cpp
         NativeGraphicPacks.cpp

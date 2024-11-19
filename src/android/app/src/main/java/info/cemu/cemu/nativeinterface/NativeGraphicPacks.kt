@@ -1,11 +1,11 @@
 package info.cemu.cemu.nativeinterface
 
+import androidx.annotation.Keep
 import java.util.Objects
 
 object NativeGraphicPacks {
     @JvmStatic
-    val graphicPackBasicInfos: ArrayList<GraphicPackBasicInfo?>?
-        external get
+    external fun getGraphicPackBasicInfos(): List<GraphicPackBasicInfo>
 
     @JvmStatic
     external fun refreshGraphicPacks()
@@ -22,22 +22,23 @@ object NativeGraphicPacks {
     @JvmStatic
     external fun getGraphicPackPresets(id: Long): ArrayList<GraphicPackPreset>
 
-    @JvmRecord
+    @Keep
     data class GraphicPackBasicInfo(
-        @JvmField val id: Long,
-        @JvmField val virtualPath: String,
-        @JvmField val enabled: Boolean,
-        @JvmField val titleIds: ArrayList<Long>
+        val id: Long,
+        val virtualPath: String,
+        val enabled: Boolean,
+        val titleIds: ArrayList<Long>
     )
 
+    @Keep
     class GraphicPackPreset(
         private val graphicPackId: Long,
-        @JvmField val category: String?,
-        @JvmField val presets: ArrayList<String>,
-        private var activePreset: String
+        val category: String?,
+        val presets: ArrayList<String>,
+        private var _activePreset: String
     ) {
         override fun hashCode(): Int {
-            return Objects.hash(graphicPackId, category, presets, activePreset)
+            return Objects.hash(graphicPackId, category, presets, _activePreset)
         }
 
         override fun equals(other: Any?): Boolean {
@@ -53,33 +54,32 @@ object NativeGraphicPacks {
             return false
         }
 
-        fun getActivePreset(): String {
-            return activePreset
-        }
-
-        fun setActivePreset(activePreset: String) {
-            require(
-                !presets.stream()
-                    .noneMatch { s: String -> s == activePreset }) { "Trying to set an invalid preset: $activePreset" }
-            setGraphicPackActivePreset(graphicPackId, category, activePreset)
-            this.activePreset = activePreset
-        }
+        var activePreset: String
+            get() = _activePreset
+            set(value) {
+                require(presets.any { it == value }) { "Trying to set an invalid preset: $value" }
+                setGraphicPackActivePreset(graphicPackId, category, value)
+                _activePreset = value
+            }
     }
 
+    @Keep
     class GraphicPack(
-        @JvmField val id: Long,
+        val id: Long,
         private var active: Boolean,
-        @JvmField val name: String,
-        @JvmField val description: String,
-        private var presets: ArrayList<GraphicPackPreset>
+        val name: String,
+        val description: String,
+        private var _presets: ArrayList<GraphicPackPreset>
     ) {
         fun isActive(): Boolean {
             return active
         }
 
-        fun getPresets(): List<GraphicPackPreset> = presets
+        val presets: List<GraphicPackPreset>
+            get() = _presets
+
         fun reloadPresets() {
-            presets = getGraphicPackPresets(id)
+            _presets = getGraphicPackPresets(id)
         }
 
         fun setActive(active: Boolean) {
