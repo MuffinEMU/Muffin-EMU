@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.text.InputFilter.LengthFilter
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.View
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.Keep
 import androidx.appcompat.app.AlertDialog
@@ -20,11 +19,9 @@ import info.cemu.cemu.databinding.ActivityEmulationBinding
 import info.cemu.cemu.emulation.EmulationFragment.OnEmulationErrorCallback
 import info.cemu.cemu.input.InputManager
 import info.cemu.cemu.nativeinterface.NativeSwkbd.setCurrentInputText
-import java.util.Objects
 import kotlin.system.exitProcess
 
 class EmulationActivity : AppCompatActivity() {
-    private var hasEmulationError = false
     private val inputManager = InputManager()
     private var emulationTextInputDialog: AlertDialog? = null
 
@@ -95,10 +92,6 @@ class EmulationActivity : AppCompatActivity() {
     }
 
     private fun onEmulationError(emulationError: String?) {
-        if (hasEmulationError) {
-            return
-        }
-        hasEmulationError = true
         val builder = MaterialAlertDialogBuilder(this)
         builder.setTitle(R.string.error)
             .setMessage(emulationError)
@@ -143,19 +136,13 @@ class EmulationActivity : AppCompatActivity() {
                 val inputEditText =
                     inputEditTextLayout.requireViewById<EmulationTextInputEditText>(R.id.emulation_input_text)
                 inputEditText.updateText(initialText)
-                val dialog = MaterialAlertDialogBuilder(
-                    emulationActivityInstance!!
-                )
+                val dialog = MaterialAlertDialogBuilder(emulationActivityInstance!!)
                     .setView(inputEditTextLayout)
                     .setCancelable(false)
-                    .setPositiveButton(
-                        R.string.done
-                    ) { d: DialogInterface?, w: Int -> }.show()
-                val doneButton = Objects.requireNonNull(
-                    dialog.getButton(DialogInterface.BUTTON_POSITIVE)
-                )
+                    .setPositiveButton(R.string.done) { _, _ -> }.show()
+                val doneButton = dialog.getButton(DialogInterface.BUTTON_POSITIVE)!!
                 doneButton.isEnabled = false
-                doneButton.setOnClickListener { _: View? -> inputEditText.onFinishedEdit() }
+                doneButton.setOnClickListener { _ -> inputEditText.onFinishedEdit() }
                 inputEditText.setOnTextChangedListener {
                     doneButton.isEnabled = it.isNotEmpty()
                 }

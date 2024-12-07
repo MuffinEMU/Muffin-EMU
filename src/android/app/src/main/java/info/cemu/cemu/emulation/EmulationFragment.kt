@@ -21,8 +21,9 @@ import androidx.fragment.app.Fragment
 import info.cemu.cemu.R
 import info.cemu.cemu.databinding.FragmentEmulationBinding
 import info.cemu.cemu.input.SensorManager
-import info.cemu.cemu.inputoverlay.InputOverlaySettingsProvider
+import info.cemu.cemu.inputoverlay.InputOverlaySettingsManager
 import info.cemu.cemu.inputoverlay.InputOverlaySurfaceView
+import info.cemu.cemu.inputoverlay.OverlaySettings
 import info.cemu.cemu.nativeinterface.NativeEmulation
 import info.cemu.cemu.nativeinterface.NativeEmulation.clearSurface
 import info.cemu.cemu.nativeinterface.NativeEmulation.initializeRenderer
@@ -35,40 +36,43 @@ import info.cemu.cemu.nativeinterface.NativeInput.onTouchDown
 import info.cemu.cemu.nativeinterface.NativeInput.onTouchMove
 import info.cemu.cemu.nativeinterface.NativeInput.onTouchUp
 
-@SuppressLint("ClickableViewAccessibility")
-class EmulationFragment(private val launchPath: String) : Fragment(),
-    PopupMenu.OnMenuItemClickListener {
-    private class OnSurfaceTouchListener(val isTV: Boolean) : OnTouchListener {
-        var currentPointerId: Int = -1
 
-        override fun onTouch(v: View, event: MotionEvent): Boolean {
-            val pointerIndex = event.actionIndex
-            val pointerId = event.getPointerId(pointerIndex)
-            if (currentPointerId != -1 && pointerId != currentPointerId) {
-                return false
-            }
-            val x = event.getX(pointerIndex).toInt()
-            val y = event.getY(pointerIndex).toInt()
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    onTouchDown(x, y, isTV)
-                    return true
-                }
+private class OnSurfaceTouchListener(val isTV: Boolean) : OnTouchListener {
+    var currentPointerId: Int = -1
 
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
-                    currentPointerId = -1
-                    onTouchUp(x, y, isTV)
-                    return true
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    onTouchMove(x, y, isTV)
-                    return true
-                }
-            }
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouch(v: View, event: MotionEvent): Boolean {
+        val pointerIndex = event.actionIndex
+        val pointerId = event.getPointerId(pointerIndex)
+        if (currentPointerId != -1 && pointerId != currentPointerId) {
             return false
         }
+        val x = event.getX(pointerIndex).toInt()
+        val y = event.getY(pointerIndex).toInt()
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                onTouchDown(x, y, isTV)
+                return true
+            }
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                currentPointerId = -1
+                onTouchUp(x, y, isTV)
+                return true
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                onTouchMove(x, y, isTV)
+                return true
+            }
+        }
+        return false
     }
+}
+
+class EmulationFragment(private val launchPath: String) : Fragment(),
+    PopupMenu.OnMenuItemClickListener {
+
 
     private inner class SurfaceHolderCallback(val isMainCanvas: Boolean) : SurfaceHolder.Callback {
         var surfaceSet: Boolean = false
@@ -107,8 +111,9 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
     private var isGameRunning = false
     private var padCanvas: SurfaceView? = null
     private var toast: Toast? = null
-    private var binding: FragmentEmulationBinding? = null
+    private lateinit var binding: FragmentEmulationBinding
     private var isMotionEnabled = false
+    private lateinit var overlaySettings: OverlaySettings
     private var settingsMenu: PopupMenu? = null
     private var inputOverlaySurfaceView: InputOverlaySurfaceView? = null
     private var sensorManager: SensorManager? = null
@@ -121,45 +126,43 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val inputOverlaySettingsProvider = InputOverlaySettingsProvider(requireContext())
-        if (sensorManager == null) {
-            sensorManager = SensorManager(requireContext())
-        }
-        sensorManager!!.setIsLandscape(resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
+        val inputOverlaySettingsManager = InputOverlaySettingsManager(requireContext())
+        overlaySettings = inputOverlaySettingsManager.overlaySettings
+        sensorManager = SensorManager(requireContext())
+        sensorManager?.setIsLandscape(resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (sensorManager != null) {
-            sensorManager!!.setIsLandscape(newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE)
-        }
+        sensorManager?.setIsLandscape(newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE)
     }
 
     override fun onPause() {
         super.onPause()
-        sensorManager!!.pauseListening()
+        sensorManager?.pauseListening()
     }
 
     override fun onResume() {
         super.onResume()
         if (isMotionEnabled) {
-            sensorManager!!.startListening()
+            sensorManager?.startListening()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
         if (sensorManager != null) {
-            sensorManager!!.pauseListening()
+            sensorManager?.pauseListening()
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun createPadCanvas() {
         if (padCanvas != null) {
             return
         }
         padCanvas = SurfaceView(requireContext())
-        binding!!.canvasesLayout.addView(
+        binding.canvasesLayout.addView(
             padCanvas,
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1.0f)
         )
@@ -179,7 +182,7 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
         if (padCanvas == null) {
             return
         }
-        binding!!.canvasesLayout.removeView(padCanvas)
+        binding.canvasesLayout.removeView(padCanvas)
         padCanvas = null
     }
 
@@ -200,9 +203,9 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
             return true
         }
         if (itemId == R.id.edit_inputs) {
-            binding!!.editInputsLayout.visibility = View.VISIBLE
-            binding!!.finishEditInputsButton.visibility = View.VISIBLE
-            binding!!.moveInputsButton.performClick()
+            binding.editInputsLayout.visibility = View.VISIBLE
+            binding.finishEditInputsButton.visibility = View.VISIBLE
+            binding.moveInputsButton.performClick()
             return true
         }
         if (itemId == R.id.replace_tv_with_pad) {
@@ -218,9 +221,9 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
         if (itemId == R.id.enable_motion) {
             isMotionEnabled = !item.isChecked
             if (isMotionEnabled) {
-                sensorManager!!.startListening()
+                sensorManager?.startListening()
             } else {
-                sensorManager!!.pauseListening()
+                sensorManager?.pauseListening()
             }
             item.setChecked(isMotionEnabled)
             return true
@@ -242,50 +245,51 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
         return false
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View {
         binding = FragmentEmulationBinding.inflate(inflater, container, false)
-        inputOverlaySurfaceView = binding!!.inputOverlay
+        inputOverlaySurfaceView = binding.inputOverlay
 
-        binding!!.moveInputsButton.setOnClickListener { v: View? ->
+        binding.moveInputsButton.setOnClickListener { v: View? ->
             if (inputOverlaySurfaceView!!.getInputMode() == InputOverlaySurfaceView.InputMode.EDIT_POSITION) {
                 return@setOnClickListener
             }
-            binding!!.resizeInputsButton.alpha = 0.5f
-            binding!!.moveInputsButton.alpha = 1.0f
+            binding.resizeInputsButton.alpha = 0.5f
+            binding.moveInputsButton.alpha = 1.0f
             toastMessage(R.string.input_mode_edit_position)
             inputOverlaySurfaceView!!.setInputMode(InputOverlaySurfaceView.InputMode.EDIT_POSITION)
         }
-        binding!!.resizeInputsButton.setOnClickListener { v: View? ->
+        binding.resizeInputsButton.setOnClickListener { v: View? ->
             if (inputOverlaySurfaceView!!.getInputMode() == InputOverlaySurfaceView.InputMode.EDIT_SIZE) {
                 return@setOnClickListener
             }
-            binding!!.moveInputsButton.alpha = 0.5f
-            binding!!.resizeInputsButton.alpha = 1.0f
+            binding.moveInputsButton.alpha = 0.5f
+            binding.resizeInputsButton.alpha = 1.0f
             toastMessage(R.string.input_mode_edit_size)
             inputOverlaySurfaceView!!.setInputMode(InputOverlaySurfaceView.InputMode.EDIT_SIZE)
         }
-        binding!!.finishEditInputsButton.setOnClickListener { v: View? ->
+        binding.finishEditInputsButton.setOnClickListener { v: View? ->
             inputOverlaySurfaceView!!.setInputMode(InputOverlaySurfaceView.InputMode.DEFAULT)
-            binding!!.finishEditInputsButton.visibility = View.GONE
-            binding!!.editInputsLayout.visibility = View.GONE
+            binding.finishEditInputsButton.visibility = View.GONE
+            binding.editInputsLayout.visibility = View.GONE
             toastMessage(R.string.input_mode_default)
         }
-        settingsMenu = PopupMenu(requireContext(), binding!!.emulationSettingsButton)
+        settingsMenu = PopupMenu(requireContext(), binding.emulationSettingsButton)!!
         settingsMenu!!.menuInflater.inflate(R.menu.emulation, settingsMenu!!.menu)
         settingsMenu!!.setOnMenuItemClickListener(this@EmulationFragment)
-        binding!!.emulationSettingsButton.setOnClickListener { v: View? -> settingsMenu!!.show() }
+        binding.emulationSettingsButton.setOnClickListener { v: View? -> settingsMenu!!.show() }
         val menu = settingsMenu!!.menu
-//        menu.findItem(R.id.show_input_overlay).setChecked(overlaySettings!!.isOverlayEnabled)
-//        if (!overlaySettings!!.isOverlayEnabled) {
-//            menu.findItem(R.id.reset_inputs).setEnabled(false)
-//            menu.findItem(R.id.edit_inputs).setEnabled(false)
-//            inputOverlaySurfaceView!!.visibility = View.GONE
-//        }
-        val mainCanvas = binding!!.mainCanvas
+        menu.findItem(R.id.show_input_overlay).setChecked(overlaySettings!!.isOverlayEnabled)
+        if (!overlaySettings!!.isOverlayEnabled) {
+            menu.findItem(R.id.reset_inputs).setEnabled(false)
+            menu.findItem(R.id.edit_inputs).setEnabled(false)
+            inputOverlaySurfaceView!!.visibility = View.GONE
+        }
+        val mainCanvas = binding.mainCanvas
         try {
             val testSurfaceTexture = SurfaceTexture(0)
             val testSurface = Surface(testSurfaceTexture)
@@ -299,7 +303,7 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
                     exception.message
                 )
             )
-            return binding!!.root
+            return binding.root
         }
 
         val mainCanvasHolder = mainCanvas.holder
@@ -327,7 +331,7 @@ class EmulationFragment(private val launchPath: String) : Fragment(),
             }
         })
         mainCanvas.setOnTouchListener(OnSurfaceTouchListener(true))
-        return binding!!.root
+        return binding.root
     }
 
     private fun startGame() {

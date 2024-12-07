@@ -2,12 +2,10 @@ package info.cemu.cemu.inputoverlay
 
 import android.content.res.Resources
 import android.graphics.Canvas
-import android.graphics.drawable.Drawable
+import android.graphics.Rect
 import android.view.MotionEvent
 import androidx.annotation.DrawableRes
 import androidx.core.content.res.ResourcesCompat
-import info.cemu.cemu.drawable.applyInvertedColorTransform
-import info.cemu.cemu.inputoverlay.InputOverlaySettingsProvider.InputOverlaySettings
 import kotlin.math.atan2
 import kotlin.math.min
 
@@ -15,290 +13,110 @@ class DPadInput(
     resources: Resources,
     @DrawableRes backgroundId: Int,
     @DrawableRes buttonId: Int,
-    private val buttonStateChangeListener: ButtonStateChangeListener,
-    settings: InputOverlaySettings
-) :
-    Input(settings) {
-    var iconDpadUp: Drawable
-    var iconDpadUpPressed: Drawable
-    var iconDpadUpNotPressed: Drawable
+    private val onButtonStateChange: (button: OverlayDpad, state: Boolean) -> Unit,
+    private val alpha: Int,
+    rect: Rect,
+) : Input(rect) {
+    private val dpadUpDrawable = InputDrawable(resources, buttonId)
+    private val dpadDownDrawable = InputDrawable(resources, buttonId)
+    private val dpadLeftDrawable = InputDrawable(resources, buttonId)
+    private val dpadRightDrawable = InputDrawable(resources, buttonId)
+    private val background = ResourcesCompat.getDrawable(resources, backgroundId, null)!!
 
-    var iconDpadDown: Drawable
-    var iconDpadDownPressed: Drawable
-    var iconDpadDownNotPressed: Drawable
+    private var dpadState: Int = NONE
 
-    var iconDpadLeft: Drawable
-    var iconDpadLeftPressed: Drawable
-    var iconDpadLeftNotPressed: Drawable
-
-    var iconDpadRight: Drawable
-    var iconDpadRightPressed: Drawable
-    var iconDpadRightNotPressed: Drawable
-    var background: Drawable = ResourcesCompat.getDrawable(resources, backgroundId, null)!!
-
-    enum class DpadState {
-        NONE, UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT,
-    }
-
-    var dpadState: DpadState = DpadState.NONE
-
-    var centreX: Int = 0
-    var centreY: Int = 0
-    var radius: Int = 0
-    var currentPointerId: Int = -1
+    private var centerX: Int = 0
+    private var centerY: Int = 0
+    private var radius2: Int = 0
+    private var currentPointerId: Int = -1
 
     override fun configure() {
-        val rect = settings.rect
-        this.centreX = rect.centerX()
-        this.centreY = rect.centerY()
-        this.radius = (min(rect.width(), rect.height()) / 2.0f).toInt()
-        background.alpha = settings.alpha
+        this.centerX = rect.centerX()
+        this.centerY = rect.centerY()
+        val radius = min(rect.width(), rect.height()) / 2
+        radius2 = radius * radius
+        background.alpha = alpha
         background.setBounds(
-            centreX - radius,
-            centreY - radius,
-            centreX + radius,
-            centreY + radius
+            centerX - radius,
+            centerY - radius,
+            centerX + radius,
+            centerY + radius
         )
 
-        val buttonSize = (radius * 0.5f).toInt()
-        val configureButton =
-            { circleXPos: Int, circleYPos: Int, pressedButton: Drawable, notPressedButton: Drawable ->
-                pressedButton.alpha =
-                    settings.alpha
-                notPressedButton.alpha = settings.alpha
-                val left = circleXPos - buttonSize / 2
-                val top = circleYPos - buttonSize / 2
-                pressedButton.setBounds(left, top, left + buttonSize, top + buttonSize)
-                notPressedButton.setBounds(left, top, left + buttonSize, top + buttonSize)
-            }
+        val buttonSize = radius / 2
+        val configureButton = { circleXPos: Int, circleYPos: Int, inputDrawable: InputDrawable ->
+            inputDrawable.setAlpha(alpha)
+            val left = circleXPos - buttonSize / 2
+            val top = circleYPos - buttonSize / 2
+            inputDrawable.setBounds(left, top, left + buttonSize, top + buttonSize)
+        }
         configureButton(
-            centreX,
-            centreY - 2 * radius / 3,
-            iconDpadUpPressed,
-            iconDpadUp
+            centerX,
+            centerY - 2 * radius / 3,
+            dpadUpDrawable
         )
         configureButton(
-            centreX,
-            centreY + 2 * radius / 3,
-            iconDpadDownPressed,
-            iconDpadDownNotPressed
+            centerX,
+            centerY + 2 * radius / 3,
+            dpadDownDrawable
         )
         configureButton(
-            centreX - 2 * radius / 3,
-            centreY,
-            iconDpadLeftPressed,
-            iconDpadLeftNotPressed
+            centerX - 2 * radius / 3,
+            centerY,
+            dpadLeftDrawable
         )
         configureButton(
-            centreX + 2 * radius / 3,
-            centreY,
-            iconDpadRightPressed,
-            iconDpadRightNotPressed
+            centerX + 2 * radius / 3,
+            centerY,
+            dpadRightDrawable
         )
     }
 
     init {
-        val getNotPressedButtonIcon = {
-            ResourcesCompat.getDrawable(resources, buttonId, null)!!
-        }
-        val getPressedButtonIcon = {
-            ResourcesCompat.getDrawable(resources, buttonId, null)!!
-                .applyInvertedColorTransform()
-        }
-
-        iconDpadUpPressed = getPressedButtonIcon()
-        iconDpadUpNotPressed = getNotPressedButtonIcon()
-        iconDpadUp = iconDpadUpNotPressed
-
-        iconDpadDownPressed = getPressedButtonIcon()
-        iconDpadDownNotPressed = getNotPressedButtonIcon()
-        iconDpadDown = iconDpadDownNotPressed
-
-        iconDpadLeftPressed = getPressedButtonIcon()
-        iconDpadLeftNotPressed = getNotPressedButtonIcon()
-        iconDpadLeft = iconDpadLeftNotPressed
-
-        iconDpadRightPressed = getPressedButtonIcon()
-        iconDpadRightNotPressed = getNotPressedButtonIcon()
-        iconDpadRight = iconDpadRightNotPressed
-
         configure()
     }
 
-    private fun updateState(nextDpadState: DpadState) {
-        when (dpadState) {
-            DpadState.NONE -> {}
-
-            DpadState.UP -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_UP,
-                    false
-                )
-                iconDpadUp = iconDpadUpNotPressed
-            }
-
-            DpadState.DOWN -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_DOWN,
-                    false
-                )
-                iconDpadDown = iconDpadDownNotPressed
-            }
-
-            DpadState.LEFT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_LEFT,
-                    false
-                )
-                iconDpadLeft = iconDpadLeftNotPressed
-            }
-
-            DpadState.RIGHT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_RIGHT,
-                    false
-                )
-                iconDpadRight = iconDpadRightNotPressed
-            }
-
-            DpadState.UP_LEFT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_UP,
-                    false
-                )
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_LEFT,
-                    false
-                )
-                iconDpadUp = iconDpadUpNotPressed
-                iconDpadLeft = iconDpadLeftNotPressed
-            }
-
-            DpadState.UP_RIGHT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_UP,
-                    false
-                )
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_RIGHT,
-                    false
-                )
-                iconDpadUp = iconDpadUpNotPressed
-                iconDpadRight = iconDpadRightNotPressed
-            }
-
-            DpadState.DOWN_LEFT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_DOWN,
-                    false
-                )
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_LEFT,
-                    false
-                )
-                iconDpadDown = iconDpadDownNotPressed
-                iconDpadLeft = iconDpadLeftNotPressed
-            }
-
-            DpadState.DOWN_RIGHT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_DOWN,
-                    false
-                )
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_RIGHT,
-                    false
-                )
-                iconDpadDown = iconDpadDownNotPressed
-                iconDpadRight = iconDpadRightNotPressed
-            }
-        }
+    private fun updateState(nextDpadState: Int) {
+        updateState(dpadState and nextDpadState.inv(), false)
+        updateState(nextDpadState and dpadState.inv(), true)
         dpadState = nextDpadState
-        when (nextDpadState) {
-            DpadState.NONE -> {}
-            DpadState.UP -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_UP,
-                    true
-                )
-                iconDpadUp = iconDpadUpPressed
-            }
+    }
 
-            DpadState.DOWN -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_DOWN,
-                    true
-                )
-                iconDpadDown = iconDpadDownPressed
-            }
+    private fun updateState(dpadState: Int, pressed: Boolean) {
+        if (dpadState == NONE) return
+        if ((dpadState and UP) != 0) {
+            onButtonStateChange(OverlayDpad.DPAD_UP, pressed)
+            dpadUpDrawable.setActiveState(pressed)
+        }
+        if ((dpadState and DOWN) != 0) {
+            onButtonStateChange(OverlayDpad.DPAD_DOWN, pressed)
+            dpadDownDrawable.setActiveState(pressed)
+        }
+        if ((dpadState and LEFT) != 0) {
+            onButtonStateChange(OverlayDpad.DPAD_LEFT, pressed)
+            dpadLeftDrawable.setActiveState(pressed)
+        }
+        if ((dpadState and RIGHT) != 0) {
+            onButtonStateChange(OverlayDpad.DPAD_RIGHT, pressed)
+            dpadRightDrawable.setActiveState(pressed)
+        }
+    }
 
-            DpadState.LEFT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_LEFT,
-                    true
-                )
-                iconDpadLeft = iconDpadLeftPressed
-            }
-
-            DpadState.RIGHT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_RIGHT,
-                    true
-                )
-                iconDpadRight = iconDpadRightPressed
-            }
-
-            DpadState.UP_LEFT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_UP,
-                    true
-                )
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_LEFT,
-                    true
-                )
-                iconDpadUp = iconDpadUpPressed
-                iconDpadLeft = iconDpadLeftPressed
-            }
-
-            DpadState.UP_RIGHT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_UP,
-                    true
-                )
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_RIGHT,
-                    true
-                )
-                iconDpadUp = iconDpadUpPressed
-                iconDpadRight = iconDpadRightPressed
-            }
-
-            DpadState.DOWN_LEFT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_DOWN,
-                    true
-                )
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_LEFT,
-                    true
-                )
-                iconDpadDown = iconDpadDownPressed
-                iconDpadLeft = iconDpadLeftPressed
-            }
-
-            DpadState.DOWN_RIGHT -> {
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_DOWN,
-                    true
-                )
-                buttonStateChangeListener.onButtonStateChange(
-                    InputOverlaySurfaceView.OverlayButton.DPAD_RIGHT,
-                    true
-                )
-                iconDpadDown = iconDpadDownPressed
-                iconDpadRight = iconDpadRightPressed
-            }
+    private fun getStateByPosition(x: Int, y: Int): Int {
+        val norm2 = (x - centerX) * (x - centerX) + (y - centerY) * (y - centerY)
+        if (norm2 <= radius2 * 0.1f) {
+            return NONE
+        }
+        val angle = atan2((y - centerY).toDouble(), (x - centerX).toDouble())
+        return when (angle) {
+            in -0.875 * Math.PI..<-0.625 * Math.PI -> UP or LEFT
+            in -0.625 * Math.PI..<-0.375 * Math.PI -> UP
+            in -0.375 * Math.PI..<-0.125 * Math.PI -> UP or RIGHT
+            in -0.125 * Math.PI..<0.125 * Math.PI -> RIGHT
+            in 0.125 * Math.PI..<0.375 * Math.PI -> DOWN or RIGHT
+            in 0.375 * Math.PI..<0.625 * Math.PI -> DOWN
+            in 0.625 * Math.PI..<0.875 * Math.PI -> DOWN or LEFT
+            else -> LEFT // in [-pi, -0.875*pi) or [0.875*pi, pi]
         }
     }
 
@@ -312,8 +130,7 @@ class DPadInput(
                 val pointerId = event.getPointerId(pointerIndex)
                 if (isInside(x, y)) {
                     currentPointerId = pointerId
-                    val angle = atan2((y - centreY).toDouble(), (x - centreX).toDouble())
-                    nextState = getStateByAngle(angle)
+                    nextState = getStateByPosition(x, y)
                 }
             }
 
@@ -321,7 +138,7 @@ class DPadInput(
                 val pointerId = event.getPointerId(event.actionIndex)
                 if (pointerId == currentPointerId) {
                     currentPointerId = -1
-                    nextState = DpadState.NONE
+                    nextState = NONE
                 }
             }
 
@@ -335,13 +152,7 @@ class DPadInput(
                     }
                     val x = event.getX(i).toInt()
                     val y = event.getY(i).toInt()
-                    val norm2 = ((x - centreX) * (x - centreX) + (y - centreY) * (y - centreY))
-                    if (norm2 <= radius * radius * 0.1f) {
-                        nextState = DpadState.NONE
-                        break
-                    }
-                    val angle = atan2((y - centreY).toDouble(), (x - centreX).toDouble())
-                    nextState = getStateByAngle(angle)
+                    nextState = getStateByPosition(x, y)
                     break
                 }
             }
@@ -354,43 +165,26 @@ class DPadInput(
     }
 
     override fun resetInput() {
-        updateState(DpadState.NONE)
-    }
-
-    private fun getStateByAngle(angle: Double): DpadState {
-        if (-0.125 * Math.PI <= angle && angle < 0.125 * Math.PI) {
-            return DpadState.RIGHT
-        }
-        if (0.125 * Math.PI <= angle && angle < 0.375 * Math.PI) {
-            return DpadState.DOWN_RIGHT
-        }
-        if (0.375 * Math.PI <= angle && angle < 0.625 * Math.PI) {
-            return DpadState.DOWN
-        }
-        if (0.625 * Math.PI <= angle && angle < 0.875 * Math.PI) {
-            return DpadState.DOWN_LEFT
-        }
-        if (-0.875 * Math.PI <= angle && angle < -0.625 * Math.PI) {
-            return DpadState.UP_LEFT
-        }
-        if (-0.625 * Math.PI <= angle && angle < -0.375 * Math.PI) {
-            return DpadState.UP
-        }
-        if (-0.375 * Math.PI <= angle && angle < -0.125 * Math.PI) {
-            return DpadState.UP_RIGHT
-        }
-        return DpadState.LEFT
+        updateState(NONE)
     }
 
     override fun isInside(x: Int, y: Int): Boolean {
-        return ((x - centreX) * (x - centreX) + (y - centreY) * (y - centreY)) <= radius * radius
+        return (x - centerX) * (x - centerX) + (y - centerY) * (y - centerY) <= radius2
     }
 
     override fun drawInput(canvas: Canvas) {
         background.draw(canvas)
-        iconDpadUp.draw(canvas)
-        iconDpadDown.draw(canvas)
-        iconDpadLeft.draw(canvas)
-        iconDpadRight.draw(canvas)
+        dpadUpDrawable.icon.draw(canvas)
+        dpadDownDrawable.icon.draw(canvas)
+        dpadLeftDrawable.icon.draw(canvas)
+        dpadRightDrawable.icon.draw(canvas)
+    }
+
+    companion object {
+        private const val NONE = 0
+        private const val UP = 1 shl 0
+        private const val DOWN = 1 shl 1
+        private const val LEFT = 1 shl 2
+        private const val RIGHT = 1 shl 3
     }
 }

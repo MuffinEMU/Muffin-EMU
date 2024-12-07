@@ -2,13 +2,11 @@ package info.cemu.cemu.inputoverlay
 
 import android.content.res.Resources
 import android.graphics.Canvas
+import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.view.MotionEvent
 import androidx.annotation.DrawableRes
 import androidx.core.content.res.ResourcesCompat
-import info.cemu.cemu.drawable.getInvertedDrawable
-import info.cemu.cemu.inputoverlay.InputOverlaySettingsProvider.InputOverlaySettings
-import info.cemu.cemu.inputoverlay.InputOverlaySurfaceView.OverlayJoystick
 import kotlin.math.min
 import kotlin.math.sqrt
 
@@ -16,17 +14,13 @@ class Joystick(
     resources: Resources,
     @DrawableRes joystickBackgroundId: Int,
     @DrawableRes innerStickId: Int,
-    stickStateChangeListener: StickStateChangeListener,
-    joystick: OverlayJoystick,
-    settings: InputOverlaySettings
-) :
-    Input(settings) {
-    private val iconPressed: Drawable
-    private val iconNotPressed: Drawable =
-        ResourcesCompat.getDrawable(resources, innerStickId, null)!!
+    private val onStickStateChange: (x: Float, y: Float) -> Unit,
+    private val alpha: Int,
+    boundingRectangle: Rect,
+) : Input(boundingRectangle) {
     private val joystickBackground: Drawable =
         ResourcesCompat.getDrawable(resources, joystickBackgroundId, null)!!
-    private var icon: Drawable
+    private val joystickDrawable = InputDrawable(resources, innerStickId)
     private var currentPointerId = -1
     private var centerX = 0
     private var centerY = 0
@@ -35,31 +29,16 @@ class Joystick(
     private var radius = 0
     private var innerRadius = 0
 
-    fun interface StickStateChangeListener {
-        fun onStickStateChange(joystick: OverlayJoystick, x: Float, y: Float)
-    }
-
-    private val stickStateChangeListener: StickStateChangeListener
-    private val joystick: OverlayJoystick
-
     init {
-        iconPressed = iconNotPressed.getInvertedDrawable(resources)
-        icon = iconNotPressed
-        this.stickStateChangeListener = stickStateChangeListener
-        this.joystick = joystick
         configure()
     }
 
     private fun updateState(pressed: Boolean, x: Float, y: Float) {
-        icon = if (pressed) {
-            iconPressed
-        } else {
-            iconNotPressed
-        }
-        stickStateChangeListener.onStickStateChange(joystick, x, y)
+        joystickDrawable.setActiveState(pressed)
+        onStickStateChange(x, y)
         val newCentreX = (centerX + radius * x).toInt()
         val newCentreY = (centerY + radius * y).toInt()
-        iconPressed.setBounds(
+        joystickDrawable.setBounds(
             newCentreX - innerRadius,
             newCentreY - innerRadius,
             newCentreX + innerRadius,
@@ -68,33 +47,21 @@ class Joystick(
     }
 
     override fun configure() {
-        val joystickBounds = settings.rect
-        this.centerX = joystickBounds.centerX()
-        this.originalCenterX = this.centerX
-        this.centerY = joystickBounds.centerY()
-        this.originalCenterY = this.centerY
-        this.radius =
-            (min(
-                joystickBounds.width().toDouble(),
-                joystickBounds.height().toDouble()
-            ) / 2).toInt()
-        this.innerRadius = (radius * 0.65f).toInt()
+        centerX = rect.centerX()
+        originalCenterX = centerX
+        centerY = rect.centerY()
+        originalCenterY = centerY
+        radius = min(rect.width(), rect.height()) / 2
+        innerRadius = (radius * 0.65f).toInt()
         joystickBackground.setBounds(
             centerX - radius,
             centerY - radius,
             centerX + radius,
             centerY + radius
         )
-        joystickBackground.alpha = settings.alpha
-        iconPressed.alpha = settings.alpha
-        iconPressed.setBounds(
-            centerX - innerRadius,
-            centerY - innerRadius,
-            centerX + innerRadius,
-            centerY + innerRadius
-        )
-        iconNotPressed.alpha = settings.alpha
-        iconNotPressed.setBounds(
+        joystickBackground.alpha = alpha
+        joystickDrawable.setAlpha(alpha)
+        joystickDrawable.setBounds(
             centerX - innerRadius,
             centerY - innerRadius,
             centerX + innerRadius,
@@ -103,7 +70,6 @@ class Joystick(
     }
 
     override fun onTouch(event: MotionEvent): Boolean {
-        var stateUpdated = false
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val pointerIndex = event.actionIndex
@@ -120,7 +86,7 @@ class Joystick(
                     )
                     currentPointerId = event.getPointerId(pointerIndex)
                     updateState(true, 0.0f, 0.0f)
-                    stateUpdated = true
+                    return true
                 }
             }
 
@@ -136,7 +102,7 @@ class Joystick(
                     )
                     currentPointerId = -1
                     updateState(false, 0.0f, 0.0f)
-                    stateUpdated = true
+                    return true
                 }
             }
 
@@ -156,12 +122,11 @@ class Joystick(
                         y /= norm
                     }
                     updateState(true, x, y)
-                    stateUpdated = true
-                    break
+                    return true
                 }
             }
         }
-        return stateUpdated
+        return false
     }
 
     override fun resetInput() {
@@ -170,7 +135,7 @@ class Joystick(
 
     override fun drawInput(canvas: Canvas) {
         joystickBackground.draw(canvas)
-        icon.draw(canvas)
+        joystickDrawable.icon.draw(canvas)
     }
 
     override fun isInside(x: Int, y: Int): Boolean {
