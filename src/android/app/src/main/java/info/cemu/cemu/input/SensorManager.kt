@@ -20,11 +20,13 @@ class SensorManager(context: Context) : SensorEventListener {
     private var accelY = 0f
     private var accelZ = 0f
     private var isLandscape = true
+    private var isListening = false
 
     fun startListening() {
-        if (!hasMotionData) {
+        if (!hasMotionData || isListening) {
             return
         }
+        isListening = true
         setMotionEnabled(true)
         sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME)
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME)
@@ -35,9 +37,10 @@ class SensorManager(context: Context) : SensorEventListener {
     }
 
     fun pauseListening() {
-        if (!hasMotionData) {
+        if (!hasMotionData || !isListening) {
             return
         }
+        isListening = false
         setMotionEnabled(false)
         sensorManager.unregisterListener(this)
     }

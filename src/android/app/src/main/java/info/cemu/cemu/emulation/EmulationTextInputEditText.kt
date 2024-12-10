@@ -3,7 +3,6 @@ package info.cemu.cemu.emulation
 import android.content.Context
 import android.text.Editable
 import android.text.InputFilter
-import android.text.Spanned
 import android.text.TextWatcher
 import android.util.AttributeSet
 import android.view.inputmethod.EditorInfo
@@ -16,8 +15,7 @@ class EmulationTextInputEditText @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = R.attr.editTextStyle,
-) :
-    TextInputEditText(context, attrs, defStyleAttr) {
+) : TextInputEditText(context, attrs, defStyleAttr) {
     fun appendFilter(inputFilter: InputFilter) {
         filters += inputFilter
     }
@@ -33,42 +31,28 @@ class EmulationTextInputEditText @JvmOverloads constructor(
         }
     }
 
-    fun interface OnTextChangedListener {
-        fun onTextChanged(text: CharSequence)
-    }
-
-
-    private var onTextChangedListener: OnTextChangedListener? = null
+    private var onTextChangedListener: ((CharSequence) -> Unit)? = null
 
     init {
-        appendFilter { source: CharSequence, _: Int, _: Int, _: Spanned?, _: Int, _: Int ->
-            if (INPUT_PATTERN.matcher(source).matches()) {
-                return@appendFilter null
-            }
-            ""
+        appendFilter { source: CharSequence, _, _, _, _, _ ->
+            if (INPUT_PATTERN.matcher(source).matches()) null else ""
         }
         inputType = EditorInfo.TYPE_CLASS_TEXT or EditorInfo.TYPE_TEXT_VARIATION_NORMAL
         addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence, start: Int, count: Int, after: Int) {
-            }
+            override fun beforeTextChanged(s: CharSequence, start: Int, count: Int, after: Int) {}
 
             override fun onTextChanged(text: CharSequence, start: Int, before: Int, count: Int) {
                 if (!hasFocus()) {
                     return
                 }
-                if (onTextChangedListener != null) {
-                    onTextChangedListener!!.onTextChanged(text)
-                }
                 NativeSwkbd.onTextChanged(text.toString())
             }
 
-            override fun afterTextChanged(s: Editable) {
-            }
+            override fun afterTextChanged(s: Editable) {}
         })
     }
 
     override fun onEditorAction(actionCode: Int) {
-        val text = text
         if (actionCode == EditorInfo.IME_ACTION_DONE && !text.isNullOrEmpty()) {
             onFinishedEdit()
         }
@@ -79,7 +63,7 @@ class EmulationTextInputEditText @JvmOverloads constructor(
         NativeSwkbd.onFinishedInputEdit()
     }
 
-    fun setOnTextChangedListener(onTextChangedListener: OnTextChangedListener) {
+    fun setOnTextChangedListener(onTextChangedListener: ((CharSequence) -> Unit)?) {
         this.onTextChangedListener = onTextChangedListener
     }
 

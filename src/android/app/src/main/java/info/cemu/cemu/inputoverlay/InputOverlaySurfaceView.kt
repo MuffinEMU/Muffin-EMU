@@ -34,6 +34,7 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
     private var currentAlpha = 255
     private var currentConfiguredInput: Input? = null
     private var nativeControllerType = -1
+    private var visible = false
     var controllerIndex: Int = 0
 
     private var inputs: MutableList<Pair<OverlayInput, Input>>? = null
@@ -55,6 +56,11 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
         controllerIndex = overlaySettings.controllerIndex
         currentAlpha = overlaySettings.alpha
         vibrateOnTouch = vibrator.hasVibrator() && overlaySettings.isVibrateOnTouchEnabled
+    }
+
+    fun setVisible(visible: Boolean) {
+        this.visible = visible
+        invalidate()
     }
 
     fun resetInputs() {
@@ -458,6 +464,7 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
 
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
+        if (!visible) return
         for ((_, input) in inputs!!) {
             input.draw(canvas)
         }

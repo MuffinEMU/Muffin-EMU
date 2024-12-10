@@ -13,6 +13,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputLayout
 import info.cemu.cemu.BuildConfig
 import info.cemu.cemu.R
 import info.cemu.cemu.databinding.ActivityEmulationBinding
@@ -146,8 +147,14 @@ class EmulationActivity : AppCompatActivity() {
                 inputEditText.setOnTextChangedListener {
                     doneButton.isEnabled = it.isNotEmpty()
                 }
+                val parentTextInputLayout =
+                    inputEditTextLayout.requireViewById<TextInputLayout>(R.id.emulation_input_layout)
                 if (maxLength > 0) {
+                    parentTextInputLayout.isCounterEnabled = true
+                    parentTextInputLayout.counterMaxLength = maxLength
                     inputEditText.appendFilter(LengthFilter(maxLength))
+                } else {
+                    parentTextInputLayout.isCounterEnabled = false
                 }
                 emulationActivityInstance!!.emulationTextInputDialog = dialog
             }

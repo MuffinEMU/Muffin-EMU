@@ -44,7 +44,7 @@ class DocumentsProvider : DocumentsProvider() {
     }
 
     override fun queryRoots(projection: Array<String>?): Cursor {
-        val cursor = MatrixCursor(projection ?: DefaultRootProjection)
+        val cursor = MatrixCursor(projection ?: DEFAULT_ROOT_PROJECTION)
         cursor.newRow().add(DocumentsContract.Root.COLUMN_ROOT_ID, ROOT_ID)
             .add(DocumentsContract.Root.COLUMN_SUMMARY, null)
             .add(
@@ -61,7 +61,7 @@ class DocumentsProvider : DocumentsProvider() {
 
     @Throws(FileNotFoundException::class)
     override fun queryDocument(documentId: String, projection: Array<String>?): Cursor {
-        val cursor = MatrixCursor(projection ?: DefaultDocumentProjection)
+        val cursor = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
         includeFile(cursor, documentId, null)
         return cursor
     }
@@ -217,7 +217,7 @@ class DocumentsProvider : DocumentsProvider() {
         projection: Array<String>?,
         sortOrder: String
     ): Cursor {
-        val cursor = MatrixCursor(projection ?: DefaultDocumentProjection)
+        val cursor = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
         val parent = getFile(parentDocumentId)
         val files = parent.listFiles() ?: return cursor
         for (file in files) {
@@ -346,7 +346,7 @@ class DocumentsProvider : DocumentsProvider() {
     companion object {
         const val ROOT_ID: String = "root"
         const val AUTHORITY: String = BuildConfig.APPLICATION_ID + ".provider"
-        private val DefaultRootProjection = arrayOf(
+        private val DEFAULT_ROOT_PROJECTION = arrayOf(
             DocumentsContract.Root.COLUMN_ROOT_ID,
             DocumentsContract.Root.COLUMN_MIME_TYPES,
             DocumentsContract.Root.COLUMN_FLAGS,
@@ -356,7 +356,7 @@ class DocumentsProvider : DocumentsProvider() {
             DocumentsContract.Root.COLUMN_DOCUMENT_ID,
             DocumentsContract.Root.COLUMN_AVAILABLE_BYTES
         )
-        private val DefaultDocumentProjection = arrayOf(
+        private val DEFAULT_DOCUMENT_PROJECTION = arrayOf(
             DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_MIME_TYPE,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,

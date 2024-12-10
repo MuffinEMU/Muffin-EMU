@@ -1,27 +1,25 @@
 package info.cemu.cemu.settings.gamespath
 
-import androidx.compose.runtime.mutableStateListOf
 import androidx.lifecycle.ViewModel
 import info.cemu.cemu.nativeinterface.NativeSettings
-
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 
 class GamesPathsViewModel : ViewModel() {
-    private val _gamesPaths = mutableStateListOf<String>().apply {
-        addAll(NativeSettings.getGamesPaths())
-    }
-    val gamesPaths: List<String>
-        get() = _gamesPaths
+    private val _gamesPaths = MutableStateFlow(NativeSettings.getGamesPaths().toList())
+    val gamesPaths = _gamesPaths.asStateFlow()
 
     fun addGamesPath(gamesPath: String) {
-        if (!_gamesPaths.contains(gamesPath)) {
-            _gamesPaths.add(gamesPath)
+        if (!_gamesPaths.value.contains(gamesPath)) {
+            _gamesPaths.value += gamesPath
             NativeSettings.addGamesPath(gamesPath)
         }
     }
 
     fun removeGamesPath(gamesPath: String) {
-        if (_gamesPaths.remove(gamesPath)) {
+        if (_gamesPaths.value.contains(gamesPath)) {
+            _gamesPaths.value -= gamesPath
             NativeSettings.removeGamesPath(gamesPath)
         }
     }

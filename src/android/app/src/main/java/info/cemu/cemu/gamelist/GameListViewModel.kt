@@ -1,7 +1,5 @@
 package info.cemu.cemu.gamelist
 
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.cemu.cemu.nativeinterface.NativeGameTitles
@@ -36,13 +34,12 @@ class GameListViewModel : ViewModel() {
         emptyList()
     )
 
-    fun getGames(): LiveData<List<Game>> = MutableLiveData(emptyList())
-
     init {
         NativeGameTitles.setGameTitleLoadedCallback(NativeGameTitles.GameTitleLoadedCallback { game: Game? ->
-            if (game == null || !isGameValid(game)) {
+            if (game == null || !isGameValid(game))
                 return@GameTitleLoadedCallback
-            }
+            if (_games.value.any { it.titleId == game.titleId })
+                return@GameTitleLoadedCallback
             _games.value += game
         })
         refreshGames()

@@ -254,7 +254,7 @@
     <string name="clear_search">Clear search</string>
     <string name="nav_back">Navigate back</string>
     <string name="title_path">Path</string>
-    <string name="game_icon_empty">No icon found for game available</string>
+    <string name="game_icon_empty">No icon for game available</string>
     <string name="graphic_packs_installed_only">Installed only</string>
     <string name="title_activity_graphic_packs2">GraphicPacksActivity2</string>
     <string name="about_cemu">About Cemu</string>

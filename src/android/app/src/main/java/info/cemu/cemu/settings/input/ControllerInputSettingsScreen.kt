@@ -4,29 +4,18 @@ import android.content.Context
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.widget.TextView
-import androidx.annotation.StringRes
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.Header
 import info.cemu.cemu.guicore.ScreenContent
 import info.cemu.cemu.guicore.SingleSelection
-import info.cemu.cemu.guicore.Toggle
 import info.cemu.cemu.nativeinterface.NativeInput
-import kotlinx.serialization.Serializable
 
 @Composable
 fun ControllerInputSettingsScreen(
@@ -37,10 +26,11 @@ fun ControllerInputSettingsScreen(
         extras = MutableCreationExtras().apply {
             set(ControllersViewModel.CONTROLLER_INDEX_KEY, controllerIndex)
         }
-    )
+    ),
 ) {
     val context = LocalContext.current
-    val controllerType = controllersViewModel.controllerType
+    val controllerType by controllersViewModel.controllerType.collectAsState()
+    val controls by controllersViewModel.controls.collectAsState()
 
     fun onInputClick(buttonName: String, buttonId: Int) {
         openInputDialog(
@@ -59,7 +49,7 @@ fun ControllerInputSettingsScreen(
         SingleSelection(
             isChoiceEnabled = controllersViewModel::isControllerTypeAllowed,
             label = stringResource(R.string.emulated_controller),
-            initialChoice = { controllersViewModel.controllerType },
+            initialChoice = { controllerType },
             choices = listOf(
                 NativeInput.EMULATED_CONTROLLER_TYPE_DISABLED,
                 NativeInput.EMULATED_CONTROLLER_TYPE_VPAD,
@@ -74,22 +64,22 @@ fun ControllerInputSettingsScreen(
             NativeInput.EMULATED_CONTROLLER_TYPE_VPAD -> VPADInputs(
                 controllerIndex = controllerIndex,
                 onInputClick = ::onInputClick,
-                controlsMapping = controllersViewModel.controls,
+                controlsMapping = controls,
             )
 
             NativeInput.EMULATED_CONTROLLER_TYPE_PRO -> ProControllerInputs(
                 onInputClick = ::onInputClick,
-                controlsMapping = controllersViewModel.controls,
+                controlsMapping = controls,
             )
 
             NativeInput.EMULATED_CONTROLLER_TYPE_CLASSIC -> ClassicControllerInputs(
                 onInputClick = ::onInputClick,
-                controlsMapping = controllersViewModel.controls,
+                controlsMapping = controls,
             )
 
             NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE -> WiimoteControllerInputs(
                 onInputClick = ::onInputClick,
-                controlsMapping = controllersViewModel.controls,
+                controlsMapping = controls,
             )
         }
     }

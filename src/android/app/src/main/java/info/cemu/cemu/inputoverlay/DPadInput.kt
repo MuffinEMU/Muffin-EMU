@@ -77,6 +77,7 @@ class DPadInput(
     }
 
     private fun updateState(nextDpadState: Int) {
+        if (nextDpadState == dpadState) return
         updateState(dpadState and nextDpadState.inv(), false)
         updateState(nextDpadState and dpadState.inv(), true)
         dpadState = nextDpadState
@@ -121,16 +122,19 @@ class DPadInput(
     }
 
     override fun onTouch(event: MotionEvent): Boolean {
-        var nextState = dpadState
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                if (currentPointerId != -1) {
+                    return false
+                }
                 val pointerIndex = event.actionIndex
                 val x = event.getX(pointerIndex).toInt()
                 val y = event.getY(pointerIndex).toInt()
                 val pointerId = event.getPointerId(pointerIndex)
                 if (isInside(x, y)) {
                     currentPointerId = pointerId
-                    nextState = getStateByPosition(x, y)
+                    updateState(getStateByPosition(x, y))
+                    return true
                 }
             }
 
@@ -138,7 +142,8 @@ class DPadInput(
                 val pointerId = event.getPointerId(event.actionIndex)
                 if (pointerId == currentPointerId) {
                     currentPointerId = -1
-                    nextState = NONE
+                    updateState(NONE)
+                    return true
                 }
             }
 
@@ -152,14 +157,10 @@ class DPadInput(
                     }
                     val x = event.getX(i).toInt()
                     val y = event.getY(i).toInt()
-                    nextState = getStateByPosition(x, y)
-                    break
+                    updateState(getStateByPosition(x, y))
+                    return true
                 }
             }
-        }
-        if (nextState != dpadState) {
-            updateState(nextState)
-            return true
         }
         return false
     }

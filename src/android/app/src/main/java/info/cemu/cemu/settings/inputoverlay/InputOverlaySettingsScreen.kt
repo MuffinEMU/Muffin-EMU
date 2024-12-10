@@ -9,20 +9,17 @@ import info.cemu.cemu.guicore.SingleSelection
 import info.cemu.cemu.guicore.Slider
 import info.cemu.cemu.guicore.Toggle
 import info.cemu.cemu.nativeinterface.NativeInput
-import kotlinx.serialization.Serializable
 
 private val ControllerIndexChoices = (0..<NativeInput.MAX_CONTROLLERS).toList()
 
 @Composable
 fun InputOverlaySettingsScreen(
     inputOverlaySettingsViewModel: InputOverlaySettingsViewModel = viewModel(factory = InputOverlaySettingsViewModel.Factory),
-    navigateBack: () -> Unit
+    navigateBack: () -> Unit,
 ) {
     val overlaySettings = inputOverlaySettingsViewModel.overlaySettings
     ScreenContent(
-        appBarText = stringResource(
-            R.string.input_overlay_settings,
-        ),
+        appBarText = stringResource(R.string.input_overlay_settings),
         navigateBack = navigateBack
     )
     {
@@ -44,7 +41,7 @@ fun InputOverlaySettingsScreen(
             valueFrom = 0,
             valueTo = 255,
             onValueChange = { overlaySettings.alpha = it },
-            labelFormatter = { it.toString() },
+            labelFormatter = { "${(100 * it) / 255}%" },
         )
         SingleSelection(
             label = stringResource(R.string.overlay_controller),

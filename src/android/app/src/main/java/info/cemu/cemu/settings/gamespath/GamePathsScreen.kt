@@ -1,7 +1,6 @@
 package info.cemu.cemu.settings.gamespath
 
 import android.content.Intent
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.basicMarquee
@@ -15,8 +14,14 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -26,14 +31,17 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.viewmodel.compose.viewModel
 import info.cemu.cemu.R
 import info.cemu.cemu.guicore.ScreenContentLazy
-import kotlinx.serialization.Serializable
+import kotlinx.coroutines.launch
 
 @Composable
 fun GamePathsScreen(
     navigateBack: () -> Unit,
-    gamesPathsViewModel: GamesPathsViewModel = viewModel()
+    gamesPathsViewModel: GamesPathsViewModel = viewModel(),
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val gamesPaths by gamesPathsViewModel.gamesPaths.collectAsState()
     val launcher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
@@ -44,17 +52,17 @@ fun GamePathsScreen(
             val documentFile =
                 DocumentFile.fromTreeUri(context, uri) ?: return@rememberLauncherForActivityResult
             val gamesPath = documentFile.uri.toString()
-            if (gamesPathsViewModel.gamesPaths.contains(gamesPath)) {
-                Toast.makeText(
-                    context,
-                    R.string.games_path_already_added,
-                    Toast.LENGTH_LONG
-                ).show()
+            if (gamesPaths.contains(gamesPath)) {
+                coroutineScope.launch {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    snackbarHostState.showSnackbar(context.getString(R.string.games_path_already_added))
+                }
                 return@rememberLauncherForActivityResult
             }
             gamesPathsViewModel.addGamesPath(gamesPath)
         }
     ScreenContentLazy(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         appBarText = stringResource(R.string.game_paths_settings),
         navigateBack = navigateBack,
         actions = {
@@ -66,7 +74,7 @@ fun GamePathsScreen(
             }
         },
     ) {
-        items(gamesPathsViewModel.gamesPaths) {
+        items(items = gamesPaths, key = { it }) {
             GamePathsListItem(
                 modifier = Modifier.animateItem(),
                 gamesPath = it,
@@ -80,7 +88,7 @@ fun GamePathsScreen(
 fun GamePathsListItem(
     modifier: Modifier,
     gamesPath: String,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
 ) {
     Card(modifier = modifier.padding(8.dp)) {
         Row(

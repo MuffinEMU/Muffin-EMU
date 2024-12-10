@@ -1,8 +1,6 @@
 package info.cemu.cemu.settings.input
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.dropUnlessResumed
@@ -10,7 +8,6 @@ import info.cemu.cemu.R
 import info.cemu.cemu.guicore.Button
 import info.cemu.cemu.guicore.ScreenContent
 import info.cemu.cemu.nativeinterface.NativeInput
-import kotlinx.serialization.Serializable
 
 data class InputSettingsScreenActions(
     val goToInputOverlaySettings: () -> Unit,
@@ -19,11 +16,13 @@ data class InputSettingsScreenActions(
 
 @Composable
 fun InputSettingsScreen(navigateBack: () -> Unit, actions: InputSettingsScreenActions) {
-    val controllers by remember {
-        mutableStateOf(ControllerList)
+    val controllers = remember {
+        (0..<NativeInput.MAX_CONTROLLERS).map { controllerIndex ->
+            controllerIndex to getControllerType(controllerIndex)
+        }
     }
     ScreenContent(
-        appBarText = stringResource(R.string.overlay_settings),
+        appBarText = stringResource(R.string.input_settings),
         navigateBack = navigateBack,
     ) {
         Button(
@@ -44,12 +43,7 @@ fun InputSettingsScreen(navigateBack: () -> Unit, actions: InputSettingsScreenAc
     }
 }
 
-val ControllerList: List<Pair<Int, Int>>
-    get() = (0..<NativeInput.MAX_CONTROLLERS).map { controllerIndex ->
-        controllerIndex to getControllerType(controllerIndex)
-    }
-
-private fun getControllerType(index: Int): Int =
+fun getControllerType(index: Int): Int =
     if (NativeInput.isControllerDisabled(index))
         NativeInput.EMULATED_CONTROLLER_TYPE_DISABLED
     else NativeInput.getControllerType(index)
