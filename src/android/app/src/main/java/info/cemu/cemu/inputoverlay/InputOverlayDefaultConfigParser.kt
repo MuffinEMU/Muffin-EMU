@@ -1,5 +1,6 @@
 package info.cemu.cemu.inputoverlay
 
+import info.cemu.cemu.utils.toIntOrZero
 import org.xmlpull.v1.XmlPullParser
 
 data class InputConfig(
@@ -10,8 +11,6 @@ data class InputConfig(
     val paddingHorizontal: Int,
     val paddingVertical: Int,
 )
-
-private fun String.toIntOrZero() = toIntOrNull() ?: 0
 
 private const val INPUT_OVERLAY_CONFIG_TAG_NAME = "input-overlay-config"
 private const val WIDTH_CONFIG_TAG_NAME = "width"

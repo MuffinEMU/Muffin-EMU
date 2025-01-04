@@ -7,7 +7,20 @@ namespace JNIUtils
 {
 	extern JavaVM* g_jvm;
 
-	std::string JStringToString(JNIEnv* env, jstring jstr);
+	inline std::string toString(JNIEnv* env, jstring jstr)
+	{
+		if (jstr == nullptr)
+			return {};
+		const char* c_str = env->GetStringUTFChars(jstr, nullptr);
+		std::string str(c_str);
+		env->ReleaseStringUTFChars(jstr, c_str);
+		return str;
+	}
+
+	inline jstring toJString(JNIEnv* env, const std::string& str)
+	{
+		return env->NewStringUTF(str.c_str());
+	}
 
 	jobject createJavaStringArrayList(JNIEnv* env, const std::vector<std::string>& stringList);
 
@@ -21,16 +34,17 @@ namespace JNIUtils
 		ScopedJNIENV()
 		{
 			jint result = g_jvm->GetEnv((void**)&m_env, JNI_VERSION_1_6);
-			if (result == JNI_EDETACHED)
-			{
-				JavaVMAttachArgs args;
-				args.version = JNI_VERSION_1_6;
-				args.name = nullptr;
-				args.group = nullptr;
-				result = g_jvm->AttachCurrentThread(&m_env, &args);
-				if (result == JNI_OK)
-					m_threadWasAttached = true;
-			}
+
+			if (result != JNI_EDETACHED)
+				return;
+
+			JavaVMAttachArgs args;
+			args.version = JNI_VERSION_1_6;
+			args.name = nullptr;
+			args.group = nullptr;
+			result = g_jvm->AttachCurrentThread(&m_env, &args);
+			if (result == JNI_OK)
+				m_threadWasAttached = true;
 		}
 
 		JNIEnv*& operator*()
@@ -39,6 +53,11 @@ namespace JNIUtils
 		}
 
 		JNIEnv* operator->()
+		{
+			return m_env;
+		}
+
+		operator JNIEnv*() const
 		{
 			return m_env;
 		}
@@ -133,7 +152,7 @@ namespace JNIUtils
 		explicit Scopedjclass(const std::string& className)
 		{
 			ScopedJNIENV scopedEnv;
-			jobject tempObj = scopedEnv->FindClass(className.c_str());
+			jclass tempObj = scopedEnv->FindClass(className.c_str());
 			m_jclass = static_cast<jclass>(scopedEnv->NewGlobalRef(tempObj));
 			scopedEnv->DeleteLocalRef(tempObj);
 		}
@@ -146,7 +165,7 @@ namespace JNIUtils
 
 		bool isValid() const
 		{
-			return m_jclass;
+			return m_jclass != nullptr;
 		}
 
 		jclass& operator*()
@@ -161,4 +180,14 @@ namespace JNIUtils
 	Scopedjobject getEnumValue(JNIEnv* env, const std::string& enumClassName, const std::string& enumName);
 	jobject createArrayList(JNIEnv* env, const std::vector<jobject>& objects);
 	jobject createJavaLongArrayList(JNIEnv* env, const std::vector<uint64_t>& values);
+
+	template<typename... TArgs>
+	jobject newObject(JNIEnv* env, const std::string& className, const std::string& ctrSig = "()V", TArgs... args)
+	{
+		jclass javaClass = env->FindClass(className.c_str());
+		jmethodID ctrId = env->GetMethodID(javaClass, "<init>", ctrSig.c_str());
+		jobject obj = env->NewObject(javaClass, ctrId, std::forward<TArgs>(args)...);
+		env->DeleteLocalRef(javaClass);
+		return obj;
+	}
 } // namespace JNIUtils

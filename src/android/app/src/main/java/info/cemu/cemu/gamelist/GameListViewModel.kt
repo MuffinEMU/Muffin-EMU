@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import info.cemu.cemu.nativeinterface.NativeGameTitles
 import info.cemu.cemu.nativeinterface.NativeGameTitles.Game
+import info.cemu.cemu.nativeinterface.NativeSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
 class GameListViewModel : ViewModel() {
+    private var gamePaths = NativeSettings.getGamesPaths().toSet()
     private val _filterText = MutableStateFlow("")
     private val filterText = _filterText.asStateFlow()
     fun setFilterText(filterText: String) {
@@ -78,6 +80,15 @@ class GameListViewModel : ViewModel() {
 
     override fun onCleared() {
         NativeGameTitles.setGameTitleLoadedCallback(null)
+    }
+
+    fun checkIfGamePathsHaveChanged(): Boolean {
+        val newGamePaths = NativeSettings.getGamesPaths().toSet()
+        if (newGamePaths != gamePaths) {
+            gamePaths = newGamePaths
+            return true
+        }
+        return false
     }
 
     fun refreshGames() {

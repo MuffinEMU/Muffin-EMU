@@ -16,7 +16,7 @@ class AndroidFilesystemCallbacks : public FilesystemAndroid::FilesystemCallbacks
 		bool result = false;
 		std::thread([&, this]() {
 			JNIUtils::ScopedJNIENV env;
-			jstring uriString = env->NewStringUTF(uri.c_str());
+			jstring uriString = JNIUtils::toJString(env, uri);
 			result = env->CallStaticBooleanMethod(*m_fileUtilClass, methodId, uriString);
 			env->DeleteLocalRef(uriString);
 		}).join();
@@ -40,7 +40,7 @@ class AndroidFilesystemCallbacks : public FilesystemAndroid::FilesystemCallbacks
 		int fd = -1;
 		std::thread([&, this]() {
 			JNIUtils::ScopedJNIENV env;
-			jstring uriString = env->NewStringUTF(uri.c_str());
+			jstring uriString = JNIUtils::toJString(env, uri);
 			fd = env->CallStaticIntMethod(*m_fileUtilClass, m_openContentUriMid, uriString);
 			env->DeleteLocalRef(uriString);
 		}).join();
@@ -52,7 +52,7 @@ class AndroidFilesystemCallbacks : public FilesystemAndroid::FilesystemCallbacks
 		std::vector<std::filesystem::path> paths;
 		std::thread([&, this]() {
 			JNIUtils::ScopedJNIENV env;
-			jstring uriString = env->NewStringUTF(uri.c_str());
+			jstring uriString = JNIUtils::toJString(env, uri);
 			jobjectArray pathsObjArray = static_cast<jobjectArray>(env->CallStaticObjectMethod(*m_fileUtilClass, m_listFilesMid, uriString));
 			env->DeleteLocalRef(uriString);
 			jsize arrayLength = env->GetArrayLength(pathsObjArray);
@@ -60,7 +60,7 @@ class AndroidFilesystemCallbacks : public FilesystemAndroid::FilesystemCallbacks
 			for (jsize i = 0; i < arrayLength; i++)
 			{
 				jstring pathStr = static_cast<jstring>(env->GetObjectArrayElement(pathsObjArray, i));
-				paths.push_back(JNIUtils::JStringToString(*env, pathStr));
+				paths.push_back(JNIUtils::toString(env, pathStr));
 				env->DeleteLocalRef(pathStr);
 			}
 			env->DeleteLocalRef(pathsObjArray);

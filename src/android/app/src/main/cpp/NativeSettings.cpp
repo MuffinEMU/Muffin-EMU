@@ -188,7 +188,7 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_addGamesPath(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring uri)
 {
 	auto& gamePaths = g_config.data().game_paths;
-	auto gamePath = JNIUtils::JStringToString(env, uri);
+	auto gamePath = JNIUtils::toString(env, uri);
 	if (std::any_of(gamePaths.begin(), gamePaths.end(), [&](auto path) { return path == gamePath; }))
 		return;
 	gamePaths.push_back(gamePath);
@@ -198,7 +198,7 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_addGamesPath(JNIEnv* env, [[m
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_removeGamesPath(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring uri)
 {
-	auto gamePath = JNIUtils::JStringToString(env, uri);
+	auto gamePath = JNIUtils::toString(env, uri);
 	auto& gamePaths = g_config.data().game_paths;
 	std::erase_if(gamePaths, [&](auto path) { return path == gamePath; });
 	g_config.Save();

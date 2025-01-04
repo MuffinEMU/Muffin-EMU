@@ -5,16 +5,6 @@ namespace JNIUtils
 	JavaVM* g_jvm = nullptr;
 };
 
-std::string JNIUtils::JStringToString(JNIEnv* env, jstring jstr)
-{
-	if (jstr == nullptr)
-		return {};
-	const char* c_str = env->GetStringUTFChars(jstr, nullptr);
-	std::string str(c_str);
-	env->ReleaseStringUTFChars(jstr, c_str);
-	return str;
-}
-
 jobject JNIUtils::createJavaStringArrayList(JNIEnv* env, const std::vector<std::string>& strings)
 {
 	jclass clsArrayList = env->FindClass("java/util/ArrayList");
@@ -60,8 +50,9 @@ jobject JNIUtils::createJavaLongArrayList(JNIEnv* env, const std::vector<uint64_
 	jclass longClass = env->FindClass("java/lang/Long");
 	jmethodID valueOf = env->GetStaticMethodID(longClass, "valueOf", "(J)Ljava/lang/Long;");
 	std::vector<jobject> valuesJava;
+	valuesJava.reserve(values.size());
 	for (auto&& value : values)
-		valuesJava.push_back(env->CallStaticObjectMethod(longClass, valueOf, static_cast<jlong>(value)));
+		valuesJava.push_back(env->CallStaticObjectMethod(longClass, valueOf, value));
 	env->DeleteLocalRef(longClass);
 	return JNIUtils::createArrayList(env, valuesJava);
 }

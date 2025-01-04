@@ -2,7 +2,7 @@ add_library(CemuAndroid SHARED
         AndroidAudio.cpp
         AndroidEmulatedController.cpp
         AndroidSwkbdCallbacks.cpp
-        CMakeLists.txt
+        CompressTitleCallbacks.cpp
         GameTitleLoader.cpp
         Image.cpp
         JNIUtils.cpp
@@ -15,6 +15,7 @@ add_library(CemuAndroid SHARED
         NativeLogging.cpp
         NativeSettings.cpp
         NativeSwkbd.cpp
+        WuaConverter.cpp
 )
 
 target_link_libraries(CemuAndroid PRIVATE
@@ -24,4 +25,5 @@ target_link_libraries(CemuAndroid PRIVATE
         CemuComponents
         CemuCafe
         CemuBin
+        ZArchive::zarchive
 )

@@ -44,6 +44,10 @@
             android:exported="false"
             android:parentActivityName=".MainActivity" />
         <activity
+            android:name=".titlemanager.TitleManagerActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+        <activity
             android:name=".emulation.EmulationActivity"
             android:configChanges="orientation|screenSize"
             android:exported="true"

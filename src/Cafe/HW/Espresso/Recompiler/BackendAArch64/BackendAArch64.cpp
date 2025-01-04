@@ -80,6 +80,10 @@ struct AArch64GenContext_t : CodeGenerator, CodeContext
 
 	void gqr_generateScaleCode(VReg& dataReg, bool isLoad, bool scalePS1, const IMLReg& registerGQR);
 
+	void prepareJump(IMLSegment* target)
+	{
+	}
+
 	bool conditional_r_s32([[maybe_unused]] IMLInstruction* imlInstruction)
 	{
 		cemu_assert_unimplemented();
@@ -600,6 +604,12 @@ void AArch64GenContext_t::compare_s32(IMLInstruction* imlInstruction)
 	cmp_imm(regA, imm, TEMP_GPR_1_WREG);
 	cset(regR, cond);
 }
+
+struct ConditionalJumpInfo
+{
+	WReg regBool;
+	bool mustBeTrue;
+};
 
 void AArch64GenContext_t::cjump(const std::unordered_map<IMLSegment*, Label>& labels, IMLInstruction* imlInstruction, IMLSegment* imlSegment)
 {

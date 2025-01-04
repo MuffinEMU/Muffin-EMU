@@ -42,9 +42,7 @@ fun String.fromNativePath(): Uri {
 @Keep
 fun openContentUri(uri: String): Int {
     try {
-        if (!exists(uri)) {
-            return -1
-        }
+        Log.i("NATIVE_FILES", "openContentUri $uri")
         val parcelFileDescriptor =
             ContentResolver.openFileDescriptor(
                 uri.fromNativePath(), MODE
@@ -62,6 +60,8 @@ fun openContentUri(uri: String): Int {
 
 @Keep
 fun listFiles(uri: String): Array<String?> {
+    Log.i("NATIVE_FILES", "listFiles $uri")
+
     val files = ArrayList<String>()
     val directoryUri = uri.fromNativePath()
     val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
@@ -93,6 +93,8 @@ fun listFiles(uri: String): Array<String?> {
 
 @Keep
 fun isDirectory(uri: String): Boolean {
+    Log.i("NATIVE_FILES", "isDirectory $uri")
+
     val mimeType = ContentResolver.getType(
         uri.fromNativePath()
     )
@@ -106,6 +108,8 @@ fun isFile(uri: String): Boolean {
 
 @Keep
 fun exists(uri: String): Boolean {
+    Log.i("NATIVE_FILES", "exists $uri")
+
     try {
         ContentResolver.query(uri.fromNativePath(), null, null, null, null).use { cursor ->
             return cursor != null && cursor.moveToFirst()

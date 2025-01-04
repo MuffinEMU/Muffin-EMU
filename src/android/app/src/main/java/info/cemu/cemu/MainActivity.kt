@@ -41,6 +41,7 @@ import info.cemu.cemu.graphicpacks.GraphicPacksActivity
 import info.cemu.cemu.guicore.ActivityContent
 import info.cemu.cemu.nativeinterface.NativeGameTitles.Game
 import info.cemu.cemu.settings.SettingsActivity
+import info.cemu.cemu.titlemanager.TitleManagerActivity
 import kotlinx.serialization.Serializable
 
 class MainActivity : ComponentActivity() {
@@ -137,19 +138,38 @@ fun GameListToolBarActions() {
         onDismissRequest = { expandMenu = false }
     ) {
         DropdownMenuItem(
-            onClick = { context.goToActivity(SettingsActivity::class.java) },
+            onClick = {
+                context.goToActivity(SettingsActivity::class.java)
+                expandMenu = false
+            },
             text = { Text(stringResource(R.string.settings)) },
         )
         DropdownMenuItem(
-            onClick = { context.goToActivity(GraphicPacksActivity::class.java) },
+            onClick = {
+                context.goToActivity(GraphicPacksActivity::class.java)
+                expandMenu = false
+            },
             text = { Text(stringResource(R.string.graphic_packs)) },
         )
         DropdownMenuItem(
-            onClick = { openCemuFolder(context) },
+            onClick = {
+                context.goToActivity(TitleManagerActivity::class.java)
+                expandMenu = false
+            },
+            text = { Text(stringResource(R.string.title_manager)) },
+        )
+        DropdownMenuItem(
+            onClick = {
+                openCemuFolder(context)
+                expandMenu = false
+            },
             text = { Text(stringResource(R.string.open_cemu_folder)) },
         )
         DropdownMenuItem(
-            onClick = { context.goToActivity(AboutCemuActivity::class.java) },
+            onClick = {
+                context.goToActivity(AboutCemuActivity::class.java)
+                expandMenu = false
+            },
             text = { Text(stringResource(R.string.about_cemu)) },
         )
     }

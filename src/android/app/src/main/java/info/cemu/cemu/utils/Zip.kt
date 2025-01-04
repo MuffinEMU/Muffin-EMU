@@ -1,4 +1,4 @@
-package info.cemu.cemu.zip
+package info.cemu.cemu.utils
 
 import java.io.FileOutputStream
 import java.io.IOException
@@ -7,13 +7,11 @@ import java.nio.file.Paths
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
-private const val DEFAULT_BUFFER_SIZE = 8192
-
 @Throws(IOException::class)
 fun unzip(stream: InputStream?, targetDir: String) {
     ZipInputStream(stream).use { zipInputStream ->
         var zipEntry: ZipEntry
-        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        val buffer = ByteArray(8192)
         while ((zipInputStream.nextEntry.also { zipEntry = it }) != null) {
             extractZipEntry(zipInputStream, zipEntry, buffer, targetDir)
             zipInputStream.closeEntry()

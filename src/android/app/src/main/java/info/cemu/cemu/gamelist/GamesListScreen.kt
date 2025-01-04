@@ -39,6 +39,7 @@ import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,6 +96,12 @@ fun GamesListScreen(
     }
 
     val state = rememberPullToRefreshState()
+
+    LaunchedEffect(Unit) {
+        if (gameListViewModel.checkIfGamePathsHaveChanged()) {
+            gameListViewModel.refreshGames()
+        }
+    }
 
     DisposableEffect(LocalLifecycleOwner.current) {
         onDispose {

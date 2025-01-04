@@ -34,13 +34,13 @@ Java_info_cemu_cemu_nativeinterface_NativeSwkbd_initializeSwkbd([[maybe_unused]]
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSwkbd_setCurrentInputText([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jstring initial_text)
 {
-	NativeSwkbd::s_currentInputText = JNIUtils::JStringToString(env, initial_text);
+	NativeSwkbd::s_currentInputText = JNIUtils::toString(env, initial_text);
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSwkbd_onTextChanged([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jstring j_text)
 {
-	std::string text = JNIUtils::JStringToString(env, j_text);
+	std::string text = JNIUtils::toString(env, j_text);
 	auto stringDiff = NativeSwkbd::getStringDiffs(text, NativeSwkbd::s_currentInputText);
 	for (size_t i = 0; i < stringDiff.numberOfCharacterToDelete; i++)
 		swkbd::keyInput(swkbd::BACKSPACE_KEYCODE);

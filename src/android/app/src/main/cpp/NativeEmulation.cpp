@@ -161,8 +161,8 @@ Java_info_cemu_cemu_nativeinterface_NativeEmulation_setReplaceTVWithPadView([[ma
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeEmulation_initializeActiveSettings(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring data_path, jstring cache_path)
 {
-	std::string dataPath = JNIUtils::JStringToString(env, data_path);
-	std::string cachePath = JNIUtils::JStringToString(env, cache_path);
+	std::string dataPath = JNIUtils::toString(env, data_path);
+	std::string cachePath = JNIUtils::toString(env, cache_path);
 	std::set<fs::path> failedWriteAccess;
 	ActiveSettings::SetPaths(false, {}, dataPath, dataPath, cachePath, dataPath, failedWriteAccess);
 }
@@ -258,5 +258,5 @@ Java_info_cemu_cemu_nativeinterface_NativeEmulation_startGame([[maybe_unused]] J
 {
 	GuiSystem::getWindowInfo().set_keystates_up();
 	NativeEmulation::initializeAudioDevices();
-	return NativeEmulation::startGame(JNIUtils::JStringToString(env, launchPath));
+	return NativeEmulation::startGame(JNIUtils::toString(env, launchPath));
 }

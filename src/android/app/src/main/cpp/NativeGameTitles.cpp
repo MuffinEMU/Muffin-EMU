@@ -1,8 +1,10 @@
-#include <Cafe/TitleList/SaveList.h>
-#include "JNIUtils.h"
-#include "Cafe/GameProfile/GameProfile.h"
-#include "GameTitleLoader.h"
 #include "AndroidGameTitleLoadedCallback.h"
+#include "Cafe/TitleList/SaveList.h"
+#include "Cafe/GameProfile/GameProfile.h"
+#include "JNIUtils.h"
+#include "GameTitleLoader.h"
+#include "WuaConverter.h"
+#include "CompressTitleCallbacks.h"
 
 namespace NativeGameTitles
 {
@@ -35,6 +37,8 @@ namespace NativeGameTitles
 		s_currentGameProfile.Reset();
 		s_currentGameProfile.Load(titleId);
 	}
+
+	std::unique_ptr<WuaConverter> s_wuaConverter;
 } // namespace NativeGameTitles
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -169,8 +173,8 @@ class SaveListCallback
 			name.replace(nl, 1, " - ");
 
 		JNIUtils::ScopedJNIENV env;
-		jstring nameJava = env->NewStringUTF(name.c_str());
-		jobject pathJava = env->NewStringUTF(saveInfo.GetPath().c_str());
+		jstring nameJava = JNIUtils::toJString(env, name);
+		jstring pathJava = JNIUtils::toJString(env, saveInfo.GetPath());
 		jobject saveData = env->NewObject(
 			*m_saveDataClass,
 			m_saveDataConstructorMID,
@@ -224,16 +228,15 @@ class TitleListCallbacks
 		if (titleInfo.IsSystemDataTitle())
 			return; // don't show system data titles for now
 
-		JNIUtils::ScopedJNIENV env;
-
 		ParsedMetaXml* metaInfo = titleInfo.GetMetaInfo();
 		std::string name = metaInfo->GetLongName(GetConfig().console_language.GetValue());
 		const auto nl = name.find(L'\n');
 		if (nl != std::string::npos)
 			name.replace(nl, 1, " - ");
 
-		jobject nameJava = env->NewStringUTF(name.c_str());
-		jobject pathJava = env->NewStringUTF(titleInfo.GetPath().c_str());
+		JNIUtils::ScopedJNIENV env;
+		jobject nameJava = JNIUtils::toJString(env, name);
+		jobject pathJava = JNIUtils::toJString(env, titleInfo.GetPath());
 		jobject titleData = env->NewObject(
 			*m_titleDataClass,
 			m_titleDataConstructorMID,
@@ -324,4 +327,218 @@ Java_info_cemu_cemu_nativeinterface_NativeGameTitles_setSaveListCallback([[maybe
 		s_saveListCallback = nullptr;
 	else
 		s_saveListCallback = std::make_unique<SaveListCallback>(save_list_callback);
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT jobject JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_checkIfTitleExists(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring meta_path)
+{
+	TitleInfo titleInfo(fs::path(JNIUtils::toString(env, meta_path)));
+
+	if (!titleInfo.IsValid())
+		return nullptr;
+
+	fs::path target_location = ActiveSettings::GetMlcPath(titleInfo.GetInstallPath());
+
+	auto createTitleExistsStatus = [&](jobject existsError = nullptr) {
+		if (existsError == nullptr)
+			existsError = JNIUtils::newObject(env, "info/cemu/cemu/nativeinterface/NativeGameTitles$TitleExistsError$None");
+		return JNIUtils::newObject(
+			env,
+			"info/cemu/cemu/nativeinterface/NativeGameTitles$TitleExistsStatus",
+			"(Linfo/cemu/cemu/nativeinterface/NativeGameTitles$TitleExistsError;Ljava/lang/String;)V",
+			existsError,
+			JNIUtils::toJString(env, target_location));
+	};
+
+	std::error_code ec;
+	if (!fs::exists(target_location, ec))
+	{
+		return createTitleExistsStatus();
+	}
+
+	try
+	{
+		const TitleInfo tmp(target_location);
+		if (!tmp.IsValid())
+		{
+			// does not exist / is not valid. We allow to overwrite it
+			return createTitleExistsStatus();
+		}
+
+		TitleIdParser tip(titleInfo.GetAppTitleId());
+		TitleIdParser tipOther(tmp.GetAppTitleId());
+
+		jint oldType = static_cast<jint>(tip.GetType());
+		jint toInstallType = static_cast<jint>(tipOther.GetType());
+		if (oldType != toInstallType)
+		{
+			jobject err = JNIUtils::newObject(
+				env,
+				"info/cemu/cemu/nativeinterface/NativeGameTitles$TitleExistsError$DifferentType",
+				"(II)V",
+				oldType,
+				toInstallType);
+			return createTitleExistsStatus(err);
+		}
+		else if (tmp.GetAppTitleVersion() == titleInfo.GetAppTitleVersion())
+		{
+			jobject err = JNIUtils::newObject(env, "info/cemu/cemu/nativeinterface/NativeGameTitles$TitleExistsError$SameVersion");
+			return createTitleExistsStatus(err);
+		}
+		else if (tmp.GetAppTitleVersion() > titleInfo.GetAppTitleVersion())
+		{
+			jobject err = JNIUtils::newObject(env, "info/cemu/cemu/nativeinterface/NativeGameTitles$TitleExistsError$NewVersion");
+			return createTitleExistsStatus(err);
+		}
+	} catch (const std::exception& ex)
+	{
+		cemuLog_log(LogType::Force, "exist-error: {} at {}", ex.what(), _pathToUtf8(target_location));
+	}
+
+	return createTitleExistsStatus();
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_addTitleFromPath(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring path)
+{
+	CafeTitleList::AddTitleFromPath(fs::path(JNIUtils::toString(env, path)));
+}
+
+struct Title
+{
+	uint64 uid;
+	uint16 version;
+};
+
+extern "C" [[maybe_unused]] JNIEXPORT jobject JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_queueTitleToCompress(JNIEnv* env, [[maybe_unused]] jclass clazz, jlong titleId, jlong selectedUID, jobject titlesCallback)
+{
+	jclass titlesCallbackClass = env->GetObjectClass(titlesCallback);
+	jmethodID getTitlesMID = env->GetMethodID(titlesCallbackClass, "getTitlesByTitleId", "(J)[Linfo/cemu/cemu/nativeinterface/NativeGameTitles$TitleIdToTitlesCallback$Title;");
+	jclass titleClass = env->FindClass("info/cemu/cemu/nativeinterface/NativeGameTitles$TitleIdToTitlesCallback$Title");
+	jfieldID versionFieldId = env->GetFieldID(titleClass, "version", "S");
+	jfieldID titleUIDFieldId = env->GetFieldID(titleClass, "titleUID", "J");
+
+	auto getTitlePrintPath = [&](const TitleInfo& titleInfo) -> jstring {
+		if (!titleInfo.IsValid())
+			return nullptr;
+		return JNIUtils::toJString(env, titleInfo.GetPrintPath());
+	};
+
+	auto getTitlesByTitleId = [&](uint64 titleId) -> std::vector<Title> {
+		auto titlesJava = static_cast<jobjectArray>(env->CallObjectMethod(titlesCallback, getTitlesMID, titleId));
+		jsize arraySize = env->GetArrayLength(titlesJava);
+		std::vector<Title> titles;
+		titles.reserve(arraySize);
+		for (jsize i = 0; i < arraySize; i++)
+		{
+			jobject title = env->GetObjectArrayElement(titlesJava, i);
+			uint64 uid = env->GetLongField(title, titleUIDFieldId);
+			uint16 version = env->GetShortField(title, versionFieldId);
+			titles.push_back(Title{.uid = uid, .version = version});
+		}
+		return titles;
+	};
+
+	TitleInfo titleInfo_base;
+	TitleInfo titleInfo_update;
+	TitleInfo titleInfo_aoc;
+
+	titleId = TitleIdParser::MakeBaseTitleId(titleId); // if the titleId of a separate update is selected, this converts it back to the base titleId
+	TitleIdParser titleIdParser(titleId);
+	bool hasBaseTitleId = titleIdParser.GetType() != TitleIdParser::TITLE_TYPE::AOC;
+	bool hasUpdateTitleId = titleIdParser.CanHaveSeparateUpdateTitleId();
+	TitleId updateTitleId = hasUpdateTitleId ? titleIdParser.GetSeparateUpdateTitleId() : 0;
+
+	// todo - AOC titleIds might differ from the base/update game in other bits than the type. We have to use the meta data from the base/update to match aoc to the base title id
+	// for now we just assume they match
+	TitleId aocTitleId;
+	if (hasBaseTitleId)
+		aocTitleId = (titleId & (uint64)~0xFF00000000) | (uint64)0xC00000000;
+	else
+		aocTitleId = titleId;
+
+	// find base and update
+	if (hasBaseTitleId)
+	{
+		for (const auto& title : getTitlesByTitleId(titleId))
+		{
+			if (!titleInfo_base.IsValid())
+			{
+				titleInfo_base = CafeTitleList::GetTitleInfoByUID(title.uid);
+				if (title.uid == selectedUID)
+					break; // prefer the users selection
+			}
+		}
+	}
+	if (hasUpdateTitleId)
+	{
+		for (const auto& title : getTitlesByTitleId(updateTitleId))
+		{
+			if (!titleInfo_update.IsValid())
+			{
+				titleInfo_update = CafeTitleList::GetTitleInfoByUID(title.uid);
+				if (title.uid == selectedUID)
+					break;
+			}
+			else
+			{
+				// if multiple updates are present use the newest one
+				if (titleInfo_update.GetAppTitleVersion() < title.version)
+					titleInfo_update = CafeTitleList::GetTitleInfoByUID(title.uid);
+				if (title.uid == selectedUID)
+					break;
+			}
+		}
+	}
+	// find AOC
+	for (const auto& title : getTitlesByTitleId(aocTitleId))
+	{
+		titleInfo_aoc = CafeTitleList::GetTitleInfoByUID(title.uid);
+		if (title.uid == selectedUID)
+			break;
+	}
+
+	NativeGameTitles::s_wuaConverter = std::make_unique<WuaConverter>(titleInfo_base, titleInfo_update, titleInfo_aoc);
+
+	jobject compressTitleInfo = JNIUtils::newObject(
+		env,
+		"info/cemu/cemu/nativeinterface/NativeGameTitles$CompressTitleInfo",
+		"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V",
+		getTitlePrintPath(titleInfo_base),
+		getTitlePrintPath(titleInfo_update),
+		getTitlePrintPath(titleInfo_aoc));
+	return compressTitleInfo;
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT jstring JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_getCompressedFileNameForQueuedTitle(JNIEnv* env, [[maybe_unused]] jclass clazz)
+{
+	if (NativeGameTitles::s_wuaConverter == nullptr)
+		return nullptr;
+	return JNIUtils::toJString(env, NativeGameTitles::s_wuaConverter->getCompressedFileName());
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_compressQueuedTitle([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint fd, jobject compressTitleCallbacks)
+{
+	if (NativeGameTitles::s_wuaConverter == nullptr)
+		return;
+	NativeGameTitles::s_wuaConverter->startConversion(fd, std::make_unique<CompressTitleCallbacks>(compressTitleCallbacks));
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT jlong JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_getCurrentProgressForCompression([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+{
+	if (NativeGameTitles::s_wuaConverter == nullptr)
+		return 0L;
+	return NativeGameTitles::s_wuaConverter->getTransferredInputBytes();
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeGameTitles_cancelTitleCompression([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+{
+	if (NativeGameTitles::s_wuaConverter == nullptr)
+		return;
+	NativeGameTitles::s_wuaConverter.reset();
 }

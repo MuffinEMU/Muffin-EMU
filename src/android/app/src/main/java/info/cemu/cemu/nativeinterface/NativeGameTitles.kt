@@ -108,4 +108,119 @@ object NativeGameTitles {
     fun interface GameTitleLoadedCallback {
         fun onGameTitleLoaded(game: Game?)
     }
+
+    @Keep
+    data class SaveData(
+        val name: String,
+        val path: String,
+        val titleId: Long,
+        val locationUID: Long,
+        val version: Short,
+        val region: Int,
+    )
+
+    @Keep
+    fun interface SaveListCallback {
+        fun onSaveDiscovered(saveData: SaveData)
+    }
+
+    @JvmStatic
+    external fun setSaveListCallback(saveListCallback: SaveListCallback?)
+
+    const val TITLE_TYPE_UNKNOWN: Int = 0xFF;
+    const val TITLE_TYPE_BASE_TITLE: Int = 0x00;
+    const val TITLE_TYPE_BASE_TITLE_DEMO: Int = 0x02;
+    const val TITLE_TYPE_BASE_TITLE_UPDATE: Int = 0x0E;
+    const val TITLE_TYPE_HOMEBREW: Int = 0x0F;
+    const val TITLE_TYPE_AOC: Int = 0x0C;
+    const val TITLE_TYPE_SYSTEM_TITLE: Int = 0x10;
+    const val TITLE_TYPE_SYSTEM_DATA: Int = 0x1B;
+    const val TITLE_TYPE_SYSTEM_OVERLAY_TITLE: Int = 0x30;
+
+    const val TITLE_DATA_FORMAT_HOST_FS: Int = 1;
+    const val TITLE_DATA_FORMAT_WUD: Int = 2;
+    const val TITLE_DATA_FORMAT_WIIU_ARCHIVE: Int = 3;
+    const val TITLE_DATA_FORMAT_NUS: Int = 4;
+    const val TITLE_DATA_FORMAT_WUHB: Int = 5;
+    const val TITLE_DATA_FORMAT_INVALID_STRUCTURE: Int = 0;
+
+    @Keep
+    data class TitleData(
+        val name: String,
+        val path: String,
+        val titleId: Long,
+        val locationUID: Long,
+        val version: Short,
+        val region: Int,
+        val titleType: Int,
+        val titleDataFormat: Int,
+    )
+
+    @Keep
+    interface TitleListCallbacks {
+        fun onTitleDiscovered(titleData: TitleData)
+        fun onTitleRemoved(locationUID: Long)
+    }
+
+    @JvmStatic
+    external fun refreshCafeTitleList()
+
+    @JvmStatic
+    external fun setTitleListCallbacks(titleListCallbacks: TitleListCallbacks?)
+
+    @Keep
+    sealed class TitleExistsError {
+        data object None : TitleExistsError()
+        data class DifferentType(val oldType: Int, val toInstallType: Int) : TitleExistsError()
+        data object SameVersion : TitleExistsError()
+        data object NewVersion : TitleExistsError()
+    }
+
+    @Keep
+    data class TitleExistsStatus(val existsError: TitleExistsError, val targetLocation: String)
+
+    @JvmStatic
+    external fun checkIfTitleExists(metaPath: String): TitleExistsStatus?
+
+    @JvmStatic
+    external fun addTitleFromPath(path: String)
+
+    @Keep
+    fun interface TitleIdToTitlesCallback {
+        data class Title(val version: Short, val titleUID: Long)
+
+        fun getTitlesByTitleId(titleId: Long): Array<Title>
+    }
+
+    @Keep
+    data class CompressTitleInfo(
+        val basePrintPath: String?,
+        val updatePrintPath: String?,
+        val aocPrintPath: String?,
+    )
+
+    @JvmStatic
+    external fun queueTitleToCompress(
+        titleId: Long,
+        selectedUID: Long,
+        titlesCallback: TitleIdToTitlesCallback,
+    ): CompressTitleInfo
+
+    @JvmStatic
+    external fun getCompressedFileNameForQueuedTitle(): String?
+
+    @Keep
+    interface TitleCompressCallbacks {
+        fun onFinished()
+        fun onError()
+    }
+
+    @JvmStatic
+    external fun compressQueuedTitle(fd: Int, compressCallbacks: TitleCompressCallbacks)
+
+    @JvmStatic
+    external fun getCurrentProgressForCompression(): Long
+
+    @JvmStatic
+    external fun cancelTitleCompression()
 }

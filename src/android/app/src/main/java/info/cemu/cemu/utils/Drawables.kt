@@ -1,4 +1,4 @@
-package info.cemu.cemu.drawable
+package info.cemu.cemu.utils
 
 import android.content.res.Resources
 import android.graphics.ColorMatrix
@@ -15,11 +15,11 @@ private val INVERTED_COLOR_MATRIX = ColorMatrix(
 )
 
 fun Drawable.getInvertedDrawable(resources: Resources?): Drawable {
-    val newDrawable = this.constantState!!.newDrawable(resources)
+    val newDrawable = constantState!!.newDrawable(resources)
     return newDrawable.applyInvertedColorTransform()
 }
 
 fun Drawable.applyInvertedColorTransform(): Drawable {
-    this.mutate().colorFilter = ColorMatrixColorFilter(INVERTED_COLOR_MATRIX)
+    mutate().colorFilter = ColorMatrixColorFilter(INVERTED_COLOR_MATRIX)
     return this
 }

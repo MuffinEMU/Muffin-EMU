@@ -5,13 +5,11 @@
 
 #include "Common/unix/FilesystemAndroid.h"
 
-using fd_streambuf = boost::iostreams::stream_buffer<boost::iostreams::file_descriptor_source>;
-
-class ContentUriStream : public fd_streambuf, public std::istream
+class ContentUriStream : public boost::iostreams::stream_buffer<boost::iostreams::file_descriptor_source>, public std::istream
 {
   public:
 	explicit ContentUriStream(const std::filesystem::path& path)
-		: fd_streambuf(FilesystemAndroid::openContentUri(path), boost::iostreams::close_handle), std::istream(this) {}
+		: boost::iostreams::stream_buffer<boost::iostreams::file_descriptor_source>(FilesystemAndroid::openContentUri(path), boost::iostreams::close_handle), std::istream(this) {}
 
 	bool is_open()
 	{

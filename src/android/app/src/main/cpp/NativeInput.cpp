@@ -24,8 +24,8 @@ namespace NativeInput
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeInput_onNativeKey(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring device_descriptor, jstring device_name, jint key, jboolean is_pressed)
 {
-	auto deviceDescriptor = JNIUtils::JStringToString(env, device_descriptor);
-	auto deviceName = JNIUtils::JStringToString(env, device_name);
+	auto deviceDescriptor = JNIUtils::toString(env, device_descriptor);
+	auto deviceName = JNIUtils::toString(env, device_name);
 	auto apiProvider = InputManager::instance().get_api_provider(InputAPI::Android);
 	auto androidControllerProvider = dynamic_cast<AndroidControllerProvider*>(apiProvider.get());
 	androidControllerProvider->on_key_event(deviceDescriptor, deviceName, key, is_pressed);
@@ -34,8 +34,8 @@ Java_info_cemu_cemu_nativeinterface_NativeInput_onNativeKey(JNIEnv* env, [[maybe
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeInput_onNativeAxis(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring device_descriptor, jstring device_name, jint axis, jfloat value)
 {
-	auto deviceDescriptor = JNIUtils::JStringToString(env, device_descriptor);
-	auto deviceName = JNIUtils::JStringToString(env, device_name);
+	auto deviceDescriptor = JNIUtils::toString(env, device_descriptor);
+	auto deviceName = JNIUtils::toString(env, device_name);
 	auto apiProvider = InputManager::instance().get_api_provider(InputAPI::Android);
 	auto androidControllerProvider = dynamic_cast<AndroidControllerProvider*>(apiProvider.get());
 	androidControllerProvider->on_axis_event(deviceDescriptor, deviceName, axis, value);
@@ -118,8 +118,8 @@ Java_info_cemu_cemu_nativeinterface_NativeInput_isControllerDisabled([[maybe_unu
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeInput_setControllerMapping(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring device_descriptor, jstring device_name, jint index, jint mapping_id, jint button_id)
 {
-	auto deviceName = JNIUtils::JStringToString(env, device_name);
-	auto deviceDescriptor = JNIUtils::JStringToString(env, device_descriptor);
+	auto deviceName = JNIUtils::toString(env, device_name);
+	auto deviceDescriptor = JNIUtils::toString(env, device_descriptor);
 	auto apiProvider = InputManager::instance().get_api_provider(InputAPI::Android);
 	auto controller = ControllerFactory::CreateController(InputAPI::Android, deviceDescriptor, deviceName);
 	AndroidEmulatedController::getAndroidEmulatedController(index).setMapping(mapping_id, controller, button_id);
@@ -129,7 +129,7 @@ extern "C" [[maybe_unused]] JNIEXPORT jstring JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeInput_getControllerMapping(JNIEnv* env, [[maybe_unused]] jclass clazz, jint index, jint mapping_id)
 {
 	auto mapping = AndroidEmulatedController::getAndroidEmulatedController(index).getMapping(mapping_id);
-	return env->NewStringUTF(mapping.value_or("").c_str());
+	return JNIUtils::toJString(env, mapping.value_or(""));
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
@@ -151,7 +151,7 @@ Java_info_cemu_cemu_nativeinterface_NativeInput_getControllerMappings(JNIEnv* en
 	for (const auto& pair : mappings)
 	{
 		jint key = pair.first;
-		jstring buttonName = env->NewStringUTF(pair.second.c_str());
+		jstring buttonName = JNIUtils::toJString(env, pair.second);
 		jobject mappingId = env->NewObject(integerClass, integerConstructor, key);
 		env->CallObjectMethod(hashMapObj, hashMapPut, mappingId, buttonName);
 	}

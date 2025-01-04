@@ -13,7 +13,7 @@ void AndroidSwkbdCallbacks::showSoftwareKeyboard(const std::string& initialText,
 {
 	std::thread([&, this]() {
 		JNIUtils::ScopedJNIENV env;
-		jstring j_initialText = env->NewStringUTF(initialText.c_str());
+		jstring j_initialText = JNIUtils::toJString(env, initialText);
 		JNIUtils::ScopedJNIENV()->CallStaticVoidMethod(*m_emulationActivityClass, m_showSoftwareKeyboardMethodID, j_initialText, maxLength);
 		env->DeleteLocalRef(j_initialText);
 	}).join();
