@@ -102,11 +102,15 @@ object NativeGameTitles {
         }
 
         val icon: ImageBitmap? = _icon?.asImageBitmap()
+
+        fun isValid(): Boolean {
+            return !path.isNullOrEmpty() && !name.isNullOrEmpty()
+        }
     }
 
     @Keep
     fun interface GameTitleLoadedCallback {
-        fun onGameTitleLoaded(game: Game?)
+        fun onGameTitleLoaded(game: Game)
     }
 
     @Keep

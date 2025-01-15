@@ -37,11 +37,13 @@ class GameListViewModel : ViewModel() {
     )
 
     init {
-        NativeGameTitles.setGameTitleLoadedCallback(NativeGameTitles.GameTitleLoadedCallback { game: Game? ->
-            if (game == null || !isGameValid(game))
+        NativeGameTitles.setGameTitleLoadedCallback(NativeGameTitles.GameTitleLoadedCallback { game: Game ->
+            if (!game.isValid())
                 return@GameTitleLoadedCallback
+
             if (_games.value.any { it.titleId == game.titleId })
                 return@GameTitleLoadedCallback
+
             _games.value += game
         })
         refreshGames()
@@ -63,10 +65,6 @@ class GameListViewModel : ViewModel() {
         _gameToRemoveShaders.value = null
     }
 
-    private fun isGameValid(game: Game): Boolean {
-        return !game.path.isNullOrEmpty() && !game.name.isNullOrEmpty()
-    }
-
     fun setGameTitleFavorite(game: Game, isFavorite: Boolean) {
         if (!_games.value.contains(game)) {
             return
@@ -82,7 +80,7 @@ class GameListViewModel : ViewModel() {
         NativeGameTitles.setGameTitleLoadedCallback(null)
     }
 
-    fun checkIfGamePathsHaveChanged(): Boolean {
+    fun gamePathsHaveChanged(): Boolean {
         val newGamePaths = NativeSettings.getGamesPaths().toSet()
         if (newGamePaths != gamePaths) {
             gamePaths = newGamePaths

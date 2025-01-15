@@ -189,7 +189,7 @@ class EmulationFragment(private val launchPath: String) : Fragment() {
     }
 
     private fun LayoutSideMenuTextItemBinding.setEnabled(isEnabled: Boolean) {
-        textItem.isClickable = isEnabled
+        textItem.isEnabled = isEnabled
         textItem.alpha = if (isEnabled) 1f else 0.7f
     }
 

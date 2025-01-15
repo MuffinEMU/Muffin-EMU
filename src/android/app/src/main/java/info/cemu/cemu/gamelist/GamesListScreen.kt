@@ -40,6 +40,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -74,7 +76,6 @@ data class GamesListScreenActions(
     val startGame: (Game) -> Unit,
 )
 
-
 @Composable
 fun GamesListScreen(
     selectedGameViewModel: GameViewModel,
@@ -83,27 +84,21 @@ fun GamesListScreen(
     toolbarActions: @Composable RowScope.() -> Unit,
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
     val gameToRemoveShaders by gameListViewModel.gameToRemoveShaders.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    fun onRefresh() = coroutineScope.launch {
-        refreshing = true
-        gameListViewModel.refreshGames()
-        delay(1500)
-        refreshing = false
-    }
-
     val state = rememberPullToRefreshState()
 
-    LaunchedEffect(Unit) {
-        if (gameListViewModel.checkIfGamePathsHaveChanged()) {
+    LaunchedEffect(lifecycleState) {
+        if (lifecycleState == Lifecycle.State.RESUMED && gameListViewModel.gamePathsHaveChanged())
             gameListViewModel.refreshGames()
-        }
     }
 
-    DisposableEffect(LocalLifecycleOwner.current) {
+    DisposableEffect(lifecycleOwner) {
         onDispose {
             gameListViewModel.setFilterText("")
         }
@@ -125,7 +120,14 @@ fun GamesListScreen(
                 .pullToRefresh(
                     isRefreshing = refreshing,
                     state = state,
-                    onRefresh = ::onRefresh,
+                    onRefresh = {
+                        coroutineScope.launch {
+                            refreshing = true
+                            gameListViewModel.refreshGames()
+                            delay(1500)
+                            refreshing = false
+                        }
+                    },
                 ),
         ) {
             GameList(
@@ -367,35 +369,39 @@ private fun createShortcutForGame(
     game: Game,
     onFailedToCreateShortCut: () -> Unit,
 ) {
-    val shortcutManager = context.getSystemService(
-        ShortcutManager::class.java
-    )
-    if (!shortcutManager.isRequestPinShortcutSupported) {
+    try {
+        val shortcutManager = context.getSystemService(
+            ShortcutManager::class.java
+        )
+        if (!shortcutManager.isRequestPinShortcutSupported) {
+            onFailedToCreateShortCut()
+            return
+        }
+        val icon = game.icon?.asAndroidBitmap().let {
+            if (it != null) ShortcutIcon.createWithBitmap(it)
+            else ShortcutIcon.createWithResource(context, R.mipmap.ic_launcher)
+        }
+        val intent = Intent(
+            context,
+            EmulationActivity::class.java
+        )
+        intent.setAction(Intent.ACTION_VIEW)
+        intent.putExtra(EmulationActivity.EXTRA_LAUNCH_PATH, game.path)
+        val pinShortcutInfo = ShortcutInfo.Builder(context, game.titleId.toString())
+            .setShortLabel(game.name!!)
+            .setIntent(intent)
+            .setIcon(icon)
+            .build()
+        val pinnedShortcutCallbackIntent =
+            shortcutManager.createShortcutResultIntent(pinShortcutInfo)
+        val successCallback = PendingIntent.getBroadcast(
+            context,
+            0,
+            pinnedShortcutCallbackIntent,
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        shortcutManager.requestPinShortcut(pinShortcutInfo, successCallback.intentSender)
+    } catch (_: Exception) {
         onFailedToCreateShortCut()
-        return
     }
-    val icon = game.icon?.asAndroidBitmap().let {
-        if (it != null) ShortcutIcon.createWithBitmap(it)
-        else ShortcutIcon.createWithResource(context, R.mipmap.ic_launcher)
-    }
-    val intent = Intent(
-        context,
-        EmulationActivity::class.java
-    )
-    intent.setAction(Intent.ACTION_VIEW)
-    intent.putExtra(EmulationActivity.EXTRA_LAUNCH_PATH, game.path)
-    val pinShortcutInfo = ShortcutInfo.Builder(context, game.titleId.toString())
-        .setShortLabel(game.name!!)
-        .setIntent(intent)
-        .setIcon(icon)
-        .build()
-    val pinnedShortcutCallbackIntent =
-        shortcutManager.createShortcutResultIntent(pinShortcutInfo)
-    val successCallback = PendingIntent.getBroadcast(
-        context,
-        0,
-        pinnedShortcutCallbackIntent,
-        PendingIntent.FLAG_IMMUTABLE
-    )
-    shortcutManager.requestPinShortcut(pinShortcutInfo, successCallback.intentSender)
 }
