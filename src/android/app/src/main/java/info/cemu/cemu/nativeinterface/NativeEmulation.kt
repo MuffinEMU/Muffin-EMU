@@ -4,9 +4,6 @@ import android.view.Surface
 
 object NativeEmulation {
     @JvmStatic
-    external fun initializeActiveSettings(dataPath: String?, cachePath: String?)
-
-    @JvmStatic
     external fun initializeEmulation()
 
     @JvmStatic
@@ -38,4 +35,7 @@ object NativeEmulation {
 
     @JvmStatic
     external fun recreateRenderSurface(isMainCanvas: Boolean)
+
+    @JvmStatic
+    external fun supportsLoadingCustomDriver(): Boolean
 }

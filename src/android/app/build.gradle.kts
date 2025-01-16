@@ -47,6 +47,9 @@ android {
         versionName = getVersionName()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    packaging {
+        jniLibs.useLegacyPackaging = true
+    }
     val keystoreFilePath: String? = System.getenv("ANDROID_KEYSTORE_FILE")
     signingConfigs {
         if (keystoreFilePath != null) {

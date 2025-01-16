@@ -4,6 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContentScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -75,7 +77,13 @@ fun GraphicPacksNav(
 
     NavHost(
         navController = navController,
-        startDestination = GraphicPackRoutes.GraphicPacksRootSectionRoute
+        startDestination = GraphicPackRoutes.GraphicPacksRootSectionRoute,
+        enterTransition = {
+            EnterTransition.None
+        },
+        exitTransition = {
+            ExitTransition.None
+        }
     ) {
         composable<GraphicPackRoutes.GraphicPacksRootSectionRoute> { backStackEntry ->
             val graphicPackViewModel: GraphicPackViewModel = viewModel(backStackEntry)

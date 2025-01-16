@@ -192,4 +192,16 @@ object NativeSettings {
 
     @JvmStatic
     external fun setConsoleLanguage(value: Int)
+
+    /**
+     * @return the selected driver directory path. If it's null, then the default system driver will be used.
+     */
+    @JvmStatic
+    external fun getCustomDriverPath(): String?
+
+    /**
+     * Sets the selected driver directory [path]. To use the default system driver, pass a null [path].
+     */
+    @JvmStatic
+    external fun setCustomDriverPath(path: String?)
 }

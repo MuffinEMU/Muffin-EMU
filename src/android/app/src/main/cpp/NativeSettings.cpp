@@ -362,3 +362,19 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_setConsoleLanguage([[maybe_un
 	g_config.data().console_language = static_cast<CafeConsoleLanguage>(console_language);
 	g_config.Save();
 }
+
+extern "C" [[maybe_unused]] JNIEXPORT jstring JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeSettings_getCustomDriverPath(JNIEnv* env, [[maybe_unused]] jclass clazz)
+{
+	std::string customDriverPath = g_config.data().custom_driver_path;
+	if (customDriverPath.empty())
+		return nullptr;
+	return JNIUtils::toJString(env, customDriverPath);
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeSettings_setCustomDriverPath(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring custom_driver_path)
+{
+	g_config.data().custom_driver_path = JNIUtils::toString(env, custom_driver_path);
+	g_config.Save();
+}

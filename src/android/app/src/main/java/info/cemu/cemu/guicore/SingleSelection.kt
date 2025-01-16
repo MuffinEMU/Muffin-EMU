@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -141,45 +142,45 @@ fun <T> SelectDialog(
                 .fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
         ) {
-            Box(
+            Text(
+                modifier = Modifier.padding(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 16.dp,
+                    bottom = 8.dp
+                ),
+                text = label,
+                fontSize = 24.sp,
+            )
+            Column(
                 modifier = Modifier
-                    .padding(8.dp)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp, horizontal = 16.dp)
+                    .weight(weight = 1.0f, fill = false)
+                    .verticalScroll(rememberScrollState()),
             ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        modifier = Modifier.padding(8.dp),
-                        text = label,
-                        fontSize = 24.sp,
+                choices.forEach { choice ->
+                    Choice(
+                        label = choiceToString(choice),
+                        selected = currentChoice == choice,
+                        isEnabled = isChoiceEnabled(choice),
+                        onClick = {
+                            onChoiceChanged(choice)
+                            onDismissRequest()
+                        },
                     )
-                    Column(
-                        modifier = Modifier
-                            .padding(vertical = 8.dp)
-                            .weight(weight = 1.0f, fill = false)
-                            .verticalScroll(rememberScrollState()),
-                    ) {
-                        choices.forEach { choice ->
-                            val isEnabled = isChoiceEnabled(choice)
-                            Choice(
-                                label = choiceToString(choice),
-                                selected = currentChoice == choice,
-                                isEnabled = isEnabled,
-                                onClick = {
-                                    onChoiceChanged(choice)
-                                    onDismissRequest()
-                                },
-                            )
-                        }
-                    }
-                    TextButton(
-                        onClick = onDismissRequest,
-                        modifier = Modifier
-                            .padding(8.dp)
-                            .align(Alignment.End),
-                    ) {
-                        Text(stringResource(R.string.cancel))
-                    }
                 }
+            }
+
+            HorizontalDivider()
+
+            TextButton(
+                onClick = onDismissRequest,
+                modifier = Modifier
+                    .padding(16.dp)
+                    .align(Alignment.End),
+            ) {
+                Text(stringResource(R.string.cancel))
             }
         }
     }

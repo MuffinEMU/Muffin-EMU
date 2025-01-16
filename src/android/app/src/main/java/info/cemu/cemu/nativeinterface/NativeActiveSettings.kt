@@ -2,6 +2,15 @@ package info.cemu.cemu.nativeinterface
 
 object NativeActiveSettings {
     @JvmStatic
+    external fun initializeActiveSettings(dataPath: String, cachePath: String)
+
+    @JvmStatic
+    external fun setNativeLibDir(nativeLibDir: String)
+
+    @JvmStatic
+    external fun setInternalDir(internalDir: String)
+
+    @JvmStatic
     external fun getMLCPath(): String
 
     @JvmStatic

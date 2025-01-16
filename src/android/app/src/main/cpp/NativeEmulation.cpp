@@ -159,15 +159,6 @@ Java_info_cemu_cemu_nativeinterface_NativeEmulation_setReplaceTVWithPadView([[ma
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
-Java_info_cemu_cemu_nativeinterface_NativeEmulation_initializeActiveSettings(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring data_path, jstring cache_path)
-{
-	std::string dataPath = JNIUtils::toString(env, data_path);
-	std::string cachePath = JNIUtils::toString(env, cache_path);
-	std::set<fs::path> failedWriteAccess;
-	ActiveSettings::SetPaths(false, {}, dataPath, dataPath, cachePath, dataPath, failedWriteAccess);
-}
-
-extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeEmulation_initializeEmulation([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
 {
 	FilesystemAndroid::setFilesystemCallbacks(std::make_shared<AndroidFilesystemCallbacks>());
@@ -177,12 +168,12 @@ Java_info_cemu_cemu_nativeinterface_NativeEmulation_initializeEmulation([[maybe_
 	ActiveSettings::Init();
 	LatteOverlay_init();
 	CemuCommonInit();
-	InitializeGlobalVulkan();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeEmulation_initializeRenderer(JNIEnv* env, [[maybe_unused]] jclass clazz, jobject j_testSurface)
 {
+	InitializeGlobalVulkan();
 	using ANativewindow_Ptr = std::unique_ptr<ANativeWindow, decltype(&ANativeWindow_release)>;
 	JNIUtils::handleNativeException(env, [&]() {
 		cemu_assert_debug(j_testSurface != nullptr);
@@ -214,6 +205,12 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeEmulation_recreateRenderSurface([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean is_main_canvas)
 {
 	// TODO
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeEmulation_supportsLoadingCustomDriver([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+{
+	return SupportsLoadingCustomDriver();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL

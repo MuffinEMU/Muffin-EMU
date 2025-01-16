@@ -378,6 +378,10 @@ struct CemuConfig
 	ConfigValue<bool> disable_screensaver{DISABLE_SCREENSAVER_DEFAULT};
 #undef DISABLE_SCREENSAVER_DEFAULT
 
+#if __ANDROID__
+	ConfigValue<std::string> custom_driver_path{};
+#endif
+
 	std::vector<std::string> game_paths;
 	std::mutex game_cache_entries_mutex;
 	std::vector<GameEntry> game_cache_entries;

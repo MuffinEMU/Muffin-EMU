@@ -344,6 +344,10 @@ void CemuConfig::Load(XMLConfigParser& parser)
 	auto usbdevices = parser.get("EmulatedUsbDevices");
 	emulated_usb_devices.emulate_skylander_portal = usbdevices.get("EmulateSkylanderPortal", emulated_usb_devices.emulate_skylander_portal);
 	emulated_usb_devices.emulate_infinity_base = usbdevices.get("EmulateInfinityBase", emulated_usb_devices.emulate_infinity_base);
+
+#if __ANDROID__
+	custom_driver_path = parser.get("custom_driver_path", "");
+#endif
 }
 
 void CemuConfig::Save(XMLConfigParser& parser)
@@ -543,6 +547,10 @@ void CemuConfig::Save(XMLConfigParser& parser)
 	auto usbdevices = config.set("EmulatedUsbDevices");
 	usbdevices.set("EmulateSkylanderPortal", emulated_usb_devices.emulate_skylander_portal.GetValue());
 	usbdevices.set("EmulateInfinityBase", emulated_usb_devices.emulate_infinity_base.GetValue());
+
+#if __ANDROID__
+	config.set("custom_driver_path", custom_driver_path.GetValue());
+#endif
 }
 
 GameEntry* CemuConfig::GetGameEntryByTitleId(uint64 titleId)

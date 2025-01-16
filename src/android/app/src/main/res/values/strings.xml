@@ -291,6 +291,7 @@
     <string name="title_exists_error_same_version">It seems that the selected title is already installed, do you want to reinstall it?</string>
     <string name="title_exists_error_new_version">It seems that a newer version is already installed, do you still want to install the older version?</string>
     <string name="ok">OK</string>
+    <string name="custom_drivers">Custom drivers</string>
     <string name="enabled">Enabled</string>
     <string name="wua_convert_action_label">Convert to WUA</string>
     <string name="wua_convert_current_progress">Current progress: %1$s</string>

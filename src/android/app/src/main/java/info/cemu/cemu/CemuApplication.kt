@@ -1,7 +1,10 @@
 package info.cemu.cemu
 
 import android.app.Application
-import info.cemu.cemu.nativeinterface.NativeEmulation.initializeActiveSettings
+import android.util.Log
+import info.cemu.cemu.nativeinterface.NativeActiveSettings.initializeActiveSettings
+import info.cemu.cemu.nativeinterface.NativeActiveSettings.setInternalDir
+import info.cemu.cemu.nativeinterface.NativeActiveSettings.setNativeLibDir
 import info.cemu.cemu.nativeinterface.NativeEmulation.initializeEmulation
 import info.cemu.cemu.nativeinterface.NativeEmulation.setDPI
 import info.cemu.cemu.nativeinterface.NativeGraphicPacks.refreshGraphicPacks
@@ -44,6 +47,8 @@ class CemuApplication : Application() {
         val displayMetrics = resources.displayMetrics
         setDPI(displayMetrics.density)
         initializeActiveSettings(internalFolder.toString(), internalFolder.toString())
+        setNativeLibDir(applicationInfo.nativeLibraryDir)
+        setInternalDir(dataDir.absolutePath)
         initializeEmulation()
         initializeSwkbd()
         refreshGraphicPacks()

@@ -1,18 +1,20 @@
 package info.cemu.cemu.settings.graphics
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.res.stringResource
 import info.cemu.cemu.R
+import info.cemu.cemu.guicore.Button
 import info.cemu.cemu.guicore.ScreenContent
 import info.cemu.cemu.guicore.SingleSelection
 import info.cemu.cemu.guicore.Toggle
 import info.cemu.cemu.guicore.enumtostringmapper.native.fullscreenScalingModeToStringId
 import info.cemu.cemu.guicore.enumtostringmapper.native.scalingFilterToStringId
 import info.cemu.cemu.guicore.enumtostringmapper.native.vsyncModeToStringId
+import info.cemu.cemu.nativeinterface.NativeEmulation
 import info.cemu.cemu.nativeinterface.NativeSettings
 
-
-val ScalingFilterChoices = listOf(
+private val SCALING_FILTER_CHOICES = listOf(
     NativeSettings.SCALING_FILTER_BILINEAR_FILTER,
     NativeSettings.SCALING_FILTER_BICUBIC_FILTER,
     NativeSettings.SCALING_FILTER_BICUBIC_HERMITE_FILTER,
@@ -20,11 +22,20 @@ val ScalingFilterChoices = listOf(
 )
 
 @Composable
-fun GraphicsSettingsScreen(navigateBack: () -> Unit) {
+fun GraphicsSettingsScreen(navigateBack: () -> Unit, goToCustomDriversSettings: () -> Unit) {
+    val supportsLoadingCustomDrivers =
+        rememberSaveable { NativeEmulation.supportsLoadingCustomDriver() }
+
     ScreenContent(
         appBarText = stringResource(R.string.general_settings),
         navigateBack = navigateBack,
     ) {
+        if (supportsLoadingCustomDrivers) {
+            Button(
+                label = stringResource(R.string.custom_drivers),
+                onClick = goToCustomDriversSettings
+            )
+        }
         Toggle(
             label = stringResource(R.string.async_shader_compile),
             description = stringResource(R.string.async_shader_compile_description),
@@ -63,14 +74,14 @@ fun GraphicsSettingsScreen(navigateBack: () -> Unit) {
             initialChoice = NativeSettings::getUpscalingFilter,
             onChoiceChanged = NativeSettings::setUpscalingFilter,
             choiceToString = { stringResource(scalingFilterToStringId(it)) },
-            choices = ScalingFilterChoices,
+            choices = SCALING_FILTER_CHOICES,
         )
         SingleSelection(
             label = stringResource(R.string.downscale_filter),
             initialChoice = NativeSettings::getDownscalingFilter,
             onChoiceChanged = NativeSettings::setDownscalingFilter,
             choiceToString = { stringResource(scalingFilterToStringId(it)) },
-            choices = ScalingFilterChoices,
+            choices = SCALING_FILTER_CHOICES,
         )
     }
 }

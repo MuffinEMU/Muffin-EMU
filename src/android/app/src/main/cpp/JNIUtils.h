@@ -182,7 +182,7 @@ namespace JNIUtils
 	jobject createJavaLongArrayList(JNIEnv* env, const std::vector<uint64_t>& values);
 
 	template<typename... TArgs>
-	jobject newObject(JNIEnv* env, const std::string& className, const std::string& ctrSig = "()V", TArgs... args)
+	jobject newObject(JNIEnv* env, const std::string& className, const std::string& ctrSig = "()V", TArgs&&... args)
 	{
 		jclass javaClass = env->FindClass(className.c_str());
 		jmethodID ctrId = env->GetMethodID(javaClass, "<init>", ctrSig.c_str());

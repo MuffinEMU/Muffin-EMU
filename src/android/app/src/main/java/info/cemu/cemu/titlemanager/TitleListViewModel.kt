@@ -320,7 +320,6 @@ class TitleListViewModel : ViewModel() {
                 withContext(Dispatchers.IO) {
                     val contentResolver = context.contentResolver
                     val buffer = ByteArray(8192)
-                    var bytesWritten = 0L
 
                     val (totalSize, entries) = listFilesInSourceDirs(
                         contentResolver = contentResolver,
@@ -337,7 +336,10 @@ class TitleListViewModel : ViewModel() {
                     backupFile.deleteRecursively()
                     if (installFile.exists())
                         installFile.renameTo(backupFile)
+
                     installStarted = true
+                    _titleInstallProgress.value = Pair(0, totalSize)
+                    var bytesWritten = 0L
 
                     for (file in entries) {
                         yield()

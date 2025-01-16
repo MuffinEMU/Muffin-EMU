@@ -549,6 +549,9 @@ if(ANDROID)
     Filesystem/fscDeviceAndroidSAF.cpp
     Filesystem/fscDeviceAndroidSAF.h
   )
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "(aarch64)|(AARCH64)")
+    target_link_libraries(CemuCafe PRIVATE adrenotools)
+  endif()
 endif()
 
 set_property(TARGET CemuCafe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
