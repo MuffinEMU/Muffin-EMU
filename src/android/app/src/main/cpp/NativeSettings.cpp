@@ -12,7 +12,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setOverlayPosition([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint position)
 {
 	g_config.data().overlay.position = static_cast<ScreenPosition>(position);
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -25,7 +24,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setOverlayTextScalePercentage([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint scalePercentage)
 {
 	g_config.data().overlay.text_scale = scalePercentage;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -38,7 +36,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setOverlayFPSEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.fps = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -51,7 +48,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setOverlayDrawCallsPerFrameEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.drawcalls = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -64,7 +60,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setOverlayCPUUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.cpu_usage = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -77,7 +72,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setOverlayCPUPerCoreUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.cpu_per_core_usage = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -90,7 +84,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setOverlayRAMUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.ram_usage = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -103,7 +96,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setOverlayVRAMUsageEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.vram_usage = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -116,7 +108,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setOverlayDebugEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().overlay.debug = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -129,7 +120,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setNotificationsPosition([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint position)
 {
 	g_config.data().notification.position = static_cast<ScreenPosition>(position);
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -142,7 +132,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setNotificationsTextScalePercentage([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint scalePercentage)
 {
 	g_config.data().notification.text_scale = scalePercentage;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -155,7 +144,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setNotificationControllerProfilesEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().notification.controller_profiles = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -168,7 +156,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setNotificationShaderCompilerEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().notification.shader_compiling = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -181,7 +168,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setNotificationFriendListEnabled([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().notification.friends = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
@@ -192,7 +178,6 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_addGamesPath(JNIEnv* env, [[m
 	if (std::any_of(gamePaths.begin(), gamePaths.end(), [&](auto path) { return path == gamePath; }))
 		return;
 	gamePaths.push_back(gamePath);
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
@@ -201,7 +186,6 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_removeGamesPath(JNIEnv* env, 
 	auto gamePath = JNIUtils::toString(env, uri);
 	auto& gamePaths = g_config.data().game_paths;
 	std::erase_if(gamePaths, [&](auto path) { return path == gamePath; });
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jobject JNICALL
@@ -220,7 +204,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setAsyncShaderCompile([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().async_compile = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -233,7 +216,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setVsyncMode([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint vsync_mode)
 {
 	g_config.data().vsync = vsync_mode;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -246,7 +228,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setUpscalingFilter([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint upscaling_filter)
 {
 	g_config.data().upscale_filter = upscaling_filter;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -259,7 +240,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setDownscalingFilter([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint downscaling_filter)
 {
 	g_config.data().downscale_filter = downscaling_filter;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -272,7 +252,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setFullscreenScaling([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint fullscreen_scaling)
 {
 	g_config.data().fullscreen_scaling = fullscreen_scaling;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -285,7 +264,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setAccurateBarriers([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jboolean enabled)
 {
 	g_config.data().vk_accurate_barriers = enabled;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jboolean JNICALL
@@ -303,7 +281,6 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_setAudioDeviceEnabled([[maybe
 		device = L"Default";
 	else
 		device.clear();
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -318,7 +295,6 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_setAudioDeviceChannels([[mayb
 {
 	auto& deviceChannels = tv ? g_config.data().tv_channels : g_config.data().pad_channels;
 	deviceChannels = static_cast<AudioChannels>(channels);
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -333,7 +309,6 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_setAudioDeviceVolume([[maybe_
 {
 	auto& deviceVolume = tv ? g_config.data().tv_volume : g_config.data().pad_volume;
 	deviceVolume = volume;
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -347,7 +322,6 @@ Java_info_cemu_cemu_nativeinterface_NativeSettings_setAudioLatency([[maybe_unuse
 {
 	g_config.data().audio_delay = latency / 12;
 	IAudioAPI::SetAudioDelay(g_config.data().audio_delay);
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jint JNICALL
@@ -360,7 +334,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setConsoleLanguage([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jint console_language)
 {
 	g_config.data().console_language = static_cast<CafeConsoleLanguage>(console_language);
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT jstring JNICALL
@@ -376,5 +349,10 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeSettings_setCustomDriverPath(JNIEnv* env, [[maybe_unused]] jclass clazz, jstring custom_driver_path)
 {
 	g_config.data().custom_driver_path = JNIUtils::toString(env, custom_driver_path);
+}
+
+extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
+Java_info_cemu_cemu_nativeinterface_NativeSettings_saveSettings([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz)
+{
 	g_config.Save();
 }

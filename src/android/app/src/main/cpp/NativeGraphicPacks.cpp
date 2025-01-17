@@ -38,7 +38,6 @@ namespace NativeGraphicPacks
 			auto& it = data.graphic_pack_entries[filename];
 			it.try_emplace("_disabled", "false");
 		}
-		g_config.Save();
 	}
 
 	jobject getGraphicPresets(JNIEnv* env, GraphicPackPtr graphicPack, sint64 id)

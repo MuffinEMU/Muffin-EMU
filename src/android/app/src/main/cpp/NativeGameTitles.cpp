@@ -119,7 +119,6 @@ extern "C" [[maybe_unused]] JNIEXPORT void JNICALL
 Java_info_cemu_cemu_nativeinterface_NativeGameTitles_setGameTitleFavorite([[maybe_unused]] JNIEnv* env, [[maybe_unused]] jclass clazz, jlong game_title_id, jboolean isFavorite)
 {
 	GetConfig().SetGameListFavorite(game_title_id, isFavorite);
-	g_config.Save();
 }
 
 extern "C" [[maybe_unused]] JNIEXPORT void JNICALL

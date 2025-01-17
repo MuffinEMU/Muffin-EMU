@@ -12,6 +12,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import info.cemu.cemu.guicore.ActivityContent
+import info.cemu.cemu.nativeinterface.NativeSettings
 import info.cemu.cemu.settings.audio.AudioSettingsScreen
 import info.cemu.cemu.settings.customdrivers.CustomDriversScreen
 import info.cemu.cemu.settings.gamespath.GamePathsScreen
@@ -32,6 +33,11 @@ class SettingsActivity : ComponentActivity() {
                 SettingsNav(parentNavBack = ::onNavigateUp)
             }
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        NativeSettings.saveSettings()
     }
 }
 

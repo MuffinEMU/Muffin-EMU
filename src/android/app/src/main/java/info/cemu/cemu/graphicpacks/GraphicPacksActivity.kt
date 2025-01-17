@@ -16,6 +16,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import info.cemu.cemu.guicore.ActivityContent
+import info.cemu.cemu.nativeinterface.NativeSettings
 import kotlinx.serialization.Serializable
 
 class GraphicPacksActivity : ComponentActivity() {
@@ -26,6 +27,11 @@ class GraphicPacksActivity : ComponentActivity() {
                 GraphicPacksNav(parentNavBack = ::onNavigateUp)
             }
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        NativeSettings.saveSettings()
     }
 }
 

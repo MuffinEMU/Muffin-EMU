@@ -40,6 +40,7 @@ import info.cemu.cemu.gamelist.GamesListScreenActions
 import info.cemu.cemu.graphicpacks.GraphicPacksActivity
 import info.cemu.cemu.guicore.ActivityContent
 import info.cemu.cemu.nativeinterface.NativeGameTitles.Game
+import info.cemu.cemu.nativeinterface.NativeSettings
 import info.cemu.cemu.settings.SettingsActivity
 import info.cemu.cemu.titlemanager.TitleManagerActivity
 import kotlinx.serialization.Serializable
@@ -52,6 +53,11 @@ class MainActivity : ComponentActivity() {
                 MainNav()
             }
         }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        NativeSettings.saveSettings()
     }
 }
 

@@ -2,6 +2,9 @@ package info.cemu.cemu.nativeinterface
 
 object NativeSettings {
     @JvmStatic
+    external fun saveSettings()
+
+    @JvmStatic
     external fun addGamesPath(uri: String?)
 
     @JvmStatic
