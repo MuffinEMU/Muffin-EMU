@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -16,9 +17,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -41,7 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.ScreenContentLazy
+import info.cemu.cemu.guicore.components.ScreenContentLazy
 import kotlinx.coroutines.launch
 
 @Composable
@@ -53,22 +57,24 @@ fun CustomDriversScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val installedDrivers by customDriversViewModel.installedDrivers.collectAsState()
     val isSystemDriverSelected by customDriversViewModel.isSystemDriverSelected.collectAsState()
+    val isDriverInstallInProgress by customDriversViewModel.isDriverInstallInProgress.collectAsState()
     val context = LocalContext.current
 
     val customDriversInstallLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri == null) return@rememberLauncherForActivityResult
-            val installStatus = context.contentResolver.openInputStream(uri)?.use {
-                customDriversViewModel.installDriver(it)
-            }
-            val errorMessage = when (installStatus) {
-                DriverInstallStatus.AlreadyInstalled -> "Driver already installed"
-                DriverInstallStatus.ErrorInstalling -> "Failed to install driver"
-                else -> return@rememberLauncherForActivityResult
-            }
-            coroutineScope.launch {
-                snackbarHostState.currentSnackbarData?.dismiss()
-                snackbarHostState.showSnackbar(errorMessage)
+
+            customDriversViewModel.installDriver(context, uri) { installStatus ->
+                val message = when (installStatus) {
+                    DriverInstallStatus.AlreadyInstalled -> "Driver already installed"
+                    DriverInstallStatus.ErrorInstalling -> "Failed to install driver"
+                    DriverInstallStatus.Installed -> "Driver installed successfully"
+                }
+
+                coroutineScope.launch {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    snackbarHostState.showSnackbar(message)
+                }
             }
         }
 
@@ -99,6 +105,34 @@ fun CustomDriversScreen(
             )
         }
     }
+
+    if (isDriverInstallInProgress)
+        DriverInstallProgressDialog()
+}
+
+@Composable
+private fun DriverInstallProgressDialog() {
+    AlertDialog(
+        title = {
+            Text("Installing")
+        },
+        text = {
+            Column(
+                modifier = Modifier.padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Installing driver in progress")
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                )
+            }
+        },
+        onDismissRequest = {},
+        confirmButton = {},
+        dismissButton = {}
+    )
 }
 
 @Composable

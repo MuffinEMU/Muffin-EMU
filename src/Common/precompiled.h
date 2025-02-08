@@ -333,8 +333,22 @@ inline uint64 _udiv128(uint64 highDividend, uint64 lowDividend, uint64 divisor, 
 
 // On aarch64 we handle some of the x86 intrinsics by implementing them as wrappers
 #if defined(__aarch64__)
+inline void _mm_pause(void)
+{
+    asm volatile("isb");
+}
 
-#include "sse2neon.h";
+inline uint64 __rdtsc()
+{
+    uint64 t;
+    asm volatile("mrs %0, cntvct_el0" : "=r" (t));
+    return t;
+}
+
+inline void _mm_mfence()
+{
+
+}
 
 inline unsigned char _addcarry_u64(unsigned char carry, unsigned long long a, unsigned long long b, unsigned long long *result)
 {

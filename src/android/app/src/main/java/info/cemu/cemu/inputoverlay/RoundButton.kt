@@ -5,7 +5,7 @@ import android.graphics.Rect
 import androidx.annotation.DrawableRes
 import kotlin.math.min
 
-class RoundButton internal constructor(
+class RoundButton constructor(
     resources: Resources,
     @DrawableRes buttonId: Int,
     onButtonStateChange: (state: Boolean) -> Unit,

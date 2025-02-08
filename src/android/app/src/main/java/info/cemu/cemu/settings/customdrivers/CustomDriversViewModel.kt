@@ -2,6 +2,8 @@
 
 package info.cemu.cemu.settings.customdrivers
 
+import android.content.Context
+import android.net.Uri
 import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,14 +11,16 @@ import info.cemu.cemu.nativeinterface.NativeActiveSettings
 import info.cemu.cemu.nativeinterface.NativeSettings
 import info.cemu.cemu.utils.decodeJsonFromFile
 import info.cemu.cemu.utils.unzip
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import java.io.File
-import java.io.InputStream
 import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.Path
 import kotlin.io.path.createDirectories
@@ -64,79 +68,102 @@ class CustomDriversViewModel : ViewModel() {
     val installedDrivers = _installedDrivers.asStateFlow()
 
     init {
-        _installedDrivers.value = parseInstalledDrivers()
-    }
-
-    private fun parseInstalledDrivers(): List<Driver> {
-        val customDriversDir = getCustomDriversDir()
-
-        if (!customDriversDir.isDirectory())
-            return emptyList()
-
-        val driverDirs: Array<File> = customDriversDir.toFile().listFiles() ?: return emptyList()
-
-        val drivers = mutableListOf<Driver>()
-        val selectedDriver = selectedDriverPath.value
-
-        for (driverDir in driverDirs) {
-            if (!driverDir.isDirectory)
-                continue
-            val metadata =
-                decodeJsonFromFile<DriverMetadata>(driverDir.resolve(META_FILE_NAME)) ?: continue
-            val driver = Driver(
-                path = driverDir.path,
-                metadata = metadata,
-                selected = selectedDriver == driverDir.path,
-            )
-            drivers.add(driver)
+        viewModelScope.launch {
+            _installedDrivers.value = parseInstalledDrivers()
         }
-
-        drivers.sortBy { it.metadata.name }
-
-        return drivers
     }
 
-    fun installDriver(driverZipFileInputStream: InputStream): DriverInstallStatus {
-        val tempDir =
-            Path(NativeActiveSettings.getUserDataPath()).resolve(Uuid.random().toString())
-
-        try {
-            tempDir.createDirectories()
-            unzip(driverZipFileInputStream, tempDir)
-
-            val metadata =
-                decodeJsonFromFile<DriverMetadata>(tempDir.resolve(META_FILE_NAME).toFile())
-            if (metadata == null
-                || metadata.minApi > Build.VERSION.SDK_INT
-                || metadata.schemaVersion != SUPPORTED_SCHEMA_VERSION
-                || !tempDir.resolve(metadata.libraryName).exists()
-            ) {
-                tempDir.deleteRecursively()
-                return DriverInstallStatus.ErrorInstalling
-            }
-
-            if (_installedDrivers.value.any { it.metadata == metadata }) {
-                tempDir.deleteRecursively()
-                return DriverInstallStatus.AlreadyInstalled
-            }
-
+    private suspend fun parseInstalledDrivers(): List<Driver> {
+        return withContext(Dispatchers.IO) {
             val customDriversDir = getCustomDriversDir()
-            customDriversDir.createDirectories()
-            val driverPath = tempDir.moveTo(customDriversDir.resolve(tempDir.fileName))
 
-            _installedDrivers.value = _installedDrivers.value.toMutableList().apply {
+            if (!customDriversDir.isDirectory())
+                return@withContext emptyList()
+
+            val driverDirs: Array<File> =
+                customDriversDir.toFile().listFiles() ?: return@withContext emptyList()
+
+            val drivers = mutableListOf<Driver>()
+            val selectedDriver = selectedDriverPath.value
+
+            for (driverDir in driverDirs) {
+                if (!driverDir.isDirectory)
+                    continue
+                val metadata =
+                    decodeJsonFromFile<DriverMetadata>(driverDir.resolve(META_FILE_NAME))
+                        ?: continue
                 val driver = Driver(
+                    path = driverDir.path,
                     metadata = metadata,
-                    path = driverPath.toString(),
+                    selected = selectedDriver == driverDir.path,
                 )
-                add(driver)
-                sortBy { it.metadata.name }
+                drivers.add(driver)
             }
 
-            return DriverInstallStatus.Installed
-        } catch (exception: Exception) {
-            tempDir.deleteRecursively()
-            return DriverInstallStatus.ErrorInstalling
+            drivers.sortBy { it.metadata.name }
+
+            return@withContext drivers
+        }
+    }
+
+    private val _isDriverInstallInProgress = MutableStateFlow(false)
+    val isDriverInstallInProgress = _isDriverInstallInProgress.asStateFlow()
+
+    fun installDriver(
+        context: Context,
+        driverZipUri: Uri,
+        onInstallFinished: (DriverInstallStatus) -> Unit,
+    ) {
+        _isDriverInstallInProgress.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            val tempDir =
+                Path(NativeActiveSettings.getUserDataPath()).resolve(Uuid.random().toString())
+
+            try {
+                tempDir.createDirectories()
+
+                context.contentResolver.openInputStream(driverZipUri)?.use {
+                    unzip(it, tempDir)
+                }
+
+                val metadata =
+                    decodeJsonFromFile<DriverMetadata>(tempDir.resolve(META_FILE_NAME).toFile())
+                if (metadata == null
+                    || metadata.minApi > Build.VERSION.SDK_INT
+                    || metadata.schemaVersion != SUPPORTED_SCHEMA_VERSION
+                    || !tempDir.resolve(metadata.libraryName).exists()
+                ) {
+                    tempDir.deleteRecursively()
+                    onInstallFinished(DriverInstallStatus.ErrorInstalling)
+                    return@launch
+                }
+
+                if (_installedDrivers.value.any { it.metadata == metadata }) {
+                    tempDir.deleteRecursively()
+                    onInstallFinished(DriverInstallStatus.AlreadyInstalled)
+                    return@launch
+                }
+
+                val customDriversDir = getCustomDriversDir()
+                customDriversDir.createDirectories()
+                val driverPath = tempDir.moveTo(customDriversDir.resolve(tempDir.fileName))
+
+                _installedDrivers.value = _installedDrivers.value.toMutableList().apply {
+                    val driver = Driver(
+                        metadata = metadata,
+                        path = driverPath.toString(),
+                    )
+                    add(driver)
+                    sortBy { it.metadata.name }
+                }
+
+                onInstallFinished(DriverInstallStatus.Installed)
+            } catch (exception: Exception) {
+                tempDir.deleteRecursively()
+                onInstallFinished(DriverInstallStatus.ErrorInstalling)
+            } finally {
+                _isDriverInstallInProgress.value = false
+            }
         }
     }
 
@@ -150,7 +177,9 @@ class CustomDriversViewModel : ViewModel() {
             NativeSettings.setCustomDriverPath(null)
         }
 
-        Path(driver.path).toFile().deleteRecursively()
+        viewModelScope.launch(Dispatchers.IO) {
+            Path(driver.path).toFile().deleteRecursively()
+        }
     }
 
     fun setSystemDriverSelected() {

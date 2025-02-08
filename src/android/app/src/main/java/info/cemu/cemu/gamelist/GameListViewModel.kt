@@ -15,14 +15,15 @@ import kotlinx.coroutines.flow.stateIn
 
 class GameListViewModel : ViewModel() {
     private var gamePaths = NativeSettings.getGamesPaths().toSet()
+
     private val _filterText = MutableStateFlow("")
-    private val filterText = _filterText.asStateFlow()
+    val filterText = _filterText.asStateFlow()
     fun setFilterText(filterText: String) {
         _filterText.value = filterText
     }
 
     private val _games = MutableStateFlow<Set<Game>>(emptySet())
-    val games: StateFlow<List<Game>> = filterText.combine(_games) { filter, games ->
+    val games: StateFlow<List<Game>> = combine(_filterText, _games) { filter, games ->
         if (filter.isBlank()) {
             games
         } else {
@@ -49,20 +50,8 @@ class GameListViewModel : ViewModel() {
         refreshGames()
     }
 
-    private val _gameToRemoveShaders = MutableStateFlow<Game?>(null)
-    val gameToRemoveShaders = _gameToRemoveShaders.asStateFlow()
-    fun removeShadersForSelectedGame() {
-        if (_gameToRemoveShaders.value == null) return
-        NativeGameTitles.removeShaderCacheFilesForTitle(_gameToRemoveShaders.value!!.titleId)
-        _gameToRemoveShaders.value = null
-    }
-
-    fun setGameForShadersRemoval(game: Game) {
-        _gameToRemoveShaders.value = game
-    }
-
-    fun clearSelectedGameForShaderRemoval() {
-        _gameToRemoveShaders.value = null
+    fun removeShadersForGame(game: Game) {
+        NativeGameTitles.removeShaderCacheFilesForTitle(game.titleId)
     }
 
     fun setGameTitleFavorite(game: Game, isFavorite: Boolean) {

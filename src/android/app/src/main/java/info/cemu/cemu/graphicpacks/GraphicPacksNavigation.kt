@@ -1,41 +1,21 @@
 package info.cemu.cemu.graphicpacks
 
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContentScope
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavGraphBuilder
-import androidx.navigation.compose.NavHost
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import info.cemu.cemu.guicore.ActivityContent
-import info.cemu.cemu.nativeinterface.NativeSettings
+import androidx.navigation.compose.navigation
 import kotlinx.serialization.Serializable
 
-class GraphicPacksActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            ActivityContent {
-                GraphicPacksNav(parentNavBack = ::onNavigateUp)
-            }
-        }
-    }
+@Serializable
+object GraphicPacksRoute
 
-    override fun onPause() {
-        super.onPause()
-        NativeSettings.saveSettings()
-    }
-}
-
-object GraphicPackRoutes {
+private object GraphicPackRoutes {
     @Serializable
     object GraphicPacksRootSectionRoute
 
@@ -62,42 +42,22 @@ private inline fun <reified T : Any, reified U : GraphicPackNode> NavGraphBuilde
     }
 }
 
-@Composable
-fun GraphicPacksNav(
-    parentNavBack: () -> Unit,
-) {
-    val navController = rememberNavController()
-
-    fun navigateBack() {
-        if (!navController.popBackStack()) {
-            parentNavBack()
-        }
+private fun graphicPacksNavigate(navController: NavController, graphicPackNode: GraphicPackNode) {
+    when (graphicPackNode) {
+        is GraphicPackSectionNode -> navController.navigate(GraphicPackRoutes.GraphicPackSectionScreenRoute)
+        is GraphicPackDataNode -> navController.navigate(GraphicPackRoutes.GraphicPackDataScreenRoute)
     }
+}
 
-    fun graphicPacksNavigate(graphicPackNode: GraphicPackNode) {
-        when (graphicPackNode) {
-            is GraphicPackSectionNode -> navController.navigate(GraphicPackRoutes.GraphicPackSectionScreenRoute)
-            is GraphicPackDataNode -> navController.navigate(GraphicPackRoutes.GraphicPackDataScreenRoute)
-        }
-    }
-
-    NavHost(
-        navController = navController,
-        startDestination = GraphicPackRoutes.GraphicPacksRootSectionRoute,
-        enterTransition = {
-            EnterTransition.None
-        },
-        exitTransition = {
-            ExitTransition.None
-        }
-    ) {
+fun NavGraphBuilder.graphicPacksNavigation(navController: NavHostController) {
+    navigation<GraphicPacksRoute>(startDestination = GraphicPackRoutes.GraphicPacksRootSectionRoute) {
         composable<GraphicPackRoutes.GraphicPacksRootSectionRoute> { backStackEntry ->
             val graphicPackViewModel: GraphicPackViewModel = viewModel(backStackEntry)
             GraphicPacksRootSectionScreen(
-                navigateBack = ::navigateBack,
+                navigateBack = { navController.popBackStack() },
                 graphicPackNodeNavigate = {
                     graphicPackViewModel.graphicPackNode = it
-                    graphicPacksNavigate(it)
+                    graphicPacksNavigate(navController, it)
                 }
             )
         }
@@ -106,10 +66,10 @@ fun GraphicPacksNav(
         ) { backStackEntry, graphicPackNode ->
             val graphicPacksViewModel: GraphicPackViewModel = viewModel(backStackEntry)
             GraphicPacksSectionScreen(
-                navigateBack = ::navigateBack,
+                navigateBack = { navController.popBackStack() },
                 graphicPackNodeNavigate = {
                     graphicPacksViewModel.graphicPackNode = it
-                    graphicPacksNavigate(it)
+                    graphicPacksNavigate(navController, it)
                 },
                 graphicPackSectionNode = graphicPackNode,
             )
@@ -125,7 +85,7 @@ fun GraphicPacksNav(
                 }
             )
             GraphicPackDataScreen(
-                navigateBack = ::navigateBack,
+                navigateBack = { navController.popBackStack() },
                 graphicPackDataViewModel = graphicPackDataViewModel,
             )
         }

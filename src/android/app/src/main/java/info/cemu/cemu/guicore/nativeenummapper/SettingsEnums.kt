@@ -1,4 +1,4 @@
-package info.cemu.cemu.guicore.enumtostringmapper.native
+package info.cemu.cemu.guicore.nativeenummapper
 
 import androidx.annotation.StringRes
 import info.cemu.cemu.R

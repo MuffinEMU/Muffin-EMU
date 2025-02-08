@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import info.cemu.cemu.BuildConfig
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.ScreenContent
+import info.cemu.cemu.guicore.components.ScreenContent
 
 @Composable
 fun AboutCemuScreen(navigateBack: () -> Unit) {

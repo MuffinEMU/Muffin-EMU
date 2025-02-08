@@ -5,7 +5,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.DocumentsContract
-import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -27,7 +26,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import java.io.File
 import java.nio.file.Path
@@ -189,17 +187,14 @@ class TitleListViewModel : ViewModel() {
 
         _titleToBeDeleted.value = titleEntry
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 if (!delete(context.contentResolver, titleEntry.path)) {
                     deleteCallbacks.onError()
                     return@launch
                 }
-
                 _titleEntries.value =
-                    _titleEntries.value.toMutableList().also { titleEntriesList ->
-                        titleEntriesList.removeIf { it.locationUID == titleEntry.locationUID || it.path == titleEntry.path }
-                    }
+                    _titleEntries.value.filter { it.locationUID != titleEntry.locationUID && it.path != titleEntry.path }
                 deleteCallbacks.onDeleteFinished()
             } catch (e: Exception) {
                 deleteCallbacks.onError()
@@ -310,64 +305,55 @@ class TitleListViewModel : ViewModel() {
         _titleInstallInProgress.value = true
 
         val oldInstallJob = installTitleJob
-        installTitleJob = viewModelScope.launch {
+        installTitleJob = viewModelScope.launch(Dispatchers.IO) {
             var installStarted = false
-            var installFinished = false
             try {
                 cleanupJob?.join()
                 oldInstallJob?.join()
+                val contentResolver = context.contentResolver
+                val buffer = ByteArray(8192)
 
-                withContext(Dispatchers.IO) {
-                    val contentResolver = context.contentResolver
-                    val buffer = ByteArray(8192)
+                val (totalSize, entries) = listFilesInSourceDirs(
+                    contentResolver = contentResolver,
+                    titleDir = DocumentFile.fromTreeUri(context, titleUri)!!,
+                    titleUri = titleUri,
+                    targetLocation = targetLocation,
+                )
 
-                    val (totalSize, entries) = listFilesInSourceDirs(
-                        contentResolver = contentResolver,
-                        titleDir = DocumentFile.fromTreeUri(context, titleUri)!!,
-                        titleUri = titleUri,
-                        targetLocation = targetLocation,
-                    )
+                if (totalSize > mlcPath.toFile().freeSpace) {
+                    titleInstallCallbacks.onError()
+                    return@launch
+                }
 
-                    if (totalSize > mlcPath.toFile().freeSpace) {
-                        titleInstallCallbacks.onError()
-                        return@withContext
-                    }
+                backupFile.deleteRecursively()
+                if (installFile.exists())
+                    installFile.renameTo(backupFile)
 
-                    backupFile.deleteRecursively()
-                    if (installFile.exists())
-                        installFile.renameTo(backupFile)
+                installStarted = true
+                _titleInstallProgress.value = Pair(0, totalSize)
+                var bytesWritten = 0L
 
-                    installStarted = true
-                    _titleInstallProgress.value = Pair(0, totalSize)
-                    var bytesWritten = 0L
+                for (file in entries) {
+                    yield()
+                    when (file) {
+                        is DirEntry.Dir -> {
+                            file.destinationPath.createDirectories()
+                        }
 
-                    for (file in entries) {
-                        yield()
-                        when (file) {
-                            is DirEntry.Dir -> {
-                                file.destinationPath.createDirectories()
-                            }
-
-                            is DirEntry.File -> contentResolver.openInputStream(file.uri)?.use {
-                                copyInputStreamToFile(it, file.destinationPath, buffer)
-                                bytesWritten += file.sizeInBytes
-                                _titleInstallProgress.value = Pair(bytesWritten, totalSize)
-                            }
+                        is DirEntry.File -> contentResolver.openInputStream(file.uri)?.use {
+                            copyInputStreamToFile(it, file.destinationPath, buffer)
+                            bytesWritten += file.sizeInBytes
+                            _titleInstallProgress.value = Pair(bytesWritten, totalSize)
                         }
                     }
-
-                    if (backupFile.exists())
-                        backupFile.deleteRecursively()
-
-                    installFinished = true
                 }
 
-                if (installFinished) {
-                    NativeGameTitles.addTitleFromPath(targetLocation)
-                    titleInstallCallbacks.onInstallFinished()
-                }
+                if (backupFile.exists())
+                    backupFile.deleteRecursively()
+
+                NativeGameTitles.addTitleFromPath(targetLocation)
+                titleInstallCallbacks.onInstallFinished()
             } catch (exception: Exception) {
-                Log.e("TITLE_LIST", "Failed to install ${exception.message}")
                 if (installStarted)
                     cleanupInstall(installFile)
 
@@ -382,21 +368,19 @@ class TitleListViewModel : ViewModel() {
     private var cleanupJob: Job? = null
     private fun cleanupInstall(installFile: File) {
         val oldCleanupJob = cleanupJob
-        cleanupJob = viewModelScope.launch {
+        cleanupJob = viewModelScope.launch(Dispatchers.IO) {
             oldCleanupJob?.join()
-            withContext(Dispatchers.IO) {
-                val installPath = installFile.toPath()
-                var tempFile: File? = null
-                if (installFile.exists()) {
-                    val tempName = "${installPath.fileName}-${Random.nextUInt()}"
-                    tempFile = installPath.resolveSibling(tempName).toFile()
-                    installFile.renameTo(tempFile!!)
-                }
-                val backupInstall = installPath.getBackupFile()
-                if (backupInstall.exists())
-                    backupInstall.renameTo(installFile)
-                tempFile?.deleteRecursively()
+            val installPath = installFile.toPath()
+            var tempFile: File? = null
+            if (installFile.exists()) {
+                val tempName = "${installPath.fileName}-${Random.nextUInt()}"
+                tempFile = installPath.resolveSibling(tempName).toFile()
+                installFile.renameTo(tempFile!!)
             }
+            val backupInstall = installPath.getBackupFile()
+            if (backupInstall.exists())
+                backupInstall.renameTo(installFile)
+            tempFile?.deleteRecursively()
         }
     }
 
@@ -475,11 +459,9 @@ class TitleListViewModel : ViewModel() {
     }
 
     fun cancelCompression() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             compressProgressJob?.cancelAndJoin()
-            withContext(Dispatchers.IO) {
-                NativeGameTitles.cancelTitleCompression()
-            }
+            NativeGameTitles.cancelTitleCompression()
         }
     }
 
@@ -496,16 +478,15 @@ class TitleListViewModel : ViewModel() {
     }
 }
 
-private suspend fun delete(contentResolver: ContentResolver, path: String): Boolean {
-    return withContext(Dispatchers.IO) {
-        if (path.isContentUri())
-            return@withContext DocumentsContract.deleteDocument(
-                contentResolver,
-                path.fromNativePath()
-            )
-
-        return@withContext Path(path).toFile().deleteRecursively()
+private fun delete(contentResolver: ContentResolver, path: String): Boolean {
+    if (path.isContentUri()) {
+        return DocumentsContract.deleteDocument(
+            contentResolver,
+            path.fromNativePath()
+        )
     }
+
+    return Path(path).toFile().deleteRecursively()
 }
 
 private fun NativeGameTitles.SaveData.toTitleEntry(isInMlc: Boolean) = TitleEntry(

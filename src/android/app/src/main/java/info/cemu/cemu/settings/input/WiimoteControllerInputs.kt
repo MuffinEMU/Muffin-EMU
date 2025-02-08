@@ -3,7 +3,7 @@ package info.cemu.cemu.settings.input
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.enumtostringmapper.native.wiimoteButtonItToStringId
+import info.cemu.cemu.guicore.nativeenummapper.wiimoteButtonItToStringId
 import info.cemu.cemu.nativeinterface.NativeInput
 
 @Composable

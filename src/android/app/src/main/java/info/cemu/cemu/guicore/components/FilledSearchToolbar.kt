@@ -1,4 +1,4 @@
-package info.cemu.cemu.guicore
+package info.cemu.cemu.guicore.components
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -49,12 +49,12 @@ import info.cemu.cemu.R
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilledSearchToolbar(
+    query: String,
     hint: String,
     onValueChange: (String) -> Unit,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     var searchBarActive by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
     TopAppBar(
         actions = actions,
         title = {
@@ -82,7 +82,6 @@ fun FilledSearchToolbar(
                             trailingIcon = {
                                 IconButton(
                                     onClick = {
-                                        query = ""
                                         onValueChange("")
                                         searchBarActive = false
                                     },
@@ -98,10 +97,7 @@ fun FilledSearchToolbar(
                             },
                             value = query,
                             hint = hint,
-                            onValueChange = {
-                                query = it
-                                onValueChange(query)
-                            },
+                            onValueChange = onValueChange,
                         )
                     }
                 }

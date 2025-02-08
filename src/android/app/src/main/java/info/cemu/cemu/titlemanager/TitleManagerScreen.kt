@@ -67,9 +67,9 @@ import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.viewmodel.compose.viewModel
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.ScreenContentLazy
-import info.cemu.cemu.guicore.enumtostringmapper.native.regionToStringId
-import info.cemu.cemu.guicore.formatBytes
+import info.cemu.cemu.guicore.components.ScreenContentLazy
+import info.cemu.cemu.guicore.format.formatBytes
+import info.cemu.cemu.guicore.nativeenummapper.regionToStringId
 import info.cemu.cemu.nativeinterface.NativeGameTitles
 import kotlinx.coroutines.launch
 
@@ -466,39 +466,41 @@ private fun TitleFilterBottomSheet(
     val filter by titleListViewModel.filter.collectAsState()
 
     ModalBottomSheet(
-        sheetState = rememberModalBottomSheetState(),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         onDismissRequest = onDismissRequest,
     ) {
-        TextField(
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth(),
-            singleLine = true,
-            value = filter.query,
-            onValueChange = titleListViewModel::setFilterQuery,
-            label = { Text(stringResource(R.string.title_manager_search_label)) }
-        )
-        FilterRow(
-            filterRowLabel = stringResource(R.string.title_manager_filter_types_label),
-            filterValues = EntryType.entries.map { (it to (it in filter.types)) },
-            valueToLabel = { stringResource(entryTypeToStringId(it)) },
-            onFilterAdded = titleListViewModel.typesFilter::add,
-            onFilterRemoved = titleListViewModel.typesFilter::remove,
-        )
-        FilterRow(
-            filterRowLabel = stringResource(R.string.title_manager_filter_formats_label),
-            filterValues = EntryFormat.entries.map { (it to (it in filter.formats)) },
-            valueToLabel = { stringResource(formatToStringId(it)) },
-            onFilterAdded = titleListViewModel.formatsFilter::add,
-            onFilterRemoved = titleListViewModel.formatsFilter::remove,
-        )
-        FilterRow(
-            filterRowLabel = stringResource(R.string.title_manager_filter_locations_label),
-            filterValues = EntryPath.entries.map { (it to (it in filter.paths)) },
-            valueToLabel = { stringResource(pathToStringId(it)) },
-            onFilterAdded = titleListViewModel.pathsFilter::add,
-            onFilterRemoved = titleListViewModel.pathsFilter::remove,
-        )
+        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+            TextField(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                singleLine = true,
+                value = filter.query,
+                onValueChange = titleListViewModel::setFilterQuery,
+                label = { Text(stringResource(R.string.title_manager_search_label)) }
+            )
+            FilterRow(
+                filterRowLabel = stringResource(R.string.title_manager_filter_types_label),
+                filterValues = EntryType.entries.map { (it to (it in filter.types)) },
+                valueToLabel = { stringResource(entryTypeToStringId(it)) },
+                onFilterAdded = titleListViewModel.typesFilter::add,
+                onFilterRemoved = titleListViewModel.typesFilter::remove,
+            )
+            FilterRow(
+                filterRowLabel = stringResource(R.string.title_manager_filter_formats_label),
+                filterValues = EntryFormat.entries.map { (it to (it in filter.formats)) },
+                valueToLabel = { stringResource(formatToStringId(it)) },
+                onFilterAdded = titleListViewModel.formatsFilter::add,
+                onFilterRemoved = titleListViewModel.formatsFilter::remove,
+            )
+            FilterRow(
+                filterRowLabel = stringResource(R.string.title_manager_filter_locations_label),
+                filterValues = EntryPath.entries.map { (it to (it in filter.paths)) },
+                valueToLabel = { stringResource(pathToStringId(it)) },
+                onFilterAdded = titleListViewModel.pathsFilter::add,
+                onFilterRemoved = titleListViewModel.pathsFilter::remove,
+            )
+        }
     }
 }
 

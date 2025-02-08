@@ -1,4 +1,4 @@
-package info.cemu.cemu.guicore
+package info.cemu.cemu.guicore.format
 
 import android.text.format.Formatter
 import androidx.compose.runtime.Composable

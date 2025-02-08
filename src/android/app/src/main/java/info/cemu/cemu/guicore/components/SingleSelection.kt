@@ -1,8 +1,7 @@
-package info.cemu.cemu.guicore
+package info.cemu.cemu.guicore.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -123,7 +122,7 @@ fun <T> SingleSelection(
 }
 
 @Composable
-fun <T> SelectDialog(
+private fun <T> SelectDialog(
     label: String,
     currentChoice: T,
     choices: List<T>,
@@ -155,7 +154,7 @@ fun <T> SelectDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp, horizontal = 16.dp)
+                    .padding(vertical = 4.dp, horizontal = 16.dp)
                     .weight(weight = 1.0f, fill = false)
                     .verticalScroll(rememberScrollState()),
             ) {
@@ -177,7 +176,7 @@ fun <T> SelectDialog(
             TextButton(
                 onClick = onDismissRequest,
                 modifier = Modifier
-                    .padding(16.dp)
+                    .padding(8.dp)
                     .align(Alignment.End),
             ) {
                 Text(stringResource(R.string.cancel))

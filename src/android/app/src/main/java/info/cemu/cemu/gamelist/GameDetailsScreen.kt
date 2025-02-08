@@ -7,32 +7,31 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.ScreenContent
-import info.cemu.cemu.guicore.enumtostringmapper.native.regionToStringId
+import info.cemu.cemu.guicore.components.ScreenContent
+import info.cemu.cemu.guicore.nativeenummapper.regionToStringId
 import info.cemu.cemu.nativeinterface.NativeGameTitles.Game
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 @Composable
-fun GameDetailsScreen(selectedGameViewModel: GameViewModel, navigateBack: () -> Unit) {
-    val game by selectedGameViewModel.game.collectAsState()
-    if (game == null) return
+fun GameDetailsScreen(game: Game?, navigateBack: () -> Unit) {
+    if (game == null)
+        return
+
     ScreenContent(
         appBarText = stringResource(R.string.about_title),
         contentModifier = Modifier.padding(16.dp),
         contentVerticalArrangement = Arrangement.spacedBy(16.dp),
         navigateBack = navigateBack,
     ) {
-        GameDetails(game!!)
+        GameDetails(game)
     }
 }
 

@@ -1,4 +1,4 @@
-package info.cemu.cemu.guicore
+package info.cemu.cemu.guicore.components
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme

@@ -8,6 +8,8 @@ import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -25,25 +27,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import info.cemu.cemu.about.AboutCemuActivity
+import info.cemu.cemu.about.AboutCemuRoute
+import info.cemu.cemu.about.aboutCemuNavigation
 import info.cemu.cemu.emulation.EmulationActivity
 import info.cemu.cemu.features.DocumentsProvider
-import info.cemu.cemu.gamelist.GameDetailsScreen
-import info.cemu.cemu.gamelist.GameProfileEditScreen
-import info.cemu.cemu.gamelist.GameViewModel
-import info.cemu.cemu.gamelist.GamesListScreen
-import info.cemu.cemu.gamelist.GamesListScreenActions
-import info.cemu.cemu.graphicpacks.GraphicPacksActivity
-import info.cemu.cemu.guicore.ActivityContent
+import info.cemu.cemu.gamelist.GameListRoute
+import info.cemu.cemu.gamelist.gameListNavigation
+import info.cemu.cemu.graphicpacks.GraphicPacksRoute
+import info.cemu.cemu.graphicpacks.graphicPacksNavigation
+import info.cemu.cemu.guicore.components.ActivityContent
 import info.cemu.cemu.nativeinterface.NativeGameTitles.Game
 import info.cemu.cemu.nativeinterface.NativeSettings
-import info.cemu.cemu.settings.SettingsActivity
-import info.cemu.cemu.titlemanager.TitleManagerActivity
-import kotlinx.serialization.Serializable
+import info.cemu.cemu.settings.SettingsRoute
+import info.cemu.cemu.settings.settingsNavigation
+import info.cemu.cemu.titlemanager.TitleManagerRoute
+import info.cemu.cemu.titlemanager.titleManagerNavigation
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -62,135 +62,98 @@ class MainActivity : ComponentActivity() {
 }
 
 private fun startGame(context: Context, game: Game) {
-    context.startActivity(
-        Intent(
-            context,
-            EmulationActivity::class.java
-        ).apply {
-            putExtra(EmulationActivity.EXTRA_LAUNCH_PATH, game.path)
-        }
-    )
+    Intent(
+        context,
+        EmulationActivity::class.java
+    ).apply {
+        putExtra(EmulationActivity.EXTRA_LAUNCH_PATH, game.path)
+        context.startActivity(this)
+    }
 }
-
-sealed class MainRoutes {
-    @Serializable
-    object GamesRoute
-
-    @Serializable
-    object GameDetailsRoute
-
-    @Serializable
-    object GameProfileEditRoute
-}
-
 
 @Composable
-fun MainNav() {
+private fun MainNav() {
     val navController = rememberNavController()
-    val selectedGameViewModel: GameViewModel = viewModel()
-    fun navigateBack() {
-        navController.popBackStack()
-    }
-    NavHost(navController = navController, startDestination = MainRoutes.GamesRoute) {
-        composable<MainRoutes.GamesRoute> {
-            val context = LocalContext.current
-            GamesListScreen(
-                selectedGameViewModel = selectedGameViewModel,
-                gameListActions = GamesListScreenActions(
-                    goToGameEditProfile = { navController.navigate(MainRoutes.GameProfileEditRoute) },
-                    startGame = { startGame(context, it) },
-                    goToGameDetails = { navController.navigate(MainRoutes.GameDetailsRoute) },
-                ),
-                toolbarActions = {
-                    GameListToolBarActions()
-                }
+    val context = LocalContext.current
+
+    NavHost(
+        navController = navController,
+        startDestination = GameListRoute,
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None }
+    ) {
+        gameListNavigation(navController, startGame = { startGame(context, it) }) {
+            GameListToolBarActionsMenu(
+                goToSettings = { navController.navigate(SettingsRoute) },
+                goToTitleManager = { navController.navigate(TitleManagerRoute) },
+                goToGraphicPacks = { navController.navigate(GraphicPacksRoute) },
+                goToAboutCemu = { navController.navigate(AboutCemuRoute) }
             )
         }
-        composable<MainRoutes.GameDetailsRoute> {
-            GameDetailsScreen(
-                selectedGameViewModel = selectedGameViewModel,
-                navigateBack = ::navigateBack,
-            )
-        }
-        composable<MainRoutes.GameProfileEditRoute> {
-            GameProfileEditScreen(
-                selectedGameViewModel = selectedGameViewModel,
-                navigateBack = ::navigateBack,
-            )
-        }
+        settingsNavigation(navController)
+        titleManagerNavigation(navController)
+        graphicPacksNavigation(navController)
+        aboutCemuNavigation(navController)
     }
 }
 
 @Composable
-fun GameListToolBarActions() {
+private fun GameListToolBarActionsMenu(
+    goToSettings: () -> Unit,
+    goToTitleManager: () -> Unit,
+    goToGraphicPacks: () -> Unit,
+    goToAboutCemu: () -> Unit,
+) {
     var expandMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    @Composable
+    fun DropdownMenuItem(onClick: () -> Unit, text: String) {
+        DropdownMenuItem(
+            onClick = {
+                onClick()
+                expandMenu = false
+            },
+            text = { Text(text) },
+        )
+    }
     IconButton(
         modifier = Modifier.padding(end = 8.dp),
         onClick = { expandMenu = true },
     ) {
-        IconButton(
-            onClick = { expandMenu = true }
-        ) {
-            Icon(
-                imageVector = Icons.Filled.MoreVert,
-                contentDescription = "More options"
-            )
-
-        }
+        Icon(
+            imageVector = Icons.Filled.MoreVert,
+            contentDescription = "More options"
+        )
     }
     DropdownMenu(
         expanded = expandMenu,
         onDismissRequest = { expandMenu = false }
     ) {
         DropdownMenuItem(
-            onClick = {
-                context.goToActivity(SettingsActivity::class.java)
-                expandMenu = false
-            },
-            text = { Text(stringResource(R.string.settings)) },
+            onClick = goToSettings,
+            text = stringResource(R.string.settings)
         )
         DropdownMenuItem(
-            onClick = {
-                context.goToActivity(GraphicPacksActivity::class.java)
-                expandMenu = false
-            },
-            text = { Text(stringResource(R.string.graphic_packs)) },
+            onClick = goToGraphicPacks,
+            text = stringResource(R.string.graphic_packs)
         )
         DropdownMenuItem(
-            onClick = {
-                context.goToActivity(TitleManagerActivity::class.java)
-                expandMenu = false
-            },
-            text = { Text(stringResource(R.string.title_manager)) },
+            onClick = goToTitleManager,
+            text = stringResource(R.string.title_manager)
         )
         DropdownMenuItem(
-            onClick = {
-                openCemuFolder(context)
-                expandMenu = false
-            },
-            text = { Text(stringResource(R.string.open_cemu_folder)) },
+            onClick = { openCemuFolder(context) },
+            text = stringResource(R.string.open_cemu_folder)
         )
         DropdownMenuItem(
-            onClick = {
-                context.goToActivity(AboutCemuActivity::class.java)
-                expandMenu = false
-            },
-            text = { Text(stringResource(R.string.about_cemu)) },
+            onClick = goToAboutCemu,
+            text = stringResource(R.string.about_cemu),
         )
     }
 }
 
-private fun <T : ComponentActivity> Context.goToActivity(activityClass: Class<T>) {
-    startActivity(
-        Intent(
-            this,
-            activityClass,
-        )
-    )
-}
-
-fun openCemuFolder(context: Context) {
+private fun openCemuFolder(context: Context) {
     try {
         Intent(Intent.ACTION_VIEW).apply {
             addCategory(Intent.CATEGORY_DEFAULT)

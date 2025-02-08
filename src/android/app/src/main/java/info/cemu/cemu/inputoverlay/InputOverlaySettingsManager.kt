@@ -26,7 +26,7 @@ class OverlaySettings(
         private const val ALPHA_KEY = "ALPHA"
     }
 
-    internal constructor(sharedPreferences: SharedPreferences) : this(
+    constructor(sharedPreferences: SharedPreferences) : this(
         isVibrateOnTouchEnabled = sharedPreferences.getBoolean(
             IS_VIBRATE_ON_TOUCH_ENABLED_KEY,
             false
@@ -36,7 +36,7 @@ class OverlaySettings(
         alpha = sharedPreferences.getInt(ALPHA_KEY, DEFAULT_ALPHA),
     )
 
-    internal fun save(sharedPreferences: SharedPreferences) {
+    fun save(sharedPreferences: SharedPreferences) {
         sharedPreferences.edit().apply {
             putBoolean(IS_VIBRATE_ON_TOUCH_ENABLED_KEY, isVibrateOnTouchEnabled)
             putBoolean(IS_OVERLAY_ENABLED_KEY, isOverlayEnabled)

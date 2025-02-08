@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -63,24 +64,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import info.cemu.cemu.R
 import info.cemu.cemu.emulation.EmulationActivity
-import info.cemu.cemu.guicore.FilledSearchToolbar
+import info.cemu.cemu.guicore.components.FilledSearchToolbar
 import info.cemu.cemu.nativeinterface.NativeGameTitles
 import info.cemu.cemu.nativeinterface.NativeGameTitles.Game
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import android.graphics.drawable.Icon as ShortcutIcon
 
-data class GamesListScreenActions(
-    val goToGameDetails: () -> Unit,
-    val goToGameEditProfile: () -> Unit,
-    val startGame: (Game) -> Unit,
-)
-
 @Composable
 fun GamesListScreen(
-    selectedGameViewModel: GameViewModel,
     gameListViewModel: GameListViewModel = viewModel(),
-    gameListActions: GamesListScreenActions,
+    goToGameDetails: (Game) -> Unit,
+    goToGameEditProfile: (Game) -> Unit,
+    startGame: (Game) -> Unit,
     toolbarActions: @Composable RowScope.() -> Unit,
 ) {
     val context = LocalContext.current
@@ -88,8 +84,9 @@ fun GamesListScreen(
     val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
-    val gameToRemoveShaders by gameListViewModel.gameToRemoveShaders.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val gameSearchQuery by gameListViewModel.filterText.collectAsStateWithLifecycle()
+    val games by gameListViewModel.games.collectAsStateWithLifecycle()
 
     val state = rememberPullToRefreshState()
 
@@ -109,6 +106,7 @@ fun GamesListScreen(
             FilledSearchToolbar(
                 actions = toolbarActions,
                 hint = stringResource(R.string.search_games),
+                query = gameSearchQuery,
                 onValueChange = gameListViewModel::setFilterText
             )
         },
@@ -131,12 +129,26 @@ fun GamesListScreen(
                 ),
         ) {
             GameList(
-                gameListViewModel = gameListViewModel,
-                selectedGameViewModel = selectedGameViewModel,
-                actions = gameListActions,
-                onFailedToCreateShortCut = {
-                    coroutineScope.launch { snackbarHostState.showSnackbar(context.getString(R.string.shortcut_not_supported)) }
-                }
+                games = games,
+                setFavorite = gameListViewModel::setGameTitleFavorite,
+                deleteShaderCaches = {
+                    coroutineScope.launch { snackbarHostState.showSnackbar(context.getString(R.string.shader_caches_removed_notification)) }
+                    gameListViewModel.removeShadersForGame(it)
+                },
+                startGame = startGame,
+                goToGameDetails = goToGameDetails,
+                goToGameEditProfile = goToGameEditProfile,
+                createShortcut = { game ->
+                    createShortcutForGame(
+                        context,
+                        game,
+                        onFailedToCreateShortCut = {
+                            val errorMessage =
+                                context.getString(R.string.shortcut_not_supported)
+                            coroutineScope.launch { snackbarHostState.showSnackbar(errorMessage) }
+                        }
+                    )
+                },
             )
             PullToRefreshDefaults.Indicator(
                 modifier = Modifier.align(Alignment.TopCenter),
@@ -147,29 +159,18 @@ fun GamesListScreen(
             )
         }
     }
-
-    if (gameToRemoveShaders != null) {
-        ShaderCachesConfirmationDialog(
-            gameName = gameToRemoveShaders?.name ?: "",
-            onDismissRequest = gameListViewModel::clearSelectedGameForShaderRemoval,
-            onConfirm = {
-                gameListViewModel.removeShadersForSelectedGame()
-                coroutineScope.launch { snackbarHostState.showSnackbar(context.getString(R.string.shader_caches_removed_notification)) }
-            },
-        )
-    }
 }
 
-
 @Composable
-fun GameList(
-    gameListViewModel: GameListViewModel,
-    selectedGameViewModel: GameViewModel,
-    actions: GamesListScreenActions,
-    onFailedToCreateShortCut: () -> Unit,
+private fun GameList(
+    games: List<Game>,
+    startGame: (Game) -> Unit,
+    goToGameDetails: (Game) -> Unit,
+    goToGameEditProfile: (Game) -> Unit,
+    setFavorite: (Game, Boolean) -> Unit,
+    createShortcut: (Game) -> Unit,
+    deleteShaderCaches: (Game) -> Unit,
 ) {
-    val games by gameListViewModel.games.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     LazyVerticalGrid(
         modifier = Modifier
             .padding(8.dp)
@@ -177,34 +178,39 @@ fun GameList(
         columns = GridCells.Adaptive(620.dp)
     ) {
         items(items = games, key = { it.titleId }) { game ->
+            var showDeleteShaderConfirmationDialog by remember { mutableStateOf(false) }
             GameListItem(
                 modifier = Modifier.animateItem(),
                 game = game,
-                onStartGame = actions.startGame,
-                actions = GameContextMenuActions(
-                    onIsFavoriteChanged = { isFavorite ->
-                        gameListViewModel.setGameTitleFavorite(game, isFavorite)
-                    },
-                    onEditGameProfile = {
-                        selectedGameViewModel.setCurrentGame(game)
-                        actions.goToGameEditProfile()
-                    },
-                    onRemoveShaderCaches = { gameListViewModel.setGameForShadersRemoval(game) },
-                    onAboutTitle = {
-                        selectedGameViewModel.setCurrentGame(game)
-                        actions.goToGameDetails()
-                    },
-                    onCreateShortcut = {
-                        createShortcutForGame(
-                            context = context,
-                            game = game,
-                            onFailedToCreateShortCut = onFailedToCreateShortCut
-                        )
-                    },
-                ),
+                onStartGame = startGame,
+                onIsFavoriteChanged = { isFavorite ->
+                    setFavorite(game, isFavorite)
+                },
+                onEditGameProfile = {
+                    goToGameEditProfile(game)
+                },
+                onRemoveShaderCaches = { showDeleteShaderConfirmationDialog = true },
+                onAboutTitle = {
+                    goToGameDetails(game)
+                },
+                onCreateShortcut = {
+                    createShortcut(game)
+                },
             )
+
+            if (showDeleteShaderConfirmationDialog)
+                ShaderCachesConfirmationDialog(
+                    gameName = game.name ?: "",
+                    onDismissRequest = { showDeleteShaderConfirmationDialog = false },
+                    onConfirm = {
+                        deleteShaderCaches(game)
+                        showDeleteShaderConfirmationDialog = false
+                    },
+                )
+
         }
     }
+
 }
 
 @Composable
@@ -240,8 +246,12 @@ fun ShaderCachesConfirmationDialog(
 
 @Composable
 fun GameListItem(
-    actions: GameContextMenuActions,
     onStartGame: (Game) -> Unit,
+    onIsFavoriteChanged: (Boolean) -> Unit,
+    onEditGameProfile: () -> Unit,
+    onRemoveShaderCaches: () -> Unit,
+    onAboutTitle: () -> Unit,
+    onCreateShortcut: () -> Unit,
     game: Game,
     modifier: Modifier = Modifier,
 ) {
@@ -269,7 +279,7 @@ fun GameListItem(
                         .align(Alignment.TopEnd)
                         .padding(2.dp)
                         .size(24.dp)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant),
                     painter = painterResource(R.drawable.ic_favorite),
                     tint = MaterialTheme.colorScheme.primary,
@@ -287,25 +297,25 @@ fun GameListItem(
         GameContextMenu(
             expanded = contextMenuExpanded,
             onDismissRequest = { contextMenuExpanded = false },
-            actions = actions,
             game = game,
+            onIsFavoriteChanged = onIsFavoriteChanged,
+            onEditGameProfile = onEditGameProfile,
+            onRemoveShaderCaches = onRemoveShaderCaches,
+            onAboutTitle = onAboutTitle,
+            onCreateShortcut = onCreateShortcut,
         )
     }
 }
-
-data class GameContextMenuActions(
-    val onIsFavoriteChanged: (Boolean) -> Unit,
-    val onEditGameProfile: () -> Unit,
-    val onRemoveShaderCaches: () -> Unit,
-    val onAboutTitle: () -> Unit,
-    val onCreateShortcut: () -> Unit,
-)
 
 @Composable
 fun GameContextMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
-    actions: GameContextMenuActions,
+    onIsFavoriteChanged: (Boolean) -> Unit,
+    onEditGameProfile: () -> Unit,
+    onRemoveShaderCaches: () -> Unit,
+    onAboutTitle: () -> Unit,
+    onCreateShortcut: () -> Unit,
     game: Game,
 ) {
     @Composable
@@ -335,29 +345,29 @@ fun GameContextMenu(
             NativeGameTitles.titleHasShaderCacheFiles(game.titleId)
         }
         GameContextMenuItem(
-            onClick = { actions.onIsFavoriteChanged(!game.isFavorite) },
+            onClick = { onIsFavoriteChanged(!game.isFavorite) },
             text = stringResource(R.string.game_favorite),
             trailingIcon = {
                 Checkbox(checked = game.isFavorite, onCheckedChange = null)
             }
         )
         GameContextMenuItem(
-            onClick = actions.onEditGameProfile,
+            onClick = onEditGameProfile,
             text = stringResource(R.string.edit_game_profile)
         )
         GameContextMenuItem(
             enabled = gameTitleHasCaches,
             onClick = {
-                actions.onRemoveShaderCaches()
+                onRemoveShaderCaches()
             },
             text = stringResource(R.string.remove_shader_caches)
         )
         GameContextMenuItem(
-            onClick = actions.onAboutTitle,
+            onClick = onAboutTitle,
             text = stringResource(R.string.about_title),
         )
         GameContextMenuItem(
-            onClick = actions.onCreateShortcut,
+            onClick = onCreateShortcut,
             text = stringResource(R.string.create_shortcut)
         )
     }

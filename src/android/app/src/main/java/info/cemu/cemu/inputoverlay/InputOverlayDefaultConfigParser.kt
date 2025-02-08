@@ -76,7 +76,7 @@ private fun parseInputConfig(xmlPullParser: XmlPullParser): Pair<String, InputCo
     return null
 }
 
-internal fun parseDefaultInputConfigs(xmlPullParser: XmlPullParser): Map<String, InputConfig> {
+fun parseDefaultInputConfigs(xmlPullParser: XmlPullParser): Map<String, InputConfig> {
     val inputConfigs = mutableMapOf<String, InputConfig>()
     var eventType = xmlPullParser.eventType
     while (eventType != XmlPullParser.END_DOCUMENT) {

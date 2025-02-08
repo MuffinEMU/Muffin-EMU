@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.viewmodel.compose.viewModel
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.ScreenContentLazy
+import info.cemu.cemu.guicore.components.ScreenContentLazy
 import kotlinx.coroutines.launch
 
 @Composable

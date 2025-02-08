@@ -1,4 +1,4 @@
-package info.cemu.cemu.guicore
+package info.cemu.cemu.guicore.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement

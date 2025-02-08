@@ -4,13 +4,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.res.stringResource
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.Button
-import info.cemu.cemu.guicore.ScreenContent
-import info.cemu.cemu.guicore.SingleSelection
-import info.cemu.cemu.guicore.Toggle
-import info.cemu.cemu.guicore.enumtostringmapper.native.fullscreenScalingModeToStringId
-import info.cemu.cemu.guicore.enumtostringmapper.native.scalingFilterToStringId
-import info.cemu.cemu.guicore.enumtostringmapper.native.vsyncModeToStringId
+import info.cemu.cemu.guicore.components.Button
+import info.cemu.cemu.guicore.components.ScreenContent
+import info.cemu.cemu.guicore.components.SingleSelection
+import info.cemu.cemu.guicore.components.Toggle
+import info.cemu.cemu.guicore.nativeenummapper.fullscreenScalingModeToStringId
+import info.cemu.cemu.guicore.nativeenummapper.scalingFilterToStringId
+import info.cemu.cemu.guicore.nativeenummapper.vsyncModeToStringId
 import info.cemu.cemu.nativeinterface.NativeEmulation
 import info.cemu.cemu.nativeinterface.NativeSettings
 

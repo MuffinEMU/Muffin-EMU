@@ -4,10 +4,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.dropUnlessResumed
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.Button
-import info.cemu.cemu.guicore.ScreenContent
-import info.cemu.cemu.guicore.SingleSelection
-import info.cemu.cemu.guicore.enumtostringmapper.native.consoleLanguageToStringId
+import info.cemu.cemu.guicore.components.Button
+import info.cemu.cemu.guicore.components.ScreenContent
+import info.cemu.cemu.guicore.components.SingleSelection
+import info.cemu.cemu.guicore.nativeenummapper.consoleLanguageToStringId
 import info.cemu.cemu.nativeinterface.NativeSettings
 
 @Composable

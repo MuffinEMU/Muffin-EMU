@@ -6,18 +6,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.Header
-import info.cemu.cemu.guicore.ScreenContent
-import info.cemu.cemu.guicore.SingleSelection
-import info.cemu.cemu.guicore.Toggle
-import info.cemu.cemu.guicore.enumtostringmapper.native.cpuModeToStringId
+import info.cemu.cemu.guicore.components.Header
+import info.cemu.cemu.guicore.components.ScreenContent
+import info.cemu.cemu.guicore.components.SingleSelection
+import info.cemu.cemu.guicore.components.Toggle
+import info.cemu.cemu.guicore.nativeenummapper.cpuModeToStringId
 import info.cemu.cemu.nativeinterface.NativeGameTitles
 
 @Composable
-fun GameProfileEditScreen(selectedGameViewModel: GameViewModel, navigateBack: () -> Unit) {
-    val game = selectedGameViewModel.game.collectAsStateWithLifecycle().value ?: return
+fun GameProfileEditScreen(game: NativeGameTitles.Game?, navigateBack: () -> Unit) {
+    if (game == null)
+        return
+
     val titleId = game.titleId
     ScreenContent(
         appBarText = stringResource(R.string.edit_game_profile),

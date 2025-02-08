@@ -13,8 +13,9 @@ import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.ScreenContent
-import info.cemu.cemu.guicore.SingleSelection
+import info.cemu.cemu.guicore.components.ScreenContent
+import info.cemu.cemu.guicore.components.SingleSelection
+import info.cemu.cemu.guicore.nativeenummapper.controllerTypeToStringId
 import info.cemu.cemu.nativeinterface.NativeInput
 
 @Composable

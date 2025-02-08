@@ -4,10 +4,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import info.cemu.cemu.R
-import info.cemu.cemu.guicore.ScreenContent
-import info.cemu.cemu.guicore.SingleSelection
-import info.cemu.cemu.guicore.Slider
-import info.cemu.cemu.guicore.Toggle
+import info.cemu.cemu.guicore.components.ScreenContent
+import info.cemu.cemu.guicore.components.SingleSelection
+import info.cemu.cemu.guicore.components.Slider
+import info.cemu.cemu.guicore.components.Toggle
 import info.cemu.cemu.nativeinterface.NativeInput
 
 private val ControllerIndexChoices = (0..<NativeInput.MAX_CONTROLLERS).toList()

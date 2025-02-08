@@ -1,18 +1,10 @@
 package info.cemu.cemu.settings
 
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.runtime.Composable
-import androidx.navigation.compose.NavHost
+import androidx.navigation.NavGraphBuilder
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
-import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import info.cemu.cemu.guicore.ActivityContent
-import info.cemu.cemu.nativeinterface.NativeSettings
 import info.cemu.cemu.settings.audio.AudioSettingsScreen
 import info.cemu.cemu.settings.customdrivers.CustomDriversScreen
 import info.cemu.cemu.settings.gamespath.GamePathsScreen
@@ -25,23 +17,10 @@ import info.cemu.cemu.settings.inputoverlay.InputOverlaySettingsScreen
 import info.cemu.cemu.settings.overlay.OverlaySettingsScreen
 import kotlinx.serialization.Serializable
 
-class SettingsActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            ActivityContent {
-                SettingsNav(parentNavBack = ::onNavigateUp)
-            }
-        }
-    }
+@Serializable
+object SettingsRoute
 
-    override fun onPause() {
-        super.onPause()
-        NativeSettings.saveSettings()
-    }
-}
-
-private sealed class SettingsRoutes {
+private object SettingsRoutes {
     @Serializable
     object GeneralSettings
 
@@ -79,32 +58,11 @@ private sealed class SettingsRoutes {
     object InputOverlaySettingsScreenRoute
 }
 
-
-@Composable
-fun SettingsNav(
-    parentNavBack: () -> Unit,
-) {
-    val navController = rememberNavController()
-
-    fun navigateBack() {
-        if (!navController.popBackStack()) {
-            parentNavBack()
-        }
-    }
-
-    NavHost(
-        navController = navController,
-        startDestination = SettingsRoutes.SettingsHomeScreenRoute,
-        enterTransition = {
-            EnterTransition.None
-        },
-        exitTransition = {
-            ExitTransition.None
-        }
-    ) {
+fun NavGraphBuilder.settingsNavigation(navController: NavHostController) {
+    navigation<SettingsRoute>(startDestination = SettingsRoutes.SettingsHomeScreenRoute) {
         composable<SettingsRoutes.SettingsHomeScreenRoute> {
             SettingsHomeScreen(
-                navigateBack = ::navigateBack,
+                navigateBack = { navController.popBackStack() },
                 actions = SettingsHomeScreenActions(
                     goToGeneralSettings = { navController.navigate(SettingsRoutes.GeneralSettings) },
                     goToInputSettings = { navController.navigate(SettingsRoutes.InputSettingsRoute) },
@@ -116,12 +74,12 @@ fun SettingsNav(
         }
         composable<SettingsRoutes.AudioSettingsScreenRoute> {
             AudioSettingsScreen(
-                navigateBack = ::navigateBack,
+                navigateBack = { navController.popBackStack() },
             )
         }
         composable<SettingsRoutes.GraphicsSettingsScreenRoute> {
             GraphicsSettingsScreen(
-                navigateBack = ::navigateBack,
+                navigateBack = { navController.popBackStack() },
                 goToCustomDriversSettings = {
                     navController.navigate(SettingsRoutes.CustomDriversScreenRoute)
                 }
@@ -129,12 +87,12 @@ fun SettingsNav(
         }
         composable<SettingsRoutes.CustomDriversScreenRoute> {
             CustomDriversScreen(
-                navigateBack = ::navigateBack,
+                navigateBack = { navController.popBackStack() },
             )
         }
         composable<SettingsRoutes.OverlaySettingsScreenRoute> {
             OverlaySettingsScreen(
-                navigateBack = ::navigateBack,
+                navigateBack = { navController.popBackStack() },
             )
         }
         navigation<SettingsRoutes.InputSettingsRoute>(startDestination = SettingsRoutes.InputSettingsScreenRoute) {
@@ -142,18 +100,18 @@ fun SettingsNav(
                 val controllerIndex =
                     navBackStackEntry.toRoute<SettingsRoutes.ControllerInputSettingsScreenRoute>().index
                 ControllerInputSettingsScreen(
-                    navigateBack = ::navigateBack,
+                    navigateBack = { navController.popBackStack() },
                     controllerIndex = controllerIndex,
                 )
             }
             composable<SettingsRoutes.InputOverlaySettingsScreenRoute> {
                 InputOverlaySettingsScreen(
-                    navigateBack = ::navigateBack
+                    navigateBack = { navController.popBackStack() }
                 )
             }
             composable<SettingsRoutes.InputSettingsScreenRoute> {
                 InputSettingsScreen(
-                    navigateBack = ::navigateBack,
+                    navigateBack = { navController.popBackStack() },
                     actions = InputSettingsScreenActions(
                         goToInputOverlaySettings = {
                             navController.navigate(SettingsRoutes.InputOverlaySettingsScreenRoute)
@@ -172,13 +130,13 @@ fun SettingsNav(
         navigation<SettingsRoutes.GeneralSettings>(startDestination = SettingsRoutes.GeneralSettingsScreenRoute) {
             composable<SettingsRoutes.GeneralSettingsScreenRoute> {
                 GeneralSettingsScreen(
-                    navigateBack = ::navigateBack,
+                    navigateBack = { navController.popBackStack() },
                     goToGamePathsSettings = { navController.navigate(SettingsRoutes.GamePathsScreenRoute) }
                 )
             }
             composable<SettingsRoutes.GamePathsScreenRoute> {
                 GamePathsScreen(
-                    navigateBack = ::navigateBack,
+                    navigateBack = { navController.popBackStack() },
                 )
             }
         }
