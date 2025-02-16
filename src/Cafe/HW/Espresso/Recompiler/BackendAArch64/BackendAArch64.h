@@ -17,5 +17,5 @@ namespace IMLArchAArch64
 	static constexpr int PHYSREG_GPR_BASE = 0;
 	static constexpr int PHYSREG_GPR_COUNT = 25;
 	static constexpr int PHYSREG_FPR_BASE = PHYSREG_GPR_COUNT;
-	static constexpr int PHYSREG_FPR_COUNT = 29;
+	static constexpr int PHYSREG_FPR_COUNT = 28;
 }; // namespace IMLArchAArch64
