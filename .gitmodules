@@ -27,3 +27,6 @@
 [submodule "dependencies/libadrenotools"]
 	path = dependencies/libadrenotools
 	url = https://github.com/bylaws/libadrenotools
+[submodule "dependencies/libucontext/libucontext"]
+	path = dependencies/libucontext/libucontext
+	url = https://github.com/kaniini/libucontext
