@@ -1,29 +1,21 @@
-package info.cemu.cemu.inputoverlay
+package info.cemu.cemu.inputoverlay.inputs
 
-import android.content.res.Resources
-import android.graphics.Canvas
 import android.graphics.Rect
 import android.view.MotionEvent
-import androidx.annotation.DrawableRes
 
 abstract class Button(
-    resources: Resources,
-    @DrawableRes buttonId: Int,
     private val onButtonStateChange: (state: Boolean) -> Unit,
     boundingRect: Rect,
 ) : Input(boundingRect) {
-
-
-    protected val inputDrawable = InputDrawable(resources, buttonId)
-
+    protected var state = false
     private var currentPointerId: Int = -1
 
     override fun onTouch(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val pointerIndex = event.actionIndex
-                val x = event.getX(pointerIndex).toInt()
-                val y = event.getY(pointerIndex).toInt()
+                val x = event.getX(pointerIndex)
+                val y = event.getY(pointerIndex)
                 if (isInside(x, y)) {
                     currentPointerId = event.getPointerId(pointerIndex)
                     updateState(true)
@@ -42,16 +34,12 @@ abstract class Button(
         return false
     }
 
-    override fun drawInput(canvas: Canvas) {
-        inputDrawable.icon.draw(canvas)
-    }
-
     override fun resetInput() {
         updateState(false)
     }
 
     private fun updateState(state: Boolean) {
-        inputDrawable.setActiveState(state)
+        this.state = state
         onButtonStateChange(state)
     }
 }

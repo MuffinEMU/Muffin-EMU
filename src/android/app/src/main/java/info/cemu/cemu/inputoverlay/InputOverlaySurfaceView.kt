@@ -13,8 +13,16 @@ import android.view.MotionEvent
 import android.view.SurfaceView
 import android.view.View
 import android.view.View.OnTouchListener
-import androidx.annotation.DrawableRes
 import info.cemu.cemu.R
+import info.cemu.cemu.inputoverlay.inputs.DPadInput
+import info.cemu.cemu.inputoverlay.inputs.Input
+import info.cemu.cemu.inputoverlay.inputs.Joystick
+import info.cemu.cemu.inputoverlay.inputs.RectangleButton
+import info.cemu.cemu.inputoverlay.inputs.RoundButton
+import info.cemu.cemu.inputoverlay.inputs.innerdrawing.ButtonInnerDrawing
+import info.cemu.cemu.inputoverlay.inputs.innerdrawing.HomeButtonInnerDrawing
+import info.cemu.cemu.inputoverlay.inputs.innerdrawing.StickClickInnerDrawing
+import info.cemu.cemu.inputoverlay.inputs.innerdrawing.TextButtonInnerDrawing
 import info.cemu.cemu.nativeinterface.NativeInput
 import info.cemu.cemu.nativeinterface.NativeInput.getControllerType
 import info.cemu.cemu.nativeinterface.NativeInput.isControllerDisabled
@@ -35,8 +43,10 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
     private var currentConfiguredInput: Input? = null
     private var nativeControllerType = -1
     private var visible = false
-    var controllerIndex: Int = 0
-
+    private var controllerIndex: Int = 0
+    private var onJoystickChange: (OverlayInput, Float, Float, Float, Float) -> Unit =
+        { _, _, _, _, _ -> }
+    private var overlyButtonToNativeButton: (OverlayInput) -> Int = { _ -> -1 }
     private var inputs: MutableList<Pair<OverlayInput, Input>>? = null
     private val settingsProvider: InputOverlaySettingsManager
     private val vibrator: Vibrator?
@@ -85,7 +95,6 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
             return
         }
         for ((overlayInput, input) in inputs!!) {
-            input.reset()
             settingsProvider.saveRectangle(overlayInput, input.getBoundingRectangle())
         }
     }
@@ -188,13 +197,7 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
     }
 
     private fun onButtonStateChange(button: OverlayInput, state: Boolean) {
-        val nativeButtonId = when (nativeControllerType) {
-            NativeInput.EMULATED_CONTROLLER_TYPE_VPAD -> overlayButtonToVPADButton(button)
-            NativeInput.EMULATED_CONTROLLER_TYPE_CLASSIC -> overlayButtonToClassicButton(button)
-            NativeInput.EMULATED_CONTROLLER_TYPE_PRO -> overlayButtonToProButton(button)
-            NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE -> overlayButtonToWiimoteButton(button)
-            else -> -1
-        }
+        val nativeButtonId = overlyButtonToNativeButton(button)
         if (nativeButtonId == -1) {
             return
         }
@@ -284,13 +287,6 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
     }
 
     private fun onJoystickStateChange(joystick: OverlayInput, x: Float, y: Float) {
-        val onJoystickChange = when (nativeControllerType) {
-            NativeInput.EMULATED_CONTROLLER_TYPE_VPAD -> ::onVPADJoystickStateChange
-            NativeInput.EMULATED_CONTROLLER_TYPE_PRO -> ::onProJoystickStateChange
-            NativeInput.EMULATED_CONTROLLER_TYPE_CLASSIC -> ::onClassicJoystickStateChange
-            NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE -> ::onWiimoteJoystickStateChange
-            else -> return
-        }
         val (up, down) = if (y < 0) Pair(-y, 0f) else Pair(0f, y)
         val (left, right) = if (x < 0) Pair(-x, 0f) else Pair(0f, x)
         onJoystickChange(joystick, up, down, left, right)
@@ -300,15 +296,13 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
         return settingsProvider.getInputOverlayRectangle(input, width, height, pixelDensity)
     }
 
-
     private fun MutableList<Pair<OverlayInput, Input>>.addRoundButton(
         button: OverlayButton,
-        @DrawableRes buttonDrawable: Int,
+        innerDrawing: ButtonInnerDrawing,
     ) {
         add(
             button to RoundButton(
-                resources,
-                buttonDrawable,
+                innerDrawing,
                 { onButtonStateChange(button, it) },
                 currentAlpha,
                 getBoundingRectangleForInput(button),
@@ -316,16 +310,14 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
         )
     }
 
-    private fun MutableList<Pair<OverlayInput, Input>>.addJoystick(
-        joystick: OverlayJoystick,
-        @DrawableRes joystickInnerCircleDrawable: Int = R.drawable.stick_inner,
-        @DrawableRes joystickBackgroundDrawable: Int = R.drawable.stick_background,
-    ) {
+    private fun MutableList<Pair<OverlayInput, Input>>.addRoundButton(
+        button: OverlayButton,
+        buttonText: String = button.name,
+    ) = addRoundButton(button, TextButtonInnerDrawing(buttonText))
+
+    private fun MutableList<Pair<OverlayInput, Input>>.addJoystick(joystick: OverlayJoystick) {
         add(
             joystick to Joystick(
-                resources,
-                joystickBackgroundDrawable,
-                joystickInnerCircleDrawable,
                 { x, y -> onJoystickStateChange(joystick, x, y) },
                 currentAlpha,
                 getBoundingRectangleForInput(joystick)
@@ -336,9 +328,6 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
     private fun MutableList<Pair<OverlayInput, Input>>.addDpad() {
         add(
             OverlayDpad.DPAD_UP to DPadInput(
-                resources,
-                R.drawable.dpad_background,
-                R.drawable.dpad_button,
                 ::onButtonStateChange,
                 currentAlpha,
                 getBoundingRectangleForInput(OverlayDpad.DPAD_UP)
@@ -348,12 +337,11 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
 
     private fun MutableList<Pair<OverlayInput, Input>>.addRectangleButton(
         button: OverlayButton,
-        @DrawableRes buttonDrawable: Int,
+        buttonText: String = button.name,
     ) {
         add(
             button to RectangleButton(
-                resources,
-                buttonDrawable,
+                TextButtonInnerDrawing(buttonText),
                 { onButtonStateChange(button, it) },
                 currentAlpha,
                 getBoundingRectangleForInput(button)
@@ -372,85 +360,48 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
         }
 
         nativeControllerType = getControllerType(controllerIndex)
+        overlyButtonToNativeButton = when (nativeControllerType) {
+            NativeInput.EMULATED_CONTROLLER_TYPE_VPAD -> ::overlayButtonToVPADButton
+            NativeInput.EMULATED_CONTROLLER_TYPE_CLASSIC -> ::overlayButtonToClassicButton
+            NativeInput.EMULATED_CONTROLLER_TYPE_PRO -> ::overlayButtonToProButton
+            NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE -> ::overlayButtonToWiimoteButton
+            else -> { _ -> -1 }
+        }
+        onJoystickChange = when (nativeControllerType) {
+            NativeInput.EMULATED_CONTROLLER_TYPE_VPAD -> ::onVPADJoystickStateChange
+            NativeInput.EMULATED_CONTROLLER_TYPE_PRO -> ::onProJoystickStateChange
+            NativeInput.EMULATED_CONTROLLER_TYPE_CLASSIC -> ::onClassicJoystickStateChange
+            NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE -> ::onWiimoteJoystickStateChange
+            else -> { _, _, _, _, _ -> }
+        }
         inputs = mutableListOf<Pair<OverlayInput, Input>>().apply {
-            addRoundButton(
-                OverlayButton.MINUS,
-                R.drawable.button_minus,
-            )
-            addRoundButton(
-                OverlayButton.PLUS,
-                R.drawable.button_plus,
-            )
+            addRoundButton(OverlayButton.MINUS, "-")
+            addRoundButton(OverlayButton.PLUS, "+")
             addDpad()
-            addRoundButton(
-                OverlayButton.A,
-                R.drawable.button_a,
-            )
-            addRoundButton(
-                OverlayButton.B,
-                R.drawable.button_b,
-            )
+            addRoundButton(OverlayButton.A)
+            addRoundButton(OverlayButton.B)
             addJoystick(OverlayJoystick.RIGHT)
             if (nativeControllerType != NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE) {
-                addRoundButton(
-                    OverlayButton.X,
-                    R.drawable.button_x,
-                )
-                addRoundButton(
-                    OverlayButton.Y,
-                    R.drawable.button_y,
-                )
-                addRectangleButton(
-                    OverlayButton.ZL,
-                    R.drawable.button_zl,
-                )
-                addRectangleButton(
-                    OverlayButton.ZR,
-                    R.drawable.button_zr,
-                )
-                addRectangleButton(
-                    OverlayButton.L,
-                    R.drawable.button_l,
-                )
-                addRectangleButton(
-                    OverlayButton.R,
-                    R.drawable.button_r,
-                )
+                addRoundButton(OverlayButton.X)
+                addRoundButton(OverlayButton.Y)
+                addRectangleButton(OverlayButton.ZL)
+                addRectangleButton(OverlayButton.ZR)
+                addRectangleButton(OverlayButton.L)
+                addRectangleButton(OverlayButton.R)
                 addJoystick(OverlayJoystick.LEFT)
             }
             if (nativeControllerType == NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE) {
-                addRoundButton(
-                    OverlayButton.ONE,
-                    R.drawable.button_one,
-                )
-                addRoundButton(
-                    OverlayButton.TWO,
-                    R.drawable.button_two,
-                )
-                addRoundButton(
-                    OverlayButton.C,
-                    R.drawable.button_c,
-                )
-                addRectangleButton(
-                    OverlayButton.Z,
-                    R.drawable.button_z,
-                )
-                addRoundButton(
-                    OverlayButton.HOME,
-                    R.drawable.button_home,
-                )
+                addRoundButton(OverlayButton.ONE, "1")
+                addRoundButton(OverlayButton.TWO, "2")
+                addRoundButton(OverlayButton.C)
+                addRectangleButton(OverlayButton.Z)
+                addRoundButton(OverlayButton.HOME, HomeButtonInnerDrawing())
             }
             if (nativeControllerType != NativeInput.EMULATED_CONTROLLER_TYPE_CLASSIC
                 && nativeControllerType != NativeInput.EMULATED_CONTROLLER_TYPE_WIIMOTE
             ) {
-                addRoundButton(
-                    OverlayButton.L_STICK_CLICK,
-                    R.drawable.button_stick,
-                )
-                addRoundButton(
-                    OverlayButton.R_STICK_CLICK,
-                    R.drawable.button_stick,
-                )
+                addRoundButton(OverlayButton.L_STICK_CLICK, StickClickInnerDrawing())
+                addRoundButton(OverlayButton.R_STICK_CLICK, StickClickInnerDrawing())
             }
         }
     }
@@ -472,90 +423,88 @@ class InputOverlaySurfaceView(context: Context, attrs: AttributeSet?) :
 
 
     private fun onEditPosition(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                val x = event.x.toInt()
-                val y = event.y.toInt()
-                for ((_, input) in inputs!!) {
-                    if (input.isInside(x, y)) {
-                        currentConfiguredInput = input
-                        input.enableDrawingBoundingRect(
-                            resources.getColor(
-                                R.color.purple,
-                                context.theme
-                            )
-                        )
-                        return true
-                    }
-                }
+        val configuredInput = currentConfiguredInput
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            if (configuredInput != null) {
+                return false
             }
-
-            MotionEvent.ACTION_UP -> {
-                if (currentConfiguredInput != null) {
-                    currentConfiguredInput!!.disableDrawingBoundingRect()
-                    currentConfiguredInput = null
-                    return true
-                }
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                if (currentConfiguredInput != null) {
-                    val x = event.x.toInt()
-                    val y = event.y.toInt()
-                    currentConfiguredInput!!.moveInput(x, y, width, height)
+            val x = event.x
+            val y = event.y
+            for ((_, input) in inputs!!) {
+                if (input.isInside(x, y)) {
+                    currentConfiguredInput = input
+                    input.enableDrawingBoundingRect(
+                        resources.getColor(R.color.purple, context.theme)
+                    )
                     return true
                 }
             }
         }
+
+        if (configuredInput == null) {
+            return false
+        }
+
+        if (event.actionMasked == MotionEvent.ACTION_UP) {
+            configuredInput.disableDrawingBoundingRect()
+            currentConfiguredInput = null
+            return true
+        }
+
+        if (event.actionMasked == MotionEvent.ACTION_MOVE) {
+            val x = event.x.toInt()
+            val y = event.y.toInt()
+            configuredInput.moveInput(x, y, width, height)
+            return true
+        }
+
         return false
     }
 
     private fun onEditSize(event: MotionEvent): Boolean {
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                val x = event.x.toInt()
-                val y = event.y.toInt()
-                for ((_, input) in inputs!!) {
-                    if (input.isInside(x, y)) {
-                        currentConfiguredInput = input
-                        input.enableDrawingBoundingRect(
-                            resources.getColor(
-                                R.color.red,
-                                context.theme
-                            )
-                        )
-                        return true
-                    }
-                }
-            }
+        val configuredInput = currentConfiguredInput
 
-            MotionEvent.ACTION_UP -> {
-                if (currentConfiguredInput != null) {
-                    currentConfiguredInput!!.disableDrawingBoundingRect()
-                    currentConfiguredInput = null
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+
+            val x = event.x
+            val y = event.y
+            for ((_, input) in inputs!!) {
+                if (input.isInside(x, y)) {
+                    currentConfiguredInput = input
+                    input.enableDrawingBoundingRect(
+                        resources.getColor(R.color.red, context.theme)
+                    )
                     return true
                 }
             }
+        }
 
-            MotionEvent.ACTION_MOVE -> {
-                if (currentConfiguredInput != null) {
-                    val histSize = event.historySize
-                    if (event.historySize >= 2) {
-                        val x1 = event.getHistoricalX(0)
-                        val y1 = event.getHistoricalY(0)
-                        val x2 = event.getHistoricalX(histSize - 1)
-                        val y2 = event.getHistoricalY(histSize - 1)
-                        currentConfiguredInput!!.resize(
-                            (x2 - x1).toInt(),
-                            (y2 - y1).toInt(),
-                            width,
-                            height,
-                            inputsMinWidthHeight
-                        )
-                    }
-                    return true
-                }
+        if (configuredInput == null) {
+            return false
+        }
+
+        if (event.actionMasked == MotionEvent.ACTION_UP) {
+            configuredInput.disableDrawingBoundingRect()
+            currentConfiguredInput = null
+            return true
+        }
+
+        if (event.actionMasked == MotionEvent.ACTION_MOVE) {
+            val histSize = event.historySize
+            if (event.historySize >= 2) {
+                val x1 = event.getHistoricalX(0)
+                val y1 = event.getHistoricalY(0)
+                val x2 = event.getHistoricalX(histSize - 1)
+                val y2 = event.getHistoricalY(histSize - 1)
+                configuredInput.resize(
+                    (x2 - x1).toInt(),
+                    (y2 - y1).toInt(),
+                    width,
+                    height,
+                    inputsMinWidthHeight
+                )
             }
+            return true
         }
         return false
     }

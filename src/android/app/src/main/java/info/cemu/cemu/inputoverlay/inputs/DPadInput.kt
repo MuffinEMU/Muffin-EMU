@@ -1,74 +1,72 @@
-package info.cemu.cemu.inputoverlay
+package info.cemu.cemu.inputoverlay.inputs
 
-import android.content.res.Resources
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.RectF
 import android.view.MotionEvent
-import androidx.annotation.DrawableRes
-import androidx.core.content.res.ResourcesCompat
+import info.cemu.cemu.inputoverlay.OverlayDpad
+import info.cemu.cemu.utils.fillCircleWithStroke
+import info.cemu.cemu.utils.fillRoundRectangleWithStroke
 import kotlin.math.atan2
 import kotlin.math.min
 
 class DPadInput(
-    resources: Resources,
-    @DrawableRes backgroundId: Int,
-    @DrawableRes buttonId: Int,
     private val onButtonStateChange: (button: OverlayDpad, state: Boolean) -> Unit,
     private val alpha: Int,
     rect: Rect,
 ) : Input(rect) {
-    private val dpadUpDrawable = InputDrawable(resources, buttonId)
-    private val dpadDownDrawable = InputDrawable(resources, buttonId)
-    private val dpadLeftDrawable = InputDrawable(resources, buttonId)
-    private val dpadRightDrawable = InputDrawable(resources, buttonId)
-    private val background = ResourcesCompat.getDrawable(resources, backgroundId, null)!!
+    private var backgroundFillColor: Int = 0
+    private var backgroundStrokeColor: Int = 0
+
+    private val dpadUpRect = RectF()
+    private val dpadDownRect = RectF()
+    private val dpadLeftRect = RectF()
+    private val dpadRightRect = RectF()
 
     private var dpadState: Int = NONE
 
-    private var centerX: Int = 0
-    private var centerY: Int = 0
-    private var radius2: Int = 0
+    private var centerX: Float = 0f
+    private var centerY: Float = 0f
+    private var radius2: Float = 0f
+    private var radius: Float = 0f
     private var currentPointerId: Int = -1
 
     override fun configure() {
-        this.centerX = rect.centerX()
-        this.centerY = rect.centerY()
-        val radius = min(rect.width(), rect.height()) / 2
-        radius2 = radius * radius
-        background.alpha = alpha
-        background.setBounds(
-            centerX - radius,
-            centerY - radius,
-            centerX + radius,
-            centerY + radius
-        )
+        backgroundFillColor = Color.argb(alpha, 128, 128, 128)
+        backgroundStrokeColor = Color.argb(alpha, 200, 200, 200)
+        configureColors(alpha)
 
+        centerX = rect.exactCenterX()
+        centerY = rect.exactCenterY()
+        radius = min(rect.width(), rect.height()) * 0.5f
+        radius2 = radius * radius
         val buttonSize = radius / 2
-        val configureButton = { circleXPos: Int, circleYPos: Int, inputDrawable: InputDrawable ->
-            inputDrawable.setAlpha(alpha)
-            val left = circleXPos - buttonSize / 2
-            val top = circleYPos - buttonSize / 2
-            inputDrawable.setBounds(left, top, left + buttonSize, top + buttonSize)
+        val configureButtonRect = { circleXPos: Float, circleYPos: Float, rect: RectF ->
+            val left = circleXPos - buttonSize * 0.5f
+            val top = circleYPos - buttonSize * 0.5f
+            rect.set(left, top, left + buttonSize, top + buttonSize)
         }
-        configureButton(
+        val buttonCenterXYTranslate = 2f * radius / 3f
+        configureButtonRect(
             centerX,
-            centerY - 2 * radius / 3,
-            dpadUpDrawable
+            centerY - buttonCenterXYTranslate,
+            dpadUpRect
         )
-        configureButton(
+        configureButtonRect(
             centerX,
-            centerY + 2 * radius / 3,
-            dpadDownDrawable
+            centerY + buttonCenterXYTranslate,
+            dpadDownRect
         )
-        configureButton(
-            centerX - 2 * radius / 3,
+        configureButtonRect(
+            centerX - buttonCenterXYTranslate,
             centerY,
-            dpadLeftDrawable
+            dpadLeftRect
         )
-        configureButton(
-            centerX + 2 * radius / 3,
+        configureButtonRect(
+            centerX + buttonCenterXYTranslate,
             centerY,
-            dpadRightDrawable
+            dpadRightRect
         )
     }
 
@@ -87,23 +85,19 @@ class DPadInput(
         if (dpadState == NONE) return
         if ((dpadState and UP) != 0) {
             onButtonStateChange(OverlayDpad.DPAD_UP, pressed)
-            dpadUpDrawable.setActiveState(pressed)
         }
         if ((dpadState and DOWN) != 0) {
             onButtonStateChange(OverlayDpad.DPAD_DOWN, pressed)
-            dpadDownDrawable.setActiveState(pressed)
         }
         if ((dpadState and LEFT) != 0) {
             onButtonStateChange(OverlayDpad.DPAD_LEFT, pressed)
-            dpadLeftDrawable.setActiveState(pressed)
         }
         if ((dpadState and RIGHT) != 0) {
             onButtonStateChange(OverlayDpad.DPAD_RIGHT, pressed)
-            dpadRightDrawable.setActiveState(pressed)
         }
     }
 
-    private fun getStateByPosition(x: Int, y: Int): Int {
+    private fun getStateByPosition(x: Float, y: Float): Int {
         val norm2 = (x - centerX) * (x - centerX) + (y - centerY) * (y - centerY)
         if (norm2 <= radius2 * 0.1f) {
             return NONE
@@ -128,8 +122,8 @@ class DPadInput(
                     return false
                 }
                 val pointerIndex = event.actionIndex
-                val x = event.getX(pointerIndex).toInt()
-                val y = event.getY(pointerIndex).toInt()
+                val x = event.getX(pointerIndex)
+                val y = event.getY(pointerIndex)
                 val pointerId = event.getPointerId(pointerIndex)
                 if (isInside(x, y)) {
                     currentPointerId = pointerId
@@ -155,8 +149,8 @@ class DPadInput(
                     if (currentPointerId != event.getPointerId(i)) {
                         continue
                     }
-                    val x = event.getX(i).toInt()
-                    val y = event.getY(i).toInt()
+                    val x = event.getX(i)
+                    val y = event.getY(i)
                     updateState(getStateByPosition(x, y))
                     return true
                 }
@@ -169,19 +163,40 @@ class DPadInput(
         updateState(NONE)
     }
 
-    override fun isInside(x: Int, y: Int): Boolean {
+    override fun isInside(x: Float, y: Float): Boolean {
         return (x - centerX) * (x - centerX) + (y - centerY) * (y - centerY) <= radius2
     }
 
     override fun drawInput(canvas: Canvas) {
-        background.draw(canvas)
-        dpadUpDrawable.icon.draw(canvas)
-        dpadDownDrawable.icon.draw(canvas)
-        dpadLeftDrawable.icon.draw(canvas)
-        dpadRightDrawable.icon.draw(canvas)
+        canvas.fillCircleWithStroke(
+            centerX,
+            centerY,
+            radius,
+            paint,
+            backgroundFillColor,
+            backgroundStrokeColor
+        )
+        drawButton(canvas, dpadUpRect, dpadState and UP)
+        drawButton(canvas, dpadDownRect, dpadState and DOWN)
+        drawButton(canvas, dpadLeftRect, dpadState and LEFT)
+        drawButton(canvas, dpadRightRect, dpadState and RIGHT)
+    }
+
+    private fun drawButton(canvas: Canvas, rect: RectF, state: Int) {
+        val fillColor: Int
+        val strokeColor: Int
+        if (state != 0) {
+            fillColor = activeFillColor
+            strokeColor = activeStrokeColor
+        } else {
+            fillColor = inactiveFillColor
+            strokeColor = inactiveStrokeColor
+        }
+        canvas.fillRoundRectangleWithStroke(rect, BUTTON_RADIUS, paint, fillColor, strokeColor)
     }
 
     companion object {
+        private const val BUTTON_RADIUS = 5f
         private const val NONE = 0
         private const val UP = 1 shl 0
         private const val DOWN = 1 shl 1
