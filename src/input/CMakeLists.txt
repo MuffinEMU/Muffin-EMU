@@ -69,6 +69,11 @@ if (ENABLE_WIIMOTE)
 			api/Wiimote/hidapi/HidapiWiimote.cpp
 			api/Wiimote/hidapi/HidapiWiimote.h
 	)
+	if (UNIX AND NOT APPLE)
+		target_sources(CemuInput PRIVATE
+			api/Wiimote/l2cap/L2CapWiimote.cpp
+			api/Wiimote/l2cap/L2CapWiimote.h)
+	endif()
 endif ()
 
 
@@ -108,3 +113,8 @@ endif()
 if(ENABLE_SDL)
 	target_link_libraries(CemuInput PRIVATE	SDL2::SDL2)
 endif()
+
+
+if (UNIX AND NOT APPLE)
+	target_link_libraries(CemuInput PRIVATE bluez::bluez)
+endif ()

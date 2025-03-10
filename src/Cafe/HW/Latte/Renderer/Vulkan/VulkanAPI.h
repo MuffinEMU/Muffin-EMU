@@ -174,6 +174,7 @@ VKFUNC_DEVICE(vkCmdDraw);
 VKFUNC_DEVICE(vkCmdCopyBufferToImage);
 VKFUNC_DEVICE(vkCmdCopyImageToBuffer);
 VKFUNC_DEVICE(vkCmdClearColorImage);
+VKFUNC_DEVICE(vkCmdClearAttachments);
 VKFUNC_DEVICE(vkCmdBindIndexBuffer);
 VKFUNC_DEVICE(vkCmdBindVertexBuffers);
 VKFUNC_DEVICE(vkCmdDrawIndexed);
@@ -207,6 +208,7 @@ VKFUNC_DEVICE(vkCmdEndTransformFeedbackEXT);
 
 // query
 VKFUNC_DEVICE(vkCreateQueryPool);
+VKFUNC_DEVICE(vkDestroyQueryPool);
 VKFUNC_DEVICE(vkCmdResetQueryPool);
 VKFUNC_DEVICE(vkCmdBeginQuery);
 VKFUNC_DEVICE(vkCmdEndQuery);
@@ -245,6 +247,7 @@ VKFUNC_DEVICE(vkAllocateDescriptorSets);
 VKFUNC_DEVICE(vkFreeDescriptorSets);
 VKFUNC_DEVICE(vkUpdateDescriptorSets);
 VKFUNC_DEVICE(vkCreateDescriptorPool);
+VKFUNC_DEVICE(vkDestroyDescriptorPool);
 VKFUNC_DEVICE(vkDestroyDescriptorSetLayout);
 
 #undef VKFUNC_INIT

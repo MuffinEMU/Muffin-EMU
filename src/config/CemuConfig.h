@@ -189,7 +189,7 @@ ENABLE_ENUM_ITERATORS(CrashDump, CrashDump::Disabled, CrashDump::Enabled);
 #endif
 
 template <>
-struct fmt::formatter<PrecompiledShaderOption> : formatter<string_view> {
+struct fmt::formatter<const PrecompiledShaderOption> : formatter<string_view> {
 	template <typename FormatContext>
 	auto format(const PrecompiledShaderOption c, FormatContext &ctx) const {
 		string_view name;
@@ -204,7 +204,7 @@ struct fmt::formatter<PrecompiledShaderOption> : formatter<string_view> {
 	}
 };
 template <>
-struct fmt::formatter<AccurateShaderMulOption> : formatter<string_view> {
+struct fmt::formatter<const AccurateShaderMulOption> : formatter<string_view> {
 	template <typename FormatContext>
 	auto format(const AccurateShaderMulOption c, FormatContext &ctx) const {
 		string_view name;
@@ -218,7 +218,7 @@ struct fmt::formatter<AccurateShaderMulOption> : formatter<string_view> {
 	}
 };
 template <>
-struct fmt::formatter<CPUMode> : formatter<string_view> {
+struct fmt::formatter<const CPUMode> : formatter<string_view> {
 	template <typename FormatContext>
 	auto format(const CPUMode c, FormatContext &ctx) const {
 		string_view name;
@@ -235,7 +235,7 @@ struct fmt::formatter<CPUMode> : formatter<string_view> {
 	}
 };
 template <>
-struct fmt::formatter<CPUModeLegacy> : formatter<string_view> {
+struct fmt::formatter<const CPUModeLegacy> : formatter<string_view> {
 	template <typename FormatContext>
 	auto format(const CPUModeLegacy c, FormatContext &ctx) const {
 		string_view name;
@@ -252,7 +252,7 @@ struct fmt::formatter<CPUModeLegacy> : formatter<string_view> {
 	}
 };
 template <>
-struct fmt::formatter<CafeConsoleRegion> : formatter<string_view> {
+struct fmt::formatter<const CafeConsoleRegion> : formatter<string_view> {
 	template <typename FormatContext>
 	auto format(const CafeConsoleRegion v, FormatContext &ctx) const {
 		string_view name;
@@ -273,7 +273,7 @@ struct fmt::formatter<CafeConsoleRegion> : formatter<string_view> {
 	}
 };
 template <>
-struct fmt::formatter<CafeConsoleLanguage> : formatter<string_view> {
+struct fmt::formatter<const CafeConsoleLanguage> : formatter<string_view> {
 	template <typename FormatContext>
 	auto format(const CafeConsoleLanguage v, FormatContext &ctx) {
 		string_view name;
@@ -299,7 +299,7 @@ struct fmt::formatter<CafeConsoleLanguage> : formatter<string_view> {
 
 #if BOOST_OS_WINDOWS
 template <>
-struct fmt::formatter<CrashDump> : formatter<string_view> {
+struct fmt::formatter<const CrashDump> : formatter<string_view> {
 	template <typename FormatContext>
 	auto format(const CrashDump v, FormatContext &ctx) {
 		string_view name;
@@ -316,7 +316,7 @@ struct fmt::formatter<CrashDump> : formatter<string_view> {
 };
 #elif BOOST_OS_UNIX
 template <>
-struct fmt::formatter<CrashDump> : formatter<string_view> {
+struct fmt::formatter<const CrashDump> : formatter<string_view> {
 	template <typename FormatContext>
 	auto format(const CrashDump v, FormatContext &ctx) {
 		string_view name;
@@ -377,6 +377,7 @@ struct CemuConfig
 #endif
 	ConfigValue<bool> disable_screensaver{DISABLE_SCREENSAVER_DEFAULT};
 #undef DISABLE_SCREENSAVER_DEFAULT
+	ConfigValue<bool> play_boot_sound{false};
 
 #if __ANDROID__
 	ConfigValue<std::string> custom_driver_path{};
@@ -522,9 +523,23 @@ struct CemuConfig
 	{
 		ConfigValue<bool> emulate_skylander_portal{false};
 		ConfigValue<bool> emulate_infinity_base{false};
+		ConfigValue<bool> emulate_dimensions_toypad{false};
 	}emulated_usb_devices{};
 
-	private:
+	static int AudioChannelsToNChannels(AudioChannels kStereo)
+	{
+		switch (kStereo)
+		{
+		case 0:
+			return 1; // will mix mono sound on both output channels
+		case 2:
+			return 6;
+		default: // stereo
+			return 2;
+		}
+	}
+
+  private:
 	GameEntry* GetGameEntryByTitleId(uint64 titleId);
 	GameEntry* CreateGameEntry(uint64 titleId);
 };
