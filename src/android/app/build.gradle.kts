@@ -41,7 +41,7 @@ android {
     ndkVersion = "26.1.10909125"
     defaultConfig {
         applicationId = "info.cemu.cemu"
-        minSdk = 30
+        minSdk = 31
         targetSdk = 35
         versionCode = getVersionCode()
         versionName = getVersionName()
@@ -53,32 +53,37 @@ android {
     val keystoreFilePath: String? = System.getenv("ANDROID_KEYSTORE_FILE")
     signingConfigs {
         if (keystoreFilePath != null) {
-            signingConfigs {
-                create("release") {
-                    storeFile = file(keystoreFilePath)
-                    storePassword = System.getenv("ANDROID_KEY_STORE_PASSWORD")
-                    keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-                    keyPassword = System.getenv("ANDROID_KEYSTORE_PASS")
-                }
+            create("releaseSigningConfig") {
+                storeFile = file(keystoreFilePath)
+                storePassword = System.getenv("ANDROID_KEY_STORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEYSTORE_PASS")
             }
         }
     }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            signingConfig = if (keystoreFilePath != null) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+    androidComponents {
+        beforeVariants { variantBuilder ->
+            if (variantBuilder.name == "release") {
+                variantBuilder.enable = false
             }
         }
+    }
+    buildTypes {
         debug {
             applicationIdSuffix = ".debug"
+        }
+        create("githubRelease") {
+            if (keystoreFilePath != null) {
+                initWith(getByName("release"))
+                isMinifyEnabled = true
+                proguardFiles(
+                    getDefaultProguardFile("proguard-android-optimize.txt"),
+                    "proguard-rules.pro"
+                )
+                signingConfig = signingConfigs.getByName("releaseSigningConfig")
+            } else {
+                initWith(getByName("debug"))
+            }
         }
     }
     compileOptions {

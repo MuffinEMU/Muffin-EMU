@@ -38,8 +38,8 @@ on:
         description: 'Feature 9'
         required: false
         type: string
-      changelog9:
-        description: 'Feature 10'
+      android_build_type:
+        description: 'Build type'
         required: false
         type: string
 
@@ -53,6 +53,7 @@ jobs:
     with:
       next_version_major: ${{ needs.calculate-version.outputs.next_version_major }}
       next_version_minor: ${{ needs.calculate-version.outputs.next_version_minor }}
+      android_build_type: ${{ inputs.android_build_type }}
   deploy:
     name: Deploy experimental release
     runs-on: ubuntu-22.04
@@ -75,7 +76,6 @@ jobs:
           if [ -n "${{ github.event.inputs.changelog6 }}" ]; then CHANGELOG="$CHANGELOG- ${{ github.event.inputs.changelog6 }}\n"; fi
           if [ -n "${{ github.event.inputs.changelog7 }}" ]; then CHANGELOG="$CHANGELOG- ${{ github.event.inputs.changelog7 }}\n"; fi
           if [ -n "${{ github.event.inputs.changelog8 }}" ]; then CHANGELOG="$CHANGELOG- ${{ github.event.inputs.changelog8 }}\n"; fi
-          if [ -n "${{ github.event.inputs.changelog9 }}" ]; then CHANGELOG="$CHANGELOG- ${{ github.event.inputs.changelog9 }}\n"; fi
           echo -e "$CHANGELOG"
           echo "RELEASE_BODY=$CHANGELOG" >> $GITHUB_ENV
       - uses: actions/download-artifact@v4

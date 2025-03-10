@@ -25,6 +25,7 @@ import info.cemu.cemu.BuildConfig
 import info.cemu.cemu.R
 import info.cemu.cemu.guicore.components.ScreenContent
 
+// TODO
 @Composable
 fun AboutCemuScreen(navigateBack: () -> Unit) {
     ScreenContent(
