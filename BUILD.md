@@ -20,6 +20,7 @@
    - [Installing Tool Dependencies](#installing-tool-dependencies)
    - [Installing Library Dependencies](#installing-library-dependencies)
    - [Build Cemu using CMake](#build-cemu-using-cmake)
+- [Android](#android)
 - [Updating Cemu and source code](#updating-cemu-and-source-code)
 
 ## Windows
@@ -181,6 +182,16 @@ Then install the dependencies:
 
 #### Troubleshooting steps
 - If step 3 gives you an error about not being able to find ninja, try appending `-DCMAKE_MAKE_PROGRAM=/usr/local/bin/ninja` to the command and running it again.
+
+## Android
+Prerequisites:
+- git
+- [Android studio](https://developer.android.com/studio)
+
+Instructions:
+1. Run `git clone --recursive https://github.com/cemu-project/Cemu`
+2. Open the project located in `src/android` in Android Studio
+3. Click Build > Make Project
 
 ## Updating Cemu and source code
 1. To update your Cemu local repository, use the command `git pull --recurse-submodules` (run this command on the Cemu root).

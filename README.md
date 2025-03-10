@@ -24,7 +24,7 @@ Cemu is currently only available for 64-bit Windows, Linux & macOS devices.
 
 ## Download
 
-You can download the latest Cemu releases for Windows, Linux and Mac from the [GitHub Releases](https://github.com/cemu-project/Cemu/releases/). For Linux you can also find Cemu on [flathub](https://flathub.org/apps/info.cemu.Cemu).
+You can download the latest Cemu releases for Windows, Linux, Mac, and Android from the [GitHub Releases](https://github.com/cemu-project/Cemu/releases/). For Linux you can also find Cemu on [flathub](https://flathub.org/apps/info.cemu.Cemu).
 
 On Windows Cemu is currently only available in a portable format so no installation is required besides extracting it in a safe place.
 
