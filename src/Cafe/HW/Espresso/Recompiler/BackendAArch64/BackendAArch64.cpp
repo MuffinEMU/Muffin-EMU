@@ -789,13 +789,13 @@ void AArch64GenContext_t::conditionalJumpCycleCheck(IMLSegment* imlSegment)
 
 void ATTR_MS_ABI PPCRecompiler_getTBL(PPCInterpreter_t* ppcInterpreter, uint32 gprIndex)
 {
-	uint64 coreTime = coreinit::coreinit_getTimerTick();
+	uint64 coreTime = coreinit::OSGetSystemTime();
 	ppcInterpreter->gpr[gprIndex] = (uint32)(coreTime & 0xFFFFFFFF);
 }
 
 void ATTR_MS_ABI PPCRecompiler_getTBU(PPCInterpreter_t* ppcInterpreter, uint32 gprIndex)
 {
-	uint64 coreTime = coreinit::coreinit_getTimerTick();
+	uint64 coreTime = coreinit::OSGetSystemTime();
 	ppcInterpreter->gpr[gprIndex] = (uint32)((coreTime >> 32) & 0xFFFFFFFF);
 }
 

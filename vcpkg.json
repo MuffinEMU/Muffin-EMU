@@ -69,10 +69,7 @@
       "default-features": false,
       "features": ["jpeg", "zip"]
     },
-    {
-      "name": "libusb",
-      "platform": "!android"
-    }
+    "libusb"
   ],
   "overrides": [
     {

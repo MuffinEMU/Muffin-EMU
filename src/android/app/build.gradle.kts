@@ -29,7 +29,7 @@ val versionMinor: String? = System.getenv("EMULATOR_VERSION_MINOR")
 
 fun getVersionName(): String {
     if (versionMajor != null && versionMinor != null)
-        return "$versionMinor.$versionMinor"
+        return "$versionMajor.$versionMinor"
     return getGitHash() ?: "1.0"
 }
 
@@ -57,7 +57,7 @@ android {
                 storeFile = file(keystoreFilePath)
                 storePassword = System.getenv("ANDROID_KEY_STORE_PASSWORD")
                 keyAlias = System.getenv("ANDROID_KEY_ALIAS")
-                keyPassword = System.getenv("ANDROID_KEYSTORE_PASS")
+                keyPassword = System.getenv("ANDROID_KEY_STORE_PASSWORD")
             }
         }
     }
@@ -83,6 +83,11 @@ android {
                 signingConfig = signingConfigs.getByName("releaseSigningConfig")
             } else {
                 initWith(getByName("debug"))
+                externalNativeBuild {
+                    cmake {
+                        arguments.add("-DCMAKE_BUILD_TYPE=DEBUG")
+                    }
+                }
             }
         }
     }
@@ -108,6 +113,7 @@ android {
         "-DENABLE_SDL=OFF",
         "-DENABLE_WXWIDGETS=OFF",
         "-DENABLE_OPENGL=OFF",
+        "-DENABLE_BLUEZ=OFF",
         "-DBUNDLE_SPEEX=ON",
         "-DENABLE_DISCORD_RPC=OFF",
         "-DENABLE_NSYSHID_LIBUSB=OFF",
@@ -117,9 +123,7 @@ android {
     defaultConfig {
         externalNativeBuild {
             cmake {
-                arguments(
-                    *cmakeArguments
-                )
+                arguments.addAll(cmakeArguments)
                 abiFilters("arm64-v8a")
             }
         }

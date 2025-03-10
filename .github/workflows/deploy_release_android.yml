@@ -42,10 +42,8 @@ jobs:
           BUILD_TYPE: ${{ inputs.build_type }}
         run: |
           cd ./src/android
-          if [[ -z "$ANDROID_STORE_FILE_BASE64" ]]; then
-            base64 --decode <<< "${ANDROID_STORE_FILE_BASE64}" > store.jks
-            export ANDROID_STORE_FILE=$(pwd)/store.jks
-          fi
+          base64 --decode <<< "${ANDROID_STORE_FILE_BASE64}" > store.jks
+          export ANDROID_KEYSTORE_FILE=$(pwd)/store.jks
           ./gradlew assemble$BUILD_TYPE
 
 
