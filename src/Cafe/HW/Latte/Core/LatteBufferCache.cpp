@@ -3,11 +3,1037 @@
 #include "util/helpers/fspinlock.h"
 #include "config/ActiveSettings.h"
 
+#include <boost/container/small_vector.hpp>
+#include <fstream>
+
 #define CACHE_PAGE_SIZE		0x400
 #define CACHE_PAGE_SIZE_M1	(CACHE_PAGE_SIZE-1)
 
 uint32 g_currentCacheChronon = 0;
 
+#define NEW_INTERVAL_TREE
+
+#ifdef NEW_INTERVAL_TREE
+template<typename TRangeData, typename TNodeObject>
+class IntervalTree3
+{
+	static constexpr TRangeData MAX_VALUE = std::numeric_limits<TRangeData>::max();
+	static constexpr uint32 ROOT_NODE_INDEX = 0;
+	static constexpr uint32 INVALID_NODE_INDEX = 0xFFFFFFFFu;
+
+	static constexpr sint32 NUM_SLOTS = 16;
+	static constexpr sint32 MIN_CHILDREN = 7; // try to merge nodes below this count
+
+	struct TreeNode
+	{
+		TRangeData values[NUM_SLOTS];
+		sint32 indices[NUM_SLOTS]; // for the second to last layer these are indices into value nodes vector. Otherwise its a relative offset to a tree node
+		uint32 selfIndex{ INVALID_NODE_INDEX };
+		uint32 parentNodeIndex{ INVALID_NODE_INDEX };
+		uint8 parentSlot{ 0 };
+		uint8 usedCount{ 0 };
+	};
+
+	struct ValueNode
+	{
+		ValueNode() = default;
+		ValueNode(TNodeObject* _ptr, TRangeData _rangeBegin, TRangeData _rangeEnd, uint32 _selfIndex) : ptr(_ptr), rangeBegin(_rangeBegin), rangeEnd(_rangeEnd), selfIndex(_selfIndex) {}
+
+		TNodeObject* ptr{ nullptr };
+		TRangeData rangeBegin{};
+		TRangeData rangeEnd{};
+		uint32 selfIndex{ INVALID_NODE_INDEX };
+		uint32 parentNodeIndex{ INVALID_NODE_INDEX };
+		uint8 parentSlot{ 0 };
+	};
+public:
+	IntervalTree3()
+	{
+		// create root node
+		m_treeNodes.push_back({});
+		m_treeNodes[0].selfIndex = 0;
+		m_freeTreeNodeIndices.push_back(0);
+		TreeNode& rootNode = AllocateTreeNode(INVALID_NODE_INDEX, 0);
+		cemu_assert_debug(rootNode.selfIndex == 0);
+		ReserveNodes();
+	}
+
+	TNodeObject* GetRange(TRangeData rangeBegin)//getRange(TRangeData rangeBegin, TRangeData rangeEnd)
+	{
+		cemu_assert_debug(rangeBegin < MAX_VALUE);
+		if (IsEmpty())
+			return nullptr;
+		const ValueNode* valueNode = FindFloorValueNode(rangeBegin);
+		if (valueNode == nullptr)
+			return nullptr;
+		if (rangeBegin >= valueNode->rangeEnd)
+			return nullptr;
+		return valueNode->ptr;
+	}
+
+	void GetOverlappingRanges(TRangeData rangeBegin, TRangeData rangeEnd, std::vector<TNodeObject*>& results)//getRange(TRangeData rangeBegin, TRangeData rangeEnd)
+	{
+		cemu_assert_debug(rangeBegin < rangeEnd);
+		if (IsEmpty())
+			return;
+		results.clear();
+		if (rangeBegin >= rangeEnd)
+			return;
+		const ValueNode* valueNode = FindFloorValueNode(rangeBegin);
+		if (!valueNode)
+			valueNode = GetLeftmostValue();
+		if (rangeBegin < valueNode->rangeEnd && rangeEnd > valueNode->rangeBegin)
+		{
+			results.emplace_back(valueNode->ptr);
+		}
+		valueNode = GetSuccessorValue(valueNode);
+		while (valueNode != nullptr)
+		{
+			if (valueNode->rangeBegin >= rangeEnd)
+				break;
+			if (valueNode->rangeEnd > rangeBegin)
+				results.emplace_back(valueNode->ptr);
+			valueNode = GetSuccessorValue(valueNode);
+		}
+		// DEBUG - verify result by calculating it the slow way and comparing
+		// std::vector<TNodeObject*> manualTestList;
+		// std::map<TRangeData, TNodeObject*> manualTestListMap;
+		// for (auto& valNode : m_valueNodes)
+		// {
+		// 	if (valNode.rangeBegin < rangeEnd && valNode.rangeEnd > rangeBegin)
+		// 		manualTestListMap.emplace(valNode.rangeBegin, valNode.ptr);
+		// }
+		// for (auto& it : manualTestListMap)
+		// 	manualTestList.emplace_back(it.second);
+		//
+		// cemu_assert_debug(manualTestList == results);
+	}
+
+	// will assert if no exact match was found
+	void RemoveRange(TRangeData rangeBegin, TRangeData rangeEnd)
+	{
+		ValueNode* valueNode = FindFloorValueNode(rangeBegin);
+		cemu_assert(valueNode);
+		cemu_assert(valueNode->rangeBegin == rangeBegin && valueNode->rangeEnd == rangeEnd);
+		TreeNode* parentNode = &m_treeNodes[valueNode->parentNodeIndex];
+		sint32 parentSlot = valueNode->parentSlot;
+
+		// [DEBUG] Validate tree
+		// {
+		// 	TRangeData treeMinVal, treeMaxVal;
+		// 	ValidateTree(GetRootNode(), m_treeDepth, treeMinVal, treeMaxVal);
+		// }
+		// remove value from parent
+		ReduceUsedCount(parentNode, 1);
+		for (sint32 i=parentSlot; i<parentNode->usedCount; i++)
+			SetChildNode(*parentNode, i, m_valueNodes[parentNode->indices[i+1]]);
+		if (parentSlot == 0 && parentNode->usedCount > 0)
+			PropagateMinValue(parentNode);
+		// release value
+		ReleaseValueNode(valueNode->selfIndex);
+
+		// if (parentNode->usedCount > 0)
+		// {
+		// 	// [DEBUG] Validate tree
+		// 	TRangeData treeMinVal, treeMaxVal;
+		// 	ValidateTree(GetRootNode(), m_treeDepth, treeMinVal, treeMaxVal);
+		// }
+		// static int dbgCounterA = 0;
+		// dbgCounterA++;
+		// if (dbgCounterA == 0x4d2f)
+		// 	__debugbreak();
+
+		// if parent node now has few nodes then merge/redistribute it
+		CollapseNode(parentNode, m_treeDepth-1);
+		sint32 dbg_prevTreeDepth = m_treeDepth;
+		ShortenTreeIfPossible();
+		// // [DEBUG] Validate tree
+		// TRangeData treeMinVal, treeMaxVal;
+		// ValidateTree(GetRootNode(), m_treeDepth, treeMinVal, treeMaxVal);
+	}
+
+	FORCE_INLINE TreeNode* GetTreeNodeChild(TreeNode* treeNode, sint32 slot)
+	{
+		cemu_assert_debug(slot >= 0 && slot < NUM_SLOTS);
+		//return &m_treeNodes[treeNode->indices[slot]];
+		// return treeNode + (treeNode->indices[slot] / (sint32)sizeof(TreeNode));
+
+		char* base = reinterpret_cast<char*>(treeNode);
+		return reinterpret_cast<TreeNode*>(base + treeNode->indices[slot]);
+	}
+
+	void SetChildNode(TreeNode& parent, sint32 slot, TreeNode* child)
+	{
+		cemu_assert_debug(slot >= 0 && slot < NUM_SLOTS);
+		cemu_assert_debug(child->usedCount > 0); // cant know value if node has no children
+		uint32 childIndex = child->selfIndex;
+		uint32 parentIndex = parent.selfIndex;
+		child->parentNodeIndex = parentIndex;
+		child->parentSlot = slot;
+		parent.values[slot] = child->values[0];
+		//parent.indices[slot] = childIndex;
+		parent.indices[slot] = (sint32)(child - &parent) * (sint32)sizeof(TreeNode);
+	}
+
+	void SetChildNode(TreeNode& parent, sint32 slot, ValueNode& child)
+	{
+		cemu_assert_debug(slot >= 0 && slot < NUM_SLOTS);
+		uint32 childIndex = child.selfIndex;
+		uint32 parentIndex = parent.selfIndex;
+		child.parentNodeIndex = parentIndex;
+		child.parentSlot = slot;
+		parent.values[slot] = child.rangeBegin;
+		parent.indices[slot] = childIndex;
+	}
+
+	void AddRange(TRangeData rangeBegin, TRangeData rangeEnd, TNodeObject* nodeObject)
+	{
+		// static uint32 addRangeDotCounter = 0;
+		// addRangeDotCounter++;
+		// if (addRangeDotCounter >= 500)
+		// {
+		// 	addRangeDotCounter = 0;
+		// 	WriteDotFile("IntervalTree3.dot");
+		// }
+
+		ReserveNodes();
+		cemu_assert_debug(rangeBegin < rangeEnd);
+		if (IsEmpty()) [[unlikely]]
+		{
+			// special case, insert into empty tree
+			TreeNode& rootNode = GetRootNode();
+			cemu_assert_debug(rootNode.usedCount == 0);
+			cemu_assert_debug(m_treeDepth == 0);
+			rootNode.usedCount = 1;
+			SetChildNode(rootNode, 0, AllocateValueNode(rangeBegin, rangeEnd, nodeObject));
+			m_treeDepth = 1;
+			// [DEBUG] Validate tree
+			//TRangeData treeMinVal, treeMaxVal;
+			//ValidateTree(GetRootNode(), m_treeDepth, treeMinVal, treeMaxVal);
+			return;
+		}
+		// find the preceding value, we insert after it in the same parent
+		TreeNode* insertNode = nullptr;
+		sint32 insertSlotIndex = -1;
+		{
+			ValueNode* valueNode = FindFloorValueNode(rangeBegin);
+			if (valueNode)
+			{
+				insertSlotIndex = valueNode->parentSlot+1; // insert after
+			}
+			else
+			{
+				// special case where we insert at the very left
+				valueNode = GetLeftmostValue();
+				insertSlotIndex = 0;
+			}
+			cemu_assert_debug(valueNode->parentNodeIndex != INVALID_NODE_INDEX);
+			insertNode = &m_treeNodes[valueNode->parentNodeIndex];
+		}
+		// handle the case where the node can still fit more entries
+		if (insertNode->usedCount < NUM_SLOTS)
+		{
+			for (sint32 i=insertNode->usedCount-1; i>=insertSlotIndex; i--)
+				SetChildNode(*insertNode, i+1, m_valueNodes[insertNode->indices[i]]);
+			insertNode->usedCount++;
+			SetChildNode(*insertNode, insertSlotIndex, AllocateValueNode(rangeBegin, rangeEnd, nodeObject));
+			if (insertSlotIndex == 0)
+				PropagateMinValue(insertNode);
+			// [DEBUG] Validate tree
+			//TRangeData treeMinVal, treeMaxVal;
+			//ValidateTree(GetRootNode(), m_treeDepth, treeMinVal, treeMaxVal);
+			return;
+		}
+		// split is necessary
+		InsertNode(*insertNode, nullptr, &AllocateValueNode(rangeBegin, rangeEnd, nodeObject));
+		// [DEBUG] Validate tree
+		// TRangeData treeMinVal, treeMaxVal;
+		// ValidateTree(GetRootNode(), m_treeDepth, treeMinVal, treeMaxVal);
+	}
+
+	void WriteDotFile(const char* filePath)
+	{
+		std::ofstream outFile(filePath, std::ios::trunc);
+		if (!outFile.is_open())
+			return;
+
+		outFile << "digraph IntervalTree3 {\n";
+		outFile << "  rankdir=TB;\n";
+		outFile << "  splines=polyline;\n";
+		outFile << "  node [shape=record, fontname=\"Consolas\", fontsize=10];\n";
+		outFile << "  edge [arrowhead=vee, arrowsize=0.8, penwidth=1.2];\n";
+		if (IsEmpty())
+		{
+			outFile << "  t0 [label=\"{Tree 0|empty}\"];\n";
+			outFile << "}\n";
+			return;
+		}
+		WriteDotTreeNodeRecursive(outFile, GetRootNode(), m_treeDepth);
+		outFile << "}\n";
+		outFile.flush();
+	}
+
+	void ValidateTree(TreeNode& treeNode, sint32 remainingTreeDepth, TRangeData& minChildValue, TRangeData& maxChildValue)
+	{
+		minChildValue = std::numeric_limits<TRangeData>::max();
+		maxChildValue = std::numeric_limits<TRangeData>::min();
+
+		// basic validation
+		cemu_assert(treeNode.usedCount > 0); // empty notes are not allowed
+		for (uint32 i=0; i<treeNode.usedCount-1; i++)
+		{
+			cemu_assert(treeNode.values[i] < treeNode.values[i+1]);
+		}
+		// handle subnodes and check for disallowed overlaps
+		cemu_assert_debug(remainingTreeDepth > 0);
+		if (remainingTreeDepth == 1)
+		{
+			// children are value nodes (leaf)
+			for (uint32 i=0; i<treeNode.usedCount; i++)
+			{
+				ValueNode& valueNode = m_valueNodes[treeNode.indices[i]];
+				cemu_assert(treeNode.values[i] == valueNode.rangeBegin);
+				// cemu_assert(valueNode.selfIndex == treeNode.indices[i]); -> we store relative offset now
+				minChildValue = std::min(minChildValue, valueNode.rangeBegin);
+				maxChildValue = std::max(maxChildValue, valueNode.rangeEnd);
+			}
+		}
+		else
+		{
+			// children are tree nodes (branch)
+			for (uint32 i=0; i<treeNode.usedCount; i++)
+			{
+				TreeNode& childTreeNode = GetTreeNodeChild(treeNode, i);
+				cemu_assert(childTreeNode.parentNodeIndex == treeNode.selfIndex);
+				TRangeData currentChildMinVal, currentChildMaxVal;
+				ValidateTree(childTreeNode, remainingTreeDepth-1, currentChildMinVal, currentChildMaxVal);
+				cemu_assert(currentChildMinVal < currentChildMaxVal);
+				cemu_assert(treeNode.values[i] == currentChildMinVal);
+				if (i < (treeNode.usedCount-1))
+				{
+					cemu_assert(currentChildMaxVal <= treeNode.values[i+1]);
+				}
+				minChildValue = std::min(minChildValue, currentChildMinVal);
+				maxChildValue = std::max(maxChildValue, currentChildMaxVal);
+			}
+			cemu_assert(treeNode.values[0] == minChildValue);
+		}
+	}
+
+	void InsertNode(TreeNode& nodeToInsertInto, TreeNode* treeNode, ValueNode* valueNode)
+	{
+		cemu_assert_debug((treeNode != nullptr) != (valueNode != nullptr)); // either treeNode or valueNode can be set but never both or none
+		TRangeData rangeBegin = treeNode ? treeNode->values[0] : valueNode->rangeBegin;
+		if (nodeToInsertInto.usedCount == NUM_SLOTS)
+		{
+			// if the target node is full then try to move a child left
+			TreeNode* leftNeighbor = GetTreeNodeLeftNeighbor(&nodeToInsertInto);
+			if (leftNeighbor && leftNeighbor->usedCount < NUM_SLOTS)
+			{
+				cemu_assert_debug(rangeBegin > nodeToInsertInto.values[0]); // if this is not true we are not allowed to move the child
+				MigrateSubnodesFromRight(&nodeToInsertInto, leftNeighbor, 1, !treeNode);
+				cemu_assert_debug(rangeBegin > leftNeighbor->values[leftNeighbor->usedCount-1]);
+				// [DEBUG] VALIDATE TREE
+				// TRangeData treeMinVal, treeMaxVal;
+				// ValidateTree(GetRootNode(), m_treeDepth, treeMinVal, treeMaxVal);
+			}
+			else
+			{
+				// try offload into right neighbor if possible
+				TreeNode* rightNeighbor = GetTreeNodeRightNeighbor(&nodeToInsertInto);
+				if (rightNeighbor && rightNeighbor->usedCount < NUM_SLOTS)
+				{
+					cemu_assert_debug(nodeToInsertInto.usedCount == NUM_SLOTS);
+					if (rangeBegin > nodeToInsertInto.values[NUM_SLOTS-1])
+					{
+						// insert into right neighbor instead
+						InsertNode(*rightNeighbor, treeNode, valueNode);
+						return;
+					}
+					// offload one child
+					MigrateSubnodesFromLeft(&nodeToInsertInto, rightNeighbor, 1, !treeNode);
+				}
+			}
+		}
+
+		if (nodeToInsertInto.usedCount < NUM_SLOTS)
+		{
+			sint32 insertSlotIndex = 0;
+			if (rangeBegin >= nodeToInsertInto.values[0])
+				insertSlotIndex = (sint32)FindFloorElementIndexMinBound(nodeToInsertInto, rangeBegin) + 1;
+			// we can determine from the parameter the children type of nodeToInsertInto. Tree nodes cannot have mixed tree/value nodes as children
+			if (treeNode)
+			{
+				for (sint32 i=nodeToInsertInto.usedCount-1; i>=insertSlotIndex; i--)
+					SetChildNode(nodeToInsertInto, i+1, GetTreeNodeChild(&nodeToInsertInto, i));
+			}
+			else
+			{
+				for (sint32 i=nodeToInsertInto.usedCount-1; i>=insertSlotIndex; i--)
+					SetChildNode(nodeToInsertInto, i+1, m_valueNodes[nodeToInsertInto.indices[i]]);
+			}
+			nodeToInsertInto.usedCount++;
+			if (treeNode)
+				SetChildNode(nodeToInsertInto, insertSlotIndex, treeNode);
+			else
+				SetChildNode(nodeToInsertInto, insertSlotIndex, *valueNode);
+			if (insertSlotIndex == 0)
+				PropagateMinValue(&nodeToInsertInto);
+			return;
+		}
+		// target node is full and we need to split
+		if (nodeToInsertInto.parentNodeIndex == INVALID_NODE_INDEX)
+		{
+			// we do this by creating a new node between root and the current node and move all of root's children there
+			// then we can split the new node like usual
+			TreeNode& newTreeNode = AllocateTreeNode(INVALID_NODE_INDEX, 0);
+			cemu_assert_debug(nodeToInsertInto.usedCount == NUM_SLOTS);
+			cemu_assert_debug(m_treeDepth >= 0);
+			if (valueNode)
+			{
+				for (int i=0; i<NUM_SLOTS; i++)
+					SetChildNode(newTreeNode, i, m_valueNodes[nodeToInsertInto.indices[i]]);
+			}
+			else
+			{
+				for (int i=0; i<NUM_SLOTS; i++)
+					SetChildNode(newTreeNode, i, GetTreeNodeChild(&nodeToInsertInto, i));
+			}
+			newTreeNode.usedCount = NUM_SLOTS;
+			ReduceUsedCount(&nodeToInsertInto, nodeToInsertInto.usedCount - 1); // target count 1
+			SetChildNode(nodeToInsertInto, 0, &newTreeNode);
+			PropagateMinValue(&newTreeNode);
+			m_treeDepth++; // tree length increased
+			// try insert again but into the new non-root that can be split
+			InsertNode(newTreeNode, treeNode, valueNode);
+			return;
+		}
+		TreeNode& splitLeft = nodeToInsertInto;
+		TreeNode& splitRight = AllocateTreeNode(INVALID_NODE_INDEX, 0);
+		MigrateSubnodesFromLeft(&splitLeft, &splitRight, NUM_SLOTS/2, valueNode);
+		// insert new node into left or right node
+		TreeNode* insertNode = rangeBegin >= splitRight.values[0] ? &splitRight : &splitLeft;
+		sint32 insertSlotIndex = 0;
+		if (rangeBegin >= nodeToInsertInto.values[0])
+			insertSlotIndex = (sint32)FindFloorElementIndexMinBound(*insertNode, rangeBegin) + 1;
+		if (valueNode)
+		{
+			for (sint32 i=insertNode->usedCount-1; i>=insertSlotIndex; i--)
+				SetChildNode(*insertNode, i+1, m_valueNodes[insertNode->indices[i]]);
+		}
+		else
+		{
+			for (sint32 i=insertNode->usedCount-1; i>=insertSlotIndex; i--)
+				SetChildNode(*insertNode, i+1, GetTreeNodeChild(insertNode, i));
+		}
+		insertNode->usedCount++;
+		if (treeNode)
+			SetChildNode(*insertNode, insertSlotIndex, treeNode);
+		else
+			SetChildNode(*insertNode, insertSlotIndex, *valueNode);
+		// propagate min value
+		if (insertSlotIndex == 0 && insertNode == &splitLeft)
+			PropagateMinValue(&splitLeft);
+		// insert splitRight into parent
+		InsertNode(m_treeNodes[splitLeft.parentNodeIndex], &splitRight, nullptr);
+	}
+
+	bool IsEmpty() const
+	{
+		return m_treeDepth == 0;
+	}
+
+	void PrintStats()
+	{
+		cemuLog_log(LogType::Force, "--- IntervalTree info ---");
+		cemuLog_log(LogType::Force, "Depth: {}", m_treeDepth);
+		size_t numTreeNodes = m_treeNodes.size() - m_freeTreeNodeIndices.size();
+		size_t numValueNodes = m_valueNodes.size() - m_freeValueNodeIndices.size();
+		cemuLog_log(LogType::Force, "NumTreeNodes: {}", numTreeNodes);
+		cemuLog_log(LogType::Force, "NumValueNodes: {}", numValueNodes);
+		size_t fillCountTotal = 0;
+		for (auto& treeNode : m_treeNodes)
+		{
+			if (treeNode.usedCount == 0)
+				continue;
+			fillCountTotal += (size_t)treeNode.usedCount;
+		}
+		cemuLog_log(LogType::Force, "AvgFillAmount: {:.2f}", (double)fillCountTotal / (double)numTreeNodes);
+	}
+private:
+	TreeNode& GetRootNode()
+	{
+		return m_treeNodes[ROOT_NODE_INDEX];
+	}
+
+	const TreeNode& GetRootNode() const
+	{
+		return m_treeNodes[ROOT_NODE_INDEX];
+	}
+
+	TreeNode& GetNode(uint32 nodeIndex)
+	{
+		cemu_assert_debug(nodeIndex < m_treeNodes.size());
+		return m_treeNodes[nodeIndex];
+	}
+
+	const TreeNode& GetNode(uint32 nodeIndex) const
+	{
+		cemu_assert_debug(nodeIndex < m_treeNodes.size());
+		return m_treeNodes[nodeIndex];
+	}
+
+	void InitializeTreeNode(TreeNode& node, uint32 selfIndex, uint32 parentNodeIndex, uint8 parentSlot)
+	{
+		node.selfIndex = selfIndex;
+		node.parentNodeIndex = parentNodeIndex;
+		node.parentSlot = parentSlot;
+		node.usedCount = 0;
+		for (auto& it : node.values)
+			it = MAX_VALUE;
+		for (auto& it : node.indices)
+			it = 0;
+	}
+
+	void ReduceUsedCount(TreeNode* node, sint32 num)
+	{
+		cemu_assert_debug(num >= 0);
+		cemu_assert_debug(num <= node->usedCount);
+		node->usedCount -= (uint8)num;
+		for (int i=0; i<num; i++)
+		{
+			node->values[node->usedCount + i] = MAX_VALUE;
+		}
+	}
+
+	// assumes value >= node.values[0]
+	FORCEINLINE ptrdiff_t FindFloorElementIndexMinBound(TreeNode& node, TRangeData value)
+	{
+		static_assert(NUM_SLOTS == 16); // this function needs to be updated if the count changes
+		cemu_assert_debug(value >= node.values[0]);
+		TRangeData* ptr = node.values;
+		if (value >= ptr[8])
+			ptr += 8;
+		if (value >= ptr[4])
+			ptr += 4;
+		if (value >= ptr[2])
+			ptr += 2;
+		if (value >= ptr[1])
+			ptr += 1;
+		return (ptr - node.values);
+	}
+
+	void ReserveNodes()
+	{
+		// this function guarantees a minimum of available amount of tree and value nodes in the pool, enough for the needs of AddRange()
+		// additionally, to avoid having to resize many times we allocate new elements in larger chunks
+		if (m_freeTreeNodeIndices.size() < 16)
+		{
+			uint32 curNodeCount = (uint32)m_treeNodes.size();
+			m_treeNodes.resize(curNodeCount + 64);
+			for (uint32 i=0; i<64; i++)
+				m_treeNodes[curNodeCount + i].selfIndex = curNodeCount + i;
+			uint32 freeIndexCount = (uint32)m_freeTreeNodeIndices.size();
+			m_freeTreeNodeIndices.resize(freeIndexCount + 64);
+			for (uint32 i=0; i<64; i++)
+				m_freeTreeNodeIndices[freeIndexCount + i] = curNodeCount + i;
+		}
+		if (m_freeValueNodeIndices.size() < 16)
+		{
+			uint32 curNodeCount = (uint32)m_valueNodes.size();
+			m_valueNodes.resize(curNodeCount + 128);
+			for (uint32 i=0; i<128; i++)
+				m_valueNodes[curNodeCount + i].selfIndex = curNodeCount + i;
+			uint32 freeIndexCount = (uint32)m_freeValueNodeIndices.size();
+			m_freeValueNodeIndices.resize(freeIndexCount + 128);
+			for (uint32 i=0; i<128; i++)
+				m_freeValueNodeIndices[freeIndexCount + i] = curNodeCount + i;
+		}
+	}
+
+	void WriteDotTreeNodeRecursive(std::ofstream& outFile, TreeNode& treeNode, sint32 remainingDepth)
+	{
+		auto writeHex = [&outFile](TRangeData value)
+		{
+			outFile << "0x" << std::hex << static_cast<uint64>(value) << std::dec;
+		};
+		outFile << "  t" << treeNode.selfIndex << " [label=\"";
+		for (uint32 i = 0; i < NUM_SLOTS; i++)
+		{
+			if (i != 0)
+				outFile << "|";
+			outFile << "<s" << i << ">";
+			if (i < treeNode.usedCount)
+				writeHex(treeNode.values[i]);
+		}
+		outFile << "\"];\n";
+		if (remainingDepth <= 1)
+		{
+			for (uint32 i = 0; i < treeNode.usedCount; i++)
+			{
+				const ValueNode& valueNode = m_valueNodes[treeNode.indices[i]];
+				outFile << "  v" << valueNode.selfIndex << " [shape=box, label=\"";
+				writeHex(valueNode.rangeBegin);
+				outFile << "\\n";
+				writeHex(valueNode.rangeEnd);
+				outFile << "\"];\n";
+				outFile << "  t" << treeNode.selfIndex << ":s" << i << ":s -> v" << valueNode.selfIndex << ":nw;\n";
+			}
+			return;
+		}
+		for (uint32 i = 0; i < treeNode.usedCount; i++)
+		{
+			TreeNode* childNode = GetTreeNodeChild(&treeNode, i);
+			outFile << "  t" << treeNode.selfIndex << ":s" << i << ":s -> t" << childNode->selfIndex << ":nw;\n";
+			WriteDotTreeNodeRecursive(outFile, *childNode, remainingDepth - 1);
+		}
+	}
+
+	TreeNode& AllocateTreeNode(uint32 parentNodeIndex, uint8 parentSlot)
+	{
+		cemu_assert(!m_freeTreeNodeIndices.empty());
+		uint32 nodeIndex;
+		nodeIndex = m_freeTreeNodeIndices.back();
+		m_freeTreeNodeIndices.pop_back();
+		InitializeTreeNode(m_treeNodes[nodeIndex], nodeIndex, parentNodeIndex, parentSlot);
+		return m_treeNodes[nodeIndex];
+	}
+
+	void ReleaseTreeNode(TreeNode* treeNode, bool unlinkFromParent)
+	{
+		uint32 nodeIndex = treeNode->selfIndex;
+		if (unlinkFromParent)
+		{
+			cemu_assert_debug(treeNode->parentNodeIndex != INVALID_NODE_INDEX);
+			TreeNode& parentNode = m_treeNodes[treeNode->parentNodeIndex];
+			sint32 slotIndex = treeNode->parentSlot;
+			ReduceUsedCount(&parentNode, 1);
+			for (sint32 i=slotIndex; i<parentNode.usedCount; i++)
+				SetChildNode(parentNode, i, GetTreeNodeChild(&parentNode, i + 1));
+		}
+		cemu_assert_debug(nodeIndex != ROOT_NODE_INDEX);
+		if (nodeIndex == ROOT_NODE_INDEX || nodeIndex >= m_treeNodes.size())
+			return;
+		InitializeTreeNode(m_treeNodes[nodeIndex], nodeIndex, INVALID_NODE_INDEX, 0);
+		m_freeTreeNodeIndices.emplace_back(nodeIndex);
+	}
+
+	ValueNode& AllocateValueNode(TRangeData beginValue, TRangeData endValue, TNodeObject* nodeObject)
+	{
+		cemu_assert(!m_freeValueNodeIndices.empty());
+		uint32 valueIndex;
+		valueIndex = m_freeValueNodeIndices.back();
+		m_freeValueNodeIndices.pop_back();
+		ValueNode& valueNode = m_valueNodes[valueIndex];
+		valueNode.ptr = nodeObject;
+		valueNode.rangeBegin = beginValue;
+		valueNode.rangeEnd = endValue;
+		valueNode.selfIndex = valueIndex;
+		valueNode.parentNodeIndex = INVALID_NODE_INDEX;
+		valueNode.parentSlot = 0;
+		return valueNode;
+	}
+
+	void ReleaseValueNode(uint32 valueIndex)
+	{
+		cemu_assert_debug(valueIndex < m_valueNodes.size());
+		ValueNode& valueNode = m_valueNodes[valueIndex];
+		valueNode.ptr = nullptr;
+		valueNode.rangeBegin = TRangeData{};
+		valueNode.rangeEnd = TRangeData{};
+		valueNode.parentNodeIndex = INVALID_NODE_INDEX;
+		valueNode.parentSlot = 0;
+		m_freeValueNodeIndices.emplace_back(valueIndex);
+	}
+
+	ValueNode* GetLeftmostValue()
+	{
+		cemu_assert_debug(!IsEmpty());
+		TreeNode* currentNode = &GetRootNode();
+		// traverse branches
+		for (sint32 i=0; i<m_treeDepth-1; i++)
+		{
+			currentNode = GetTreeNodeChild(currentNode, 0);
+		}
+		// get value node
+		ValueNode* valueNode = &m_valueNodes[currentNode->indices[0]];
+		return valueNode;
+	}
+
+	// find the node with the highest rangeBegin that satisfies node->rangeBegin <= beginValue, or null if none exists
+	ValueNode* FindFloorValueNode(TRangeData beginValue)
+	{
+		cemu_assert_debug(beginValue != MAX_VALUE);
+		cemu_assert_debug(!IsEmpty());
+		TreeNode* currentNode = &GetRootNode();
+		if (beginValue < currentNode->values[0])
+			return nullptr;
+		ptrdiff_t diff = 0;
+		auto remainingDepth = m_treeDepth;
+		do
+		{
+			currentNode = reinterpret_cast<TreeNode*>(reinterpret_cast<char*>(currentNode) + diff);
+			ptrdiff_t floorSlot = FindFloorElementIndexMinBound(*currentNode, beginValue);
+			ASSUME(floorSlot >= 0 && floorSlot < NUM_SLOTS);
+			diff = currentNode->indices[floorSlot];
+		}
+		while (--remainingDepth);
+		return &m_valueNodes[diff];
+	}
+
+	ValueNode* GetSuccessorValue(const ValueNode* valueNode)
+	{
+		cemu_assert_debug(valueNode);
+		cemu_assert_debug(valueNode->parentNodeIndex != INVALID_NODE_INDEX);
+		TreeNode* currentNode = &m_treeNodes[valueNode->parentNodeIndex];
+		// straight forward case: There is another value node in the parent tree node
+		uint32 currentSlot = valueNode->parentSlot;
+		if (currentSlot + 1 < currentNode->usedCount)
+			return &m_valueNodes[currentNode->indices[currentSlot + 1]];
+		// otherwise traverse towards root until we find a right branch
+		sint32 remainingTreeDepth = 0;
+		while (true)
+		{
+			if (currentNode->parentNodeIndex == INVALID_NODE_INDEX)
+				return nullptr; // root reached
+			currentSlot = currentNode->parentSlot;
+			currentNode = &m_treeNodes[currentNode->parentNodeIndex];
+			if (currentSlot+1 < currentNode->usedCount)
+			{
+				currentNode = GetTreeNodeChild(currentNode, currentSlot + 1);
+				break;
+			}
+			remainingTreeDepth++;
+		}
+		// and then traverse always left to get the value
+		for (sint32 i=0; i<remainingTreeDepth; i++)
+			currentNode = GetTreeNodeChild(currentNode, 0);
+		return &m_valueNodes[currentNode->indices[0]];
+	}
+
+	// get the immediate left tree node on the same tree depth, this can be a node on a different parent branch as long as its the same depth
+	TreeNode* GetTreeNodeLeftNeighbor(const TreeNode* treeNode)
+	{
+		cemu_assert_debug(treeNode);
+		if (treeNode->parentNodeIndex == INVALID_NODE_INDEX)
+			return nullptr; // root has no neighbors
+		TreeNode* currentNode = &GetNode(treeNode->parentNodeIndex);
+		// straight forward case: There is another tree node in the parent tree node
+		uint32 currentSlot = treeNode->parentSlot;
+		if (currentSlot > 0)
+			return GetTreeNodeChild(currentNode, currentSlot - 1);
+		// otherwise traverse towards root until we find a left branch
+		sint32 remainingTreeDepth = 0;
+		while (true)
+		{
+			if (currentNode->parentNodeIndex == INVALID_NODE_INDEX)
+				return nullptr; // root reached
+			currentSlot = currentNode->parentSlot;
+			currentNode = &m_treeNodes[currentNode->parentNodeIndex];
+			if (currentSlot > 0)
+			{
+				currentNode = GetTreeNodeChild(currentNode, currentSlot - 1);
+				break;
+			}
+			remainingTreeDepth++;
+		}
+		// and then traverse always right
+		for (sint32 i=0; i<remainingTreeDepth; i++)
+			currentNode = GetTreeNodeChild(currentNode, currentNode->usedCount - 1);
+		return GetTreeNodeChild(currentNode, currentNode->usedCount - 1);
+	}
+
+	// get the immediate right tree node on the same tree depth, this can be a node on a different parent branch as long as its the same depth
+	TreeNode* GetTreeNodeRightNeighbor(TreeNode* treeNode)
+	{
+		cemu_assert_debug(treeNode);
+		if (treeNode->parentNodeIndex == INVALID_NODE_INDEX)
+			return nullptr; // root has no neighbors
+		TreeNode* currentNode = &GetNode(treeNode->parentNodeIndex);
+		// straight forward case: There is another tree node in the parent tree node
+		uint32 currentSlot = treeNode->parentSlot;
+		if (currentSlot + 1 < currentNode->usedCount)
+			return GetTreeNodeChild(currentNode, currentSlot + 1);
+		// otherwise traverse towards root until we find a right branch
+		sint32 remainingTreeDepth = 0;
+		while (true)
+		{
+			if (currentNode->parentNodeIndex == INVALID_NODE_INDEX)
+				return nullptr; // root reached
+			currentSlot = currentNode->parentSlot;
+			currentNode = &m_treeNodes[currentNode->parentNodeIndex];
+			if (currentSlot+1 < currentNode->usedCount)
+			{
+				currentNode = GetTreeNodeChild(currentNode, currentSlot + 1);
+				break;
+			}
+			remainingTreeDepth++;
+		}
+		// and then traverse always left
+		for (sint32 i=0; i<remainingTreeDepth; i++)
+			currentNode = GetTreeNodeChild(currentNode, 0);
+		return GetTreeNodeChild(currentNode, 0);
+	}
+
+	// merge or delete a node if it has less than MIN_CHILDREN. Can decrease tree length
+	void CollapseNode(TreeNode* treeNode, sint32 depth)
+	{
+		if (treeNode->usedCount >= MIN_CHILDREN)
+		{
+			PropagateMinValue(treeNode);
+			return; // node full enough to not collapse
+		}
+		bool hasValueNodeChildren = (depth == m_treeDepth-1);
+		// check if we can merge with left node
+		TreeNode* leftNeighbor = GetTreeNodeLeftNeighbor(treeNode);
+		if (leftNeighbor && (leftNeighbor->usedCount + treeNode->usedCount) <= NUM_SLOTS && treeNode->usedCount > 0)
+		{
+			cemu_assert_debug(treeNode->usedCount > 0); // if there are neighbors then empty nodes should not be possible
+			// merge left into self
+			MigrateSubnodesFromLeft(leftNeighbor, treeNode, leftNeighbor->usedCount, hasValueNodeChildren); // also propagates new min value
+			// left neighbor is now empty so remove it
+			TreeNode* leftNeighborParent = &m_treeNodes[leftNeighbor->parentNodeIndex];
+			ReleaseTreeNode(leftNeighbor, true);
+			if (leftNeighbor->parentSlot == 0)
+				PropagateMinValue(leftNeighborParent);
+			CollapseNode(leftNeighborParent, depth - 1);
+			PropagateMinValue(treeNode);
+			return;
+		}
+		// check if we can merge with right node
+		TreeNode* rightNeighbor = GetTreeNodeRightNeighbor(treeNode);
+		if (rightNeighbor && (rightNeighbor->usedCount + treeNode->usedCount) <= NUM_SLOTS && treeNode->usedCount > 0)
+		{
+			cemu_assert_debug(treeNode->usedCount > 0);
+			// merge right into self
+			MigrateSubnodesFromRight(rightNeighbor, treeNode, rightNeighbor->usedCount, hasValueNodeChildren);
+			// right neighbor is now empty so remove it
+			TreeNode* rightNeighborParent = &m_treeNodes[rightNeighbor->parentNodeIndex];
+			ReleaseTreeNode(rightNeighbor, true);
+			if (rightNeighbor->parentSlot == 0)
+				PropagateMinValue(rightNeighborParent);
+			CollapseNode(rightNeighborParent, depth - 1);
+			return;
+		}
+		if (!leftNeighbor && !rightNeighbor)
+		{
+			// no neighbors
+			if (treeNode->usedCount > 0)
+			{
+				PropagateMinValue(treeNode);
+				return;
+			}
+			// if this node is empty and there are no neighbors then the tree is empty, collapse nodes and eventually root
+			if (treeNode->parentNodeIndex == INVALID_NODE_INDEX)
+			{
+				cemu_assert_debug(treeNode->selfIndex == ROOT_NODE_INDEX);
+				m_treeDepth = 0;
+				cemu_assert_debug(m_freeValueNodeIndices.size() == m_valueNodes.size());
+				cemu_assert_debug(m_freeTreeNodeIndices.size() == m_treeNodes.size()-1); // -1 for the root node which is always reserved
+				cemu_assert_debug(GetRootNode().usedCount == 0);
+				return;
+			}
+			else
+			{
+				// unlink empty node and continue collapsing parent chain
+				TreeNode* parentNode = &m_treeNodes[treeNode->parentNodeIndex];
+				ReleaseTreeNode(treeNode, true);
+				CollapseNode(parentNode, depth - 1);
+				return;
+			}
+		}
+		// if merging is not possible then only redistribute values
+		if (treeNode->usedCount == 0)
+		{
+			TreeNode* treeNodeParent = (treeNode->parentNodeIndex != INVALID_NODE_INDEX) ? &m_treeNodes[treeNode->parentNodeIndex] : nullptr;
+			ReleaseTreeNode(treeNode, true);
+			if (treeNodeParent && treeNodeParent->usedCount > 0)
+				PropagateMinValue(treeNodeParent);
+			// note - this will never shrink the tree, since there is at least one left or right neighbor
+			return;
+		}
+		// todo - redistribute values
+		PropagateMinValue(treeNode);
+	}
+
+	// helper for CollapseNode(), moves children from left neighbor to center node. Changes left and center node min value
+	void MigrateSubnodesFromLeft(TreeNode* leftNode, TreeNode* targetNode, sint32 count, bool hasValueNodes)
+	{
+		cemu_assert_debug(count > 0);
+		cemu_assert_debug(leftNode->usedCount >= count);
+		cemu_assert_debug((targetNode->usedCount + count) <= NUM_SLOTS);
+		sint32 targetCount = targetNode->usedCount;
+		sint32 leftStart = leftNode->usedCount - count;
+		if (hasValueNodes)
+		{
+			for (sint32 i=targetCount-1; i>=0; i--)
+				SetChildNode(*targetNode, count + i, m_valueNodes[targetNode->indices[i]]);
+			for (sint32 i=0; i<count; i++)
+				SetChildNode(*targetNode, i, m_valueNodes[leftNode->indices[leftStart + i]]);
+		}
+		else
+		{
+			for (sint32 i=targetCount-1; i>=0; i--)
+				SetChildNode(*targetNode, count + i, GetTreeNodeChild(targetNode, i));
+			for (sint32 i=0; i<count; i++)
+				SetChildNode(*targetNode, i, GetTreeNodeChild(leftNode, leftStart + i));
+		}
+		ReduceUsedCount(leftNode, count);
+		targetNode->usedCount += count;
+		PropagateMinValue(targetNode);
+	}
+
+	// helper for CollapseNode(), moves children from right neighbor to center node. Changes right node min value
+	void MigrateSubnodesFromRight(TreeNode* rightNode, TreeNode* targetNode, sint32 count, bool hasValueNodes)
+	{
+		cemu_assert_debug(rightNode && targetNode);
+		cemu_assert_debug(rightNode != targetNode);
+		cemu_assert_debug(count >= 0);
+		if (count <= 0)
+			return;
+
+		cemu_assert_debug(rightNode->usedCount >= count);
+		cemu_assert_debug((targetNode->usedCount + count) <= NUM_SLOTS);
+
+		sint32 targetCount = targetNode->usedCount;
+		sint32 rightCount = rightNode->usedCount;
+		sint32 remainingCount = rightCount - count;
+
+		if (hasValueNodes)
+		{
+			for (sint32 i=0; i<count; i++)
+				SetChildNode(*targetNode, targetCount + i, m_valueNodes[rightNode->indices[i]]);
+			for (sint32 i=0; i<remainingCount; i++)
+				SetChildNode(*rightNode, i, m_valueNodes[rightNode->indices[count + i]]);
+		}
+		else
+		{
+			for (sint32 i=0; i<count; i++)
+				SetChildNode(*targetNode, targetCount + i, GetTreeNodeChild(rightNode, i));
+			for (sint32 i=0; i<remainingCount; i++)
+				SetChildNode(*rightNode, i, GetTreeNodeChild(rightNode, count + i));
+		}
+		ReduceUsedCount(rightNode, count);
+		targetNode->usedCount += count;
+		if (rightNode->usedCount > 0)
+			PropagateMinValue(rightNode);
+	}
+
+	void ShortenTreeIfPossible()
+	{
+		if (m_treeDepth == 0)
+			return;
+		TreeNode& rootNode = GetRootNode();
+		cemu_assert_debug(rootNode.usedCount > 0);
+		while (m_treeDepth > 1 && rootNode.usedCount == 1) // if root has exactly one tree child, absorb it and reduce depth
+		{
+			TreeNode* onlyChild = GetTreeNodeChild(&rootNode, 0);
+			cemu_assert_debug(onlyChild->usedCount > 0);
+			bool childHasValueNodes = (m_treeDepth == 2);
+			sint32 childCount = onlyChild->usedCount;
+			if (childHasValueNodes)
+			{
+				for (sint32 i=0; i<childCount; i++)
+					SetChildNode(rootNode, i, m_valueNodes[onlyChild->indices[i]]);
+			}
+			else
+			{
+				for (sint32 i=0; i<childCount; i++)
+					SetChildNode(rootNode, i, GetTreeNodeChild(onlyChild, i));
+			}
+			rootNode.usedCount = (uint8)childCount;
+			for (sint32 i=rootNode.usedCount; i<NUM_SLOTS; i++)
+				rootNode.values[i] = MAX_VALUE;
+			ReleaseTreeNode(onlyChild, false);
+			m_treeDepth--;
+		}
+	}
+
+	// new minimum value can propagate up the tree
+	void PropagateMinValue(TreeNode* node)
+	{
+		while (true)
+		{
+			TRangeData minValue = node->values[0];
+			if (node->parentNodeIndex == INVALID_NODE_INDEX)
+				break; // reached root
+			TreeNode* parentNode = &m_treeNodes[node->parentNodeIndex];
+			parentNode->values[node->parentSlot] = minValue;
+			if (node->parentSlot != 0)
+				break; // value wont further propagate
+			node = parentNode;
+		}
+	}
+
+	std::vector<TreeNode> m_treeNodes;
+	std::vector<uint32> m_freeTreeNodeIndices;
+	std::vector<ValueNode> m_valueNodes;
+	std::vector<uint32> m_freeValueNodeIndices;
+
+	sint32 m_treeDepth{0};
+};
+
+template<typename TRangeData, typename TNodeObject>
+class IntervalTree3Map
+{
+public:
+	TNodeObject* GetRange(TRangeData rangeBegin)
+	{
+		auto itr = m_ranges.find(rangeBegin);
+		if (itr == m_ranges.cend())
+			return nullptr;
+		return itr->second;
+	}
+
+	void GetOverlappingRanges(TRangeData rangeBegin, TRangeData rangeEnd, std::vector<TNodeObject*>& results)
+	{
+		cemu_assert_debug(rangeBegin < rangeEnd);
+		results.clear();
+		if (m_ranges.empty() || rangeBegin >= rangeEnd)
+			return;
+
+		auto itr = m_ranges.lower_bound(rangeBegin);
+		while (itr != m_ranges.cend() && itr->first < rangeEnd)
+		{
+			results.emplace_back(itr->second);
+			++itr;
+		}
+	}
+
+	void AddRange(TRangeData rangeBegin, TRangeData rangeEnd, TNodeObject* nodeObject)
+	{
+		cemu_assert_debug(rangeBegin < rangeEnd);
+		cemu_assert_debug(rangeEnd == (rangeBegin + 1));
+		auto insertResult = m_ranges.emplace(rangeBegin, nodeObject);
+		cemu_assert(insertResult.second);
+	}
+
+	void RemoveRange(TRangeData rangeBegin, TRangeData rangeEnd)
+	{
+		cemu_assert_debug(rangeBegin < rangeEnd);
+		cemu_assert_debug(rangeEnd == (rangeBegin + 1));
+		auto itr = m_ranges.find(rangeBegin);
+		cemu_assert(itr != m_ranges.cend());
+		m_ranges.erase(itr);
+	}
+
+	bool IsEmpty() const
+	{
+		return m_ranges.empty();
+	}
+
+	void PrintStats()
+	{
+		cemuLog_log(LogType::Force, "--- IntervalTree3Map info ---");
+		cemuLog_log(LogType::Force, "NumValues: {}", m_ranges.size());
+	}
+
+private:
+	std::map<TRangeData, TNodeObject*> m_ranges;
+};
+#endif
+
+#ifndef NEW_INTERVAL_TREE
 template<typename TRangeData, typename TNodeObject>
 class IntervalTree2
 {
@@ -264,6 +1290,7 @@ public:
 
 	const std::map<InternalRange, TNodeObject*>& getAll() const { return m_map; };
 };
+#endif NEW_INTERVAL_TREE
 
 std::unique_ptr<VHeap> g_gpuBufferHeap = nullptr;
 std::vector<uint8> s_pageUploadBuffer;
@@ -910,6 +1937,103 @@ public:
 };
 
 std::vector<uint32> BufferCacheNode::g_deallocateQueue;
+
+static int dbg_sampleCounter = 0;
+static sint64 dbg_totalSampleCount = 0;
+static double dbg_totalSampleTime = 0;
+static HRTick dbg_sampleTimeDiff = 0;
+
+#ifdef NEW_INTERVAL_TREE
+IntervalTree3<MPTR, BufferCacheNode> g_gpuBufferCache3;
+std::vector<BufferCacheNode*> s_gpuCacheQueryResult; // keep vector around to reduce runtime allocations
+
+void LatteBufferCache_removeSingleNodeFromTree(BufferCacheNode* node)
+{
+#ifdef NEW_INTERVAL_TREE
+	g_gpuBufferCache3.RemoveRange(node->GetRangeBegin(), node->GetRangeEnd());
+#else
+	g_gpuBufferCache.removeRangeSingleWithoutCallback(node->GetRangeBegin(), node->GetRangeEnd());
+#endif
+}
+
+__declspec(noinline) BufferCacheNode* LatteBufferCache_reserveRange(MPTR physAddress, uint32 size)
+{
+	MPTR rangeStart = physAddress - (physAddress % CACHE_PAGE_SIZE);
+	MPTR rangeEnd = (physAddress + size + CACHE_PAGE_SIZE_M1) & ~CACHE_PAGE_SIZE_M1;
+
+	HRTick startTick = HighResolutionTimer::now().getTick();
+	BufferCacheNode* range = g_gpuBufferCache3.GetRange(physAddress);
+	HRTick endTick = HighResolutionTimer::now().getTick();
+	dbg_sampleTimeDiff += (endTick - startTick);
+	dbg_sampleCounter++;
+	if (dbg_sampleCounter > 100)
+	{
+		dbg_totalSampleCount += 100;
+		dbg_totalSampleTime += HighResolutionTimer::getTimeDiff(0, dbg_sampleTimeDiff);
+		dbg_sampleTimeDiff = 0;
+		dbg_sampleCounter = 0;
+		if ( (dbg_totalSampleCount%500000) == 0 )
+		{
+			cemuLog_log(LogType::Force, "---- Cache sample print ----");
+			cemuLog_log(LogType::Force, "TotalSamples: {}", dbg_totalSampleCount);
+			cemuLog_log(LogType::Force, "TotalSampleTime: {}", dbg_totalSampleTime);
+			cemuLog_log(LogType::Force, "Avg(microseconds): {}", dbg_totalSampleTime / (double)dbg_totalSampleCount * 1000000.0);
+			g_gpuBufferCache3.PrintStats();
+		}
+	}
+
+	if (range && physAddress >= range->GetRangeBegin() && (physAddress+size) <= range->GetRangeEnd())
+	{
+		return range;
+	}
+	// no containing range found, we need to create a range and potentially merge any overlapping ones
+	g_gpuBufferCache3.GetOverlappingRanges(rangeStart, rangeEnd, s_gpuCacheQueryResult);
+	if (s_gpuCacheQueryResult.empty())
+	{
+		// no overlaps we can just create a new blank range
+		BufferCacheNode* newRange = BufferCacheNode::Create(rangeStart, rangeEnd, s_gpuCacheQueryResult);
+		g_gpuBufferCache3.AddRange(rangeStart, rangeEnd, newRange);
+		return newRange;
+	}
+	else
+	{
+		// merge with overlapping ranges
+		uint32 mergedRangeStart = std::min<uint32>(rangeStart, s_gpuCacheQueryResult.front()->GetRangeBegin());
+		uint32 mergedRangeEnd = std::max<uint32>(rangeEnd, s_gpuCacheQueryResult.back()->GetRangeEnd());
+		// todo2 - but we still want to have special handling for shrink/split/resize as an optimization
+		// note - BufferCacheNode::Create deletes the nodes, we only need to remove them from the interval tree
+		for (auto& it : s_gpuCacheQueryResult)
+		{
+			g_gpuBufferCache3.RemoveRange(it->GetRangeBegin(), it->GetRangeEnd());
+		}
+		BufferCacheNode* newRange = BufferCacheNode::Create(mergedRangeStart, mergedRangeEnd, s_gpuCacheQueryResult);
+		g_gpuBufferCache3.AddRange(mergedRangeStart, mergedRangeEnd, newRange);
+		return newRange;
+	}
+
+
+
+	// algorithm goes like this:
+	// 0) Try to fetch existing range and exit early if we find one
+	// 1) Get all overlapping nodes
+	// 2) If there are none then just add a new range
+	// 3) Otherwise calculate a new merged range size and merge data into it
+	// 4) Then remove the ranges and add the new one
+
+	return nullptr;
+	// auto range = g_gpuBufferCache.getRange(rangeStart, rangeEnd);
+	// if (!range)
+	// {
+	// 	g_gpuBufferCache.addRange(rangeStart, rangeEnd);
+	// 	range = g_gpuBufferCache.getRange(rangeStart, rangeEnd);
+	// 	cemu_assert_debug(range);
+	// }
+	// cemu_assert_debug(range->GetRangeBegin() <= physAddress);
+	// cemu_assert_debug(range->GetRangeEnd() >= (physAddress + size));
+	// return range;
+}
+
+#else
 IntervalTree2<MPTR, BufferCacheNode> g_gpuBufferCache;
 
 void LatteBufferCache_removeSingleNodeFromTree(BufferCacheNode* node)
@@ -922,7 +2046,28 @@ BufferCacheNode* LatteBufferCache_reserveRange(MPTR physAddress, uint32 size)
 	MPTR rangeStart = physAddress - (physAddress % CACHE_PAGE_SIZE);
 	MPTR rangeEnd = (physAddress + size + CACHE_PAGE_SIZE_M1) & ~CACHE_PAGE_SIZE_M1;
 
+	HRTick startTick = HighResolutionTimer::now().getTick();
+	//BufferCacheNode* range = g_gpuBufferCache3.GetRange(physAddress);
 	auto range = g_gpuBufferCache.getRange(rangeStart, rangeEnd);
+	HRTick endTick = HighResolutionTimer::now().getTick();
+	dbg_sampleTimeDiff += (endTick - startTick);
+	dbg_sampleCounter++;
+	if (dbg_sampleCounter > 100)
+	{
+		dbg_totalSampleCount += 100;
+		dbg_totalSampleTime += HighResolutionTimer::getTimeDiff(0, dbg_sampleTimeDiff);
+		dbg_sampleTimeDiff = 0;
+		dbg_sampleCounter = 0;
+		if ( (dbg_totalSampleCount%100000) == 0 )
+		{
+			cemuLog_log(LogType::Force, "---- Cache sample print ----");
+			cemuLog_log(LogType::Force, "TotalSamples: {}", dbg_totalSampleCount);
+			cemuLog_log(LogType::Force, "TotalSampleTime: {}", dbg_totalSampleTime);
+			cemuLog_log(LogType::Force, "Avg(microseconds): {}", dbg_totalSampleTime / (double)dbg_totalSampleCount * 1000000.0);
+		}
+	}
+
+
 	if (!range)
 	{
 		g_gpuBufferCache.addRange(rangeStart, rangeEnd);
@@ -933,7 +2078,7 @@ BufferCacheNode* LatteBufferCache_reserveRange(MPTR physAddress, uint32 size)
 	cemu_assert_debug(range->GetRangeEnd() >= (physAddress + size));
 	return range;
 }
-
+#endif
 
 uint32 LatteBufferCache_retrieveDataInCache(MPTR physAddress, uint32 size)
 {
@@ -964,20 +2109,40 @@ void LatteBufferCache_invalidate(MPTR physAddress, uint32 size)
 {
 	if (size == 0)
 		return;
+#ifdef NEW_INTERVAL_TREE
+	if (physAddress >= 0xFFFFFFFF)
+		return;
+	g_gpuBufferCache3.GetOverlappingRanges(physAddress, physAddress+size, s_gpuCacheQueryResult);
+	for (auto& range : s_gpuCacheQueryResult)
+	{
+		cemu_assert_debug(physAddress < range->GetRangeEnd() && (physAddress + size) > range->GetRangeBegin());
+		range->invalidate(physAddress, physAddress + size);
+	}
+#else
 	g_gpuBufferCache.forEachOverlapping(physAddress, physAddress + size, [](BufferCacheNode* node, MPTR invalidationRangeBegin, MPTR invalidationRangeEnd)
 		{
 			node->invalidate(invalidationRangeBegin, invalidationRangeEnd);
 		}
 	);
+#endif
 }
 
 // optimized version of LatteBufferCache_invalidate() if physAddress points to the beginning of a page
 void LatteBufferCache_invalidatePage(MPTR physAddress)
 {
 	cemu_assert_debug((physAddress & CACHE_PAGE_SIZE_M1) == 0);
+#ifdef NEW_INTERVAL_TREE
+	BufferCacheNode* node = g_gpuBufferCache3.GetRange(physAddress);
+	if (node)
+	{
+		cemu_assert_debug(physAddress >= node->GetRangeBegin() && physAddress < node->GetRangeEnd());
+		node->invalidate(physAddress, physAddress+CACHE_PAGE_SIZE);
+	}
+#else
 	BufferCacheNode* node = g_gpuBufferCache.getRangeByPoint(physAddress);
 	if (node)
 		node->invalidate(physAddress, physAddress+CACHE_PAGE_SIZE);
+#endif
 }
 
 void LatteBufferCache_processDeallocations()
@@ -985,11 +2150,21 @@ void LatteBufferCache_processDeallocations()
 	BufferCacheNode::ProcessDeallocations();
 }
 
+void LatteBufferCache_profileIntervalTree3();
+
 void LatteBufferCache_init(size_t bufferSize)
 {
+#ifdef NEW_INTERVAL_TREE
+	cemu_assert_debug(g_gpuBufferCache3.IsEmpty());
+#else
     cemu_assert_debug(g_gpuBufferCache.empty());
+#endif
 	g_gpuBufferHeap.reset(new VHeap(nullptr, (uint32)bufferSize));
 	g_renderer->bufferCache_init((uint32)bufferSize);
+
+	// DEBUG
+	//LatteBufferCache_profileIntervalTree3();
+	//exit(0);
 }
 
 void LatteBufferCache_UnloadAll()
@@ -1101,6 +2276,13 @@ void LatteBufferCache_notifySwapTVScanBuffer()
 
 void LatteBufferCache_incrementalCleanup()
 {
+	if (GetAsyncKeyState('A'))
+	{
+		g_gpuBufferCache3.PrintStats();
+		g_gpuBufferCache3.WriteDotFile("BotWTree.dot");
+		Sleep(2000);
+	}
+
 	static uint32 s_counter = 0;
 
 	if (s_allCacheNodes.empty())
@@ -1128,7 +2310,12 @@ void LatteBufferCache_incrementalCleanup()
 		// heap is 80% filled
 		if (range->GetFrameAge() >= 2)
 		{
+#ifdef NEW_INTERVAL_TREE
+			g_gpuBufferCache3.RemoveRange(range->GetRangeBegin(), range->GetRangeEnd());
+			BufferCacheNode::Delete(range);
+#else
 			g_gpuBufferCache.removeRangeSingle(range->GetRangeBegin(), range->GetRangeEnd());
+#endif
 		}
 	}
 	else if (allocationSize >= (heapSize * 3 / 4))
@@ -1136,7 +2323,12 @@ void LatteBufferCache_incrementalCleanup()
 		// heap is 75-100% filled
 		if (range->GetFrameAge() >= 4)
 		{
+#ifdef NEW_INTERVAL_TREE
+			g_gpuBufferCache3.RemoveRange(range->GetRangeBegin(), range->GetRangeEnd());
+			BufferCacheNode::Delete(range);
+#else
 			g_gpuBufferCache.removeRangeSingle(range->GetRangeBegin(), range->GetRangeEnd());
+#endif
 		}
 	}
 	else if (allocationSize >= (heapSize / 2))
@@ -1144,7 +2336,12 @@ void LatteBufferCache_incrementalCleanup()
 		// if heap is 50-75% filled
 		if (range->GetFrameAge() >= 20)
 		{
+#ifdef NEW_INTERVAL_TREE
+			g_gpuBufferCache3.RemoveRange(range->GetRangeBegin(), range->GetRangeEnd());
+			BufferCacheNode::Delete(range);
+#else
 			g_gpuBufferCache.removeRangeSingle(range->GetRangeBegin(), range->GetRangeEnd());
+#endif
 		}
 	}
 	else
@@ -1152,7 +2349,221 @@ void LatteBufferCache_incrementalCleanup()
 		// heap is under 50% capacity
 		if (range->GetFrameAge() >= 500)
 		{
+#ifdef NEW_INTERVAL_TREE
+			g_gpuBufferCache3.RemoveRange(range->GetRangeBegin(), range->GetRangeEnd());
+			BufferCacheNode::Delete(range);
+#else
 			g_gpuBufferCache.removeRangeSingle(range->GetRangeBegin(), range->GetRangeEnd());
+#endif
 		}
 	}
+}
+
+
+// ****************************************** Profiling code **********************************************/
+
+void LatteBufferCache_profileIntervalTree3()
+{
+#ifdef NEW_INTERVAL_TREE
+	IntervalTree3<MPTR, void> profileTree;
+	//IntervalTree3Map<MPTR, void> profileTree;
+
+	void* dummyObject = reinterpret_cast<void*>(1);
+
+	// static constexpr sint32 kInsertPhaseCount[3] = { 12000, 12000, 10000 }; // total 34000
+	// static constexpr sint32 kTotalInsertCount = 34000;
+	// static constexpr sint32 kRemovePhaseCount[3] = { 8000, 8000, 8000 };
+	static constexpr sint32 kInsertPhaseCount[3] = { 400, 400, 200 }; // total 1000
+	static constexpr sint32 kTotalInsertCount = 1000;
+	static constexpr sint32 kRemovePhaseCount[3] = { 300, 300, 300 };
+	static constexpr sint32 kGetRangeQueryCountTotal = 1000000;
+	static constexpr sint32 kGetRangeHitQueryCount = kGetRangeQueryCountTotal / 2;
+	static constexpr sint32 kGetRangeMissQueryCount = kGetRangeQueryCountTotal - kGetRangeHitQueryCount;
+	static constexpr sint32 kOverlapQueryCount = 300000;
+	static constexpr uint32 kPointDomain = 65536; // fixed unique point pool
+
+	auto logPhase = [](const char* label, sint32 phaseIndex, sint32 opCount, double elapsedMs)
+	{
+		double mops = 0.0;
+		double nsPerOp = 0.0;
+		if (elapsedMs > 0.0 && opCount > 0)
+		{
+			mops = static_cast<double>(opCount) / (elapsedMs * 1000.0);
+			nsPerOp = (elapsedMs * 1000000.0) / static_cast<double>(opCount);
+		}
+		cemuLog_log(LogType::Force,
+			"[IntervalTree3 profile] {} {}: {} ops in {:.3f} ms ({:.3f} Mops/s, {:.1f} ns/op)",
+			label, phaseIndex + 1, opCount, elapsedMs, mops, nsPerOp);
+	};
+	auto logSingle = [](const char* label, sint32 opCount, double elapsedMs)
+	{
+		double mops = 0.0;
+		double nsPerOp = 0.0;
+		if (elapsedMs > 0.0 && opCount > 0)
+		{
+			mops = static_cast<double>(opCount) / (elapsedMs * 1000.0);
+			nsPerOp = (elapsedMs * 1000000.0) / static_cast<double>(opCount);
+		}
+		cemuLog_log(LogType::Force,
+			"[IntervalTree3 profile] {}: {} ops in {:.3f} ms ({:.3f} Mops/s, {:.1f} ns/op)",
+			label, opCount, elapsedMs, mops, nsPerOp);
+	};
+
+	uint32 randomState = 0xC001D00Du;
+	auto nextRandom = [&]() -> uint32
+	{
+		// xorshift32 (deterministic, cheap)
+		randomState ^= (randomState << 13);
+		randomState ^= (randomState >> 17);
+		randomState ^= (randomState << 5);
+		return randomState;
+	};
+
+	cemu_assert_debug(kTotalInsertCount <= static_cast<sint32>(kPointDomain));
+
+	std::vector<MPTR> pointPool;
+	pointPool.reserve(kPointDomain);
+	for (uint32 i = 0; i < kPointDomain; i++)
+		pointPool.emplace_back(static_cast<MPTR>(i));
+	for (sint32 i = static_cast<sint32>(pointPool.size()) - 1; i > 0; i--)
+	{
+		sint32 j = static_cast<sint32>(nextRandom() % static_cast<uint32>(i + 1));
+		MPTR tmpPoint = pointPool[i];
+		pointPool[i] = pointPool[j];
+		pointPool[j] = tmpPoint;
+	}
+
+	std::vector<MPTR> activePoints;
+	activePoints.reserve(kTotalInsertCount);
+
+	size_t pointPoolIndex = 0;
+
+	cemuLog_log(LogType::Force, "[IntervalTree3 profile] Starting profile run");
+
+	// insert phases
+	for (sint32 phase = 0; phase < 3; phase++)
+	{
+		const sint32 insertCount = kInsertPhaseCount[phase];
+		BenchmarkTimer timer;
+		timer.Start();
+		for (sint32 i = 0; i < insertCount; i++)
+		{
+			MPTR point = pointPool[pointPoolIndex];
+			pointPoolIndex++;
+			profileTree.AddRange(point, point + 1, dummyObject);
+			activePoints.emplace_back(point);
+		}
+		timer.Stop();
+		logPhase("Insert phase", phase, insertCount, timer.GetElapsedMilliseconds());
+	}
+
+	cemuLog_log(LogType::Force, "[IntervalTree3 profile] Active points after inserts: {}", activePoints.size());
+	cemu_assert_debug(pointPoolIndex == activePoints.size());
+
+	profileTree.PrintStats();
+
+	// GetRange() benchmark (existing points)
+	{
+		sint32 hitCount = 0;
+		BenchmarkTimer timer;
+		timer.Start();
+		for (sint32 repeat=0; repeat<100; repeat++)
+		{
+			for (sint32 i = 0; i < kGetRangeHitQueryCount; i++)
+			{
+				size_t idx = static_cast<size_t>(nextRandom() % static_cast<uint32>(activePoints.size()));
+				MPTR point = activePoints[idx];
+				if (profileTree.GetRange(point) != nullptr)
+					hitCount++;
+			}
+		}
+		timer.Stop();
+		double elapsedMs = timer.GetElapsedMilliseconds();
+		logSingle("GetRange hit phase", kGetRangeHitQueryCount, elapsedMs);
+		cemuLog_log(LogType::Force,
+			"[IntervalTree3 profile] GetRange hit phase: hits {} / {} ({:.2f}%)",
+			hitCount, kGetRangeHitQueryCount, (static_cast<double>(hitCount) * 100.0) / static_cast<double>(kGetRangeHitQueryCount));
+	}
+
+	// GetRange() benchmark (points guaranteed to be absent)
+	{
+		cemu_assert_debug(pointPoolIndex < pointPool.size());
+		size_t missPoolStart = pointPoolIndex;
+		size_t missPoolCount = pointPool.size() - missPoolStart;
+		sint32 missCount = 0;
+		BenchmarkTimer timer;
+		timer.Start();
+		for (sint32 i = 0; i < kGetRangeMissQueryCount; i++)
+		{
+			size_t idx = missPoolStart + (nextRandom() % static_cast<uint32>(missPoolCount));
+			MPTR point = pointPool[idx];
+			if (profileTree.GetRange(point) == nullptr)
+				missCount++;
+		}
+		timer.Stop();
+		double elapsedMs = timer.GetElapsedMilliseconds();
+		logSingle("GetRange miss phase", kGetRangeMissQueryCount, elapsedMs);
+		cemuLog_log(LogType::Force,
+			"[IntervalTree3 profile] GetRange miss phase: misses {} / {} ({:.2f}%)",
+			missCount, kGetRangeMissQueryCount, (static_cast<double>(missCount) * 100.0) / static_cast<double>(kGetRangeMissQueryCount));
+	}
+
+	// overlap query phase (separate)
+	{
+		std::vector<void*> overlapResults;
+		overlapResults.reserve(128);
+
+		uint64 overlapHitSum = 0;
+		BenchmarkTimer timer;
+		timer.Start();
+		for (sint32 i = 0; i < kOverlapQueryCount; i++)
+		{
+			MPTR begin = static_cast<MPTR>(nextRandom() % kPointDomain);
+			MPTR rangeLen = static_cast<MPTR>((nextRandom() & 63u) + 1u); // 1..64
+			MPTR end = begin + rangeLen;
+			profileTree.GetOverlappingRanges(begin, end, overlapResults);
+			overlapHitSum += static_cast<uint64>(overlapResults.size());
+		}
+		timer.Stop();
+
+		const double elapsedMs = timer.GetElapsedMilliseconds();
+		double mops = 0.0;
+		double nsPerOp = 0.0;
+		if (elapsedMs > 0.0)
+		{
+			mops = static_cast<double>(kOverlapQueryCount) / (elapsedMs * 1000.0);
+			nsPerOp = (elapsedMs * 1000000.0) / static_cast<double>(kOverlapQueryCount);
+		}
+		const double avgHits = static_cast<double>(overlapHitSum) / static_cast<double>(kOverlapQueryCount);
+
+		cemuLog_log(LogType::Force,
+			"[IntervalTree3 profile] Overlap query phase: {} ops in {:.3f} ms ({:.3f} Mops/s, {:.1f} ns/op, avg hits {:.2f})",
+			kOverlapQueryCount, elapsedMs, mops, nsPerOp, avgHits);
+	}
+
+	// remove phases (random removals)
+	for (sint32 phase = 0; phase < 3; phase++)
+	{
+		sint32 removeCount = kRemovePhaseCount[phase];
+		if (removeCount > static_cast<sint32>(activePoints.size()))
+			removeCount = static_cast<sint32>(activePoints.size());
+
+		BenchmarkTimer timer;
+		timer.Start();
+		for (sint32 i = 0; i < removeCount; i++)
+		{
+			size_t idx = static_cast<size_t>(nextRandom() % static_cast<uint32>(activePoints.size()));
+			MPTR point = activePoints[idx];
+			profileTree.RemoveRange(point, point + 1);
+			activePoints[idx] = activePoints.back();
+			activePoints.pop_back();
+		}
+		timer.Stop();
+		logPhase("Remove phase", phase, removeCount, timer.GetElapsedMilliseconds());
+	}
+
+	cemuLog_log(LogType::Force, "[IntervalTree3 profile] Active points after removals: {}", activePoints.size());
+#else
+	cemuLog_log(LogType::Force, "[IntervalTree3 profile] NEW_INTERVAL_TREE is disabled");
+#endif
 }
