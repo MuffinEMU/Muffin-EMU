@@ -606,7 +606,8 @@ bool _resolverPass(PatchContext_t& patchContext, std::vector<UnresolvedPatches_t
 			else
 			{
 				// unknown error
-				patchContext.errorHandler.printError(resolverState.currentGroup, -1, "Internal error");
+				sint32 lineNumber = (*it)->getLineNumber();
+				patchContext.errorHandler.printError(resolverState.currentGroup, lineNumber, "Unable to parse expression or other internal error");
 				it++;
 			}
 		}
