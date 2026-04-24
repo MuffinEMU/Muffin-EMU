@@ -633,12 +633,6 @@ public:
 		std::string_view svExpressionPart(startPtr, endPtr - startPtr);
 		std::string_view svRegPart(memoryRegBegin, memoryRegEnd - memoryRegBegin);
 		sint32 memGpr = _parseRegIndex(svRegPart, "r");
-		//if (_ppcAssembler_parseRegister(svRegPart, "r", memGpr) == false || (memGpr < 0 || memGpr >= 32))
-		//{
-		//	sprintf(_assemblerErrorMessageDepr, "\'%.*s\' is not a valid GPR", (int)(memoryRegEnd - memoryRegBegin), memoryRegBegin);
-		//	ppcAssembler_setError(internalCtx.ctx, _assemblerErrorMessageDepr);
-		//	return false;
-		//}
 		if (memGpr < 0 || memGpr >= 32)
 		{
 			ppcAssembler_setError(assemblerCtx->ctx, fmt::format("Memory operand register \"{}\" is not a valid GPR (expected r0 - r31)", svRegPart));
@@ -2299,9 +2293,72 @@ bool _ppcAssembler_emitDataDirective(PPCAssemblerContext& internalInfo, ASM_DATA
 				ppcAssembler_setError(internalInfo.ctx, "String constants must end with a quotation mark. Example: \"text\"");
 				return false;
 			}
+			expressionStr.remove_prefix(1);
+			expressionStr.remove_suffix(1);
+			// unescape C-style characters
+			std::vector<uint8> stringData;
+			stringData.reserve(expressionStr.size());
+			while (!expressionStr.empty())
+			{
+				char c = expressionStr.front();
+				expressionStr.remove_prefix(1);
+				if (c != '\\')
+				{
+					stringData.push_back(c);
+					continue;
+				}
+				if (expressionStr.empty())
+					break;
+				c = expressionStr.front();
+				expressionStr.remove_prefix(1);
+				if (c >= 'A' && c <= 'Z')
+					c -= ('A' - 'a');
+				if (c == '\\')
+					stringData.push_back(c);
+				else if (c == 'n')
+					stringData.push_back('\n');
+				else if (c == 't')
+					stringData.push_back('\t');
+				else if (c == 'r')
+					stringData.push_back('\r');
+				else if (c == '\"')
+					stringData.push_back('\"');
+				else if (c == '\'')
+					stringData.push_back('\'');
+				else if (c == 'x')
+				{
+					uint32 value = 0;
+					bool hasDigits = false;
+					while (!expressionStr.empty())
+					{
+						char h = expressionStr.front();
+						uint32 digit;
+						if (h >= '0' && h <= '9')
+							digit = h - '0';
+						else if (h >= 'a' && h <= 'f')
+							digit = h - 'a' + 10;
+						else if (h >= 'A' && h <= 'F')
+							digit = h - 'A' + 10;
+						else
+							break;
+						hasDigits = true;
+						value = (value << 4) | digit;
+						expressionStr.remove_prefix(1);
+					}
+					if (hasDigits)
+						stringData.push_back((uint8)value);
+					else
+					{
+						ppcAssembler_setError(internalInfo.ctx, "String contains invalid hex escape sequence");
+						return false;
+					}
+					break;
+				}
+				else
+					stringData.push_back('\\'); // output as backward slash if unhandled
+			}
 			// write string bytes + null-termination character
-			size_t strConstantLength = expressionStr.size() - 2;
-			internalInfo.ctx->outputData.insert(internalInfo.ctx->outputData.end(), expressionStr.data() + 1, expressionStr.data() + 1 + strConstantLength);
+			internalInfo.ctx->outputData.insert(internalInfo.ctx->outputData.end(), stringData.data(), stringData.data() + stringData.size());
 			internalInfo.ctx->outputData.emplace_back(0);
 			continue;
 		}
