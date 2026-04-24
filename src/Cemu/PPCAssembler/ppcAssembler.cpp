@@ -42,6 +42,7 @@ enum
 	OP_FORM_OP3_A_IMM, // rA, rS, rB is imm - has RC bit
 	OP_FORM_BRANCH_S16,
 	OP_FORM_BRANCH_S24,
+	OP_FORM_BRANCH_BCCLR, // conditional BLR
 	OP_FORM_OP2_D_HSIMM, // rD, signed imm shifted imm (high half)
 	OP_FORM_RLWINM,
 	OP_FORM_RLWINM_EXTENDED, // alternative mnemonics of rlwinm
@@ -1089,12 +1090,12 @@ PPCInstructionDef ppcInstructionTable[] =
 
 	{PPCASM_OP_BLR, 0, 19, 16, OPC_NONE, OP_FORM_NO_OPERAND, FLG_DEFAULT, C_MASK_BO | C_MASK_LK, C_BIT_BO_ALWAYS, nullptr},
 
-	{PPCASM_OP_BLTLR, 0, 19, 16, OPC_NONE, OP_FORM_NO_OPERAND, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_TRUE | C_BITS_BI_LT, nullptr}, // less
-	{PPCASM_OP_BGTLR, 0, 19, 16, OPC_NONE, OP_FORM_NO_OPERAND, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_TRUE | C_BITS_BI_GT, nullptr}, // greater
-	{PPCASM_OP_BEQLR, 0, 19, 16, OPC_NONE, OP_FORM_NO_OPERAND, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_TRUE | C_BITS_BI_EQ, nullptr}, // equal
-	{PPCASM_OP_BLELR, 0, 19, 16, OPC_NONE, OP_FORM_NO_OPERAND, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_FALSE | C_BITS_BI_GT, nullptr}, // less or equal (not greater)
-	{PPCASM_OP_BGELR, 0, 19, 16, OPC_NONE, OP_FORM_NO_OPERAND, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_FALSE | C_BITS_BI_LT, nullptr}, // greater or equal (not less)
-	{PPCASM_OP_BNELR, 0, 19, 16, OPC_NONE, OP_FORM_NO_OPERAND, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_FALSE | C_BITS_BI_EQ, nullptr}, // not equal
+	{PPCASM_OP_BLTLR, 0, 19, 16, OPC_NONE, OP_FORM_BRANCH_BCCLR, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_TRUE | C_BITS_BI_LT, nullptr}, // less
+	{PPCASM_OP_BGTLR, 0, 19, 16, OPC_NONE, OP_FORM_BRANCH_BCCLR, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_TRUE | C_BITS_BI_GT, nullptr}, // greater
+	{PPCASM_OP_BEQLR, 0, 19, 16, OPC_NONE, OP_FORM_BRANCH_BCCLR, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_TRUE | C_BITS_BI_EQ, nullptr}, // equal
+	{PPCASM_OP_BLELR, 0, 19, 16, OPC_NONE, OP_FORM_BRANCH_BCCLR, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_FALSE | C_BITS_BI_GT, nullptr}, // less or equal (not greater)
+	{PPCASM_OP_BGELR, 0, 19, 16, OPC_NONE, OP_FORM_BRANCH_BCCLR, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_FALSE | C_BITS_BI_LT, nullptr}, // greater or equal (not less)
+	{PPCASM_OP_BNELR, 0, 19, 16, OPC_NONE, OP_FORM_BRANCH_BCCLR, FLG_DEFAULT, C_MASK_BO | C_MASK_BI_CRBIT | C_MASK_LK, C_BIT_BO_FALSE | C_BITS_BI_EQ, nullptr}, // not equal
 
 	{PPCASM_OP_ISYNC, 0, 19, 150, OPC_NONE, OP_FORM_NO_OPERAND, FLG_DEFAULT, 0, 0, nullptr},
 
@@ -1603,6 +1604,18 @@ void ppcAssembler_disassemble(uint32 virtualAddress, uint32 opcode, PPCDisassemb
 			// operand 0
 			disInstr->operand[0].type = PPCASM_OPERAND_TYPE_CIMM;
 			disInstr->operand[0].immU32 = dest;
+		}
+		else if (iDef->instructionForm == OP_FORM_BRANCH_BCCLR)
+		{
+			uint32 BO, BI, BD;
+			PPC_OPC_TEMPL_XL(opcode, BO, BI, BD);
+			uint32 crIndex = BI/4;
+			if (crIndex != 0) // cr0 is implicit
+			{
+				disInstr->operandMask |= operand0Bit;
+				disInstr->operand[0].type = PPCASM_OPERAND_TYPE_CR;
+				disInstr->operand[0].registerIndex = crIndex;
+			}
 		}
 		else if (iDef->instructionForm == OP_FORM_OP2_D_HSIMM)
 		{
@@ -2789,6 +2802,16 @@ bool ppcAssembler_assembleSingleInstruction(char const* text, PPCAssemblerInOut*
 	{
 		if (_ppcAssembler_processBranchOperandS26(internalInfo, 0) == false)
 			return false;
+	}
+	else if (iDef->instructionForm == OP_FORM_BRANCH_BCCLR)
+	{
+		// check for implicit cr
+		sint32 crIndex = 0;
+		if (internalInfo.listOperandStr.size() >= 1)
+		{
+			if (_ppcAssembler_processCROperand(internalInfo, 0, 18, false) == false)
+				return false;
+		}
 	}
 	else if (iDef->instructionForm == OP_FORM_XL_CR)
 	{
