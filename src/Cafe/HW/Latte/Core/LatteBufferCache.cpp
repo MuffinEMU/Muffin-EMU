@@ -3,21 +3,15 @@
 #include "util/helpers/fspinlock.h"
 #include "config/ActiveSettings.h"
 
-#include <boost/container/small_vector.hpp>
-#include <fstream>
-
 #define CACHE_PAGE_SIZE		0x400
 #define CACHE_PAGE_SIZE_M1	(CACHE_PAGE_SIZE-1)
 
 uint32 g_currentCacheChronon = 0;
 
-#define NEW_INTERVAL_TREE
-
-#ifdef NEW_INTERVAL_TREE
-template<typename TRangeData, typename TNodeObject>
-class IntervalTree3
+template<typename TRangeType, typename TNodeObject>
+class IntervalTree
 {
-	static constexpr TRangeData MAX_VALUE = std::numeric_limits<TRangeData>::max();
+	static constexpr TRangeType MAX_VALUE = std::numeric_limits<TRangeType>::max();
 	static constexpr uint32 ROOT_NODE_INDEX = 0;
 	static constexpr uint32 INVALID_NODE_INDEX = 0xFFFFFFFFu;
 
@@ -26,7 +20,7 @@ class IntervalTree3
 
 	struct TreeNode
 	{
-		TRangeData values[NUM_SLOTS];
+		TRangeType values[NUM_SLOTS];
 		sint32 indices[NUM_SLOTS]; // for the second to last layer these are indices into value nodes vector. Otherwise its a relative byte offset to a tree node
 		uint32 selfIndex{ INVALID_NODE_INDEX };
 		uint32 parentNodeIndex{ INVALID_NODE_INDEX };
@@ -37,17 +31,17 @@ class IntervalTree3
 	struct ValueNode
 	{
 		ValueNode() = default;
-		ValueNode(TNodeObject* _ptr, TRangeData _rangeBegin, TRangeData _rangeEnd, uint32 _selfIndex) : ptr(_ptr), rangeBegin(_rangeBegin), rangeEnd(_rangeEnd), selfIndex(_selfIndex) {}
+		ValueNode(TNodeObject* _ptr, TRangeType _rangeBegin, TRangeType _rangeEnd, uint32 _selfIndex) : ptr(_ptr), rangeBegin(_rangeBegin), rangeEnd(_rangeEnd), selfIndex(_selfIndex) {}
 
 		TNodeObject* ptr{ nullptr };
-		TRangeData rangeBegin{};
-		TRangeData rangeEnd{};
+		TRangeType rangeBegin{};
+		TRangeType rangeEnd{};
 		uint32 selfIndex{ INVALID_NODE_INDEX };
 		uint32 parentNodeIndex{ INVALID_NODE_INDEX };
 		uint8 parentSlot{ 0 };
 	};
 public:
-	IntervalTree3()
+	IntervalTree()
 	{
 		// create root node
 		m_treeNodes.push_back({});
@@ -58,7 +52,7 @@ public:
 		ReserveNodes();
 	}
 
-	TNodeObject* GetRange(TRangeData rangeBegin)//getRange(TRangeData rangeBegin, TRangeData rangeEnd)
+	TNodeObject* GetRange(TRangeType rangeBegin)
 	{
 		cemu_assert_debug(rangeBegin < MAX_VALUE);
 		if (IsEmpty())
@@ -71,7 +65,7 @@ public:
 		return valueNode->ptr;
 	}
 
-	void GetOverlappingRanges(TRangeData rangeBegin, TRangeData rangeEnd, std::vector<TNodeObject*>& results)//getRange(TRangeData rangeBegin, TRangeData rangeEnd)
+	void GetOverlappingRanges(TRangeType rangeBegin, TRangeType rangeEnd, std::vector<TNodeObject*>& results)
 	{
 		results.clear();
 		cemu_assert_debug(rangeBegin < rangeEnd);
@@ -96,7 +90,7 @@ public:
 	}
 
 	// will assert if no exact match was found
-	void RemoveRange(TRangeData rangeBegin, TRangeData rangeEnd)
+	void RemoveRange(TRangeType rangeBegin, TRangeType rangeEnd)
 	{
 		ValueNode* valueNode = FindFloorValueNode(rangeBegin);
 		cemu_assert(valueNode);
@@ -113,7 +107,6 @@ public:
 		ReleaseValueNode(valueNode->selfIndex);
 		// if parent node now has few nodes then merge/redistribute it
 		CollapseNode(parentNode, m_treeDepth-1);
-		sint32 dbg_prevTreeDepth = m_treeDepth;
 		ShortenTreeIfPossible();
 	}
 
@@ -128,7 +121,6 @@ public:
 	{
 		cemu_assert_debug(slot >= 0 && slot < NUM_SLOTS);
 		cemu_assert_debug(child->usedCount > 0); // cant determine value if node has no children
-		uint32 childIndex = child->selfIndex;
 		uint32 parentIndex = parent.selfIndex;
 		child->parentNodeIndex = parentIndex;
 		child->parentSlot = slot;
@@ -147,7 +139,7 @@ public:
 		parent.indices[slot] = childIndex;
 	}
 
-	void AddRange(TRangeData rangeBegin, TRangeData rangeEnd, TNodeObject* nodeObject)
+	void AddRange(TRangeType rangeBegin, TRangeType rangeEnd, TNodeObject* nodeObject)
 	{
 		ReserveNodes();
 		cemu_assert_debug(rangeBegin < rangeEnd);
@@ -200,7 +192,7 @@ public:
 		std::ofstream outFile(filePath, std::ios::trunc);
 		if (!outFile.is_open())
 			return;
-		outFile << "digraph IntervalTree3 {\n";
+		outFile << "digraph IntervalTree {\n";
 		outFile << "  rankdir=TB;\n";
 		outFile << "  splines=polyline;\n";
 		outFile << "  node [shape=record, fontname=\"Consolas\", fontsize=10];\n";
@@ -216,12 +208,12 @@ public:
 		outFile.flush();
 	}
 
-	void ValidateTree(TreeNode& treeNode, sint32 remainingTreeDepth, TRangeData& minChildValue, TRangeData& maxChildValue)
+	void ValidateTree(TreeNode& treeNode, sint32 remainingTreeDepth, TRangeType& minChildValue, TRangeType& maxChildValue)
 	{
-		minChildValue = std::numeric_limits<TRangeData>::max();
-		maxChildValue = std::numeric_limits<TRangeData>::min();
+		minChildValue = std::numeric_limits<TRangeType>::max();
+		maxChildValue = std::numeric_limits<TRangeType>::min();
 		// basic validation
-		cemu_assert(treeNode.usedCount > 0); // empty notes are not allowed
+		cemu_assert(treeNode.usedCount > 0); // empty nodes are not allowed
 		for (uint32 i=0; i<treeNode.usedCount-1; i++)
 		{
 			cemu_assert(treeNode.values[i] < treeNode.values[i+1]);
@@ -235,7 +227,6 @@ public:
 			{
 				ValueNode& valueNode = m_valueNodes[treeNode.indices[i]];
 				cemu_assert(treeNode.values[i] == valueNode.rangeBegin);
-				// cemu_assert(valueNode.selfIndex == treeNode.indices[i]); -> we store relative offset now
 				minChildValue = std::min(minChildValue, valueNode.rangeBegin);
 				maxChildValue = std::max(maxChildValue, valueNode.rangeEnd);
 			}
@@ -247,7 +238,7 @@ public:
 			{
 				TreeNode& childTreeNode = GetTreeNodeChild(treeNode, i);
 				cemu_assert(childTreeNode.parentNodeIndex == treeNode.selfIndex);
-				TRangeData currentChildMinVal, currentChildMaxVal;
+				TRangeType currentChildMinVal, currentChildMaxVal;
 				ValidateTree(childTreeNode, remainingTreeDepth-1, currentChildMinVal, currentChildMaxVal);
 				cemu_assert(currentChildMinVal < currentChildMaxVal);
 				cemu_assert(treeNode.values[i] == currentChildMinVal);
@@ -265,7 +256,7 @@ public:
 	void InsertNode(TreeNode& nodeToInsertInto, TreeNode* treeNode, ValueNode* valueNode)
 	{
 		cemu_assert_debug((treeNode != nullptr) != (valueNode != nullptr)); // either treeNode or valueNode can be set but never both or none
-		TRangeData rangeBegin = treeNode ? treeNode->values[0] : valueNode->rangeBegin;
+		TRangeType rangeBegin = treeNode ? treeNode->values[0] : valueNode->rangeBegin;
 		if (nodeToInsertInto.usedCount == NUM_SLOTS)
 		{
 			// if the target node is full then try to move a child left
@@ -446,11 +437,11 @@ private:
 	}
 
 	// assumes value >= node.values[0]
-	FORCEINLINE ptrdiff_t FindFloorElementIndexMinBound(TreeNode& node, TRangeData value)
+	FORCE_INLINE ptrdiff_t FindFloorElementIndexMinBound(TreeNode& node, TRangeType value)
 	{
 		static_assert(NUM_SLOTS == 16); // this function needs to be updated if the count changes
 		cemu_assert_debug(value >= node.values[0]);
-		TRangeData* ptr = node.values;
+		TRangeType* ptr = node.values;
 		if (value >= ptr[8])
 			ptr += 8;
 		if (value >= ptr[4])
@@ -464,7 +455,7 @@ private:
 
 	void ReserveNodes()
 	{
-		// this function guarantees a minimum of available amount of tree and value nodes in the pool, enough for the needs of AddRange()
+		// this function guarantees a minimum amount of available TreeNode and ValueNode in the pool, enough to avoid vector invalidation in AddRange()
 		if (m_freeTreeNodeIndices.size() < 16)
 		{
 			uint32 curNodeCount = (uint32)m_treeNodes.size();
@@ -491,7 +482,7 @@ private:
 
 	void WriteDotTreeNodeRecursive(std::ofstream& outFile, TreeNode& treeNode, sint32 remainingDepth)
 	{
-		auto writeHex = [&outFile](TRangeData value)
+		auto writeHex = [&outFile](TRangeType value)
 		{
 			outFile << "0x" << std::hex << static_cast<uint64>(value) << std::dec;
 		};
@@ -556,7 +547,7 @@ private:
 		m_freeTreeNodeIndices.emplace_back(nodeIndex);
 	}
 
-	ValueNode& AllocateValueNode(TRangeData beginValue, TRangeData endValue, TNodeObject* nodeObject)
+	ValueNode& AllocateValueNode(TRangeType beginValue, TRangeType endValue, TNodeObject* nodeObject)
 	{
 		cemu_assert(!m_freeValueNodeIndices.empty());
 		uint32 valueIndex;
@@ -577,8 +568,8 @@ private:
 		cemu_assert_debug(valueIndex < m_valueNodes.size());
 		ValueNode& valueNode = m_valueNodes[valueIndex];
 		valueNode.ptr = nullptr;
-		valueNode.rangeBegin = TRangeData{};
-		valueNode.rangeEnd = TRangeData{};
+		valueNode.rangeBegin = TRangeType{};
+		valueNode.rangeEnd = TRangeType{};
 		valueNode.parentNodeIndex = INVALID_NODE_INDEX;
 		valueNode.parentSlot = 0;
 		m_freeValueNodeIndices.emplace_back(valueIndex);
@@ -599,7 +590,7 @@ private:
 	}
 
 	// find the node with the highest rangeBegin that satisfies node->rangeBegin <= beginValue, or null if none exists
-	ValueNode* FindFloorValueNode(TRangeData beginValue)
+	ValueNode* FindFloorValueNode(TRangeType beginValue)
 	{
 		cemu_assert_debug(beginValue != MAX_VALUE);
 		cemu_assert_debug(!IsEmpty());
@@ -892,7 +883,7 @@ private:
 	{
 		while (true)
 		{
-			TRangeData minValue = node->values[0];
+			TRangeType minValue = node->values[0];
 			if (node->parentNodeIndex == INVALID_NODE_INDEX)
 				break; // reached root
 			TreeNode* parentNode = &m_treeNodes[node->parentNodeIndex];
@@ -910,267 +901,6 @@ private:
 	sint32 m_treeDepth{0};
 };
 
-#endif
-
-#ifndef NEW_INTERVAL_TREE
-template<typename TRangeData, typename TNodeObject>
-class IntervalTree2
-{
-	// TNodeObject will be interfaced with via callbacks to static methods
-
-	// static TNodeObject* Create(TRangeData rangeBegin, TRangeData rangeEnd, std::span<TNodeObject*> overlappingObjects)
-	// Create a new node with the given range. overlappingObjects contains all the nodes that are replaced by this operation. The callee has to delete all objects in overlappingObjects (Delete callback wont be invoked)
-
-	// static void Delete(TNodeObject* nodeObject)
-	// Delete a node object. Replacement operations won't trigger this callback and instead pass the objects to Create()
-
-	// static void Resize(TNodeObject* nodeObject, TRangeData rangeBegin, TRangeData rangeEnd)
-	// Shrink or extend an existing range
-
-	// static TNodeObject* Split(TNodeObject* nodeObject, TRangeData firstRangeBegin, TRangeData firstRangeEnd, TRangeData secondRangeBegin, TRangeData secondRangeEnd)
-	// Cut a hole into an existing range and split it in two. Should return the newly created node object after the hole
-
-	static_assert(!std::is_pointer_v<TNodeObject>, "TNodeObject must be a non-pointer type");
-
-	struct InternalRange
-	{
-		InternalRange() = default;
-		InternalRange(TRangeData _rangeBegin, TRangeData _rangeEnd) : rangeBegin(_rangeBegin), rangeEnd(_rangeEnd) { cemu_assert_debug(_rangeBegin < _rangeEnd); };
-
-		TRangeData rangeBegin;
-		TRangeData rangeEnd;
-
-		bool operator<(const InternalRange& rhs) const
-		{
-			// use <= instead of < because ranges are allowed to touch (e.g. 10-20 and 20-30 dont get merged)
-			return this->rangeEnd <= rhs.rangeBegin;
-		}
-
-	};
-
-	std::map<InternalRange, TNodeObject*> m_map;
-	std::vector<TNodeObject*> m_tempObjectArray;
-
-public:
-	TNodeObject* getRange(TRangeData rangeBegin, TRangeData rangeEnd)
-	{
-		auto itr = m_map.find(InternalRange(rangeBegin, rangeEnd));
-		if (itr == m_map.cend())
-			return nullptr;
-		if (rangeBegin < (*itr).first.rangeBegin)
-			return nullptr;
-		if (rangeEnd > (*itr).first.rangeEnd)
-			return nullptr;
-		return (*itr).second;
-	}
-
-	TNodeObject* getRangeByPoint(TRangeData rangeOffset)
-	{
-		auto itr = m_map.find(InternalRange(rangeOffset, rangeOffset+1)); // todo - better to use custom comparator instead of +1?
-		if (itr == m_map.cend())
-			return nullptr;
-		cemu_assert_debug(rangeOffset >= (*itr).first.rangeBegin);
-		cemu_assert_debug(rangeOffset < (*itr).first.rangeEnd);
-		return (*itr).second;
-	}
-
-	void addRange(TRangeData rangeBegin, TRangeData rangeEnd)
-	{
-		if (rangeEnd == rangeBegin)
-			return;
-		InternalRange range(rangeBegin, rangeEnd);
-		auto itr = m_map.find(range);
-		if (itr == m_map.cend())
-		{
-			// new entry
-			m_map.emplace(range, TNodeObject::Create(rangeBegin, rangeEnd, std::span<TNodeObject*>()));
-		}
-		else
-		{
-			// overlap detected
-			if (rangeBegin >= (*itr).first.rangeBegin && rangeEnd <= (*itr).first.rangeEnd)
-				return; // do nothing if added range is already covered
-			rangeBegin = (std::min)(rangeBegin, (*itr).first.rangeBegin);
-			// DEBUG - make sure this is the start point of the merge process (the first entry that starts below minValue)
-#ifdef CEMU_DEBUG_ASSERT
-			if (itr != m_map.cbegin())
-			{
-				// check previous result
-				auto itrCopy = itr;
-				--itrCopy;
-				if ((*itrCopy).first.rangeEnd > rangeBegin)
-				{
-					assert_dbg(); // n-1 entry is also overlapping
-					rangeBegin = (std::min)(rangeBegin, (*itrCopy).first.rangeBegin);
-				}
-			}
-#endif
-			// DEBUG - END
-			// collect and remove all overlapping ranges
-			size_t count = 0;
-			while (itr != m_map.cend() && (*itr).first.rangeBegin < rangeEnd)
-			{
-				rangeEnd = (std::max)(rangeEnd, (*itr).first.rangeEnd);
-				if (m_tempObjectArray.size() <= count)
-					m_tempObjectArray.resize(count + 8);
-				m_tempObjectArray[count] = (*itr).second;
-				count++;
-				auto tempItr = itr;
-				++itr;
-				m_map.erase(tempItr);
-			}
-
-			// create callback
-			TNodeObject* newObject = TNodeObject::Create(rangeBegin, rangeEnd, std::span<TNodeObject*>(m_tempObjectArray.data(), count));
-			m_map.emplace(InternalRange(rangeBegin, rangeEnd), newObject);
-		}
-	}
-
-	void removeRange(TRangeData rangeBegin, TRangeData rangeEnd)
-	{
-		InternalRange range(rangeBegin, rangeEnd);
-		auto itr = m_map.find(range);
-		if (itr == m_map.cend())
-			return;
-		cemu_assert_debug(itr == m_map.lower_bound(range));
-		while (itr != m_map.cend() && (*itr).first.rangeBegin < rangeEnd)
-		{
-			if ((*itr).first.rangeBegin >= rangeBegin && (*itr).first.rangeEnd <= rangeEnd)
-			{
-				// delete entire range
-				auto itrCopy = itr;
-				TNodeObject* t = (*itr).second;
-				++itr;
-				m_map.erase(itrCopy);
-				TNodeObject::Delete(t);
-				continue;
-			}
-			if (rangeBegin > (*itr).first.rangeBegin && rangeEnd < (*itr).first.rangeEnd)
-			{
-				// cut hole into existing range
-				TRangeData firstRangeBegin = (*itr).first.rangeBegin;
-				TRangeData firstRangeEnd = rangeBegin;
-				TRangeData secondRangeBegin = rangeEnd;
-				TRangeData secondRangeEnd = (*itr).first.rangeEnd;
-				TNodeObject* newObject = TNodeObject::Split((*itr).second, firstRangeBegin, firstRangeEnd, secondRangeBegin, secondRangeEnd);
-				// modify key
-				auto nh = m_map.extract(itr);
-				nh.key().rangeBegin = firstRangeBegin;
-				nh.key().rangeEnd = firstRangeEnd;
-				m_map.insert(std::move(nh));
-				// insert new object after hole
-				m_map.emplace(InternalRange(secondRangeBegin, secondRangeEnd), newObject);
-				return; // done
-			}
-			// shrink (trim either beginning or end)
-			TRangeData newRangeBegin;
-			TRangeData newRangeEnd;
-			if ((rangeBegin <= (*itr).first.rangeBegin && rangeEnd < (*itr).first.rangeEnd))
-			{
-				// trim from beginning
-				newRangeBegin = (std::max)((*itr).first.rangeBegin, rangeEnd);
-				newRangeEnd = (*itr).first.rangeEnd;
-			}
-			else if ((rangeBegin > (*itr).first.rangeBegin && rangeEnd >= (*itr).first.rangeEnd))
-			{
-				// trim from end
-				newRangeBegin = (*itr).first.rangeBegin;
-				newRangeEnd = (std::min)((*itr).first.rangeEnd, rangeBegin);
-			}
-			else
-			{
-				assert_dbg(); // should not happen
-			}
-			TNodeObject::Resize((*itr).second, newRangeBegin, newRangeEnd);
-			// modify key and increment iterator
-			auto itrCopy = itr;
-			++itr;
-			auto nh = m_map.extract(itrCopy);
-			nh.key().rangeBegin = newRangeBegin;
-			nh.key().rangeEnd = newRangeEnd;
-			m_map.insert(std::move(nh));
-		}
-	}
-
-	// remove existing range that matches given begin and end
-	void removeRangeSingle(TRangeData rangeBegin, TRangeData rangeEnd)
-	{
-		InternalRange range(rangeBegin, rangeEnd);
-		auto itr = m_map.find(range);
-		cemu_assert_debug(itr != m_map.cend());
-		if (itr == m_map.cend())
-			return;
-		cemu_assert_debug((*itr).first.rangeBegin == rangeBegin && (*itr).first.rangeEnd == rangeEnd);
-		// delete entire range
-		TNodeObject* t = (*itr).second;
-		m_map.erase(itr);
-		TNodeObject::Delete(t);
-	}
-
-	// remove existing range that matches given begin and end without calling delete callback
-	void removeRangeSingleWithoutCallback(TRangeData rangeBegin, TRangeData rangeEnd)
-	{
-		InternalRange range(rangeBegin, rangeEnd);
-		auto itr = m_map.find(range);
-		cemu_assert_debug(itr != m_map.cend());
-		if (itr == m_map.cend())
-			return;
-		cemu_assert_debug((*itr).first.rangeBegin == rangeBegin && (*itr).first.rangeEnd == rangeEnd);
-		// delete entire range
-		TNodeObject* t = (*itr).second;
-		m_map.erase(itr);
-	}
-
-	void splitRange(TRangeData rangeOffset)
-	{
-		// not well tested
-		removeRange(rangeOffset, rangeOffset+1);
-	}
-
-	template<typename TFunc>
-	void forEachOverlapping(TRangeData rangeBegin, TRangeData rangeEnd, TFunc f)
-	{
-		InternalRange range(rangeBegin, rangeEnd);
-		auto itr = m_map.find(range);
-		if (itr == m_map.cend())
-			return;
-		cemu_assert_debug(itr == m_map.lower_bound(range));
-		while (itr != m_map.cend() && (*itr).first.rangeBegin < rangeEnd)
-		{
-			f((*itr).second, rangeBegin, rangeEnd);
-			++itr;
-		}
-	}
-
-	void validate()
-	{
-		if (m_map.empty())
-			return;
-		auto itr = m_map.begin();
-		if ((*itr).first.rangeBegin > (*itr).first.rangeEnd)
-			assert_dbg();
-		TRangeData currentLoc = (*itr).first.rangeEnd;
-		++itr;
-		while (itr != m_map.end())
-		{
-			if ((*itr).first.rangeBegin >= (*itr).first.rangeEnd)
-				assert_dbg(); // negative or zero size ranges are not allowed
-			if (currentLoc > (*itr).first.rangeBegin)
-				assert_dbg(); // stored ranges must not overlap
-			currentLoc = (*itr).first.rangeEnd;
-			++itr;
-		}
-	}
-
-    bool empty() const
-    {
-        return m_map.empty();
-    }
-
-	const std::map<InternalRange, TNodeObject*>& getAll() const { return m_map; };
-};
-#endif NEW_INTERVAL_TREE
-
 std::unique_ptr<VHeap> g_gpuBufferHeap = nullptr;
 std::vector<uint8> s_pageUploadBuffer;
 std::vector<class BufferCacheNode*> s_allCacheNodes;
@@ -1183,6 +913,20 @@ class BufferCacheNode
 	static inline constexpr uint64 c_streamoutSig1 = 0x8BE6336411814F4Full;
 
 public:
+	~BufferCacheNode()
+	{
+		if (m_hasCacheAlloc)
+			g_deallocateQueue.emplace_back(m_cacheOffset); // release after current drawcall
+		// remove from array
+		auto temp = s_allCacheNodes.back();
+		s_allCacheNodes.pop_back();
+		if (this != temp)
+		{
+			s_allCacheNodes[m_arrayIndex] = temp;
+			temp->m_arrayIndex = m_arrayIndex;
+		}
+	}
+
 	// returns false if not enough space is available
 	bool allocateCacheMemory()
 	{
@@ -1241,8 +985,6 @@ public:
 		{
 			pageWriteStreamoutSignatures(pageIndex, rangeBegin, rangeEnd);
 			pageIndex++;
-			//pageInfo->hasStreamoutData = true;
-			//pageInfo++;
 		}
 		if (numPages > 0)
 			m_hasStreamoutData = true;
@@ -1334,7 +1076,7 @@ public:
 		{
 			// ideally we would only upload the pages that intersect both the reserve range and the invalidation range
 			// but this would require complex per-page tracking of invalidation. Since this is on a hot path we do a cheap approximation
-			// where we only track one continous invalidation range
+			// where we only track one continuous invalidation range
 
 			// try to bound uploads to the reserve range within the invalidation
 			uint32 resRangeBegin = reservePhysAddress & ~CACHE_PAGE_SIZE_M1;
@@ -1345,7 +1087,6 @@ public:
 
 			if (uploadBegin >= uploadEnd)
 				return; // reserve range not within invalidation or range is zero sized
-
 
 			if (uploadBegin == m_invalidationRangeBegin)
 			{
@@ -1451,20 +1192,6 @@ private:
 		m_arrayIndex = (uint32)s_allCacheNodes.size();
 		s_allCacheNodes.emplace_back(this);
 	};
-
-	~BufferCacheNode()
-	{
-		if (m_hasCacheAlloc)
-			g_deallocateQueue.emplace_back(m_cacheOffset); // release after current drawcall
-		// remove from array
-		auto temp = s_allCacheNodes.back();
-		s_allCacheNodes.pop_back();
-		if (this != temp)
-		{
-			s_allCacheNodes[m_arrayIndex] = temp;
-			temp->m_arrayIndex = m_arrayIndex;
-		}
-	}
 
 	uint32 getPageIndexFromAddrAligned(uint32 offset) const
 	{
@@ -1718,7 +1445,7 @@ public:
 		g_deallocateQueue.clear();
 	}
 
-	// drops everything from the cache that isn't considered in use or unrestorable (ranges with streamout)
+	// drops everything from the cache that isn't considered in use or unrestorable due to containing streamout data
 	static void CleanupCacheAggressive(MPTR excludedRangeBegin, MPTR excludedRangeEnd)
 	{
 		size_t i = 0;
@@ -1748,8 +1475,6 @@ public:
 			delete node;
 		}
 	}
-
-	/* callbacks from IntervalTree */
 
 	static BufferCacheNode* Create(MPTR rangeBegin, MPTR rangeEnd, std::span<BufferCacheNode*> overlappingObjects)
 	{
@@ -1790,44 +1515,19 @@ public:
 		return newRange;
 	}
 
-	static void Delete(BufferCacheNode* nodeObject)
-	{
-		delete nodeObject;
-	}
-
 	static void Resize(BufferCacheNode* nodeObject, MPTR rangeBegin, MPTR rangeEnd)
 	{
 		nodeObject->shrink(rangeBegin, rangeEnd);
 	}
-
-	static BufferCacheNode* Split(BufferCacheNode* nodeObject, MPTR firstRangeBegin, MPTR firstRangeEnd, MPTR secondRangeBegin, MPTR secondRangeEnd)
-	{
-		auto newRange = new BufferCacheNode(secondRangeBegin, secondRangeEnd);
-		// todo - add support for splitting BufferCacheNode memory allocations, then we dont need to do a separate allocation
-		if (!newRange->allocateCacheMemory())
-		{
-			cemuLog_log(LogType::Force, "Out-of-memory in GPU buffer during split operation");
-			cemu_assert(false);
-		}
-		newRange->syncFromNode(nodeObject);
-		nodeObject->shrink(firstRangeBegin, firstRangeEnd);
-		return newRange;
-	}
 };
 
+IntervalTree<MPTR, BufferCacheNode> g_gpuBufferCache;
+std::vector<BufferCacheNode*> s_gpuCacheQueryResult; // keep vector for query results around to reduce runtime allocations
 std::vector<uint32> BufferCacheNode::g_deallocateQueue;
-
-#ifdef NEW_INTERVAL_TREE
-IntervalTree3<MPTR, BufferCacheNode> g_gpuBufferCache3;
-std::vector<BufferCacheNode*> s_gpuCacheQueryResult; // keep vector around to reduce runtime allocations
 
 void LatteBufferCache_removeSingleNodeFromTree(BufferCacheNode* node)
 {
-#ifdef NEW_INTERVAL_TREE
-	g_gpuBufferCache3.RemoveRange(node->GetRangeBegin(), node->GetRangeEnd());
-#else
-	g_gpuBufferCache.removeRangeSingleWithoutCallback(node->GetRangeBegin(), node->GetRangeEnd());
-#endif
+	g_gpuBufferCache.RemoveRange(node->GetRangeBegin(), node->GetRangeEnd());
 }
 
 BufferCacheNode* LatteBufferCache_reserveRange(MPTR physAddress, uint32 size)
@@ -1835,16 +1535,16 @@ BufferCacheNode* LatteBufferCache_reserveRange(MPTR physAddress, uint32 size)
 	MPTR rangeStart = physAddress - (physAddress % CACHE_PAGE_SIZE);
 	MPTR rangeEnd = (physAddress + size + CACHE_PAGE_SIZE_M1) & ~CACHE_PAGE_SIZE_M1;
 
-	BufferCacheNode* range = g_gpuBufferCache3.GetRange(physAddress);
+	BufferCacheNode* range = g_gpuBufferCache.GetRange(physAddress);
 	if (range && physAddress >= range->GetRangeBegin() && (physAddress+size) <= range->GetRangeEnd())
 		return range;
 	// no containing range found, we need to create a range and potentially merge with any overlapping ranges
-	g_gpuBufferCache3.GetOverlappingRanges(rangeStart, rangeEnd, s_gpuCacheQueryResult);
+	g_gpuBufferCache.GetOverlappingRanges(rangeStart, rangeEnd, s_gpuCacheQueryResult);
 	if (s_gpuCacheQueryResult.empty())
 	{
 		// no overlaps we can just create a new blank range
 		BufferCacheNode* newRange = BufferCacheNode::Create(rangeStart, rangeEnd, s_gpuCacheQueryResult);
-		g_gpuBufferCache3.AddRange(rangeStart, rangeEnd, newRange);
+		g_gpuBufferCache.AddRange(rangeStart, rangeEnd, newRange);
 		return newRange;
 	}
 	else
@@ -1852,43 +1552,13 @@ BufferCacheNode* LatteBufferCache_reserveRange(MPTR physAddress, uint32 size)
 		// merge with overlapping ranges
 		uint32 mergedRangeStart = std::min<uint32>(rangeStart, s_gpuCacheQueryResult.front()->GetRangeBegin());
 		uint32 mergedRangeEnd = std::max<uint32>(rangeEnd, s_gpuCacheQueryResult.back()->GetRangeEnd());
-		// todo2 - but we still want to have special handling for shrink/split/resize as an optimization
-		// note - BufferCacheNode::Create deletes the nodes, we only need to remove them from the interval tree
 		for (auto& it : s_gpuCacheQueryResult)
-		{
-			g_gpuBufferCache3.RemoveRange(it->GetRangeBegin(), it->GetRangeEnd());
-		}
+			g_gpuBufferCache.RemoveRange(it->GetRangeBegin(), it->GetRangeEnd()); // remove from interval tree, BufferCacheNode::Create below will delete the range objects
 		BufferCacheNode* newRange = BufferCacheNode::Create(mergedRangeStart, mergedRangeEnd, s_gpuCacheQueryResult);
-		g_gpuBufferCache3.AddRange(mergedRangeStart, mergedRangeEnd, newRange);
+		g_gpuBufferCache.AddRange(mergedRangeStart, mergedRangeEnd, newRange);
 		return newRange;
 	}
 }
-
-#else
-IntervalTree2<MPTR, BufferCacheNode> g_gpuBufferCache;
-
-void LatteBufferCache_removeSingleNodeFromTree(BufferCacheNode* node)
-{
-	g_gpuBufferCache.removeRangeSingleWithoutCallback(node->GetRangeBegin(), node->GetRangeEnd());
-}
-
-BufferCacheNode* LatteBufferCache_reserveRange(MPTR physAddress, uint32 size)
-{
-	MPTR rangeStart = physAddress - (physAddress % CACHE_PAGE_SIZE);
-	MPTR rangeEnd = (physAddress + size + CACHE_PAGE_SIZE_M1) & ~CACHE_PAGE_SIZE_M1;
-
-	BufferCacheNode* range = g_gpuBufferCache.getRange(rangeStart, rangeEnd);
-	if (!range)
-	{
-		g_gpuBufferCache.addRange(rangeStart, rangeEnd);
-		range = g_gpuBufferCache.getRange(rangeStart, rangeEnd);
-		cemu_assert_debug(range);
-	}
-	cemu_assert_debug(range->GetRangeBegin() <= physAddress);
-	cemu_assert_debug(range->GetRangeEnd() >= (physAddress + size));
-	return range;
-}
-#endif
 
 uint32 LatteBufferCache_retrieveDataInCache(MPTR physAddress, uint32 size)
 {
@@ -1919,40 +1589,28 @@ void LatteBufferCache_invalidate(MPTR physAddress, uint32 size)
 {
 	if (size == 0)
 		return;
-#ifdef NEW_INTERVAL_TREE
-	if (physAddress >= 0xFFFFFFFF)
+	if (physAddress >= 0xFFFFF000)
 		return;
-	g_gpuBufferCache3.GetOverlappingRanges(physAddress, physAddress+size, s_gpuCacheQueryResult);
+	if ((physAddress+size) < physAddress)
+		return;
+	g_gpuBufferCache.GetOverlappingRanges(physAddress, physAddress+size, s_gpuCacheQueryResult);
 	for (auto& range : s_gpuCacheQueryResult)
 	{
 		cemu_assert_debug(physAddress < range->GetRangeEnd() && (physAddress + size) > range->GetRangeBegin());
 		range->invalidate(physAddress, physAddress + size);
 	}
-#else
-	g_gpuBufferCache.forEachOverlapping(physAddress, physAddress + size, [](BufferCacheNode* node, MPTR invalidationRangeBegin, MPTR invalidationRangeEnd)
-		{
-			node->invalidate(invalidationRangeBegin, invalidationRangeEnd);
-		}
-	);
-#endif
 }
 
 // optimized version of LatteBufferCache_invalidate() if physAddress points to the beginning of a page
 void LatteBufferCache_invalidatePage(MPTR physAddress)
 {
 	cemu_assert_debug((physAddress & CACHE_PAGE_SIZE_M1) == 0);
-#ifdef NEW_INTERVAL_TREE
-	BufferCacheNode* node = g_gpuBufferCache3.GetRange(physAddress);
+	BufferCacheNode* node = g_gpuBufferCache.GetRange(physAddress);
 	if (node)
 	{
 		cemu_assert_debug(physAddress >= node->GetRangeBegin() && physAddress < node->GetRangeEnd());
 		node->invalidate(physAddress, physAddress+CACHE_PAGE_SIZE);
 	}
-#else
-	BufferCacheNode* node = g_gpuBufferCache.getRangeByPoint(physAddress);
-	if (node)
-		node->invalidate(physAddress, physAddress+CACHE_PAGE_SIZE);
-#endif
 }
 
 void LatteBufferCache_processDeallocations()
@@ -1962,11 +1620,7 @@ void LatteBufferCache_processDeallocations()
 
 void LatteBufferCache_init(size_t bufferSize)
 {
-#ifdef NEW_INTERVAL_TREE
-	cemu_assert_debug(g_gpuBufferCache3.IsEmpty());
-#else
-    cemu_assert_debug(g_gpuBufferCache.empty());
-#endif
+	cemu_assert_debug(g_gpuBufferCache.IsEmpty());
 	g_gpuBufferHeap.reset(new VHeap(nullptr, (uint32)bufferSize));
 	g_renderer->bufferCache_init((uint32)bufferSize);
 }
@@ -1980,8 +1634,6 @@ void LatteBufferCache_getStats(uint32& heapSize, uint32& allocationSize, uint32&
 {
 	g_gpuBufferHeap->getStats(heapSize, allocationSize, allocNum);
 }
-
-FSpinlock g_spinlockDCFlushQueue;
 
 class SparseBitset
 {
@@ -2041,6 +1693,7 @@ private:
 	size_t m_numNonEmptyVectors{ 0 };
 };
 
+FSpinlock g_spinlockDCFlushQueue;
 SparseBitset* s_DCFlushQueue = new SparseBitset();
 SparseBitset* s_DCFlushQueueAlternate = new SparseBitset();
 
@@ -2090,10 +1743,9 @@ void LatteBufferCache_incrementalCleanup()
 
 	auto range = s_allCacheNodes[s_counter];
 
-	if (range->HasStreamoutData())
+	if (range->HasStreamoutData() && range->GetFrameAge() < 120)
 	{
-		// currently we never delete streamout ranges
-		// todo - check if streamout pages got overwritten + if the range would lose the hasStreamoutData flag
+		// todo - proper way to check if streamout data has been overwritten (in RAM) and whether it can be invalidated from GPU cache
 		return;
 	}
 
@@ -2102,56 +1754,19 @@ void LatteBufferCache_incrementalCleanup()
 	uint32 allocNum;
 	g_gpuBufferHeap->getStats(heapSize, allocationSize, allocNum);
 
-	if (allocationSize >= (heapSize * 4 / 5))
+	sint32 evictionFrameAge;
+	if (allocationSize >= (heapSize * 4 / 5)) // heap is 80% filled
+		evictionFrameAge = 2;
+	else if (allocationSize >= (heapSize * 3 / 4)) // heap is 75-100% filled
+		evictionFrameAge = 4;
+	else if (allocationSize >= (heapSize / 2)) // if heap is 50-75% filled
+		evictionFrameAge = 20;
+	else // heap is under 50% capacity
+		evictionFrameAge = 500;
+	// evict range if above threshold
+	if (range->GetFrameAge() >= evictionFrameAge)
 	{
-		// heap is 80% filled
-		if (range->GetFrameAge() >= 2)
-		{
-#ifdef NEW_INTERVAL_TREE
-			g_gpuBufferCache3.RemoveRange(range->GetRangeBegin(), range->GetRangeEnd());
-			BufferCacheNode::Delete(range);
-#else
-			g_gpuBufferCache.removeRangeSingle(range->GetRangeBegin(), range->GetRangeEnd());
-#endif
-		}
-	}
-	else if (allocationSize >= (heapSize * 3 / 4))
-	{
-		// heap is 75-100% filled
-		if (range->GetFrameAge() >= 4)
-		{
-#ifdef NEW_INTERVAL_TREE
-			g_gpuBufferCache3.RemoveRange(range->GetRangeBegin(), range->GetRangeEnd());
-			BufferCacheNode::Delete(range);
-#else
-			g_gpuBufferCache.removeRangeSingle(range->GetRangeBegin(), range->GetRangeEnd());
-#endif
-		}
-	}
-	else if (allocationSize >= (heapSize / 2))
-	{
-		// if heap is 50-75% filled
-		if (range->GetFrameAge() >= 20)
-		{
-#ifdef NEW_INTERVAL_TREE
-			g_gpuBufferCache3.RemoveRange(range->GetRangeBegin(), range->GetRangeEnd());
-			BufferCacheNode::Delete(range);
-#else
-			g_gpuBufferCache.removeRangeSingle(range->GetRangeBegin(), range->GetRangeEnd());
-#endif
-		}
-	}
-	else
-	{
-		// heap is under 50% capacity
-		if (range->GetFrameAge() >= 500)
-		{
-#ifdef NEW_INTERVAL_TREE
-			g_gpuBufferCache3.RemoveRange(range->GetRangeBegin(), range->GetRangeEnd());
-			BufferCacheNode::Delete(range);
-#else
-			g_gpuBufferCache.removeRangeSingle(range->GetRangeBegin(), range->GetRangeEnd());
-#endif
-		}
+		g_gpuBufferCache.RemoveRange(range->GetRangeBegin(), range->GetRangeEnd());
+		delete range;
 	}
 }
