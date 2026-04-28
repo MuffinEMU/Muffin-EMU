@@ -658,13 +658,12 @@ void debugger_handleLoggingBreakpoint(PPCInterpreter_t* hCPU, DebuggerBreakpoint
 void debugger_stepOverCurrentBreakpoint(PPCInterpreter_t* hCPU)
 {
 	std::unique_lock _l(s_debuggerState.breakpointsMtx);
-	bool isRecEnabled = ppcRecompilerEnabled;
-	ppcRecompilerEnabled = false;
+	PPCRecompiler_Enable();
 	MPTR bpAddress = hCPU->instructionPointer;
 	debugger_updateExecutionBreakpoint(bpAddress, true);
 	PPCInterpreterSlim_executeInstruction(hCPU);
 	debugger_updateExecutionBreakpoint(bpAddress);
-	ppcRecompilerEnabled = isRecEnabled;
+	PPCRecompiler_Disable();
 }
 
 void debugger_enterTW(PPCInterpreter_t* hCPU, bool isSingleStep)

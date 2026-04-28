@@ -155,6 +155,7 @@ private:
 	uint32 m_module_address;
 	wxStaticText* m_module_label;
 
+	bool m_forceInterpreter{false};
 
 wxDECLARE_EVENT_TABLE();
 };

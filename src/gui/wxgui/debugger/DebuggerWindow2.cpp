@@ -392,6 +392,14 @@ DebuggerWindow2::~DebuggerWindow2()
 
 	if (m_symbol_window && m_symbol_window->IsShown())
 		m_symbol_window->Close(true);
+
+	// reenable recompiler if force interpreter option was enabled
+	if (m_forceInterpreter)
+	{
+		PPCRecompiler_Enable();
+		m_forceInterpreter = false;
+		cemuLog_log(LogType::Force, "Debugger: Switched CPU mode to recompiler");
+	}
 }
 
 // note: Can be called twice in some circumstances where early cleanup is needed. Will also always be called from destructor
@@ -617,14 +625,17 @@ void DebuggerWindow2::OnOptionsInput(wxCommandEvent& event)
 	}
 	case MENU_ID_OPTIONS_SWITCH_CPU_MODE:
 	{
-		if (ppcRecompilerEnabled)
+		if (m_forceInterpreter)
 		{
-			ppcRecompilerEnabled = false;
-			cemuLog_log(LogType::Force, "Debugger: Switched CPU mode to interpreter");
-		}
-		else {
-			ppcRecompilerEnabled = true;
+			PPCRecompiler_Enable();
+			m_forceInterpreter = false;
 			cemuLog_log(LogType::Force, "Debugger: Switched CPU mode to recompiler");
+		}
+		else
+		{
+			PPCRecompiler_Disable();
+			m_forceInterpreter = true;
+			cemuLog_log(LogType::Force, "Debugger: Switched CPU mode to interpreter");
 		}
 		break;
 	}
