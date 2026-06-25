@@ -445,6 +445,7 @@ namespace CafeSystem
 	static SystemImplementation* s_implementation{nullptr};
     bool sLaunchModeIsStandalone = false;
 	std::optional<std::vector<std::string>> s_overrideArgs;
+	std::optional<sint32> s_foregroundReturnStatus;
 
 	bool sSystemRunning = false;
 	TitleId sForegroundTitleId = 0;
@@ -824,6 +825,7 @@ namespace CafeSystem
 	{
 		CafeTitleList::WaitForMandatoryScan();
 		sLaunchModeIsStandalone = false;
+		s_foregroundReturnStatus = std::nullopt;
         _pathToExecutable.clear();
 		TitleIdParser tip(titleId);
 		if (tip.GetType() == TitleIdParser::TITLE_TYPE::AOC || tip.GetType() == TitleIdParser::TITLE_TYPE::BASE_TITLE_UPDATE)
@@ -1165,6 +1167,17 @@ namespace CafeSystem
 	void RequestRecreateCanvas()
 	{
 		s_implementation->CafeRecreateCanvas();
+	}
+
+	void NotifyPPCProcessExit(sint32 status)
+	{
+		s_foregroundReturnStatus = status;
+		s_implementation->CafePPCProcessExit();
+	}
+
+	std::optional<sint32> GetForegroundTitleReturnStatus()
+	{
+		return s_foregroundReturnStatus;
 	}
 
 }
