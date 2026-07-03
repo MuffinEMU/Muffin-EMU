@@ -389,7 +389,7 @@ struct EmulatorViewOptimized: View {
                 .borderBottom(width: 0.5, color: Color.white.opacity(0.1))
 
                 if showSkinSelector {
-                    ControllerSkinSelector(selectedSkin: $controllerSkin)
+                    OrganizedControllerSkinSelector(selectedSkin: $controllerSkin)
                         .padding(12)
                         .background(Color.black.opacity(0.7))
                         .transition(.move(edge: .top).combined(with: .opacity))
