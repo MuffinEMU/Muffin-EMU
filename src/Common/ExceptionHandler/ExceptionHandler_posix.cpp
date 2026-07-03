@@ -2,7 +2,9 @@
 #include <execinfo.h>
 #include <string.h>
 #include <string>
+#if !defined(CEMU_PLATFORM_IOS)
 #include "config/CemuConfig.h"
+#endif
 #include "util/helpers/StringHelpers.h"
 #include "ExceptionHandler.h"
 
@@ -54,7 +56,11 @@ void DemangleAndPrintBacktrace(char** backtrace, size_t size)
         CrashLog_WriteLine("+", false);
 		if (newOffset != -1)
 		{
+#if !defined(CEMU_PLATFORM_IOS)
             CrashLog_WriteLine(fmt::format("0x{:x}", newOffset), false);
+#else
+            CrashLog_WriteLine("0x0", false);
+#endif
             CrashLog_WriteLine(traceLine.substr(parenthesesClose));
 		}
 		else
@@ -91,7 +97,11 @@ void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
 		// should never be the case
 		printf("Unknown core dumping signal!\n");
 	}
+#if !defined(CEMU_PLATFORM_IOS)
     CrashLog_WriteLine(fmt::format("Error: signal {}:", sig));
+#else
+    CrashLog_WriteLine("Error: signal raised");
+#endif
 #if BOOST_PLAT_ANDROID
     CrashLog_WriteLine(to_string(boost::stacktrace::stacktrace()));
 #else
@@ -123,8 +133,10 @@ void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
 #endif
 #endif
 
+#if !defined(CEMU_PLATFORM_IOS)
     std::cerr << fmt::format("\nStacktrace and additional info written to:") << std::endl;
     std::cerr << cemuLog_GetLogFilePath().generic_string() << std::endl;
+#endif
 
     CrashLog_SetOutputChannels(false, true);
     ExceptionHandler_LogGeneralInfo();

@@ -1,0 +1,2 @@
+"/usr/bin/ar" qc libimguiImpl.a CMakeFiles/imguiImpl.dir/imgui_impl_opengl3.cpp.o CMakeFiles/imguiImpl.dir/imgui_impl_vulkan.cpp.o CMakeFiles/imguiImpl.dir/imgui_extension.cpp.o CMakeFiles/imguiImpl.dir/imgui_impl_metal.mm.o CMakeFiles/imguiImpl.dir/__/__/dependencies/imgui/imgui.cpp.o CMakeFiles/imguiImpl.dir/__/__/dependencies/imgui/imgui_draw.cpp.o CMakeFiles/imguiImpl.dir/__/__/dependencies/imgui/imgui_tables.cpp.o CMakeFiles/imguiImpl.dir/__/__/dependencies/imgui/imgui_widgets.cpp.o
+"/usr/bin/ranlib" libimguiImpl.a

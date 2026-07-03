@@ -1,0 +1,2 @@
+"/usr/bin/ar" qc libCemuAudio.a CMakeFiles/CemuAudio.dir/IAudioAPI.cpp.o CMakeFiles/CemuAudio.dir/IAudioInputAPI.cpp.o CMakeFiles/CemuAudio.dir/CubebAPI.cpp.o CMakeFiles/CemuAudio.dir/CubebInputAPI.cpp.o
+"/usr/bin/ranlib" libCemuAudio.a

@@ -10,3 +10,8 @@ if(ANDROID)
     add_subdirectory(androidgui)
     target_link_libraries(CemuGui INTERFACE CemuAndroidGui)
 endif()
+
+if(PLATFORM_IOS)
+    add_subdirectory(iosgui)
+    target_link_libraries(CemuGui INTERFACE iosgui)
+endif()

@@ -1,0 +1,2 @@
+"/usr/bin/ar" qc libCemuCommon.a CMakeFiles/CemuCommon.dir/cpu_features.cpp.o CMakeFiles/CemuCommon.dir/ExceptionHandler/ExceptionHandler.cpp.o CMakeFiles/CemuCommon.dir/precompiled.cpp.o CMakeFiles/CemuCommon.dir/SysAllocator.cpp.o CMakeFiles/CemuCommon.dir/unix/platform.cpp.o CMakeFiles/CemuCommon.dir/unix/FileStream_unix.cpp.o CMakeFiles/CemuCommon.dir/ExceptionHandler/ExceptionHandler_posix.cpp.o
+"/usr/bin/ranlib" libCemuCommon.a

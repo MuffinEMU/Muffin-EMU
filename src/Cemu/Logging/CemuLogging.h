@@ -1,6 +1,11 @@
 #pragma once
 
+#if !defined(CEMU_PLATFORM_IOS)
 extern uint64 s_loggingFlagMask;
+#else
+// iOS Phase 0: Stub logging
+static uint64 s_loggingFlagMask = 0;
+#endif
 
 enum class LogType : sint32
 {
@@ -49,6 +54,7 @@ enum class LogType : sint32
 	Recompiler = 60,
 };
 
+#if !defined(CEMU_PLATFORM_IOS)
 template <>
 struct fmt::formatter<std::u8string_view> : formatter<string_view> {
 	template <typename FormatContext>
@@ -58,6 +64,7 @@ struct fmt::formatter<std::u8string_view> : formatter<string_view> {
 		return formatter<string_view>::format(s, ctx);
 	}
 };
+#endif
 
 void cemuLog_writeLineToLog(std::string_view text, bool date = true, bool new_line = true);
 inline void cemuLog_writePlainToLog(std::string_view text) { cemuLog_writeLineToLog(text, false, false); }
@@ -78,6 +85,7 @@ bool cemuLog_log(LogType type, std::string_view text);
 bool cemuLog_log(LogType type, std::u8string_view text);
 void cemuLog_waitForFlush(); // wait until all log lines are written
 
+#if !defined(CEMU_PLATFORM_IOS)
 template<typename... TArgs>
 bool cemuLog_log(LogType type, fmt::format_string<TArgs...> formatStr, TArgs&&... args)
 {
@@ -101,6 +109,14 @@ bool cemuLog_logDebug(LogType type, fmt::format_string<TArgs...> format, TArgs&&
 	return false;
 #endif
 }
+#else
+// iOS Phase 0: Stub logging templates
+template<typename... TArgs>
+bool cemuLog_log(LogType type, const char* formatStr, TArgs&&... args) { return false; }
+#define cemuLog_logOnce(...) {}
+template<typename ... TArgs>
+bool cemuLog_logDebug(LogType type, const char* format, TArgs&&... args) { return false; }
+#endif
 
 inline bool cemuLog_logDebug(LogType type, std::string_view message)
 {

@@ -39,13 +39,25 @@ endif()
 
 add_compile_definitions(VK_NO_PROTOTYPES)
 
+# iOS-specific flags
+if(PLATFORM_IOS)
+	add_compile_definitions(CEMU_PLATFORM_IOS=1)
+	message(STATUS "Compiling for iOS with platform defines")
+endif()
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
+
+# iOS Phase 0: Use GLM stubs
+if(PLATFORM_IOS)
+	include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/Common/glm_stub)
+	message(STATUS "iOS: Using GLM stubs")
+endif()
 
 # on msvc we can reuse the PCH from CemuCommon, on other platforms it's not straight forward to reuse the PCH so we opt out of it
 function(cemu_use_precompiled_header target_name)
 	if(MSVC)
 		target_precompile_headers(${target_name} REUSE_FROM CemuCommon)
-	else()
+	elseif(NOT PLATFORM_IOS)
 		target_precompile_headers(${target_name} PRIVATE "${CMAKE_SOURCE_DIR}/src/Common/precompiled.h")
 	endif()
 endfunction()
@@ -61,7 +73,7 @@ add_subdirectory(util)
 add_subdirectory(imgui)
 add_subdirectory(resource)
 
-if(ANDROID)
+if(ANDROID OR PLATFORM_IOS)
     add_library(CemuBin STATIC
         main.cpp
         mainLLE.cpp
@@ -69,7 +81,9 @@ if(ANDROID)
 
 	cemu_use_precompiled_header(CemuBin)
 
-    add_subdirectory(android/app/src/main/cpp)
+    if(ANDROID)
+        add_subdirectory(android/app/src/main/cpp)
+    endif()
 else()
 	add_executable(CemuBin
 		main.cpp

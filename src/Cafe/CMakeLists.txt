@@ -635,6 +635,14 @@ else()
 	set(glslang_target "glslang::glslang")
 endif()
 
+# Create stubs for iOS (if not already created)
+if(PLATFORM_IOS AND NOT TARGET ZArchive::zarchive)
+	add_library(ZArchive::zarchive INTERFACE IMPORTED)
+endif()
+if(PLATFORM_IOS AND NOT TARGET zstd::zstd)
+	add_library(zstd::zstd INTERFACE IMPORTED)
+endif()
+
 target_link_libraries(CemuCafe PRIVATE
 	CemuCommon
   CemuGui

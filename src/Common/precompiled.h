@@ -1,10 +1,34 @@
 #pragma once
 
-#include <stdlib.h> // for size_t
+#include <stdlib.h>
+#include <cstdint>
+
+// Standard type definitions
+using uint8 = std::uint8_t;
+using sint8 = std::int8_t;
+using uint16 = std::uint16_t;
+using sint16 = std::int16_t;
+using uint32 = std::uint32_t;
+using sint32 = std::int32_t;
+using uint64 = std::uint64_t;
+using sint64 = std::int64_t;
 
 #include "version.h"
 #include "platform.h"
 
+// iOS Phase 0: Include stubs EARLY for type definitions
+#if defined(CEMU_PLATFORM_IOS)
+#include "../Common/glm_stub/fmt_stub.h"
+#endif
+
+// iOS Phase 0: Disable entire XMLConfig system
+#if !defined(CEMU_PLATFORM_IOS)
+#define ENABLE_XML_CONFIG 1
+#else
+#define ENABLE_XML_CONFIG 0
+#endif
+
+#if !defined(CEMU_PLATFORM_IOS)
 #define FMT_HEADER_ONLY
 #define FMT_USE_GRISU 1
 #include <fmt/core.h>
@@ -12,6 +36,7 @@
 #include <fmt/ranges.h>
 #if FMT_VERSION > 80000
 #include <fmt/xchar.h> // needed for wchar_t support
+#endif
 #endif
 
 #define SDL_MAIN_HANDLED
@@ -77,11 +102,26 @@
 #include <ranges>
 #include <variant>
 
+#if !defined(CEMU_PLATFORM_IOS)
 #include <boost/predef.h>
 #include <boost/nowide/convert.hpp>
 #include <boost/algorithm/string.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#else
+// iOS Phase 0: minimal GLM support - use stubs
+#include "../Common/glm_stub/glm.hpp"
+#include "../Common/glm_stub/gtc/quaternion.hpp"
+#endif
+
+#if defined(CEMU_PLATFORM_IOS)
+// iOS Phase 0: fmt and type stubs
+#include "../Common/glm_stub/fmt_stub.h"
+#include "../config/config_stubs_ios.h"
+namespace std {
+    template<typename T> struct formatter { };
+}
+#endif
 
 namespace fs = std::filesystem;
 #if BOOST_PLAT_ANDROID
@@ -195,6 +235,7 @@ inline std::string _tr(std::string_view text)
 	return std::string{text};
 }
 
+#if !defined(CEMU_PLATFORM_IOS)
 template<typename... TArgs>
 inline std::string _tr(fmt::format_string<TArgs...> text, TArgs... args)
 {
@@ -206,6 +247,14 @@ inline std::string _tr(fmt::format_string<TArgs...> text, TArgs... args)
 
 	return fmt::format(text, std::forward<TArgs>(args)...);
 }
+#else
+// iOS Phase 0: Stub translation
+template<typename... TArgs>
+inline std::string _tr(const char* text, TArgs... args)
+{
+	return std::string{text};
+}
+#endif
 
 // manual endian-swapping
 
@@ -237,9 +286,11 @@ inline sint16 _swapEndianS16(sint16 v)
 #else
 inline uint64 _swapEndianU64(uint64 v)
 {
-#if BOOST_OS_MACOS
+#if defined(CEMU_PLATFORM_IOS)
     return OSSwapInt64(v);
-#elif BOOST_OS_BSD
+#elif defined(BOOST_OS_MACOS)
+    return OSSwapInt64(v);
+#elif defined(BOOST_OS_BSD)
 #ifdef __OpenBSD__
     return swap64(v);
 #else // FreeBSD and NetBSD
@@ -252,9 +303,11 @@ inline uint64 _swapEndianU64(uint64 v)
 
 inline uint32 _swapEndianU32(uint32 v)
 {
-#if BOOST_OS_MACOS
+#if defined(CEMU_PLATFORM_IOS)
     return OSSwapInt32(v);
-#elif BOOST_OS_BSD
+#elif defined(BOOST_OS_MACOS)
+    return OSSwapInt32(v);
+#elif defined(BOOST_OS_BSD)
 #ifdef __OpenBSD__
     return swap32(v);
 #else // FreeBSD and NetBSD
@@ -267,9 +320,11 @@ inline uint32 _swapEndianU32(uint32 v)
 
 inline sint32 _swapEndianS32(sint32 v)
 {
-#if BOOST_OS_MACOS
+#if defined(CEMU_PLATFORM_IOS)
     return (sint32)OSSwapInt32((uint32)v);
-#elif BOOST_OS_BSD
+#elif defined(BOOST_OS_MACOS)
+    return (sint32)OSSwapInt32((uint32)v);
+#elif defined(BOOST_OS_BSD)
 #ifdef __OpenBSD__
     return (sint32)swap32((uint32)v);
 #else // FreeBSD and NetBSD
@@ -494,7 +549,11 @@ inline void cemu_assert_error()
 #define assert_dbg() DEBUG_BREAK // old style unconditional generic assert
 
 // MEMPTR
+#if !defined(CEMU_PLATFORM_IOS)
 #include "Common/MemPtr.h"
+#else
+#include "Common/MemPtr_stub.h"
+#endif
 
 template <typename T1, typename T2>
 constexpr bool HAS_FLAG(T1 flags, T2 test_flag) { return (flags & (T1)test_flag) == (T1)test_flag; }
@@ -682,6 +741,7 @@ inline uint32 GetTitleIdLow(uint64 titleId)
 void DebugLogStackTrace(struct OSThread_t* thread, MPTR sp, bool printSymbols = false);
 
 // generic formatter for enums (to underlying)
+#if !defined(CEMU_PLATFORM_IOS)
 template <typename Enum>
 	requires std::is_enum_v<Enum>
 struct fmt::formatter<Enum> : fmt::formatter<underlying_t<Enum>>
@@ -703,6 +763,7 @@ struct fmt::formatter<betype<T>> : fmt::formatter<T>
 		return formatter<T>::format(static_cast<T>(e), ctx);
 	}
 };
+#endif // !CEMU_PLATFORM_IOS
 
 // useful future C++ stuff
 namespace stdx

@@ -1,0 +1,2 @@
+"/usr/bin/ar" qc libiosgui.a CMakeFiles/iosgui.dir/IOSWindowSystem.cpp.o
+"/usr/bin/ranlib" libiosgui.a

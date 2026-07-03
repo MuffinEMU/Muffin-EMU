@@ -1,0 +1,2 @@
+/usr/bin/ar qc ../../lib/libxbyak_aarch64.a CMakeFiles/xbyak_aarch64.dir/src/xbyak_aarch64_impl.cpp.o CMakeFiles/xbyak_aarch64.dir/src/util_impl.cpp.o
+/usr/bin/ranlib ../../lib/libxbyak_aarch64.a
