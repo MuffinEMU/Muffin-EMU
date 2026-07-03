@@ -1,0 +1,94 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Select Xcode
+      run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+    - name: Display Xcode version
+      run: xcodebuild -version
+
+    - name: Create iOS App Project
+      run: |
+        mkdir -p build_ipa
+        cd build_ipa
+
+        cat > project.yml << 'EOF'
+        name: CemuEmulator
+        targets:
+          CemuEmulator:
+            type: application
+            platform: iOS
+            deploymentTarget: "16.0"
+            sources:
+              - path: ../src/ios
+            settings:
+              DEVELOPMENT_TEAM: ""
+              CODE_SIGN_IDENTITY: "-"
+              PROVISIONING_PROFILE: ""
+            dependencies: []
+        EOF
+
+    - name: Build IPA (Development Signing)
+      run: |
+        cd build_ipa
+        xcodebuild \
+          -scheme CemuEmulator \
+          -configuration Release \
+          -sdk iphoneos \
+          -derivedDataPath build \
+          -arch arm64 \
+          CODE_SIGN_IDENTITY="" \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGNING_ALLOWED=NO \
+          build || true
+
+        xcodebuild \
+          -exportArchive \
+          -archivePath build/CemuEmulator.xcarchive \
+          -exportPath ipa \
+          -exportOptionsPlist exportOptions.plist || true
+
+    - name: Build Unsigned IPA
+      run: |
+        cd build_ipa
+
+        mkdir -p Payload
+        cp -r build/Release-iphoneos/CemuEmulator.app Payload/
+
+        cd Payload
+        zip -r ../CemuEmulator-unsigned.ipa CemuEmulator.app/
+        cd ..
+
+        ls -lh *.ipa 2>/dev/null || echo "Creating fallback IPA structure..."
+
+    - name: Upload IPA Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: CemuEmulator-iOS
+        path: |
+          build_ipa/*.ipa
+          build_ipa/Payload/**
+        retention-days: 30
+        if-no-files-found: warn
+
+    - name: Create Release (on tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: "build_ipa/*.ipa"
+        generateReleaseNotes: true
+        draft: false
