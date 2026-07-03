@@ -324,6 +324,7 @@ struct EmulatorViewOptimized: View {
     @Binding var isRunning: Bool
     @Binding var controllerSkin: WiiUControllerSkin
     @State private var showControls = true
+    @State private var showSkinSelector = false
 
     var body: some View {
         ZStack {
@@ -354,27 +355,45 @@ struct EmulatorViewOptimized: View {
                             .foregroundColor(.white)
                             .lineLimit(1)
 
-                        Text(game.region)
-                            .font(.system(size: 10, weight: .regular))
-                            .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                        Text(controllerSkin.name)
+                            .font(.system(size: 9, weight: .regular))
+                            .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
                     }
                     .frame(maxWidth: .infinity)
 
-                    HStack(spacing: 6) {
-                        Image(systemName: "speedometer")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("\(gameManager.getFrameRate()) FPS")
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    HStack(spacing: 8) {
+                        Button(action: { showSkinSelector.toggle() }) {
+                            Image(systemName: "gamecontroller.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
+                        }
+                        .frame(width: 32, height: 40)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(8)
+
+                        HStack(spacing: 6) {
+                            Image(systemName: "speedometer")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("\(gameManager.getFrameRate()) FPS")
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        }
+                        .foregroundColor(gameManager.getFrameRate() >= 20 ? Color(red: 0.4, green: 0.9, blue: 0.4) : Color(red: 1.0, green: 0.6, blue: 0.4))
+                        .frame(height: 40)
+                        .padding(.horizontal, 12)
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(8)
                     }
-                    .foregroundColor(gameManager.getFrameRate() >= 20 ? Color(red: 0.4, green: 0.9, blue: 0.4) : Color(red: 1.0, green: 0.6, blue: 0.4))
-                    .frame(height: 40)
-                    .padding(.horizontal, 12)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(8)
                 }
                 .padding(12)
                 .background(Color.black.opacity(0.5))
                 .borderBottom(width: 0.5, color: Color.white.opacity(0.1))
+
+                if showSkinSelector {
+                    ControllerSkinSelector(selectedSkin: $controllerSkin)
+                        .padding(12)
+                        .background(Color.black.opacity(0.7))
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
 
                 #if os(iOS)
                 MetalViewIOS(gameManager: gameManager)
