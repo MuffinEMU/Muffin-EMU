@@ -6,7 +6,7 @@ struct ContentView: View {
     @State private var selectedGame: GameMetadata?
     @State private var showingGameBrowser = true
     @State private var showingFavorites = false
-    @Environment(\.colorScheme) var colorScheme
+    @State private var selectedSkin: WiiUControllerSkin = WiiUControllerSkin.standard
 
     var body: some View {
         ZStack {
@@ -18,10 +18,11 @@ struct ContentView: View {
                     showingFavorites: $showingFavorites
                 )
             } else if let game = selectedGame, gameManager.emulationState == .running {
-                EmulatorView(
+                EmulatorViewOptimized(
                     game: game,
                     gameManager: gameManager,
-                    isRunning: $showingGameBrowser
+                    isRunning: $showingGameBrowser,
+                    controllerSkin: $selectedSkin
                 )
             }
         }
@@ -35,7 +36,6 @@ struct GameBrowserView: View {
     @Binding var showingGameBrowser: Bool
     @Binding var showingFavorites: Bool
     @State private var searchText = ""
-    @Environment(\.colorScheme) var colorScheme
 
     var filteredGames: [GameMetadata] {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
@@ -108,13 +108,13 @@ struct GameBrowserView: View {
                         EmptyGamesView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        ScrollView(showsIndicators: true) {
+                        ScrollView(showsIndicators: false) {
                             LazyVGrid(
                                 columns: [GridItem(.adaptive(minimum: 140), spacing: 16)],
                                 spacing: 20
                             ) {
                                 ForEach(filteredGames) { game in
-                                    GameCardPolished(
+                                    GameCardOptimized(
                                         game: game,
                                         onTap: {
                                             selectedGame = game
@@ -137,45 +137,10 @@ struct GameBrowserView: View {
     }
 }
 
-struct SearchBarPolished: View {
-    @Binding var text: String
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
-
-            TextField("Search games...", text: $text)
-                .font(.system(size: 15, weight: .regular))
-                .textFieldStyle(.plain)
-                .foregroundColor(.white)
-
-            if !text.isEmpty {
-                Button(action: { text = "" }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
-                }
-            }
-        }
-        .frame(height: 44)
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 12)
-        .background(Color.white.opacity(0.05))
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
-        )
-    }
-}
-
-struct GameCardPolished: View {
+struct GameCardOptimized: View {
     let game: GameMetadata
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
-    @State private var isHovered = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -270,6 +235,40 @@ struct GameCardPolished: View {
     }
 }
 
+struct SearchBarPolished: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+
+            TextField("Search games...", text: $text)
+                .font(.system(size: 15, weight: .regular))
+                .textFieldStyle(.plain)
+                .foregroundColor(.white)
+
+            if !text.isEmpty {
+                Button(action: { text = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                }
+            }
+        }
+        .frame(height: 44)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12)
+        .background(Color.white.opacity(0.05))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+        )
+    }
+}
+
 struct LoadingView: View {
     @State private var rotation: Double = 0
 
@@ -319,12 +318,12 @@ struct EmptyGamesView: View {
     }
 }
 
-struct EmulatorView: View {
+struct EmulatorViewOptimized: View {
     let game: GameMetadata
     @ObservedObject var gameManager: GameManager
     @Binding var isRunning: Bool
+    @Binding var controllerSkin: WiiUControllerSkin
     @State private var showControls = true
-    @State private var frameRate = 0
 
     var body: some View {
         ZStack {
@@ -344,7 +343,7 @@ struct EmulatorView: View {
                         }
                         .foregroundColor(.white)
                         .frame(height: 40)
-                        .paddingHorizontal(12)
+                        .padding(.horizontal, 12)
                         .background(Color.white.opacity(0.1))
                         .cornerRadius(8)
                     }
@@ -369,7 +368,7 @@ struct EmulatorView: View {
                     }
                     .foregroundColor(gameManager.getFrameRate() >= 20 ? Color(red: 0.4, green: 0.9, blue: 0.4) : Color(red: 1.0, green: 0.6, blue: 0.4))
                     .frame(height: 40)
-                    .paddingHorizontal(12)
+                    .padding(.horizontal, 12)
                     .background(Color.white.opacity(0.05))
                     .cornerRadius(8)
                 }
@@ -386,8 +385,12 @@ struct EmulatorView: View {
                 #endif
 
                 if showControls {
-                    ControlPanelPolished()
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    OptimizedControlPanel(
+                        skin: controllerSkin,
+                        onDPadInput: { _ in },
+                        onButtonInput: { _ in }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
         }
@@ -396,72 +399,6 @@ struct EmulatorView: View {
                 showControls.toggle()
             }
         }
-    }
-}
-
-struct ControlPanelPolished: View {
-    var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-                .background(Color.white.opacity(0.1))
-
-            HStack(spacing: 40) {
-                VStack(spacing: 4) {
-                    DPadButton(arrow: "↑")
-                    HStack(spacing: 4) {
-                        DPadButton(arrow: "←")
-                        Color.clear.frame(width: 20)
-                        DPadButton(arrow: "→")
-                    }
-                    DPadButton(arrow: "↓")
-                }
-
-                Spacer()
-
-                VStack(spacing: 4) {
-                    ActionButton(label: "Y", color: Color(red: 1.0, green: 0.85, blue: 0.2))
-                    HStack(spacing: 4) {
-                        ActionButton(label: "X", color: Color(red: 0.2, green: 0.6, blue: 1.0))
-                        Color.clear.frame(width: 20)
-                        ActionButton(label: "B", color: Color(red: 1.0, green: 0.4, blue: 0.3))
-                    }
-                    ActionButton(label: "A", color: Color(red: 0.3, green: 0.9, blue: 0.4))
-                }
-            }
-            .padding(20)
-            .background(Color.black.opacity(0.7))
-        }
-    }
-}
-
-struct DPadButton: View {
-    let arrow: String
-
-    var body: some View {
-        Text(arrow)
-            .font(.system(size: 16, weight: .semibold))
-            .frame(width: 42, height: 42)
-            .background(Color.white.opacity(0.1))
-            .foregroundColor(.white)
-            .cornerRadius(6)
-    }
-}
-
-struct ActionButton: View {
-    let label: String
-    let color: Color
-
-    var body: some View {
-        Text(label)
-            .font(.system(size: 16, weight: .bold))
-            .frame(width: 42, height: 42)
-            .background(color.opacity(0.7))
-            .foregroundColor(.white)
-            .cornerRadius(21)
-            .overlay(
-                Circle()
-                    .stroke(color.opacity(0.3), lineWidth: 1)
-            )
     }
 }
 
@@ -482,10 +419,6 @@ struct BorderBottomModifier: ViewModifier {
 extension View {
     func borderBottom(width: CGFloat, color: Color) -> some View {
         self.modifier(BorderBottomModifier(width: width, color: color))
-    }
-
-    func paddingHorizontal(_ value: CGFloat) -> some View {
-        self.padding(.horizontal, value)
     }
 }
 
