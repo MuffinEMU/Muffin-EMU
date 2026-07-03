@@ -1,8 +1,15 @@
 #pragma once
 
+#include <cstdint>
+
+#if defined(CEMU_PLATFORM_IOS)
+// iOS build - skip Boost
+#include <libkern/OSByteOrder.h>
+#include "Common/unix/platform.h"
+#else
+// Desktop/Android builds
 #include <boost/predef/os.h>
 #include <boost/predef/platform.h>
-#include <cstdint>
 
 #if BOOST_OS_WINDOWS
 #include "Common/windows/platform.h"
@@ -22,4 +29,5 @@
 #elif BOOST_OS_MACOS
 #include <libkern/OSByteOrder.h>
 #include "Common/unix/platform.h"
+#endif
 #endif

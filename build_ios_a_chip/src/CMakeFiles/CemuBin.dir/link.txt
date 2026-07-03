@@ -1,0 +1,2 @@
+"/usr/bin/ar" qc libCemuBin.a CMakeFiles/CemuBin.dir/main.cpp.o CMakeFiles/CemuBin.dir/mainLLE.cpp.o
+"/usr/bin/ranlib" libCemuBin.a

@@ -1,0 +1,72 @@
+name: Cemu-iOS
+
+options:
+  bundleIdPrefix: com.cemu
+  deploymentTarget:
+    iOS: '15.0'
+  xcodeVersion: '15.0'
+
+settings:
+  PRODUCT_NAME: Cemu
+  SDKROOT: iphoneos
+  IPHONEOS_DEPLOYMENT_TARGET: '15.0'
+  CODE_SIGN_IDENTITY: iPhone Developer
+  CLANG_CXX_LANGUAGE_DIALECT: c++2a
+  GCC_C_LANGUAGE_DIALECT: c99
+
+targets:
+  Cemu:
+    type: application
+    platform: iOS
+    deploymentTarget: '15.0'
+
+    sources:
+      - path: ../gui/iosgui
+        includes:
+          - '**/*.cpp'
+          - '**/*.h'
+      - path: ../Cafe
+        includes:
+          - '**/*.cpp'
+          - '**/*.h'
+      - path: ../Cemu
+        includes:
+          - '**/*.cpp'
+          - '**/*.h'
+      - path: ../config
+        includes:
+          - '**/*.cpp'
+          - '**/*.h'
+      - path: ../Common
+        includes:
+          - '**/*.cpp'
+          - '**/*.h'
+      - path: ../input
+        includes:
+          - '**/*.cpp'
+          - '**/*.h'
+      - path: ../audio
+        includes:
+          - '**/*.cpp'
+          - '**/*.h'
+      - path: ../util
+        includes:
+          - '**/*.cpp'
+          - '**/*.h'
+      - path: ../gui/interface
+        includes:
+          - '**/*.h'
+      - path: ../imgui
+        includes:
+          - '**/*.cpp'
+          - '**/*.h'
+      - path: App
+        type: group
+
+    preBuildScripts:
+      - name: Generate Version
+        script: |
+          echo "Generating version info..."
+
+    scheme:
+      gatherCoverageData: false

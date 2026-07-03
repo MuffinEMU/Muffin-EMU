@@ -1,0 +1,21 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/dependencies/ih264d/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/dependencies/xbyak_aarch64/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/Common/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/gui/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/gui/iosgui/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/Cafe/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/Cemu/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/config/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/input/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/audio/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/util/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/imgui/cmake_install.cmake",
+		"/Users/staceylynward/cemu-ios-a-chip/build_ios_a_chip/src/resource/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

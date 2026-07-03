@@ -1,5 +1,13 @@
 #include "Common/unix/FileStream_unix.h"
 #include <cstdarg>
+#include <cctype>
+#include <algorithm>
+
+static bool iequals(const std::string& a, const std::string& b) {
+	return std::equal(a.begin(), a.end(), b.begin(), b.end(),
+		[](char ac, char bc) { return std::tolower(static_cast<unsigned char>(ac)) ==
+		                               std::tolower(static_cast<unsigned char>(bc)); });
+}
 
 fs::path findPathCI(const fs::path& path)
 {
@@ -14,7 +22,7 @@ fs::path findPathCI(const fs::path& path)
 
 	std::error_code listErr;
 	for (auto&& dirEntry : fs::directory_iterator(parentPath, listErr))
-		if (boost::iequals(dirEntry.path().filename().string(), fName.string()))
+		if (iequals(dirEntry.path().filename().string(), fName.string()))
 			return dirEntry;
 
 	return parentPath / fName;

@@ -1,0 +1,2 @@
+"/usr/bin/ar" qc libCemuConfig.a CMakeFiles/CemuConfig.dir/ActiveSettings.cpp.o CMakeFiles/CemuConfig.dir/CemuConfig.cpp.o CMakeFiles/CemuConfig.dir/LaunchSettings.cpp.o CMakeFiles/CemuConfig.dir/NetworkSettings.cpp.o
+"/usr/bin/ranlib" libCemuConfig.a
