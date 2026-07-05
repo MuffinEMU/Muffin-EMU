@@ -42,3 +42,9 @@ set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
 # Signal to Cemu's build that this is the iOS platform and the engine bridge is live.
 add_compile_definitions(PLATFORM_IOS=1 CEMU_CORE_AVAILABLE=1)
+
+# This CMake build produces static libs + helper executables (e.g. ZArchive's
+# zarchiveTool), never app bundles. iOS otherwise treats executables as
+# MACOSX_BUNDLE, which makes their install() rules fail without a BUNDLE
+# DESTINATION. The real iOS .app is built separately via Xcode (src/ios/project.yml).
+set(CMAKE_MACOSX_BUNDLE OFF)
