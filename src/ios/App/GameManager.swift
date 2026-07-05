@@ -23,6 +23,8 @@ class GameManager: ObservableObject {
     @Published var isLoading = false
     @Published var currentGame: GameMetadata?
     @Published var emulationState: EmulationState = .idle
+    /// Last human-readable message from the engine bridge (e.g. "engine not built yet").
+    @Published var lastStatusMessage: String = ""
 
     private let romsDirectory = "Roms"
     private let gameListFile = "games.json"
@@ -116,13 +118,21 @@ class GameManager: ObservableObject {
             return
         }
 
-        engine.loadROM(game.romPath)
-        engine.startEmulation()
-        emulationState = .running
+        // Delegate to the real Cemu core via the bridge. Pre-M1 (core not compiled
+        // for iOS yet) this honestly reports "engine not built" rather than faking a run.
+        guard engine.coreAvailable else {
+            lastStatusMessage = engine.statusText
+            emulationState = .error
+            return
+        }
+
+        let status = engine.boot(rpxPath: game.romPath)
+        lastStatusMessage = engine.statusText
+        emulationState = (status == CEMU_BRIDGE_OK) ? .running : .error
     }
 
     func stopEmulation() {
-        emulationEngine?.stopEmulation()
+        emulationEngine?.stop()
         emulationState = .idle
         currentGame = nil
     }
@@ -131,12 +141,13 @@ class GameManager: ObservableObject {
         return emulationEngine
     }
 
+    /// No frames are produced until the Metal/MoltenVK renderer is wired (ROADMAP.md M3).
     func getFrameTexture() -> MTLTexture? {
-        return emulationEngine?.getFrameTexture()
+        return nil
     }
 
     func getFrameRate() -> Int {
-        return emulationEngine?.frameRate ?? 0
+        return 0
     }
 }
 

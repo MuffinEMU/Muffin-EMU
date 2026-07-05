@@ -55,3 +55,6 @@ bin/graphicPacks/*
 
 # Ignore Finder view option files created by OS X
 .DS_Store
+# generated / junk
+._*
+src/ios/Cemu-iOS.xcodeproj/
