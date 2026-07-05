@@ -53,11 +53,13 @@ if(PLATFORM_IOS)
 	message(STATUS "iOS: Using GLM stubs")
 endif()
 
-# on msvc we can reuse the PCH from CemuCommon, on other platforms it's not straight forward to reuse the PCH so we opt out of it
+# on msvc we can reuse the PCH from CemuCommon, on other platforms apply precompiled.h
+# per target. iOS behaves like macOS here — the PCH provides Cemu's core type aliases
+# (uint32/sint32/MPTR/...) and was only opted out during the earlier stub-deps era.
 function(cemu_use_precompiled_header target_name)
 	if(MSVC)
 		target_precompile_headers(${target_name} REUSE_FROM CemuCommon)
-	elseif(NOT PLATFORM_IOS)
+	else()
 		target_precompile_headers(${target_name} PRIVATE "${CMAKE_SOURCE_DIR}/src/Common/precompiled.h")
 	endif()
 endfunction()
