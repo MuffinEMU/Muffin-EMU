@@ -2,9 +2,7 @@
 #include <execinfo.h>
 #include <string.h>
 #include <string>
-#if !defined(CEMU_PLATFORM_IOS)
 #include "config/CemuConfig.h"
-#endif
 #include "util/helpers/StringHelpers.h"
 #include "ExceptionHandler.h"
 
