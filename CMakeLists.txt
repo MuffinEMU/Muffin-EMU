@@ -268,7 +268,10 @@ if (UNIX AND NOT APPLE AND NOT ANDROID)
 
 endif()
 
-if (ENABLE_VULKAN)
+if (ENABLE_VULKAN OR PLATFORM_IOS)
+	# iOS doesn't build/link Vulkan, but ~15 files #include VulkanAPI.h for shared
+	# declarations (e.g. g_vulkan_available). With VK_NO_PROTOTYPES the headers are
+	# declaration-only, so providing them lets those files parse without a loader.
 	include_directories("dependencies/Vulkan-Headers/include")
 endif()
 
