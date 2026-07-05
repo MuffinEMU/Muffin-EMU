@@ -16,11 +16,6 @@ using sint64 = std::int64_t;
 #include "version.h"
 #include "platform.h"
 
-// iOS Phase 0: Include stubs EARLY for type definitions
-#if defined(CEMU_PLATFORM_IOS)
-#include "../Common/glm_stub/fmt_stub.h"
-#endif
-
 // iOS Phase 0: Disable entire XMLConfig system
 #if !defined(CEMU_PLATFORM_IOS)
 #define ENABLE_XML_CONFIG 1
@@ -102,26 +97,14 @@ using sint64 = std::int64_t;
 #include <ranges>
 #include <variant>
 
-#if !defined(CEMU_PLATFORM_IOS)
+// Real boost + glm on all platforms including iOS (provided via vcpkg arm64-ios).
+// The former iOS glm/fmt stubs conflicted with real fmt (which is included above)
+// and redefined std::formatter, breaking betype's formatters.
 #include <boost/predef.h>
 #include <boost/nowide/convert.hpp>
 #include <boost/algorithm/string.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
-#else
-// iOS Phase 0: minimal GLM support - use stubs
-#include "../Common/glm_stub/glm.hpp"
-#include "../Common/glm_stub/gtc/quaternion.hpp"
-#endif
-
-#if defined(CEMU_PLATFORM_IOS)
-// iOS Phase 0: fmt and type stubs
-#include "../Common/glm_stub/fmt_stub.h"
-#include "../config/config_stubs_ios.h"
-namespace std {
-    template<typename T> struct formatter { };
-}
-#endif
 
 namespace fs = std::filesystem;
 #if BOOST_PLAT_ANDROID
