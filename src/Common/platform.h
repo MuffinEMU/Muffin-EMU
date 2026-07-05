@@ -8,6 +8,13 @@
 // (config CrashDump, sockets, GDBStub, nsysnet, ...) disabled on iOS.
 #include <boost/predef/os.h>
 #include <boost/predef/platform.h>
+// iOS is POSIX, but boost.predef does not set BOOST_OS_UNIX for Apple targets. Force
+// it so the codebase's many BOOST_OS_UNIX paths (BSD sockets, signal handling,
+// config CrashDump, GDBStub, nsysnet) compile on iOS.
+#if !BOOST_OS_UNIX
+#undef BOOST_OS_UNIX
+#define BOOST_OS_UNIX 1
+#endif
 #include <libkern/OSByteOrder.h>
 #include "Common/unix/platform.h"
 #else
