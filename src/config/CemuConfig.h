@@ -195,7 +195,7 @@ enum class CrashDump
 	Full
 };
 ENABLE_ENUM_ITERATORS(CrashDump, CrashDump::Disabled, CrashDump::Full);
-#elif BOOST_OS_UNIX
+#else // all non-Windows platforms incl. iOS (BOOST_OS_UNIX is unreliable on Apple)
 enum class CrashDump
 {
 	Disabled,
@@ -371,7 +371,7 @@ struct fmt::formatter<CrashDump> : formatter<string_view> {
 		return formatter<string_view>::format(name, ctx);
 	}
 };
-#elif BOOST_OS_UNIX
+#else // all non-Windows platforms incl. iOS
 template <>
 struct fmt::formatter<CrashDump> : formatter<string_view> {
 	template <typename FormatContext>
