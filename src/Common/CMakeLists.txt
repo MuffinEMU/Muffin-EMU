@@ -65,10 +65,9 @@ if(ANDROID)
   )
 endif()
 
-# CemuCommon always builds the precompiled header (except iOS Phase 0)
-if(NOT PLATFORM_IOS)
-	target_precompile_headers(CemuCommon PRIVATE precompiled.h)
-endif()
+# CemuCommon always builds the precompiled header (iOS included now that it has
+# real dependencies — precompiled.h pulls in fmt/boost/nowide).
+target_precompile_headers(CemuCommon PRIVATE precompiled.h)
 target_include_directories(CemuCommon PUBLIC "../")
 
 target_link_libraries(CemuCommon PRIVATE
