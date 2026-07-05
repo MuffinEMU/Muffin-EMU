@@ -1,0 +1,73 @@
+name: Build iOS Core (bring-up)
+
+# The REAL iOS build loop. This actually cross-compiles the Cemu C++ engine for
+# arm64-ios and FAILS LOUDLY with real diagnostics (no "|| true" masking like the
+# old build-ipa.yml, which only compiled the Swift shell and hid every error).
+#
+# Expect this to fail on early runs — that is the point. Each failure is a real
+# compiler/linker error to fix on the road to booting a title (see ROADMAP.md M1).
+# Full logs are uploaded as an artifact every run.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'cmake/**'
+      - 'CMakeLists*.txt'
+      - 'vcpkg.json'
+      - '.github/workflows/build-ios-core.yml'
+
+jobs:
+  build-core:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Select full Xcode (has the iOS SDK)
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Set up vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+          "$HOME/vcpkg/bootstrap-vcpkg.sh"
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
+
+      - name: Cross-compile dependencies for arm64-ios
+        # The heavy, slow step (boost/openssl/etc. for iOS). Cached by vcpkg across runs.
+        run: |
+          "$HOME/vcpkg/vcpkg" install --triplet arm64-ios \
+            --x-manifest-root="$GITHUB_WORKSPACE" || {
+              echo "::warning::vcpkg dep build failed — expected during bring-up. See log." ; exit 1 ; }
+
+      - name: Configure Cemu core for iOS
+        run: |
+          cmake -B build-ios -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/cmake/ios.toolchain.cmake" \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/cmake/ios.toolchain.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=arm64-ios \
+            -DCMAKE_BUILD_TYPE=Release \
+            -C CMakeLists_iOS.txt 2>&1 | tee configure.log
+
+      - name: Build Cemu core
+        run: cmake --build build-ios --target CemuCore 2>&1 | tee build.log
+
+      - name: Upload build logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-core-build-logs
+          path: |
+            configure.log
+            build.log
+            build-ios/**/*.log
+          if-no-files-found: warn
+          retention-days: 30

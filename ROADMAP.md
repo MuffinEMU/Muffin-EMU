@@ -13,13 +13,20 @@ The strategy is **bridge to the real Cemu engine**, not finish the Swift toy. Ce
 - [x] Scaffold the real Swift↔C++ bridge (`src/ios/Bridge/`) that targets the actual `CafeSystem` API, and rewire the Swift app to call it instead of the fake `WiiUCPU`.
 - **Note:** the bridge is real code against the real API but is **not yet compiled/linked** — that requires M1.
 
+## Assets already in this tree (verified 2026-07-05) — better than expected
+The two scariest pieces of a Wii U-on-iOS port already exist upstream in this codebase:
+- **ARM64 CPU JIT:** `src/Cafe/HW/Espresso/Recompiler/BackendAArch64` (plus a full PPC interpreter fallback). With on-device JIT (SideStore/LiveContainer) this is the fast path.
+- **Native Metal GPU renderer:** `src/Cafe/HW/Latte/Renderer/Metal/` (42 files). Its **only** platform glue was one 23-line file (`MetalLayer.mm`) — now adapted to UIKit/iOS in this fork.
+So the port is real engineering, not a rewrite.
+
 ## M1 — Compile the real core for iOS arm64  ← **the true starting gate**
-The single most important unknown. Until the engine builds for `arm64-apple-ios`, there is nothing to bridge.
-- [ ] Get a working iOS CMake toolchain (`ios-cmake` / `leetal`).
-- [ ] Resolve the dependency tree for arm64-ios (boost, zlib, zstd, libzip, openssl, fmt, etc.) — most via vcpkg with an ios triplet, some vendored.
-- [ ] Compile `CemuCommon` + `CemuCafe` + `CemuConfig` + `CemuInput` as static libs for the device.
-- [ ] Link them with `IOSWindowSystem.cpp` into a `CemuCore` static library that the Xcode app embeds.
-- **Exit test:** `CemuCore.a` builds for `arm64-apple-ios` and the sample app links against it without unresolved symbols.
+The single most important unknown. Until the engine builds for `arm64-apple-ios`, there is nothing to bridge. **This must run on a machine with full Xcode or on CI — it cannot compile on a Command-Line-Tools-only Mac.**
+- [x] Real iOS CMake toolchain (`cmake/ios.toolchain.cmake` — proper `SYSTEM_NAME iOS`, iPhoneOS sysroot via xcrun, min-version). Replaces the fake `cmake/ios.cmake` that targeted arm64 macOS.
+- [x] Gate desktop-only deps off for iOS (`wxwidgets` → `!ios` in `vcpkg.json`).
+- [x] Real CI build loop (`.github/workflows/build-ios-core.yml`) that cross-compiles deps for `arm64-ios`, builds the core, and uploads real logs — no `|| true` masking.
+- [ ] **Iterate the CI loop until the core compiles** (dependency fixes, desktop-assumption fixes). This is the grind. Needs the fork on GitHub to run.
+- [ ] Link into a `CemuCore` static lib the Xcode app embeds; define `CEMU_CORE_AVAILABLE`.
+- **Exit test:** `build-ios-core` CI job goes green — the core builds for `arm64-apple-ios`.
 
 ## M2 — Bring-up: boot to a title's entry point (no graphics)
 - [ ] Provide MLC/NAND paths, keys (`keys.txt`), and a title on the device's Documents dir.

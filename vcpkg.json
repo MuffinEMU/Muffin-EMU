@@ -58,7 +58,7 @@
     "zstd",
     {
       "name": "wxwidgets",
-      "platform": "!android"
+      "platform": "!android & !ios"
     },
     "openssl",
     {
