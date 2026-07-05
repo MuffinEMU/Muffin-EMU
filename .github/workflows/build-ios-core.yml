@@ -6,7 +6,8 @@ name: Build iOS Core (bring-up)
 #
 # Expect this to fail on early runs — that is the point. Each failure is a real
 # compiler/linker error to fix on the road to booting a title (see ROADMAP.md M1).
-# Full logs are uploaded as an artifact every run.
+# Full logs are uploaded as an artifact every run. vcpkg deps are cached across
+# runs via the GitHub Actions cache so only the first run pays the full dep cost.
 
 on:
   workflow_dispatch: {}
@@ -18,6 +19,10 @@ on:
       - 'CMakeLists*.txt'
       - 'vcpkg.json'
       - '.github/workflows/build-ios-core.yml'
+
+env:
+  # vcpkg binary caching through the GitHub Actions cache — makes the grind fast.
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
 
 jobs:
   build-core:
@@ -34,6 +39,14 @@ jobs:
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-path
 
+      # Expose the Actions cache endpoint/token so vcpkg's x-gha backend can use it.
+      - name: Enable vcpkg GHA binary cache
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
       - name: Set up vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
@@ -41,24 +54,26 @@ jobs:
           echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
 
       - name: Cross-compile dependencies for arm64-ios
-        # The heavy, slow step (boost/openssl/etc. for iOS). Cached by vcpkg across runs.
+        # First run is slow (boost/openssl/etc. for iOS); subsequent runs hit the cache.
         run: |
           "$HOME/vcpkg/vcpkg" install --triplet arm64-ios \
-            --x-manifest-root="$GITHUB_WORKSPACE" || {
-              echo "::warning::vcpkg dep build failed — expected during bring-up. See log." ; exit 1 ; }
+            --x-manifest-root="$GITHUB_WORKSPACE"
 
       - name: Configure Cemu core for iOS
+        # CMakeLists_iOS.txt is the iOS project. CMake only reads a file named
+        # CMakeLists.txt from the source dir, so on this ephemeral runner we make the
+        # iOS project the top-level. vcpkg.cmake is the primary toolchain and it
+        # chainloads our real iOS toolchain (SYSTEM_NAME iOS + iPhoneOS sysroot).
         run: |
+          cp CMakeLists_iOS.txt CMakeLists.txt
           cmake -B build-ios -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/cmake/ios.toolchain.cmake" \
-            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/cmake/ios.toolchain.cmake" \
             -DCMAKE_TOOLCHAIN_FILE="$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/cmake/ios.toolchain.cmake" \
             -DVCPKG_TARGET_TRIPLET=arm64-ios \
-            -DCMAKE_BUILD_TYPE=Release \
-            -C CMakeLists_iOS.txt 2>&1 | tee configure.log
+            -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure.log
 
       - name: Build Cemu core
-        run: cmake --build build-ios --target CemuCore 2>&1 | tee build.log
+        run: cmake --build build-ios 2>&1 | tee build.log
 
       - name: Upload build logs (always)
         if: always()
