@@ -539,7 +539,10 @@ add_library(CemuCafe
   TitleList/TitleList.h
 )
 
-if(APPLE)
+# Desktop-macOS only: CocoaSurface.mm is a MoltenVK/Cocoa Vulkan surface and
+# MetalView.mm is an NSView (AppKit). iOS has neither — it uses the UIKit path in
+# Metal/MetalLayer.mm instead.
+if(APPLE AND NOT PLATFORM_IOS)
 	target_sources(CemuCafe PRIVATE
 	    HW/Latte/Renderer/Vulkan/CocoaSurface.mm
 	    HW/Latte/Renderer/MetalView.mm
