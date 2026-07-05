@@ -334,13 +334,11 @@ if(CEMU_ARCHITECTURE MATCHES "(aarch64)|(AARCH64)|(arm64)|(ARM64)")
 	add_subdirectory("dependencies/xbyak_aarch64" EXCLUDE_FROM_ALL)
 endif()
 
-if(NOT PLATFORM_IOS)
-	find_package(ZArchive)
-	if (NOT ZArchive_FOUND)
-		add_subdirectory("dependencies/ZArchive" EXCLUDE_FROM_ALL)
-	endif()
-else()
-	message(STATUS "iOS: Skipping ZArchive")
+# ZArchive is needed on iOS too — it reads .wua game archives (fscDeviceWua.cpp).
+# It's portable C++ and uses zstd, which iOS has via vcpkg.
+find_package(ZArchive)
+if (NOT ZArchive_FOUND)
+	add_subdirectory("dependencies/ZArchive" EXCLUDE_FROM_ALL)
 endif()
 
 if(ANDROID)
