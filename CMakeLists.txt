@@ -152,14 +152,23 @@ option(ENABLE_CUBEB "Enabled cubeb backend" ON)
 
 option(ENABLE_WXWIDGETS "Build with wxWidgets UI (Currently required)" ON)
 
-# Force disable wxWidgets on iOS
+# iOS: disable desktop-only / non-iOS backends. Metal is the renderer; there is no
+# wxWidgets UI, no OpenGL, and no Vulkan loader on iOS. Discord RPC / HIDAPI are also
+# unavailable. (Metal itself is enabled below via ENABLE_METAL default-on for Apple.)
 if(PLATFORM_IOS)
 	set(ENABLE_WXWIDGETS OFF CACHE BOOL "" FORCE)
+	set(ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
+	set(ENABLE_OPENGL OFF CACHE BOOL "" FORCE)
+	set(ENABLE_DISCORD_RPC OFF CACHE BOOL "" FORCE)
+	set(ENABLE_HIDAPI OFF CACHE BOOL "" FORCE)
 endif()
 
 find_package(Threads REQUIRED)
 
-if(NOT PLATFORM_IOS)
+# Real dependencies for all platforms INCLUDING iOS. iOS gets the same libraries via
+# vcpkg's arm64-ios triplet (see vcpkg.json). The previous iOS branch used empty stub
+# IMPORTED targets that provided no headers and could never actually compile the core.
+if(TRUE)
 	if(ENABLE_SDL)
 		find_package(SDL2 REQUIRED)
 		add_compile_definitions("HAS_SDL=1")
@@ -263,7 +272,8 @@ if (ENABLE_OPENGL AND NOT PLATFORM_IOS)
 	find_package(OpenGL REQUIRED)
 endif()
 
-if (ENABLE_METAL AND NOT PLATFORM_IOS)
+if (ENABLE_METAL)
+    # Metal is the iOS renderer too — metal-cpp is header-only and works on iOS.
     include_directories(${CMAKE_SOURCE_DIR}/dependencies/metal-cpp)
     add_definitions(-DENABLE_METAL=1)
 endif()

@@ -60,20 +60,21 @@ jobs:
             --x-manifest-root="$GITHUB_WORKSPACE"
 
       - name: Configure Cemu core for iOS
-        # CMakeLists_iOS.txt is the iOS project. CMake only reads a file named
-        # CMakeLists.txt from the source dir, so on this ephemeral runner we make the
-        # iOS project the top-level. vcpkg.cmake is the primary toolchain and it
-        # chainloads our real iOS toolchain (SYSTEM_NAME iOS + iPhoneOS sysroot).
+        # Use the REAL top-level CMakeLists.txt (it has the true iOS logic: routes the
+        # GUI to src/gui/iosgui, disables wx/OpenGL/Vulkan, enables Metal). vcpkg.cmake
+        # is the primary toolchain and chainloads our iOS toolchain (SYSTEM_NAME iOS +
+        # iPhoneOS sysroot). The old CMakeLists_iOS.txt was a naive stub — not used.
         run: |
-          cp CMakeLists_iOS.txt CMakeLists.txt
           cmake -B build-ios -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake" \
             -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/cmake/ios.toolchain.cmake" \
             -DVCPKG_TARGET_TRIPLET=arm64-ios \
             -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure.log
 
-      - name: Build Cemu core
-        run: cmake --build build-ios 2>&1 | tee build.log
+      - name: Build Cemu core (CemuCafe = the engine)
+        # Build the engine library specifically, not the desktop app target. If this
+        # compiles for arm64-ios, M1's exit test is met.
+        run: cmake --build build-ios --target CemuCafe 2>&1 | tee build.log
 
       - name: Upload build logs (always)
         if: always()
