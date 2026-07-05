@@ -2,9 +2,13 @@
 #include "WindowSystem.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "resource/IconsFontAwesome5.h"
+#if !defined(CEMU_PLATFORM_IOS)   // iOS is Metal-only; no OpenGL/Vulkan backend headers
 #include "imgui_impl_opengl3.h"
+#endif
 #include "resource/resource.h"
+#if !defined(CEMU_PLATFORM_IOS)
 #include "imgui_impl_vulkan.h"
+#endif
 #include "input/InputManager.h"
 
 // <imgui_internal.h>
