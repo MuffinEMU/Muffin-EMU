@@ -548,12 +548,10 @@ inline void cemu_assert_error()
 
 #define assert_dbg() DEBUG_BREAK // old style unconditional generic assert
 
-// MEMPTR
-#if !defined(CEMU_PLATFORM_IOS)
+// MEMPTR — use the real, portable MemPtr on all platforms including iOS. The old
+// MemPtr_stub.h lacked MEMPTRBase and a matching MEMPTR<void> ctor, which broke
+// PPCCallback.h. The real MemPtr.h has no x86 assumptions (desktop macOS uses it).
 #include "Common/MemPtr.h"
-#else
-#include "Common/MemPtr_stub.h"
-#endif
 
 template <typename T1, typename T2>
 constexpr bool HAS_FLAG(T1 flags, T2 test_flag) { return (flags & (T1)test_flag) == (T1)test_flag; }
