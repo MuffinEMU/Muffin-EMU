@@ -3,7 +3,11 @@
 #include <cstdint>
 
 #if defined(CEMU_PLATFORM_IOS)
-// iOS build - skip Boost
+// iOS build - include boost.predef so BOOST_OS_UNIX / BOOST_OS_* resolve the same
+// way they do on macOS. Skipping boost here left every BOOST_OS_UNIX code path
+// (config CrashDump, sockets, GDBStub, nsysnet, ...) disabled on iOS.
+#include <boost/predef/os.h>
+#include <boost/predef/platform.h>
 #include <libkern/OSByteOrder.h>
 #include "Common/unix/platform.h"
 #else

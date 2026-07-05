@@ -1,9 +1,7 @@
 #pragma once
-#if !defined(CEMU_PLATFORM_IOS)
+// Real boost.nowide on all platforms including iOS (the StringHelpers_ios.h stub
+// redefined uint16be as uint16_t and duplicated declarations, conflicting with betype).
 #include "boost/nowide/convert.hpp"
-#else
-#include "StringHelpers_ios.h"
-#endif
 #include <charconv>
 
 // Definition for removed templates in Apple Clang 17
@@ -95,7 +93,6 @@ namespace std {
 // todo - move the Cafe/PPC specific parts to CafeString.h eventually
 namespace StringHelpers
 {
-#if !defined(CEMU_PLATFORM_IOS)
 	// convert Wii U big-endian wchar_t string to utf8 string
 	static std::string ToUtf8(const uint16be* ptr, size_t maxLength)
 	{
@@ -124,9 +121,6 @@ namespace StringHelpers
 			tmpStr.push_back((uint16)c);
 		return tmpStr;
 	}
-#else
-	// iOS implementations in StringHelpers_ios.h are already included
-#endif
 
 	static sint32 ToInt(const std::string_view& input, sint32 defaultValue = 0)
 	{
