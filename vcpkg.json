@@ -17,6 +17,7 @@
     },
     "boost-tokenizer",
     "boost-container",
+    "boost-filesystem",
     "boost-program-options",
     "boost-nowide",
     "boost-algorithm",
