@@ -13,6 +13,12 @@ settings:
   CODE_SIGN_IDENTITY: iPhone Developer
   CLANG_CXX_LANGUAGE_DIALECT: c++2a
   GCC_C_LANGUAGE_DIALECT: c99
+  # Swift <-> C++ engine bridge (src/ios/Bridge/CemuBridge.{h,mm})
+  SWIFT_OBJC_BRIDGING_HEADER: Bridge/Cemu-Bridging-Header.h
+  CLANG_ENABLE_MODULES: 'YES'
+  # Define CEMU_CORE_AVAILABLE once the real Cemu core links for arm64 (ROADMAP.md M1).
+  # Until then the bridge honestly reports "core not built" and the app shell still builds.
+  # GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1'
 
 targets:
   Cemu:
@@ -61,6 +67,12 @@ targets:
           - '**/*.cpp'
           - '**/*.h'
       - path: App
+        type: group
+      - path: Emulation
+        type: group
+      - path: Rendering
+        type: group
+      - path: Bridge
         type: group
 
     preBuildScripts:

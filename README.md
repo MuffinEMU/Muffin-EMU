@@ -1,14 +1,29 @@
-# **Cemu - Android Port (Wii U Emulator)**
+# Cemu — iOS Port (Wii U Emulator), work in progress
 
-This is the Android port of **Cemu**, a Wii U emulator written in C/C++.
-It is still early and experimental. Stability, performance, and features are not guaranteed, and some functionality may be missing compared to the desktop version.
+An **early, honest, in-progress** iOS port of [Cemu](https://github.com/cemu-project/Cemu), the Wii U emulator written in C/C++. Forked to build the port for real.
 
-There is no timeline for when this port will be finished or when new features will be implemented.
+> **Does it play games yet? No.** Read [`STATUS.md`](STATUS.md) for exactly what works and what doesn't, and [`ROADMAP.md`](ROADMAP.md) for the real milestones. This README will not claim more than the code delivers.
 
-**Please do not open issues or pull requests yet.**
-Development is ongoing, and contributions will be welcome once the project is more stable.
+## Where things actually stand
 
-For general information about Cemu, see the [official website](https://cemu.info) and [main repository](https://github.com/cemu-project/Cemu).
+- ✅ The genuine Cemu C++ engine is in-tree (`src/Cafe`, `src/Common`, …).
+- ✅ A SwiftUI app shell exists (game browser, controller skins).
+- ✅ A **real** Swift↔C++ bridge (`src/ios/Bridge/CemuBridge.{h,mm}`) targets the actual `CafeSystem` API — no fake emulator.
+- ⬜ The Cemu core has **not** been compiled for iOS arm64 yet — this is the next real gate ([`ROADMAP.md`](ROADMAP.md) **M1**).
+- ⬜ No graphics/input/audio wiring yet (M3–M4).
+
+The earlier version of this repo shipped ~20 markdown files declaring the project "complete/delivered/production-ready." None of that was true. Those files are preserved for history under [`docs/_archive_original_claims/`](docs/_archive_original_claims/) and should not be trusted. A hand-rolled Swift PowerPC "CPU" (mostly empty stubs) has been retired for the same reason.
+
+## Architecture
+
+See [`ARCHITECTURE.md`](ARCHITECTURE.md). Short version: the SwiftUI shell drives the **real** Cemu core through a thin C bridge. The bridge is guarded by `CEMU_CORE_AVAILABLE`; until the core links for iOS it compiles to honest "engine not built yet" responses so the app shell still builds, then flips to the real engine when M1 lands.
+
+## Building
+
+- The Xcode project is generated from `src/ios/project.yml` via [XcodeGen](https://github.com/yonwoo9/XcodeGen): `cd src/ios && xcodegen generate`.
+- Device builds require a Mac with **full Xcode** (iOS SDK) — Command Line Tools alone are not enough.
+- Deployment to a non-jailbroken device uses sideloading (SideStore/AltStore/TrollStore); the Cemu interpreter needs JIT, which requires a JIT-enable step on device.
 
 ## License
-Cemu is licensed under [Mozilla Public License 2.0](/LICENSE.txt). Exempt from this are all files in the dependencies directory for which the licenses of the original code apply as well as some individual files in the src folder, as specified in those file headers respectively.
+
+Cemu is licensed under [Mozilla Public License 2.0](/LICENSE.txt). Files under `dependencies/` and some individual `src/` files carry their original licenses as noted in their headers.
