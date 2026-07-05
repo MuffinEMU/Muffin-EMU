@@ -23,7 +23,7 @@ using sint64 = std::int64_t;
 #define ENABLE_XML_CONFIG 0
 #endif
 
-#if !defined(CEMU_PLATFORM_IOS)
+// Real fmt on all platforms including iOS (vcpkg arm64-ios). The iOS stub is gone.
 #define FMT_HEADER_ONLY
 #define FMT_USE_GRISU 1
 #include <fmt/core.h>
@@ -31,7 +31,6 @@ using sint64 = std::int64_t;
 #include <fmt/ranges.h>
 #if FMT_VERSION > 80000
 #include <fmt/xchar.h> // needed for wchar_t support
-#endif
 #endif
 
 #define SDL_MAIN_HANDLED
@@ -721,8 +720,7 @@ inline uint32 GetTitleIdLow(uint64 titleId)
 // PPC stack trace printer
 void DebugLogStackTrace(struct OSThread_t* thread, MPTR sp, bool printSymbols = false);
 
-// generic formatter for enums (to underlying)
-#if !defined(CEMU_PLATFORM_IOS)
+// generic formatter for enums (to underlying) — needed on iOS too (real fmt now available)
 template <typename Enum>
 	requires std::is_enum_v<Enum>
 struct fmt::formatter<Enum> : fmt::formatter<underlying_t<Enum>>
@@ -744,7 +742,6 @@ struct fmt::formatter<betype<T>> : fmt::formatter<T>
 		return formatter<T>::format(static_cast<T>(e), ctx);
 	}
 };
-#endif // !CEMU_PLATFORM_IOS
 
 // useful future C++ stuff
 namespace stdx
