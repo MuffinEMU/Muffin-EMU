@@ -17,7 +17,8 @@ void* CreateMetalLayer(void* handle, float& scaleX, float& scaleY)
 	CAMetalLayer* metalLayer = [CAMetalLayer layer];
 	metalLayer.frame = view.bounds;
 	metalLayer.contentsScale = view.contentScaleFactor;
-	metalLayer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+	// (kCALayer*Sizable autoresizing masks are macOS-only; on iOS the owning view
+	// resizes this layer on layout.)
 	[view.layer addSublayer:metalLayer];
 
 	// iOS reports the backing-store scale directly; width/height scale are equal.
