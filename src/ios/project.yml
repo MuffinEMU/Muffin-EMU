@@ -68,6 +68,11 @@ settings:
   INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
   INFOPLIST_KEY_UIApplicationSceneManifest_Generation: 'YES'
   INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+  # GameManager.swift scans Documents/Roms/ for .rpx/.wud/... - without these two
+  # keys that folder is sandboxed and invisible to Finder/Files, so there'd be no
+  # way to actually get a test RPX onto the device once the app is sideloaded.
+  INFOPLIST_KEY_UIFileSharingEnabled: 'YES'
+  INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: 'YES'
 
 targets:
   Cemu:
