@@ -5,8 +5,12 @@ struct MetalViewIOS: UIViewRepresentable {
     var gameManager: GameManager
 
     func makeUIView(context: Context) -> MTKView {
-        let device = MTLCreateSystemDefaultDevice() ?? MTLCreateSystemDefaultDevice()!
         let view = MTKView()
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            // Honest failure, not a crash - matches this codebase's stated
+            // philosophy of surfacing real error states rather than force-unwrapping.
+            return view
+        }
         view.device = device
         view.delegate = context.coordinator
         view.preferredFramesPerSecond = 60
@@ -29,8 +33,10 @@ struct MetalView: NSViewRepresentable {
     var gameManager: GameManager
 
     func makeNSView(context: Context) -> MTKView {
-        let device = MTLCreateSystemDefaultDevice()!
         let view = MTKView()
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            return view
+        }
         view.device = device
         view.delegate = context.coordinator
         view.preferredFramesPerSecond = 60
@@ -49,6 +55,7 @@ struct MetalView: NSViewRepresentable {
 
 class MetalRenderer: NSObject, MTKViewDelegate {
     var gameManager: GameManager
+    private var commandQueue: MTLCommandQueue?
 
     init(gameManager: GameManager) {
         self.gameManager = gameManager
@@ -62,7 +69,10 @@ class MetalRenderer: NSObject, MTKViewDelegate {
               let descriptor = view.currentRenderPassDescriptor,
               let device = view.device else { return }
 
-        guard let commandBuffer = device.makeCommandQueue()?.makeCommandBuffer() else { return }
+        if commandQueue == nil {
+            commandQueue = device.makeCommandQueue()
+        }
+        guard let commandBuffer = commandQueue?.makeCommandBuffer() else { return }
 
         descriptor.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1)
         descriptor.colorAttachments[0].loadAction = .clear
@@ -102,9 +112,9 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
         let scale: Float
         if aspectRatio > targetAspect {
-            scale = 720.0 / Float(viewSize.height)
+            scale = Float(viewSize.height) / 720.0
         } else {
-            scale = 1280.0 / Float(viewSize.width)
+            scale = Float(viewSize.width) / 1280.0
         }
 
         let width = 1280.0 * scale / Float(viewSize.width)

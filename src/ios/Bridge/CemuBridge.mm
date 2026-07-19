@@ -78,6 +78,14 @@ namespace {
         char path[1024];
         snprintf(path, sizeof(path), "%s/Documents/CemuCrashLog.txt", home);
         g_crashLogFd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+
+        // backtrace() isn't async-signal-safe (it can lazily allocate/lock on first
+        // use), which is exactly the risk on the crashes it's meant to catch - a call
+        // from inside the signal handler could hang/deadlock instead of completing.
+        // Pre-warm its one-time internal state here, during normal startup, so the
+        // handler's later call is just a fast, already-initialized path.
+        void* warm[4];
+        backtrace(warm, 4);
     }
 }
 
@@ -131,11 +139,23 @@ void cemu_bridge_log_checkpoint(const char* message) {
 namespace {
     std::atomic<bool> g_initialized{false};
 
-    const char* setStatus(const char* s) {
+    std::string& statusBuf() {
         // Static storage; single-writer from the emulation control path is fine for a status string.
         static thread_local std::string buf;
-        buf = s ? s : "";
-        return buf.c_str();
+        return buf;
+    }
+
+    const char* setStatus(const char* s) {
+        statusBuf() = s ? s : "";
+        return statusBuf().c_str();
+    }
+
+    // Read-only: does NOT overwrite the buffer, unlike setStatus(). Used by
+    // cemu_bridge_status_text() so it returns whatever the last real setStatus() call
+    // actually said (e.g. "Invalid RPX", a specific boot failure reason) instead of
+    // silently discarding it in favor of a freshly recomputed generic string.
+    const char* getStatus() {
+        return statusBuf().c_str();
     }
 }
 
@@ -292,8 +312,16 @@ void cemu_bridge_shutdown(void) {
 
 const char* cemu_bridge_status_text(void) {
 #if defined(CEMU_CORE_AVAILABLE)
-    return setStatus(CafeSystem::IsTitleRunning() ? "Title running." : "Core ready (no title running).");
+    // Don't unconditionally recompute a generic string here - that was discarding
+    // the specific message the last setStatus() call actually set (e.g. "Invalid
+    // RPX", a boot failure reason) on every single read. Only fall back to a
+    // computed default when nothing specific has been set yet.
+    if (statusBuf().empty())
+        setStatus(CafeSystem::IsTitleRunning() ? "Title running." : "Core ready (no title running).");
+    return getStatus();
 #else
-    return setStatus("Real engine not compiled into this build yet (see ROADMAP.md M1).");
+    if (statusBuf().empty())
+        setStatus("Real engine not compiled into this build yet (see ROADMAP.md M1).");
+    return getStatus();
 #endif
 }

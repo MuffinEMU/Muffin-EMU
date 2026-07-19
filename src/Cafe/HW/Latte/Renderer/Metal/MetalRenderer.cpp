@@ -38,15 +38,22 @@ void LatteDraw_handleSpecialState8_clearAsDepth();
 
 std::vector<MetalRenderer::DeviceInfo> MetalRenderer::GetDevices()
 {
-    NS_STACK_SCOPED auto devices = MTL::CopyAllDevices();
     std::vector<MetalRenderer::DeviceInfo> result;
+#if defined(CEMU_PLATFORM_IOS)
+    // MTL::CopyAllDevices() (multi-GPU/eGPU enumeration) is a macOS-only Metal API -
+    // unavailable on iOS/iPadOS, where there's always exactly one GPU, reachable via
+    // MTL::CreateSystemDefaultDevice() (already used as the fallback below).
+    if (MTL::Device* device = MTL::CreateSystemDefaultDevice())
+        result.push_back({std::string(device->name()->utf8String()), device->registryID()});
+#else
+    NS_STACK_SCOPED auto devices = MTL::CopyAllDevices();
     result.reserve(devices->count());
     for (uint32 i = 0; i < devices->count(); i++)
     {
         MTL::Device* device = static_cast<MTL::Device*>(devices->object(i));
         result.push_back({std::string(device->name()->utf8String()), device->registryID()});
     }
-
+#endif
     return result;
 }
 
@@ -126,6 +133,10 @@ MetalRenderer::MetalRenderer()
     const bool hasDeviceSet = config.mtl_graphic_device_uuid != 0;
 
     // If a device is set, try to find it
+    // (MTL::CopyAllDevices() is macOS-only - unavailable on iOS, which only ever has
+    // one GPU anyway, so there's nothing to search for; falls through to
+    // MTL::CreateSystemDefaultDevice() below exactly as the not-found case does.)
+#if !defined(CEMU_PLATFORM_IOS)
     if (hasDeviceSet)
     {
         NS_STACK_SCOPED auto devices = MTL::CopyAllDevices();
@@ -139,6 +150,7 @@ MetalRenderer::MetalRenderer()
             }
         }
     }
+#endif
 
     if (!m_device)
     {

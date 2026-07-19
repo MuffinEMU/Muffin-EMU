@@ -846,6 +846,12 @@ namespace CafeSystem
 	{
 		sLaunchModeIsStandalone = true;
 		cemuLog_log(LogType::Force, "Launching executable in standalone mode due to incorrect layout or missing meta files");
+		// PrepareForegroundTitle (the other launch path) calls MountBaseDirectories()
+		// here, mounting /vol/storage_mlc01/ - without it, nn_save's hardcoded
+		// "/vol/storage_mlc01/usr/save/..." paths resolve against nothing, so every
+		// title launched via this standalone path (the ONLY path the iOS bridge
+		// uses) silently loses all save-game read/write access.
+		MountBaseDirectories();
 		fs::path executablePath = path;
 		std::string dirName = _pathToUtf8(executablePath.parent_path().filename());
 		if (boost::iequals(dirName, "code"))
@@ -876,6 +882,14 @@ namespace CafeSystem
 		uint32 h = generateHashFromRawRPXData(execData->data(), execData->size());
 		sForegroundTitleId = 0xFFFFFFFF00000000ULL | (uint64)h;
 		cemuLog_log(LogType::Force, "Generated placeholder TitleId: {:016x}", sForegroundTitleId);
+		// PrepareForegroundTitle (the other launch path) calls gameProfile_load()
+		// once GetForegroundTitleId() is valid - without it, g_current_game_profile
+		// (which ActiveSettings::GetCPUMode() etc. all read from) keeps whatever a
+		// previously-launched title left behind instead of being reset for this one.
+		// A standalone RPX has no real gameProfiles/<id>.ini on disk, so Load() will
+		// just fail to find a file and fall through to defaults - the point here is
+		// ResetOptional() clearing stale state, not actually loading a profile.
+		gameProfile_load();
 		// setup memory space and ppc recompiler
         SetupMemorySpace();
         PPCRecompiler_init();

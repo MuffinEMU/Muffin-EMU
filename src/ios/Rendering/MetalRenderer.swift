@@ -187,9 +187,9 @@ class AdvancedMetalRenderer: NSObject, MTKViewDelegate {
 
         let scale: Float
         if aspectRatio > targetAspect {
-            scale = 720.0 / Float(viewSize.height)
+            scale = Float(viewSize.height) / 720.0
         } else {
-            scale = 1280.0 / Float(viewSize.width)
+            scale = Float(viewSize.width) / 1280.0
         }
 
         let width = 1280.0 * scale / Float(viewSize.width)
