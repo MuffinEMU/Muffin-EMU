@@ -143,7 +143,7 @@ void SetThreadName(const char* name)
 	}
 #pragma warning(pop)
 #endif
-#elif BOOST_OS_MACOS
+#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
 	pthread_setname_np(name);
 #else
 	if(std::strlen(name) > 15)
