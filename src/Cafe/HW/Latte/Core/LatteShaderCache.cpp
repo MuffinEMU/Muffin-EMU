@@ -273,6 +273,7 @@ static BootSoundPlayer g_bootSndPlayer;
 
 void LatteShaderCache_finish()
 {
+#if !defined(CEMU_PLATFORM_IOS)
     if (g_renderer->GetType() == RendererAPI::Vulkan)
 		RendererShaderVk::ShaderCacheLoading_end();
 	else if (g_renderer->GetType() == RendererAPI::OpenGL)
@@ -280,6 +281,10 @@ void LatteShaderCache_finish()
 #if ENABLE_METAL
 	else if (g_renderer->GetType() == RendererAPI::Metal)
 	    RendererShaderMtl::ShaderCacheLoading_end();
+#endif
+#else
+	// iOS: Metal is the only backend (Vulkan/OpenGL excluded, see ROADMAP.md M1/M3)
+	RendererShaderMtl::ShaderCacheLoading_end();
 #endif
 }
 
@@ -359,6 +364,7 @@ void LatteShaderCache_Load()
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/transferable"), ec);
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/precompiled"), ec);
 	// initialize renderer specific caches
+#if !defined(CEMU_PLATFORM_IOS)
 	if (g_renderer->GetType() == RendererAPI::Vulkan)
 		RendererShaderVk::ShaderCacheLoading_begin(cacheTitleId);
 	else if (g_renderer->GetType() == RendererAPI::OpenGL)
@@ -366,6 +372,9 @@ void LatteShaderCache_Load()
 #if ENABLE_METAL
 	else if (g_renderer->GetType() == RendererAPI::Metal)
 	    RendererShaderMtl::ShaderCacheLoading_begin(cacheTitleId);
+#endif
+#else
+	RendererShaderMtl::ShaderCacheLoading_begin(cacheTitleId);
 #endif
 
 	// get cache file name
@@ -634,30 +643,42 @@ void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateF
 
 void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId)
 {
+#if !defined(CEMU_PLATFORM_IOS)
 	if (g_renderer->GetType() == RendererAPI::Vulkan)
 	    g_shaderCacheLoaderState.pipelineFileCount = VulkanPipelineStableCache::GetInstance().BeginLoading(cacheTitleId);
 #if ENABLE_METAL
 	else if (g_renderer->GetType() == RendererAPI::Metal)
 		g_shaderCacheLoaderState.pipelineFileCount = MetalPipelineCache::GetInstance().BeginLoading(cacheTitleId);
 #endif
+#else
+	g_shaderCacheLoaderState.pipelineFileCount = MetalPipelineCache::GetInstance().BeginLoading(cacheTitleId);
+#endif
 	g_shaderCacheLoaderState.loadedPipelines = 0;
 	LatteShaderCache_ShowProgress(LatteShaderCache_updatePipelineLoadingProgress, true);
+#if !defined(CEMU_PLATFORM_IOS)
 	if (g_renderer->GetType() == RendererAPI::Vulkan)
 	    VulkanPipelineStableCache::GetInstance().EndLoading();
 #if ENABLE_METAL
 	else if (g_renderer->GetType() == RendererAPI::Metal)
 		MetalPipelineCache::GetInstance().EndLoading();
 #endif
+#else
+	MetalPipelineCache::GetInstance().EndLoading();
+#endif
 }
 
 bool LatteShaderCache_updatePipelineLoadingProgress()
 {
 	uint32 pipelinesMissingShaders = 0;
+#if !defined(CEMU_PLATFORM_IOS)
 	if (g_renderer->GetType() == RendererAPI::Vulkan)
 	    return VulkanPipelineStableCache::GetInstance().UpdateLoading(g_shaderCacheLoaderState.loadedPipelines, pipelinesMissingShaders);
 #if ENABLE_METAL
 	else if (g_renderer->GetType() == RendererAPI::Metal)
 		return MetalPipelineCache::GetInstance().UpdateLoading(g_shaderCacheLoaderState.loadedPipelines, pipelinesMissingShaders);
+#endif
+#else
+	return MetalPipelineCache::GetInstance().UpdateLoading(g_shaderCacheLoaderState.loadedPipelines, pipelinesMissingShaders);
 #endif
 
 	return false;
@@ -918,6 +939,7 @@ void LatteShaderCache_Close()
         delete s_shaderCacheGeneric;
         s_shaderCacheGeneric = nullptr;
     }
+#if !defined(CEMU_PLATFORM_IOS)
     if (g_renderer->GetType() == RendererAPI::Vulkan)
 		RendererShaderVk::ShaderCacheLoading_Close();
 	else if (g_renderer->GetType() == RendererAPI::OpenGL)
@@ -926,12 +948,19 @@ void LatteShaderCache_Close()
 	else if (g_renderer->GetType() == RendererAPI::Metal)
 	    RendererShaderMtl::ShaderCacheLoading_Close();
 #endif
+#else
+	RendererShaderMtl::ShaderCacheLoading_Close();
+#endif
 
     // if Vulkan or Metal then also close pipeline cache
+#if !defined(CEMU_PLATFORM_IOS)
     if (g_renderer->GetType() == RendererAPI::Vulkan)
         VulkanPipelineStableCache::GetInstance().Close();
 #if ENABLE_METAL
     else if (g_renderer->GetType() == RendererAPI::Metal)
         MetalPipelineCache::GetInstance().Close();
+#endif
+#else
+    MetalPipelineCache::GetInstance().Close();
 #endif
 }

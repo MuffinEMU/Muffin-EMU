@@ -40,5 +40,6 @@ echo "-framework CoreAudio" >> "$OUT"
 echo "-framework CoreBluetooth" >> "$OUT"
 echo "-framework CoreHaptics" >> "$OUT"
 echo "-framework GameController" >> "$OUT"
+echo "-framework CoreMotion" >> "$OUT"
 
 echo "generate-link-flags.sh: wrote $(wc -l < "$OUT") linker args to $OUT"

@@ -28,7 +28,13 @@ void LatteShader_prepareSeparableUniforms(LatteDecompilerShader* shader)
 {
 	if (g_renderer->GetType() != RendererAPI::OpenGL)
 		return;
-
+#if defined(CEMU_PLATFORM_IOS)
+	// Unreachable: g_renderer->GetType() is never OpenGL on iOS (Vulkan/OpenGL are
+	// excluded from this build entirely, see ROADMAP.md M1/M3). But this function is
+	// still called unconditionally from LatteShader_FinishCompilation, so a real body
+	// referencing raw gl* calls (which don't link here) needs *some* definition.
+	cemu_assert_debug(false);
+#else
 	auto shaderGL = (RendererShaderGL*)shader->shader;
 	// setup uniform info
 	if (shader->shaderType == LatteConst::ShaderType::Vertex)
@@ -65,6 +71,7 @@ void LatteShader_prepareSeparableUniforms(LatteDecompilerShader* shader)
 			shader->uniform.list_ufTexRescale.push_back(entry);
 		}
 	}
+#endif
 }
 GLuint gpu7ShaderGLDepr_compileShader(const std::string& source, uint32_t type)
 {

@@ -18,10 +18,11 @@
     // Real Cemu engine headers. These only resolve once the core is built for iOS.
     #include "Cafe/CafeSystem.h"
     #include "config/ActiveSettings.h"
+    #include "Cafe/HW/Latte/Core/LatteDraw.h"
     #include <filesystem>
 
-    // Two globals desktop Cemu defines outside any library CMake target links into
-    // this app, so they were undefined at link time:
+    // Globals/functions desktop Cemu defines outside any library CMake target links
+    // into this app, so they were undefined at link time:
     //   - g_isGPUInitFinished (Cafe/CafeSystem.h) is defined in src/main.cpp, which
     //     belongs to the desktop CemuBin executable target - never linked here.
     //   - g_vulkan_available (Vulkan/VulkanAPI.h) is defined in VulkanAPI.cpp, which
@@ -31,6 +32,13 @@
     // Renderer.cpp), so something has to provide the definition.
     std::atomic_bool g_isGPUInitFinished = false;
     bool g_vulkan_available = false;
+
+    // LatteDraw_cleanupAfterFrame (Cafe/HW/Latte/Core/LatteDraw.h) is only defined in
+    // OpenGLRendererCore.cpp (excluded on iOS), but called unconditionally every
+    // frame from shared Latte code regardless of active backend. Its real body
+    // evicts OpenGL's own index-buffer cache - nothing Metal needs, so a no-op here
+    // is correct, not just a stopgap.
+    void LatteDraw_cleanupAfterFrame() {}
 #endif
 
 namespace {

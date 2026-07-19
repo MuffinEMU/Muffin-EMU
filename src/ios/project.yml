@@ -47,7 +47,12 @@ settings:
   # it, per Common/platform.h's own comment on the same issue). Root cause of the
   # OSSwapInt32/64 "undeclared identifier" errors, and would have silently affected
   # every other CEMU_PLATFORM_IOS-gated branch in the bridge file too.
-  GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1 CEMU_PLATFORM_IOS=1'
+  # ENABLE_METAL was also missing entirely. Without it, every #if ENABLE_METAL guard
+  # in the Cafe source (the Metal renderer selection paths in LatteShaderCache.cpp,
+  # etc.) evaluates false, so RendererShaderMtl.h/MetalPipelineCache.h never even get
+  # included - matches the CMake build's own -DENABLE_METAL=1 (see top-level
+  # CMakeLists.txt: `if (ENABLE_METAL) add_definitions(-DENABLE_METAL=1)`).
+  GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1 CEMU_PLATFORM_IOS=1 ENABLE_METAL=1'
   HEADER_SEARCH_PATHS:
     - '$(SRCROOT)/..'
     - '$(SRCROOT)/../Common/glm_stub'
