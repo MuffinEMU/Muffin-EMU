@@ -39,7 +39,13 @@ settings:
   # run by the preBuildScript below, which turns the CMake build output into
   # OTHER_LDFLAGS via a linker response file (there are ~90 vcpkg libs; hand-listing
   # them in this file would be unmaintainable).
-  GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1'
+  # CEMU_PLATFORM_IOS was missing here entirely - CemuBridge.mm was silently taking
+  # precompiled.h's #elif BOOST_OS_MACOS branch instead of the #if CEMU_PLATFORM_IOS
+  # one (boost.predef doesn't distinguish iOS from macOS without this define forcing
+  # it, per Common/platform.h's own comment on the same issue). Root cause of the
+  # OSSwapInt32/64 "undeclared identifier" errors, and would have silently affected
+  # every other CEMU_PLATFORM_IOS-gated branch in the bridge file too.
+  GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1 CEMU_PLATFORM_IOS=1'
   HEADER_SEARCH_PATHS:
     - '$(SRCROOT)/..'
     - '$(SRCROOT)/../Common/glm_stub'
