@@ -37,7 +37,7 @@ settings:
   HEADER_SEARCH_PATHS:
     - '$(SRCROOT)/..'
     - '$(SRCROOT)/../Common/glm_stub'
-    - '$(HOME)/vcpkg/installed/arm64-ios/include'
+    - '$(SRCROOT)/../../build-ios/vcpkg_installed/arm64-ios/include'
     - '$(SRCROOT)/../../dependencies/metal-cpp'
   LIBRARY_SEARCH_PATHS:
     - '$(SRCROOT)/../../build-ios/src/Cafe'
@@ -45,7 +45,7 @@ settings:
     - '$(SRCROOT)/../../build-ios/src/Common'
     - '$(SRCROOT)/../../build-ios/src/config'
     - '$(SRCROOT)/../../build-ios/src/input'
-    - '$(HOME)/vcpkg/installed/arm64-ios/lib'
+    - '$(SRCROOT)/../../build-ios/vcpkg_installed/arm64-ios/lib'
   OTHER_LDFLAGS: '@$(SRCROOT)/link-flags.txt $(inherited)'
 
 targets:
