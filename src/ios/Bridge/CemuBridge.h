@@ -48,6 +48,13 @@ void cemu_bridge_shutdown(void);
 /// Never NULL. Points to static/thread-local storage; copy if you need to keep it.
 const char* cemu_bridge_status_text(void);
 
+/// Appends a timestamped-by-nothing (just ordered) line to Documents/CemuCrashLog.txt.
+/// Written via a raw synchronous write() so it survives even an abrupt/uncatchable
+/// process termination (e.g. a GPU driver panic) - call this at every meaningful
+/// startup milestone from Swift so a crash's location can be narrowed down from the
+/// surviving log alone.
+void cemu_bridge_log_checkpoint(const char* message);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
