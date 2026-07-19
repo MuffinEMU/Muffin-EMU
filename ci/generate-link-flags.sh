@@ -13,13 +13,16 @@ BUILD_DIR="$REPO_ROOT/build-ios"
 
 # CMake's manifest-mode vcpkg installs to build-ios/vcpkg_installed/arm64-ios/lib —
 # nested inside BUILD_DIR — so this one find picks up CemuCafe/iosgui's own .a files
-# AND every vcpkg dependency (boost, fmt, curl, ...) in one pass.
+# AND every vcpkg dependency (boost, fmt, curl, ...) in one pass. vcpkg also builds a
+# debug/lib variant of everything (e.g. libSDL2maind.a); those aren't on this Release
+# build's LIBRARY_SEARCH_PATHS, so "library not found" if included - exclude them.
+# sort -u dedupes (some libs get visited more than once) to quiet linker warnings.
 if [ -d "$BUILD_DIR" ]; then
-    find "$BUILD_DIR" -name "*.a" | while read -r lib; do
+    find "$BUILD_DIR" -name "*.a" -not -path "*/debug/*" | while read -r lib; do
         name=$(basename "$lib" .a)
         name=${name#lib}
-        echo "-l${name}" >> "$OUT"
-    done
+        echo "-l${name}"
+    done | sort -u >> "$OUT"
 fi
 
 echo "-framework Foundation" >> "$OUT"
