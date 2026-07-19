@@ -1,11 +1,11 @@
 #pragma once
 
-#if !defined(CEMU_PLATFORM_IOS)
+// CemuLogging.cpp always defines this with real linkage (a genuine mask computed
+// from cemuLog_getFlag), regardless of platform. An earlier "iOS Phase 0: Stub
+// logging" era had this as `static uint64 = 0` here instead, which conflicted with
+// the .cpp's own non-static definition the moment CEMU_PLATFORM_IOS was actually
+// defined for a real build (as opposed to never being exercised).
 extern uint64 s_loggingFlagMask;
-#else
-// iOS Phase 0: Stub logging
-static uint64 s_loggingFlagMask = 0;
-#endif
 
 enum class LogType : sint32
 {
