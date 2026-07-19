@@ -100,6 +100,7 @@ void cemu_bridge_log_checkpoint(const char* message) {
     // Real Cemu engine headers. These only resolve once the core is built for iOS.
     #include "Cafe/CafeSystem.h"
     #include "config/ActiveSettings.h"
+    #include "config/LaunchSettings.h"
     #include "Cafe/HW/Latte/Core/LatteDraw.h"
     #include "gui/interface/WindowSystem.h"
     #include "Cafe/HW/Latte/Renderer/Renderer.h"
@@ -165,6 +166,23 @@ void cemu_bridge_initialize(const char* mlcPath) {
     std::set<fs::path> failedWriteAccess;
     ActiveSettings::SetPaths(/*isPortableMode=*/true, userDataPath, userDataPath, userDataPath,
         userDataPath / "cache", userDataPath, failedWriteAccess);
+
+    // ActiveSettings::GetCPUMode() resolves CPUMode::Auto (the default with no game
+    // profile loaded) to a recompiler/JIT mode on every device - it never picks the
+    // interpreter on its own (config/ActiveSettings.cpp). That means
+    // PPCRecompiler_init() (CafeSystem.cpp's PrepareForegroundTitleFromStandaloneRPX)
+    // always reaches PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions(),
+    // which - even after the eager-static-init fix - still eventually calls
+    // Xbyak_aarch64::MmapAllocator::alloc() (mmap with PROT_EXEC) on first actual
+    // boot. Whether a sideloaded/unsigned iOS process can ever get genuine
+    // executable-memory allocation via mmap (as opposed to LiveContainer's JIT trick
+    // only re-flagging already-mapped pages executable) is a separate, harder
+    // open question. Force the interpreter for now so title boot doesn't depend on
+    // that answer - M2's exit test is about the interpreter/OS-HLE stack, not JIT
+    // performance (see ROADMAP.md: the JIT and "a full PPC interpreter fallback"
+    // are explicitly two distinct capabilities).
+    LaunchSettings::SetForceInterpreter(true);
+
     CafeSystem::Initialize();
     setStatus("Cemu core initialized.");
 #else
