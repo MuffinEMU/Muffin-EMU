@@ -17,16 +17,14 @@ This repo (`cemu-ios-muffin`) consolidates the two prior forks (`cemu-ios-playab
 
 ## What is fake / non-functional (do not trust)
 
-- **`src/ios/Emulation/CPUCore.swift` (`WiiUCPU`)** — a hand-rolled PowerPC interpreter written in Swift. ~18 of its instruction handlers are empty stubs that `return 1` and do nothing. It cannot execute real game code and is a **dead end** — Cemu already has a correct C++ PPC interpreter/recompiler; we should bridge to that, not finish this.
-- **`src/ios/Emulation/EmulationEngine.swift`** — "loads a ROM" by reading raw file bytes and dumping them at a fixed address. Wii U titles (`.wua`/`.wud`/`.rpx`) are packaged/encrypted formats; this is not how they load. Fake.
-- **The Swift app never calls the real engine.** There is no bridge from Swift into `CafeSystem`. The toy engine and the real engine coexist and never speak.
+- **This section is out of date as of 2026-07-19 — the toy engine described below is gone.** `src/ios/Emulation/CPUCore.swift`/`WiiUCPU` no longer exist in this tree. `src/ios/Emulation/EmulationEngine.swift` is now a thin, honest wrapper that calls the real `CemuBridge` C functions (`cemu_bridge_initialize`, `cemu_bridge_boot_rpx`, ...) — no fake ROM-loading. `GameManager.swift` already uses it. What's still missing is upstream of the Swift code: the compiled core isn't linked into the app yet (M2), so today `cemu_bridge_core_available()` returns `false` and every call honestly reports "engine not built yet."
 - **The archived docs in `docs/_archive_original_claims/`** (`DELIVERY_COMPLETE.md`, `IMPLEMENTATION_COMPLETE.md`, `PHASE*_FINAL_STATUS.md`, the "benchmarks" in the old optimization guide, etc.) describe a finished product that does not exist. They are kept only for history. **Do not treat any of them as accurate.**
 
 ## Hard external constraints (not code problems — reality)
 
 1. **JIT.** Corrected 2026-07-19 (the previous version of this file was wrong): Cemu has a real **ARM64** recompiler backend (`src/Cafe/HW/Espresso/Recompiler/BackendAArch64`), not just the x86-64 one, and it compiles clean for iOS — confirmed in the M1 build log (`[405/410] Building CXX object .../BackendAArch64.cpp.o`). So the fast JIT path is available, not just the C++ interpreter fallback. iOS still blocks JIT for normal apps — you need SideStore/AltStore/TrollStore + a JIT-enable step. _(Device side is handled: the target iPad Pro has JIT enabled via SideStore/LiveContainer.)_ Whether the recompiler actually *works* correctly on iOS (vs. just compiles) is untested — that's a M2+ question.
-2. **GPU.** Cemu renders with **Vulkan** or OpenGL. On iOS the realistic path is Vulkan → **MoltenVK** (Vulkan-on-Metal). This has to be built and wired in; none of it is done here.
-3. **Performance.** Interpreter-only Wii U emulation on an A-series/M-series chip will be slow. Getting from "boots" to "playable" is its own mountain.
+2. **GPU.** Corrected 2026-07-19 (the previous version of this file was wrong): no MoltenVK needed. Cemu also has a **native Metal renderer** (`src/Cafe/HW/Latte/Renderer/Metal/`), which is what this fork builds for iOS — Vulkan and OpenGL are excluded from the iOS target entirely (see ROADMAP.md M1/M3). What's left is platform glue: backing the Metal renderer's swapchain with the app's `CAMetalLayer` and finishing `IOSWindowSystem`'s stubs (M3).
+3. **Performance.** Wii U emulation on an A-series/M-series chip will be slow if it falls back to the interpreter; the ARM64 JIT recompiler (#1) should help once verified working, not just compiling. Getting from "boots" to "playable" is its own mountain.
 
 ## Bottom line
 

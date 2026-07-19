@@ -20,20 +20,9 @@ struct WiiUControllerSkin {
     let shadowOpacity: Double
     let cornerRadius: CGFloat
 
-    static let standard = WiiUControllerSkin(
-        name: "Standard",
-        dpadColor: Color(red: 0.7, green: 0.7, blue: 0.7),
-        buttonColors: [
-            "A": Color(red: 0.2, green: 0.8, blue: 0.3),
-            "B": Color(red: 1.0, green: 0.3, blue: 0.2),
-            "X": Color(red: 0.1, green: 0.5, blue: 1.0),
-            "Y": Color(red: 1.0, green: 0.8, blue: 0.1)
-        ],
-        backgroundColor: Color(red: 0.15, green: 0.15, blue: 0.17),
-        borderColor: Color.white.opacity(0.1),
-        shadowOpacity: 0.4,
-        cornerRadius: 24
-    )
+    // .standard and .minimal are defined in ControllerSkinsLibrary.swift's
+    // `extension WiiUControllerSkin` — kept there since that file already
+    // redeclared them as part of its larger skin catalog.
 
     static let pro = WiiUControllerSkin(
         name: "Pro",
@@ -48,21 +37,6 @@ struct WiiUControllerSkin {
         borderColor: Color.white.opacity(0.15),
         shadowOpacity: 0.5,
         cornerRadius: 20
-    )
-
-    static let minimal = WiiUControllerSkin(
-        name: "Minimal",
-        dpadColor: Color.white.opacity(0.8),
-        buttonColors: [
-            "A": Color.white.opacity(0.7),
-            "B": Color.white.opacity(0.7),
-            "X": Color.white.opacity(0.7),
-            "Y": Color.white.opacity(0.7)
-        ],
-        backgroundColor: Color.black.opacity(0.6),
-        borderColor: Color.white.opacity(0.2),
-        shadowOpacity: 0.2,
-        cornerRadius: 12
     )
 
     static let dark = WiiUControllerSkin(

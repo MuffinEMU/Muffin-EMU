@@ -1,0 +1,185 @@
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+format_version: "26"
+meta:
+    bitrise.io:
+        machine_type_id: g2.mac.medium
+        stack: osx-xcode-16.4.x
+project_type: other
+workflows:
+    build-ios-core:
+        steps:
+            - activate-ssh-key@4:
+                run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+            - git-clone@8:
+                inputs:
+                    - clone_depth: ""
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -e
+                        git submodule update --init --recursive
+                title: Init submodules
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -e
+                        sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+                        xcodebuild -version
+                        xcrun --sdk iphoneos --show-sdk-path
+                        export HOMEBREW_NO_AUTO_UPDATE=1
+                        command -v cmake >/dev/null || brew install cmake
+                        command -v ninja >/dev/null || brew install ninja
+                title: Select full Xcode and install build tools
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -e
+                        git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+                        "$HOME/vcpkg/bootstrap-vcpkg.sh"
+                        envman add --key VCPKG_ROOT --value "$HOME/vcpkg"
+                title: Set up vcpkg
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -e
+                        "$HOME/vcpkg/vcpkg" install --triplet arm64-ios --x-manifest-root="$BITRISE_SOURCE_DIR"
+                title: Cross-compile dependencies for arm64-ios
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -eo pipefail
+                        cd "$BITRISE_SOURCE_DIR"
+                        cmake -B build-ios -G Ninja \
+                          -DCMAKE_TOOLCHAIN_FILE="$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+                          -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$BITRISE_SOURCE_DIR/cmake/ios.toolchain.cmake" \
+                          -DVCPKG_TARGET_TRIPLET=arm64-ios \
+                          -DCMAKE_BUILD_TYPE=Release 2>&1 | tee "$BITRISE_DEPLOY_DIR/configure.log"
+                title: Configure Cemu core for iOS
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -eo pipefail
+                        cd "$BITRISE_SOURCE_DIR"
+                        cmake --build build-ios --target CemuCafe 2>&1 | tee "$BITRISE_DEPLOY_DIR/build.log"
+                title: Build Cemu core (CemuCafe = the engine)
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -eo pipefail
+                        cd "$BITRISE_SOURCE_DIR"
+                        cmake --build build-ios --target iosgui 2>&1 | tee "$BITRISE_DEPLOY_DIR/build-iosgui.log"
+                title: Build iosgui (IOSWindowSystem — never verified before)
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -e
+                        {
+                          echo "--- CemuCafe/iosgui build outputs ---"
+                          find build-ios -name "*.a" 2>/dev/null
+                          echo "--- vcpkg arm64-ios installed libs ---"
+                          find "$HOME/vcpkg/installed/arm64-ios/lib" -maxdepth 1 -name "*.a" 2>/dev/null
+                        } | tee "$BITRISE_DEPLOY_DIR/lib-inventory.log"
+                title: Inventory static libs for M2 Xcode linking
+            - deploy-to-bitrise-io@2:
+                inputs:
+                    - deploy_path: $BITRISE_DEPLOY_DIR
+        triggers:
+            push:
+                - branch: main
+    build-ios-app:
+        # M2: build the actual Xcode app, linking against the CMake-built CemuCafe/
+        # iosgui/vcpkg static libs instead of recompiling everything a second time.
+        # Manual dispatch only (not on every push) — this is new, unverified ground,
+        # unlike build-ios-core which is now our steady-state regression check.
+        steps:
+            - activate-ssh-key@4:
+                run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+            - git-clone@8:
+                inputs:
+                    - clone_depth: ""
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -e
+                        git submodule update --init --recursive
+                title: Init submodules
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -e
+                        sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+                        xcodebuild -version
+                        xcrun --sdk iphoneos --show-sdk-path
+                        export HOMEBREW_NO_AUTO_UPDATE=1
+                        command -v cmake >/dev/null || brew install cmake
+                        command -v ninja >/dev/null || brew install ninja
+                        command -v xcodegen >/dev/null || brew install xcodegen
+                title: Select full Xcode and install build tools
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -e
+                        git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+                        "$HOME/vcpkg/bootstrap-vcpkg.sh"
+                        envman add --key VCPKG_ROOT --value "$HOME/vcpkg"
+                title: Set up vcpkg
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -e
+                        "$HOME/vcpkg/vcpkg" install --triplet arm64-ios --x-manifest-root="$BITRISE_SOURCE_DIR"
+                title: Cross-compile dependencies for arm64-ios
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -eo pipefail
+                        cd "$BITRISE_SOURCE_DIR"
+                        cmake -B build-ios -G Ninja \
+                          -DCMAKE_TOOLCHAIN_FILE="$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+                          -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$BITRISE_SOURCE_DIR/cmake/ios.toolchain.cmake" \
+                          -DVCPKG_TARGET_TRIPLET=arm64-ios \
+                          -DCMAKE_BUILD_TYPE=Release 2>&1 | tee "$BITRISE_DEPLOY_DIR/configure.log"
+                title: Configure Cemu core for iOS
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -eo pipefail
+                        cd "$BITRISE_SOURCE_DIR"
+                        cmake --build build-ios --target CemuCafe iosgui 2>&1 | tee "$BITRISE_DEPLOY_DIR/build.log"
+                title: Build CemuCafe + iosgui static libs
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -eo pipefail
+                        cd "$BITRISE_SOURCE_DIR/src/ios"
+                        xcodegen generate
+                title: xcodegen generate
+            - script@1:
+                inputs:
+                    - content: |-
+                        #!/bin/bash
+                        set -eo pipefail
+                        cd "$BITRISE_SOURCE_DIR/src/ios"
+                        xcodebuild -project Cemu-iOS.xcodeproj -scheme Cemu -sdk iphoneos \
+                          -configuration Release CODE_SIGNING_ALLOWED=NO build \
+                          2>&1 | tee "$BITRISE_DEPLOY_DIR/xcodebuild.log"
+                title: Build the Cemu iOS app
+            - deploy-to-bitrise-io@2:
+                inputs:
+                    - deploy_path: $BITRISE_DEPLOY_DIR
+        triggers: {}
