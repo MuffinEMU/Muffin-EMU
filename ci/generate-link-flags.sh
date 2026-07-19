@@ -30,5 +30,15 @@ echo "-framework Foundation" >> "$OUT"
 echo "-framework Metal" >> "$OUT"
 echo "-framework MetalKit" >> "$OUT"
 echo "-framework UIKit" >> "$OUT"
+# SDL2's iOS backends (CoreAudio, GameController, haptics) reference these directly;
+# undefined symbols like _AVAudioSessionCategoryAmbient, _AudioQueueAllocateBuffer,
+# _GCControllerDidConnectNotification, _CHHapticEventTypeHapticContinuous,
+# _CBAdvertisementDataLocalNameKey surfaced from libSDL2.a without them.
+echo "-framework AVFoundation" >> "$OUT"
+echo "-framework AudioToolbox" >> "$OUT"
+echo "-framework CoreAudio" >> "$OUT"
+echo "-framework CoreBluetooth" >> "$OUT"
+echo "-framework CoreHaptics" >> "$OUT"
+echo "-framework GameController" >> "$OUT"
 
 echo "generate-link-flags.sh: wrote $(wc -l < "$OUT") linker args to $OUT"

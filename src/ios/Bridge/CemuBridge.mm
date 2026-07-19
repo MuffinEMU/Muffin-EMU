@@ -19,6 +19,18 @@
     #include "Cafe/CafeSystem.h"
     #include "config/ActiveSettings.h"
     #include <filesystem>
+
+    // Two globals desktop Cemu defines outside any library CMake target links into
+    // this app, so they were undefined at link time:
+    //   - g_isGPUInitFinished (Cafe/CafeSystem.h) is defined in src/main.cpp, which
+    //     belongs to the desktop CemuBin executable target - never linked here.
+    //   - g_vulkan_available (Vulkan/VulkanAPI.h) is defined in VulkanAPI.cpp, which
+    //     is intentionally excluded from the iOS build entirely (no Vulkan/MoltenVK -
+    //     this fork renders via the native Metal backend, see ROADMAP.md M3).
+    // Both are referenced via extern by code that does build (CafeSystem.cpp,
+    // Renderer.cpp), so something has to provide the definition.
+    std::atomic_bool g_isGPUInitFinished = false;
+    bool g_vulkan_available = false;
 #endif
 
 namespace {
