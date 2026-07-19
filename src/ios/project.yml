@@ -59,6 +59,15 @@ settings:
     - '$(SRCROOT)/../../build-ios/vcpkg_installed/arm64-ios/include'
     - '$(SRCROOT)/../../dependencies/metal-cpp'
   OTHER_LDFLAGS: '@$(SRCROOT)/link-flags.txt $(inherited)'
+  # No physical Info.plist exists in this tree and none was ever configured, so the
+  # final app-bundling step failed: "Build input file cannot be found: .../Info.plist".
+  # GENERATE_INFOPLIST_FILE has modern Xcode synthesize one from build settings.
+  GENERATE_INFOPLIST_FILE: 'YES'
+  MARKETING_VERSION: '0.1.0'
+  CURRENT_PROJECT_VERSION: '1'
+  INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
+  INFOPLIST_KEY_UIApplicationSceneManifest_Generation: 'YES'
+  INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
 
 targets:
   Cemu:
