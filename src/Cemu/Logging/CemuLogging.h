@@ -110,12 +110,44 @@ bool cemuLog_logDebug(LogType type, fmt::format_string<TArgs...> format, TArgs&&
 #endif
 }
 #else
-// iOS Phase 0: Stub logging templates
+// iOS Phase 0: Stub logging templates.
+// These templates exact-match ANY cemuLog_log(type, "plain string literal") call
+// (a `const char*`/`const char[N]` argument binds directly to `const char*`, with no
+// conversion needed - whereas the real non-template overloads take std::string_view/
+// std::u8string_view, which require one), so they were silently swallowing the
+// overwhelming majority of log calls throughout the whole engine (every zero-format-
+// arg cemuLog_log("...") call anywhere in the codebase), not just genuinely
+// unsupported formatted (fmt::format) calls. Forward the zero-arg case to the real
+// implementation instead of dropping it; only actual fmt-style formatted logging
+// (TArgs non-empty) is unsupported on iOS for now.
 template<typename... TArgs>
-bool cemuLog_log(LogType type, const char* formatStr, TArgs&&... args) { return false; }
+bool cemuLog_log(LogType type, const char* formatStr, TArgs&&... args)
+{
+	if constexpr (sizeof...(TArgs) == 0)
+		return cemuLog_log(type, std::string_view(formatStr));
+	else
+		return false; // formatted logging (fmt::format) not yet supported on iOS
+}
 #define cemuLog_logOnce(...) {}
 template<typename ... TArgs>
-bool cemuLog_logDebug(LogType type, const char* format, TArgs&&... args) { return false; }
+bool cemuLog_logDebug(LogType type, const char* format, TArgs&&... args)
+{
+	// Can't forward to the real cemuLog_logDebug(LogType, std::string_view) overload
+	// here - it's declared further down in this same header, and this call has no
+	// dependent arguments, so two-phase lookup would resolve it at THIS definition
+	// point, before that overload is visible. Inline the same CEMU_DEBUG_ASSERT gate
+	// it uses instead, calling cemuLog_log (already declared above) directly.
+	if constexpr (sizeof...(TArgs) == 0)
+	{
+#ifdef CEMU_DEBUG_ASSERT
+		return cemuLog_log(type, std::string_view(format));
+#else
+		return false;
+#endif
+	}
+	else
+		return false;
+}
 #endif
 
 inline bool cemuLog_logDebug(LogType type, std::string_view message)

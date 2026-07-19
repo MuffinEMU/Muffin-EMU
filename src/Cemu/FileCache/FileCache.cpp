@@ -77,7 +77,19 @@ private:
 	std::condition_variable m_fileCacheCondVar;
 	std::vector<FileCacheAsyncJob> m_writeRequests;
 	std::atomic_bool m_isRunning;
-}FileCacheAsyncWriter;
+};
+
+// Was a namespace-scope global (`}FileCacheAsyncWriter;`), meaning its constructor -
+// which unconditionally spawns a real std::thread - ran during static initialization,
+// before main(). On iOS that's the exact same failure class already fixed in
+// BackendAArch64.cpp: risky, unnecessary work happening before the app/runtime has
+// even started, for a thread that may never be needed this session. A function-local
+// static defers thread creation to the first actual async file-cache write.
+static _FileCacheAsyncWriter& GetFileCacheAsyncWriter()
+{
+	static _FileCacheAsyncWriter instance;
+	return instance;
+}
 
 #define FILECACHE_MAGIC_V1					0x8371b694 // used prior to Cemu 1.7.4, only supported caches up to 4GB
 #define FILECACHE_MAGIC_V2					0x8371b695 // added support for large caches
@@ -508,7 +520,7 @@ bool FileCache::DeleteFile(const FileName&& name)
 
 void FileCache::AddFileAsync(const FileName& name, const uint8* fileData, sint32 fileSize)
 {
-	FileCacheAsyncWriter.AddJob(this, name, fileData, fileSize);
+	GetFileCacheAsyncWriter().AddJob(this, name, fileData, fileSize);
 }
 
 bool FileCache::_getFileDataInternal(const FileTableEntry* entry, std::vector<uint8>& dataOut)

@@ -58,7 +58,20 @@ static const GPReg LR{TEMP_GPR_2_ID};
 
 static const FPReg TEMP_FPR{TEMP_FPR_ID};
 
-static const util::Cpu s_cpu;
+// Sibling of the eager-static-init bug already fixed further down in this file
+// (enterRecompilerCode_ctx etc.): Xbyak_aarch64::util::Cpu's constructor
+// (CpuInfoMac::setHwCap() on Apple platforms) does several sysctlbyname() feature
+// probes and throws if any of them fail - and on iOS, not every hw.optional.* node
+// probed there is guaranteed present on every OS/device combination. A namespace-scope
+// static here would run that constructor during static initialization, before main(),
+// with no possible try/catch - the exact failure mode already fixed for the JIT
+// allocator contexts. Deferring to a function-local static defers the throw risk to
+// first actual use instead.
+static const util::Cpu& GetCpu()
+{
+	static const util::Cpu s_cpu;
+	return s_cpu;
+}
 
 class AArch64Allocator : public Allocator
 {
@@ -1118,7 +1131,7 @@ void AArch64GenContext_t::atomic_cmp_store(IMLInstruction* imlInstruction)
 	WReg valReg = gpReg<WReg>(imlInstruction->op_atomic_compare_store.regWriteValue);
 	WReg cmpValReg = gpReg<WReg>(imlInstruction->op_atomic_compare_store.regCompareValue);
 
-	if (s_cpu.isAtomicSupported())
+	if (GetCpu().isAtomicSupported())
 	{
 		mov(TEMP_GPR2.WReg, cmpValReg);
 		add(TEMP_GPR1.XReg, MEM_BASE_REG, eaReg, ExtMod::UXTW);
