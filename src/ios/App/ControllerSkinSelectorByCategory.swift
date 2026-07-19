@@ -219,9 +219,16 @@ struct SkinOptionCompact: View {
     }
 }
 
+private struct OrganizedControllerSkinSelectorPreview: View {
+    @State private var selectedSkin = WiiUControllerSkin.standard
+
+    var body: some View {
+        OrganizedControllerSkinSelector(selectedSkin: $selectedSkin)
+            .padding()
+            .background(Color(red: 0.05, green: 0.08, blue: 0.15))
+    }
+}
+
 #Preview {
-    @Previewable @State var selectedSkin = WiiUControllerSkin.standard
-    OrganizedControllerSkinSelector(selectedSkin: $selectedSkin)
-        .padding()
-        .background(Color(red: 0.05, green: 0.08, blue: 0.15))
+    OrganizedControllerSkinSelectorPreview()
 }
