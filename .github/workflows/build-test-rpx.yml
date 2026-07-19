@@ -1,0 +1,36 @@
+name: Build Test RPX (Homebrew)
+
+# M2 exit test needs an actual RPX to hand cemu_bridge_boot_rpx(). Real commercial
+# Wii U titles are encrypted and require keys.txt derived from a legally-owned
+# console - not something to fabricate or source here. Homebrew RPX files carry no
+# such encryption at all, so this builds one from source (devkitPro's official wut
+# "hello_world" sample, MIT-licensed) with the standard devkitPro toolchain. Runs on
+# a plain Linux container - no relation to the Xcode/iOS build in build-ios-app.yml.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-rpx:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+    steps:
+      - name: Install wut (Wii U userland toolchain)
+        run: |
+          dkp-pacman -Sy --noconfirm wut
+
+      - name: Clone wut (for its sample sources)
+        run: |
+          git clone --depth 1 https://github.com/devkitPro/wut.git
+
+      - name: Build hello_world sample RPX
+        run: |
+          cd wut/samples/hello_world
+          make
+
+      - name: Upload built RPX
+        uses: actions/upload-artifact@v4
+        with:
+          name: hello-world-test-rpx
+          path: wut/samples/hello_world/*.rpx
+          retention-days: 30
