@@ -11,7 +11,11 @@ settings:
   SDKROOT: iphoneos
   IPHONEOS_DEPLOYMENT_TARGET: '15.0'
   CODE_SIGN_IDENTITY: iPhone Developer
-  CLANG_CXX_LANGUAGE_DIALECT: c++2a
+  # "c++2a" isn't recognized by Xcode 16.4's newer dialect naming and silently fell
+  # back to gnu++14 (way too old for std::filesystem/C++20 requires-clauses this
+  # codebase uses) - confirmed from the actual failing compiler invocation in CI.
+  # gnu++20 matches what the CMake build itself already uses successfully.
+  CLANG_CXX_LANGUAGE_DIALECT: gnu++20
   GCC_C_LANGUAGE_DIALECT: c99
   # Swift <-> C++ engine bridge (src/ios/Bridge/CemuBridge.{h,mm})
   SWIFT_OBJC_BRIDGING_HEADER: Bridge/Cemu-Bridging-Header.h
