@@ -79,6 +79,13 @@ jobs:
           set -eo pipefail   # real exit code, not tee's
           cmake --build build-ios --target CemuCafe 2>&1 | tee build.log
 
+      - name: Build iosgui (IOSWindowSystem)
+        # The iOS platform seam that implements Cemu's WindowSystem interface.
+        # CemuCafe alone doesn't pull this in, so it needs its own target build.
+        run: |
+          set -eo pipefail
+          cmake --build build-ios --target iosgui 2>&1 | tee build-iosgui.log
+
       - name: Upload build logs (always)
         if: always()
         uses: actions/upload-artifact@v4
@@ -87,6 +94,7 @@ jobs:
           path: |
             configure.log
             build.log
+            build-iosgui.log
             build-ios/**/*.log
           if-no-files-found: warn
           retention-days: 30
