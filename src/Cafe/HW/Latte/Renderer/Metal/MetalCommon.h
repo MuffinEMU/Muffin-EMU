@@ -106,6 +106,15 @@ inline bool FormatIsRenderable(Latte::E_GX2SURFFMT format)
 
 template <typename... T>
 inline bool executeCommand(fmt::format_string<T...> fmt, T&&... args) {
+#if defined(CEMU_PLATFORM_IOS)
+    // system() is unavailable on iOS (App Store sandboxing) and every caller of
+    // executeCommand() in RendererShaderMtl.cpp is currently disabled code (the
+    // AIR-cache-via-xcrun path); the live path is LibraryFromSource(), which
+    // compiles MSL in-process through the real Metal API instead of shelling out.
+    std::string command = fmt::format(fmt, std::forward<T>(args)...);
+    cemuLog_log(LogType::Force, "executeCommand unavailable on iOS, skipped: {}", command);
+    return false;
+#else
     std::string command = fmt::format(fmt, std::forward<T>(args)...);
     int res = system(command.c_str());
     if (res != 0)
@@ -115,6 +124,7 @@ inline bool executeCommand(fmt::format_string<T...> fmt, T&&... args) {
     }
 
     return true;
+#endif
 }
 
 /*
