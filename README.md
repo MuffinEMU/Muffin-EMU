@@ -6,10 +6,10 @@ An **early, honest, in-progress** iOS port of [Cemu](https://github.com/cemu-pro
 
 ## Where things actually stand
 
-- ✅ The genuine Cemu C++ engine is in-tree (`src/Cafe`, `src/Common`, …).
+- ✅ **The genuine Cemu C++ engine compiles for iOS arm64** — `libCemuCafe.a`, verified via CI (2026-07-19, 410/410 objects, zero errors). [`ROADMAP.md`](ROADMAP.md) **M1 is done.**
 - ✅ A SwiftUI app shell exists (game browser, controller skins).
 - ✅ A **real** Swift↔C++ bridge (`src/ios/Bridge/CemuBridge.{h,mm}`) targets the actual `CafeSystem` API — no fake emulator.
-- ⬜ The Cemu core has **not** been compiled for iOS arm64 yet — this is the next real gate ([`ROADMAP.md`](ROADMAP.md) **M1**).
+- ⬜ The compiled core is **not yet linked into the app** — that's M2's first task.
 - ⬜ No graphics/input/audio wiring yet (M3–M4).
 
 The earlier version of this repo shipped ~20 markdown files declaring the project "complete/delivered/production-ready." None of that was true. Those files are preserved for history under [`docs/_archive_original_claims/`](docs/_archive_original_claims/) and should not be trusted. A hand-rolled Swift PowerPC "CPU" (mostly empty stubs) has been retired for the same reason.

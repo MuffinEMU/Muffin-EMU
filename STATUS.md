@@ -1,16 +1,19 @@
 # Cemu iOS — Honest Status
 
-_Last verified by inspection: 2026-07-05. This file describes what the code **actually does today**, not what it's meant to do. If something here is wrong, the code changed — fix this file._
+_Last verified by inspection: 2026-07-19. This file describes what the code **actually does today**, not what it's meant to do. If something here is wrong, the code changed — fix this file._
 
 ## TL;DR
 
-**This does not boot or play any Wii U game yet.** It is an in-progress port with a real UI shell and the genuine Cemu C++ engine present in-tree, but the two are not yet connected and the engine has never been built for iOS in this repo. There is a lot of real work still ahead. See `ROADMAP.md`.
+**This does not boot or play any Wii U game yet — but the engine now compiles for iOS.** M1 (ROADMAP.md) is done and verified: the genuine upstream Cemu C++ core builds clean for `arm64-apple-ios` as `libCemuCafe.a` (Bitrise build #3, 2026-07-19, 410/410 objects linked, zero errors). It is not yet linked into the SwiftUI app, and no title has booted. There is a lot of real work still ahead. See `ROADMAP.md`.
+
+This repo (`cemu-ios-muffin`) consolidates the two prior forks (`cemu-ios-playable`, `cemu-ios-a-chip`) onto the more advanced one (`playable`'s bridge-to-real-C++-engine strategy). `a-chip`'s from-scratch Swift reimplementation of the Latte-shader-to-MSL translator was not carried forward — it duplicated logic upstream Cemu already has in `HW/Latte/LegacyShaderDecompiler/LatteDecompilerEmitMSL.cpp`, which this repo's native Metal renderer already uses.
 
 ## What is real and works
 
-- **The real Cemu engine source is in-tree** (`src/Cafe`, `src/Common`, `src/config`, `src/input`, etc.). This is upstream Cemu — a mature, correct Wii U emulator for desktop.
+- **The real Cemu engine compiles for iOS arm64** (`libCemuCafe.a`, M1 — see ROADMAP.md). Not just present in-tree: verified building clean via Bitrise CI, 410/410 objects, zero errors. This includes the ARM64 JIT recompiler backend, the C++ PPC interpreter, the full HLE OS stack, and the native Metal GPU renderer with its Latte-shader-to-MSL compiler.
 - **A real iOS platform seam exists**: `src/gui/iosgui/IOSWindowSystem.cpp` implements Cemu's actual `WindowSystem` interface (mostly as stubs) so the core *could* be linked into an iOS app.
 - **A SwiftUI app shell exists** (`src/ios/App`): game browser, controller-skin picker, Metal view. It runs as an iOS app; it just has nothing real behind it yet.
+- **The bridge is real and ready**: `src/ios/Bridge/CemuBridge.{h,mm}` already implements the honest `CEMU_CORE_AVAILABLE`-gated calls into `CafeSystem`. It has not been linked/activated yet — that's M2's first task.
 
 ## What is fake / non-functional (do not trust)
 
@@ -21,7 +24,7 @@ _Last verified by inspection: 2026-07-05. This file describes what the code **ac
 
 ## Hard external constraints (not code problems — reality)
 
-1. **JIT.** Cemu's fast CPU path is an **x86-64** recompiler. There is no ARM64 JIT backend, so on iOS the only working CPU path today is the **C++ interpreter** (slow but real). iOS also blocks JIT for normal apps — you need SideStore/AltStore/TrollStore + a JIT-enable step. _(Device side is handled: the target iPad Pro has JIT enabled via SideStore/LiveContainer.)_
+1. **JIT.** Corrected 2026-07-19 (the previous version of this file was wrong): Cemu has a real **ARM64** recompiler backend (`src/Cafe/HW/Espresso/Recompiler/BackendAArch64`), not just the x86-64 one, and it compiles clean for iOS — confirmed in the M1 build log (`[405/410] Building CXX object .../BackendAArch64.cpp.o`). So the fast JIT path is available, not just the C++ interpreter fallback. iOS still blocks JIT for normal apps — you need SideStore/AltStore/TrollStore + a JIT-enable step. _(Device side is handled: the target iPad Pro has JIT enabled via SideStore/LiveContainer.)_ Whether the recompiler actually *works* correctly on iOS (vs. just compiles) is untested — that's a M2+ question.
 2. **GPU.** Cemu renders with **Vulkan** or OpenGL. On iOS the realistic path is Vulkan → **MoltenVK** (Vulkan-on-Metal). This has to be built and wired in; none of it is done here.
 3. **Performance.** Interpreter-only Wii U emulation on an A-series/M-series chip will be slow. Getting from "boots" to "playable" is its own mountain.
 
