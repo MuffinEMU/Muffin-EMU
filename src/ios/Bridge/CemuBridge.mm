@@ -20,6 +20,7 @@
     #include "config/ActiveSettings.h"
     #include "Cafe/HW/Latte/Core/LatteDraw.h"
     #include <filesystem>
+    #include <set>
 
     // Globals/functions desktop Cemu defines outside any library CMake target links
     // into this app, so they were undefined at link time:
@@ -64,8 +65,21 @@ void cemu_bridge_initialize(const char* mlcPath) {
 #if defined(CEMU_CORE_AVAILABLE)
     if (g_initialized.exchange(true))
         return;
-    // NOTE (M2): real MLC path / ActiveSettings wiring goes here before Initialize().
-    (void)mlcPath;
+    // CafeSystem::Initialize() calls ActiveSettings::GetMlcPath() in its very first
+    // few lines (to log "mlc01 path: ..."), which without SetPaths() first resolves
+    // against a default-constructed (empty) s_user_data_path - i.e. a relative
+    // "mlc01" path resolved against whatever the process's cwd happens to be (the
+    // read-only app bundle, on iOS), not the writable Documents dir GameManager.swift
+    // actually passes in here. Route everything (user data, config, cache, mlc01)
+    // under that same Documents-rooted path so it's writable and, since
+    // UIFileSharingEnabled is on, visible/pullable via Finder/Files for diagnosis.
+    namespace fs = std::filesystem;
+    fs::path userDataPath = (mlcPath && mlcPath[0] != '\0') ? fs::path(mlcPath) : fs::path(".");
+    std::error_code ec;
+    fs::create_directories(userDataPath, ec);
+    std::set<fs::path> failedWriteAccess;
+    ActiveSettings::SetPaths(/*isPortableMode=*/true, userDataPath, userDataPath, userDataPath,
+        userDataPath / "cache", userDataPath, failedWriteAccess);
     CafeSystem::Initialize();
     setStatus("Cemu core initialized.");
 #else
