@@ -13,6 +13,88 @@
 
 #include <string>
 #include <atomic>
+#include <signal.h>
+#include <execinfo.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <cstring>
+#include <cstdlib>
+#include <cstdio>
+
+// The app crashed on the very first real on-device launch, before any game was even
+// tapped - meaning before cemu_bridge_initialize()/CafeSystem::Initialize() ever run.
+// Root cause turned out to be a GPU/AGX driver panic (BIF0 page fault), which is NOT
+// delivered to the app as a normal POSIX signal - it's a hardware/firmware-level
+// event, so the signal handler below is a supplement, not the primary diagnostic.
+// The checkpoint trail is what actually matters here: written via synchronous
+// write() calls that hit disk immediately, so even an abrupt un-catchable
+// termination leaves a record of exactly how far execution got. The signal handler
+// is installed via a high-priority (101 - earliest allowed for user code) C++
+// constructor rather than from Swift/App init, in case there's also a CPU-side
+// crash in one of the ~90 linked Cemu engine libraries' static initializers, which
+// run before main() - too early for a Swift-installed handler to catch. Writes to
+// Documents/CemuCrashLog.txt - already Finder/Files-visible thanks to
+// UIFileSharingEnabled - so it's unambiguously "the" Cemu crash, not some unrelated
+// system daemon's diagnostic (which is what happened hunting through iOS's own
+// Analytics Data crash list, and why LiveContainer's own crash reports don't help
+// either - it hosts the guest binary in its own process, so OS-level reports get
+// attributed to "LiveContainer", not "Cemu").
+namespace {
+    int g_crashLogFd = -1;
+
+    void cemu_crash_write(const char* s) {
+        if (g_crashLogFd >= 0 && s) write(g_crashLogFd, s, strlen(s));
+    }
+
+    // Only async-signal-safe calls (write/backtrace_symbols_fd) inside the handler
+    // itself - no malloc, no snprintf, no Objective-C/Swift runtime calls.
+    void cemu_crash_signal_handler(int signum) {
+        cemu_crash_write("\n=== CEMU CRASH: signal ");
+        char digits[16];
+        int n = signum, i = 0;
+        if (n == 0) digits[i++] = '0';
+        while (n > 0) { digits[i++] = '0' + (n % 10); n /= 10; }
+        for (int j = 0; j < i / 2; j++) { char t = digits[j]; digits[j] = digits[i - 1 - j]; digits[i - 1 - j] = t; }
+        if (g_crashLogFd >= 0) write(g_crashLogFd, digits, i);
+        cemu_crash_write(" ===\n");
+
+        void* frames[64];
+        int count = backtrace(frames, 64);
+        if (g_crashLogFd >= 0) backtrace_symbols_fd(frames, count, g_crashLogFd);
+
+        // Re-raise with the default handler so iOS still generates its own real
+        // crash report too - this is a supplement, not a replacement.
+        signal(signum, SIG_DFL);
+        raise(signum);
+    }
+
+    // Not signal-handler code - runs at normal startup, snprintf is fine here.
+    void cemu_crash_open_log() {
+        if (g_crashLogFd >= 0)
+            return;
+        const char* home = getenv("HOME");
+        if (!home)
+            return;
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/Documents/CemuCrashLog.txt", home);
+        g_crashLogFd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    }
+}
+
+extern "C" __attribute__((constructor(101)))
+void cemu_bridge_install_early_crash_handler() {
+    cemu_crash_open_log();
+    cemu_crash_write("=== Cemu process started (early constructor) ===\n");
+    int sigs[] = {SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGFPE};
+    for (int s : sigs)
+        signal(s, cemu_crash_signal_handler);
+}
+
+void cemu_bridge_log_checkpoint(const char* message) {
+    cemu_crash_open_log(); // idempotent; in case the constructor somehow didn't run
+    cemu_crash_write(message);
+    cemu_crash_write("\n");
+}
 
 #if defined(CEMU_CORE_AVAILABLE)
     // Real Cemu engine headers. These only resolve once the core is built for iOS.
