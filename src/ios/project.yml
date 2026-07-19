@@ -31,14 +31,16 @@ settings:
   GCC_PREFIX_HEADER: '$(SRCROOT)/../Common/precompiled.h'
   GCC_PRECOMPILE_PREFIX_HEADER: 'YES'
   # M1 (ROADMAP.md) is done: the real Cemu core builds via CMake as static libs
-  # (libCemuCafe.a, libiosgui.a, ...) under build-ios/, with third-party deps under
-  # $VCPKG_ROOT/installed/arm64-ios/lib. Rather than recompile ~500 C++/Cafe files a
-  # second time inside Xcode's own build system (which has no story for providing
-  # boost/fmt/curl/etc. — that's what vcpkg solved for the CMake build), this app
-  # target LINKS against those already-built libraries. See ci/generate-link-flags.sh,
-  # run by the preBuildScript below, which turns the CMake build output into
-  # OTHER_LDFLAGS via a linker response file (there are ~90 vcpkg libs; hand-listing
-  # them in this file would be unmaintainable).
+  # (libCemuCafe.a, libiosgui.a, ...) scattered across build-ios/ (src/Cafe,
+  # src/gui/iosgui, vcpkg_installed/.../lib, dependencies/ih264d, ...). Rather than
+  # recompile ~500 C++/Cafe files a second time inside Xcode's own build system
+  # (which has no story for providing boost/fmt/curl/etc. — that's what vcpkg solved
+  # for the CMake build), this app target LINKS against those already-built
+  # libraries. ci/generate-link-flags.sh (run by the preBuildScript below) finds
+  # every .a under build-ios/ and lists them by FULL PATH in a linker response file —
+  # not -l<name> + LIBRARY_SEARCH_PATHS, since new libs kept turning up in
+  # subdirectories not already hand-listed there, each one a fresh "library not
+  # found" link failure even though the file existed.
   # CEMU_PLATFORM_IOS was missing here entirely - CemuBridge.mm was silently taking
   # precompiled.h's #elif BOOST_OS_MACOS branch instead of the #if CEMU_PLATFORM_IOS
   # one (boost.predef doesn't distinguish iOS from macOS without this define forcing
@@ -51,13 +53,6 @@ settings:
     - '$(SRCROOT)/../Common/glm_stub'
     - '$(SRCROOT)/../../build-ios/vcpkg_installed/arm64-ios/include'
     - '$(SRCROOT)/../../dependencies/metal-cpp'
-  LIBRARY_SEARCH_PATHS:
-    - '$(SRCROOT)/../../build-ios/src/Cafe'
-    - '$(SRCROOT)/../../build-ios/src/gui/iosgui'
-    - '$(SRCROOT)/../../build-ios/src/Common'
-    - '$(SRCROOT)/../../build-ios/src/config'
-    - '$(SRCROOT)/../../build-ios/src/input'
-    - '$(SRCROOT)/../../build-ios/vcpkg_installed/arm64-ios/lib'
   OTHER_LDFLAGS: '@$(SRCROOT)/link-flags.txt $(inherited)'
 
 targets:
