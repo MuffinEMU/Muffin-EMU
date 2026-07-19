@@ -84,6 +84,26 @@ jobs:
             -configuration Release CODE_SIGNING_ALLOWED=NO build \
             2>&1 | tee ../../xcodebuild.log
 
+      - name: Package unsigned IPA
+        # SideStore/AltStore re-sign with the user's own Apple ID at install time, so
+        # an unsigned .app (CODE_SIGNING_ALLOWED=NO above) is enough - it just needs
+        # the standard Payload/<Name>.app zip layout an IPA installer expects.
+        run: |
+          set -eo pipefail
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "Cemu.app" -path "*Release-iphoneos*" | head -n1)
+          echo "Found app at: $APP_PATH"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -r Cemu.ipa Payload
+          echo "IPA size: $(du -h Cemu.ipa | cut -f1)"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cemu-unsigned-ipa
+          path: Cemu.ipa
+          retention-days: 30
+
       - name: Upload build logs (always)
         if: always()
         uses: actions/upload-artifact@v4
