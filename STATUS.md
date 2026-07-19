@@ -4,7 +4,7 @@ _Last verified by inspection: 2026-07-19. This file describes what the code **ac
 
 ## TL;DR
 
-**This does not boot or play any Wii U game yet — but the engine now compiles for iOS.** M1 (ROADMAP.md) is done and verified: the genuine upstream Cemu C++ core builds clean for `arm64-apple-ios` as `libCemuCafe.a` (Bitrise build #3, 2026-07-19, 410/410 objects linked, zero errors). It is not yet linked into the SwiftUI app, and no title has booted. There is a lot of real work still ahead. See `ROADMAP.md`.
+**This does not boot or play any Wii U game yet — but the engine now compiles for iOS AND the app links end-to-end.** M1 (ROADMAP.md) is done and verified: the genuine upstream Cemu C++ core builds clean for `arm64-apple-ios` as `libCemuCafe.a` (Bitrise build #3, 2026-07-19, 410/410 objects linked, zero errors). M2's first task is also done: GitHub Actions run [29679018901](https://github.com/bward-dev1/cemu-ios-muffin/actions/runs/29679018901) (2026-07-19) shows `** BUILD SUCCEEDED **` for the actual `Cemu.app` — the engine's static libs are linked into the SwiftUI app target and the full binary + Metal shader library produced, zero errors. No title has booted yet (needs MLC/keys/RPX wiring, next). There is a lot of real work still ahead. See `ROADMAP.md`.
 
 This repo (`cemu-ios-muffin`) consolidates the two prior forks (`cemu-ios-playable`, `cemu-ios-a-chip`) onto the more advanced one (`playable`'s bridge-to-real-C++-engine strategy). `a-chip`'s from-scratch Swift reimplementation of the Latte-shader-to-MSL translator was not carried forward — it duplicated logic upstream Cemu already has in `HW/Latte/LegacyShaderDecompiler/LatteDecompilerEmitMSL.cpp`, which this repo's native Metal renderer already uses.
 
@@ -13,7 +13,7 @@ This repo (`cemu-ios-muffin`) consolidates the two prior forks (`cemu-ios-playab
 - **The real Cemu engine compiles for iOS arm64** (`libCemuCafe.a`, M1 — see ROADMAP.md). Not just present in-tree: verified building clean via Bitrise CI, 410/410 objects, zero errors. This includes the ARM64 JIT recompiler backend, the C++ PPC interpreter, the full HLE OS stack, and the native Metal GPU renderer with its Latte-shader-to-MSL compiler.
 - **A real iOS platform seam exists**: `src/gui/iosgui/IOSWindowSystem.cpp` implements Cemu's actual `WindowSystem` interface (mostly as stubs) so the core *could* be linked into an iOS app.
 - **A SwiftUI app shell exists** (`src/ios/App`): game browser, controller-skin picker, Metal view. It runs as an iOS app; it just has nothing real behind it yet.
-- **The bridge is real and ready**: `src/ios/Bridge/CemuBridge.{h,mm}` already implements the honest `CEMU_CORE_AVAILABLE`-gated calls into `CafeSystem`. It has not been linked/activated yet — that's M2's first task.
+- **The bridge is real, linked, and active**: `src/ios/Bridge/CemuBridge.{h,mm}` implements the honest `CEMU_CORE_AVAILABLE`-gated calls into `CafeSystem`, and as of 2026-07-19 that flag is actually defined and the real engine is actually linked into the built `Cemu.app` (GitHub Actions run 29679018901, `** BUILD SUCCEEDED **`) — `cemu_bridge_core_available()` now compiles to `return true`, not the stub path. Still untested: nothing has called `cemu_bridge_boot_rpx()` against a real title yet (needs MLC/keys/RPX — the rest of M2).
 
 ## What is fake / non-functional (do not trust)
 
