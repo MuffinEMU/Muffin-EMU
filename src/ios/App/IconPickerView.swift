@@ -6,7 +6,8 @@ struct IconPickerView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationStack {
+        // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
+        NavigationView {
             ZStack {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
 
@@ -44,6 +45,7 @@ struct IconPickerView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     private func isSelected(_ icon: AppIconOption) -> Bool {

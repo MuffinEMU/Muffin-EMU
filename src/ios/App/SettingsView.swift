@@ -14,7 +14,8 @@ struct SettingsView: View {
     @State private var showingIconPicker = false
 
     var body: some View {
-        NavigationStack {
+        // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
+        NavigationView {
             ZStack {
                 MuffinTheme.backgroundGradient
                     .ignoresSafeArea()
@@ -28,20 +29,19 @@ struct SettingsView: View {
                     }
 
                     Section("Library") {
-                        LabeledContent("Games", value: "\(gameManager.games.count)")
-                        LabeledContent("Favorites", value: "\(gameManager.favorites.count)")
+                        SettingsRow(label: "Games", value: "\(gameManager.games.count)")
+                        SettingsRow(label: "Favorites", value: "\(gameManager.favorites.count)")
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 
                     Section("About") {
-                        LabeledContent("Version", value: Bundle.main.appVersionString)
+                        SettingsRow(label: "Version", value: Bundle.main.appVersionString)
                         Link(destination: URL(string: "https://github.com/bward-dev1/cemu-ios-muffin")!) {
                             Label("View on GitHub", systemImage: "arrow.up.right.square")
                         }
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
                 }
-                .scrollContentBackground(.hidden)
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -53,6 +53,22 @@ struct SettingsView: View {
             .sheet(isPresented: $showingIconPicker) {
                 IconPickerView()
             }
+        }
+        .navigationViewStyle(.stack)
+    }
+}
+
+/// LabeledContent needs iOS 16+; this project's deployment target is 15.0.
+private struct SettingsRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text(value)
+                .foregroundColor(MuffinTheme.brownMid)
         }
     }
 }
