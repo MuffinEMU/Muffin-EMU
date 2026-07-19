@@ -126,6 +126,15 @@ class GameManager: ObservableObject {
             return
         }
 
+        // cemu_bridge_initialize (CafeSystem::Initialize) was never being called before
+        // boot — the bridge guards it idempotently (g_initialized.exchange), so it's
+        // safe to call here on every launch rather than tracking our own init flag.
+        if let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let mlcPath = documentsPath.appendingPathComponent("mlc").path
+            try? FileManager.default.createDirectory(atPath: mlcPath, withIntermediateDirectories: true)
+            engine.initialize(mlcPath: mlcPath)
+        }
+
         let status = engine.boot(rpxPath: game.romPath)
         lastStatusMessage = engine.statusText
         emulationState = (status == CEMU_BRIDGE_OK) ? .running : .error
@@ -141,7 +150,7 @@ class GameManager: ObservableObject {
         return emulationEngine
     }
 
-    /// No frames are produced until the Metal/MoltenVK renderer is wired (ROADMAP.md M3).
+    /// No frames are produced until the native Metal renderer is wired (ROADMAP.md M3).
     func getFrameTexture() -> MTLTexture? {
         return nil
     }
