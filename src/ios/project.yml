@@ -16,9 +16,29 @@ settings:
   # Swift <-> C++ engine bridge (src/ios/Bridge/CemuBridge.{h,mm})
   SWIFT_OBJC_BRIDGING_HEADER: Bridge/Cemu-Bridging-Header.h
   CLANG_ENABLE_MODULES: 'YES'
-  # Define CEMU_CORE_AVAILABLE once the real Cemu core links for arm64 (ROADMAP.md M1).
-  # Until then the bridge honestly reports "core not built" and the app shell still builds.
-  # GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1'
+  # M1 (ROADMAP.md) is done: the real Cemu core builds via CMake as static libs
+  # (libCemuCafe.a, libiosgui.a, ...) under build-ios/, with third-party deps under
+  # $VCPKG_ROOT/installed/arm64-ios/lib. Rather than recompile ~500 C++/Cafe files a
+  # second time inside Xcode's own build system (which has no story for providing
+  # boost/fmt/curl/etc. — that's what vcpkg solved for the CMake build), this app
+  # target LINKS against those already-built libraries. See ci/generate-link-flags.sh,
+  # run by the preBuildScript below, which turns the CMake build output into
+  # OTHER_LDFLAGS via a linker response file (there are ~90 vcpkg libs; hand-listing
+  # them in this file would be unmaintainable).
+  GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1'
+  HEADER_SEARCH_PATHS:
+    - '$(SRCROOT)/..'
+    - '$(SRCROOT)/../Common/glm_stub'
+    - '$(HOME)/vcpkg/installed/arm64-ios/include'
+    - '$(SRCROOT)/../../dependencies/metal-cpp'
+  LIBRARY_SEARCH_PATHS:
+    - '$(SRCROOT)/../../build-ios/src/Cafe'
+    - '$(SRCROOT)/../../build-ios/src/gui/iosgui'
+    - '$(SRCROOT)/../../build-ios/src/Common'
+    - '$(SRCROOT)/../../build-ios/src/config'
+    - '$(SRCROOT)/../../build-ios/src/input'
+    - '$(HOME)/vcpkg/installed/arm64-ios/lib'
+  OTHER_LDFLAGS: '@$(SRCROOT)/link-flags.txt $(inherited)'
 
 targets:
   Cemu:
@@ -27,45 +47,6 @@ targets:
     deploymentTarget: '15.0'
 
     sources:
-      - path: ../gui/iosgui
-        includes:
-          - '**/*.cpp'
-          - '**/*.h'
-      - path: ../Cafe
-        includes:
-          - '**/*.cpp'
-          - '**/*.h'
-      - path: ../Cemu
-        includes:
-          - '**/*.cpp'
-          - '**/*.h'
-      - path: ../config
-        includes:
-          - '**/*.cpp'
-          - '**/*.h'
-      - path: ../Common
-        includes:
-          - '**/*.cpp'
-          - '**/*.h'
-      - path: ../input
-        includes:
-          - '**/*.cpp'
-          - '**/*.h'
-      - path: ../audio
-        includes:
-          - '**/*.cpp'
-          - '**/*.h'
-      - path: ../util
-        includes:
-          - '**/*.cpp'
-          - '**/*.h'
-      - path: ../gui/interface
-        includes:
-          - '**/*.h'
-      - path: ../imgui
-        includes:
-          - '**/*.cpp'
-          - '**/*.h'
       - path: App
         type: group
       - path: Emulation
@@ -79,6 +60,9 @@ targets:
       - name: Generate Version
         script: |
           echo "Generating version info..."
+      - name: Generate linker response file for CMake-built libs
+        script: |
+          "$SRCROOT/../../ci/generate-link-flags.sh" "$SRCROOT/link-flags.txt"
 
     scheme:
       gatherCoverageData: false
