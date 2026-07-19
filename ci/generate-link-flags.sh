@@ -8,20 +8,14 @@ set -euo pipefail
 OUT="${1:?usage: generate-link-flags.sh <output-file>}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="$REPO_ROOT/build-ios"
-VCPKG_LIB_DIR="$HOME/vcpkg/installed/arm64-ios/lib"
 
 : > "$OUT"
 
+# CMake's manifest-mode vcpkg installs to build-ios/vcpkg_installed/arm64-ios/lib —
+# nested inside BUILD_DIR — so this one find picks up CemuCafe/iosgui's own .a files
+# AND every vcpkg dependency (boost, fmt, curl, ...) in one pass.
 if [ -d "$BUILD_DIR" ]; then
     find "$BUILD_DIR" -name "*.a" | while read -r lib; do
-        name=$(basename "$lib" .a)
-        name=${name#lib}
-        echo "-l${name}" >> "$OUT"
-    done
-fi
-
-if [ -d "$VCPKG_LIB_DIR" ]; then
-    find "$VCPKG_LIB_DIR" -maxdepth 1 -name "*.a" | while read -r lib; do
         name=$(basename "$lib" .a)
         name=${name#lib}
         echo "-l${name}" >> "$OUT"
