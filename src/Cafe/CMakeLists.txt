@@ -162,58 +162,12 @@ add_library(CemuCafe
   HW/Latte/LegacyShaderDecompiler/LatteDecompilerInstructions.h
   HW/Latte/LegacyShaderDecompiler/LatteDecompilerInternal.h
   HW/Latte/LegacyShaderDecompiler/LatteDecompilerRegisterDataTypeTracker.cpp
-  HW/Latte/Renderer/OpenGL/CachedFBOGL.h
-  HW/Latte/Renderer/OpenGL/LatteTextureGL.cpp
-  HW/Latte/Renderer/OpenGL/LatteTextureGL.h
-  HW/Latte/Renderer/OpenGL/LatteTextureViewGL.cpp
-  HW/Latte/Renderer/OpenGL/LatteTextureViewGL.h
-  HW/Latte/Renderer/OpenGL/OpenGLQuery.cpp
-  HW/Latte/Renderer/OpenGL/OpenGLRendererCore.cpp
-  HW/Latte/Renderer/OpenGL/OpenGLRenderer.cpp
-  HW/Latte/Renderer/OpenGL/OpenGLRenderer.h
-  HW/Latte/Renderer/OpenGL/OpenGLRendererStreamout.cpp
-  HW/Latte/Renderer/OpenGL/OpenGLRendererUniformData.cpp
-  HW/Latte/Renderer/OpenGL/OpenGLSurfaceCopy.cpp
-  HW/Latte/Renderer/OpenGL/OpenGLTextureReadback.h
-  HW/Latte/Renderer/OpenGL/RendererShaderGL.cpp
-  HW/Latte/Renderer/OpenGL/RendererShaderGL.h
-  HW/Latte/Renderer/OpenGL/TextureReadbackGL.cpp
   HW/Latte/Renderer/Renderer.cpp
   HW/Latte/Renderer/Renderer.h
   HW/Latte/Renderer/RendererOuputShader.cpp
   HW/Latte/Renderer/RendererOuputShader.h
   HW/Latte/Renderer/RendererShader.cpp
   HW/Latte/Renderer/RendererShader.h
-  HW/Latte/Renderer/Vulkan/CachedFBOVk.cpp
-  HW/Latte/Renderer/Vulkan/CachedFBOVk.h
-  HW/Latte/Renderer/Vulkan/CocoaSurface.h
-  HW/Latte/Renderer/Vulkan/LatteTextureViewVk.cpp
-  HW/Latte/Renderer/Vulkan/LatteTextureViewVk.h
-  HW/Latte/Renderer/Vulkan/LatteTextureVk.cpp
-  HW/Latte/Renderer/Vulkan/LatteTextureVk.h
-  HW/Latte/Renderer/Vulkan/RendererShaderVk.cpp
-  HW/Latte/Renderer/Vulkan/RendererShaderVk.h
-  HW/Latte/Renderer/Vulkan/SwapchainInfoVk.cpp
-  HW/Latte/Renderer/Vulkan/SwapchainInfoVk.h
-  HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp
-  HW/Latte/Renderer/Vulkan/VKRBase.h
-  HW/Latte/Renderer/Vulkan/VKRMemoryManager.cpp
-  HW/Latte/Renderer/Vulkan/VKRMemoryManager.h
-  HW/Latte/Renderer/Vulkan/VKRPipelineInfo.cpp
-  HW/Latte/Renderer/Vulkan/VsyncDriver.cpp
-  HW/Latte/Renderer/Vulkan/VsyncDriver.h
-  HW/Latte/Renderer/Vulkan/VulkanAPI.cpp
-  HW/Latte/Renderer/Vulkan/VulkanAPI.h
-  HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.cpp
-  HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.h
-  HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.cpp
-  HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.h
-  HW/Latte/Renderer/Vulkan/VulkanQuery.cpp
-  HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
-  HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-  HW/Latte/Renderer/Vulkan/VulkanRenderer.h
-  HW/Latte/Renderer/Vulkan/VulkanSurfaceCopy.cpp
-  HW/Latte/Renderer/Vulkan/VulkanTextureReadback.h
   HW/Latte/ShaderInfo/ShaderDescription.cpp
   HW/Latte/ShaderInfo/ShaderInfo.h
   HW/Latte/ShaderInfo/ShaderInstanceInfo.cpp
@@ -538,6 +492,63 @@ add_library(CemuCafe
   TitleList/TitleList.cpp
   TitleList/TitleList.h
 )
+
+# iOS renderer is Metal-only (ENABLE_VULKAN/ENABLE_OPENGL are forced OFF for iOS in the
+# top-level CMakeLists.txt). The OpenGL and Vulkan renderer backends are real, working
+# desktop code but dead weight on iOS: they'd need a real GL context / MoltenVK loader
+# to ever run, and compiling them just to leave them unused wastes the M1 grind on
+# desktop-only bugs (Cocoa/AppKit types, `#elif BOOST_OS_MACOS` branches that don't
+# cover iOS, etc.) in code that will never execute. Exclude them from the iOS target.
+if(NOT PLATFORM_IOS)
+	target_sources(CemuCafe PRIVATE
+	    HW/Latte/Renderer/OpenGL/CachedFBOGL.h
+	    HW/Latte/Renderer/OpenGL/LatteTextureGL.cpp
+	    HW/Latte/Renderer/OpenGL/LatteTextureGL.h
+	    HW/Latte/Renderer/OpenGL/LatteTextureViewGL.cpp
+	    HW/Latte/Renderer/OpenGL/LatteTextureViewGL.h
+	    HW/Latte/Renderer/OpenGL/OpenGLQuery.cpp
+	    HW/Latte/Renderer/OpenGL/OpenGLRendererCore.cpp
+	    HW/Latte/Renderer/OpenGL/OpenGLRenderer.cpp
+	    HW/Latte/Renderer/OpenGL/OpenGLRenderer.h
+	    HW/Latte/Renderer/OpenGL/OpenGLRendererStreamout.cpp
+	    HW/Latte/Renderer/OpenGL/OpenGLRendererUniformData.cpp
+	    HW/Latte/Renderer/OpenGL/OpenGLSurfaceCopy.cpp
+	    HW/Latte/Renderer/OpenGL/OpenGLTextureReadback.h
+	    HW/Latte/Renderer/OpenGL/RendererShaderGL.cpp
+	    HW/Latte/Renderer/OpenGL/RendererShaderGL.h
+	    HW/Latte/Renderer/OpenGL/TextureReadbackGL.cpp
+	    HW/Latte/Renderer/Vulkan/CachedFBOVk.cpp
+	    HW/Latte/Renderer/Vulkan/CachedFBOVk.h
+	    HW/Latte/Renderer/Vulkan/CocoaSurface.h
+	    HW/Latte/Renderer/Vulkan/LatteTextureViewVk.cpp
+	    HW/Latte/Renderer/Vulkan/LatteTextureViewVk.h
+	    HW/Latte/Renderer/Vulkan/LatteTextureVk.cpp
+	    HW/Latte/Renderer/Vulkan/LatteTextureVk.h
+	    HW/Latte/Renderer/Vulkan/RendererShaderVk.cpp
+	    HW/Latte/Renderer/Vulkan/RendererShaderVk.h
+	    HW/Latte/Renderer/Vulkan/SwapchainInfoVk.cpp
+	    HW/Latte/Renderer/Vulkan/SwapchainInfoVk.h
+	    HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp
+	    HW/Latte/Renderer/Vulkan/VKRBase.h
+	    HW/Latte/Renderer/Vulkan/VKRMemoryManager.cpp
+	    HW/Latte/Renderer/Vulkan/VKRMemoryManager.h
+	    HW/Latte/Renderer/Vulkan/VKRPipelineInfo.cpp
+	    HW/Latte/Renderer/Vulkan/VsyncDriver.cpp
+	    HW/Latte/Renderer/Vulkan/VsyncDriver.h
+	    HW/Latte/Renderer/Vulkan/VulkanAPI.cpp
+	    HW/Latte/Renderer/Vulkan/VulkanAPI.h
+	    HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.cpp
+	    HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.h
+	    HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.cpp
+	    HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.h
+	    HW/Latte/Renderer/Vulkan/VulkanQuery.cpp
+	    HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+	    HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+	    HW/Latte/Renderer/Vulkan/VulkanRenderer.h
+	    HW/Latte/Renderer/Vulkan/VulkanSurfaceCopy.cpp
+	    HW/Latte/Renderer/Vulkan/VulkanTextureReadback.h
+	)
+endif()
 
 # Desktop-macOS only: CocoaSurface.mm is a MoltenVK/Cocoa Vulkan surface and
 # MetalView.mm is an NSView (AppKit). iOS has neither — it uses the UIKit path in
