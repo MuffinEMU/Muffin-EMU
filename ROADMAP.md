@@ -19,24 +19,25 @@ The two scariest pieces of a Wii U-on-iOS port already exist upstream in this co
 - **Native Metal GPU renderer:** `src/Cafe/HW/Latte/Renderer/Metal/` (42 files). Its **only** platform glue was one 23-line file (`MetalLayer.mm`) — now adapted to UIKit/iOS in this fork.
 So the port is real engineering, not a rewrite.
 
-## M1 — Compile the real core for iOS arm64  ← **the true starting gate**
+## M1 — Compile the real core for iOS arm64  ← **the true starting gate**  ✅ DONE (2026-07-19)
 The single most important unknown. Until the engine builds for `arm64-apple-ios`, there is nothing to bridge. **This must run on a machine with full Xcode or on CI — it cannot compile on a Command-Line-Tools-only Mac.**
 - [x] Real iOS CMake toolchain (`cmake/ios.toolchain.cmake` — proper `SYSTEM_NAME iOS`, iPhoneOS sysroot via xcrun, min-version). Replaces the fake `cmake/ios.cmake` that targeted arm64 macOS.
 - [x] Gate desktop-only deps off for iOS (`wxwidgets` → `!ios` in `vcpkg.json`).
-- [x] Real CI build loop (`.github/workflows/build-ios-core.yml`) that cross-compiles deps for `arm64-ios`, builds the core, and uploads real logs — no `|| true` masking.
-- [ ] **Iterate the CI loop until the core compiles** (dependency fixes, desktop-assumption fixes). This is the grind. Needs the fork on GitHub to run.
-- [ ] Link into a `CemuCore` static lib the Xcode app embeds; define `CEMU_CORE_AVAILABLE`.
-- **Exit test:** `build-ios-core` CI job goes green — the core builds for `arm64-apple-ios`.
+- [x] Real CI build loop (`.github/workflows/build-ios-core.yml`, mirrored to a Bitrise `build-ios-core` workflow on macOS `osx-xcode-16.4.x`) that cross-compiles deps for `arm64-ios`, builds the core, and uploads real logs — no `|| true` masking.
+- [x] **Iterate the CI loop until the core compiles.** Fixed: missing iOS branch on `CPU_swapEndianU32/64/16` (MMU.h), `tick_cached`/`HighResolutionTimer::now`/`GetTickCount` falling off the end of non-void functions on iOS, `_BitScanReverse`/`_strcmpi` undefined on iOS, `executeCommand`'s `system()` call (unavailable/sandboxed on iOS, and dead code besides), and excluded ~40 Vulkan/OpenGL renderer files + the libusb-dependent `BackendLibusb`/`SkylanderXbox360` (real-USB-hardware-only, no vcpkg arm64-ios libusb port) from the iOS target entirely.
+- [ ] Link into a `CemuCore` static lib the Xcode **app** embeds; define `CEMU_CORE_AVAILABLE`. (The engine builds as its own static lib now — `libCemuCafe.a` — but isn't yet wired into the SwiftUI app's Xcode project. That's the first task of M2.)
+- **Exit test — MET:** Bitrise build `build-ios-core` #3 (2026-07-19, https://app.bitrise.io/app/77ea58d7-5b9f-4052-b424-7b4c5c5f6103/build/39e10ffd-d6ac-4c93-80ab-5634d632091e) finished green. Build log tail: `[410/410] Linking CXX static library src/Cafe/libCemuCafe.a` — all 410 translation units compiled, zero errors (14 deprecation warnings only). The genuine upstream Cemu engine now compiles for `arm64-apple-ios`.
 
 ## M2 — Bring-up: boot to a title's entry point (no graphics)
+- [ ] Link `libCemuCafe.a` into the SwiftUI app's Xcode target; define `CEMU_CORE_AVAILABLE` so `CemuBridge.mm` calls the real `CafeSystem` instead of reporting `CEMU_BRIDGE_CORE_NOT_BUILT`.
 - [ ] Provide MLC/NAND paths, keys (`keys.txt`), and a title on the device's Documents dir.
 - [ ] From Swift, call the bridge: `Initialize()` → `PrepareForegroundTitleFromStandaloneRPX()` → `LaunchForegroundTitle()`.
 - [ ] Route Cemu's logging to the iOS console so we can see how far it gets.
 - **Exit test:** the core loads an RPX and starts executing PPC via the C++ interpreter without immediately crashing; logs show OS/HLE init progress.
 
-## M3 — Graphics: MoltenVK + present a frame
-- [ ] Build MoltenVK for iOS; select Cemu's Vulkan renderer.
-- [ ] Back Cemu's swapchain with the app's `CAMetalLayer` (the existing `MetalView`).
+## M3 — Graphics: present a frame via the native Metal renderer
+Correction from the original plan: this repo does **not** need MoltenVK/Vulkan. Upstream Cemu already ships a native Metal renderer (`src/Cafe/HW/Latte/Renderer/Metal/`, 42 files, incl. its own Latte-shader→MSL compiler in `HW/Latte/LegacyShaderDecompiler/LatteDecompilerEmitMSL.cpp`) — mature, real, and part of what M1 just compiled. Vulkan and OpenGL are excluded from the iOS build entirely (see M1); there is no MoltenVK dependency to build.
+- [ ] Back the Metal renderer's swapchain with the app's `CAMetalLayer` (the existing `MetalView`/`MetalLayer.mm`).
 - [ ] Implement the real bits of `IOSWindowSystem` (size, canvas recreate) instead of stubs.
 - **Exit test:** a title renders at least one correct frame on-device.
 
