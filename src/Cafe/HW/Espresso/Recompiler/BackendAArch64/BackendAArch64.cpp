@@ -1676,15 +1676,33 @@ void AArch64GenContext_t::leaveRecompilerCode()
 }
 
 bool initializedInterfaceFunctions = false;
-AArch64GenContext_t enterRecompilerCode_ctx{};
-
-AArch64GenContext_t leaveRecompilerCode_unvisited_ctx{};
-AArch64GenContext_t leaveRecompilerCode_visited_ctx{};
 void PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions()
 {
 	if (initializedInterfaceFunctions)
 		return;
 	initializedInterfaceFunctions = true;
+
+	// These were previously namespace-scope globals, which C++ constructs during
+	// static initialization - i.e. at binary load time, before main(), completely
+	// bypassing the initializedInterfaceFunctions guard above (and PPCRecompiler_init's
+	// own interpreter-only bailout in PPCRecompiler.cpp). Each AArch64GenContext_t's
+	// CodeGenerator base class eagerly allocates executable JIT memory on
+	// construction (Xbyak_aarch64::MmapAllocator::alloc(), which calls
+	// mmap(PROT_EXEC)). On iOS that requires a JIT/dynamic-codesigning entitlement
+	// that a sideloaded app doesn't have at pure launch time - LiveContainer's JIT
+	// enabling is a separate, asynchronous, out-of-process step (attaching a
+	// debugserver) that hadn't necessarily even completed yet. The uncaught C++
+	// exception from the failed mmap unwound out of a global constructor with no
+	// surrounding try/catch, so libc++abi called std::terminate() -> abort()
+	// (SIGABRT) instantly on every launch, before Swift/SwiftUI ever ran.
+	// Making these function-local statics defers construction to first actual call
+	// of this function (still exactly once, still thread-safe, still same lifetime
+	// once constructed) - which only happens via PPCRecompiler_init() choosing to
+	// use the JIT path, itself only reachable from CafeSystem::Initialize() once a
+	// title is actually launched, long after process startup.
+	static AArch64GenContext_t enterRecompilerCode_ctx{};
+	static AArch64GenContext_t leaveRecompilerCode_unvisited_ctx{};
+	static AArch64GenContext_t leaveRecompilerCode_visited_ctx{};
 
 	enterRecompilerCode_ctx.enterRecompilerCode();
 	enterRecompilerCode_ctx.readyRE();
