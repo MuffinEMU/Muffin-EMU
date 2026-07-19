@@ -16,6 +16,14 @@ settings:
   # Swift <-> C++ engine bridge (src/ios/Bridge/CemuBridge.{h,mm})
   SWIFT_OBJC_BRIDGING_HEADER: Bridge/Cemu-Bridging-Header.h
   CLANG_ENABLE_MODULES: 'YES'
+  # CemuBridge.mm includes real Cemu headers (Cafe/CafeSystem.h -> ... -> rpl.h) that
+  # assume Cemu's core type aliases (uint32/sint32/MPTR/...) are already visible via
+  # precompiled.h — exactly the iosgui bug from ROADMAP.md M2 (see
+  # src/gui/iosgui/CMakeLists.txt's cemu_use_precompiled_header comment), just hit via
+  # Xcode's own build instead of CMake. Swift files ignore these settings; only
+  # Bridge/CemuBridge.mm is affected.
+  GCC_PREFIX_HEADER: '$(SRCROOT)/../Common/precompiled.h'
+  GCC_PRECOMPILE_PREFIX_HEADER: 'YES'
   # M1 (ROADMAP.md) is done: the real Cemu core builds via CMake as static libs
   # (libCemuCafe.a, libiosgui.a, ...) under build-ios/, with third-party deps under
   # $VCPKG_ROOT/installed/arm64-ios/lib. Rather than recompile ~500 C++/Cafe files a
