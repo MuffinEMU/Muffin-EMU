@@ -24,6 +24,7 @@ struct MetalViewIOS: UIViewRepresentable {
     }
 }
 
+#if os(macOS)
 struct MetalView: NSViewRepresentable {
     var gameManager: GameManager
 
@@ -44,6 +45,7 @@ struct MetalView: NSViewRepresentable {
         return MetalRenderer(gameManager: gameManager)
     }
 }
+#endif
 
 class MetalRenderer: NSObject, MTKViewDelegate {
     var gameManager: GameManager

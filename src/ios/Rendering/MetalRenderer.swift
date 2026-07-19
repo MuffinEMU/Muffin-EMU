@@ -2,7 +2,7 @@ import Foundation
 import MetalKit
 import simd
 
-class MetalRenderer: NSObject, MTKViewDelegate {
+class AdvancedMetalRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private var library: MTLLibrary?
@@ -123,9 +123,10 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         descriptor.colorAttachments[0].loadAction = .clear
         descriptor.colorAttachments[0].storeAction = .store
 
-        guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else { return }
+        guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor),
+              let pipelineState else { return }
 
-        renderEncoder.setRenderPipelineState(pipelineState ?? MTLRenderPipelineState())
+        renderEncoder.setRenderPipelineState(pipelineState)
 
         if let frameTexture = gameManager?.getFrameTexture() {
             renderGameFrame(frameTexture, encoder: renderEncoder, view: view)
