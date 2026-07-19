@@ -63,6 +63,14 @@ settings:
   # final app-bundling step failed: "Build input file cannot be found: .../Info.plist".
   # GENERATE_INFOPLIST_FILE has modern Xcode synthesize one from build settings.
   GENERATE_INFOPLIST_FILE: 'YES'
+  # CFBundleIcons/CFBundleAlternateIcons is a nested dictionary - too complex for the
+  # flat INFOPLIST_KEY_<name> scheme GENERATE_INFOPLIST_FILE otherwise handles. Xcode
+  # supports merging a small hand-written partial Info.plist alongside the generated
+  # one via INFOPLIST_FILE for exactly this case, without disturbing any of the
+  # INFOPLIST_KEY_* settings already verified working in the M2 milestone build.
+  INFOPLIST_FILE: 'Info-AlternateIcons.plist'
+  ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: 'AltIcon-dark AltIcon-happy AltIcon-retro AltIcon-mint-matcha AltIcon-blueberry-blast AltIcon-strawberry AltIcon-double-chocolate AltIcon-lemon-zest AltIcon-neon-cyber AltIcon-pumpkin-spice AltIcon-holiday-frost AltIcon-spooky-halloween AltIcon-rainbow-pride AltIcon-summer-beach AltIcon-galaxy-space AltIcon-progress-pride AltIcon-transgender-pride AltIcon-equality AltIcon-fix-the-world AltIcon-autism-awareness AltIcon-adhd-awareness AltIcon-audhd-awareness AltIcon-disability-pride AltIcon-mental-health-pride AltIcon-lesbian-pride AltIcon-bisexual-pride AltIcon-nonbinary-pride AltIcon-pro-gold-vip AltIcon-pro-holographic AltIcon-pro-diamond-ice'
   MARKETING_VERSION: '0.1.0'
   CURRENT_PROJECT_VERSION: '1'
   INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
@@ -88,6 +96,8 @@ targets:
       - path: Rendering
         type: group
       - path: Bridge
+        type: group
+      - path: Resources
         type: group
 
     preBuildScripts:

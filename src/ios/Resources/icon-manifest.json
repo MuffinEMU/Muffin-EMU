@@ -1,0 +1,41 @@
+{
+  "app": "Muffin EMU",
+  "repo": "bward-dev1/cemu-ios-a-chip",
+  "note": "Icon set for an alternate-app-icon picker. Free icons ship with the app; Pro icons gate behind the paid plan.",
+  "icons": [
+    { "id": "original",         "name": "Original",          "tier": "free", "file": "muffin-emu-icon.svg", "tagline": "The OG muffin — warm, golden, and ready to boot up your library." },
+    { "id": "dark",             "name": "Dark Mode",          "tier": "free", "file": "muffin-emu-icon-dark.svg", "tagline": "Same muffin, midnight batter — easy on the eyes for late-night sessions." },
+    { "id": "happy",            "name": "Happy",              "tier": "free", "file": "muffin-emu-icon-happy.svg", "tagline": "Frosted, sprinkled, and cherry-topped — dessert mode activated." },
+    { "id": "retro",            "name": "Retro Console",      "tier": "free", "file": "muffin-emu-icon-retro.svg", "tagline": "Blocky and pixel-perfect, just like the games it's about to emulate." },
+    { "id": "mint-matcha",      "name": "Mint Matcha",        "tier": "free", "file": "specials/muffin-emu-icon-mint-matcha.svg", "tagline": "Green tea batter, red bean sprinkles — chill vibes only." },
+    { "id": "blueberry-blast",  "name": "Blueberry Blast",    "tier": "free", "file": "specials/muffin-emu-icon-blueberry-blast.svg", "tagline": "Loaded with extra blueberries, because more is more." },
+    { "id": "strawberry",       "name": "Strawberry",         "tier": "free", "file": "specials/muffin-emu-icon-strawberry.svg", "tagline": "Pale pink batter dotted with ripe strawberries. Sweet and simple." },
+    { "id": "double-chocolate", "name": "Double Chocolate",   "tier": "free", "file": "specials/muffin-emu-icon-double-chocolate.svg", "tagline": "All-chocolate everything, for players who like their icon as rich as their save files." },
+    { "id": "lemon-zest",       "name": "Lemon Zest",         "tier": "free", "file": "specials/muffin-emu-icon-lemon-zest.svg", "tagline": "Bright, citrusy, and a little zesty, with poppy-seed sprinkles." },
+    { "id": "neon-cyber",       "name": "Neon Cyber",         "tier": "free", "file": "specials/muffin-emu-icon-neon-cyber.svg", "tagline": "A glowing cyan outline on a midnight backdrop for late-night hacker energy." },
+    { "id": "pumpkin-spice",    "name": "Pumpkin Spice",      "tier": "free", "file": "specials/muffin-emu-icon-pumpkin-spice.svg", "tagline": "Autumn muffin, everything-spice season, no notes." },
+    { "id": "holiday-frost",    "name": "Holiday Frost",      "tier": "free", "file": "specials/muffin-emu-icon-holiday-frost.svg", "tagline": "Frosted top and a tiny Santa hat — festive without trying too hard." },
+    { "id": "spooky-halloween", "name": "Spooky Halloween",   "tier": "free", "file": "specials/muffin-emu-icon-spooky-halloween.svg", "tagline": "Bat wings, glowing eyes, and a grumpy little frown. Trick or emulate." },
+    { "id": "rainbow-pride",    "name": "Rainbow Pride",      "tier": "free", "file": "specials/muffin-emu-icon-rainbow-pride.svg", "tagline": "Classic six-stripe rainbow behind a muffin covered in colorful sprinkles." },
+    { "id": "summer-beach",     "name": "Summer Beach",       "tier": "free", "file": "specials/muffin-emu-icon-summer-beach.svg", "tagline": "Sunglasses on, sun's out. Beach day for your home screen." },
+    { "id": "galaxy-space",     "name": "Galaxy Space",       "tier": "free", "file": "specials/muffin-emu-icon-galaxy-space.svg", "tagline": "A starry night sky with a ringed planet standing in for a blueberry." },
+    { "id": "progress-pride",     "name": "Progress Pride",       "tier": "free", "file": "specials/muffin-emu-icon-progress-pride.svg", "tagline": "The full Progress flag arcs behind the muffin, heart-topped and proud." },
+    { "id": "transgender-pride",  "name": "Transgender Pride",    "tier": "free", "file": "specials/muffin-emu-icon-transgender-pride.svg", "tagline": "Trans flag stripes with blue-and-pink sprinkles on one happy muffin." },
+    { "id": "equality",           "name": "Equality",             "tier": "free", "file": "specials/muffin-emu-icon-equality.svg", "tagline": "A simple blue background and a gold equals sign. Says it all." },
+    { "id": "fix-the-world",      "name": "Fix the World",        "tier": "free", "file": "specials/muffin-emu-icon-fix-the-world.svg", "tagline": "Muffin-as-Earth with a healing heart on top. Small gesture, big message." },
+    { "id": "autism-awareness",   "name": "Autism Muffin",        "tier": "free", "file": "specials/muffin-emu-icon-autism-awareness.svg", "tagline": "The official rainbow infinity symbol arcs behind the muffin like a badge.", "note": "embeds specials/assets/autism-infinity-official.png (Void's official asset) via <image href> — that file must ship alongside the SVG, it is not self-contained. y-position was tuned so the loop's crossing clears the muffin's head instead of hiding behind it." },
+    { "id": "adhd-awareness",     "name": "ADHD Awareness",       "tier": "free", "file": "specials/muffin-emu-icon-adhd-awareness.svg", "tagline": "A little lightning bolt for a very fast brain." },
+    { "id": "audhd-awareness",    "name": "AuDHD Awareness",      "tier": "free", "file": "specials/muffin-emu-icon-audhd-awareness.svg", "tagline": "Infinity loop plus lightning bolt. Both, at once, all the time." },
+    { "id": "disability-pride",   "name": "Disability Pride",     "tier": "free", "file": "specials/muffin-emu-icon-disability-pride.svg", "tagline": "Diagonal flag stripes on charcoal, muffin front and center." },
+    { "id": "mental-health-pride","name": "Mental Health Pride",  "tier": "free", "file": "specials/muffin-emu-icon-mental-health-pride.svg", "tagline": "The semicolon — your story isn't over." },
+    { "id": "lesbian-pride",      "name": "Lesbian Pride",        "tier": "free", "file": "specials/muffin-emu-icon-lesbian-pride.svg", "tagline": "Sunset-toned stripes with orange and pink sprinkles on top." },
+    { "id": "bisexual-pride",     "name": "Bisexual Pride",       "tier": "free", "file": "specials/muffin-emu-icon-bisexual-pride.svg", "tagline": "Pink, purple, and blue. No notes needed." },
+    { "id": "nonbinary-pride",    "name": "Nonbinary Pride",      "tier": "free", "file": "specials/muffin-emu-icon-nonbinary-pride.svg", "tagline": "Yellow, white, purple, black — clean and iconic." },
+    { "id": "pro-gold-vip",     "name": "Gold VIP",           "tier": "pro",  "file": "specials/muffin-emu-icon-pro-gold-vip.svg", "tagline": "A tiny gold crown for a muffin that knows its worth." },
+    { "id": "pro-holographic",  "name": "Holographic",        "tier": "pro",  "file": "specials/muffin-emu-icon-pro-holographic.svg", "tagline": "Pastel-shifting holo foil, because your home screen deserves main-character energy." },
+    { "id": "pro-diamond-ice",  "name": "Diamond Ice",        "tier": "pro",  "file": "specials/muffin-emu-icon-pro-diamond-ice.svg", "tagline": "An ice-blue muffin dusted in gemstones. Cool under pressure." }
+  ],
+  "notMigrated": [
+    "mono-black and mono-white are stamp/watermark marks, not homescreen icon candidates — left out of the picker list on purpose"
+  ]
+}
