@@ -29,6 +29,7 @@ public:
 
 	static bool ForceInterpreter() { return s_force_interpreter; };
 	static bool ForceMultiCoreInterpreter() { return s_force_multicore_interpreter; }
+	static void SetForceInterpreter(bool value) { s_force_interpreter = value; }
 
 	static std::optional<uint32> GetPersistentId() { return s_persistent_id; }
 
