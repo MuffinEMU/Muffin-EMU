@@ -57,10 +57,19 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=arm64-ios \
             -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure.log
 
-      - name: Build CemuCafe + iosgui static libs
+      - name: Build all static libs the app needs
+        # CemuCafe links clean on its own (it's a static lib - target_link_libraries
+        # dependencies aren't required to physically exist until something actually
+        # links them into a final binary), but CemuAudio in particular is never a
+        # build prerequisite of CemuCafe/iosgui - it's normally only linked into the
+        # desktop CemuBin executable. Build every relevant library explicitly so the
+        # Xcode app (which needs the real merged binary) has them all as .a files.
         run: |
           set -eo pipefail
-          cmake --build build-ios --target CemuCafe iosgui 2>&1 | tee build.log
+          cmake --build build-ios --target \
+            CemuCafe iosgui CemuAudio CemuComponents CemuCommon CemuConfig \
+            imguiImpl CemuInput CemuResource CemuUtil \
+            2>&1 | tee build.log
 
       - name: xcodegen generate
         run: |
