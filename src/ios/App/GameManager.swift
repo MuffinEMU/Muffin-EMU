@@ -132,10 +132,14 @@ class GameManager: ObservableObject {
         if let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
             let mlcPath = documentsPath.appendingPathComponent("mlc").path
             try? FileManager.default.createDirectory(atPath: mlcPath, withIntermediateDirectories: true)
+            cemu_bridge_log_checkpoint("launchGame: about to call engine.initialize()")
             engine.initialize(mlcPath: mlcPath)
+            cemu_bridge_log_checkpoint("launchGame: engine.initialize() returned")
         }
 
+        cemu_bridge_log_checkpoint("launchGame: about to call engine.boot()")
         let status = engine.boot(rpxPath: game.romPath)
+        cemu_bridge_log_checkpoint("launchGame: engine.boot() returned")
         lastStatusMessage = engine.statusText
         emulationState = (status == CEMU_BRIDGE_OK) ? .running : .error
     }
