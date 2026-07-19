@@ -23,14 +23,14 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/devkitPro/wut.git
 
-      - name: Build hello_world sample RPX
+      - name: Build helloworld sample RPX
         run: |
-          cd wut/samples/hello_world
+          cd wut/samples/make/helloworld
           make
 
       - name: Upload built RPX
         uses: actions/upload-artifact@v4
         with:
           name: hello-world-test-rpx
-          path: wut/samples/hello_world/*.rpx
+          path: wut/samples/make/helloworld/*.rpx
           retention-days: 30
