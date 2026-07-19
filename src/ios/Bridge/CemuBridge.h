@@ -38,6 +38,13 @@ void cemu_bridge_initialize(const char* mlcPath);
 /// Wraps CafeSystem::PrepareForegroundTitleFromStandaloneRPX + LaunchForegroundTitle.
 CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath);
 
+/// M3 (ROADMAP.md): wires the real native Metal renderer to an actual on-screen
+/// surface. `uiView` must be a UIView* (bridged as void*), `width`/`height` its
+/// logical (point) size, `dpiScale` its contentScaleFactor. Must be called before
+/// cemu_bridge_boot_rpx() - the GPU thread reads the window size synchronously at
+/// startup. Safe (no-op) when the core is not available.
+void cemu_bridge_register_render_surface(void* uiView, int width, int height, double dpiScale);
+
 bool cemu_bridge_is_title_running(void);
 void cemu_bridge_pause(void);
 void cemu_bridge_resume(void);

@@ -101,6 +101,9 @@ void cemu_bridge_log_checkpoint(const char* message) {
     #include "Cafe/CafeSystem.h"
     #include "config/ActiveSettings.h"
     #include "Cafe/HW/Latte/Core/LatteDraw.h"
+    #include "gui/interface/WindowSystem.h"
+    #include "Cafe/HW/Latte/Renderer/Renderer.h"
+    #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
     #include <filesystem>
     #include <set>
 
@@ -167,6 +170,38 @@ void cemu_bridge_initialize(const char* mlcPath) {
 #else
     (void)mlcPath;
     setStatus("Real engine not compiled into this build yet (see ROADMAP.md M1).");
+#endif
+}
+
+void cemu_bridge_register_render_surface(void* uiView, int width, int height, double dpiScale) {
+#if defined(CEMU_CORE_AVAILABLE)
+    // M3 groundwork (ROADMAP.md): the real native Metal renderer
+    // (Cafe/HW/Latte/Renderer/Metal/) has never actually been wired to a surface on
+    // iOS - MetalRenderer::InitializeLayer() is, upstream, only ever called from the
+    // desktop wx GUI's MetalCanvas.cpp (excluded from this build entirely), so
+    // g_renderer was permanently null and WindowSystem::GetWindowInfo().window_main
+    // was permanently unset before this. Call this once, from Swift, as soon as a
+    // real UIView exists - and before booting a title, since
+    // Latte_ThreadEntry() (LatteThread.cpp) reads WindowSystem::GetWindowPhysSize()
+    // synchronously at GPU-thread startup, before any frame is drawn.
+    auto& windowInfo = WindowSystem::GetWindowInfo();
+    windowInfo.window_main.surface = uiView;
+    windowInfo.width = width;
+    windowInfo.height = height;
+    windowInfo.phys_width = (int32_t)(width * dpiScale);
+    windowInfo.phys_height = (int32_t)(height * dpiScale);
+    windowInfo.dpi_scale = dpiScale;
+
+    if (!g_renderer)
+        g_renderer = std::make_unique<MetalRenderer>();
+
+    // width/height here are logical (point) size, matching desktop's wxSize usage -
+    // MetalLayerHandle internally multiplies by the layer's own contentsScaleFactor
+    // (computed in MetalLayer.mm's CreateMetalLayer) to get the physical drawable size.
+    MetalRenderer::GetInstance()->InitializeLayer({width, height}, /*mainWindow=*/true);
+    setStatus("Render surface registered.");
+#else
+    (void)uiView; (void)width; (void)height; (void)dpiScale;
 #endif
 }
 
