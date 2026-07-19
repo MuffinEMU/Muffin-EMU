@@ -104,6 +104,22 @@ jobs:
           path: Cemu.ipa
           retention-days: 30
 
+      - name: Upload dSYM
+        # Needed to symbolicate any on-device crash report (raw addresses -> real
+        # function names/lines) - Xcode already generates one alongside the .app,
+        # this just surfaces it as a downloadable artifact.
+        run: |
+          set -eo pipefail
+          DSYM_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "Cemu.app.dSYM" -path "*Release-iphoneos*" | head -n1)
+          echo "Found dSYM at: $DSYM_PATH"
+          zip -r Cemu.app.dSYM.zip "$DSYM_PATH"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cemu-dSYM
+          path: Cemu.app.dSYM.zip
+          retention-days: 30
+
       - name: Upload build logs (always)
         if: always()
         uses: actions/upload-artifact@v4
