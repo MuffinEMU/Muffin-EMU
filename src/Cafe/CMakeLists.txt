@@ -425,8 +425,6 @@ add_library(CemuCafe
   OS/libs/nsyshid/Whitelist.h
   OS/libs/nsyshid/BackendEmulated.cpp
   OS/libs/nsyshid/BackendEmulated.h
-  OS/libs/nsyshid/BackendLibusb.cpp
-  OS/libs/nsyshid/BackendLibusb.h
   OS/libs/nsyshid/Dimensions.cpp
   OS/libs/nsyshid/Dimensions.h
   OS/libs/nsyshid/Infinity.cpp
@@ -501,6 +499,8 @@ add_library(CemuCafe
 # cover iOS, etc.) in code that will never execute. Exclude them from the iOS target.
 if(NOT PLATFORM_IOS)
 	target_sources(CemuCafe PRIVATE
+	    OS/libs/nsyshid/BackendLibusb.cpp
+	    OS/libs/nsyshid/BackendLibusb.h
 	    HW/Latte/Renderer/OpenGL/CachedFBOGL.h
 	    HW/Latte/Renderer/OpenGL/LatteTextureGL.cpp
 	    HW/Latte/Renderer/OpenGL/LatteTextureGL.h
@@ -677,16 +677,22 @@ if (ENABLE_WAYLAND)
   target_link_libraries(CemuCafe PUBLIC Wayland::Client)
 endif()
 
-if (ENABLE_VCPKG)
-  if(WIN32)
-    set(PKG_CONFIG_EXECUTABLE "${VCPKG_INSTALLED_DIR}/x64-windows/tools/pkgconf/pkgconf.exe")
-  endif()
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(libusb REQUIRED IMPORTED_TARGET libusb-1.0)
-  target_link_libraries(CemuCafe PRIVATE PkgConfig::libusb)
-else ()
-  find_package(libusb MODULE REQUIRED)
-  target_link_libraries(CemuCafe PRIVATE libusb::libusb)
+# No libusb on iOS: it's for real-USB HID peripherals (Skylanders/Infinity portals,
+# USB wheels, etc. via BackendLibusb), which don't apply during bring-up and whose
+# vcpkg arm64-ios port doesn't provide a usable libusb-1.0/libusb.h. BackendEmulated
+# (software HID emulation, no physical USB) still covers standard controller input.
+if (NOT PLATFORM_IOS)
+  if (ENABLE_VCPKG)
+    if(WIN32)
+      set(PKG_CONFIG_EXECUTABLE "${VCPKG_INSTALLED_DIR}/x64-windows/tools/pkgconf/pkgconf.exe")
+    endif()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(libusb REQUIRED IMPORTED_TARGET libusb-1.0)
+    target_link_libraries(CemuCafe PRIVATE PkgConfig::libusb)
+  else ()
+    find_package(libusb MODULE REQUIRED)
+    target_link_libraries(CemuCafe PRIVATE libusb::libusb)
+  endif ()
 endif ()
 
 if(WIN32)
