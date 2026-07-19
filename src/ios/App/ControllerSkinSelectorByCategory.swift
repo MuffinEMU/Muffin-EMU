@@ -57,8 +57,8 @@ struct OrganizedControllerSkinSelector: View {
         VStack(spacing: 0) {
             HStack {
                 Text("Controller Skin")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundColor(MuffinTheme.brownDarkest)
 
                 Spacer()
 
@@ -67,17 +67,17 @@ struct OrganizedControllerSkinSelector: View {
                         Image(systemName: "gamecontroller.fill")
                             .font(.system(size: 12))
                         Text(selectedSkin.name)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
                     }
-                    .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
+                    .foregroundColor(MuffinTheme.pixelBlue)
                 }
             }
             .padding(12)
-            .background(Color.white.opacity(0.03))
+            .background(MuffinTheme.cream)
 
             if showingSelector {
                 Divider()
-                    .background(Color.white.opacity(0.1))
+                    .background(MuffinTheme.wrapper)
 
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 8) {
@@ -106,11 +106,11 @@ struct OrganizedControllerSkinSelector: View {
                 .frame(maxHeight: 400)
             }
         }
-        .background(Color.white.opacity(0.03))
+        .background(MuffinTheme.cream)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                .stroke(MuffinTheme.wrapper, lineWidth: 1)
         )
     }
 }
@@ -128,20 +128,20 @@ struct ControllerCategoryDropdown: View {
                 HStack {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
+                        .foregroundColor(MuffinTheme.pixelBlue)
 
                     Text(category.displayName)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownDarkest)
 
                     Spacer()
 
                     Text("(\(category.skins.count))")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundColor(Color(red: 0.6, green: 0.6, blue: 0.6))
+                        .font(.system(size: 11, weight: .regular, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownMid)
                 }
                 .padding(12)
-                .background(Color.white.opacity(0.05))
+                .background(MuffinTheme.wrapper.opacity(0.4))
                 .cornerRadius(8)
             }
 
@@ -159,7 +159,7 @@ struct ControllerCategoryDropdown: View {
                     }
                 }
                 .padding(8)
-                .background(Color.white.opacity(0.02))
+                .background(MuffinTheme.wrapper.opacity(0.2))
                 .cornerRadius(6)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -177,8 +177,8 @@ struct SkinOptionCompact: View {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(skin.name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.white)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownDarkest)
 
                     HStack(spacing: 4) {
                         Circle()
@@ -208,12 +208,12 @@ struct SkinOptionCompact: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(Color(red: 0.4, green: 0.9, blue: 0.4))
+                        .foregroundColor(MuffinTheme.pixelBlue)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
-            .background(isSelected ? Color.white.opacity(0.1) : Color.white.opacity(0.05))
+            .background(isSelected ? MuffinTheme.wrapper : MuffinTheme.cream)
             .cornerRadius(6)
         }
     }
@@ -225,7 +225,7 @@ private struct OrganizedControllerSkinSelectorPreview: View {
     var body: some View {
         OrganizedControllerSkinSelector(selectedSkin: $selectedSkin)
             .padding()
-            .background(Color(red: 0.05, green: 0.08, blue: 0.15))
+            .background(MuffinTheme.backgroundGradient)
     }
 }
 

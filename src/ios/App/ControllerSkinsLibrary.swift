@@ -34,14 +34,14 @@ extension WiiUControllerSkin {
 
     static let standard = WiiUControllerSkin(
         name: "Standard",
-        dpadColor: Color(red: 0.7, green: 0.7, blue: 0.7),
+        dpadColor: ControllerSkinPalette.Standard.dpad,
         buttonColors: [
-            "A": Color(red: 0.2, green: 0.8, blue: 0.3),
-            "B": Color(red: 1.0, green: 0.3, blue: 0.2),
-            "X": Color(red: 0.1, green: 0.5, blue: 1.0),
-            "Y": Color(red: 1.0, green: 0.8, blue: 0.1)
+            "A": ControllerSkinPalette.Standard.a,
+            "B": ControllerSkinPalette.Standard.b,
+            "X": ControllerSkinPalette.Standard.x,
+            "Y": ControllerSkinPalette.Standard.y
         ],
-        backgroundColor: Color(red: 0.15, green: 0.15, blue: 0.17),
+        backgroundColor: ControllerSkinPalette.Standard.background,
         borderColor: Color.white.opacity(0.1),
         shadowOpacity: 0.4,
         cornerRadius: 24
@@ -49,14 +49,14 @@ extension WiiUControllerSkin {
 
     static let wiiUOriginal = WiiUControllerSkin(
         name: "Wii U Original",
-        dpadColor: Color(red: 0.2, green: 0.2, blue: 0.2),
+        dpadColor: ControllerSkinPalette.WiiUOriginal.dpad,
         buttonColors: [
-            "A": Color(red: 0.1, green: 0.7, blue: 0.2),
-            "B": Color(red: 0.95, green: 0.2, blue: 0.1),
-            "X": Color(red: 0.0, green: 0.3, blue: 0.95),
-            "Y": Color(red: 0.99, green: 0.75, blue: 0.0)
+            "A": ControllerSkinPalette.WiiUOriginal.a,
+            "B": ControllerSkinPalette.WiiUOriginal.b,
+            "X": ControllerSkinPalette.WiiUOriginal.x,
+            "Y": ControllerSkinPalette.WiiUOriginal.y
         ],
-        backgroundColor: Color(red: 0.18, green: 0.18, blue: 0.19),
+        backgroundColor: ControllerSkinPalette.WiiUOriginal.background,
         borderColor: Color.white.opacity(0.12),
         shadowOpacity: 0.45,
         cornerRadius: 22
@@ -64,14 +64,14 @@ extension WiiUControllerSkin {
 
     static let gameCube = WiiUControllerSkin(
         name: "GameCube",
-        dpadColor: Color(red: 0.15, green: 0.15, blue: 0.15),
+        dpadColor: ControllerSkinPalette.GameCube.dpad,
         buttonColors: [
-            "A": Color(red: 0.15, green: 0.75, blue: 0.25),
-            "B": Color(red: 1.0, green: 0.1, blue: 0.1),
-            "X": Color(red: 0.0, green: 0.3, blue: 0.95),
-            "Y": Color(red: 0.95, green: 0.65, blue: 0.0)
+            "A": ControllerSkinPalette.GameCube.a,
+            "B": ControllerSkinPalette.GameCube.b,
+            "X": ControllerSkinPalette.GameCube.x,
+            "Y": ControllerSkinPalette.GameCube.y
         ],
-        backgroundColor: Color(red: 0.1, green: 0.1, blue: 0.15),
+        backgroundColor: ControllerSkinPalette.GameCube.background,
         borderColor: Color.white.opacity(0.1),
         shadowOpacity: 0.5,
         cornerRadius: 20
@@ -79,14 +79,14 @@ extension WiiUControllerSkin {
 
     static let nintendo64 = WiiUControllerSkin(
         name: "Nintendo 64",
-        dpadColor: Color(red: 0.8, green: 0.1, blue: 0.1),
+        dpadColor: ControllerSkinPalette.Nintendo64.dpad,
         buttonColors: [
-            "A": Color(red: 0.2, green: 0.8, blue: 0.3),
-            "B": Color(red: 1.0, green: 0.8, blue: 0.0),
-            "X": Color(red: 0.2, green: 0.8, blue: 0.3),
-            "Y": Color(red: 1.0, green: 0.8, blue: 0.0)
+            "A": ControllerSkinPalette.Nintendo64.a,
+            "B": ControllerSkinPalette.Nintendo64.b,
+            "X": ControllerSkinPalette.Nintendo64.x,
+            "Y": ControllerSkinPalette.Nintendo64.y
         ],
-        backgroundColor: Color(red: 0.12, green: 0.12, blue: 0.2),
+        backgroundColor: ControllerSkinPalette.Nintendo64.background,
         borderColor: Color.white.opacity(0.15),
         shadowOpacity: 0.4,
         cornerRadius: 18
@@ -94,14 +94,14 @@ extension WiiUControllerSkin {
 
     static let superNintendo = WiiUControllerSkin(
         name: "Super Nintendo",
-        dpadColor: Color(red: 0.7, green: 0.7, blue: 0.7),
+        dpadColor: ControllerSkinPalette.SuperNintendo.dpad,
         buttonColors: [
-            "A": Color(red: 0.15, green: 0.75, blue: 0.2),
-            "B": Color(red: 0.95, green: 0.15, blue: 0.15),
-            "X": Color(red: 0.15, green: 0.4, blue: 0.95),
-            "Y": Color(red: 0.95, green: 0.7, blue: 0.05)
+            "A": ControllerSkinPalette.SuperNintendo.a,
+            "B": ControllerSkinPalette.SuperNintendo.b,
+            "X": ControllerSkinPalette.SuperNintendo.x,
+            "Y": ControllerSkinPalette.SuperNintendo.y
         ],
-        backgroundColor: Color(red: 0.2, green: 0.15, blue: 0.25),
+        backgroundColor: ControllerSkinPalette.SuperNintendo.background,
         borderColor: Color.white.opacity(0.1),
         shadowOpacity: 0.35,
         cornerRadius: 16
@@ -109,14 +109,14 @@ extension WiiUControllerSkin {
 
     static let nes = WiiUControllerSkin(
         name: "NES",
-        dpadColor: Color(red: 0.2, green: 0.2, blue: 0.2),
+        dpadColor: ControllerSkinPalette.NES.dpad,
         buttonColors: [
-            "A": Color(red: 0.95, green: 0.2, blue: 0.2),
-            "B": Color(red: 0.95, green: 0.2, blue: 0.2),
-            "X": Color(red: 0.95, green: 0.2, blue: 0.2),
-            "Y": Color(red: 0.95, green: 0.2, blue: 0.2)
+            "A": ControllerSkinPalette.NES.a,
+            "B": ControllerSkinPalette.NES.b,
+            "X": ControllerSkinPalette.NES.x,
+            "Y": ControllerSkinPalette.NES.y
         ],
-        backgroundColor: Color(red: 0.1, green: 0.1, blue: 0.1),
+        backgroundColor: ControllerSkinPalette.NES.background,
         borderColor: Color.white.opacity(0.08),
         shadowOpacity: 0.3,
         cornerRadius: 12
@@ -124,14 +124,14 @@ extension WiiUControllerSkin {
 
     static let switchPro = WiiUControllerSkin(
         name: "Switch Pro",
-        dpadColor: Color(red: 0.3, green: 0.3, blue: 0.3),
+        dpadColor: ControllerSkinPalette.SwitchPro.dpad,
         buttonColors: [
-            "A": Color(red: 0.2, green: 0.8, blue: 0.3),
-            "B": Color(red: 1.0, green: 0.3, blue: 0.2),
-            "X": Color(red: 0.1, green: 0.5, blue: 1.0),
-            "Y": Color(red: 1.0, green: 0.8, blue: 0.1)
+            "A": ControllerSkinPalette.SwitchPro.a,
+            "B": ControllerSkinPalette.SwitchPro.b,
+            "X": ControllerSkinPalette.SwitchPro.x,
+            "Y": ControllerSkinPalette.SwitchPro.y
         ],
-        backgroundColor: Color(red: 0.08, green: 0.08, blue: 0.1),
+        backgroundColor: ControllerSkinPalette.SwitchPro.background,
         borderColor: Color.white.opacity(0.12),
         shadowOpacity: 0.5,
         cornerRadius: 20
@@ -141,14 +141,14 @@ extension WiiUControllerSkin {
 
     static let playStation = WiiUControllerSkin(
         name: "PlayStation",
-        dpadColor: Color(red: 0.2, green: 0.2, blue: 0.2),
+        dpadColor: ControllerSkinPalette.PlayStation.dpad,
         buttonColors: [
-            "A": Color(red: 0.2, green: 0.6, blue: 1.0),
-            "B": Color(red: 1.0, green: 0.2, blue: 0.3),
-            "X": Color(red: 1.0, green: 0.4, blue: 0.2),
-            "Y": Color(red: 0.2, green: 0.8, blue: 0.3)
+            "A": ControllerSkinPalette.PlayStation.a,
+            "B": ControllerSkinPalette.PlayStation.b,
+            "X": ControllerSkinPalette.PlayStation.x,
+            "Y": ControllerSkinPalette.PlayStation.y
         ],
-        backgroundColor: Color(red: 0.05, green: 0.05, blue: 0.07),
+        backgroundColor: ControllerSkinPalette.PlayStation.background,
         borderColor: Color.white.opacity(0.1),
         shadowOpacity: 0.55,
         cornerRadius: 22
@@ -156,29 +156,29 @@ extension WiiUControllerSkin {
 
     static let xbox = WiiUControllerSkin(
         name: "Xbox",
-        dpadColor: Color(red: 0.2, green: 0.2, blue: 0.2),
+        dpadColor: ControllerSkinPalette.Xbox.dpad,
         buttonColors: [
-            "A": Color(red: 0.1, green: 0.7, blue: 0.2),
-            "B": Color(red: 1.0, green: 0.2, blue: 0.1),
-            "X": Color(red: 0.15, green: 0.4, blue: 1.0),
-            "Y": Color(red: 1.0, green: 0.75, blue: 0.0)
+            "A": ControllerSkinPalette.Xbox.a,
+            "B": ControllerSkinPalette.Xbox.b,
+            "X": ControllerSkinPalette.Xbox.x,
+            "Y": ControllerSkinPalette.Xbox.y
         ],
-        backgroundColor: Color(red: 0.08, green: 0.08, blue: 0.08),
-        borderColor: Color(red: 0.0, green: 0.8, blue: 0.0).opacity(0.3),
+        backgroundColor: ControllerSkinPalette.Xbox.background,
+        borderColor: ControllerSkinPalette.Xbox.border.opacity(0.3),
         shadowOpacity: 0.5,
         cornerRadius: 18
     )
 
     static let steamDeck = WiiUControllerSkin(
         name: "Steam Deck",
-        dpadColor: Color(red: 0.15, green: 0.15, blue: 0.15),
+        dpadColor: ControllerSkinPalette.SteamDeck.dpad,
         buttonColors: [
-            "A": Color(red: 0.2, green: 0.8, blue: 0.3),
-            "B": Color(red: 1.0, green: 0.3, blue: 0.2),
-            "X": Color(red: 0.1, green: 0.5, blue: 1.0),
-            "Y": Color(red: 1.0, green: 0.8, blue: 0.1)
+            "A": ControllerSkinPalette.SteamDeck.a,
+            "B": ControllerSkinPalette.SteamDeck.b,
+            "X": ControllerSkinPalette.SteamDeck.x,
+            "Y": ControllerSkinPalette.SteamDeck.y
         ],
-        backgroundColor: Color(red: 0.1, green: 0.1, blue: 0.11),
+        backgroundColor: ControllerSkinPalette.SteamDeck.background,
         borderColor: Color.white.opacity(0.15),
         shadowOpacity: 0.45,
         cornerRadius: 20
@@ -188,29 +188,29 @@ extension WiiUControllerSkin {
 
     static let arcadeCabinet = WiiUControllerSkin(
         name: "Arcade Cabinet",
-        dpadColor: Color(red: 0.95, green: 0.4, blue: 0.0),
+        dpadColor: ControllerSkinPalette.ArcadeCabinet.dpad,
         buttonColors: [
-            "A": Color(red: 0.95, green: 0.1, blue: 0.1),
-            "B": Color(red: 0.1, green: 0.8, blue: 0.95),
-            "X": Color(red: 0.95, green: 0.95, blue: 0.1),
-            "Y": Color(red: 0.1, green: 0.95, blue: 0.4)
+            "A": ControllerSkinPalette.ArcadeCabinet.a,
+            "B": ControllerSkinPalette.ArcadeCabinet.b,
+            "X": ControllerSkinPalette.ArcadeCabinet.x,
+            "Y": ControllerSkinPalette.ArcadeCabinet.y
         ],
-        backgroundColor: Color(red: 0.02, green: 0.02, blue: 0.02),
-        borderColor: Color(red: 0.95, green: 0.4, blue: 0.0).opacity(0.5),
+        backgroundColor: ControllerSkinPalette.ArcadeCabinet.background,
+        borderColor: ControllerSkinPalette.ArcadeCabinet.border.opacity(0.5),
         shadowOpacity: 0.6,
         cornerRadius: 12
     )
 
     static let segaGenesis = WiiUControllerSkin(
         name: "Sega Genesis",
-        dpadColor: Color(red: 0.2, green: 0.2, blue: 0.2),
+        dpadColor: ControllerSkinPalette.SegaGenesis.dpad,
         buttonColors: [
-            "A": Color(red: 0.95, green: 0.15, blue: 0.15),
-            "B": Color(red: 0.15, green: 0.95, blue: 0.15),
-            "X": Color(red: 0.15, green: 0.15, blue: 0.95),
-            "Y": Color(red: 0.95, green: 0.95, blue: 0.15)
+            "A": ControllerSkinPalette.SegaGenesis.a,
+            "B": ControllerSkinPalette.SegaGenesis.b,
+            "X": ControllerSkinPalette.SegaGenesis.x,
+            "Y": ControllerSkinPalette.SegaGenesis.y
         ],
-        backgroundColor: Color(red: 0.05, green: 0.05, blue: 0.05),
+        backgroundColor: ControllerSkinPalette.SegaGenesis.background,
         borderColor: Color.white.opacity(0.1),
         shadowOpacity: 0.4,
         cornerRadius: 14
@@ -237,10 +237,10 @@ extension WiiUControllerSkin {
         name: "Glass",
         dpadColor: Color.white.opacity(0.6),
         buttonColors: [
-            "A": Color(red: 0.2, green: 0.8, blue: 0.3).opacity(0.7),
-            "B": Color(red: 1.0, green: 0.3, blue: 0.2).opacity(0.7),
-            "X": Color(red: 0.1, green: 0.5, blue: 1.0).opacity(0.7),
-            "Y": Color(red: 1.0, green: 0.8, blue: 0.1).opacity(0.7)
+            "A": ControllerSkinPalette.Glass.a.opacity(0.7),
+            "B": ControllerSkinPalette.Glass.b.opacity(0.7),
+            "X": ControllerSkinPalette.Glass.x.opacity(0.7),
+            "Y": ControllerSkinPalette.Glass.y.opacity(0.7)
         ],
         backgroundColor: Color.black.opacity(0.3),
         borderColor: Color.white.opacity(0.3),
@@ -250,29 +250,29 @@ extension WiiUControllerSkin {
 
     static let neon = WiiUControllerSkin(
         name: "Neon",
-        dpadColor: Color(red: 0.0, green: 1.0, blue: 0.8),
+        dpadColor: ControllerSkinPalette.Neon.dpad,
         buttonColors: [
-            "A": Color(red: 0.0, green: 1.0, blue: 0.3),
-            "B": Color(red: 1.0, green: 0.0, blue: 0.5),
-            "X": Color(red: 0.0, green: 0.5, blue: 1.0),
-            "Y": Color(red: 1.0, green: 0.85, blue: 0.0)
+            "A": ControllerSkinPalette.Neon.a,
+            "B": ControllerSkinPalette.Neon.b,
+            "X": ControllerSkinPalette.Neon.x,
+            "Y": ControllerSkinPalette.Neon.y
         ],
-        backgroundColor: Color(red: 0.02, green: 0.02, blue: 0.05),
-        borderColor: Color(red: 0.0, green: 1.0, blue: 0.8).opacity(0.4),
+        backgroundColor: ControllerSkinPalette.Neon.background,
+        borderColor: ControllerSkinPalette.Neon.border.opacity(0.4),
         shadowOpacity: 0.6,
         cornerRadius: 20
     )
 
     static let darkMode = WiiUControllerSkin(
         name: "Dark Mode",
-        dpadColor: Color(red: 0.4, green: 0.4, blue: 0.4),
+        dpadColor: ControllerSkinPalette.DarkMode.dpad,
         buttonColors: [
-            "A": Color(red: 0.1, green: 0.6, blue: 0.2),
-            "B": Color(red: 0.8, green: 0.15, blue: 0.1),
-            "X": Color(red: 0.0, green: 0.35, blue: 0.9),
-            "Y": Color(red: 0.9, green: 0.65, blue: 0.0)
+            "A": ControllerSkinPalette.DarkMode.a,
+            "B": ControllerSkinPalette.DarkMode.b,
+            "X": ControllerSkinPalette.DarkMode.x,
+            "Y": ControllerSkinPalette.DarkMode.y
         ],
-        backgroundColor: Color(red: 0.08, green: 0.08, blue: 0.1),
+        backgroundColor: ControllerSkinPalette.DarkMode.background,
         borderColor: Color.white.opacity(0.08),
         shadowOpacity: 0.6,
         cornerRadius: 18
@@ -280,14 +280,14 @@ extension WiiUControllerSkin {
 
     static let lightMode = WiiUControllerSkin(
         name: "Light Mode",
-        dpadColor: Color(red: 0.5, green: 0.5, blue: 0.5),
+        dpadColor: ControllerSkinPalette.LightMode.dpad,
         buttonColors: [
-            "A": Color(red: 0.1, green: 0.8, blue: 0.2),
-            "B": Color(red: 1.0, green: 0.2, blue: 0.1),
-            "X": Color(red: 0.0, green: 0.3, blue: 1.0),
-            "Y": Color(red: 1.0, green: 0.8, blue: 0.0)
+            "A": ControllerSkinPalette.LightMode.a,
+            "B": ControllerSkinPalette.LightMode.b,
+            "X": ControllerSkinPalette.LightMode.x,
+            "Y": ControllerSkinPalette.LightMode.y
         ],
-        backgroundColor: Color(red: 0.9, green: 0.9, blue: 0.92),
+        backgroundColor: ControllerSkinPalette.LightMode.background,
         borderColor: Color.black.opacity(0.1),
         shadowOpacity: 0.15,
         cornerRadius: 20
@@ -295,15 +295,15 @@ extension WiiUControllerSkin {
 
     static let custom = WiiUControllerSkin(
         name: "Custom",
-        dpadColor: Color(red: 0.4, green: 0.6, blue: 0.8),
+        dpadColor: ControllerSkinPalette.Custom.dpad,
         buttonColors: [
-            "A": Color(red: 0.6, green: 0.3, blue: 0.8),
-            "B": Color(red: 0.8, green: 0.3, blue: 0.6),
-            "X": Color(red: 0.3, green: 0.8, blue: 0.6),
-            "Y": Color(red: 0.8, green: 0.6, blue: 0.3)
+            "A": ControllerSkinPalette.Custom.a,
+            "B": ControllerSkinPalette.Custom.b,
+            "X": ControllerSkinPalette.Custom.x,
+            "Y": ControllerSkinPalette.Custom.y
         ],
-        backgroundColor: Color(red: 0.1, green: 0.12, blue: 0.15),
-        borderColor: Color(red: 0.4, green: 0.6, blue: 0.8).opacity(0.3),
+        backgroundColor: ControllerSkinPalette.Custom.background,
+        borderColor: ControllerSkinPalette.Custom.dpad.opacity(0.3),
         shadowOpacity: 0.4,
         cornerRadius: 20
     )
@@ -312,30 +312,30 @@ extension WiiUControllerSkin {
 
     static let marioTheme = WiiUControllerSkin(
         name: "Mario Theme",
-        dpadColor: Color(red: 0.95, green: 0.3, blue: 0.0),
+        dpadColor: ControllerSkinPalette.MarioTheme.dpad,
         buttonColors: [
-            "A": Color(red: 0.2, green: 0.8, blue: 0.3),
-            "B": Color(red: 0.95, green: 0.2, blue: 0.1),
-            "X": Color(red: 0.95, green: 0.8, blue: 0.0),
-            "Y": Color(red: 0.2, green: 0.4, blue: 0.95)
+            "A": ControllerSkinPalette.MarioTheme.a,
+            "B": ControllerSkinPalette.MarioTheme.b,
+            "X": ControllerSkinPalette.MarioTheme.x,
+            "Y": ControllerSkinPalette.MarioTheme.y
         ],
-        backgroundColor: Color(red: 0.95, green: 0.4, blue: 0.0).opacity(0.1),
-        borderColor: Color(red: 0.95, green: 0.3, blue: 0.0).opacity(0.3),
+        backgroundColor: ControllerSkinPalette.MarioTheme.background.opacity(0.1),
+        borderColor: ControllerSkinPalette.MarioTheme.dpad.opacity(0.3),
         shadowOpacity: 0.4,
         cornerRadius: 20
     )
 
     static let zeldaTheme = WiiUControllerSkin(
         name: "Zelda Theme",
-        dpadColor: Color(red: 0.8, green: 0.7, blue: 0.2),
+        dpadColor: ControllerSkinPalette.ZeldaTheme.dpad,
         buttonColors: [
-            "A": Color(red: 0.8, green: 0.7, blue: 0.2),
-            "B": Color(red: 0.3, green: 0.6, blue: 0.2),
-            "X": Color(red: 0.2, green: 0.5, blue: 0.8),
-            "Y": Color(red: 0.8, green: 0.2, blue: 0.2)
+            "A": ControllerSkinPalette.ZeldaTheme.a,
+            "B": ControllerSkinPalette.ZeldaTheme.b,
+            "X": ControllerSkinPalette.ZeldaTheme.x,
+            "Y": ControllerSkinPalette.ZeldaTheme.y
         ],
-        backgroundColor: Color(red: 0.1, green: 0.08, blue: 0.12),
-        borderColor: Color(red: 0.8, green: 0.7, blue: 0.2).opacity(0.25),
+        backgroundColor: ControllerSkinPalette.ZeldaTheme.background,
+        borderColor: ControllerSkinPalette.ZeldaTheme.dpad.opacity(0.25),
         shadowOpacity: 0.45,
         cornerRadius: 20
     )
@@ -349,15 +349,15 @@ struct ControllerSkinSelector: View {
         VStack(spacing: 12) {
             HStack {
                 Text("Controller Skin")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .foregroundColor(MuffinTheme.brownDarkest)
 
                 Spacer()
 
                 Button(action: { showingSelector.toggle() }) {
                     Text(selectedSkin.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(Color(red: 0.4, green: 0.6, blue: 1.0))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(MuffinTheme.pixelBlue)
                 }
             }
 
@@ -380,13 +380,13 @@ struct ControllerSkinSelector: View {
                     .frame(maxHeight: 300)
                 }
                 .padding(12)
-                .background(Color.white.opacity(0.05))
+                .background(MuffinTheme.wrapper.opacity(0.5))
                 .cornerRadius(12)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .padding(12)
-        .background(Color.white.opacity(0.03))
+        .background(MuffinTheme.cream)
         .cornerRadius(12)
     }
 }
@@ -401,8 +401,8 @@ struct SkinOption: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(skin.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownDarkest)
 
                     HStack(spacing: 6) {
                         Circle()
@@ -432,12 +432,12 @@ struct SkinOption: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(Color(red: 0.4, green: 0.9, blue: 0.4))
+                        .foregroundColor(MuffinTheme.pixelBlue)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
-            .background(isSelected ? Color.white.opacity(0.1) : Color.white.opacity(0.05))
+            .background(isSelected ? MuffinTheme.wrapper : MuffinTheme.cream)
             .cornerRadius(8)
         }
     }
