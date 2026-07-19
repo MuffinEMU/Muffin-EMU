@@ -1,18 +1,8 @@
 name: Build check
 on:
-  workflow_dispatch:
-  pull_request:
-    paths-ignore:
-      - "*.md"
-    types:
-      - opened
-      - synchronize
-      - reopened
-  push:
-    paths-ignore:
-      - "*.md"
-    branches:
-      - main
+  workflow_dispatch: {}
+  # No push/pull_request trigger: this calls build.yml, a full desktop (Win/Linux/
+  # macOS) Cemu build unrelated to the iOS port and expensive to run on every push.
 
 jobs:
   build:

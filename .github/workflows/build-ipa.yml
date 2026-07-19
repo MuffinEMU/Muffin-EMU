@@ -1,10 +1,10 @@
 name: Build IPA
 
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch: {}
+  # No push/pull_request trigger: building an IPA is expensive and only needed for
+  # actual test/milestone builds, not every commit in the M1 compile-fix grind.
+  # Dispatch this manually when there's something worth putting on a device.
 
 jobs:
   build:

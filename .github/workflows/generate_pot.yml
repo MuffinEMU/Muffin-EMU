@@ -1,19 +1,9 @@
 name: Generate translation template
 
 on:
-  workflow_dispatch:
-  pull_request:
-    paths-ignore:
-      - "*.md"
-    types:
-      - opened
-      - synchronize
-      - reopened
-  push:
-    paths-ignore:
-      - "*.md"
-    branches:
-      - main
+  workflow_dispatch: {}
+  # No push/pull_request trigger: translation-template generation isn't relevant
+  # during the M1 iOS compile grind and shouldn't fire on every commit.
 
 jobs:
   generate-pot:
