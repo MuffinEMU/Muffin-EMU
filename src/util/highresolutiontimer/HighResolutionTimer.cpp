@@ -12,7 +12,7 @@ HighResolutionTimer HighResolutionTimer::now()
     clock_gettime(CLOCK_MONOTONIC_RAW, &pc);
     uint64 nsec = (uint64)pc.tv_sec * (uint64)1000000000 + (uint64)pc.tv_nsec;
     return HighResolutionTimer(nsec);
-#elif BOOST_OS_MACOS
+#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
 	return HighResolutionTimer(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW));
 #elif BOOST_OS_BSD
     timespec pc;
