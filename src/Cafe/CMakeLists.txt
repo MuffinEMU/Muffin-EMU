@@ -431,8 +431,6 @@ add_library(CemuCafe
   OS/libs/nsyshid/Infinity.h
   OS/libs/nsyshid/Skylander.cpp
   OS/libs/nsyshid/Skylander.h
-  OS/libs/nsyshid/SkylanderXbox360.cpp
-  OS/libs/nsyshid/SkylanderXbox360.h
   OS/libs/nsyshid/g721/g721.cpp
   OS/libs/nsyshid/g721/g721.h
   OS/libs/nsyskbd/nsyskbd.cpp
@@ -501,6 +499,8 @@ if(NOT PLATFORM_IOS)
 	target_sources(CemuCafe PRIVATE
 	    OS/libs/nsyshid/BackendLibusb.cpp
 	    OS/libs/nsyshid/BackendLibusb.h
+	    OS/libs/nsyshid/SkylanderXbox360.cpp
+	    OS/libs/nsyshid/SkylanderXbox360.h
 	    HW/Latte/Renderer/OpenGL/CachedFBOGL.h
 	    HW/Latte/Renderer/OpenGL/LatteTextureGL.cpp
 	    HW/Latte/Renderer/OpenGL/LatteTextureGL.h
