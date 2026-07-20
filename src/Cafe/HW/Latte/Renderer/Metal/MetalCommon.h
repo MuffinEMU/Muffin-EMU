@@ -18,7 +18,20 @@ struct MetalPixelFormatSupport
         m_supportsR8Unorm_sRGB = device->supportsFamily(MTL::GPUFamilyApple1);
         m_supportsRG8Unorm_sRGB = device->supportsFamily(MTL::GPUFamilyApple1);
         m_supportsPacked16BitFormats = device->supportsFamily(MTL::GPUFamilyApple1);
+        // -[MTLDevice depth24Stencil8PixelFormatSupported] is a macOS-only method -
+        // Apple deliberately excludes it from the MTLDevice protocol on iOS (the
+        // legacy packed D24S8 format isn't relevant to Apple Silicon GPUs, which use
+        // D32-based depth/stencil formats instead - see MTL_DEPTH_FORMAT_TABLE in
+        // LatteToMtl.cpp, which already maps GX2's D24_S8 formats to
+        // PixelFormatDepth32Float_Stencil8 regardless of this flag). Confirmed via a
+        // live device crash: -[AGXA12XDevice isDepth24Stencil8PixelFormatSupported]:
+        // unrecognized selector sent to instance - calling it unconditionally on iOS
+        // reliably throws, since the selector genuinely isn't implemented there.
+#if !defined(CEMU_PLATFORM_IOS)
         m_supportsDepth24Unorm_Stencil8 = device->depth24Stencil8PixelFormatSupported();
+#else
+        m_supportsDepth24Unorm_Stencil8 = false;
+#endif
 	}
 };
 
