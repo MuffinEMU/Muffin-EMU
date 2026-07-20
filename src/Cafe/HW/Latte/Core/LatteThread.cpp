@@ -115,6 +115,25 @@ void LatteThread_HandleOSScreen()
 int Latte_ThreadEntry()
 {
 	SetThreadName("LatteThread");
+
+	// g_renderer can be null here if construction failed (confirmed possible via a
+	// live device crash inside MetalRenderer::MetalRenderer() - now caught with
+	// @try/@catch at the iOS bridge call sites rather than left to crash the whole
+	// app, since M2's actual exit criteria is the interpreter/OS-HLE stack, not
+	// working rendering - that's the separate M3 milestone). Two different callers
+	// spin-wait on this thread signaling completion before they proceed
+	// (Latte_Start()'s own `while (!sLatteThreadFinishedInit)`, and separately
+	// PrepareExecutable()'s `while (g_isGPUInitFinished == false)`) - so without a
+	// renderer, this must still signal both flags immediately and return, rather
+	// than dereference g_renderer or simply bail without signaling and leave the
+	// callers hanging in yet another indefinite freeze.
+	if (!g_renderer)
+	{
+		sLatteThreadFinishedInit = true;
+		g_isGPUInitFinished = true;
+		return 0;
+	}
+
 	sint32 w,h;
 	WindowSystem::GetWindowPhysSize(w,h);
 

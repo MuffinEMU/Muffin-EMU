@@ -243,14 +243,36 @@ void cemu_bridge_register_render_surface(void* uiView, int width, int height, do
     windowInfo.phys_height = (int32_t)(height * dpiScale);
     windowInfo.dpi_scale = dpiScale;
 
-    if (!g_renderer)
-        g_renderer = std::make_unique<MetalRenderer>();
+    // MetalRenderer's constructor (and InitializeLayer(), transitively) makes real
+    // Objective-C/Metal API calls - device/queue/texture creation, and compiling
+    // utilityShaderSource (a raw MSL string) via newLibrary(source:...) at runtime.
+    // The first-ever live device test of this path threw an uncaught NSException
+    // from inside the constructor (confirmed via dSYM symbolication of the crash
+    // address to MetalRenderer::MetalRenderer() specifically) - this .cpp file can't
+    // @try/@catch it (plain C++, not Objective-C++), but this .mm file can, since
+    // ObjC and C++ exceptions share one unwinding mechanism on Darwin. M2's actual
+    // exit criteria is the interpreter/OS-HLE stack, not working rendering (that's
+    // M3, separately) - so a renderer construction failure shouldn't be allowed to
+    // take down the whole app. Catch it, log the real reason (rather than continuing
+    // to guess blind), and proceed without a renderer.
+    @try {
+        if (!g_renderer)
+            g_renderer = std::make_unique<MetalRenderer>();
 
-    // width/height here are logical (point) size, matching desktop's wxSize usage -
-    // MetalLayerHandle internally multiplies by the layer's own contentsScaleFactor
-    // (computed in MetalLayer.mm's CreateMetalLayer) to get the physical drawable size.
-    MetalRenderer::GetInstance()->InitializeLayer({width, height}, /*mainWindow=*/true);
-    setStatus("Render surface registered.");
+        // width/height here are logical (point) size, matching desktop's wxSize usage -
+        // MetalLayerHandle internally multiplies by the layer's own contentsScaleFactor
+        // (computed in MetalLayer.mm's CreateMetalLayer) to get the physical drawable size.
+        MetalRenderer::GetInstance()->InitializeLayer({width, height}, /*mainWindow=*/true);
+        setStatus("Render surface registered.");
+    } @catch (NSException* exception) {
+        g_renderer.reset();
+        std::string message = "MetalRenderer construction/InitializeLayer threw: ";
+        message += exception.name.UTF8String;
+        message += " - ";
+        message += exception.reason.UTF8String;
+        cemu_bridge_log_checkpoint(message.c_str());
+        setStatus("Render surface registration failed (see crash log).");
+    }
 #else
     (void)uiView; (void)width; (void)height; (void)dpiScale;
 #endif
@@ -269,19 +291,29 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     // calls Latte_Start(), which spawns the GPU thread (Latte_ThreadEntry(),
     // LatteThread.cpp) and then - on THIS thread, before PrepareExecutable() even
     // returns - spins `while (g_isGPUInitFinished == false) sleep(50ms);` waiting for
-    // it. Latte_ThreadEntry() unconditionally calls `g_renderer->Initialize()` as
-    // nearly its first action. g_renderer is only ever constructed by
-    // cemu_bridge_register_render_surface() below - which nothing in the Swift app
-    // actually calls yet (the UIView/surface-before-boot wiring is separate M3 work,
-    // still open). Without this, g_renderer is null here and that call is a null
-    // dereference on the newly spawned GPU thread - happening chronologically BEFORE
-    // LaunchForegroundTitle()'s PPCTimer_waitForInit() is ever reached, so it can
-    // masquerade as (or compound with) that bug. MetalRenderer's constructor and
-    // Initialize() don't touch a surface/layer at all (that's InitializeLayer(),
-    // called separately once a real one exists) - only the device/command queue/
-    // shader compiler get set up - so it's safe to construct here with no UIView yet.
+    // it. Latte_ThreadEntry() unconditionally calls `g_renderer->Initialize()` with
+    // no null check, so retry construction here in case
+    // cemu_bridge_register_render_surface()'s own attempt (with its own @try/@catch)
+    // failed and left g_renderer null - same @try/@catch reasoning applies: a
+    // renderer construction failure is real (confirmed via live device crash) but
+    // shouldn't block M2's actual exit criteria (interpreter/OS-HLE stack), only M3
+    // (rendering). If this also fails, g_renderer stays null - Latte_ThreadEntry()
+    // (LatteThread.cpp) now checks for that and signals both flags the callers spin
+    // on (sLatteThreadFinishedInit, g_isGPUInitFinished) without touching g_renderer,
+    // rather than null-dereferencing or leaving those waits hanging forever.
     if (!g_renderer)
-        g_renderer = std::make_unique<MetalRenderer>();
+    {
+        @try {
+            g_renderer = std::make_unique<MetalRenderer>();
+        } @catch (NSException* exception) {
+            g_renderer.reset();
+            std::string message = "MetalRenderer construction (retry, boot_rpx) threw: ";
+            message += exception.name.UTF8String;
+            message += " - ";
+            message += exception.reason.UTF8String;
+            cemu_bridge_log_checkpoint(message.c_str());
+        }
+    }
 
     namespace fs = std::filesystem;
     cemu_bridge_log_checkpoint("boot_rpx: about to call PrepareForegroundTitleFromStandaloneRPX");
