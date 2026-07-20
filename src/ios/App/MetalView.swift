@@ -21,6 +21,20 @@ struct MetalViewIOS: UIViewRepresentable {
 
     func updateUIView(_ uiView: MTKView, context: Context) {
         context.coordinator.gameManager = gameManager
+
+        // Register this view as the real render surface as soon as it has actual
+        // (nonzero) bounds. Called on every SwiftUI update, but GameManager guards
+        // against acting more than once - the first update after layout is usually
+        // still zero-sized, so this can't just be done from makeUIView() above.
+        let bounds = uiView.bounds
+        if bounds.width > 0 && bounds.height > 0 {
+            gameManager.registerRenderSurface(
+                uiView: uiView,
+                width: Int32(bounds.width),
+                height: Int32(bounds.height),
+                dpiScale: Double(uiView.contentScaleFactor)
+            )
+        }
     }
 
     func makeCoordinator() -> MetalRenderer {
