@@ -153,7 +153,22 @@ class GameManager: ObservableObject {
               let game = currentGame, let engine = emulationEngine else { return }
         surfaceRegistered = true
 
-        let surfacePtr = Unmanaged.passUnretained(uiView).toOpaque()
+        // passRetained, not passUnretained - deliberately, permanently leaking this
+        // one MTKView for the app's lifetime. Confirmed via a live device SIGSEGV
+        // inside MetalRenderer::BeginFrame() -> AcquireDrawable() -> nextDrawable():
+        // CreateMetalLayer() (MetalLayer.mm) adds the real CAMetalLayer as a sublayer
+        // of this view's CALayer, and the C++ side (MetalLayerHandle) holds a bare,
+        // ARC-invisible `CA::MetalLayer*` to it with no retain of its own. If SwiftUI
+        // ever tears down and recreates this UIViewRepresentable's underlying MTKView
+        // (it's free to do this on essentially any view-hierarchy change, e.g. the
+        // .loading -> .running transition removing the "Booting..." overlay), an
+        // unretained view here means the view - and therefore its layer, and
+        // therefore our sublayer - gets deallocated while the GPU thread still holds
+        // a raw pointer to it, and the very next draw call reads freed memory.
+        // Retaining forever is a small, deliberate one-object bring-up cost, not a
+        // real leak risk (one MTKView per app run) - correct enough for now; the
+        // real fix would have the C++ side own this lifetime properly.
+        let surfacePtr = Unmanaged.passRetained(uiView).toOpaque()
         cemu_bridge_register_render_surface(surfacePtr, width, height, dpiScale)
 
         let romPath = game.romPath
