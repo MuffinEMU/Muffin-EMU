@@ -265,11 +265,33 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     if (!g_initialized.load())
         CafeSystem::Initialize();
 
+    // CafeSystem::PrepareForegroundTitleFromStandaloneRPX() -> PrepareExecutable()
+    // calls Latte_Start(), which spawns the GPU thread (Latte_ThreadEntry(),
+    // LatteThread.cpp) and then - on THIS thread, before PrepareExecutable() even
+    // returns - spins `while (g_isGPUInitFinished == false) sleep(50ms);` waiting for
+    // it. Latte_ThreadEntry() unconditionally calls `g_renderer->Initialize()` as
+    // nearly its first action. g_renderer is only ever constructed by
+    // cemu_bridge_register_render_surface() below - which nothing in the Swift app
+    // actually calls yet (the UIView/surface-before-boot wiring is separate M3 work,
+    // still open). Without this, g_renderer is null here and that call is a null
+    // dereference on the newly spawned GPU thread - happening chronologically BEFORE
+    // LaunchForegroundTitle()'s PPCTimer_waitForInit() is ever reached, so it can
+    // masquerade as (or compound with) that bug. MetalRenderer's constructor and
+    // Initialize() don't touch a surface/layer at all (that's InitializeLayer(),
+    // called separately once a real one exists) - only the device/command queue/
+    // shader compiler get set up - so it's safe to construct here with no UIView yet.
+    if (!g_renderer)
+        g_renderer = std::make_unique<MetalRenderer>();
+
     namespace fs = std::filesystem;
+    cemu_bridge_log_checkpoint("boot_rpx: about to call PrepareForegroundTitleFromStandaloneRPX");
     auto status = CafeSystem::PrepareForegroundTitleFromStandaloneRPX(fs::path(rpxPath));
+    cemu_bridge_log_checkpoint("boot_rpx: PrepareForegroundTitleFromStandaloneRPX returned");
     switch (status) {
         case CafeSystem::PREPARE_STATUS_CODE::SUCCESS:
+            cemu_bridge_log_checkpoint("boot_rpx: about to call LaunchForegroundTitle");
             CafeSystem::LaunchForegroundTitle();
+            cemu_bridge_log_checkpoint("boot_rpx: LaunchForegroundTitle returned");
             setStatus("Title launched.");
             return CEMU_BRIDGE_OK;
         case CafeSystem::PREPARE_STATUS_CODE::INVALID_RPX:
