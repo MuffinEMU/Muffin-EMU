@@ -10,6 +10,7 @@
 //  say so; we never pretend a game is running.
 //
 #import "CemuBridge.h"
+#import <Foundation/Foundation.h>
 
 #include <string>
 #include <atomic>
