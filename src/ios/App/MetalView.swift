@@ -1,5 +1,8 @@
 import SwiftUI
 import MetalKit
+#if os(iOS)
+import UIKit
+#endif
 
 struct MetalViewIOS: UIViewRepresentable {
     var gameManager: GameManager
@@ -16,16 +19,36 @@ struct MetalViewIOS: UIViewRepresentable {
         view.preferredFramesPerSecond = 60
         view.backgroundColor = .black
         view.enableSetNeedsDisplay = false
+
+        // Register the render surface right here, immediately, using the screen's
+        // own bounds - NOT view.bounds. This view sits in a plain VStack with no
+        // explicit .frame(maxWidth:.infinity, maxHeight:.infinity), so UIKit/SwiftUI
+        // may never actually lay it out to a nonzero size (or may take an
+        // unpredictable number of update cycles to do so) - and since boot() now
+        // waits on this registration happening at all, that turned "the boot screen
+        // never resolves" into an indefinite hang with zero C++ involvement, not a
+        // slow boot. The exact size only matters for M3 (real rendering) later; for
+        // now the GPU thread just needs a non-null surface to exist before it starts,
+        // so a real (if approximate) screen size beats waiting on layout timing that
+        // might never satisfy the old nonzero-bounds check.
+        let screenBounds = UIScreen.main.bounds
+        gameManager.registerRenderSurface(
+            uiView: view,
+            width: Int32(screenBounds.width * UIScreen.main.scale),
+            height: Int32(screenBounds.height * UIScreen.main.scale),
+            dpiScale: Double(UIScreen.main.scale)
+        )
+
         return view
     }
 
     func updateUIView(_ uiView: MTKView, context: Context) {
         context.coordinator.gameManager = gameManager
 
-        // Register this view as the real render surface as soon as it has actual
-        // (nonzero) bounds. Called on every SwiftUI update, but GameManager guards
-        // against acting more than once - the first update after layout is usually
-        // still zero-sized, so this can't just be done from makeUIView() above.
+        // Fallback: if for some reason makeUIView's registration above didn't take
+        // (e.g. this view is somehow recreated after boot already started), retry
+        // once real, nonzero view bounds are available. GameManager's surfaceRegistered
+        // guard makes this a no-op once registration has already succeeded.
         let bounds = uiView.bounds
         if bounds.width > 0 && bounds.height > 0 {
             gameManager.registerRenderSurface(
