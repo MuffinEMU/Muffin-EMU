@@ -24,7 +24,7 @@ final class EmulationEngine: ObservableObject {
 
     /// Initialize the engine with the app-sandbox MLC/NAND path.
     func initialize(mlcPath: String) {
-        mlcPath.withCString { cemu_bridge_initialize($0) }
+        EmulationEngine.initializeBlocking(mlcPath: mlcPath)
         statusText = String(cString: cemu_bridge_status_text())
     }
 
@@ -32,10 +32,34 @@ final class EmulationEngine: ObservableObject {
     @discardableResult
     func boot(rpxPath: String) -> CemuBridgeStatus {
         currentGame = URL(fileURLWithPath: rpxPath).lastPathComponent
-        let status = rpxPath.withCString { cemu_bridge_boot_rpx($0) }
+        let status = EmulationEngine.bootBlocking(rpxPath: rpxPath)
         isRunning = cemu_bridge_is_title_running()
         statusText = String(cString: cemu_bridge_status_text())
         return status
+    }
+
+    /// Raw, non-actor-isolated entry points for the two bridge calls that do real
+    /// (potentially slow, and historically hang-prone on iOS - see the M2 boot-freeze
+    /// investigation) engine work. `initialize`/`boot` above call these directly on
+    /// whatever actor they're invoked from (@MainActor by default, since this class
+    /// is @MainActor) - fine for callers that are OK blocking the main thread, but
+    /// GameManager's real launch path calls these `nonisolated` versions from a
+    /// detached background task instead, precisely so a slow interpreter boot (or
+    /// any future bug in it) can't freeze the UI no matter how the C++ side behaves.
+    /// Must not be called concurrently with any other EmulationEngine bridge call.
+    nonisolated static func initializeBlocking(mlcPath: String) {
+        mlcPath.withCString { cemu_bridge_initialize($0) }
+    }
+
+    nonisolated static func bootBlocking(rpxPath: String) -> CemuBridgeStatus {
+        rpxPath.withCString { cemu_bridge_boot_rpx($0) }
+    }
+
+    /// Refreshes published state from the bridge's (fast, non-blocking) getters.
+    /// Call after a background bootBlocking()/initializeBlocking() completes.
+    func refreshStatus() {
+        isRunning = cemu_bridge_is_title_running()
+        statusText = String(cString: cemu_bridge_status_text())
     }
 
     func pause() {

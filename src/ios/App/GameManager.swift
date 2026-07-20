@@ -1,5 +1,8 @@
 import Foundation
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 struct GameMetadata: Codable, Identifiable {
     let id: String
@@ -29,6 +32,7 @@ class GameManager: ObservableObject {
     private let romsDirectory = "Roms"
     private let gameListFile = "games.json"
     private var emulationEngine: EmulationEngine?
+    private var surfaceRegistered = false
 
     init() {
         emulationEngine = EmulationEngine()
@@ -112,6 +116,7 @@ class GameManager: ObservableObject {
     func launchGame(_ game: GameMetadata) {
         currentGame = game
         emulationState = .loading
+        surfaceRegistered = false
 
         guard let engine = emulationEngine else {
             emulationState = .error
@@ -126,23 +131,54 @@ class GameManager: ObservableObject {
             return
         }
 
-        // cemu_bridge_initialize (CafeSystem::Initialize) was never being called before
-        // boot — the bridge guards it idempotently (g_initialized.exchange), so it's
-        // safe to call here on every launch rather than tracking our own init flag.
-        if let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+        // Actual init/boot is deferred to registerRenderSurface(...) below, called by
+        // MetalViewIOS once its view has mounted while emulationState == .loading (see
+        // ContentView.swift). WindowSystem::GetWindowPhysSize() is read synchronously
+        // by the GPU thread the instant boot() spawns it (M3, CemuBridge.mm), so a real
+        // surface must be registered with the bridge before boot() runs, not after -
+        // this view previously only appeared once emulationState == .running, i.e.
+        // strictly after boot() had already returned.
+    }
+
+    /// Called by MetalViewIOS's Coordinator once its view has real, nonzero bounds,
+    /// while emulationState == .loading. Registers the render surface (fast, safe to
+    /// run synchronously on the calling - main - thread: sets a few WindowSystem
+    /// fields and constructs the renderer, doesn't touch the GPU thread), then runs
+    /// the actual init/boot on a detached background task so a slow interpreter boot -
+    /// or any bug in it - can't freeze the UI, regardless of how well-behaved the C++
+    /// side turns out to be.
+    #if os(iOS)
+    func registerRenderSurface(uiView: UIView, width: Int32, height: Int32, dpiScale: Double) {
+        guard emulationState == .loading, !surfaceRegistered,
+              let game = currentGame, let engine = emulationEngine else { return }
+        surfaceRegistered = true
+
+        let surfacePtr = Unmanaged.passUnretained(uiView).toOpaque()
+        cemu_bridge_register_render_surface(surfacePtr, width, height, dpiScale)
+
+        let romPath = game.romPath
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
             let mlcPath = documentsPath.appendingPathComponent("mlc").path
             try? FileManager.default.createDirectory(atPath: mlcPath, withIntermediateDirectories: true)
-            cemu_bridge_log_checkpoint("launchGame: about to call engine.initialize()")
-            engine.initialize(mlcPath: mlcPath)
-            cemu_bridge_log_checkpoint("launchGame: engine.initialize() returned")
-        }
 
-        cemu_bridge_log_checkpoint("launchGame: about to call engine.boot()")
-        let status = engine.boot(rpxPath: game.romPath)
-        cemu_bridge_log_checkpoint("launchGame: engine.boot() returned")
-        lastStatusMessage = engine.statusText
-        emulationState = (status == CEMU_BRIDGE_OK) ? .running : .error
+            cemu_bridge_log_checkpoint("launchGame: about to call engine.initialize() [background]")
+            EmulationEngine.initializeBlocking(mlcPath: mlcPath)
+            cemu_bridge_log_checkpoint("launchGame: engine.initialize() returned [background]")
+
+            cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
+            let status = EmulationEngine.bootBlocking(rpxPath: romPath)
+            cemu_bridge_log_checkpoint("launchGame: engine.boot() returned [background]")
+
+            await MainActor.run {
+                guard let self else { return }
+                engine.refreshStatus()
+                self.lastStatusMessage = engine.statusText
+                self.emulationState = (status == CEMU_BRIDGE_OK) ? .running : .error
+            }
+        }
     }
+    #endif
 
     func stopEmulation() {
         emulationEngine?.stop()

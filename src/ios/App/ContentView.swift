@@ -17,7 +17,13 @@ struct ContentView: View {
                     showingGameBrowser: $showingGameBrowser,
                     showingFavorites: $showingFavorites
                 )
-            } else if let game = selectedGame, gameManager.emulationState == .running {
+            } else if let game = selectedGame,
+                      gameManager.emulationState == .loading || gameManager.emulationState == .running {
+                // Mount as soon as .loading starts, not only once .running - the
+                // Metal surface needs to exist and register itself with the C++
+                // bridge (see GameManager.registerRenderSurface) BEFORE boot() runs,
+                // since the GPU thread reads the window size synchronously the
+                // instant boot() spawns it.
                 EmulatorViewOptimized(
                     game: game,
                     gameManager: gameManager,
@@ -414,6 +420,22 @@ struct EmulatorViewOptimized: View {
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
+            }
+
+            // The Metal view above must mount (so it can register the render
+            // surface) before boot() actually runs, so this state genuinely
+            // overlaps with an on-screen MetalViewIOS for the first time now -
+            // cover it with a status overlay until emulationState flips to .running.
+            if gameManager.emulationState == .loading {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .tint(.white)
+                    Text("Booting…")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
             }
         }
         .onTapGesture {
