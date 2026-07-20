@@ -113,6 +113,7 @@ void cemu_bridge_log_checkpoint(const char* message) {
     #include "gui/interface/WindowSystem.h"
     #include "Cafe/HW/Latte/Renderer/Renderer.h"
     #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
+    #include "Cafe/HW/Espresso/PPCState.h"
     #include <filesystem>
     #include <set>
 
@@ -171,6 +172,18 @@ void cemu_bridge_initialize(const char* mlcPath) {
 #if defined(CEMU_CORE_AVAILABLE)
     if (g_initialized.exchange(true))
         return;
+    // Desktop Cemu only ever calls PPCTimer_init() from main.cpp's CemuCommonInit(),
+    // which this iOS bridge never runs (it goes straight to CafeSystem::Initialize()).
+    // Without it, _rdtscFrequency stays 0 forever, and LaunchForegroundTitle() calls
+    // PPCTimer_waitForInit() - `while (!PPCTimer_isReady()) sleep_for(10ms);` -
+    // synchronously on whatever thread boot() runs on (the main/UI thread here, since
+    // GameManager.launchGame() never dispatches off @MainActor). Nothing was ever
+    // going to make that loop exit: the freeze on tapping play (checkpoint log stops
+    // right after "about to call engine.boot()", never reaches "returned") was this
+    // spin loop running forever, not a crash and not slow interpreter execution. Call
+    // it here, as early as possible per the original comment - it spawns its own
+    // ~3-second background calibration thread, so this doesn't block anything itself.
+    PPCTimer_init();
     // CafeSystem::Initialize() calls ActiveSettings::GetMlcPath() in its very first
     // few lines (to log "mlc01 path: ..."), which without SetPaths() first resolves
     // against a default-constructed (empty) s_user_data_path - i.e. a relative
