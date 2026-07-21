@@ -1,9 +1,14 @@
 name: Build IPA and Create Release
 
+# Auto-trigger on tag push disabled 2026-07-20: this workflow predates the
+# current Cemu-iOS project layout - it references a "CemuEmulator" project/
+# scheme/xcodeproj that no longer exists (the real build lives in
+# build-ios-app.yml, targeting "Cemu"), so it fails at the xcodegen step on
+# every single tag push, generating "your build failed" emails for a build
+# that was never going to succeed. Left as workflow_dispatch-only (manual)
+# rather than deleted, in case its release-notes/upload steps are still
+# wanted as a reference later - just no longer fires automatically.
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       version:
