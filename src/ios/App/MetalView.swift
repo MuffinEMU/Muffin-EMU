@@ -7,18 +7,22 @@ import UIKit
 struct MetalViewIOS: UIViewRepresentable {
     var gameManager: GameManager
 
-    func makeUIView(context: Context) -> MTKView {
-        let view = MTKView()
-        guard let device = MTLCreateSystemDefaultDevice() else {
-            // Honest failure, not a crash - matches this codebase's stated
-            // philosophy of surfacing real error states rather than force-unwrapping.
-            return view
-        }
-        view.device = device
-        view.delegate = context.coordinator
-        view.preferredFramesPerSecond = 60
+    // Plain UIView, deliberately NOT MTKView. MTKView overrides +layerClass to make
+    // its OWN .layer a CAMetalLayer with its own active render loop (device/delegate/
+    // preferredFramesPerSecond below used to drive the Swift-side placeholder
+    // MetalRenderer.draw(in:) at 60fps). CreateMetalLayer() (MetalLayer.mm) then
+    // added the REAL C++ renderer's CAMetalLayer as a SUBLAYER of that already-active
+    // Metal-backed layer - two independent Metal render loops fighting over one
+    // layer tree, one requesting drawables via MTKView's own currentDrawable every
+    // frame, the other calling nextDrawable() directly on the sublayer from the GPU
+    // thread. A live device test confirmed this is genuinely unstable (crashes
+    // recurring in MetalRenderer::BeginFrame -> nextDrawable even after fixing the
+    // separate view-retain issue) - a plain UIView's .layer is an ordinary CALayer
+    // with no competing rendering machinery of its own, so the C++ sublayer has the
+    // view's layer tree to itself.
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
         view.backgroundColor = .black
-        view.enableSetNeedsDisplay = false
 
         // Register the render surface right here, immediately, using the screen's
         // own bounds - NOT view.bounds. This view sits in a plain VStack with no
@@ -42,9 +46,7 @@ struct MetalViewIOS: UIViewRepresentable {
         return view
     }
 
-    func updateUIView(_ uiView: MTKView, context: Context) {
-        context.coordinator.gameManager = gameManager
-
+    func updateUIView(_ uiView: UIView, context: Context) {
         // Fallback: if for some reason makeUIView's registration above didn't take
         // (e.g. this view is somehow recreated after boot already started), retry
         // once real, nonzero view bounds are available. GameManager's surfaceRegistered
@@ -58,10 +60,6 @@ struct MetalViewIOS: UIViewRepresentable {
                 dpiScale: Double(uiView.contentScaleFactor)
             )
         }
-    }
-
-    func makeCoordinator() -> MetalRenderer {
-        return MetalRenderer(gameManager: gameManager)
     }
 }
 
