@@ -1,3 +1,5 @@
 #pragma once
 
-void* CreateMetalLayer(void* handle, float& scaleX, float& scaleY);
+#include "util/math/vector2.h"
+
+void* CreateMetalLayer(void* handle, const Vector2i& pixelSize, float& scaleX, float& scaleY);
