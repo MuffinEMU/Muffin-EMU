@@ -10,19 +10,29 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CAMetalLayer.h>
 
-void* CreateMetalLayer(void* handle, float& scaleX, float& scaleY)
+void* CreateMetalLayer(void* handle, const Vector2i& pixelSize, float& scaleX, float& scaleY)
 {
 	UIView* view = (__bridge UIView*)handle;
 
 	CAMetalLayer* metalLayer = [CAMetalLayer layer];
-	metalLayer.frame = view.bounds;
-	metalLayer.contentsScale = view.contentScaleFactor;
-	// (kCALayer*Sizable autoresizing masks are macOS-only; on iOS the owning view
-	// resizes this layer on layout.)
+
+	// Frame comes from the caller-supplied pixel size (converted to points), NOT
+	// view.bounds: this runs synchronously the instant the render surface is
+	// registered (GameManager.registerRenderSurface, called from makeUIView), which
+	// is before SwiftUI has necessarily laid the owning view out to a nonzero size -
+	// view.bounds was frequently still CGRectZero here, producing a zero-sized,
+	// invisible sublayer: correct rendering underneath, black screen on top.
+	// Confirmed via live device test after the MetalLayerHandle double-release fix
+	// (v1.9) eliminated the earlier crash and exposed this as the next blocker.
+	// Nothing later re-syncs this frame either, since a manually-added sublayer
+	// doesn't auto-resize with its superlayer - a future dynamic-resize path (e.g.
+	// rotation, split view) will need to call back into this layer explicitly.
+	const float scale = (float)view.contentScaleFactor;
+	metalLayer.frame = CGRectMake(0, 0, pixelSize.x / scale, pixelSize.y / scale);
+	metalLayer.contentsScale = scale;
 	[view.layer addSublayer:metalLayer];
 
 	// iOS reports the backing-store scale directly; width/height scale are equal.
-	const float scale = (float)view.contentScaleFactor;
 	scaleX = scale;
 	scaleY = scale;
 
