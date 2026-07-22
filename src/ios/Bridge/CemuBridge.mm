@@ -260,9 +260,29 @@ void cemu_bridge_register_render_surface(void* uiView, int width, int height, do
         if (!g_renderer)
             g_renderer = std::make_unique<MetalRenderer>();
 
-        // width/height here are logical (point) size, matching desktop's wxSize usage -
-        // MetalLayerHandle internally multiplies by the layer's own contentsScaleFactor
-        // (computed in MetalLayer.mm's CreateMetalLayer) to get the physical drawable size.
+        // NOTE: despite the name, width/height as actually supplied by the live
+        // registration path (MetalView.swift's makeUIView: screenBounds.width/height
+        // * UIScreen.main.scale) are PHYSICAL PIXELS, not logical/point size - this
+        // comment previously claimed otherwise (a leftover from an earlier, pre-fix
+        // assumption modeled on desktop's wxSize-in-points convention) and was wrong.
+        // CreateMetalLayer()'s iOS body (MetalLayer.mm) requires pixels - it divides
+        // by view.contentScaleFactor to recover the on-screen point-size frame, and
+        // that specific behavior is confirmed correct by live device test. Below,
+        // MetalLayerHandle's ctor then multiplies this SAME already-pixel value by
+        // the layer's scale factor again for setDrawableSize() - since it was
+        // written assuming points-in (matching the macOS/MetalCanvas.cpp caller,
+        // where the equivalent argument really is wx's point-based size). The net
+        // effect on iOS is a drawable allocated at scale^2 the pixel count actually
+        // needed (e.g. 4x on a 2x-Retina device) - wasteful but NOT visually broken,
+        // because windowInfo.phys_width/phys_height below apply the exact same
+        // redundant multiply, so the output-blit viewport (LatteRenderTarget_
+        // getScreenImageArea, driven by GetWindowPhysSize()) stays proportionally
+        // consistent with the oversized drawable rather than being clipped against
+        // it. Left unfixed deliberately: correcting one side without the other
+        // would substitute a real crop/scale bug for a merely wasteful one, and
+        // there's no device here to verify the combined change. Worth a coordinated
+        // cleanup later (this file + MetalLayerHandle.cpp's ctor), not a same-session
+        // fix without hardware in the loop.
         MetalRenderer::GetInstance()->InitializeLayer({width, height}, /*mainWindow=*/true);
         setStatus("Render surface registered.");
     } @catch (NSException* exception) {
