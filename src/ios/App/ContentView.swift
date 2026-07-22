@@ -98,7 +98,7 @@ struct GameBrowserView: View {
                             .cornerRadius(14)
 
                             Button(action: { showingROMImporter = true }) {
-                                Image(systemName: "arrow.up.doc")
+                                Image(systemName: "doc.badge.plus")
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
                             }
