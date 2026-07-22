@@ -44,8 +44,22 @@ void* CreateMetalLayer(void* handle, const Vector2i& pixelSize, float& scaleX, f
 // macOS / AppKit path (unchanged upstream behavior).
 #include "Cafe/HW/Latte/Renderer/MetalView.h"
 
-void* CreateMetalLayer(void* handle, float& scaleX, float& scaleY)
+// `pixelSize` is unused here (deliberately - see below) but must stay in the
+// signature: MetalLayer.h declares ONE CreateMetalLayer() prototype shared by both
+// platform bodies below, and MetalLayerHandle.cpp (compiled for both iOS and macOS
+// whenever ENABLE_METAL is on - see Cafe/CMakeLists.txt's unconditional
+// `if(ENABLE_METAL)` block) calls it with the 4-argument form unconditionally. This
+// branch used to take only (handle, scaleX, scaleY) - a leftover from before the
+// iOS zero-size fix added pixelSize to the shared declaration - which compiled fine
+// in isolation but left the macOS build (ENABLE_METAL default-on for APPLE, see
+// CMakeLists.txt, and actually built by build-macos in CI) with no definition
+// matching the header's declared signature: a link error, not something caught by
+// this file compiling on its own. macOS's actual sizing still comes from
+// view.bounds/convertRectToBacking below, same as ever - (void) it to silence the
+// unused-parameter warning without pretending it does anything here.
+void* CreateMetalLayer(void* handle, const Vector2i& pixelSize, float& scaleX, float& scaleY)
 {
+	(void)pixelSize;
 	NSView* view = (NSView*)handle;
 
 	MetalView* childView = [[MetalView alloc] initWithFrame:view.bounds];
