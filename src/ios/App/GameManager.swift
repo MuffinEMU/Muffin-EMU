@@ -101,6 +101,61 @@ class GameManager: ObservableObject {
         return nil
     }
 
+    enum ROMImportError: LocalizedError {
+        case unsupportedFormat(String)
+        case accessDenied
+        case copyFailed(Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .unsupportedFormat(let ext):
+                return "\".\(ext)\" isn't a supported ROM format (wua, wud, iso, rpx)."
+            case .accessDenied:
+                return "Couldn't access that file."
+            case .copyFailed(let error):
+                return "Couldn't copy the ROM: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private static let supportedROMExtensions: Set<String> = ["wua", "wud", "iso", "rpx"]
+
+    /// Copies a user-picked ROM (from .fileImporter, so `source` is a security-scoped
+    /// URL outside our sandbox - Files app, iCloud Drive, another app's share sheet)
+    /// into Documents/Roms, then reloads the library so it shows up immediately.
+    func importROM(from source: URL) async throws {
+        let pathExtension = source.pathExtension.lowercased()
+        guard Self.supportedROMExtensions.contains(pathExtension) else {
+            throw ROMImportError.unsupportedFormat(pathExtension)
+        }
+
+        guard source.startAccessingSecurityScopedResource() else {
+            throw ROMImportError.accessDenied
+        }
+        defer { source.stopAccessingSecurityScopedResource() }
+
+        let fileManager = FileManager.default
+        guard let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            throw ROMImportError.accessDenied
+        }
+
+        let romsPath = documentsPath.appendingPathComponent(romsDirectory)
+        try? fileManager.createDirectory(at: romsPath, withIntermediateDirectories: true)
+
+        let destination = romsPath.appendingPathComponent(source.lastPathComponent)
+
+        do {
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.removeItem(at: destination)
+            }
+            try fileManager.copyItem(at: source, to: destination)
+        } catch {
+            throw ROMImportError.copyFailed(error)
+        }
+
+        await loadGames()
+    }
+
     func toggleFavorite(_ game: GameMetadata) {
         if let index = games.firstIndex(where: { $0.id == game.id }) {
             games[index].isFavorite.toggle()

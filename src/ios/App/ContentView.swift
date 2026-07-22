@@ -1,5 +1,6 @@
 import SwiftUI
 import MetalKit
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @StateObject var gameManager = GameManager()
@@ -44,6 +45,8 @@ struct GameBrowserView: View {
     @State private var searchText = ""
     @State private var showingIconPicker = false
     @State private var showingSettings = false
+    @State private var showingROMImporter = false
+    @State private var romImportErrorMessage: String?
 
     var filteredGames: [GameMetadata] {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
@@ -89,6 +92,15 @@ struct GameBrowserView: View {
                                 Image(systemName: showingFavorites ? "heart.fill" : "heart")
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(showingFavorites ? MuffinTheme.blushPink : MuffinTheme.sparkleCream.opacity(0.8))
+                            }
+                            .frame(width: 44, height: 44)
+                            .background(MuffinTheme.sparkleCream.opacity(0.15))
+                            .cornerRadius(14)
+
+                            Button(action: { showingROMImporter = true }) {
+                                Image(systemName: "arrow.up.doc")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
                             }
                             .frame(width: 44, height: 44)
                             .background(MuffinTheme.sparkleCream.opacity(0.15))
@@ -155,6 +167,30 @@ struct GameBrowserView: View {
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView(gameManager: gameManager)
+        }
+        .fileImporter(
+            isPresented: $showingROMImporter,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task {
+                    do {
+                        try await gameManager.importROM(from: url)
+                    } catch {
+                        romImportErrorMessage = error.localizedDescription
+                    }
+                }
+            case .failure(let error):
+                romImportErrorMessage = error.localizedDescription
+            }
+        }
+        .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
+            Button("OK") { romImportErrorMessage = nil }
+        } message: { message in
+            Text(message)
         }
     }
 }
