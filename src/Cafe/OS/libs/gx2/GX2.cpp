@@ -48,6 +48,13 @@ uint64 lastSwapTime = 0;
 
 void gx2Export_GX2SwapScanBuffers(PPCInterpreter_t* hCPU)
 {
+	// Force-level (always-on) one-time marker, independent of the gated GX2 log
+	// line below - that one requires GX2 logging to be explicitly enabled, which
+	// this iOS build has no settings UI to toggle. Without this, a black screen
+	// with clean logs is ambiguous between "the renderer never got a real frame
+	// to present" and "the title never even asked to swap" - this line settles
+	// the second question conclusively the next time someone tests.
+	cemuLog_logOnce(LogType::Force, "GX2SwapScanBuffers() reached for the first time - title has issued its first swap request");
 	cemuLog_log(LogType::GX2, "GX2SwapScanBuffers()");
 
 	bool isPokken = false;
