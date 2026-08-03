@@ -306,19 +306,31 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     if (!g_initialized.load())
         CafeSystem::Initialize();
 
-    // CafeSystem::PrepareForegroundTitleFromStandaloneRPX() -> PrepareExecutable()
-    // calls Latte_Start(), which spawns the GPU thread (Latte_ThreadEntry(),
-    // LatteThread.cpp) and then - on THIS thread, before PrepareExecutable() even
-    // returns - spins `while (g_isGPUInitFinished == false) sleep(50ms);` waiting for
-    // it. Latte_ThreadEntry() unconditionally calls `g_renderer->Initialize()` with
-    // no null check, so retry construction here in case
-    // cemu_bridge_register_render_surface()'s own attempt (with its own @try/@catch)
-    // failed and left g_renderer null - same @try/@catch reasoning applies: a
-    // renderer construction failure is real (confirmed via live device crash) but
-    // shouldn't block M2's actual exit criteria (interpreter/OS-HLE stack), only M3
-    // (rendering). If this also fails, g_renderer stays null - Latte_ThreadEntry()
-    // (LatteThread.cpp) now checks for that and signals both flags the callers spin
-    // on (sLatteThreadFinishedInit, g_isGPUInitFinished) without touching g_renderer,
+    // Last chance to have a renderer before the GPU thread starts, so retry
+    // construction here if cemu_bridge_register_render_surface()'s own attempt (which
+    // has its own @try/@catch) failed and left g_renderer null.
+    //
+    // On the actual ordering - an earlier version of this comment claimed
+    // PrepareForegroundTitleFromStandaloneRPX() -> PrepareExecutable() calls
+    // Latte_Start() and then spins on g_isGPUInitFinished before returning. It does
+    // NOT. PrepareExecutable() is CafeSystem.cpp:775 and does neither of those
+    // things; PrepareForegroundTitleFromStandaloneRPX() only mounts the RPX, derives
+    // a placeholder title id, loads the game profile and sets up memory/recompiler,
+    // then returns. Latte_Start() is called from cemu_initForGame()
+    // (CafeSystem.cpp:416), which runs later on the DETACHED TITLE THREAD spawned by
+    // LaunchForegroundTitle() -> _LaunchTitleThread(), i.e. after
+    // cemu_bridge_boot_rpx() has already returned to Swift. Anyone tracing a hang or
+    // a black screen from that old comment would have been looking at the wrong
+    // thread and the wrong function entirely.
+    //
+    // What that means practically: this retry still has to happen before
+    // LaunchForegroundTitle(), because Latte_ThreadEntry() (LatteThread.cpp) reaches
+    // g_renderer->Initialize() with no null check of its own. Same @try/@catch
+    // reasoning as above - a renderer construction failure is real (confirmed via
+    // live device crash) but shouldn't block M2's exit criteria (interpreter/OS-HLE
+    // stack), only M3 (rendering). If this also fails, g_renderer stays null and
+    // Latte_ThreadEntry() handles that case: it signals both flags callers spin on
+    // (sLatteThreadFinishedInit, g_isGPUInitFinished) without touching g_renderer,
     // rather than null-dereferencing or leaving those waits hanging forever.
     if (!g_renderer)
     {
