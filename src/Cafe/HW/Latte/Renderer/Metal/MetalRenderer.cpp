@@ -480,7 +480,13 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 								bool padView, bool clearBackground)
 {
     if (!AcquireDrawable(!padView))
+    {
+        // See SwapBuffer() below for the reasoning. This is the earlier of the two
+        // silent bail-outs: nothing is even drawn into the backbuffer, so the
+        // subsequent SwapBuffer() has nothing to present regardless.
+        cemuLog_logOnce(LogType::Force, "MetalRenderer::DrawBackbufferQuad: no drawable available (padView={}) - backbuffer not drawn", padView);
         return;
+    }
 
     MTL::Texture* presentTexture = static_cast<LatteTextureViewMtl*>(texView)->GetRGBAView();
 
@@ -1937,7 +1943,15 @@ bool MetalRenderer::AcquireDrawable(bool mainWindow)
 {
     auto& layer = GetLayer(mainWindow);
     if (!layer.GetLayer())
+    {
+        // Distinct from "nextDrawable() returned nil" (logged by
+        // MetalLayerHandle::AcquireDrawable): this means InitializeLayer() was never
+        // called for this window, or was called and threw. Same symptom for the
+        // user - a black screen - but a completely different fix, so it is worth
+        // being able to tell the two apart from a log alone.
+        cemuLog_logOnce(LogType::Force, "MetalRenderer::AcquireDrawable: no CAMetalLayer for this window (mainWindow={}) - InitializeLayer() never ran or failed", mainWindow);
         return false;
+    }
 
     const bool latteBufferUsesSRGB = mainWindow ? LatteGPUState.tvBufferUsesSRGB : LatteGPUState.drcBufferUsesSRGB;
     if (latteBufferUsesSRGB != m_state.m_usesSRGB)
@@ -2271,7 +2285,17 @@ void MetalRenderer::CopyBufferToBuffer(MTL::Buffer* src, uint32 srcOffset, MTL::
 void MetalRenderer::SwapBuffer(bool mainWindow)
 {
     if (!AcquireDrawable(mainWindow))
+    {
+        // Bailing out here means the frame is never presented - the user sees a
+        // black screen and nothing else happens. Without a marker that is
+        // indistinguishable from the title never producing a frame at all, which
+        // are two completely different bugs. Same reasoning as the always-on
+        // GX2SwapScanBuffers() marker (GX2.cpp): Force-level so it survives a build
+        // with no settings UI to enable log categories, and logOnce so a failure
+        // that repeats every frame cannot flood the log out of usefulness.
+        cemuLog_logOnce(LogType::Force, "MetalRenderer::SwapBuffer: no drawable available (mainWindow={}) - frame dropped, nothing presented", mainWindow);
         return;
+    }
 
     auto commandBuffer = GetCommandBuffer();
     GetLayer(mainWindow).PresentDrawable(commandBuffer);
