@@ -48,6 +48,14 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath);
 /// startup. Safe (no-op) when the core is not available.
 void cemu_bridge_register_render_surface(void* uiView, int width, int height, double dpiScale);
 
+/// Last frame rate actually measured by the emulator, or 0 when no title is
+/// producing frames (idle, loading, or not yet rendering). This is the engine's own
+/// number - LattePerformanceMonitor computes it and pushes it through
+/// WindowSystem::UpdateWindowTitles() about once a second - not an estimate made on
+/// the Swift side. Safe to call at any time; returns 0 when the core is not
+/// available.
+double cemu_bridge_get_fps(void);
+
 bool cemu_bridge_is_title_running(void);
 void cemu_bridge_pause(void);
 void cemu_bridge_resume(void);

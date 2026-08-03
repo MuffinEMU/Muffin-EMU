@@ -28,6 +28,10 @@ class GameManager: ObservableObject {
     @Published var emulationState: EmulationState = .idle
     /// Last human-readable message from the engine bridge (e.g. "engine not built yet").
     @Published var lastStatusMessage: String = ""
+    /// Real emulator frame rate, polled from the bridge once a second while a title
+    /// is running (see startFrameRateMonitor()). 0 whenever nothing is rendering.
+    @Published private(set) var frameRate: Int = 0
+    private var frameRateTimer: Timer?
 
     private let romsDirectory = "Roms"
     private let gameListFile = "games.json"
@@ -245,12 +249,16 @@ class GameManager: ObservableObject {
                 engine.refreshStatus()
                 self.lastStatusMessage = engine.statusText
                 self.emulationState = (status == CEMU_BRIDGE_OK) ? .running : .error
+                if self.emulationState == .running {
+                    self.startFrameRateMonitor()
+                }
             }
         }
     }
     #endif
 
     func stopEmulation() {
+        stopFrameRateMonitor()
         emulationEngine?.stop()
         emulationState = .idle
         currentGame = nil
@@ -260,13 +268,51 @@ class GameManager: ObservableObject {
         return emulationEngine
     }
 
-    /// No frames are produced until the native Metal renderer is wired (ROADMAP.md M3).
+    /// Always nil, and correctly so: the native C++ Metal renderer presents straight
+    /// into its own CAMetalLayer (added as a sublayer of the registered UIView by
+    /// CreateMetalLayer(), MetalLayer.mm) and never hands a texture back across the
+    /// bridge. This exists only for the Swift-side placeholder MTKView renderers
+    /// (Rendering/MetalRenderer.swift and MetalView.swift's macOS path), which have
+    /// nothing to draw as a result.
     func getFrameTexture() -> MTLTexture? {
         return nil
     }
 
+    /// Real frame rate as measured by the emulator itself, refreshed by
+    /// `startFrameRateMonitor()` below. Not a Swift-side estimate: the number comes
+    /// from LattePerformanceMonitor via WindowSystem::UpdateWindowTitles().
+    /// 0 means "not currently rendering", which is a true statement, not a placeholder.
     func getFrameRate() -> Int {
-        return 0
+        return frameRate
+    }
+
+    /// The HUD used to call a getFrameRate() that returned a hardcoded 0, so it
+    /// permanently read "0 FPS" no matter what the emulator was doing - worse than
+    /// showing nothing, because it looked like a live measurement of a stalled
+    /// emulator. Poll the bridge instead.
+    ///
+    /// 1s cadence deliberately: LattePerformanceMonitor only recomputes fps about
+    /// once a second, so anything faster would just re-read the same value and churn
+    /// SwiftUI. A Timer (rather than reading the bridge inline from `body`) is what
+    /// makes the reading actually refresh - `body` is only re-evaluated when
+    /// published state changes, which a plain function call cannot trigger.
+    private func startFrameRateMonitor() {
+        frameRateTimer?.invalidate()
+        frameRateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let fps = Int(cemu_bridge_get_fps().rounded())
+                if fps != self.frameRate {
+                    self.frameRate = fps
+                }
+            }
+        }
+    }
+
+    private func stopFrameRateMonitor() {
+        frameRateTimer?.invalidate()
+        frameRateTimer = nil
+        frameRate = 0
     }
 }
 
