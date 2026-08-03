@@ -97,8 +97,6 @@ bool cemuLog_log(LogType type, fmt::format_string<TArgs...> formatStr, TArgs&&..
 	return true;
 }
 
-#define cemuLog_logOnce(...) { static bool _not_first_call = false; if (!_not_first_call) { _not_first_call = true; cemuLog_log(__VA_ARGS__); } }
-
 // same as cemuLog_log, but only outputs in debug mode
 template<typename ... TArgs>
 bool cemuLog_logDebug(LogType type, fmt::format_string<TArgs...> format, TArgs&&... args)
@@ -110,45 +108,66 @@ bool cemuLog_logDebug(LogType type, fmt::format_string<TArgs...> format, TArgs&&
 #endif
 }
 #else
-// iOS Phase 0: Stub logging templates.
-// These templates exact-match ANY cemuLog_log(type, "plain string literal") call
-// (a `const char*`/`const char[N]` argument binds directly to `const char*`, with no
-// conversion needed - whereas the real non-template overloads take std::string_view/
-// std::u8string_view, which require one), so they were silently swallowing the
-// overwhelming majority of log calls throughout the whole engine (every zero-format-
-// arg cemuLog_log("...") call anywhere in the codebase), not just genuinely
-// unsupported formatted (fmt::format) calls. Forward the zero-arg case to the real
-// implementation instead of dropping it; only actual fmt-style formatted logging
-// (TArgs non-empty) is unsupported on iOS for now.
+// iOS overloads. These templates exact-match ANY cemuLog_log(type, "string literal",
+// ...) call (a `const char*`/`const char[N]` argument binds directly to `const char*`
+// with no conversion needed - whereas the real non-template overloads take
+// std::string_view/std::u8string_view, which require one), so whatever these do IS
+// what iOS logging does for the overwhelming majority of the engine's log calls.
+//
+// They used to `return false` for every call with format arguments, and the
+// accompanying `#define cemuLog_logOnce(...) {}` expanded logOnce to nothing at all.
+// That made the iOS log actively deceptive rather than merely sparse: every line that
+// survived was a zero-argument call, and every formatted line - `RPL link time: {}ms`,
+// the whole `Active settings` block, `Generated placeholder TitleId: {:016x}`,
+// MetalLayerHandle's `layer {} failed to acquire next drawable` - vanished with no
+// trace, as did the always-on GX2SwapScanBuffers() marker (GX2.cpp), which is a
+// cemuLog_logOnce call. Debugging the black screen off that log meant reading the
+// absence of lines that could never have been printed in the first place, and
+// concluding things about the emulator that the log had no ability to report.
+//
+// fmt is available and working in this target (CemuLogging.cpp builds every log
+// timestamp with fmt::format), so there was never a real capability gap here. Use
+// the runtime-format entry point, fmt::vformat + fmt::make_format_args, rather than
+// the compile-time-checked fmt::format_string<TArgs...> path the desktop branch above
+// uses: format_string is a consteval-constructed type, and its strictness is what
+// made these calls awkward to support here in the first place. Runtime formatting
+// gives identical output.
 template<typename... TArgs>
 bool cemuLog_log(LogType type, const char* formatStr, TArgs&&... args)
 {
 	if constexpr (sizeof...(TArgs) == 0)
 		return cemuLog_log(type, std::string_view(formatStr));
 	else
-		return false; // formatted logging (fmt::format) not yet supported on iOS
+	{
+		if (!cemuLog_isLoggingEnabled(type))
+			return false;
+		const std::string formatted = fmt::vformat(fmt::string_view(formatStr), fmt::make_format_args(args...));
+		cemuLog_log(type, std::string_view(formatted));
+		return true;
+	}
 }
-#define cemuLog_logOnce(...) {}
 template<typename ... TArgs>
 bool cemuLog_logDebug(LogType type, const char* format, TArgs&&... args)
 {
-	// Can't forward to the real cemuLog_logDebug(LogType, std::string_view) overload
-	// here - it's declared further down in this same header, and this call has no
-	// dependent arguments, so two-phase lookup would resolve it at THIS definition
-	// point, before that overload is visible. Inline the same CEMU_DEBUG_ASSERT gate
-	// it uses instead, calling cemuLog_log (already declared above) directly.
-	if constexpr (sizeof...(TArgs) == 0)
-	{
+	// Deliberately calls cemuLog_log (the template directly above) rather than the
+	// cemuLog_logDebug(LogType, std::string_view) overload declared further down in
+	// this same header: this call has non-dependent arguments, so two-phase lookup
+	// would resolve it at THIS definition point, before that overload is visible.
+	// Same CEMU_DEBUG_ASSERT gate, inlined.
 #ifdef CEMU_DEBUG_ASSERT
-		return cemuLog_log(type, std::string_view(format));
+	return cemuLog_log(type, format, std::forward<TArgs>(args)...);
 #else
-		return false;
+	return false;
 #endif
-	}
-	else
-		return false;
 }
 #endif
+
+// Platform-independent: this used to live inside the desktop-only branch above, with
+// the iOS branch defining it as `{}` - i.e. cemuLog_logOnce() compiled to nothing at
+// all on iOS, silently discarding every one-shot diagnostic in the engine including
+// the always-on GX2SwapScanBuffers() marker added specifically to debug the iOS
+// black screen.
+#define cemuLog_logOnce(...) { static bool _not_first_call = false; if (!_not_first_call) { _not_first_call = true; cemuLog_log(__VA_ARGS__); } }
 
 inline bool cemuLog_logDebug(LogType type, std::string_view message)
 {
