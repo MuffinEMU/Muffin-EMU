@@ -57,11 +57,29 @@ std::vector<MetalRenderer::DeviceInfo> MetalRenderer::GetDevices()
     return result;
 }
 
-MetalRenderer::MetalRenderer()
+// Resolve the position-invariance shader workaround for the title that is actually
+// running. This deliberately does NOT live in the constructor any more.
+//
+// Both inputs here - g_current_game_profile and CafeSystem::GetForegroundTitleId() -
+// only become valid once a title has been prepared. On iOS the renderer is
+// constructed much earlier than that: cemu_bridge_register_render_surface()
+// (CemuBridge.mm) builds it on the MAIN thread the instant a UIView exists, whereas
+// gameProfile_load() and the title id assignment both happen later, inside
+// CafeSystem::PrepareForegroundTitleFromStandaloneRPX() / PrepareForegroundTitle(),
+// on the detached title thread. Reading them in the ctor therefore saw title id 0
+// and a profile carrying whatever the previous title left behind, so the Auto switch
+// below always fell through to `default:` and m_positionInvariance was ALWAYS false -
+// including for every title in its own case list that needs it true (Breath of the
+// Wild, Mario Kart 8, Bayonetta 1/2, Star Fox Zero, The Wonderful 101, ...), whose
+// symptom is missing or garbage geometry rather than an error. RendererShaderMtl
+// (:283) reads the flag when it compiles shaders, which is well after this point.
+//
+// Called from Initialize(), which Latte_ThreadEntry() invokes on the GPU thread after
+// the title is loaded - so by then both inputs are real. Desktop was never affected
+// (its renderer is constructed from the wx canvas after a title is picked), but
+// moving it is correct there too and keeps one code path.
+void MetalRenderer::ResolvePositionInvariance()
 {
-    // Options
-
-    // Position invariance
     switch (g_current_game_profile->GetPositionInvariance())
     {
     case PositionInvariance::Auto:
@@ -128,6 +146,11 @@ MetalRenderer::MetalRenderer()
         break;
     }
 
+    cemuLog_log(LogType::Force, "Metal: position invariance = {} (title {:016x})", m_positionInvariance, CafeSystem::GetForegroundTitleId());
+}
+
+MetalRenderer::MetalRenderer()
+{
     // Pick a device
     auto& config = GetConfig();
     const bool hasDeviceSet = config.mtl_graphic_device_uuid != 0;
@@ -337,6 +360,15 @@ void MetalRenderer::ResizeLayer(const Vector2i& size, bool mainWindow)
 
 void MetalRenderer::Initialize()
 {
+    // Must run before RendererShaderMtl::Initialize() - and before any shader is
+    // compiled - because RendererShaderMtl reads m_positionInvariance while emitting
+    // vertex shader source. This is the earliest point at which the answer can be
+    // correct: Latte_ThreadEntry() calls Initialize() on the GPU thread after the
+    // title has been prepared, so the game profile and foreground title id are both
+    // real by now. See ResolvePositionInvariance() for why the constructor was the
+    // wrong place.
+    ResolvePositionInvariance();
+
     Renderer::Initialize();
     RendererShaderMtl::Initialize();
 }

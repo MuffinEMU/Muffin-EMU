@@ -351,6 +351,10 @@ public:
 
     bool AcquireDrawable(bool mainWindow);
 
+    // Reads the game profile and the foreground title id, so it can only be called
+    // once a title has been prepared. Invoked from Initialize() (GPU thread).
+    void ResolvePositionInvariance();
+
     //bool CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader);
     void BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader);
 
@@ -476,7 +480,11 @@ private:
 	MetalPerformanceMonitor m_performanceMonitor;
 
 	// Options
-	bool m_positionInvariance;
+	// Resolved by ResolvePositionInvariance() from Initialize(), NOT from the ctor -
+	// see the comment on that function. Defaulted explicitly so the window between
+	// construction and Initialize() reads as a defined `false` rather than whatever
+	// was on the stack.
+	bool m_positionInvariance = false;
 
 	// Metal objects
 	MTL::Device* m_device = nullptr;
