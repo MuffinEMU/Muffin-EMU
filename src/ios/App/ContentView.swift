@@ -416,13 +416,20 @@ struct EmulatorViewOptimized: View {
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
 
+                        // Reads the @Published frameRate directly rather than calling
+                        // getFrameRate(): a plain method call cannot invalidate this
+                        // view, so even once the value became real the HUD would only
+                        // update when something else happened to redraw it. Until
+                        // the emulator reports its first measurement this shows "--",
+                        // not "0" - "0 FPS" reads as a measured stall, which is a
+                        // different and much more alarming claim than "no reading yet".
                         HStack(spacing: 6) {
                             Image(systemName: "speedometer")
                                 .font(.system(size: 12, weight: .semibold))
-                            Text("\(gameManager.getFrameRate()) FPS")
+                            Text(gameManager.frameRate > 0 ? "\(gameManager.frameRate) FPS" : "-- FPS")
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                         }
-                        .foregroundColor(gameManager.getFrameRate() >= 20 ? Color.green : MuffinTheme.blushPink)
+                        .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.blushPink)
                         .frame(height: 40)
                         .padding(.horizontal, 12)
                         .background(Color.white.opacity(0.08))

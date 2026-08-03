@@ -23,8 +23,25 @@ WindowSystem::WindowInfo& WindowSystem::GetWindowInfo()
 	return g_window_info;
 }
 
+// There is no window title to update on iOS, but this is the engine's only
+// push of a real, measured frame rate to the UI layer: LattePerformanceMonitor
+// (LattePerformanceMonitor.cpp:114) calls it roughly once a second with the fps it
+// just computed. Keep the last value so cemu_bridge_get_fps() can hand it to the
+// Swift HUD, which previously had a hardcoded 0 to display.
+static std::atomic<double> s_ios_last_fps{0.0};
+
 void WindowSystem::UpdateWindowTitles(bool isIdle, bool isLoading, double fps)
 {
+	// isIdle/isLoading both mean "not producing frames right now" - report 0 rather
+	// than leaving the last real reading on screen while nothing is being rendered.
+	s_ios_last_fps.store((isIdle || isLoading) ? 0.0 : fps);
+}
+
+// Declared in CemuBridge.mm (the only caller); no header of its own, matching the
+// rest of this platform shim.
+double IOSWindowSystem_GetLastFPS()
+{
+	return s_ios_last_fps.load();
 }
 
 void WindowSystem::GetWindowSize(int& w, int& h)

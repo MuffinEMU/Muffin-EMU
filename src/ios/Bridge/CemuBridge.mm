@@ -373,6 +373,22 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
 #endif
 }
 
+#if defined(CEMU_CORE_AVAILABLE)
+// Defined in src/gui/iosgui/IOSWindowSystem.cpp - the platform shim that receives
+// the engine's fps readings via WindowSystem::UpdateWindowTitles(). That shim has no
+// header of its own, so declare it here rather than inventing one for a single
+// function.
+double IOSWindowSystem_GetLastFPS();
+#endif
+
+double cemu_bridge_get_fps(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return IOSWindowSystem_GetLastFPS();
+#else
+    return 0.0;
+#endif
+}
+
 bool cemu_bridge_is_title_running(void) {
 #if defined(CEMU_CORE_AVAILABLE)
     return CafeSystem::IsTitleRunning();
