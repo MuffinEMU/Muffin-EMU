@@ -10,25 +10,30 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CAMetalLayer.h>
 
-void* CreateMetalLayer(void* handle, const Vector2i& pixelSize, float& scaleX, float& scaleY)
+void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX, float& scaleY)
 {
 	UIView* view = (__bridge UIView*)handle;
 
 	CAMetalLayer* metalLayer = [CAMetalLayer layer];
 
-	// Frame comes from the caller-supplied pixel size (converted to points), NOT
-	// view.bounds: this runs synchronously the instant the render surface is
-	// registered (GameManager.registerRenderSurface, called from makeUIView), which
-	// is before SwiftUI has necessarily laid the owning view out to a nonzero size -
+	// Frame comes from the caller-supplied size, NOT view.bounds: this runs
+	// synchronously the instant the render surface is registered
+	// (GameManager.registerRenderSurface, called from makeUIView), which is before
+	// SwiftUI has necessarily laid the owning view out to a nonzero size -
 	// view.bounds was frequently still CGRectZero here, producing a zero-sized,
 	// invisible sublayer: correct rendering underneath, black screen on top.
 	// Confirmed via live device test after the MetalLayerHandle double-release fix
 	// (v1.9) eliminated the earlier crash and exposed this as the next blocker.
+	// A CALayer frame is in POINTS, and sizeInPoints is already points, so it is
+	// used as-is; contentsScale carries the points -> pixels conversion, and the
+	// caller (MetalLayerHandle) applies it exactly once for setDrawableSize().
+	// This used to be `sizeInPoints / scale` back when the iOS caller handed over
+	// physical pixels - which left the drawable multiplied by the scale twice.
 	// Nothing later re-syncs this frame either, since a manually-added sublayer
 	// doesn't auto-resize with its superlayer - a future dynamic-resize path (e.g.
 	// rotation, split view) will need to call back into this layer explicitly.
 	const float scale = (float)view.contentScaleFactor;
-	metalLayer.frame = CGRectMake(0, 0, pixelSize.x / scale, pixelSize.y / scale);
+	metalLayer.frame = CGRectMake(0, 0, sizeInPoints.x, sizeInPoints.y);
 	metalLayer.contentsScale = scale;
 	[view.layer addSublayer:metalLayer];
 
@@ -44,22 +49,22 @@ void* CreateMetalLayer(void* handle, const Vector2i& pixelSize, float& scaleX, f
 // macOS / AppKit path (unchanged upstream behavior).
 #include "Cafe/HW/Latte/Renderer/MetalView.h"
 
-// `pixelSize` is unused here (deliberately - see below) but must stay in the
+// `sizeInPoints` is unused here (deliberately - see below) but must stay in the
 // signature: MetalLayer.h declares ONE CreateMetalLayer() prototype shared by both
 // platform bodies below, and MetalLayerHandle.cpp (compiled for both iOS and macOS
 // whenever ENABLE_METAL is on - see Cafe/CMakeLists.txt's unconditional
 // `if(ENABLE_METAL)` block) calls it with the 4-argument form unconditionally. This
 // branch used to take only (handle, scaleX, scaleY) - a leftover from before the
-// iOS zero-size fix added pixelSize to the shared declaration - which compiled fine
+// iOS zero-size fix added the size to the shared declaration - which compiled fine
 // in isolation but left the macOS build (ENABLE_METAL default-on for APPLE, see
 // CMakeLists.txt, and actually built by build-macos in CI) with no definition
 // matching the header's declared signature: a link error, not something caught by
 // this file compiling on its own. macOS's actual sizing still comes from
 // view.bounds/convertRectToBacking below, same as ever - (void) it to silence the
 // unused-parameter warning without pretending it does anything here.
-void* CreateMetalLayer(void* handle, const Vector2i& pixelSize, float& scaleX, float& scaleY)
+void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX, float& scaleY)
 {
-	(void)pixelSize;
+	(void)sizeInPoints;
 	NSView* view = (NSView*)handle;
 
 	MetalView* childView = [[MetalView alloc] initWithFrame:view.bounds];

@@ -35,11 +35,24 @@ struct MetalViewIOS: UIViewRepresentable {
         // now the GPU thread just needs a non-null surface to exist before it starts,
         // so a real (if approximate) screen size beats waiting on layout timing that
         // might never satisfy the old nonzero-bounds check.
+        //
+        // width/height are LOGICAL POINTS, not physical pixels - matching the desktop
+        // caller (wxgui/canvas/MetalCanvas.cpp passes a wxSize, which is points) and
+        // matching updateUIView() below, which has always passed uiView.bounds. The
+        // pixel size is derived exactly once, downstream, by multiplying by dpiScale:
+        // CemuBridge.mm computes windowInfo.phys_width/phys_height, and
+        // MetalLayerHandle's ctor computes setDrawableSize(). Passing pixels here
+        // made both of those multiply by the scale a SECOND time - on a 2x device
+        // that is a 4x-oversized drawable (roughly 4096x5464 / ~89 MB each, ~268 MB
+        // for a triple-buffered swapchain), which nextDrawable() can simply refuse to
+        // hand out under memory pressure. MetalRenderer::SwapBuffer() and
+        // DrawBackbufferQuad() both bail out silently when that happens, so the
+        // failure mode is an unexplained black screen, not an error.
         let screenBounds = UIScreen.main.bounds
         gameManager.registerRenderSurface(
             uiView: view,
-            width: Int32(screenBounds.width * UIScreen.main.scale),
-            height: Int32(screenBounds.height * UIScreen.main.scale),
+            width: Int32(screenBounds.width),
+            height: Int32(screenBounds.height),
             dpiScale: Double(UIScreen.main.scale)
         )
 
