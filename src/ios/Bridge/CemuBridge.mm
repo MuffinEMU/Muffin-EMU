@@ -260,29 +260,27 @@ void cemu_bridge_register_render_surface(void* uiView, int width, int height, do
         if (!g_renderer)
             g_renderer = std::make_unique<MetalRenderer>();
 
-        // NOTE: despite the name, width/height as actually supplied by the live
-        // registration path (MetalView.swift's makeUIView: screenBounds.width/height
-        // * UIScreen.main.scale) are PHYSICAL PIXELS, not logical/point size - this
-        // comment previously claimed otherwise (a leftover from an earlier, pre-fix
-        // assumption modeled on desktop's wxSize-in-points convention) and was wrong.
-        // CreateMetalLayer()'s iOS body (MetalLayer.mm) requires pixels - it divides
-        // by view.contentScaleFactor to recover the on-screen point-size frame, and
-        // that specific behavior is confirmed correct by live device test. Below,
-        // MetalLayerHandle's ctor then multiplies this SAME already-pixel value by
-        // the layer's scale factor again for setDrawableSize() - since it was
-        // written assuming points-in (matching the macOS/MetalCanvas.cpp caller,
-        // where the equivalent argument really is wx's point-based size). The net
-        // effect on iOS is a drawable allocated at scale^2 the pixel count actually
-        // needed (e.g. 4x on a 2x-Retina device) - wasteful but NOT visually broken,
-        // because windowInfo.phys_width/phys_height below apply the exact same
-        // redundant multiply, so the output-blit viewport (LatteRenderTarget_
-        // getScreenImageArea, driven by GetWindowPhysSize()) stays proportionally
-        // consistent with the oversized drawable rather than being clipped against
-        // it. Left unfixed deliberately: correcting one side without the other
-        // would substitute a real crop/scale bug for a merely wasteful one, and
-        // there's no device here to verify the combined change. Worth a coordinated
-        // cleanup later (this file + MetalLayerHandle.cpp's ctor), not a same-session
-        // fix without hardware in the loop.
+        // width/height are LOGICAL POINTS, matching the desktop caller
+        // (wxgui/canvas/MetalCanvas.cpp passes a wxSize). Points get converted to
+        // physical pixels exactly once on each path that needs them: phys_width/
+        // phys_height above, and MetalLayerHandle's ctor -> setDrawableSize()
+        // (points * the layer's backing scale) below.
+        //
+        // This used to be passed as pixels (MetalView.swift multiplied by
+        // UIScreen.main.scale before calling in), which meant BOTH of those
+        // conversions multiplied by the scale a second time. An earlier version of
+        // this comment dismissed that as "wasteful but not visually broken", on the
+        // grounds that phys_width/phys_height were inflated by the same factor so
+        // the output-blit viewport (LatteRenderTarget_getScreenImageArea, driven by
+        // GetWindowPhysSize()) stayed proportionally consistent with the oversized
+        // drawable. That reasoning only covers geometry, and geometry was never the
+        // risk. On a 2x iPad the drawable came out around 4096x5464 - roughly 89 MB
+        // per drawable, ~268 MB for a triple-buffered swapchain - and nextDrawable()
+        // is entitled to simply return nil rather than hand that out. When it does,
+        // MetalRenderer::SwapBuffer() and DrawBackbufferQuad() both return silently
+        // (see AcquireDrawable's callers), so the symptom is a black screen with no
+        // error anywhere: exactly the failure being chased. A 4x allocation
+        // overshoot is not a cosmetic issue when allocation is what fails.
         MetalRenderer::GetInstance()->InitializeLayer({width, height}, /*mainWindow=*/true);
         setStatus("Render surface registered.");
     } @catch (NSException* exception) {
