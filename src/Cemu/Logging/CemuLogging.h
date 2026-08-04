@@ -1,5 +1,11 @@
 #pragma once
 
+// This header normally leans entirely on precompiled.h, but the iOS branch below
+// catches std::exception around fmt, and libc++'s granular headers do not guarantee
+// <string> drags in <exception>. Ask for it directly rather than by luck.
+#include <exception>
+#include <string>
+
 // CemuLogging.cpp always defines this with real linkage (a genuine mask computed
 // from cemuLog_getFlag), regardless of platform. An earlier "iOS Phase 0: Stub
 // logging" era had this as `static uint64 = 0` here instead, which conflicted with
@@ -132,16 +138,74 @@ bool cemuLog_logDebug(LogType type, fmt::format_string<TArgs...> format, TArgs&&
 // uses: format_string is a consteval-constructed type, and its strictness is what
 // made these calls awkward to support here in the first place. Runtime formatting
 // gives identical output.
+//
+// The catch, learned the hard way: fmt reports every formatting failure by calling
+// fmt::detail::report_error(), which THROWS fmt::format_error. Nothing in the engine
+// catches it, so an unhandled throw out of a log call is std::terminate -> abort. The
+// first thing this change made visible on device was exactly that: CafeSystem's
+// "Platform: {}" line was handed a null const char* (see logPlatformInfo() in
+// CafeSystem.cpp), fmt bailed with "string pointer is null", and the app SIGABRTed
+// during CafeSystem::Initialize() before it ever reached a frame. That is a
+// diagnostic facility killing the process it exists to diagnose.
+//
+// Note the desktop branch above has the same runtime exposure - fmt::format_string
+// only validates the format string against the argument TYPES at compile time; it
+// cannot know an argument's runtime VALUE, so a null char* throws there too. Which is
+// why the guard below lives in the formatting helper rather than being "fixed" by
+// switching iOS back to compile-time-checked fmt::format: compile-time checking would
+// not have caught this bug, and format_string would reject the handful of call sites
+// that pass a non-literal format string (RendererShaderGL/LatteShaderGL/GraphicPack2).
+//
+// So: format at runtime, but treat formatting as fallible. A log line that cannot be
+// formatted degrades to the raw format string plus the fmt error - which still names
+// the call site and is still evidence - instead of aborting the emulator.
+namespace cemuLogDetail
+{
+	// fmt formats a null `const char*` argument by calling report_error("string
+	// pointer is null"). That is trivially reachable from Objective-C/Metal bridging
+	// (`error->localizedDescription()->utf8String()`), getenv(), and any `const char*`
+	// left null because no #if branch matched. Substitute a marker so the line still
+	// formats normally and the null itself becomes visible in the log.
+	inline const char* iosSanitizeLogArg(const char* v) { return v ? v : "(null)"; }
+	inline const char* iosSanitizeLogArg(char* v) { return v ? v : "(null)"; }
+	// Everything else passes through untouched. String literals bind here (identity,
+	// which outranks the array-to-pointer conversion the overloads above would need),
+	// and they can never be null anyway.
+	template<typename T>
+	inline T&& iosSanitizeLogArg(T&& v) { return std::forward<T>(v); }
+
+	// `args` are named function parameters here, i.e. lvalues, which is what
+	// fmt::make_format_args() requires - it takes T&... and will not bind rvalues.
+	template<typename... TArgs>
+	inline std::string iosFormatOrRaw(const char* formatStr, TArgs&&... args)
+	{
+		try
+		{
+			return fmt::vformat(fmt::string_view(formatStr), fmt::make_format_args(args...));
+		}
+		catch (const std::exception& ex)
+		{
+			return std::string(formatStr) + " <log format error: " + (ex.what() ? ex.what() : "unknown") + ">";
+		}
+		catch (...)
+		{
+			return std::string(formatStr) + " <log format error>";
+		}
+	}
+}
+
 template<typename... TArgs>
 bool cemuLog_log(LogType type, const char* formatStr, TArgs&&... args)
 {
+	if (!formatStr)
+		formatStr = "(null log format string)";
 	if constexpr (sizeof...(TArgs) == 0)
 		return cemuLog_log(type, std::string_view(formatStr));
 	else
 	{
 		if (!cemuLog_isLoggingEnabled(type))
 			return false;
-		const std::string formatted = fmt::vformat(fmt::string_view(formatStr), fmt::make_format_args(args...));
+		const std::string formatted = cemuLogDetail::iosFormatOrRaw(formatStr, cemuLogDetail::iosSanitizeLogArg(args)...);
 		cemuLog_log(type, std::string_view(formatted));
 		return true;
 	}
