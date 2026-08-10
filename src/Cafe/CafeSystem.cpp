@@ -67,9 +67,15 @@
 
 #include <time.h>
 
+// CEMU_PLATFORM_IOS has to be spelled out separately everywhere BOOST_OS_MACOS
+// appears in this file. Boost.Predef's os/ios.h is evaluated before os/macos.h and
+// sets BOOST_PREDEF_DETAIL_OS_DETECTED, so on an iOS target BOOST_OS_IOS is nonzero
+// and BOOST_OS_MACOS is *zero* - "Apple platform" does not imply BOOST_OS_MACOS here.
+// precompiled.h already carries the same `BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)`
+// spelling for exactly this reason.
 #if BOOST_OS_LINUX
 #include <sys/sysinfo.h>
-#elif BOOST_OS_MACOS || BOOST_OS_BSD
+#elif BOOST_OS_MACOS || BOOST_OS_BSD || defined(CEMU_PLATFORM_IOS)
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #endif
@@ -244,7 +250,29 @@ void InfoLog_PrintActiveSettings()
 	cemuLog_log(LogType::Force, "------- Active settings -------");
 
 	// settings to log:
-	cemuLog_log(LogType::Force, "CPU-Mode: {}{}", fmt::format("{}", ActiveSettings::GetCPUMode()).c_str(), g_current_game_profile->GetCPUMode().has_value() ? " (gameprofile)" : "");
+	// ActiveSettings::GetCPUMode() reports what the CONFIG asks for. It knows nothing
+	// about --force-interpreter / --force-multicore-interpreter, both of which make
+	// PPCRecompiler_init() return before it ever sets ppcRecompilerEnabled, so the
+	// interpreter is what actually executes. Printing the config value alone produced
+	// a log that flatly contradicted itself: "Recompiler disabled. Command line
+	// --force-interpreter [...] was passed" from PPCRecompiler.cpp, followed seconds
+	// later by "CPU-Mode: Multi-core recompiler" from here - both in the first iOS
+	// device log that reached "------- Run title -------", where CemuBridge.mm calls
+	// LaunchSettings::SetForceInterpreter(true) unconditionally. Report the mode that
+	// actually runs, and keep the requested one alongside it so nothing is hidden. The
+	// core count matches _LaunchTitleThread()'s own test.
+	const bool forceInterpreter = LaunchSettings::ForceInterpreter();
+	const bool forceMulticoreInterpreter = LaunchSettings::ForceMultiCoreInterpreter();
+	const CPUMode requestedCPUMode = ActiveSettings::GetCPUMode();
+	if (forceInterpreter || forceMulticoreInterpreter)
+	{
+		const bool isMulticore = forceMulticoreInterpreter && !forceInterpreter;
+		cemuLog_log(LogType::Force, "CPU-Mode: {} (forced, overriding {})", isMulticore ? "Multi-core interpreter" : "Single-core interpreter", fmt::format("{}", requestedCPUMode));
+	}
+	else
+	{
+		cemuLog_log(LogType::Force, "CPU-Mode: {}{}", fmt::format("{}", requestedCPUMode).c_str(), g_current_game_profile->GetCPUMode().has_value() ? " (gameprofile)" : "");
+	}
 	cemuLog_log(LogType::Force, "Load shared libraries: {}{}", ActiveSettings::LoadSharedLibrariesEnabled() ? "true" : "false", g_current_game_profile->ShouldLoadSharedLibraries().has_value() ? " (gameprofile)" : "");
 	cemuLog_log(LogType::Force, "Use precompiled shaders: {}{}", fmt::format("{}", ActiveSettings::GetPrecompiledShadersOption()), g_current_game_profile->GetPrecompiledShadersState().has_value() ? " (gameprofile)" : "");
 	cemuLog_log(LogType::Force, "Full sync at GX2DrawDone: {}", ActiveSettings::WaitForGX2DrawDoneEnabled() ? "true" : "false");
@@ -500,7 +528,10 @@ namespace CafeSystem
 		struct sysinfo info {};
 		sysinfo(&info);
 		cemuLog_log(LogType::Force, "RAM: {}MB", ((static_cast<uint64_t>(info.totalram) * info.mem_unit) / 1024LL / 1024LL));
-		#elif BOOST_OS_MACOS
+		#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
+		// BOOST_OS_MACOS is 0 on iOS (see the include block at the top of this file),
+		// so without the explicit CEMU_PLATFORM_IOS here no branch matched at all and
+		// the iOS log simply had no RAM line. hw.memsize is public API on iOS.
 		int64_t totalRam;
 		size_t size = sizeof(totalRam);
 		int result = sysctlbyname("hw.memsize", &totalRam, &size, NULL, 0);
@@ -541,7 +572,33 @@ namespace CafeSystem
 	{
 		std::string buffer;
 		const char* platform = NULL;
-		#if BOOST_PLAT_ANDROID
+		#if defined(CEMU_PLATFORM_IOS)
+		// This branch is why the app SIGABRTed at startup. BOOST_OS_MACOS is 0 on an
+		// iOS target (Boost.Predef detects iOS first and stops), so before this branch
+		// existed NOT ONE of the #if arms below compiled on iOS: `platform` stayed
+		// NULL and was handed straight to the "Platform: {}" call at the bottom of
+		// this function. That was harmless only while the iOS cemuLog_log stub threw
+		// formatted calls away; the moment the stub started really formatting, fmt hit
+		// a null string pointer, called report_error(), threw fmt::format_error out of
+		// a log call, and terminate()/abort() took the process down inside
+		// CafeSystem::Initialize().
+		char productVersion[256]{};
+		size_t productVersionSize = sizeof(productVersion);
+		const int productVersionResult = sysctlbyname("kern.osproductversion", productVersion, &productVersionSize, nullptr, 0);
+
+		char buildVersion[256]{};
+		size_t buildVersionSize = sizeof(buildVersion);
+		const int buildVersionResult = sysctlbyname("kern.osversion", buildVersion, &buildVersionSize, nullptr, 0);
+
+		if (productVersionResult == 0 && buildVersionResult == 0)
+			buffer = fmt::format("iOS {} ({})", productVersion, buildVersion);
+		else if (productVersionResult == 0)
+			buffer = fmt::format("iOS {}", productVersion);
+		else
+			buffer = "iOS";
+
+		platform = buffer.c_str();
+		#elif BOOST_PLAT_ANDROID
         buffer = fmt::format("Android (API level {})", android_get_device_api_level());;
 		platform = buffer.c_str();
 		#elif BOOST_OS_WINDOWS
@@ -590,7 +647,10 @@ namespace CafeSystem
 		platform = "Unknown BSD";
 		#endif
 		#endif
-		cemuLog_log(LogType::Force, "Platform: {}", platform);
+		// Belt and braces: `platform` is only ever set inside a platform #if arm, so
+		// any future target that matches none of them lands here holding NULL. Don't
+		// make the next port's first symptom an abort inside a log call.
+		cemuLog_log(LogType::Force, "Platform: {}", platform ? platform : "Unknown");
 	}
 
 	static std::vector<IOSUModule*> s_iosuModules =

@@ -7,59 +7,48 @@ import UIKit
 struct MetalViewIOS: UIViewRepresentable {
     var gameManager: GameManager
 
-    // Plain UIView, deliberately NOT MTKView. MTKView overrides +layerClass to make
-    // its OWN .layer a CAMetalLayer with its own active render loop (device/delegate/
-    // preferredFramesPerSecond below used to drive the Swift-side placeholder
-    // MetalRenderer.draw(in:) at 60fps). CreateMetalLayer() (MetalLayer.mm) then
-    // added the REAL C++ renderer's CAMetalLayer as a SUBLAYER of that already-active
-    // Metal-backed layer - two independent Metal render loops fighting over one
-    // layer tree, one requesting drawables via MTKView's own currentDrawable every
-    // frame, the other calling nextDrawable() directly on the sublayer from the GPU
-    // thread. A live device test confirmed this is genuinely unstable (crashes
-    // recurring in MetalRenderer::BeginFrame -> nextDrawable even after fixing the
-    // separate view-retain issue) - a plain UIView's .layer is an ordinary CALayer
-    // with no competing rendering machinery of its own, so the C++ sublayer has the
-    // view's layer tree to itself.
+    // This returns a plain CONTAINER view; the view the C++ renderer actually draws
+    // into is DisplayRouter.shared.tvRenderView, added as a subview of it. The
+    // indirection is what makes the Wii U TV screen movable between this device and an
+    // external display without destroying its CAMetalLayer: SwiftUI only ever sees the
+    // container, so it can create, lay out and tear that down as it likes, while the
+    // render view - and the layer the GPU thread holds a bare pointer to - is reparented
+    // by DisplayRouter and outlives all of it.
+    //
+    // Neither is an MTKView, deliberately. MTKView overrides +layerClass to make its OWN
+    // .layer a CAMetalLayer with its own active render loop. CreateMetalLayer()
+    // (MetalLayer.mm) then added the REAL C++ renderer's CAMetalLayer as a SUBLAYER of
+    // that already-active Metal-backed layer - two independent Metal render loops
+    // fighting over one layer tree, one requesting drawables via MTKView's own
+    // currentDrawable every frame, the other calling nextDrawable() directly on the
+    // sublayer from the GPU thread. A live device test confirmed this is genuinely
+    // unstable (crashes recurring in MetalRenderer::BeginFrame -> nextDrawable even
+    // after fixing the separate view-retain issue) - a plain UIView's .layer is an
+    // ordinary CALayer with no competing rendering machinery of its own, so the C++
+    // sublayer has the view's layer tree to itself.
     func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .black
+        let container = UIView()
+        container.backgroundColor = .black
 
-        // Register the render surface right here, immediately, using the screen's
-        // own bounds - NOT view.bounds. This view sits in a plain VStack with no
-        // explicit .frame(maxWidth:.infinity, maxHeight:.infinity), so UIKit/SwiftUI
-        // may never actually lay it out to a nonzero size (or may take an
-        // unpredictable number of update cycles to do so) - and since boot() now
-        // waits on this registration happening at all, that turned "the boot screen
-        // never resolves" into an indefinite hang with zero C++ involvement, not a
-        // slow boot. The exact size only matters for M3 (real rendering) later; for
-        // now the GPU thread just needs a non-null surface to exist before it starts,
-        // so a real (if approximate) screen size beats waiting on layout timing that
-        // might never satisfy the old nonzero-bounds check.
-        let screenBounds = UIScreen.main.bounds
-        gameManager.registerRenderSurface(
-            uiView: view,
-            width: Int32(screenBounds.width * UIScreen.main.scale),
-            height: Int32(screenBounds.height * UIScreen.main.scale),
-            dpiScale: Double(UIScreen.main.scale)
-        )
+        // Arm display detection before anything is registered, so a TV that is already
+        // connected at launch and one plugged in later take the same code path. The
+        // router decides where the Wii U TV screen goes, registers the surface (which is
+        // what starts the boot - see GameManager.registerRenderSurface), and creates a
+        // GamePad surface only when there is a second display to put it on.
+        DisplayRouter.shared.startObserving()
+        DisplayRouter.shared.attach(deviceContainer: container)
+        DisplayRouter.shared.registerSurfaces(with: gameManager)
 
-        return view
+        return container
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        // Fallback: if for some reason makeUIView's registration above didn't take
-        // (e.g. this view is somehow recreated after boot already started), retry
-        // once real, nonzero view bounds are available. GameManager's surfaceRegistered
-        // guard makes this a no-op once registration has already succeeded.
-        let bounds = uiView.bounds
-        if bounds.width > 0 && bounds.height > 0 {
-            gameManager.registerRenderSurface(
-                uiView: uiView,
-                width: Int32(bounds.width),
-                height: Int32(bounds.height),
-                dpiScale: Double(uiView.contentScaleFactor)
-            )
-        }
+        // Fallback: if for some reason makeUIView's registration above didn't take (e.g.
+        // this view is recreated after boot already started), retry. Both calls are
+        // idempotent - attach() ignores a container it already has, and
+        // registerSurfaces() ignores everything once the TV surface exists.
+        DisplayRouter.shared.attach(deviceContainer: uiView)
+        DisplayRouter.shared.registerSurfaces(with: gameManager)
     }
 }
 

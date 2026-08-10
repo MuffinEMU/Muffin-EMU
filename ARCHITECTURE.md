@@ -1,6 +1,8 @@
 # Cemu iOS — Architecture (real vs. toy)
 
-## Two engines currently live in this repo
+## One engine, one path
+
+The "two engines" this file used to describe are gone. `WiiUCPU` — the Swift toy CPU — was deleted; `EmulationEngine.swift` is now a thin wrapper over the bridge, with no emulation of its own.
 
 ```
                  ┌─────────────────────────────────────────────┐
@@ -8,10 +10,9 @@
                  │   src/ios/App  (browser, skins, MetalView)   │
                  └───────────────┬─────────────────┬────────────┘
                                  │                 │
-              (today, fake)      │                 │   (target, real)
                                  ▼                 ▼
         src/ios/Emulation/EmulationEngine   src/ios/Bridge/CemuBridge.{h,mm}
-        + WiiUCPU  ← TOY, to be retired      = C API → real CafeSystem
+        (thin Swift wrapper, no logic) ───▶  = C API → real CafeSystem
                                                          │
                                                          ▼
                                         src/Cafe, src/Common, src/config …
@@ -22,8 +23,7 @@
                                    (implements Cemu's WindowSystem seam)
 ```
 
-- **Toy path (left):** `EmulationEngine` + `WiiUCPU`. Non-functional stubs. Being replaced.
-- **Real path (right):** `CemuBridge` is a thin C interface that calls the genuine `CafeSystem` API. This is the path we build out.
+`CemuBridge` is a thin C interface that calls the genuine `CafeSystem` API. Everything below it is unmodified-in-spirit upstream Cemu.
 
 ## The real boot sequence (from upstream `src/main.cpp`)
 
@@ -45,17 +45,19 @@ if (status == PREPARE_STATUS_CODE::SUCCESS)
 
 It is guarded by the `CEMU_CORE_AVAILABLE` compile flag:
 
-- **Flag undefined (today, pre-M1):** the bridge compiles to honest "core not built" responses. The app builds and truthfully shows *"Real engine not compiled into this build yet."* — it does **not** pretend to emulate.
-- **Flag defined (after M1 links the core):** the bridge calls the real `CafeSystem`.
+- **Flag undefined:** the bridge compiles to honest "core not built" responses. The app builds and truthfully shows *"Real engine not compiled into this build yet."* — it does **not** pretend to emulate.
+- **Flag defined (the iOS app build, since M2):** the bridge calls the real `CafeSystem`.
 
-This lets the SwiftUI shell build and run now while keeping the seam honest, and flips to the real engine the moment the core compiles for arm64 (see `ROADMAP.md` M1).
+The stub half is still in the tree because it is what keeps the seam honest if the core ever stops being linked. It is not the live path.
 
 ## Platform seams Cemu needs on iOS
 
 | Seam | Cemu interface | iOS status |
 |------|----------------|-----------|
-| Window / canvas | `WindowSystem` (`src/gui/interface`) | stubbed in `IOSWindowSystem.cpp`; needs real size/canvas |
-| GPU | Vulkan renderer | **not wired** — needs MoltenVK on `CAMetalLayer` (M3) |
-| Input | `src/input` | **not wired** — map skins + MFi controllers (M4) |
-| Audio | Cemu audio backend | **not wired** — CoreAudio (M4) |
-| CPU | PPC interpreter (C++) | present in core; no ARM JIT — interpreter only |
+| Window / canvas | `WindowSystem` (`src/gui/interface`) | size/phys-size/DPI/fps are real; input, error dialogs and game-list hooks are no-ops |
+| GPU | native Metal renderer (`Renderer/Metal/`) | wired to a real `CAMetalLayer` sublayer; no frame confirmed on device (M3) |
+| Input | `src/input` | **not wired** — skin buttons call empty closures; no MFi (M4) |
+| Audio | Cemu audio backend | **not wired** — cubeb is disabled for iOS in `CMakeLists.txt`; needs CoreAudio (M4) |
+| CPU | PPC interpreter + AArch64 recompiler | both compile; the recompiler is force-disabled via `LaunchSettings::SetForceInterpreter(true)` |
+
+There is **no MoltenVK and no Vulkan** in this build — an earlier version of this table said otherwise. Vulkan and OpenGL are excluded from the iOS target entirely.

@@ -40,12 +40,62 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath);
 
 /// M3 (ROADMAP.md): wires the real native Metal renderer to an actual on-screen
 /// surface. `uiView` must be a UIView* (bridged as void*); `width`/`height` are its
-/// PHYSICAL PIXEL size (not logical/points - see the long comment at this
-/// function's definition in CemuBridge.mm for why, and for a known, deliberately
-/// unfixed side effect), `dpiScale` its contentScaleFactor. Must be called before
+/// client size in LOGICAL POINTS (not physical pixels - the points -> pixels
+/// conversion is applied downstream, exactly once per consumer, using `dpiScale`;
+/// see the comment at this function's definition in CemuBridge.mm), `dpiScale` its
+/// contentScaleFactor. Must be called before
 /// cemu_bridge_boot_rpx() - the GPU thread reads the window size synchronously at
 /// startup. Safe (no-op) when the core is not available.
 void cemu_bridge_register_render_surface(void* uiView, int width, int height, double dpiScale);
+
+/// Registers a SECOND surface for the Wii U GamePad (DRC) screen, so the two Wii U
+/// outputs can be shown at once when there is somewhere to put them - the TV screen on
+/// an external display (AirPlay / screen mirroring / a cable) and the GamePad screen on
+/// the device. Same units as above: LOGICAL POINTS plus a scale.
+///
+/// When this is never called, `MetalRenderer::IsPadWindowActive()` stays false and the
+/// renderer skips every pad-window code path outright rather than failing inside one.
+/// That - not a second layer - is what "TV only" means here, and it is the normal
+/// configuration on a device with no external display.
+///
+/// Main thread only: it creates a CAMetalLayer inside `uiView`. Safe (no-op) when the
+/// core is not available.
+void cemu_bridge_register_pad_render_surface(void* uiView, int width, int height, double dpiScale);
+
+/// Asks for the pad surface to be dropped, because its display went away. The teardown
+/// itself happens on the GPU thread at its next frame boundary - the pad layer belongs
+/// to that thread while a title runs - so this returns immediately and the caller must
+/// NOT free the hosting view. Safe to call when no pad surface exists.
+void cemu_bridge_release_pad_render_surface(void);
+
+/// True while a pad surface is registered. Reflects the renderer's own
+/// IsPadWindowActive(), i.e. it only goes false once the GPU thread has actually
+/// completed a release requested above.
+bool cemu_bridge_has_pad_render_surface(void);
+
+/// Re-sizes an already-registered surface after its hosting view moved or its display
+/// changed - both the drawable and the CALayer's own frame/backing scale, which nothing
+/// else maintains for a manually added sublayer. `mainWindow` selects TV vs GamePad.
+/// Main thread only (Core Animation geometry). Safe (no-op) when the core is not
+/// available or that surface was never registered.
+void cemu_bridge_resize_render_surface(int width, int height, double dpiScale, bool mainWindow);
+
+/// Writes a line into the engine's own log (log.txt + the os_log mirror) at
+/// LogType::Force. Exists so Swift-side decisions that determine what the renderer
+/// does - above all which physical display each Wii U screen was routed to - land in
+/// the same timeline as the renderer's own lines, instead of in a separate iOS log
+/// nobody correlates. Not a substitute for cemu_bridge_log_checkpoint(), which uses a
+/// synchronous write() and survives an abrupt kill; this one goes through the engine's
+/// buffered logger.
+void cemu_bridge_log_line(const char* message);
+
+/// Last frame rate actually measured by the emulator, or 0 when no title is
+/// producing frames (idle, loading, or not yet rendering). This is the engine's own
+/// number - LattePerformanceMonitor computes it and pushes it through
+/// WindowSystem::UpdateWindowTitles() about once a second - not an estimate made on
+/// the Swift side. Safe to call at any time; returns 0 when the core is not
+/// available.
+double cemu_bridge_get_fps(void);
 
 bool cemu_bridge_is_title_running(void);
 void cemu_bridge_pause(void);

@@ -9,7 +9,14 @@ name: Build iOS App (M2)
 # build-ios-core.yml which is our steady-state regression check.
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >-
+          Optional. Publish the IPA as a GitHub Release under this tag (e.g. v2.0).
+          Leave empty to only upload artifacts, which is the normal case.
+        required: false
+        default: ''
 
 env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
@@ -17,6 +24,8 @@ env:
 jobs:
   build-app:
     runs-on: macos-15
+    permissions:
+      contents: write # only used by the optional release step at the bottom
     steps:
       - uses: actions/checkout@v4
         with:
@@ -119,6 +128,35 @@ jobs:
           name: Cemu-dSYM
           path: Cemu.app.dSYM.zip
           retention-days: 30
+
+      - name: Publish GitHub Release
+        # Opt-in, because most dispatches of this workflow are verification runs, not
+        # things worth installing. The artifacts above are the normal delivery path;
+        # a Release exists so an IPA can be fetched on the device itself without
+        # being signed into GitHub, which is what actually matters for SideStore.
+        #
+        # This replaces build-and-release.yml and build-ipa.yml, both deleted in the
+        # same commit: both built a "CemuEmulator" project/scheme that has not
+        # existed in this repo for a long time, so both failed within ~20 seconds of
+        # every dispatch. Only this workflow builds the CMake static libs the app
+        # actually links against, so only this workflow can produce a real IPA.
+        if: inputs.release_tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: ${{ inputs.release_tag }}
+          generate_release_notes: true
+          files: |
+            Cemu.ipa
+            Cemu.app.dSYM.zip
+          body: |
+            Unsigned iOS build from commit ${{ github.sha }}.
+
+            Install with SideStore/AltStore, which re-signs with your own Apple ID.
+            `Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.
+
+            This is a bring-up build. See `STATUS.md` in the repo for what does and
+            does not work — as of this writing no Wii U title has been shown to boot.
 
       - name: Upload build logs (always)
         if: always()

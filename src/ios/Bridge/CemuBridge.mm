@@ -14,6 +14,7 @@
 
 #include <string>
 #include <atomic>
+#include <mutex>
 #include <signal.h>
 #include <execinfo.h>
 #include <unistd.h>
@@ -141,23 +142,50 @@ void cemu_bridge_log_checkpoint(const char* message) {
 namespace {
     std::atomic<bool> g_initialized{false};
 
-    std::string& statusBuf() {
-        // Static storage; single-writer from the emulation control path is fine for a status string.
-        static thread_local std::string buf;
-        return buf;
+    // One status string for the whole bridge, not one per thread. It used to be a
+    // `static thread_local std::string`, which quietly broke the only thing this
+    // string exists for. The writers and the reader are never on the same thread:
+    // GameManager.registerRenderSurface() runs the whole init/boot sequence inside a
+    // Task.detached, so "Invalid RPX.", "Unable to mount title", "Title launched."
+    // and friends were written to a background thread's copy - while the UI reads it
+    // from `await MainActor.run { engine.refreshStatus() }`, i.e. the main thread,
+    // whose copy those writes never touched.
+    //
+    // Worse than just losing them, because the main thread's copy is not empty
+    // either: cemu_bridge_register_render_surface() is called from makeUIView() and
+    // therefore does write "Render surface registered." there. So the empty-check in
+    // cemu_bridge_status_text() found a value, returned it, and the UI showed a
+    // success message from the surface registration no matter how the boot afterwards
+    // actually went - including on the .error path, which is precisely where the
+    // specific reason was needed. The comment on that function already described
+    // preserving the last real message as the whole point; thread_local made it
+    // impossible.
+    std::mutex g_statusMutex;
+    std::string g_statusText;
+
+    void setStatus(const char* s) {
+        std::lock_guard<std::mutex> lock(g_statusMutex);
+        g_statusText = s ? s : "";
     }
 
-    const char* setStatus(const char* s) {
-        statusBuf() = s ? s : "";
-        return statusBuf().c_str();
+    bool statusIsEmpty() {
+        std::lock_guard<std::mutex> lock(g_statusMutex);
+        return g_statusText.empty();
     }
 
-    // Read-only: does NOT overwrite the buffer, unlike setStatus(). Used by
-    // cemu_bridge_status_text() so it returns whatever the last real setStatus() call
-    // actually said (e.g. "Invalid RPX", a specific boot failure reason) instead of
-    // silently discarding it in favor of a freshly recomputed generic string.
+    // Returns a pointer that stays valid until the SAME thread calls this again.
+    // Handing out g_statusText.c_str() directly would be a data race - a background
+    // boot thread can reassign that string while the main thread is reading it - so
+    // copy it under the lock into a per-thread snapshot and return that. Swift's
+    // String(cString:) copies immediately, so one call's worth of lifetime is all any
+    // caller needs.
     const char* getStatus() {
-        return statusBuf().c_str();
+        static thread_local std::string snapshot;
+        {
+            std::lock_guard<std::mutex> lock(g_statusMutex);
+            snapshot = g_statusText;
+        }
+        return snapshot.c_str();
     }
 }
 
@@ -260,29 +288,27 @@ void cemu_bridge_register_render_surface(void* uiView, int width, int height, do
         if (!g_renderer)
             g_renderer = std::make_unique<MetalRenderer>();
 
-        // NOTE: despite the name, width/height as actually supplied by the live
-        // registration path (MetalView.swift's makeUIView: screenBounds.width/height
-        // * UIScreen.main.scale) are PHYSICAL PIXELS, not logical/point size - this
-        // comment previously claimed otherwise (a leftover from an earlier, pre-fix
-        // assumption modeled on desktop's wxSize-in-points convention) and was wrong.
-        // CreateMetalLayer()'s iOS body (MetalLayer.mm) requires pixels - it divides
-        // by view.contentScaleFactor to recover the on-screen point-size frame, and
-        // that specific behavior is confirmed correct by live device test. Below,
-        // MetalLayerHandle's ctor then multiplies this SAME already-pixel value by
-        // the layer's scale factor again for setDrawableSize() - since it was
-        // written assuming points-in (matching the macOS/MetalCanvas.cpp caller,
-        // where the equivalent argument really is wx's point-based size). The net
-        // effect on iOS is a drawable allocated at scale^2 the pixel count actually
-        // needed (e.g. 4x on a 2x-Retina device) - wasteful but NOT visually broken,
-        // because windowInfo.phys_width/phys_height below apply the exact same
-        // redundant multiply, so the output-blit viewport (LatteRenderTarget_
-        // getScreenImageArea, driven by GetWindowPhysSize()) stays proportionally
-        // consistent with the oversized drawable rather than being clipped against
-        // it. Left unfixed deliberately: correcting one side without the other
-        // would substitute a real crop/scale bug for a merely wasteful one, and
-        // there's no device here to verify the combined change. Worth a coordinated
-        // cleanup later (this file + MetalLayerHandle.cpp's ctor), not a same-session
-        // fix without hardware in the loop.
+        // width/height are LOGICAL POINTS, matching the desktop caller
+        // (wxgui/canvas/MetalCanvas.cpp passes a wxSize). Points get converted to
+        // physical pixels exactly once on each path that needs them: phys_width/
+        // phys_height above, and MetalLayerHandle's ctor -> setDrawableSize()
+        // (points * the layer's backing scale) below.
+        //
+        // This used to be passed as pixels (MetalView.swift multiplied by
+        // UIScreen.main.scale before calling in), which meant BOTH of those
+        // conversions multiplied by the scale a second time. An earlier version of
+        // this comment dismissed that as "wasteful but not visually broken", on the
+        // grounds that phys_width/phys_height were inflated by the same factor so
+        // the output-blit viewport (LatteRenderTarget_getScreenImageArea, driven by
+        // GetWindowPhysSize()) stayed proportionally consistent with the oversized
+        // drawable. That reasoning only covers geometry, and geometry was never the
+        // risk. On a 2x iPad the drawable came out around 4096x5464 - roughly 89 MB
+        // per drawable, ~268 MB for a triple-buffered swapchain - and nextDrawable()
+        // is entitled to simply return nil rather than hand that out. When it does,
+        // MetalRenderer::SwapBuffer() and DrawBackbufferQuad() both return silently
+        // (see AcquireDrawable's callers), so the symptom is a black screen with no
+        // error anywhere: exactly the failure being chased. A 4x allocation
+        // overshoot is not a cosmetic issue when allocation is what fails.
         MetalRenderer::GetInstance()->InitializeLayer({width, height}, /*mainWindow=*/true);
         setStatus("Render surface registered.");
     } @catch (NSException* exception) {
@@ -299,6 +325,134 @@ void cemu_bridge_register_render_surface(void* uiView, int width, int height, do
 #endif
 }
 
+void cemu_bridge_register_pad_render_surface(void* uiView, int width, int height, double dpiScale) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!uiView || width <= 0 || height <= 0)
+        return;
+    if (!g_renderer) {
+        // The TV surface is registered first and constructs the renderer; without it
+        // there is nothing to attach a second layer to. Say so rather than silently
+        // doing nothing, because the caller's whole display-routing decision is now
+        // wrong and only the log can tell anyone that.
+        cemuLog_log(LogType::Force, "iOS: cannot register the GamePad surface - no renderer yet (the TV surface must be registered first)");
+        return;
+    }
+
+    // pad_open drives WindowSystem::GetPadWindowSize/PhysSize/DPIScale, which
+    // LatteRenderTarget_getScreenImageArea() uses to letterbox the DRC image. Left
+    // false those all report 0 and the pad blit would be laid out into nothing.
+    auto& windowInfo = WindowSystem::GetWindowInfo();
+    windowInfo.window_pad.surface = uiView;
+    windowInfo.pad_width = width;
+    windowInfo.pad_height = height;
+    windowInfo.phys_pad_width = (int32_t)(width * dpiScale);
+    windowInfo.phys_pad_height = (int32_t)(height * dpiScale);
+    windowInfo.pad_dpi_scale = dpiScale;
+    windowInfo.pad_open = true;
+
+    // Same @try/@catch reasoning as the TV surface above: InitializeLayer() makes real
+    // Objective-C/Metal calls and a throw here must not take down a running title. If
+    // it does throw, undo pad_open so the engine goes back to believing there is no
+    // pad window at all - which is a configuration it handles correctly - rather than
+    // one it thinks exists but has no layer.
+    @try {
+        MetalRenderer::GetInstance()->InitializeLayer({width, height}, /*mainWindow=*/false);
+        cemuLog_log(LogType::Force, "iOS: GamePad (DRC) screen surface registered, {}x{} points at {}x scale", width, height, dpiScale);
+    } @catch (NSException* exception) {
+        windowInfo.pad_open = false;
+        windowInfo.window_pad.surface = nullptr;
+        std::string message = "GamePad surface InitializeLayer threw: ";
+        message += exception.name.UTF8String;
+        message += " - ";
+        message += exception.reason.UTF8String;
+        cemu_bridge_log_checkpoint(message.c_str());
+        cemuLog_log(LogType::Force, "iOS: {}", message);
+    }
+#else
+    (void)uiView; (void)width; (void)height; (void)dpiScale;
+#endif
+}
+
+void cemu_bridge_release_pad_render_surface(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    auto& windowInfo = WindowSystem::GetWindowInfo();
+    // Flip pad_open first. Every Latte-side consumer of the pad geometry reads it, so
+    // this stops new pad work being laid out even before the layer is actually gone.
+    windowInfo.pad_open = false;
+    windowInfo.pad_width = 0;
+    windowInfo.pad_height = 0;
+    windowInfo.phys_pad_width = 0;
+    windowInfo.phys_pad_height = 0;
+    if (!g_renderer)
+        return;
+    // Deferred on purpose - see MetalRenderer::RequestPadLayerRelease(). The hosting
+    // view must stay alive and must keep the layer as a sublayer: the C++ side only
+    // drops the +1 that CreateMetalLayer() took, and the view's own reference is what
+    // keeps the CAMetalLayer from being deallocated on the GPU thread.
+    MetalRenderer::GetInstance()->RequestPadLayerRelease();
+    cemuLog_log(LogType::Force, "iOS: GamePad (DRC) surface release requested - the GPU thread will drop it at its next frame boundary");
+#endif
+}
+
+bool cemu_bridge_has_pad_render_surface(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!g_renderer)
+        return false;
+    return MetalRenderer::GetInstance()->IsPadWindowActive();
+#else
+    return false;
+#endif
+}
+
+void cemu_bridge_resize_render_surface(int width, int height, double dpiScale, bool mainWindow) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!g_renderer || width <= 0 || height <= 0)
+        return;
+
+    auto& windowInfo = WindowSystem::GetWindowInfo();
+    if (mainWindow) {
+        windowInfo.width = width;
+        windowInfo.height = height;
+        windowInfo.phys_width = (int32_t)(width * dpiScale);
+        windowInfo.phys_height = (int32_t)(height * dpiScale);
+        windowInfo.dpi_scale = dpiScale;
+    } else {
+        if (!windowInfo.pad_open)
+            return;
+        windowInfo.pad_width = width;
+        windowInfo.pad_height = height;
+        windowInfo.phys_pad_width = (int32_t)(width * dpiScale);
+        windowInfo.phys_pad_height = (int32_t)(height * dpiScale);
+        windowInfo.pad_dpi_scale = dpiScale;
+    }
+
+    @try {
+        MetalRenderer::GetInstance()->ResizeLayerAndFrame({width, height}, (float)dpiScale, mainWindow);
+        cemuLog_log(LogType::Force, "iOS: resized the {} surface to {}x{} points at {}x scale", mainWindow ? "TV" : "GamePad", width, height, dpiScale);
+    } @catch (NSException* exception) {
+        cemuLog_log(LogType::Force, "iOS: resizing the {} surface threw: {} - {}", mainWindow ? "TV" : "GamePad", exception.name.UTF8String, exception.reason.UTF8String);
+    }
+#else
+    (void)width; (void)height; (void)dpiScale; (void)mainWindow;
+#endif
+}
+
+void cemu_bridge_log_line(const char* message) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!message)
+        return;
+    // Deliberately the zero-argument form: the iOS cemuLog_log() template forwards a
+    // call with no varargs straight to the std::string_view overload without going
+    // through fmt, so a caller-supplied string containing braces is logged verbatim
+    // instead of being treated as a format string and throwing fmt::format_error
+    // (see the block comment in CemuLogging.h - an unhandled throw out of a log call
+    // is std::terminate).
+    cemuLog_log(LogType::Force, message);
+#else
+    (void)message;
+#endif
+}
+
 CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     if (!rpxPath || rpxPath[0] == '\0') {
         setStatus("boot_rpx: empty path.");
@@ -308,19 +462,31 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     if (!g_initialized.load())
         CafeSystem::Initialize();
 
-    // CafeSystem::PrepareForegroundTitleFromStandaloneRPX() -> PrepareExecutable()
-    // calls Latte_Start(), which spawns the GPU thread (Latte_ThreadEntry(),
-    // LatteThread.cpp) and then - on THIS thread, before PrepareExecutable() even
-    // returns - spins `while (g_isGPUInitFinished == false) sleep(50ms);` waiting for
-    // it. Latte_ThreadEntry() unconditionally calls `g_renderer->Initialize()` with
-    // no null check, so retry construction here in case
-    // cemu_bridge_register_render_surface()'s own attempt (with its own @try/@catch)
-    // failed and left g_renderer null - same @try/@catch reasoning applies: a
-    // renderer construction failure is real (confirmed via live device crash) but
-    // shouldn't block M2's actual exit criteria (interpreter/OS-HLE stack), only M3
-    // (rendering). If this also fails, g_renderer stays null - Latte_ThreadEntry()
-    // (LatteThread.cpp) now checks for that and signals both flags the callers spin
-    // on (sLatteThreadFinishedInit, g_isGPUInitFinished) without touching g_renderer,
+    // Last chance to have a renderer before the GPU thread starts, so retry
+    // construction here if cemu_bridge_register_render_surface()'s own attempt (which
+    // has its own @try/@catch) failed and left g_renderer null.
+    //
+    // On the actual ordering - an earlier version of this comment claimed
+    // PrepareForegroundTitleFromStandaloneRPX() -> PrepareExecutable() calls
+    // Latte_Start() and then spins on g_isGPUInitFinished before returning. It does
+    // NOT. PrepareExecutable() is CafeSystem.cpp:775 and does neither of those
+    // things; PrepareForegroundTitleFromStandaloneRPX() only mounts the RPX, derives
+    // a placeholder title id, loads the game profile and sets up memory/recompiler,
+    // then returns. Latte_Start() is called from cemu_initForGame()
+    // (CafeSystem.cpp:416), which runs later on the DETACHED TITLE THREAD spawned by
+    // LaunchForegroundTitle() -> _LaunchTitleThread(), i.e. after
+    // cemu_bridge_boot_rpx() has already returned to Swift. Anyone tracing a hang or
+    // a black screen from that old comment would have been looking at the wrong
+    // thread and the wrong function entirely.
+    //
+    // What that means practically: this retry still has to happen before
+    // LaunchForegroundTitle(), because Latte_ThreadEntry() (LatteThread.cpp) reaches
+    // g_renderer->Initialize() with no null check of its own. Same @try/@catch
+    // reasoning as above - a renderer construction failure is real (confirmed via
+    // live device crash) but shouldn't block M2's exit criteria (interpreter/OS-HLE
+    // stack), only M3 (rendering). If this also fails, g_renderer stays null and
+    // Latte_ThreadEntry() handles that case: it signals both flags callers spin on
+    // (sLatteThreadFinishedInit, g_isGPUInitFinished) without touching g_renderer,
     // rather than null-dereferencing or leaving those waits hanging forever.
     if (!g_renderer)
     {
@@ -360,6 +526,22 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     (void)rpxPath;
     setStatus("Cannot boot: real engine not compiled into this build yet (ROADMAP.md M1).");
     return CEMU_BRIDGE_CORE_NOT_BUILT;
+#endif
+}
+
+#if defined(CEMU_CORE_AVAILABLE)
+// Defined in src/gui/iosgui/IOSWindowSystem.cpp - the platform shim that receives
+// the engine's fps readings via WindowSystem::UpdateWindowTitles(). That shim has no
+// header of its own, so declare it here rather than inventing one for a single
+// function.
+double IOSWindowSystem_GetLastFPS();
+#endif
+
+double cemu_bridge_get_fps(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return IOSWindowSystem_GetLastFPS();
+#else
+    return 0.0;
 #endif
 }
 
@@ -404,11 +586,11 @@ const char* cemu_bridge_status_text(void) {
     // the specific message the last setStatus() call actually set (e.g. "Invalid
     // RPX", a boot failure reason) on every single read. Only fall back to a
     // computed default when nothing specific has been set yet.
-    if (statusBuf().empty())
+    if (statusIsEmpty())
         setStatus(CafeSystem::IsTitleRunning() ? "Title running." : "Core ready (no title running).");
     return getStatus();
 #else
-    if (statusBuf().empty())
+    if (statusIsEmpty())
         setStatus("Real engine not compiled into this build yet (see ROADMAP.md M1).");
     return getStatus();
 #endif
