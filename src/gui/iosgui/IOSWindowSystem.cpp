@@ -38,7 +38,20 @@ void WindowSystem::ShowErrorDialog(std::string_view message, std::string_view ti
 		cemuLog_log(LogType::Force, "[error] {}", message);
 	else
 		cemuLog_log(LogType::Force, "[error] {}: {}", title, message);
-	cemuLog_waitForFlush();
+
+	// Open the log file if it is not open yet - on the memory_init() and
+	// LoadMainExecutable() paths it usually is not, since the engine's own
+	// cemuLog_createLogFile() call does not happen until cemu_initForGame(), which is
+	// later. Then flush, but ONLY if that actually produced an open file:
+	// cemuLog_waitForFlush() waits on the writer thread draining text_cache, and
+	// cemuLog_createLogFile() does not start that thread when the open fails, so
+	// flushing unconditionally would turn "log write failed" into a hang inside a
+	// fatal-error handler. The os_log mirror (CemuLogging.cpp) has already carried
+	// this line out of the process by now either way, so skipping the flush costs a
+	// line in log.txt, not the diagnosis.
+	cemuLog_createLogFile(false);
+	if (cemuLog_isLogFileOpen())
+		cemuLog_waitForFlush();
 }
 
 WindowSystem::WindowInfo& WindowSystem::GetWindowInfo()

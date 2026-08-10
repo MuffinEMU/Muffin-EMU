@@ -254,6 +254,7 @@ uint64 cemuLog_getFlag(LogType type);
 
 fs::path cemuLog_GetLogFilePath();
 void cemuLog_createLogFile(bool triggeredByCrash);
+bool cemuLog_isLogFileOpen(); // check before cemuLog_waitForFlush() on a fatal path - see the definition
 [[nodiscard]] std::unique_lock<std::recursive_mutex> cemuLog_acquire(); // used for logging multiple lines at once
 
 class LoggingCallbacks
