@@ -18,22 +18,100 @@ struct ContentView: View {
                     showingGameBrowser: $showingGameBrowser,
                     showingFavorites: $showingFavorites
                 )
-            } else if let game = selectedGame,
-                      gameManager.emulationState == .loading || gameManager.emulationState == .running {
-                // Mount as soon as .loading starts, not only once .running - the
-                // Metal surface needs to exist and register itself with the C++
-                // bridge (see GameManager.registerRenderSurface) BEFORE boot() runs,
-                // since the GPU thread reads the window size synchronously the
-                // instant boot() spawns it.
-                EmulatorViewOptimized(
-                    game: game,
-                    gameManager: gameManager,
-                    isRunning: $showingGameBrowser,
-                    controllerSkin: $selectedSkin
-                )
+            } else if let game = selectedGame {
+                switch gameManager.emulationState {
+                case .loading, .running, .paused:
+                    // Mount as soon as .loading starts, not only once .running - the
+                    // Metal surface needs to exist and register itself with the C++
+                    // bridge (see GameManager.registerRenderSurface) BEFORE boot() runs,
+                    // since the GPU thread reads the window size synchronously the
+                    // instant boot() spawns it.
+                    EmulatorViewOptimized(
+                        game: game,
+                        gameManager: gameManager,
+                        isRunning: $showingGameBrowser,
+                        controllerSkin: $selectedSkin
+                    )
+                case .error:
+                    BootFailureView(
+                        game: game,
+                        message: gameManager.lastStatusMessage,
+                        onDismiss: {
+                            gameManager.stopEmulation()
+                            showingGameBrowser = true
+                        }
+                    )
+                case .idle:
+                    // Reached only if something stopped emulation without restoring the
+                    // browser. Rendering nothing here is what the old code did for every
+                    // non-loading/running state, so make the recovery explicit instead.
+                    Color.clear.onAppear { showingGameBrowser = true }
+                }
             }
         }
         .ignoresSafeArea()
+    }
+}
+
+/// Shown when `emulationState` is `.error`.
+///
+/// Before this existed, ContentView's only non-browser branch required the state to
+/// be `.loading` or `.running`, so a failed boot rendered an empty ZStack: no
+/// emulator view, no browser (showingGameBrowser was already false), no Back button,
+/// nothing. A blank screen and no way out, which on a device is indistinguishable
+/// from the emulator hanging - and is a plausible share of what has been reported as
+/// "black screen" during M2 bring-up, since every boot failure path lands here.
+///
+/// GameManager has always recorded the reason in `lastStatusMessage`; nothing in the
+/// app displayed it. (It was also wrong until the bridge's thread_local status buffer
+/// was fixed - see CemuBridge.mm.) Showing it is the whole point of this view.
+struct BootFailureView: View {
+    let game: GameMetadata
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundColor(MuffinTheme.blushPink)
+
+                Text("Couldn't start \(game.title)")
+                    .font(.system(size: 17, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+
+                // The engine's own words. Empty only if the bridge never set anything,
+                // which is itself worth seeing rather than papering over.
+                Text(message.isEmpty ? "The engine didn't report a reason." : message)
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundColor(.white.opacity(0.75))
+                    .multilineTextAlignment(.center)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: 480)
+
+                Text("Full detail is in log.txt and CemuCrashLog.txt — Files ▸ On My iPad ▸ Cemu.")
+                    .font(.system(size: 11, weight: .regular, design: .rounded))
+                    .foregroundColor(.white.opacity(0.45))
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 480)
+
+                Button(action: onDismiss) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Back to games")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    }
+                }
+                .buttonStyle(MuffinSecondaryButtonStyle())
+                .padding(.top, 4)
+            }
+            .padding(32)
+        }
     }
 }
 
@@ -416,13 +494,20 @@ struct EmulatorViewOptimized: View {
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
 
+                        // Reads the @Published frameRate directly rather than calling
+                        // getFrameRate(): a plain method call cannot invalidate this
+                        // view, so even once the value became real the HUD would only
+                        // update when something else happened to redraw it. Until
+                        // the emulator reports its first measurement this shows "--",
+                        // not "0" - "0 FPS" reads as a measured stall, which is a
+                        // different and much more alarming claim than "no reading yet".
                         HStack(spacing: 6) {
                             Image(systemName: "speedometer")
                                 .font(.system(size: 12, weight: .semibold))
-                            Text("\(gameManager.getFrameRate()) FPS")
+                            Text(gameManager.frameRate > 0 ? "\(gameManager.frameRate) FPS" : "-- FPS")
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                         }
-                        .foregroundColor(gameManager.getFrameRate() >= 20 ? Color.green : MuffinTheme.blushPink)
+                        .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.blushPink)
                         .frame(height: 40)
                         .padding(.horizontal, 12)
                         .background(Color.white.opacity(0.08))

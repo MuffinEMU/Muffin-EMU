@@ -14,8 +14,44 @@ void WindowSystem::Create()
 {
 }
 
+// There is no modal dialog to show here, but discarding the message outright - which
+// is what this did - loses the only explanation the engine ever produces for several
+// paths that then kill the process outright:
+//
+//   MMU.cpp memory_init()        -> "Unable to reserve 4GB of memory"    -> exit(-1)
+//   MMU.cpp MMURange::mapMem()   -> "Unable to allocate {} memory"       -> exit(-1)
+//   CafeSystem.cpp LoadMainExecutable() -> damaged executable            -> exit(0)
+//   KeyCache.cpp                 -> keys.txt unreadable/uncreatable      -> continues
+//
+// exit() is not a signal, so CemuBridge.mm's signal handler never fires and
+// CemuCrashLog.txt stays empty; iOS reports it as a normal termination. The symptom
+// on device is the app simply vanishing with no crash report and no log line - which
+// is indistinguishable from the several other ways boot can currently fail, and is
+// exactly the class of failure the first three of those are plausible candidates for
+// on a memory-constrained sideloaded process. Log it instead, at LogType::Force so it
+// is never filtered out, and flush synchronously: every caller above is either about
+// to exit or has just failed at something load-bearing, so there may be no later
+// opportunity for the writer thread to drain the cache to disk.
 void WindowSystem::ShowErrorDialog(std::string_view message, std::string_view title, std::optional<WindowSystem::ErrorCategory> /*errorId*/)
 {
+	if (title.empty())
+		cemuLog_log(LogType::Force, "[error] {}", message);
+	else
+		cemuLog_log(LogType::Force, "[error] {}: {}", title, message);
+
+	// Open the log file if it is not open yet - on the memory_init() and
+	// LoadMainExecutable() paths it usually is not, since the engine's own
+	// cemuLog_createLogFile() call does not happen until cemu_initForGame(), which is
+	// later. Then flush, but ONLY if that actually produced an open file:
+	// cemuLog_waitForFlush() waits on the writer thread draining text_cache, and
+	// cemuLog_createLogFile() does not start that thread when the open fails, so
+	// flushing unconditionally would turn "log write failed" into a hang inside a
+	// fatal-error handler. The os_log mirror (CemuLogging.cpp) has already carried
+	// this line out of the process by now either way, so skipping the flush costs a
+	// line in log.txt, not the diagnosis.
+	cemuLog_createLogFile(false);
+	if (cemuLog_isLogFileOpen())
+		cemuLog_waitForFlush();
 }
 
 WindowSystem::WindowInfo& WindowSystem::GetWindowInfo()
@@ -23,8 +59,25 @@ WindowSystem::WindowInfo& WindowSystem::GetWindowInfo()
 	return g_window_info;
 }
 
+// There is no window title to update on iOS, but this is the engine's only
+// push of a real, measured frame rate to the UI layer: LattePerformanceMonitor
+// (LattePerformanceMonitor.cpp:114) calls it roughly once a second with the fps it
+// just computed. Keep the last value so cemu_bridge_get_fps() can hand it to the
+// Swift HUD, which previously had a hardcoded 0 to display.
+static std::atomic<double> s_ios_last_fps{0.0};
+
 void WindowSystem::UpdateWindowTitles(bool isIdle, bool isLoading, double fps)
 {
+	// isIdle/isLoading both mean "not producing frames right now" - report 0 rather
+	// than leaving the last real reading on screen while nothing is being rendered.
+	s_ios_last_fps.store((isIdle || isLoading) ? 0.0 : fps);
+}
+
+// Declared in CemuBridge.mm (the only caller); no header of its own, matching the
+// rest of this platform shim.
+double IOSWindowSystem_GetLastFPS()
+{
+	return s_ios_last_fps.load();
 }
 
 void WindowSystem::GetWindowSize(int& w, int& h)
