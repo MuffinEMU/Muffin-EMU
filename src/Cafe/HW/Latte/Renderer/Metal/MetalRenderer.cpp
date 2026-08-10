@@ -513,10 +513,24 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 {
     if (!AcquireDrawable(!padView))
     {
-        // See SwapBuffer() below for the reasoning. This is the earlier of the two
-        // silent bail-outs: nothing is even drawn into the backbuffer, so the
-        // subsequent SwapBuffer() has nothing to present regardless.
-        cemuLog_logOnce(LogType::Force, "MetalRenderer::DrawBackbufferQuad: no drawable available (padView={}) - backbuffer not drawn", padView);
+        // See SwapBuffer() below for the reasoning, including why the flag is
+        // per-window rather than per-call-site. This is the earlier of the two silent
+        // bail-outs: nothing is even drawn into the backbuffer, so the subsequent
+        // SwapBuffer() has nothing to present regardless.
+        //
+        // Reaching this for the pad window means the title really did produce a DRC
+        // image and there is nowhere to put it - LatteHandleOSScreen_DRC()
+        // (LatteThread.cpp) blits to the pad unconditionally, without the
+        // IsPadWindowActive() check the GX2 scan-buffer path in
+        // LatteRenderTarget_itHLECopyColorBufferToScanBuffer() has. On a TV-primary
+        // host that is a dropped frame, not a broken one, but it is the signal that
+        // the guest is rendering, which is worth being able to see on its own.
+        static bool s_noBackbufferLogged[2] = {};
+        if (!s_noBackbufferLogged[padView ? 1 : 0])
+        {
+            s_noBackbufferLogged[padView ? 1 : 0] = true;
+            cemuLog_log(LogType::Force, "MetalRenderer: the {} window has no drawable, so a backbuffer blit was skipped - the title IS producing frames", padView ? "pad (DRC)" : "TV");
+        }
         return;
     }
 
@@ -1978,10 +1992,29 @@ bool MetalRenderer::AcquireDrawable(bool mainWindow)
     {
         // Distinct from "nextDrawable() returned nil" (logged by
         // MetalLayerHandle::AcquireDrawable): this means InitializeLayer() was never
-        // called for this window, or was called and threw. Same symptom for the
-        // user - a black screen - but a completely different fix, so it is worth
-        // being able to tell the two apart from a log alone.
-        cemuLog_logOnce(LogType::Force, "MetalRenderer::AcquireDrawable: no CAMetalLayer for this window (mainWindow={}) - InitializeLayer() never ran or failed", mainWindow);
+        // called for this window. That is a failure for the TV window and completely
+        // normal for the pad window, which only exists when the host has opened a
+        // second one - MetalCanvas.cpp on desktop, nothing at all on iOS, where the
+        // bridge registers exactly one surface (CemuBridge.mm,
+        // cemu_bridge_register_render_surface). Callers already treat `false` as
+        // "skip this window", which is the graceful degradation; only the wording of
+        // the log needed to stop calling the normal case a failure.
+        //
+        // The flag is per-window, not per-call-site. cemuLog_logOnce() keys its static
+        // on the call site, so the first window to reach it permanently silences the
+        // other - and since the pad window has no layer from the very first frame, it
+        // always gets there first. The first device log that reached "Run title" is
+        // exactly that: one "mainWindow=false" line here, one in SwapBuffer(), and
+        // consequently no evidence either way about what the TV window did afterwards.
+        static bool s_noLayerLogged[2] = {};
+        if (!s_noLayerLogged[mainWindow ? 1 : 0])
+        {
+            s_noLayerLogged[mainWindow ? 1 : 0] = true;
+            if (mainWindow)
+                cemuLog_log(LogType::Force, "MetalRenderer: the TV window has no CAMetalLayer - InitializeLayer(mainWindow=true) never ran or threw. Nothing can be presented.");
+            else
+                cemuLog_log(LogType::Force, "MetalRenderer: no pad (DRC) window on this host, so pad frames are skipped. Expected when only one render surface is registered; the TV window is unaffected.");
+        }
         return false;
     }
 
@@ -2323,14 +2356,38 @@ void MetalRenderer::SwapBuffer(bool mainWindow)
         // indistinguishable from the title never producing a frame at all, which
         // are two completely different bugs. Same reasoning as the always-on
         // GX2SwapScanBuffers() marker (GX2.cpp): Force-level so it survives a build
-        // with no settings UI to enable log categories, and logOnce so a failure
+        // with no settings UI to enable log categories, and once-only so a failure
         // that repeats every frame cannot flood the log out of usefulness.
-        cemuLog_logOnce(LogType::Force, "MetalRenderer::SwapBuffer: no drawable available (mainWindow={}) - frame dropped, nothing presented", mainWindow);
+        // Per-window for the reason spelled out in AcquireDrawable().
+        static bool s_dropLogged[2] = {};
+        if (!s_dropLogged[mainWindow ? 1 : 0])
+        {
+            s_dropLogged[mainWindow ? 1 : 0] = true;
+            cemuLog_log(LogType::Force, "MetalRenderer: dropped a frame for the {} window - no drawable, nothing presented (see the line above for why)", mainWindow ? "TV" : "pad (DRC)");
+        }
         return;
     }
 
+    auto& layer = GetLayer(mainWindow);
+
+    // The counterpart to the drop marker above, and the line that was missing from
+    // the first device log that reached "Run title": there was no way to tell "the TV
+    // window presented frames and they were not visible" from "the TV window never
+    // presented at all", because only failures were logged and the pad's consumed
+    // the one-shot flag. Report the first success per window, with the drawable size,
+    // so the geometry is on the record too - the iOS caller registers UIScreen bounds
+    // rather than the hosting view's bounds (see ROADMAP.md M3), so a surface larger
+    // than the visible view is expected and worth being able to confirm.
+    static bool s_presentLogged[2] = {};
+    if (!s_presentLogged[mainWindow ? 1 : 0])
+    {
+        s_presentLogged[mainWindow ? 1 : 0] = true;
+        const CGSize drawableSize = layer.GetLayer()->drawableSize();
+        cemuLog_log(LogType::Force, "MetalRenderer: presented the first frame to the {} window ({}x{} pixels)", mainWindow ? "TV" : "pad (DRC)", (sint32)drawableSize.width, (sint32)drawableSize.height);
+    }
+
     auto commandBuffer = GetCommandBuffer();
-    GetLayer(mainWindow).PresentDrawable(commandBuffer);
+    layer.PresentDrawable(commandBuffer);
 }
 
 void MetalRenderer::EnsureImGuiBackend()
