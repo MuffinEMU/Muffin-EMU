@@ -94,6 +94,20 @@ void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX
 	return (__bridge void*)metalLayer;
 }
 
+void ResizeMetalLayer(void* layer, const Vector2i& sizeInPoints, float scale)
+{
+	CAMetalLayer* metalLayer = (__bridge CAMetalLayer*)layer;
+	if (!metalLayer)
+		return;
+
+	// Same units contract as CreateMetalLayer(): a CALayer frame is in POINTS, and
+	// contentsScale carries the points -> pixels conversion. The drawable size is not
+	// set here - MetalLayerHandle::ResizeWithScale() does that, exactly once, so the
+	// scale is never applied twice (the bug fixed in 6488cc1d).
+	metalLayer.frame = CGRectMake(0, 0, sizeInPoints.x, sizeInPoints.y);
+	metalLayer.contentsScale = scale;
+}
+
 #else
 
 // macOS / AppKit path (unchanged upstream behavior).
@@ -137,6 +151,19 @@ void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX
 	CFRetain((__bridge CFTypeRef)childView.layer);
 
 	return childView.layer;
+}
+
+void ResizeMetalLayer(void* layer, const Vector2i& sizeInPoints, float scale)
+{
+	// Nothing to do on macOS, and deliberately so rather than left undefined: the
+	// CAMetalLayer here is MetalView's backing layer (+layerClass), so AppKit resizes
+	// it with the view through the autoresizing mask set above, and
+	// -layer:shouldInheritContentsScale:fromWindow: keeps contentsScale current across
+	// display moves. Touching either from here would fight the framework. The
+	// declaration is shared, so the definition has to exist - see MetalLayer.h.
+	(void)layer;
+	(void)sizeInPoints;
+	(void)scale;
 }
 
 #endif

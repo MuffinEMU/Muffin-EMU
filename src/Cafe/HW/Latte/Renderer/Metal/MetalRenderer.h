@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 
 #include "Cafe/HW/Latte/Renderer/Metal/MetalLayerHandle.h"
@@ -170,6 +172,28 @@ public:
 	void InitializeLayer(const Vector2i& size, bool mainWindow);
 	void ShutdownLayer(bool mainWindow);
 	void ResizeLayer(const Vector2i& size, bool mainWindow);
+
+	// Resize that also moves the CALayer's own frame and backing scale, not just the
+	// drawable. ResizeLayer() above updates setDrawableSize() only, which is all the
+	// desktop canvas needs (there the CAMetalLayer is a view's backing layer and
+	// AppKit owns its geometry). On iOS the layer is a manually added sublayer whose
+	// frame nothing else maintains, and the scale changes when the surface moves
+	// between an iPad's screen and an external display. Must be called on the main
+	// thread - it touches Core Animation geometry.
+	void ResizeLayerAndFrame(const Vector2i& sizeInPoints, float scale, bool mainWindow);
+
+	// Ask the GPU thread to drop the pad window's layer at its next frame boundary.
+	// Called from the main thread when an external display goes away, so the pad
+	// screen stops being rendered. Deliberately NOT a direct ShutdownLayer() call:
+	// m_padLayer belongs to the Latte thread while a title is running, and tearing it
+	// down underneath that thread is the exact shape of the MetalLayerHandle
+	// use-after-free already fixed once in this fork (see MetalLayerHandle.h). If the
+	// GPU thread is wedged and never reaches a frame boundary, the layer simply stays
+	// alive and keeps drawing into a hidden view - wasteful, not fatal.
+	void RequestPadLayerRelease()
+	{
+	    m_padLayerReleaseRequested.store(true, std::memory_order_relaxed);
+	}
 
 	void Initialize() override;
 	void Shutdown() override;
@@ -476,6 +500,7 @@ public:
 private:
 	MetalLayerHandle m_mainLayer;
 	MetalLayerHandle m_padLayer;
+	std::atomic<bool> m_padLayerReleaseRequested{false};
 
 	MetalPerformanceMonitor m_performanceMonitor;
 
