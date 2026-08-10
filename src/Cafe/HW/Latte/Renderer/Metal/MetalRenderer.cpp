@@ -408,6 +408,21 @@ void MetalRenderer::DrawEmptyFrame(bool mainWindow)
 {
     if (!BeginFrame(mainWindow))
 		return;
+	// Actually clear the drawable before presenting it. BeginFrame() only acquires
+	// one; without a render pass writing to it, the texture contents are undefined
+	// (it is a framebufferOnly drawable straight out of the layer's pool), and what
+	// gets scanned out is whatever that memory happened to hold. Upstream gets away
+	// with it because on desktop this path runs for a fraction of a second between
+	// window creation and the first real frame. On iOS it is currently the ONLY frame
+	// that reaches the screen before a title starts scanning out - LatteThread.cpp's
+	// pre-title wait loop does not run at all here, because LaunchForegroundTitle()
+	// sets sSystemRunning before spawning the thread that starts Latte, so
+	// CafeSystem::IsTitleRunning() is already true when the loop is first evaluated -
+	// which leaves the single DrawEmptyFrame(true) immediately after it as the whole
+	// of the on-screen state until then. Opaque black is a definite state; undefined
+	// is not, and it became visible rather than merely wrong once the iOS layer was
+	// marked opaque (MetalLayer.mm).
+	ClearColorTextureInternal(GetLayer(mainWindow).GetDrawable()->texture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
 	SwapBuffers(mainWindow, !mainWindow);
 }
 
