@@ -35,6 +35,25 @@ void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX
 	const float scale = (float)view.contentScaleFactor;
 	metalLayer.frame = CGRectMake(0, 0, sizeInPoints.x, sizeInPoints.y);
 	metalLayer.contentsScale = scale;
+
+	// A manually created CALayer has opaque = NO, unlike a UIView's own backing layer
+	// (UIKit drives that from UIView.isOpaque, which defaults to YES). The macOS branch
+	// below never meets this problem because there the CAMetalLayer IS a view's backing
+	// layer, via MetalView's +layerClass.
+	//
+	// This is deliberately NOT being claimed as the black-screen fix: the output shader
+	// Cemu blits a title's scanbuffer with (RendererOuputShader.cpp's copy shader)
+	// writes vec4(rgb, 1.0), so a real frame is already fully opaque and composites the
+	// same either way. What opaque = NO does change is every frame whose alpha is not 1
+	// - which today is the ones this fork actually produces most: DrawEmptyFrame()'s
+	// backbuffer, ClearColorbuffer()'s explicit a=0.0 clear, and anything drawn before
+	// a title starts scanning out. Those blend against whatever is behind the layer
+	// instead of covering it, so "presented an empty frame" and "presented nothing at
+	// all" look identical on screen. Marking the layer opaque makes the presented
+	// contents authoritative, and skips a full-screen per-pixel blend in the compositor
+	// on top of that.
+	metalLayer.opaque = YES;
+
 	[view.layer addSublayer:metalLayer];
 
 	// iOS reports the backing-store scale directly; width/height scale are equal.
