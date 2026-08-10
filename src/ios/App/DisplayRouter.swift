@@ -136,9 +136,10 @@ final class DisplayRouter {
         applyPlacement(reason: "the emulator view mounted")
     }
 
-    /// Registers the TV surface with the engine and kicks off the boot, exactly once.
-    /// Kept here rather than in `MetalViewIOS` so that surface creation and display
-    /// routing cannot disagree about which view the renderer is drawing into.
+    /// Registers the TV surface with the engine and kicks off the boot: once per title
+    /// launch, and idempotent within one (`titleStopped()` is what re-arms it). Kept
+    /// here rather than in `MetalViewIOS` so that surface creation and display routing
+    /// cannot disagree about which view the renderer is drawing into.
     func registerSurfaces(with gameManager: GameManager) {
         guard !tvSurfaceRegistered else { return }
 
