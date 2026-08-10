@@ -210,6 +210,17 @@ void cemuLog_createLogFile(bool triggeredByCrash)
 	lock.unlock();
 }
 
+// cemuLog_waitForFlush() spins until text_cache drains, and only the writer thread
+// drains it - a thread cemuLog_createLogFile() starts only if the file actually
+// opened. So "flush before we exit" is an unbounded spin whenever the log file could
+// not be created. Callers that want a flush on a fatal path need to be able to ask
+// first; this is the only way to find out.
+bool cemuLog_isLogFileOpen()
+{
+	std::unique_lock lock(LogContext.log_mutex);
+	return LogContext.file_stream.is_open();
+}
+
 void cemuLog_writeLineToLog(std::string_view text, bool date, bool new_line)
 {
 	std::unique_lock lock(LogContext.log_mutex);
