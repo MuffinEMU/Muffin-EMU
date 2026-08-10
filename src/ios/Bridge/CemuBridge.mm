@@ -14,6 +14,7 @@
 
 #include <string>
 #include <atomic>
+#include <mutex>
 #include <signal.h>
 #include <execinfo.h>
 #include <unistd.h>
@@ -141,23 +142,50 @@ void cemu_bridge_log_checkpoint(const char* message) {
 namespace {
     std::atomic<bool> g_initialized{false};
 
-    std::string& statusBuf() {
-        // Static storage; single-writer from the emulation control path is fine for a status string.
-        static thread_local std::string buf;
-        return buf;
+    // One status string for the whole bridge, not one per thread. It used to be a
+    // `static thread_local std::string`, which quietly broke the only thing this
+    // string exists for. The writers and the reader are never on the same thread:
+    // GameManager.registerRenderSurface() runs the whole init/boot sequence inside a
+    // Task.detached, so "Invalid RPX.", "Unable to mount title", "Title launched."
+    // and friends were written to a background thread's copy - while the UI reads it
+    // from `await MainActor.run { engine.refreshStatus() }`, i.e. the main thread,
+    // whose copy those writes never touched.
+    //
+    // Worse than just losing them, because the main thread's copy is not empty
+    // either: cemu_bridge_register_render_surface() is called from makeUIView() and
+    // therefore does write "Render surface registered." there. So the empty-check in
+    // cemu_bridge_status_text() found a value, returned it, and the UI showed a
+    // success message from the surface registration no matter how the boot afterwards
+    // actually went - including on the .error path, which is precisely where the
+    // specific reason was needed. The comment on that function already described
+    // preserving the last real message as the whole point; thread_local made it
+    // impossible.
+    std::mutex g_statusMutex;
+    std::string g_statusText;
+
+    void setStatus(const char* s) {
+        std::lock_guard<std::mutex> lock(g_statusMutex);
+        g_statusText = s ? s : "";
     }
 
-    const char* setStatus(const char* s) {
-        statusBuf() = s ? s : "";
-        return statusBuf().c_str();
+    bool statusIsEmpty() {
+        std::lock_guard<std::mutex> lock(g_statusMutex);
+        return g_statusText.empty();
     }
 
-    // Read-only: does NOT overwrite the buffer, unlike setStatus(). Used by
-    // cemu_bridge_status_text() so it returns whatever the last real setStatus() call
-    // actually said (e.g. "Invalid RPX", a specific boot failure reason) instead of
-    // silently discarding it in favor of a freshly recomputed generic string.
+    // Returns a pointer that stays valid until the SAME thread calls this again.
+    // Handing out g_statusText.c_str() directly would be a data race - a background
+    // boot thread can reassign that string while the main thread is reading it - so
+    // copy it under the lock into a per-thread snapshot and return that. Swift's
+    // String(cString:) copies immediately, so one call's worth of lifetime is all any
+    // caller needs.
     const char* getStatus() {
-        return statusBuf().c_str();
+        static thread_local std::string snapshot;
+        {
+            std::lock_guard<std::mutex> lock(g_statusMutex);
+            snapshot = g_statusText;
+        }
+        return snapshot.c_str();
     }
 }
 
@@ -430,11 +458,11 @@ const char* cemu_bridge_status_text(void) {
     // the specific message the last setStatus() call actually set (e.g. "Invalid
     // RPX", a boot failure reason) on every single read. Only fall back to a
     // computed default when nothing specific has been set yet.
-    if (statusBuf().empty())
+    if (statusIsEmpty())
         setStatus(CafeSystem::IsTitleRunning() ? "Title running." : "Core ready (no title running).");
     return getStatus();
 #else
-    if (statusBuf().empty())
+    if (statusIsEmpty())
         setStatus("Real engine not compiled into this build yet (see ROADMAP.md M1).");
     return getStatus();
 #endif
