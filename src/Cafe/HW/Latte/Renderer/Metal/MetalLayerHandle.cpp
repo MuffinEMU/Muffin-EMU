@@ -24,6 +24,16 @@ void MetalLayerHandle::Resize(const Vector2i& size)
     m_layer->setDrawableSize(CGSize{(float)size.x * m_layerScaleX, (float)size.y * m_layerScaleY});
 }
 
+void MetalLayerHandle::ResizeWithScale(const Vector2i& sizeInPoints, float scale)
+{
+    if (!m_layer)
+        return;
+    m_layerScaleX = scale;
+    m_layerScaleY = scale;
+    ResizeMetalLayer(m_layer, sizeInPoints, scale);
+    Resize(sizeInPoints);
+}
+
 bool MetalLayerHandle::AcquireDrawable()
 {
     if (m_drawable)

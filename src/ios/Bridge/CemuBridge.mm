@@ -325,6 +325,134 @@ void cemu_bridge_register_render_surface(void* uiView, int width, int height, do
 #endif
 }
 
+void cemu_bridge_register_pad_render_surface(void* uiView, int width, int height, double dpiScale) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!uiView || width <= 0 || height <= 0)
+        return;
+    if (!g_renderer) {
+        // The TV surface is registered first and constructs the renderer; without it
+        // there is nothing to attach a second layer to. Say so rather than silently
+        // doing nothing, because the caller's whole display-routing decision is now
+        // wrong and only the log can tell anyone that.
+        cemuLog_log(LogType::Force, "iOS: cannot register the GamePad surface - no renderer yet (the TV surface must be registered first)");
+        return;
+    }
+
+    // pad_open drives WindowSystem::GetPadWindowSize/PhysSize/DPIScale, which
+    // LatteRenderTarget_getScreenImageArea() uses to letterbox the DRC image. Left
+    // false those all report 0 and the pad blit would be laid out into nothing.
+    auto& windowInfo = WindowSystem::GetWindowInfo();
+    windowInfo.window_pad.surface = uiView;
+    windowInfo.pad_width = width;
+    windowInfo.pad_height = height;
+    windowInfo.phys_pad_width = (int32_t)(width * dpiScale);
+    windowInfo.phys_pad_height = (int32_t)(height * dpiScale);
+    windowInfo.pad_dpi_scale = dpiScale;
+    windowInfo.pad_open = true;
+
+    // Same @try/@catch reasoning as the TV surface above: InitializeLayer() makes real
+    // Objective-C/Metal calls and a throw here must not take down a running title. If
+    // it does throw, undo pad_open so the engine goes back to believing there is no
+    // pad window at all - which is a configuration it handles correctly - rather than
+    // one it thinks exists but has no layer.
+    @try {
+        MetalRenderer::GetInstance()->InitializeLayer({width, height}, /*mainWindow=*/false);
+        cemuLog_log(LogType::Force, "iOS: GamePad (DRC) screen surface registered, {}x{} points at {}x scale", width, height, dpiScale);
+    } @catch (NSException* exception) {
+        windowInfo.pad_open = false;
+        windowInfo.window_pad.surface = nullptr;
+        std::string message = "GamePad surface InitializeLayer threw: ";
+        message += exception.name.UTF8String;
+        message += " - ";
+        message += exception.reason.UTF8String;
+        cemu_bridge_log_checkpoint(message.c_str());
+        cemuLog_log(LogType::Force, "iOS: {}", message);
+    }
+#else
+    (void)uiView; (void)width; (void)height; (void)dpiScale;
+#endif
+}
+
+void cemu_bridge_release_pad_render_surface(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    auto& windowInfo = WindowSystem::GetWindowInfo();
+    // Flip pad_open first. Every Latte-side consumer of the pad geometry reads it, so
+    // this stops new pad work being laid out even before the layer is actually gone.
+    windowInfo.pad_open = false;
+    windowInfo.pad_width = 0;
+    windowInfo.pad_height = 0;
+    windowInfo.phys_pad_width = 0;
+    windowInfo.phys_pad_height = 0;
+    if (!g_renderer)
+        return;
+    // Deferred on purpose - see MetalRenderer::RequestPadLayerRelease(). The hosting
+    // view must stay alive and must keep the layer as a sublayer: the C++ side only
+    // drops the +1 that CreateMetalLayer() took, and the view's own reference is what
+    // keeps the CAMetalLayer from being deallocated on the GPU thread.
+    MetalRenderer::GetInstance()->RequestPadLayerRelease();
+    cemuLog_log(LogType::Force, "iOS: GamePad (DRC) surface release requested - the GPU thread will drop it at its next frame boundary");
+#endif
+}
+
+bool cemu_bridge_has_pad_render_surface(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!g_renderer)
+        return false;
+    return MetalRenderer::GetInstance()->IsPadWindowActive();
+#else
+    return false;
+#endif
+}
+
+void cemu_bridge_resize_render_surface(int width, int height, double dpiScale, bool mainWindow) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!g_renderer || width <= 0 || height <= 0)
+        return;
+
+    auto& windowInfo = WindowSystem::GetWindowInfo();
+    if (mainWindow) {
+        windowInfo.width = width;
+        windowInfo.height = height;
+        windowInfo.phys_width = (int32_t)(width * dpiScale);
+        windowInfo.phys_height = (int32_t)(height * dpiScale);
+        windowInfo.dpi_scale = dpiScale;
+    } else {
+        if (!windowInfo.pad_open)
+            return;
+        windowInfo.pad_width = width;
+        windowInfo.pad_height = height;
+        windowInfo.phys_pad_width = (int32_t)(width * dpiScale);
+        windowInfo.phys_pad_height = (int32_t)(height * dpiScale);
+        windowInfo.pad_dpi_scale = dpiScale;
+    }
+
+    @try {
+        MetalRenderer::GetInstance()->ResizeLayerAndFrame({width, height}, (float)dpiScale, mainWindow);
+        cemuLog_log(LogType::Force, "iOS: resized the {} surface to {}x{} points at {}x scale", mainWindow ? "TV" : "GamePad", width, height, dpiScale);
+    } @catch (NSException* exception) {
+        cemuLog_log(LogType::Force, "iOS: resizing the {} surface threw: {} - {}", mainWindow ? "TV" : "GamePad", exception.name.UTF8String, exception.reason.UTF8String);
+    }
+#else
+    (void)width; (void)height; (void)dpiScale; (void)mainWindow;
+#endif
+}
+
+void cemu_bridge_log_line(const char* message) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!message)
+        return;
+    // Deliberately the zero-argument form: the iOS cemuLog_log() template forwards a
+    // call with no varargs straight to the std::string_view overload without going
+    // through fmt, so a caller-supplied string containing braces is logged verbatim
+    // instead of being treated as a format string and throwing fmt::format_error
+    // (see the block comment in CemuLogging.h - an unhandled throw out of a log call
+    // is std::terminate).
+    cemuLog_log(LogType::Force, message);
+#else
+    (void)message;
+#endif
+}
+
 CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     if (!rpxPath || rpxPath[0] == '\0') {
         setStatus("boot_rpx: empty path.");
