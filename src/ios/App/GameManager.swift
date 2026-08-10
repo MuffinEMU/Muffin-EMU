@@ -272,6 +272,16 @@ class GameManager: ObservableObject {
     func stopEmulation() {
         stopFrameRateMonitor()
         emulationEngine?.stop()
+        #if os(iOS)
+        // engine.stop() is CafeSystem::ShutdownTitle(), which reaches
+        // LatteThread_Exit() and `delete renderer` - so every surface registered with
+        // the C++ side is gone by the time this returns, and the router has to know
+        // that or the next launch would try to reuse a view whose layer no longer has
+        // an owner on the C++ side. Ordered after stop() deliberately: the views must
+        // outlive the renderer, not the other way round.
+        DisplayRouter.shared.titleStopped()
+        #endif
+        surfaceRegistered = false
         emulationState = .idle
         currentGame = nil
     }

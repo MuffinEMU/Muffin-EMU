@@ -51,19 +51,30 @@ final class DisplayRouter {
 
     private(set) var placement: Placement = .deviceOnly
 
-    /// The view the C++ renderer's TV `CAMetalLayer` is a sublayer of. Created once and
-    /// held by this singleton for the process lifetime, deliberately: `MetalLayerHandle`
-    /// keeps a bare, ARC-invisible pointer to that layer from the GPU thread, and the
-    /// view's own reference is the only thing keeping it alive. Moving the surface
-    /// between displays therefore reparents THIS VIEW rather than destroying and
-    /// rebuilding the layer — no teardown, no window for a use-after-free, and the C++
-    /// side never learns that anything moved beyond a resize call.
-    let tvRenderView: UIView = {
+    /// The view the C++ renderer's TV `CAMetalLayer` is a sublayer of.
+    ///
+    /// One per title launch, not one per process. Within a session it is never
+    /// rebuilt - moving the TV screen between displays reparents THIS VIEW rather than
+    /// destroying and recreating its layer, so `MetalLayerHandle`'s bare,
+    /// ARC-invisible pointer stays valid and there is no teardown for the GPU thread to
+    /// race. Across launches it has to be replaced, because `LatteThread_Exit()`
+    /// deletes the renderer on title shutdown and takes the layer's C++ handle with it;
+    /// reusing the view would stack the next launch's CAMetalLayer on top of the dead
+    /// one. `titleStopped()` drops it, and the old view stays alive anyway thanks to the
+    /// passRetained in GameManager - which is what keeps the dead layer from being
+    /// deallocated out from under anything still holding it.
+    private var tvRenderViewStorage: UIView?
+
+    var tvRenderView: UIView {
+        if let existing = tvRenderViewStorage {
+            return existing
+        }
         let view = UIView()
         view.backgroundColor = .black
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        tvRenderViewStorage = view
         return view
-    }()
+    }
 
     /// Host for the GamePad screen, created only when there is somewhere real to show
     /// it. Never reused after a release: `cemu_bridge_release_pad_render_surface()`
@@ -146,12 +157,31 @@ final class DisplayRouter {
         ) else { return }
 
         tvSurfaceRegistered = true
+        // The view above may have just been created by the `tvRenderView` accessor, in
+        // which case it is not in any hierarchy yet.
+        applyPlacement(reason: "the TV surface was registered")
         log("routing the Wii U TV screen to \(placement == .dualScreen ? "the external display" : "this device") at \(Int(geometry.size.width))x\(Int(geometry.size.height)) points, \(geometry.scale)x scale (placement=\(placementName))")
 
         // Only meaningful in .dualScreen; in the other two placements this is a no-op
         // and the engine is left with no pad window at all, which is the intended
         // "GamePad screen not rendered" state.
         syncPadSurface()
+    }
+
+    /// Called when a title stops. `CafeSystem::ShutdownTitle()` -> `LatteThread_Exit()`
+    /// deletes the renderer, so every surface this router registered is gone on the C++
+    /// side and the next launch must build fresh ones. Views are only detached, never
+    /// released: the C++ retain taken at registration outlives them deliberately, and
+    /// the dead CAMetalLayer must keep an owner so nothing deallocates it late.
+    func titleStopped() {
+        tvRenderViewStorage?.removeFromSuperview()
+        tvRenderViewStorage = nil
+        padRenderView?.removeFromSuperview()
+        padRenderView = nil
+        externalWindow?.isHidden = true
+        externalWindow = nil
+        tvSurfaceRegistered = false
+        log("title stopped; render surfaces will be rebuilt on the next launch")
     }
 
     // MARK: - Placement
@@ -209,6 +239,10 @@ final class DisplayRouter {
 
     private func placeTVOnDevice() {
         guard let container = deviceContainer else { return }
+        // Only place a view that already exists. Touching `tvRenderView` here would
+        // create one between titles, which then gets adopted by the next launch's
+        // registration without the router having decided anything about it.
+        guard let tvRenderView = tvRenderViewStorage else { return }
         if tvRenderView.superview !== container {
             tvRenderView.removeFromSuperview()
             tvRenderView.frame = container.bounds
@@ -237,6 +271,7 @@ final class DisplayRouter {
             externalWindow = window
         }
         guard let host = externalWindow?.rootViewController?.view else { return }
+        guard let tvRenderView = tvRenderViewStorage else { return }
         if tvRenderView.superview !== host {
             tvRenderView.removeFromSuperview()
             tvRenderView.frame = host.bounds
