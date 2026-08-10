@@ -546,22 +546,26 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 								sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
 								bool padView, bool clearBackground)
 {
+    // The pad window may legitimately not exist (no second display - see
+    // DisplayRouter.swift), and LatteHandleOSScreen_DRC() blits to it unconditionally,
+    // without the IsPadWindowActive() test the GX2 scan-buffer path in
+    // LatteRenderTarget_itHLECopyColorBufferToScanBuffer() applies. Skip rather than
+    // walk into AcquireDrawable() and fail there - but say it once, because reaching
+    // this line at all is the clearest possible evidence that the title is producing
+    // frames, which is the very thing a black screen leaves in doubt.
     if (padView && !IsPadWindowActive())
+    {
+        cemuLog_logOnce(LogType::Force, "MetalRenderer: the title produced a GamePad (DRC) frame and there is no pad window to show it on - skipped. The title IS rendering.");
         return;
+    }
     if (!AcquireDrawable(!padView))
     {
-        // See SwapBuffer() below for the reasoning, including why the flag is
-        // per-window rather than per-call-site. This is the earlier of the two silent
-        // bail-outs: nothing is even drawn into the backbuffer, so the subsequent
-        // SwapBuffer() has nothing to present regardless.
-        //
-        // Reaching this for the pad window means the title really did produce a DRC
-        // image and there is nowhere to put it - LatteHandleOSScreen_DRC()
-        // (LatteThread.cpp) blits to the pad unconditionally, without the
-        // IsPadWindowActive() check the GX2 scan-buffer path in
-        // LatteRenderTarget_itHLECopyColorBufferToScanBuffer() has. On a TV-primary
-        // host that is a dropped frame, not a broken one, but it is the signal that
-        // the guest is rendering, which is worth being able to see on its own.
+        // Reached only when the window HAS a layer and nextDrawable() still came back
+        // empty - the missing-layer case is handled by the guard above. See
+        // SwapBuffer() below for the reasoning, including why the flag is per-window
+        // rather than per-call-site. This is the earlier of the two silent bail-outs:
+        // nothing is even drawn into the backbuffer, so the subsequent SwapBuffer()
+        // has nothing to present regardless.
         static bool s_noBackbufferLogged[2] = {};
         if (!s_noBackbufferLogged[padView ? 1 : 0])
         {
