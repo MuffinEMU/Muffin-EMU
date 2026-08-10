@@ -14,8 +14,31 @@ void WindowSystem::Create()
 {
 }
 
+// There is no modal dialog to show here, but discarding the message outright - which
+// is what this did - loses the only explanation the engine ever produces for several
+// paths that then kill the process outright:
+//
+//   MMU.cpp memory_init()        -> "Unable to reserve 4GB of memory"    -> exit(-1)
+//   MMU.cpp MMURange::mapMem()   -> "Unable to allocate {} memory"       -> exit(-1)
+//   CafeSystem.cpp LoadMainExecutable() -> damaged executable            -> exit(0)
+//   KeyCache.cpp                 -> keys.txt unreadable/uncreatable      -> continues
+//
+// exit() is not a signal, so CemuBridge.mm's signal handler never fires and
+// CemuCrashLog.txt stays empty; iOS reports it as a normal termination. The symptom
+// on device is the app simply vanishing with no crash report and no log line - which
+// is indistinguishable from the several other ways boot can currently fail, and is
+// exactly the class of failure the first three of those are plausible candidates for
+// on a memory-constrained sideloaded process. Log it instead, at LogType::Force so it
+// is never filtered out, and flush synchronously: every caller above is either about
+// to exit or has just failed at something load-bearing, so there may be no later
+// opportunity for the writer thread to drain the cache to disk.
 void WindowSystem::ShowErrorDialog(std::string_view message, std::string_view title, std::optional<WindowSystem::ErrorCategory> /*errorId*/)
 {
+	if (title.empty())
+		cemuLog_log(LogType::Force, "[error] {}", message);
+	else
+		cemuLog_log(LogType::Force, "[error] {}: {}", title, message);
+	cemuLog_waitForFlush();
 }
 
 WindowSystem::WindowInfo& WindowSystem::GetWindowInfo()
