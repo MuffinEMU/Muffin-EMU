@@ -41,6 +41,37 @@ void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX
 	scaleX = scale;
 	scaleY = scale;
 
+	// Hand back a +1 reference, because ~MetalLayerHandle() unconditionally calls
+	// m_layer->release() on whatever this returns. Everything above produces a +0
+	// object: +[CAMetalLayer layer] is a convenience constructor (autoreleased), and
+	// a __bridge cast transfers no ownership - so without this retain the handle's
+	// destructor was releasing a reference it never owned. The only strong reference
+	// left at that point belongs to view.layer (addSublayer: retains), so the release
+	// dropped the layer to zero and deallocated it while it was still sitting in a
+	// live view's sublayers array.
+	//
+	// That destructor is reachable, not theoretical: LatteThread_Exit()
+	// (LatteThread.cpp:282) does `delete renderer` on every title shutdown, which
+	// destroys MetalRenderer::m_mainLayer. The owning UIView deliberately outlives it
+	// - GameManager.registerRenderSurface() passes it with Unmanaged.passRetained and
+	// never balances that - so the freed layer stays reachable from Core Animation
+	// afterwards, which is a use-after-free on the next compositing pass or the next
+	// boot, not a crash confined to teardown. Stopping a title and starting another
+	// is the ordinary way to hit it.
+	//
+	// CFRetain rather than -retain or CFBridgingRetain: this file is compiled without
+	// ARC today (nothing adds -fobjc-arc), but it is written in ARC-compatible style,
+	// and CFRetain with a __bridge cast is the one spelling that means the same thing
+	// either way - CFBridgingRetain only exists under __has_feature(objc_arc), and
+	// -retain is rejected under it.
+	//
+	// Deliberately NOT paired with a removeFromSuperlayer: the handle has no teardown
+	// hook to call one from, so the dead layer lingers as a sublayer of a view that is
+	// itself already leaked. That is a bounded, invisible leak of one offscreen layer
+	// per title launch (the next launch builds a fresh view and layer), which is the
+	// correct trade against a use-after-free.
+	CFRetain((__bridge CFTypeRef)metalLayer);
+
 	return (__bridge void*)metalLayer;
 }
 
@@ -78,6 +109,13 @@ void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX
 
 	scaleX = (float)(pixels.size.width / points.size.width);
     scaleY = (float)(pixels.size.height / points.size.height);
+
+	// +1 for the same reason as the iOS branch above: ~MetalLayerHandle() releases
+	// whatever comes back, and childView.layer is owned by childView, not by us. This
+	// is upstream's behavior, not something the iOS work introduced - it is just far
+	// easier to survive here, because on macOS the view hierarchy holding the layer is
+	// normally torn down at the same time as the renderer.
+	CFRetain((__bridge CFTypeRef)childView.layer);
 
 	return childView.layer;
 }
