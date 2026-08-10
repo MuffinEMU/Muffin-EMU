@@ -250,7 +250,29 @@ void InfoLog_PrintActiveSettings()
 	cemuLog_log(LogType::Force, "------- Active settings -------");
 
 	// settings to log:
-	cemuLog_log(LogType::Force, "CPU-Mode: {}{}", fmt::format("{}", ActiveSettings::GetCPUMode()).c_str(), g_current_game_profile->GetCPUMode().has_value() ? " (gameprofile)" : "");
+	// ActiveSettings::GetCPUMode() reports what the CONFIG asks for. It knows nothing
+	// about --force-interpreter / --force-multicore-interpreter, both of which make
+	// PPCRecompiler_init() return before it ever sets ppcRecompilerEnabled, so the
+	// interpreter is what actually executes. Printing the config value alone produced
+	// a log that flatly contradicted itself: "Recompiler disabled. Command line
+	// --force-interpreter [...] was passed" from PPCRecompiler.cpp, followed seconds
+	// later by "CPU-Mode: Multi-core recompiler" from here - both in the first iOS
+	// device log that reached "------- Run title -------", where CemuBridge.mm calls
+	// LaunchSettings::SetForceInterpreter(true) unconditionally. Report the mode that
+	// actually runs, and keep the requested one alongside it so nothing is hidden. The
+	// core count matches _LaunchTitleThread()'s own test.
+	const bool forceInterpreter = LaunchSettings::ForceInterpreter();
+	const bool forceMulticoreInterpreter = LaunchSettings::ForceMultiCoreInterpreter();
+	const CPUMode requestedCPUMode = ActiveSettings::GetCPUMode();
+	if (forceInterpreter || forceMulticoreInterpreter)
+	{
+		const bool isMulticore = forceMulticoreInterpreter && !forceInterpreter;
+		cemuLog_log(LogType::Force, "CPU-Mode: {} (forced, overriding {})", isMulticore ? "Multi-core interpreter" : "Single-core interpreter", fmt::format("{}", requestedCPUMode));
+	}
+	else
+	{
+		cemuLog_log(LogType::Force, "CPU-Mode: {}{}", fmt::format("{}", requestedCPUMode).c_str(), g_current_game_profile->GetCPUMode().has_value() ? " (gameprofile)" : "");
+	}
 	cemuLog_log(LogType::Force, "Load shared libraries: {}{}", ActiveSettings::LoadSharedLibrariesEnabled() ? "true" : "false", g_current_game_profile->ShouldLoadSharedLibraries().has_value() ? " (gameprofile)" : "");
 	cemuLog_log(LogType::Force, "Use precompiled shaders: {}{}", fmt::format("{}", ActiveSettings::GetPrecompiledShadersOption()), g_current_game_profile->GetPrecompiledShadersState().has_value() ? " (gameprofile)" : "");
 	cemuLog_log(LogType::Force, "Full sync at GX2DrawDone: {}", ActiveSettings::WaitForGX2DrawDoneEnabled() ? "true" : "false");

@@ -199,34 +199,44 @@ class GameManager: ObservableObject {
         // strictly after boot() had already returned.
     }
 
-    /// Called by MetalViewIOS's Coordinator once its view has real, nonzero bounds,
-    /// while emulationState == .loading. Registers the render surface (fast, safe to
-    /// run synchronously on the calling - main - thread: sets a few WindowSystem
+    /// Called by DisplayRouter once it has decided which display the Wii U TV screen
+    /// belongs on, while emulationState == .loading. Registers the render surface (fast,
+    /// safe to run synchronously on the calling - main - thread: sets a few WindowSystem
     /// fields and constructs the renderer, doesn't touch the GPU thread), then runs
     /// the actual init/boot on a detached background task so a slow interpreter boot -
     /// or any bug in it - can't freeze the UI, regardless of how well-behaved the C++
     /// side turns out to be.
+    ///
+    /// Returns whether this call is the one that registered. The router needs a real
+    /// answer rather than an assumption: it only creates a GamePad surface once a TV
+    /// surface exists, because InitializeLayer(mainWindow=false) needs the renderer that
+    /// the TV registration constructs.
     #if os(iOS)
-    func registerRenderSurface(uiView: UIView, width: Int32, height: Int32, dpiScale: Double) {
+    @discardableResult
+    func registerRenderSurface(uiView: UIView, width: Int32, height: Int32, dpiScale: Double) -> Bool {
         guard emulationState == .loading, !surfaceRegistered,
-              let game = currentGame, let engine = emulationEngine else { return }
+              let game = currentGame, let engine = emulationEngine else { return false }
         surfaceRegistered = true
 
-        // passRetained, not passUnretained - deliberately, permanently leaking this
-        // one MTKView for the app's lifetime. Confirmed via a live device SIGSEGV
-        // inside MetalRenderer::BeginFrame() -> AcquireDrawable() -> nextDrawable():
+        // passRetained, not passUnretained - deliberately keeping this one view alive
+        // for the app's lifetime. Confirmed via a live device SIGSEGV inside
+        // MetalRenderer::BeginFrame() -> AcquireDrawable() -> nextDrawable():
         // CreateMetalLayer() (MetalLayer.mm) adds the real CAMetalLayer as a sublayer
         // of this view's CALayer, and the C++ side (MetalLayerHandle) holds a bare,
-        // ARC-invisible `CA::MetalLayer*` to it with no retain of its own. If SwiftUI
-        // ever tears down and recreates this UIViewRepresentable's underlying MTKView
-        // (it's free to do this on essentially any view-hierarchy change, e.g. the
-        // .loading -> .running transition removing the "Booting..." overlay), an
-        // unretained view here means the view - and therefore its layer, and
-        // therefore our sublayer - gets deallocated while the GPU thread still holds
-        // a raw pointer to it, and the very next draw call reads freed memory.
-        // Retaining forever is a small, deliberate one-object bring-up cost, not a
-        // real leak risk (one MTKView per app run) - correct enough for now; the
-        // real fix would have the C++ side own this lifetime properly.
+        // ARC-invisible `CA::MetalLayer*` to it with no retain of its own. If the view
+        // is deallocated - SwiftUI is free to tear down and rebuild a
+        // UIViewRepresentable's underlying view on essentially any hierarchy change,
+        // e.g. the .loading -> .running transition removing the "Booting..." overlay -
+        // its layer, and therefore our sublayer, goes with it while the GPU thread
+        // still holds a raw pointer, and the very next draw call reads freed memory.
+        //
+        // Belt and braces as of the display-routing work: the view handed in here is
+        // DisplayRouter.shared.tvRenderView, which that singleton also holds strongly
+        // and which SwiftUI never owns - it is reparented between the on-device
+        // container and an external display's window rather than recreated. This
+        // retain is now the second reason it survives rather than the only one, and is
+        // kept because the C++ side's ownership is still the thing that is wrong; the
+        // real fix would have it own this lifetime properly.
         let surfacePtr = Unmanaged.passRetained(uiView).toOpaque()
         cemu_bridge_register_render_surface(surfacePtr, width, height, dpiScale)
 
@@ -254,12 +264,24 @@ class GameManager: ObservableObject {
                 }
             }
         }
+
+        return true
     }
     #endif
 
     func stopEmulation() {
         stopFrameRateMonitor()
         emulationEngine?.stop()
+        #if os(iOS)
+        // engine.stop() is CafeSystem::ShutdownTitle(), which reaches
+        // LatteThread_Exit() and `delete renderer` - so every surface registered with
+        // the C++ side is gone by the time this returns, and the router has to know
+        // that or the next launch would try to reuse a view whose layer no longer has
+        // an owner on the C++ side. Ordered after stop() deliberately: the views must
+        // outlive the renderer, not the other way round.
+        DisplayRouter.shared.titleStopped()
+        #endif
+        surfaceRegistered = false
         emulationState = .idle
         currentGame = nil
     }

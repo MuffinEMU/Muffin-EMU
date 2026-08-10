@@ -16,6 +16,13 @@ struct CemuApp: App {
             ContentView()
                 .onAppear {
                     cemu_bridge_log_checkpoint("ContentView.onAppear reached")
+                    #if os(iOS)
+                    // Arm display detection at launch, not when a game starts, so a TV
+                    // that is already connected is known about before the first surface
+                    // is registered - and so the log records the display situation even
+                    // for a session where nothing is ever booted.
+                    DisplayRouter.shared.startObserving()
+                    #endif
                 }
         }
     }

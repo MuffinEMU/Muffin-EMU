@@ -358,6 +358,14 @@ void MetalRenderer::ResizeLayer(const Vector2i& size, bool mainWindow)
     GetLayer(mainWindow).Resize(size);
 }
 
+void MetalRenderer::ResizeLayerAndFrame(const Vector2i& sizeInPoints, float scale, bool mainWindow)
+{
+    auto& layer = GetLayer(mainWindow);
+    if (!layer.GetLayer())
+        return;
+    layer.ResizeWithScale(sizeInPoints, scale);
+}
+
 void MetalRenderer::Initialize()
 {
     // Must run before RendererShaderMtl::Initialize() - and before any shader is
@@ -398,6 +406,8 @@ bool MetalRenderer::GetVRAMInfo(int& usageInMB, int& totalInMB) const
 
 void MetalRenderer::ClearColorbuffer(bool padView)
 {
+    if (padView && !IsPadWindowActive())
+        return;
     if (!AcquireDrawable(!padView))
         return;
 
@@ -406,8 +416,25 @@ void MetalRenderer::ClearColorbuffer(bool padView)
 
 void MetalRenderer::DrawEmptyFrame(bool mainWindow)
 {
+    if (!mainWindow && !IsPadWindowActive())
+        return;
     if (!BeginFrame(mainWindow))
 		return;
+	// Actually clear the drawable before presenting it. BeginFrame() only acquires
+	// one; without a render pass writing to it, the texture contents are undefined
+	// (it is a framebufferOnly drawable straight out of the layer's pool), and what
+	// gets scanned out is whatever that memory happened to hold. Upstream gets away
+	// with it because on desktop this path runs for a fraction of a second between
+	// window creation and the first real frame. On iOS it is currently the ONLY frame
+	// that reaches the screen before a title starts scanning out - LatteThread.cpp's
+	// pre-title wait loop does not run at all here, because LaunchForegroundTitle()
+	// sets sSystemRunning before spawning the thread that starts Latte, so
+	// CafeSystem::IsTitleRunning() is already true when the loop is first evaluated -
+	// which leaves the single DrawEmptyFrame(true) immediately after it as the whole
+	// of the on-screen state until then. Opaque black is a definite state; undefined
+	// is not, and it became visible rather than merely wrong once the iOS layer was
+	// marked opaque (MetalLayer.mm).
+	ClearColorTextureInternal(GetLayer(mainWindow).GetDrawable()->texture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
 	SwapBuffers(mainWindow, !mainWindow);
 }
 
@@ -415,7 +442,15 @@ void MetalRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
     if (swapTV)
         SwapBuffer(true);
-    if (swapDRC)
+    // IsPadWindowActive() is literally "m_padLayer has a CAMetalLayer", so this only
+    // skips work that would have bailed out one call deeper anyway - but it is what
+    // makes "AcquireDrawable found no layer" unreachable rather than merely handled.
+    // The Latte core already applies this test on the GX2 scan-buffer path
+    // (LatteRenderTarget_itHLECopyColorBufferToScanBuffer); the callers that reach the
+    // pad window through SwapBuffers(), DrawEmptyFrame(), ClearColorbuffer(),
+    // ImguiBegin() and DrawBackbufferQuad() never did. See the block comment on
+    // AcquireDrawable().
+    if (swapDRC && IsPadWindowActive())
         SwapBuffer(false);
 
     // Reset the command buffers (they are released by TemporaryBufferAllocator)
@@ -511,12 +546,32 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 								sint32 imageX, sint32 imageY, sint32 imageWidth, sint32 imageHeight,
 								bool padView, bool clearBackground)
 {
+    // The pad window may legitimately not exist (no second display - see
+    // DisplayRouter.swift), and LatteHandleOSScreen_DRC() blits to it unconditionally,
+    // without the IsPadWindowActive() test the GX2 scan-buffer path in
+    // LatteRenderTarget_itHLECopyColorBufferToScanBuffer() applies. Skip rather than
+    // walk into AcquireDrawable() and fail there - but say it once, because reaching
+    // this line at all is the clearest possible evidence that the title is producing
+    // frames, which is the very thing a black screen leaves in doubt.
+    if (padView && !IsPadWindowActive())
+    {
+        cemuLog_logOnce(LogType::Force, "MetalRenderer: the title produced a GamePad (DRC) frame and there is no pad window to show it on - skipped. The title IS rendering.");
+        return;
+    }
     if (!AcquireDrawable(!padView))
     {
-        // See SwapBuffer() below for the reasoning. This is the earlier of the two
-        // silent bail-outs: nothing is even drawn into the backbuffer, so the
-        // subsequent SwapBuffer() has nothing to present regardless.
-        cemuLog_logOnce(LogType::Force, "MetalRenderer::DrawBackbufferQuad: no drawable available (padView={}) - backbuffer not drawn", padView);
+        // Reached only when the window HAS a layer and nextDrawable() still came back
+        // empty - the missing-layer case is handled by the guard above. See
+        // SwapBuffer() below for the reasoning, including why the flag is per-window
+        // rather than per-call-site. This is the earlier of the two silent bail-outs:
+        // nothing is even drawn into the backbuffer, so the subsequent SwapBuffer()
+        // has nothing to present regardless.
+        static bool s_noBackbufferLogged[2] = {};
+        if (!s_noBackbufferLogged[padView ? 1 : 0])
+        {
+            s_noBackbufferLogged[padView ? 1 : 0] = true;
+            cemuLog_log(LogType::Force, "MetalRenderer: the {} window has no drawable, so a backbuffer blit was skipped - the title IS producing frames", padView ? "pad (DRC)" : "TV");
+        }
         return;
     }
 
@@ -575,6 +630,8 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 
 bool MetalRenderer::BeginFrame(bool mainWindow)
 {
+    if (!mainWindow && !IsPadWindowActive())
+        return false;
     return AcquireDrawable(mainWindow);
 }
 
@@ -595,6 +652,8 @@ void MetalRenderer::NotifyLatteCommandProcessorIdle()
 
 bool MetalRenderer::ImguiBegin(bool mainWindow)
 {
+    if (!mainWindow && !IsPadWindowActive())
+        return false;
     if (!Renderer::ImguiBegin(mainWindow))
 		return false;
 
@@ -1973,15 +2032,46 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
 
 bool MetalRenderer::AcquireDrawable(bool mainWindow)
 {
+    // Apply a pending pad-layer teardown here rather than where it was requested.
+    // This runs on the Latte thread, which is the only thread that touches
+    // m_padLayer while a title is running; the request comes from the main thread
+    // when an external display disconnects. Gated on mainWindow so it cannot fire
+    // from inside a pad-window call that is about to use the layer being dropped.
+    if (mainWindow && m_padLayerReleaseRequested.exchange(false, std::memory_order_relaxed))
+    {
+        ShutdownLayer(false);
+        cemuLog_log(LogType::Force, "MetalRenderer: released the pad (DRC) layer - its display went away");
+    }
+
     auto& layer = GetLayer(mainWindow);
     if (!layer.GetLayer())
     {
-        // Distinct from "nextDrawable() returned nil" (logged by
-        // MetalLayerHandle::AcquireDrawable): this means InitializeLayer() was never
-        // called for this window, or was called and threw. Same symptom for the
-        // user - a black screen - but a completely different fix, so it is worth
-        // being able to tell the two apart from a log alone.
-        cemuLog_logOnce(LogType::Force, "MetalRenderer::AcquireDrawable: no CAMetalLayer for this window (mainWindow={}) - InitializeLayer() never ran or failed", mainWindow);
+        // This should now be unreachable, for either window, and that is the point.
+        //
+        // For the pad window it used to be routine: nothing calls
+        // InitializeLayer(..., false) unless a second display exists, so every
+        // caller that reached the pad window without checking IsPadWindowActive()
+        // landed here. Those callers are all guarded now (SwapBuffers,
+        // DrawEmptyFrame, ClearColorbuffer, BeginFrame, ImguiBegin,
+        // DrawBackbufferQuad), matching the check the Latte core's GX2 scan-buffer
+        // path already performed. For the TV window it was always a real failure -
+        // InitializeLayer(mainWindow=true) never ran, or threw.
+        //
+        // Distinct from "nextDrawable() returned nil", which MetalLayerHandle::
+        // AcquireDrawable logs: same black screen, completely different fix.
+        //
+        // The one-shot flag is per-window, not per-call-site. cemuLog_logOnce() keys
+        // its static on the call site, so whichever window arrives first permanently
+        // silences the other - and the pad window, with no layer from the very first
+        // frame, always arrived first. The first device log that reached "Run title"
+        // is exactly that: one "mainWindow=false" line here, one in SwapBuffer(), and
+        // consequently no evidence either way about what the TV window did afterwards.
+        static bool s_noLayerLogged[2] = {};
+        if (!s_noLayerLogged[mainWindow ? 1 : 0])
+        {
+            s_noLayerLogged[mainWindow ? 1 : 0] = true;
+            cemuLog_log(LogType::Force, "MetalRenderer: the {} window has no CAMetalLayer - InitializeLayer() never ran or threw for it. This is a bug, not a configuration: every caller is supposed to test IsPadWindowActive() first.", mainWindow ? "TV" : "pad (DRC)");
+        }
         return false;
     }
 
@@ -2323,14 +2413,38 @@ void MetalRenderer::SwapBuffer(bool mainWindow)
         // indistinguishable from the title never producing a frame at all, which
         // are two completely different bugs. Same reasoning as the always-on
         // GX2SwapScanBuffers() marker (GX2.cpp): Force-level so it survives a build
-        // with no settings UI to enable log categories, and logOnce so a failure
+        // with no settings UI to enable log categories, and once-only so a failure
         // that repeats every frame cannot flood the log out of usefulness.
-        cemuLog_logOnce(LogType::Force, "MetalRenderer::SwapBuffer: no drawable available (mainWindow={}) - frame dropped, nothing presented", mainWindow);
+        // Per-window for the reason spelled out in AcquireDrawable().
+        static bool s_dropLogged[2] = {};
+        if (!s_dropLogged[mainWindow ? 1 : 0])
+        {
+            s_dropLogged[mainWindow ? 1 : 0] = true;
+            cemuLog_log(LogType::Force, "MetalRenderer: dropped a frame for the {} window - no drawable, nothing presented (see the line above for why)", mainWindow ? "TV" : "pad (DRC)");
+        }
         return;
     }
 
+    auto& layer = GetLayer(mainWindow);
+
+    // The counterpart to the drop marker above, and the line that was missing from
+    // the first device log that reached "Run title": there was no way to tell "the TV
+    // window presented frames and they were not visible" from "the TV window never
+    // presented at all", because only failures were logged and the pad's consumed
+    // the one-shot flag. Report the first success per window, with the drawable size,
+    // so the geometry is on the record too - the iOS caller registers UIScreen bounds
+    // rather than the hosting view's bounds (see ROADMAP.md M3), so a surface larger
+    // than the visible view is expected and worth being able to confirm.
+    static bool s_presentLogged[2] = {};
+    if (!s_presentLogged[mainWindow ? 1 : 0])
+    {
+        s_presentLogged[mainWindow ? 1 : 0] = true;
+        const CGSize drawableSize = layer.GetLayer()->drawableSize();
+        cemuLog_log(LogType::Force, "MetalRenderer: presented the first frame to the {} window ({}x{} pixels)", mainWindow ? "TV" : "pad (DRC)", (sint32)drawableSize.width, (sint32)drawableSize.height);
+    }
+
     auto commandBuffer = GetCommandBuffer();
-    GetLayer(mainWindow).PresentDrawable(commandBuffer);
+    layer.PresentDrawable(commandBuffer);
 }
 
 void MetalRenderer::EnsureImGuiBackend()

@@ -60,6 +60,12 @@ public:
 
     void Resize(const Vector2i& size);
 
+    // Resize that also updates the CALayer's frame and backing scale, for hosts where
+    // the layer's geometry is ours to maintain (iOS - see MetalLayer.h). The stored
+    // scale is replaced first, so the single points -> pixels multiplication for
+    // setDrawableSize() uses the new display's scale rather than the old one's.
+    void ResizeWithScale(const Vector2i& sizeInPoints, float scale);
+
     bool AcquireDrawable();
 
     void PresentDrawable(MTL::CommandBuffer* commandBuffer);

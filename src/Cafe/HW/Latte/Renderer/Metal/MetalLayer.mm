@@ -35,6 +35,25 @@ void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX
 	const float scale = (float)view.contentScaleFactor;
 	metalLayer.frame = CGRectMake(0, 0, sizeInPoints.x, sizeInPoints.y);
 	metalLayer.contentsScale = scale;
+
+	// A manually created CALayer has opaque = NO, unlike a UIView's own backing layer
+	// (UIKit drives that from UIView.isOpaque, which defaults to YES). The macOS branch
+	// below never meets this problem because there the CAMetalLayer IS a view's backing
+	// layer, via MetalView's +layerClass.
+	//
+	// This is deliberately NOT being claimed as the black-screen fix: the output shader
+	// Cemu blits a title's scanbuffer with (RendererOuputShader.cpp's copy shader)
+	// writes vec4(rgb, 1.0), so a real frame is already fully opaque and composites the
+	// same either way. What opaque = NO does change is every frame whose alpha is not 1
+	// - which today is the ones this fork actually produces most: DrawEmptyFrame()'s
+	// backbuffer, ClearColorbuffer()'s explicit a=0.0 clear, and anything drawn before
+	// a title starts scanning out. Those blend against whatever is behind the layer
+	// instead of covering it, so "presented an empty frame" and "presented nothing at
+	// all" look identical on screen. Marking the layer opaque makes the presented
+	// contents authoritative, and skips a full-screen per-pixel blend in the compositor
+	// on top of that.
+	metalLayer.opaque = YES;
+
 	[view.layer addSublayer:metalLayer];
 
 	// iOS reports the backing-store scale directly; width/height scale are equal.
@@ -73,6 +92,20 @@ void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX
 	CFRetain((__bridge CFTypeRef)metalLayer);
 
 	return (__bridge void*)metalLayer;
+}
+
+void ResizeMetalLayer(void* layer, const Vector2i& sizeInPoints, float scale)
+{
+	CAMetalLayer* metalLayer = (__bridge CAMetalLayer*)layer;
+	if (!metalLayer)
+		return;
+
+	// Same units contract as CreateMetalLayer(): a CALayer frame is in POINTS, and
+	// contentsScale carries the points -> pixels conversion. The drawable size is not
+	// set here - MetalLayerHandle::ResizeWithScale() does that, exactly once, so the
+	// scale is never applied twice (the bug fixed in 6488cc1d).
+	metalLayer.frame = CGRectMake(0, 0, sizeInPoints.x, sizeInPoints.y);
+	metalLayer.contentsScale = scale;
 }
 
 #else
@@ -118,6 +151,19 @@ void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX
 	CFRetain((__bridge CFTypeRef)childView.layer);
 
 	return childView.layer;
+}
+
+void ResizeMetalLayer(void* layer, const Vector2i& sizeInPoints, float scale)
+{
+	// Nothing to do on macOS, and deliberately so rather than left undefined: the
+	// CAMetalLayer here is MetalView's backing layer (+layerClass), so AppKit resizes
+	// it with the view through the autoresizing mask set above, and
+	// -layer:shouldInheritContentsScale:fromWindow: keeps contentsScale current across
+	// display moves. Touching either from here would fight the framework. The
+	// declaration is shared, so the definition has to exist - see MetalLayer.h.
+	(void)layer;
+	(void)sizeInPoints;
+	(void)scale;
 }
 
 #endif
