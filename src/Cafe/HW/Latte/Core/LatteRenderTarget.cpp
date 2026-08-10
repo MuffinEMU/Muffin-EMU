@@ -1010,10 +1010,28 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 
 	bool showDRC = swkbd::hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
 
-	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
+	const bool drawToPad = (renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive();
+	const bool drawToMain = ((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC);
+
+	if (drawToPad)
 		LatteRenderTarget_copyToBackbuffer(texView, true);
-	if (((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC))
+	if (drawToMain)
 		LatteRenderTarget_copyToBackbuffer(texView, false);
+
+	// Both conditions above can be false at once, and when they are, a scan buffer the
+	// title genuinely produced is discarded without reaching any window. The reachable
+	// case is a DRC-only copy on a host with no pad window: drawToPad needs the pad
+	// window to exist, and drawToMain needs showDRC, which the user toggles with Tab or
+	// a VPAD screen button - neither of which exists on a touch-only host. The result
+	// is a permanently black screen that looks exactly like the renderer being broken.
+	// This is the line that distinguishes the two, so a device log can settle it
+	// without another round of guessing. Deliberately only logged, not "fixed" by
+	// redirecting the frame to the TV window: a title that copies TV and DRC in
+	// separate calls would then have its DRC copy overwrite the TV image every frame.
+	if (!drawToPad && !drawToMain)
+	{
+		cemuLog_logOnce(LogType::Force, "Scan buffer dropped: renderTarget={} (TV={}, DRC={}), showDRC={}, pad window active={}. The title produced a frame that has no window to go to.", renderTarget, (renderTarget & RENDER_TARGET_TV) != 0, (renderTarget & RENDER_TARGET_DRC) != 0, showDRC, g_renderer->IsPadWindowActive());
+	}
 }
 
 
