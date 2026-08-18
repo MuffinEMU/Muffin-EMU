@@ -225,9 +225,42 @@ void cemu_bridge_initialize(const char* mlcPath) {
     fs::path userDataPath = (mlcPath && mlcPath[0] != '\0') ? fs::path(mlcPath) : fs::path(".");
     std::error_code ec;
     fs::create_directories(userDataPath, ec);
+
+    // The DATA path is the one exception, and it used to be wrong: it was passed
+    // userDataPath along with everything else, but nothing writes to it - it is where
+    // Cemu reads the files it ships with. Two consumers survive into the iOS build:
+    // CafeSystem::LoadSharedData() reads GetDataPath("resources/sharedFonts/*.ttf")
+    // and GameProfile::Load() falls back to GetDataPath("gameProfiles/default/
+    // <titleid>.ini"). Pointing it at Documents/mlc meant both looked in a directory
+    // that only ever contains user data, so LoadSharedData() logged "Shared font
+    // CafeCn.ttf is not present" and installed a stub region, and every per-title
+    // game profile silently resolved to the default - including the position
+    // invariance MetalRenderer::ResolvePositionInvariance() reads at Initialize().
+    // Those files now ship in the app bundle (ci/copy-bundle-data.sh, wired up as a
+    // postBuildScript in src/ios/project.yml), so point the data path there.
+    //
+    // The bundle is read-only, which is fine: SetPaths() only TestWriteAccess()es
+    // userDataPath, configPath and cachePath. GameProfile::Save() likewise writes to
+    // GetConfigPath("gameProfiles"), not here.
+    fs::path dataPath = userDataPath;
+    NSString* bundleResourcePath = [[NSBundle mainBundle] resourcePath];
+    if (bundleResourcePath.length > 0)
+        dataPath = fs::path(bundleResourcePath.fileSystemRepresentation);
+
     std::set<fs::path> failedWriteAccess;
     ActiveSettings::SetPaths(/*isPortableMode=*/true, userDataPath, userDataPath, userDataPath,
-        userDataPath / "cache", userDataPath, failedWriteAccess);
+        userDataPath / "cache", dataPath, failedWriteAccess);
+
+    // Say outright whether the bundled data actually made it into this build, so a
+    // device log answers the question instead of it having to be inferred from a
+    // downstream symptom several hundred lines later. The error_code overloads, not
+    // the throwing ones: an unhandled exception this early in boot is std::terminate
+    // with nothing useful logged, and "could not tell" is reported the same as "no".
+    std::error_code fontsEc, profilesEc;
+    const bool haveFonts = fs::exists(dataPath / "resources" / "sharedFonts" / "CafeStd.ttf", fontsEc);
+    const bool haveProfiles = fs::exists(dataPath / "gameProfiles" / "default", profilesEc);
+    cemuLog_log(LogType::Force, "iOS data path: {} (shared fonts present: {}, default game profiles present: {})",
+        _pathToUtf8(dataPath), haveFonts, haveProfiles);
 
     // ActiveSettings::GetCPUMode() resolves CPUMode::Auto (the default with no game
     // profile loaded) to a recompiler/JIT mode on every device - it never picks the
