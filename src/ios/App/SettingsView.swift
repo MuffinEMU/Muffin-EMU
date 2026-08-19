@@ -12,6 +12,10 @@ struct SettingsView: View {
     @ObservedObject var gameManager: GameManager
     @Environment(\.dismiss) private var dismiss
     @State private var showingIconPicker = false
+    /// Shared with EmulatorViewOptimized by key, not by binding - the emulator view is
+    /// not in this sheet's hierarchy, and AppStorage is what makes the setting outlive
+    /// the sheet anyway.
+    @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
 
     var body: some View {
         // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
@@ -27,6 +31,23 @@ struct SettingsView: View {
                         }
                         .foregroundColor(MuffinTheme.brownDarkest)
                     }
+
+                    // Off by default: the log is a diagnostic, not a feature, and a
+                    // wall of monospaced text over the boot is not what someone who
+                    // just wants to play a game should meet. Collection is always on
+                    // regardless (see IOSLiveLog.h) - gating that too would mean the
+                    // toggle could only ever show the boot AFTER the one that failed.
+                    Section {
+                        Toggle(isOn: $showLaunchLog) {
+                            Label("Show launch log", systemImage: "text.alignleft")
+                        }
+                        .tint(MuffinTheme.pixelBlue)
+                    } header: {
+                        Text("Diagnostics")
+                    } footer: {
+                        Text("Shows what the emulator is doing, with timestamps, while a game boots. Useful when a game starts but the screen stays black.")
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
 
                     Section("Library") {
                         SettingsRow(label: "Games", value: "\(gameManager.games.count)")

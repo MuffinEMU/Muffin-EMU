@@ -11,6 +11,7 @@
 //
 #import "CemuBridge.h"
 #import <Foundation/Foundation.h>
+#include "Cemu/Logging/IOSLiveLog.h"
 
 #include <string>
 #include <atomic>
@@ -169,6 +170,13 @@ void cemu_bridge_log_checkpoint(const char* message) {
     cemu_crash_open_log(); // idempotent; in case the constructor somehow didn't run
     cemu_crash_write(message);
     cemu_crash_write("\n");
+    // These checkpoints are the only record of the earliest part of a launch - they
+    // bracket engine.initialize() and engine.boot(), and they are written before
+    // cemuLog has a file to write to at all. Mirroring them into the live ring is what
+    // makes the on-screen launch log a single timeline instead of the engine's half of
+    // one. Cheap and safe: ios_live_log_push() copies, takes a short mutex of its own,
+    // and is a relaxed atomic load away from free when collection is off.
+    ios_live_log_push(message);
 }
 
 #if defined(CEMU_CORE_AVAILABLE)
@@ -365,6 +373,14 @@ void cemu_bridge_initialize(const char* mlcPath) {
 }
 
 void cemu_bridge_register_render_surface(void* uiView, int width, int height, double dpiScale) {
+    // First thing that happens in a title launch, so it is where the launch log's
+    // "+0.000s" belongs. Not the process start: under LiveContainer the guest can be
+    // launched more than once inside one host process (Void's 2026-08-19 device log
+    // has three "=== Cemu process started (early constructor) ===" blocks in a row),
+    // and an elapsed column measured from the first of those would be meaningless by
+    // the third.
+    ios_live_log_begin_run();
+
 #if defined(CEMU_CORE_AVAILABLE)
     // M3 groundwork (ROADMAP.md): the real native Metal renderer
     // (Cafe/HW/Latte/Renderer/Metal/) has never actually been wired to a surface on
