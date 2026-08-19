@@ -448,6 +448,12 @@ struct EmptyGamesView: View {
     }
 }
 
+/// Where the launch-log setting lives, so the settings sheet and the emulator view
+/// agree on the key without one importing the other.
+enum LaunchLogSettings {
+    static let showKey = "muffin.showLaunchLog"
+}
+
 struct EmulatorViewOptimized: View {
     let game: GameMetadata
     @ObservedObject var gameManager: GameManager
@@ -455,6 +461,9 @@ struct EmulatorViewOptimized: View {
     @Binding var controllerSkin: WiiUControllerSkin
     @State private var showControls = true
     @State private var showSkinSelector = false
+    @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
+    @StateObject private var launchLog = LaunchLogStore()
+    @State private var launchLogDismissed = false
 
     var body: some View {
         ZStack {
@@ -554,15 +563,49 @@ struct EmulatorViewOptimized: View {
                     Text("Booting…")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(.white.opacity(0.8))
+
+                    if showLaunchLog {
+                        LaunchLogView(store: launchLog)
+                            .frame(maxWidth: 720, maxHeight: 340)
+                            .padding(.horizontal, 24)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
+            }
+
+            // Deliberately outlives .loading. emulationState flips to .running the
+            // moment boot() returns, which is BEFORE the GPU thread has presented
+            // anything - so the interesting part of the log (first swap request, first
+            // present, or the silence where those should be) all happens after the
+            // boot overlay above has already gone. Hiding the log at .running would
+            // hide exactly the lines that explain a black screen. It stays, small and
+            // dismissable, until the user closes it.
+            if showLaunchLog && gameManager.emulationState == .running && !launchLogDismissed {
+                VStack {
+                    Spacer()
+                    LaunchLogView(store: launchLog) {
+                        withAnimation(.easeInOut(duration: 0.2)) { launchLogDismissed = true }
+                    }
+                    .frame(maxWidth: 720, maxHeight: 240)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
+                }
+                .transition(.opacity)
             }
         }
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.3)) {
                 showControls.toggle()
             }
+        }
+        // Tied to this view's lifetime, not the store's: no launch log on screen means
+        // nothing draining, and the C ring keeps filling either way so switching the
+        // setting on mid-boot still catches up on everything already logged.
+        .onAppear { if showLaunchLog { launchLog.start() } }
+        .onDisappear { launchLog.stop() }
+        .onChange(of: showLaunchLog) { enabled in
+            if enabled { launchLog.start() } else { launchLog.stop() }
         }
     }
 }
