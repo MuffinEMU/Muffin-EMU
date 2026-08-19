@@ -22,6 +22,8 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
+#include <exception>
+#include <typeinfo>
 
 // The app crashed on the very first real on-device launch, before any game was even
 // tapped - meaning before cemu_bridge_initialize()/CafeSystem::Initialize() ever run.
@@ -89,6 +91,65 @@ namespace {
         void* warm[4];
         backtrace(warm, 4);
     }
+
+    // The signal handler above catches the SIGABRT but cannot answer the question
+    // that abort actually poses. A trace ending
+    //   CafeSystem::Initialize -> cemuLog_log<char const*&> -> fmt::detail::vformat_to
+    //   -> fmt::v12::report_error -> abort
+    // says an fmt formatting failure reached std::terminate out of a log call, but
+    // not WHICH log call and not what fmt objected to. Worse, it should not have been
+    // fatal at all: cemuLogDetail::iosFormatOrRaw() (CemuLogging.h) wraps the whole
+    // fmt::vformat() call in try / catch(const std::exception&) / catch(...) for
+    // exactly this reason, and that guard is present in the build that crashed. So
+    // one of two quite different things is true - either the throw escapes from a
+    // path that guard does not cover, or the abort is not an escaping C++ exception
+    // in the first place (fmt built with FMT_THROW mapped to assert_fail, or an
+    // unwind that cannot find the landing pad) - and the backtrace alone cannot
+    // distinguish them.
+    //
+    // std::terminate is the one place both questions are answerable: the in-flight
+    // exception is still recoverable there via std::current_exception(). Rethrow it
+    // to get its dynamic type and what(), write both to the crash log, then chain to
+    // the previous handler (_objc_terminate, installed by the Objective-C runtime)
+    // and abort so the signal handler still appends its backtrace exactly as before.
+    // Purely additive: nothing that used to be reported stops being reported.
+    //
+    // Not signal-handler context, so typeid/what()/malloc are all legitimate here.
+    std::terminate_handler g_previousTerminateHandler = nullptr;
+
+    void cemu_terminate_handler() {
+        cemu_crash_open_log(); // idempotent
+        cemu_crash_write("\n=== CEMU TERMINATE ===\n");
+        if (std::exception_ptr pending = std::current_exception())
+        {
+            try
+            {
+                std::rethrow_exception(pending);
+            }
+            catch (const std::exception& ex)
+            {
+                cemu_crash_write("uncaught C++ exception, type: ");
+                cemu_crash_write(typeid(ex).name());
+                cemu_crash_write("\nwhat(): ");
+                cemu_crash_write(ex.what() ? ex.what() : "(none)");
+                cemu_crash_write("\n");
+            }
+            catch (...)
+            {
+                cemu_crash_write("uncaught exception not derived from std::exception\n");
+            }
+        }
+        else
+        {
+            // This branch is itself the answer to the second hypothesis: it means the
+            // abort did NOT come from an escaping C++ throw, so no catch block
+            // anywhere could ever have stopped it.
+            cemu_crash_write("terminate called with no in-flight exception\n");
+        }
+        if (g_previousTerminateHandler && g_previousTerminateHandler != cemu_terminate_handler)
+            g_previousTerminateHandler();
+        abort();
+    }
 }
 
 extern "C" __attribute__((constructor(101)))
@@ -98,6 +159,10 @@ void cemu_bridge_install_early_crash_handler() {
     int sigs[] = {SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGFPE};
     for (int s : sigs)
         signal(s, cemu_crash_signal_handler);
+    // Installed from the same constructor, and for the same reason: an uncaught throw
+    // out of one of the ~90 linked engine libraries' static initializers happens
+    // before main(), too early for anything installed from Swift to see it.
+    g_previousTerminateHandler = std::set_terminate(cemu_terminate_handler);
 }
 
 void cemu_bridge_log_checkpoint(const char* message) {
@@ -109,6 +174,7 @@ void cemu_bridge_log_checkpoint(const char* message) {
 #if defined(CEMU_CORE_AVAILABLE)
     // Real Cemu engine headers. These only resolve once the core is built for iOS.
     #include "Cafe/CafeSystem.h"
+    #include "Cemu/Logging/CemuLogging.h"
     #include "config/ActiveSettings.h"
     #include "config/LaunchSettings.h"
     #include "Cafe/HW/Latte/Core/LatteDraw.h"
@@ -250,6 +316,18 @@ void cemu_bridge_initialize(const char* mlcPath) {
     std::set<fs::path> failedWriteAccess;
     ActiveSettings::SetPaths(/*isPortableMode=*/true, userDataPath, userDataPath, userDataPath,
         userDataPath / "cache", dataPath, failedWriteAccess);
+
+    // Open log.txt here rather than leaving it to the first cemu_initForGame(), which
+    // is several hundred lines and one whole CafeSystem::Initialize() later. Until it
+    // is open, every cemuLog_log() line sits in LogContext.text_cache in RAM and is
+    // discarded outright if the process dies first - which is precisely what happened
+    // on the crash this is being changed for: the run that aborted inside
+    // CafeSystem::Initialize() left a log.txt with not one line in it, so the only
+    // evidence of a failure inside a LOGGING call was a backtrace. Every launch that
+    // got past Initialize() wrote a complete log, which is the opposite of the
+    // selection you want from a diagnostic. cemuLog_GetLogFilePath() resolves against
+    // ActiveSettings, so this has to come after SetPaths() above, not before.
+    cemuLog_createLogFile(false);
 
     // Say outright whether the bundled data actually made it into this build, so a
     // device log answers the question instead of it having to be inferred from a
