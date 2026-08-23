@@ -434,7 +434,18 @@ void MetalRenderer::DrawEmptyFrame(bool mainWindow)
 	// of the on-screen state until then. Opaque black is a definite state; undefined
 	// is not, and it became visible rather than merely wrong once the iOS layer was
 	// marked opaque (MetalLayer.mm).
-	ClearColorTextureInternal(GetLayer(mainWindow).GetDrawable()->texture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
+	//
+	// That definite state is deliberately MAGENTA rather than black, and it is a
+	// diagnostic this fork wants, not an accident. On device "the renderer never ran
+	// at all" and "the renderer ran and the title then scanned out nothing" are both
+	// a black screen, and the log cannot separate them either: helloworld.rpx
+	// legitimately draws nothing, and the OSScreen scanout path carries no marker.
+	// Clearing to magenta splits them by eye - black means the chain never reached
+	// the glass, magenta means it reached the glass end to end and is waiting on the
+	// title for content. Any frame the title actually presents overwrites this
+	// completely, so nothing that draws is ever tinted by it.
+	ClearColorTextureInternal(GetLayer(mainWindow).GetDrawable()->texture(), 0, 0, 1.0f, 0.0f, 1.0f, 1.0f);
+	cemuLog_logOnce(LogType::Force, "MetalRenderer: cleared the empty frame to magenta - if the screen is magenta the renderer reached the display and the title has not drawn yet; if it is black the renderer never got here");
 	SwapBuffers(mainWindow, !mainWindow);
 }
 
