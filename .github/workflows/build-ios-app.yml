@@ -101,10 +101,25 @@ jobs:
           set -eo pipefail
           APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "Cemu.app" -path "*Release-iphoneos*" | head -n1)
           echo "Found app at: $APP_PATH"
+          # Start from nothing: cp -R into an existing Payload/ merges rather than
+          # replaces, so a stale directory would silently ship alongside the new one.
+          rm -rf Payload Cemu.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
+          # Defends against a LiveContainer bug that deletes the app's executable on
+          # install. Must run before the zip; see the script for the full write-up.
+          ./ci/stage-livecontainer-spare.sh Payload/Cemu.app
           zip -r Cemu.ipa Payload
           echo "IPA size: $(du -h Cemu.ipa | cut -f1)"
+
+      - name: Verify the IPA is structurally sound
+        # Gate, not a report: this runs before any upload or release step, so a
+        # malformed IPA fails the build instead of becoming a download. Checks the
+        # executable is present, executable, arm64 MH_EXECUTE, has an entry point and
+        # is unencrypted - the exact set that had to be established by hand when a
+        # v1.15 install reported "App's executable path not found" and it was not
+        # clear whether the package or the device was at fault.
+        run: ./ci/verify-ipa.sh Cemu.ipa
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
