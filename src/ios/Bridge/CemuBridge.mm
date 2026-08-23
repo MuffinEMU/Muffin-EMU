@@ -220,6 +220,8 @@ void cemu_bridge_log_checkpoint(const char* message) {
     // IOSWindowSystem_GetLastFPS() declaration further down.
     void IOSInput_Initialize();
     void IOSInput_RefreshDevices();
+    void IOSInput_SetButtonState(int button, bool pressed);
+    void IOSInput_ReleaseAllButtons();
 
     // SDL's iOS joystick backend is a GameController.framework client, so bring it up on
     // the main thread even though cemu_bridge_initialize() itself runs on GameManager's
@@ -773,6 +775,34 @@ void cemu_bridge_shutdown(void) {
     CafeSystem::Shutdown();
     g_initialized.store(false);
     setStatus("Cemu core shut down.");
+#endif
+}
+
+// Declared in CemuBridge.h since the emulated-GamePad commit but never actually defined
+// here, which nothing noticed only because no caller existed yet. It does now.
+void cemu_bridge_refresh_input_devices(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    IOSInput_RefreshDevices();
+#endif
+}
+
+void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
+#if defined(CEMU_CORE_AVAILABLE)
+    // Passed as a plain int, and translated back on the other side. IOSInput_* is
+    // declared here by hand rather than by #including InputManager.h - that header pulls
+    // in SDL2/SDL.h and the whole input stack, which build under CMake but would have to
+    // be made to work a second time inside Xcode's build of this one file - so the
+    // declaration cannot name a type Cemu's own headers do not define, and CemuBridge.h
+    // is not something src/input should be forced to include just for a signature.
+    IOSInput_SetButtonState((int)button, pressed);
+#else
+    (void)button; (void)pressed;
+#endif
+}
+
+void cemu_bridge_release_all_buttons(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    IOSInput_ReleaseAllButtons();
 #endif
 }
 

@@ -121,10 +121,66 @@ void cemu_bridge_log_checkpoint(const char* message);
 /// costs nothing and closes the window where a controller pairs during app startup,
 /// before the hotplug hook was installed. Safe to call at any time; a no-op until
 /// cemu_bridge_initialize() has run.
-///
-/// NOTE: there is no touch-based input path. Player 1 needs a real MFi/Bluetooth
-/// controller; the on-screen pad in ControllerSkins.swift is not wired to the engine.
 void cemu_bridge_refresh_input_devices(void);
+
+/// A button on player 1's emulated Wii U GamePad, as the iOS app names it.
+///
+/// Deliberately its own enum rather than VPADController::ButtonId. These values are
+/// baked into Swift call sites, so they have to stay put; ButtonId is Cemu's internal
+/// numbering and is free to be reordered upstream at any time. InputManager.cpp maps
+/// one to the other in a single explicit switch, which is the only place that has to be
+/// revisited if either side changes.
+typedef enum {
+    CEMU_BRIDGE_BUTTON_NONE    = 0,
+
+    CEMU_BRIDGE_BUTTON_A       = 1,
+    CEMU_BRIDGE_BUTTON_B       = 2,
+    CEMU_BRIDGE_BUTTON_X       = 3,
+    CEMU_BRIDGE_BUTTON_Y       = 4,
+
+    CEMU_BRIDGE_BUTTON_L       = 5,
+    CEMU_BRIDGE_BUTTON_R       = 6,
+    CEMU_BRIDGE_BUTTON_ZL      = 7,
+    CEMU_BRIDGE_BUTTON_ZR      = 8,
+
+    CEMU_BRIDGE_BUTTON_PLUS    = 9,
+    CEMU_BRIDGE_BUTTON_MINUS   = 10,
+
+    CEMU_BRIDGE_BUTTON_UP      = 11,
+    CEMU_BRIDGE_BUTTON_DOWN    = 12,
+    CEMU_BRIDGE_BUTTON_LEFT    = 13,
+    CEMU_BRIDGE_BUTTON_RIGHT   = 14,
+
+    CEMU_BRIDGE_BUTTON_STICK_L = 15, // left stick pressed in (L3)
+    CEMU_BRIDGE_BUTTON_STICK_R = 16, // right stick pressed in (R3)
+
+    CEMU_BRIDGE_BUTTON_HOME    = 17,
+
+    CEMU_BRIDGE_BUTTON_COUNT   = 18,
+} CemuBridgeButton;
+
+/// Holds or releases one GamePad button from the on-screen controls.
+///
+/// This is press-and-release, not "tap": `pressed` stays true for as long as the finger
+/// is down, because holding a direction is most of playing anything. Calling it twice
+/// with the same value is harmless.
+///
+/// The state is an override that sits in FRONT of whatever physical controller is bound
+/// (EmulatedController::is_mapping_down checks it first), so the touch pad and an
+/// MFi controller work at the same time and neither cancels the other. The flip side:
+/// a button left true is held forever as far as the title is concerned, so every press
+/// must be paired with a release - see cemu_bridge_release_all_buttons() for the case
+/// where the UI cannot be sure it will get one.
+///
+/// Safe to call from the main thread while the emulated title polls from its own; a
+/// no-op until cemu_bridge_initialize() has brought input up.
+void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed);
+
+/// Releases every GamePad button at once. For the cases where the UI knows a press can
+/// no longer be tracked to its natural end - the control panel being dismissed, the app
+/// going to the background, a gesture the system cancelled out from under it - and would
+/// otherwise leave the title holding a direction with nothing on screen touching it.
+void cemu_bridge_release_all_buttons(void);
 
 #ifdef __cplusplus
 } // extern "C"

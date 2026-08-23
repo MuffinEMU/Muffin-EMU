@@ -57,10 +57,11 @@ struct WiiUControllerSkin {
 
 struct OptimizedControlPanel: View {
     let skin: WiiUControllerSkin
-    let onDPadInput: (String) -> Void
-    let onButtonInput: (String) -> Void
-    @State private var activeDPad: String?
-    @State private var activeButton: String?
+    // (label, pressed) - not (label). A tap has no way to express "still held", and
+    // holding a direction is most of playing anything, so the whole panel reports state
+    // changes rather than events. Every `true` is followed by exactly one `false`.
+    let onDPadInput: (String, Bool) -> Void
+    let onButtonInput: (String, Bool) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -68,30 +69,11 @@ struct OptimizedControlPanel: View {
                 .background(skin.borderColor)
 
             HStack(spacing: 32) {
-                DPadControl(
-                    skin: skin,
-                    onInput: { direction in
-                        activeDPad = direction
-                        onDPadInput(direction)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            activeDPad = nil
-                        }
-                    }
-                )
+                DPadControl(skin: skin, onInput: onDPadInput)
 
                 Spacer()
 
-                ActionButtonGrid(
-                    skin: skin,
-                    onInput: { button in
-                        activeButton = button
-                        onButtonInput(button)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            activeButton = nil
-                        }
-                    },
-                    activeButton: $activeButton
-                )
+                ActionButtonGrid(skin: skin, onInput: onButtonInput)
             }
             .padding(20)
             .background(skin.backgroundColor)
@@ -99,19 +81,70 @@ struct OptimizedControlPanel: View {
     }
 }
 
+/// A control that is held for as long as a finger is on it.
+///
+/// The panel used to be built out of `Button` + `onLongPressGesture`, which is a tap:
+/// it fires once, on release, and there is no way to ask it whether the finger is still
+/// down. It also serialises - UIKit's button machinery claims the interaction, so a
+/// second finger arriving on a different button while the first is held was simply
+/// dropped, and "hold left while pressing A" was not expressible at all.
+///
+/// `DragGesture(minimumDistance: 0)` fixes both. onChanged arrives on touch-down and
+/// onEnded on lift, including a lift that happens outside the view's own bounds, so a
+/// press cannot get stuck by sliding a thumb off the edge of a button.
+///
+/// Attached with `.gesture`, deliberately, not `.simultaneousGesture`: a gesture on a
+/// child view takes precedence over one on an ancestor, and the emulator screen has a
+/// full-screen `.onTapGesture` on it that shows and hides this very panel. Made
+/// simultaneous, every button press would also toggle the controls away underneath the
+/// finger. Sibling buttons are not ancestors of one another, so they arbitrate
+/// independently and two fingers on two different controls both register.
+private struct HeldControl<Content: View>: View {
+    let onPressChange: (Bool) -> Void
+    let content: (Bool) -> Content
+
+    @State private var isPressed = false
+
+    var body: some View {
+        content(isPressed)
+            // Without this the hit area is whatever the label happens to paint, so a
+            // finger landing on the transparent corner of a circular button hits the
+            // view behind it instead.
+            .contentShape(Rectangle())
+            .accessibilityAddTraits(.isButton)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in setPressed(true) }
+                    .onEnded { _ in setPressed(false) }
+            )
+            // A gesture the system cancels (backgrounding, an incoming call) or a view
+            // removed mid-press never delivers onEnded, and a button stuck down is a
+            // title stuck walking into a wall.
+            .onDisappear { setPressed(false) }
+    }
+
+    // onChanged repeats for every touch-move, so guard - both to keep the highlight from
+    // re-animating and to keep the bridge call one per actual state change.
+    private func setPressed(_ value: Bool) {
+        guard isPressed != value else { return }
+        isPressed = value
+        onPressChange(value)
+    }
+}
+
 struct DPadControl: View {
     let skin: WiiUControllerSkin
-    let onInput: (String) -> Void
+    let onInput: (String, Bool) -> Void
 
     var body: some View {
         VStack(spacing: 4) {
-            DPadButton(direction: "↑", skin: skin, action: { onInput("up") })
+            DPadButton(direction: "↑", skin: skin) { onInput("up", $0) }
             HStack(spacing: 4) {
-                DPadButton(direction: "←", skin: skin, action: { onInput("left") })
+                DPadButton(direction: "←", skin: skin) { onInput("left", $0) }
                 Color.clear.frame(width: 20)
-                DPadButton(direction: "→", skin: skin, action: { onInput("right") })
+                DPadButton(direction: "→", skin: skin) { onInput("right", $0) }
             }
-            DPadButton(direction: "↓", skin: skin, action: { onInput("down") })
+            DPadButton(direction: "↓", skin: skin) { onInput("down", $0) }
         }
     }
 }
@@ -119,70 +152,48 @@ struct DPadControl: View {
 struct DPadButton: View {
     let direction: String
     let skin: WiiUControllerSkin
-    let action: () -> Void
-    @State private var isPressed = false
+    let onPressChange: (Bool) -> Void
 
     var body: some View {
-        Button(action: action) {
+        HeldControl(onPressChange: onPressChange) { isPressed in
             Text(direction)
                 .font(.system(size: 16, weight: .bold))
                 .frame(width: 44, height: 44)
                 .background(
-                    isPressed ?
-                    skin.dpadColor.opacity(0.9) :
-                    skin.dpadColor.opacity(0.6)
+                    skin.dpadColor.opacity(isPressed ? 0.9 : 0.6)
                 )
                 .foregroundColor(.white)
                 .cornerRadius(6)
+                .animation(.easeInOut(duration: 0.05), value: isPressed)
         }
-        .onLongPressGesture(
-            minimumDuration: 0.05,
-            pressing: { isPressing in
-                withAnimation(.easeInOut(duration: 0.05)) {
-                    isPressed = isPressing
-                }
-            },
-            perform: action
-        )
     }
 }
 
 struct ActionButtonGrid: View {
     let skin: WiiUControllerSkin
-    let onInput: (String) -> Void
-    @Binding var activeButton: String?
+    let onInput: (String, Bool) -> Void
 
     var body: some View {
         VStack(spacing: 4) {
             ActionButtonStyled(
                 label: "Y",
-                color: skin.buttonColors["Y"] ?? Color.yellow,
-                isActive: activeButton == "Y",
-                action: {
-                    onInput("Y")
-                }
-            )
+                color: skin.buttonColors["Y"] ?? Color.yellow
+            ) { onInput("Y", $0) }
             HStack(spacing: 4) {
                 ActionButtonStyled(
                     label: "X",
-                    color: skin.buttonColors["X"] ?? Color.blue,
-                    isActive: activeButton == "X",
-                    action: { onInput("X") }
-                )
+                    color: skin.buttonColors["X"] ?? Color.blue
+                ) { onInput("X", $0) }
                 Color.clear.frame(width: 20)
                 ActionButtonStyled(
                     label: "B",
-                    color: skin.buttonColors["B"] ?? Color.red,
-                    isActive: activeButton == "B",
-                    action: { onInput("B") }
-                )
+                    color: skin.buttonColors["B"] ?? Color.red
+                ) { onInput("B", $0) }
             }
             ActionButtonStyled(
                 label: "A",
-                color: skin.buttonColors["A"] ?? Color.green,
-                isActive: activeButton == "A",
-                action: { onInput("A") }
-            )
+                color: skin.buttonColors["A"] ?? Color.green
+            ) { onInput("A", $0) }
         }
     }
 }
@@ -190,34 +201,24 @@ struct ActionButtonGrid: View {
 struct ActionButtonStyled: View {
     let label: String
     let color: Color
-    let isActive: Bool
-    let action: () -> Void
-    @State private var isPressed = false
+    let onPressChange: (Bool) -> Void
 
     var body: some View {
-        Button(action: action) {
+        HeldControl(onPressChange: onPressChange) { isPressed in
             Text(label)
                 .font(.system(size: 18, weight: .bold))
                 .frame(width: 48, height: 48)
                 .background(
                     Circle()
-                        .fill(isPressed ? color.opacity(0.95) : color.opacity(0.75))
+                        .fill(color.opacity(isPressed ? 0.95 : 0.75))
                 )
                 .foregroundColor(.white)
                 .overlay(
                     Circle()
-                        .stroke(color.opacity(0.3), lineWidth: 2)
+                        .stroke(color.opacity(isPressed ? 0.8 : 0.3), lineWidth: 2)
                 )
+                .animation(.easeInOut(duration: 0.05), value: isPressed)
         }
-        .onLongPressGesture(
-            minimumDuration: 0.05,
-            pressing: { isPressing in
-                withAnimation(.easeInOut(duration: 0.05)) {
-                    isPressed = isPressing
-                }
-            },
-            perform: action
-        )
     }
 }
 

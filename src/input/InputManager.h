@@ -159,4 +159,28 @@ void IOSInput_Initialize();
 // already wired to SDL's own device-added/removed event, so callers only need this for a
 // belt-and-braces rescan (e.g. immediately before booting a title).
 void IOSInput_RefreshDevices();
+
+// Holds or releases one button on player 1's emulated GamePad on behalf of the
+// on-screen controls. `button` is a CemuBridgeButton (src/ios/Bridge/CemuBridge.h), not
+// a VPADController::ButtonId - the app's numbering is a published contract with the
+// Swift call sites, Cemu's internal one is not, and iosMapBridgeButton() is the single
+// place the two meet.
+//
+// Held, not tapped: `pressed` stays true until the finger lifts. It writes into the
+// emulated controller's override state, which is checked ahead of any physical
+// controller's mapping, so the touch pad and an attached MFi controller both work and
+// neither cancels the other.
+//
+// Safe to call from the UI thread while the title polls VPADRead from its own: the
+// override is an atomic bool, and IOSInput_Initialize() has already reserved every slot
+// so no call here can rehash the map the reader is walking. A no-op before
+// IOSInput_Initialize() has run, and repeated identical calls cost nothing.
+void IOSInput_SetButtonState(int button, bool pressed);
+
+// Releases everything the on-screen pad is holding. Every press is supposed to be
+// paired with a release by the view that started it, but a gesture the system cancels
+// (backgrounding, an incoming call, a view torn out from under a finger) does not always
+// produce one - and a button left down is a title stuck walking into a wall with nothing
+// on screen touching it. Same thread-safety terms as above.
+void IOSInput_ReleaseAllButtons();
 #endif // CEMU_PLATFORM_IOS
