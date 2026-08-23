@@ -169,7 +169,7 @@ struct LaunchLogView: View {
             return MuffinTheme.blushPink
         }
         if lower.contains("presented the first frame") || lower.contains("run title")
-            || lower.contains("first swap request") {
+            || lower.contains("first swap request") || lower.contains("cleared the empty frame") {
             return .green
         }
         if lower.contains("ios display:") || lower.contains("ios data path") {
