@@ -101,6 +101,14 @@ public:
 	bool was_home_button_down() { return std::exchange(m_homebutton_down, false); }
 
 	virtual bool set_default_mapping(const std::shared_ptr<ControllerBase>& controller) { return false; }
+	// Host-UI override for a single mapping, for on-screen controls that are not backed
+	// by any physical device (Android's overlay, iOS's touch pad). Checked *before*
+	// m_mappings by is_mapping_down()/get_axis_value(), so an on-screen press works
+	// whether or not a controller is attached and whatever profile is loaded.
+	//
+	// Callable from the host UI thread while the emulated title polls the same state
+	// from its own thread - see the comment on m_overriddenButtonMappings below for what
+	// makes that safe and what the caller still has to do first.
 	void setButtonValue(uint64 mapping, bool value);
 	void setAxisValue(uint64 mapping, float value);
 protected:
@@ -119,7 +127,22 @@ protected:
 		uint64 button;
 	};
 	std::unordered_map<uint64, Mapping> m_mappings;
-	std::unordered_map<uint64, bool> m_overriddenButtonMappings;
+
+	// std::atomic<bool>, not bool. is_mapping_down() reads this from the emulated
+	// title's own thread and takes no lock at all (it is called once per mapping per
+	// VPADRead, i.e. in the poll loop, so it cannot afford one), while setButtonValue()
+	// writes it from the host UI thread. As a plain bool that pairing is a data race by
+	// the language definition; as an atomic it is a well-defined load/store and the
+	// reader sees either the old value or the new one.
+	//
+	// That leaves exactly one hazard, which the type cannot fix: inserting a key the map
+	// has never seen may rehash, and rehashing while another thread is walking a bucket
+	// chain in find() is a genuine crash, not a stale read. std::unordered_map is
+	// node-based so existing elements never move - only the bucket array is rebuilt -
+	// so a caller can close the hole completely by touching every mapping id it will
+	// ever use ONCE, before the title thread exists. IOSInput_Initialize() does this;
+	// anything else driving these overrides from a second thread must do the same.
+	std::unordered_map<uint64, std::atomic<bool>> m_overriddenButtonMappings;
 	std::unordered_map<uint64, float> m_overriddenAxisMappings;
  
 	bool m_homebutton_down = false;

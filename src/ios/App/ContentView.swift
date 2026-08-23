@@ -582,10 +582,20 @@ struct EmulatorViewOptimized: View {
                 #endif
 
                 if showControls {
+                    // These two closures used to be `{ _ in }`. The on-screen pad drew
+                    // itself, highlighted on touch and sent the result precisely
+                    // nowhere, which is why a touch could never move anything: not a
+                    // missing mapping or an unconfigured controller, just no call.
+                    // OptimizedControlPanel now reports press AND release, and each
+                    // label is translated here into the bridge's own button numbering.
                     OptimizedControlPanel(
                         skin: controllerSkin,
-                        onDPadInput: { _ in },
-                        onButtonInput: { _ in }
+                        onDPadInput: { direction, pressed in
+                            cemu_bridge_set_button_state(cemuBridgeButton(forDPadDirection: direction), pressed)
+                        },
+                        onButtonInput: { label, pressed in
+                            cemu_bridge_set_button_state(cemuBridgeButton(forActionLabel: label), pressed)
+                        }
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -637,6 +647,13 @@ struct EmulatorViewOptimized: View {
             withAnimation(.easeInOut(duration: 0.3)) {
                 showControls.toggle()
             }
+            // Hiding the panel removes the buttons mid-gesture. Each one releases itself
+            // on disappear, but a button the title still thinks is held is a character
+            // walking into a wall with nothing on screen to explain it, so sweep as
+            // well. Both paths are idempotent.
+            if !showControls {
+                cemu_bridge_release_all_buttons()
+            }
         }
         // Tied to this view's lifetime, not the store's: no launch log on screen means
         // nothing draining, and the C ring keeps filling either way so switching the
@@ -646,6 +663,30 @@ struct EmulatorViewOptimized: View {
         .onChange(of: showLaunchLog) { enabled in
             if enabled { launchLog.start() } else { launchLog.stop() }
         }
+    }
+}
+
+// The on-screen pad speaks in labels ("up", "A") because that is what it draws. The
+// engine speaks in CemuBridgeButton. Keeping the translation here, at the one call site,
+// rather than inside the view means ControllerSkins.swift stays a pure SwiftUI file with
+// no dependency on the bridge at all.
+private func cemuBridgeButton(forDPadDirection direction: String) -> CemuBridgeButton {
+    switch direction {
+    case "up":    return CEMU_BRIDGE_BUTTON_UP
+    case "down":  return CEMU_BRIDGE_BUTTON_DOWN
+    case "left":  return CEMU_BRIDGE_BUTTON_LEFT
+    case "right": return CEMU_BRIDGE_BUTTON_RIGHT
+    default:      return CEMU_BRIDGE_BUTTON_NONE
+    }
+}
+
+private func cemuBridgeButton(forActionLabel label: String) -> CemuBridgeButton {
+    switch label {
+    case "A": return CEMU_BRIDGE_BUTTON_A
+    case "B": return CEMU_BRIDGE_BUTTON_B
+    case "X": return CEMU_BRIDGE_BUTTON_X
+    case "Y": return CEMU_BRIDGE_BUTTON_Y
+    default:  return CEMU_BRIDGE_BUTTON_NONE
     }
 }
 

@@ -282,13 +282,16 @@ float EmulatedController::get_axis_value(uint64 mapping) const
 
 void EmulatedController::setButtonValue(uint64 mapping, bool value)
 {
-	std::shared_lock lock(m_mutex);
+	// Unique, not shared. operator[] can insert, and inserting under a reader lock lets
+	// two host threads rehash the same map at once. The store itself is atomic (see the
+	// member declaration) so the poll-loop reader is unaffected either way, and this
+	// runs on input events rather than per frame, so the stronger lock costs nothing.
+	std::unique_lock lock(m_mutex);
 	m_overriddenButtonMappings[mapping] = value;
-
 }
 void EmulatedController::setAxisValue(uint64 mapping, float value)
 {
-	std::shared_lock lock(m_mutex);
+	std::unique_lock lock(m_mutex);
 	m_overriddenAxisMappings[mapping] = value;
 }
 
