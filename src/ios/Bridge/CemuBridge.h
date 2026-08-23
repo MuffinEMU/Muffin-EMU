@@ -114,6 +114,18 @@ const char* cemu_bridge_status_text(void);
 /// surviving log alone.
 void cemu_bridge_log_checkpoint(const char* message);
 
+/// Rescans for physical controllers and binds the first one found to player 1's
+/// emulated GamePad if nothing is bound yet.
+///
+/// Normally unnecessary - SDL's own device-added event already triggers this - but it
+/// costs nothing and closes the window where a controller pairs during app startup,
+/// before the hotplug hook was installed. Safe to call at any time; a no-op until
+/// cemu_bridge_initialize() has run.
+///
+/// NOTE: there is no touch-based input path. Player 1 needs a real MFi/Bluetooth
+/// controller; the on-screen pad in ControllerSkins.swift is not wired to the engine.
+void cemu_bridge_refresh_input_devices(void);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
