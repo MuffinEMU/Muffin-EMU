@@ -264,9 +264,17 @@ struct GameBrowserView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView(gameManager: gameManager)
         }
+        // .item, not .data or a list of ROM types. iOS has no built-in UTType for .rpx,
+        // .wux, .wud or .wua, so any type-filtered list greys out exactly the files this
+        // button exists to import - which is the reported "it only opens folders, you
+        // cannot select things". .item is the root of the type hierarchy: everything
+        // matches, nothing is greyed out, and GameManager.importROM does the deciding
+        // afterwards against its own copy. .data is nearly as permissive but still
+        // depends on the provider having resolved a byte-stream type for the file at
+        // all; .item does not.
         .fileImporter(
             isPresented: $showingROMImporter,
-            allowedContentTypes: [.data],
+            allowedContentTypes: [.item],
             allowsMultipleSelection: false
         ) { result in
             handleImport(result)
@@ -465,7 +473,7 @@ struct EmptyGamesView: View {
                     .foregroundColor(MuffinTheme.brownDarkest)
 
                 VStack(alignment: .center, spacing: 4) {
-                    Text("Add .wua, .wud, .rpx, or .iso files")
+                    Text("Add .wux, .wud, .wua, .rpx, or .iso files")
                         .font(.system(size: 13, weight: .regular, design: .rounded))
                         .foregroundColor(MuffinTheme.brownMid)
 
