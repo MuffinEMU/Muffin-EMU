@@ -67,15 +67,33 @@ class GameManager: ObservableObject {
             var discoveredGames: [GameMetadata] = []
 
             for item in contents {
-                let pathExtension = item.pathExtension.lowercased()
-                guard ["wua", "wud", "iso", "rpx"].contains(pathExtension) else { continue }
+                // A Roms entry is either a single-file dump or a dumped game DIRECTORY.
+                // For a directory the engine still boots an .rpx, but it must be the one
+                // sitting inside code/ so Cemu sees the real layout next to it - boot it
+                // from anywhere else and it falls back to standalone mode and logs
+                // "incorrect layout or missing meta files", losing the title metadata.
+                let gameID: String
+                let bootPath: String
 
-                let gameID = item.deletingPathExtension().lastPathComponent
+                var isDirectory: ObjCBool = false
+                _ = fileManager.fileExists(atPath: item.path, isDirectory: &isDirectory)
+
+                if isDirectory.boolValue {
+                    guard Self.looksLikeWiiUDump(item),
+                          let rpx = Self.executableInDump(item) else { continue }
+                    gameID = item.lastPathComponent
+                    bootPath = rpx.path
+                } else {
+                    let pathExtension = item.pathExtension.lowercased()
+                    guard Self.supportedROMExtensions.contains(pathExtension) else { continue }
+                    gameID = item.deletingPathExtension().lastPathComponent
+                    bootPath = item.path
+                }
 
                 let gameMetadata = GameMetadata(
                     id: gameID,
                     title: gameID,
-                    romPath: item.path,
+                    romPath: bootPath,
                     coverPath: findCover(for: gameID, in: romsPath),
                     region: "Unknown",
                     releaseDate: "Unknown",
@@ -90,6 +108,38 @@ class GameManager: ObservableObject {
         } catch {
             print("Error scanning Roms directory: \(error)")
         }
+    }
+
+    /// A dumped Wii U title is a directory containing code/, content/ and meta/.
+    /// code/ is the one that actually matters (it holds the .rpx we boot); meta/ is
+    /// required too because its absence is exactly what makes Cemu drop to standalone.
+    static func looksLikeWiiUDump(_ directory: URL) -> Bool {
+        let fileManager = FileManager.default
+        var isDirectory: ObjCBool = false
+
+        for required in ["code", "meta"] {
+            let sub = directory.appendingPathComponent(required)
+            guard fileManager.fileExists(atPath: sub.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue else {
+                return false
+            }
+        }
+        return true
+    }
+
+    /// The .rpx inside a dump's code/ directory. Case matters on nothing here, but the
+    /// extension does: code/ also holds .rpl libraries, which are not entry points.
+    static func executableInDump(_ directory: URL) -> URL? {
+        let codePath = directory.appendingPathComponent("code")
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: codePath,
+            includingPropertiesForKeys: nil
+        )) ?? []
+
+        return entries
+            .filter { $0.pathExtension.lowercased() == "rpx" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .first
     }
 
     private func findCover(for gameID: String, in directory: URL) -> String? {
@@ -107,13 +157,16 @@ class GameManager: ObservableObject {
 
     enum ROMImportError: LocalizedError {
         case unsupportedFormat(String)
+        case notAWiiUDump(String)
         case accessDenied
         case copyFailed(Error)
 
         var errorDescription: String? {
             switch self {
             case .unsupportedFormat(let ext):
-                return "\".\(ext)\" isn't a supported ROM format (wua, wud, iso, rpx)."
+                return "\".\(ext)\" isn't a supported ROM format (wux, wud, wua, iso, rpx)."
+            case .notAWiiUDump(let name):
+                return "\"\(name)\" doesn't look like a Wii U dump - a dumped game folder has code/, content/ and meta/ inside it."
             case .accessDenied:
                 return "Couldn't access that file."
             case .copyFailed(let error):
@@ -122,23 +175,42 @@ class GameManager: ObservableObject {
         }
     }
 
-    private static let supportedROMExtensions: Set<String> = ["wua", "wud", "iso", "rpx"]
+    /// .wux is the compressed dump format most Wii U rips are distributed in and was
+    /// missing here, so importing one failed with "isn't a supported ROM format" even
+    /// though the picker had happily handed it over.
+    static let supportedROMExtensions: Set<String> = ["wux", "wud", "wua", "iso", "rpx"]
 
     /// Copies a user-picked ROM (from .fileImporter, so `source` is a security-scoped
     /// URL outside our sandbox - Files app, iCloud Drive, another app's share sheet)
     /// into Documents/Roms, then reloads the library so it shows up immediately.
     func importROM(from source: URL) async throws {
-        let pathExtension = source.pathExtension.lowercased()
-        guard Self.supportedROMExtensions.contains(pathExtension) else {
-            throw ROMImportError.unsupportedFormat(pathExtension)
-        }
-
+        // Security scope has to be claimed BEFORE anything reads the URL. For a folder
+        // pick, the scope covers the whole tree, so the recursive copy below inherits
+        // it - but only while the claim is held, hence the copy happening inside it.
         guard source.startAccessingSecurityScopedResource() else {
             throw ROMImportError.accessDenied
         }
         defer { source.stopAccessingSecurityScopedResource() }
 
         let fileManager = FileManager.default
+
+        var isDirectory: ObjCBool = false
+        let exists = fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory)
+        guard exists else { throw ROMImportError.accessDenied }
+
+        if isDirectory.boolValue {
+            // A dumped game is a directory, not a file. Require the real Wii U layout
+            // rather than copying any folder the user happened to tap - importing a
+            // 30 GB Downloads folder by accident is a worse failure than being told no.
+            guard Self.looksLikeWiiUDump(source) else {
+                throw ROMImportError.notAWiiUDump(source.lastPathComponent)
+            }
+        } else {
+            let pathExtension = source.pathExtension.lowercased()
+            guard Self.supportedROMExtensions.contains(pathExtension) else {
+                throw ROMImportError.unsupportedFormat(pathExtension)
+            }
+        }
         guard let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
             throw ROMImportError.accessDenied
         }
