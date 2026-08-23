@@ -124,6 +124,13 @@ struct GameBrowserView: View {
     @State private var showingIconPicker = false
     @State private var showingSettings = false
     @State private var showingROMImporter = false
+    /// Separate from showingROMImporter on purpose. A document picker only lets you
+    /// SELECT a directory when UTType.folder is among its allowed types; with a
+    /// file-only type list, tapping a folder navigates into it and there is no way to
+    /// choose it. A full Wii U dump IS a directory (code/, content/, meta/), so one
+    /// picker cannot serve both without making folder taps ambiguous. Two explicit
+    /// entry points, two pickers.
+    @State private var showingFolderImporter = false
     @State private var romImportErrorMessage: String?
 
     var filteredGames: [GameMetadata] {
@@ -175,14 +182,25 @@ struct GameBrowserView: View {
                             .background(MuffinTheme.sparkleCream.opacity(0.15))
                             .cornerRadius(14)
 
-                            Button(action: { showingROMImporter = true }) {
+                            Menu {
+                                Button {
+                                    showingROMImporter = true
+                                } label: {
+                                    Label("Game file (.wux, .wud, .wua, .iso, .rpx)", systemImage: "doc")
+                                }
+                                Button {
+                                    showingFolderImporter = true
+                                } label: {
+                                    Label("Game folder (code / content / meta)", systemImage: "folder")
+                                }
+                            } label: {
                                 Image(systemName: "doc.badge.plus")
                                     .font(.system(size: 16, weight: .semibold))
                                     .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
+                                    .frame(width: 44, height: 44)
+                                    .background(MuffinTheme.sparkleCream.opacity(0.15))
+                                    .cornerRadius(14)
                             }
-                            .frame(width: 44, height: 44)
-                            .background(MuffinTheme.sparkleCream.opacity(0.15))
-                            .cornerRadius(14)
 
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text("\(filteredGames.count)")
@@ -248,27 +266,40 @@ struct GameBrowserView: View {
         }
         .fileImporter(
             isPresented: $showingROMImporter,
-            allowedContentTypes: [.item],
+            allowedContentTypes: [.data],
             allowsMultipleSelection: false
         ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                Task {
-                    do {
-                        try await gameManager.importROM(from: url)
-                    } catch {
-                        romImportErrorMessage = error.localizedDescription
-                    }
-                }
-            case .failure(let error):
-                romImportErrorMessage = error.localizedDescription
-            }
+            handleImport(result)
+        }
+        .fileImporter(
+            isPresented: $showingFolderImporter,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            handleImport(result)
         }
         .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
             Button("OK") { romImportErrorMessage = nil }
         } message: { message in
             Text(message)
+        }
+    }
+
+    /// Shared by both pickers - a folder and a file import identically from here, the
+    /// only difference being which one the user was allowed to tap.
+    private func handleImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            Task {
+                do {
+                    try await gameManager.importROM(from: url)
+                } catch {
+                    romImportErrorMessage = error.localizedDescription
+                }
+            }
+        case .failure(let error):
+            romImportErrorMessage = error.localizedDescription
         }
     }
 }
