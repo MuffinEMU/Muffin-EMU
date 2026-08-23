@@ -106,19 +106,20 @@ jobs:
           rm -rf Payload Cemu.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          # Defends against a LiveContainer bug that deletes the app's executable on
-          # install. Must run before the zip; see the script for the full write-up.
-          ./ci/stage-livecontainer-spare.sh Payload/Cemu.app
           zip -r Cemu.ipa Payload
           echo "IPA size: $(du -h Cemu.ipa | cut -f1)"
 
       - name: Verify the IPA is structurally sound
         # Gate, not a report: this runs before any upload or release step, so a
-        # malformed IPA fails the build instead of becoming a download. Checks the
-        # executable is present, executable, arm64 MH_EXECUTE, has an entry point and
-        # is unencrypted - the exact set that had to be established by hand when a
-        # v1.15 install reported "App's executable path not found" and it was not
-        # clear whether the package or the device was at fault.
+        # malformed IPA fails the build instead of becoming a download.
+        #
+        # The check that matters most is the last one - it hands the packaged bundle
+        # to a real NSBundle and fails if the identifier or CFBundleExecutable comes
+        # back nil. That is the exact failure v1.14 and v1.15 shipped with: a bundle
+        # whose files were all present and correct, but which CFBundle could not read
+        # because a directory named `resources` at the top level collided
+        # case-insensitively with the reserved `Resources`. Every otool-level check
+        # here passed on those builds. Only asking CFBundle catches it.
         run: ./ci/verify-ipa.sh Cemu.ipa
 
       - name: Upload unsigned IPA

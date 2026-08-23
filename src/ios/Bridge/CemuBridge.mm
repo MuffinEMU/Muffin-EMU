@@ -316,10 +316,38 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // The bundle is read-only, which is fine: SetPaths() only TestWriteAccess()es
     // userDataPath, configPath and cachePath. GameProfile::Save() likewise writes to
     // GetConfigPath("gameProfiles"), not here.
+    //
+    // The data root is a "CemuData" SUBDIRECTORY of the bundle, not the bundle
+    // itself, and that indirection is load-bearing. GetDataPath()'s callers hardcode
+    // a "resources/" prefix, so making the bundle the data root put a directory
+    // literally named `resources` at the top level of Cemu.app - and iOS filesystems
+    // are case-insensitive, so CFBundle's probe for the reserved `Resources`
+    // directory matched it. That reclassifies the bundle from a flat one (Info.plist
+    // at the top level, which is where ours is) into a Resources-style one (Info.plist
+    // expected inside), and CFBundle then reads no Info.plist at all: -bundleIdentifier,
+    // -infoDictionary[@"CFBundleExecutable"] and -executablePath all come back nil for
+    // a bundle whose files are every one of them present and intact.
+    //
+    // That is what broke v1.14 and v1.15 under LiveContainer. LiveContainer reads
+    // Info.plist directly off disk to install, so installs succeeded; then
+    // LCBootstrap.m asked NSBundle for -executablePath at launch, got nil, and
+    // reported "App's executable path not found. Please try force re-signing or
+    // reinstalling this app." Nothing was missing and nothing was being deleted.
+    // v1.13 worked only because its bundle was flat and had no such directory.
+    // Confirmed by isolation against a real CFBundle: the v1.13 bundle plus one empty
+    // directory named `resources` reproduces it exactly, v1.13 plus `gameProfiles`
+    // does not, and the v1.15 bundle with that one directory renamed resolves cleanly.
+    //
+    // Nesting keeps Cemu's own relative layout (CemuData/resources/sharedFonts,
+    // CemuData/gameProfiles) exactly as GetDataPath()'s callers expect, while leaving
+    // the top level of the bundle with no name CFBundle reserves. ci/verify-ipa.sh
+    // now fails the build on both halves of this - a reserved directory name at the
+    // bundle root, and a bundle NSBundle cannot resolve - so it cannot return in some
+    // other form.
     fs::path dataPath = userDataPath;
     NSString* bundleResourcePath = [[NSBundle mainBundle] resourcePath];
     if (bundleResourcePath.length > 0)
-        dataPath = fs::path(bundleResourcePath.fileSystemRepresentation);
+        dataPath = fs::path(bundleResourcePath.fileSystemRepresentation) / "CemuData";
 
     std::set<fs::path> failedWriteAccess;
     ActiveSettings::SetPaths(/*isPortableMode=*/true, userDataPath, userDataPath, userDataPath,
