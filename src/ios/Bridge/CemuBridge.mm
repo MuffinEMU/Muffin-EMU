@@ -211,6 +211,38 @@ void cemu_bridge_log_checkpoint(const char* message) {
     // evicts OpenGL's own index-buffer cache - nothing Metal needs, so a no-op here
     // is correct, not just a stopgap.
     void LatteDraw_cleanupAfterFrame() {}
+
+    // Defined at the bottom of src/input/InputManager.cpp, behind the same
+    // CEMU_PLATFORM_IOS guard. Declared here rather than #including InputManager.h,
+    // which drags in SDL2/SDL.h, VPADController.h and the rest of the input stack - all
+    // of which build fine under CMake but would have to be made to work a second time
+    // inside Xcode's own build of this one file. Same approach, and same reason, as the
+    // IOSWindowSystem_GetLastFPS() declaration further down.
+    void IOSInput_Initialize();
+    void IOSInput_RefreshDevices();
+
+    // SDL's iOS joystick backend is a GameController.framework client, so bring it up on
+    // the main thread even though cemu_bridge_initialize() itself runs on GameManager's
+    // detached launch task. dispatch_sync is safe here specifically because that task is
+    // fire-and-forget - registerRenderSurface() spawns it and returns immediately, so the
+    // main thread is never waiting on this one and cannot deadlock against it.
+    static void cemu_bridge_bring_up_input_on_main_thread() {
+        void (^work)(void) = ^{
+            @try {
+                IOSInput_Initialize();
+            } @catch (NSException* exception) {
+                std::string message = "IOSInput_Initialize threw: ";
+                message += exception.name.UTF8String;
+                message += " - ";
+                message += exception.reason.UTF8String;
+                cemu_bridge_log_checkpoint(message.c_str());
+            }
+        };
+        if ([NSThread isMainThread])
+            work();
+        else
+            dispatch_sync(dispatch_get_main_queue(), work);
+    }
 #endif
 
 namespace {
@@ -393,6 +425,15 @@ void cemu_bridge_initialize(const char* mlcPath) {
     LaunchSettings::SetForceInterpreter(true);
 
     CafeSystem::Initialize();
+
+    // Nothing on iOS had ever constructed InputManager or loaded a controller profile:
+    // desktop Cemu does both from src/main.cpp, which this app never runs, and there is
+    // no input-settings UI to do it by hand. So SDL was never initialized and every
+    // title ran with zero emulated controllers attached. Do it here, right after
+    // CafeSystem::Initialize() - it needs ActiveSettings::SetPaths() (above) to resolve
+    // controllerProfiles/, and the loaded config for controller defaults.
+    cemu_bridge_bring_up_input_on_main_thread();
+
     setStatus("Cemu core initialized.");
 #else
     (void)mlcPath;

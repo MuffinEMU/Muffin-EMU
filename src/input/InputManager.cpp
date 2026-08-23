@@ -968,3 +968,144 @@ void InputManager::update_thread()
 		std::this_thread::yield();
 	}
 }
+
+#if defined(CEMU_PLATFORM_IOS)
+// ---------------------------------------------------------------------------------
+// iOS input bring-up - see the block comment on the declarations in InputManager.h.
+// ---------------------------------------------------------------------------------
+namespace
+{
+	// Serialises IOSInput_Initialize() against IOSInput_RefreshDevices(), which SDL's
+	// event thread can call at any moment (including while initialization is still
+	// running, since SDL queues a CONTROLLERDEVICEADDED for every controller that was
+	// already attached when SDL_Init ran).
+	//
+	// Not a recursive mutex on purpose: nothing reachable from inside the guarded region
+	// signals Events::ControllerChanged. InputManager::on_device_changed() is the only
+	// emitter, and it releases its own lock before signalling, so the callback below
+	// always arrives on a fresh call stack.
+	std::mutex s_iosInputMutex;
+	bool s_iosInputInitialized = false;
+
+	// Returns player 0's emulated GamePad, creating it if loading a profile didn't.
+	//
+	// A Wii U title expects a GamePad to exist even before anyone presses anything -
+	// VPADRead() is polled from the very first frames - so this is created
+	// unconditionally, not only when a physical controller happens to be attached.
+	std::shared_ptr<VPADController> iosEnsureGamePad()
+	{
+		auto& inputManager = InputManager::instance();
+		if (auto existing = inputManager.get_vpad_controller(0))
+			return existing;
+
+		if (!inputManager.set_controller(0, EmulatedController::Type::VPAD))
+			return {};
+
+		return inputManager.get_vpad_controller(0);
+	}
+
+	// Caller must hold s_iosInputMutex.
+	void iosBindFirstAvailableController()
+	{
+		auto gamepad = iosEnsureGamePad();
+		if (!gamepad)
+		{
+			cemuLog_log(LogType::Force, "iOS: could not create the emulated GamePad for player 1");
+			return;
+		}
+
+		// Already bound to something - either a loaded profile or an earlier pass. Don't
+		// stack a second physical controller onto the same emulated one; SDLController
+		// re-attaches itself by GUID when a device it already knows comes back, via
+		// on_device_changed() -> EmulatedController::connect().
+		if (!gamepad->get_controllers().empty())
+			return;
+
+#if HAS_SDL
+		if (!InputManager::instance().is_api_available(InputAPI::SDLController))
+		{
+			// The provider constructor threw (see SDLControllerProvider.cpp). Nothing to
+			// bind, and the emulated GamePad above is as far as this can get.
+			cemuLog_log(LogType::Force, "iOS: no SDL controller provider - the emulated GamePad has no physical controller bound to it");
+			return;
+		}
+
+		const auto provider = InputManager::instance().get_api_provider(InputAPI::SDLController);
+		if (!provider)
+			return;
+
+		auto controllers = provider->get_controllers();
+		if (controllers.empty())
+		{
+			cemuLog_log(LogType::Force, "iOS: no physical controller attached yet - connect an MFi/Bluetooth controller and it will be bound automatically");
+			return;
+		}
+
+		const auto& controller = controllers.front();
+		gamepad->add_controller(controller);
+		if (!gamepad->set_default_mapping(controller))
+		{
+			// Leaving an unmapped controller attached would look connected and do nothing,
+			// which is the most confusing possible outcome. Take it back off.
+			gamepad->remove_controller(controller);
+			cemuLog_log(LogType::Force, "iOS: no default GamePad mapping for '{}' - not binding it", controller->display_name());
+			return;
+		}
+
+		cemuLog_log(LogType::Force, "iOS: bound '{}' to the emulated GamePad using the default mapping", controller->display_name());
+#else
+		cemuLog_log(LogType::Force, "iOS: built without SDL - the emulated GamePad has no physical controller bound to it");
+#endif // HAS_SDL
+	}
+
+	// EventService::connect() binds a member function to an instance (boost::bind), so a
+	// plain free function or lambda won't do - hence this one-method type.
+	struct IOSControllerHotplugListener
+	{
+		void onControllerChanged()
+		{
+			IOSInput_RefreshDevices();
+		}
+	};
+
+	IOSControllerHotplugListener s_iosHotplugListener;
+}
+
+void IOSInput_Initialize()
+{
+	std::scoped_lock lock(s_iosInputMutex);
+	if (s_iosInputInitialized)
+		return;
+	s_iosInputInitialized = true;
+
+	// Constructing the singleton is what creates the controller providers, i.e. what
+	// actually calls SDL_Init(). Doing it here, explicitly and early, replaces the
+	// accident of whichever engine thread happened to touch InputManager first.
+	auto& inputManager = InputManager::instance();
+
+	// Desktop parity: src/main.cpp does exactly this before WindowSystem::Create(). Picks
+	// up any controllerProfiles/controller<N>.xml the user dropped in over Finder/Files
+	// (UIFileSharingEnabled is on), so a hand-written mapping still wins over the default
+	// binding applied below.
+	inputManager.load();
+
+	iosBindFirstAvailableController();
+
+	// SDL raises CONTROLLERDEVICEADDED/REMOVED on its event thread, which
+	// on_device_changed() turns into this signal. Without this hook a controller paired
+	// after startup - the common case on iOS - would never get bound to anything.
+	EventService::instance().connect<Events::ControllerChanged>(
+		&IOSControllerHotplugListener::onControllerChanged, &s_iosHotplugListener);
+
+	const auto controllerCount = inputManager.get_controller_count();
+	cemuLog_log(LogType::Force, "iOS: input initialized - {} emulated VPAD, {} emulated WPAD", controllerCount.first, controllerCount.second);
+}
+
+void IOSInput_RefreshDevices()
+{
+	std::scoped_lock lock(s_iosInputMutex);
+	if (!s_iosInputInitialized)
+		return;
+	iosBindFirstAvailableController();
+}
+#endif // CEMU_PLATFORM_IOS

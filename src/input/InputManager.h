@@ -126,3 +126,37 @@ private:
 		}
 	}
 };
+
+#if defined(CEMU_PLATFORM_IOS)
+// iOS input bring-up.
+//
+// Desktop Cemu does this work in two places that simply do not exist on iOS:
+// src/main.cpp calls InputManager::instance().load(), and the wxWidgets input-settings
+// dialog is what creates an emulated controller and binds a physical one to it. The iOS
+// app is launched by SwiftUI, so main() is never entered, and there is no input
+// configuration UI at all. The consequence is not "input needs configuring" - it is that
+// InputManager is never constructed until CafeSystem happens to touch it mid-boot, no
+// controller profile is ever loaded, and the running title sees zero emulated
+// controllers no matter what hardware is attached.
+//
+// Implemented at the bottom of InputManager.cpp (guarded the same way) rather than in a
+// file of its own, so it stays next to the InputManager internals it depends on and adds
+// nothing to the build graph for other platforms.
+
+// Constructs InputManager (which brings up the SDL controller provider, i.e. SDL_Init),
+// loads any controller profile present under <userdata>/controllerProfiles/, and - if
+// that left player 0 without a usable GamePad - creates one and binds the first attached
+// physical controller to it using Cemu's own default mapping.
+//
+// Idempotent. Call once during engine initialization, from the main thread: SDL's iOS
+// joystick backend is a GameController.framework client, so bring it up where UIKit
+// lives rather than on whichever background thread happens to boot the engine first.
+void IOSInput_Initialize();
+
+// Re-runs only the binding step, for a controller paired *after* startup - the normal
+// case on iOS, where Bluetooth controllers connect whenever they feel like it. Safe to
+// call from any thread and does nothing before IOSInput_Initialize() has run. It is
+// already wired to SDL's own device-added/removed event, so callers only need this for a
+// belt-and-braces rescan (e.g. immediately before booting a title).
+void IOSInput_RefreshDevices();
+#endif // CEMU_PLATFORM_IOS
