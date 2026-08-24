@@ -165,14 +165,22 @@ struct LaunchLogView: View {
     private func colour(for line: String) -> Color {
         let lower = line.lowercased()
         if lower.contains("crash") || lower.contains("failed") || lower.contains("error")
-            || lower.contains("dropped a frame") || lower.contains("not present") {
+            || lower.contains("dropped a frame") || lower.contains("not present")
+            // The decryption failure. Red because it is the line that explains why an
+            // encrypted game did not start, and it is the one the user can act on.
+            || lower.contains("no key in keys.txt decrypts it") {
             return MuffinTheme.blushPink
         }
         if lower.contains("presented the first frame") || lower.contains("run title")
-            || lower.contains("first swap request") || lower.contains("cleared the empty frame") {
+            || lower.contains("first swap request") || lower.contains("cleared the empty frame")
+            // "launching real title <id>" is the proof that a decrypted disc image
+            // mounted and was resolved to an actual title, as opposed to falling through
+            // to the standalone-executable path.
+            || lower.contains("launching real title") {
             return .green
         }
-        if lower.contains("ios display:") || lower.contains("ios data path") {
+        if lower.contains("ios display:") || lower.contains("ios data path")
+            || lower.contains("keys.txt reloaded") || lower.contains("title list initialized") {
             return MuffinTheme.pixelBlue
         }
         return .white.opacity(0.72)

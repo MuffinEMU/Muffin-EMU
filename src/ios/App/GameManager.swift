@@ -423,7 +423,7 @@ class GameManager: ObservableObject {
             cemu_bridge_log_checkpoint("launchGame: engine.initialize() returned [background]")
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
-            let status = EmulationEngine.bootBlocking(rpxPath: romPath)
+            let status = EmulationEngine.bootBlocking(path: romPath)
             cemu_bridge_log_checkpoint("launchGame: engine.boot() returned [background]")
 
             await MainActor.run {

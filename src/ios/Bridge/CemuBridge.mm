@@ -223,6 +223,16 @@ void cemu_bridge_log_checkpoint(const char* message) {
     void IOSInput_SetButtonState(int button, bool pressed);
     void IOSInput_ReleaseAllButtons();
 
+    // Defined in src/gui/iosgui/IOSTitleLaunch.cpp - the real-title launch path, kept on
+    // the CMake side for the same reason as the input shims above: TitleInfo.h and
+    // TitleList.h drag in pugixml, ZArchive and the config stack, all of which the CMake
+    // build already resolves and Xcode's build of this one file would have to be taught
+    // a second time. The int it returns is the IOS_TITLE_LAUNCH_* enum in that file,
+    // whose values are deliberately identical to the CemuBridgeStatus values below.
+    void IOSTitleLaunch_InitializeTitleList();
+    int IOSTitleLaunch_PrepareForegroundTitle(const char* path);
+    int IOSTitleLaunch_ReloadAndCountKeys();
+
     // SDL's iOS joystick backend is a GameController.framework client, so bring it up on
     // the main thread even though cemu_bridge_initialize() itself runs on GameManager's
     // detached launch task. dispatch_sync is safe here specifically because that task is
@@ -651,6 +661,54 @@ void cemu_bridge_log_line(const char* message) {
 #endif
 }
 
+#if defined(CEMU_CORE_AVAILABLE)
+namespace {
+    void cemu_bridge_ensure_renderer(const char* callerTag) {
+        // Shared by both boot entry points below.
+        //
+        // Last chance to have a renderer before the GPU thread starts, so retry
+        // construction here if cemu_bridge_register_render_surface()'s own attempt (which
+        // has its own @try/@catch) failed and left g_renderer null.
+        //
+        // On the actual ordering - an earlier version of this comment claimed
+        // PrepareForegroundTitleFromStandaloneRPX() -> PrepareExecutable() calls
+        // Latte_Start() and then spins on g_isGPUInitFinished before returning. It does
+        // NOT. PrepareExecutable() is CafeSystem.cpp:775 and does neither of those
+        // things; PrepareForegroundTitleFromStandaloneRPX() only mounts the RPX, derives
+        // a placeholder title id, loads the game profile and sets up memory/recompiler,
+        // then returns. Latte_Start() is called from cemu_initForGame()
+        // (CafeSystem.cpp:416), which runs later on the DETACHED TITLE THREAD spawned by
+        // LaunchForegroundTitle() -> _LaunchTitleThread(), i.e. after
+        // cemu_bridge_boot_rpx() has already returned to Swift. Anyone tracing a hang or
+        // a black screen from that old comment would have been looking at the wrong
+        // thread and the wrong function entirely.
+        //
+        // What that means practically: this retry still has to happen before
+        // LaunchForegroundTitle(), because Latte_ThreadEntry() (LatteThread.cpp) reaches
+        // g_renderer->Initialize() with no null check of its own. Same @try/@catch
+        // reasoning as above - a renderer construction failure is real (confirmed via
+        // live device crash) but shouldn't block M2's exit criteria (interpreter/OS-HLE
+        // stack), only M3 (rendering). If this also fails, g_renderer stays null and
+        // Latte_ThreadEntry() handles that case: it signals both flags callers spin on
+        // (sLatteThreadFinishedInit, g_isGPUInitFinished) without touching g_renderer,
+        // rather than null-dereferencing or leaving those waits hanging forever.
+        if (!g_renderer)
+        {
+            @try {
+                g_renderer = std::make_unique<MetalRenderer>();
+            } @catch (NSException* exception) {
+                g_renderer.reset();
+                std::string message = std::string("MetalRenderer construction (retry, ") + callerTag + ") threw: ";
+                message += exception.name.UTF8String;
+                message += " - ";
+                message += exception.reason.UTF8String;
+                cemu_bridge_log_checkpoint(message.c_str());
+            }
+        }
+    }
+}
+#endif
+
 CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     if (!rpxPath || rpxPath[0] == '\0') {
         setStatus("boot_rpx: empty path.");
@@ -660,45 +718,7 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     if (!g_initialized.load())
         CafeSystem::Initialize();
 
-    // Last chance to have a renderer before the GPU thread starts, so retry
-    // construction here if cemu_bridge_register_render_surface()'s own attempt (which
-    // has its own @try/@catch) failed and left g_renderer null.
-    //
-    // On the actual ordering - an earlier version of this comment claimed
-    // PrepareForegroundTitleFromStandaloneRPX() -> PrepareExecutable() calls
-    // Latte_Start() and then spins on g_isGPUInitFinished before returning. It does
-    // NOT. PrepareExecutable() is CafeSystem.cpp:775 and does neither of those
-    // things; PrepareForegroundTitleFromStandaloneRPX() only mounts the RPX, derives
-    // a placeholder title id, loads the game profile and sets up memory/recompiler,
-    // then returns. Latte_Start() is called from cemu_initForGame()
-    // (CafeSystem.cpp:416), which runs later on the DETACHED TITLE THREAD spawned by
-    // LaunchForegroundTitle() -> _LaunchTitleThread(), i.e. after
-    // cemu_bridge_boot_rpx() has already returned to Swift. Anyone tracing a hang or
-    // a black screen from that old comment would have been looking at the wrong
-    // thread and the wrong function entirely.
-    //
-    // What that means practically: this retry still has to happen before
-    // LaunchForegroundTitle(), because Latte_ThreadEntry() (LatteThread.cpp) reaches
-    // g_renderer->Initialize() with no null check of its own. Same @try/@catch
-    // reasoning as above - a renderer construction failure is real (confirmed via
-    // live device crash) but shouldn't block M2's exit criteria (interpreter/OS-HLE
-    // stack), only M3 (rendering). If this also fails, g_renderer stays null and
-    // Latte_ThreadEntry() handles that case: it signals both flags callers spin on
-    // (sLatteThreadFinishedInit, g_isGPUInitFinished) without touching g_renderer,
-    // rather than null-dereferencing or leaving those waits hanging forever.
-    if (!g_renderer)
-    {
-        @try {
-            g_renderer = std::make_unique<MetalRenderer>();
-        } @catch (NSException* exception) {
-            g_renderer.reset();
-            std::string message = "MetalRenderer construction (retry, boot_rpx) threw: ";
-            message += exception.name.UTF8String;
-            message += " - ";
-            message += exception.reason.UTF8String;
-            cemu_bridge_log_checkpoint(message.c_str());
-        }
-    }
+    cemu_bridge_ensure_renderer("boot_rpx");
 
     namespace fs = std::filesystem;
     cemu_bridge_log_checkpoint("boot_rpx: about to call PrepareForegroundTitleFromStandaloneRPX");
@@ -724,6 +744,77 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     (void)rpxPath;
     setStatus("Cannot boot: real engine not compiled into this build yet (ROADMAP.md M1).");
     return CEMU_BRIDGE_CORE_NOT_BUILT;
+#endif
+}
+
+CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
+    if (!path || path[0] == '\0') {
+        setStatus("boot_title: empty path.");
+        return CEMU_BRIDGE_BAD_ARG;
+    }
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!g_initialized.load())
+        CafeSystem::Initialize();
+
+    cemu_bridge_ensure_renderer("boot_title");
+
+    // Everything format-specific happens on the CMake side (IOSTitleLaunch.cpp): key
+    // cache reload, title-list registration, disc mount, and the choice between
+    // PrepareForegroundTitle() and PrepareForegroundTitleFromStandaloneRPX(). What is
+    // left here is the launch itself and turning a reason code into a sentence someone
+    // holding an iPad can act on.
+    cemu_bridge_log_checkpoint("boot_title: about to prepare title");
+    int prepared = IOSTitleLaunch_PrepareForegroundTitle(path);
+    cemu_bridge_log_checkpoint("boot_title: prepare returned");
+
+    switch (prepared) {
+        case 0: // IOS_TITLE_LAUNCH_OK
+            cemu_bridge_log_checkpoint("boot_title: about to call LaunchForegroundTitle");
+            CafeSystem::LaunchForegroundTitle();
+            cemu_bridge_log_checkpoint("boot_title: LaunchForegroundTitle returned");
+            setStatus("Title launched.");
+            return CEMU_BRIDGE_OK;
+        case 1:
+            setStatus("Invalid RPX.");
+            return CEMU_BRIDGE_INVALID_RPX;
+        case 2:
+            setStatus("Unable to mount title (bad/outdated path).");
+            return CEMU_BRIDGE_UNABLE_TO_MOUNT;
+        case 3:
+            // Deliberately says whose keys and where they go. This is the one failure
+            // the user can actually fix, and the fix is not guessable from "decryption
+            // failed".
+            setStatus("This game is encrypted and no key in keys.txt opens it. Import the keys.txt you dumped from your own Wii U in Settings, then try again.");
+            return CEMU_BRIDGE_NO_DISC_KEY;
+        case 4:
+            setStatus("This title has no usable title.tik, so its content cannot be decrypted.");
+            return CEMU_BRIDGE_NO_TITLE_TIK;
+        case 6:
+            setStatus("That looks like an update or DLC. Launch the base game instead.");
+            return CEMU_BRIDGE_BASE_NOT_FOUND;
+        default:
+            setStatus("Not a Wii U title this build can launch.");
+            return CEMU_BRIDGE_UNSUPPORTED;
+    }
+#else
+    (void)path;
+    setStatus("Cannot boot: real engine not compiled into this build yet (ROADMAP.md M1).");
+    return CEMU_BRIDGE_CORE_NOT_BUILT;
+#endif
+}
+
+int cemu_bridge_reload_and_count_keys(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    // keys.txt is resolved against the user data path that cemu_bridge_initialize()
+    // establishes, so before that call there is no file to count and any number
+    // returned here would be about the wrong directory. Say "cannot answer" rather than
+    // "zero keys" - the difference is the whole point, since zero is also what a real,
+    // empty keys.txt looks like.
+    if (!g_initialized.load())
+        return -1;
+    return IOSTitleLaunch_ReloadAndCountKeys();
+#else
+    return -1;
 #endif
 }
 
