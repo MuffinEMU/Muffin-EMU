@@ -1,0 +1,65 @@
+name: Build Rainbow Demo RPX (Homebrew)
+
+# Builds homebrew/rainbow into rainbow.rpx with the standard devkitPro Wii U toolchain.
+#
+# Same shape and the same reasoning as build-test-rpx.yml: homebrew RPX files carry no
+# encryption, so this is built from source in a plain Linux container with no relation
+# to the Xcode/iOS build in build-ios-app.yml, and no console keys are involved at any
+# point.
+#
+# Rather than reproduce wut's sample Makefile here - it is a long boilerplate that
+# tracks the toolchain and would silently rot - this copies the official sample's
+# Makefile verbatim from the wut checkout and swaps the sources. TARGET is overridden on
+# the make command line, which wins over the `:=` in the Makefile.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-rainbow-rpx:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Install wut (Wii U userland toolchain)
+        run: dkp-pacman -Sy --noconfirm wut
+
+      - name: Clone wut (for its sample Makefile)
+        run: git clone --depth 1 https://github.com/devkitPro/wut.git /tmp/wut
+
+      - name: Assemble the project
+        run: |
+          set -euo pipefail
+          cp -r /tmp/wut/samples/make/helloworld /tmp/rainbow
+          rm -f /tmp/rainbow/source/*.c /tmp/rainbow/source/*.cpp
+          cp homebrew/rainbow/source/rainbow.c /tmp/rainbow/source/
+          ls -la /tmp/rainbow /tmp/rainbow/source
+
+      - name: Build rainbow.rpx
+        run: |
+          set -euo pipefail
+          make -C /tmp/rainbow TARGET=rainbow
+          test -f /tmp/rainbow/rainbow.rpx
+
+      # A zero-byte or truncated RPX that still gets uploaded and released is exactly the
+      # failure this repo has already shipped twice. Check the file is real here, where
+      # failing is free, rather than on a device.
+      - name: Verify the built RPX
+        run: |
+          set -euo pipefail
+          RPX=/tmp/rainbow/rainbow.rpx
+          SIZE=$(stat -c%s "$RPX")
+          echo "rainbow.rpx = $SIZE bytes"
+          test "$SIZE" -gt 4096
+          # RPX is an ELF variant; it must still start with \x7fELF.
+          head -c 4 "$RPX" | od -An -tx1 | tr -d ' \n' | grep -qi '^7f454c46'
+          echo "verify: PASS"
+
+      - name: Upload rainbow.rpx
+        uses: actions/upload-artifact@v4
+        with:
+          name: rainbow-demo-rpx
+          path: /tmp/rainbow/rainbow.rpx
+          retention-days: 30
