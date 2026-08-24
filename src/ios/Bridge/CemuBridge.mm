@@ -409,6 +409,19 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // ActiveSettings, so this has to come after SetPaths() above, not before.
     cemuLog_createLogFile(false);
 
+    // cemuLog_log() filters every line against s_loggingFlagMask, and that mask starts
+    // out as Force alone. On desktop the wx frontend calls cemuLog_setActiveLoggingFlags()
+    // out of the config during startup; there is no wx here and nothing on this path was
+    // calling it, so every OSReport a title made was dropped before it reached log.txt.
+    // The cost of that is not cosmetic: it makes a homebrew ROM that narrates its own
+    // progress look exactly like one that never started, which is the worst possible
+    // failure mode for a diagnostic. CoreinitLogging is the channel OSReport ends up on;
+    // APIErrors is where the OS libs report bad parameters, which is the class of mistake
+    // homebrew actually makes. setActiveLoggingFlags ORs Force back in, so the existing
+    // Force-level boot log is unaffected.
+    cemuLog_setActiveLoggingFlags(cemuLog_getFlag(LogType::CoreinitLogging) |
+        cemuLog_getFlag(LogType::APIErrors));
+
     // Say outright whether the bundled data actually made it into this build, so a
     // device log answers the question instead of it having to be inferred from a
     // downstream symptom several hundred lines later. The error_code overloads, not
