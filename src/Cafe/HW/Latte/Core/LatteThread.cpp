@@ -194,6 +194,7 @@ int Latte_ThreadEntry()
 
 	// before doing anything with game specific shaders, we need to wait for graphic packs to finish loading
 	GraphicPack2::WaitUntilReady();
+	cemuLog_log(LogType::Force, "LatteThread: graphic packs ready");
 	// if legacy packs are enabled we cannot use the colorbuffer resolution optimization
 	LatteGPUState.allowFramebufferSizeOptimization = true;
 	for(auto& pack : GraphicPack2::GetActiveGraphicPacks())
@@ -213,10 +214,19 @@ int Latte_ThreadEntry()
 	}
 	// load disk shader cache
     LatteShaderCache_Load();
+	cemuLog_log(LogType::Force, "LatteThread: shader cache loaded");
 	// init registers
 	Latte_LoadInitialRegisters();
 	// let CPU thread know the GPU is done initializing
 	g_isGPUInitFinished = true;
+	// Everything from DrawEmptyFrame() down to here is silent at Force level, so a
+	// stall anywhere in it looks identical from a log: the empty frame stays on
+	// screen and the log simply stops. These three breadcrumbs make the last line
+	// printed name the stage that did not finish. This one also matters on its own
+	// terms - for a title that never calls GX2Init (OSScreen-only homebrew), the
+	// loop below is the only thing that ever scans OSScreen out, so "entering" it
+	// is the point where such a title can first put a pixel on the display.
+	cemuLog_log(LogType::Force, "LatteThread: entering the OSScreen scanout loop, waiting on GX2Init()");
 	// wait until CPU has called GX2Init()
 	while (LatteGPUState.gx2InitCalled == 0)
 	{
