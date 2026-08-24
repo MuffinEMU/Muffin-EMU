@@ -176,7 +176,10 @@ struct LaunchLogView: View {
             // "launching real title <id>" is the proof that a decrypted disc image
             // mounted and was resolved to an actual title, as opposed to falling through
             // to the standalone-executable path.
-            || lower.contains("launching real title") {
+            || lower.contains("launching real title")
+            // Homebrew's equivalent of the GX2 swap marker: proof that the rom itself
+            // drew a frame and handed it over, on the OSScreen path GX2 never touches.
+            || lower.contains("osscreenflipbuffersex") {
             return .green
         }
         if lower.contains("ios display:") || lower.contains("ios data path")
