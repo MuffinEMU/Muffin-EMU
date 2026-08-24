@@ -16,6 +16,11 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  # The devkitPPC container ships no bash, so Actions falls back to `sh -e {0}` for every
+  # `run:` block here. That is dash, which has no `pipefail` - `set -euo pipefail` aborts
+  # the step before the first real command. Every script below stays POSIX and uses
+  # `set -eu`; no pipeline in this workflow needs pipefail, since the last command in each
+  # is the one whose exit status matters.
   build-rainbow-rpx:
     runs-on: ubuntu-latest
     container: devkitpro/devkitppc:latest
@@ -31,7 +36,7 @@ jobs:
 
       - name: Assemble the project
         run: |
-          set -euo pipefail
+          set -eu
           cp -r /tmp/wut/samples/make/helloworld /tmp/rainbow
           rm -f /tmp/rainbow/source/*.c /tmp/rainbow/source/*.cpp
           cp homebrew/rainbow/source/rainbow.c /tmp/rainbow/source/
@@ -39,7 +44,7 @@ jobs:
 
       - name: Build rainbow.rpx
         run: |
-          set -euo pipefail
+          set -eu
           make -C /tmp/rainbow TARGET=rainbow
           test -f /tmp/rainbow/rainbow.rpx
 
@@ -48,7 +53,7 @@ jobs:
       # failing is free, rather than on a device.
       - name: Verify the built RPX
         run: |
-          set -euo pipefail
+          set -eu
           RPX=/tmp/rainbow/rainbow.rpx
           SIZE=$(stat -c%s "$RPX")
           echo "rainbow.rpx = $SIZE bytes"
