@@ -22,6 +22,14 @@ typedef enum {
     CEMU_BRIDGE_OK              = 0,   // title prepared/started (maps CafeSystem SUCCESS)
     CEMU_BRIDGE_INVALID_RPX     = 1,   // maps PREPARE_STATUS_CODE::INVALID_RPX
     CEMU_BRIDGE_UNABLE_TO_MOUNT = 2,   // maps PREPARE_STATUS_CODE::UNABLE_TO_MOUNT
+    // The disc image is real and readable, but no key in keys.txt decrypts it - either
+    // there is no keys.txt yet, or it does not contain the key for THIS disc. Cemu tries
+    // every key it has against the disc header, so this is never a "wrong key selected"
+    // problem, only a "key not present" one.
+    CEMU_BRIDGE_NO_DISC_KEY     = 3,
+    CEMU_BRIDGE_NO_TITLE_TIK    = 4,   // installed title with no usable title.tik
+    CEMU_BRIDGE_UNSUPPORTED     = 5,   // not a title and not a loadable executable
+    CEMU_BRIDGE_BASE_NOT_FOUND  = 6,   // an update/DLC was launched without its base game
     CEMU_BRIDGE_CORE_NOT_BUILT  = 100, // real engine not linked into this build yet (pre-M1)
     CEMU_BRIDGE_BAD_ARG         = 101, // null/empty path etc.
 } CemuBridgeStatus;
@@ -34,9 +42,32 @@ bool cemu_bridge_core_available(void);
 /// Safe (no-op) when the core is not available.
 void cemu_bridge_initialize(const char* mlcPath);
 
-/// Boot a standalone .rpx. Returns CEMU_BRIDGE_OK when the title starts.
+/// Boot whatever the user picked: an encrypted disc image (.wux/.wud/.iso), a Wii U
+/// archive (.wua), a dumped game folder, or a standalone homebrew .rpx. Returns
+/// CEMU_BRIDGE_OK when the title starts.
+///
+/// Real games are decrypted with the user's OWN console keys, read from keys.txt in the
+/// app's Documents/mlc directory. Nothing is bundled, derived or worked around: with no
+/// keys.txt the disc paths report CEMU_BRIDGE_NO_DISC_KEY and homebrew keeps working
+/// exactly as before. keys.txt is re-read on every call, so importing one mid-session
+/// takes effect on the next launch attempt rather than after an app restart.
+CemuBridgeStatus cemu_bridge_boot_title(const char* path);
+
+/// Boot a standalone .rpx and nothing else. Kept as the narrow homebrew entry point;
+/// cemu_bridge_boot_title() is what the app calls, and it falls through to this same
+/// engine path for an RPX/ELF.
 /// Wraps CafeSystem::PrepareForegroundTitleFromStandaloneRPX + LaunchForegroundTitle.
 CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath);
+
+/// Re-reads keys.txt and returns how many 128-bit keys the engine's own parser accepted.
+/// 0 means the file is absent, empty, or contains nothing usable. Cheap; safe to call
+/// from the UI.
+///
+/// Returns -1, meaning "cannot answer", when the engine has not been initialized yet
+/// (keys.txt is resolved against the user data path cemu_bridge_initialize() sets up) or
+/// when the core is not in this build. That is deliberately distinct from 0, which is a
+/// real answer about a real file.
+int cemu_bridge_reload_and_count_keys(void);
 
 /// M3 (ROADMAP.md): wires the real native Metal renderer to an actual on-screen
 /// surface. `uiView` must be a UIView* (bridged as void*); `width`/`height` are its
