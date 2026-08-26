@@ -20,6 +20,9 @@
 #include <execinfo.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <sys/mman.h>
+#include <libkern/OSCacheControl.h>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -307,6 +310,140 @@ namespace {
     }
 }
 
+#if defined(CEMU_CORE_AVAILABLE)
+// ---------------------------------------------------------------------------
+// BW-112: ask the kernel whether this process actually gets executable memory,
+// instead of assuming it does not.
+//
+// Every iOS build up to now called LaunchSettings::SetForceInterpreter(true)
+// unconditionally a few lines below. That was a bring-up hedge from a point where
+// nobody knew whether a sideloaded process can obtain genuine PROT_EXEC pages from
+// mmap - which is exactly what Xbyak_aarch64::MmapAllocator::alloc() needs - or
+// whether LiveContainer's JIT trick only re-flags pages that were already mapped.
+// The question was never answered, only routed around, and the hedge kept shipping.
+// Worse, PPCRecompiler.cpp:696 prints "(forced, overriding Multi-core recompiler)"
+// whenever that flag is set however it was set, so the launcher named a
+// --force-interpreter argument that nobody ever passed. That is why turning JIT on
+// in the UI looked like the app lying about it. Answer it at runtime.
+//
+// Stage 1 cannot crash: mmap one page RW, write two instructions into it, mprotect
+// it R+X. If either call is refused we have the answer plus an errno to log, and
+// the interpreter is forced with a reason attached.
+//
+// Stage 2 has to actually branch into that page, and on iOS a code-signing
+// violation arrives as an uncatchable SIGKILL - no handler, no unwind, no chance
+// to record anything afterwards. So the intent is written down BEFORE the jump: a
+// sentinel file is created and fsync'd to disk, and removed only once the thunk has
+// returned. A sentinel still present at startup therefore means "the last attempt
+// to execute our own page killed the process mid-call", and this install forces the
+// interpreter from then on rather than dying on every launch forever.
+//
+// The caveat that must not get lost: the AArch64 recompiler has only ever been
+// proven to COMPILE for iOS. It has never executed one instruction on device. A
+// passing probe makes the JIT testable. It does not make it correct and it does not
+// make it fast.
+// ---------------------------------------------------------------------------
+namespace {
+
+// AArch64, little-endian:  MOVZ X0, #42  ;  RET
+constexpr uint32_t kJitProbeCode[2] = { 0xD2800540u, 0xD65F03C0u };
+constexpr int kJitProbeExpected = 42;
+
+bool ios_probe_executable_memory(const std::filesystem::path& sentinelPath)
+{
+	namespace fs = std::filesystem;
+	std::error_code ec;
+
+	if (fs::exists(sentinelPath, ec))
+	{
+		// Deliberately not deleted. If it were cleared here, a device that SIGKILLs on
+		// execute would fail the probe, get killed, and repeat that forever; leaving it
+		// makes the failure sticky and the app launchable.
+		cemuLog_log(LogType::Force,
+			"JIT probe: a previous launch did not survive executing its own page (sentinel still present) - "
+			"this install forces the interpreter from now on. Delete {} to make it try again.",
+			_pathToUtf8(sentinelPath));
+		return false;
+	}
+
+	const size_t pageSize = (size_t)sysconf(_SC_PAGESIZE);
+	void* page = mmap(nullptr, pageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (page == MAP_FAILED)
+	{
+		const int err = errno;
+		cemuLog_log(LogType::Force,
+			"JIT probe: stage 1 failed - mmap(RW) refused (errno {} - {}). Forcing the interpreter.",
+			err, strerror(err));
+		return false;
+	}
+
+	memcpy(page, kJitProbeCode, sizeof(kJitProbeCode));
+
+	if (mprotect(page, pageSize, PROT_READ | PROT_EXEC) != 0)
+	{
+		const int err = errno;
+		munmap(page, pageSize);
+		cemuLog_log(LogType::Force,
+			"JIT probe: stage 1 failed - mprotect(R+X) refused (errno {} - {}). This process cannot get "
+			"executable pages at all, so the recompiler could never work here. Forcing the interpreter.",
+			err, strerror(err));
+		return false;
+	}
+
+	// Record the intent before jumping, because a code-signing kill is not catchable.
+	const std::string sentinelNative = sentinelPath.string();
+	const int sentinelFd = open(sentinelNative.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (sentinelFd < 0)
+	{
+		const int err = errno;
+		munmap(page, pageSize);
+		cemuLog_log(LogType::Force,
+			"JIT probe: stage 2 skipped - could not create the crash sentinel at {} (errno {} - {}). "
+			"Refusing to execute an untested page with no way to record that it killed us. Forcing the interpreter.",
+			_pathToUtf8(sentinelPath), err, strerror(err));
+		return false;
+	}
+	const char sentinelNote[] = "cemu-ios JIT probe entered stage 2 and did not return\n";
+	(void)write(sentinelFd, sentinelNote, sizeof(sentinelNote) - 1);
+	(void)fsync(sentinelFd);
+	close(sentinelFd);
+
+	cemuLog_log(LogType::Force,
+		"JIT probe: stage 1 passed (mmap + mprotect R+X accepted). Entering stage 2 - calling into the page. "
+		"If this is the last line in the log, executing our own memory killed the process.");
+
+	sys_icache_invalidate(page, sizeof(kJitProbeCode));
+
+	using JitProbeThunk = int (*)(void);
+	JitProbeThunk thunk = nullptr;
+	memcpy(&thunk, &page, sizeof(thunk));
+	const int result = thunk();
+
+	munmap(page, pageSize);
+	fs::remove(sentinelPath, ec);
+
+	if (result != kJitProbeExpected)
+	{
+		// Survived, but the page did not do what was written into it - so the memory is
+		// executable and yet not trustworthy. Not a crash, and not something to hand the
+		// recompiler either.
+		cemuLog_log(LogType::Force,
+			"JIT probe: stage 2 returned {} but {} was written into the page. Executable memory is not behaving "
+			"as written, so the recompiler is not trusted here. Forcing the interpreter.",
+			result, kJitProbeExpected);
+		return false;
+	}
+
+	cemuLog_log(LogType::Force,
+		"JIT probe: PASSED - this process can allocate, mark and execute its own pages. Leaving the recompiler "
+		"enabled. Note that the AArch64 recompiler has never executed a PPC instruction on iOS before, so this "
+		"is its first run, not a known-good path.");
+	return true;
+}
+
+}  // namespace
+#endif
+
 bool cemu_bridge_core_available(void) {
 #if defined(CEMU_CORE_AVAILABLE)
     return true;
@@ -447,7 +584,15 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // that answer - M2's exit test is about the interpreter/OS-HLE stack, not JIT
     // performance (see ROADMAP.md: the JIT and "a full PPC interpreter fallback"
     // are explicitly two distinct capabilities).
-    LaunchSettings::SetForceInterpreter(true);
+    //
+    // That open question is now asked directly rather than assumed - see
+    // ios_probe_executable_memory() above. The interpreter is still forced whenever the
+    // answer is no, or unknown, or the probe cannot be run safely; the only case that
+    // leaves the recompiler enabled is a probe that allocated a page, marked it
+    // executable, branched into it and got the expected value back.
+    const fs::path jitProbeSentinel = userDataPath / "jit_probe_did_not_return";
+    if (!ios_probe_executable_memory(jitProbeSentinel))
+        LaunchSettings::SetForceInterpreter(true);
 
     CafeSystem::Initialize();
 
