@@ -1055,7 +1055,7 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
             // Deliberately says whose keys and where they go. This is the one failure
             // the user can actually fix, and the fix is not guessable from "decryption
             // failed".
-            setStatus("This game is encrypted and no key in keys.txt opens it. Import the keys.txt you dumped from your own Wii U in Settings, then try again.");
+            setStatus("This game is encrypted and no key in keys.txt opens it. Put the keys.txt you dumped from your own Wii U in Muffin's \"keys\" folder in the Files app (or import it in Settings), then try again.");
             return CEMU_BRIDGE_NO_DISC_KEY;
         case 4:
             setStatus("This title has no usable title.tik, so its content cannot be decrypted.");

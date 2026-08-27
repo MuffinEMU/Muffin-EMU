@@ -9,24 +9,51 @@ import Foundation
 /// keys.txt is absent, encrypted games do not run and homebrew is completely unaffected.
 /// Getting the file is the user's side of the deal: it is dumped from a Wii U they own.
 ///
-/// The file lives in the same directory the engine already uses for everything else,
-/// Documents/mlc, because that is what `ActiveSettings::GetUserDataPath()` resolves to
-/// on iOS (see CemuBridge.mm's SetPaths call). UIFileSharingEnabled is on, so it is also
-/// directly visible and editable in the Files app - importing through the app is the
-/// convenient route, not the only one.
+/// The file lives in Documents/keys. UIFileSharingEnabled is on, so that folder shows up
+/// in the Files app under the app's name and a keys.txt can simply be dragged into it -
+/// importing through Settings is the convenient route, not the only one.
+///
+/// The engine itself reads `ActiveSettings::GetUserDataPath("keys.txt")`, which on iOS is
+/// Documents/mlc/keys.txt (see CemuBridge.mm's SetPaths call). Documents/mlc is correct
+/// for the engine and a poor place to ask a person to put a file: it is the emulated
+/// console's storage, full of engine state. So the two are kept in sync rather than
+/// merged - `IOSTitleLaunch_AdoptDroppedKeys()` in src/gui/iosgui/IOSTitleLaunch.cpp
+/// copies Documents/keys/keys.txt into the engine's location immediately before every
+/// key read, which is what lets a file dropped mid-session work with no relaunch. That
+/// function and this type have to agree on both paths; if either moves, both move.
 enum WiiUKeys {
-    /// Mirrors GameManager's own `documentsPath/mlc` construction, which is what gets
-    /// handed to `cemu_bridge_initialize()`. If one of these two ever moves, the other
-    /// has to move with it or the app would be writing keys where the engine does not
-    /// read them.
+    /// Where the user puts keys, and the only path this type writes to.
     static var directoryURL: URL? {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
             .first?
-            .appendingPathComponent("mlc")
+            .appendingPathComponent("keys")
     }
 
     static var fileURL: URL? {
         directoryURL?.appendingPathComponent("keys.txt")
+    }
+
+    /// Where the engine reads from - Documents/mlc, mirroring GameManager's own
+    /// `documentsPath/mlc` construction, which is what gets handed to
+    /// `cemu_bridge_initialize()`. Not written to on import (the adopt step in the
+    /// engine does that), but removal has to reach it, or deleting the keys here would
+    /// leave a copy behind that the next adopt would seed straight back.
+    private static var engineFileURL: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+            .first?
+            .appendingPathComponent("mlc")
+            .appendingPathComponent("keys.txt")
+    }
+
+    /// Creates the drop folder so it is visible in the Files app from first launch.
+    ///
+    /// The engine creates it too, but not until something asks it to read keys - and a
+    /// folder you cannot see until after you have already installed keys is no use as
+    /// the place to install them. Called at startup from GameManager.loadGames(),
+    /// alongside the same treatment the Roms folder gets.
+    static func ensureDirectoryExists() {
+        guard let directoryURL else { return }
+        try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
     }
 
     enum ImportError: LocalizedError {
@@ -135,13 +162,29 @@ enum WiiUKeys {
         return count
     }
 
-    /// Deletes the installed keys.txt.
+    /// Deletes the installed keys.txt - both the copy the user can see and the engine's.
     ///
     /// Worth having as a deliberate action rather than something only the Files app can
     /// do: these are the user's console keys sitting in their own sandbox, and they
     /// should be able to take them back out from the same screen that put them there.
+    ///
+    /// Both copies, because "remove" has to mean removed. Deleting only Documents/keys
+    /// would leave Documents/mlc/keys.txt in place, and the adopt step - which seeds the
+    /// drop folder from the engine's copy when only the engine's copy exists - would put
+    /// the keys straight back on the next launch attempt.
     static func removeKeys() throws {
-        guard let fileURL, FileManager.default.fileExists(atPath: fileURL.path) else { return }
-        try FileManager.default.removeItem(at: fileURL)
+        let manager = FileManager.default
+        var firstError: Error?
+        for url in [fileURL, engineFileURL].compactMap({ $0 }) {
+            guard manager.fileExists(atPath: url.path) else { continue }
+            do {
+                try manager.removeItem(at: url)
+            } catch {
+                // Keep going: leaving the engine's copy behind because the visible one
+                // failed to delete is the exact half-removal this exists to prevent.
+                if firstError == nil { firstError = error }
+            }
+        }
+        if let firstError { throw firstError }
     }
 }
