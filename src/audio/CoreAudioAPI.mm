@@ -8,14 +8,19 @@
 //  device, and AXOut_init() logged "can't initialize tv audio: failed to find
 //  selected device" on every boot. Titles ran silent. This is the missing backend.
 //
+// precompiled.h FIRST. This file opts out of the shared PCH (a C++ PCH cannot be
+// applied to an Objective-C++ TU), so it has to include it the ordinary way - and it
+// has to come before CoreAudioAPI.h, because IAudioAPI.h relies on it for BOOST_OS_*
+// and for Cemu's sint16/uint32 typedefs. Including it afterwards compiles on a build
+// where the PCH happens to be applied and fails everywhere else.
+#include "Common/precompiled.h"
+
 #import <Foundation/Foundation.h>
 #import <AVFoundation/AVFoundation.h>
 
 #include "audio/CoreAudioAPI.h"
 
 #if HAS_COREAUDIO
-
-#include "Common/precompiled.h"
 
 #include <algorithm>
 #include <mutex>
