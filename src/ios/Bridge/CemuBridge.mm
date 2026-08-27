@@ -16,6 +16,7 @@
 #include <string>
 #include <atomic>
 #include <mutex>
+#include <cstdarg>
 #include <signal.h>
 #include <execinfo.h>
 #include <unistd.h>
@@ -312,6 +313,58 @@ namespace {
         }
         return snapshot.c_str();
     }
+
+    // BW-184: which CPU path this launch actually got, recorded at the point the
+    // decision is made so the app can state it outright. Until this existed, the only
+    // way to know whether the recompiler was live was to read cs_flags out of a crash
+    // log after the fact - which is a thing the person who deliberately launched
+    // through a JIT enabler to turn the recompiler ON should not have to do to find out
+    // whether it worked.
+    //
+    // 0 is deliberately distinct from 1: "nothing has decided yet" (the engine has not
+    // initialized) is not the same answer as "the interpreter". Written once from
+    // whatever thread runs cemu_bridge_initialize(), read from the UI thread.
+    [[maybe_unused]] constexpr int kCpuModeUndecided   = 0;
+    [[maybe_unused]] constexpr int kCpuModeInterpreter = 1;
+    [[maybe_unused]] constexpr int kCpuModeRecompiler  = 2;
+
+    std::atomic<int> g_cpuMode{kCpuModeUndecided};
+    std::mutex g_cpuModeDetailMutex;
+    std::string g_cpuModeDetail;
+
+    // vsnprintf rather than fmt::format: this runs inside the JIT probe, before the
+    // engine is up, and a diagnostic string is not worth making dependent on Cemu's
+    // formatting library being in this translation unit.
+    [[maybe_unused]] __attribute__((format(printf, 1, 2)))
+    std::string cpuModeDetailf(const char* format, ...) {
+        char buffer[512];
+        va_list args;
+        va_start(args, format);
+        const int written = vsnprintf(buffer, sizeof(buffer), format, args);
+        va_end(args);
+        if (written < 0)
+            return std::string();
+        return std::string(buffer);
+    }
+
+    // The detail is set by the probe, which is the only code that knows WHICH of the
+    // several disqualifying conditions applied. The mode is set by the probe's caller,
+    // from its return value - two calls rather than one, so a specific reason can never
+    // be overwritten by a generic one at the call site.
+    [[maybe_unused]] void setCpuModeDetail(std::string detail) {
+        std::lock_guard<std::mutex> lock(g_cpuModeDetailMutex);
+        g_cpuModeDetail = std::move(detail);
+    }
+
+    // Same per-thread-snapshot contract as getStatus() above, for the same reason.
+    [[maybe_unused]] const char* getCpuModeDetail() {
+        static thread_local std::string snapshot;
+        {
+            std::lock_guard<std::mutex> lock(g_cpuModeDetailMutex);
+            snapshot = g_cpuModeDetail;
+        }
+        return snapshot.c_str();
+    }
 }
 
 #if defined(CEMU_CORE_AVAILABLE)
@@ -389,6 +442,9 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 			"JIT check: a previous launch enabled the recompiler and did not survive it (sentinel still "
 			"present) - this install forces the interpreter from now on. Delete {} to make it try again.",
 			_pathToUtf8(sentinelPath));
+		setCpuModeDetail("A previous launch turned the recompiler on and did not survive it, so this "
+			"install stays on the interpreter. Delete jit_enabled_boot_did_not_finish in Muffin's "
+			"Documents folder to let it try again.");
 		return false;
 	}
 
@@ -400,6 +456,8 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 		cemuLog_log(LogType::Force,
 			"JIT check: mmap(RW) refused (errno {} - {}). Forcing the interpreter.",
 			err, strerror(err));
+		setCpuModeDetail(cpuModeDetailf("The system refused to hand this process a writable page at all "
+			"(mmap errno %d - %s), so the recompiler has nowhere to emit code.", err, strerror(err)));
 		return false;
 	}
 
@@ -413,6 +471,9 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 			"JIT check: mprotect(R+X) refused (errno {} - {}). This process cannot get executable pages at "
 			"all, so the recompiler could never work here. Forcing the interpreter.",
 			mprotectErr, strerror(mprotectErr));
+		setCpuModeDetail(cpuModeDetailf("This process cannot obtain executable memory (mprotect R+X "
+			"errno %d - %s), so the recompiler could not work here under any launcher.",
+			mprotectErr, strerror(mprotectErr)));
 		return false;
 	}
 
@@ -424,6 +485,9 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 			"JIT check: csops(CS_OPS_STATUS) failed (errno {} - {}), so whether this process may execute its "
 			"own pages is unknown. Unknown is not yes. Forcing the interpreter.",
 			err, strerror(err));
+		setCpuModeDetail(cpuModeDetailf("Could not ask the kernel whether this process may execute its "
+			"own pages (csops errno %d - %s). Unknown is not yes, so the interpreter it is.",
+			err, strerror(err)));
 		return false;
 	}
 
@@ -435,6 +499,11 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 			"To get JIT here, launch through a JIT enabler (StikJIT / SideStore / LiveContainer) or install a "
 			"build that actually carries dynamic-codesigning.",
 			csFlags);
+		setCpuModeDetail(cpuModeDetailf("Executable pages are available, but CS_DEBUGGED is not set "
+			"(cs_flags 0x%08x) - the kernel would kill Muffin the moment it ran recompiled code. Launch "
+			"through StikJIT, SideStore or LiveContainer to turn the recompiler on. That is the single "
+			"biggest speed difference available here, and it needs no new build.",
+			(unsigned int)csFlags));
 		return false;
 	}
 
@@ -449,6 +518,9 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 			"JIT check: could not create the crash sentinel at {} (errno {} - {}). Refusing to hand the "
 			"recompiler an untested device with no way to record that it killed us. Forcing the interpreter.",
 			_pathToUtf8(sentinelPath), err, strerror(err));
+		setCpuModeDetail(cpuModeDetailf("JIT is permitted here, but the crash sentinel could not be "
+			"written (errno %d - %s), and the recompiler is not handed an untested device with no way to "
+			"record that it killed us.", err, strerror(err)));
 		return false;
 	}
 	const char sentinelNote[] = "cemu-ios enabled the PPC recompiler and did not reach a launched title\n";
@@ -465,6 +537,10 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 		"never run a PPC instruction on iOS, so this boot is its first run, not a known-good path; if it does "
 		"not survive, the sentinel at {} makes the next launch fall back to the interpreter.",
 		csFlags, _pathToUtf8(sentinelPath));
+	setCpuModeDetail(cpuModeDetailf("Executable pages are available and CS_DEBUGGED is set (cs_flags "
+		"0x%08x), so the PPC recompiler is enabled. Nothing was executed to prove that, on purpose - "
+		"this is the recompiler's first run on this device, not a known-good path.",
+		(unsigned int)csFlags));
 	return true;
 }
 
@@ -482,6 +558,27 @@ void ios_jit_survived_boot()
 
 }  // namespace
 #endif
+
+int cemu_bridge_cpu_mode(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return g_cpuMode.load();
+#else
+    return 0;
+#endif
+}
+
+const char* cemu_bridge_cpu_mode_detail(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    const char* detail = getCpuModeDetail();
+    // Empty means cemu_bridge_initialize() has not run yet. That is a real state with a
+    // real explanation, so give it rather than returning "".
+    if (detail[0] == '\0')
+        return "Not decided yet - the CPU path is chosen when the engine initializes, on the first launch.";
+    return detail;
+#else
+    return "This build does not contain the Cemu core, so there is no CPU path to choose.";
+#endif
+}
 
 bool cemu_bridge_core_available(void) {
 #if defined(CEMU_CORE_AVAILABLE)
@@ -631,8 +728,12 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // told to stop checking their signature. Nothing is executed to find that out,
     // because on iOS the wrong answer to that experiment is the process dying.
     const fs::path jitSentinel = userDataPath / "jit_enabled_boot_did_not_finish";
-    if (!ios_jit_is_permitted(jitSentinel))
+    const bool jitPermitted = ios_jit_is_permitted(jitSentinel);
+    if (!jitPermitted)
         LaunchSettings::SetForceInterpreter(true);
+    // The probe has already recorded WHY. This records WHICH, from the probe's own
+    // return value, so the two can never disagree about the same launch.
+    g_cpuMode.store(jitPermitted ? kCpuModeRecompiler : kCpuModeInterpreter);
 
     CafeSystem::Initialize();
 

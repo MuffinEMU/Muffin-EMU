@@ -128,6 +128,25 @@ void cemu_bridge_log_line(const char* message);
 /// available.
 double cemu_bridge_get_fps(void);
 
+/// Which CPU path this launch actually got: 0 = not decided yet (the engine has not
+/// initialized), 1 = interpreter, 2 = PPC recompiler (JIT).
+///
+/// 0 and 1 are deliberately different values. "Nothing has chosen yet" is not the same
+/// claim as "the interpreter", and a caller that collapsed them would tell the user the
+/// recompiler is off before anything had looked.
+///
+/// Decided once, in cemu_bridge_initialize(), and constant for the process after that -
+/// LaunchSettings::SetForceInterpreter() is read by PPCRecompiler_init() during title
+/// boot and nothing changes it later. Safe to call from any thread.
+int cemu_bridge_cpu_mode(void);
+
+/// The reason behind cemu_bridge_cpu_mode(), in a sentence the person holding the iPad
+/// can act on - which is the point: the answer used to be obtainable only by reading a
+/// cs_flags hex value out of a crash log. Never NULL. Points to thread-local storage the
+/// next call ON THE SAME THREAD overwrites; Swift's String(cString:) copies, so that is
+/// enough lifetime for any caller here.
+const char* cemu_bridge_cpu_mode_detail(void);
+
 bool cemu_bridge_is_title_running(void);
 void cemu_bridge_pause(void);
 void cemu_bridge_resume(void);
