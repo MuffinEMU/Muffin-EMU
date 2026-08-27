@@ -7,7 +7,7 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include <numeric> // for std::iota
 
-#if BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_BSD
+#if BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_BSD || defined(CEMU_PLATFORM_IOS)
 #include <dlfcn.h>
 #endif
 
@@ -250,7 +250,10 @@ void* dlopen_vulkan_loader()
 	vulkan_so = dlopen("libvulkan.so", RTLD_NOW);
 	if(!vulkan_so)
 		vulkan_so = dlopen("libvulkan.so.1", RTLD_NOW);
-#elif BOOST_OS_MACOS
+#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
+// Reaching this branch on iOS depends on the CEMU_PLATFORM_IOS term: BOOST_OS_MACOS is
+// 0 there, so without it every branch of this function was preprocessed away and the
+// body became a bare `return vulkan_so;` against an identifier that no longer existed.
 #if TARGET_OS_IOS
 	// iOS links MoltenVK statically (cmake/MoltenVK.cmake force-loads the archive),
 	// so there is no dylib to open -- the Vulkan entry points are already symbols in
