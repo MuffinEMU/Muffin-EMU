@@ -10,7 +10,7 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CAMetalLayer.h>
 
-void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX, float& scaleY)
+void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float requestedScale, float& scaleX, float& scaleY)
 {
 	UIView* view = (__bridge UIView*)handle;
 
@@ -32,9 +32,31 @@ void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX
 	// Nothing later re-syncs this frame either, since a manually-added sublayer
 	// doesn't auto-resize with its superlayer - a future dynamic-resize path (e.g.
 	// rotation, split view) will need to call back into this layer explicitly.
-	const float scale = (float)view.contentScaleFactor;
+	//
+	// The scale is the caller's, not view.contentScaleFactor. Those two were the same
+	// number until the render-scale setting existed, and reading the view's own value
+	// here silently discarded the setting: the app told the bridge points * 0.5x, the
+	// bridge wrote phys_width/phys_height from that, and this layer then went and built
+	// a full-native drawable anyway. On Metal that made the setting a no-op that also
+	// mislaid the output blit; on Vulkan it is worse than a no-op, because MoltenVK
+	// reports this layer's drawable size as the surface's currentExtent, ChooseSwapExtent()
+	// returns that verbatim (SwapchainInfoVk.cpp - m_desiredExtent is ignored whenever the
+	// surface names a concrete extent, which on MoltenVK is always), and
+	// UpdateSwapchainProperties() then finds GetWindowPhysSize() != getExtent() on every
+	// acquire and rebuilds the entire swapchain - WaitDeviceIdle, ImGui teardown and
+	// re-init, the lot - once per frame, for a mismatch that recreating cannot fix.
+	// Fall back to the view only when the caller has no opinion.
+	const float scale = requestedScale > 0.0f ? requestedScale : (float)view.contentScaleFactor;
 	metalLayer.frame = CGRectMake(0, 0, sizeInPoints.x, sizeInPoints.y);
 	metalLayer.contentsScale = scale;
+
+	// Set explicitly rather than left to Core Animation to derive from bounds *
+	// contentsScale. The Metal path's MetalLayerHandle sets the same value immediately
+	// after this returns (points * the scale it got back), so this changes nothing there
+	// - but the Vulkan path has no MetalLayerHandle at all: CreateCocoaSurface() hands
+	// the layer straight to vkCreateMetalSurfaceEXT, and the drawable size it happens to
+	// hold at that moment becomes the swapchain extent for the life of the surface.
+	metalLayer.drawableSize = CGSizeMake(sizeInPoints.x * scale, sizeInPoints.y * scale);
 
 	// A manually created CALayer has opaque = NO, unlike a UIView's own backing layer
 	// (UIKit drives that from UIView.isOpaque, which defaults to YES). The macOS branch
@@ -126,9 +148,15 @@ void ResizeMetalLayer(void* layer, const Vector2i& sizeInPoints, float scale)
 // this file compiling on its own. macOS's actual sizing still comes from
 // view.bounds/convertRectToBacking below, same as ever - (void) it to silence the
 // unused-parameter warning without pretending it does anything here.
-void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX, float& scaleY)
+void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float requestedScale, float& scaleX, float& scaleY)
 {
 	(void)sizeInPoints;
+	// Ignored here, and deliberately: the layer on this branch is MetalView's own backing
+	// layer, whose contentsScale AppKit owns and keeps current across display moves (see
+	// ResizeMetalLayer below). There is no render-scale setting on macOS to honour, and
+	// overriding a framework-managed contentsScale would fight the same machinery the
+	// resize path defers to. The parameter exists because the declaration is shared.
+	(void)requestedScale;
 	NSView* view = (NSView*)handle;
 
 	MetalView* childView = [[MetalView alloc] initWithFrame:view.bounds];
