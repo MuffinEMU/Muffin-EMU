@@ -21,6 +21,13 @@ struct SettingsView: View {
     /// not in this sheet's hierarchy, and AppStorage is what makes the setting outlive
     /// the sheet anyway.
     @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
+    /// Read by DisplayRouter through `RenderScale.current` at surface-registration time,
+    /// not observed by it - hence AppStorage here and a plain UserDefaults read there.
+    @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.balanced.rawValue
+
+    private var renderScale: RenderScale {
+        RenderScale(rawValue: renderScaleRaw) ?? .balanced
+    }
 
     var body: some View {
         // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
@@ -36,6 +43,29 @@ struct SettingsView: View {
                         }
                         .foregroundColor(MuffinTheme.brownDarkest)
                     }
+
+                    // The two things that decide how fast this runs, in the order they
+                    // matter. CPU mode first because it is worth more than everything
+                    // else combined and it is not a setting - it is decided by HOW the
+                    // app was launched, which is exactly why it needs saying here.
+                    Section {
+                        CPUModeRow()
+
+                        Picker("Resolution", selection: $renderScaleRaw) {
+                            ForEach(RenderScale.allCases) { scale in
+                                Text(scale.title).tag(scale.rawValue)
+                            }
+                        }
+                        .foregroundColor(MuffinTheme.brownDarkest)
+                    } header: {
+                        Text("Performance")
+                    } footer: {
+                        // Says "next launch" because it is true: the scale is baked into
+                        // the surface at registration, and a running title's swapchain is
+                        // not rebuilt underneath it.
+                        Text("\(renderScale.summary)\n\nResolution changes the size of the picture Muffin draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.")
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
 
                     // Off by default: the log is a diagnostic, not a feature, and a
                     // wall of monospaced text over the boot is not what someone who
@@ -143,6 +173,52 @@ struct SettingsView: View {
             }
         case .failure(let error):
             keysErrorMessage = error.localizedDescription
+        }
+    }
+}
+
+/// Reports whether this launch got the PPC recompiler or the interpreter, and why.
+///
+/// This exists because the answer was previously only obtainable by pulling
+/// CemuCrashLog.txt off the device and reading a cs_flags hex value out of it - an absurd
+/// thing to ask of someone whose actual question is "did launching through StikJIT do
+/// anything". The bridge decides this once at engine init, so a plain `let` read in
+/// `init` is correct; there is no path that changes it while this sheet is open.
+private struct CPUModeRow: View {
+    private let mode = cemu_bridge_cpu_mode()
+    private let detail = String(cString: cemu_bridge_cpu_mode_detail())
+
+    private var title: String {
+        switch mode {
+        case 2:  return "Recompiler (JIT)"
+        case 1:  return "Interpreter"
+        default: return "Not decided yet"
+        }
+    }
+
+    private var tint: Color {
+        // Amber rather than red for the interpreter: it is slow, but it is a working,
+        // correct emulator, and it is the state every launch has been in so far. Red
+        // would be claiming something is broken when nothing is.
+        switch mode {
+        case 2:  return MuffinTheme.pixelBlue
+        case 1:  return .orange
+        default: return MuffinTheme.brownMid
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("CPU")
+                Spacer()
+                Text(title)
+                    .foregroundColor(tint)
+            }
+            Text(detail)
+                .font(.footnote)
+                .foregroundColor(MuffinTheme.brownMid)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
