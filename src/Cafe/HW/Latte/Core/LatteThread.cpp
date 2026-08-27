@@ -104,12 +104,73 @@ bool LatteHandleOSScreen_DRC()
 	return true;
 }
 
+// Counts OSScreen scanouts. The heartbeat below reads this to tell whether
+// anything is still reaching the display during the pre-GX2Init phase.
+std::atomic<uint64> sOSScreenSwapCount = 0;
+
 void LatteThread_HandleOSScreen()
 {
 	bool swapTV = LatteHandleOSScreen_TV();
 	bool swapDRC = LatteHandleOSScreen_DRC();
 	if(swapTV || swapDRC)
+	{
+		sOSScreenSwapCount++;
 		g_renderer->SwapBuffers(swapTV, swapDRC);
+	}
+}
+
+// Progress heartbeat.
+//
+// Deliberately on its own thread rather than in the frame path. A title that
+// freezes after presenting one frame never swaps again, so a counter living in
+// the swap path goes silent at exactly the moment it is needed and reports a
+// freeze as an absence of output - which is indistinguishable from a log that
+// simply ended. This thread keeps printing regardless of what the emulated CPU
+// or GPU are doing, so the log itself separates the two failure modes:
+//
+//   GX2 frames climbing slowly   -> running past the first frame, just slow
+//   GX2 frames pinned, GX2Init reached -> stalled after handing over to GX2
+//   GX2Init never reached, OSScreen/flips climbing -> still in OSScreen boot
+//   every counter frozen         -> a real deadlock, not slowness
+//
+// This matters most under the forced interpreter, where "slow enough to look
+// hung" is the expected case and cannot otherwise be told apart from hung.
+std::thread sLatteHeartbeatThread;
+std::atomic_bool sLatteHeartbeatRunning = false;
+
+void LatteThread_HeartbeatEntry()
+{
+	SetThreadName("LatteHeartbeat");
+	const auto startTime = std::chrono::steady_clock::now();
+	auto lastTime = startTime;
+	uint64 lastFrameCount = 0;
+	uint64 lastOSScreenCount = 0;
+	uint32 lastFlipRequestCount = 0;
+	while (sLatteHeartbeatRunning)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(250));
+		const auto now = std::chrono::steady_clock::now();
+		if (now - lastTime < std::chrono::seconds(3))
+			continue;
+		const double windowSeconds = std::chrono::duration<double>(now - lastTime).count();
+		const uint64 frameCount = LatteGPUState.frameCounter;
+		const uint64 osScreenCount = sOSScreenSwapCount.load();
+		// Written by the emulated CPU, so it moving while nothing else does means the
+		// guest is alive and the stall is on our side, not the title's.
+		const uint32 flipRequestCount = LatteGPUState.osScreen.screen[0].flipRequestCount;
+		cemuLog_log(LogType::Force,
+			"Heartbeat: {:.1f}s - GX2Init {}, GX2 frames {} (+{}, {:.2f} fps), OSScreen scanouts {} (+{}), guest flip requests {} (+{})",
+			std::chrono::duration<double>(now - startTime).count(),
+			LatteGPUState.gx2InitCalled ? "reached" : "NOT reached",
+			frameCount, frameCount - lastFrameCount,
+			(double)(frameCount - lastFrameCount) / windowSeconds,
+			osScreenCount, osScreenCount - lastOSScreenCount,
+			flipRequestCount, flipRequestCount - lastFlipRequestCount);
+		lastFrameCount = frameCount;
+		lastOSScreenCount = osScreenCount;
+		lastFlipRequestCount = flipRequestCount;
+		lastTime = now;
+	}
 }
 
 int Latte_ThreadEntry()
@@ -236,6 +297,7 @@ int Latte_ThreadEntry()
 		if (Latte_GetStopSignal())
 			LatteThread_Exit();
 	}
+	cemuLog_log(LogType::Force, "LatteThread: GX2Init() reached - handing over to the command ringbuffer, GX2 frames start here");
 	LatteCP_ProcessRingbuffer();
 	cemu_assert_debug(false); // should never reach
 	return 0;
@@ -253,6 +315,15 @@ void Latte_Start()
 	sLatteThreadRunning = true;
 	sLatteThreadFinishedInit = false;
 	sLatteThread = std::thread(Latte_ThreadEntry);
+	// Assigning over a still-joinable std::thread calls std::terminate, so make sure
+	// a heartbeat left over from a previous launch is reaped before starting another.
+	if (sLatteHeartbeatThread.joinable())
+	{
+		sLatteHeartbeatRunning = false;
+		sLatteHeartbeatThread.join();
+	}
+	sLatteHeartbeatRunning = true;
+	sLatteHeartbeatThread = std::thread(LatteThread_HeartbeatEntry);
 	// wait until initialized
 	while (!sLatteThreadFinishedInit)
 	{
@@ -267,6 +338,12 @@ void Latte_Stop()
 		return;
 	sLatteThreadRunning = false;
 	_lock.unlock();
+	if (sLatteHeartbeatRunning)
+	{
+		sLatteHeartbeatRunning = false;
+		if (sLatteHeartbeatThread.joinable())
+			sLatteHeartbeatThread.join();
+	}
 	sLatteThread.join();
 }
 
