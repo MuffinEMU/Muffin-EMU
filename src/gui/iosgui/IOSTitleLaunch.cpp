@@ -47,6 +47,10 @@ enum
 	IOS_TITLE_LAUNCH_BASE_NOT_FOUND = 6,
 };
 
+// Defined below, next to the rest of the key handling. Declared here because the
+// launch path above it calls it too.
+static void IOSTitleLaunch_AdoptDroppedKeys();
+
 static std::atomic_bool sTitleListInitialized{false};
 
 // Desktop Cemu does this in src/main.cpp's CemuCommonInit(), which the iOS app never
@@ -86,6 +90,9 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 	// Re-read keys.txt before touching the file. The key cache is one-shot, and on iOS
 	// the user can import keys.txt from the Files app at any point - including after a
 	// failed boot in this same session, which is precisely when they are most likely to.
+	// The adopt step ahead of it is what makes a file dropped into Documents/keys/ count
+	// as such an import, with no app relaunch in between.
+	IOSTitleLaunch_AdoptDroppedKeys();
 	KeyCache_Reload();
 	IOSTitleLaunch_InitializeTitleList();
 
@@ -148,12 +155,92 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 	}
 }
 
+// Adopt a keys.txt the user dropped into Documents/keys/.
+//
+// The engine reads keys from ActiveSettings::GetUserDataPath("keys.txt"), which on iOS
+// resolves to Documents/mlc/keys.txt. That path is correct for the engine and useless
+// as an instruction to a person: mlc is the emulated console's storage and is full of
+// engine state, so "put your keys in there" means picking the right directory out of a
+// pile. Documents/keys/ exists so there is exactly one plainly named folder, visible in
+// Files.app via UIFileSharingEnabled, whose only job is to receive keys.txt.
+//
+// Adopted by copying rather than by repointing the engine, because KeyCache_Prepare()
+// builds its path from GetUserDataPath() in code shared with every other platform.
+// Copying keeps that untouched and is free in practice - a keys.txt is a few hundred
+// bytes. Doing it immediately before every key read (rather than once at startup) is
+// what makes a file dropped mid-session work without relaunching the app, which is the
+// same reason KeyCache_Reload() is called on every launch attempt.
+//
+// The drop folder wins when both files exist: it is the one the user can see and edit,
+// so it is the one their last action was performed on. When only the engine copy exists
+// - a keys.txt imported through Settings before this folder existed - it is seeded into
+// the drop folder instead, so those keys become visible rather than silently staying in
+// mlc. After that first seed the drop file always exists and the drop folder wins from
+// then on, so the two rules cannot ping-pong.
+static void IOSTitleLaunch_AdoptDroppedKeys()
+{
+	std::error_code ec;
+
+	const fs::path engineKeys = ActiveSettings::GetUserDataPath("keys.txt");
+	// Documents/mlc -> Documents. cemu_bridge_initialize() sets the user data path to
+	// the app's Documents/mlc, so its parent is the Documents root Files.app exposes.
+	const fs::path userDataRoot = ActiveSettings::GetUserDataPath();
+	if (userDataRoot.empty())
+		return;
+	const fs::path dropDir = userDataRoot.parent_path() / "keys";
+	const fs::path dropKeys = dropDir / "keys.txt";
+
+	// Created even while empty, and on every call rather than once: an empty folder in
+	// Files.app is itself the instruction for how to install keys, a folder that only
+	// appears once keys exist is one nobody can drop keys into, and a user who deletes
+	// it from Files.app should get it back rather than lose the mechanism.
+	fs::create_directories(dropDir, ec);
+	if (ec)
+	{
+		cemuLog_log(LogType::Force, "iOS: could not create the keys drop folder ({})", ec.message());
+		return;
+	}
+
+	std::error_code dropEc, engineEc;
+	const bool haveDrop = fs::is_regular_file(dropKeys, dropEc);
+	const bool haveEngine = fs::is_regular_file(engineKeys, engineEc);
+	if (!haveDrop && !haveEngine)
+		return; // nothing to adopt yet - but the folder now exists to be dropped into
+
+	const fs::path& from = haveDrop ? dropKeys : engineKeys;
+	const fs::path& to = haveDrop ? engineKeys : dropKeys;
+
+	// Skip a copy that would change nothing. Not a micro-optimisation: this runs before
+	// every launch attempt, and rewriting the file the engine is about to read - and its
+	// mtime with it - on every boot is worth not doing. Separate error_codes because a
+	// later successful call clears a shared one, which would hide the earlier failure.
+	if (haveDrop && haveEngine)
+	{
+		std::error_code fromSizeEc, toSizeEc, fromTimeEc, toTimeEc;
+		const auto fromSize = fs::file_size(from, fromSizeEc);
+		const auto toSize = fs::file_size(to, toSizeEc);
+		const auto fromTime = fs::last_write_time(from, fromTimeEc);
+		const auto toTime = fs::last_write_time(to, toTimeEc);
+		if (!fromSizeEc && !toSizeEc && !fromTimeEc && !toTimeEc
+			&& fromSize == toSize && fromTime <= toTime)
+			return;
+	}
+
+	ec.clear();
+	fs::copy_file(from, to, fs::copy_options::overwrite_existing, ec);
+	if (ec)
+		cemuLog_log(LogType::Force, "iOS: could not adopt keys.txt from {} ({})", _pathToUtf8(from), ec.message());
+	else
+		cemuLog_log(LogType::Force, "iOS: adopted keys.txt from {}", _pathToUtf8(from));
+}
+
 // Number of 128-bit keys currently readable from keys.txt, re-read on every call.
 // Shown in Settings so an import is confirmed by the engine's own parser rather than by
 // the file having been copied somewhere. KeyCache_GetAES128() returns nullptr past the
 // end of the cache, which is the only count the key cache exposes.
 int IOSTitleLaunch_ReloadAndCountKeys()
 {
+	IOSTitleLaunch_AdoptDroppedKeys();
 	KeyCache_Reload();
 	sint32 count = 0;
 	while (KeyCache_GetAES128(count) != nullptr)

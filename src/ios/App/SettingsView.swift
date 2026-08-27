@@ -74,7 +74,7 @@ struct SettingsView: View {
                     } header: {
                         Text("Wii U keys")
                     } footer: {
-                        Text("Optional. Encrypted games (.wux, .wud, .iso, .wua) need the AES keys dumped from your own Wii U, in a plain text file called keys.txt - one key per line. Muffin ships no keys and can't obtain them. Homebrew and already-decrypted dumps need none of this.")
+                        Text("Optional. Encrypted games (.wux, .wud, .iso, .wua) need the AES keys dumped from your own Wii U, in a plain text file called keys.txt - one key per line. Muffin ships no keys and can't obtain them. Homebrew and already-decrypted dumps need none of this.\n\nYou can also skip this button entirely: open Muffin in the Files app and drop keys.txt straight into the \"keys\" folder. It's picked up on the next launch, no restart needed.")
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 

@@ -58,6 +58,13 @@ class GameManager: ObservableObject {
 
         try? fileManager.createDirectory(at: romsPath, withIntermediateDirectories: true)
 
+        // Same treatment for the keys folder, and for the same reason the Roms folder
+        // gets it: a folder that does not exist is not a folder anyone can drop a file
+        // into. This is the first code to run that touches Documents, so it is what
+        // makes Documents/keys visible in the Files app on a fresh install, before any
+        // game has been launched and before the engine has ever been initialized.
+        WiiUKeys.ensureDirectoryExists()
+
         do {
             let contents = try fileManager.contentsOfDirectory(
                 at: romsPath,
