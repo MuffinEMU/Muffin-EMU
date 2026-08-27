@@ -731,7 +731,32 @@ void cemu_bridge_initialize(const char* mlcPath) {
     const fs::path jitSentinel = userDataPath / "jit_enabled_boot_did_not_finish";
     const bool jitPermitted = ios_jit_is_permitted(jitSentinel);
     if (!jitPermitted)
-        LaunchSettings::SetForceInterpreter(true);
+    {
+        // Multi-core, not single-core. Both run the exact same interpreter; the only
+        // difference is _LaunchTitleThread()'s OSSchedulerBegin(3) vs OSSchedulerBegin(1)
+        // - whether the Wii U's three PPC cores get three host threads or take turns on
+        // one. Every iOS launch up to and including v1.17 took turns on one, on an
+        // 8-core M2, while a title that schedules work across all three cores sat
+        // waiting on the two that were not running.
+        //
+        // SetForceInterpreter(false) matters as much as the line under it. CafeSystem.cpp
+        // gates the three-thread path on
+        //     ForceMultiCoreInterpreter() && !ForceInterpreter()
+        // so leaving the single-core flag set would silently win and this whole change
+        // would be a no-op that still logged "Single-core interpreter". Clearing it is
+        // safe because PPCRecompiler_init() returns early on
+        //     ForceInterpreter() || ForceMultiCoreInterpreter()
+        // - it never reaches Xbyak's PROT_EXEC mmap - so the recompiler stays just as
+        // off as it was, and nothing here weakens the CS_DEBUGGED reasoning above.
+        //
+        // What this is NOT: a substitute for the recompiler, or anything close to one.
+        // Interpreting Espresso stays roughly two orders of magnitude off recompiling
+        // it, and three threads of that is still three threads of that. It is simply
+        // the only CPU-side gain that exists while CS_DEBUGGED is unset, and it costs
+        // nothing to take.
+        LaunchSettings::SetForceInterpreter(false);
+        LaunchSettings::SetForceMultiCoreInterpreter(true);
+    }
     // The probe has already recorded WHY. This records WHICH, from the probe's own
     // return value, so the two can never disagree about the same launch.
     g_cpuMode.store(jitPermitted ? kCpuModeRecompiler : kCpuModeInterpreter);
