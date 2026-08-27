@@ -109,7 +109,17 @@ endif()
 
 if (APPLE)
     enable_language(OBJC OBJCXX)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.4")
+    # macOS is supported back to 13.4. iOS is NOT: cmake/ios.toolchain.cmake sets its
+    # own minimum (15.0) in the CACHE, and a normal variable set here shadows a cache
+    # entry, so this line silently won the argument and handed the whole iOS build
+    # -miphoneos-version-min=13.4. That is below the availability floor libc++ puts on
+    # the C++20 atomic wait/notify primitives (iOS 14.0), which VulkanRenderer.cpp uses
+    # for m_destroyPadSwapchainNextAcquire - so turning the Vulkan backend on for iOS
+    # made the engine stop compiling on a line that has nothing to do with Vulkan. The
+    # Metal-only build never noticed because Renderer/Vulkan was compiled out entirely.
+    if (NOT PLATFORM_IOS)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "13.4")
+    endif()
 endif()
 
 if (UNIX AND NOT APPLE)
