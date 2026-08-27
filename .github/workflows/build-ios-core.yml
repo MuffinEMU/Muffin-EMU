@@ -61,7 +61,7 @@ jobs:
 
       - name: Configure Cemu core for iOS
         # Use the REAL top-level CMakeLists.txt (it has the true iOS logic: routes the
-        # GUI to src/gui/iosgui, disables wx/OpenGL/Vulkan, enables Metal). vcpkg.cmake
+        # GUI to src/gui/iosgui, disables wx/OpenGL, enables Metal AND Vulkan-on-MoltenVK). vcpkg.cmake
         # is the primary toolchain and chainloads our iOS toolchain (SYSTEM_NAME iOS +
         # iPhoneOS sysroot). The old CMakeLists_iOS.txt was a naive stub — not used.
         run: |
