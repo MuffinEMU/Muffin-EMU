@@ -192,6 +192,10 @@ void cemu_bridge_log_checkpoint(const char* message) {
     #include "gui/interface/WindowSystem.h"
     #include "Cafe/HW/Latte/Renderer/Renderer.h"
     #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
+    #if defined(ENABLE_VULKAN)
+    #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
+    #endif
+    #include "config/CemuConfig.h"
     #include "Cafe/HW/Espresso/PPCState.h"
     #include <filesystem>
     #include <set>
@@ -611,6 +615,38 @@ void cemu_bridge_initialize(const char* mlcPath) {
 #endif
 }
 
+#if defined(CEMU_CORE_AVAILABLE)
+// Which renderer this build actually constructs on iOS.
+//
+// Until now this was hardcoded to Metal in two places. It is a choice again because
+// the native Metal backend is no longer the only iOS option: Cemu's Vulkan backend
+// now builds for iOS against a statically linked MoltenVK (see cmake/MoltenVK.cmake),
+// which is the combination the one shipping iOS Cemu build renders through.
+//
+// Selection goes through GetConfig().graphic_api, the same mechanism desktop uses,
+// so it is switchable on device without a rebuild. NOTE that CemuConfig's default for
+// that value is kVulkan, so a build off this branch with no config written is a
+// VULKAN-FIRST build, not the Metal behaviour that shipped before it. That is
+// intentional for testing this path and is the reason this branch is not
+// merge-ready as-is -- merging it should first decide what the iOS default ought to
+// be, rather than inheriting the desktop one by accident.
+//
+// kOpenGL is not reachable on iOS (ENABLE_OPENGL is forced off) and falls through to
+// Metal rather than returning nothing.
+static std::unique_ptr<Renderer> cemu_bridge_make_renderer(const char*& outName)
+{
+#if defined(ENABLE_VULKAN)
+    if (GetConfig().graphic_api == kVulkan)
+    {
+        outName = "Vulkan/MoltenVK";
+        return std::make_unique<VulkanRenderer>();
+    }
+#endif
+    outName = "Metal";
+    return std::make_unique<MetalRenderer>();
+}
+#endif
+
 void cemu_bridge_register_render_surface(void* uiView, int width, int height, double dpiScale) {
     // First thing that happens in a title launch, so it is where the launch log's
     // "+0.000s" belongs. Not the process start: under LiveContainer the guest can be
@@ -652,7 +688,11 @@ void cemu_bridge_register_render_surface(void* uiView, int width, int height, do
     // to guess blind), and proceed without a renderer.
     @try {
         if (!g_renderer)
-            g_renderer = std::make_unique<MetalRenderer>();
+        {
+            const char* rendererName = "";
+            g_renderer = cemu_bridge_make_renderer(rendererName);
+            cemu_bridge_log_checkpoint((std::string("Renderer constructed: ") + rendererName).c_str());
+        }
 
         // width/height are LOGICAL POINTS, matching the desktop caller
         // (wxgui/canvas/MetalCanvas.cpp passes a wxSize). Points get converted to
@@ -852,11 +892,12 @@ namespace {
         // rather than null-dereferencing or leaving those waits hanging forever.
         if (!g_renderer)
         {
+            const char* rendererName = "";
             @try {
-                g_renderer = std::make_unique<MetalRenderer>();
+                g_renderer = cemu_bridge_make_renderer(rendererName);
             } @catch (NSException* exception) {
                 g_renderer.reset();
-                std::string message = std::string("MetalRenderer construction (retry, ") + callerTag + ") threw: ";
+                std::string message = std::string(rendererName) + " renderer construction (retry, " + callerTag + ") threw: ";
                 message += exception.name.UTF8String;
                 message += " - ";
                 message += exception.reason.UTF8String;

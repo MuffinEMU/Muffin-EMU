@@ -152,12 +152,18 @@ option(ENABLE_CUBEB "Enabled cubeb backend" ON)
 
 option(ENABLE_WXWIDGETS "Build with wxWidgets UI (Currently required)" ON)
 
-# iOS: disable desktop-only / non-iOS backends. Metal is the renderer; there is no
-# wxWidgets UI, no OpenGL, and no Vulkan loader on iOS. Discord RPC / HIDAPI are also
-# unavailable. (Metal itself is enabled below via ENABLE_METAL default-on for Apple.)
+# iOS: disable desktop-only / non-iOS backends. There is no wxWidgets UI and no
+# OpenGL. Discord RPC / HIDAPI are also unavailable.
+#
+# Vulkan is NOT disabled here any more. The old comment on this block claimed there
+# was "no Vulkan loader on iOS", which was wrong: MoltenVK *is* the Vulkan loader on
+# iOS, and it is what the one shipping iOS Cemu build (Fin, by MuffinFluffin) runs
+# on -- its About screen credits MoltenVK, SPIRV-Cross and Vulkan-Headers, and
+# credits no Metal backend at all. So the renderer path known to work on this
+# hardware is Cemu's own Vulkan backend on top of MoltenVK, not a native Metal one.
+# Both are built for iOS now; Metal is untouched and still the default.
 if(PLATFORM_IOS)
 	set(ENABLE_WXWIDGETS OFF CACHE BOOL "" FORCE)
-	set(ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
 	set(ENABLE_OPENGL OFF CACHE BOOL "" FORCE)
 	set(ENABLE_DISCORD_RPC OFF CACHE BOOL "" FORCE)
 	set(ENABLE_HIDAPI OFF CACHE BOOL "" FORCE)
@@ -269,10 +275,16 @@ if (UNIX AND NOT APPLE AND NOT ANDROID)
 endif()
 
 if (ENABLE_VULKAN OR PLATFORM_IOS)
-	# iOS doesn't build/link Vulkan, but ~15 files #include VulkanAPI.h for shared
-	# declarations (e.g. g_vulkan_available). With VK_NO_PROTOTYPES the headers are
-	# declaration-only, so providing them lets those files parse without a loader.
+	# ~15 files #include VulkanAPI.h for shared declarations (e.g. g_vulkan_available)
+	# regardless of whether the backend is built. With VK_NO_PROTOTYPES the headers are
+	# declaration-only, so providing them lets those files parse either way.
 	include_directories("dependencies/Vulkan-Headers/include")
+endif()
+
+if (ENABLE_VULKAN AND PLATFORM_IOS)
+	# Supplies MoltenVK::MoltenVK. See cmake/MoltenVK.cmake for why this is the static
+	# archive force-loaded rather than an embedded framework.
+	include(MoltenVK)
 endif()
 
 if (ENABLE_OPENGL AND NOT PLATFORM_IOS)
