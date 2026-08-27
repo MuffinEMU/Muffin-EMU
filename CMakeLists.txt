@@ -177,10 +177,13 @@ if(PLATFORM_IOS)
 	set(ENABLE_OPENGL OFF CACHE BOOL "" FORCE)
 	set(ENABLE_DISCORD_RPC OFF CACHE BOOL "" FORCE)
 	set(ENABLE_HIDAPI OFF CACHE BOOL "" FORCE)
-	# No cubeb on iOS yet (audio backend comes later — CoreAudio/AudioUnit). Without
-	# this, src/audio would compile CubebAPI.cpp and link a cubeb::cubeb target that
-	# isn't created on iOS. Silent audio is fine for bring-up.
+	# No cubeb on iOS. Without this, src/audio would compile CubebAPI.cpp and link a
+	# cubeb::cubeb target that isn't created on iOS. iOS gets its own backend instead:
+	# src/audio/CoreAudioAPI.mm (AudioUnit RemoteIO + AVAudioSession), which is what
+	# HAS_COREAUDIO switches on. Before it existed there was no available audio API at
+	# all on this platform and every title ran silent.
 	set(ENABLE_CUBEB OFF CACHE BOOL "" FORCE)
+	add_compile_definitions("HAS_COREAUDIO=1")
 endif()
 
 find_package(Threads REQUIRED)

@@ -52,7 +52,11 @@ settings:
   # etc.) evaluates false, so RendererShaderMtl.h/MetalPipelineCache.h never even get
   # included - matches the CMake build's own -DENABLE_METAL=1 (see top-level
   # CMakeLists.txt: `if (ENABLE_METAL) add_definitions(-DENABLE_METAL=1)`).
-  GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1 CEMU_PLATFORM_IOS=1 ENABLE_METAL=1'
+  # HAS_COREAUDIO must match the CMake side (top-level CMakeLists.txt sets it for
+  # PLATFORM_IOS). Xcode compiles src/ios/Bridge/CemuBridge.mm itself rather than
+  # through CMake, so without it here the audio bring-up block in that file would
+  # preprocess away to nothing and iOS would stay silent with no error anywhere.
+  GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1 CEMU_PLATFORM_IOS=1 ENABLE_METAL=1 HAS_COREAUDIO=1'
   HEADER_SEARCH_PATHS:
     - '$(SRCROOT)/..'
     - '$(SRCROOT)/../Common/glm_stub'

@@ -196,6 +196,7 @@ void cemu_bridge_log_checkpoint(const char* message) {
     #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
     #endif
     #include "config/CemuConfig.h"
+    #include "audio/IAudioAPI.h"
     #include "Cafe/HW/Espresso/PPCState.h"
     #include <filesystem>
     #include <set>
@@ -633,6 +634,40 @@ void cemu_bridge_initialize(const char* mlcPath) {
     const fs::path jitSentinel = userDataPath / "jit_enabled_boot_did_not_finish";
     if (!ios_jit_is_permitted(jitSentinel))
         LaunchSettings::SetForceInterpreter(true);
+
+    // Audio had TWO independent faults, and fixing either one alone still leaves a
+    // silent device:
+    //
+    //   1. IAudioAPI::InitializeStatic() is only ever called from src/main.cpp - the
+    //      desktop entry point, which iOS never runs. So s_availableApis stayed all
+    //      false no matter which backends were compiled in, and the boot log's
+    //      "------- Init Audio backend -------" block reported every API as "not
+    //      supported" even for ones that were present.
+    //   2. CemuConfig defaults audio_api to 0, which is DirectSound - a Windows-only
+    //      backend. There is no iOS settings UI to change it, so even once a working
+    //      backend exists the configured API would never have matched one.
+    //
+    // Together those are the whole reason AXOut_init() logged "can't initialize tv
+    // audio: failed to find selected device" on hardware with working speakers: the
+    // device list for the configured API was empty, so no DeviceDescription could
+    // ever match tv_device.
+    IAudioAPI::InitializeStatic();
+#if HAS_COREAUDIO
+    {
+        auto& audioConfig = GetConfig();
+        if (!IAudioAPI::IsAudioAPIAvailable((IAudioAPI::AudioAPI)audioConfig.audio_api))
+        {
+            audioConfig.audio_api = IAudioAPI::CoreAudio;
+            // CoreAudioAPI::GetDevices() publishes exactly this identifier, and it is
+            // also CemuConfig's default, so this only matters if a config ever lands
+            // here with it cleared.
+            if (audioConfig.tv_device.empty())
+                audioConfig.tv_device = L"default";
+            cemuLog_log(LogType::Force,
+                "Audio: the configured backend is not available on iOS, using CoreAudio instead.");
+        }
+    }
+#endif
 
     CafeSystem::Initialize();
 
