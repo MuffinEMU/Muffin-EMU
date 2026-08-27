@@ -191,7 +191,7 @@ private struct CPUModeRow: View {
     private var title: String {
         switch mode {
         case 2:  return "Recompiler (JIT)"
-        case 1:  return "Interpreter"
+        case 1:  return "Interpreter (3 cores)"
         default: return "Not decided yet"
         }
     }
