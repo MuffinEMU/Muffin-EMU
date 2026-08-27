@@ -645,6 +645,42 @@ static std::unique_ptr<Renderer> cemu_bridge_make_renderer(const char*& outName)
     outName = "Metal";
     return std::make_unique<MetalRenderer>();
 }
+
+// True when the constructed renderer is the Vulkan one. Everything below has to ask,
+// because MetalRenderer::GetInstance() is an UNCHECKED static_cast of g_renderer -
+// calling it while a VulkanRenderer sits in that slot is undefined behaviour, not a
+// null check that fails safely.
+static bool cemu_bridge_renderer_is_vulkan()
+{
+#if defined(ENABLE_VULKAN)
+    return g_renderer && g_renderer->GetType() == RendererAPI::Vulkan;
+#else
+    return false;
+#endif
+}
+
+// Attach a just-registered UIView to whichever renderer was constructed.
+//
+// The two backends neither share this entry point nor read the view handle from the
+// same place:
+//   Metal  -> InitializeLayer(), reads window_main / window_pad
+//   Vulkan -> InitializeSurface(), which builds a SwapchainInfoVk that reads
+//             canvas_main / canvas_pad (SwapchainInfoVk.cpp) and hands that pointer to
+//             CreateCocoaSurface()
+// On desktop the canvas_* fields are filled by initHandleContextFromWxWidgetsWindow()
+// inside VulkanCanvas's constructor - a file this build does not compile - so on iOS
+// the caller has to set them itself, or the Vulkan surface gets created from nullptr.
+static void cemu_bridge_initialize_render_surface(bool mainWindow, int width, int height)
+{
+#if defined(ENABLE_VULKAN)
+    if (cemu_bridge_renderer_is_vulkan())
+    {
+        VulkanRenderer::GetInstance()->InitializeSurface({width, height}, mainWindow);
+        return;
+    }
+#endif
+    MetalRenderer::GetInstance()->InitializeLayer({width, height}, mainWindow);
+}
 #endif
 
 void cemu_bridge_register_render_surface(void* uiView, int width, int height, double dpiScale) {
@@ -668,6 +704,11 @@ void cemu_bridge_register_render_surface(void* uiView, int width, int height, do
     // synchronously at GPU-thread startup, before any frame is drawn.
     auto& windowInfo = WindowSystem::GetWindowInfo();
     windowInfo.window_main.surface = uiView;
+    // canvas_main is the field the VULKAN path reads (SwapchainInfoVk's ctor ->
+    // CreateFramebufferSurface -> CreateCocoaSurface). Metal reads window_main. Set
+    // both from the one UIView: iOS has a single view per screen, so the desktop
+    // window/canvas distinction has nothing to distinguish here.
+    windowInfo.canvas_main.surface = uiView;
     windowInfo.width = width;
     windowInfo.height = height;
     windowInfo.phys_width = (int32_t)(width * dpiScale);
@@ -715,7 +756,7 @@ void cemu_bridge_register_render_surface(void* uiView, int width, int height, do
         // (see AcquireDrawable's callers), so the symptom is a black screen with no
         // error anywhere: exactly the failure being chased. A 4x allocation
         // overshoot is not a cosmetic issue when allocation is what fails.
-        MetalRenderer::GetInstance()->InitializeLayer({width, height}, /*mainWindow=*/true);
+        cemu_bridge_initialize_render_surface(/*mainWindow=*/true, width, height);
         setStatus("Render surface registered.");
     } @catch (NSException* exception) {
         g_renderer.reset();
@@ -749,6 +790,7 @@ void cemu_bridge_register_pad_render_surface(void* uiView, int width, int height
     // false those all report 0 and the pad blit would be laid out into nothing.
     auto& windowInfo = WindowSystem::GetWindowInfo();
     windowInfo.window_pad.surface = uiView;
+    windowInfo.canvas_pad.surface = uiView;  // the Vulkan path's handle - see the TV surface above
     windowInfo.pad_width = width;
     windowInfo.pad_height = height;
     windowInfo.phys_pad_width = (int32_t)(width * dpiScale);
@@ -762,7 +804,7 @@ void cemu_bridge_register_pad_render_surface(void* uiView, int width, int height
     // pad window at all - which is a configuration it handles correctly - rather than
     // one it thinks exists but has no layer.
     @try {
-        MetalRenderer::GetInstance()->InitializeLayer({width, height}, /*mainWindow=*/false);
+        cemu_bridge_initialize_render_surface(/*mainWindow=*/false, width, height);
         cemuLog_log(LogType::Force, "iOS: GamePad (DRC) screen surface registered, {}x{} points at {}x scale", width, height, dpiScale);
     } @catch (NSException* exception) {
         windowInfo.pad_open = false;
@@ -791,6 +833,20 @@ void cemu_bridge_release_pad_render_surface(void) {
     windowInfo.phys_pad_height = 0;
     if (!g_renderer)
         return;
+#if defined(ENABLE_VULKAN)
+    if (cemu_bridge_renderer_is_vulkan())
+    {
+        // Vulkan owns no CAMetalLayer of its own to hand back - the pad's swapchain is
+        // torn down through StopUsingPadAndWait(), which blocks until the GPU thread
+        // has stopped submitting pad work. pad_open is already false above, so no new
+        // work is being laid out by the time this returns.
+        VulkanRenderer::GetInstance()->StopUsingPadAndWait();
+        windowInfo.window_pad.surface = nullptr;
+        windowInfo.canvas_pad.surface = nullptr;
+        cemuLog_log(LogType::Force, "iOS: GamePad (DRC) Vulkan pad swapchain released");
+        return;
+    }
+#endif
     // Deferred on purpose - see MetalRenderer::RequestPadLayerRelease(). The hosting
     // view must stay alive and must keep the layer as a sublayer: the C++ side only
     // drops the +1 that CreateMetalLayer() took, and the view's own reference is what
@@ -804,7 +860,9 @@ bool cemu_bridge_has_pad_render_surface(void) {
 #if defined(CEMU_CORE_AVAILABLE)
     if (!g_renderer)
         return false;
-    return MetalRenderer::GetInstance()->IsPadWindowActive();
+    // Virtual on Renderer and overridden by both backends, so ask the base pointer
+    // rather than downcasting to one of them.
+    return g_renderer->IsPadWindowActive();
 #else
     return false;
 #endif
@@ -831,6 +889,20 @@ void cemu_bridge_resize_render_surface(int width, int height, double dpiScale, b
         windowInfo.phys_pad_height = (int32_t)(height * dpiScale);
         windowInfo.pad_dpi_scale = dpiScale;
     }
+
+#if defined(ENABLE_VULKAN)
+    if (cemu_bridge_renderer_is_vulkan())
+    {
+        // Nothing to call. The window sizes were just updated above, and Vulkan's
+        // RecreateSwapchain() re-reads them itself via WindowSystem::GetWindowPhysSize()
+        // /GetPadWindowPhysSize(); it is triggered when the resized layer makes
+        // vkAcquireNextImageKHR/vkQueuePresentKHR report OUT_OF_DATE or SUBOPTIMAL.
+        // ResizeLayerAndFrame() is a Metal-only entry point and calling it here would
+        // be a bad downcast.
+        cemuLog_log(LogType::Force, "iOS: {} surface resized to {}x{} points at {}x scale - Vulkan swapchain will recreate at the next present", mainWindow ? "TV" : "GamePad", width, height, dpiScale);
+        return;
+    }
+#endif
 
     @try {
         MetalRenderer::GetInstance()->ResizeLayerAndFrame({width, height}, (float)dpiScale, mainWindow);
