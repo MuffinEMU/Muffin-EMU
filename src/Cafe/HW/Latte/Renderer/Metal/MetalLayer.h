@@ -6,7 +6,18 @@
 // caller passes a wxSize; the iOS caller passes UIScreen/view bounds). Physical pixel
 // size is always points * the backing scale returned via scaleX/scaleY, and is
 // derived exactly once, by the caller (MetalLayerHandle) - never here.
-void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float& scaleX, float& scaleY);
+//
+// `requestedScale` is the points -> pixels scale the CALLER has already committed to,
+// or <= 0 for "derive it from the host view". It is not a preference. On iOS,
+// WindowSystem's phys_width/phys_height were computed from this exact number by
+// cemu_bridge_register_render_surface(), and VulkanRenderer::UpdateSwapchainProperties()
+// compares GetWindowPhysSize() against the swapchain's real extent on every acquire. The
+// swapchain extent comes from the surface, and the surface IS this layer - so a layer
+// that picks its own scale can never agree with the size the caller recorded, and the
+// disagreement re-triggers RecreateSwapchain() every frame, forever. Passing the scale
+// in is what keeps the single number the app chose (RenderScale, on iOS) authoritative
+// all the way down to the drawable.
+void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float requestedScale, float& scaleX, float& scaleY);
 
 // Move an existing layer to a new size and backing scale, updating the CALayer's own
 // geometry as well as its contentsScale. CreateMetalLayer() sets a frame once and

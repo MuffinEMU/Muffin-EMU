@@ -6,6 +6,7 @@
 
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalLayer.h"
+#include "gui/interface/WindowSystem.h"
 
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -52,10 +53,31 @@ VkSurfaceKHR CreateCocoaSurface(VkInstance instance, void* handle)
 					(sint32)sizeInPoints.width, (sint32)sizeInPoints.height);
 	}
 
+	// Which of the two Wii U outputs this surface is for, decided by the handle itself
+	// rather than by a parameter: CreateFramebufferSurface() passes only the surface
+	// pointer, and both canvases are filled in by cemu_bridge_register_*_render_surface()
+	// from two different UIViews. When no pad view is registered canvas_pad is null, so
+	// the TV branch is also the correct default.
+	auto& windowInfo = WindowSystem::GetWindowInfo();
+	const bool isPadSurface = (windowInfo.canvas_pad.surface.load() == handle) &&
+							  (windowInfo.canvas_main.surface.load() != handle);
+
+	// The scale the app already committed to for this window - NOT the view's own
+	// contentScaleFactor. phys_width/phys_height (and therefore GetWindowPhysSize(), which
+	// UpdateSwapchainProperties() checks against the live swapchain extent on every
+	// acquire) were computed from this number. MoltenVK reports the layer's drawable size
+	// as the surface's currentExtent, and ChooseSwapExtent() returns currentExtent
+	// verbatim - so if the layer is built at a different scale the two disagree
+	// permanently and every frame tears down and rebuilds the swapchain. See
+	// CreateMetalLayer()'s contract in MetalLayer.h.
+	const float requestedScale = (float)(isPadSurface ? windowInfo.pad_dpi_scale.load()
+													  : windowInfo.dpi_scale.load());
+
 	float scaleX = 1.0f;
 	float scaleY = 1.0f;
 	void* layer = CreateMetalLayer(handle,
 								   Vector2i((sint32)sizeInPoints.width, (sint32)sizeInPoints.height),
+								   requestedScale,
 								   scaleX, scaleY);
 	if (!layer)
 	{
