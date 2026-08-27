@@ -565,8 +565,10 @@ if(NOT PLATFORM_IOS OR ENABLE_VULKAN)
 endif()
 
 # The Vulkan surface. Both platforms end up in vkCreateMetalSurfaceEXT with a
-# CAMetalLayer -- they differ only in how that layer is obtained, so each gets its
-# own implementation of CreateCocoaSurface() and VulkanRenderer.cpp needs no #ifdef.
+# CAMetalLayer -- they differ only in how that layer is obtained, so each gets its own
+# implementation of CreateCocoaSurface() behind a single call site. That call site is
+# still #ifdef'd, on BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS), because Boost.Predef
+# zeroes BOOST_OS_MACOS on iOS.
 # macOS: an AppKit NSView subclass whose +layerClass is CAMetalLayer.
 # iOS:    the UIKit CAMetalLayer the Metal backend already knows how to build.
 if(PLATFORM_IOS AND ENABLE_VULKAN)

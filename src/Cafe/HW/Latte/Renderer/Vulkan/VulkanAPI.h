@@ -149,7 +149,13 @@ VKFUNC_INSTANCE(vkCreateWaylandSurfaceKHR);
 VKFUNC_INSTANCE(vkCreateWin32SurfaceKHR);
 #endif
 
-#if BOOST_OS_MACOS
+// Both Apple platforms present Vulkan through MoltenVK and reach it via the same
+// extension. BOOST_OS_MACOS alone does not cover them: Boost.Predef checks os/ios.h
+// before os/macos.h, and the first OS it detects suppresses every later one, so on iOS
+// BOOST_OS_IOS is set and BOOST_OS_MACOS is 0 despite the target being Darwin.
+// CEMU_PLATFORM_IOS is the spelling the rest of the tree uses for this (see
+// CafeSystem.cpp and precompiled.h); it comes from add_compile_definitions.
+#if BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
 VKFUNC_INSTANCE(vkCreateMetalSurfaceEXT);
 #endif
 

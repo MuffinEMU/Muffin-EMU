@@ -10,11 +10,16 @@
 #import <UIKit/UIKit.h>
 #import <QuartzCore/CAMetalLayer.h>
 
-// iOS implementation of CreateCocoaSurface(). VulkanRenderer.cpp calls this from its
-// BOOST_OS_MACOS branch, which is also taken on iOS (Boost.Predef sets BOOST_OS_MACOS
-// for any __APPLE__ && __MACH__ target) - so giving iOS its own definition of the same
-// symbol keeps the caller free of platform #ifdefs. The macOS definition lives in
-// CocoaSurface.mm and only one of the two is ever compiled into a given build.
+// iOS implementation of CreateCocoaSurface(). The macOS definition lives in
+// CocoaSurface.mm and only one of the two is ever compiled into a given build, so both
+// platforms can share one call site in VulkanRenderer.cpp.
+//
+// That call site is guarded by BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS), and the
+// second term is load-bearing. Boost.Predef does NOT set BOOST_OS_MACOS for every __APPLE__ &&
+// __MACH__ target, as was assumed here originally: it evaluates os/ios.h first, and a
+// detected OS suppresses the rest, so on iOS BOOST_OS_MACOS is 0. With only the macOS
+// term the surface entry point went undeclared and CreateFramebufferSurface returned an
+// uninitialized handle.
 //
 // Both platforms hand a CAMetalLayer to VK_EXT_metal_surface, which is the extension
 // MoltenVK presents through. The only difference is where the layer comes from: macOS
