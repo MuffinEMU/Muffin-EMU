@@ -330,42 +330,64 @@ namespace {
 // --force-interpreter argument that nobody ever passed. That is why turning JIT on
 // in the UI looked like the app lying about it. Answer it at runtime.
 //
-// Stage 1 cannot crash: mmap one page RW, write two instructions into it, mprotect
-// it R+X. If either call is refused we have the answer plus an errno to log, and
-// the interpreter is forced with a reason attached.
+// The first version of this answered the question by executing the page. That is not
+// a probe, it is a coin flip with the process as the stake: on iOS a code-signing
+// violation arrives as an uncatchable SIGKILL, so "can we execute our own memory"
+// cannot be asked by executing our own memory - a "no" is indistinguishable from the
+// app dying. The sentinel meant to make that failure sticky only ever got written on
+// the launch that died, and the device log ends exactly there, on "Entering stage 2 -
+// calling into the page", on every single launch.
 //
-// Stage 2 has to actually branch into that page, and on iOS a code-signing
-// violation arrives as an uncatchable SIGKILL - no handler, no unwind, no chance
-// to record anything afterwards. So the intent is written down BEFORE the jump: a
-// sentinel file is created and fsync'd to disk, and removed only once the thunk has
-// returned. A sentinel still present at startup therefore means "the last attempt
-// to execute our own page killed the process mid-call", and this install forces the
-// interpreter from then on rather than dying on every launch forever.
+// So nothing is executed here any more. Two non-fatal facts are checked instead:
 //
-// The caveat that must not get lost: the AArch64 recompiler has only ever been
-// proven to COMPILE for iOS. It has never executed one instruction on device. A
-// passing probe makes the JIT testable. It does not make it correct and it does not
-// make it fast.
+//   1. mmap RW + mprotect R+X. If either is refused we have the answer plus an errno,
+//      and the recompiler could never work here regardless. The page is never entered.
+//   2. csops(CS_OPS_STATUS) & CS_DEBUGGED. Marking a page executable is not the
+//      permission that matters on iOS - the kernel checks code signing at the moment
+//      of the instruction fetch. CS_DEBUGGED is the flag that waives that check, and
+//      it is what every JIT-enabling path on a sideloaded device actually produces (a
+//      debugger attached over debugserver, StikJIT/SideStore/LiveContainer arranging
+//      the same thing, or a real dynamic-codesigning entitlement). Without it,
+//      mprotect(R+X) succeeding means nothing: the jump is still fatal. That is
+//      precisely the state this device was in - stage 1 passed, stage 2 was death.
+//
+// The sentinel stays, but it now guards the thing that is genuinely dangerous: a whole
+// boot with the recompiler live, since PPCRecompiler_init() generates and enters real
+// code long after this function has returned. It is armed only when JIT is being left
+// enabled, and disarmed once a title has actually launched. A sentinel present at
+// startup therefore means "the last launch that trusted JIT did not survive it", and
+// this install falls back to the interpreter from then on rather than dying forever.
+//
+// The caveat that must not get lost: the AArch64 recompiler has only ever been proven
+// to COMPILE for iOS. It has never executed one instruction on device. A passing check
+// makes the JIT testable. It does not make it correct and it does not make it fast.
 // ---------------------------------------------------------------------------
+
+// csops() lives in libSystem, but <sys/codesign.h> is not in the iOS SDK, so the two
+// things needed from it are declared here.
+extern "C" int csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
+
 namespace {
 
-// AArch64, little-endian:  MOVZ X0, #42  ;  RET
-constexpr uint32_t kJitProbeCode[2] = { 0xD2800540u, 0xD65F03C0u };
-constexpr int kJitProbeExpected = 42;
+constexpr unsigned int kCsOpsStatus = 0;       // CS_OPS_STATUS
+constexpr uint32_t     kCsDebugged  = 0x10000000u; // CS_DEBUGGED
 
-bool ios_probe_executable_memory(const std::filesystem::path& sentinelPath)
+std::filesystem::path g_jitSentinelPath;
+std::atomic<bool> g_jitSentinelArmed{false};
+
+bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 {
 	namespace fs = std::filesystem;
 	std::error_code ec;
 
 	if (fs::exists(sentinelPath, ec))
 	{
-		// Deliberately not deleted. If it were cleared here, a device that SIGKILLs on
-		// execute would fail the probe, get killed, and repeat that forever; leaving it
-		// makes the failure sticky and the app launchable.
+		// Deliberately not deleted. If it were cleared here, a device that dies with the
+		// recompiler live would fail, get killed, and repeat that forever; leaving it makes
+		// the failure sticky and the app launchable.
 		cemuLog_log(LogType::Force,
-			"JIT probe: a previous launch did not survive executing its own page (sentinel still present) - "
-			"this install forces the interpreter from now on. Delete {} to make it try again.",
+			"JIT check: a previous launch enabled the recompiler and did not survive it (sentinel still "
+			"present) - this install forces the interpreter from now on. Delete {} to make it try again.",
 			_pathToUtf8(sentinelPath));
 		return false;
 	}
@@ -376,73 +398,86 @@ bool ios_probe_executable_memory(const std::filesystem::path& sentinelPath)
 	{
 		const int err = errno;
 		cemuLog_log(LogType::Force,
-			"JIT probe: stage 1 failed - mmap(RW) refused (errno {} - {}). Forcing the interpreter.",
+			"JIT check: mmap(RW) refused (errno {} - {}). Forcing the interpreter.",
 			err, strerror(err));
 		return false;
 	}
 
-	memcpy(page, kJitProbeCode, sizeof(kJitProbeCode));
+	const bool canMarkExecutable = mprotect(page, pageSize, PROT_READ | PROT_EXEC) == 0;
+	const int mprotectErr = errno;
+	munmap(page, pageSize);
 
-	if (mprotect(page, pageSize, PROT_READ | PROT_EXEC) != 0)
+	if (!canMarkExecutable)
+	{
+		cemuLog_log(LogType::Force,
+			"JIT check: mprotect(R+X) refused (errno {} - {}). This process cannot get executable pages at "
+			"all, so the recompiler could never work here. Forcing the interpreter.",
+			mprotectErr, strerror(mprotectErr));
+		return false;
+	}
+
+	uint32_t csFlags = 0;
+	if (csops(getpid(), kCsOpsStatus, &csFlags, sizeof(csFlags)) != 0)
 	{
 		const int err = errno;
-		munmap(page, pageSize);
 		cemuLog_log(LogType::Force,
-			"JIT probe: stage 1 failed - mprotect(R+X) refused (errno {} - {}). This process cannot get "
-			"executable pages at all, so the recompiler could never work here. Forcing the interpreter.",
+			"JIT check: csops(CS_OPS_STATUS) failed (errno {} - {}), so whether this process may execute its "
+			"own pages is unknown. Unknown is not yes. Forcing the interpreter.",
 			err, strerror(err));
 		return false;
 	}
 
-	// Record the intent before jumping, because a code-signing kill is not catchable.
+	if ((csFlags & kCsDebugged) == 0)
+	{
+		cemuLog_log(LogType::Force,
+			"JIT check: pages can be marked executable, but CS_DEBUGGED is not set (cs_flags 0x{:08x}), so the "
+			"kernel kills this process the moment it fetches an instruction from one. Forcing the interpreter. "
+			"To get JIT here, launch through a JIT enabler (StikJIT / SideStore / LiveContainer) or install a "
+			"build that actually carries dynamic-codesigning.",
+			csFlags);
+		return false;
+	}
+
+	// Arm the sentinel for the whole recompiler-enabled boot, not for a single call.
+	// Disarmed by ios_jit_survived_boot() once a title has actually launched.
 	const std::string sentinelNative = sentinelPath.string();
 	const int sentinelFd = open(sentinelNative.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
 	if (sentinelFd < 0)
 	{
 		const int err = errno;
-		munmap(page, pageSize);
 		cemuLog_log(LogType::Force,
-			"JIT probe: stage 2 skipped - could not create the crash sentinel at {} (errno {} - {}). "
-			"Refusing to execute an untested page with no way to record that it killed us. Forcing the interpreter.",
+			"JIT check: could not create the crash sentinel at {} (errno {} - {}). Refusing to hand the "
+			"recompiler an untested device with no way to record that it killed us. Forcing the interpreter.",
 			_pathToUtf8(sentinelPath), err, strerror(err));
 		return false;
 	}
-	const char sentinelNote[] = "cemu-ios JIT probe entered stage 2 and did not return\n";
+	const char sentinelNote[] = "cemu-ios enabled the PPC recompiler and did not reach a launched title\n";
 	(void)write(sentinelFd, sentinelNote, sizeof(sentinelNote) - 1);
 	(void)fsync(sentinelFd);
 	close(sentinelFd);
 
-	cemuLog_log(LogType::Force,
-		"JIT probe: stage 1 passed (mmap + mprotect R+X accepted). Entering stage 2 - calling into the page. "
-		"If this is the last line in the log, executing our own memory killed the process.");
-
-	sys_icache_invalidate(page, sizeof(kJitProbeCode));
-
-	using JitProbeThunk = int (*)(void);
-	JitProbeThunk thunk = nullptr;
-	memcpy(&thunk, &page, sizeof(thunk));
-	const int result = thunk();
-
-	munmap(page, pageSize);
-	fs::remove(sentinelPath, ec);
-
-	if (result != kJitProbeExpected)
-	{
-		// Survived, but the page did not do what was written into it - so the memory is
-		// executable and yet not trustworthy. Not a crash, and not something to hand the
-		// recompiler either.
-		cemuLog_log(LogType::Force,
-			"JIT probe: stage 2 returned {} but {} was written into the page. Executable memory is not behaving "
-			"as written, so the recompiler is not trusted here. Forcing the interpreter.",
-			result, kJitProbeExpected);
-		return false;
-	}
+	g_jitSentinelPath = sentinelPath;
+	g_jitSentinelArmed.store(true);
 
 	cemuLog_log(LogType::Force,
-		"JIT probe: PASSED - this process can allocate, mark and execute its own pages. Leaving the recompiler "
-		"enabled. Note that the AArch64 recompiler has never executed a PPC instruction on iOS before, so this "
-		"is its first run, not a known-good path.");
+		"JIT check: PASSED - executable pages are available and CS_DEBUGGED is set (cs_flags 0x{:08x}), so the "
+		"recompiler is left enabled. Nothing was executed to prove that, on purpose. The AArch64 recompiler has "
+		"never run a PPC instruction on iOS, so this boot is its first run, not a known-good path; if it does "
+		"not survive, the sentinel at {} makes the next launch fall back to the interpreter.",
+		csFlags, _pathToUtf8(sentinelPath));
 	return true;
+}
+
+// Called once a title has actually launched with the recompiler live. Until this runs,
+// the sentinel on disk says the last JIT boot did not finish.
+void ios_jit_survived_boot()
+{
+	if (!g_jitSentinelArmed.exchange(false))
+		return;
+	std::error_code ec;
+	std::filesystem::remove(g_jitSentinelPath, ec);
+	cemuLog_log(LogType::Force,
+		"JIT check: a title launched with the recompiler enabled - clearing the crash sentinel.");
 }
 
 }  // namespace
@@ -590,12 +625,13 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // are explicitly two distinct capabilities).
     //
     // That open question is now asked directly rather than assumed - see
-    // ios_probe_executable_memory() above. The interpreter is still forced whenever the
-    // answer is no, or unknown, or the probe cannot be run safely; the only case that
-    // leaves the recompiler enabled is a probe that allocated a page, marked it
-    // executable, branched into it and got the expected value back.
-    const fs::path jitProbeSentinel = userDataPath / "jit_probe_did_not_return";
-    if (!ios_probe_executable_memory(jitProbeSentinel))
+    // ios_jit_is_permitted() above. The interpreter is forced whenever the answer is no,
+    // or unknown, or a previous JIT-enabled launch died; the only case that leaves the
+    // recompiler enabled is executable pages being obtainable AND the kernel having been
+    // told to stop checking their signature. Nothing is executed to find that out,
+    // because on iOS the wrong answer to that experiment is the process dying.
+    const fs::path jitSentinel = userDataPath / "jit_enabled_boot_did_not_finish";
+    if (!ios_jit_is_permitted(jitSentinel))
         LaunchSettings::SetForceInterpreter(true);
 
     CafeSystem::Initialize();
@@ -1000,6 +1036,9 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
             cemu_bridge_log_checkpoint("boot_rpx: about to call LaunchForegroundTitle");
             CafeSystem::LaunchForegroundTitle();
             cemu_bridge_log_checkpoint("boot_rpx: LaunchForegroundTitle returned");
+            // Reaching here means a recompiler-enabled boot got a title running, so the
+            // sentinel armed by ios_jit_is_permitted() has nothing left to warn about.
+            ios_jit_survived_boot();
             setStatus("Title launched.");
             return CEMU_BRIDGE_OK;
         case CafeSystem::PREPARE_STATUS_CODE::INVALID_RPX:
@@ -1043,6 +1082,9 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
             cemu_bridge_log_checkpoint("boot_title: about to call LaunchForegroundTitle");
             CafeSystem::LaunchForegroundTitle();
             cemu_bridge_log_checkpoint("boot_title: LaunchForegroundTitle returned");
+            // Reaching here means a recompiler-enabled boot got a title running, so the
+            // sentinel armed by ios_jit_is_permitted() has nothing left to warn about.
+            ios_jit_survived_boot();
             setStatus("Title launched.");
             return CEMU_BRIDGE_OK;
         case 1:
