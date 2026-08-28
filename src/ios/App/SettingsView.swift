@@ -103,7 +103,7 @@ struct SettingsView: View {
                     } header: {
                         Text("Emulated clock")
                     } footer: {
-                        Text("\(timebase.summary)\n\nThis changes how fast the game believes time is passing, not how fast Muffin runs. Without the recompiler the emulated CPU is far slower than the console's, while the game's own clock keeps up with real time - so every deadline it sets itself is already overdue, and it can spend all its time on overdue work and never draw. Slowing its clock puts those deadlines back in reach. Nothing about the emulation is made less accurate by it, and it takes effect straight away.")
+                        Text("\(timebase.summary)\n\nUntil you pick a value here, Muffin finds one itself: if a game has not reached its graphics handover after twelve seconds it steps its own clock down a notch, as far as 1/64, and the log says which value freed it. Choosing anything on this list stops that search for good and keeps your choice.\n\nThis changes how fast the game believes time is passing, not how fast Muffin runs. Without the recompiler the emulated CPU is far slower than the console's, while the game's own clock keeps up with real time - so every deadline it sets itself is already overdue, and it can spend all its time on overdue work and never draw. Slowing its clock puts those deadlines back in reach. Nothing about the emulation is made less accurate by it, and it takes effect straight away.")
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 

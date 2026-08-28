@@ -15,6 +15,8 @@
 
 #include <string>
 #include <atomic>
+#include <thread>
+#include <chrono>
 #include <mutex>
 #include <cstdarg>
 #include <signal.h>
@@ -369,6 +371,11 @@ namespace {
         return snapshot.c_str();
     }
 }
+
+// Defined further down, next to the rest of the timebase code, but called from
+// cemu_bridge_boot_title() and cemu_bridge_shutdown_title() which both appear before it.
+static void ios_timebase_ladder_start();
+static void ios_timebase_ladder_stop();
 
 #if defined(CEMU_CORE_AVAILABLE)
 // ---------------------------------------------------------------------------
@@ -1261,6 +1268,10 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
             // Reaching here means a recompiler-enabled boot got a title running, so the
             // sentinel armed by ios_jit_is_permitted() has nothing left to warn about.
             ios_jit_survived_boot();
+            // After the launch call, not before: the ladder measures time from a title that
+            // is actually running, and starting it during prepare would spend its first step
+            // on disc mounting rather than on anything the clock affects.
+            ios_timebase_ladder_start();
             setStatus("Title launched.");
             return CEMU_BRIDGE_OK;
         case CafeSystem::PREPARE_STATUS_CODE::INVALID_RPX:
@@ -1420,6 +1431,157 @@ int cemu_bridge_get_timebase_shift(void) {
 #endif
 }
 
+// The automatic clock ladder. See cemu_bridge_set_timebase_auto_enabled() in
+// CemuBridge.h for why this exists rather than leaving the picker to do the job.
+//
+// The floor is 9 (1/64) rather than kTimebaseShiftMax, because past that the search has
+// stopped being a search: a title that will not reach GX2Init with its clock at a
+// sixty-fourth is not being held up by its clock, and stepping further only makes the
+// console slower while proving nothing. The ladder says so and stops instead of running
+// the number down to where the guest's clock stops advancing at all.
+static constexpr int kLadderFloorShift = 9;    // 1/64 real time
+static constexpr int kLadderStepSeconds = 12;  // long enough that a slow boot is not mistaken for a stuck one
+
+static std::atomic<bool> g_timebaseAutoEnabled{true};
+static std::atomic<bool> g_timebaseLadderRunning{false};
+static std::thread g_timebaseLadderThread;
+// Guards the thread object itself, not the flag. Launch runs on GameManager's background
+// queue and shutdown can come from the UI thread, so without this a shutdown arriving
+// during a launch would be reading a std::thread another thread is assigning to.
+static std::mutex g_timebaseLadderMutex;
+
+void cemu_bridge_set_timebase_auto_enabled(bool enabled) {
+    const bool was = g_timebaseAutoEnabled.exchange(enabled);
+    if (was == enabled)
+        return;
+#if defined(CEMU_CORE_AVAILABLE)
+    // Logged because a run where the ladder moved the clock and a run where a person did
+    // are not the same experiment, and the log is the only place that distinction survives.
+    cemuLog_log(LogType::Force, "Emulated timebase: automatic clock ladder {}",
+        enabled ? "enabled" : "disabled - a value was chosen by hand, so it stands");
+#endif
+}
+
+bool cemu_bridge_timebase_auto_enabled(void) {
+    return g_timebaseAutoEnabled.load();
+}
+
+#if defined(CEMU_CORE_AVAILABLE)
+static void ios_timebase_ladder_entry() {
+    const auto start = std::chrono::steady_clock::now();
+    auto lastStep = start;
+    // Baselines, taken from the first poll rather than assumed to be zero. Compared against
+    // literal zero instead, a title that presented exactly one frame and then stopped - the
+    // precise symptom this whole thing exists for - would read as "advancing" on the first
+    // pass and the ladder would congratulate itself and quit before taking a single step.
+    bool baselineTaken = false;
+    unsigned long long baseGX2Frames = 0;
+    unsigned long long baseOSScreenScanouts = 0;
+    unsigned int baseGuestFlipRequests = 0;
+    while (g_timebaseLadderRunning.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (!g_timebaseLadderRunning.load())
+            return;
+        // Checked every pass, not just at the start: this is what makes opening Settings
+        // mid-boot take effect. The user's pick wins immediately and the ladder does not
+        // get to take another step on top of it.
+        if (!g_timebaseAutoEnabled.load())
+            return;
+        if (!CafeSystem::IsTitleRunning())
+            return;
+
+        CemuBridgeProgress progress{};
+        cemu_bridge_get_progress(&progress);
+        const auto now = std::chrono::steady_clock::now();
+        const double elapsed = std::chrono::duration<double>(now - start).count();
+
+        if (!baselineTaken) {
+            baselineTaken = true;
+            baseGX2Frames = progress.gx2_frame_count;
+            baseOSScreenScanouts = progress.os_screen_scanouts;
+            baseGuestFlipRequests = progress.guest_flip_requests;
+        }
+
+        // Success, and the only line in this whole file worth reading first.
+        //
+        // More than one signal, because "made progress" is not the same question as "reached
+        // GX2Init". A homebrew title on OSScreen never calls GX2Init at all, so testing that
+        // alone would walk a title that is visibly scanning out down to the floor and then
+        // report it as a failure - the opposite of what its own counters say. Movement in any
+        // of them means the guest is past the point this exists to get it past.
+        //
+        // gx2_init_reached is the exception and is read as a latch, not compared to a
+        // baseline: if it is already true when the ladder starts, there is nothing here left
+        // to search for.
+        const bool advancing = progress.gx2_init_reached ||
+                               progress.gx2_frame_count > baseGX2Frames ||
+                               progress.os_screen_scanouts > baseOSScreenScanouts ||
+                               progress.guest_flip_requests > baseGuestFlipRequests;
+        if (advancing) {
+            const int shift = cemu_bridge_get_timebase_shift();
+            cemuLog_log(LogType::Force,
+                "Emulated timebase: the title is advancing ({}) after {:.1f}s with the clock at shift {} "
+                "({:.4g}x real time). Ladder stopped - that is the value that worked.",
+                progress.gx2_init_reached ? "GX2Init reached" : "guest output moving",
+                elapsed, shift, 8.0 / (double)(1u << shift));
+            return;
+        }
+
+        if (now - lastStep < std::chrono::seconds(kLadderStepSeconds))
+            continue;
+        lastStep = now;
+
+        const int shift = cemu_bridge_get_timebase_shift();
+        if (shift >= kLadderFloorShift) {
+            PPCGuestLiveness guest{};
+            PPCCore_getLiveness(guest);
+            cemuLog_log(LogType::Force,
+                "Emulated timebase: the ladder is at its floor - shift {} (1/64 real time) - and after "
+                "{:.1f}s the title still has not reached GX2Init ({} guest instructions retired). The "
+                "guest's clock is not what is holding this title, so the ladder stops rather than making "
+                "the console slower to no purpose.",
+                shift, elapsed, guest.cyclesRetired);
+            return;
+        }
+
+        cemuLog_log(LogType::Force,
+            "Emulated timebase: no GX2Init after {:.1f}s, stepping the guest's clock down to shift {} "
+            "({:.4g}x real time). This is the ladder searching, not a value anyone chose.",
+            elapsed, shift + 1, 8.0 / (double)(1u << (shift + 1)));
+        cemu_bridge_set_timebase_shift(shift + 1);
+    }
+}
+#endif
+
+// Started once a title is actually running, and joined before another can start, so two
+// ladders can never be walking the same clock in opposite directions.
+static void ios_timebase_ladder_stop() {
+#if defined(CEMU_CORE_AVAILABLE)
+    std::lock_guard lock{g_timebaseLadderMutex};
+    g_timebaseLadderRunning.store(false);
+    if (g_timebaseLadderThread.joinable())
+        g_timebaseLadderThread.join();
+#endif
+}
+
+static void ios_timebase_ladder_start() {
+#if defined(CEMU_CORE_AVAILABLE)
+    ios_timebase_ladder_stop();
+    if (!g_timebaseAutoEnabled.load())
+        return;
+    // Not under the recompiler. There the guest's clock and the emulated CPU are in roughly
+    // the right relationship already, and slowing the clock would be a pure loss.
+    if (g_cpuMode.load() != kCpuModeInterpreter)
+        return;
+    std::lock_guard lock{g_timebaseLadderMutex};
+    g_timebaseLadderRunning.store(true);
+    g_timebaseLadderThread = std::thread(ios_timebase_ladder_entry);
+    cemuLog_log(LogType::Force,
+        "Emulated timebase: automatic clock ladder armed - if the title has not reached GX2Init after "
+        "{}s the clock steps down one notch, to a floor of 1/64 real time.", kLadderStepSeconds);
+#endif
+}
+
 bool cemu_bridge_is_title_running(void) {
 #if defined(CEMU_CORE_AVAILABLE)
     return CafeSystem::IsTitleRunning();
@@ -1442,6 +1604,7 @@ void cemu_bridge_resume(void) {
 
 void cemu_bridge_shutdown_title(void) {
 #if defined(CEMU_CORE_AVAILABLE)
+    ios_timebase_ladder_stop();
     CafeSystem::ShutdownTitle();
     setStatus("Title shut down.");
 #endif

@@ -88,18 +88,29 @@ enum TimebaseScale: Int, CaseIterable, Identifiable {
     }
 
     /// Pushes a chosen value to the engine and remembers it. Safe mid-title.
+    ///
+    /// Turning the ladder off is part of applying, not a separate step someone could
+    /// forget: a search that keeps stepping after a person has stated what they want is
+    /// not a convenience, it is the app overruling them. Once this is called the chosen
+    /// value stands for good, including on every later launch.
     static func apply(_ scale: TimebaseScale) {
         UserDefaults.standard.set(scale.rawValue, forKey: storageKey)
+        cemu_bridge_set_timebase_auto_enabled(false)
         cemu_bridge_set_timebase_shift(Int32(scale.rawValue))
     }
 
-    /// Re-applies a stored choice after the engine has initialized, and otherwise leaves
-    /// the engine's own default alone. Call once, immediately after
-    /// `cemu_bridge_initialize()`.
+    /// Re-applies a stored choice after the engine has initialized, and otherwise arms the
+    /// automatic ladder. These are the same decision seen from two sides: either the user
+    /// has told us what the clock should be, in which case it is set and nothing searches,
+    /// or nobody has, in which case the engine is free to find out for itself.
     static func applyStoredChoiceIfAny() {
         guard hasExplicitChoice,
               let value = TimebaseScale(rawValue: UserDefaults.standard.integer(forKey: storageKey))
-        else { return }
+        else {
+            cemu_bridge_set_timebase_auto_enabled(true)
+            return
+        }
+        cemu_bridge_set_timebase_auto_enabled(false)
         cemu_bridge_set_timebase_shift(Int32(value.rawValue))
     }
 }
