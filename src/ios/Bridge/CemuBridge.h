@@ -184,6 +184,28 @@ void cemu_bridge_set_timebase_shift(int shift);
 /// The shift currently in effect. See above for the scale.
 int cemu_bridge_get_timebase_shift(void);
 
+/// Turns the automatic clock ladder on or off.
+///
+/// The Emulated clock setting above is only useful if somebody knows which value to pick,
+/// and nothing knows that in advance - it depends on how tight a particular title's own
+/// deadlines are. Left to a person it means launch, wait, decide it is still stuck, open
+/// Settings, step down one, wait again. On a port with one test device that loop is the
+/// bottleneck, not the code.
+///
+/// So the engine walks it itself. While a title is booting on the interpreter and has not
+/// reached GX2Init, the ladder steps the guest's clock down one notch every twelve seconds
+/// to a floor of 1/64, and stops the moment GX2 is reached - logging which value got there,
+/// which is a measurement this port has never had.
+///
+/// Enabled unless the user has chosen a value by hand; choosing one turns it off for good,
+/// because a search that overrides a deliberate choice is a bug rather than a convenience.
+/// It never runs under the recompiler, where the premise does not hold. Stepping is always
+/// downward, so a step that was not needed costs slow motion, never a hang.
+void cemu_bridge_set_timebase_auto_enabled(bool enabled);
+
+/// Whether the ladder is allowed to run. See above.
+bool cemu_bridge_timebase_auto_enabled(void);
+
 /// Which CPU path this launch actually got: 0 = not decided yet (the engine has not
 /// initialized), 1 = interpreter, 2 = PPC recompiler (JIT).
 ///
