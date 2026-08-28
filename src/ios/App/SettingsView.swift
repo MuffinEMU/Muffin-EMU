@@ -20,7 +20,7 @@ struct SettingsView: View {
     /// Shared with EmulatorViewOptimized by key, not by binding - the emulator view is
     /// not in this sheet's hierarchy, and AppStorage is what makes the setting outlive
     /// the sheet anyway.
-    @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
+    @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = true
     /// Read by DisplayRouter through `RenderScale.current` at surface-registration time,
     /// not observed by it - hence AppStorage here and a plain UserDefaults read there.
     @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.balanced.rawValue
@@ -107,11 +107,21 @@ struct SettingsView: View {
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 
-                    // Off by default: the log is a diagnostic, not a feature, and a
-                    // wall of monospaced text over the boot is not what someone who
-                    // just wants to play a game should meet. Collection is always on
-                    // regardless (see IOSLiveLog.h) - gating that too would mean the
-                    // toggle could only ever show the boot AFTER the one that failed.
+                    // ON by default, which is the reverse of what shipping software
+                    // should do, and deliberate while this port is what it is. The
+                    // release notes say it plainly: no Wii U title has been shown to
+                    // boot. Until one does, the log is not a diagnostic sitting on top
+                    // of the feature - it IS the feature, and the only thing a failed
+                    // launch produces that is worth anything.
+                    //
+                    // The concrete reason it flipped: four builds went out asking for a
+                    // boot log and none came back, because seeing one first required
+                    // knowing this toggle existed and finding it. On screen it can just
+                    // be screenshotted. Turn it off here once a game actually boots.
+                    //
+                    // Collection is always on regardless (see IOSLiveLog.h) - gating
+                    // that too would mean the toggle could only ever show the boot AFTER
+                    // the one that failed.
                     Section {
                         Toggle(isOn: $showLaunchLog) {
                             Label("Show launch log", systemImage: "text.alignleft")
