@@ -200,6 +200,7 @@ void cemu_bridge_log_checkpoint(const char* message) {
     #include "config/CemuConfig.h"
     #include "audio/IAudioAPI.h"
     #include "Cafe/HW/Espresso/PPCState.h"
+    #include "Common/version.h"
     #include <filesystem>
     #include <set>
 
@@ -430,6 +431,30 @@ constexpr uint32_t     kCsDebugged  = 0x10000000u; // CS_DEBUGGED
 std::filesystem::path g_jitSentinelPath;
 std::atomic<bool> g_jitSentinelArmed{false};
 
+// Reads back the build id stamped on the sentinel's first line. Returns an empty string
+// for a sentinel written by a build that predates the stamp, which reads as "not this
+// build" and therefore gets a retry - the desired answer for exactly those builds.
+std::string ios_jit_read_sentinel_build(const std::filesystem::path& sentinelPath)
+{
+	const int fd = open(sentinelPath.string().c_str(), O_RDONLY);
+	if (fd < 0)
+		return {};
+	char buf[128] = {};
+	const ssize_t n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n <= 0)
+		return {};
+
+	std::string firstLine(buf, (size_t)n);
+	const size_t nl = firstLine.find('\n');
+	if (nl != std::string::npos)
+		firstLine.resize(nl);
+	// Anything with whitespace in it is prose from a pre-stamp sentinel, not a build id.
+	if (firstLine.empty() || firstLine.find(' ') != std::string::npos)
+		return {};
+	return firstLine;
+}
+
 bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 {
 	namespace fs = std::filesystem;
@@ -437,17 +462,30 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 
 	if (fs::exists(sentinelPath, ec))
 	{
-		// Deliberately not deleted. If it were cleared here, a device that dies with the
-		// recompiler live would fail, get killed, and repeat that forever; leaving it makes
-		// the failure sticky and the app launchable.
+		// The sentinel records WHICH build died, not just that one did. Making it sticky
+		// forever was right while every build shared the same recompiler; it is wrong the
+		// moment a build ships specifically to fix the crash that armed it, because the
+		// fix would then never get to run and the only way out would be deleting a file by
+		// hand in the Files app. So: same build as the one that died -> still sticky. A
+		// different build -> that is a new claim, clear it and let the new code be tested.
+		const std::string armedBy = ios_jit_read_sentinel_build(sentinelPath);
+		if (armedBy == BUILD_VERSION_STRING)
+		{
+			cemuLog_log(LogType::Force,
+				"JIT check: this exact build ({}) enabled the recompiler before and did not survive it "
+				"(sentinel still present) - forcing the interpreter. Delete {} to make it try again.",
+				BUILD_VERSION_STRING, _pathToUtf8(sentinelPath));
+			setCpuModeDetail("This build turned the recompiler on and did not survive it, so it stays on "
+				"the interpreter. Install a newer build, or delete jit_enabled_boot_did_not_finish in "
+				"Muffin's Documents folder, to let it try again.");
+			return false;
+		}
+
 		cemuLog_log(LogType::Force,
-			"JIT check: a previous launch enabled the recompiler and did not survive it (sentinel still "
-			"present) - this install forces the interpreter from now on. Delete {} to make it try again.",
-			_pathToUtf8(sentinelPath));
-		setCpuModeDetail("A previous launch turned the recompiler on and did not survive it, so this "
-			"install stays on the interpreter. Delete jit_enabled_boot_did_not_finish in Muffin's "
-			"Documents folder to let it try again.");
-		return false;
+			"JIT check: the crash sentinel was left by a different build ({}); this one is {}. Clearing it "
+			"and re-testing the recompiler.",
+			armedBy.empty() ? std::string("unknown") : armedBy, BUILD_VERSION_STRING);
+		fs::remove(sentinelPath, ec);
 	}
 
 	const size_t pageSize = (size_t)sysconf(_SC_PAGESIZE);
@@ -525,8 +563,11 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 			"record that it killed us.", err, strerror(err)));
 		return false;
 	}
-	const char sentinelNote[] = "cemu-ios enabled the PPC recompiler and did not reach a launched title\n";
-	(void)write(sentinelFd, sentinelNote, sizeof(sentinelNote) - 1);
+	// The build id on the first line is what makes the sentinel clearable by shipping a
+	// fix rather than by hand. ios_jit_read_sentinel_build() reads exactly this back.
+	const std::string sentinelNote = std::string(BUILD_VERSION_STRING) +
+		"\ncemu-ios enabled the PPC recompiler and did not reach a launched title\n";
+	(void)write(sentinelFd, sentinelNote.data(), sentinelNote.size());
 	(void)fsync(sentinelFd);
 	close(sentinelFd);
 

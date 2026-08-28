@@ -7,6 +7,12 @@
 #include <xbyak_aarch64_util.h>
 
 #include <cstddef>
+#include <unordered_map>
+
+#if defined(__APPLE__)
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 #include "../PPCRecompiler.h"
 #include "Common/precompiled.h"
@@ -73,10 +79,68 @@ static const util::Cpu& GetCpu()
 	return s_cpu;
 }
 
+#if defined(__APPLE__)
+// Xbyak defines XBYAK_USE_MAP_JIT for all of __APPLE__, so its stock MmapAllocator
+// unconditionally passes MAP_JIT to mmap. On macOS that is the correct hardened-runtime
+// path. On iOS, MAP_JIT is only honoured for a process carrying the dynamic-codesigning
+// entitlement, which a sideloaded build never has - not even one that a JIT enabler has
+// already attached to and set CS_DEBUGGED on. The mapping fails, Xbyak throws
+// Error(ERR_CANT_ALLOC), and because that happens inside a CodeGenerator constructor in
+// PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions with nothing to catch it,
+// libc++abi calls std::terminate() -> abort(). That is a SIGABRT on the very first
+// JIT-enabled boot, before a single PPC instruction has been translated.
+//
+// What CS_DEBUGGED does buy on iOS is the right to map pages read-write, write code into
+// them, then mprotect them to read-execute. That RW -> RE transition is already exactly
+// what Xbyak performs via CodeArray::protect() / readyRE(), so dropping MAP_JIT costs
+// nothing and makes the whole path legal here. MAP_JIT is still attempted first, so macOS
+// and any build that genuinely carries the entitlement keep the better mapping.
+class AppleJitAllocator : public Allocator
+{
+  private:
+	std::unordered_map<uintptr_t, size_t> m_sizeByAddress;
+
+  public:
+	uint32* alloc(size_t size) override
+	{
+		const size_t pageSize = (size_t)sysconf(_SC_PAGESIZE);
+		size = (size + pageSize - 1) & ~(pageSize - 1);
+
+		constexpr int baseMode = MAP_PRIVATE | MAP_ANON;
+		void* p = mmap(nullptr, size, PROT_READ | PROT_WRITE, baseMode | MAP_JIT, -1, 0);
+		if (p == MAP_FAILED)
+			p = mmap(nullptr, size, PROT_READ | PROT_WRITE, baseMode, -1, 0);
+		if (p == MAP_FAILED)
+			throw Error(ERR_CANT_ALLOC);
+
+		m_sizeByAddress[(uintptr_t)p] = size;
+		return (uint32*)p;
+	}
+
+	void free(uint32* p) override
+	{
+		if (!p)
+			return;
+		auto it = m_sizeByAddress.find((uintptr_t)p);
+		if (it == m_sizeByAddress.end())
+			return;
+		munmap((void*)it->first, it->second);
+		m_sizeByAddress.erase(it);
+	}
+
+	[[nodiscard]] bool useProtect() const override
+	{
+		return true;
+	}
+};
+#endif
+
 class AArch64Allocator : public Allocator
 {
   private:
-#ifdef XBYAK_USE_MMAP_ALLOCATOR
+#if defined(__APPLE__)
+	inline static AppleJitAllocator s_allocator;
+#elif defined(XBYAK_USE_MMAP_ALLOCATOR)
 	inline static MmapAllocator s_allocator;
 #else
 	inline static Allocator s_allocator;
@@ -114,6 +178,18 @@ class AArch64Allocator : public Allocator
 		return !m_freeDisabled && m_allocatorImpl->useProtect();
 	}
 };
+
+// After code is written through a read-write mapping and that mapping is flipped to
+// read-execute, the instruction cache may still hold stale lines for those addresses.
+// On AArch64 that is the caller's problem, not the kernel's, and stale lines mean the
+// core executes whatever used to be at that address - garbage, in practice.
+static void PPCRecompilerAArch64_flushICache(const void* code, size_t size)
+{
+	if (!code || size == 0)
+		return;
+	char* begin = (char*)code;
+	__builtin___clear_cache(begin, begin + size);
+}
 
 struct UnconditionalJumpInfo
 {
@@ -1628,6 +1704,7 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 	}
 
 	aarch64GenContext.readyRE();
+	PPCRecompilerAArch64_flushICache(aarch64GenContext.getCode<void*>(), aarch64GenContext.getSize());
 
 	// set code
 	PPCRecFunction->x86Code = aarch64GenContext.getCode<void*>();
@@ -1689,10 +1766,11 @@ void AArch64GenContext_t::leaveRecompilerCode()
 }
 
 bool initializedInterfaceFunctions = false;
-void PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions()
+bool interfaceFunctionsAvailable = false;
+bool PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions()
 {
 	if (initializedInterfaceFunctions)
-		return;
+		return interfaceFunctionsAvailable;
 	initializedInterfaceFunctions = true;
 
 	// These were previously namespace-scope globals, which C++ constructs during
@@ -1713,19 +1791,46 @@ void PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions()
 	// once constructed) - which only happens via PPCRecompiler_init() choosing to
 	// use the JIT path, itself only reachable from CafeSystem::Initialize() once a
 	// title is actually launched, long after process startup.
-	static AArch64GenContext_t enterRecompilerCode_ctx{};
-	static AArch64GenContext_t leaveRecompilerCode_unvisited_ctx{};
-	static AArch64GenContext_t leaveRecompilerCode_visited_ctx{};
+	//
+	// Passing the allocator explicitly matters as much as deferring construction did. With
+	// no allocator argument, CodeArray falls back to its own internal MmapAllocator, which
+	// is the MAP_JIT one - so these three contexts would bypass AppleJitAllocator entirely
+	// and fail on iOS even though every other allocation in this file is routed correctly.
+	//
+	// The whole block is wrapped because an allocation failure here must not be fatal. It
+	// used to escape as an uncaught exception and abort the process; now it reports back
+	// and PPCRecompiler_init falls through to the interpreter, which is slow but alive.
+	try
+	{
+		static AArch64Allocator interfaceAllocator;
+		static AArch64GenContext_t enterRecompilerCode_ctx{&interfaceAllocator};
+		static AArch64GenContext_t leaveRecompilerCode_unvisited_ctx{&interfaceAllocator};
+		static AArch64GenContext_t leaveRecompilerCode_visited_ctx{&interfaceAllocator};
 
-	enterRecompilerCode_ctx.enterRecompilerCode();
-	enterRecompilerCode_ctx.readyRE();
-	PPCRecompiler_enterRecompilerCode = enterRecompilerCode_ctx.getCode<decltype(PPCRecompiler_enterRecompilerCode)>();
+		enterRecompilerCode_ctx.enterRecompilerCode();
+		enterRecompilerCode_ctx.readyRE();
+		PPCRecompiler_enterRecompilerCode = enterRecompilerCode_ctx.getCode<decltype(PPCRecompiler_enterRecompilerCode)>();
+		PPCRecompilerAArch64_flushICache(enterRecompilerCode_ctx.getCode<void*>(), enterRecompilerCode_ctx.getSize());
 
-	leaveRecompilerCode_unvisited_ctx.leaveRecompilerCode();
-	leaveRecompilerCode_unvisited_ctx.readyRE();
-	PPCRecompiler_leaveRecompilerCode_unvisited = leaveRecompilerCode_unvisited_ctx.getCode<decltype(PPCRecompiler_leaveRecompilerCode_unvisited)>();
+		leaveRecompilerCode_unvisited_ctx.leaveRecompilerCode();
+		leaveRecompilerCode_unvisited_ctx.readyRE();
+		PPCRecompiler_leaveRecompilerCode_unvisited = leaveRecompilerCode_unvisited_ctx.getCode<decltype(PPCRecompiler_leaveRecompilerCode_unvisited)>();
+		PPCRecompilerAArch64_flushICache(leaveRecompilerCode_unvisited_ctx.getCode<void*>(), leaveRecompilerCode_unvisited_ctx.getSize());
 
-	leaveRecompilerCode_visited_ctx.leaveRecompilerCode();
-	leaveRecompilerCode_visited_ctx.readyRE();
-	PPCRecompiler_leaveRecompilerCode_visited = leaveRecompilerCode_visited_ctx.getCode<decltype(PPCRecompiler_leaveRecompilerCode_visited)>();
+		leaveRecompilerCode_visited_ctx.leaveRecompilerCode();
+		leaveRecompilerCode_visited_ctx.readyRE();
+		PPCRecompiler_leaveRecompilerCode_visited = leaveRecompilerCode_visited_ctx.getCode<decltype(PPCRecompiler_leaveRecompilerCode_visited)>();
+		PPCRecompilerAArch64_flushICache(leaveRecompilerCode_visited_ctx.getCode<void*>(), leaveRecompilerCode_visited_ctx.getSize());
+	}
+	catch (const std::exception& ex)
+	{
+		cemuLog_log(LogType::Force, "Recompiler: could not set up executable memory for the interface functions ({}). Falling back to the interpreter.", ex.what());
+		PPCRecompiler_enterRecompilerCode = nullptr;
+		PPCRecompiler_leaveRecompilerCode_unvisited = nullptr;
+		PPCRecompiler_leaveRecompilerCode_visited = nullptr;
+		return false;
+	}
+
+	interfaceFunctionsAvailable = true;
+	return true;
 }
