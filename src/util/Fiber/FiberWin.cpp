@@ -1,3 +1,9 @@
+// Dispatch header first, deliberately. Fiber.h picks the backend *declaration* by
+// platform and must agree with the .cpp CMake compiles; if it ever disagrees, the
+// two class definitions collide here and the build stops, instead of linking a
+// silent size mismatch into the PPC scheduler. #pragma once makes this free when
+// the selection is correct.
+#include "Fiber.h"
 #include "FiberWin.h"
 
 thread_local Fiber* sCurrentFiber{};
