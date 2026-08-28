@@ -29,6 +29,17 @@ struct SettingsView: View {
         RenderScale(rawValue: renderScaleRaw) ?? .balanced
     }
 
+    /// Defaulted from `TimebaseScale.current` rather than from a fixed case, because the
+    /// engine picks this one itself at launch from the CPU mode it actually got (real
+    /// time under the recompiler, an eighth under the interpreter). A hardcoded default
+    /// here would show a value that is not the one in effect, on the single screen whose
+    /// job is to say what is in effect.
+    @AppStorage(TimebaseScale.storageKey) private var timebaseRaw = TimebaseScale.current.rawValue
+
+    private var timebase: TimebaseScale {
+        TimebaseScale(rawValue: timebaseRaw) ?? .realTime
+    }
+
     var body: some View {
         // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
         NavigationView {
@@ -64,6 +75,35 @@ struct SettingsView: View {
                         // the surface at registration, and a running title's swapchain is
                         // not rebuilt underneath it.
                         Text("\(renderScale.summary)\n\nResolution changes the size of the picture Muffin draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.")
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
+
+                    // Its own section rather than a third row under Performance, because
+                    // it is not a performance setting and calling it one would be the
+                    // wrong idea to give: it makes nothing faster. It is the setting that
+                    // decides whether a game that is already running slowly can advance
+                    // at all, which is a different question and the one that has actually
+                    // been blocking this port.
+                    Section {
+                        Picker("Speed", selection: $timebaseRaw) {
+                            ForEach(TimebaseScale.allCases) { scale in
+                                Text(scale.title).tag(scale.rawValue)
+                            }
+                        }
+                        .foregroundColor(MuffinTheme.brownDarkest)
+                        // Applied immediately, unlike Resolution: the shift is read per
+                        // call inside PPCTimer, so changing it mid-title is safe and the
+                        // guest's clock still only ever moves forward. Someone watching a
+                        // game sit on one frame can walk down this list and see which
+                        // value frees it, without relaunching between each try.
+                        .onChange(of: timebaseRaw) { raw in
+                            guard let scale = TimebaseScale(rawValue: raw) else { return }
+                            TimebaseScale.apply(scale)
+                        }
+                    } header: {
+                        Text("Emulated clock")
+                    } footer: {
+                        Text("\(timebase.summary)\n\nThis changes how fast the game believes time is passing, not how fast Muffin runs. Without the recompiler the emulated CPU is far slower than the console's, while the game's own clock keeps up with real time - so every deadline it sets itself is already overdue, and it can spend all its time on overdue work and never draw. Slowing its clock puts those deadlines back in reach. Nothing about the emulation is made less accurate by it, and it takes effect straight away.")
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 
