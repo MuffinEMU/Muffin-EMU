@@ -498,7 +498,6 @@ struct EmulatorViewOptimized: View {
     @ObservedObject var gameManager: GameManager
     @Binding var isRunning: Bool
     @Binding var controllerSkin: WiiUControllerSkin
-    @State private var showControls = true
     @State private var showSkinSelector = false
     @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
     @StateObject private var launchLog = LaunchLogStore()
@@ -592,24 +591,37 @@ struct EmulatorViewOptimized: View {
                     .ignoresSafeArea()
                 #endif
 
-                if showControls {
-                    // These two closures used to be `{ _ in }`. The on-screen pad drew
-                    // itself, highlighted on touch and sent the result precisely
-                    // nowhere, which is why a touch could never move anything: not a
-                    // missing mapping or an unconfigured controller, just no call.
-                    // OptimizedControlPanel now reports press AND release, and each
-                    // label is translated here into the bridge's own button numbering.
-                    OptimizedControlPanel(
-                        skin: controllerSkin,
-                        onDPadInput: { direction, pressed in
-                            cemu_bridge_set_button_state(cemuBridgeButton(forDPadDirection: direction), pressed)
-                        },
-                        onButtonInput: { label, pressed in
-                            cemu_bridge_set_button_state(cemuBridgeButton(forActionLabel: label), pressed)
-                        }
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+            }
+
+            // Unconditional: no showControls state, no tap-to-toggle, no transition.
+            // The pad is on screen for as long as the emulator view is, and floating
+            // it here rather than stacking it under the Metal view is what actually
+            // removes the grey slab - the panel no longer needs an opaque background
+            // to sit on, so the game keeps the full height and the buttons are drawn
+            // straight onto it.
+            //
+            // Placed above the Metal view but below the two overlays that follow, so
+            // the boot screen still comes up clean rather than with a live-looking pad
+            // sitting on a title that has not started. The launch log below carries the
+            // bottom padding that keeps it clear of these buttons.
+            //
+            // These two closures used to be `{ _ in }`. The on-screen pad drew itself,
+            // highlighted on touch and sent the result precisely nowhere, which is why
+            // a touch could never move anything: not a missing mapping or an
+            // unconfigured controller, just no call. OptimizedControlPanel reports
+            // press AND release, and each label is translated here into the bridge's
+            // own button numbering.
+            VStack {
+                Spacer()
+                OptimizedControlPanel(
+                    skin: controllerSkin,
+                    onDPadInput: { direction, pressed in
+                        cemu_bridge_set_button_state(cemuBridgeButton(forDPadDirection: direction), pressed)
+                    },
+                    onButtonInput: { label, pressed in
+                        cemu_bridge_set_button_state(cemuBridgeButton(forActionLabel: label), pressed)
+                    }
+                )
             }
 
             // The Metal view above must mount (so it can register the render
@@ -649,28 +661,31 @@ struct EmulatorViewOptimized: View {
                     }
                     .frame(maxWidth: 720, maxHeight: 240)
                     .padding(.horizontal, 24)
-                    .padding(.bottom, 24)
+                    // Clears the control pad, which now floats over the bottom of the
+                    // game instead of occupying a strip below it. 24pt was enough only
+                    // while the pad lived somewhere the log could never reach.
+                    .padding(.bottom, 180)
                 }
                 .transition(.opacity)
             }
         }
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.3)) {
-                showControls.toggle()
-            }
-            // Hiding the panel removes the buttons mid-gesture. Each one releases itself
-            // on disappear, but a button the title still thinks is held is a character
-            // walking into a wall with nothing on screen to explain it, so sweep as
-            // well. Both paths are idempotent.
-            if !showControls {
-                cemu_bridge_release_all_buttons()
-            }
-        }
+        // No full-screen tap gesture. There used to be one here toggling showControls,
+        // which meant every stray tap on the game could take the pad away and every
+        // press near an edge risked doing it by accident. The controls are permanent,
+        // so there is nothing left to toggle and taps on the game are just taps.
+        //
         // Tied to this view's lifetime, not the store's: no launch log on screen means
         // nothing draining, and the C ring keeps filling either way so switching the
         // setting on mid-boot still catches up on everything already logged.
         .onAppear { if showLaunchLog { launchLog.start() } }
-        .onDisappear { launchLog.stop() }
+        .onDisappear {
+            launchLog.stop()
+            // The pad can no longer vanish mid-press while a title runs, so the only
+            // way out from under a held finger is leaving the emulator entirely. Each
+            // button releases itself on disappear; this sweeps anyway, because a button
+            // the title still thinks is held survives into the next launch. Idempotent.
+            cemu_bridge_release_all_buttons()
+        }
         .onChange(of: showLaunchLog) { enabled in
             if enabled { launchLog.start() } else { launchLog.stop() }
         }

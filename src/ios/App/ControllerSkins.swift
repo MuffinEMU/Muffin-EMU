@@ -63,21 +63,27 @@ struct OptimizedControlPanel: View {
     let onDPadInput: (String, Bool) -> Void
     let onButtonInput: (String, Bool) -> Void
 
+    // No backing plate and no divider, deliberately. This panel used to paint
+    // skin.backgroundColor behind itself - an opaque dark-grey slab (Standard is
+    // rgb 0.15/0.15/0.17) which, because it was opaque, had to sit in the layout
+    // flow and stole a strip of height from the emulator view for the sole purpose
+    // of being grey. The controls are drawn straight onto the game now: pad
+    // bottom-left, action buttons bottom-right, and the gap between them is not
+    // hit-tested at all - an HStack with no background and a Spacer between its
+    // children has nothing to hit - so taps in the middle reach the game view.
+    //
+    // skin.backgroundColor and skin.borderColor are still read by SkinPreview, so
+    // the skin catalog is untouched; it is only the in-game panel that stopped
+    // painting them.
     var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-                .background(skin.borderColor)
+        HStack(spacing: 32) {
+            DPadControl(skin: skin, onInput: onDPadInput)
 
-            HStack(spacing: 32) {
-                DPadControl(skin: skin, onInput: onDPadInput)
+            Spacer()
 
-                Spacer()
-
-                ActionButtonGrid(skin: skin, onInput: onButtonInput)
-            }
-            .padding(20)
-            .background(skin.backgroundColor)
+            ActionButtonGrid(skin: skin, onInput: onButtonInput)
         }
+        .padding(20)
     }
 }
 
@@ -93,12 +99,12 @@ struct OptimizedControlPanel: View {
 /// onEnded on lift, including a lift that happens outside the view's own bounds, so a
 /// press cannot get stuck by sliding a thumb off the edge of a button.
 ///
-/// Attached with `.gesture`, deliberately, not `.simultaneousGesture`: a gesture on a
-/// child view takes precedence over one on an ancestor, and the emulator screen has a
-/// full-screen `.onTapGesture` on it that shows and hides this very panel. Made
-/// simultaneous, every button press would also toggle the controls away underneath the
-/// finger. Sibling buttons are not ancestors of one another, so they arbitrate
-/// independently and two fingers on two different controls both register.
+/// Attached with `.gesture`, not `.simultaneousGesture`: sibling buttons are not
+/// ancestors of one another, so they arbitrate independently and two fingers on two
+/// different controls both register. (This used to matter for a second reason - the
+/// emulator screen carried a full-screen `.onTapGesture` that toggled this panel away,
+/// and a simultaneous gesture would have fired it under the finger on every press. That
+/// toggle is gone; the panel is permanent.)
 private struct HeldControl<Content: View>: View {
     let onPressChange: (Bool) -> Void
     let content: (Bool) -> Content
