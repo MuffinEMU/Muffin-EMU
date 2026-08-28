@@ -25,10 +25,12 @@ Fiber* Fiber::PrepareCurrentThread(void* privateData)
 	return currentFiber;
 }
 
-void Fiber::Switch(Fiber& targetFiber)
+int Fiber::Switch(Fiber& targetFiber)
 {
 	sCurrentFiber = &targetFiber;
 	SwitchToFiber(targetFiber.m_handle);
+	// SwitchToFiber has no failure mode to report, unlike the ucontext backend.
+	return 0;
 }
 
 void* Fiber::GetFiberPrivateData()

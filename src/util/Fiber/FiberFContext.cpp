@@ -37,16 +37,18 @@ Fiber* Fiber::PrepareCurrentThread(void* privateData)
 	return sCurrentFiber;
 }
 
-void Fiber::Switch(Fiber& targetFiber)
+int Fiber::Switch(Fiber& targetFiber)
 {
 	if (&targetFiber == sCurrentFiber)
-		return;
+		return 0;
 
 	Fiber* thisFiber = sCurrentFiber;
 	sCurrentFiber = &targetFiber;
 	targetFiber.m_prevFiber = thisFiber;
 	transfer_t transfer = jump_fcontext(targetFiber.m_context, &targetFiber);
 	thisFiber->m_prevFiber->m_context = transfer.fctx;
+	// jump_fcontext has no failure mode to report, unlike the ucontext backend.
+	return 0;
 }
 
 void* Fiber::GetFiberPrivateData()

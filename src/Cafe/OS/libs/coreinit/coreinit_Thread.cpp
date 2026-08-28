@@ -1298,6 +1298,12 @@ namespace coreinit
 	// this is necessary since we can't block in __OSThreadSwitchToNext() (__OSStoreThread + thread switch must happen inside same scheduler lock)
 	void __OSThreadCoreIdle(void* unusedParam)
 	{
+		// First statement in the fiber, ahead of anything that can block. The "idle fiber
+		// running" line below only prints once __OSUnlockScheduler() has returned, so on
+		// its own it cannot tell "the fiber was never entered" apart from "the fiber was
+		// entered and the unlock never came back". Those want different fixes, so they get
+		// different lines.
+		cemuLog_log(LogType::Force, "Boot stage: core {} idle fiber entered", t_assignedCoreIndex);
 		bool isMainCore = g_isMulticoreMode == false || t_assignedCoreIndex == 1;
 		sint32 coreIndex = t_assignedCoreIndex;
 		__OSUnlockScheduler();
@@ -1485,7 +1491,11 @@ namespace coreinit
 		cemu_assert_debug(PPCInterpreter_getCurrentInstance() == nullptr);
 		__OSLockScheduler();
 		cemuLog_log(LogType::Force, "Boot stage: core {} about to switch to the idle fiber", t_assignedCoreIndex);
-		Fiber::Switch(*g_idleLoopFiber[t_assignedCoreIndex]);
+		const int idleSwitchResult = Fiber::Switch(*g_idleLoopFiber[t_assignedCoreIndex]);
+		// Getting here during boot is itself the failure: the idle fiber never returns while
+		// the title is running, so this line only prints if the switch refused. A non-zero
+		// code is the errno from swapcontext, which used to be thrown away.
+		cemuLog_log(LogType::Force, "Boot stage: core {} returned from the idle fiber switch (rc={})", t_assignedCoreIndex, idleSwitchResult);
 		// returned from scheduler loop, exit thread
 		cemu_assert_debug(!__OSHasSchedulerLock());
 	}

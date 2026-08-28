@@ -9,7 +9,9 @@ public:
 	~Fiber();
 
 	static Fiber* PrepareCurrentThread(void* privateData = nullptr);
-	static void Switch(Fiber& targetFiber);
+	// Returns 0 when the switch happened. Anything else is the errno from a
+	// swapcontext that refused, which used to be discarded silently.
+	static int Switch(Fiber& targetFiber);
 	static void* GetFiberPrivateData();
 private:
 	Fiber(void* privateData); // fiber from current thread
