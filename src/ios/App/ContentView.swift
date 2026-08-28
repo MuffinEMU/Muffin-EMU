@@ -499,7 +499,10 @@ struct EmulatorViewOptimized: View {
     @Binding var isRunning: Bool
     @Binding var controllerSkin: WiiUControllerSkin
     @State private var showSkinSelector = false
-    @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
+    // Defaults ON, and must keep matching SettingsView's declaration of the same key -
+    // two @AppStorage defaults for one key that disagree means the toggle and the
+    // emulator disagree about what is on. See SettingsView for why this flipped.
+    @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = true
     @StateObject private var launchLog = LaunchLogStore()
     @State private var launchLogDismissed = false
 
