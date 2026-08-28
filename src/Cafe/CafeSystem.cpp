@@ -959,26 +959,47 @@ namespace CafeSystem
 		return PREPARE_STATUS_CODE::SUCCESS;
 	}
 
+	// Boot-stage trace. Every iOS stall log to date ends at "------- Run title -------"
+	// with the guest-CPU counters at zero, which says only "the scheduler never ran a
+	// single iteration" and not which of the six steps between here and there it died
+	// on. Each of these lines is one step, so a stalled log names the last one it
+	// survived instead of leaving it to be guessed at.
 	void _LaunchTitleThread()
 	{
+		cemuLog_log(LogType::Force, "Boot stage: launch thread entered");
 		for(auto& module : s_iosuModules)
 			module->TitleStart();
+		cemuLog_log(LogType::Force, "Boot stage: IOSU modules started");
 		cemu_initForGame();
+		cemuLog_log(LogType::Force, "Boot stage: cemu_initForGame() returned");
 		// enter scheduler
 		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
+		{
+			cemuLog_log(LogType::Force, "Boot stage: entering scheduler on 3 cores");
 			coreinit::OSSchedulerBegin(3);
+		}
 		else
+		{
+			cemuLog_log(LogType::Force, "Boot stage: entering scheduler on 1 core");
 			coreinit::OSSchedulerBegin(1);
+		}
+		cemuLog_log(LogType::Force, "Boot stage: scheduler returned (title stopping)");
 	}
 
 	void LaunchForegroundTitle()
 	{
+		// PPCTimer_waitForInit() is a bare spin on a flag set by a detached calibration
+		// thread. It has hung this port before (see cemu_bridge_initialize()), so it is
+		// bracketed rather than trusted.
+		cemuLog_log(LogType::Force, "Boot stage: waiting for the guest timer to calibrate");
 		PPCTimer_waitForInit();
+		cemuLog_log(LogType::Force, "Boot stage: guest timer ready");
 		// start system
 		sSystemRunning = true;
 		WindowSystem::NotifyGameLoaded();
 		std::thread t(_LaunchTitleThread);
 		t.detach();
+		cemuLog_log(LogType::Force, "Boot stage: launch thread spawned");
 	}
 
 	bool IsTitleRunning()
