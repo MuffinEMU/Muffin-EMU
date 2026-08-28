@@ -202,6 +202,10 @@ if(TRUE)
 	find_package(Boost COMPONENTS program_options filesystem nowide REQUIRED)
 	if(ANDROID)
 		find_package(Boost COMPONENTS context iostreams REQUIRED)
+	elseif(PLATFORM_IOS)
+		# iOS needs context for the same reason Android does (see src/util/CMakeLists.txt),
+		# but not iostreams, which is only pulled in by the Android stacktrace handler.
+		find_package(Boost COMPONENTS context REQUIRED)
 	endif()
 	find_package(libzip REQUIRED)
 	find_package(glslang REQUIRED)
