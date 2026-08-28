@@ -190,6 +190,7 @@ void cemu_bridge_log_checkpoint(const char* message) {
     #include "config/ActiveSettings.h"
     #include "config/LaunchSettings.h"
     #include "Cafe/HW/Latte/Core/LatteDraw.h"
+    #include "Cafe/HW/Latte/Core/Latte.h"
     #include "gui/interface/WindowSystem.h"
     #include "Cafe/HW/Latte/Renderer/Renderer.h"
     #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
@@ -761,6 +762,25 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // return value, so the two can never disagree about the same launch.
     g_cpuMode.store(jitPermitted ? kCpuModeRecompiler : kCpuModeInterpreter);
 
+    // Emulated timebase. See cemu_bridge_set_timebase_shift() in CemuBridge.h for why
+    // this is not cosmetic on this port.
+    //
+    // Under the interpreter the emulated CPU is roughly two orders of magnitude slower
+    // than the Espresso it stands in for, while the guest's own clock keeps advancing at
+    // host wall-clock rate. Every deadline the title sets for itself is then already
+    // expired when it is serviced, so coreinit can spend a whole timeslice on overdue
+    // alarm and AX work and hand the title's thread nothing - one frame presented, then
+    // apparent silence. Slowing the guest's clock is the compensation Cemu already ships
+    // for exactly this (desktop exposes it as the Timer Speed menu); iOS simply never
+    // set it, so every launch to date ran at 3 - real time - regardless of CPU mode.
+    //
+    // 6 (an eighth of real time) is a starting point, not a measured optimum, which is
+    // why Settings exposes the whole range rather than this being hardcoded. Swift
+    // overrides it immediately after this call when the user has chosen a value.
+    //
+    // With the recompiler the premise does not hold, so the default there is real time.
+    cemu_bridge_set_timebase_shift(jitPermitted ? 3 : 6);
+
     // Audio had TWO independent faults, and fixing either one alone still leaves a
     // silent device:
     //
@@ -1305,6 +1325,57 @@ double cemu_bridge_get_fps(void) {
     return IOSWindowSystem_GetLastFPS();
 #else
     return 0.0;
+#endif
+}
+
+void cemu_bridge_get_progress(CemuBridgeProgress* out) {
+    if (!out)
+        return;
+    // Zero first and unconditionally, so every early return below is a complete answer
+    // rather than a partly written struct the caller cannot tell apart from a full one.
+    *out = CemuBridgeProgress{};
+#if defined(CEMU_CORE_AVAILABLE)
+    // The counters live in LatteGPUState, which is only meaningful while a title owns the
+    // GPU. Reading them with nothing running would report the last title's totals as if
+    // they were this one's.
+    if (!CafeSystem::IsTitleRunning())
+        return;
+    LatteProgressSnapshot snapshot{};
+    LatteThread_GetProgress(snapshot);
+    out->gx2_init_reached = snapshot.gx2InitReached;
+    out->gx2_frame_count = snapshot.gx2FrameCount;
+    out->gx2_frames_per_second = snapshot.gx2FramesPerSecond;
+    out->os_screen_scanouts = snapshot.osScreenScanouts;
+    out->guest_flip_requests = snapshot.guestFlipRequests;
+#endif
+}
+
+// Clamped rather than trusted. PPCTimer_getFromRDTSC() computes
+//     elapsedTick = (elapsedTick << 3) >> shift
+// on a uint64, so a large enough shift makes every elapsed tick zero and the guest's
+// clock stops entirely - which is not slow motion, it is a stopped console, and it would
+// hang far more convincingly than the problem this setting exists to relieve. 10 is
+// 1/128th of real time, already well past anything useful.
+static constexpr int kTimebaseShiftMin = 0;   // 8x real time
+static constexpr int kTimebaseShiftMax = 10;  // 1/128 real time
+
+void cemu_bridge_set_timebase_shift(int shift) {
+    if (shift < kTimebaseShiftMin) shift = kTimebaseShiftMin;
+    if (shift > kTimebaseShiftMax) shift = kTimebaseShiftMax;
+#if defined(CEMU_CORE_AVAILABLE)
+    ActiveSettings::SetTimerShiftFactor((uint8)shift);
+    // Logged at Force because this changes how the guest perceives time, and a log that
+    // does not say which value was in effect cannot be used to compare two runs.
+    cemuLog_log(LogType::Force, "Emulated timebase: shift {} ({:.4g}x real time)",
+        shift, 8.0 / (double)(1u << shift));
+#endif
+}
+
+int cemu_bridge_get_timebase_shift(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return (int)ActiveSettings::GetTimerShiftFactor();
+#else
+    return 3;
 #endif
 }
 

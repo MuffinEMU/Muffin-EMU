@@ -31,6 +31,9 @@ class GameManager: ObservableObject {
     /// Real emulator frame rate, polled from the bridge once a second while a title
     /// is running (see startFrameRateMonitor()). 0 whenever nothing is rendering.
     @Published private(set) var frameRate: Int = 0
+    /// Refreshed alongside `frameRate`. See `EmulatorProgress` below for why a second
+    /// source of frame information is not redundant with the first.
+    @Published private(set) var progress = EmulatorProgress()
     private var frameRateTimer: Timer?
 
     private let romsDirectory = "Roms"
@@ -429,6 +432,13 @@ class GameManager: ObservableObject {
             EmulationEngine.initializeBlocking(mlcPath: mlcPath)
             cemu_bridge_log_checkpoint("launchGame: engine.initialize() returned [background]")
 
+            // After initialize, never before: the engine picks its own timebase default
+            // from the CPU mode that launch actually got, and that decision is made
+            // inside cemu_bridge_initialize(). This only overrides it when the user has
+            // explicitly chosen a value, so someone who never opens Settings keeps the
+            // default that was chosen with the CPU mode in hand.
+            TimebaseScale.applyStoredChoiceIfAny()
+
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)
             cemu_bridge_log_checkpoint("launchGame: engine.boot() returned [background]")
@@ -506,6 +516,10 @@ class GameManager: ObservableObject {
                 if fps != self.frameRate {
                     self.frameRate = fps
                 }
+                let snapshot = EmulatorProgress.read()
+                if snapshot != self.progress {
+                    self.progress = snapshot
+                }
             }
         }
     }
@@ -514,6 +528,66 @@ class GameManager: ObservableObject {
         frameRateTimer?.invalidate()
         frameRateTimer = nil
         frameRate = 0
+        progress = EmulatorProgress()
+    }
+}
+
+/// The engine's own progress counters, as the heartbeat measures them.
+///
+/// The reason this exists next to `frameRate` rather than replacing it: `frameRate`
+/// comes from LattePerformanceMonitor, which reports whole frames per second. Every rate
+/// this port has actually produced under the interpreter rounds to zero there, so the
+/// HUD read "-- FPS" during runs that were genuinely rendering - the same readout it
+/// shows for a title that has stopped dead. These counters tell those two apart, on the
+/// device, without anyone exporting log.txt and mailing it anywhere.
+struct EmulatorProgress: Equatable {
+    var gx2InitReached: Bool = false
+    var gx2FrameCount: UInt64 = 0
+    /// Fractional on purpose. 0.4 frames per second is the answer, and rounding it to
+    /// "0 FPS" destroys exactly the information being asked for.
+    var gx2FramesPerSecond: Double = 0
+    var osScreenScanouts: UInt64 = 0
+    var guestFlipRequests: UInt32 = 0
+
+    static func read() -> EmulatorProgress {
+        var raw = CemuBridgeProgress()
+        cemu_bridge_get_progress(&raw)
+        return EmulatorProgress(
+            gx2InitReached: raw.gx2_init_reached,
+            gx2FrameCount: raw.gx2_frame_count,
+            gx2FramesPerSecond: raw.gx2_frames_per_second,
+            osScreenScanouts: raw.os_screen_scanouts,
+            guestFlipRequests: raw.guest_flip_requests)
+    }
+
+    /// What the HUD shows, and the whole point of the struct: one short string that
+    /// distinguishes slow from stuck.
+    ///
+    /// `wholeFramesPerSecond` is LattePerformanceMonitor's number and stays in charge
+    /// whenever it is non-zero, so a build that reaches a normal frame rate reads exactly
+    /// as it always did.
+    func hudText(wholeFramesPerSecond: Int) -> String {
+        if wholeFramesPerSecond > 0 {
+            return "\(wholeFramesPerSecond) FPS"
+        }
+        if gx2FrameCount > 0 {
+            // Running past the first frame, just below one frame per second. Show the
+            // rate AND the count: the rate says how slow, the count is the thing whose
+            // movement proves it is not stuck.
+            if gx2FramesPerSecond > 0 {
+                return String(format: "%.2f fps · %llu frames", gx2FramesPerSecond, gx2FrameCount)
+            }
+            return String(format: "%llu frames", gx2FrameCount)
+        }
+        if gx2InitReached {
+            // Past handover with nothing drawn. This is the case that is a real bug
+            // rather than a slow one, so it says so instead of showing a rate of zero.
+            return "GX2 · no frames yet"
+        }
+        if osScreenScanouts > 0 || guestFlipRequests > 0 {
+            return "Booting · \(osScreenScanouts) scanouts"
+        }
+        return "-- FPS"
     }
 }
 

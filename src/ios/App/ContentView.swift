@@ -549,11 +549,22 @@ struct EmulatorViewOptimized: View {
                         // the emulator reports its first measurement this shows "--",
                         // not "0" - "0 FPS" reads as a measured stall, which is a
                         // different and much more alarming claim than "no reading yet".
+                        //
+                        // The string comes from EmulatorProgress rather than from
+                        // frameRate alone because whole frames per second is the wrong
+                        // unit for this port. Every rate the interpreter has actually
+                        // produced rounds to zero there, so a title rendering slowly and
+                        // a title that has stopped dead both read "-- FPS" - the one
+                        // distinction anybody looking at this HUD needs. hudText() keeps
+                        // frameRate in charge whenever it is non-zero, so a build that
+                        // reaches a normal rate reads exactly as it always did, and only
+                        // falls back to the engine's own counters below that.
                         HStack(spacing: 6) {
                             Image(systemName: "speedometer")
                                 .font(.system(size: 12, weight: .semibold))
-                            Text(gameManager.frameRate > 0 ? "\(gameManager.frameRate) FPS" : "-- FPS")
+                            Text(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .lineLimit(1)
                         }
                         .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.blushPink)
                         .frame(height: 40)

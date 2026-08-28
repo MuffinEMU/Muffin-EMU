@@ -128,6 +128,62 @@ void cemu_bridge_log_line(const char* message);
 /// available.
 double cemu_bridge_get_fps(void);
 
+/// The four counters the engine's own progress heartbeat prints, readable on demand.
+///
+/// This exists because `cemu_bridge_get_fps()` cannot answer the question that actually
+/// matters on this port. It reports whole frames per second, so a title genuinely
+/// rendering at a fraction of a frame per second - the normal case under the forced
+/// interpreter - rounds to 0 and the HUD reads "-- FPS", identical to a title that
+/// stopped dead. These counters separate the two, on screen, without anyone having to
+/// export log.txt:
+///
+///   gx2FrameCount climbing, however slowly  -> running past the first frame, just slow
+///   gx2FrameCount pinned, gx2InitReached    -> stalled after handing over to GX2
+///   gx2InitReached false, others climbing   -> still in OSScreen boot
+///   nothing moving at all                   -> a real deadlock, not slowness
+///
+/// `gx2FramesPerSecond` is fractional on purpose and is the heartbeat's own measurement,
+/// not a second one taken here, so the number on screen and the number in the log are
+/// the same number rather than two samples that disagree.
+typedef struct {
+    bool gx2_init_reached;
+    unsigned long long gx2_frame_count;
+    double gx2_frames_per_second;
+    unsigned long long os_screen_scanouts;
+    unsigned int guest_flip_requests;
+} CemuBridgeProgress;
+
+/// Fills `out` with the counters above. Zeroed, with `gx2_init_reached` false, when no
+/// title is running or the core is not in this build - all of which are true statements
+/// rather than placeholders. Safe to call from any thread, cheap enough to poll.
+void cemu_bridge_get_progress(CemuBridgeProgress* out);
+
+/// How fast the emulated console believes time is passing, as a right-shift factor:
+/// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
+/// Cemu's own `ActiveSettings::SetTimerShiftFactor()`, which desktop Cemu exposes as its
+/// Timer Speed menu; nothing on iOS was setting it, so it sat at 3 on every launch.
+///
+/// It matters here far more than it does on desktop. Under the forced interpreter the
+/// emulated CPU retires instructions on the order of a hundred times slower than the
+/// hardware it is pretending to be, while `PPCTimer_getFromRDTSC()` keeps deriving the
+/// guest's clock from the host's wall clock. The guest therefore experiences a console
+/// whose CPU has effectively stopped: every periodic deadline it sets - coreinit alarms,
+/// the AX audio callback, thread quanta - is already long overdue by the time it is
+/// serviced, so the scheduler can spend all of its time on overdue timer work and never
+/// return to the title's own thread. The visible result is a title that presents one
+/// frame and then appears to hang, which is not a hang.
+///
+/// Raising the shift makes the guest's clock advance more slowly, so its deadlines stay
+/// reachable and it runs in honest slow motion instead of drowning. It changes no
+/// emulated result: it is the rate a monotonic counter accumulates, applied per call, so
+/// it can be changed while a title runs and time still only ever moves forward.
+///
+/// This is a compensation for an emulator that is too slow. It does not make it faster.
+void cemu_bridge_set_timebase_shift(int shift);
+
+/// The shift currently in effect. See above for the scale.
+int cemu_bridge_get_timebase_shift(void);
+
 /// Which CPU path this launch actually got: 0 = not decided yet (the engine has not
 /// initialized), 1 = interpreter, 2 = PPC recompiler (JIT).
 ///
