@@ -216,6 +216,50 @@ void PPCTimer_start();
 // core info and control
 extern uint32 ppcThreadQuantum;
 
+// Guest CPU liveness
+//
+// Whether the emulated Espresso is retiring instructions at all. Nothing else in the
+// emulator reports this, which is why every stalled-boot log from the iOS port has so far
+// been unreadable: the GPU-side counters (GX2 frames, OSScreen scanouts, guest flip
+// requests) all sit downstream of the guest reaching GX2Init, so before that point they
+// read zero whether the guest is grinding along or wedged solid. Those two cases need
+// opposite fixes - one is "the interpreter is ~100x slower than a recompiler and needs
+// CS_DEBUGGED", the other is a bug in here - and nothing in the log told them apart.
+//
+// Read the three counters together:
+//   cyclesRetired climbing                   -> the guest is alive; a stall before
+//                                               GX2Init is speed, not a hang
+//   cyclesRetired flat, coreIdleSpins rising -> the scheduler is alive but no guest
+//                                               thread is runnable: everything is
+//                                               blocked, i.e. a guest-side deadlock
+//   both flat                                -> the core threads themselves are not
+//                                               running: wedged in host code, or
+//                                               OSSchedulerBegin never got as far as
+//                                               starting them
+//
+// cyclesRetired is accumulated per timeslice from __OSStoreThread()'s own executed-cycle
+// figure rather than counted per instruction, so it costs one relaxed add per ~45000
+// instructions instead of one per instruction. It is therefore a liveness signal, not a
+// performance counter: it lands in bursts of a whole quantum, and a core that is
+// mid-timeslice has not contributed its current work yet.
+struct PPCGuestLiveness
+{
+	uint64 cyclesRetired;   // guest instructions retired, summed over all cores
+	uint64 timeslices;      // completed thread timeslices
+	uint64 coreIdleSpins;   // idle-loop iterations, i.e. a core looking for work and finding none
+	uint32 coreInstructionPointer[3]; // 0 when that core is not currently running a guest thread
+};
+
+void PPCCore_getLiveness(PPCGuestLiveness& out);
+void PPCCore_noteRetiredCycles(uint64 cycles);
+void PPCCore_noteCoreIdleSpin();
+// Called with the interpreter instance a core is running, and with nullptr when it stops
+// running one. The core index is passed explicitly rather than derived from thread-local
+// state on purpose: guest threads are fibers and migrate between host threads, so a
+// thread_local here would be read on the wrong host thread after a fiber switch - the
+// same hazard TLS_WORKAROUND_NOINLINE exists to prevent in PPCInterpreterMain.cpp.
+void PPCCore_setCoreInstance(uint32 coreIndex, PPCInterpreter_t* hCPU);
+
 uint8* PPCInterpreter_PushAndReturnStackPointer(sint32 offset);
 uint8* PPCInterpreterGetStackPointer();
 void PPCInterpreterModifyStackPointer(sint32 offset);

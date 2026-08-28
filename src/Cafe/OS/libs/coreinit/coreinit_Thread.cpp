@@ -1191,9 +1191,20 @@ namespace coreinit
 		else
 			executedCycles -= hCPU->skippedCycles;
 		thread->totalCycles += (uint64)executedCycles;
+		// Same figure, accumulated across every thread and core rather than per-thread, so a
+		// reporting thread can ask "is the guest CPU executing at all" without walking the
+		// thread list. Taken here rather than in the execution loop below because this is
+		// where the skipped-cycle correction has already been applied - a thread that
+		// relinquished its timeslice must not be counted as having run it.
+		PPCCore_noteRetiredCycles((uint64)executedCycles);
 		// store context and set current thread to null
 		__OSThreadStoreContext(hCPU, thread);
 		OSSetCurrentThread(OSGetCoreId(), nullptr);
+		// Core index taken from the interpreter instance rather than OSGetCoreId(), which
+		// only answers correctly while PPCInterpreter_getCurrentInstance() is still set and
+		// is therefore hostage to the order of the two lines around it. hCPU->spr.UPIR is
+		// the same number with no such dependency.
+		PPCCore_setCoreInstance(PPCInterpreter_getCoreIndex(hCPU), nullptr);
 		PPCInterpreter_setCurrentInstance(nullptr);
 	}
 
@@ -1206,6 +1217,7 @@ namespace coreinit
 		hCPU->spr.UPIR = coreIndex;
 		hCPU->coreInterruptMask = 1;
 		PPCInterpreter_setCurrentInstance(hCPU);
+		PPCCore_setCoreInstance(coreIndex, hCPU);
 		OSSetCurrentThread(OSGetCoreId(), thread);
 		__OSThreadLoadContext(hCPU, thread);
 		thread->context.upir = coreIndex;
@@ -1291,6 +1303,11 @@ namespace coreinit
 		__OSUnlockScheduler();
 		while (true)
 		{
+			// Counted before the run-queue check, so this ticks even on the iteration that
+			// finds nothing to do. That is the case it exists to report: a core spinning here
+			// with no runnable thread is alive but starved, which looks exactly like a dead
+			// core from every other counter in the emulator.
+			PPCCore_noteCoreIdleSpin();
 			if (!g_coreRunQueueThreadCount[coreIndex].isZero()) // avoid hammering the lock on the main core if there is no runable thread
 			{
 				__OSLockScheduler();

@@ -18,6 +18,7 @@
 #include "config/ActiveSettings.h"
 
 #include "Cafe/CafeSystem.h"
+#include "Cafe/HW/Espresso/PPCState.h" // PPCGuestLiveness - the guest-CPU half of the heartbeat below
 
 LatteGPUState_t LatteGPUState = {};
 
@@ -138,6 +139,25 @@ void LatteThread_HandleOSScreen()
 std::thread sLatteHeartbeatThread;
 std::atomic_bool sLatteHeartbeatRunning = false;
 
+// The rate the heartbeat last measured, published so the app can show the same number
+// the log line shows. Deliberately the heartbeat's own value rather than a second
+// measurement taken somewhere else: two independently sampled frame rates that disagree
+// slightly are worse than useless when the whole question is whether the counter moves
+// at all. It is also not derivable from LattePerformanceMonitor, which reports whole
+// frames per second and therefore rounds every rate this port has actually produced
+// down to zero - which is exactly why the on-screen readout says "-- FPS" during runs
+// that are genuinely rendering.
+std::atomic<double> sLatteHeartbeatFps = 0.0;
+
+void LatteThread_GetProgress(LatteProgressSnapshot& out)
+{
+	out.gx2InitReached = LatteGPUState.gx2InitCalled != 0;
+	out.gx2FrameCount = LatteGPUState.frameCounter;
+	out.gx2FramesPerSecond = sLatteHeartbeatFps.load();
+	out.osScreenScanouts = sOSScreenSwapCount.load();
+	out.guestFlipRequests = LatteGPUState.osScreen.screen[0].flipRequestCount;
+}
+
 void LatteThread_HeartbeatEntry()
 {
 	SetThreadName("LatteHeartbeat");
@@ -146,6 +166,11 @@ void LatteThread_HeartbeatEntry()
 	uint64 lastFrameCount = 0;
 	uint64 lastOSScreenCount = 0;
 	uint32 lastFlipRequestCount = 0;
+	uint64 lastCyclesRetired = 0;
+	uint64 lastTimeslices = 0;
+	uint64 lastIdleSpins = 0;
+	bool guestSeenAlive = false;
+	bool osScreenEverUsed = false;
 	while (sLatteHeartbeatRunning)
 	{
 		std::this_thread::sleep_for(std::chrono::milliseconds(250));
@@ -158,19 +183,66 @@ void LatteThread_HeartbeatEntry()
 		// Written by the emulated CPU, so it moving while nothing else does means the
 		// guest is alive and the stall is on our side, not the title's.
 		const uint32 flipRequestCount = LatteGPUState.osScreen.screen[0].flipRequestCount;
+		// Latched rather than sampled: a title that used OSScreen during early boot and then
+		// moved to GX2 should keep reporting the counters that were meaningful for it, instead
+		// of having them vanish from the log the moment it disables the screens.
+		if (osScreenCount > 0 || flipRequestCount > 0 || LatteGPUState.osScreen.screen[0].isEnabled || LatteGPUState.osScreen.screen[1].isEnabled)
+			osScreenEverUsed = true;
+		const double fps = (double)(frameCount - lastFrameCount) / windowSeconds;
+		sLatteHeartbeatFps.store(fps);
+
+		PPCGuestLiveness guest;
+		PPCCore_getLiveness(guest);
+		const double mips = (double)(guest.cyclesRetired - lastCyclesRetired) / windowSeconds / 1000000.0;
+
+		// The guest-CPU half goes first because it is the half that decides what the rest of
+		// the line means. Before GX2Init every GPU-side number below is structurally zero -
+		// GX2 frames cannot exist yet, and OSScreen is a different API that a GX2 title never
+		// touches - so reading them as evidence of a stall is a mistake this log used to
+		// invite. Whether the emulated CPU is retiring instructions is the one measurement
+		// that separates "slow" from "stuck", and it belongs where it is read first.
 		cemuLog_log(LogType::Force,
-			"Heartbeat: {:.1f}s - GX2Init {}, GX2 frames {} (+{}, {:.2f} fps), OSScreen scanouts {} (+{}), guest flip requests {} (+{})",
+			"Heartbeat: {:.1f}s - GX2Init {} | guest CPU: {} instr (+{}, {:.2f} MIPS), {} timeslices (+{}), idle spins {} (+{}), cores at 0x{:08x}/0x{:08x}/0x{:08x} | GX2 frames {} (+{}, {:.2f} fps){}",
 			std::chrono::duration<double>(now - startTime).count(),
 			LatteGPUState.gx2InitCalled ? "reached" : "NOT reached",
-			frameCount, frameCount - lastFrameCount,
-			(double)(frameCount - lastFrameCount) / windowSeconds,
-			osScreenCount, osScreenCount - lastOSScreenCount,
-			flipRequestCount, flipRequestCount - lastFlipRequestCount);
+			guest.cyclesRetired, guest.cyclesRetired - lastCyclesRetired, mips,
+			guest.timeslices, guest.timeslices - lastTimeslices,
+			guest.coreIdleSpins, guest.coreIdleSpins - lastIdleSpins,
+			guest.coreInstructionPointer[0], guest.coreInstructionPointer[1], guest.coreInstructionPointer[2],
+			frameCount, frameCount - lastFrameCount, fps,
+			// Only reported once the title has actually used OSScreen. It is a separate
+			// display path from GX2 - homebrew uses it, retail games do not - so for most
+			// titles these two counters are pinned at zero by design and printing them
+			// unconditionally reads as two more dead counters confirming a freeze.
+			osScreenEverUsed
+				? fmt::format(" | OSScreen scanouts {} (+{}), guest flip requests {} (+{})",
+					osScreenCount, osScreenCount - lastOSScreenCount,
+					flipRequestCount, flipRequestCount - lastFlipRequestCount)
+				: std::string(" | OSScreen: not used by this title"));
+
+		// One-shot verdict, printed the first time the guest is seen to be alive. Worth its
+		// own line because it retires the question the previous builds could not answer: if
+		// the CPU is retiring instructions, a boot that has not reached GX2Init yet is slow,
+		// not hung, and no amount of work on the after-handover path will change that.
+		if (!guestSeenAlive && guest.cyclesRetired > 0)
+		{
+			guestSeenAlive = true;
+			cemuLog_log(LogType::Force,
+				"Guest CPU is executing - {} instructions retired so far. A boot that has not reached "
+				"GX2Init yet is running slowly, not deadlocked.", guest.cyclesRetired);
+		}
+
 		lastFrameCount = frameCount;
 		lastOSScreenCount = osScreenCount;
 		lastFlipRequestCount = flipRequestCount;
+		lastCyclesRetired = guest.cyclesRetired;
+		lastTimeslices = guest.timeslices;
+		lastIdleSpins = guest.coreIdleSpins;
 		lastTime = now;
 	}
+	// A stopped heartbeat must not leave its last rate standing, or anything polling this
+	// keeps reporting the frame rate of a title that is no longer running.
+	sLatteHeartbeatFps.store(0.0);
 }
 
 int Latte_ThreadEntry()
