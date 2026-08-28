@@ -707,7 +707,16 @@ void PPCRecompiler_init()
 #ifdef ARCH_X86_64
 	PPCRecompilerX64Gen_generateRecompilerInterfaceFunctions();
 #elif defined(__aarch64__)
-	PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions();
+	// This is the first thing that actually asks the kernel for executable memory. If the
+	// process is not allowed to have any, that used to surface as an uncaught C++ exception
+	// and an instant SIGABRT. Fail soft instead: leave the recompiler off and let the title
+	// run on the interpreter.
+	if (!PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions())
+	{
+		cemuLog_log(LogType::Force, "Recompiler disabled: the interface functions could not be placed in executable memory. Running the interpreter instead.");
+		ppcRecompilerEnabled = false;
+		return;
+	}
 #endif
     PPCRecompiler_allocateRange(0, 0x1000); // the first entry is used for fallback to interpreter
     PPCRecompiler_allocateRange(mmuRange_TRAMPOLINE_AREA.getBase(), mmuRange_TRAMPOLINE_AREA.getSize());
