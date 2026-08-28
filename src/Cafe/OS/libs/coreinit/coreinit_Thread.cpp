@@ -1301,6 +1301,11 @@ namespace coreinit
 		bool isMainCore = g_isMulticoreMode == false || t_assignedCoreIndex == 1;
 		sint32 coreIndex = t_assignedCoreIndex;
 		__OSUnlockScheduler();
+		// Logged once per core rather than every iteration - this loop spins thousands of
+		// times a second and the only question it needs to answer here is whether it was
+		// ever reached at all. "idle spins 0" in the heartbeat with this line absent means
+		// the fiber switch above never delivered control.
+		cemuLog_log(LogType::Force, "Boot stage: core {} idle fiber running", coreIndex);
 		while (true)
 		{
 			// Counted before the run-queue check, so this ticks even on the iteration that
@@ -1465,12 +1470,21 @@ namespace coreinit
 		}
 #endif
 
+		// Boot-stage trace, continued from CafeSystem::_LaunchTitleThread(). The three
+		// lines below bracket the fiber machinery: this port builds Fiber from ucontext
+		// (FiberUContext.cpp - the Android port needed Boost.Context instead, and iOS
+		// silently inherited the ucontext path by being neither Windows nor Android).
+		// If makecontext/swapcontext do not deliver control on this platform, the last
+		// line logged is "about to switch to the idle fiber" and nothing after it, which
+		// is a different diagnosis from the thread never starting at all.
+		cemuLog_log(LogType::Force, "Boot stage: core {} emulation thread started", t_assignedCoreIndex);
 		t_schedulerFiber = Fiber::PrepareCurrentThread();
 
 		// create scheduler idle fiber and switch to it
 		g_idleLoopFiber[t_assignedCoreIndex] = new Fiber(__OSThreadCoreIdle, nullptr, nullptr);
 		cemu_assert_debug(PPCInterpreter_getCurrentInstance() == nullptr);
 		__OSLockScheduler();
+		cemuLog_log(LogType::Force, "Boot stage: core {} about to switch to the idle fiber", t_assignedCoreIndex);
 		Fiber::Switch(*g_idleLoopFiber[t_assignedCoreIndex]);
 		// returned from scheduler loop, exit thread
 		cemu_assert_debug(!__OSHasSchedulerLock());
