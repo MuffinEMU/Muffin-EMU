@@ -12,6 +12,7 @@
 #if defined(__APPLE__)
 #include <sys/mman.h>
 #include <unistd.h>
+#include <libkern/OSCacheControl.h>
 #endif
 
 #include "../PPCRecompiler.h"
@@ -187,8 +188,17 @@ static void PPCRecompilerAArch64_flushICache(const void* code, size_t size)
 {
 	if (!code || size == 0)
 		return;
+	// __builtin___clear_cache() lowers to a call to compiler-rt's ___clear_cache, which
+	// Apple's arm64 runtime does not ship - the v1.24 build linked cleanly on every other
+	// target and failed here with "Undefined symbols for architecture arm64: ___clear_cache".
+	// Darwin's supported spelling for the same operation is sys_icache_invalidate(), which
+	// takes a base and a length rather than a begin/end pair.
+#if defined(__APPLE__)
+	sys_icache_invalidate((void*)code, size);
+#else
 	char* begin = (char*)code;
 	__builtin___clear_cache(begin, begin + size);
+#endif
 }
 
 struct UnconditionalJumpInfo
