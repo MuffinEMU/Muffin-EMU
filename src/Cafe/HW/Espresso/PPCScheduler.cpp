@@ -9,6 +9,54 @@
 
 uint32 ppcThreadQuantum = 45000; // execute 45000 instructions before thread reschedule happens, this value can be overwritten by game profiles
 
+// Guest CPU liveness counters. See PPCGuestLiveness in PPCState.h for what the three of
+// them mean when read together, and why nothing else in the emulator answers the question
+// they answer.
+//
+// Relaxed ordering throughout: these are read by a reporting thread that only cares
+// whether a number is larger than it was three seconds ago. Ordering them against other
+// memory would put a barrier on the scheduler's hot path to protect a log line.
+static std::atomic<uint64> s_ppcCyclesRetired{0};
+static std::atomic<uint64> s_ppcTimeslices{0};
+static std::atomic<uint64> s_ppcCoreIdleSpins{0};
+
+// Written on thread load/store, read by the reporting thread while the core is running,
+// so the instruction pointer it publishes is deliberately a live racing read of a
+// naturally-aligned uint32. That race is the point: a value that keeps changing means the
+// core is executing, and a value frozen across several reports names the address it is
+// stuck on. Taking a lock to read it would serialise the scheduler against a diagnostic.
+static std::atomic<PPCInterpreter_t*> s_ppcCoreInstance[3] = {};
+
+void PPCCore_noteRetiredCycles(uint64 cycles)
+{
+	s_ppcCyclesRetired.fetch_add(cycles, std::memory_order_relaxed);
+	s_ppcTimeslices.fetch_add(1, std::memory_order_relaxed);
+}
+
+void PPCCore_noteCoreIdleSpin()
+{
+	s_ppcCoreIdleSpins.fetch_add(1, std::memory_order_relaxed);
+}
+
+void PPCCore_setCoreInstance(uint32 coreIndex, PPCInterpreter_t* hCPU)
+{
+	if (coreIndex >= 3)
+		return;
+	s_ppcCoreInstance[coreIndex].store(hCPU, std::memory_order_relaxed);
+}
+
+void PPCCore_getLiveness(PPCGuestLiveness& out)
+{
+	out.cyclesRetired = s_ppcCyclesRetired.load(std::memory_order_relaxed);
+	out.timeslices = s_ppcTimeslices.load(std::memory_order_relaxed);
+	out.coreIdleSpins = s_ppcCoreIdleSpins.load(std::memory_order_relaxed);
+	for (uint32 i = 0; i < 3; i++)
+	{
+		PPCInterpreter_t* hCPU = s_ppcCoreInstance[i].load(std::memory_order_relaxed);
+		out.coreInstructionPointer[i] = hCPU ? hCPU->instructionPointer : 0;
+	}
+}
+
 void PPCInterpreter_relinquishTimeslice()
 {
 	PPCInterpreter_t* hCPU = PPCInterpreter_getCurrentInstance();
