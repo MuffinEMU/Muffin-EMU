@@ -242,6 +242,26 @@ const char* cemu_bridge_status_text(void);
 /// surviving log alone.
 void cemu_bridge_log_checkpoint(const char* message);
 
+/// Current memory position of this process, in bytes. `availableBytes` is the
+/// headroom iOS will allow before it kills the process (os_proc_available_memory),
+/// `footprintBytes` is what the process is currently billed for (phys_footprint).
+/// Either pointer may be NULL. Returns false if neither could be read.
+///
+/// Note this is NOT free system RAM. A device can have a gigabyte free and still
+/// kill this process, and that gap is the whole reason the figure is reported.
+bool cemu_bridge_memory_status(unsigned long long* availableBytes, unsigned long long* footprintBytes);
+
+/// Writes one memory-position line, tagged with `tag`, to the crash log. Use at
+/// points where a jump in footprint would be meaningful - the GX2 handover being
+/// the obvious one, since that is where a retail title starts allocating for real.
+void cemu_bridge_memory_note(const char* tag);
+
+/// Starts the 10 Hz memory sampler and subscribes to iOS memory warnings. Both
+/// write to the crash log via synchronous write(), because the termination they
+/// exist to explain (jetsam) delivers no signal and takes any buffered log with
+/// it. Idempotent; safe to call more than once.
+void cemu_bridge_start_memory_watchdog(void);
+
 /// Absolute path of the file cemu_bridge_log_checkpoint() and the crash handler write
 /// to. Never NULL, but empty if $HOME was unset and the log was never opened. Points to
 /// static storage; copy if you need to keep it.

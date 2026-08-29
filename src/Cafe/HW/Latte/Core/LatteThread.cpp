@@ -20,6 +20,14 @@
 #include "Cafe/CafeSystem.h"
 #include "Cafe/HW/Espresso/PPCState.h" // PPCGuestLiveness - the guest-CPU half of the heartbeat below
 
+#if defined(CEMU_PLATFORM_IOS)
+// Declared here rather than by including CemuBridge.h: that header is part of the iOS
+// app target, and pulling it into the engine's include path for two functions is a
+// bigger change than the two functions are worth. Both are plain C linkage.
+extern "C" bool cemu_bridge_memory_status(unsigned long long* availableBytes, unsigned long long* footprintBytes);
+extern "C" void cemu_bridge_memory_note(const char* tag);
+#endif
+
 LatteGPUState_t LatteGPUState = {};
 
 std::atomic_bool sLatteThreadRunning = false;
@@ -173,9 +181,18 @@ void LatteThread_HeartbeatEntry()
 	bool osScreenEverUsed = false;
 	while (sLatteHeartbeatRunning)
 	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(250));
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		const auto now = std::chrono::steady_clock::now();
-		if (now - lastTime < std::chrono::seconds(3))
+		// Fast for the first five seconds, then settle to the old cadence. The launch
+		// that motivated this died 563ms after the GX2 handover and so produced not one
+		// heartbeat line - a three-second interval cannot describe a boot that does not
+		// survive three seconds. After the opening burst the numbers are trends rather
+		// than events, and 3s is the right rate for a trend.
+		const auto sinceStart = now - startTime;
+		const auto interval = (sinceStart < std::chrono::seconds(5))
+			? std::chrono::milliseconds(500)
+			: std::chrono::milliseconds(3000);
+		if (now - lastTime < interval)
 			continue;
 		const double windowSeconds = std::chrono::duration<double>(now - lastTime).count();
 		const uint64 frameCount = LatteGPUState.frameCounter;
@@ -219,6 +236,19 @@ void LatteThread_HeartbeatEntry()
 					osScreenCount, osScreenCount - lastOSScreenCount,
 					flipRequestCount, flipRequestCount - lastFlipRequestCount)
 				: std::string(" | OSScreen: not used by this title"));
+
+		// Reported on the heartbeat as well as by the 10 Hz sampler, because these two
+		// answer different questions. The sampler exists to survive the kill; this exists
+		// so a launch that is merely getting close is legible while it is still running,
+		// next to the counters that say what the title was doing when it got there.
+#if defined(CEMU_PLATFORM_IOS)
+		{
+			unsigned long long availBytes = 0, footBytes = 0;
+			if (cemu_bridge_memory_status(&availBytes, &footBytes))
+				cemuLog_log(LogType::Force, "Memory: {} MB in use, {} MB of headroom left before iOS kills this process",
+					footBytes / (1024ull * 1024ull), availBytes / (1024ull * 1024ull));
+		}
+#endif
 
 		// One-shot verdict, printed the first time the guest is seen to be alive. Worth its
 		// own line because it retires the question the previous builds could not answer: if
@@ -370,6 +400,15 @@ int Latte_ThreadEntry()
 			LatteThread_Exit();
 	}
 	cemuLog_log(LogType::Force, "LatteThread: GX2Init() reached - handing over to the command ringbuffer, GX2 frames start here");
+#if defined(CEMU_PLATFORM_IOS)
+	// Stamped here because this is the line where the two kinds of title stop
+	// resembling each other. Homebrew never reaches it and never allocates a GPU
+	// resource; a retail title crosses it and immediately starts uploading textures
+	// and building pipelines. Paired with the 10 Hz sampler running underneath, which
+	// supplies the after, that makes the difference between "homebrew boots, retail
+	// dies" a measured quantity rather than an argued one.
+	cemu_bridge_memory_note("at the GX2 handover, before the ringbuffer runs");
+#endif
 	LatteCP_ProcessRingbuffer();
 	cemu_assert_debug(false); // should never reach
 	return 0;
