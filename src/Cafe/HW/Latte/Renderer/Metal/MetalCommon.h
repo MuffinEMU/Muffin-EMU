@@ -14,14 +14,25 @@
 // note below, which was found the hard way on device. Going through the runtime lets
 // us ask whether the selector exists first, and keeps the query independent of which
 // metal-cpp revision happens to be vendored.
+//
+// The device stays a void* the whole way through, and the two runtime entry points are
+// called through recast function pointers. This header reaches ARC Objective-C++ by way
+// of CemuBridge.mm, and there a cast from MTL::Device* to id is a hard error: ARC has no
+// way to know whether such a cast transfers ownership, so it demands a __bridge
+// annotation that a plain C++ translation unit cannot parse. Keeping ObjC pointer types
+// out of the signatures sidesteps the question in both kinds of TU. objc_msgSend is
+// already called this way below; on arm64 a void* and an id are the same register.
 inline bool MtlDeviceBoolProperty(MTL::Device* device, const char* selectorName, bool fallback)
 {
-	id deviceObject = reinterpret_cast<id>(device);
+	void* deviceObject = static_cast<void*>(device);
 	SEL selector = sel_registerName(selectorName);
-	if (!class_respondsToSelector(object_getClass(deviceObject), selector))
+
+	using ClassGetter = Class (*)(void*);
+	Class deviceClass = reinterpret_cast<ClassGetter>(object_getClass)(deviceObject);
+	if (!deviceClass || !class_respondsToSelector(deviceClass, selector))
 		return fallback;
 
-	using BoolPropertyGetter = BOOL (*)(id, SEL);
+	using BoolPropertyGetter = BOOL (*)(void*, SEL);
 	return reinterpret_cast<BoolPropertyGetter>(objc_msgSend)(deviceObject, selector) != NO;
 }
 
