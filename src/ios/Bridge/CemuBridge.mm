@@ -52,6 +52,7 @@
 // attributed to "LiveContainer", not "Cemu").
 namespace {
     int g_crashLogFd = -1;
+    char g_crashLogPath[1024] = {0};
 
     void cemu_crash_write(const char* s) {
         if (g_crashLogFd >= 0 && s) write(g_crashLogFd, s, strlen(s));
@@ -89,6 +90,16 @@ namespace {
         char path[1024];
         snprintf(path, sizeof(path), "%s/Documents/CemuCrashLog.txt", home);
         g_crashLogFd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+        // Kept, because "where is the crash log" turned out not to be answerable from
+        // outside. The on-screen hint said Files > On My iPad > Cemu, which is where this
+        // lands for a normally installed app and is not where it lands under
+        // LiveContainer: LiveContainer redirects HOME per hosted app, so $HOME here is
+        // its container and not Cemu's, and the file appears under LiveContainer's own
+        // Documents. Guessing which of the two applies - and it depends on how early this
+        // constructor runs relative to the redirect - is not something a person holding an
+        // iPad should have to do. The path is right here at the moment it is opened, so
+        // record it and let the app print the real one.
+        snprintf(g_crashLogPath, sizeof(g_crashLogPath), "%s", path);
 
         // backtrace() isn't async-signal-safe (it can lazily allocate/lock on first
         // use), which is exactly the risk on the crashes it's meant to catch - a call
@@ -170,6 +181,11 @@ void cemu_bridge_install_early_crash_handler() {
     // out of one of the ~90 linked engine libraries' static initializers happens
     // before main(), too early for anything installed from Swift to see it.
     g_previousTerminateHandler = std::set_terminate(cemu_terminate_handler);
+}
+
+const char* cemu_bridge_crash_log_path(void) {
+    cemu_crash_open_log(); // idempotent; the path is set as a side effect of opening
+    return g_crashLogPath;
 }
 
 void cemu_bridge_log_checkpoint(const char* message) {
@@ -642,6 +658,16 @@ void cemu_bridge_initialize(const char* mlcPath) {
 #if defined(CEMU_CORE_AVAILABLE)
     if (g_initialized.exchange(true))
         return;
+    // First line of every launch, deliberately. A crash log nobody can find is the same
+    // as no crash log, and this is the only place the real path is known for certain.
+    // Goes through the checkpoint call so it lands in the on-screen launch log as well as
+    // in the file it names.
+    {
+        std::string where = "Crash log and checkpoints are being written to: ";
+        const char* crashPath = cemu_bridge_crash_log_path();
+        where += (crashPath && crashPath[0]) ? crashPath : "(nowhere - $HOME was not set, so no file could be opened)";
+        cemu_bridge_log_checkpoint(where.c_str());
+    }
     // Desktop Cemu only ever calls PPCTimer_init() from main.cpp's CemuCommonInit(),
     // which this iOS bridge never runs (it goes straight to CafeSystem::Initialize()).
     // Without it, _rdtscFrequency stays 0 forever, and LaunchForegroundTitle() calls

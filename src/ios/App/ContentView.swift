@@ -70,6 +70,17 @@ struct BootFailureView: View {
     let message: String
     let onDismiss: () -> Void
 
+    /// Where the diagnostics actually are. Computed from the bridge rather than written
+    /// down here, because only the bridge knows what $HOME resolved to when it opened the
+    /// file, and that differs between a normal install and a LiveContainer one.
+    private static var crashLogHint: String {
+        let path = String(cString: cemu_bridge_crash_log_path())
+        guard !path.isEmpty else {
+            return "Full detail is in log.txt. No crash log could be opened this run, so there is no CemuCrashLog.txt to send."
+        }
+        return "Full detail is in log.txt and CemuCrashLog.txt, at:\n\(path)"
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -93,10 +104,19 @@ struct BootFailureView: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: 480)
 
-                Text("Full detail is in log.txt and CemuCrashLog.txt — Files ▸ On My iPad ▸ Cemu.")
+                // The real path, asked of the bridge, rather than the folder this used to
+                // name. It said "Files > On My iPad > Cemu", which is true for a normally
+                // installed app and false under LiveContainer - LiveContainer redirects
+                // HOME per hosted app, so the file lands under LiveContainer's own
+                // Documents instead. Anyone who followed the old line looked in the right
+                // place for the wrong install, found nothing, and reasonably concluded no
+                // crash log existed. Selectable, because the useful thing to do with a
+                // path is copy it.
+                Text(Self.crashLogHint)
                     .font(.system(size: 11, weight: .regular, design: .rounded))
                     .foregroundColor(.white.opacity(0.45))
                     .multilineTextAlignment(.center)
+                    .textSelection(.enabled)
                     .frame(maxWidth: 480)
 
                 Button(action: onDismiss) {

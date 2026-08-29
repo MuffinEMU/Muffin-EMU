@@ -242,6 +242,16 @@ const char* cemu_bridge_status_text(void);
 /// surviving log alone.
 void cemu_bridge_log_checkpoint(const char* message);
 
+/// Absolute path of the file cemu_bridge_log_checkpoint() and the crash handler write
+/// to. Never NULL, but empty if $HOME was unset and the log was never opened. Points to
+/// static storage; copy if you need to keep it.
+///
+/// Exists because the answer is not guessable from the UI side. Under LiveContainer
+/// $HOME is redirected per hosted app, so the file is not where it would be for a
+/// normally installed app, and telling someone the wrong folder is worse than telling
+/// them nothing - they conclude the crash log does not exist. Print this instead.
+const char* cemu_bridge_crash_log_path(void);
+
 /// Rescans for physical controllers and binds the first one found to player 1's
 /// emulated GamePad if nothing is bound yet.
 ///
