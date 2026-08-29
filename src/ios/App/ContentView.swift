@@ -534,6 +534,13 @@ struct EmulatorViewOptimized: View {
     /// under you, exactly like the two sliders next to it.
     @AppStorage(ControllerLayoutSettings.joystickKey)
     private var joystickMode = ControllerLayoutSettings.defaultJoystick
+    // The two feel settings, offered here as well as in Settings for the same reason the
+    // toggle is: a deadzone is not something you can judge from a settings screen with no
+    // game under it. This is the panel you have open while steering.
+    @AppStorage(ControllerLayoutSettings.deadzoneKey)
+    private var stickDeadzone = ControllerLayoutSettings.defaultDeadzone
+    @AppStorage(ControllerLayoutSettings.stickCurveKey)
+    private var stickCurve = ControllerLayoutSettings.defaultStickCurve
     // Defaults ON, and must keep matching SettingsView's declaration of the same key -
     // two @AppStorage defaults for one key that disagree means the toggle and the
     // emulator disagree about what is on. See SettingsView for why this flipped.
@@ -776,6 +783,43 @@ struct EmulatorViewOptimized: View {
                                 .foregroundColor(.white.opacity(0.85))
                         }
                         .tint(MuffinTheme.brownDarkest)
+
+                        if joystickMode {
+                            HStack(spacing: 10) {
+                                Text("Deadzone")
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.85))
+                                Slider(
+                                    value: $stickDeadzone,
+                                    in: ControllerLayoutSettings.minDeadzone...ControllerLayoutSettings.maxDeadzone
+                                )
+                                // Fixed width, so dragging the slider does not make the
+                                // slider itself change size under the finger as the
+                                // number beside it gets wider.
+                                Text(stickDeadzone <= 0.0005
+                                     ? "off"
+                                     : "\(Int((stickDeadzone * 100).rounded()))%")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .frame(width: 34, alignment: .trailing)
+                            }
+
+                            HStack(spacing: 10) {
+                                Text("Fine")
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.85))
+                                Slider(
+                                    value: $stickCurve,
+                                    in: ControllerLayoutSettings.minStickCurve...ControllerLayoutSettings.maxStickCurve
+                                )
+                                Text(stickCurve <= ControllerLayoutSettings.minStickCurve + 0.005
+                                     ? "lin"
+                                     : String(format: "%.1fx", stickCurve))
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .frame(width: 34, alignment: .trailing)
+                            }
+                        }
 
                         HStack(spacing: 12) {
                             Button("Reset layout") { ControllerLayoutSettings.reset() }
