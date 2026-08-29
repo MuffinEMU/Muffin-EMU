@@ -1318,6 +1318,26 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
             // Reaching here means a recompiler-enabled boot got a title running, so the
             // sentinel armed by ios_jit_is_permitted() has nothing left to warn about.
             ios_jit_survived_boot();
+            // Same call, same position, and for the same reason as in cemu_bridge_boot_rpx()
+            // above - which until now was the only place it appeared, and which the app never
+            // calls. EmulationEngine.bootBlocking() goes to cemu_bridge_boot_title() for
+            // everything: disc images, archives, dumped folders, and standalone homebrew
+            // alike (the RPX case falls through inside IOSTitleLaunch_PrepareForegroundTitle,
+            // not out here). So every launch that has ever happened on a device took this
+            // branch, and the automatic clock ladder - the thing written specifically to
+            // search for a timebase that gets a title past GX2Init - was never once armed.
+            // It was reachable only from a function nothing calls.
+            //
+            // That matters most for exactly the titles it was meant for. Homebrew on OSScreen
+            // does not need the ladder and its own counters say so, so the ladder stopping
+            // early there costs nothing. A commercial title is the case that has to reach
+            // GX2Init, and it is the case that has been running the whole time at whatever
+            // fixed shift the boot happened to start at, with nothing measuring whether that
+            // clock was ever the thing holding it. Arming it here does not by itself make a
+            // retail game boot, but it is a precondition for the ladder's own log lines to
+            // exist at all, and those lines are the difference between "it crashed" and
+            // knowing whether the guest's clock was ever a factor.
+            ios_timebase_ladder_start();
             setStatus("Title launched.");
             return CEMU_BRIDGE_OK;
         case 1:
