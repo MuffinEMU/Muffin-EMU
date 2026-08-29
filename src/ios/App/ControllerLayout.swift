@@ -24,10 +24,12 @@ enum ControllerLayoutSettings {
     /// - which is a different place on a phone than on an iPad.
     static let rightStickOffsetXKey = "muffin.controls.rstick.dx"
     static let rightStickOffsetYKey = "muffin.controls.rstick.dy"
-    /// How much of the stick's travel reads as centred, and how the rest of it is shaped.
-    /// Both are feel rather than layout, which is why neither is in `reset()` below.
+    /// How much of the stick's travel reads as centred, how the rest of it is shaped, and
+    /// what shape it may reach. All three are feel rather than layout, which is why none
+    /// of them is in `reset()` below.
     static let deadzoneKey = "muffin.controls.stick.deadzone"
     static let stickCurveKey = "muffin.controls.stick.curve"
+    static let stickGateKey = "muffin.controls.stick.gate"
 
     static let defaultJoystick = false
 
@@ -53,6 +55,15 @@ enum ControllerLayoutSettings {
     static let defaultStickCurve: Double = 1.0
     static let minStickCurve: Double = 1.0
     static let maxStickCurve: Double = 2.5
+
+    /// The gate the stick reaches by default.
+    ///
+    /// Octagonal, because that is what the hardware this is imitating does, and the
+    /// difference is not cosmetic - see `StickGate` for what it changes about the numbers
+    /// a title receives.
+    /// Stored as its raw string, so the key survives a case being added or reordered.
+    static let defaultStickGate = ControllerGeometry.StickGate.octagon
+    static let defaultStickGateRaw = ControllerGeometry.StickGate.octagon.rawValue
     static let defaultScale: Double = 1.0
     static let defaultOpacity: Double = 0.85
     static let minScale: Double = 0.6
@@ -207,6 +218,67 @@ enum ControllerGeometry {
     /// deflection - the knob stays inside its own ring at the extremes, as a real stick's
     /// cap does.
     static var stickTravel: CGFloat { (stickBaseDiameter - stickKnobDiameter) / 2 }
+
+    /// The shape the knob may reach, which is a fidelity question and not a cosmetic one.
+    ///
+    /// The GamePad's sticks sit in an octagonal gate, and that gate is why a Wii U stick
+    /// does not behave like a circle. On a circle the magnitude is 1 in every direction,
+    /// so a diagonal is as strong as a cardinal and there is nothing under the thumb to
+    /// say where the diagonals are. In the gate the eight vertices - the four cardinals
+    /// and the four diagonals - are the only directions that reach full travel, and the
+    /// flats between them stop about 8% short. That is what a title tuned on the console
+    /// was tuned against: Mario Kart's drift, and the eight-way feel of walking in Zelda
+    /// and 3D World, are both read off a stick whose corners were cut this way.
+    ///
+    /// Round is kept because it is what every other on-screen stick does and because the
+    /// gate is a real constraint - it takes about 8% off the top of every direction that
+    /// is not one of the eight, and someone who wants the maximum number in every
+    /// direction should be able to have it.
+    enum StickGate: String, CaseIterable, Identifiable {
+        case octagon
+        case round
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .octagon: return "Octagonal"
+            case .round:   return "Round"
+            }
+        }
+
+        /// For the settings screen: what picking this actually does, in one line.
+        var summary: String {
+            switch self {
+            case .octagon:
+                return "The GamePad's own gate. Full travel at the four cardinals and the four diagonals, a little short of it in between - the shape the games were tuned against."
+            case .round:
+                return "Full travel in every direction. Stronger off the eight, and with nothing marking where the diagonals are."
+            }
+        }
+
+        /// How far the gate lies from the centre along `angle`, as a fraction of the
+        /// stick's full travel. 1 at a vertex, `cos(22.5 deg)` on a flat.
+        ///
+        /// Standard regular-polygon inradius-over-cosine, folded into one 45-degree
+        /// segment: a regular octagon is eight copies of the same wedge, so only the
+        /// angle within a wedge matters. The fold is written as a remainder plus a
+        /// correction rather than an `abs`, because `atan2` returns negative angles for
+        /// the lower half of the screen and truncatingRemainder keeps their sign - the
+        /// uncorrected value would put the whole bottom of the stick on the wrong side
+        /// of the wedge and make its gate the mirror image of the top's.
+        func radiusFraction(atAngle angle: CGFloat) -> CGFloat {
+            switch self {
+            case .round:
+                return 1
+            case .octagon:
+                let wedge = CGFloat.pi / 4
+                var offset = angle.truncatingRemainder(dividingBy: wedge)
+                if offset < 0 { offset += wedge }
+                return cos(wedge / 2) / cos(offset - wedge / 2)
+            }
+        }
+    }
 
     /// The camera stick, for joystick mode: the right analog stick, drawn as its own
     /// one-control cluster rather than folded into the right half.

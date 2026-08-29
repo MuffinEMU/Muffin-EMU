@@ -414,6 +414,52 @@ private struct HeldControl<Content: View>: View {
     }
 }
 
+/// The stick's gate, as a shape.
+///
+/// `InsettableShape` rather than plain `Shape` so `.strokeBorder` works on it, which is
+/// what the rest of this file uses for outlines: `.stroke` centres the line on the path
+/// and spills half its width outside the frame, so an octagon drawn that way would be
+/// wider than the circle it is meant to be inscribed in and would not line up with the
+/// circular hit area.
+///
+/// The vertices are at every 45 degrees starting at 0, which puts one on each cardinal
+/// and one on each diagonal - the eight directions `StickGate.radiusFraction` returns 1
+/// for. Drawing it any other way round would show flats where the full-travel directions
+/// are, which is exactly backwards.
+private struct StickGateShape: InsettableShape {
+    let gate: ControllerGeometry.StickGate
+    var inset: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        let radius = min(rect.width, rect.height) / 2 - inset
+        guard radius > 0 else { return Path() }
+
+        switch gate {
+        case .round:
+            return Circle().path(in: CGRect(x: rect.midX - radius, y: rect.midY - radius,
+                                            width: radius * 2, height: radius * 2))
+        case .octagon:
+            var path = Path()
+            for corner in 0..<8 {
+                let angle = CGFloat(corner) * .pi / 4
+                let point = CGPoint(x: rect.midX + cos(angle) * radius,
+                                    y: rect.midY + sin(angle) * radius)
+                if corner == 0 {
+                    path.move(to: point)
+                } else {
+                    path.addLine(to: point)
+                }
+            }
+            path.closeSubpath()
+            return path
+        }
+    }
+
+    func inset(by amount: CGFloat) -> StickGateShape {
+        StickGateShape(gate: gate, inset: inset + amount)
+    }
+}
+
 /// The analog stick, for joystick mode.
 ///
 /// Not a `ControlButton` with extra behaviour: a button reports one bit and a stick
@@ -447,6 +493,8 @@ private struct JoystickControl: View {
     private var deadzoneSetting = ControllerLayoutSettings.defaultDeadzone
     @AppStorage(ControllerLayoutSettings.stickCurveKey)
     private var curveSetting = ControllerLayoutSettings.defaultStickCurve
+    @AppStorage(ControllerLayoutSettings.stickGateKey)
+    private var gateSetting = ControllerLayoutSettings.defaultStickGateRaw
 
     /// Where the knob is drawn, in points from the ring's centre. Already clamped to the
     /// travel radius, so this is also what the axis is derived from - one number, not a
@@ -480,6 +528,11 @@ private struct JoystickControl: View {
         CGFloat(min(max(curveSetting, ControllerLayoutSettings.minStickCurve),
                     ControllerLayoutSettings.maxStickCurve))
     }
+    /// Same defensive read as the two above, for the same reason: a raw string from a
+    /// UserDefaults nobody here wrote may name a case that does not exist.
+    private var gate: ControllerGeometry.StickGate {
+        ControllerGeometry.StickGate(rawValue: gateSetting) ?? ControllerLayoutSettings.defaultStickGate
+    }
 
     /// How long a tap holds L3 before releasing it.
     ///
@@ -496,12 +549,20 @@ private struct JoystickControl: View {
 
     var body: some View {
         ZStack {
-            // The ring. Neutral, like the shoulders and plus/minus: it is not a control
-            // the skins have ever had an opinion about.
-            Circle()
+            // The gate, drawn as the shape the knob can actually reach. Neutral, like the
+            // shoulders and plus/minus: it is not a control the skins have ever had an
+            // opinion about.
+            //
+            // Drawn rather than left as a circle because the flats are the only thing on
+            // screen that says where the eight directions are, which on the real GamePad
+            // is something the thumb is told by the gate itself. A round ring over an
+            // octagonal clamp would also be the one place in this file where what is
+            // drawn and what the title receives disagree.
+            StickGateShape(gate: gate)
                 .fill(Color(white: 0.85).opacity(0.55))
                 .overlay(
-                    Circle().strokeBorder(Color.black.opacity(0.45), lineWidth: max(1, unit * 0.05))
+                    StickGateShape(gate: gate)
+                        .strokeBorder(Color.black.opacity(0.45), lineWidth: max(1, unit * 0.05))
                 )
 
             // The cap takes the skin's d-pad colour, because it is what the d-pad became.
@@ -514,9 +575,13 @@ private struct JoystickControl: View {
                 .offset(knobOffset)
         }
         .frame(width: base, height: base)
-        // Circle, not Rectangle. The corners of the frame are outside anything drawn, and
-        // the d-pad this replaces did not claim them either - a touch that misses the
-        // stick should still reach the game underneath.
+        // Circle, not Rectangle, and deliberately the circle rather than the gate. The
+        // corners of the frame are outside anything drawn and the d-pad this replaces did
+        // not claim them either, so a touch that misses the stick still reaches the game
+        // underneath - but the sliver between an octagonal gate and its circumcircle is a
+        // thumb aiming at a diagonal and overshooting by a couple of points, and the
+        // clamp above already turns that into full deflection at the vertex. Hit-testing
+        // the octagon would drop it on the floor instead.
         .contentShape(Circle())
         .accessibilityLabel(clickButton == nil ? "Camera stick" : "Left stick")
         .allowsHitTesting(isInteractive)
@@ -528,12 +593,22 @@ private struct JoystickControl: View {
                     let dy = value.location.y - base / 2
                     let distance = (dx * dx + dy * dy).squareRoot()
 
-                    // Clamped by magnitude, so the reachable area is the circle that is
-                    // drawn rather than the square it is inscribed in.
-                    let scale = distance > travel ? travel / distance : 1
+                    // How far the gate is in the direction the thumb is holding. Round
+                    // returns 1 everywhere and this is the old circular clamp; the
+                    // octagon returns less than 1 between its vertices, which is the
+                    // whole of what the gate does.
+                    let reach = travel * gate.radiusFraction(atAngle: atan2(dy, dx))
+
+                    // Clamped by magnitude along that direction, so the reachable area is
+                    // the shape that is drawn rather than the square it is inscribed in -
+                    // and so the knob cannot be drawn somewhere the gate does not go.
+                    let scale = distance > reach ? reach / distance : 1
                     knobOffset = CGSize(width: dx * scale, height: dy * scale)
 
-                    let deflection = travel > 0 ? min(distance, travel) / travel : 0
+                    // Over `travel`, not over `reach`. Dividing by the gate's own radius
+                    // would renormalise every direction back to 1 at the flats and undo
+                    // the gate entirely - the point of it is that the flats stop short.
+                    let deflection = travel > 0 ? min(distance, reach) / travel : 0
                     // The click threshold, not the deadzone. The deadzone is a setting
                     // and can be turned down to nothing, and if this went with it then
                     // every press of the stick would count as a push and L3 would become
