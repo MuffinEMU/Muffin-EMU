@@ -36,6 +36,15 @@ struct SettingsView: View {
     /// job is to say what is in effect.
     @AppStorage(TimebaseScale.storageKey) private var timebaseRaw = TimebaseScale.current.rawValue
 
+    /// Same keys the on-screen pad reads. Moving a cluster is a thing you can only
+    /// sensibly do with a game under it, so that lives in the emulator view - but size
+    /// and opacity are worth being able to set from here too, and "Reset layout" needs
+    /// to be reachable from somewhere that is not itself on top of the pad.
+    @AppStorage(ControllerLayoutSettings.scaleKey)
+    private var controlScale = ControllerLayoutSettings.defaultScale
+    @AppStorage(ControllerLayoutSettings.opacityKey)
+    private var controlOpacity = ControllerLayoutSettings.defaultOpacity
+
     private var timebase: TimebaseScale {
         TimebaseScale(rawValue: timebaseRaw) ?? .realTime
     }
@@ -54,6 +63,40 @@ struct SettingsView: View {
                         }
                         .foregroundColor(MuffinTheme.brownDarkest)
                     }
+
+                    Section {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Button size")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            HStack(spacing: 10) {
+                                Image(systemName: "minus.magnifyingglass")
+                                Slider(
+                                    value: $controlScale,
+                                    in: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale
+                                )
+                                Image(systemName: "plus.magnifyingglass")
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Opacity")
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            HStack(spacing: 10) {
+                                Image(systemName: "circle.lefthalf.filled")
+                                Slider(value: $controlOpacity, in: 0.2...1.0)
+                                Image(systemName: "circle.fill")
+                            }
+                        }
+
+                        Button(role: .destructive, action: { ControllerLayoutSettings.reset() }) {
+                            Label("Reset layout", systemImage: "arrow.uturn.backward")
+                        }
+                    } header: {
+                        Text("On-screen controls")
+                    } footer: {
+                        Text("Muffin picks a button size for the screen it is on and re-picks it whenever that changes, so the pad is already the right size on a phone and on an iPad without being set here. These two adjust that choice rather than replacing it.\n\nTo move either half, start a game and tap the move button in the top bar - you need the game underneath to judge where the controls should go.")
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
 
                     // The two things that decide how fast this runs, in the order they
                     // matter. CPU mode first because it is worth more than everything
