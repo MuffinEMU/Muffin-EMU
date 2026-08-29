@@ -499,6 +499,16 @@ struct EmulatorViewOptimized: View {
     @Binding var isRunning: Bool
     @Binding var controllerSkin: WiiUControllerSkin
     @State private var showSkinSelector = false
+    /// Turns the pad into something you position rather than something you press. Local
+    /// state, not AppStorage: nobody wants to come back to a game and find the controls
+    /// still in edit mode because that is how they last left them.
+    @State private var isEditingControlLayout = false
+    /// The same two keys the pad itself reads. Declared here as well so the in-game
+    /// sliders write to the thing being dragged, with no plumbing between them.
+    @AppStorage(ControllerLayoutSettings.scaleKey)
+    private var controlScale = ControllerLayoutSettings.defaultScale
+    @AppStorage(ControllerLayoutSettings.opacityKey)
+    private var controlOpacity = ControllerLayoutSettings.defaultOpacity
     // Defaults ON, and must keep matching SettingsView's declaration of the same key -
     // two @AppStorage defaults for one key that disagree means the toggle and the
     // emulator disagree about what is on. See SettingsView for why this flipped.
@@ -540,6 +550,25 @@ struct EmulatorViewOptimized: View {
                     HStack(spacing: 8) {
                         Button(action: { showSkinSelector.toggle() }) {
                             Image(systemName: "gamecontroller.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(MuffinSecondaryButtonStyle())
+
+                        // Reachable without leaving the game, because the only way to
+                        // tell whether the pad is in the right place is to have the
+                        // game under it while you move it.
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isEditingControlLayout.toggle()
+                            }
+                            // Editing disables the buttons, and a button held at the
+                            // moment it stops being able to report its own release
+                            // would stay held inside the title.
+                            cemu_bridge_release_all_buttons()
+                        }) {
+                            Image(systemName: isEditingControlLayout
+                                  ? "checkmark.circle.fill"
+                                  : "arrow.up.and.down.and.arrow.left.and.right")
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
@@ -614,18 +643,16 @@ struct EmulatorViewOptimized: View {
             // unconfigured controller, just no call. OptimizedControlPanel reports
             // press AND release, and each label is translated here into the bridge's
             // own button numbering.
-            VStack {
-                Spacer()
-                OptimizedControlPanel(
-                    skin: controllerSkin,
-                    onDPadInput: { direction, pressed in
-                        cemu_bridge_set_button_state(cemuBridgeButton(forDPadDirection: direction), pressed)
-                    },
-                    onButtonInput: { label, pressed in
-                        cemu_bridge_set_button_state(cemuBridgeButton(forActionLabel: label), pressed)
-                    }
-                )
-            }
+            // No VStack/Spacer any more: the pad positions every control itself against
+            // the size it is handed, which is what lets one half be dragged somewhere a
+            // bottom-aligned stack could never have put it.
+            OptimizedControlPanel(
+                skin: controllerSkin,
+                onInput: { label, pressed in
+                    cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
+                },
+                isEditingLayout: $isEditingControlLayout
+            )
 
             // The Metal view above must mount (so it can register the render
             // surface) before boot() actually runs, so this state genuinely
@@ -671,6 +698,64 @@ struct EmulatorViewOptimized: View {
                 }
                 .transition(.opacity)
             }
+
+            // Last in the ZStack so it sits above the pad it is adjusting - a size
+            // slider you have to hunt for behind a button is not an adjustment anyone
+            // makes twice. Everything here writes to the same AppStorage keys the pad
+            // reads, so the change is under the finger as the slider moves.
+            if isEditingControlLayout {
+                VStack {
+                    VStack(spacing: 10) {
+                        Text("Drag either half to move it. Nothing here reaches the game.")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.85))
+                            .multilineTextAlignment(.center)
+
+                        HStack(spacing: 10) {
+                            Image(systemName: "minus.magnifyingglass")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.7))
+                            Slider(
+                                value: $controlScale,
+                                in: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale
+                            )
+                            Image(systemName: "plus.magnifyingglass")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+
+                        HStack(spacing: 10) {
+                            Image(systemName: "circle.lefthalf.filled")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.7))
+                            Slider(value: $controlOpacity, in: 0.2...1.0)
+                            Image(systemName: "circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+
+                        HStack(spacing: 12) {
+                            Button("Reset layout") { ControllerLayoutSettings.reset() }
+                                .buttonStyle(MuffinSecondaryButtonStyle())
+
+                            Button("Done") {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isEditingControlLayout = false
+                                }
+                            }
+                            .buttonStyle(MuffinSecondaryButtonStyle())
+                        }
+                    }
+                    .padding(14)
+                    .frame(maxWidth: 420)
+                    .background(Color.black.opacity(0.82))
+                    .cornerRadius(14)
+                    .padding(.top, 12)
+
+                    Spacer()
+                }
+                .transition(.opacity)
+            }
         }
         // No full-screen tap gesture. There used to be one here toggling showControls,
         // which meant every stray tap on the game could take the pad away and every
@@ -695,27 +780,42 @@ struct EmulatorViewOptimized: View {
     }
 }
 
-// The on-screen pad speaks in labels ("up", "A") because that is what it draws. The
+// The on-screen pad speaks in labels ("up", "A", "ZL") because that is what it draws. The
 // engine speaks in CemuBridgeButton. Keeping the translation here, at the one call site,
-// rather than inside the view means ControllerSkins.swift stays a pure SwiftUI file with
-// no dependency on the bridge at all.
-private func cemuBridgeButton(forDPadDirection direction: String) -> CemuBridgeButton {
-    switch direction {
+// rather than inside the view means ControllerPad.swift stays a pure SwiftUI file with no
+// dependency on the bridge at all.
+//
+// One function now rather than two, because the pad no longer has two kinds of control to
+// tell apart: the d-pad, the face buttons, the shoulders, plus/minus and the stick clicks
+// all report through the same closure, and the bridge has had an id for every one of them
+// since CemuBridge.h was written - it was the pad that was only drawing eight of them.
+private func cemuBridgeButton(forLabel label: String) -> CemuBridgeButton {
+    switch label {
     case "up":    return CEMU_BRIDGE_BUTTON_UP
     case "down":  return CEMU_BRIDGE_BUTTON_DOWN
     case "left":  return CEMU_BRIDGE_BUTTON_LEFT
     case "right": return CEMU_BRIDGE_BUTTON_RIGHT
-    default:      return CEMU_BRIDGE_BUTTON_NONE
-    }
-}
 
-private func cemuBridgeButton(forActionLabel label: String) -> CemuBridgeButton {
-    switch label {
     case "A": return CEMU_BRIDGE_BUTTON_A
     case "B": return CEMU_BRIDGE_BUTTON_B
     case "X": return CEMU_BRIDGE_BUTTON_X
     case "Y": return CEMU_BRIDGE_BUTTON_Y
-    default:  return CEMU_BRIDGE_BUTTON_NONE
+
+    case "L":  return CEMU_BRIDGE_BUTTON_L
+    case "R":  return CEMU_BRIDGE_BUTTON_R
+    case "ZL": return CEMU_BRIDGE_BUTTON_ZL
+    case "ZR": return CEMU_BRIDGE_BUTTON_ZR
+
+    case "plus":  return CEMU_BRIDGE_BUTTON_PLUS
+    case "minus": return CEMU_BRIDGE_BUTTON_MINUS
+
+    // The two small grey circles in the middle of each cluster. Read as stick clicks
+    // (L3/R3) - they are drawn as plain unlabelled dots, and the bridge has no analog
+    // axis call for them to have been sticks with.
+    case "L3": return CEMU_BRIDGE_BUTTON_STICK_L
+    case "R3": return CEMU_BRIDGE_BUTTON_STICK_R
+
+    default: return CEMU_BRIDGE_BUTTON_NONE
     }
 }
 
