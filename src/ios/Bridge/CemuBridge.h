@@ -334,11 +334,43 @@ typedef enum {
 /// no-op until cemu_bridge_initialize() has brought input up.
 void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed);
 
-/// Releases every GamePad button at once. For the cases where the UI knows a press can
-/// no longer be tracked to its natural end - the control panel being dismissed, the app
-/// going to the background, a gesture the system cancelled out from under it - and would
-/// otherwise leave the title holding a direction with nothing on screen touching it.
+/// Releases every GamePad button at once, and re-centres both analog sticks. For the
+/// cases where the UI knows a press can no longer be tracked to its natural end - the
+/// control panel being dismissed, the app going to the background, a gesture the system
+/// cancelled out from under it - and would otherwise leave the title holding a direction
+/// with nothing on screen touching it.
 void cemu_bridge_release_all_buttons(void);
+
+/// Which analog stick an axis call is about.
+typedef enum {
+    CEMU_BRIDGE_STICK_LEFT  = 0,
+    CEMU_BRIDGE_STICK_RIGHT = 1,
+} CemuBridgeStick;
+
+/// Positions one analog stick on player 1's emulated GamePad from the on-screen controls.
+///
+/// This is the axis counterpart to cemu_bridge_set_button_state(), and it exists because
+/// there was no way to express a stick at all: CEMU_BRIDGE_BUTTON_STICK_L/R are the
+/// *clicks* (L3/R3), and Cemu deliberately skips the eight kButtonId_Stick*_ entries in
+/// its button loop because VPADRead derives the sticks from get_axis() instead. Sending a
+/// direction as a button press is therefore not a rough approximation of a stick - it
+/// does nothing at all.
+///
+/// `x` and `y` are in -1..1 and use the CONSOLE's convention, not the screen's: +x is
+/// right and +y is UP. A caller working in view coordinates has to negate y, and the
+/// on-screen pad does. Values outside the unit circle are clamped by magnitude rather
+/// than per-component, so a diagonal cannot ask for more deflection than the hardware can
+/// produce (Cemu normalizes anything longer than 1 anyway; clamping here keeps the number
+/// the engine reports equal to the number that was sent).
+///
+/// Same override semantics as the buttons: it sits in front of any bound physical
+/// controller, and a zero on both components hands the stick back to that controller
+/// rather than pinning it to centre. So (0,0) is both "released" and "not overridden",
+/// which is what lets an MFi stick and the on-screen one coexist.
+///
+/// Safe to call from the main thread while the title polls from its own; a no-op until
+/// cemu_bridge_initialize() has brought input up. Repeated identical values cost nothing.
+void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y);
 
 #ifdef __cplusplus
 } // extern "C"

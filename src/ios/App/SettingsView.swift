@@ -44,6 +44,11 @@ struct SettingsView: View {
     private var controlScale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.opacityKey)
     private var controlOpacity = ControllerLayoutSettings.defaultOpacity
+    // Must keep matching the declaration in ControllerPad and ContentView: one key with
+    // two disagreeing @AppStorage defaults means this toggle and the pad disagree about
+    // which control scheme is on.
+    @AppStorage(ControllerLayoutSettings.joystickKey)
+    private var joystickMode = ControllerLayoutSettings.defaultJoystick
 
     private var timebase: TimebaseScale {
         TimebaseScale(rawValue: timebaseRaw) ?? .realTime
@@ -65,6 +70,18 @@ struct SettingsView: View {
                     }
 
                     Section {
+                        Toggle(isOn: $joystickMode) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Joystick instead of d-pad")
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                Text(joystickMode
+                                     ? "An analog stick where the d-pad is."
+                                     : "The four-way d-pad from the measured layout.")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Button size")
                                 .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -94,7 +111,7 @@ struct SettingsView: View {
                     } header: {
                         Text("On-screen controls")
                     } footer: {
-                        Text("Muffin picks a button size for the screen it is on and re-picks it whenever that changes, so the pad is already the right size on a phone and on an iPad without being set here. These two adjust that choice rather than replacing it.\n\nTo move either half, start a game and tap the move button in the top bar - you need the game underneath to judge where the controls should go.")
+                        Text("The joystick is analog, like the sticks on the real GamePad: how far you push it is how fast you go, which a d-pad cannot express - it only ever says fully left or nothing. It takes the d-pad's own footprint, so nothing else on the pad moves. Tap it without pushing it to click it in (L3), which is where that button lives in this mode.\n\nMuffin picks a button size for the screen it is on and re-picks it whenever that changes, so the pad is already the right size on a phone and on an iPad without being set here. The two sliders adjust that choice rather than replacing it.\n\nTo move either half, start a game and tap the move button in the top bar - you need the game underneath to judge where the controls should go. The same joystick switch is in that panel.")
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 

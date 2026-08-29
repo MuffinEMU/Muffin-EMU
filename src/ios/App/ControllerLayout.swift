@@ -14,7 +14,12 @@ enum ControllerLayoutSettings {
     static let leftOffsetYKey = "muffin.controls.left.dy"
     static let rightOffsetXKey = "muffin.controls.right.dx"
     static let rightOffsetYKey = "muffin.controls.right.dy"
+    /// Whether the left cluster's d-pad is replaced by an analog stick. Off by default:
+    /// the measured layout is a d-pad, and a control scheme is not something to change
+    /// under someone who did not ask for it.
+    static let joystickKey = "muffin.controls.joystick"
 
+    static let defaultJoystick = false
     static let defaultScale: Double = 1.0
     static let defaultOpacity: Double = 0.85
     static let minScale: Double = 0.6
@@ -24,6 +29,10 @@ enum ControllerLayoutSettings {
     /// keys rather than writing the defaults into them is deliberate: `@AppStorage` falls
     /// back to its declared default for a missing key, so one list here cannot drift out
     /// of step with the defaults declared at each use site.
+    /// `joystickKey` is deliberately not in this list. "Reset layout" is about where the
+    /// controls are and how big they are; which control scheme you play with is a
+    /// different question, and silently switching someone back to the d-pad because they
+    /// nudged a cluster too far would be a surprise, not a reset.
     static func reset() {
         let defaults = UserDefaults.standard
         for key in [scaleKey, opacityKey,
@@ -84,12 +93,13 @@ enum ControllerGeometry {
         return min(max(shortSide * 0.115, 46), 72)
     }
 
-    enum Style {
+    enum Style: Equatable {
         case dpad       // the skin's d-pad colour
         case face       // the skin's per-letter A/B/X/Y colour
         case shoulder   // neutral, as in the screenshot
         case system     // neutral, as in the screenshot
         case stick      // neutral, as in the screenshot
+        case joystick   // the analog stick: a base and a knob, not a button
     }
 
     enum Shape {
@@ -131,6 +141,47 @@ enum ControllerGeometry {
         Control(id: "L",     glyph: "L",  offset: CGPoint(x: shoulderSpreadX, y: shoulderY),  shape: shoulder, style: .shoulder),
         Control(id: "ZL",    glyph: "ZL", offset: CGPoint(x: -shoulderSpreadX, y: shoulderY), shape: shoulder, style: .shoulder)
     ]
+
+    /// The same left half with the d-pad replaced by an analog stick, for when joystick
+    /// mode is on.
+    ///
+    /// The stick is sized to the footprint the d-pad already occupies rather than to a
+    /// number picked by eye: its base diameter is the cross's own measured width
+    /// (2 x crossX + one button), and it sits on the cluster's centre dot. So turning
+    /// this mode on swaps a control scheme and moves nothing else - the shoulders, minus,
+    /// both anchors and the whole right cluster stay exactly where the measurements put
+    /// them, and a pad someone has already dragged into place does not jump.
+    ///
+    /// It takes the d-pad's four circles AND the centre dot, because the dot is L3 and
+    /// the knob would be drawn straight on top of it. L3 is not lost: a tap on the stick
+    /// that does not move it is the click, which is the one gesture a stick has spare.
+    static let leftClusterJoystick: [Control] = [
+        Control(id: "stickL", glyph: "", offset: .zero,
+                shape: .circle(stickBaseDiameter), style: .joystick),
+        Control(id: "minus", glyph: "\u{2212}", offset: systemOffset,              shape: system, style: .system),
+        Control(id: "L",     glyph: "L",  offset: CGPoint(x: shoulderSpreadX, y: shoulderY),  shape: shoulder, style: .shoulder),
+        Control(id: "ZL",    glyph: "ZL", offset: CGPoint(x: -shoulderSpreadX, y: shoulderY), shape: shoulder, style: .shoulder)
+    ]
+
+    /// The stick's outer ring, in layout units: exactly as wide as the d-pad it replaces
+    /// (2 x 1.240 + 1.0), so the cluster's bounds - and therefore the drag handle and the
+    /// off-screen clamp derived from them - barely change between the two modes.
+    static let stickBaseDiameter: CGFloat = 2 * crossX + 1.0
+    /// The thumb cap. Close to a face button, so it reads as something you push around
+    /// rather than a dot that happens to move.
+    static let stickKnobDiameter: CGFloat = 1.15
+    /// How far the knob's centre may leave the base's centre before it is at full
+    /// deflection - the knob stays inside its own ring at the extremes, as a real stick's
+    /// cap does.
+    static var stickTravel: CGFloat { (stickBaseDiameter - stickKnobDiameter) / 2 }
+
+    /// Below this fraction of full travel the stick reports centred.
+    ///
+    /// A thumb resting on a piece of glass is never still, and without this a title reads
+    /// a slow permanent drift in whichever direction the finger settled. Everything past
+    /// the deadzone is rescaled back across the full 0...1 range, so the cost is a little
+    /// slack at the centre and not a stick that can no longer reach 1.
+    static let stickDeadzone: CGFloat = 0.14
 
     /// A/B/X/Y, plus, R and ZR, around the right centre dot. Mirroring the left half is
     /// not a shortcut - it is what the measurements say the layout is - but the ids and

@@ -529,6 +529,11 @@ struct EmulatorViewOptimized: View {
     private var controlScale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.opacityKey)
     private var controlOpacity = ControllerLayoutSettings.defaultOpacity
+    /// Same key the pad and SettingsView read. Offered in the move-controls panel as
+    /// well as in Settings because switching schemes is a thing you decide with a game
+    /// under you, exactly like the two sliders next to it.
+    @AppStorage(ControllerLayoutSettings.joystickKey)
+    private var joystickMode = ControllerLayoutSettings.defaultJoystick
     // Defaults ON, and must keep matching SettingsView's declaration of the same key -
     // two @AppStorage defaults for one key that disagree means the toggle and the
     // emulator disagree about what is on. See SettingsView for why this flipped.
@@ -671,6 +676,17 @@ struct EmulatorViewOptimized: View {
                 onInput: { label, pressed in
                     cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
                 },
+                // The axis path. Deliberately not routed through the button call above:
+                // the bridge keeps sticks and buttons apart because the engine does, and
+                // a stick sent as a press reaches VPADRead's button loop, which skips
+                // the stick mappings outright.
+                onStick: { stick, position in
+                    cemu_bridge_set_stick_axis(
+                        stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
+                        Float(position.x),
+                        Float(position.y)
+                    )
+                },
                 isEditingLayout: $isEditingControlLayout
             )
 
@@ -754,6 +770,13 @@ struct EmulatorViewOptimized: View {
                                 .foregroundColor(.white.opacity(0.7))
                         }
 
+                        Toggle(isOn: $joystickMode) {
+                            Text("Joystick instead of d-pad")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white.opacity(0.85))
+                        }
+                        .tint(MuffinTheme.brownDarkest)
+
                         HStack(spacing: 12) {
                             Button("Reset layout") { ControllerLayoutSettings.reset() }
                                 .buttonStyle(MuffinSecondaryButtonStyle())
@@ -829,9 +852,11 @@ private func cemuBridgeButton(forLabel label: String) -> CemuBridgeButton {
     case "plus":  return CEMU_BRIDGE_BUTTON_PLUS
     case "minus": return CEMU_BRIDGE_BUTTON_MINUS
 
-    // The two small grey circles in the middle of each cluster. Read as stick clicks
-    // (L3/R3) - they are drawn as plain unlabelled dots, and the bridge has no analog
-    // axis call for them to have been sticks with.
+    // The stick clicks. In d-pad mode these are the two small grey dots in the middle
+    // of each cluster; in joystick mode the left one is a tap on the stick itself, which
+    // is where L3 went when the knob took the dot's place. The bridge now has a real
+    // axis call as well (cemu_bridge_set_stick_axis), and it is deliberately not routed
+    // through here - these two ids are the click and only the click.
     case "L3": return CEMU_BRIDGE_BUTTON_STICK_L
     case "R3": return CEMU_BRIDGE_BUTTON_STICK_R
 
