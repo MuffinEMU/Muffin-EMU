@@ -1306,11 +1306,12 @@ void IOSInput_SetStickAxis(int stick, float x, float y)
 		return;
 	}
 
-	// y arrives UP-positive (the console's convention, converted by the caller), which is
-	// what kButtonId_StickL_Up expects; get_axis() returns up as +y unchanged.
-	// A local aggregate rather than std::pair, to avoid leaning on <utility> arriving
-	// through somebody else's header - the kind of assumption that compiles here and
-	// stops compiling in the next translation unit that includes this one.
+	// y arrives UP-positive - the console's convention, converted by the caller - which
+	// is what kButtonId_StickL_Up expects, and get_axis() hands it back as +y unchanged.
+	//
+	// A local aggregate rather than std::pair, so this does not lean on <utility>
+	// arriving through somebody else's header: the kind of assumption that compiles here
+	// and stops compiling in the next translation unit that includes this one.
 	struct Component { VPADController::ButtonId mapping; float value; };
 	const Component components[] = {
 		{axes.left,  x < 0.0f ? -x : 0.0f},
