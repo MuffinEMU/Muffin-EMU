@@ -3,7 +3,27 @@
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
+#include <objc/message.h>
+#include <objc/runtime.h>
+
 #include "Cafe/HW/Latte/Core/LatteConst.h"
+
+// Read a BOOL property off a MTLDevice by selector name. Capability selectors get
+// added to the MTLDevice protocol over time and are not implemented by every driver
+// class, and sending one that isn't there kills the process - see the depth24Stencil8
+// note below, which was found the hard way on device. Going through the runtime lets
+// us ask whether the selector exists first, and keeps the query independent of which
+// metal-cpp revision happens to be vendored.
+inline bool MtlDeviceBoolProperty(MTL::Device* device, const char* selectorName, bool fallback)
+{
+	id deviceObject = reinterpret_cast<id>(device);
+	SEL selector = sel_registerName(selectorName);
+	if (!class_respondsToSelector(object_getClass(deviceObject), selector))
+		return fallback;
+
+	using BoolPropertyGetter = BOOL (*)(id, SEL);
+	return reinterpret_cast<BoolPropertyGetter>(objc_msgSend)(deviceObject, selector) != NO;
+}
 
 struct MetalPixelFormatSupport
 {
@@ -11,6 +31,7 @@ struct MetalPixelFormatSupport
 	bool m_supportsRG8Unorm_sRGB;
 	bool m_supportsPacked16BitFormats;
 	bool m_supportsDepth24Unorm_Stencil8;
+	bool m_supportsBCTextureCompression;
 
 	MetalPixelFormatSupport() = default;
 	MetalPixelFormatSupport(MTL::Device* device)
@@ -32,6 +53,16 @@ struct MetalPixelFormatSupport
 #else
         m_supportsDepth24Unorm_Stencil8 = false;
 #endif
+        // BC (DXT/S3TC) is a desktop-GPU format family. Apple Silicon Macs have it,
+        // but the A12Z in this iPad does not, and Metal answers a BC texture descriptor
+        // by calling MTLReportFailure() -> abort() instead of returning nil - so the
+        // very first BC-compressed game texture takes the whole process down with
+        // signal 6 inside newTexture(). Ask the device, and let
+        // CheckForPixelFormatSupport() swap in CPU decompression when the answer is no.
+        // The selector only exists from iOS 16.4 / macOS 11 onwards; where it is
+        // missing, assume BC is present on everything except Apple GPUs, which is what
+        // the feature set tables say.
+        m_supportsBCTextureCompression = MtlDeviceBoolProperty(device, "supportsBCTextureCompression", !device->supportsFamily(MTL::GPUFamilyApple1));
 	}
 };
 
