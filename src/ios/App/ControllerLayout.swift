@@ -18,8 +18,41 @@ enum ControllerLayoutSettings {
     /// the measured layout is a d-pad, and a control scheme is not something to change
     /// under someone who did not ask for it.
     static let joystickKey = "muffin.controls.joystick"
+    /// Where the camera stick has been dragged to. Its own pair rather than sharing the
+    /// right cluster's: it is a separate cluster, positioned separately, and the whole
+    /// point of it is that it sits where the right thumb reaches without leaving A/B/X/Y
+    /// - which is a different place on a phone than on an iPad.
+    static let rightStickOffsetXKey = "muffin.controls.rstick.dx"
+    static let rightStickOffsetYKey = "muffin.controls.rstick.dy"
+    /// How much of the stick's travel reads as centred, and how the rest of it is shaped.
+    /// Both are feel rather than layout, which is why neither is in `reset()` below.
+    static let deadzoneKey = "muffin.controls.stick.deadzone"
+    static let stickCurveKey = "muffin.controls.stick.curve"
 
     static let defaultJoystick = false
+
+    /// Fraction of full travel that reads as centred.
+    ///
+    /// Small, because this stick is absolute: the knob goes where the finger is, so a
+    /// thumb at rest is a thumb that was deliberately put there, and the drift a deadzone
+    /// exists to swallow is only the tremor of a finger already on the glass. The large
+    /// deadzones physical sticks need are for worn potentiometers that no longer return
+    /// to zero, which is not a problem a piece of capacitive glass has.
+    static let defaultDeadzone: Double = 0.06
+    static let minDeadzone: Double = 0.0
+    static let maxDeadzone: Double = 0.30
+
+    /// The exponent applied to the stick's magnitude after the deadzone is rescaled out.
+    ///
+    /// 1.0 is linear: the number the title receives is the fraction of travel the thumb
+    /// actually covered, and nothing in between reshapes it. Above 1.0 the early travel
+    /// produces smaller values, so the same thumb movement near the centre buys finer
+    /// control - which is what makes a light lean in Mario Kart a light lean instead of a
+    /// quarter turn. 0 and 1 map to themselves at every setting, so raising it never
+    /// costs the stick its top end nor gives it a false centre.
+    static let defaultStickCurve: Double = 1.0
+    static let minStickCurve: Double = 1.0
+    static let maxStickCurve: Double = 2.5
     static let defaultScale: Double = 1.0
     static let defaultOpacity: Double = 0.85
     static let minScale: Double = 0.6
@@ -35,7 +68,7 @@ enum ControllerLayoutSettings {
     /// nudged a cluster too far would be a surprise, not a reset.
     static func reset() {
         let defaults = UserDefaults.standard
-        for key in [scaleKey, opacityKey,
+        for key in [scaleKey, opacityKey, rightStickOffsetXKey, rightStickOffsetYKey,
                     leftOffsetXKey, leftOffsetYKey,
                     rightOffsetXKey, rightOffsetYKey] {
             defaults.removeObject(forKey: key)
@@ -175,13 +208,45 @@ enum ControllerGeometry {
     /// cap does.
     static var stickTravel: CGFloat { (stickBaseDiameter - stickKnobDiameter) / 2 }
 
-    /// Below this fraction of full travel the stick reports centred.
+    /// The camera stick, for joystick mode: the right analog stick, drawn as its own
+    /// one-control cluster rather than folded into the right half.
     ///
-    /// A thumb resting on a piece of glass is never still, and without this a title reads
-    /// a slow permanent drift in whichever direction the finger settled. Everything past
-    /// the deadzone is rescaled back across the full 0...1 range, so the cost is a little
-    /// slack at the centre and not a stick that can no longer reach 1.
-    static let stickDeadzone: CGFloat = 0.14
+    /// It is a separate cluster because it cannot be the right half's centre dot the way
+    /// the left stick is the left half's. The dot sits inside the ring of A/B/X/Y, and a
+    /// stick the size of the one this needs would be drawn straight over all four of
+    /// them. Its own cluster also means its own drag handle and its own stored offset, so
+    /// where the camera sits is a decision made with a thumb on the glass instead of one
+    /// inherited from where the face buttons happen to be.
+    ///
+    /// R3 is untouched. Unlike L3 it never lost its dot, so a tap here is not the click -
+    /// the click is still the dot in the middle of A/B/X/Y where the measured layout
+    /// draws it, in both modes.
+    static let rightStickCluster: [Control] = [
+        Control(id: "stickR", glyph: "", offset: .zero,
+                shape: .circle(stickBaseDiameter), style: .joystick)
+    ]
+
+    /// Where the camera stick starts, as an offset in units from the right cluster's
+    /// anchor: inboard of A/B/X/Y and a little above it.
+    ///
+    /// This one is placed rather than measured - the source layout is a photograph of a
+    /// GamePad, which has its right stick above the face buttons in a space an on-screen
+    /// pad does not have. So it is chosen to the one standard the measurements can still
+    /// hold it to: it overlaps nothing. At this offset its right edge clears the plus
+    /// button by more than half a button width, and it sits below the shoulders rather
+    /// than beside them. Everything past that is thumb ergonomics, which is why it is a
+    /// starting point with a drag handle rather than a fixed position.
+    static let rightStickAnchorOffset = CGPoint(x: -5.0, y: -1.6)
+
+    /// The deflection below which a gesture counts as a tap rather than a push, for the
+    /// tap-is-L3 rule.
+    ///
+    /// Deliberately not the deadzone. The deadzone is a feel setting and can be turned
+    /// all the way down to nothing, and if the click threshold went with it then at zero
+    /// deadzone every press of the stick - however still the thumb - would be a movement
+    /// and L3 would become unreachable. This is the separate, fixed answer to a separate
+    /// question: did the finger mean to move the stick at all.
+    static let stickClickThreshold: CGFloat = 0.14
 
     /// A/B/X/Y, plus, R and ZR, around the right centre dot. Mirroring the left half is
     /// not a shortcut - it is what the measurements say the layout is - but the ids and

@@ -46,6 +46,8 @@ struct OptimizedControlPanel: View {
     @AppStorage(ControllerLayoutSettings.leftOffsetYKey) private var leftOffsetY = 0.0
     @AppStorage(ControllerLayoutSettings.rightOffsetXKey) private var rightOffsetX = 0.0
     @AppStorage(ControllerLayoutSettings.rightOffsetYKey) private var rightOffsetY = 0.0
+    @AppStorage(ControllerLayoutSettings.rightStickOffsetXKey) private var rightStickOffsetX = 0.0
+    @AppStorage(ControllerLayoutSettings.rightStickOffsetYKey) private var rightStickOffsetY = 0.0
     // Must keep matching SettingsView's declaration of the same key: two @AppStorage
     // defaults for one key that disagree means the toggle and the pad disagree about
     // which control scheme is on.
@@ -90,11 +92,34 @@ struct OptimizedControlPanel: View {
                     offsetX: $rightOffsetX,
                     offsetY: $rightOffsetY,
                     onInput: onInput,
-                    // The right half has no stick yet - its centre dot is still R3, as
-                    // the measured layout draws it. Wired rather than omitted so adding
-                    // one later is a change to ControllerGeometry and nothing else.
+                    // The right half itself has no stick: its centre dot is R3, as the
+                    // measured layout draws it, and the camera stick below is its own
+                    // cluster. Nothing in this one can report an axis, so this closure is
+                    // never called - wired rather than omitted because a cluster that
+                    // silently could not carry a stick is a trap for the next person to
+                    // put one in it.
                     onStick: { onStick(1, $0) }
                 )
+
+                // The camera stick, in joystick mode only. A separate cluster, so it has
+                // its own drag handle and its own stored position: the right half stays
+                // exactly where the measurements put it, and turning the mode on adds a
+                // control rather than rearranging the ones already there.
+                if joystickMode {
+                    ControlCluster(
+                        controls: ControllerGeometry.rightStickCluster,
+                        edge: .trailing,
+                        anchorOffset: ControllerGeometry.rightStickAnchorOffset,
+                        skin: skin,
+                        unit: unit,
+                        container: proxy.size,
+                        isEditingLayout: isEditingLayout,
+                        offsetX: $rightStickOffsetX,
+                        offsetY: $rightStickOffsetY,
+                        onInput: onInput,
+                        onStick: { onStick(1, $0) }
+                    )
+                }
             }
             // Editing is a mode you want to see clearly, so it ignores the opacity
             // setting rather than making someone turn the pad back up to reposition it.
@@ -107,6 +132,11 @@ struct OptimizedControlPanel: View {
 private struct ControlCluster: View {
     let controls: [ControllerGeometry.Control]
     let edge: HorizontalEdge
+    /// Shifts this cluster's unmoved position, in units, away from the standard anchor -
+    /// for a cluster the measured layout has no anchor for. Applied before the user's
+    /// drag and before the clamp, so it is genuinely a different starting point rather
+    /// than a drag nobody made: "Reset layout" returns here, not to the shared anchor.
+    var anchorOffset: CGPoint = .zero
     let skin: WiiUControllerSkin
     let unit: CGFloat
     let container: CGSize
@@ -131,8 +161,8 @@ private struct ControlCluster: View {
     private var anchor: CGPoint {
         let inset = ControllerGeometry.centreFromNearEdge * unit
         return CGPoint(
-            x: edge == .leading ? inset : container.width - inset,
-            y: container.height - ControllerGeometry.centreFromBottom * unit
+            x: (edge == .leading ? inset : container.width - inset) + anchorOffset.x * unit,
+            y: container.height - ControllerGeometry.centreFromBottom * unit + anchorOffset.y * unit
         )
     }
 
@@ -409,17 +439,47 @@ private struct JoystickControl: View {
     /// L3, for the tap case below.
     let onInput: (String, Bool) -> Void
 
+    // Same keys SettingsView and the move-controls panel write. Read here rather than
+    // passed down because they are settings, not layout: a value threaded through
+    // OptimizedControlPanel and ControlCluster would be two more places for the default
+    // to be restated and disagree.
+    @AppStorage(ControllerLayoutSettings.deadzoneKey)
+    private var deadzoneSetting = ControllerLayoutSettings.defaultDeadzone
+    @AppStorage(ControllerLayoutSettings.stickCurveKey)
+    private var curveSetting = ControllerLayoutSettings.defaultStickCurve
+
     /// Where the knob is drawn, in points from the ring's centre. Already clamped to the
     /// travel radius, so this is also what the axis is derived from - one number, not a
     /// visual one and a reported one that could disagree.
     @State private var knobOffset: CGSize = .zero
-    /// Whether this gesture ever left the deadzone. What separates a click from a
-    /// movement, and it is deflection that decides it rather than distance travelled: a
-    /// finger that lands directly on the edge of the ring has moved nowhere and is
-    /// nonetheless asking for full deflection, so it is not a tap.
-    @State private var leftDeadzone = false
+    /// Whether this gesture ever pushed the stick, as opposed to resting on it. What
+    /// separates a click from a movement, and it is deflection that decides it rather than
+    /// distance travelled: a finger that lands directly on the edge of the ring has moved
+    /// nowhere and is nonetheless asking for full deflection, so it is not a tap.
+    @State private var pushed = false
     /// The pending release of a tap-click, so the view going away cannot leave L3 held.
     @State private var clickRelease: DispatchWorkItem?
+
+    /// Which button a tap on this stick presses, if any.
+    ///
+    /// Only the left one has a click to give. L3 lost its dot when the knob took the
+    /// centre of the left cluster; R3 still has its own, in the middle of A/B/X/Y, so a
+    /// tap on the camera stick has nothing to mean and is better off meaning nothing than
+    /// firing a second control that is already on screen.
+    private var clickButton: String? { control.id == "stickL" ? "L3" : nil }
+
+    /// The settings, held to their declared ranges. UserDefaults is writable by anything
+    /// on the device and survives a downgrade, so a value from outside the range the
+    /// sliders offer is not impossible - and a deadzone above 1 would be a stick that
+    /// never reports anything at all.
+    private var deadzone: CGFloat {
+        CGFloat(min(max(deadzoneSetting, ControllerLayoutSettings.minDeadzone),
+                    ControllerLayoutSettings.maxDeadzone))
+    }
+    private var curve: CGFloat {
+        CGFloat(min(max(curveSetting, ControllerLayoutSettings.minStickCurve),
+                    ControllerLayoutSettings.maxStickCurve))
+    }
 
     /// How long a tap holds L3 before releasing it.
     ///
@@ -446,7 +506,7 @@ private struct JoystickControl: View {
 
             // The cap takes the skin's d-pad colour, because it is what the d-pad became.
             Circle()
-                .fill(skin.dpadColor.opacity(leftDeadzone ? 1.0 : 0.9))
+                .fill(skin.dpadColor.opacity(pushed ? 1.0 : 0.9))
                 .overlay(
                     Circle().strokeBorder(Color.black.opacity(0.45), lineWidth: max(1, unit * 0.05))
                 )
@@ -458,7 +518,7 @@ private struct JoystickControl: View {
         // the d-pad this replaces did not claim them either - a touch that misses the
         // stick should still reach the game underneath.
         .contentShape(Circle())
-        .accessibilityLabel("Left stick")
+        .accessibilityLabel(clickButton == nil ? "Camera stick" : "Left stick")
         .allowsHitTesting(isInteractive)
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -474,8 +534,12 @@ private struct JoystickControl: View {
                     knobOffset = CGSize(width: dx * scale, height: dy * scale)
 
                     let deflection = travel > 0 ? min(distance, travel) / travel : 0
-                    if deflection > ControllerGeometry.stickDeadzone {
-                        leftDeadzone = true
+                    // The click threshold, not the deadzone. The deadzone is a setting
+                    // and can be turned down to nothing, and if this went with it then
+                    // every press of the stick would count as a push and L3 would become
+                    // unreachable at the setting people who want precision will pick.
+                    if deflection > ControllerGeometry.stickClickThreshold {
+                        pushed = true
                     }
                     report(deflection: deflection, dx: dx, dy: dy, distance: distance)
                 }
@@ -483,7 +547,7 @@ private struct JoystickControl: View {
                     // A press that never deflected the stick is the click. It is the one
                     // gesture a stick has spare, and L3 would otherwise be lost in this
                     // mode - the centre dot it used to live on is where the knob is now.
-                    if !leftDeadzone { click() }
+                    if !pushed { click() }
                     recentre()
                 }
         )
@@ -494,22 +558,40 @@ private struct JoystickControl: View {
         .onDisappear {
             clickRelease?.cancel()
             clickRelease = nil
-            onInput("L3", false)
+            if let clickButton { onInput(clickButton, false) }
             recentre()
         }
     }
 
     private func report(deflection: CGFloat, dx: CGFloat, dy: CGFloat, distance: CGFloat) {
-        guard deflection > ControllerGeometry.stickDeadzone, distance > 0 else {
+        let dead = deadzone
+        // `distance > 0` is not the same test as the deadzone one and does not fold into
+        // it: it is what makes the division below safe, and at a deadzone of zero a
+        // finger exactly on the centre pixel would otherwise reach it.
+        guard deflection > dead, distance > 0 else {
             onStick(.zero)
             return
         }
 
         // Rescaled across the full range rather than passed through: without this the
-        // deadzone would cost the stick its top 14% as well as its bottom, and a title
-        // that expects 1.0 at the rim would never see it.
-        let dead = ControllerGeometry.stickDeadzone
-        let magnitude = (deflection - dead) / (1 - dead)
+        // deadzone would cost the stick its top end as well as its bottom, and a title
+        // that expects 1.0 at the rim would never see it. `dead < 1` is guaranteed by the
+        // clamp on the setting, so the divisor cannot be zero.
+        var magnitude = (deflection - dead) / (1 - dead)
+
+        // The response curve, applied to the magnitude alone and never to the direction.
+        // Shaping x and y separately would bend the diagonals - a stick pushed exactly
+        // north-east would come back out pointing somewhere else - so the angle the thumb
+        // is holding survives untouched and only how hard it is holding it changes.
+        // pow() is skipped rather than called with 1.0 because linear is the default and
+        // this runs on every touch-move; it is also the exactness the setting promises,
+        // and 0.5 raised to the power of exactly 1 is not guaranteed to be 0.5 back.
+        if curve != 1 {
+            // Through Double rather than relying on a CGFloat overload of pow(). CGFloat
+            // is a different width on a 32-bit slice, and this file otherwise only ever
+            // uses maths the standard library defines on the protocol.
+            magnitude = CGFloat(pow(Double(magnitude), Double(curve)))
+        }
 
         // y is negated exactly here, once. The screen counts downwards and the console
         // counts upwards, and the bridge's contract is the console's.
@@ -517,15 +599,16 @@ private struct JoystickControl: View {
     }
 
     private func click() {
+        guard let clickButton else { return }
         clickRelease?.cancel()
-        onInput("L3", true)
-        let release = DispatchWorkItem { onInput("L3", false) }
+        onInput(clickButton, true)
+        let release = DispatchWorkItem { onInput(clickButton, false) }
         clickRelease = release
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.clickHoldSeconds, execute: release)
     }
 
     private func recentre() {
-        leftDeadzone = false
+        pushed = false
         // The axis first, then the animation. A spring is for the person holding the
         // iPad; the title should be told the stick is centred the moment the finger
         // leaves it, not a quarter of a second later once the cap has finished moving.
