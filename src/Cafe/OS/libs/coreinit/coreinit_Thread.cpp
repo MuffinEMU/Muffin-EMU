@@ -52,7 +52,10 @@ void nnNfp_update();
 
 namespace coreinit
 {
-#ifdef __arm64__
+// The split-pointer entry point below belongs to makecontext, not to arm64. See the
+// definition for why, and util/Fiber/Fiber.h for where CEMU_FIBER_BACKEND_UCONTEXT
+// comes from.
+#if defined(__arm64__) && defined(CEMU_FIBER_BACKEND_UCONTEXT)
 	void __OSFiberThreadEntry(uint32, uint32);
 #else
 	void __OSFiberThreadEntry(void* thread);
@@ -1402,7 +1405,26 @@ namespace coreinit
 		__OSThreadStartTimeslice(hostThread->m_thread, &hostThread->ppcInstance);
 	}
 
-#ifdef __arm64__
+	// This entry point is called by the fiber backend, so its signature has to match
+	// the backend's calling convention - which is not the same thing as the CPU
+	// architecture, and conflating the two is what broke iOS.
+	//
+	// makecontext takes int-sized varargs (see the NOTES in its man page), so on 64-bit
+	// it cannot carry a pointer in one argument. FiberUContext.cpp splits userParam into
+	// a high and a low half and passes two, and this function reassembles them. That is
+	// a property of ucontext, and the guard used to say `#ifdef __arm64__`, which happens
+	// to be equivalent on macOS - the only arm64 platform that was on the ucontext
+	// backend when it was written.
+	//
+	// It stopped being equivalent when iOS moved to Boost.Context. jump_fcontext hands
+	// the entry point a single pointer in x0 and leaves x1 holding whatever was there
+	// before, so the reassembly produced ((uint32)ptr << 32 | garbage) and every guest
+	// thread fiber dereferenced a wild OSHostThread the moment it was entered. Android
+	// never hit it because Apple defines __arm64__ and Linux does not - it only defines
+	// __aarch64__ - so Android took the void* branch by accident, correctly.
+	//
+	// Keyed off the backend now, which is what actually decides the convention.
+#if defined(__arm64__) && defined(CEMU_FIBER_BACKEND_UCONTEXT)
 	void __OSFiberThreadEntry(uint32 _high, uint32 _low)
 	{
 		uint64 _thread = (uint64) _high << 32 | _low;
@@ -1411,6 +1433,11 @@ namespace coreinit
 	{
 #endif
 		OSHostThread* hostThread = (OSHostThread*)_thread;
+		// Logged before the first dereference of hostThread, because the first dereference
+		// is what died when the entry point's signature did not match the fiber backend.
+		// Printing the pointer makes a wrong one obvious: it should look like a heap
+		// address, not like a 32-bit value shifted into the high half.
+		cemuLog_log(LogType::Force, "Boot stage: core {} entered a guest thread fiber (hostThread={})", t_assignedCoreIndex, (void*)hostThread);
 
 		enableFlushDenormalsToZero();
 

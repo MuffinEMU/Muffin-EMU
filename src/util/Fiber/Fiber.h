@@ -16,10 +16,20 @@
 //
 // The three backend .cpp files now include this header instead of their own, so any
 // future disagreement is a compile error rather than a corrupted PPC scheduler.
+//
+// The CEMU_FIBER_BACKEND_* macro below says which backend won. Callers need to know,
+// because the backends do not agree on how a fiber entry point is *called*:
+// makecontext takes int-sized varargs, so the ucontext backend splits a 64-bit
+// userParam across two arguments, while jump_fcontext hands the entry point one
+// pointer in the first register. Anything that has to match that calling convention
+// must key off the backend, not off the architecture.
 #if BOOST_PLAT_ANDROID || defined(CEMU_PLATFORM_IOS)
+#define CEMU_FIBER_BACKEND_FCONTEXT 1
 #include "FiberFContext.h"
 #elif BOOST_OS_WINDOWS
+#define CEMU_FIBER_BACKEND_WIN 1
 #include "FiberWin.h"
 #else
+#define CEMU_FIBER_BACKEND_UCONTEXT 1
 #include "FiberUContext.h"
 #endif
