@@ -1090,6 +1090,41 @@ namespace
 	// instead of fifty.
 	std::array<std::atomic<bool>, VPADController::kButtonId_Max> s_iosButtonState{};
 
+	// The same trick for the sticks. A finger sliding across a thumbstick produces a new
+	// position on every touch-move - far more traffic than any button generates - and
+	// most of those frames leave at least two of the four components unchanged (sliding
+	// straight up never touches left or right). Comparing before writing turns each of
+	// those into nothing instead of a lock acquisition on the emulated controller.
+	std::array<std::atomic<float>, VPADController::kButtonId_Max> s_iosAxisState{};
+
+	// The four mappings one stick is made of, in the order (left, right, up, down) that
+	// VPADController::get_axis() reads them back in.
+	struct IOSStickAxes { VPADController::ButtonId left, right, up, down; };
+
+	// -1 on an axis is not a button: it is the *opposite* axis mapping carrying a
+	// positive magnitude. Cemu stores each direction as its own 0..1 value and resolves
+	// the pair in get_axis() ((left > right) ? -left : right), so one component of the
+	// stick is always written as zero. Splitting it here rather than in the app keeps
+	// that convention where the enum it depends on lives.
+	bool iosStickAxes(int stick, IOSStickAxes& out)
+	{
+		switch (stick)
+		{
+		case CEMU_BRIDGE_STICK_LEFT:
+			out = {VPADController::kButtonId_StickL_Left, VPADController::kButtonId_StickL_Right,
+				   VPADController::kButtonId_StickL_Up,   VPADController::kButtonId_StickL_Down};
+			return true;
+		case CEMU_BRIDGE_STICK_RIGHT:
+			out = {VPADController::kButtonId_StickR_Left, VPADController::kButtonId_StickR_Right,
+				   VPADController::kButtonId_StickR_Up,   VPADController::kButtonId_StickR_Down};
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	std::atomic<bool> s_iosFirstStickLogged{false};
+
 	// A silent input path is unfalsifiable from a device log, so say something exactly
 	// once for each of the two outcomes that matter: it worked, or there was nothing to
 	// deliver it to.
@@ -1102,7 +1137,9 @@ namespace
 	// no VPAD hold flag at all (VPADRead treats them as special cases), and the eight
 	// kButtonId_Stick*_ entries are axis mappings - VPADRead skips them in the button
 	// loop and derives them from get_axis(), so pressing them as buttons would do
-	// nothing. An analog stick belongs on setAxisValue(), not here.
+	// nothing. An analog stick belongs on setAxisValue(), not here - which is what
+	// IOSInput_SetStickAxis() below does. kButtonId_StickL/StickR (the clicks) are not
+	// in that group and are mapped normally.
 	VPADController::ButtonId iosMapBridgeButton(int button)
 	{
 		// Range-check before the cast, not after. Converting an int outside an unscoped
@@ -1188,6 +1225,18 @@ void IOSInput_Initialize()
 	{
 		for (uint32 id = VPADController::kButtonId_None; id < VPADController::kButtonId_Max; ++id)
 			gamepad->setButtonValue(id, false);
+
+		// The axis override map needs exactly the same treatment, and for exactly the
+		// same reason - it is a second unordered_map read unlocked from the title
+		// thread. Adding the on-screen analog stick is what made this necessary: before
+		// it, nothing on iOS ever called setAxisValue(), so the map stayed empty and the
+		// reader's find() always missed on an untouched bucket array.
+		//
+		// Every id rather than only the eight stick ones. The loop above already covers
+		// the whole range, get_axis_value() is also what reads ZL/ZR as analog triggers,
+		// and a zero is inert everywhere - it means "not overridden", not "held at 0".
+		for (uint32 id = VPADController::kButtonId_None; id < VPADController::kButtonId_Max; ++id)
+			gamepad->setAxisValue(id, 0.0f);
 	}
 
 	s_iosInputReady.store(true, std::memory_order_release);
@@ -1238,6 +1287,52 @@ void IOSInput_SetButtonState(int button, bool pressed)
 	}
 }
 
+void IOSInput_SetStickAxis(int stick, float x, float y)
+{
+	// Same gate and same reasoning as IOSInput_SetButtonState(): no mutex, because a
+	// finger-down must not wait behind an SDL device rescan.
+	if (!s_iosInputReady.load(std::memory_order_acquire))
+		return;
+
+	IOSStickAxes axes;
+	if (!iosStickAxes(stick, axes))
+		return;
+
+	auto gamepad = InputManager::instance().get_vpad_controller(0);
+	if (!gamepad)
+	{
+		if (!s_iosMissingGamePadLogged.exchange(true))
+			cemuLog_log(LogType::Force, "iOS: on-screen stick {} moved but player 1 has no emulated GamePad - the input went nowhere", stick);
+		return;
+	}
+
+	// y arrives UP-positive (the console's convention, converted by the caller), which is
+	// what kButtonId_StickL_Up expects; get_axis() returns up as +y unchanged.
+	// A local aggregate rather than std::pair, to avoid leaning on <utility> arriving
+	// through somebody else's header - the kind of assumption that compiles here and
+	// stops compiling in the next translation unit that includes this one.
+	struct Component { VPADController::ButtonId mapping; float value; };
+	const Component components[] = {
+		{axes.left,  x < 0.0f ? -x : 0.0f},
+		{axes.right, x > 0.0f ?  x : 0.0f},
+		{axes.up,    y > 0.0f ?  y : 0.0f},
+		{axes.down,  y < 0.0f ? -y : 0.0f},
+	};
+
+	for (const Component& component : components)
+	{
+		if (s_iosAxisState[component.mapping].exchange(component.value) == component.value)
+			continue;
+		gamepad->setAxisValue(component.mapping, component.value);
+	}
+
+	if ((x != 0.0f || y != 0.0f) && !s_iosFirstStickLogged.exchange(true))
+	{
+		cemuLog_log(LogType::Force, "iOS: first on-screen stick movement reached the engine - stick {} at ({:.2f}, {:.2f})",
+					stick, x, y);
+	}
+}
+
 void IOSInput_ReleaseAllButtons()
 {
 	if (!s_iosInputReady.load(std::memory_order_acquire))
@@ -1246,10 +1341,15 @@ void IOSInput_ReleaseAllButtons()
 	auto gamepad = InputManager::instance().get_vpad_controller(0);
 	for (uint32 id = VPADController::kButtonId_None; id < VPADController::kButtonId_Max; ++id)
 	{
-		if (!s_iosButtonState[id].exchange(false))
-			continue;
-		if (gamepad)
+		if (s_iosButtonState[id].exchange(false) && gamepad)
 			gamepad->setButtonValue(id, false);
+
+		// A stick left deflected by a cancelled gesture is worse than a stuck button,
+		// not better: the title keeps walking and there is no highlighted control on
+		// screen to explain why. Zeroing clears the override, so an attached physical
+		// controller takes the axis back rather than being pinned to centre with it.
+		if (s_iosAxisState[id].exchange(0.0f) != 0.0f && gamepad)
+			gamepad->setAxisValue(id, 0.0f);
 	}
 }
 #endif // CEMU_PLATFORM_IOS

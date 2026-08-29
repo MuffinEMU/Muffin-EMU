@@ -27,6 +27,7 @@
 #include <sys/mman.h>
 #include <libkern/OSCacheControl.h>
 #include <cstring>
+#include <cmath>   // std::sqrt/std::isnan, for the stick-axis clamp
 #include <cstdlib>
 #include <cstdio>
 #include <exception>
@@ -383,6 +384,7 @@ void cemu_bridge_start_memory_watchdog(void) {
     void IOSInput_Initialize();
     void IOSInput_RefreshDevices();
     void IOSInput_SetButtonState(int button, bool pressed);
+    void IOSInput_SetStickAxis(int stick, float x, float y);
     void IOSInput_ReleaseAllButtons();
 
     // Defined in src/gui/iosgui/IOSTitleLaunch.cpp - the real-title launch path, kept on
@@ -1821,6 +1823,26 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
     IOSInput_SetButtonState((int)button, pressed);
 #else
     (void)button; (void)pressed;
+#endif
+}
+
+void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y) {
+#ifdef CEMU_CORE_AVAILABLE
+    // Clamped here rather than in Swift so every caller gets the same guarantee, and by
+    // magnitude rather than per-component: clamping x and y separately would let a
+    // corner-of-the-square input through as 1.41 units of deflection.
+    const float magnitude = std::sqrt(x * x + y * y);
+    if (magnitude > 1.0f) {
+        x /= magnitude;
+        y /= magnitude;
+    }
+    // NaN survives every comparison above, and a NaN written into the override would be
+    // neither zero (so it wins over the physical controller) nor a usable deflection.
+    if (std::isnan(x) || std::isnan(y))
+        return;
+    IOSInput_SetStickAxis((int)stick, x, y);
+#else
+    (void)stick; (void)x; (void)y;
 #endif
 }
 

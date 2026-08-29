@@ -143,7 +143,19 @@ protected:
 	// ever use ONCE, before the title thread exists. IOSInput_Initialize() does this;
 	// anything else driving these overrides from a second thread must do the same.
 	std::unordered_map<uint64, std::atomic<bool>> m_overriddenButtonMappings;
-	std::unordered_map<uint64, float> m_overriddenAxisMappings;
+
+	// std::atomic<float>, for exactly the reasons spelled out above the button map: the
+	// emulated title's thread reads this through get_axis_value() with no lock, once per
+	// stick component per VPADRead, while the host UI writes it from wherever the finger
+	// is. A plain float there is a data race in the language, and an analog stick writes
+	// far more often than a button does - a finger sliding across a thumbstick produces a
+	// new value on every touch-move, not one per press.
+	//
+	// Same unclosable hazard, same remedy: inserting an unseen key can rehash the bucket
+	// array under a reader walking it, so every mapping id that will ever be written has
+	// to be touched once before the title thread exists. IOSInput_Initialize() writes 0
+	// to all of them next to the button loop that does the same job.
+	std::unordered_map<uint64, std::atomic<float>> m_overriddenAxisMappings;
  
 	bool m_homebutton_down = false;
 };

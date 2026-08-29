@@ -177,7 +177,22 @@ void IOSInput_RefreshDevices();
 // IOSInput_Initialize() has run, and repeated identical calls cost nothing.
 void IOSInput_SetButtonState(int button, bool pressed);
 
-// Releases everything the on-screen pad is holding. Every press is supposed to be
+// Positions one analog stick on player 1's emulated GamePad from the on-screen controls.
+// `stick` is a CemuBridgeStick (0 = left, 1 = right); `x`/`y` are in -1..1 with +x right
+// and +y UP, i.e. the console's convention, and the caller has already clamped them.
+//
+// Separate from IOSInput_SetButtonState() because Cemu keeps the two separate: VPADRead
+// skips the eight kButtonId_Stick*_ ids in its button loop and derives the sticks from
+// get_axis()/get_rotation() instead, so a stick direction delivered as a button press is
+// not an approximation of a stick - it is discarded. This writes the four axis mappings
+// the stick is actually made of.
+//
+// (0, 0) clears the override rather than pinning the stick to centre, so releasing the
+// on-screen stick hands that axis back to whatever physical controller is bound instead
+// of holding it still. Same thread-safety terms as IOSInput_SetButtonState().
+void IOSInput_SetStickAxis(int stick, float x, float y);
+
+// Releases everything the on-screen pad is holding, sticks included. Every press is supposed to be
 // paired with a release by the view that started it, but a gesture the system cancels
 // (backgrounding, an incoming call, a view torn out from under a finger) does not always
 // produce one - and a button left down is a title stuck walking into a wall with nothing
