@@ -31,6 +31,8 @@
 #include <cstdio>
 #include <exception>
 #include <typeinfo>
+#include <mach/mach.h>
+#include <os/proc.h>
 
 // The app crashed on the very first real on-device launch, before any game was even
 // tapped - meaning before cemu_bridge_initialize()/CafeSystem::Initialize() ever run.
@@ -199,6 +201,137 @@ void cemu_bridge_log_checkpoint(const char* message) {
     // one. Cheap and safe: ios_live_log_push() copies, takes a short mutex of its own,
     // and is a relaxed atomic load away from free when collection is off.
     ios_live_log_push(message);
+}
+
+// ---------------------------------------------------------------------------
+// Memory-pressure trail
+//
+// The commercial-title launch dies leaving an EMPTY crash log. The signal
+// handler above caught nothing, the terminate handler caught nothing, and the
+// launch log simply stops mid-boot. That combination is itself the diagnosis:
+// nothing in-process was given a chance to run. On iOS the killer that behaves
+// that way is jetsam - the OS reclaiming a process that crossed its memory
+// limit. It is not a signal and it cannot be caught, so the only way to see it
+// is to have already written the number down before the kill lands.
+//
+// Which is why every line here goes through cemu_bridge_log_checkpoint() - the
+// raw synchronous write() to the crash-log fd - and not through cemuLog.
+// cemuLog buffers, and a jetsam kill takes the buffer with it. A measurement is
+// only evidence if it is on disk at the moment the process stops existing.
+//
+// This is instrumentation, not a fix. If the trail ends with a few MB available
+// then jetsam is confirmed and the work moves to footprint. If it ends with
+// plenty of headroom, jetsam is ruled out and this cost one log line - which is
+// worth as much, because it is currently the leading theory.
+namespace {
+    std::atomic<bool> g_memWatchRunning{false};
+
+    // phys_footprint is the figure jetsam actually bills the process for. Not
+    // resident_size, which undercounts compressed and IOKit-backed pages and would
+    // read as comfortable right up until the kill.
+    uint64_t cemu_mem_footprint_bytes() {
+        task_vm_info_data_t info{};
+        mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+        if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS)
+            return 0;
+        return (uint64_t)info.phys_footprint;
+    }
+
+    void cemu_mem_write_line(const char* tag, uint64_t availableBytes, uint64_t footprintBytes) {
+        char line[320];
+        snprintf(line, sizeof(line),
+                 "MEM %s: %llu MB still available to this process, %llu MB in use",
+                 tag,
+                 (unsigned long long)(availableBytes / (1024ull * 1024ull)),
+                 (unsigned long long)(footprintBytes / (1024ull * 1024ull)));
+        cemu_bridge_log_checkpoint(line);
+    }
+}
+
+bool cemu_bridge_memory_status(unsigned long long* availableBytes, unsigned long long* footprintBytes) {
+    // os_proc_available_memory() is the headroom left before jetsam, as the OS
+    // computes it. Distinct from free system RAM, and the only number that
+    // predicts the kill. Returns 0 if called outside an app context.
+    const uint64_t avail = (uint64_t)os_proc_available_memory();
+    const uint64_t foot = cemu_mem_footprint_bytes();
+    if (availableBytes) *availableBytes = (unsigned long long)avail;
+    if (footprintBytes) *footprintBytes = (unsigned long long)foot;
+    return avail != 0 || foot != 0;
+}
+
+void cemu_bridge_memory_note(const char* tag) {
+    unsigned long long avail = 0, foot = 0;
+    cemu_bridge_memory_status(&avail, &foot);
+    cemu_mem_write_line(tag && tag[0] ? tag : "checkpoint", avail, foot);
+}
+
+void cemu_bridge_start_memory_watchdog(void) {
+    if (g_memWatchRunning.exchange(true))
+        return;
+
+    // Named by string rather than via the UIKit constant so this file keeps its
+    // existing Foundation-only dependency - the render-surface calls already take
+    // a void* UIView for the same reason. The value is the documented one.
+    [[NSNotificationCenter defaultCenter]
+        addObserverForName:@"UIApplicationDidReceiveMemoryWarningNotification"
+                    object:nil
+                     queue:nil
+                usingBlock:^(NSNotification* note) {
+                    (void)note;
+                    unsigned long long avail = 0, foot = 0;
+                    cemu_bridge_memory_status(&avail, &foot);
+                    cemu_mem_write_line("WARNING - iOS is asking for memory back", avail, foot);
+                }];
+
+    cemu_bridge_memory_note("baseline at startup");
+
+    std::thread([] {
+        // 100ms, because the launch this exists to explain died 563ms after
+        // GX2Init. A sampler slower than that would have produced no samples at
+        // all between the handover and the kill - which is exactly what the
+        // 3-second Latte heartbeat did.
+        uint64_t lastFootBucket = 0;
+        uint64_t lastAvailBucket = UINT64_MAX;
+        bool criticalAnnounced = false;
+        auto lastForced = std::chrono::steady_clock::now();
+        while (g_memWatchRunning.load())
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            unsigned long long avail = 0, foot = 0;
+            if (!cemu_bridge_memory_status(&avail, &foot))
+                continue;
+
+            // Bucketed so a steady state costs nothing and only real movement is
+            // written. An unbucketed 10 Hz sampler would bury the one line that
+            // matters under thousands of identical ones.
+            const uint64_t footBucket = foot / (32ull << 20);   // per 32 MB gained
+            const uint64_t availBucket = avail / (64ull << 20); // per 64 MB lost
+            const auto now = std::chrono::steady_clock::now();
+
+            bool report = false;
+            if (footBucket > lastFootBucket) report = true;
+            if (availBucket < lastAvailBucket) report = true;
+            if (now - lastForced >= std::chrono::seconds(5)) report = true;
+            lastFootBucket = footBucket;
+            lastAvailBucket = availBucket;
+
+            if (report)
+            {
+                cemu_mem_write_line("sample", avail, foot);
+                lastForced = now;
+            }
+
+            // One-shot, and phrased as a verdict because by the time headroom is
+            // this low the kill is the expected outcome, not a possibility. If
+            // this line is the last thing in the crash log, the question is
+            // answered.
+            if (!criticalAnnounced && avail > 0 && avail < (128ull << 20))
+            {
+                criticalAnnounced = true;
+                cemu_mem_write_line("CRITICAL - a kill by iOS is likely imminent", avail, foot);
+            }
+        }
+    }).detach();
 }
 
 #if defined(CEMU_CORE_AVAILABLE)
@@ -668,6 +801,11 @@ void cemu_bridge_initialize(const char* mlcPath) {
         where += (crashPath && crashPath[0]) ? crashPath : "(nowhere - $HOME was not set, so no file could be opened)";
         cemu_bridge_log_checkpoint(where.c_str());
     }
+    // Started here rather than from the early constructor: this needs the ObjC
+    // runtime and a notification centre, and constructor(101) runs before either is
+    // guaranteed. Still well ahead of any title boot, which is the only part that
+    // has to be covered.
+    cemu_bridge_start_memory_watchdog();
     // Desktop Cemu only ever calls PPCTimer_init() from main.cpp's CemuCommonInit(),
     // which this iOS bridge never runs (it goes straight to CafeSystem::Initialize()).
     // Without it, _rdtscFrequency stays 0 forever, and LaunchForegroundTitle() calls
