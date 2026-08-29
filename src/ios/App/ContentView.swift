@@ -541,6 +541,11 @@ struct EmulatorViewOptimized: View {
     private var stickDeadzone = ControllerLayoutSettings.defaultDeadzone
     @AppStorage(ControllerLayoutSettings.stickCurveKey)
     private var stickCurve = ControllerLayoutSettings.defaultStickCurve
+    // The gate belongs here more than either slider does: it is the one setting you
+    // judge by pushing the stick to a corner and seeing whether the game turns as hard
+    // as you meant it to.
+    @AppStorage(ControllerLayoutSettings.stickGateKey)
+    private var stickGateRaw = ControllerLayoutSettings.defaultStickGateRaw
     // Defaults ON, and must keep matching SettingsView's declaration of the same key -
     // two @AppStorage defaults for one key that disagree means the toggle and the
     // emulator disagree about what is on. See SettingsView for why this flipped.
@@ -785,6 +790,13 @@ struct EmulatorViewOptimized: View {
                         .tint(MuffinTheme.brownDarkest)
 
                         if joystickMode {
+                            Picker("Gate", selection: $stickGateRaw) {
+                                ForEach(ControllerGeometry.StickGate.allCases) { gate in
+                                    Text(gate.title).tag(gate.rawValue)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+
                             HStack(spacing: 10) {
                                 Text("Deadzone")
                                     .font(.system(size: 12, weight: .semibold, design: .rounded))

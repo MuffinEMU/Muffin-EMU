@@ -53,6 +53,12 @@ struct SettingsView: View {
     private var stickDeadzone = ControllerLayoutSettings.defaultDeadzone
     @AppStorage(ControllerLayoutSettings.stickCurveKey)
     private var stickCurve = ControllerLayoutSettings.defaultStickCurve
+    @AppStorage(ControllerLayoutSettings.stickGateKey)
+    private var stickGateRaw = ControllerLayoutSettings.defaultStickGateRaw
+
+    private var stickGate: ControllerGeometry.StickGate {
+        ControllerGeometry.StickGate(rawValue: stickGateRaw) ?? ControllerLayoutSettings.defaultStickGate
+    }
 
     private var timebase: TimebaseScale {
         TimebaseScale(rawValue: timebaseRaw) ?? .realTime
@@ -89,6 +95,22 @@ struct SettingsView: View {
                         // Only while the mode they belong to is on. A deadzone slider
                         // under a d-pad is a control with nothing behind it.
                         if joystickMode {
+                            // Above the two sliders because it is a different kind of
+                            // question: the gate is the shape of the stick, and the
+                            // sliders are how that shape is read.
+                            VStack(alignment: .leading, spacing: 4) {
+                                Picker("Gate", selection: $stickGateRaw) {
+                                    ForEach(ControllerGeometry.StickGate.allCases) { gate in
+                                        Text(gate.title).tag(gate.rawValue)
+                                    }
+                                }
+                                .pickerStyle(.segmented)
+                                Text(stickGate.summary)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
                                     Text("Stick deadzone")
@@ -156,7 +178,7 @@ struct SettingsView: View {
                     } header: {
                         Text("On-screen controls")
                     } footer: {
-                        Text("The joystick is analog, like the sticks on the real GamePad: how far you push it is how fast you go, which a d-pad cannot express - it only ever says fully left or nothing. The position your thumb is at is the position the game receives, at full precision and with nothing smoothing it on the way. It takes the d-pad's own footprint, so nothing else on the pad moves, and turning it on also adds a camera stick on the right for the games that look around. Tap the left stick without pushing it to click it in (L3), which is where that button lives in this mode.\n\nDeadzone is how much of the stick around the centre reads as untouched. Everything past it still reaches full speed, so turning it down buys precision near the middle and costs nothing at the top - turn it up only if a resting thumb makes the game drift. Fine control bends the first part of the travel: at linear, halfway is half speed; above it, halfway is slower than half, so small corrections get more of the stick to happen in. Nothing changes at the rim either way.\n\nMuffin picks a button size for the screen it is on and re-picks it whenever that changes, so the pad is already the right size on a phone and on an iPad without being set here. The size and opacity sliders adjust that choice rather than replacing it.\n\nTo move a cluster - either half, or the camera stick - start a game and tap the move button in the top bar; you need the game underneath to judge where the controls should go. The same joystick switch is in that panel.")
+                        Text("The joystick is analog, like the sticks on the real GamePad: how far you push it is how fast you go, which a d-pad cannot express - it only ever says fully left or nothing. The position your thumb is at is the position the game receives, at full precision and with nothing smoothing it on the way. It takes the d-pad's own footprint, so nothing else on the pad moves, and turning it on also adds a camera stick on the right for the games that look around. Tap the left stick without pushing it to click it in (L3), which is where that button lives in this mode.\n\nThe gate is the shape the stick can reach. The real GamePad's is an octagon, and that is not decoration: only the four cardinals and the four diagonals reach full travel, and the flats between them stop about 8% short - which is the stick Mario Kart's drift and Zelda's walking were tuned against, and the flats are also the only thing telling your thumb where the diagonals are. Round gives the maximum in every direction instead.\n\nDeadzone is how much of the stick around the centre reads as untouched. Everything past it still reaches full speed, so turning it down buys precision near the middle and costs nothing at the top - turn it up only if a resting thumb makes the game drift. Fine control bends the first part of the travel: at linear, halfway is half speed; above it, halfway is slower than half, so small corrections get more of the stick to happen in. Nothing changes at the rim either way.\n\nMuffin picks a button size for the screen it is on and re-picks it whenever that changes, so the pad is already the right size on a phone and on an iPad without being set here. The size and opacity sliders adjust that choice rather than replacing it.\n\nTo move a cluster - either half, or the camera stick - start a game and tap the move button in the top bar; you need the game underneath to judge where the controls should go. The same joystick switch is in that panel.")
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 
