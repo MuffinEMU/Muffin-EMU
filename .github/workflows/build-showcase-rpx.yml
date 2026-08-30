@@ -1,0 +1,67 @@
+name: Build Showcase RPX (Homebrew)
+
+# Builds the three MuffinEMU showcase roms with the devkitPro Wii U toolchain, the same
+# way build-rainbow-rpx.yml builds rainbow.rpx: homebrew RPX carries no encryption, so
+# this is a plain Linux container with no relation to the Xcode build and no console
+# keys anywhere in it.
+#
+# A matrix rather than three workflows. Each rom is one .c plus the shared header, and
+# the wut sample Makefile builds whatever .c files are in source/ - so each matrix leg
+# stages exactly one of them.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  build-showcase:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        demo: [prime, bakery, handson]
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Install wut (Wii U userland toolchain)
+        run: dkp-pacman -Sy --noconfirm wut
+
+      - name: Clone wut (for its sample Makefile)
+        run: git clone --depth 1 https://github.com/devkitPro/wut.git /tmp/wut
+
+      # POSIX sh, not bash - the devkitPPC container ships no bash and Actions falls
+      # back to `sh -e {0}`, which is dash and has no pipefail.
+      - name: Assemble the project
+        run: |
+          set -eu
+          cp -r /tmp/wut/samples/make/helloworld /tmp/build
+          rm -f /tmp/build/source/*.c /tmp/build/source/*.cpp
+          cp homebrew/showcase/source/muffin_gfx.h /tmp/build/source/
+          cp homebrew/showcase/source/${{ matrix.demo }}.c /tmp/build/source/
+          ls -la /tmp/build/source
+
+      - name: Build ${{ matrix.demo }}.rpx
+        run: |
+          set -eu
+          make -C /tmp/build TARGET=${{ matrix.demo }}
+          test -f /tmp/build/${{ matrix.demo }}.rpx
+
+      # Same check as the rainbow workflow, for the same reason: this repo has shipped
+      # a truncated RPX before, and failing here is free.
+      - name: Verify the built RPX
+        run: |
+          set -eu
+          RPX=/tmp/build/${{ matrix.demo }}.rpx
+          SIZE=$(stat -c%s "$RPX")
+          echo "${{ matrix.demo }}.rpx = $SIZE bytes"
+          test "$SIZE" -gt 4096
+          head -c 4 "$RPX" | od -An -tx1 | tr -d ' \n' | grep -qi '^7f454c46'
+          echo "verify: PASS"
+
+      - name: Upload ${{ matrix.demo }}.rpx
+        uses: actions/upload-artifact@v4
+        with:
+          name: showcase-${{ matrix.demo }}
+          path: /tmp/build/${{ matrix.demo }}.rpx
+          retention-days: 30
