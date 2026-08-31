@@ -294,7 +294,13 @@ struct PadLayout {
             if vh > sh * 0.62 { vh = sh * 0.62; vw = vh * 16 / 9 }
             video = CGRect(x: sx + (sw - vw) / 2, y: sy, width: vw, height: vh)
             let band = sy + sh - video.maxY
-            unit = min(unit, band / G.verticalNeed(armAngle: armAngle, hardwareSystem: hardwareSystem))
+            // Both clamps matter. The height one alone lets the two clusters size
+            // themselves past the width they have to share, which on a Slide Over pane
+            // puts them straight through each other.
+            let clustersWide = (outboard + inboardL) + (outboard + inboardR)
+            unit = min(unit,
+                       band / G.verticalNeed(armAngle: armAngle, hardwareSystem: hardwareSystem),
+                       sw / (clustersWide + 0.6))
             let out = G.outboardExtent(armAngle: armAngle)
             lx = sx + (edgeMargin + out) * unit
             rx = sx + sw - (edgeMargin + out) * unit
@@ -356,17 +362,48 @@ struct PadLayout {
                                  diameter: G.systemDiameter * unit)
             notes.append("+/- moved to the elbow: no room for their real place under A/B/X/Y")
         }
+        // The menu rail. HOME keeps its hardware place where it fits, but the framed
+        // picture is taller than the hardware's own LCD whenever the gap between the
+        // clusters is wider than the GamePad's bezel - so it has to be pushed clear of
+        // the picture rather than trusted to the hardware offset. Where nothing clears,
+        // HOME joins TV and POWER in the pause menu instead of being drawn on top of
+        // something: a button you cannot tell apart from the one under it is worse than
+        // a button that is somewhere else.
+        let hr = G.homeDiameter / 2 * unit
+        func collides(_ x: CGFloat, _ y: CGFloat, _ r: CGFloat) -> Bool {
+            for (id, p) in c where !id.hasPrefix("knob") {
+                var w: CGFloat, h: CGFloat
+                switch p {
+                case .circle(_, let d):     w = d; h = d
+                case .pill(_, let s, _):    w = s.width; h = s.height
+                case .cross(_, let s, _):   w = s.width; h = s.height
+                }
+                if abs(x - p.centre.x) < (r + w / 2) - 0.5,
+                   abs(y - p.centre.y) < (r + h / 2) - 0.5 { return true }
+            }
+            return false
+        }
+        var placed = false
         if let top = bodyTop, mode == .framed || mode == .shell {
-            let hy = top + G.homeFromBodyTop * unit
-            c["HOME"]  = .circle(centre: CGPoint(x: gapCentreX, y: hy), diameter: G.homeDiameter * unit)
-            c["TV"]    = .circle(centre: CGPoint(x: gapCentreX + G.tvFromHome * unit, y: hy),
-                                 diameter: G.menuDiameter * unit)
-            c["POWER"] = .circle(centre: CGPoint(x: gapCentreX + G.powerFromHome * unit, y: hy),
-                                 diameter: G.menuDiameter * unit)
-        } else {
-            c["HOME"] = .circle(centre: CGPoint(x: mode == .overlay ? sx + sw / 2 : gapCentreX,
-                                                y: sy + sh - (edgeMargin + G.homeDiameter / 2) * unit),
-                                diameter: G.homeDiameter * unit)
+            let hy = max(top + G.homeFromBodyTop * unit, video.maxY + clearance * unit + hr)
+            if hy + hr <= sy + sh - edgeMargin * unit, !collides(gapCentreX, hy, hr) {
+                c["HOME"]  = .circle(centre: CGPoint(x: gapCentreX, y: hy),
+                                     diameter: G.homeDiameter * unit)
+                c["TV"]    = .circle(centre: CGPoint(x: gapCentreX + G.tvFromHome * unit, y: hy),
+                                     diameter: G.menuDiameter * unit)
+                c["POWER"] = .circle(centre: CGPoint(x: gapCentreX + G.powerFromHome * unit, y: hy),
+                                     diameter: G.menuDiameter * unit)
+                placed = true
+            }
+        }
+        if !placed {
+            let hx = mode == .overlay ? sx + sw / 2 : gapCentreX
+            let hy = sy + sh - (edgeMargin + G.homeDiameter / 2) * unit
+            if !collides(hx, hy, hr) {
+                c["HOME"] = .circle(centre: CGPoint(x: hx, y: hy), diameter: G.homeDiameter * unit)
+            } else {
+                notes.append("HOME joins TV/POWER in the pause menu: nothing on the pad clears")
+            }
             notes.append("TV/POWER belong to the pause menu at this size, not to the pad")
         }
 

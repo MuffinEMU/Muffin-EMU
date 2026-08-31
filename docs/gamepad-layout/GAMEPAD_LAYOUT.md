@@ -132,14 +132,20 @@ measured circle drawn back over the source art.
 | file | what it is |
 |---|---|
 | `GamePadGeometry.swift` | the constants and the resolver. Typechecks clean; **not in the build** - `src/ios/project.yml` pulls `src/ios/App` in as a group, so moving it there is the whole of wiring it in |
+| `index.html` | the same thing as a browsable page with a device picker - opens by double-clicking, no server needed |
+| `HANDOFF.md` | what the next person needs: how to verify it, how to wire it in, and the traps |
 | `resolve_reference.py` | the same four laws in Python, which generated the mockups |
 | `mock_*.png` | what each configuration looks like |
 | `muffin_pad_layout.json` | resolved coordinates, all 15 configurations |
 | `hardware_measurements.json` | the source measurements, in pixels and mm |
 
-The Swift and the Python were checked against each other on five configurations - mode,
-unit, +/- placement, picture rect and twelve control centres each. **Zero discrepancies**,
-so the mockups are a true picture of what the Swift produces.
+The Swift and the Python were checked against each other on **every configuration and
+every control**: 278 controls across 15 configurations, comparing mode, unit, +/- placement,
+picture rect, and each control's centre and size. **Zero discrepancies**, so the mockups are
+a true picture of what the Swift produces. The same pass asserts that nothing lands outside
+a safe area, that no two controls overlap, that nothing covers the picture in framed mode,
+that every face button is at or above 44 pt, that both clusters stay level, and that every
+picture is exactly 16:9.
 
 ## Two things to decide
 
