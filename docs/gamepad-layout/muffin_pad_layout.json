@@ -1559,19 +1559,19 @@
     "HOME": {
      "kind": "circle",
      "x": 674.2,
-     "y": 780.3,
+     "y": 803.4,
      "d": 57.4
     },
     "TV": {
      "kind": "circle",
      "x": 954.7,
-     "y": 780.3,
+     "y": 803.4,
      "d": 35.3
     },
     "POWER": {
      "kind": "circle",
      "x": 1021.0,
-     "y": 780.3,
+     "y": 803.4,
      "d": 35.3
     }
    },
@@ -1734,19 +1734,19 @@
     "HOME": {
      "kind": "circle",
      "x": 679.2,
-     "y": 784.3,
+     "y": 810.3,
      "d": 57.4
     },
     "TV": {
      "kind": "circle",
      "x": 959.7,
-     "y": 784.3,
+     "y": 810.3,
      "d": 35.3
     },
     "POWER": {
      "kind": "circle",
      "x": 1026.0,
-     "y": 784.3,
+     "y": 810.3,
      "d": 35.3
     }
    },
@@ -2071,16 +2071,11 @@
      "x": 195.9,
      "y": 780.0,
      "d": 33.5
-    },
-    "HOME": {
-     "kind": "circle",
-     "x": 178.7,
-     "y": 771.2,
-     "d": 51.2
     }
    },
    "notes": [
     "portrait: video pinned to the top, both clusters on the bottom corners",
+    "HOME joins TV/POWER in the pause menu: nothing on the pad clears",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
   },
@@ -2403,16 +2398,11 @@
      "x": 229.8,
      "y": 882.2,
      "d": 39.3
-    },
-    "HOME": {
-     "kind": "circle",
-     "x": 209.7,
-     "y": 871.8,
-     "d": 60.0
     }
    },
    "notes": [
     "portrait: video pinned to the top, both clusters on the bottom corners",
+    "HOME joins TV/POWER in the pause menu: nothing on the pad clears",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
   },
@@ -2573,19 +2563,19 @@
     "HOME": {
      "kind": "circle",
      "x": 679.2,
-     "y": 784.3,
+     "y": 810.3,
      "d": 57.4
     },
     "TV": {
      "kind": "circle",
      "x": 959.7,
-     "y": 784.3,
+     "y": 810.3,
      "d": 35.3
     },
     "POWER": {
      "kind": "circle",
      "x": 1026.0,
-     "y": 784.3,
+     "y": 810.3,
      "d": 35.3
     }
    },

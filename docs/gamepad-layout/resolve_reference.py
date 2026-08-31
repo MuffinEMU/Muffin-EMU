@@ -176,14 +176,33 @@ def resolve(name, W, H, ppi_pt, insets, user_scale=1.0, external_display=False):
         circ("plus",  rx - ex*D, cy + ey*D, G['systemDiameter'])
         circ("minus", lx + ex*D, cy + ey*D, G['systemDiameter'])
         notes.append("+/- relocated to the elbow slot: no room for their real place below A/B/X/Y")
+    # The menu rail. HOME keeps its hardware place when it fits, but the framed picture
+    # is taller than the hardware's own LCD whenever the gap is wider than the GamePad's
+    # bezel, so it has to be pushed clear of the picture rather than trusted to the
+    # hardware offset - and where nothing clears, HOME joins TV/POWER in the pause menu
+    # rather than being drawn on top of something.
+    hr = G['homeDiameter']/2*D
+    def collides(x, y, r):
+        for i, c in P.items():
+            if i.startswith('knob'): continue
+            w = c.get('d', c.get('w')); h = c.get('d', c.get('h'))
+            if abs(x-c['x']) < (r + w/2) - 0.5 and abs(y-c['y']) < (r + h/2) - 0.5: return True
+        return False
+    placed = False
     if body_top is not None and mode in ("framed","shell"):
-        hy = body_top + G['homeFromBodyTop']*D
-        circ("HOME", gapCx, hy, G['homeDiameter'])
-        circ("TV",    gapCx + G['tvFromHome']*D, hy, G['menuDiameter'])
-        circ("POWER", gapCx + G['powerFromHome']*D, hy, G['menuDiameter'])
-    else:
-        circ("HOME", gapCx if mode!="overlay" else sx+sw/2, sy + sh - (EDGE_M + G['homeDiameter']/2)*D,
-             G['homeDiameter'])
+        hy = max(body_top + G['homeFromBodyTop']*D, vy + vh + CLEAR*D + hr)
+        if hy + hr <= sy + sh - EDGE_M*D and not collides(gapCx, hy, hr):
+            circ("HOME",  gapCx, hy, G['homeDiameter'])
+            circ("TV",    gapCx + G['tvFromHome']*D, hy, G['menuDiameter'])
+            circ("POWER", gapCx + G['powerFromHome']*D, hy, G['menuDiameter'])
+            placed = True
+    if not placed:
+        hx = sx + sw/2 if mode == "overlay" else gapCx
+        hy = sy + sh - (EDGE_M + G['homeDiameter']/2)*D
+        if not collides(hx, hy, hr):
+            circ("HOME", hx, hy, G['homeDiameter'])
+        else:
+            notes.append("HOME joins TV/POWER in the pause menu: nothing on the pad clears")
         notes.append("TV/POWER live in the pause menu at this size, not on the pad")
     return dict(device=name, container=[W,H], safe=[round(sx,1),round(sy,1),round(sw,1),round(sh,1)],
                 ppi_pt=ppi_pt, mode=mode, D=round(D,2), D_life=round(D_life,2),
