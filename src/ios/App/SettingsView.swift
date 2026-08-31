@@ -39,6 +39,11 @@ struct SettingsView: View {
     // at title start, and a disagreement here would show a switch in the wrong position.
     @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = false
     @AppStorage("muffin.cpu.legacyTimebase") private var legacyTimebase = false
+    @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
+    @State private var learnedCacheBytes: Int64 = 0
+    @State private var compiledCacheBytes: Int64 = 0
+    @State private var confirmClearLearned = false
+    @State private var cacheStatusMessage: String?
 
     /// Same keys the on-screen pad reads. Moving a cluster is a thing you can only
     /// sensibly do with a game under it, so that lives in the emulator view - but size
@@ -222,6 +227,50 @@ struct SettingsView: View {
                             cemu_bridge_set_legacy_timebase(newValue)
                         }
 
+                        Toggle(isOn: $asyncShaderCompile) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Compile shaders in the background")
+                                Text("On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead. Neither can build a shader before the game first uses it - the Wii U only reveals them as it draws.")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .tint(MuffinTheme.pixelBlue)
+                        .onChange(of: asyncShaderCompile) { newValue in
+                            cemu_bridge_set_async_shader_compile(newValue)
+                        }
+
+                        // Two buttons, not one. Pressing the first costs a slow launch;
+                        // pressing the second throws away something only playing can earn
+                        // back, and a single "clear cache" button would hide that.
+                        HStack {
+                            Text("Compiled shaders")
+                            Spacer()
+                            Text(Self.formatBytes(compiledCacheBytes)).foregroundColor(.secondary)
+                        }
+                        HStack {
+                            Text("Learned shaders")
+                            Spacer()
+                            Text(Self.formatBytes(learnedCacheBytes)).foregroundColor(.secondary)
+                        }
+                        Button {
+                            let freed = cemu_bridge_clear_shader_cache(0, false)
+                            cacheStatusMessage = freed < 0
+                                ? "Cannot clear this while a game is running."
+                                : "Freed \(Self.formatBytes(freed)). The next launch of each game is slow once, then back to normal."
+                            refreshCacheStats()
+                        } label: {
+                            Label("Clear compiled shaders", systemImage: "arrow.counterclockwise")
+                        }
+                        Button(role: .destructive) { confirmClearLearned = true } label: {
+                            Label("Clear everything, including learned", systemImage: "trash")
+                        }
+                        if let cacheStatusMessage {
+                            Text(cacheStatusMessage)
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+
                         Picker("Resolution", selection: $renderScaleRaw) {
                             ForEach(RenderScale.allCases) { scale in
                                 Text(scale.title).tag(scale.rawValue)
@@ -370,6 +419,36 @@ struct SettingsView: View {
             }
         }
         .navigationViewStyle(.stack)
+        .onAppear { refreshCacheStats() }
+        .confirmationDialog("Clear learned shaders too?", isPresented: $confirmClearLearned, titleVisibility: .visible) {
+            Button("Clear everything", role: .destructive) {
+                let freed = cemu_bridge_clear_shader_cache(0, true)
+                cacheStatusMessage = freed < 0
+                    ? "Cannot clear this while a game is running."
+                    : "Freed \(Self.formatBytes(freed)). Games will stutter while they relearn their shaders."
+                refreshCacheStats()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This cannot be undone by pressing a button - each game only relearns its shaders by being played again.")
+        }
+    }
+
+    private func refreshCacheStats() {
+        var learned: Int64 = 0
+        var compiled: Int64 = 0
+        _ = cemu_bridge_shader_cache_stats(0, &learned, &compiled)
+        learnedCacheBytes = learned
+        compiledCacheBytes = compiled
+    }
+
+    private static func formatBytes(_ bytes: Int64) -> String {
+        if bytes <= 0 { return "none" }
+        let units = ["B", "KB", "MB", "GB"]
+        var value = Double(bytes)
+        var unit = 0
+        while value >= 1024 && unit < units.count - 1 { value /= 1024; unit += 1 }
+        return unit == 0 ? "\(Int(value)) B" : String(format: "%.1f %@", value, units[unit])
     }
 
     private func handleKeysImport(_ result: Result<[URL], Error>) {
