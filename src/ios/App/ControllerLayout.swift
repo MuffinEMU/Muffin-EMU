@@ -84,6 +84,10 @@ enum ControllerLayoutSettings {
                     rightOffsetXKey, rightOffsetYKey] {
             defaults.removeObject(forKey: key)
         }
+        // Per-element placement is layout too. Leaving it behind would make this button
+        // look broken: the clusters would snap back while every control inside them
+        // stayed where it had been dragged.
+        ControllerCustomLayout.shared.resetAll()
     }
 }
 

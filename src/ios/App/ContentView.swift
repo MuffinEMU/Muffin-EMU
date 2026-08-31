@@ -757,7 +757,7 @@ struct EmulatorViewOptimized: View {
             if isEditingControlLayout {
                 VStack {
                     VStack(spacing: 10) {
-                        Text("Drag either half to move it. Nothing here reaches the game.")
+                        Text("Drag any button to move it on its own, or pinch it to resize. Drag the empty space inside a dashed box to move that whole half. L and ZL move together, and so do R and ZR. Nothing here reaches the game.")
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .foregroundColor(.white.opacity(0.85))
                             .multilineTextAlignment(.center)

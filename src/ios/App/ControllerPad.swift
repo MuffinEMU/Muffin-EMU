@@ -204,30 +204,22 @@ private struct ControlCluster: View {
                 dragHandle
             }
 
+            // Drawn after the cluster's drag handle, so where an element overlaps the
+            // handle the element takes the touch. That is what lets one editing mode do
+            // both jobs: drag an element to move that element, drag the empty part of the
+            // dashed box to move the whole cluster.
             ForEach(controls) { control in
-                Group {
-                    if control.style == .joystick {
-                        JoystickControl(
-                            control: control,
-                            skin: skin,
-                            unit: unit,
-                            isInteractive: !isEditingLayout,
-                            onStick: onStick,
-                            onInput: onInput
-                        )
-                    } else {
-                        ControlButton(
-                            control: control,
-                            skin: skin,
-                            unit: unit,
-                            isInteractive: !isEditingLayout,
-                            onInput: onInput
-                        )
-                    }
-                }
-                .position(
-                    x: centre.x + control.offset.x * unit,
-                    y: centre.y + control.offset.y * unit
+                EditableControl(
+                    control: control,
+                    skin: skin,
+                    unit: unit,
+                    base: CGPoint(
+                        x: centre.x + control.offset.x * unit,
+                        y: centre.y + control.offset.y * unit
+                    ),
+                    isEditingLayout: isEditingLayout,
+                    onStick: onStick,
+                    onInput: onInput
                 )
             }
         }
@@ -269,6 +261,90 @@ private struct ControlCluster: View {
                         offsetY = Double(settled.y - anchor.y)
                     }
             )
+    }
+}
+
+/// One control, placed where the user put it.
+///
+/// Its own view rather than a modifier chain inside the ForEach because each element needs
+/// its own drag origin: reading the live offset every frame would compound DragGesture's
+/// cumulative translation and throw the control off the screen on the first slow drag,
+/// which is the same trap the cluster handle documents.
+private struct EditableControl: View {
+    let control: ControllerGeometry.Control
+    let skin: WiiUControllerSkin
+    let unit: CGFloat
+    /// Where this control sits with no customisation - the measured default.
+    let base: CGPoint
+    let isEditingLayout: Bool
+    let onStick: (CGPoint) -> Void
+    let onInput: (String, Bool) -> Void
+
+    @ObservedObject private var custom = ControllerCustomLayout.shared
+    @State private var dragOrigin: ControlOverride?
+    @State private var scaleOrigin: Double?
+
+    private var settings: ControlOverride { custom.override(for: control.id) }
+
+    var body: some View {
+        Group {
+            if control.style == .joystick {
+                JoystickControl(
+                    control: control,
+                    skin: skin,
+                    unit: unit * CGFloat(settings.scale),
+                    isInteractive: !isEditingLayout,
+                    onStick: onStick,
+                    onInput: onInput
+                )
+            } else {
+                ControlButton(
+                    control: control,
+                    skin: skin,
+                    unit: unit * CGFloat(settings.scale),
+                    isInteractive: !isEditingLayout,
+                    onInput: onInput
+                )
+            }
+        }
+        .position(x: base.x + CGFloat(settings.dx), y: base.y + CGFloat(settings.dy))
+        // A dashed ring while editing, so it is obvious which things can be moved and
+        // that L/ZL and R/ZR answer as one.
+        .overlay(
+            Group {
+                if isEditingLayout {
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                        .frame(width: unit * CGFloat(settings.scale) * 1.25, height: unit * CGFloat(settings.scale) * 1.25)
+                        .position(x: base.x + CGFloat(settings.dx), y: base.y + CGFloat(settings.dy))
+                        .allowsHitTesting(false)
+                }
+            }
+        )
+        .gesture(isEditingLayout ? editGesture : nil)
+    }
+
+    private var editGesture: some Gesture {
+        let drag = DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let origin = dragOrigin ?? settings
+                if dragOrigin == nil { dragOrigin = origin }
+                custom.move(control.id, to: value.translation, from: origin)
+            }
+            .onEnded { _ in dragOrigin = nil }
+
+        let pinch = MagnificationGesture()
+            .onChanged { value in
+                let origin = scaleOrigin ?? settings.scale
+                if scaleOrigin == nil { scaleOrigin = origin }
+                custom.setScale(origin * Double(value), for: control.id)
+            }
+            .onEnded { _ in scaleOrigin = nil }
+
+        // Simultaneous rather than exclusive: a pinch is two fingers moving, and an
+        // exclusive pair would let the first finger's travel be read as a drag and shove
+        // the control across the screen while it was being resized.
+        return SimultaneousGesture(drag, pinch)
     }
 }
 
