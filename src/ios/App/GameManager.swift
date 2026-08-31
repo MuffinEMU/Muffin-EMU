@@ -84,6 +84,10 @@ class GameManager: ObservableObject {
                 // "incorrect layout or missing meta files", losing the title metadata.
                 let gameID: String
                 let bootPath: String
+                // The dump directory, when the entry is one. Only a directory dump keeps
+                // its meta/ on disk where the icon can be read from; a single-file dump
+                // keeps meta/ inside the container, where only the engine can reach it.
+                let dumpDirectory: URL?
 
                 var isDirectory: ObjCBool = false
                 _ = fileManager.fileExists(atPath: item.path, isDirectory: &isDirectory)
@@ -93,18 +97,20 @@ class GameManager: ObservableObject {
                           let rpx = Self.executableInDump(item) else { continue }
                     gameID = item.lastPathComponent
                     bootPath = rpx.path
+                    dumpDirectory = item
                 } else {
                     let pathExtension = item.pathExtension.lowercased()
                     guard Self.supportedROMExtensions.contains(pathExtension) else { continue }
                     gameID = item.deletingPathExtension().lastPathComponent
                     bootPath = item.path
+                    dumpDirectory = nil
                 }
 
                 let gameMetadata = GameMetadata(
                     id: gameID,
                     title: gameID,
                     romPath: bootPath,
-                    coverPath: findCover(for: gameID, in: romsPath),
+                    coverPath: findCover(for: gameID, in: romsPath, dump: dumpDirectory),
                     region: "Unknown",
                     releaseDate: "Unknown",
                     genre: "Game"
@@ -152,14 +158,27 @@ class GameManager: ObservableObject {
             .first
     }
 
-    private func findCover(for gameID: String, in directory: URL) -> String? {
+    /// Art for a game's card, in the order a person would expect it: whatever they put
+    /// there themselves first, then the game's own icon out of the dump.
+    ///
+    /// Before this, only the first half existed - and nothing in the app ever wrote a
+    /// `<gameID>_cover.png`, so every card fell through to the placeholder controller
+    /// glyph no matter what was installed. The icon has been sitting inside every
+    /// dumped title the whole time at meta/iconTex.tga.
+    private func findCover(for gameID: String, in directory: URL, dump: URL?) -> String? {
         let fileManager = FileManager.default
 
+        // A hand-placed cover wins. Someone who dropped a file in specifically to
+        // override the icon should not be overruled by the icon.
         for ext in ["jpg", "jpeg", "png"] {
             let coverPath = directory.appendingPathComponent("\(gameID)_cover.\(ext)")
             if fileManager.fileExists(atPath: coverPath.path) {
                 return coverPath.path
             }
+        }
+
+        if let dump = dump {
+            return WiiUIcon.cachedIconPath(for: gameID, dump: dump, in: directory)
         }
 
         return nil
