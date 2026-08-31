@@ -145,22 +145,26 @@ struct GameBrowserView: View {
     @State private var showingSettings = false
     /// What the picker is being opened for.
     ///
-    /// A document picker only lets you SELECT a directory when UTType.folder is among its
-    /// allowed types; with a file-only type list, tapping a folder navigates into it and
-    /// there is no way to choose it. A full Wii U dump IS a directory (code/, content/,
-    /// meta/), so one type list cannot serve both without making folder taps ambiguous -
-    /// hence two entry points.
+    /// A document picker only lets you SELECT a directory when UTType.folder is among
+    /// its allowed types; with a file-only type list, tapping a folder navigates into it
+    /// and there is no way to choose it. A full Wii U dump IS a directory (code/,
+    /// content/, meta/), so one type list cannot serve both without making folder taps
+    /// ambiguous - hence two entry points, each with its own fixed list.
     ///
-    /// But they cannot be two .fileImporter modifiers. Two of them attached to the same
-    /// view do not both work: SwiftUI keeps one presentation, and the other button
-    /// silently does nothing. That is why importing was broken. One modifier, and this
-    /// decides what it is allowed to select.
-    enum ImportKind: Int, Identifiable {
-        case file, folder
-        var id: Int { rawValue }
-        var contentTypes: [UTType] { self == .file ? [.item] : [.folder] }
-    }
-    @State private var importKind: ImportKind?
+    /// .item, not .data or a list of ROM types, for the file case. iOS has no built-in
+    /// UTType for .rpx, .wux, .wud or .wua, so any type-filtered list greys out exactly
+    /// the files this button exists to import - the reported "it only opens folders, you
+    /// cannot select things". .item is the root of the type hierarchy: everything
+    /// matches, nothing is greyed out, and GameManager.importROM does the deciding
+    /// afterwards against its own copy. .data is nearly as permissive but still depends
+    /// on the provider having resolved a byte-stream type for the file at all; .item
+    /// does not.
+    ///
+    /// Presentation itself is DocumentImport's job rather than .fileImporter's - see
+    /// that file for why the button did nothing when it was a SwiftUI modifier.
+    private static let fileImportTypes: [UTType] = [.item]
+    private static let folderImportTypes: [UTType] = [.folder]
+
     @State private var romImportErrorMessage: String?
 
     var filteredGames: [GameMetadata] {
@@ -214,12 +218,12 @@ struct GameBrowserView: View {
 
                             Menu {
                                 Button {
-                                    importKind = .file
+                                    beginImport(contentTypes: Self.fileImportTypes)
                                 } label: {
                                     Label("Game file (.wux, .wud, .wua, .iso, .rpx)", systemImage: "doc")
                                 }
                                 Button {
-                                    importKind = .folder
+                                    beginImport(contentTypes: Self.folderImportTypes)
                                 } label: {
                                     Label("Game folder (code / content / meta)", systemImage: "folder")
                                 }
@@ -294,29 +298,16 @@ struct GameBrowserView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView(gameManager: gameManager)
         }
-        // .item, not .data or a list of ROM types. iOS has no built-in UTType for .rpx,
-        // .wux, .wud or .wua, so any type-filtered list greys out exactly the files this
-        // button exists to import - which is the reported "it only opens folders, you
-        // cannot select things". .item is the root of the type hierarchy: everything
-        // matches, nothing is greyed out, and GameManager.importROM does the deciding
-        // afterwards against its own copy. .data is nearly as permissive but still
-        // depends on the provider having resolved a byte-stream type for the file at
-        // all; .item does not.
-        .fileImporter(
-            isPresented: Binding(
-                get: { importKind != nil },
-                set: { if !$0 { importKind = nil } }
-            ),
-            allowedContentTypes: importKind?.contentTypes ?? [.item],
-            allowsMultipleSelection: false
-        ) { result in
-            importKind = nil
-            handleImport(result)
-        }
         .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
             Button("OK") { romImportErrorMessage = nil }
         } message: { message in
             Text(message)
+        }
+    }
+
+    private func beginImport(contentTypes: [UTType]) {
+        DocumentImport.present(contentTypes: contentTypes) { result in
+            handleImport(result)
         }
     }
 
@@ -363,11 +354,16 @@ struct GameCardOptimized: View {
 
                 if let coverPath = game.coverPath,
                    let uiImage = UIImage(contentsOfFile: coverPath) {
+                    // scaledToFit, not scaledToFill. A game's own icon is SQUARE and
+                    // this well is 3:4, so filling it would crop the top and bottom
+                    // quarter off every icon - which on a Wii U icon is usually the
+                    // title text. Fitting leaves the muffin gradient showing around it
+                    // instead, and box art that is already 3:4 fits exactly either way.
                     Image(uiImage: uiImage)
                         .resizable()
-                        .scaledToFill()
+                        .scaledToFit()
+                        .padding(10)
                         .cornerRadius(16)
-                        .clipped()
                 } else {
                     VStack {
                         Image(systemName: "gamecontroller.fill")
