@@ -39,6 +39,9 @@ uint64 muldiv64(uint64 a, uint64 b, uint64 d)
 // Defined further down, next to the rest of the lock-free timebase; declared here
 // because PPCTimer_init() and PPCTimer_start() above it both publish an anchor.
 static void PPCTimer_republishAnchor(bool resetToZero);
+// Same reason: PPCTimer_init() below reports the resulting guest clock rate, and both the
+// anchor type and the conversion it needs are defined further down.
+static void PPCTimer_reportTimebaseRate(uint64 counterHz);
 #endif
 
 uint64 PPCTimer_estimateRDTSCFrequency()
@@ -103,20 +106,7 @@ void PPCTimer_init()
 	// symptom of it looked like a clock - so the number that matters gets printed and
 	// checked, and a mismatch is called out in the log rather than left to be inferred
 	// from a game behaving strangely.
-	if (TimebaseAnchor* anchor = s_timebaseAnchor.load(std::memory_order_acquire))
-	{
-		const uint64 guestHz = PPCTimer_guestTicks(f, anchor->mulFixed) >> 3ull;
-		const uint64 expectedHz = Espresso::CORE_CLOCK;
-		const uint64 drift = guestHz > expectedHz ? guestHz - expectedHz : expectedHz - guestHz;
-		if (drift > expectedHz / 100ull)
-		{
-			cemuLog_log(LogType::Force, "Emulated timebase: WRONG - counter {} Hz gives a guest clock of {} Hz, expected {} Hz. Titles will mistime everything they animate.", f, guestHz, expectedHz);
-		}
-		else
-		{
-			cemuLog_log(LogType::Force, "Emulated timebase: counter {} Hz, guest clock {} Hz (expected {}), read lock-free", f, guestHz, expectedHz);
-		}
-	}
+	PPCTimer_reportTimebaseRate(f);
 #else
 	std::thread t(PPCTimer_initThread);
 	t.detach();
@@ -259,6 +249,27 @@ static constexpr uint64 kTimebaseNumerator = Espresso::CORE_CLOCK * 8ull;
 static inline uint64 PPCTimer_guestTicks(uint64 counterDelta, uint64 mulFixed)
 {
 	return PPCTimer_mulHigh(counterDelta, mulFixed) << (64u - kTimebaseFracBits);
+}
+
+// Reports the guest clock rate the published anchor actually produces, and checks it
+// against what it is supposed to be.
+//
+// Measured out of the anchor rather than restated from the constants, so it exercises the
+// same arithmetic the emulator will use rather than a copy of it that could agree while
+// the real one is wrong. The previous version of that arithmetic was out by a factor of
+// 65 and reported nothing at all, and no symptom of it looked like a clock.
+static void PPCTimer_reportTimebaseRate(uint64 counterHz)
+{
+	TimebaseAnchor* anchor = s_timebaseAnchor.load(std::memory_order_acquire);
+	if (!anchor)
+		return;
+	const uint64 guestHz = PPCTimer_guestTicks(counterHz, anchor->mulFixed) >> 3ull;
+	const uint64 expectedHz = Espresso::CORE_CLOCK;
+	const uint64 drift = guestHz > expectedHz ? guestHz - expectedHz : expectedHz - guestHz;
+	if (drift > expectedHz / 100ull)
+		cemuLog_log(LogType::Force, "Emulated timebase: WRONG - counter {} Hz gives a guest clock of {} Hz, expected {} Hz. Titles will mistime everything they animate.", counterHz, guestHz, expectedHz);
+	else
+		cemuLog_log(LogType::Force, "Emulated timebase: counter {} Hz, guest clock {} Hz (expected {}), read lock-free", counterHz, guestHz, expectedHz);
 }
 
 // Publishes a new anchor that continues from wherever the current one had reached, so the

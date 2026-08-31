@@ -230,6 +230,32 @@ bool cemu_bridge_recompiler_enabled(void);
 void cemu_bridge_set_legacy_timebase(bool useLegacy);
 bool cemu_bridge_legacy_timebase(void);
 
+/// Whether shaders and pipelines are compiled in the background instead of the game
+/// waiting for each one.
+///
+/// This is the real setting. There is also a `precompiled_shaders` option in the config
+/// header, and it is INERT here: ActiveSettings::GetPrecompiledShadersOption() returns a
+/// hardcoded Auto with its lookup commented out, and the only code that reads it is the
+/// OpenGL backend. Exposing that one would be a switch that moves and changes nothing.
+/// async_compile is read by MetalPipelineCache on every pipeline it builds.
+void cemu_bridge_set_async_shader_compile(bool enabled);
+bool cemu_bridge_async_shader_compile(void);
+
+/// Shader cache maintenance. Two different things get called "the shader cache" and
+/// deleting them has very different consequences, so they are separate:
+///
+///   learned  - shaderCache/transferable. The Wii U bytecode of every shader a title has
+///              ever revealed. A title only reveals a shader by drawing with it, so this
+///              is the only reason anything can be compiled before you play. Deleting it
+///              throws that away until those parts are played again.
+///   compiled - shaderCache/precompiled. Compiled output. Rebuilds by itself, so deleting
+///              it costs one slow launch and nothing else.
+///
+/// titleId 0 means every title. Returns bytes freed, or -1 on error.
+long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includeLearned);
+/// Returns 0 on success. Either out pointer may be null.
+int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLearnedBytes, long long* outCompiledBytes);
+
 /// The reason behind cemu_bridge_cpu_mode(), in a sentence the person holding the iPad
 /// can act on - which is the point: the answer used to be obtainable only by reading a
 /// cs_flags hex value out of a crash log. Never NULL. Points to thread-local storage the

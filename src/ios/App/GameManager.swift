@@ -449,6 +449,8 @@ class GameManager: ObservableObject {
                 UserDefaults.standard.object(forKey: "muffin.cpu.recompiler") as? Bool ?? false)
             cemu_bridge_set_legacy_timebase(
                 UserDefaults.standard.object(forKey: "muffin.cpu.legacyTimebase") as? Bool ?? false)
+            cemu_bridge_set_async_shader_compile(
+                UserDefaults.standard.object(forKey: "muffin.shaders.asyncCompile") as? Bool ?? true)
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)

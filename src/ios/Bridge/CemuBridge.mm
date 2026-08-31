@@ -762,6 +762,105 @@ void ios_jit_survived_boot()
 #endif
 
 
+
+
+#if defined(CEMU_CORE_AVAILABLE)
+namespace {
+
+// Both caches name their files with the title id as 16 lowercase hex digits, so one
+// prefix test serves for either directory.
+bool IOSShaderCacheFileMatches(const std::filesystem::path& file, unsigned long long titleId)
+{
+    if (titleId == 0)
+        return true;
+    char prefix[32];
+    snprintf(prefix, sizeof(prefix), "%016llx", titleId);
+    return file.filename().string().rfind(prefix, 0) == 0;
+}
+
+long long IOSShaderCacheSweep(const std::filesystem::path& dir, unsigned long long titleId, bool deleteThem)
+{
+    namespace sfs = std::filesystem;
+    std::error_code ec;
+    if (!sfs::exists(dir, ec))
+        return 0;
+    long long bytes = 0;
+    for (auto& entry : sfs::directory_iterator(dir, ec))
+    {
+        if (ec)
+            break;
+        if (!entry.is_regular_file(ec))
+            continue;
+        if (!IOSShaderCacheFileMatches(entry.path(), titleId))
+            continue;
+        std::error_code sizeEc;
+        const auto size = sfs::file_size(entry.path(), sizeEc);
+        if (sizeEc)
+            continue;
+        if (deleteThem)
+        {
+            std::error_code rmEc;
+            if (!sfs::remove(entry.path(), rmEc) || rmEc)
+                continue;
+        }
+        bytes += (long long)size;
+    }
+    return bytes;
+}
+
+} // namespace
+#endif
+
+long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includeLearned) {
+#if defined(CEMU_CORE_AVAILABLE)
+    // Refused while a title runs: both caches are open and the pipeline cache serializes
+    // on close, so a delete now would either be undone a moment later or take the file
+    // out from under a live write.
+    if (cemu_bridge_is_title_running()) {
+        cemuLog_log(LogType::Force, "Shader cache: refusing to clear while a title is running");
+        return -1;
+    }
+    long long freed = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, true);
+    if (includeLearned)
+        freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId, true);
+    cemuLog_log(LogType::Force, "Shader cache: cleared {} bytes ({})", freed, includeLearned ? "compiled and learned" : "compiled only");
+    return freed;
+#else
+    (void)titleId; (void)includeLearned; return -1;
+#endif
+}
+
+int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLearnedBytes, long long* outCompiledBytes) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (outLearnedBytes)
+        *outLearnedBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId, false);
+    if (outCompiledBytes)
+        *outCompiledBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, false);
+    return 0;
+#else
+    (void)titleId;
+    if (outLearnedBytes) *outLearnedBytes = 0;
+    if (outCompiledBytes) *outCompiledBytes = 0;
+    return -1;
+#endif
+}
+
+void cemu_bridge_set_async_shader_compile(bool enabled) {
+#if defined(CEMU_CORE_AVAILABLE)
+    GetConfig().async_compile = enabled;
+#else
+    (void)enabled;
+#endif
+}
+
+bool cemu_bridge_async_shader_compile(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return GetConfig().async_compile;
+#else
+    return true;
+#endif
+}
+
 void cemu_bridge_set_recompiler_enabled(bool enabled) {
 #if defined(CEMU_CORE_AVAILABLE)
     PPCRecompiler_setForceDisabled(!enabled);
