@@ -35,6 +35,10 @@ struct SettingsView: View {
     /// here would show a value that is not the one in effect, on the single screen whose
     /// job is to say what is in effect.
     @AppStorage(TimebaseScale.storageKey) private var timebaseRaw = TimebaseScale.current.rawValue
+    // Must keep matching GameManager's defaults for the same keys: the engine reads them
+    // at title start, and a disagreement here would show a switch in the wrong position.
+    @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = false
+    @AppStorage("muffin.cpu.legacyTimebase") private var legacyTimebase = false
 
     /// Same keys the on-screen pad reads. Moving a cluster is a thing you can only
     /// sensibly do with a game under it, so that lives in the emulator view - but size
@@ -188,6 +192,35 @@ struct SettingsView: View {
                     // app was launched, which is exactly why it needs saying here.
                     Section {
                         CPUModeRow()
+
+                        // Both default to the safe side. They exist because two builds in
+                        // a row were unusable and neither of us could tell which change
+                        // did it without a rebuild per guess.
+                        Toggle(isOn: $recompilerEnabled) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Use the recompiler (JIT)")
+                                Text("Off by default because it is reported to crash. Faster when it works, but a crash in the emulated CPU makes every other problem impossible to judge. Start the game again after changing this.")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .tint(MuffinTheme.pixelBlue)
+                        .onChange(of: recompilerEnabled) { newValue in
+                            cemu_bridge_set_recompiler_enabled(newValue)
+                        }
+
+                        Toggle(isOn: $legacyTimebase) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Use the original emulated clock")
+                                Text("The rewritten clock had an overflow that ran the emulated console 65 times too slow, which made games mistime everything they animate. That is fixed, and the log now prints the clock rate so you can check it. This falls back to the old one anyway if anything still looks wrong.")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .tint(MuffinTheme.pixelBlue)
+                        .onChange(of: legacyTimebase) { newValue in
+                            cemu_bridge_set_legacy_timebase(newValue)
+                        }
 
                         Picker("Resolution", selection: $renderScaleRaw) {
                             ForEach(RenderScale.allCases) { scale in

@@ -439,6 +439,17 @@ class GameManager: ObservableObject {
             // default that was chosen with the CPU mode in hand.
             TimebaseScale.applyStoredChoiceIfAny()
 
+            // Read here rather than only from the switches, because the engine reads both
+            // of these once while a title starts and cannot see UserDefaults. A switch
+            // that silently reverts on every relaunch is worse than no switch.
+            //
+            // The recompiler defaults OFF. It is reported to crash on device, and a crash
+            // in the emulated CPU makes every other fault impossible to judge.
+            cemu_bridge_set_recompiler_enabled(
+                UserDefaults.standard.object(forKey: "muffin.cpu.recompiler") as? Bool ?? false)
+            cemu_bridge_set_legacy_timebase(
+                UserDefaults.standard.object(forKey: "muffin.cpu.legacyTimebase") as? Bool ?? false)
+
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)
             cemu_bridge_log_checkpoint("launchGame: engine.boot() returned [background]")

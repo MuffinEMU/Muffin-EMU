@@ -151,6 +151,18 @@ void PPCRecompiler_allocateRange(uint32 startAddress, uint32 size);
 
 void PPCRecompiler_invalidateRange(uint32 startAddr, uint32 endAddr);
 
+// Fires ONCE, the first time control returns alive from generated code. Registered by
+// the iOS bridge to clear its JIT crash sentinel. That moment - not title launch - is the
+// only point that proves the recompiler both ran and survived, which is the whole job the
+// sentinel exists to do. Pass nullptr to unregister.
+void PPCRecompiler_setSurvivedFirstEntryCallback(void (*callback)());
+
+// Forces the recompiler off regardless of the configured CPU mode. Set before a title
+// starts. The iOS build defaults it off: the recompiler is reported to crash on device,
+// and a crash in the CPU makes every other fault impossible to judge.
+void PPCRecompiler_setForceDisabled(bool disabled);
+bool PPCRecompiler_isForceDisabled();
+
 extern void ATTR_MS_ABI (*PPCRecompiler_enterRecompilerCode)(uint64 codeMem, uint64 ppcInterpreterInstance);
 extern void ATTR_MS_ABI (*PPCRecompiler_leaveRecompilerCode_visited)();
 extern void ATTR_MS_ABI (*PPCRecompiler_leaveRecompilerCode_unvisited)();

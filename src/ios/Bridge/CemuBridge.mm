@@ -352,6 +352,7 @@ void cemu_bridge_start_memory_watchdog(void) {
     #include "config/CemuConfig.h"
     #include "audio/IAudioAPI.h"
     #include "Cafe/HW/Espresso/PPCState.h"
+    #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
     #include "Common/version.h"
     #include <filesystem>
     #include <set>
@@ -759,6 +760,39 @@ void ios_jit_survived_boot()
 
 }  // namespace
 #endif
+
+
+void cemu_bridge_set_recompiler_enabled(bool enabled) {
+#if defined(CEMU_CORE_AVAILABLE)
+    PPCRecompiler_setForceDisabled(!enabled);
+#else
+    (void)enabled;
+#endif
+}
+
+bool cemu_bridge_recompiler_enabled(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return !PPCRecompiler_isForceDisabled();
+#else
+    return false;
+#endif
+}
+
+void cemu_bridge_set_legacy_timebase(bool useLegacy) {
+#if defined(CEMU_CORE_AVAILABLE)
+    PPCTimer_setUseLegacyTimebase(useLegacy);
+#else
+    (void)useLegacy;
+#endif
+}
+
+bool cemu_bridge_legacy_timebase(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return PPCTimer_usingLegacyTimebase();
+#else
+    return false;
+#endif
+}
 
 int cemu_bridge_cpu_mode(void) {
 #if defined(CEMU_CORE_AVAILABLE)

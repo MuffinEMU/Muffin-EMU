@@ -1451,9 +1451,31 @@ namespace coreinit
 			{
 				// try to enter recompiler immediately
 				PPCRecompiler_attemptEnterWithoutRecompile(hCPU, hCPU->instructionPointer);
+
+				// Bracketed so the log can say how much of the wall clock is actually
+				// spent executing guest code.
+				//
+				// The existing MIPS figure divides retired instructions by the whole
+				// reporting window, which includes time cores spent idle-spinning with
+				// nothing runnable, time inside HLE, and time blocked on the GPU. So it
+				// FALLS when the title is waiting, which is not a statement about the
+				// interpreter at all. Optimising against it would be optimising against
+				// noise, and that is the trap this exists to avoid.
+				//
+				// Two reads of the raw counter and two relaxed adds per BURST, not per
+				// instruction. On arm64 PPCTimer_getRawTsc() is a single mrs cntvct_el0
+				// with no lock and no divide, so this is comfortably cheaper than the
+				// thing it measures. A per-instruction counter would distort exactly the
+				// loop it was trying to describe.
+				const uint64 burstStartTsc = PPCTimer_getRawTsc();
+				const sint32 burstStartCycles = hCPU->remainingCycles;
+
 				// keep executing as long as there are cycles left
 				while ((--hCPU->remainingCycles) >= 0)
 					PPCInterpreterSlim_executeInstruction(hCPU);
+
+				PPCCore_noteInterpreterBurst(PPCTimer_getRawTsc() - burstStartTsc,
+											 (uint64)(burstStartCycles - hCPU->remainingCycles));
 			}
 
 			// reset reservation
