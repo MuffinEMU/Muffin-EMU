@@ -218,6 +218,18 @@ bool cemu_bridge_timebase_auto_enabled(void);
 /// boot and nothing changes it later. Safe to call from any thread.
 int cemu_bridge_cpu_mode(void);
 
+/// Diagnostic switches, all read when a title starts rather than while one runs.
+///
+/// These exist because two builds in a row were unusable and neither of us could tell
+/// which change was responsible without a twenty-minute rebuild per guess. Each one
+/// isolates a subsystem that has been wrong before.
+void cemu_bridge_set_recompiler_enabled(bool enabled);
+bool cemu_bridge_recompiler_enabled(void);
+/// Falls back to the original spinlock timebase. The rewritten one had an overflow that
+/// ran the emulated console's clock 65 times too slow.
+void cemu_bridge_set_legacy_timebase(bool useLegacy);
+bool cemu_bridge_legacy_timebase(void);
+
 /// The reason behind cemu_bridge_cpu_mode(), in a sentence the person holding the iPad
 /// can act on - which is the point: the answer used to be obtainable only by reading a
 /// cs_flags hex value out of a crash log. Never NULL. Points to thread-local storage the

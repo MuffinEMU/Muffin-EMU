@@ -13,6 +13,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <libkern/OSCacheControl.h>
+#include <TargetConditionals.h>
 #endif
 
 #include "../PPCRecompiler.h"
@@ -96,10 +97,43 @@ static const util::Cpu& GetCpu()
 // what Xbyak performs via CodeArray::protect() / readyRE(), so dropping MAP_JIT costs
 // nothing and makes the whole path legal here. MAP_JIT is still attempted first, so macOS
 // and any build that genuinely carries the entitlement keep the better mapping.
+//
+// SECOND ROUND, and this is the bug the v1.37 log caught. Mapping the pages
+// read-write and letting Xbyak mprotect them executable afterwards does allocate -
+// v1.23's "can't alloc" is gone - but the code will not RUN. Void's log: the JIT
+// check passes (cs_flags 0x32003005, CS_DEBUGGED set), "Recompiler initialized",
+// and then signal 10 the first time anything enters generated code.
+//
+// Signal 10 is SIGBUS, not SIGSEGV, and that distinction is the whole diagnosis. A
+// permissions refusal is a segfault. SIGBUS on the first instruction fetch from a
+// page whose mprotect() returned 0 is what an Apple arm64 core does when the page was
+// never really made executable: adding PROT_EXEC to an already-dirtied anonymous
+// mapping is accepted by mprotect() and then not honoured by code-signing
+// enforcement. So Xbyak's RW -> RWE -> RE dance (see CodeArray's constructor, which
+// calls setProtectMode(PROTECT_RWE) the moment it allocates) cannot get us there no
+// matter how many times it succeeds.
+//
+// What CS_DEBUGGED actually grants is the right to map executable memory AT MAP TIME.
+// So ask for PROT_EXEC in the mmap itself and never mprotect the result. When that
+// works we report useProtect() == false, which makes Xbyak skip both the constructor's
+// PROTECT_RWE and readyRE()'s PROTECT_RE - the two calls that were quietly producing
+// pages the core refuses to execute.
+//
+// The MAP_JIT attempt stays FIRST on macOS and is deliberately NOT taken as the
+// skip-protect path: a MAP_JIT region on macOS is governed by the per-thread
+// pthread_jit_write_protect_np() switch rather than by mprotect, and writing to one
+// with write-protection on faults on the WRITE. Cemu generates code on one thread and
+// runs it on others, so opting into that toggle is a separate change with its own
+// failure mode. macOS keeps exactly the behaviour it has today; only iOS gains a new
+// first choice.
 class AppleJitAllocator : public Allocator
 {
   private:
 	std::unordered_map<uintptr_t, size_t> m_sizeByAddress;
+	// Set by alloc() and read by useProtect(). Safe in that order because CodeArray
+	// allocates in its member-init list, before the constructor body asks.
+	bool m_mappedExecutable = false;
+	bool m_reportedMapping = false;
 
   public:
 	uint32* alloc(size_t size) override
@@ -108,11 +142,63 @@ class AppleJitAllocator : public Allocator
 		size = (size + pageSize - 1) & ~(pageSize - 1);
 
 		constexpr int baseMode = MAP_PRIVATE | MAP_ANON;
-		void* p = mmap(nullptr, size, PROT_READ | PROT_WRITE, baseMode | MAP_JIT, -1, 0);
+		constexpr int rwx = PROT_READ | PROT_WRITE | PROT_EXEC;
+		void* p = MAP_FAILED;
+		const char* how = nullptr;
+
+		// MAP_JIT FIRST, and asking for PROT_EXEC. This is the mapping the CS_DEBUGGED
+		// exemption actually attaches to - it is the entire reason JIT enablers exist.
+		//
+		// It was not first before, and the device log is what corrected that. v2.0 took
+		// the plain-RWX branch below, reported "read-write-execute at map time" exactly
+		// as designed, and then still took SIGBUS on the first entry into generated
+		// code. So a plain anonymous mapping does not become runnable merely by being
+		// requested executable at creation: the kernel hands it over and code-signing
+		// still refuses to execute it. Same refusal as mprotect, one step earlier.
+		//
+		// MAP_JIT had been deprioritised on evidence that has since expired. In v1.23 it
+		// failed outright with ERR_CANT_ALLOC - but that was Xbyak's own attempt, asking
+		// for read-write only, on a process where CS_DEBUGGED was NOT set. It is set
+		// now, so the attempt that failed then is the one most likely to succeed.
+		p = mmap(nullptr, size, rwx, baseMode | MAP_JIT, -1, 0);
+		if (p != MAP_FAILED)
+		{
+			m_mappedExecutable = true;
+			how = "MAP_JIT, executable at map time - the CS_DEBUGGED path";
+		}
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
 		if (p == MAP_FAILED)
+		{
+			p = mmap(nullptr, size, rwx, baseMode, -1, 0);
+			if (p != MAP_FAILED)
+			{
+				m_mappedExecutable = true;
+				how = "read-write-execute at map time, no MAP_JIT - known to map but NOT to run on iOS";
+			}
+		}
+#endif
+		if (p == MAP_FAILED)
+		{
+			p = mmap(nullptr, size, PROT_READ | PROT_WRITE, baseMode | MAP_JIT, -1, 0);
+			if (p != MAP_FAILED)
+				how = "MAP_JIT read-write, promoted by mprotect";
+		}
+		if (p == MAP_FAILED)
+		{
 			p = mmap(nullptr, size, PROT_READ | PROT_WRITE, baseMode, -1, 0);
+			if (p != MAP_FAILED)
+				how = "read-write, promoted by mprotect - this path gave SIGBUS on iOS";
+		}
 		if (p == MAP_FAILED)
 			throw Error(ERR_CANT_ALLOC);
+
+		// Once, not per allocation. Which of the three won decides whether the JIT can
+		// work at all, and guessing it from a crash is exactly what cost us v1.37.
+		if (!m_reportedMapping)
+		{
+			m_reportedMapping = true;
+			cemuLog_log(LogType::Force, "Recompiler: JIT memory obtained as {}", how);
+		}
 
 		m_sizeByAddress[(uintptr_t)p] = size;
 		return (uint32*)p;
@@ -129,9 +215,12 @@ class AppleJitAllocator : public Allocator
 		m_sizeByAddress.erase(it);
 	}
 
+	// False once we have executable pages already. Letting Xbyak mprotect them anyway
+	// is not merely redundant: PROTECT_RE would strip PROT_WRITE from a region the
+	// recompiler still patches, and PROTECT_RWE is the call whose success was a lie.
 	[[nodiscard]] bool useProtect() const override
 	{
-		return true;
+		return !m_mappedExecutable;
 	}
 };
 #endif

@@ -17,6 +17,34 @@ on:
           Leave empty to only upload artifacts, which is the normal case.
         required: false
         default: ''
+  # Every push to the working branch builds and publishes an installable IPA by itself.
+  #
+  # WHY: until now a fix only reached the device when somebody remembered to dispatch a
+  # build and then hand over a link, which put a human step between "fixed" and
+  # "installable" and made the wait depend on whether anyone was awake. The release is the
+  # delivery mechanism rather than the artifact, because an artifact needs a GitHub login
+  # to download and the device doing the installing does not have one.
+  push:
+    branches:
+      - ios-audio-and-renderscale
+      # v1.37 base carrying the CPU fixes and the timebase overflow fix. Its own tag so
+      # it cannot be confused with the lines that render nothing.
+      - ios-v137-base
+      # v1.38's renderer restored wholesale, with only the CPU and JIT work carried
+      # forward. Its own branch so it builds and releases without touching either of
+      # the other lines.
+      - ios-v138-renderer-restore
+    # Documentation cannot change the binary, and a 20-minute build for a comment edit is
+    # 20 minutes of runner nobody gets back.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+
+# One build per branch. Pushing three commits in a row should produce the newest IPA, not
+# three queued builds delivering two stale ones first.
+concurrency:
+  group: ios-app-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
@@ -156,11 +184,15 @@ jobs:
         # existed in this repo for a long time, so both failed within ~20 seconds of
         # every dispatch. Only this workflow builds the CMake static libs the app
         # actually links against, so only this workflow can produce a real IPA.
-        if: inputs.release_tag != ''
+        # A manual dispatch publishes under the tag it was given; a push publishes under
+        # a generated one. Named by date and short sha rather than by an incrementing
+        # number because nothing here can safely invent a version, and a name that says
+        # WHEN and WHICH COMMIT is the thing you actually need when comparing two logs.
+        if: inputs.release_tag != '' || github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag }}
-          name: ${{ inputs.release_tag }}
+          tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || (github.ref_name == 'ios-v137-base' && format('v137-{0}', github.sha) || (github.ref_name == 'ios-v138-renderer-restore' && format('v138r-{0}', github.sha) || format('auto-{0}', github.sha))) }}
+          name: ${{ inputs.release_tag != '' && inputs.release_tag || (github.ref_name == 'ios-v137-base' && format('v1.37 + clock fix {0}', github.sha) || (github.ref_name == 'ios-v138-renderer-restore' && format('v1.38 renderer restored {0}', github.sha) || format('Automatic build {0}', github.sha))) }}
           generate_release_notes: true
           files: |
             Cemu.ipa
@@ -171,8 +203,13 @@ jobs:
             Install with SideStore/AltStore, which re-signs with your own Apple ID.
             `Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.
 
-            This is a bring-up build. See `STATUS.md` in the repo for what does and
-            does not work — as of this writing no Wii U title has been shown to boot.
+            Built from `${{ github.ref_name }}`.
+
+            Check the `Init Cemu <sha>` line at the top of the log before judging a
+            build — it names the commit that is actually in the binary, and it is the
+            only reliable way to tell one build from another.
+
+            See `STATUS.md` for what does and does not work.
 
       - name: Upload build logs (always)
         if: always()

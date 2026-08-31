@@ -143,14 +143,24 @@ struct GameBrowserView: View {
     @State private var searchText = ""
     @State private var showingIconPicker = false
     @State private var showingSettings = false
-    @State private var showingROMImporter = false
-    /// Separate from showingROMImporter on purpose. A document picker only lets you
-    /// SELECT a directory when UTType.folder is among its allowed types; with a
-    /// file-only type list, tapping a folder navigates into it and there is no way to
-    /// choose it. A full Wii U dump IS a directory (code/, content/, meta/), so one
-    /// picker cannot serve both without making folder taps ambiguous. Two explicit
-    /// entry points, two pickers.
-    @State private var showingFolderImporter = false
+    /// What the picker is being opened for.
+    ///
+    /// A document picker only lets you SELECT a directory when UTType.folder is among its
+    /// allowed types; with a file-only type list, tapping a folder navigates into it and
+    /// there is no way to choose it. A full Wii U dump IS a directory (code/, content/,
+    /// meta/), so one type list cannot serve both without making folder taps ambiguous -
+    /// hence two entry points.
+    ///
+    /// But they cannot be two .fileImporter modifiers. Two of them attached to the same
+    /// view do not both work: SwiftUI keeps one presentation, and the other button
+    /// silently does nothing. That is why importing was broken. One modifier, and this
+    /// decides what it is allowed to select.
+    enum ImportKind: Int, Identifiable {
+        case file, folder
+        var id: Int { rawValue }
+        var contentTypes: [UTType] { self == .file ? [.item] : [.folder] }
+    }
+    @State private var importKind: ImportKind?
     @State private var romImportErrorMessage: String?
 
     var filteredGames: [GameMetadata] {
@@ -204,12 +214,12 @@ struct GameBrowserView: View {
 
                             Menu {
                                 Button {
-                                    showingROMImporter = true
+                                    importKind = .file
                                 } label: {
                                     Label("Game file (.wux, .wud, .wua, .iso, .rpx)", systemImage: "doc")
                                 }
                                 Button {
-                                    showingFolderImporter = true
+                                    importKind = .folder
                                 } label: {
                                     Label("Game folder (code / content / meta)", systemImage: "folder")
                                 }
@@ -293,17 +303,14 @@ struct GameBrowserView: View {
         // depends on the provider having resolved a byte-stream type for the file at
         // all; .item does not.
         .fileImporter(
-            isPresented: $showingROMImporter,
-            allowedContentTypes: [.item],
+            isPresented: Binding(
+                get: { importKind != nil },
+                set: { if !$0 { importKind = nil } }
+            ),
+            allowedContentTypes: importKind?.contentTypes ?? [.item],
             allowsMultipleSelection: false
         ) { result in
-            handleImport(result)
-        }
-        .fileImporter(
-            isPresented: $showingFolderImporter,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
+            importKind = nil
             handleImport(result)
         }
         .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
