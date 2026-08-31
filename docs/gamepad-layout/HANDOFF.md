@@ -19,7 +19,7 @@ other. What has *not* happened is any change to a file the app compiles.
 | `muffin_pad_layout.json` | resolved coordinates, all 15 configurations |
 | `hardware_measurements.json` | the source measurements in px and mm |
 | `hardware_measurements_check.png` | every measured circle drawn back over the source art |
-| `resolve_reference.py` | the same four laws in Python — the cross-check, and what drew the mockups |
+| `resolve_reference.py` | the same laws in Python — the cross-check, and what drew the mockups |
 | `mock_*.png` | eight configurations rendered |
 
 ## Verifying it yourself
@@ -32,10 +32,12 @@ python3 resolve_reference.py                     # prints the per-device table
 
 The cross-check that matters — Swift against Python on every configuration and every
 control — is not a committed script because it needs a `main.swift` harness; it was run
-before this commit and reported **278 controls across 15 configurations, zero
-discrepancies**, along with: nothing outside a safe area, no two controls overlapping, no
-control over the picture in framed mode, every face button at or above 44 pt, both
-clusters level, every picture exactly 16:9.
+before this commit and reported **336 controls across 18 configurations, zero
+discrepancies**, along with: nothing outside a safe area, no two controls overlapping
+(tested with exact shapes — the d-pad as its two real arms, not the square around them),
+**both clusters clearing each other by at least 0.6 D**, no control over the picture in
+framed mode, every face button at or above 44 pt in landscape, both clusters level, every
+picture exactly 16:9. It also exercises `DeviceMetrics` on twelve probes.
 
 ## Wiring it in
 
@@ -71,11 +73,25 @@ clusters level, every picture exactly 16:9.
   every `is_axis_mapping()` id and derives the sticks from `get_axis()`. Anything analog
   goes through `cemu_bridge_set_stick_axis` — x right-positive, y **UP**-positive, the
   console's convention, not the screen's. `STICK_L`/`STICK_R` are the clicks only.
-- **Life-size depends entirely on points-per-inch**, which UIKit does not expose, so
-  `DeviceMetrics` carries a model table. An unknown model falls back by idiom. If a new
-  iPad mini ships, add its identifier or it will silently render 24% small.
+- **Life-size depends entirely on points-per-inch**, which UIKit does not expose.
+  `DeviceMetrics` resolves it from four sources — a stored calibration, an exact
+  `hw.machine` match, a known panel by native pixel size, then a derivation from idiom and
+  scale. Call `DeviceMetrics.current()` once at launch and **log `detail`**: it is the only
+  thing that makes a wrong-sized pad diagnosable after the fact. If `source == .derived`,
+  the device is new to the app — the layout is still close, and `PadCalibrationView` makes
+  it exact against a bank card (ISO/IEC 7810 ID-1, 85.60 mm).
+- **The cluster-gap invariant is not decorative.** `PadLayout.minimumClusterGap` is what
+  keeps the two halves off each other; the width clamp that enforces it must include *both*
+  edge margins. Omitting them prescribes a negative gap, which is precisely how Y ended up
+  drawn on top of the d-pad's right arm in Slide Over and in portrait.
 - **This branch is what GitHub Pages is serving.** Deleting or force-pushing it takes the
   page down with it.
+
+## The target device
+
+`iPad Pro 12.9" (2020)` — the A12Z this port is actually for — is in the table by name:
+framed, life-size, a 173 × 98 mm picture against the hardware's own 137 × 77 mm. It is
+also what the page's device picker opens on.
 
 ## Still open — both need Void
 

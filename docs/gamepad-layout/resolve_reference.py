@@ -60,6 +60,7 @@ REAL_SCREEN_MM = 137.3  # the GamePad's own 6.2" screen. Framed mode is only wor
                         # hardware itself had, which is the wrong trade.
 TOUCH_FLOOR_PT = 44.0
 RAKE_MIN_DEG = 45.0
+MIN_GAP = 0.6       # clear space the two clusters must leave between them, in D
 
 TOP_EXTENT_FIXED = -G['shoulderDy'] + G['shoulderH']/2          # 2.054  (above the stick centre)
 BOTTOM_HW  = G['minusFromABXY'][1] + G['systemDiameter']/2      # 4.000
@@ -73,6 +74,22 @@ def need_v(theta, hardware): return top_extent(theta) + (BOTTOM_HW if hardware e
 THETA_HW = math.radians(G['stickArmAngleDeg'])
 
 # ---------------------------------------------------------------- the resolver
+
+def extents(theta, hardware):
+    """Outboard reach, inboard reach of each half, and the total width, all in D."""
+    inb  = G['dpadW']/2 if hardware else (G['systemElbow'][0] + G['systemDiameter']/2)
+    inbR = max(G['faceHalfX'] + 0.5, inb)
+    outX = out_extent(theta)
+    return outX, inb, inbR, (outX + inb) + (outX + inbR)
+
+def width_fit(theta, hardware, sw):
+    """The largest D at which both clusters fit side by side and still clear each other.
+
+    The two edge margins belong in this denominator. Leaving them out is not a rounding
+    error - it prescribes a NEGATIVE gap, and the clusters are then placed overlapping by
+    construction, which is exactly what happened in Slide Over and in portrait."""
+    return sw / (extents(theta, hardware)[3] + 2*EDGE_M + MIN_GAP)
+
 def resolve(name, W, H, ppi_pt, insets, user_scale=1.0, external_display=False):
     l, r, b, t = insets
     sx, sy = l, t
@@ -82,63 +99,70 @@ def resolve(name, W, H, ppi_pt, insets, user_scale=1.0, external_display=False):
     D0 = D_life * user_scale
     notes = []
 
-    # ---- 1. size + arrangement: keep the hardware angle, shrink D, rake only as a last resort
+    # In portrait the picture takes the top and the clusters get only the band below it,
+    # so the picture has to be decided before the size law, not after.
+    if portrait:
+        vw = sw; vh = vw*9/16
+        if vh > sh*0.62: vh = sh*0.62; vw = vh*16/9
+        vx, vy = sx + (sw-vw)/2, sy
+        availH = sy + sh - (vy + vh)
+    else:
+        availH = sh
+
+    # LAW 1+2 - size, then arrangement. Two candidates, evaluated whole rather than
+    # patched one after the other: keeping +/- in their hardware slot costs height but
+    # makes the clusters narrower, so height and width have to be judged together.
     theta = THETA_HW
-    if D0 <= sh / need_v(THETA_HW, True):
-        hardware_system, D = True, D0            # +/- in their real slot below A/B/X/Y
+    D_hw = min(D0, width_fit(theta, True, sw))
+    if D_hw <= availH / need_v(theta, True) + 1e-9:
+        hardware_system, D = True, D_hw
     else:
         hardware_system = False
-        D = min(D0, sh / need_v(THETA_HW, False))
-        if D < TOUCH_FLOOR_PT:                    # only now bend the geometry
-            s = (sh/TOUCH_FLOOR_PT - BOTTOM_SPL - 2*EDGE_M - TOP_EXTENT_FIXED) / G['stickArm']
-            theta = max(math.radians(RAKE_MIN_DEG), math.asin(max(-1, min(1, s))))
-            D = min(D0, sh / need_v(theta, False))
-            notes.append("raked: stick arm rotated to %.1f deg to fit the height" % math.degrees(theta))
+        D = min(D0, availH / need_v(theta, False), width_fit(theta, False, sw))
+        if D < TOUCH_FLOOR_PT:
+            # Raking buys height. It cannot buy width - it pushes the stick outboard - so
+            # a width-bound pad is not helped by it and simply comes out small.
+            k = (availH/TOUCH_FLOOR_PT - BOTTOM_SPL - 2*EDGE_M - TOP_EXTENT_FIXED) / G['stickArm']
+            theta = max(math.radians(RAKE_MIN_DEG), math.asin(max(-1, min(1, k))))
+            D = min(D0, availH / need_v(theta, False), width_fit(theta, False, sw))
+            notes.append("raked: stick arm rotated to %.0f deg to fit the height" % math.degrees(theta))
             if D < TOUCH_FLOOR_PT:
-                D = TOUCH_FLOOR_PT
-                notes.append("below the 44 pt floor even raked - controls will overhang")
-    if D0 > D + .01: notes.append("D reduced to %.0f%% of life-size to fit the height" % (100*D/D_life))
+                # Never forced back up to the floor: buttons a little small are recoverable,
+                # two clusters drawn through each other are not.
+                notes.append("%.0f pt buttons, under the 44 pt floor - the container is too small" % D)
+    if D0 > D + .01:
+        notes.append("D reduced to %.0f%% of life-size to fit" % (100*D/D_life))
 
-    bottom_ext = BOTTOM_HW if hardware_system else BOTTOM_SPL   # what actually hangs below
-    inb = G['dpadW']/2 if hardware_system else (G['systemElbow'][0] + G['systemDiameter']/2)
-    inbR = max(G['faceHalfX'] + .5, inb)
-    outX = out_extent(theta)
-    clustersW = (outX + inb) + (outX + inbR)
+    bottom_ext = BOTTOM_HW if hardware_system else BOTTOM_SPL
+    outX, inb, inbR, clustersW = extents(theta, hardware_system)
 
-    # ---- 2. horizontal anchors: clusters pinned to the safe edges, the bezel is the slack
-    lx = sx + EDGE_M*D + outX*D
-    rx = sx + sw - EDGE_M*D - outX*D
-    gap0, gap1 = lx + inb*D + CLEAR*D, rx - inbR*D - CLEAR*D
+    # LAW 3 - clusters pinned to the safe edges, the bezel between them is the slack.
+    lx = sx + (EDGE_M + outX)*D
+    rx = sx + sw - (EDGE_M + outX)*D
+    gap0, gap1 = lx + (inb + CLEAR)*D, rx - (inbR + CLEAR)*D
     gapW, gapCx = max(0, gap1-gap0), (gap0+gap1)/2
 
-    # ---- 3. mode: does a non-overlapping video still earn its keep?
-    fw = min(gapW, (sh - 2*CLEAR*D)*16/9)
-    fits_real_screen = fw/ppi_pt*25.4 >= REAL_SCREEN_MM
-    mode = "shell" if external_display else ("framed" if fits_real_screen else "overlay")
-    if portrait: mode = "stacked"
+    # LAW 4 - mode.
+    if portrait:
+        mode = "stacked"
+    elif external_display:
+        mode = "shell"
+    else:
+        fw = min(gapW, (sh - 2*CLEAR*D)*16/9)
+        mode = "framed" if fw/ppi_pt*25.4 >= REAL_SCREEN_MM else "overlay"
 
-    # ---- 4. vertical placement
     body_top = None
     if mode in ("framed", "shell") and G['bodyH']*D <= sh:
-        body_top = sy + (sh - G['bodyH']*D)/2          # the real bezel fits: use it
+        body_top = sy + (sh - G['bodyH']*D)/2
         cy = body_top + G['clusterFromTop']*D
     elif mode in ("framed", "shell"):
         ext = need_v(theta, hardware_system)
         cy = sy + (sh - ext*D)/2 + (top_extent(theta) + EDGE_M)*D
     else:
-        cy = sy + sh - (bottom_ext + EDGE_M)*D          # thumbs come from the bottom corners
-
-    # ---- 5. video rect
-    if mode == "stacked":
-        vw = sw; vh = vw*9/16
-        if vh > sh*0.62: vh = sh*0.62; vw = vh*16/9
-        vx, vy = sx + (sw-vw)/2, sy
-        band_top = vy + vh
-        D = min(D, (sy+sh-band_top)/need_v(theta, hardware_system), sw/(clustersW+0.6))
         cy = sy + sh - (bottom_ext + EDGE_M)*D
-        lx = sx + EDGE_M*D + out_extent(theta)*D
-        rx = sx + sw - EDGE_M*D - out_extent(theta)*D
-        notes.append("portrait: video pinned to the top, both clusters on the bottom corners")
+
+    if mode == "stacked":
+        notes.append("portrait: picture along the top, both clusters on the bottom corners")
     elif mode == "overlay":
         vh = min(sh, sw*9/16); vw = vh*16/9
         vx, vy = sx + (sw-vw)/2, sy + (sh-vh)/2
@@ -148,7 +172,7 @@ def resolve(name, W, H, ppi_pt, insets, user_scale=1.0, external_display=False):
         vcy = min(max(vcy, sy + vh/2 + CLEAR*D), sy + sh - vh/2 - CLEAR*D)
         vx, vy = gapCx - vw/2, vcy - vh/2
 
-    # ---- 6. the controls
+    # ---- the controls
     ax, ay = G['stickArm']*math.cos(theta)*D, G['stickArm']*math.sin(theta)*D
     P = {}
     def circ(n, x, y, d): P[n] = dict(kind="circle", x=round(x,1), y=round(y,1), d=round(d*D,1))
@@ -175,18 +199,14 @@ def resolve(name, W, H, ppi_pt, insets, user_scale=1.0, external_display=False):
         ex, ey = G['systemElbow']
         circ("plus",  rx - ex*D, cy + ey*D, G['systemDiameter'])
         circ("minus", lx + ex*D, cy + ey*D, G['systemDiameter'])
-        notes.append("+/- relocated to the elbow slot: no room for their real place below A/B/X/Y")
-    # The menu rail. HOME keeps its hardware place when it fits, but the framed picture
-    # is taller than the hardware's own LCD whenever the gap is wider than the GamePad's
-    # bezel, so it has to be pushed clear of the picture rather than trusted to the
-    # hardware offset - and where nothing clears, HOME joins TV/POWER in the pause menu
-    # rather than being drawn on top of something.
+        notes.append("+/- relocated to the elbow: no room for their real place below A/B/X/Y")
+
     hr = G['homeDiameter']/2*D
-    def collides(x, y, r):
+    def collides(x, y, rr):
         for i, c in P.items():
             if i.startswith('knob'): continue
             w = c.get('d', c.get('w')); h = c.get('d', c.get('h'))
-            if abs(x-c['x']) < (r + w/2) - 0.5 and abs(y-c['y']) < (r + h/2) - 0.5: return True
+            if abs(x-c['x']) < (rr + w/2) - 0.5 and abs(y-c['y']) < (rr + h/2) - 0.5: return True
         return False
     placed = False
     if body_top is not None and mode in ("framed","shell"):
@@ -204,13 +224,14 @@ def resolve(name, W, H, ppi_pt, insets, user_scale=1.0, external_display=False):
         else:
             notes.append("HOME joins TV/POWER in the pause menu: nothing on the pad clears")
         notes.append("TV/POWER live in the pause menu at this size, not on the pad")
+
     return dict(device=name, container=[W,H], safe=[round(sx,1),round(sy,1),round(sw,1),round(sh,1)],
                 ppi_pt=ppi_pt, mode=mode, D=round(D,2), D_life=round(D_life,2),
                 pct_life=round(100*D/D_life), theta_deg=round(math.degrees(theta),1),
                 system_placement="hardware" if hardware_system else "elbow",
                 mm_per_button=round(D/ppi_pt*25.4,2),
                 clusters=dict(leftAnchor=[round(lx,1),round(cy,1)], rightAnchor=[round(rx,1),round(cy,1)],
-                              widthUnits=round(clustersW,3)),
+                              widthUnits=round(clustersW,3), gapUnits=round((gap1-gap0)/D + 2*CLEAR,3)),
                 video=[round(vx,1),round(vy,1),round(vw,1),round(vh,1)],
                 video_mm=[round(vw/ppi_pt*25.4,1), round(vh/ppi_pt*25.4,1)],
                 controls=P, notes=notes)
@@ -224,6 +245,9 @@ DEVICES = [
  ("iPad mini (A17 Pro)",     1133, 744, 163.00, (0,0,20,0)),
  ("iPad (A16) / Air 11\"",   1180, 820, 132.00, (0,0,20,0)),
  ("iPad Pro 11\" (M4)",      1210, 834, 132.00, (0,0,20,0)),
+ ("iPad Pro 11\" (2020, A12Z)", 1194, 834, 132.00, (0,0,20,0)),
+ ("iPad Pro 12.9\" (2020, A12Z)", 1366,1024, 132.00, (0,0,20,0)),
+ ("iPad Pro 12.9\" (2020) portrait", 1024,1366, 132.00, (0,0,20,24)),
  ("iPad Air 13\"",           1366,1024, 132.00, (0,0,20,0)),
  ("iPad Pro 13\" (M4)",      1376,1032, 132.00, (0,0,20,0)),
  ("iPad Pro 11\" Split View 1/2", 583, 834, 132.00, (0,0,20,0)),

@@ -81,7 +81,8 @@
      526.3,
      276.1
     ],
-    "widthUnits": 7.929
+    "widthUnits": 7.929,
+    "gapUnits": 3.508
    },
    "video": [
     0.2,
@@ -214,8 +215,8 @@
     }
    },
    "notes": [
-    "D reduced to 81% of life-size to fit the height",
-    "+/- relocated to the elbow slot: no room for their real place below A/B/X/Y",
+    "D reduced to 81% of life-size to fit",
+    "+/- relocated to the elbow: no room for their real place below A/B/X/Y",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
   },
@@ -248,7 +249,8 @@
      602.8,
      249.6
     ],
-    "widthUnits": 7.929
+    "widthUnits": 7.929,
+    "gapUnits": 5.059
    },
    "video": [
     88.7,
@@ -381,8 +383,8 @@
     }
    },
    "notes": [
-    "D reduced to 75% of life-size to fit the height",
-    "+/- relocated to the elbow slot: no room for their real place below A/B/X/Y",
+    "D reduced to 75% of life-size to fit",
+    "+/- relocated to the elbow: no room for their real place below A/B/X/Y",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
   },
@@ -415,7 +417,8 @@
      653.4,
      273.9
     ],
-    "widthUnits": 7.929
+    "widthUnits": 7.929,
+    "gapUnits": 4.835
    },
    "video": [
     95.3,
@@ -548,8 +551,8 @@
     }
    },
    "notes": [
-    "D reduced to 85% of life-size to fit the height",
-    "+/- relocated to the elbow slot: no room for their real place below A/B/X/Y",
+    "D reduced to 85% of life-size to fit",
+    "+/- relocated to the elbow: no room for their real place below A/B/X/Y",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
   },
@@ -582,7 +585,8 @@
      669.0,
      280.5
     ],
-    "widthUnits": 7.929
+    "widthUnits": 7.929,
+    "gapUnits": 4.804
    },
    "video": [
     98.3,
@@ -715,8 +719,8 @@
     }
    },
    "notes": [
-    "D reduced to 87% of life-size to fit the height",
-    "+/- relocated to the elbow slot: no room for their real place below A/B/X/Y",
+    "D reduced to 87% of life-size to fit",
+    "+/- relocated to the elbow: no room for their real place below A/B/X/Y",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
   },
@@ -749,7 +753,8 @@
      736.8,
      308.5
     ],
-    "widthUnits": 7.929
+    "widthUnits": 7.929,
+    "gapUnits": 4.921
    },
    "video": [
     105.6,
@@ -882,8 +887,8 @@
     }
    },
    "notes": [
-    "D reduced to 96% of life-size to fit the height",
-    "+/- relocated to the elbow slot: no room for their real place below A/B/X/Y",
+    "D reduced to 96% of life-size to fit",
+    "+/- relocated to the elbow: no room for their real place below A/B/X/Y",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
   },
@@ -916,7 +921,8 @@
      958.4,
      427.4
     ],
-    "widthUnits": 7.021
+    "widthUnits": 7.021,
+    "gapUnits": 8.896
    },
    "video": [
     0.0,
@@ -1081,7 +1087,8 @@
      1038.6,
      365.8
     ],
-    "widthUnits": 7.021
+    "widthUnits": 7.021,
+    "gapUnits": 13.649
    },
    "video": [
     223.7,
@@ -1256,7 +1263,8 @@
      1068.6,
      372.8
     ],
-    "widthUnits": 7.021
+    "widthUnits": 7.021,
+    "gapUnits": 14.193
    },
    "video": [
     223.7,
@@ -1403,6 +1411,525 @@
    "notes": []
   },
   {
+   "device": "iPad Pro 11\" (2020, A12Z)",
+   "container": [
+    1194,
+    834
+   ],
+   "safe": [
+    0,
+    0,
+    1194,
+    814
+   ],
+   "ppi_pt": 132.0,
+   "mode": "framed",
+   "D": 55.22,
+   "D_life": 55.22,
+   "pct_life": 100,
+   "theta_deg": 69.9,
+   "system_placement": "hardware",
+   "mm_per_button": 10.62,
+   "clusters": {
+    "leftAnchor": [
+     141.4,
+     372.8
+    ],
+    "rightAnchor": [
+     1052.6,
+     372.8
+    ],
+    "widthUnits": 7.021,
+    "gapUnits": 13.903
+   },
+   "video": [
+    223.7,
+    202.0,
+    729.0,
+    410.1
+   ],
+   "video_mm": [
+    140.3,
+    78.9
+   ],
+   "controls": {
+    "stickL": {
+     "kind": "circle",
+     "x": 88.4,
+     "y": 228.1,
+     "d": 108.2
+    },
+    "knobL": {
+     "kind": "circle",
+     "x": 88.4,
+     "y": 228.1,
+     "d": 61.8
+    },
+    "L": {
+     "kind": "pill",
+     "x": 51.1,
+     "y": 138.8,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "ZL": {
+     "kind": "pill",
+     "x": 125.6,
+     "y": 138.8,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "stickR": {
+     "kind": "circle",
+     "x": 1105.6,
+     "y": 228.1,
+     "d": 108.2
+    },
+    "knobR": {
+     "kind": "circle",
+     "x": 1105.6,
+     "y": 228.1,
+     "d": 61.8
+    },
+    "R": {
+     "kind": "pill",
+     "x": 1142.9,
+     "y": 138.8,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "ZR": {
+     "kind": "pill",
+     "x": 1068.4,
+     "y": 138.8,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "dpad": {
+     "kind": "cross",
+     "x": 141.4,
+     "y": 372.8,
+     "w": 125.9,
+     "h": 123.7,
+     "arm": 42.0
+    },
+    "L3": {
+     "kind": "circle",
+     "x": 141.4,
+     "y": 372.8,
+     "d": 39.0
+    },
+    "X": {
+     "kind": "circle",
+     "x": 1052.6,
+     "y": 320.3,
+     "d": 55.2
+    },
+    "Y": {
+     "kind": "circle",
+     "x": 999.6,
+     "y": 372.8,
+     "d": 55.2
+    },
+    "A": {
+     "kind": "circle",
+     "x": 1105.6,
+     "y": 372.8,
+     "d": 55.2
+    },
+    "B": {
+     "kind": "circle",
+     "x": 1052.6,
+     "y": 425.2,
+     "d": 55.2
+    },
+    "R3": {
+     "kind": "circle",
+     "x": 1052.6,
+     "y": 372.8,
+     "d": 39.0
+    },
+    "plus": {
+     "kind": "circle",
+     "x": 993.0,
+     "y": 506.4,
+     "d": 37.5
+    },
+    "minus": {
+     "kind": "circle",
+     "x": 993.0,
+     "y": 574.9,
+     "d": 37.5
+    },
+    "HOME": {
+     "kind": "circle",
+     "x": 588.2,
+     "y": 685.3,
+     "d": 57.4
+    },
+    "TV": {
+     "kind": "circle",
+     "x": 868.7,
+     "y": 685.3,
+     "d": 35.3
+    },
+    "POWER": {
+     "kind": "circle",
+     "x": 935.0,
+     "y": 685.3,
+     "d": 35.3
+    }
+   },
+   "notes": []
+  },
+  {
+   "device": "iPad Pro 12.9\" (2020, A12Z)",
+   "container": [
+    1366,
+    1024
+   ],
+   "safe": [
+    0,
+    0,
+    1366,
+    1004
+   ],
+   "ppi_pt": 132.0,
+   "mode": "framed",
+   "D": 55.22,
+   "D_life": 55.22,
+   "pct_life": 100,
+   "theta_deg": 69.9,
+   "system_placement": "hardware",
+   "mm_per_button": 10.62,
+   "clusters": {
+    "leftAnchor": [
+     141.4,
+     467.8
+    ],
+    "rightAnchor": [
+     1224.6,
+     467.8
+    ],
+    "widthUnits": 7.021,
+    "gapUnits": 17.018
+   },
+   "video": [
+    223.7,
+    248.6,
+    901.0,
+    506.8
+   ],
+   "video_mm": [
+    173.4,
+    97.5
+   ],
+   "controls": {
+    "stickL": {
+     "kind": "circle",
+     "x": 88.4,
+     "y": 323.1,
+     "d": 108.2
+    },
+    "knobL": {
+     "kind": "circle",
+     "x": 88.4,
+     "y": 323.1,
+     "d": 61.8
+    },
+    "L": {
+     "kind": "pill",
+     "x": 51.1,
+     "y": 233.8,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "ZL": {
+     "kind": "pill",
+     "x": 125.6,
+     "y": 233.8,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "stickR": {
+     "kind": "circle",
+     "x": 1277.6,
+     "y": 323.1,
+     "d": 108.2
+    },
+    "knobR": {
+     "kind": "circle",
+     "x": 1277.6,
+     "y": 323.1,
+     "d": 61.8
+    },
+    "R": {
+     "kind": "pill",
+     "x": 1314.9,
+     "y": 233.8,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "ZR": {
+     "kind": "pill",
+     "x": 1240.4,
+     "y": 233.8,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "dpad": {
+     "kind": "cross",
+     "x": 141.4,
+     "y": 467.8,
+     "w": 125.9,
+     "h": 123.7,
+     "arm": 42.0
+    },
+    "L3": {
+     "kind": "circle",
+     "x": 141.4,
+     "y": 467.8,
+     "d": 39.0
+    },
+    "X": {
+     "kind": "circle",
+     "x": 1224.6,
+     "y": 415.3,
+     "d": 55.2
+    },
+    "Y": {
+     "kind": "circle",
+     "x": 1171.6,
+     "y": 467.8,
+     "d": 55.2
+    },
+    "A": {
+     "kind": "circle",
+     "x": 1277.6,
+     "y": 467.8,
+     "d": 55.2
+    },
+    "B": {
+     "kind": "circle",
+     "x": 1224.6,
+     "y": 520.2,
+     "d": 55.2
+    },
+    "R3": {
+     "kind": "circle",
+     "x": 1224.6,
+     "y": 467.8,
+     "d": 39.0
+    },
+    "plus": {
+     "kind": "circle",
+     "x": 1165.0,
+     "y": 601.4,
+     "d": 37.5
+    },
+    "minus": {
+     "kind": "circle",
+     "x": 1165.0,
+     "y": 669.9,
+     "d": 37.5
+    },
+    "HOME": {
+     "kind": "circle",
+     "x": 674.2,
+     "y": 803.4,
+     "d": 57.4
+    },
+    "TV": {
+     "kind": "circle",
+     "x": 954.7,
+     "y": 803.4,
+     "d": 35.3
+    },
+    "POWER": {
+     "kind": "circle",
+     "x": 1021.0,
+     "y": 803.4,
+     "d": 35.3
+    }
+   },
+   "notes": []
+  },
+  {
+   "device": "iPad Pro 12.9\" (2020) portrait",
+   "container": [
+    1024,
+    1366
+   ],
+   "safe": [
+    0,
+    24,
+    1024,
+    1322
+   ],
+   "ppi_pt": 132.0,
+   "mode": "stacked",
+   "D": 55.22,
+   "D_life": 55.22,
+   "pct_life": 100,
+   "theta_deg": 69.9,
+   "system_placement": "hardware",
+   "mm_per_button": 10.62,
+   "clusters": {
+    "leftAnchor": [
+     141.4,
+     1105.8
+    ],
+    "rightAnchor": [
+     882.6,
+     1105.8
+    ],
+    "widthUnits": 7.021,
+    "gapUnits": 10.824
+   },
+   "video": [
+    0.0,
+    24,
+    1024,
+    576.0
+   ],
+   "video_mm": [
+    197.0,
+    110.8
+   ],
+   "controls": {
+    "stickL": {
+     "kind": "circle",
+     "x": 88.4,
+     "y": 961.2,
+     "d": 108.2
+    },
+    "knobL": {
+     "kind": "circle",
+     "x": 88.4,
+     "y": 961.2,
+     "d": 61.8
+    },
+    "L": {
+     "kind": "pill",
+     "x": 51.1,
+     "y": 871.9,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "ZL": {
+     "kind": "pill",
+     "x": 125.6,
+     "y": 871.9,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "stickR": {
+     "kind": "circle",
+     "x": 935.6,
+     "y": 961.2,
+     "d": 108.2
+    },
+    "knobR": {
+     "kind": "circle",
+     "x": 935.6,
+     "y": 961.2,
+     "d": 61.8
+    },
+    "R": {
+     "kind": "pill",
+     "x": 972.9,
+     "y": 871.9,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "ZR": {
+     "kind": "pill",
+     "x": 898.4,
+     "y": 871.9,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
+    },
+    "dpad": {
+     "kind": "cross",
+     "x": 141.4,
+     "y": 1105.8,
+     "w": 125.9,
+     "h": 123.7,
+     "arm": 42.0
+    },
+    "L3": {
+     "kind": "circle",
+     "x": 141.4,
+     "y": 1105.8,
+     "d": 39.0
+    },
+    "X": {
+     "kind": "circle",
+     "x": 882.6,
+     "y": 1053.4,
+     "d": 55.2
+    },
+    "Y": {
+     "kind": "circle",
+     "x": 829.6,
+     "y": 1105.8,
+     "d": 55.2
+    },
+    "A": {
+     "kind": "circle",
+     "x": 935.6,
+     "y": 1105.8,
+     "d": 55.2
+    },
+    "B": {
+     "kind": "circle",
+     "x": 882.6,
+     "y": 1158.3,
+     "d": 55.2
+    },
+    "R3": {
+     "kind": "circle",
+     "x": 882.6,
+     "y": 1105.8,
+     "d": 39.0
+    },
+    "plus": {
+     "kind": "circle",
+     "x": 823.0,
+     "y": 1239.4,
+     "d": 37.5
+    },
+    "minus": {
+     "kind": "circle",
+     "x": 823.0,
+     "y": 1307.9,
+     "d": 37.5
+    },
+    "HOME": {
+     "kind": "circle",
+     "x": 503.2,
+     "y": 1298.0,
+     "d": 57.4
+    }
+   },
+   "notes": [
+    "portrait: picture along the top, both clusters on the bottom corners",
+    "TV/POWER live in the pause menu at this size, not on the pad"
+   ]
+  },
+  {
    "device": "iPad Air 13\"",
    "container": [
     1366,
@@ -1431,7 +1958,8 @@
      1224.6,
      467.8
     ],
-    "widthUnits": 7.021
+    "widthUnits": 7.021,
+    "gapUnits": 17.018
    },
    "video": [
     223.7,
@@ -1606,7 +2134,8 @@
      1234.6,
      471.8
     ],
-    "widthUnits": 7.021
+    "widthUnits": 7.021,
+    "gapUnits": 17.199
    },
    "video": [
     223.7,
@@ -1766,22 +2295,23 @@
    ],
    "ppi_pt": 132.0,
    "mode": "stacked",
-   "D": 51.85,
+   "D": 55.22,
    "D_life": 55.22,
-   "pct_life": 94,
+   "pct_life": 100,
    "theta_deg": 69.9,
-   "system_placement": "hardware",
-   "mm_per_button": 9.98,
+   "system_placement": "elbow",
+   "mm_per_button": 10.62,
    "clusters": {
     "leftAnchor": [
-     132.8,
-     588.4
+     141.4,
+     714.6
     ],
     "rightAnchor": [
-     450.2,
-     588.4
+     441.6,
+     714.6
     ],
-    "widthUnits": 7.021
+    "widthUnits": 7.929,
+    "gapUnits": 1.929
    },
    "video": [
     0.0,
@@ -1796,125 +2326,126 @@
    "controls": {
     "stickL": {
      "kind": "circle",
-     "x": 83.0,
-     "y": 452.6,
-     "d": 101.6
+     "x": 88.4,
+     "y": 570.0,
+     "d": 108.2
     },
     "knobL": {
      "kind": "circle",
-     "x": 83.0,
-     "y": 452.6,
-     "d": 58.1
+     "x": 88.4,
+     "y": 570.0,
+     "d": 61.8
     },
     "L": {
      "kind": "pill",
-     "x": 48.0,
-     "y": 368.7,
-     "w": 59.7,
-     "h": 45.3,
-     "r": 12.2
+     "x": 51.1,
+     "y": 480.7,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
     },
     "ZL": {
      "kind": "pill",
-     "x": 118.0,
-     "y": 368.7,
-     "w": 59.7,
-     "h": 45.3,
-     "r": 12.2
+     "x": 125.6,
+     "y": 480.7,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
     },
     "stickR": {
      "kind": "circle",
-     "x": 500.0,
-     "y": 452.6,
-     "d": 101.6
+     "x": 494.6,
+     "y": 570.0,
+     "d": 108.2
     },
     "knobR": {
      "kind": "circle",
-     "x": 500.0,
-     "y": 452.6,
-     "d": 58.1
+     "x": 494.6,
+     "y": 570.0,
+     "d": 61.8
     },
     "R": {
      "kind": "pill",
-     "x": 535.0,
-     "y": 368.7,
-     "w": 59.7,
-     "h": 45.3,
-     "r": 12.2
+     "x": 531.9,
+     "y": 480.7,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
     },
     "ZR": {
      "kind": "pill",
-     "x": 465.0,
-     "y": 368.7,
-     "w": 59.7,
-     "h": 45.3,
-     "r": 12.2
+     "x": 457.4,
+     "y": 480.7,
+     "w": 63.6,
+     "h": 48.3,
+     "r": 13.0
     },
     "dpad": {
      "kind": "cross",
-     "x": 132.8,
-     "y": 588.4,
-     "w": 118.2,
-     "h": 116.2,
-     "arm": 39.4
+     "x": 141.4,
+     "y": 714.6,
+     "w": 125.9,
+     "h": 123.7,
+     "arm": 42.0
     },
     "L3": {
      "kind": "circle",
-     "x": 132.8,
-     "y": 588.4,
-     "d": 36.6
+     "x": 141.4,
+     "y": 714.6,
+     "d": 39.0
     },
     "X": {
      "kind": "circle",
-     "x": 450.2,
-     "y": 539.2,
-     "d": 51.9
+     "x": 441.6,
+     "y": 662.2,
+     "d": 55.2
     },
     "Y": {
      "kind": "circle",
-     "x": 400.4,
-     "y": 588.4,
-     "d": 51.9
+     "x": 388.6,
+     "y": 714.6,
+     "d": 55.2
     },
     "A": {
      "kind": "circle",
-     "x": 500.0,
-     "y": 588.4,
-     "d": 51.9
+     "x": 494.6,
+     "y": 714.6,
+     "d": 55.2
     },
     "B": {
      "kind": "circle",
-     "x": 450.2,
-     "y": 637.7,
-     "d": 51.9
+     "x": 441.6,
+     "y": 767.1,
+     "d": 55.2
     },
     "R3": {
      "kind": "circle",
-     "x": 450.2,
-     "y": 588.4,
-     "d": 36.6
+     "x": 441.6,
+     "y": 714.6,
+     "d": 39.0
     },
     "plus": {
      "kind": "circle",
-     "x": 394.2,
-     "y": 713.9,
-     "d": 35.3
+     "x": 363.5,
+     "y": 636.5,
+     "d": 37.5
     },
     "minus": {
      "kind": "circle",
-     "x": 394.2,
-     "y": 778.2,
-     "d": 35.3
+     "x": 219.5,
+     "y": 636.5,
+     "d": 37.5
     },
     "HOME": {
      "kind": "circle",
-     "x": 282.7,
-     "y": 768.9,
-     "d": 53.9
+     "x": 291.5,
+     "y": 766.0,
+     "d": 57.4
     }
    },
    "notes": [
-    "portrait: video pinned to the top, both clusters on the bottom corners",
+    "portrait: picture along the top, both clusters on the bottom corners",
+    "+/- relocated to the elbow: no room for their real place below A/B/X/Y",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
   },
@@ -1932,22 +2463,23 @@
    ],
    "ppi_pt": 132.0,
    "mode": "stacked",
-   "D": 49.21,
+   "D": 45.07,
    "D_life": 55.22,
-   "pct_life": 89,
+   "pct_life": 82,
    "theta_deg": 69.9,
    "system_placement": "hardware",
-   "mm_per_button": 9.47,
+   "mm_per_button": 8.67,
    "clusters": {
     "leftAnchor": [
-     126.0,
-     600.0
+     115.4,
+     618.0
     ],
     "rightAnchor": [
-     249.0,
-     600.0
+     259.6,
+     618.0
     ],
-    "widthUnits": 7.021
+    "widthUnits": 7.021,
+    "gapUnits": 0.6
    },
    "video": [
     0.0,
@@ -1962,119 +2494,120 @@
    "controls": {
     "stickL": {
      "kind": "circle",
-     "x": 78.8,
-     "y": 471.0,
-     "d": 96.4
+     "x": 72.1,
+     "y": 499.9,
+     "d": 88.3
     },
     "knobL": {
      "kind": "circle",
-     "x": 78.8,
-     "y": 471.0,
-     "d": 55.1
+     "x": 72.1,
+     "y": 499.9,
+     "d": 50.5
     },
     "L": {
      "kind": "pill",
-     "x": 45.5,
-     "y": 391.5,
-     "w": 56.6,
-     "h": 43.0,
-     "r": 11.6
+     "x": 41.7,
+     "y": 427.0,
+     "w": 51.9,
+     "h": 39.4,
+     "r": 10.6
     },
     "ZL": {
      "kind": "pill",
-     "x": 112.0,
-     "y": 391.5,
-     "w": 56.6,
-     "h": 43.0,
-     "r": 11.6
+     "x": 102.5,
+     "y": 427.0,
+     "w": 51.9,
+     "h": 39.4,
+     "r": 10.6
     },
     "stickR": {
      "kind": "circle",
-     "x": 296.2,
-     "y": 471.0,
-     "d": 96.4
+     "x": 302.9,
+     "y": 499.9,
+     "d": 88.3
     },
     "knobR": {
      "kind": "circle",
-     "x": 296.2,
-     "y": 471.0,
-     "d": 55.1
+     "x": 302.9,
+     "y": 499.9,
+     "d": 50.5
     },
     "R": {
      "kind": "pill",
-     "x": 329.5,
-     "y": 391.5,
-     "w": 56.6,
-     "h": 43.0,
-     "r": 11.6
+     "x": 333.3,
+     "y": 427.0,
+     "w": 51.9,
+     "h": 39.4,
+     "r": 10.6
     },
     "ZR": {
      "kind": "pill",
-     "x": 263.0,
-     "y": 391.5,
-     "w": 56.6,
-     "h": 43.0,
-     "r": 11.6
+     "x": 272.5,
+     "y": 427.0,
+     "w": 51.9,
+     "h": 39.4,
+     "r": 10.6
     },
     "dpad": {
      "kind": "cross",
-     "x": 126.0,
-     "y": 600.0,
-     "w": 112.2,
-     "h": 110.2,
-     "arm": 37.4
+     "x": 115.4,
+     "y": 618.0,
+     "w": 102.8,
+     "h": 100.9,
+     "arm": 34.3
     },
     "L3": {
      "kind": "circle",
-     "x": 126.0,
-     "y": 600.0,
-     "d": 34.7
+     "x": 115.4,
+     "y": 618.0,
+     "d": 31.8
     },
     "X": {
      "kind": "circle",
-     "x": 249.0,
-     "y": 553.2,
-     "d": 49.2
+     "x": 259.6,
+     "y": 575.2,
+     "d": 45.1
     },
     "Y": {
      "kind": "circle",
-     "x": 201.8,
-     "y": 600.0,
-     "d": 49.2
+     "x": 216.3,
+     "y": 618.0,
+     "d": 45.1
     },
     "A": {
      "kind": "circle",
-     "x": 296.2,
-     "y": 600.0,
-     "d": 49.2
+     "x": 302.9,
+     "y": 618.0,
+     "d": 45.1
     },
     "B": {
      "kind": "circle",
-     "x": 249.0,
-     "y": 646.7,
-     "d": 49.2
+     "x": 259.6,
+     "y": 660.8,
+     "d": 45.1
     },
     "R3": {
      "kind": "circle",
-     "x": 249.0,
-     "y": 600.0,
-     "d": 34.7
+     "x": 259.6,
+     "y": 618.0,
+     "d": 31.8
     },
     "plus": {
      "kind": "circle",
-     "x": 195.9,
-     "y": 719.0,
-     "d": 33.5
+     "x": 210.9,
+     "y": 727.0,
+     "d": 30.6
     },
     "minus": {
      "kind": "circle",
-     "x": 195.9,
-     "y": 780.0,
-     "d": 33.5
+     "x": 210.9,
+     "y": 782.9,
+     "d": 30.6
     }
    },
    "notes": [
-    "portrait: video pinned to the top, both clusters on the bottom corners",
+    "D reduced to 82% of life-size to fit",
+    "portrait: picture along the top, both clusters on the bottom corners",
     "HOME joins TV/POWER in the pause menu: nothing on the pad clears",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
@@ -2108,7 +2641,8 @@
      890.6,
      1115.8
     ],
-    "widthUnits": 7.021
+    "widthUnits": 7.021,
+    "gapUnits": 10.969
    },
    "video": [
     0.0,
@@ -2241,7 +2775,7 @@
     }
    },
    "notes": [
-    "portrait: video pinned to the top, both clusters on the bottom corners",
+    "portrait: picture along the top, both clusters on the bottom corners",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
   },
@@ -2259,22 +2793,23 @@
    ],
    "ppi_pt": 153.33,
    "mode": "stacked",
-   "D": 57.73,
+   "D": 52.88,
    "D_life": 64.14,
-   "pct_life": 90,
+   "pct_life": 82,
    "theta_deg": 69.9,
    "system_placement": "hardware",
-   "mm_per_button": 9.56,
+   "mm_per_button": 8.76,
    "clusters": {
     "leftAnchor": [
-     147.8,
-     670.9
+     135.4,
+     692.0
     ],
     "rightAnchor": [
-     292.2,
-     670.9
+     304.6,
+     692.0
     ],
-    "widthUnits": 7.021
+    "widthUnits": 7.021,
+    "gapUnits": 0.6
    },
    "video": [
     0.0,
@@ -2289,119 +2824,120 @@
    "controls": {
     "stickL": {
      "kind": "circle",
-     "x": 92.4,
-     "y": 519.6,
-     "d": 113.2
+     "x": 84.6,
+     "y": 553.5,
+     "d": 103.6
     },
     "knobL": {
      "kind": "circle",
-     "x": 92.4,
-     "y": 519.6,
-     "d": 64.7
+     "x": 84.6,
+     "y": 553.5,
+     "d": 59.2
     },
     "L": {
      "kind": "pill",
-     "x": 53.4,
-     "y": 426.2,
-     "w": 66.5,
-     "h": 50.5,
-     "r": 13.6
+     "x": 48.9,
+     "y": 468.0,
+     "w": 60.9,
+     "h": 46.2,
+     "r": 12.4
     },
     "ZL": {
      "kind": "pill",
-     "x": 131.4,
-     "y": 426.2,
-     "w": 66.5,
-     "h": 50.5,
-     "r": 13.6
+     "x": 120.3,
+     "y": 468.0,
+     "w": 60.9,
+     "h": 46.2,
+     "r": 12.4
     },
     "stickR": {
      "kind": "circle",
-     "x": 347.6,
-     "y": 519.6,
-     "d": 113.2
+     "x": 355.4,
+     "y": 553.5,
+     "d": 103.6
     },
     "knobR": {
      "kind": "circle",
-     "x": 347.6,
-     "y": 519.6,
-     "d": 64.7
+     "x": 355.4,
+     "y": 553.5,
+     "d": 59.2
     },
     "R": {
      "kind": "pill",
-     "x": 386.6,
-     "y": 426.2,
-     "w": 66.5,
-     "h": 50.5,
-     "r": 13.6
+     "x": 391.1,
+     "y": 468.0,
+     "w": 60.9,
+     "h": 46.2,
+     "r": 12.4
     },
     "ZR": {
      "kind": "pill",
-     "x": 308.6,
-     "y": 426.2,
-     "w": 66.5,
-     "h": 50.5,
-     "r": 13.6
+     "x": 319.7,
+     "y": 468.0,
+     "w": 60.9,
+     "h": 46.2,
+     "r": 12.4
     },
     "dpad": {
      "kind": "cross",
-     "x": 147.8,
-     "y": 670.9,
-     "w": 131.6,
-     "h": 129.3,
-     "arm": 43.9
+     "x": 135.4,
+     "y": 692.0,
+     "w": 120.6,
+     "h": 118.4,
+     "arm": 40.2
     },
     "L3": {
      "kind": "circle",
-     "x": 147.8,
-     "y": 670.9,
-     "d": 40.8
+     "x": 135.4,
+     "y": 692.0,
+     "d": 37.3
     },
     "X": {
      "kind": "circle",
-     "x": 292.2,
-     "y": 616.0,
-     "d": 57.7
+     "x": 304.6,
+     "y": 641.8,
+     "d": 52.9
     },
     "Y": {
      "kind": "circle",
-     "x": 236.7,
-     "y": 670.9,
-     "d": 57.7
+     "x": 253.8,
+     "y": 692.0,
+     "d": 52.9
     },
     "A": {
      "kind": "circle",
-     "x": 347.6,
-     "y": 670.9,
-     "d": 57.7
+     "x": 355.4,
+     "y": 692.0,
+     "d": 52.9
     },
     "B": {
      "kind": "circle",
-     "x": 292.2,
-     "y": 725.7,
-     "d": 57.7
+     "x": 304.6,
+     "y": 742.2,
+     "d": 52.9
     },
     "R3": {
      "kind": "circle",
-     "x": 292.2,
-     "y": 670.9,
-     "d": 40.8
+     "x": 304.6,
+     "y": 692.0,
+     "d": 37.3
     },
     "plus": {
      "kind": "circle",
-     "x": 229.8,
-     "y": 810.6,
-     "d": 39.3
+     "x": 247.5,
+     "y": 819.9,
+     "d": 36.0
     },
     "minus": {
      "kind": "circle",
-     "x": 229.8,
-     "y": 882.2,
-     "d": 39.3
+     "x": 247.5,
+     "y": 885.5,
+     "d": 36.0
     }
    },
    "notes": [
-    "portrait: video pinned to the top, both clusters on the bottom corners",
+    "D reduced to 82% of life-size to fit",
+    "portrait: picture along the top, both clusters on the bottom corners",
     "HOME joins TV/POWER in the pause menu: nothing on the pad clears",
     "TV/POWER live in the pause menu at this size, not on the pad"
    ]
@@ -2435,7 +2971,8 @@
      1234.6,
      471.8
     ],
-    "widthUnits": 7.021
+    "widthUnits": 7.021,
+    "gapUnits": 17.199
    },
    "video": [
     223.7,
