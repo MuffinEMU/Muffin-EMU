@@ -1,6 +1,7 @@
 # The on-screen pad, taken from the GamePad itself
 
 BW-198. Branch `ios-gamepad-clone-layout`, cut from `ios-controls-on-extras` (`e1de779b`).
+Live: <https://kiddreads.github.io/cemu-ios-muffin/gamepad-layout/>
 
 The shipping `ControllerGeometry` is measured from `IMG_3278.jpeg`, a screenshot of an
 on-screen pad. This is measured from the hardware: the official Wii U GamePad front
@@ -30,23 +31,22 @@ Everything is expressed in **D = one face-button diameter = 10.625 mm**, the uni
 | d-pad arm width | 0.760 | 8.075 |  |
 | stick dish | 1.960 | 20.825 |  |
 | stick cap | 1.120 | 11.9 |  |
-| stick arm length | 2.790 | 29.646 | stick centre to cluster centre |
-| + / - diameter | 0.680 | 7.225 |  |
+| stick arm length | 2.790 | 29.646 | stick centre to cluster centre, at 69.87 deg |
+| + / - diameter | 0.680 | 7.225 | both on the right, + above - |
 | HOME diameter | 1.040 | 11.05 |  |
-| TV / POWER diameter | 0.640 | 6.8 |  |
 | body | 24.000 | 255 | exactly 24 face buttons |
 | screen | 12.922 | 137.3 | normalised to exactly 16:9 |
 
 The stick arm is the strongest number in the set: **29.65 mm at 69.87 deg**, up and
 outboard, and the two halves agree on it to within 0.1 mm. That is a designed
-relationship, not an accident of measurement, and it is the one thing the laws below
-protect ahead of everything else - it is what a thumb actually learns.
+relationship, not an accident of measurement, and it is what the laws below protect ahead
+of everything else - it is what a thumb actually learns.
 
 Two facts the shipping layout has differently, both of them the hardware being right:
 
 - **The d-pad is a solid cross**, 2.280 x 2.240 D with 0.760 D arms.
-- **+ and - are both on the right**, stacked under A/B/X/Y, + above -. One per side is
-  a convention on-screen pads invented; the GamePad never did it.
+- **+ and - are both on the right**, stacked under A/B/X/Y, + above -. One per side is a
+  convention on-screen pads invented; the GamePad never did it.
 
 Not measured: **L / R / ZL / ZR**. They are on the top edge and do not appear in a front
 view. Their pill size is kept from the IMG_3278 measurement; their position is placed,
@@ -55,28 +55,27 @@ placed geometry in the file and they are marked as such at their definition.
 
 ## The four laws
 
-**1. Size.** `D = 10.625 mm expressed in points`, capped by what the height can hold.
+**1. Size.** `D = 10.625 mm expressed in points`, capped by what the container can hold.
 A point is 0.166 mm on an iPhone and 0.192 mm on an iPad, so this needs points-per-inch,
-which UIKit does not expose - hence the small model table in `DeviceMetrics`. The result
-is the headline: **the clusters are only 61 mm tall, so life-size fits nearly everywhere.**
-It is the 255 mm body that never fits, not the controls.
+which UIKit does not expose - see the next section. The result is the headline: **the
+clusters are only 61 mm tall, so life-size fits nearly everywhere.** It is the 255 mm body
+that never fits, not the controls.
 
 **2. Arrangement.** The hardware arm angle is preserved in preference to keeping the
-buttons big. When the height is short, D shrinks first; only if D would fall under the
-44 pt touch floor does the arm rake outboard (to a floor of 45 deg), which buys height
-without changing the stick-to-cluster distance. On every shipping device, no rake is
-needed.
+buttons big: D shrinks first, and only if D would fall under the 44 pt touch floor does
+the arm rake outboard, which buys height without changing the stick-to-cluster distance.
+No device in landscape needs the rake.
+
+Height and width are judged **together**, as two whole candidates rather than one applied
+after the other. Keeping +/- in their hardware slot costs 2.55 D of height but makes each
+cluster 0.45 D narrower, so evaluating them in sequence gives an answer that depends on
+which came first. Each candidate is costed complete and the better one wins.
 
 **3. Placement.** Clusters are rigid and pinned to the safe-area edges. **The bezel
-between them is the only thing that stretches.** Nothing is ever squeezed. What moves is
-the low-priority hardware:
-
-- **+ / -** keep their real slot under A/B/X/Y wherever 4.0 D of room exists below the
-  cluster centre - every iPad. Where it does not - every iPhone - they move to the
-  *elbow*, the empty diagonal between the stick and the cluster that a thumb already
-  sweeps across, one per side.
-- **TV / POWER** keep their real place on the bottom rail in framed mode and otherwise
-  belong to the pause menu, not the pad.
+between them is the only thing that stretches.** Nothing is ever squeezed, and the two
+clusters must always clear each other by at least **0.6 D** - the invariant below. What
+moves is the low-priority hardware: +/- to the elbow where their real slot will not fit,
+TV/POWER and if necessary HOME to the pause menu.
 
 **4. Mode.** Decided by one question: would a framed picture be at least as big as the
 GamePad's own 6.2 in screen (137.3 mm)? Below that, the shell is nostalgia bought with a
@@ -89,7 +88,37 @@ smaller picture than the real hardware had, which is the wrong trade.
 | `stacked` | portrait | picture along the top, both clusters on the bottom corners |
 | `shell` | external display | the picture leaves; the iPad is nothing but a GamePad |
 
-## What every device resolves to
+## Working out how big the screen physically is
+
+Life-size means nothing without points-per-inch, and UIKit does not expose it: `UIScreen.scale`
+is points per *pixel*, and there is no API for pixels per inch. A hardcoded model table
+alone is not good enough either - the first device that ships after this is written would
+render a pad 24% wrong with nothing in the logs to say so.
+
+So `DeviceMetrics` works it out at launch, from four sources, most authoritative first:
+
+| source | what it is |
+|---|---|
+| `calibrated` | the user sized an outline against a bank card. Beats everything - it is a measurement of the actual glass |
+| `model` | an exact `hw.machine` match. Authoritative for every device shipped so far |
+| `panel` | the native pixel resolution matches a panel we know. Catches a new model reusing an existing display |
+| `derived` | reasoned from idiom, native scale and pixel count. Apple has only shipped a handful of native densities and they separate cleanly |
+
+The derivation: an iPad is 264 ppi unless it is a mini, and the mini is the only iPad whose
+short side comes in under 1536 px; a 3x phone is 460 unless it is 1080 px wide, which only
+the minis are; a 2x phone is 326.
+
+`Measurement.detail` is one line for the launch log, so a wrong pad is diagnosable from a
+log alone. When `source == .derived` the device is one nobody has taught the app about, and
+`PadCalibrationView` will make it exact: the user holds any bank card against the screen and
+sizes an outline to match. ISO/IEC 7810 ID-1 is 85.60 mm wide, so that is one reliable ruler
+in everybody's pocket, and it works on hardware nobody has seen yet.
+
+Exercised off-device on twelve probes - known models, unknown models on known panels, wholly
+unknown devices of each class, a calibration that wins, and an absurd calibration that is
+rejected - all twelve correct.
+
+## What every configuration resolves to
 
 | device | mode | D (pt) | vs life-size | button | +/- | picture (pt) | picture (mm) |
 |---|---|---|---|---|---|---|---|
@@ -101,58 +130,71 @@ smaller picture than the real hardware had, which is the wrong trade.
 | iPad mini (A17 Pro) | `overlay` | 68.2 | 100% | 10.6 mm | hardware | 1133x637.3 | 176.6 x 99.3 |
 | iPad (A16) / Air 11" | `framed` | 55.2 | 100% | 10.6 mm | hardware | 715x402.2 | 137.6 x 77.4 |
 | iPad Pro 11" (M4) | `framed` | 55.2 | 100% | 10.6 mm | hardware | 745x419.1 | 143.4 x 80.6 |
+| iPad Pro 11" (2020, A12Z) | `framed` | 55.2 | 100% | 10.6 mm | hardware | 729x410.1 | 140.3 x 78.9 |
+| iPad Pro 12.9" (2020, A12Z) **<-- target** | `framed` | 55.2 | 100% | 10.6 mm | hardware | 901x506.8 | 173.4 x 97.5 |
+| iPad Pro 12.9" (2020) portrait | `stacked` | 55.2 | 100% | 10.6 mm | hardware | 1024x576 | 197 x 110.8 |
 | iPad Air 13" | `framed` | 55.2 | 100% | 10.6 mm | hardware | 901x506.8 | 173.4 x 97.5 |
 | iPad Pro 13" (M4) | `framed` | 55.2 | 100% | 10.6 mm | hardware | 911x512.4 | 175.3 x 98.6 |
-| iPad Pro 11" Split View 1/2 | `stacked` | 51.9 | 94% | 10.0 mm | hardware | 583x327.9 | 112.2 x 63.1 |
-| iPad Pro 11" Slide Over | `stacked` | 49.2 | 89% | 9.5 mm | hardware | 375x210.9 | 72.2 x 40.6 |
+| iPad Pro 11" Split View 1/2 | `stacked` | 55.2 | 100% | 10.6 mm | elbow | 583x327.9 | 112.2 x 63.1 |
+| iPad Pro 11" Slide Over | `stacked` | 45.1 | 82% | 8.7 mm | hardware | 375x210.9 | 72.2 x 40.6 |
 | iPad Pro 13" portrait | `stacked` | 55.2 | 100% | 10.6 mm | hardware | 1032x580.5 | 198.6 x 111.7 |
-| iPhone 16 Pro Max portrait | `stacked` | 57.7 | 90% | 9.6 mm | hardware | 440x247.5 | 72.9 x 41 |
+| iPhone 16 Pro Max portrait | `stacked` | 52.9 | 82% | 8.8 mm | hardware | 440x247.5 | 72.9 x 41 |
 | iPad Pro 13" + external display | `shell` | 55.2 | 100% | 10.6 mm | hardware | 911x512.4 | 175.3 x 98.6 |
 
 Reading that table:
 
-- **Every iPad is life-size**, including the mini - a 1:1 physical replica of the GamePad's
-  controls, with + and - in their real place.
-- **iPad Pro 13 in framed mode gives a 175 mm picture** against the hardware's 137 mm. It
-  is a GamePad with a screen 28% bigger than the real one and controls that are exactly
-  the right size. If a bigger iPad is ever the target, this is the mode to show people.
-- **iPhones land at 81-96% of life-size**, all well clear of the 44 pt floor, none of them
-  needing the rake. The iPhone 16 Pro Max is within 4% of a real GamePad.
-- **The iPad mini is the one interesting call**: it has the height for hardware +/- but
-  not the width for a framed picture, so it gets life-size controls floating over a
-  full-bleed 177 mm picture. Framing it would have cost 90 mm of picture to gain a bezel.
+- **The iPad Pro 12.9 in (2020) - the A12Z this port actually targets - is life-size and
+  framed**, with a 173 x 98 mm picture against the hardware's own 137 x 77 mm. A GamePad
+  with a screen 26% bigger than the real one and controls that are exactly right.
+- **Every iPad in landscape is life-size**, the mini included, with + and - in their real place.
+- **iPhones land at 75-96%**, all clear of the 44 pt floor, none needing the rake.
+- **The two narrowest panes** - Slide Over and a phone in portrait - are the only cases
+  where the width, not the height, sets the size. They come out at 82% and the clusters
+  still clear each other by 27 pt.
 
-Full resolved coordinates for every control on every configuration above are in
-`muffin_pad_layout.json`; the hardware measurements they derive from are in
-`hardware_measurements.json`, with `hardware_measurements_check.png` showing every
-measured circle drawn back over the source art.
+Full resolved coordinates are in `muffin_pad_layout.json`; the hardware measurements they
+derive from are in `hardware_measurements.json`, with `hardware_measurements_check.png`
+showing every measured circle drawn back over the source art.
+
+## Verification
+
+Swift and Python are checked against each other on **every configuration and every
+control**: 336 controls across 18 configurations, comparing mode, unit, +/- placement,
+picture rect, and each control's centre and size. **Zero discrepancies.**
+
+The same pass asserts, with **exact shapes** rather than bounding boxes - the d-pad tested
+as its two real arms, not as the square that contains them:
+
+- nothing lands outside a safe area
+- no two controls overlap
+- **the two clusters clear each other by at least 0.6 D** - tightest anywhere is 27 pt
+- nothing covers the picture in framed mode
+- every face button is at or above 44 pt in landscape
+- both clusters stay level, as they are on the hardware
+- every picture is exactly 16:9
+
+That bounding-box distinction is not pedantry. A bbox test reported the d-pad overlapping
+the relocated minus on every iPhone; the cross has no material in its corners and the real
+separation is 1.07 D. It also *missed* nothing - but the exact test is what makes the
+cluster-gap invariant meaningful.
 
 ## Files
 
 | file | what it is |
 |---|---|
-| `GamePadGeometry.swift` | the constants and the resolver. Typechecks clean; **not in the build** - `src/ios/project.yml` pulls `src/ios/App` in as a group, so moving it there is the whole of wiring it in |
+| `GamePadGeometry.swift` | the constants, the resolver and `DeviceMetrics`. Typechecks; **not in the build** - `src/ios/project.yml` pulls `src/ios/App` in as a group, so moving it there is the whole of wiring it in |
 | `index.html` | the same thing as a browsable page with a device picker - opens by double-clicking, no server needed |
 | `HANDOFF.md` | what the next person needs: how to verify it, how to wire it in, and the traps |
-| `resolve_reference.py` | the same four laws in Python, which generated the mockups |
-| `mock_*.png` | what each configuration looks like |
-| `muffin_pad_layout.json` | resolved coordinates, all 15 configurations |
+| `resolve_reference.py` | the same laws in Python - the cross-check, and what drew the mockups |
+| `mock_*.png` | all 17 landscape and portrait configurations rendered |
+| `muffin_pad_layout.json` | resolved coordinates, all 18 configurations |
 | `hardware_measurements.json` | the source measurements, in pixels and mm |
-
-The Swift and the Python were checked against each other on **every configuration and
-every control**: 278 controls across 15 configurations, comparing mode, unit, +/- placement,
-picture rect, and each control's centre and size. **Zero discrepancies**, so the mockups are
-a true picture of what the Swift produces. The same pass asserts that nothing lands outside
-a safe area, that no two controls overlap, that nothing covers the picture in framed mode,
-that every face button is at or above 44 pt, that both clusters stay level, and that every
-picture is exactly 16:9.
 
 ## Two things to decide
 
 1. **The d-pad becomes a cross and the iPad +/- both move right.** Both are the hardware
-   being right, and both are visible changes to a pad people have already learned. Worth
-   a settings toggle if either turns out to be unpopular.
+   being right, and both are visible changes to a pad people have already learned. Worth a
+   settings toggle if either turns out to be unpopular.
 2. **The shipping pad anchors to `proxy.size`, not the safe area**, so on every notched
-   iPhone in landscape the outer controls sit under the Dynamic Island. The resolver here
-   takes a safe rect instead. That is a bug fix that stands on its own, independent of
-   whether any of the rest of this lands.
+   iPhone in landscape the outer controls sit under the Dynamic Island. That is a bug fix
+   that stands on its own, independent of whether any of the rest of this lands.

@@ -129,6 +129,26 @@ enum GamePadGeometry {
             + (hardwareSystem ? bottomExtentHardware : bottomExtentElbow)
             + 2 * PadLayout.edgeMargin
     }
+
+    /// Outboard reach, the inboard reach of each half, and the total width - all in D.
+    static func extents(armAngle: CGFloat, hardwareSystem: Bool)
+        -> (outboard: CGFloat, inboardL: CGFloat, inboardR: CGFloat, total: CGFloat) {
+        let inL = hardwareSystem ? dpadWidth / 2 : systemElbow.x + systemDiameter / 2
+        let inR = max(faceHalfX + 0.5, inL)
+        let out = outboardExtent(armAngle: armAngle)
+        return (out, inL, inR, (out + inL) + (out + inR))
+    }
+
+    /// The largest D at which both clusters fit side by side and still clear each other.
+    ///
+    /// The two edge margins belong in this denominator. Leaving them out is not a rounding
+    /// error - it prescribes a *negative* gap, so the clusters get placed overlapping by
+    /// construction. That is exactly what happened in Slide Over and in portrait, where Y
+    /// was drawn on top of the d-pad's right arm.
+    static func widthFit(armAngle: CGFloat, hardwareSystem: Bool, width: CGFloat) -> CGFloat {
+        width / (extents(armAngle: armAngle, hardwareSystem: hardwareSystem).total
+                 + 2 * PadLayout.edgeMargin + PadLayout.minimumClusterGap)
+    }
 }
 
 // MARK: - Resolving it onto a screen
@@ -142,8 +162,7 @@ struct PadLayout {
         /// hardware's own 6.2 in screen - below that the shell is nostalgia bought with a
         /// smaller picture than the real thing had, which is the wrong trade.
         case framed
-        /// Picture full-bleed, controls floating over its outer thirds. Every iPhone, and
-        /// the iPad mini.
+        /// Picture full-bleed, controls floating over its outer thirds.
         case overlay
         /// Picture on an external display; the iPad is nothing but a GamePad.
         case shell
@@ -163,15 +182,25 @@ struct PadLayout {
             case .circle(let c, _), .pill(let c, _, _), .cross(let c, _, _): return c
             }
         }
+        var boundingSize: CGSize {
+            switch self {
+            case .circle(_, let d):   return CGSize(width: d, height: d)
+            case .pill(_, let s, _):  return s
+            case .cross(_, let s, _): return s
+            }
+        }
     }
 
-    /// Screen-edge margin and video clearance, in D - so spacing grows with the buttons
+    /// Screen-edge margin and picture clearance, in D - so spacing grows with the buttons
     /// rather than with the display, which is the rule the shipping layout already uses.
     static let edgeMargin: CGFloat = 0.35
     static let clearance: CGFloat  = 0.35
+    /// Clear space the two clusters must leave between them, in D. Non-negotiable: this
+    /// is the invariant whose absence put Y on top of the d-pad.
+    static let minimumClusterGap: CGFloat = 0.6
     /// The GamePad's own screen. The framed/overlay switch is decided against this.
     static let realScreenMM: CGFloat = 137.3
-    /// Apple's minimum touch target. The floor no amount of shrinking may cross.
+    /// Apple's minimum touch target.
     static let touchFloor: CGFloat = 44
     static let rakeFloor: CGFloat = 45 * .pi / 180
 
@@ -187,7 +216,6 @@ struct PadLayout {
     var controls: [String: Placement]
     var notes: [String]
 
-    /// How close to the real hardware this came out, 1.0 being life-size.
     var lifeSizeFraction: CGFloat { unit / lifeSizeUnit }
 
     // MARK: The four laws
@@ -197,10 +225,10 @@ struct PadLayout {
     ///   - safeArea: the safe rectangle inside it. The shipping pad anchors to the raw
     ///     container instead, which puts the outer controls under the Dynamic Island in
     ///     landscape on every notched iPhone.
-    ///   - pointsPerInch: points, not pixels, per inch - `DeviceMetrics.pointsPerInch`.
-    ///     This is the whole reason the layout can be life-size: a point is 0.166 mm on
-    ///     an iPhone and 0.192 mm on an iPad, so the same point size is a different
-    ///     physical button on the two, and only this converts between them.
+    ///   - pointsPerInch: points, not pixels, per inch - from `DeviceMetrics`. This is the
+    ///     whole reason the layout can be life-size: a point is 0.166 mm on an iPhone and
+    ///     0.192 mm on an iPad, so the same point size is a different physical button on
+    ///     the two, and only this converts between them.
     static func resolve(container: CGSize,
                         safeArea: CGRect,
                         pointsPerInch: CGFloat,
@@ -213,66 +241,81 @@ struct PadLayout {
         let portrait = sh > sw
         var notes: [String] = []
 
-        // LAW 1 - size. Life-size unless the height cannot hold it, and the hardware's
-        // own arm angle is preserved in preference to keeping the buttons big: bending
-        // the geometry is a worse loss than 15% off the button, because the geometry is
-        // the part a thumb remembers.
         let lifeUnit = G.unitMM * pointsPerInch / 25.4
         let wanted = lifeUnit * userScale
+
+        // In portrait the picture takes the top and the clusters get only the band below
+        // it, so the picture has to be decided before the size law, not after it.
+        var video = CGRect.zero
+        var availableHeight = sh
+        if portrait {
+            var vw = sw, vh = sw * 9 / 16
+            if vh > sh * 0.62 { vh = sh * 0.62; vw = vh * 16 / 9 }
+            video = CGRect(x: sx + (sw - vw) / 2, y: sy, width: vw, height: vh)
+            availableHeight = sy + sh - video.maxY
+        }
+
+        // LAW 1 + 2 - size, then arrangement. The two candidates are evaluated whole
+        // rather than one patched after the other: keeping +/- in their hardware slot
+        // costs height but makes the clusters narrower, so height and width have to be
+        // judged together or the answer depends on which was applied first.
         var armAngle = G.stickArmAngle
         var unit: CGFloat
         var hardwareSystem: Bool
 
-        if wanted <= sh / G.verticalNeed(armAngle: armAngle, hardwareSystem: true) {
+        let hardwareUnit = min(wanted, G.widthFit(armAngle: armAngle, hardwareSystem: true, width: sw))
+        if hardwareUnit <= availableHeight / G.verticalNeed(armAngle: armAngle, hardwareSystem: true) + 1e-9 {
             hardwareSystem = true
-            unit = wanted
+            unit = hardwareUnit
         } else {
             hardwareSystem = false
-            unit = min(wanted, sh / G.verticalNeed(armAngle: armAngle, hardwareSystem: false))
+            unit = min(wanted,
+                       availableHeight / G.verticalNeed(armAngle: armAngle, hardwareSystem: false),
+                       G.widthFit(armAngle: armAngle, hardwareSystem: false, width: sw))
             if unit < touchFloor {
-                // LAW 2 - rake, and only now. Rotating the stick arm outboard buys height
-                // at no cost to the distance between the stick and the cluster, which is
-                // the relationship a thumb actually learns. It is a last resort because
-                // it is the only law here that changes the shape of the pad.
-                let need = (sh / touchFloor - G.bottomExtentElbow - 2 * edgeMargin - G.fixedTopExtent)
-                    / G.stickArm
-                armAngle = max(rakeFloor, asin(min(max(need, -1), 1)))
-                unit = min(wanted, sh / G.verticalNeed(armAngle: armAngle, hardwareSystem: false))
+                // Raking buys height. It cannot buy width - it pushes the stick outboard -
+                // so a width-bound pad is not helped by it and simply comes out small.
+                let k = (availableHeight / touchFloor - G.bottomExtentElbow
+                         - 2 * edgeMargin - G.fixedTopExtent) / G.stickArm
+                armAngle = max(rakeFloor, asin(min(max(k, -1), 1)))
+                unit = min(wanted,
+                           availableHeight / G.verticalNeed(armAngle: armAngle, hardwareSystem: false),
+                           G.widthFit(armAngle: armAngle, hardwareSystem: false, width: sw))
                 notes.append(String(format: "raked to %.0f deg to fit the height",
                                     armAngle * 180 / .pi))
                 if unit < touchFloor {
-                    unit = touchFloor
-                    notes.append("below the 44 pt floor even raked - the pad will overhang")
+                    // Never forced back up to the floor. Buttons a little small are
+                    // recoverable; two clusters drawn through each other are not.
+                    notes.append(String(format: "%.0f pt buttons, under the 44 pt floor - the container is too small", unit))
                 }
             }
         }
         if wanted > unit + 0.01 {
-            notes.append(String(format: "%.0f%% of life-size; the height could not hold more",
-                                100 * unit / lifeUnit))
+            notes.append(String(format: "%.0f%% of life-size to fit", 100 * unit / lifeUnit))
         }
 
-        // LAW 3 - placement. Clusters are rigid and pinned to the safe edges; the bezel
-        // between them is the only thing that stretches. Nothing is ever squeezed.
+        // LAW 3 - clusters rigid, pinned to the safe edges; the bezel is the only slack.
         let bottomExtent = hardwareSystem ? G.bottomExtentHardware : G.bottomExtentElbow
-        let inboardL = hardwareSystem ? G.dpadWidth / 2 : G.systemElbow.x + G.systemDiameter / 2
-        let inboardR = max(G.faceHalfX + 0.5, inboardL)
-        let outboard = G.outboardExtent(armAngle: armAngle)
-
-        var lx = sx + (edgeMargin + outboard) * unit
-        var rx = sx + sw - (edgeMargin + outboard) * unit
-        let gap0 = lx + (inboardL + clearance) * unit
-        let gap1 = rx - (inboardR + clearance) * unit
+        let e = G.extents(armAngle: armAngle, hardwareSystem: hardwareSystem)
+        var lx = sx + (edgeMargin + e.outboard) * unit
+        var rx = sx + sw - (edgeMargin + e.outboard) * unit
+        let gap0 = lx + (e.inboardL + clearance) * unit
+        let gap1 = rx - (e.inboardR + clearance) * unit
         let gapWidth = max(0, gap1 - gap0)
         let gapCentreX = (gap0 + gap1) / 2
 
         // LAW 4 - mode.
-        let framedWidth = min(gapWidth, (sh - 2 * clearance * unit) * 16 / 9)
-        let framedMM = framedWidth / pointsPerInch * 25.4
-        var mode: Mode = hasExternalDisplay ? .shell : (framedMM >= realScreenMM ? .framed : .overlay)
-        if portrait { mode = .stacked }
+        var mode: Mode
+        if portrait {
+            mode = .stacked
+            notes.append("portrait: picture along the top, both clusters on the bottom corners")
+        } else if hasExternalDisplay {
+            mode = .shell
+        } else {
+            let framedWidth = min(gapWidth, (sh - 2 * clearance * unit) * 16 / 9)
+            mode = framedWidth / pointsPerInch * 25.4 >= realScreenMM ? .framed : .overlay
+        }
 
-        // Vertical placement. When the real bezel fits, use it, so the pad sits where the
-        // hardware puts it rather than wherever the arithmetic lands.
         var bodyTop: CGFloat? = nil
         var cy: CGFloat
         if (mode == .framed || mode == .shell) && G.bodyHeight * unit <= sh {
@@ -286,26 +329,11 @@ struct PadLayout {
             cy = sy + sh - (bottomExtent + edgeMargin) * unit
         }
 
-        // The picture.
-        var video: CGRect
         switch mode {
         case .stacked:
-            var vw = sw, vh = sw * 9 / 16
-            if vh > sh * 0.62 { vh = sh * 0.62; vw = vh * 16 / 9 }
-            video = CGRect(x: sx + (sw - vw) / 2, y: sy, width: vw, height: vh)
-            let band = sy + sh - video.maxY
-            // Both clamps matter. The height one alone lets the two clusters size
-            // themselves past the width they have to share, which on a Slide Over pane
-            // puts them straight through each other.
-            let clustersWide = (outboard + inboardL) + (outboard + inboardR)
-            unit = min(unit,
-                       band / G.verticalNeed(armAngle: armAngle, hardwareSystem: hardwareSystem),
-                       sw / (clustersWide + 0.6))
-            let out = G.outboardExtent(armAngle: armAngle)
-            lx = sx + (edgeMargin + out) * unit
-            rx = sx + sw - (edgeMargin + out) * unit
             cy = sy + sh - (bottomExtent + edgeMargin) * unit
-            notes.append("portrait: picture along the top, clusters on the bottom corners")
+            lx = sx + (edgeMargin + e.outboard) * unit
+            rx = sx + sw - (edgeMargin + e.outboard) * unit
         case .overlay:
             let vh = min(sh, sw * 9 / 16), vw = vh * 16 / 9
             video = CGRect(x: sx + (sw - vw) / 2, y: sy + (sh - vh) / 2, width: vw, height: vh)
@@ -362,24 +390,18 @@ struct PadLayout {
                                  diameter: G.systemDiameter * unit)
             notes.append("+/- moved to the elbow: no room for their real place under A/B/X/Y")
         }
+
         // The menu rail. HOME keeps its hardware place where it fits, but the framed
         // picture is taller than the hardware's own LCD whenever the gap between the
-        // clusters is wider than the GamePad's bezel - so it has to be pushed clear of
-        // the picture rather than trusted to the hardware offset. Where nothing clears,
-        // HOME joins TV and POWER in the pause menu instead of being drawn on top of
-        // something: a button you cannot tell apart from the one under it is worse than
-        // a button that is somewhere else.
+        // clusters is wider than the GamePad's bezel, so it has to be pushed clear of the
+        // picture rather than trusted to the hardware offset. Where nothing clears, HOME
+        // joins TV and POWER in the pause menu instead of being drawn on top of something.
         let hr = G.homeDiameter / 2 * unit
         func collides(_ x: CGFloat, _ y: CGFloat, _ r: CGFloat) -> Bool {
             for (id, p) in c where !id.hasPrefix("knob") {
-                var w: CGFloat, h: CGFloat
-                switch p {
-                case .circle(_, let d):     w = d; h = d
-                case .pill(_, let s, _):    w = s.width; h = s.height
-                case .cross(_, let s, _):   w = s.width; h = s.height
-                }
-                if abs(x - p.centre.x) < (r + w / 2) - 0.5,
-                   abs(y - p.centre.y) < (r + h / 2) - 0.5 { return true }
+                let s = p.boundingSize
+                if abs(x - p.centre.x) < (r + s.width / 2) - 0.5,
+                   abs(y - p.centre.y) < (r + s.height / 2) - 0.5 { return true }
             }
             return false
         }
@@ -439,53 +461,208 @@ struct PadLayout {
         }
     }
 
-    /// The touch radius for a round control: never below 22 pt, never past half the way
-    /// to its nearest neighbour, so enlarging a target can never steal a neighbour's
-    /// touches. A/B/X/Y are 1.35 D apart centre to centre, so at life-size on an iPhone
-    /// they get the full 22 pt and still do not overlap.
+    /// The touch radius for a round control: never below 22 pt, never past half the way to
+    /// its nearest neighbour, so enlarging a target can never steal a neighbour's touches.
     static func hitRadius(visualDiameter d: CGFloat, nearestNeighbourDistance n: CGFloat) -> CGFloat {
         min(max(d / 2, 22), n / 2)
     }
 }
 
-// MARK: - Points per inch
+// MARK: - Working out how big the screen physically is
+
+/// Life-size means nothing without points-per-inch, and UIKit does not expose it:
+/// `UIScreen.scale` is points per *pixel*, and there is no API for pixels per inch. So it
+/// has to be worked out, and it has to keep working on a device that did not exist when
+/// this was written - otherwise the first unknown iPad renders a pad 24% wrong with no
+/// error anywhere.
+///
+/// Four sources, most authoritative first. The pure function below is deliberately free
+/// of UIKit so it can be tested off-device; `current()` is the thin part that reads the
+/// machine.
+///
+/// 1. **calibrated** - the user measured it against a bank card. Beats everything,
+///    because it was measured on the actual glass.
+/// 2. **model** - an exact `hw.machine` match. Authoritative for every device shipped so far.
+/// 3. **panel** - the native pixel resolution matches a panel we know. Catches a new
+///    model that reuses an existing display, which is the common case for a mid-cycle
+///    refresh.
+/// 4. **derived** - reasoned from idiom, native scale and pixel count. Apple has only ever
+///    shipped a handful of native densities, and they separate cleanly. This is a guess,
+///    it says so, and it is the point at which offering calibration is worthwhile.
+enum DeviceMetrics {
+
+    enum Source: String { case calibrated, model, panel, derived }
+
+    struct Measurement {
+        let pointsPerInch: CGFloat
+        let source: Source
+        let identifier: String
+        /// One line for the launch log, so a wrong pad is diagnosable from a log alone.
+        let detail: String
+    }
+
+    static let calibrationKey = "muffin.controls.pointsPerInch"
+    /// ISO/IEC 7810 ID-1: every bank card, driving licence and library card on earth is
+    /// 85.60 mm wide, to a tolerance far tighter than a thumb cares about. That makes one
+    /// reliably available ruler in the user's pocket.
+    static let referenceCardWidthMM: CGFloat = 85.60
+
+    /// Native densities Apple has actually shipped. Everything reduces to one of these.
+    private static let padStandard: CGFloat = 264      // every iPad but the mini
+    private static let padMini: CGFloat = 326          // iPad mini, and the old 2x phones
+    private static let phoneOLED: CGFloat = 460        // 458 on the older ones; a 0.4% difference
+    private static let phoneMini: CGFloat = 476        // 12 mini and 13 mini only
+    private static let phoneLCD: CGFloat = 326
+
+    private static let modelTable: [String: CGFloat] = [
+        // The target device and its siblings.
+        "iPad8,11": padStandard, "iPad8,12": padStandard,   // iPad Pro 12.9 in, 2020 (A12Z)
+        "iPad8,9":  padStandard, "iPad8,10": padStandard,   // iPad Pro 11 in, 2020 (A12Z)
+        // iPad mini is the only iPad that is not 264.
+        "iPad14,1": padMini, "iPad14,2": padMini,           // mini 6
+        "iPad16,1": padMini, "iPad16,2": padMini,           // mini 7
+        "iPad5,1": padMini,  "iPad5,2": padMini,            // mini 4
+        // The 3x phones that are not 460.
+        "iPhone13,1": phoneMini, "iPhone14,4": phoneMini,   // 12 mini, 13 mini
+        // The 2x phones.
+        "iPhone14,6": phoneLCD, "iPhone12,8": phoneLCD,     // SE 3, SE 2
+        "iPhone11,8": phoneLCD, "iPhone12,1": phoneLCD,     // XR, 11
+    ]
+
+    /// Keyed on native pixels, long side first, so orientation cannot change the answer.
+    private static let panelTable: [String: CGFloat] = [
+        "2732x2048": padStandard,   // 12.9 in iPad Pro, every generation
+        "2388x1668": padStandard,   // 11 in iPad Pro
+        "2420x1668": padStandard,   // 11 in iPad Pro M4
+        "2752x2064": padStandard,   // 13 in iPad Pro M4
+        "2360x1640": padStandard,   // iPad Air 11 in, iPad 10th/11th
+        "2160x1620": padStandard,   // iPad 10.2 in
+        "2266x1488": padMini,       // iPad mini 6 and 7
+        "2796x1290": phoneOLED, "2868x1320": phoneOLED, "2778x1284": phoneOLED,
+        "2556x1179": phoneOLED, "2622x1206": phoneOLED, "2532x1170": phoneOLED,
+        "2436x1125": phoneOLED, "2688x1242": phoneOLED,
+        "2340x1080": phoneMini,
+        "1792x828": phoneLCD, "1334x750": phoneLCD, "1920x1080": phoneLCD,
+    ]
+
+    /// The whole decision, with nothing platform-specific in it.
+    static func measurement(identifier: String,
+                            nativePixels: CGSize,
+                            scale: CGFloat,
+                            isPad: Bool,
+                            calibrated: CGFloat?) -> Measurement {
+        if let c = calibrated, isPlausible(c) {
+            return Measurement(pointsPerInch: c, source: .calibrated, identifier: identifier,
+                               detail: String(format: "measured against a bank card: %.1f pt/in", c))
+        }
+        let safeScale = scale > 0 ? scale : 2
+        if let native = modelTable[identifier] {
+            return Measurement(pointsPerInch: native / safeScale, source: .model,
+                               identifier: identifier,
+                               detail: String(format: "%@ is a known model: %.0f ppi at %.0fx", identifier, native, safeScale))
+        }
+        let long = max(nativePixels.width, nativePixels.height)
+        let short = min(nativePixels.width, nativePixels.height)
+        let key = "\(Int(long))x\(Int(short))"
+        if let native = panelTable[key] {
+            return Measurement(pointsPerInch: native / safeScale, source: .panel,
+                               identifier: identifier,
+                               detail: "\(identifier) is unknown, but its \(key) panel is: \(Int(native)) ppi")
+        }
+        // Derived. iPads are 264 unless they are a mini, and a mini is the only iPad whose
+        // short side comes in under 1536 px. Phones at 3x are 460 unless they are 1080 px
+        // wide, which only the minis are; phones at 2x are 326.
+        let native: CGFloat
+        let why: String
+        if isPad {
+            if short <= 1536 { native = padMini; why = "iPad, short side \(Int(short)) px - mini class" }
+            else { native = padStandard; why = "iPad, short side \(Int(short)) px - standard class" }
+        } else if safeScale >= 3 {
+            if short <= 1080 { native = phoneMini; why = "3x phone, \(Int(short)) px wide - mini class" }
+            else { native = phoneOLED; why = "3x phone, \(Int(short)) px wide" }
+        } else {
+            native = phoneLCD; why = "2x phone"
+        }
+        return Measurement(pointsPerInch: native / safeScale, source: .derived, identifier: identifier,
+                           detail: "\(identifier) unrecognised - derived from \(why); offer calibration")
+    }
+
+    /// Sanity bounds. Every Apple display in points lands between 132 and 163; anything
+    /// far outside that is a bad calibration rather than an exotic screen, and taking it
+    /// would be worse than ignoring it.
+    static func isPlausible(_ pointsPerInch: CGFloat) -> Bool { pointsPerInch > 90 && pointsPerInch < 240 }
+
+    /// Turn a card the user has sized against a real one into points-per-inch.
+    static func calibration(fromCardWidthInPoints width: CGFloat) -> CGFloat {
+        width / (referenceCardWidthMM / 25.4)
+    }
+}
 
 #if canImport(UIKit)
 import UIKit
 
-/// Points per inch for the current device, which UIKit does not expose.
-///
-/// It has to be a table: `UIScreen.scale` gives points per pixel, not pixels per inch,
-/// and there is no API for the second. The values are the only three that matter -
-/// 132 for every iPad but the mini, 163 for the mini and the older iPhones, 153.33 for
-/// every iPhone since the X. An unknown model falls back by idiom, which is right for
-/// every device Apple has shipped so far and cannot be worse than a guess.
-enum DeviceMetrics {
-    static var pointsPerInch: CGFloat {
+extension DeviceMetrics {
+    /// Read the machine. Call once at launch, log `detail`, and keep the value.
+    static func current(defaults: UserDefaults = .standard) -> Measurement {
         var size = 0
         sysctlbyname("hw.machine", nil, &size, nil, 0)
-        var machine = [CChar](repeating: 0, count: size)
+        var machine = [CChar](repeating: 0, count: max(size, 1))
         sysctlbyname("hw.machine", &machine, &size, nil, 0)
-        let id = String(cString: machine)
+        let identifier = String(cString: machine)
 
-        if id.hasPrefix("iPad") {
-            // iPad mini 6 and 7 are iPad14,1 / iPad14,2 and iPad16,1 / iPad16,2.
-            if ["iPad14,1", "iPad14,2", "iPad16,1", "iPad16,2"].contains(id) { return 163 }
-            return 132
+        let screen = UIScreen.main
+        let stored = defaults.object(forKey: calibrationKey) as? Double
+        return measurement(identifier: identifier,
+                           nativePixels: screen.nativeBounds.size,
+                           scale: screen.nativeScale,
+                           isPad: UIDevice.current.userInterfaceIdiom == .pad,
+                           calibrated: stored.map(CGFloat.init))
+    }
+
+    static func storeCalibration(cardWidthInPoints width: CGFloat, defaults: UserDefaults = .standard) {
+        let ppi = calibration(fromCardWidthInPoints: width)
+        guard isPlausible(ppi) else { return }
+        defaults.set(Double(ppi), forKey: calibrationKey)
+    }
+
+    static func clearCalibration(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: calibrationKey)
+    }
+}
+
+/// The calibration itself, for when `measurement(...).source == .derived` - an unknown
+/// device where the derived answer is a reasoned guess rather than a fact.
+///
+/// One draggable rectangle and one instruction. The user holds any bank card against the
+/// screen and sizes the rectangle to match it; that is a direct physical measurement of
+/// the display, and it is exact on hardware nobody has seen yet.
+struct PadCalibrationView: View {
+    var onDone: (CGFloat) -> Void
+    @State private var width: CGFloat = 320
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Text("Hold a bank card against the screen")
+                .font(.headline)
+            Text("Drag until the outline matches the card exactly. Any card will do - they are all the same size.")
+                .font(.subheadline).foregroundStyle(.secondary)
+                .multilineTextAlignment(.center).padding(.horizontal, 40)
+
+            RoundedRectangle(cornerRadius: width * 0.0374)      // the card's own corner radius
+                .strokeBorder(.tint, lineWidth: 2)
+                .frame(width: width, height: width / 1.5858)    // ID-1 is 85.60 x 53.98 mm
+                .gesture(DragGesture()
+                    .onChanged { width = max(120, min(700, width + $0.translation.width / 12)) })
+
+            Slider(value: $width, in: 120...700)
+                .frame(maxWidth: 420)
+                .accessibilityLabel("Card width")
+
+            Button("That matches") { onDone(width) }
+                .buttonStyle(.borderedProminent)
+                .disabled(!DeviceMetrics.isPlausible(DeviceMetrics.calibration(fromCardWidthInPoints: width)))
         }
-        if id.hasPrefix("iPhone") {
-            // 476 ppi at 3x - the 12 mini and 13 mini only.
-            if ["iPhone13,1", "iPhone14,4"].contains(id) { return 158.67 }
-            // 326 ppi at 2x - SE and the last of the 4.7 in bodies.
-            if ["iPhone12,8", "iPhone14,6", "iPhone8,4", "iPhone9,1", "iPhone9,3",
-                "iPhone10,1", "iPhone10,4"].contains(id) { return 163 }
-            return 153.33
-        }
-        #if targetEnvironment(simulator)
-        return UIDevice.current.userInterfaceIdiom == .pad ? 132 : 153.33
-        #else
-        return UIDevice.current.userInterfaceIdiom == .pad ? 132 : 153.33
-        #endif
+        .padding()
     }
 }
 #endif
@@ -496,21 +673,27 @@ enum DeviceMetrics {
 //  1. Move this file to src/ios/App/. project.yml pulls that folder in as a group, so
 //     nothing else needs editing to compile it.
 //
-//  2. In ControllerPad.body, replace
+//  2. Once at launch, and again on a size change:
+//
+//         let metrics = DeviceMetrics.current()
+//         logger.info("pad metrics: \(metrics.detail)")
+//
+//     Keep `metrics.pointsPerInch`. If `metrics.source == .derived`, the device is one
+//     nobody has taught this app about yet - the layout will still be close, and
+//     PadCalibrationView will make it exact if the user wants to spend ten seconds on it.
+//
+//  3. In ControllerPad.body, replace
 //         let unit = ControllerGeometry.automaticDiameter(in: proxy.size) * CGFloat(userScale)
 //     with
 //         let layout = PadLayout.resolve(container: proxy.size,
 //                                        safeArea: proxy.frame(in: .local)
 //                                            .inset(by: proxy.safeAreaInsets),
-//                                        pointsPerInch: DeviceMetrics.pointsPerInch,
+//                                        pointsPerInch: metrics.pointsPerInch,
 //                                        userScale: CGFloat(userScale))
 //     and position each control at layout.controls[id]!.centre. The user's drag offsets
 //     and ControllerCustomLayout's per-element overrides apply on top exactly as they do
 //     now - this only changes where "unmoved" is.
 //
-//  3. ControllerLayoutSettings.reset() should stay as it is. Everything here is a
-//     starting point; the drag handles remain the last word.
-//
-//  4. Two visible changes to expect, both of them the hardware being right:
-//     the d-pad becomes a cross rather than four circles, and + and - are both on the
-//     right on iPads. Worth a settings toggle if either turns out to be unpopular.
+//  4. The d-pad is a .cross, not four circles. Hit-test it with
+//     PadLayout.dpadDirections(at:centre:size:), which is eight-way and presses two ids
+//     on a diagonal. Four separate rects meeting at a corner have no diagonals at all.
