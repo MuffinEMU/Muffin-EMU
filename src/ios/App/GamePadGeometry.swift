@@ -634,7 +634,7 @@ extension DeviceMetrics {
                            nativePixels: screen.nativeBounds.size,
                            scale: screen.nativeScale,
                            isPad: UIDevice.current.userInterfaceIdiom == .pad,
-                           calibrated: stored.map(CGFloat.init))
+                           calibrated: stored.map { CGFloat($0) })
     }
 
     static func storeCalibration(cardWidthInPoints width: CGFloat, defaults: UserDefaults = .standard) {
@@ -667,7 +667,9 @@ struct PadCalibrationView: View {
                 .multilineTextAlignment(.center).padding(.horizontal, 40)
 
             RoundedRectangle(cornerRadius: width * 0.0374)      // the card's own corner radius
-                .strokeBorder(.tint, lineWidth: 2)
+                // Color.accentColor, not the ShapeStyle .tint - .tint needs iOS 16, and
+                // this target's deploymentTarget is 15.0 (project.yml).
+                .strokeBorder(Color.accentColor, lineWidth: 2)
                 .frame(width: width, height: width / 1.5858)    // ID-1 is 85.60 x 53.98 mm
                 .gesture(DragGesture()
                     .onChanged { width = max(120, min(700, width + $0.translation.width / 12)) })
