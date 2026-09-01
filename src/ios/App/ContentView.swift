@@ -544,6 +544,7 @@ struct EmulatorViewOptimized: View {
     /// state, not AppStorage: nobody wants to come back to a game and find the controls
     /// still in edit mode because that is how they last left them.
     @State private var isEditingControlLayout = false
+    @State private var isPaused = false
     /// The same two keys the pad itself reads. Declared here as well so the in-game
     /// sliders write to the thing being dragged, with no plumbing between them.
     @AppStorage(ControllerLayoutSettings.scaleKey)
@@ -612,6 +613,25 @@ struct EmulatorViewOptimized: View {
                     HStack(spacing: 8) {
                         Button(action: { showSkinSelector.toggle() }) {
                             Image(systemName: "gamecontroller.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(MuffinSecondaryButtonStyle())
+
+                        // cemu_bridge_pause/resume wrap CafeSystem::PauseTitle()/
+                        // ResumeTitle(), which already exist and were never called from
+                        // anywhere on iOS - this is the first thing to use them.
+                        // isPaused is local state rather than a query, because there is
+                        // no cemu_bridge_is_paused() to ask - only this button ever
+                        // changes it, so it cannot drift out of sync with the engine.
+                        Button(action: {
+                            isPaused.toggle()
+                            if isPaused {
+                                cemu_bridge_pause()
+                            } else {
+                                cemu_bridge_resume()
+                            }
+                        }) {
+                            Image(systemName: isPaused ? "play.fill" : "pause.fill")
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
@@ -778,6 +798,25 @@ struct EmulatorViewOptimized: View {
                     },
                     isEditingLayout: $isEditingControlLayout
                 )
+            }
+
+            // Above the pad (which stays on screen and interactive-looking underneath
+            // it) so there is no ambiguity about whether input is actually reaching a
+            // paused title - the label is the whole point, not just the pause itself.
+            if isPaused {
+                VStack(spacing: 10) {
+                    Image(systemName: "pause.circle.fill")
+                        .font(.system(size: 40))
+                    Text("PAUSED")
+                        .font(.system(size: 22, weight: .bold, design: .rounded))
+                        .tracking(2)
+                }
+                .foregroundColor(.white)
+                .padding(28)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(20)
+                .transition(.opacity)
+                .allowsHitTesting(false)
             }
 
             // The Metal view above must mount (so it can register the render

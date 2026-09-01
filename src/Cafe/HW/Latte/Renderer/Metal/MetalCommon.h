@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
@@ -7,6 +9,25 @@
 #include <objc/runtime.h>
 
 #include "Cafe/HW/Latte/Core/LatteConst.h"
+
+/// Off by default; per-game/global setting exposed through
+/// cemu_bridge_set_reduce_encoder_splitting(). Set from a Settings toggle rather than
+/// baked in, because it targets a specific, unconfirmed hypothesis rather than a proven
+/// fix: intermittent rainbow/garbage geometry (screen recordings, 2026-08-31) that
+/// coincides with Metal's own runtime warning about heavy interleaving of blit encoders
+/// with other encoder types on this exact game. EndEncoding()'s auto-commit is checked
+/// after EVERY encoder-type switch, including the short blit encoders textures use for
+/// upload/readback - so a frame with a lot of that interleaving can end up auto-committing
+/// the command buffer in the middle of a blit rather than at a natural "finished this
+/// batch of draws" boundary. MetalSynchronizedRingAllocator's sync points are recorded
+/// against whichever command buffer is current AT ALLOCATION TIME; if the buffer that
+/// actually reads that memory ends up split into a later command buffer by one of these
+/// mid-sequence commits, the allocator can consider the memory free to reuse before the
+/// GPU work that reads it has actually run - which is exactly the class of bug that
+/// produces occasional, self-correcting garbage geometry rather than a hard crash.
+/// Atomic because it is set from the app's main thread (a Settings toggle, or a per-game
+/// launch-time read) and read from wherever EndEncoding() runs.
+extern std::atomic<bool> g_metal_reduceEncoderSplitting;
 
 // Read a BOOL property off a MTLDevice by selector name. Capability selectors get
 // added to the MTLDevice protocol over time and are not implemented by every driver

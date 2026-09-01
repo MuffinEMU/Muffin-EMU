@@ -861,6 +861,22 @@ bool cemu_bridge_async_shader_compile(void) {
 #endif
 }
 
+void cemu_bridge_set_reduce_encoder_splitting(bool enabled) {
+#if defined(CEMU_CORE_AVAILABLE)
+    g_metal_reduceEncoderSplitting.store(enabled, std::memory_order_relaxed);
+#else
+    (void)enabled;
+#endif
+}
+
+bool cemu_bridge_reduce_encoder_splitting(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return g_metal_reduceEncoderSplitting.load(std::memory_order_relaxed);
+#else
+    return false;
+#endif
+}
+
 void cemu_bridge_set_recompiler_enabled(bool enabled) {
 #if defined(CEMU_CORE_AVAILABLE)
     PPCRecompiler_setForceDisabled(!enabled);
