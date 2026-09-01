@@ -9,7 +9,18 @@
 
 inline MTL::ResourceOptions GetResourceOptions(MTL::ResourceOptions options)
 {
-    if (options & MTL::ResourceStorageModeShared || options & MTL::ResourceStorageModeManaged)
+    // Storage mode is a multi-bit FIELD inside the options bitmask, at bits 4-5
+    // (Shared=0, Managed=16, Private=32, Memoryless=48 - MTL::StorageMode's own values
+    // shifted left by Apple's MTLResourceStorageModeShift=4), not a single flag bit.
+    // `options & MTL::ResourceStorageModeShared` is therefore `options & 0`, which is 0
+    // for every possible options value - this branch never took the Shared case, so
+    // Shared-storage buffers (the common CPU-write/GPU-read case for Cemu's dynamically
+    // updated vertex/uniform buffers) never got ResourceCPUCacheModeWriteCombined.
+    // Managed happened to work by accident, since 16 is nonzero. Mask out just the
+    // storage-mode field and compare instead of testing raw bits against it.
+    constexpr MTL::ResourceOptions storageModeMask = 0x30;
+    const MTL::ResourceOptions storageMode = options & storageModeMask;
+    if (storageMode == MTL::ResourceStorageModeShared || storageMode == MTL::ResourceStorageModeManaged)
         options |= MTL::ResourceCPUCacheModeWriteCombined;
 
     return options;
