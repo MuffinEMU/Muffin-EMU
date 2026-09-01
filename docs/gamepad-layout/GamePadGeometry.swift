@@ -172,6 +172,17 @@ struct PadLayout {
 
     enum SystemPlacement: String { case hardware, elbow }
 
+    /// A plain user setting, not something the app auto-picks: which of the two ways the
+    /// picture and the pad can share the glass. FIT fills the screen and floats the
+    /// controls on top of it. NATIVE sizes the picture to whatever the clusters leave
+    /// room for and never lets a control cover it - which on a device where that room is
+    /// small (a phone) means a small, letterboxed picture. That is the accepted cost of
+    /// choosing NATIVE, not a bug to route around.
+    enum DisplayMode: String, Codable, CaseIterable {
+        case fit, native
+        var title: String { self == .fit ? "Fit" : "Native" }
+    }
+
     enum Placement {
         case circle(centre: CGPoint, diameter: CGFloat)
         case pill(centre: CGPoint, size: CGSize, corner: CGFloat)
@@ -233,7 +244,8 @@ struct PadLayout {
                         safeArea: CGRect,
                         pointsPerInch: CGFloat,
                         userScale: CGFloat = 1.0,
-                        hasExternalDisplay: Bool = false) -> PadLayout {
+                        hasExternalDisplay: Bool = false,
+                        displayMode: DisplayMode = .fit) -> PadLayout {
 
         let G = GamePadGeometry.self
         let sx = safeArea.minX, sy = safeArea.minY
@@ -244,11 +256,13 @@ struct PadLayout {
         let lifeUnit = G.unitMM * pointsPerInch / 25.4
         let wanted = lifeUnit * userScale
 
-        // In portrait the picture takes the top and the clusters get only the band below
-        // it, so the picture has to be decided before the size law, not after it.
+        // NATIVE portrait reserves a top band for the picture and gives the clusters only
+        // what is left below it, so that band has to be decided before the size law, not
+        // after. FIT portrait has no reserved band - the picture floats full-bleed behind
+        // the clusters, same as FIT landscape - so it costs the size law nothing.
         var video = CGRect.zero
         var availableHeight = sh
-        if portrait {
+        if portrait, displayMode == .native {
             var vw = sw, vh = sw * 9 / 16
             if vh > sh * 0.62 { vh = sh * 0.62; vw = vh * 16 / 9 }
             video = CGRect(x: sx + (sw - vw) / 2, y: sy, width: vw, height: vh)
@@ -304,16 +318,19 @@ struct PadLayout {
         let gapWidth = max(0, gap1 - gap0)
         let gapCentreX = (gap0 + gap1) / 2
 
-        // LAW 4 - mode.
+        // LAW 4 - mode. Two axes: orientation (decided already, from the container) and
+        // displayMode (a plain user setting). External display always wins regardless of
+        // displayMode - there is no local picture to place either way.
         var mode: Mode
-        if portrait {
-            mode = .stacked
-            notes.append("portrait: picture along the top, both clusters on the bottom corners")
-        } else if hasExternalDisplay {
+        if hasExternalDisplay {
             mode = .shell
+        } else if portrait {
+            mode = displayMode == .fit ? .overlay : .stacked
+            if mode == .stacked {
+                notes.append("portrait, Native: picture along the top, clusters on the bottom corners")
+            }
         } else {
-            let framedWidth = min(gapWidth, (sh - 2 * clearance * unit) * 16 / 9)
-            mode = framedWidth / pointsPerInch * 25.4 >= realScreenMM ? .framed : .overlay
+            mode = displayMode == .fit ? .overlay : .framed
         }
 
         var bodyTop: CGFloat? = nil
