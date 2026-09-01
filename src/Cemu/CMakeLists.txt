@@ -6,6 +6,8 @@ add_library(CemuComponents
   Logging/CemuDebugLogging.h
   Logging/CemuLogging.cpp
   Logging/CemuLogging.h
+  Logging/IOSLiveLog.cpp
+  Logging/IOSLiveLog.h
   napi/napi_act.cpp
   napi/napi_ec.cpp
   napi/napi.cpp

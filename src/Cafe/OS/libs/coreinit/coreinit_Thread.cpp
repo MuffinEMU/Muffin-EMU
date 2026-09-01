@@ -52,7 +52,10 @@ void nnNfp_update();
 
 namespace coreinit
 {
-#ifdef __arm64__
+// The split-pointer entry point below belongs to makecontext, not to arm64. See the
+// definition for why, and util/Fiber/Fiber.h for where CEMU_FIBER_BACKEND_UCONTEXT
+// comes from.
+#if defined(__arm64__) && defined(CEMU_FIBER_BACKEND_UCONTEXT)
 	void __OSFiberThreadEntry(uint32, uint32);
 #else
 	void __OSFiberThreadEntry(void* thread);
@@ -1191,9 +1194,20 @@ namespace coreinit
 		else
 			executedCycles -= hCPU->skippedCycles;
 		thread->totalCycles += (uint64)executedCycles;
+		// Same figure, accumulated across every thread and core rather than per-thread, so a
+		// reporting thread can ask "is the guest CPU executing at all" without walking the
+		// thread list. Taken here rather than in the execution loop below because this is
+		// where the skipped-cycle correction has already been applied - a thread that
+		// relinquished its timeslice must not be counted as having run it.
+		PPCCore_noteRetiredCycles((uint64)executedCycles);
 		// store context and set current thread to null
 		__OSThreadStoreContext(hCPU, thread);
 		OSSetCurrentThread(OSGetCoreId(), nullptr);
+		// Core index taken from the interpreter instance rather than OSGetCoreId(), which
+		// only answers correctly while PPCInterpreter_getCurrentInstance() is still set and
+		// is therefore hostage to the order of the two lines around it. hCPU->spr.UPIR is
+		// the same number with no such dependency.
+		PPCCore_setCoreInstance(PPCInterpreter_getCoreIndex(hCPU), nullptr);
 		PPCInterpreter_setCurrentInstance(nullptr);
 	}
 
@@ -1206,6 +1220,7 @@ namespace coreinit
 		hCPU->spr.UPIR = coreIndex;
 		hCPU->coreInterruptMask = 1;
 		PPCInterpreter_setCurrentInstance(hCPU);
+		PPCCore_setCoreInstance(coreIndex, hCPU);
 		OSSetCurrentThread(OSGetCoreId(), thread);
 		__OSThreadLoadContext(hCPU, thread);
 		thread->context.upir = coreIndex;
@@ -1286,11 +1301,27 @@ namespace coreinit
 	// this is necessary since we can't block in __OSThreadSwitchToNext() (__OSStoreThread + thread switch must happen inside same scheduler lock)
 	void __OSThreadCoreIdle(void* unusedParam)
 	{
+		// First statement in the fiber, ahead of anything that can block. The "idle fiber
+		// running" line below only prints once __OSUnlockScheduler() has returned, so on
+		// its own it cannot tell "the fiber was never entered" apart from "the fiber was
+		// entered and the unlock never came back". Those want different fixes, so they get
+		// different lines.
+		cemuLog_log(LogType::Force, "Boot stage: core {} idle fiber entered", t_assignedCoreIndex);
 		bool isMainCore = g_isMulticoreMode == false || t_assignedCoreIndex == 1;
 		sint32 coreIndex = t_assignedCoreIndex;
 		__OSUnlockScheduler();
+		// Logged once per core rather than every iteration - this loop spins thousands of
+		// times a second and the only question it needs to answer here is whether it was
+		// ever reached at all. "idle spins 0" in the heartbeat with this line absent means
+		// the fiber switch above never delivered control.
+		cemuLog_log(LogType::Force, "Boot stage: core {} idle fiber running", coreIndex);
 		while (true)
 		{
+			// Counted before the run-queue check, so this ticks even on the iteration that
+			// finds nothing to do. That is the case it exists to report: a core spinning here
+			// with no runnable thread is alive but starved, which looks exactly like a dead
+			// core from every other counter in the emulator.
+			PPCCore_noteCoreIdleSpin();
 			if (!g_coreRunQueueThreadCount[coreIndex].isZero()) // avoid hammering the lock on the main core if there is no runable thread
 			{
 				__OSLockScheduler();
@@ -1374,7 +1405,26 @@ namespace coreinit
 		__OSThreadStartTimeslice(hostThread->m_thread, &hostThread->ppcInstance);
 	}
 
-#ifdef __arm64__
+	// This entry point is called by the fiber backend, so its signature has to match
+	// the backend's calling convention - which is not the same thing as the CPU
+	// architecture, and conflating the two is what broke iOS.
+	//
+	// makecontext takes int-sized varargs (see the NOTES in its man page), so on 64-bit
+	// it cannot carry a pointer in one argument. FiberUContext.cpp splits userParam into
+	// a high and a low half and passes two, and this function reassembles them. That is
+	// a property of ucontext, and the guard used to say `#ifdef __arm64__`, which happens
+	// to be equivalent on macOS - the only arm64 platform that was on the ucontext
+	// backend when it was written.
+	//
+	// It stopped being equivalent when iOS moved to Boost.Context. jump_fcontext hands
+	// the entry point a single pointer in x0 and leaves x1 holding whatever was there
+	// before, so the reassembly produced ((uint32)ptr << 32 | garbage) and every guest
+	// thread fiber dereferenced a wild OSHostThread the moment it was entered. Android
+	// never hit it because Apple defines __arm64__ and Linux does not - it only defines
+	// __aarch64__ - so Android took the void* branch by accident, correctly.
+	//
+	// Keyed off the backend now, which is what actually decides the convention.
+#if defined(__arm64__) && defined(CEMU_FIBER_BACKEND_UCONTEXT)
 	void __OSFiberThreadEntry(uint32 _high, uint32 _low)
 	{
 		uint64 _thread = (uint64) _high << 32 | _low;
@@ -1383,6 +1433,11 @@ namespace coreinit
 	{
 #endif
 		OSHostThread* hostThread = (OSHostThread*)_thread;
+		// Logged before the first dereference of hostThread, because the first dereference
+		// is what died when the entry point's signature did not match the fiber backend.
+		// Printing the pointer makes a wrong one obvious: it should look like a heap
+		// address, not like a 32-bit value shifted into the high half.
+		cemuLog_log(LogType::Force, "Boot stage: core {} entered a guest thread fiber (hostThread={})", t_assignedCoreIndex, (void*)hostThread);
 
 		enableFlushDenormalsToZero();
 
@@ -1396,9 +1451,31 @@ namespace coreinit
 			{
 				// try to enter recompiler immediately
 				PPCRecompiler_attemptEnterWithoutRecompile(hCPU, hCPU->instructionPointer);
+
+				// Bracketed so the log can say how much of the wall clock is actually
+				// spent executing guest code.
+				//
+				// The existing MIPS figure divides retired instructions by the whole
+				// reporting window, which includes time cores spent idle-spinning with
+				// nothing runnable, time inside HLE, and time blocked on the GPU. So it
+				// FALLS when the title is waiting, which is not a statement about the
+				// interpreter at all. Optimising against it would be optimising against
+				// noise, and that is the trap this exists to avoid.
+				//
+				// Two reads of the raw counter and two relaxed adds per BURST, not per
+				// instruction. On arm64 PPCTimer_getRawTsc() is a single mrs cntvct_el0
+				// with no lock and no divide, so this is comfortably cheaper than the
+				// thing it measures. A per-instruction counter would distort exactly the
+				// loop it was trying to describe.
+				const uint64 burstStartTsc = PPCTimer_getRawTsc();
+				const sint32 burstStartCycles = hCPU->remainingCycles;
+
 				// keep executing as long as there are cycles left
 				while ((--hCPU->remainingCycles) >= 0)
 					PPCInterpreterSlim_executeInstruction(hCPU);
+
+				PPCCore_noteInterpreterBurst(PPCTimer_getRawTsc() - burstStartTsc,
+											 (uint64)(burstStartCycles - hCPU->remainingCycles));
 			}
 
 			// reset reservation
@@ -1448,13 +1525,28 @@ namespace coreinit
 		}
 #endif
 
+		// Boot-stage trace, continued from CafeSystem::_LaunchTitleThread(). The three
+		// lines below bracket the fiber machinery. iOS and Android build Fiber on
+		// Boost.Context (FiberFContext.cpp, hand-written arm64 jump_fcontext); every
+		// other Unix still uses ucontext. If the switch does not deliver control on this
+		// platform, the last line logged is "about to switch to the idle fiber" and
+		// nothing after it, which is a different diagnosis from the thread never
+		// starting at all.
+		cemuLog_log(LogType::Force, "Boot stage: core {} emulation thread started", t_assignedCoreIndex);
 		t_schedulerFiber = Fiber::PrepareCurrentThread();
 
 		// create scheduler idle fiber and switch to it
 		g_idleLoopFiber[t_assignedCoreIndex] = new Fiber(__OSThreadCoreIdle, nullptr, nullptr);
 		cemu_assert_debug(PPCInterpreter_getCurrentInstance() == nullptr);
 		__OSLockScheduler();
-		Fiber::Switch(*g_idleLoopFiber[t_assignedCoreIndex]);
+		cemuLog_log(LogType::Force, "Boot stage: core {} about to switch to the idle fiber", t_assignedCoreIndex);
+		const int idleSwitchResult = Fiber::Switch(*g_idleLoopFiber[t_assignedCoreIndex]);
+		// Getting here during boot is itself the failure: the idle fiber never returns while
+		// the title is running, so this line only prints if the switch refused. On the
+		// ucontext backend a non-zero code is the errno from swapcontext, which used to be
+		// thrown away; jump_fcontext cannot refuse, so on iOS/Android reaching this line at
+		// all is the whole signal and rc is always 0.
+		cemuLog_log(LogType::Force, "Boot stage: core {} returned from the idle fiber switch (rc={})", t_assignedCoreIndex, idleSwitchResult);
 		// returned from scheduler loop, exit thread
 		cemu_assert_debug(!__OSHasSchedulerLock());
 	}

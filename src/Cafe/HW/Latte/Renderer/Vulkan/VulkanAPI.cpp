@@ -1,9 +1,13 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 #define VKFUNC_DEFINE
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include <numeric> // for std::iota
 
-#if BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_BSD
+#if BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_BSD || defined(CEMU_PLATFORM_IOS)
 #include <dlfcn.h>
 #endif
 
@@ -246,8 +250,24 @@ void* dlopen_vulkan_loader()
 	vulkan_so = dlopen("libvulkan.so", RTLD_NOW);
 	if(!vulkan_so)
 		vulkan_so = dlopen("libvulkan.so.1", RTLD_NOW);
-#elif BOOST_OS_MACOS
+#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
+// Reaching this branch on iOS depends on the CEMU_PLATFORM_IOS term: BOOST_OS_MACOS is
+// 0 there, so without it every branch of this function was preprocessed away and the
+// body became a bare `return vulkan_so;` against an identifier that no longer existed.
+#if TARGET_OS_IOS
+	// iOS links MoltenVK statically (cmake/MoltenVK.cmake force-loads the archive),
+	// so there is no dylib to open -- the Vulkan entry points are already symbols in
+	// this executable's own image. dlopen(nullptr) returns a handle to that image,
+	// which makes the dlsym() calls in the VKFUNC table below resolve against it
+	// unchanged. Nothing else about the loader path differs from desktop.
+	//
+	// The static link is deliberate: the dynamic MoltenVK.framework would have to be
+	// embedded and re-signed into a sideloaded .app, and this app's executable layout
+	// has already been broken once by LiveContainer. Fewer moving parts wins here.
+	void* vulkan_so = dlopen(nullptr, RTLD_NOW);
+#else
 	void* vulkan_so = dlopen("libMoltenVK.dylib", RTLD_NOW);
+#endif
 #endif
 	return vulkan_so;
 }

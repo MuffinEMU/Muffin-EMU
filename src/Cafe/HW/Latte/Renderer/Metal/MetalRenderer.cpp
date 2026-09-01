@@ -31,6 +31,9 @@
 
 extern bool hasValidFramebufferAttached;
 
+// Declared in MetalCommon.h - see that comment for the full reasoning. Off by default.
+std::atomic<bool> g_metal_reduceEncoderSplitting{false};
+
 float supportBufferData[512 * 4];
 
 // Defined in the OpenGL renderer
@@ -434,7 +437,18 @@ void MetalRenderer::DrawEmptyFrame(bool mainWindow)
 	// of the on-screen state until then. Opaque black is a definite state; undefined
 	// is not, and it became visible rather than merely wrong once the iOS layer was
 	// marked opaque (MetalLayer.mm).
-	ClearColorTextureInternal(GetLayer(mainWindow).GetDrawable()->texture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
+	//
+	// That definite state is deliberately MAGENTA rather than black, and it is a
+	// diagnostic this fork wants, not an accident. On device "the renderer never ran
+	// at all" and "the renderer ran and the title then scanned out nothing" are both
+	// a black screen, and the log cannot separate them either: helloworld.rpx
+	// legitimately draws nothing, and the OSScreen scanout path carries no marker.
+	// Clearing to magenta splits them by eye - black means the chain never reached
+	// the glass, magenta means it reached the glass end to end and is waiting on the
+	// title for content. Any frame the title actually presents overwrites this
+	// completely, so nothing that draws is ever tinted by it.
+	ClearColorTextureInternal(GetLayer(mainWindow).GetDrawable()->texture(), 0, 0, 1.0f, 0.0f, 1.0f, 1.0f);
+	cemuLog_logOnce(LogType::Force, "MetalRenderer: cleared the empty frame to magenta - if the screen is magenta the renderer reached the display and the title has not drawn yet; if it is black the renderer never got here");
 	SwapBuffers(mainWindow, !mainWindow);
 }
 
@@ -1968,13 +1982,28 @@ void MetalRenderer::EndEncoding()
 {
     if (m_commandEncoder)
     {
+        MetalEncoderType endingType = m_encoderType;
         m_commandEncoder->endEncoding();
         m_commandEncoder->release();
         m_commandEncoder = nullptr;
         m_encoderType = MetalEncoderType::None;
 
-        // Commit the command buffer if enough draw calls have been recorded
-        if (m_recordedDrawcalls >= m_commitTreshold)
+        // Experimental, off by default (g_metal_reduceEncoderSplitting - see
+        // MetalCommon.h). This threshold check runs after EVERY encoder-type switch,
+        // including the short Blit/Compute encoders a texture upload or readback opens
+        // and closes mid-frame - so a frame with a lot of that interleaving can commit
+        // the command buffer in the middle of one, rather than at a natural "finished
+        // this batch of draws" boundary. MetalSynchronizedRingAllocator's sync points are
+        // recorded against whichever command buffer is current when memory is allocated;
+        // if the draw that actually reads that memory ends up in a later command buffer
+        // because of a mid-sequence commit here, the allocator can consider the memory
+        // free before the GPU work reading it has run. Restricting the check to Render
+        // encoder endings only removes exactly those Blit/Compute-triggered boundaries,
+        // without changing the threshold itself or its already-tuned memory/latency
+        // trade-off for the common (non-interleaved) case.
+        bool shouldCheckCommit = !g_metal_reduceEncoderSplitting.load(std::memory_order_relaxed)
+            || endingType == MetalEncoderType::Render;
+        if (shouldCheckCommit && m_recordedDrawcalls >= m_commitTreshold)
             CommitCommandBuffer();
     }
 }

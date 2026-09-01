@@ -1,9 +1,61 @@
 #pragma once
 
+#include <atomic>
+
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
+#include <objc/message.h>
+#include <objc/runtime.h>
+
 #include "Cafe/HW/Latte/Core/LatteConst.h"
+
+/// Off by default; per-game/global setting exposed through
+/// cemu_bridge_set_reduce_encoder_splitting(). Set from a Settings toggle rather than
+/// baked in, because it targets a specific, unconfirmed hypothesis rather than a proven
+/// fix: intermittent rainbow/garbage geometry (screen recordings, 2026-08-31) that
+/// coincides with Metal's own runtime warning about heavy interleaving of blit encoders
+/// with other encoder types on this exact game. EndEncoding()'s auto-commit is checked
+/// after EVERY encoder-type switch, including the short blit encoders textures use for
+/// upload/readback - so a frame with a lot of that interleaving can end up auto-committing
+/// the command buffer in the middle of a blit rather than at a natural "finished this
+/// batch of draws" boundary. MetalSynchronizedRingAllocator's sync points are recorded
+/// against whichever command buffer is current AT ALLOCATION TIME; if the buffer that
+/// actually reads that memory ends up split into a later command buffer by one of these
+/// mid-sequence commits, the allocator can consider the memory free to reuse before the
+/// GPU work that reads it has actually run - which is exactly the class of bug that
+/// produces occasional, self-correcting garbage geometry rather than a hard crash.
+/// Atomic because it is set from the app's main thread (a Settings toggle, or a per-game
+/// launch-time read) and read from wherever EndEncoding() runs.
+extern std::atomic<bool> g_metal_reduceEncoderSplitting;
+
+// Read a BOOL property off a MTLDevice by selector name. Capability selectors get
+// added to the MTLDevice protocol over time and are not implemented by every driver
+// class, and sending one that isn't there kills the process - see the depth24Stencil8
+// note below, which was found the hard way on device. Going through the runtime lets
+// us ask whether the selector exists first, and keeps the query independent of which
+// metal-cpp revision happens to be vendored.
+//
+// The device stays a void* the whole way through, and the two runtime entry points are
+// called through recast function pointers. This header reaches ARC Objective-C++ by way
+// of CemuBridge.mm, and there a cast from MTL::Device* to id is a hard error: ARC has no
+// way to know whether such a cast transfers ownership, so it demands a __bridge
+// annotation that a plain C++ translation unit cannot parse. Keeping ObjC pointer types
+// out of the signatures sidesteps the question in both kinds of TU. objc_msgSend is
+// already called this way below; on arm64 a void* and an id are the same register.
+inline bool MtlDeviceBoolProperty(MTL::Device* device, const char* selectorName, bool fallback)
+{
+	void* deviceObject = static_cast<void*>(device);
+	SEL selector = sel_registerName(selectorName);
+
+	using ClassGetter = Class (*)(void*);
+	Class deviceClass = reinterpret_cast<ClassGetter>(object_getClass)(deviceObject);
+	if (!deviceClass || !class_respondsToSelector(deviceClass, selector))
+		return fallback;
+
+	using BoolPropertyGetter = BOOL (*)(void*, SEL);
+	return reinterpret_cast<BoolPropertyGetter>(objc_msgSend)(deviceObject, selector) != NO;
+}
 
 struct MetalPixelFormatSupport
 {
@@ -11,6 +63,7 @@ struct MetalPixelFormatSupport
 	bool m_supportsRG8Unorm_sRGB;
 	bool m_supportsPacked16BitFormats;
 	bool m_supportsDepth24Unorm_Stencil8;
+	bool m_supportsBCTextureCompression;
 
 	MetalPixelFormatSupport() = default;
 	MetalPixelFormatSupport(MTL::Device* device)
@@ -32,6 +85,16 @@ struct MetalPixelFormatSupport
 #else
         m_supportsDepth24Unorm_Stencil8 = false;
 #endif
+        // BC (DXT/S3TC) is a desktop-GPU format family. Apple Silicon Macs have it,
+        // but the A12Z in this iPad does not, and Metal answers a BC texture descriptor
+        // by calling MTLReportFailure() -> abort() instead of returning nil - so the
+        // very first BC-compressed game texture takes the whole process down with
+        // signal 6 inside newTexture(). Ask the device, and let
+        // CheckForPixelFormatSupport() swap in CPU decompression when the answer is no.
+        // The selector only exists from iOS 16.4 / macOS 11 onwards; where it is
+        // missing, assume BC is present on everything except Apple GPUs, which is what
+        // the feature set tables say.
+        m_supportsBCTextureCompression = MtlDeviceBoolProperty(device, "supportsBCTextureCompression", !device->supportsFamily(MTL::GPUFamilyApple1));
 	}
 };
 

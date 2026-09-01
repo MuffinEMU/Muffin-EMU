@@ -109,7 +109,17 @@ endif()
 
 if (APPLE)
     enable_language(OBJC OBJCXX)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.4")
+    # macOS is supported back to 13.4. iOS is NOT: cmake/ios.toolchain.cmake sets its
+    # own minimum (15.0) in the CACHE, and a normal variable set here shadows a cache
+    # entry, so this line silently won the argument and handed the whole iOS build
+    # -miphoneos-version-min=13.4. That is below the availability floor libc++ puts on
+    # the C++20 atomic wait/notify primitives (iOS 14.0), which VulkanRenderer.cpp uses
+    # for m_destroyPadSwapchainNextAcquire - so turning the Vulkan backend on for iOS
+    # made the engine stop compiling on a line that has nothing to do with Vulkan. The
+    # Metal-only build never noticed because Renderer/Vulkan was compiled out entirely.
+    if (NOT PLATFORM_IOS)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "13.4")
+    endif()
 endif()
 
 if (UNIX AND NOT APPLE)
@@ -152,19 +162,28 @@ option(ENABLE_CUBEB "Enabled cubeb backend" ON)
 
 option(ENABLE_WXWIDGETS "Build with wxWidgets UI (Currently required)" ON)
 
-# iOS: disable desktop-only / non-iOS backends. Metal is the renderer; there is no
-# wxWidgets UI, no OpenGL, and no Vulkan loader on iOS. Discord RPC / HIDAPI are also
-# unavailable. (Metal itself is enabled below via ENABLE_METAL default-on for Apple.)
+# iOS: disable desktop-only / non-iOS backends. There is no wxWidgets UI and no
+# OpenGL. Discord RPC / HIDAPI are also unavailable.
+#
+# Vulkan is NOT disabled here any more. The old comment on this block claimed there
+# was "no Vulkan loader on iOS", which was wrong: MoltenVK *is* the Vulkan loader on
+# iOS, and it is what the one shipping iOS Cemu build (Fin, by MuffinFluffin) runs
+# on -- its About screen credits MoltenVK, SPIRV-Cross and Vulkan-Headers, and
+# credits no Metal backend at all. So the renderer path known to work on this
+# hardware is Cemu's own Vulkan backend on top of MoltenVK, not a native Metal one.
+# Both are built for iOS now; Metal is untouched and still the default.
 if(PLATFORM_IOS)
 	set(ENABLE_WXWIDGETS OFF CACHE BOOL "" FORCE)
-	set(ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
 	set(ENABLE_OPENGL OFF CACHE BOOL "" FORCE)
 	set(ENABLE_DISCORD_RPC OFF CACHE BOOL "" FORCE)
 	set(ENABLE_HIDAPI OFF CACHE BOOL "" FORCE)
-	# No cubeb on iOS yet (audio backend comes later — CoreAudio/AudioUnit). Without
-	# this, src/audio would compile CubebAPI.cpp and link a cubeb::cubeb target that
-	# isn't created on iOS. Silent audio is fine for bring-up.
+	# No cubeb on iOS. Without this, src/audio would compile CubebAPI.cpp and link a
+	# cubeb::cubeb target that isn't created on iOS. iOS gets its own backend instead:
+	# src/audio/CoreAudioAPI.mm (AudioUnit RemoteIO + AVAudioSession), which is what
+	# HAS_COREAUDIO switches on. Before it existed there was no available audio API at
+	# all on this platform and every title ran silent.
 	set(ENABLE_CUBEB OFF CACHE BOOL "" FORCE)
+	add_compile_definitions("HAS_COREAUDIO=1")
 endif()
 
 find_package(Threads REQUIRED)
@@ -183,6 +202,10 @@ if(TRUE)
 	find_package(Boost COMPONENTS program_options filesystem nowide REQUIRED)
 	if(ANDROID)
 		find_package(Boost COMPONENTS context iostreams REQUIRED)
+	elseif(PLATFORM_IOS)
+		# iOS needs context for the same reason Android does (see src/util/CMakeLists.txt),
+		# but not iostreams, which is only pulled in by the Android stacktrace handler.
+		find_package(Boost COMPONENTS context REQUIRED)
 	endif()
 	find_package(libzip REQUIRED)
 	find_package(glslang REQUIRED)
@@ -269,10 +292,16 @@ if (UNIX AND NOT APPLE AND NOT ANDROID)
 endif()
 
 if (ENABLE_VULKAN OR PLATFORM_IOS)
-	# iOS doesn't build/link Vulkan, but ~15 files #include VulkanAPI.h for shared
-	# declarations (e.g. g_vulkan_available). With VK_NO_PROTOTYPES the headers are
-	# declaration-only, so providing them lets those files parse without a loader.
+	# ~15 files #include VulkanAPI.h for shared declarations (e.g. g_vulkan_available)
+	# regardless of whether the backend is built. With VK_NO_PROTOTYPES the headers are
+	# declaration-only, so providing them lets those files parse either way.
 	include_directories("dependencies/Vulkan-Headers/include")
+endif()
+
+if (ENABLE_VULKAN AND PLATFORM_IOS)
+	# Supplies MoltenVK::MoltenVK. See cmake/MoltenVK.cmake for why this is the static
+	# archive force-loaded rather than an embedded framework.
+	include(MoltenVK)
 endif()
 
 if (ENABLE_OPENGL AND NOT PLATFORM_IOS)
