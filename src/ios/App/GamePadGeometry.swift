@@ -617,6 +617,7 @@ enum DeviceMetrics {
 
 #if canImport(UIKit)
 import UIKit
+import SwiftUI
 
 extension DeviceMetrics {
     /// Read the machine. Call once at launch, log `detail`, and keep the value.
