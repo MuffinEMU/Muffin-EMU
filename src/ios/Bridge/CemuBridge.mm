@@ -640,6 +640,10 @@ std::string ios_jit_read_sentinel_build(const std::filesystem::path& sentinelPat
 	return firstLine;
 }
 
+// Defined further down; forward-declared so ios_jit_is_permitted() below can register it
+// as PPCRecompiler's survived-first-entry callback before its own definition is reached.
+void ios_jit_survived_boot();
+
 bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 {
 	namespace fs = std::filesystem;
@@ -795,6 +799,20 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 
 	g_jitSentinelPath = sentinelPath;
 	g_jitSentinelArmed.store(true);
+
+	// Registers the ONLY correct place left to clear this sentinel: PPCRecompiler_enter()
+	// already calls this back the first time control returns alive from generated code
+	// (see its own comment - "the first and only proof that the recompiler actually
+	// works on this machine"), but nothing ever registered a callback, so that mechanism
+	// has been a complete no-op since it was written. This bridge instead cleared the
+	// sentinel itself, synchronously, right after LaunchForegroundTitle() returned - and
+	// LaunchForegroundTitle() only spawns and detaches the title thread, it does not wait
+	// for it. So the sentinel was disarmed the instant a launch was REQUESTED, not
+	// launched, which is exactly the ~3-second-too-early clear that let a crash-looping
+	// recompiler re-arm itself clean on every single boot. Idempotent to call more than
+	// once (it is just a store), so registering it here on every JIT-permitted boot is
+	// harmless.
+	PPCRecompiler_setSurvivedFirstEntryCallback(ios_jit_survived_boot);
 
 	cemuLog_log(LogType::Force,
 		"JIT check: PASSED - executable pages are available and CS_DEBUGGED is set (cs_flags 0x{:08x}), so the "
@@ -1685,9 +1703,11 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
             cemu_bridge_log_checkpoint("boot_rpx: about to call LaunchForegroundTitle");
             CafeSystem::LaunchForegroundTitle();
             cemu_bridge_log_checkpoint("boot_rpx: LaunchForegroundTitle returned");
-            // Reaching here means a recompiler-enabled boot got a title running, so the
-            // sentinel armed by ios_jit_is_permitted() has nothing left to warn about.
-            ios_jit_survived_boot();
+            // The sentinel is no longer cleared here - LaunchForegroundTitle() only
+            // spawns and detaches the title thread, it does not wait for generated code
+            // to actually run, so clearing at this point was ~3 seconds too early to mean
+            // anything. See ios_jit_is_permitted()'s PPCRecompiler_setSurvivedFirstEntryCallback
+            // registration for where this now happens correctly.
             // After the launch call, not before: the ladder measures time from a title that
             // is actually running, and starting it during prepare would spend its first step
             // on disc mounting rather than on anything the clock affects.
@@ -1735,12 +1755,10 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
             cemu_bridge_log_checkpoint("boot_title: about to call LaunchForegroundTitle");
             CafeSystem::LaunchForegroundTitle();
             cemu_bridge_log_checkpoint("boot_title: LaunchForegroundTitle returned");
-            // Reaching here means a recompiler-enabled boot got a title running, so the
-            // sentinel armed by ios_jit_is_permitted() has nothing left to warn about.
-            ios_jit_survived_boot();
-            // Same call, same position, and for the same reason as in cemu_bridge_boot_rpx()
-            // above - which until now was the only place it appeared, and which the app never
-            // calls. EmulationEngine.bootBlocking() goes to cemu_bridge_boot_title() for
+            // No sentinel clear here either - see the matching comment in
+            // cemu_bridge_boot_rpx() above for why, and ios_jit_is_permitted() for where
+            // it now actually happens.
+            // EmulationEngine.bootBlocking() goes to cemu_bridge_boot_title() for
             // everything: disc images, archives, dumped folders, and standalone homebrew
             // alike (the RPX case falls through inside IOSTitleLaunch_PrepareForegroundTitle,
             // not out here). So every launch that has ever happened on a device took this
