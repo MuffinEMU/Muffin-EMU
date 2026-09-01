@@ -1030,7 +1030,22 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 	// separate calls would then have its DRC copy overwrite the TV image every frame.
 	if (!drawToPad && !drawToMain)
 	{
-		cemuLog_logOnce(LogType::Force, "Scan buffer dropped: renderTarget={} (TV={}, DRC={}), showDRC={}, pad window active={}. The title produced a frame that has no window to go to.", renderTarget, (renderTarget & RENDER_TARGET_TV) != 0, (renderTarget & RENDER_TARGET_DRC) != 0, showDRC, g_renderer->IsPadWindowActive());
+		// cemuLog_logOnce() keys its static on the call site, not on renderTarget - so
+		// whichever combination (TV-only, DRC-only, or both) drops first permanently
+		// silences the others for the rest of the session. A title that drops a DRC
+		// scan buffer early (the routine, expected case on a host with no pad window)
+		// would then hide a LATER, unrelated TV drop for a completely different reason
+		// - exactly the diagnostic blind spot already found and fixed for the
+		// TV/pad-window CAMetalLayer case in MetalRenderer.cpp (see its comment there).
+		// Index by just the two known bits so an unexpected extra bit in renderTarget
+		// can't index out of bounds.
+		static bool s_scanBufferDroppedLogged[4] = {};
+		const uint32 targetIndex = ((renderTarget & RENDER_TARGET_TV) ? 1 : 0) | ((renderTarget & RENDER_TARGET_DRC) ? 2 : 0);
+		if (!s_scanBufferDroppedLogged[targetIndex])
+		{
+			s_scanBufferDroppedLogged[targetIndex] = true;
+			cemuLog_log(LogType::Force, "Scan buffer dropped: renderTarget={} (TV={}, DRC={}), showDRC={}, pad window active={}. The title produced a frame that has no window to go to.", renderTarget, (renderTarget & RENDER_TARGET_TV) != 0, (renderTarget & RENDER_TARGET_DRC) != 0, showDRC, g_renderer->IsPadWindowActive());
+		}
 	}
 }
 
