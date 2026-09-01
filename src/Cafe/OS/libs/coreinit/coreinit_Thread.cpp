@@ -15,6 +15,10 @@
 
 #include "util/helpers/helpers.h"
 
+#if BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
+#include <pthread/qos.h>
+#endif
+
 #ifdef __arm64__
 #if defined(__clang__)
 #include <arm_acle.h>
@@ -1509,6 +1513,19 @@ namespace coreinit
 		t_assignedCoreIndex = (sint32)(uintptr_t)_assignedCoreIndex;
 
 		enableFlushDenormalsToZero();
+
+#if BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
+		// std::thread inherits its creator's QoS, and OSSchedulerBegin() is called from
+		// wherever GameManager.launchGame() happens to be running on - not guaranteed
+		// to be user-interactive itself. On a fanless device like the iPad Pro (2020)
+		// target, a CPU-emulation thread left at the default QoS competes for time with
+		// (and can lose to) the UI thread under any load, silently capping interpreter
+		// throughput for a reason that has nothing to do with the interpreter's own
+		// code. This asks unconditionally, not "if lower than" - these threads ARE the
+		// game for as long as a title runs, so there is no scenario where a lower QoS
+		// than user-interactive is the right call for one of them.
+		pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
 
 #if BOOST_OS_LINUX
 		if (g_gdbstub)
