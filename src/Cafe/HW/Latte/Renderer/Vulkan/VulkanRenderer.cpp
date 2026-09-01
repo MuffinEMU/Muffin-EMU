@@ -123,7 +123,7 @@ std::vector<VulkanRenderer::DeviceInfo> VulkanRenderer::GetDevices()
 	else if (backend == WindowSystem::WindowHandleInfo::Backend::Wayland)
 		requiredExtensions.emplace_back(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
     #endif // HAS_WAYLAND
-    #elif BOOST_OS_MACOS
+    #elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
 	requiredExtensions.emplace_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
 	#endif
 
@@ -1454,7 +1454,7 @@ std::vector<const char*> VulkanRenderer::CheckInstanceExtensionSupport(FeatureCo
 	else if (backend == WindowSystem::WindowHandleInfo::Backend::Wayland)
 		requiredInstanceExtensions.emplace_back(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
     #endif // HAS_WAYLAND
-	#elif BOOST_OS_MACOS
+	#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
 	requiredInstanceExtensions.emplace_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
 	#endif
 	if (cemuLog_isLoggingEnabled(LogType::VulkanValidation))
@@ -1637,8 +1637,14 @@ VkSurfaceKHR VulkanRenderer::CreateFramebufferSurface(VkInstance instance, Windo
 		return CreateWaylandSurface(instance, static_cast<wl_display*>(windowInfo.display.load()), static_cast<wl_surface*>(windowInfo.surface.load()));
 #endif
 	return {};
-#elif BOOST_OS_MACOS
+#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
 	return CreateCocoaSurface(instance, windowInfo.surface.load());
+#else
+	// Not a warning. Every branch above returns, so a platform that matches none of them
+	// leaves this non-void function falling off its end and handing back an uninitialized
+	// VkSurfaceKHR -- which presents as a black screen rather than as any kind of error.
+	// iOS sat in exactly that state until CEMU_PLATFORM_IOS was added above.
+	#error "No Vulkan surface implementation for this platform"
 #endif
 }
 #endif

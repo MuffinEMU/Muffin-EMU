@@ -43,6 +43,10 @@ public:
 		XAudio27,
 		XAudio2,
 		Cubeb,
+		// Appended, not inserted: audio_api is persisted to settings.xml as a plain
+		// integer, so renumbering the existing entries would silently repoint an
+		// existing config at a different backend.
+		CoreAudio,
 
 		AudioAPIEnd,
 	};

@@ -13,6 +13,7 @@
 
 #if defined(CEMU_PLATFORM_IOS)
 #include <os/log.h>
+#include "Cemu/Logging/IOSLiveLog.h"
 #endif
 
 uint64 s_loggingFlagMask = cemuLog_getFlag(LogType::Force);
@@ -47,6 +48,12 @@ static void cemuLog_writeLineToSystemConsole(std::string_view text)
 	static os_log_t s_iosLogHandle = os_log_create("com.cemu.ios", "emu");
 	const std::string line(text); // os_log needs NUL-termination; string_view has none
 	os_log(s_iosLogHandle, "%{public}s", line.c_str());
+
+	// Third sink, same funnel, same NUL-terminated copy: the in-app launch log (see
+	// IOSLiveLog.h). Deliberately here and not in cemuLog_writeLineToLog() for the
+	// reason spelled out at the call site below - the file sink receives one line in up
+	// to three pieces, which would become three rows on screen.
+	ios_live_log_push(line.c_str());
 }
 #endif
 

@@ -156,8 +156,27 @@ void PPCInterpreter_setCurrentInstance(PPCInterpreter_t* hCPU);
 
 uint64 PPCInterpreter_getMainCoreCycleCounter();
 
-void PPCInterpreter_nextInstruction(PPCInterpreter_t* cpuInterpreter);
-void PPCInterpreter_jumpToInstruction(PPCInterpreter_t* cpuInterpreter, uint32 newIP);
+// Defined here rather than in PPCInterpreterMain.cpp, which is what they used to be.
+//
+// There are ~230 calls to PPCInterpreter_nextInstruction and essentially every interpreter
+// handler ends in one - it is reached once per guest instruction executed. Out of line in
+// another translation unit, that is a cross-TU function call whose entire body is
+// `ip += 4`, and the call, the spill and the return dominate the work by a wide margin.
+//
+// Whether this was already being folded depends on link-time optimisation, which the
+// release build does enable - so on a build where LTO fires this changes nothing, and on
+// one where it does not it removes a call per instruction. It costs ten lines either way,
+// and the interpreter is the only CPU path available when JIT is unavailable, which is the
+// case this port has to be good at.
+inline void PPCInterpreter_nextInstruction(PPCInterpreter_t* cpuInterpreter)
+{
+	cpuInterpreter->instructionPointer += 4;
+}
+
+inline void PPCInterpreter_jumpToInstruction(PPCInterpreter_t* cpuInterpreter, uint32 newIP)
+{
+	cpuInterpreter->instructionPointer = (uint32)newIP;
+}
 
 void PPCInterpreterSlim_executeInstruction(PPCInterpreter_t* hCPU);
 void PPCInterpreterFull_executeInstruction(PPCInterpreter_t* hCPU);
@@ -207,6 +226,15 @@ void PPCTimer_init();
 void PPCTimer_waitForInit();
 uint64 PPCTimer_getFromRDTSC();
 
+// Told when the emulated clock rate changes, so the timebase can carry its current value
+// into a new anchor instead of jumping. No-op where the timebase is not anchor-based.
+void PPCTimer_onTimerShiftFactorChanged();
+// Falls back to the original spinlock timebase. Only meaningful on ARM, where the
+// lock-free rewrite is the default; it exists so that a wrong clock can be ruled in or
+// out on the device instead of by rebuilding.
+void PPCTimer_setUseLegacyTimebase(bool useLegacy);
+bool PPCTimer_usingLegacyTimebase();
+
 uint64 PPCTimer_microsecondsToTsc(uint64 us);
 uint64 PPCTimer_tscToMicroseconds(uint64 us);
 uint64 PPCTimer_getRawTsc();
@@ -215,6 +243,59 @@ void PPCTimer_start();
 
 // core info and control
 extern uint32 ppcThreadQuantum;
+
+// Guest CPU liveness
+//
+// Whether the emulated Espresso is retiring instructions at all. Nothing else in the
+// emulator reports this, which is why every stalled-boot log from the iOS port has so far
+// been unreadable: the GPU-side counters (GX2 frames, OSScreen scanouts, guest flip
+// requests) all sit downstream of the guest reaching GX2Init, so before that point they
+// read zero whether the guest is grinding along or wedged solid. Those two cases need
+// opposite fixes - one is "the interpreter is ~100x slower than a recompiler and needs
+// CS_DEBUGGED", the other is a bug in here - and nothing in the log told them apart.
+//
+// Read the three counters together:
+//   cyclesRetired climbing                   -> the guest is alive; a stall before
+//                                               GX2Init is speed, not a hang
+//   cyclesRetired flat, coreIdleSpins rising -> the scheduler is alive but no guest
+//                                               thread is runnable: everything is
+//                                               blocked, i.e. a guest-side deadlock
+//   both flat                                -> the core threads themselves are not
+//                                               running: wedged in host code, or
+//                                               OSSchedulerBegin never got as far as
+//                                               starting them
+//
+// cyclesRetired is accumulated per timeslice from __OSStoreThread()'s own executed-cycle
+// figure rather than counted per instruction, so it costs one relaxed add per ~45000
+// instructions instead of one per instruction. It is therefore a liveness signal, not a
+// performance counter: it lands in bursts of a whole quantum, and a core that is
+// mid-timeslice has not contributed its current work yet.
+struct PPCGuestLiveness
+{
+	uint64 cyclesRetired;   // guest instructions retired, summed over all cores
+	uint64 timeslices;      // completed thread timeslices
+	uint64 coreIdleSpins;   // idle-loop iterations, i.e. a core looking for work and finding none
+	uint32 coreInstructionPointer[3]; // 0 when that core is not currently running a guest thread
+	// Raw counter ticks spent inside the interpreter loop, and instructions executed
+	// there, summed over all cores. Unlike cyclesRetired these are measured AT the loop,
+	// so instructions/tsc is real interpreter throughput and tsc/wallclock is the
+	// fraction of the run that any interpreter optimisation could possibly affect.
+	uint64 interpreterTsc;
+	uint64 interpreterInstructions;
+};
+
+void PPCCore_getLiveness(PPCGuestLiveness& out);
+void PPCCore_noteRetiredCycles(uint64 cycles);
+void PPCCore_noteCoreIdleSpin();
+// Called once per interpreter burst - a whole timeslice's worth of instructions - not
+// once per instruction, so it cannot distort what it measures.
+void PPCCore_noteInterpreterBurst(uint64 tscElapsed, uint64 instructions);
+// Called with the interpreter instance a core is running, and with nullptr when it stops
+// running one. The core index is passed explicitly rather than derived from thread-local
+// state on purpose: guest threads are fibers and migrate between host threads, so a
+// thread_local here would be read on the wrong host thread after a fiber switch - the
+// same hazard TLS_WORKAROUND_NOINLINE exists to prevent in PPCInterpreterMain.cpp.
+void PPCCore_setCoreInstance(uint32 coreIndex, PPCInterpreter_t* hCPU);
 
 uint8* PPCInterpreter_PushAndReturnStackPointer(sint32 offset);
 uint8* PPCInterpreterGetStackPointer();

@@ -52,7 +52,11 @@ settings:
   # etc.) evaluates false, so RendererShaderMtl.h/MetalPipelineCache.h never even get
   # included - matches the CMake build's own -DENABLE_METAL=1 (see top-level
   # CMakeLists.txt: `if (ENABLE_METAL) add_definitions(-DENABLE_METAL=1)`).
-  GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1 CEMU_PLATFORM_IOS=1 ENABLE_METAL=1'
+  # HAS_COREAUDIO must match the CMake side (top-level CMakeLists.txt sets it for
+  # PLATFORM_IOS). Xcode compiles src/ios/Bridge/CemuBridge.mm itself rather than
+  # through CMake, so without it here the audio bring-up block in that file would
+  # preprocess away to nothing and iOS would stay silent with no error anywhere.
+  GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1 CEMU_PLATFORM_IOS=1 ENABLE_METAL=1 HAS_COREAUDIO=1'
   HEADER_SEARCH_PATHS:
     - '$(SRCROOT)/..'
     - '$(SRCROOT)/../Common/glm_stub'
@@ -107,6 +111,25 @@ targets:
       - name: Generate linker response file for CMake-built libs
         script: |
           "$SRCROOT/../../ci/generate-link-flags.sh" "$SRCROOT/link-flags.txt"
+
+    # Cemu's own data files (bin/resources/sharedFonts, bin/gameProfiles) live
+    # outside src/ios, so the `sources:` list above never carried them into the
+    # bundle - STATUS.md's "None of Cemu's own data files ship in the app". A copy
+    # step rather than a folder reference under `sources:`, because the paths the
+    # engine looks them up at (ActiveSettings::GetDataPath("resources/sharedFonts/...")
+    # and ("gameProfiles/default/...")) do not match the on-disk layout, and because
+    # a folder reference on bin/resources would also drag in ~1.1 MB of wxWidgets
+    # translation catalogs that nothing in the iOS target can read.
+    #
+    # postBuildScripts, not preBuildScripts: the app bundle it writes into does not
+    # exist yet when a pre-build script runs.
+    postBuildScripts:
+      - name: Copy Cemu data files (shared fonts, game profiles) into the bundle
+        # No inputFiles/outputFiles to derive from, and correctness matters more
+        # here than skipping a ~26 MB incremental rsync, so run it every build.
+        basedOnDependencyAnalysis: false
+        script: |
+          "$SRCROOT/../../ci/copy-bundle-data.sh"
 
     scheme:
       gatherCoverageData: false

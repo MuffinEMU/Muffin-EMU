@@ -127,3 +127,15 @@ void KeyCache_Prepare()
 	delete fs_keys;
 	mtxKeyCache.unlock();
 }
+
+void KeyCache_Reload()
+{
+	// Drop the cache under the lock, then re-run Prepare() OUTSIDE it. mtxKeyCache is a
+	// plain std::mutex and KeyCache_Prepare() locks it itself, so calling it while
+	// holding the lock here would deadlock rather than reload.
+	mtxKeyCache.lock();
+	sKeyCachePrepared = false;
+	g_keyCache.clear();
+	mtxKeyCache.unlock();
+	KeyCache_Prepare();
+}

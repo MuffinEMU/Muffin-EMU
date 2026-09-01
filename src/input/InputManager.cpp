@@ -968,3 +968,389 @@ void InputManager::update_thread()
 		std::this_thread::yield();
 	}
 }
+
+#if defined(CEMU_PLATFORM_IOS)
+// ---------------------------------------------------------------------------------
+// iOS input bring-up - see the block comment on the declarations in InputManager.h.
+// ---------------------------------------------------------------------------------
+
+// Included for CemuBridgeButton alone, so the numbering the Swift call sites use and
+// the switch that translates it live off the same declaration and cannot drift apart.
+// Resolves via target_include_directories(CemuInput PUBLIC "../"); the header is plain
+// C with no Objective-C or UIKit in it, which is the whole point of its existing.
+#include "ios/Bridge/CemuBridge.h"
+
+namespace
+{
+	// Serialises IOSInput_Initialize() against IOSInput_RefreshDevices(), which SDL's
+	// event thread can call at any moment (including while initialization is still
+	// running, since SDL queues a CONTROLLERDEVICEADDED for every controller that was
+	// already attached when SDL_Init ran).
+	//
+	// Not a recursive mutex on purpose: nothing reachable from inside the guarded region
+	// signals Events::ControllerChanged. InputManager::on_device_changed() is the only
+	// emitter, and it releases its own lock before signalling, so the callback below
+	// always arrives on a fresh call stack.
+	std::mutex s_iosInputMutex;
+	bool s_iosInputInitialized = false;
+
+	// Returns player 0's emulated GamePad, creating it if loading a profile didn't.
+	//
+	// A Wii U title expects a GamePad to exist even before anyone presses anything -
+	// VPADRead() is polled from the very first frames - so this is created
+	// unconditionally, not only when a physical controller happens to be attached.
+	std::shared_ptr<VPADController> iosEnsureGamePad()
+	{
+		auto& inputManager = InputManager::instance();
+		if (auto existing = inputManager.get_vpad_controller(0))
+			return existing;
+
+		if (!inputManager.set_controller(0, EmulatedController::Type::VPAD))
+			return {};
+
+		return inputManager.get_vpad_controller(0);
+	}
+
+	// Caller must hold s_iosInputMutex.
+	void iosBindFirstAvailableController()
+	{
+		auto gamepad = iosEnsureGamePad();
+		if (!gamepad)
+		{
+			cemuLog_log(LogType::Force, "iOS: could not create the emulated GamePad for player 1");
+			return;
+		}
+
+		// Already bound to something - either a loaded profile or an earlier pass. Don't
+		// stack a second physical controller onto the same emulated one; SDLController
+		// re-attaches itself by GUID when a device it already knows comes back, via
+		// on_device_changed() -> EmulatedController::connect().
+		if (!gamepad->get_controllers().empty())
+			return;
+
+#if HAS_SDL
+		if (!InputManager::instance().is_api_available(InputAPI::SDLController))
+		{
+			// The provider constructor threw (see SDLControllerProvider.cpp). Nothing to
+			// bind, and the emulated GamePad above is as far as this can get.
+			cemuLog_log(LogType::Force, "iOS: no SDL controller provider - the emulated GamePad has no physical controller bound to it");
+			return;
+		}
+
+		const auto provider = InputManager::instance().get_api_provider(InputAPI::SDLController);
+		if (!provider)
+			return;
+
+		auto controllers = provider->get_controllers();
+		if (controllers.empty())
+		{
+			cemuLog_log(LogType::Force, "iOS: no physical controller attached yet - connect an MFi/Bluetooth controller and it will be bound automatically");
+			return;
+		}
+
+		const auto& controller = controllers.front();
+		gamepad->add_controller(controller);
+		if (!gamepad->set_default_mapping(controller))
+		{
+			// Leaving an unmapped controller attached would look connected and do nothing,
+			// which is the most confusing possible outcome. Take it back off.
+			gamepad->remove_controller(controller);
+			cemuLog_log(LogType::Force, "iOS: no default GamePad mapping for '{}' - not binding it", controller->display_name());
+			return;
+		}
+
+		cemuLog_log(LogType::Force, "iOS: bound '{}' to the emulated GamePad using the default mapping", controller->display_name());
+#else
+		cemuLog_log(LogType::Force, "iOS: built without SDL - the emulated GamePad has no physical controller bound to it");
+#endif // HAS_SDL
+	}
+
+	// EventService::connect() binds a member function to an instance (boost::bind), so a
+	// plain free function or lambda won't do - hence this one-method type.
+	struct IOSControllerHotplugListener
+	{
+		void onControllerChanged()
+		{
+			IOSInput_RefreshDevices();
+		}
+	};
+
+	IOSControllerHotplugListener s_iosHotplugListener;
+
+	// Lock-free gate for the touch path. s_iosInputInitialized is guarded by
+	// s_iosInputMutex, which SDL's event thread can be holding for the length of a
+	// device rescan - not something a UI thread delivering a finger-down should ever
+	// wait on. This says the same thing without the wait.
+	std::atomic<bool> s_iosInputReady{false};
+
+	// What the on-screen pad currently believes it is holding. Kept next to the
+	// emulated controller's own override state rather than read back out of it, so
+	// IOSInput_ReleaseAllButtons() can let go of exactly what was pressed, and so a
+	// drag gesture repeating "still down" fifty times a second turns into one write
+	// instead of fifty.
+	std::array<std::atomic<bool>, VPADController::kButtonId_Max> s_iosButtonState{};
+
+	// The same trick for the sticks. A finger sliding across a thumbstick produces a new
+	// position on every touch-move - far more traffic than any button generates - and
+	// most of those frames leave at least two of the four components unchanged (sliding
+	// straight up never touches left or right). Comparing before writing turns each of
+	// those into nothing instead of a lock acquisition on the emulated controller.
+	std::array<std::atomic<float>, VPADController::kButtonId_Max> s_iosAxisState{};
+
+	// The four mappings one stick is made of, in the order (left, right, up, down) that
+	// VPADController::get_axis() reads them back in.
+	struct IOSStickAxes { VPADController::ButtonId left, right, up, down; };
+
+	// -1 on an axis is not a button: it is the *opposite* axis mapping carrying a
+	// positive magnitude. Cemu stores each direction as its own 0..1 value and resolves
+	// the pair in get_axis() ((left > right) ? -left : right), so one component of the
+	// stick is always written as zero. Splitting it here rather than in the app keeps
+	// that convention where the enum it depends on lives.
+	bool iosStickAxes(int stick, IOSStickAxes& out)
+	{
+		switch (stick)
+		{
+		case CEMU_BRIDGE_STICK_LEFT:
+			out = {VPADController::kButtonId_StickL_Left, VPADController::kButtonId_StickL_Right,
+				   VPADController::kButtonId_StickL_Up,   VPADController::kButtonId_StickL_Down};
+			return true;
+		case CEMU_BRIDGE_STICK_RIGHT:
+			out = {VPADController::kButtonId_StickR_Left, VPADController::kButtonId_StickR_Right,
+				   VPADController::kButtonId_StickR_Up,   VPADController::kButtonId_StickR_Down};
+			return true;
+		default:
+			return false;
+		}
+	}
+
+	std::atomic<bool> s_iosFirstStickLogged{false};
+
+	// A silent input path is unfalsifiable from a device log, so say something exactly
+	// once for each of the two outcomes that matter: it worked, or there was nothing to
+	// deliver it to.
+	std::atomic<bool> s_iosFirstPressLogged{false};
+	std::atomic<bool> s_iosMissingGamePadLogged{false};
+
+	// The one place the app's stable button numbering meets Cemu's internal one.
+	//
+	// Not exhaustive over ButtonId on purpose. kButtonId_Mic and kButtonId_Screen have
+	// no VPAD hold flag at all (VPADRead treats them as special cases), and the eight
+	// kButtonId_Stick*_ entries are axis mappings - VPADRead skips them in the button
+	// loop and derives them from get_axis(), so pressing them as buttons would do
+	// nothing. An analog stick belongs on setAxisValue(), not here - which is what
+	// IOSInput_SetStickAxis() below does. kButtonId_StickL/StickR (the clicks) are not
+	// in that group and are mapped normally.
+	VPADController::ButtonId iosMapBridgeButton(int button)
+	{
+		// Range-check before the cast, not after. Converting an int outside an unscoped
+		// enum's value range to that enum is undefined behaviour, so a garbage argument
+		// has to be rejected while it is still an int.
+		if (button <= CEMU_BRIDGE_BUTTON_NONE || button >= CEMU_BRIDGE_BUTTON_COUNT)
+			return VPADController::kButtonId_None;
+
+		switch (static_cast<CemuBridgeButton>(button))
+		{
+		case CEMU_BRIDGE_BUTTON_A:       return VPADController::kButtonId_A;
+		case CEMU_BRIDGE_BUTTON_B:       return VPADController::kButtonId_B;
+		case CEMU_BRIDGE_BUTTON_X:       return VPADController::kButtonId_X;
+		case CEMU_BRIDGE_BUTTON_Y:       return VPADController::kButtonId_Y;
+
+		case CEMU_BRIDGE_BUTTON_L:       return VPADController::kButtonId_L;
+		case CEMU_BRIDGE_BUTTON_R:       return VPADController::kButtonId_R;
+		case CEMU_BRIDGE_BUTTON_ZL:      return VPADController::kButtonId_ZL;
+		case CEMU_BRIDGE_BUTTON_ZR:      return VPADController::kButtonId_ZR;
+
+		case CEMU_BRIDGE_BUTTON_PLUS:    return VPADController::kButtonId_Plus;
+		case CEMU_BRIDGE_BUTTON_MINUS:   return VPADController::kButtonId_Minus;
+
+		case CEMU_BRIDGE_BUTTON_UP:      return VPADController::kButtonId_Up;
+		case CEMU_BRIDGE_BUTTON_DOWN:    return VPADController::kButtonId_Down;
+		case CEMU_BRIDGE_BUTTON_LEFT:    return VPADController::kButtonId_Left;
+		case CEMU_BRIDGE_BUTTON_RIGHT:   return VPADController::kButtonId_Right;
+
+		case CEMU_BRIDGE_BUTTON_STICK_L: return VPADController::kButtonId_StickL;
+		case CEMU_BRIDGE_BUTTON_STICK_R: return VPADController::kButtonId_StickR;
+
+		case CEMU_BRIDGE_BUTTON_HOME:    return VPADController::kButtonId_Home;
+
+		case CEMU_BRIDGE_BUTTON_NONE:
+		case CEMU_BRIDGE_BUTTON_COUNT:
+			break;
+		}
+		return VPADController::kButtonId_None;
+	}
+}
+
+void IOSInput_Initialize()
+{
+	std::scoped_lock lock(s_iosInputMutex);
+	if (s_iosInputInitialized)
+		return;
+	s_iosInputInitialized = true;
+
+	// Constructing the singleton is what creates the controller providers, i.e. what
+	// actually calls SDL_Init(). Doing it here, explicitly and early, replaces the
+	// accident of whichever engine thread happened to touch InputManager first.
+	auto& inputManager = InputManager::instance();
+
+	// Desktop parity: src/main.cpp does exactly this before WindowSystem::Create(). Picks
+	// up any controllerProfiles/controller<N>.xml the user dropped in over Finder/Files
+	// (UIFileSharingEnabled is on), so a hand-written mapping still wins over the default
+	// binding applied below.
+	inputManager.load();
+
+	iosBindFirstAvailableController();
+
+	// SDL raises CONTROLLERDEVICEADDED/REMOVED on its event thread, which
+	// on_device_changed() turns into this signal. Without this hook a controller paired
+	// after startup - the common case on iOS - would never get bound to anything.
+	EventService::instance().connect<Events::ControllerChanged>(
+		&IOSControllerHotplugListener::onControllerChanged, &s_iosHotplugListener);
+
+	// Write every override slot once, here, while this is still the only thread that can
+	// see that map. After this setButtonValue() only ever overwrites an element that
+	// already exists - an atomic store into a node whose address never moves again - so
+	// a finger-down can never rehash the map underneath the title thread's unlocked
+	// find(). The full reasoning is on m_overriddenButtonMappings in
+	// EmulatedController.h; the short version is that this loop is what makes touch
+	// input safe rather than merely usually-safe.
+	//
+	// All false, so nothing is held and every mapping still falls through to whatever
+	// physical controller is bound. It only reserves the slots.
+	//
+	// This is also why nothing may replace player 1's emulated controller once a title
+	// is running: a fresh VPADController would start with an empty override map again.
+	// On iOS nothing does - the GamePad is created here and never swapped.
+	if (auto gamepad = inputManager.get_vpad_controller(0))
+	{
+		for (uint32 id = VPADController::kButtonId_None; id < VPADController::kButtonId_Max; ++id)
+			gamepad->setButtonValue(id, false);
+
+		// The axis override map needs exactly the same treatment, and for exactly the
+		// same reason - it is a second unordered_map read unlocked from the title
+		// thread. Adding the on-screen analog stick is what made this necessary: before
+		// it, nothing on iOS ever called setAxisValue(), so the map stayed empty and the
+		// reader's find() always missed on an untouched bucket array.
+		//
+		// Every id rather than only the eight stick ones. The loop above already covers
+		// the whole range, get_axis_value() is also what reads ZL/ZR as analog triggers,
+		// and a zero is inert everywhere - it means "not overridden", not "held at 0".
+		for (uint32 id = VPADController::kButtonId_None; id < VPADController::kButtonId_Max; ++id)
+			gamepad->setAxisValue(id, 0.0f);
+	}
+
+	s_iosInputReady.store(true, std::memory_order_release);
+
+	const auto controllerCount = inputManager.get_controller_count();
+	cemuLog_log(LogType::Force, "iOS: input initialized - {} emulated VPAD, {} emulated WPAD", controllerCount.first, controllerCount.second);
+}
+
+void IOSInput_RefreshDevices()
+{
+	std::scoped_lock lock(s_iosInputMutex);
+	if (!s_iosInputInitialized)
+		return;
+	iosBindFirstAvailableController();
+}
+
+void IOSInput_SetButtonState(int button, bool pressed)
+{
+	// Deliberately no s_iosInputMutex here - see s_iosInputReady. A press that arrives
+	// before initialization has nowhere to go anyway.
+	if (!s_iosInputReady.load(std::memory_order_acquire))
+		return;
+
+	const auto mapping = iosMapBridgeButton(button);
+	if (mapping == VPADController::kButtonId_None)
+		return;
+
+	// A DragGesture reports "still down" on every touch-move, so most calls carry no
+	// news. Drop those before touching the emulated controller, which would otherwise
+	// take its write lock for nothing several dozen times a second.
+	if (s_iosButtonState[mapping].exchange(pressed) == pressed)
+		return;
+
+	auto gamepad = InputManager::instance().get_vpad_controller(0);
+	if (!gamepad)
+	{
+		if (!s_iosMissingGamePadLogged.exchange(true))
+			cemuLog_log(LogType::Force, "iOS: on-screen button {} was pressed but player 1 has no emulated GamePad - the press went nowhere", button);
+		return;
+	}
+
+	gamepad->setButtonValue(mapping, pressed);
+
+	if (pressed && !s_iosFirstPressLogged.exchange(true))
+	{
+		cemuLog_log(LogType::Force, "iOS: first on-screen press reached the engine - bridge button {} -> VPAD {} ({})",
+					button, static_cast<int>(mapping), std::string(VPADController::get_button_name(mapping)));
+	}
+}
+
+void IOSInput_SetStickAxis(int stick, float x, float y)
+{
+	// Same gate and same reasoning as IOSInput_SetButtonState(): no mutex, because a
+	// finger-down must not wait behind an SDL device rescan.
+	if (!s_iosInputReady.load(std::memory_order_acquire))
+		return;
+
+	IOSStickAxes axes;
+	if (!iosStickAxes(stick, axes))
+		return;
+
+	auto gamepad = InputManager::instance().get_vpad_controller(0);
+	if (!gamepad)
+	{
+		if (!s_iosMissingGamePadLogged.exchange(true))
+			cemuLog_log(LogType::Force, "iOS: on-screen stick {} moved but player 1 has no emulated GamePad - the input went nowhere", stick);
+		return;
+	}
+
+	// y arrives UP-positive - the console's convention, converted by the caller - which
+	// is what kButtonId_StickL_Up expects, and get_axis() hands it back as +y unchanged.
+	//
+	// A local aggregate rather than std::pair, so this does not lean on <utility>
+	// arriving through somebody else's header: the kind of assumption that compiles here
+	// and stops compiling in the next translation unit that includes this one.
+	struct Component { VPADController::ButtonId mapping; float value; };
+	const Component components[] = {
+		{axes.left,  x < 0.0f ? -x : 0.0f},
+		{axes.right, x > 0.0f ?  x : 0.0f},
+		{axes.up,    y > 0.0f ?  y : 0.0f},
+		{axes.down,  y < 0.0f ? -y : 0.0f},
+	};
+
+	for (const Component& component : components)
+	{
+		if (s_iosAxisState[component.mapping].exchange(component.value) == component.value)
+			continue;
+		gamepad->setAxisValue(component.mapping, component.value);
+	}
+
+	if ((x != 0.0f || y != 0.0f) && !s_iosFirstStickLogged.exchange(true))
+	{
+		cemuLog_log(LogType::Force, "iOS: first on-screen stick movement reached the engine - stick {} at ({:.2f}, {:.2f})",
+					stick, x, y);
+	}
+}
+
+void IOSInput_ReleaseAllButtons()
+{
+	if (!s_iosInputReady.load(std::memory_order_acquire))
+		return;
+
+	auto gamepad = InputManager::instance().get_vpad_controller(0);
+	for (uint32 id = VPADController::kButtonId_None; id < VPADController::kButtonId_Max; ++id)
+	{
+		if (s_iosButtonState[id].exchange(false) && gamepad)
+			gamepad->setButtonValue(id, false);
+
+		// A stick left deflected by a cancelled gesture is worse than a stuck button,
+		// not better: the title keeps walking and there is no highlighted control on
+		// screen to explain why. Zeroing clears the override, so an attached physical
+		// controller takes the axis back rather than being pinned to centre with it.
+		if (s_iosAxisState[id].exchange(0.0f) != 0.0f && gamepad)
+			gamepad->setAxisValue(id, 0.0f);
+	}
+}
+#endif // CEMU_PLATFORM_IOS
