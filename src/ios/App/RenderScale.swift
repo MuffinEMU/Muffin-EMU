@@ -75,6 +75,20 @@ enum RenderScale: String, CaseIterable, Identifiable {
     }
 }
 
+/// Whether the picture fills the view's own aspect ratio instead of keeping the Wii U's
+/// 1280x720, letterboxed. A viewer choice, not a correctness fix - MetalRenderer's own
+/// quad math (createScreenQuad) already produces a correct, undistorted picture; this
+/// exists for someone who would rather fill every pixel of an odd-shaped screen than see
+/// bars on two sides of it.
+enum FrameStretch {
+    static let storageKey = "muffin.render.stretchToFit"
+    static let defaultValue = false
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+    }
+}
+
 #if os(iOS)
 extension UIScreen {
     /// The backing scale to hand the renderer, after the user's render-scale setting.

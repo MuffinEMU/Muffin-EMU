@@ -457,7 +457,7 @@ private struct ControlButton: View {
 /// Attached with `.gesture`, not `.simultaneousGesture`: sibling buttons are not
 /// ancestors of one another, so they arbitrate independently and two fingers on two
 /// different controls both register.
-private struct HeldControl<Content: View>: View {
+struct HeldControl<Content: View>: View {
     let onPressChange: (Bool) -> Void
     let content: (Bool) -> Content
 

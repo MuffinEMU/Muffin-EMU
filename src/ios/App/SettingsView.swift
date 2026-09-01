@@ -40,9 +40,85 @@ struct SettingsView: View {
     @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = false
     @AppStorage("muffin.cpu.legacyTimebase") private var legacyTimebase = false
     @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
+    @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @State private var learnedCacheBytes: Int64 = 0
     @State private var compiledCacheBytes: Int64 = 0
     @State private var confirmClearLearned = false
+    // A real ObservedObject on the shared store, not a second set of @AppStorage vars
+    // pointed at the same keys - PreviewPadStore only reads UserDefaults once, at
+    // launch, so a separate @AppStorage binding here would write the key correctly but
+    // leave the store's own @Published value - the thing the live pad actually reads -
+    // stale until relaunch. Binding straight to the store is what makes a change here
+    // reach a game already running with the pad on screen.
+    @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = false
+    @ObservedObject private var previewPad = PreviewPadStore.shared
+    @State private var showingLayoutExporter = false
+    @State private var showingLayoutImporter = false
+    @State private var showingColourExporter = false
+    @State private var showingColourImporter = false
+    @State private var previewFileErrorMessage: String?
+
+    private var previewLayoutPresetBinding: Binding<String> {
+        Binding(get: { previewPad.layoutPreset.rawValue },
+               set: { previewPad.layoutPreset = PreviewLayoutPreset(rawValue: $0) ?? .iPadPro2020 })
+    }
+    private var previewColourPresetBinding: Binding<String> {
+        Binding(get: { previewPad.colourPreset.rawValue },
+               set: { previewPad.colourPreset = PreviewColourPreset(rawValue: $0) ?? .wiiUWhite })
+    }
+    private var previewDisplayModeBinding: Binding<String> {
+        Binding(get: { previewPad.displayMode.rawValue },
+               set: { previewPad.displayMode = PadLayout.DisplayMode(rawValue: $0) ?? .fit })
+    }
+    private var previewLayoutPreset: PreviewLayoutPreset { previewPad.layoutPreset }
+    private var previewColourPreset: PreviewColourPreset { previewPad.colourPreset }
+
+    /// A representative container/safe-area to export against when there is no live game
+    /// view to measure - the exact reference profile PreviewLayoutPreset.iPadPro2020
+    /// itself captures from, so an export made from Settings and one made mid-game agree.
+    private func currentLayoutFile() -> MuffinLayoutFile {
+        PreviewPadStore.shared.effectiveLayoutFile(
+            container: CGSize(width: 1366, height: 1024),
+            safeArea: CGRect(x: 0, y: 0, width: 1366, height: 1004),
+            pointsPerInch: 132)
+    }
+
+    private func importLayout(_ result: Result<URL, Error>) {
+        do {
+            let url = try result.get()
+            guard url.startAccessingSecurityScopedResource() else {
+                previewFileErrorMessage = "Couldn't access that file."
+                return
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+            let data = try Data(contentsOf: url)
+            let file = try MuffinLayoutFile.decode(data)
+            PreviewPadStore.shared.applyImportedLayout(file)
+        } catch {
+            previewFileErrorMessage = "Couldn't import that .muffinlyt file: \(error.localizedDescription)"
+        }
+    }
+
+    private func importColour(_ result: Result<URL, Error>) {
+        do {
+            let url = try result.get()
+            guard url.startAccessingSecurityScopedResource() else {
+                previewFileErrorMessage = "Couldn't access that file."
+                return
+            }
+            defer { url.stopAccessingSecurityScopedResource() }
+            let data = try Data(contentsOf: url)
+            _ = try MuffinColourFile.decode(data)
+            // The three shipping presets in this preview are a fixed set (white/black/
+            // Super Famicom); a genuinely custom imported palette is what
+            // MuffinColourPresets.customStarter and PadColourPickerView exist for in the
+            // full colour system - out of scope for this showcase build's 3-preset
+            // picker, so this only validates the file rather than pretending to apply it.
+            previewFileErrorMessage = "Imported and verified - custom colour slots aren't in this preview build's 3-preset picker yet."
+        } catch {
+            previewFileErrorMessage = "Couldn't import that .muffinclr file: \(error.localizedDescription)"
+        }
+    }
     @State private var cacheStatusMessage: String?
 
     /// Same keys the on-screen pad reads. Moving a cluster is a thing you can only
@@ -195,51 +271,68 @@ struct SettingsView: View {
                     // matter. CPU mode first because it is worth more than everything
                     // else combined and it is not a setting - it is decided by HOW the
                     // app was launched, which is exactly why it needs saying here.
+                    // Three independent settings that each decide something different -
+                    // whether the CPU is recompiled or interpreted, how fast the emulated
+                    // clock runs, and when a shader gets built - split into their own
+                    // sections rather than one shared block. They used to share a single
+                    // "Performance" section, which read as one combined decision when
+                    // they are not: Nano Assault Neo needs background shader compilation
+                    // OFF while every other tested game wants it on, and that only makes
+                    // sense as a real per-setting choice, not a facet of one bundled
+                    // toggle. The per-game override for this one lives in the library's
+                    // long-press menu, not here - this is the global default it falls
+                    // back to.
                     Section {
                         CPUModeRow()
 
-                        // Both default to the safe side. They exist because two builds in
-                        // a row were unusable and neither of us could tell which change
-                        // did it without a rebuild per guess.
+                        // Off by default because it is reported to crash. Two builds in a
+                        // row were unusable and neither of us could tell which change did
+                        // it without a rebuild per guess.
                         Toggle(isOn: $recompilerEnabled) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Use the recompiler (JIT)")
-                                Text("Off by default because it is reported to crash. Faster when it works, but a crash in the emulated CPU makes every other problem impossible to judge. Start the game again after changing this.")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
-                            }
+                            Text("Use the recompiler (JIT)")
                         }
                         .tint(MuffinTheme.pixelBlue)
                         .onChange(of: recompilerEnabled) { newValue in
                             cemu_bridge_set_recompiler_enabled(newValue)
                         }
+                    } header: {
+                        Text("CPU")
+                    } footer: {
+                        Text("Faster when it works, but a crash in the emulated CPU makes every other problem impossible to judge. Start the game again after changing this.")
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
 
+                    Section {
                         Toggle(isOn: $legacyTimebase) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Use the original emulated clock")
-                                Text("The rewritten clock had an overflow that ran the emulated console 65 times too slow, which made games mistime everything they animate. That is fixed, and the log now prints the clock rate so you can check it. This falls back to the old one anyway if anything still looks wrong.")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
-                            }
+                            Text("Use the original emulated clock")
                         }
                         .tint(MuffinTheme.pixelBlue)
                         .onChange(of: legacyTimebase) { newValue in
                             cemu_bridge_set_legacy_timebase(newValue)
                         }
+                    } header: {
+                        Text("Emulated Clock")
+                    } footer: {
+                        Text("The rewritten clock had an overflow that ran the emulated console 65 times too slow, which made games mistime everything they animate. That is fixed, and the log now prints the clock rate so you can check it. This falls back to the old one anyway if anything still looks wrong.")
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
 
+                    Section {
                         Toggle(isOn: $asyncShaderCompile) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Compile shaders in the background")
-                                Text("On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead. Neither can build a shader before the game first uses it - the Wii U only reveals them as it draws.")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.secondary)
-                            }
+                            Text("Compile shaders in the background")
                         }
                         .tint(MuffinTheme.pixelBlue)
                         .onChange(of: asyncShaderCompile) { newValue in
                             cemu_bridge_set_async_shader_compile(newValue)
                         }
+                    } header: {
+                        Text("Shader Compilation")
+                    } footer: {
+                        Text("On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead. Neither can build a shader before the game first uses it - the Wii U only reveals them as it draws.\n\nNano Assault Neo specifically breaks with this on - use its own per-game override (long-press the game in your library) rather than turning this off for everyone.")
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
 
+                    Section {
                         // Two buttons, not one. Pressing the first costs a slow launch;
                         // pressing the second throws away something only playing can earn
                         // back, and a single "clear cache" button would hide that.
@@ -277,13 +370,18 @@ struct SettingsView: View {
                             }
                         }
                         .foregroundColor(MuffinTheme.brownDarkest)
+
+                        Toggle(isOn: $frameStretchEnabled) {
+                            Text("Enable Frame Stretching")
+                        }
+                        .tint(MuffinTheme.pixelBlue)
                     } header: {
                         Text("Performance")
                     } footer: {
                         // Says "next launch" because it is true: the scale is baked into
                         // the surface at registration, and a running title's swapchain is
                         // not rebuilt underneath it.
-                        Text("\(renderScale.summary)\n\nResolution changes the size of the picture Muffin draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.")
+                        Text("\(renderScale.summary)\n\nResolution changes the size of the picture Muffin draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.\n\nFrame stretching fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.")
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 
@@ -373,6 +471,111 @@ struct SettingsView: View {
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 
+                    // Computed live rather than written down, for the same reason
+                    // BootFailureView's crash-log hint is: only the OS knows what $HOME
+                    // actually resolved to for this install, and that differs between a
+                    // normal signed install and a sideloaded one. The Wii U keys section
+                    // above already tells someone to "open Muffin in the Files app" -
+                    // this is the exact path that instruction means, spelled out, so it
+                    // is followable rather than a folder name to guess at.
+                    Section {
+                        Text(Self.documentsPathHint)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                    } header: {
+                        Text("Your Files")
+                    } footer: {
+                        Text("ROMs, saves, shader caches and keys.txt all live in this folder. Installed normally, it shows up as Files \u{2192} On My iPhone/iPad \u{2192} Muffin. Sideloaded through LiveContainer, iOS attributes the folder to LiveContainer instead of to Muffin by name, so look for it under LiveContainer's own Documents, or one level into Data/Application/<its folder>/Documents - the path above is the one to actually search for.")
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
+
+                    // Off by default. Everything above and below this section is the
+                    // shipping app, unaffected by whatever is chosen here - see
+                    // EmulatorViewOptimized's branch on PreviewPadStore.enabledKey for
+                    // exactly what turning this on changes and what stays untouched.
+                    Section {
+                        Toggle(isOn: $previewPadEnabled) {
+                            Text("Use the new pad system")
+                        }
+                        .tint(MuffinTheme.pixelBlue)
+
+                        if previewPadEnabled {
+                            Picker("Layout", selection: previewLayoutPresetBinding) {
+                                ForEach(PreviewLayoutPreset.allCases) { preset in
+                                    Text(preset.title).tag(preset.rawValue)
+                                }
+                            }
+                            Text(previewLayoutPreset.summary)
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+
+                            Picker("Colours", selection: previewColourPresetBinding) {
+                                ForEach(PreviewColourPreset.allCases) { preset in
+                                    Text(preset.file.name).tag(preset.rawValue)
+                                }
+                            }
+
+                            Picker("Picture", selection: previewDisplayModeBinding) {
+                                Text("Fit").tag(PadLayout.DisplayMode.fit.rawValue)
+                                Text("Native").tag(PadLayout.DisplayMode.native.rawValue)
+                            }
+                            .pickerStyle(.segmented)
+
+                            Button(role: .destructive) {
+                                PreviewPadStore.shared.resetAdjustments()
+                            } label: {
+                                Label("Reset dragged/resized groups", systemImage: "arrow.counterclockwise")
+                            }
+
+                            Button {
+                                showingLayoutExporter = true
+                            } label: {
+                                Label("Export layout (.muffinlyt)", systemImage: "square.and.arrow.up")
+                            }
+                            Button {
+                                showingLayoutImporter = true
+                            } label: {
+                                Label("Import layout (.muffinlyt)", systemImage: "square.and.arrow.down")
+                            }
+                            Button {
+                                showingColourExporter = true
+                            } label: {
+                                Label("Export colours (.muffinclr)", systemImage: "square.and.arrow.up")
+                            }
+                            Button {
+                                showingColourImporter = true
+                            } label: {
+                                Label("Import colours (.muffinclr)", systemImage: "square.and.arrow.down")
+                            }
+                        }
+                    } header: {
+                        Text("Preview: New Pad System")
+                    } footer: {
+                        Text("Every group - both shoulders, both sticks, the d-pad, A/B/X/Y, Start, Select, HOME - can be dragged and pinch-resized once this is on: tap the move icon in the top bar during a game, the same way the shipping pad's edit mode works.\n\nFit fills the screen with controls floating on top. Native sizes the picture to whatever the clusters leave room for and never lets a control cover it - small and letterboxed on a phone, life-size and framed on an iPad.\n\nThis has not run on a real device yet. If something looks wrong, turn it back off - nothing else in the app depends on it.")
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
+                    .fileExporter(isPresented: $showingLayoutExporter,
+                                 document: MuffinLayoutDocument(currentLayoutFile()),
+                                 contentType: .muffinLayout,
+                                 defaultFilename: previewLayoutPreset.title) { _ in }
+                    .fileImporter(isPresented: $showingLayoutImporter, allowedContentTypes: [.muffinLayout]) { result in
+                        importLayout(result)
+                    }
+                    .fileExporter(isPresented: $showingColourExporter,
+                                 document: MuffinColourDocument(previewColourPreset.file),
+                                 contentType: .muffinColour,
+                                 defaultFilename: previewColourPreset.file.name) { _ in }
+                    .fileImporter(isPresented: $showingColourImporter, allowedContentTypes: [.muffinColour]) { result in
+                        importColour(result)
+                    }
+                    .alert("Preview pad files", isPresented: .constant(previewFileErrorMessage != nil),
+                          presenting: previewFileErrorMessage) { _ in
+                        Button("OK") { previewFileErrorMessage = nil }
+                    } message: { message in
+                        Text(message)
+                    }
+
                     Section("About") {
                         SettingsRow(label: "Version", value: Bundle.main.appVersionString)
                         Link(destination: URL(string: "https://github.com/bward-dev1/cemu-ios-muffin")!) {
@@ -440,6 +643,15 @@ struct SettingsView: View {
         _ = cemu_bridge_shader_cache_stats(0, &learned, &compiled)
         learnedCacheBytes = learned
         compiledCacheBytes = compiled
+    }
+
+    /// The real on-device path to Documents/, same computed-not-written-down reasoning as
+    /// BootFailureView.crashLogHint above it.
+    private static var documentsPathHint: String {
+        guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return "Could not resolve a Documents folder for this install."
+        }
+        return url.path
     }
 
     private static func formatBytes(_ bytes: Int64) -> String {

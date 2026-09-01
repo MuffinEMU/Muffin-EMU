@@ -143,6 +143,10 @@ struct GameBrowserView: View {
     @State private var searchText = ""
     @State private var showingIconPicker = false
     @State private var showingSettings = false
+    /// Which game "View Game Options" was opened for - the sheet's own presence, not a
+    /// separate Bool, so there is no way for the sheet to open pointed at the wrong game.
+    @State private var gameOptionsTarget: GameMetadata?
+    @ObservedObject private var perGameSettings = PerGameSettingsStore.shared
     /// What the picker is being opened for.
     ///
     /// A document picker only lets you SELECT a directory when UTType.folder is among
@@ -278,6 +282,17 @@ struct GameBrowserView: View {
                                             gameManager.toggleFavorite(game)
                                         }
                                     )
+                                    // Same pattern as Manic: a long-press on the card
+                                    // offers a couple of fast toggles plus a way into the
+                                    // full screen, rather than making every per-game
+                                    // setting a trip through Settings for one game.
+                                    .contextMenu {
+                                        GameContextMenu(
+                                            game: game,
+                                            store: perGameSettings,
+                                            onViewOptions: { gameOptionsTarget = game }
+                                        )
+                                    }
                                 }
                             }
                             .padding(16)
@@ -297,6 +312,9 @@ struct GameBrowserView: View {
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView(gameManager: gameManager)
+        }
+        .sheet(item: $gameOptionsTarget) { game in
+            GameOptionsView(game: game, store: perGameSettings)
         }
         .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
             Button("OK") { romImportErrorMessage = nil }
@@ -537,6 +555,10 @@ struct EmulatorViewOptimized: View {
     /// under you, exactly like the two sliders next to it.
     @AppStorage(ControllerLayoutSettings.joystickKey)
     private var joystickMode = ControllerLayoutSettings.defaultJoystick
+    /// Off by default - see the branch on this flag a few lines below for exactly what
+    /// it swaps in and why the shipping path is otherwise untouched.
+    @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = false
+    @ObservedObject private var previewPad = PreviewPadStore.shared
     // The two feel settings, offered here as well as in Settings for the same reason the
     // toggle is: a deadzone is not something you can judge from a settings screen with no
     // game under it. This is the panel you have open while steering.
@@ -655,14 +677,62 @@ struct EmulatorViewOptimized: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                #if os(iOS)
-                MetalViewIOS(gameManager: gameManager)
-                    .ignoresSafeArea()
-                #else
-                MetalView(gameManager: gameManager)
-                    .ignoresSafeArea()
-                #endif
+                if previewPadEnabled {
+                    // Video and pad have to agree on the exact same rect for Native mode
+                    // to mean anything - a mismatch between two independent resolves
+                    // would put the picture in one place and the "never overlaps it"
+                    // guarantee somewhere else. So both are siblings inside ONE
+                    // GeometryReader here, sharing one PreviewResolved, rather than the
+                    // video living in the VStack and the pad spanning the full screen the
+                    // way the shipping OptimizedControlPanel does below. The trade is
+                    // real and worth stating plainly: in this preview path the pad no
+                    // longer draws over the top bar/skin-selector area above it. The
+                    // shipping path (this flag off, the default) is untouched by any of
+                    // this - same MetalView, same .ignoresSafeArea(), same full-screen pad.
+                    GeometryReader { proxy in
+                        let insets = proxy.safeAreaInsets
+                        let full = proxy.frame(in: .local)
+                        let safeArea = CGRect(x: full.minX + insets.leading, y: full.minY + insets.top,
+                                              width: full.width - insets.leading - insets.trailing,
+                                              height: full.height - insets.top - insets.bottom)
+                        let resolved = previewPad.resolve(container: proxy.size, safeArea: safeArea,
+                                                          pointsPerInch: DeviceMetrics.current().pointsPerInch)
+                        ZStack(alignment: .topLeading) {
+                            #if os(iOS)
+                            MetalViewIOS(gameManager: gameManager)
+                            #else
+                            MetalView(gameManager: gameManager)
+                            #endif
+                        }
+                        .frame(width: previewPad.displayMode == .native ? resolved.video.width : proxy.size.width,
+                              height: previewPad.displayMode == .native ? resolved.video.height : proxy.size.height)
+                        .position(x: previewPad.displayMode == .native ? resolved.video.midX : proxy.size.width / 2,
+                                 y: previewPad.displayMode == .native ? resolved.video.midY : proxy.size.height / 2)
+                        .clipped()
 
+                        PreviewControllerPad(
+                            store: previewPad,
+                            onInput: { label, pressed in
+                                cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
+                            },
+                            onStick: { stick, position in
+                                cemu_bridge_set_stick_axis(
+                                    stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
+                                    Float(position.x), Float(position.y)
+                                )
+                            },
+                            isEditingLayout: $isEditingControlLayout
+                        )
+                    }
+                } else {
+                    #if os(iOS)
+                    MetalViewIOS(gameManager: gameManager)
+                        .ignoresSafeArea()
+                    #else
+                    MetalView(gameManager: gameManager)
+                        .ignoresSafeArea()
+                    #endif
+                }
             }
 
             // Unconditional: no showControls state, no tap-to-toggle, no transition.
@@ -686,24 +756,29 @@ struct EmulatorViewOptimized: View {
             // No VStack/Spacer any more: the pad positions every control itself against
             // the size it is handed, which is what lets one half be dragged somewhere a
             // bottom-aligned stack could never have put it.
-            OptimizedControlPanel(
-                skin: controllerSkin,
-                onInput: { label, pressed in
-                    cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
-                },
-                // The axis path. Deliberately not routed through the button call above:
-                // the bridge keeps sticks and buttons apart because the engine does, and
-                // a stick sent as a press reaches VPADRead's button loop, which skips
-                // the stick mappings outright.
-                onStick: { stick, position in
-                    cemu_bridge_set_stick_axis(
-                        stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
-                        Float(position.x),
-                        Float(position.y)
-                    )
-                },
-                isEditingLayout: $isEditingControlLayout
-            )
+            // Preview mode draws its own pad inside the GeometryReader above, alongside
+            // the video it shares a coordinate space with - so the shipping pad only
+            // renders when that flag is off, which is also its default.
+            if !previewPadEnabled {
+                OptimizedControlPanel(
+                    skin: controllerSkin,
+                    onInput: { label, pressed in
+                        cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
+                    },
+                    // The axis path. Deliberately not routed through the button call above:
+                    // the bridge keeps sticks and buttons apart because the engine does, and
+                    // a stick sent as a press reaches VPADRead's button loop, which skips
+                    // the stick mappings outright.
+                    onStick: { stick, position in
+                        cemu_bridge_set_stick_axis(
+                            stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
+                            Float(position.x),
+                            Float(position.y)
+                        )
+                    },
+                    isEditingLayout: $isEditingControlLayout
+                )
+            }
 
             // The Metal view above must mount (so it can register the render
             // surface) before boot() actually runs, so this state genuinely

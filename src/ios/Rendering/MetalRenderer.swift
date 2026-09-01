@@ -182,6 +182,21 @@ class AdvancedMetalRenderer: NSObject, MTKViewDelegate {
     }
 
     private func createScreenQuad(viewSize: CGSize) -> [Float] {
+        // Stretch to fill: the full clip-space quad, ignoring the source's own 1280x720
+        // aspect ratio entirely. Read live rather than cached, the same way the CPU/clock/
+        // shader settings are - this runs every frame, so a toggle in Settings takes
+        // effect on the very next one instead of needing a relaunch.
+        if FrameStretch.isEnabled {
+            return [
+                -1, 1, 0, 1,
+                -1, -1, 0, 0,
+                1, -1, 1, 0,
+                -1, 1, 0, 1,
+                1, -1, 1, 0,
+                1, 1, 1, 1
+            ]
+        }
+
         let aspectRatio = Float(viewSize.width / viewSize.height)
         let targetAspect: Float = 1280.0 / 720.0
 
