@@ -83,8 +83,11 @@ settings:
   # GameManager.swift scans Documents/Roms/ for .rpx/.wud/... - without these two
   # keys that folder is sandboxed and invisible to Finder/Files, so there'd be no
   # way to actually get a test RPX onto the device once the app is sideloaded.
-  INFOPLIST_KEY_UIFileSharingEnabled: 'YES'
-  INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: 'YES'
+  # NOT declared here as INFOPLIST_KEY_* - confirmed on a real built IPA that
+  # xcodebuild's GENERATE_INFOPLIST_FILE+INFOPLIST_FILE merge silently drops
+  # UIFileSharingEnabled while keeping LSSupportsOpeningDocumentsInPlace, even
+  # though both land identically in the generated pbxproj. Both keys are written
+  # literally into Info-AlternateIcons.plist instead - see the comment there.
 
 targets:
   Cemu:

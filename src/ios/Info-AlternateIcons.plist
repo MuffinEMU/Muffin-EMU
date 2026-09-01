@@ -2,6 +2,20 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Moved here from project.yml's INFOPLIST_KEY_UIFileSharingEnabled: that flat
+	     build-setting merged correctly for LSSupportsOpeningDocumentsInPlace but
+	     silently dropped UIFileSharingEnabled from the actual shipped Info.plist
+	     (confirmed via PlistBuddy on a real built IPA - GENERATE_INFOPLIST_FILE +
+	     INFOPLIST_FILE merging both keys identically in the generated pbxproj, but
+	     xcodebuild's own merge step only carrying one of the two through). Void
+	     hit this live: sideloaded via SideStore, no file-sharing folder in Files/
+	     Finder at all, no way to move ROMs/keys/logs onto the device. Writing it
+	     literally here sidesteps the merge entirely rather than trying to explain
+	     the undocumented Xcode behavior. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<!-- Declares .muffinlyt/.muffinclr as real Uniform Types rather than leaving them as
 	     plain JSON with a custom extension. Same merge mechanism as CFBundleIcons below -
 	     this is a nested structure GENERATE_INFOPLIST_FILE's flat INFOPLIST_KEY_* scheme
