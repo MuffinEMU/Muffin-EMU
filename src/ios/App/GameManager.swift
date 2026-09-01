@@ -211,7 +211,12 @@ class GameManager: ObservableObject {
     /// .wux is the compressed dump format most Wii U rips are distributed in and was
     /// missing here, so importing one failed with "isn't a supported ROM format" even
     /// though the picker had happily handed it over.
-    static let supportedROMExtensions: Set<String> = ["wux", "wud", "wua", "iso", "rpx"]
+    ///
+    /// .wuhb (Wii U Homebrew Bundle) is a single-file container the core already reads -
+    /// src/Cafe/Filesystem/WUHB/WUHBReader.cpp and fscDeviceWuhb.cpp are upstream Cemu,
+    /// not new engineering - so this is only the iOS-side import allowlist catching up to
+    /// what the engine underneath it already supports.
+    static let supportedROMExtensions: Set<String> = ["wux", "wud", "wua", "iso", "rpx", "wuhb"]
 
     /// Staging directory inside Documents/Roms. A single-file import lands here first
     /// and is only moved up into Roms/ once it has passed validation. Two reasons: a
@@ -256,6 +261,9 @@ class GameManager: ObservableObject {
             return fileMagic(at: url) == Data([0x7F, 0x45, 0x4C, 0x46])
         case "wux":
             return fileMagic(at: url) == Data([0x57, 0x55, 0x58, 0x30])
+        case "wuhb":
+            // WUHBReader.h's own s_headerMagicValue - "WUHB" in ASCII at offset 0.
+            return fileMagic(at: url) == Data([0x57, 0x55, 0x48, 0x42])
         default:
             return true
         }
@@ -468,8 +476,12 @@ class GameManager: ObservableObject {
                 UserDefaults.standard.object(forKey: "muffin.cpu.recompiler") as? Bool ?? false)
             cemu_bridge_set_legacy_timebase(
                 UserDefaults.standard.object(forKey: "muffin.cpu.legacyTimebase") as? Bool ?? false)
+            // Per-game override first, global default underneath it - PerGameSettingsStore
+            // reads the same UserDefaults key directly for exactly the reason above: an
+            // override that only lived in a @Published property would revert the moment
+            // this background task started fresh on a relaunch.
             cemu_bridge_set_async_shader_compile(
-                UserDefaults.standard.object(forKey: "muffin.shaders.asyncCompile") as? Bool ?? true)
+                PerGameSettingsStore.shared.effectivePreCompileShaders(for: game.id))
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)
