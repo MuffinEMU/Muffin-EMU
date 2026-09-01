@@ -174,3 +174,21 @@ void Latte_Start();
 void Latte_Stop();
 bool Latte_GetStopSignal(); // returns true if stop was requested or if in stopped state
 void LatteThread_Exit();
+
+// Progress reporting
+//
+// The same four counters the heartbeat prints (LatteThread.cpp), readable on demand so a
+// frontend can show them instead of the user having to export log.txt and mail it
+// somewhere. The distinction they exist to make - "running, just very slow" versus
+// "stopped dead after the first frame" - is invisible in an ordinary FPS readout,
+// because both of those look like zero once the rate is rounded to whole frames.
+struct LatteProgressSnapshot
+{
+	bool gx2InitReached;        // GX2Init() reached, i.e. past OSScreen boot
+	uint64 gx2FrameCount;       // frames the GPU has actually completed
+	double gx2FramesPerSecond;  // the heartbeat's own last measured rate; fractional on purpose
+	uint64 osScreenScanouts;    // pre-GX2 OSScreen presents
+	uint32 guestFlipRequests;   // written by the emulated CPU, so it moves only if the guest is alive
+};
+
+void LatteThread_GetProgress(LatteProgressSnapshot& out);

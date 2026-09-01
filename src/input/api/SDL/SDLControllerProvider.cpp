@@ -16,6 +16,34 @@ struct SDL_JoystickGUIDHash
 
 SDLControllerProvider::SDLControllerProvider()
 {
+	// SDL refuses to bring up any subsystem until its internal SDL_MainIsReady flag is
+	// set. On every platform where SDL_main.h defines SDL_MAIN_NEEDED (iOS, WinRT/GDK,
+	// PSP, ...) that flag starts out FALSE and is only ever set by SDL's own entry
+	// point - SDL_UIKitRunApp() on iOS. This fork's iOS app is launched by SwiftUI
+	// (CemuApp.init() -> ContentView.onAppear -> EmulationEngine -> CemuBridge), so
+	// SDL_main never runs and the SDL_Init() below failed on every real device launch
+	// with SDL's own diagnostic:
+	//
+	//   couldn't initialize SDL: Application didn't initialize properly, did you
+	//   include SDL_main.h in the file containing your main() function?
+	//
+	// That message is not really about a missing #include - it is the text SDL returns
+	// for "SDL_MainIsReady is false". It surfaced as a std::runtime_error out of this
+	// constructor, which InputManager::create_provider() catches and logs, so the app
+	// carried on and booted titles with no SDLControllerProvider registered at all: zero
+	// controller input, and nothing louder than one log line to say why.
+	//
+	// SDL_SetMainReady() is the documented way for a host application that provides its
+	// own entry point to tell SDL the work SDL_main would have done is already done.
+	// Guarded so it stays a no-op where it isn't needed (on Windows, src/main.cpp already
+	// calls it before WindowSystem::Create()). CEMU_PLATFORM_IOS is ORed in so the fix
+	// can't silently evaporate if SDL_MAIN_HANDLED is ever defined project-wide - that
+	// would suppress SDL_MAIN_NEEDED here without changing the runtime behaviour that
+	// makes this call necessary.
+#if defined(SDL_MAIN_NEEDED) || defined(CEMU_PLATFORM_IOS)
+	SDL_SetMainReady();
+#endif
+
 	SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 
 	SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS4, "1");

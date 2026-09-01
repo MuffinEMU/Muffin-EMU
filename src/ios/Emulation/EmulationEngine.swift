@@ -28,11 +28,12 @@ final class EmulationEngine: ObservableObject {
         statusText = String(cString: cemu_bridge_status_text())
     }
 
-    /// Boot a standalone `.rpx`. Returns the real bridge status.
+    /// Boot whatever was picked - an encrypted disc image, a Wii U archive, a dumped
+    /// game folder, or a standalone homebrew `.rpx`. Returns the real bridge status.
     @discardableResult
-    func boot(rpxPath: String) -> CemuBridgeStatus {
-        currentGame = URL(fileURLWithPath: rpxPath).lastPathComponent
-        let status = EmulationEngine.bootBlocking(rpxPath: rpxPath)
+    func boot(path: String) -> CemuBridgeStatus {
+        currentGame = URL(fileURLWithPath: path).lastPathComponent
+        let status = EmulationEngine.bootBlocking(path: path)
         isRunning = cemu_bridge_is_title_running()
         statusText = String(cString: cemu_bridge_status_text())
         return status
@@ -51,8 +52,25 @@ final class EmulationEngine: ObservableObject {
         mlcPath.withCString { cemu_bridge_initialize($0) }
     }
 
-    nonisolated static func bootBlocking(rpxPath: String) -> CemuBridgeStatus {
-        rpxPath.withCString { cemu_bridge_boot_rpx($0) }
+    nonisolated static func bootBlocking(path: String) -> CemuBridgeStatus {
+        path.withCString { cemu_bridge_boot_title($0) }
+    }
+
+    /// Number of decryption keys the engine can currently read out of keys.txt.
+    ///
+    /// This is the engine's own count, not a Swift re-parse of the file: it is the only
+    /// answer that means anything, because it is the same parser that will be asked to
+    /// open a disc image. 0 means no usable keys, which is a perfectly normal state -
+    /// homebrew needs none.
+    ///
+    /// Only meaningful once initializeBlocking() has run, since keys.txt is resolved
+    /// against the user data path that establishes. Returns -1 before then, and -1 in a
+    /// build without the core - "cannot answer", which is deliberately not the same
+    /// value as 0. Zero is a real answer about a real file that holds no usable keys, so
+    /// a caller that collapsed the two would report "no keys" for a keys.txt it had
+    /// simply never looked at.
+    nonisolated static func reloadAndCountKeys() -> Int {
+        Int(cemu_bridge_reload_and_count_keys())
     }
 
     /// Refreshes published state from the bridge's (fast, non-blocking) getters.

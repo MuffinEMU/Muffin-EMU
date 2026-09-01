@@ -1,4 +1,12 @@
+// Dispatch header first, deliberately. Fiber.h picks the backend *declaration* by
+// platform and must agree with the .cpp CMake compiles; if it ever disagrees, the
+// two class definitions collide here and the build stops, instead of linking a
+// silent size mismatch into the PPC scheduler. #pragma once makes this free when
+// the selection is correct.
+#include "Fiber.h"
 #include "FiberUContext.h"
+
+#include <cerrno>
 
 thread_local Fiber* sCurrentFiber{};
 
@@ -42,13 +50,27 @@ Fiber* Fiber::PrepareCurrentThread(void* privateData)
 	return sCurrentFiber;
 }
 
-void Fiber::Switch(Fiber& targetFiber)
+int Fiber::Switch(Fiber& targetFiber)
 {
     Fiber* leavingFiber = sCurrentFiber;
     sCurrentFiber = &targetFiber;
 	std::atomic_thread_fence(std::memory_order_seq_cst);
-	swapcontext(leavingFiber->m_ctx, targetFiber.m_ctx);
+	// The return code used to be dropped on the floor. ucontext is declared but not
+	// promised on every platform this now builds for, and a swapcontext that refuses
+	// outright leaves the caller looking identical to one that landed and then hung:
+	// execution simply continues with nothing logged. Hand the code back so the caller
+	// can tell those two apart.
+	errno = 0;
+	const int rc = swapcontext(leavingFiber->m_ctx, targetFiber.m_ctx);
+	const int err = errno;
 	std::atomic_thread_fence(std::memory_order_seq_cst);
+	if (rc != 0)
+	{
+		// The switch did not happen, so the current-fiber bookkeeping is a lie. Undo it.
+		sCurrentFiber = leavingFiber;
+		return err ? err : -1;
+	}
+	return 0;
 }
 
 void* Fiber::GetFiberPrivateData()

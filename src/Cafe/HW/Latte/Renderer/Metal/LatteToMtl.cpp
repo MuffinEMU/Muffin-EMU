@@ -163,6 +163,38 @@ void CheckForPixelFormatSupport(const MetalPixelFormatSupport& support)
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::R5_G5_B5_A1_UNORM].textureDecoder = TextureDecoder_R5_G5_B5_A1_UNORM_swappedRB_To_RGBA8::getInstance();
     }
 
+    if (!support.m_supportsBCTextureCompression)
+    {
+        // No block-compression hardware here - every Apple GPU up to and including the
+        // A12Z. Metal doesn't fail a BC descriptor politely, it aborts the process, so
+        // decode the blocks on the CPU into plain uncompressed formats instead. This is
+        // the same fallback the Vulkan backend takes when fmt_bc* comes back false, and
+        // it reuses the same decoders. It costs texture memory - BC1 goes from half a
+        // byte per texel to four - which matters on a 6 GB device, but the alternative
+        // is not booting at all.
+        auto decompressBC = [](Latte::E_GX2SURFFMT format, MTL::PixelFormat pixelFormat, size_t bytesPerTexel, TextureDecoder* textureDecoder)
+        {
+            auto& formatInfo = MTL_COLOR_FORMAT_TABLE[format];
+            formatInfo.pixelFormat = pixelFormat;
+            formatInfo.bytesPerBlock = bytesPerTexel;
+            formatInfo.blockTexelSize = {1, 1};
+            formatInfo.textureDecoder = textureDecoder;
+        };
+
+        decompressBC(Latte::E_GX2SURFFMT::BC1_UNORM, MTL::PixelFormatRGBA8Unorm, 4, TextureDecoder_BC1_To_R8G8B8A8::getInstance());
+        decompressBC(Latte::E_GX2SURFFMT::BC1_SRGB, MTL::PixelFormatRGBA8Unorm_sRGB, 4, TextureDecoder_BC1_To_R8G8B8A8::getInstance());
+        decompressBC(Latte::E_GX2SURFFMT::BC2_UNORM, MTL::PixelFormatRGBA8Unorm, 4, TextureDecoder_BC2_To_R8G8B8A8::getInstance());
+        decompressBC(Latte::E_GX2SURFFMT::BC2_SRGB, MTL::PixelFormatRGBA8Unorm_sRGB, 4, TextureDecoder_BC2_To_R8G8B8A8::getInstance());
+        decompressBC(Latte::E_GX2SURFFMT::BC3_UNORM, MTL::PixelFormatRGBA8Unorm, 4, TextureDecoder_BC3_To_R8G8B8A8::getInstance());
+        decompressBC(Latte::E_GX2SURFFMT::BC3_SRGB, MTL::PixelFormatRGBA8Unorm_sRGB, 4, TextureDecoder_BC3_To_R8G8B8A8::getInstance());
+        decompressBC(Latte::E_GX2SURFFMT::BC4_UNORM, MTL::PixelFormatR8Unorm, 1, TextureDecoder_BC4_To_R8::getInstance());
+        decompressBC(Latte::E_GX2SURFFMT::BC4_SNORM, MTL::PixelFormatR8Snorm, 1, TextureDecoder_BC4_To_R8::getInstance());
+        decompressBC(Latte::E_GX2SURFFMT::BC5_UNORM, MTL::PixelFormatRG8Unorm, 2, TextureDecoder_BC5_To_R8G8<decodeBC5Block_UNORM>::getInstance());
+        decompressBC(Latte::E_GX2SURFFMT::BC5_SNORM, MTL::PixelFormatRG8Snorm, 2, TextureDecoder_BC5_To_R8G8<decodeBC5Block_SNORM>::getInstance());
+
+        cemuLog_log(LogType::Force, "Metal: this GPU has no BC texture support, so BC1-BC5 textures are decompressed on the CPU");
+    }
+
     // Depth
    	MTL_DEPTH_FORMAT_TABLE[Latte::E_GX2SURFFMT::D24_S8_UNORM].textureDecoder = TextureDecoder_D24_S8::getInstance();
    	MTL_DEPTH_FORMAT_TABLE[Latte::E_GX2SURFFMT::D24_S8_FLOAT].textureDecoder = TextureDecoder_NullData64::getInstance(); // TODO: why?

@@ -490,12 +490,15 @@ add_library(CemuCafe
   TitleList/TitleList.h
 )
 
-# iOS renderer is Metal-only (ENABLE_VULKAN/ENABLE_OPENGL are forced OFF for iOS in the
-# top-level CMakeLists.txt). The OpenGL and Vulkan renderer backends are real, working
-# desktop code but dead weight on iOS: they'd need a real GL context / MoltenVK loader
-# to ever run, and compiling them just to leave them unused wastes the M1 grind on
-# desktop-only bugs (Cocoa/AppKit types, `#elif BOOST_OS_MACOS` branches that don't
-# cover iOS, etc.) in code that will never execute. Exclude them from the iOS target.
+# OpenGL stays desktop-only: iOS has no GL context to give it and ENABLE_OPENGL is
+# forced OFF for iOS in the top-level CMakeLists.txt. The nsyshid libusb/Skylander
+# backends are desktop-only for the same reason (no libusb on iOS).
+#
+# Vulkan is NOT in this block any more -- see the ENABLE_VULKAN block below. The
+# reason the old comment gave for excluding it ("they'd need a real GL context /
+# MoltenVK loader to ever run") was right about the requirement and wrong about the
+# conclusion: MoltenVK is obtainable on iOS, and it is what the one shipping iOS
+# Cemu build actually renders through.
 if(NOT PLATFORM_IOS)
 	target_sources(CemuCafe PRIVATE
 	    OS/libs/nsyshid/BackendLibusb.cpp
@@ -518,6 +521,16 @@ if(NOT PLATFORM_IOS)
 	    HW/Latte/Renderer/OpenGL/RendererShaderGL.cpp
 	    HW/Latte/Renderer/OpenGL/RendererShaderGL.h
 	    HW/Latte/Renderer/OpenGL/TextureReadbackGL.cpp
+	)
+endif()
+
+# The Vulkan backend. On desktop this is unconditional exactly as it always was
+# (NOT PLATFORM_IOS); on iOS it comes in when ENABLE_VULKAN is on, running against
+# MoltenVK. VulkanAPI.h is compiled with VK_NO_PROTOTYPES and every entry point is
+# resolved through dlsym at runtime, so nothing here links against a Vulkan loader
+# at build time.
+if(NOT PLATFORM_IOS OR ENABLE_VULKAN)
+	target_sources(CemuCafe PRIVATE
 	    HW/Latte/Renderer/Vulkan/CachedFBOVk.cpp
 	    HW/Latte/Renderer/Vulkan/CachedFBOVk.h
 	    HW/Latte/Renderer/Vulkan/CocoaSurface.h
@@ -549,6 +562,20 @@ if(NOT PLATFORM_IOS)
 	    HW/Latte/Renderer/Vulkan/VulkanSurfaceCopy.cpp
 	    HW/Latte/Renderer/Vulkan/VulkanTextureReadback.h
 	)
+endif()
+
+# The Vulkan surface. Both platforms end up in vkCreateMetalSurfaceEXT with a
+# CAMetalLayer -- they differ only in how that layer is obtained, so each gets its own
+# implementation of CreateCocoaSurface() behind a single call site. That call site is
+# still #ifdef'd, on BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS), because Boost.Predef
+# zeroes BOOST_OS_MACOS on iOS.
+# macOS: an AppKit NSView subclass whose +layerClass is CAMetalLayer.
+# iOS:    the UIKit CAMetalLayer the Metal backend already knows how to build.
+if(PLATFORM_IOS AND ENABLE_VULKAN)
+	target_sources(CemuCafe PRIVATE
+	    HW/Latte/Renderer/Vulkan/UIKitSurface.mm
+	)
+	target_link_libraries(CemuCafe PUBLIC MoltenVK::MoltenVK)
 endif()
 
 # Desktop-macOS only: CocoaSurface.mm is a MoltenVK/Cocoa Vulkan surface and
