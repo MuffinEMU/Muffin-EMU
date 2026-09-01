@@ -11,6 +11,70 @@ Repo: `kiddreads/cemu-ios-muffin` is canonical (`git push ci <branch>`).
 Current HEAD: `metal-shader-binary-archive`. Target device: iPad Pro 12.9" 4th
 gen, A12Z, 6 GB, fanless — no Metal3/mesh shaders, no BC texture formats.
 
+## Progress log (overnight session, 2026-08-31 → 2026-09-01)
+
+Real outcomes as of the 2026-09-01 14:00 check-in and after, so the next session
+doesn't re-investigate these. Each is code-verified (compiles clean in CI);
+none has been run on a device.
+
+- **#24 fixed** — `metal-buffer-storage-mode-fix` branch: `GetResourceOptions()`'s
+  storage-mode check could never match Shared (tested against 0 via `&`), and
+  the related `RequiresFlush()` also misidentified Memoryless as Managed.
+- **#36-38, #42, #54, #56 done** — `metal-shader-binary-archive` branch: real
+  `MTLBinaryArchive`-backed cache for compiled Metal shader binaries, gated by
+  the existing Persistent Shader Cache toggle (#56), serialized to
+  `shaderCache/precompiled/<id>_mtlbinaries.bin` on title exit, degrades to
+  uncached compilation on any failure (#54). Mesh pipelines deliberately not
+  archived (#48-49 partially addressed by scoping them out — metal-cpp here has
+  no `addMeshRenderPipelineFunctions`, and this device reports
+  `SupportsMeshShaders() == false` anyway, so there's nothing to cache there).
+- **#57 done** — `ARCHITECTURE.md` now documents which cache is which (merged
+  to `main`).
+- **#74 confirmed** — `snd_user.cpp`'s "unsupported audio effect" warning is
+  genuine upstream Cemu behavior (missing optional `snd_user.rpl`/
+  `snduser2.rpl` firmware files), not iOS-specific and not a missing codec path.
+- **#80-84 partially addressed** — `ios-interpreter-thread-qos` branch: CPU-
+  emulation scheduler threads now explicitly request
+  `QOS_CLASS_USER_INTERACTIVE` instead of inheriting whatever priority they
+  happened to spawn at. Real speed lever, zero correctness risk, but the
+  actual on-device instructions/sec delta (#80) is still unmeasured.
+- **#101-102 already done, #105-107 fixed** — the mmap-PROT_EXEC-first fix
+  (#101) and `useProtect()` reporting (#102) were already implemented in
+  `AppleJitAllocator` (`BackendAArch64.cpp`) before this session; found that
+  `PPCRecompiler_setSurvivedFirstEntryCallback()` — built specifically to fix
+  #105's too-early sentinel clear — was never actually registered anywhere, so
+  it had been a complete no-op. `ios-jit-sentinel-clear-timing` branch wires it
+  up and removes the two premature `ios_jit_survived_boot()` calls that were
+  clearing the sentinel the instant a launch was *requested* rather than once
+  it *survived*. #104 (on-device re-test) still needs a device.
+- **#8-related fixed** — `latte-scan-buffer-drop-per-target-log` branch: the
+  "Scan buffer dropped" diagnostic line (named in #8 as a real diagnostic step)
+  was keyed by call site via `cemuLog_logOnce()`, so whichever renderTarget
+  combination dropped first permanently silenced a later, different one. Same
+  bug class as the already-fixed TV/pad-window CAMetalLayer check.
+  Now keyed per-renderTarget-combination.
+- **#147 confirmed** — `origin` and `ci` remotes carry identical commits on
+  every branch present on both (9 checked).
+- **#148 confirmed** — the `bward-dev1` phantom queued run (`32984538691`) is
+  already `cancelled`/`completed`, not actually stuck.
+- **#151 confirmed** — repo-wide sweep for the Fiber.h bug class (a platform
+  added to a CMake file-selection condition without updating the matching
+  header guard) found no other instance; the one other Android-only
+  conditional in `src/input/CMakeLists.txt` is correctly scoped and unrelated
+  to iOS.
+- **#152 confirmed** — no stray Claude-instruction `.txt` files remain on any
+  current branch (both from earlier this session were read and deleted).
+- **#153 reviewed, not pruned** — `.claude/worktrees/agent-*` are all stale
+  (dated 2026-08-23, based on a pre-merge `main`); spot-checked two with clean
+  single commits and confirmed both are already ancestors of current `main`.
+  Left in place per "don't silently delete" — safe to prune whenever someone
+  wants the disk space back.
+- **#154, #158-159 done** — `ARCHITECTURE.md` input/CPU rows corrected (were
+  badly stale — input has been wired for a while, the recompiler is not force-
+  disabled); `UIFileSharingEnabled` verified surviving a clean v6/v7 release
+  build via `PlistBuddy` on the actual downloaded IPA; no other Info.plist key
+  found silently dropped by the same Xcode merge quirk.
+
 ---
 
 ## P0 — M3 blockers (get a real frame on screen)
