@@ -31,6 +31,9 @@
 
 extern bool hasValidFramebufferAttached;
 
+// Declared in MetalCommon.h - see that comment for the full reasoning. Off by default.
+std::atomic<bool> g_metal_reduceEncoderSplitting{false};
+
 float supportBufferData[512 * 4];
 
 // Defined in the OpenGL renderer
@@ -1979,13 +1982,28 @@ void MetalRenderer::EndEncoding()
 {
     if (m_commandEncoder)
     {
+        MetalEncoderType endingType = m_encoderType;
         m_commandEncoder->endEncoding();
         m_commandEncoder->release();
         m_commandEncoder = nullptr;
         m_encoderType = MetalEncoderType::None;
 
-        // Commit the command buffer if enough draw calls have been recorded
-        if (m_recordedDrawcalls >= m_commitTreshold)
+        // Experimental, off by default (g_metal_reduceEncoderSplitting - see
+        // MetalCommon.h). This threshold check runs after EVERY encoder-type switch,
+        // including the short Blit/Compute encoders a texture upload or readback opens
+        // and closes mid-frame - so a frame with a lot of that interleaving can commit
+        // the command buffer in the middle of one, rather than at a natural "finished
+        // this batch of draws" boundary. MetalSynchronizedRingAllocator's sync points are
+        // recorded against whichever command buffer is current when memory is allocated;
+        // if the draw that actually reads that memory ends up in a later command buffer
+        // because of a mid-sequence commit here, the allocator can consider the memory
+        // free before the GPU work reading it has run. Restricting the check to Render
+        // encoder endings only removes exactly those Blit/Compute-triggered boundaries,
+        // without changing the threshold itself or its already-tuned memory/latency
+        // trade-off for the common (non-interleaved) case.
+        bool shouldCheckCommit = !g_metal_reduceEncoderSplitting.load(std::memory_order_relaxed)
+            || endingType == MetalEncoderType::Render;
+        if (shouldCheckCommit && m_recordedDrawcalls >= m_commitTreshold)
             CommitCommandBuffer();
     }
 }

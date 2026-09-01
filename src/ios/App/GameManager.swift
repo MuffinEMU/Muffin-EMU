@@ -482,6 +482,11 @@ class GameManager: ObservableObject {
             // this background task started fresh on a relaunch.
             cemu_bridge_set_async_shader_compile(
                 PerGameSettingsStore.shared.effectivePreCompileShaders(for: game.id))
+            // Experimental, off by default - see CemuBridge.h and MetalCommon.h for what
+            // this actually changes and why it is a per-game dial rather than a fix
+            // applied unconditionally.
+            cemu_bridge_set_reduce_encoder_splitting(
+                PerGameSettingsStore.shared.effectiveReduceEncoderSplitting(for: game.id))
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)

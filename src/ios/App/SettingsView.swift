@@ -40,6 +40,7 @@ struct SettingsView: View {
     @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = false
     @AppStorage("muffin.cpu.legacyTimebase") private var legacyTimebase = false
     @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
+    @AppStorage("muffin.render.reduceEncoderSplitting") private var reduceEncoderSplitting = false
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @State private var learnedCacheBytes: Int64 = 0
     @State private var compiledCacheBytes: Int64 = 0
@@ -329,6 +330,28 @@ struct SettingsView: View {
                         Text("Shader Compilation")
                     } footer: {
                         Text("On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead. Neither can build a shader before the game first uses it - the Wii U only reveals them as it draws.\n\nNano Assault Neo specifically breaks with this on - use its own per-game override (long-press the game in your library) rather than turning this off for everyone.")
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
+
+                    // Experimental. Aimed at a specific, unconfirmed hypothesis - see
+                    // MetalCommon.h's g_metal_reduceEncoderSplitting - not a proven fix,
+                    // which is exactly why this exists as a toggle rather than being
+                    // baked in unconditionally: it may help the games that show the
+                    // intermittent rainbow/garbage geometry and do nothing for others.
+                    // Same per-game override pattern as shader compilation, reachable
+                    // from the same long-press "View Game Options" screen.
+                    Section {
+                        Toggle(isOn: $reduceEncoderSplitting) {
+                            Text("Reduce Command-Buffer Splitting")
+                        }
+                        .tint(MuffinTheme.pixelBlue)
+                        .onChange(of: reduceEncoderSplitting) { newValue in
+                            cemu_bridge_set_reduce_encoder_splitting(newValue)
+                        }
+                    } header: {
+                        Text("Rendering (Experimental)")
+                    } footer: {
+                        Text("Off by default. Aimed at intermittent, self-correcting rainbow or garbled geometry that some games show for a few seconds at a time - it restricts when the renderer is allowed to split work across command buffers, which on-device testing suggests may be involved, but this has not been confirmed as the actual cause. Turn it on for a game that shows the glitch; leave it off for games that don't, or that render worse with it on. Set per-game in \"View Game Options\" (long-press the game in your library) to override this default for just that one.")
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 

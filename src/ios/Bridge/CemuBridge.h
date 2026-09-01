@@ -241,6 +241,16 @@ bool cemu_bridge_legacy_timebase(void);
 void cemu_bridge_set_async_shader_compile(bool enabled);
 bool cemu_bridge_async_shader_compile(void);
 
+/// Experimental, off by default. Restricts the Metal renderer's mid-frame auto-commit
+/// check to only run when a Render encoder ends, not a Blit or Compute one - see
+/// MetalCommon.h's g_metal_reduceEncoderSplitting for the full reasoning. Aimed at
+/// intermittent, self-correcting garbage/rainbow geometry that coincides with Metal's own
+/// runtime warning about heavy blit-encoder interleaving on some titles; not a confirmed
+/// fix, which is why it is a toggle - some games may render fine either way, and this has
+/// not been verified against the actual bug on device.
+void cemu_bridge_set_reduce_encoder_splitting(bool enabled);
+bool cemu_bridge_reduce_encoder_splitting(void);
+
 /// Shader cache maintenance. Two different things get called "the shader cache" and
 /// deleting them has very different consequences, so they are separate:
 ///
