@@ -343,6 +343,7 @@ void cemu_bridge_start_memory_watchdog(void) {
     #include "config/LaunchSettings.h"
     #include "Cafe/HW/Latte/Core/LatteDraw.h"
     #include "Cafe/HW/Latte/Core/Latte.h"
+    #include "Cafe/HW/Latte/Core/LatteShader.h"
     #include "gui/interface/WindowSystem.h"
     #include "Cafe/HW/Latte/Renderer/Renderer.h"
     #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
@@ -842,6 +843,22 @@ int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLea
     if (outLearnedBytes) *outLearnedBytes = 0;
     if (outCompiledBytes) *outCompiledBytes = 0;
     return -1;
+#endif
+}
+
+void cemu_bridge_set_shader_cache_persistence(bool enabled) {
+#if defined(CEMU_CORE_AVAILABLE)
+    g_shaderCachePersistenceEnabled.store(enabled, std::memory_order_relaxed);
+#else
+    (void)enabled;
+#endif
+}
+
+bool cemu_bridge_shader_cache_persistence(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return g_shaderCachePersistenceEnabled.load(std::memory_order_relaxed);
+#else
+    return true;
 #endif
 }
 

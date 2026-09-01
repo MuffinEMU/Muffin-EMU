@@ -1,6 +1,17 @@
 #pragma once
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
+#include <atomic>
+
+// User-facing toggle (Settings > Persistent Shader Cache on iOS) for whether
+// LatteShaderCache_Load() opens the transferable/precompiled cache files at all this
+// session. Defaults on - this matches Cemu's always-on desktop behaviour. Checked once
+// at the very top of LatteShaderCache_Load(), before any cache file is opened, so
+// turning it off skips both reading previously-learned shaders back in AND writing new
+// ones this session (every writer already no-ops when s_shaderCacheGeneric is null -
+// see LatteShaderCache_writeSeparableVertexShader and friends). Runtime shader
+// compilation itself is untouched either way; this only gates disk persistence.
+extern std::atomic<bool> g_shaderCachePersistenceEnabled;
 
 void LatteSHRC_Init();
 void LatteSHRC_UnloadAll();

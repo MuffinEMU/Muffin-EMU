@@ -487,6 +487,13 @@ class GameManager: ObservableObject {
             // applied unconditionally.
             cemu_bridge_set_reduce_encoder_splitting(
                 PerGameSettingsStore.shared.effectiveReduceEncoderSplitting(for: game.id))
+            // Same "sync from UserDefaults before boot" reason as the two calls above -
+            // LatteShaderCache_Load() reads this exactly once, right at the top, before
+            // any cache file is opened for this launch. Global rather than per-game:
+            // it gates disk persistence itself, not a rendering behaviour a single title
+            // might dislike.
+            cemu_bridge_set_shader_cache_persistence(
+                UserDefaults.standard.object(forKey: "muffin.shaders.persistentCache") as? Bool ?? true)
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)
