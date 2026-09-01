@@ -76,7 +76,13 @@ if(WIN32)
 	target_sources(CemuUtil PRIVATE MemMapper/MemMapperWin.cpp)
 	target_sources(CemuUtil PRIVATE SystemInfo/SystemInfoWin.cpp)
 elseif(UNIX)
-  if(ANDROID)
+  # Fiber backend. Android moved off ucontext to Boost.Context; iOS was never named in
+  # this condition, so it fell into the else() and silently inherited the ucontext path.
+  # Apple declares getcontext/makecontext/swapcontext for macOS only - the SDK header
+  # marks them __API_DEPRECATED("No longer supported", macos(10.5, 10.6)) with no iOS
+  # availability at all - so iOS was relying on routines Apple never promised there.
+  # jump_fcontext is hand-written arm64 assembly with no such dependency.
+  if(ANDROID OR PLATFORM_IOS)
     target_sources(CemuUtil PRIVATE Fiber/FiberFContext.cpp)
     target_link_libraries(CemuUtil PRIVATE Boost::context)
   else()

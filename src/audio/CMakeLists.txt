@@ -30,6 +30,22 @@ if(ENABLE_CUBEB)
 	#add_compile_definitions(HAS_CUBEB)
 endif()
 
+if(PLATFORM_IOS)
+	target_sources(CemuAudio PRIVATE
+		CoreAudioAPI.mm
+		CoreAudioAPI.h
+	)
+	# The shared precompiled header is compiled as C++. clang will not apply a C++ PCH
+	# to an Objective-C++ translation unit, so this one file opts out and includes
+	# precompiled.h the ordinary way.
+	set_source_files_properties(CoreAudioAPI.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+	target_link_libraries(CemuAudio PRIVATE
+		"-framework AudioToolbox"
+		"-framework AVFoundation"
+		"-framework Foundation"
+	)
+endif()
+
 target_include_directories(CemuAudio PUBLIC "../")
 
 target_link_libraries(CemuAudio PRIVATE

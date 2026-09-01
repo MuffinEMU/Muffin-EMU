@@ -124,10 +124,54 @@ private struct IconOptionCard: View {
 
     @ViewBuilder
     private var iconThumbnail: some View {
-        if let uiImage = UIImage(named: icon.id == "original" ? "AppIcon" : icon.alternateIconName) {
+        if let uiImage = IconOptionCard.previewImage(for: icon) {
             Image(uiImage: uiImage).resizable().scaledToFill()
         } else {
-            Rectangle().fill(MuffinTheme.wrapper)
+            // Still possible, and still better than an empty card: name the icon rather
+            // than showing a blank tile that looks like a loading failure.
+            ZStack {
+                Rectangle().fill(MuffinTheme.wrapper)
+                Text(String(icon.name.prefix(2)).uppercased())
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundColor(MuffinTheme.brownDarkest.opacity(0.55))
+            }
         }
     }
+
+    /// Every card was blank because UIImage(named:) cannot load an app icon.
+    ///
+    /// Alternate icons declared through ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES are
+    /// not left in the asset catalog: Xcode compiles them out to loose files at the bundle
+    /// root, named like AltIcon-dark60x60@2x.png. UIImage(named:) looks in the catalog, so
+    /// it finds nothing and every preview fell through to the placeholder.
+    ///
+    /// So the bundle is searched directly. The exact filenames are Xcode's business and
+    /// have changed between versions, which is why this matches on prefix and takes the
+    /// largest match rather than guessing one name.
+    static func previewImage(for icon: AppIconOption) -> UIImage? {
+        let assetName = icon.id == "original" ? "AppIcon" : icon.alternateIconName
+        if let image = UIImage(named: assetName) {
+            return image
+        }
+        if let cached = previewCache[assetName] {
+            return cached
+        }
+        let prefix = icon.id == "original" ? "AppIcon" : icon.alternateIconName
+        let candidates = Bundle.main.paths(forResourcesOfType: "png", inDirectory: nil)
+            .filter { ($0 as NSString).lastPathComponent.hasPrefix(prefix) }
+        // Largest file is the highest-resolution variant, which is the one worth showing
+        // in a grid of cards.
+        let best = candidates.max { lhs, rhs in
+            let l = (try? FileManager.default.attributesOfItem(atPath: lhs)[.size] as? Int) ?? 0
+            let r = (try? FileManager.default.attributesOfItem(atPath: rhs)[.size] as? Int) ?? 0
+            return (l ?? 0) < (r ?? 0)
+        }
+        let image = best.flatMap { UIImage(contentsOfFile: $0) }
+        previewCache[assetName] = image
+        return image
+    }
+
+    /// The bundle listing is a directory walk, and this view redraws it for every card in
+    /// a scrolling grid of thirty. Done once per icon instead.
+    private static var previewCache: [String: UIImage?] = [:]
 }

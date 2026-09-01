@@ -80,6 +80,15 @@ namespace coreinit
 	void OSScreenFlipBuffersEx(uint32 screenIndex)
 	{
 		cemu_assert(screenIndex < 2);
+		// Force-level one-time marker, for the same reason as the one on
+		// GX2SwapScanBuffers() (GX2.cpp:50). OSScreen is scanned out by
+		// LatteThread_HandleOSScreen() (LatteThread.cpp:107) on a path completely
+		// independent of GX2, so the GX2 marker stays silent for a title that only ever
+		// uses OSScreen - which is most homebrew, including every RPX used to test this
+		// port so far. Without this line, "the homebrew asked for a frame and something
+		// downstream ate it" and "the homebrew never drew anything" produce identical
+		// logs, and a black screen cannot be attributed to either.
+		cemuLog_logOnce(LogType::Force, "OSScreenFlipBuffersEx() reached for the first time - title has drawn and flipped an OSScreen frame");
 		LatteGPUState.osScreen.screen[screenIndex].flipRequestCount++;
 		_updateCurrentDrawScreen(screenIndex);
 	}

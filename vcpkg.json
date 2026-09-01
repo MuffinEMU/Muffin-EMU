@@ -38,7 +38,7 @@
     },
     {
       "name": "boost-context",
-      "platform": "android"
+      "platform": "android | ios"
     },
     "boost-random",
     {

@@ -9,7 +9,7 @@ public:
 	~Fiber();
 
 	static Fiber* PrepareCurrentThread(void* privateData = nullptr);
-	static void Switch(Fiber& targetFiber);
+	static int Switch(Fiber& targetFiber);
 	static void* GetFiberPrivateData();
 private:
 	Fiber(void* privateData); // fiber from current thread

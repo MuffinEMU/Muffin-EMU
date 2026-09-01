@@ -126,3 +126,76 @@ private:
 		}
 	}
 };
+
+#if defined(CEMU_PLATFORM_IOS)
+// iOS input bring-up.
+//
+// Desktop Cemu does this work in two places that simply do not exist on iOS:
+// src/main.cpp calls InputManager::instance().load(), and the wxWidgets input-settings
+// dialog is what creates an emulated controller and binds a physical one to it. The iOS
+// app is launched by SwiftUI, so main() is never entered, and there is no input
+// configuration UI at all. The consequence is not "input needs configuring" - it is that
+// InputManager is never constructed until CafeSystem happens to touch it mid-boot, no
+// controller profile is ever loaded, and the running title sees zero emulated
+// controllers no matter what hardware is attached.
+//
+// Implemented at the bottom of InputManager.cpp (guarded the same way) rather than in a
+// file of its own, so it stays next to the InputManager internals it depends on and adds
+// nothing to the build graph for other platforms.
+
+// Constructs InputManager (which brings up the SDL controller provider, i.e. SDL_Init),
+// loads any controller profile present under <userdata>/controllerProfiles/, and - if
+// that left player 0 without a usable GamePad - creates one and binds the first attached
+// physical controller to it using Cemu's own default mapping.
+//
+// Idempotent. Call once during engine initialization, from the main thread: SDL's iOS
+// joystick backend is a GameController.framework client, so bring it up where UIKit
+// lives rather than on whichever background thread happens to boot the engine first.
+void IOSInput_Initialize();
+
+// Re-runs only the binding step, for a controller paired *after* startup - the normal
+// case on iOS, where Bluetooth controllers connect whenever they feel like it. Safe to
+// call from any thread and does nothing before IOSInput_Initialize() has run. It is
+// already wired to SDL's own device-added/removed event, so callers only need this for a
+// belt-and-braces rescan (e.g. immediately before booting a title).
+void IOSInput_RefreshDevices();
+
+// Holds or releases one button on player 1's emulated GamePad on behalf of the
+// on-screen controls. `button` is a CemuBridgeButton (src/ios/Bridge/CemuBridge.h), not
+// a VPADController::ButtonId - the app's numbering is a published contract with the
+// Swift call sites, Cemu's internal one is not, and iosMapBridgeButton() is the single
+// place the two meet.
+//
+// Held, not tapped: `pressed` stays true until the finger lifts. It writes into the
+// emulated controller's override state, which is checked ahead of any physical
+// controller's mapping, so the touch pad and an attached MFi controller both work and
+// neither cancels the other.
+//
+// Safe to call from the UI thread while the title polls VPADRead from its own: the
+// override is an atomic bool, and IOSInput_Initialize() has already reserved every slot
+// so no call here can rehash the map the reader is walking. A no-op before
+// IOSInput_Initialize() has run, and repeated identical calls cost nothing.
+void IOSInput_SetButtonState(int button, bool pressed);
+
+// Positions one analog stick on player 1's emulated GamePad from the on-screen controls.
+// `stick` is a CemuBridgeStick (0 = left, 1 = right); `x`/`y` are in -1..1 with +x right
+// and +y UP, i.e. the console's convention, and the caller has already clamped them.
+//
+// Separate from IOSInput_SetButtonState() because Cemu keeps the two separate: VPADRead
+// skips the eight kButtonId_Stick*_ ids in its button loop and derives the sticks from
+// get_axis()/get_rotation() instead, so a stick direction delivered as a button press is
+// not an approximation of a stick - it is discarded. This writes the four axis mappings
+// the stick is actually made of.
+//
+// (0, 0) clears the override rather than pinning the stick to centre, so releasing the
+// on-screen stick hands that axis back to whatever physical controller is bound instead
+// of holding it still. Same thread-safety terms as IOSInput_SetButtonState().
+void IOSInput_SetStickAxis(int stick, float x, float y);
+
+// Releases everything the on-screen pad is holding, sticks included. Every press is supposed to be
+// paired with a release by the view that started it, but a gesture the system cancels
+// (backgrounding, an incoming call, a view torn out from under a finger) does not always
+// produce one - and a button left down is a title stuck walking into a wall with nothing
+// on screen touching it. Same thread-safety terms as above.
+void IOSInput_ReleaseAllButtons();
+#endif // CEMU_PLATFORM_IOS

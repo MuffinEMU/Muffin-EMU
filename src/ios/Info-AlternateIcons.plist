@@ -16,6 +16,83 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- Declares .muffinlyt/.muffinclr as real Uniform Types rather than leaving them as
+	     plain JSON with a custom extension. Same merge mechanism as CFBundleIcons below -
+	     this is a nested structure GENERATE_INFOPLIST_FILE's flat INFOPLIST_KEY_* scheme
+	     cannot express, so it lives in this hand-written partial instead. UTTypeIdentifier
+	     values match UTType(exportedAs:) in PreviewShowcase.swift's MuffinLayoutDocument/
+	     MuffinColourDocument exactly - a mismatch here would leave those file pickers
+	     working (they filter by the Swift-side UTType, not this plist) but the Files app
+	     showing a generic document icon and name instead of "Muffin Layout"/"Muffin
+	     Colours" for these two extensions. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.kiddreads.muffin.layout</string>
+			<key>UTTypeDescription</key>
+			<string>Muffin Layout</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>muffinlyt</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.kiddreads.muffin.colour</string>
+			<key>UTTypeDescription</key>
+			<string>Muffin Colours</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.json</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>muffinclr</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<!-- Lets Files/Mail/AirDrop offer "Open in Muffin" for these two extensions, and is
+	     what actually makes a double-tapped .muffinlyt/.muffinclr launch the app rather
+	     than just being importable through Settings' own fileImporter buttons. Editor,
+	     not Viewer, since PadPresetFitter/PadColourPickerView write these files too. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Muffin Layout</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.kiddreads.muffin.layout</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Muffin Colours</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.kiddreads.muffin.colour</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleIcons</key>
 	<dict>
 		<key>CFBundleAlternateIcons</key>

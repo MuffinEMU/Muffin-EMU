@@ -313,7 +313,9 @@ final class DisplayRouter {
             // cleared on release, and the layer must outlive that.
             let surface = Unmanaged.passRetained(view).toOpaque()
             let size = container.bounds.size == .zero ? UIScreen.main.bounds.size : container.bounds.size
-            let scale = Double(container.window?.screen.scale ?? UIScreen.main.scale)
+            // Same setting as the TV surface - a GamePad screen rendered at full native
+            // retina while the TV screen is not would cost more than the TV screen does.
+            let scale = (container.window?.screen ?? UIScreen.main).effectiveRenderScale
             cemu_bridge_register_pad_render_surface(surface, Int32(size.width), Int32(size.height), scale)
         } else if !wantPad, havePad {
             cemu_bridge_release_pad_render_surface()
@@ -339,15 +341,22 @@ final class DisplayRouter {
             .first { $0.screen === screen }
     }
 
+    /// Note the `effectiveRenderScale` rather than `scale`: the user's render-scale
+    /// setting is applied here, once, at the single point where a backing scale is turned
+    /// into a number the C++ side keeps. Everything downstream - `phys_width/phys_height`,
+    /// the CAMetalLayer's drawable size, the Vulkan swapchain extent, the letterbox maths
+    /// in `LatteRenderTarget_getScreenImageArea` - derives from this one value, so scaling
+    /// it here scales all of them consistently and nothing else has to know the setting
+    /// exists. See RenderScale.swift for what it does and does not change.
     private func tvGeometry() -> (size: CGSize, scale: Double) {
         if placement == .dualScreen, let window = externalWindow {
-            return (window.bounds.size, Double(window.screen.scale))
+            return (window.bounds.size, window.screen.effectiveRenderScale)
         }
         // Deliberately the screen's bounds, not the container's, for the on-device case.
         // The container is frequently still CGRectZero when this first runs, and boot
         // waits on registration happening at all — the reasoning is spelled out in
         // MetalViewIOS.makeUIView and has not changed.
-        return (UIScreen.main.bounds.size, Double(UIScreen.main.scale))
+        return (UIScreen.main.bounds.size, UIScreen.main.effectiveRenderScale)
     }
 
     private func describeScreens() -> String {

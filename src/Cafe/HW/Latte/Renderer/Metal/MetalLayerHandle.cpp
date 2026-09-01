@@ -7,7 +7,16 @@ MetalLayerHandle::MetalLayerHandle(MTL::Device* device, const Vector2i& size, bo
 {
     const auto& windowInfo = (mainWindow ? WindowSystem::GetWindowInfo().window_main : WindowSystem::GetWindowInfo().window_pad);
 
-    m_layer = (CA::MetalLayer*)CreateMetalLayer(windowInfo.surface, size, m_layerScaleX, m_layerScaleY);
+    // The scale this window's phys_width/phys_height were already derived from, rather
+    // than whatever the host view reports for itself - see CreateMetalLayer()'s contract
+    // in MetalLayer.h. A layer built at a different scale than the size the engine
+    // believes the window is puts the output blit's viewport
+    // (LatteRenderTarget_getScreenImageArea, driven by GetWindowPhysSize()) and the
+    // drawable permanently out of step.
+    const float requestedScale = (float)(mainWindow ? WindowSystem::GetWindowInfo().dpi_scale.load()
+                                                    : WindowSystem::GetWindowInfo().pad_dpi_scale.load());
+
+    m_layer = (CA::MetalLayer*)CreateMetalLayer(windowInfo.surface, size, requestedScale, m_layerScaleX, m_layerScaleY);
     m_layer->setDevice(device);
     m_layer->setDrawableSize(CGSize{(float)size.x * m_layerScaleX, (float)size.y * m_layerScaleY});
     m_layer->setFramebufferOnly(true);

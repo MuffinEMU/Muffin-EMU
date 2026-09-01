@@ -104,6 +104,19 @@ void PPCRecompiler_recompileIfUnvisited(uint32 enterAddress)
 	PPCRecompiler_visitAddressNoBlock(enterAddress);
 }
 
+// See PPCRecompiler_setSurvivedFirstEntryCallback(). Two variables rather than one so the
+// hot path is a single relaxed load of a bool that is false for the entire run after the
+// first entry - never an atomic exchange, which this would otherwise perform on every
+// dispatch into recompiled code.
+static std::atomic<bool> s_survivedFirstEntryPending{false};
+static void (*s_survivedFirstEntryCallback)() = nullptr;
+
+void PPCRecompiler_setSurvivedFirstEntryCallback(void (*callback)())
+{
+	s_survivedFirstEntryCallback = callback;
+	s_survivedFirstEntryPending.store(callback != nullptr, std::memory_order_release);
+}
+
 void PPCRecompiler_enter(PPCInterpreter_t* hCPU, PPCREC_JUMP_ENTRY funcPtr)
 {
 #if BOOST_OS_WINDOWS
@@ -123,6 +136,19 @@ void PPCRecompiler_enter(PPCInterpreter_t* hCPU, PPCREC_JUMP_ENTRY funcPtr)
 #else
 	PPCRecompiler_enterRecompilerCode((uint64)funcPtr, (uint64)hCPU);
 #endif
+	// Control came back out of generated code, which is the first and only proof that the
+	// recompiler actually works on this machine. Anything earlier - title launch, say - is
+	// three seconds too early and proves nothing: on iOS the first entry is exactly where a
+	// bad executable mapping raises SIGBUS.
+	if (s_survivedFirstEntryPending.load(std::memory_order_relaxed)) [[unlikely]]
+	{
+		if (s_survivedFirstEntryPending.exchange(false, std::memory_order_acquire))
+		{
+			if (auto* callback = s_survivedFirstEntryCallback)
+				callback();
+		}
+	}
+
 	// after leaving recompiler prematurely attempt to recompile the code at the new location
 	if (hCPU->remainingCycles > 0)
 	{
@@ -684,8 +710,26 @@ void PPCRecompiler_initPlatform()
 }
 #endif
 
+static std::atomic<bool> s_recompilerForceDisabled{false};
+
+void PPCRecompiler_setForceDisabled(bool disabled)
+{
+	s_recompilerForceDisabled.store(disabled, std::memory_order_relaxed);
+}
+
+bool PPCRecompiler_isForceDisabled()
+{
+	return s_recompilerForceDisabled.load(std::memory_order_relaxed);
+}
+
 void PPCRecompiler_init()
 {
+	if (s_recompilerForceDisabled.load(std::memory_order_relaxed))
+	{
+		cemuLog_log(LogType::Force, "Recompiler disabled by setting. Running the interpreter.");
+		ppcRecompilerEnabled = false;
+		return;
+	}
 	if (ActiveSettings::GetCPUMode() == CPUMode::SinglecoreInterpreter)
 	{
 		ppcRecompilerEnabled = false;
@@ -707,7 +751,16 @@ void PPCRecompiler_init()
 #ifdef ARCH_X86_64
 	PPCRecompilerX64Gen_generateRecompilerInterfaceFunctions();
 #elif defined(__aarch64__)
-	PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions();
+	// This is the first thing that actually asks the kernel for executable memory. If the
+	// process is not allowed to have any, that used to surface as an uncaught C++ exception
+	// and an instant SIGABRT. Fail soft instead: leave the recompiler off and let the title
+	// run on the interpreter.
+	if (!PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions())
+	{
+		cemuLog_log(LogType::Force, "Recompiler disabled: the interface functions could not be placed in executable memory. Running the interpreter instead.");
+		ppcRecompilerEnabled = false;
+		return;
+	}
 #endif
     PPCRecompiler_allocateRange(0, 0x1000); // the first entry is used for fallback to interpreter
     PPCRecompiler_allocateRange(mmuRange_TRAMPOLINE_AREA.getBase(), mmuRange_TRAMPOLINE_AREA.getSize());
