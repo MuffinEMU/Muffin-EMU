@@ -41,6 +41,7 @@ struct SettingsView: View {
     @AppStorage("muffin.cpu.legacyTimebase") private var legacyTimebase = false
     @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
     @AppStorage("muffin.render.reduceEncoderSplitting") private var reduceEncoderSplitting = false
+    @AppStorage("muffin.shaders.persistentCache") private var shaderCachePersistenceEnabled = true
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @State private var learnedCacheBytes: Int64 = 0
     @State private var compiledCacheBytes: Int64 = 0
@@ -356,6 +357,14 @@ struct SettingsView: View {
                     .foregroundColor(MuffinTheme.brownDarkest)
 
                     Section {
+                        Toggle(isOn: $shaderCachePersistenceEnabled) {
+                            Text("Persistent Shader Cache")
+                        }
+                        .tint(MuffinTheme.pixelBlue)
+                        .onChange(of: shaderCachePersistenceEnabled) { newValue in
+                            cemu_bridge_set_shader_cache_persistence(newValue)
+                        }
+
                         // Two buttons, not one. Pressing the first costs a slow launch;
                         // pressing the second throws away something only playing can earn
                         // back, and a single "clear cache" button would hide that.
@@ -404,7 +413,7 @@ struct SettingsView: View {
                         // Says "next launch" because it is true: the scale is baked into
                         // the surface at registration, and a running title's swapchain is
                         // not rebuilt underneath it.
-                        Text("\(renderScale.summary)\n\nResolution changes the size of the picture Muffin draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.\n\nFrame stretching fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.")
+                        Text("Persistent Shader Cache keeps what a game teaches Muffin - every shader and pipeline it's revealed by drawing with it - saved to disk under \"Learned shaders\" below, so the next launch skips recompiling what it already learned instead of starting from zero. On by default; turn it off only to compare launch behaviour with a completely cold cache, or to stop it growing on a title you don't plan to keep. Takes effect on the next launch of a game, not the one already running.\n\n\(renderScale.summary)\n\nResolution changes the size of the picture Muffin draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.\n\nFrame stretching fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.")
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 

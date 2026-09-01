@@ -341,8 +341,22 @@ void LatteShaderCache_drawBackgroundImage(ImTextureID texture, int width, int he
 	ImGui::PopStyleVar(2);
 }
 
+std::atomic<bool> g_shaderCachePersistenceEnabled{true};
+
 void LatteShaderCache_Load()
 {
+	if (!g_shaderCachePersistenceEnabled.load(std::memory_order_relaxed))
+	{
+		// Neither opens a cache file to read from nor to write to this session -
+		// s_shaderCacheGeneric stays null, so every LatteShaderCache_write*() call
+		// below already no-ops on that (see the `if (!s_shaderCacheGeneric) return;`
+		// guards), and LatteShaderCache_LoadPipelineCache() (called later in the
+		// enabled path, further down this function) never runs either. Compilation
+		// itself is completely untouched - only disk persistence is skipped.
+		cemuLog_log(LogType::Force, "Shader cache: persistence disabled by user - not loading or saving this session");
+		return;
+	}
+
 	shaderCacheScreenStats.compiledShaderCount = 0;
 	shaderCacheScreenStats.vertexShaderCount = 0;
 	shaderCacheScreenStats.geometryShaderCount = 0;

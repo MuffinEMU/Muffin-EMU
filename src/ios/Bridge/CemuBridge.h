@@ -266,6 +266,13 @@ long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includ
 /// Returns 0 on success. Either out pointer may be null.
 int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLearnedBytes, long long* outCompiledBytes);
 
+/// Master on/off for BOTH caches above - see LatteShader.h's g_shaderCachePersistenceEnabled
+/// for exactly what turning this off skips. Defaults on; this is the toggle Void asked
+/// for after reporting shaders don't feel remembered between launches. Takes effect on the
+/// NEXT title launch (LatteShaderCache_Load() only runs at boot), not the running game.
+void cemu_bridge_set_shader_cache_persistence(bool enabled);
+bool cemu_bridge_shader_cache_persistence(void);
+
 /// The reason behind cemu_bridge_cpu_mode(), in a sentence the person holding the iPad
 /// can act on - which is the point: the answer used to be obtainable only by reading a
 /// cs_flags hex value out of a crash log. Never NULL. Points to thread-local storage the
