@@ -477,7 +477,25 @@ void PPCInterpreter_PS_CMPO0(PPCInterpreter_t* hCPU, uint32 Opcode)
 	}
 
 	hCPU->fpscr = (hCPU->fpscr & 0xffff0fff) | (c << 12);
-	
+
+	// ps_cmpo0 is the ordered-compare counterpart of ps_cmpu0 (which correctly only ever
+	// raises VXSNAN via fcmpu_espresso). Ordered compares must also raise VXVC for a NaN
+	// operand - this was entirely missing here. Mirrors the corrected logic in
+	// PPCInterpreter_FCMPO (scalar fcmpo) directly above in PPCInterpreterFPU.cpp.
+	if (IS_NAN(*(uint64*)&a) || IS_NAN(*(uint64*)&b))
+	{
+		if (IS_SNAN(*(uint64*)&a) || IS_SNAN(*(uint64*)&b))
+		{
+			hCPU->fpscr |= FPSCR_VXSNAN;
+			if (!(hCPU->fpscr & FPSCR_VE))
+				hCPU->fpscr |= FPSCR_VXVC;
+		}
+		else
+		{
+			hCPU->fpscr |= FPSCR_VXVC;
+		}
+	}
+
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
