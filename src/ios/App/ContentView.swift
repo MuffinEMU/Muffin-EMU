@@ -224,7 +224,7 @@ struct GameBrowserView: View {
                                 Button {
                                     beginImport(contentTypes: Self.fileImportTypes)
                                 } label: {
-                                    Label("Game file (.wux, .wud, .wua, .iso, .rpx)", systemImage: "doc")
+                                    Label("Game file (.wux, .wud, .wua, .iso, .rpx, .elf, .wuhb)", systemImage: "doc")
                                 }
                                 Button {
                                     beginImport(contentTypes: Self.folderImportTypes)
@@ -514,7 +514,7 @@ struct EmptyGamesView: View {
                     .foregroundColor(MuffinTheme.brownDarkest)
 
                 VStack(alignment: .center, spacing: 4) {
-                    Text("Add .wux, .wud, .wua, .rpx, or .iso files")
+                    Text("Add .wux, .wud, .wua, .rpx, .elf, .wuhb, or .iso files")
                         .font(.system(size: 13, weight: .regular, design: .rounded))
                         .foregroundColor(MuffinTheme.brownMid)
 
