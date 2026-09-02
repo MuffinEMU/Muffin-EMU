@@ -284,6 +284,20 @@ bool cemu_bridge_async_shader_compile(void);
 void cemu_bridge_set_reduce_encoder_splitting(bool enabled);
 bool cemu_bridge_reduce_encoder_splitting(void);
 
+/// VSync for both Wii U screens' Metal layers - CAMetalLayer.displaySyncEnabled, which
+/// nothing on this port has ever set before (Cemu's own `vsync` config value only ever
+/// reached the Vulkan backend's swapchain present-mode selection - VulkanRenderer.cpp/
+/// SwapchainInfoVk.cpp - and does nothing for Metal). Metal's own default for a freshly
+/// created CAMetalLayer is true (synced), so leaving this untouched changed nothing for
+/// anyone; on means nextDrawable() paces to the display's refresh (smoother, capped at
+/// the screen's rate, no tearing), off lets a title that can render faster than that do
+/// so uncapped, at the cost of possible tearing. Applied in
+/// MetalRenderer::InitializeLayer() right after setPixelFormat(), so - like the other
+/// settings on this page - it takes effect on the NEXT title launch, not the one already
+/// running.
+void cemu_bridge_set_vsync_enabled(bool enabled);
+bool cemu_bridge_vsync_enabled(void);
+
 /// Shader cache maintenance. Two different things get called "the shader cache" and
 /// deleting them has very different consequences, so they are separate:
 ///

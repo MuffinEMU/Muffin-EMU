@@ -500,6 +500,11 @@ class GameManager: ObservableObject {
             // might dislike.
             cemu_bridge_set_shader_cache_persistence(
                 UserDefaults.standard.object(forKey: "muffin.shaders.persistentCache") as? Bool ?? true)
+            // Global, not per-game - see CemuBridge.h's cemu_bridge_set_vsync_enabled().
+            // Applied once per layer (re)init, so reading it here before boot is what
+            // makes a mid-session Settings change take effect on the next launch.
+            cemu_bridge_set_vsync_enabled(
+                UserDefaults.standard.object(forKey: "muffin.render.vsync") as? Bool ?? true)
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)

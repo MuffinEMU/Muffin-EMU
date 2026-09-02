@@ -34,6 +34,9 @@ extern bool hasValidFramebufferAttached;
 // Declared in MetalCommon.h - see that comment for the full reasoning. Off by default.
 std::atomic<bool> g_metal_reduceEncoderSplitting{false};
 
+// Declared in MetalCommon.h. On by default, matching CAMetalLayer's own default.
+std::atomic<bool> g_metal_vsyncEnabled{true};
+
 float supportBufferData[512 * 4];
 
 // Defined in the OpenGL renderer
@@ -349,6 +352,11 @@ void MetalRenderer::InitializeLayer(const Vector2i& size, bool mainWindow)
     auto& layer = GetLayer(mainWindow);
     layer = MetalLayerHandle(m_device, size, mainWindow);
     layer.GetLayer()->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+    // See MetalCommon.h's g_metal_vsyncEnabled for the full reasoning. Applied here,
+    // once per layer (re)initialization, rather than left to CAMetalLayer's own default
+    // every time, so a mid-session toggle in Settings reliably takes effect on the next
+    // title launch instead of only on the very first layer this process ever creates.
+    layer.GetLayer()->setDisplaySyncEnabled(g_metal_vsyncEnabled.load(std::memory_order_relaxed));
 }
 
 void MetalRenderer::ShutdownLayer(bool mainWindow)
