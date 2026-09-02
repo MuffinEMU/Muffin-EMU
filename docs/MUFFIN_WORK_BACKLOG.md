@@ -36,6 +36,11 @@ none has been run on a device.
 - **#122 confirmed** — no ETC2/ASTC/PVRTC reference exists anywhere in
   `Renderer/Metal/` (grepped the whole tree, zero hits), consistent with Wii U
   hardware never using these formats. No incorrect fallback logic to find.
+- **#67 confirmed** — `IOSInput_Initialize()` already writes every button AND
+  axis override slot across the full `kButtonId_None`..`kButtonId_Max` enum
+  range (not just the 16 controls actually exercised) before any title thread
+  exists - exactly the write-once-then-safe guarantee the item asked to
+  verify. No gap found.
 - **#80-84 partially addressed** — `ios-interpreter-thread-qos` branch: CPU-
   emulation scheduler threads now explicitly request
   `QOS_CLASS_USER_INTERACTIVE` instead of inheriting whatever priority they
