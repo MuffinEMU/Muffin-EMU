@@ -236,7 +236,17 @@ void PPCInterpreter_FCTIWZ(PPCInterpreter_t* hCPU, uint32 Opcode)
 
 	double b = hCPU->fpr[frB].fpr;
 	uint64 v;
-	if (b > (double)0x7FFFFFFF)
+	if (IS_NAN(*(uint64*)&b))
+	{
+		// Power ISA: NaN operand -> FRT = 0x8000_0000 (same sentinel as negative overflow).
+		// Must be an explicit check, not left to fall through to the plain (sint32)b cast below:
+		// double->int32 conversion of NaN is UB in C++ and platform-dependent in practice -
+		// x86 cvttsd2si happens to yield 0x80000000 for NaN (matching the spec by accident),
+		// but AArch64 FCVTZS is defined to yield 0 for NaN. Since this is an ARM64 target,
+		// omitting this check silently produced the wrong result (0 instead of 0x80000000).
+		v = (uint64)0x80000000;
+	}
+	else if (b > (double)0x7FFFFFFF)
 	{
 		v = (uint64)0x7FFFFFFF;
 	}
@@ -266,7 +276,13 @@ void PPCInterpreter_FCTIW(PPCInterpreter_t* hCPU, uint32 Opcode)
 
 	double b = hCPU->fpr[frB].fpr;
 	uint64 v;
-	if (b > (double)0x7FFFFFFF)
+	if (IS_NAN(*(uint64*)&b))
+	{
+		// see PPCInterpreter_FCTIWZ - same NaN -> 0x8000_0000 rule, same ARM64 UB pitfall
+		// (here it would otherwise fall into the (sint32)t cast below via b+0.5 == NaN)
+		v = (uint64)0x80000000;
+	}
+	else if (b > (double)0x7FFFFFFF)
 	{
 		v = (uint64)0x7FFFFFFF;
 	}
@@ -679,10 +695,27 @@ void PPCInterpreter_FCMPO(PPCInterpreter_t* hCPU, uint32 Opcode)
 
     hCPU->fpscr = (hCPU->fpscr & 0xffff0fff) | (c << 12);
 
-	if (IS_SNAN (hCPU->fpr[frA].guint) || IS_SNAN (hCPU->fpr[frB].guint))
-		hCPU->fpscr |= FPSCR_VXSNAN;
-	else if (!(hCPU->fpscr & FPSCR_VE) || IS_QNAN (hCPU->fpr[frA].guint) || IS_QNAN (hCPU->fpr[frB].guint))
-		hCPU->fpscr |= FPSCR_VXVC;
+	// fcmpo is an *ordered* compare: any NaN operand is an invalid-operation condition.
+	// Previous logic set VXVC whenever VE==0 regardless of whether a NaN was even involved
+	// (the `!(fpscr & FPSCR_VE)` term was OR'd in as a standalone condition of the non-SNaN
+	// else-branch, not gated on NaN presence) - so VXVC was being raised on ordinary,
+	// non-NaN comparisons any time VE was disabled, which is the default/typical state.
+	// Correct rule (Power ISA): VXVC is set only when a NaN is present, and then only if
+	// it's a QNaN, or it's an SNaN with VE==0 (VXSNAN is always set for an SNaN regardless).
+	if (IS_NAN(hCPU->fpr[frA].guint) || IS_NAN(hCPU->fpr[frB].guint))
+	{
+		if (IS_SNAN(hCPU->fpr[frA].guint) || IS_SNAN(hCPU->fpr[frB].guint))
+		{
+			hCPU->fpscr |= FPSCR_VXSNAN;
+			if (!(hCPU->fpscr & FPSCR_VE))
+				hCPU->fpscr |= FPSCR_VXVC;
+		}
+		else
+		{
+			// QNaN present, no SNaN
+			hCPU->fpscr |= FPSCR_VXVC;
+		}
+	}
 
 	PPCInterpreter_nextInstruction(hCPU);
 }
