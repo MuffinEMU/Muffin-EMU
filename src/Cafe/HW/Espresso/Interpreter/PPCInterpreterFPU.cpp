@@ -236,7 +236,17 @@ void PPCInterpreter_FCTIWZ(PPCInterpreter_t* hCPU, uint32 Opcode)
 
 	double b = hCPU->fpr[frB].fpr;
 	uint64 v;
-	if (b > (double)0x7FFFFFFF)
+	if (IS_NAN(*(uint64*)&b))
+	{
+		// Power ISA: NaN operand -> FRT = 0x8000_0000 (same sentinel as negative overflow).
+		// Must be an explicit check, not left to fall through to the plain (sint32)b cast below:
+		// double->int32 conversion of NaN is UB in C++ and platform-dependent in practice -
+		// x86 cvttsd2si happens to yield 0x80000000 for NaN (matching the spec by accident),
+		// but AArch64 FCVTZS is defined to yield 0 for NaN. Since this is an ARM64 target,
+		// omitting this check silently produced the wrong result (0 instead of 0x80000000).
+		v = (uint64)0x80000000;
+	}
+	else if (b > (double)0x7FFFFFFF)
 	{
 		v = (uint64)0x7FFFFFFF;
 	}
@@ -266,7 +276,13 @@ void PPCInterpreter_FCTIW(PPCInterpreter_t* hCPU, uint32 Opcode)
 
 	double b = hCPU->fpr[frB].fpr;
 	uint64 v;
-	if (b > (double)0x7FFFFFFF)
+	if (IS_NAN(*(uint64*)&b))
+	{
+		// see PPCInterpreter_FCTIWZ - same NaN -> 0x8000_0000 rule, same ARM64 UB pitfall
+		// (here it would otherwise fall into the (sint32)t cast below via b+0.5 == NaN)
+		v = (uint64)0x80000000;
+	}
+	else if (b > (double)0x7FFFFFFF)
 	{
 		v = (uint64)0x7FFFFFFF;
 	}
