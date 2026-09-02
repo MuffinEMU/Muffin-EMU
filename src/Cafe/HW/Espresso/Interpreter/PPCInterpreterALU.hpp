@@ -512,6 +512,10 @@ static void PPCInterpreter_DIVWU(PPCInterpreter_t* hCPU, uint32 opcode)
 	uint32 b = hCPU->gpr[rB];
 	if (b == 0)
 		hCPU->gpr[rD] = 0;
+	// note: unlike DIVW, there's no INT_MIN/-1 trap case for the unsigned divide - the branch
+	// below looks like it was carried over from DIVW's a==0x80000000/b==0xFFFFFFFF special case,
+	// but for unsigned values a(0x80000000) < b(0xFFFFFFFF) always, so a/b is already 0 and the
+	// "else" arm below would compute the identical result. Verified harmless, left alone.
 	else if (a == 0x80000000 && b == 0xFFFFFFFF)
 		hCPU->gpr[rD] = 0;
 	else
