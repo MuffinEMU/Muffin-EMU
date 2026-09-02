@@ -119,6 +119,25 @@ none has been run on a device.
     path); `LFS`/`STFS`-family accessors in the same LLE class skip MMU
     translation entirely. All real, all scoped to the unused-tonight LLE path
     — logged here rather than guessed at blind.
+- **Root cause of "every WUD/WUX title crashes on launch" found and fixed.**
+  Void sent a real crash log (signal 11 in `FSTVolume::FindDiscKey`,
+  called from `TitleInfo::Mount` → `ParseXmlInfo` on boot). Traced it to
+  `AES128_CBC_decrypt` — a function pointer that starts `nullptr` and is only
+  ever assigned by `AES128_init()`, which desktop Cemu calls from
+  `main.cpp`'s `CemuCommonInit()`. The iOS bridge never runs
+  `CemuCommonInit()`; it hand-picks pieces of it individually (this is the
+  same pattern `PPCTimer_init()` already needed and has its own comment
+  explaining), and `AES128_init()` was never one of the picks. Result: the
+  pointer stayed null for the process's entire lifetime, and the first thing
+  to call through it — decrypting a disc header to find the title's AES key,
+  on every single WUD/WUX title launch — jumped through address 0. Fixed by
+  adding the `AES128_init()` call next to `PPCTimer_init()` in
+  `CemuBridge.mm`. This is almost certainly the actual Super Mario 3D World
+  crash (and likely every other disc-title crash reported this session) —
+  not the WUX sector-bounds issue fixed earlier, which was real but
+  defensive-only since this null-pointer call would fire first on any title
+  that has a valid WUX index table. Not yet confirmed on-device; going into
+  v13.
 
 ---
 
