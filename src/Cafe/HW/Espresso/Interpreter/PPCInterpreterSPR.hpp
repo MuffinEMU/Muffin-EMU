@@ -72,8 +72,11 @@ static void setFPECR(PPCInterpreter_t* hCPU, uint32 newValue)
 
 static void setDEC(PPCInterpreter_t* hCPU, uint32 newValue)
 {
-	debug_printf("Set DEC to 0x%08x\n", newValue);
-	//hCPU->sprExtended.fpecr = newValue;
+	// bug: this used to be a no-op stub (only a debug_printf) so mtspr to DEC never actually
+	// restarted the decrementer countdown. PPCInterpreter_setDEC() already exists and is the
+	// real, tested implementation (updates sprExtended.DEC + the cycle-based countdown globals
+	// that PPCSpr_get's SPR_DEC case reads back) - route through it instead of duplicating it.
+	PPCInterpreter_setDEC(hCPU, newValue);
 }
 
 static uint32 getSPRG(PPCInterpreter_t* hCPU, uint32 sprgIndex)
