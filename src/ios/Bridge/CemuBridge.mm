@@ -18,6 +18,7 @@
 #include <thread>
 #include <chrono>
 #include <mutex>
+#include <functional>
 #include <cstdarg>
 #include <signal.h>
 #include <execinfo.h>
@@ -399,6 +400,16 @@ void cemu_bridge_start_memory_watchdog(void) {
     void IOSTitleLaunch_InitializeTitleList();
     int IOSTitleLaunch_PrepareForegroundTitle(const char* path);
     int IOSTitleLaunch_ReloadAndCountKeys();
+
+    // Defined in src/gui/iosgui/IOSTitleDecrypt.cpp - same "header-heavy code stays on
+    // the CMake side" reasoning as IOSTitleLaunch_* above (FST.h pulls in the ncrypto/
+    // config stack). Not wrapped in extern "C" like the Swift-facing functions below:
+    // std::atomic_bool& and std::function aren't C-compatible types, and this is only
+    // ever called from within this same C++ binary, never across the Swift boundary
+    // directly - cemu_bridge_start_decrypt() below is what Swift actually calls.
+    int IOSTitleDecrypt_ExtractToFolder(const char* srcPath, const char* destFolderPath,
+        std::atomic_bool& cancelRequested,
+        const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
 
     // SDL's iOS joystick backend is a GameController.framework client, so bring it up on
     // the main thread even though cemu_bridge_initialize() itself runs on GameManager's
@@ -1799,6 +1810,73 @@ void cemu_bridge_get_progress(CemuBridgeProgress* out) {
     out->gx2_frames_per_second = snapshot.gx2FramesPerSecond;
     out->os_screen_scanouts = snapshot.osScreenScanouts;
     out->guest_flip_requests = snapshot.guestFlipRequests;
+#endif
+}
+
+// Decrypt-to-Files state. One at a time by design - a second call while one is already
+// running is a no-op (see cemu_bridge_start_decrypt()) rather than something that would
+// need its own queue, since this is a foreground action the user explicitly started and
+// is watching progress for, not a background service.
+#if defined(CEMU_CORE_AVAILABLE)
+static std::atomic<bool> g_decryptRunning{false};
+static std::atomic<bool> g_decryptCompleted{false};
+static std::atomic<bool> g_decryptCancelRequested{false};
+static std::atomic<int> g_decryptResultStatus{0};
+static std::atomic<uint64_t> g_decryptBytesWritten{0};
+static std::atomic<uint32_t> g_decryptFilesWritten{0};
+static std::thread g_decryptThread;
+static std::mutex g_decryptThreadMutex;
+#endif
+
+bool cemu_bridge_start_decrypt(const char* srcPath, const char* destFolderPath) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!srcPath || srcPath[0] == '\0' || !destFolderPath || destFolderPath[0] == '\0')
+        return false;
+    if (g_decryptRunning.exchange(true))
+        return false; // already running - caller polls progress instead of starting a second one
+
+    std::lock_guard lock{g_decryptThreadMutex};
+    if (g_decryptThread.joinable())
+        g_decryptThread.join(); // previous run's thread object, already finished - reap it before replacing
+    g_decryptCompleted.store(false);
+    g_decryptCancelRequested.store(false);
+    g_decryptBytesWritten.store(0);
+    g_decryptFilesWritten.store(0);
+
+    std::string src(srcPath);
+    std::string dest(destFolderPath);
+    g_decryptThread = std::thread([src, dest]() {
+        int status = IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested,
+            [](uint64_t bytesWritten, uint32_t filesWritten) {
+                g_decryptBytesWritten.store(bytesWritten);
+                g_decryptFilesWritten.store(filesWritten);
+            });
+        g_decryptResultStatus.store(status);
+        g_decryptCompleted.store(true);
+        g_decryptRunning.store(false);
+    });
+    return true;
+#else
+    return false;
+#endif
+}
+
+void cemu_bridge_get_decrypt_progress(CemuBridgeDecryptProgress* out) {
+    if (!out)
+        return;
+    *out = CemuBridgeDecryptProgress{};
+#if defined(CEMU_CORE_AVAILABLE)
+    out->is_running = g_decryptRunning.load();
+    out->completed = g_decryptCompleted.load();
+    out->result_status = g_decryptResultStatus.load();
+    out->bytes_written = g_decryptBytesWritten.load();
+    out->files_written = g_decryptFilesWritten.load();
+#endif
+}
+
+void cemu_bridge_cancel_decrypt(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    g_decryptCancelRequested.store(true);
 #endif
 }
 

@@ -146,6 +146,8 @@ struct GameBrowserView: View {
     /// Which game "View Game Options" was opened for - the sheet's own presence, not a
     /// separate Bool, so there is no way for the sheet to open pointed at the wrong game.
     @State private var gameOptionsTarget: GameMetadata?
+    /// Same pattern as gameOptionsTarget, for "Decrypt to Files".
+    @State private var decryptTarget: GameMetadata?
     @ObservedObject private var perGameSettings = PerGameSettingsStore.shared
     /// What the picker is being opened for.
     ///
@@ -290,7 +292,8 @@ struct GameBrowserView: View {
                                         GameContextMenu(
                                             game: game,
                                             store: perGameSettings,
-                                            onViewOptions: { gameOptionsTarget = game }
+                                            onViewOptions: { gameOptionsTarget = game },
+                                            onDecryptToFiles: { decryptTarget = game }
                                         )
                                     }
                                 }
@@ -315,6 +318,9 @@ struct GameBrowserView: View {
         }
         .sheet(item: $gameOptionsTarget) { game in
             GameOptionsView(game: game, store: perGameSettings)
+        }
+        .sheet(item: $decryptTarget) { game in
+            DecryptROMView(game: game)
         }
         .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
             Button("OK") { romImportErrorMessage = nil }

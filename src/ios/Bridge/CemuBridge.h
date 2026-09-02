@@ -158,6 +158,39 @@ typedef struct {
 /// rather than placeholders. Safe to call from any thread, cheap enough to poll.
 void cemu_bridge_get_progress(CemuBridgeProgress* out);
 
+/// Decrypt-to-Files: takes a WUD/WUX the app already has a working key for and writes a
+/// fully decrypted copy of its file tree to destFolderPath - the same code/, content/,
+/// meta/ layout a folder dump already has, importable and bootable exactly like one.
+/// The source file at srcPath is opened read-only and never modified.
+///
+/// Starts the extraction on a background thread and returns immediately; true if it
+/// started, false on a bad argument or if a decrypt is already running (only one runs
+/// at a time - poll cemu_bridge_get_decrypt_progress() and wait for `completed` before
+/// starting another). No decryption logic lives on this side of the bridge at all: it
+/// reuses FSTVolume, the same engine code every ordinary boot already depends on to
+/// read a disc.
+bool cemu_bridge_start_decrypt(const char* srcPath, const char* destFolderPath);
+
+typedef struct {
+    bool is_running;
+    bool completed;
+    int result_status; // valid once completed is true - IOS_DECRYPT_* from IOSTitleDecrypt.cpp
+    unsigned long long bytes_written;
+    unsigned int files_written;
+} CemuBridgeDecryptProgress;
+
+/// Snapshot of the current (or most recently finished) decrypt. Zeroed when nothing has
+/// ever been started. Safe to poll from the main thread while a decrypt runs elsewhere.
+void cemu_bridge_get_decrypt_progress(CemuBridgeDecryptProgress* out);
+
+/// Asks the running decrypt to stop at the next safe point (between files, or between
+/// chunks of a large one) rather than completing. Whatever was already written to
+/// destFolderPath is left as-is - a partial, incomplete folder tree, not cleaned up
+/// automatically, since the caller is in a better position than the engine to decide
+/// whether a partial extraction is worth keeping or deleting. No-op if nothing is
+/// running.
+void cemu_bridge_cancel_decrypt(void);
+
 /// How fast the emulated console believes time is passing, as a right-shift factor:
 /// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
 /// Cemu's own `ActiveSettings::SetTimerShiftFactor()`, which desktop Cemu exposes as its
