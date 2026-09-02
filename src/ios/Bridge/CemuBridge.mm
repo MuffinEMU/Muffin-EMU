@@ -354,6 +354,7 @@ void cemu_bridge_start_memory_watchdog(void) {
     #include "audio/IAudioAPI.h"
     #include "Cafe/HW/Espresso/PPCState.h"
     #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
+    #include "util/crypto/aes128.h"
     #include "Common/version.h"
     #include <filesystem>
     #include <set>
@@ -1023,6 +1024,16 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // it here, as early as possible per the original comment - it spawns its own
     // ~3-second background calibration thread, so this doesn't block anything itself.
     PPCTimer_init();
+    // Same gap, different desktop-only init: CemuCommonInit() also calls AES128_init(),
+    // which is what actually assigns the AES128_CBC_decrypt function pointer (it starts
+    // out nullptr - see aes128.cpp). Nothing else on this port's boot path calls it, so
+    // that pointer stayed null through an entire process lifetime, and the first disc
+    // mount to call through it (FSTVolume::FindDiscKey(), decrypting the header to find
+    // the disc's AES key) jumped through a null function pointer - a signal 11 landing
+    // inside FindDiscKey with no frame below it, which is exactly the shape of the crash
+    // reported: boot reaches "title list initialized" fine (nothing touches AES before a
+    // disc is actually mounted), then SIGSEGVs the instant a WUD/WUX title is launched.
+    AES128_init();
     // CafeSystem::Initialize() calls ActiveSettings::GetMlcPath() in its very first
     // few lines (to log "mlc01 path: ..."), which without SetPaths() first resolves
     // against a default-constructed (empty) s_user_data_path - i.e. a relative
