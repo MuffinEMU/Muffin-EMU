@@ -707,6 +707,43 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 		return false;
 	}
 
+	// The check above (mmap RW, then mprotect to RX) is NOT the same guarantee as this
+	// one, and a real crash log is why this exists. AppleJitAllocator (BackendAArch64.cpp)
+	// tries four strategies in order; only the first - mmap(..., PROT_EXEC, MAP_JIT) -
+	// maps pages that are BOTH executable at map time AND rooted in the process's actual
+	// JIT region. Every fallback strategy, including the mprotect-promoted RW->RX path
+	// this function was already testing, can succeed at the syscall level - mprotect()
+	// returns 0 - and still SIGBUS the instant code-signing enforcement sees the first
+	// instruction fetch from a page that was never MAP_JIT to begin with. That is exactly
+	// what happened on-device: CS_DEBUGGED was set, mprotect(R+X) succeeded, this check
+	// returned true, MAP_JIT itself then failed inside the real allocator and it fell
+	// back to the mprotect-promoted path, and PPCRecompiler_enter's first jump into
+	// generated code took signal 10. Test the actual mechanism the allocator depends on,
+	// not a stand-in for it.
+	{
+		const size_t jitPageSize = (size_t)sysconf(_SC_PAGESIZE);
+		void* jitPage = mmap(nullptr, jitPageSize, PROT_READ | PROT_WRITE | PROT_EXEC,
+			MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0);
+		if (jitPage == MAP_FAILED)
+		{
+			const int err = errno;
+			cemuLog_log(LogType::Force,
+				"JIT check: mmap(MAP_JIT, executable at map time) refused (errno {} - {}), even though "
+				"CS_DEBUGGED is set. This is the one allocation strategy that has ever been confirmed to "
+				"survive execution on iOS - every fallback strategy can pass its own syscalls and still "
+				"SIGBUS on first entry into generated code, which is what happened before this check "
+				"existed. Forcing the interpreter rather than handing the recompiler a mapping already "
+				"known to be unsafe.",
+				err, strerror(err));
+			setCpuModeDetail(cpuModeDetailf("Executable pages are available and CS_DEBUGGED is set, but "
+				"mmap(MAP_JIT) itself was refused (errno %d - %s). Every other way to get executable "
+				"memory here is known to crash the instant recompiled code actually runs, so the "
+				"interpreter is the only safe choice on this launch.", err, strerror(err)));
+			return false;
+		}
+		munmap(jitPage, jitPageSize);
+	}
+
 	// Arm the sentinel for the whole recompiler-enabled boot, not for a single call.
 	// Disarmed by ios_jit_survived_boot() once a title has actually launched.
 	const std::string sentinelNative = sentinelPath.string();
