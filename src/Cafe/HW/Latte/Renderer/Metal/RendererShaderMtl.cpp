@@ -96,7 +96,20 @@ public:
 			job->m_compilationState.setValue(RendererShaderMtl::COMPILATION_STATE::COMPILING);
 			s_compilationQueueMutex.unlock();
 			// compile
+			//
+			// Same missing-pool bug as MetalPipelineCache.cpp's compileThreadFunc, and for
+			// the same reason: this loop runs forever on a raw std::thread with no run loop
+			// of its own, so it never gets an implicit autorelease pool. CompileInternal()
+			// -> LibraryFromSource() creates an autoreleased NS::String on every call via
+			// ToNSString() (NS::String::string() is the Cocoa "stringWith..." factory
+			// convention, not alloc/init - see MetalCommon.h), twice per shader counting
+			// CompileInternal()'s own "main0" one, plus the NSError* out-param from
+			// newLibrary() whenever compilation fails. Two threads, every shader compiled
+			// while playing, all leaking for the rest of the process's life with no pool to
+			// ever drain them into.
+			auto pool = NS::AutoreleasePool::alloc()->init();
 			job->CompileInternal();
+			pool->release();
 			if (job->ShouldCountCompilation())
 			    ++g_compiled_shaders_async;
 			// mark as compiled
