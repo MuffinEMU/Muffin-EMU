@@ -33,6 +33,9 @@ none has been run on a device.
 - **#74 confirmed** — `snd_user.cpp`'s "unsupported audio effect" warning is
   genuine upstream Cemu behavior (missing optional `snd_user.rpl`/
   `snduser2.rpl` firmware files), not iOS-specific and not a missing codec path.
+- **#122 confirmed** — no ETC2/ASTC/PVRTC reference exists anywhere in
+  `Renderer/Metal/` (grepped the whole tree, zero hits), consistent with Wii U
+  hardware never using these formats. No incorrect fallback logic to find.
 - **#80-84 partially addressed** — `ios-interpreter-thread-qos` branch: CPU-
   emulation scheduler threads now explicitly request
   `QOS_CLASS_USER_INTERACTIVE` instead of inheriting whatever priority they
