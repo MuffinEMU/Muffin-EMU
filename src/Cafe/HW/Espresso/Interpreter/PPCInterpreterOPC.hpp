@@ -68,11 +68,17 @@ static void PPCInterpreter_TW(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_OPC_TEMPL_X(opcode, to, rA, rB);
 
 	cemu_assert_debug(to == 0);
-	if(to != 0)
-		PPCInterpreter_nextInstruction(hCPU);
-
-    if (rA == DEBUGGER_BP_T_DEBUGGER)
+	// TO=0 never traps on real hardware, so tw with TO=0 is architecturally a no-op - it's
+	// also how Cemu's own debugger/gdbstub inject breakpoints (rA carries the marker, see
+	// DEBUGGER_BP_T_*_TW). Only hand off without advancing IP when rA actually matches one
+	// of those markers; any other encoding (including TO!=0, whose trap condition we don't
+	// evaluate) has to fall through to nextInstruction() or the core hangs forever re-running
+	// this instruction. Previously the IP advance was gated on `to != 0`, so a TO=0 trap with
+	// an unrecognized rA (any non-debugger tw 0,...) never advanced and stalled the core.
+    if (to == 0 && rA == DEBUGGER_BP_T_DEBUGGER)
 	    debugger_enterTW(hCPU);
-    else if (rA == DEBUGGER_BP_T_GDBSTUB)
+    else if (to == 0 && rA == DEBUGGER_BP_T_GDBSTUB)
         g_gdbstub->HandleTrapInstruction(hCPU);
+	else
+		PPCInterpreter_nextInstruction(hCPU);
 }
