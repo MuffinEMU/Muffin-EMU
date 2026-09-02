@@ -138,6 +138,44 @@ none has been run on a device.
   defensive-only since this null-pointer call would fire first on any title
   that has a valid WUX index table. Not yet confirmed on-device; going into
   v13.
+- **`.elf` import was silently rejected; engine already supported it.**
+  Void asked whether `.elf`/`.wuhb` roms work. `.wuhb` already did
+  end-to-end. `.elf` didn't, but not in the engine —
+  `IOSTitleLaunch_PrepareForegroundTitle` already detects and boots a
+  standalone `.elf` exactly like `.rpx` (same as desktop, whose file-open
+  filter has always grouped `*.rpx;*.elf` together) — `GameManager.swift`'s
+  `supportedROMExtensions` just never included `"elf"`, so the iOS import
+  screen rejected the file before it ever reached that code. Added it to
+  the allowlist and to `isValidROMFile`'s magic-byte check (reusing `.rpx`'s
+  existing ELF signature), and fixed the two UI strings that listed
+  supported formats without mentioning `.elf` or the already-working
+  `.wuhb`.
+- **Real Metal drawable leak found from a `.wuhb` hang report, fixed.**
+  Void reported a homebrew title "stays on gx2 forever, with no frames."
+  The log showed GX2Init reached fine and the guest CPU genuinely executing
+  the whole time (200+ MIPS, real progress) — not a deadlock — but
+  `MetalLayerHandle::AcquireDrawable()`'s "failed to acquire next drawable"
+  started flooding the log a few seconds in and never stopped, while
+  process memory grew from ~350MB to ~2.9GB in under a minute (heading
+  straight for a jetsam kill). Root cause: `nextDrawable()` is a Cocoa "get"
+  accessor, not alloc/new/copy, so — like `commandQueue()->commandBuffer()`
+  in `MetalRenderer::GetCommandBuffer()`, which explicitly retains its
+  result for exactly this reason — it returns an object the caller doesn't
+  own. `AcquireDrawable()` never retained it, so the pointer was only good
+  until the next autorelease pool drain, which can happen before
+  `PresentDrawable()` runs given how much rendering happens per GX2 frame
+  in between. Presenting (or destroying/moving the handle while holding) an
+  already-deallocated drawable never returns the real drawable to
+  `CAMetalLayer`'s fixed-size pool, permanently losing a slot each time —
+  draining the whole pool within the first several frames. Fixed by
+  retaining in `AcquireDrawable()` and releasing in `PresentDrawable()`,
+  the destructor, and move-assignment (same ownership pattern `m_layer`
+  already uses in this class). Also switched the failure log to
+  `cemuLog_logOnce` — once the leak is fixed this can still legitimately
+  fail on a title that outruns its swapchain, and the old unconditional
+  version fired hundreds of times a second, which is almost certainly why
+  several of Void's mailed logs this session read as truncated on
+  arrival. Not yet confirmed on-device; going into v14 with the `.elf` fix.
 
 ---
 
