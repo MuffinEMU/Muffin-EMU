@@ -48,6 +48,8 @@ public:
         {
             if (m_layer)
                 m_layer->release();
+            if (m_drawable)
+                m_drawable->release();
             m_layer = other.m_layer;
             m_layerScaleX = other.m_layerScaleX;
             m_layerScaleY = other.m_layerScaleY;

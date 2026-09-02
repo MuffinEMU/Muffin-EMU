@@ -24,6 +24,8 @@ MetalLayerHandle::MetalLayerHandle(MTL::Device* device, const Vector2i& size, bo
 
 MetalLayerHandle::~MetalLayerHandle()
 {
+    if (m_drawable)
+        m_drawable->release();
     if (m_layer)
         m_layer->release();
 }
@@ -48,12 +50,32 @@ bool MetalLayerHandle::AcquireDrawable()
     if (m_drawable)
         return true;
 
+    // nextDrawable() is a Cocoa "get" accessor, not an alloc/new/copy one - like
+    // commandQueue()->commandBuffer() in MetalRenderer::GetCommandBuffer(), it returns
+    // an autoreleased object the caller does not own. GetCommandBuffer() retains its
+    // result for exactly this reason; this call site never did, so m_drawable held a
+    // pointer good only until the nearest autorelease pool drained - which could
+    // easily happen before PresentDrawable() runs, since a full GX2 frame's worth of
+    // other rendering happens in between. Presenting (or destroying/moving this handle
+    // while holding) an already-deallocated drawable never gives the real drawable back
+    // to the CAMetalLayer's fixed-size pool, so it permanently loses one slot each time
+    // this raced - draining the pool over the first few frames until nextDrawable()
+    // starts returning nil immediately, forever, which is indistinguishable from a
+    // frozen title (GX2 frame count keeps climbing - the guest is still producing
+    // frames - while nothing ever reaches the screen and memory climbs unbounded, since
+    // whatever was backing the un-released drawables never gets reclaimed either).
     m_drawable = m_layer->nextDrawable();
     if (!m_drawable)
     {
-        cemuLog_log(LogType::Force, "layer {} failed to acquire next drawable", (void*)this);
+        // Rate-limited: the whole point of retaining above is that this can now legally
+        // fail every single frame on a title that is genuinely outrunning its swapchain
+        // (as opposed to the old dangling-pointer failure, which fires this line
+        // hundreds of times a second and buries every other log line under it - the same
+        // volume that has been truncating whole crash reports read back over mail).
+        cemuLog_logOnce(LogType::Force, "layer {} failed to acquire next drawable", (void*)this);
         return false;
     }
+    m_drawable->retain();
 
     return true;
 }
@@ -61,5 +83,6 @@ bool MetalLayerHandle::AcquireDrawable()
 void MetalLayerHandle::PresentDrawable(MTL::CommandBuffer* commandBuffer)
 {
     commandBuffer->presentDrawable(m_drawable);
+    m_drawable->release();
     m_drawable = nullptr;
 }
