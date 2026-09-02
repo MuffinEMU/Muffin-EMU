@@ -29,6 +29,14 @@
 /// launch-time read) and read from wherever EndEncoding() runs.
 extern std::atomic<bool> g_metal_reduceEncoderSplitting;
 
+/// Whether CAMetalLayer.displaySyncEnabled gets set on both Wii U screens' layers -
+/// applied in MetalRenderer::InitializeLayer(). Matches CAMetalLayer's own default
+/// (true/synced) so leaving it untouched changes nothing; the toggle is for a title that
+/// can render faster than the display's refresh and would rather have that uncapped
+/// than paced. Same "settable from a Settings toggle, read from the render path" reason
+/// for being atomic as g_metal_reduceEncoderSplitting above.
+extern std::atomic<bool> g_metal_vsyncEnabled;
+
 // Read a BOOL property off a MTLDevice by selector name. Capability selectors get
 // added to the MTLDevice protocol over time and are not implemented by every driver
 // class, and sending one that isn't there kills the process - see the depth24Stencil8
