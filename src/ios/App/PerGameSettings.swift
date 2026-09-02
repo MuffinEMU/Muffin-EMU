@@ -104,6 +104,7 @@ struct GameContextMenu: View {
     let game: GameMetadata
     @ObservedObject var store: PerGameSettingsStore
     let onViewOptions: () -> Void
+    let onDecryptToFiles: () -> Void
 
     var body: some View {
         Toggle(isOn: Binding(
@@ -114,6 +115,13 @@ struct GameContextMenu: View {
         }
         Button(action: onViewOptions) {
             Label("View Game Options", systemImage: "slider.horizontal.3")
+        }
+        // Disc images only - see gameSupportsDecryptToFiles() in DecryptROMView.swift for
+        // why a folder dump, homebrew .rpx/.elf, and .wuhb don't get this action.
+        if gameSupportsDecryptToFiles(romPath: game.romPath) {
+            Button(action: onDecryptToFiles) {
+                Label("Decrypt to Files", systemImage: "lock.open")
+            }
         }
     }
 }
