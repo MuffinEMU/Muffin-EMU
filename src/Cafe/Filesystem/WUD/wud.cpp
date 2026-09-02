@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "wud.h"
 #include "Common/FileStream.h"
+#include "Cemu/Logging/CemuLogging.h"
 
 wud_t* wud_open(const fs::path& path)
 {
@@ -104,6 +105,27 @@ unsigned int wud_readData(wud_t* wud, void* buffer, unsigned int length, long lo
 			unsigned int sectorIndex = (unsigned int)(offset / (long long)wud->sectorSize);
 			unsigned int bytesToRead = (remainingSectorBytes<length)?remainingSectorBytes:length; // read only up to the end of the current sector
 			// look up real sector index
+			// The offset<uncompressedSize clamp above the loop keeps sectorIndex in range
+			// for a well-formed WUX file (indexTableEntryCount is ceil(uncompressedSize /
+			// sectorSize)), but nothing here ever verified that assumption - a WUX whose
+			// header disagrees with its actual index table (a different converter version,
+			// a truncated/corrupted file, or simply a bug in that assumption) reads
+			// wud->indexTable out of bounds with no diagnostic at all, and whatever garbage
+			// comes back becomes a file seek position - readData() then either returns
+			// corrupted disc data silently or, if the garbage index sends the seek far
+			// enough past EOF, behaves unpredictably depending on the underlying FileStream.
+			// Real risk on a real device: this is exactly the kind of out-of-bounds read
+			// that is easy to write off as "the WUX math is correct" and never actually
+			// verify against a live encrypted retail dump.
+			if (sectorIndex >= wud->indexTableEntryCount)
+			{
+				cemuLog_log(LogType::Force,
+					"WUX: sector index {} out of range (index table has {} entries) at read offset {} - "
+					"the WUX header's declared size disagrees with its own index table. Aborting this "
+					"read rather than seeking to a garbage file position.",
+					sectorIndex, wud->indexTableEntryCount, offset);
+				return readBytes;
+			}
 			sectorIndex = wud->indexTable[sectorIndex];
 			wud->fs->SetPosition(wud->offsetSectorArray + (long long)sectorIndex * (long long)wud->sectorSize + (long long)sectorOffset);
 			readBytes += (unsigned int)wud->fs->readData(buffer, bytesToRead);

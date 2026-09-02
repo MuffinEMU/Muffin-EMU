@@ -245,24 +245,49 @@ FSTVolume* FSTVolume::OpenFromDiscImage(const fs::path& path, NCrypto::AesKey& d
 	// 4) use SI information to get titleKey for GM partition
 	// 5) Load FST for GM
 	SET_FST_ERROR(UNKNOWN_ERROR);
+	// Fine-grained checkpoints through disc mounting. This function was a silent black
+	// box on iOS: a device crash mid-mount left nothing between "title list initialized"
+	// and the next expected log line, with no way to tell whether it died opening the
+	// file, reading a header, or in the partition-table decrypt/parse below. Cheap
+	// (Force level, once per boot) and exactly what turns the next report into something
+	// actionable instead of another "the logs just end there".
+	cemuLog_log(LogType::Force, "FST: opening disc image data source for {}", _pathToUtf8(path));
 	std::unique_ptr<FSTDataSourceWUD> dataSource(FSTDataSourceWUD::Open(path));
 	if (!dataSource)
+	{
+		cemuLog_log(LogType::Force, "FST: failed to open disc image data source (wud_open returned null)");
 		return nullptr;
+	}
 	// check HeaderA (only contains product code?)
+	cemuLog_log(LogType::Force, "FST: reading disc header A");
 	DiscHeaderA headerA{};
 	if (dataSource->readData(0, 0, 0, &headerA, sizeof(headerA)) != sizeof(headerA))
+	{
+		cemuLog_log(LogType::Force, "FST: failed to read disc header A (short read)");
 		return nullptr;
+	}
 	// check HeaderB
+	cemuLog_log(LogType::Force, "FST: reading disc header B");
 	DiscHeaderB headerB{};
 	if (dataSource->readData(0, 0, DISC_SECTOR_SIZE * 2, &headerB, sizeof(headerB)) != sizeof(headerB))
+	{
+		cemuLog_log(LogType::Force, "FST: failed to read disc header B (short read)");
 		return nullptr;
+	}
 	if (headerB.magic != headerB.MAGIC_VALUE)
+	{
+		cemuLog_log(LogType::Force, "FST: disc header B magic mismatch (0x{:08x})", (uint32)headerB.magic);
 		return nullptr;
+	}
+	cemuLog_log(LogType::Force, "FST: headers OK, reading and decrypting the partition table");
 
 	// read, decrypt and parse partition table
 	uint8 partitionSector[DISC_SECTOR_SIZE];
 	if (dataSource->readData(0, 0, DISC_SECTOR_SIZE * 3, partitionSector, DISC_SECTOR_SIZE) != DISC_SECTOR_SIZE)
+	{
+		cemuLog_log(LogType::Force, "FST: failed to read the partition table sector (short read)");
 		return nullptr;
+	}
 	uint8 iv[16]{};
 	AES128_CBC_decrypt(partitionSector, partitionSector, DISC_SECTOR_SIZE, discTitleKey.b, iv);
 	// parse partition info
@@ -278,6 +303,7 @@ FSTVolume* FSTVolume::OpenFromDiscImage(const fs::path& path, NCrypto::AesKey& d
 		return nullptr;
 	}
 	uint32 numPartitions = partitionHeader->numPartitions;
+	cemuLog_log(LogType::Force, "FST: partition table decrypted OK, {} partitions - validating", numPartitions);
 	if (numPartitions > 30) // there is space for up to 240 partitions but we use a more reasonable limit
 	{
 		cemuLog_log(LogType::Force, "Disc image rejected due to exceeding the partition limit (has {} partitions)", numPartitions);
@@ -352,6 +378,7 @@ FSTVolume* FSTVolume::OpenFromDiscImage(const fs::path& path, NCrypto::AesKey& d
 	cemu_assert_debug(partitionHeaderGM.fstHashType == 1);
 	cemu_assert_debug(partitionHeaderGM.fstEncryptionType == 2);
 
+	cemuLog_log(LogType::Force, "FST: SI/GM partition headers OK, loading the SI filesystem table");
 	// if decryption is necessary
 	// load SI FST
 	dataSource->SetBaseOffset((uint64)partitionArray[siPartitionIndex].partitionAddress * DISC_SECTOR_SIZE);
