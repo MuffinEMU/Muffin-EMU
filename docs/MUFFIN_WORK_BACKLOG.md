@@ -176,6 +176,28 @@ none has been run on a device.
   version fired hundreds of times a second, which is almost certainly why
   several of Void's mailed logs this session read as truncated on
   arrival. Not yet confirmed on-device; going into v14 with the `.elf` fix.
+- **Second, related Metal leak found from a real crash log — the shader
+  and pipeline compile thread pools.** Void sent a real signal-11 crash
+  inside `compileThreadFunc`, memory climbing from 38MB to 961MB in the
+  seconds beforehand — the same shape as the drawable leak, different
+  subsystem. Root cause: `MetalPipelineCache`'s `compileThreadFunc` (up to
+  8 threads) and `RendererShaderMtl`'s `CompilerThreadFunc` (2 threads)
+  both run forever on a raw `std::thread` with no run loop of its own, so
+  neither ever gets an implicit autorelease pool — and every single compile
+  on both pools creates autoreleased objects with nowhere to drain them:
+  `NS::Array::array()` for `setBinaryArchives()`, the `NSError*` out-param
+  from `newRenderPipelineState()`/`newLibrary()`, and an autoreleased
+  `NS::String` from `ToNSString()` on every shader compile (`NS::String::
+  string()` is the Cocoa factory convention, not alloc/init). Every shader
+  and pipeline compiled during real play leaked, on both thread pools, for
+  the rest of the process's life. Fixed by wrapping each unit of compile
+  work in its own `NS::AutoreleasePool`, matching the exact per-operation
+  pattern `MetalRenderer.cpp`'s `GetCommandBuffer()`/
+  `GetTemporaryRenderCommandEncoder()` already use for the same reason.
+  Also caught and fixed the same exposure on
+  `MetalPipelineCache::GetRenderPipelineState()`'s synchronous compile path
+  (runs on the render thread when async compile isn't allowed — same
+  missing-pool situation). Not yet confirmed on-device; going into v15.
 
 ---
 
