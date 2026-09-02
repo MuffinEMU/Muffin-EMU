@@ -42,8 +42,21 @@ static void compileThreadFunc(sint32 threadIndex)
 
 		lock.unlock();
 
+		// This loop runs forever on a raw std::thread with no run loop of its own, so
+		// unlike the main thread it never gets an implicit autorelease pool - and
+		// Compile() creates autoreleased objects on every single call (NS::Array::array()
+		// for setBinaryArchives(), the NSError* out-param from newRenderPipelineState()).
+		// With no pool anywhere on this thread's stack to ever drain them, every compile
+		// on every one of these threads (up to 8, see initCompileThread()) leaked for the
+		// rest of the process's life - the exact shape of a real device crash: memory
+		// climbing steadily through heavy pipeline compilation, SIGSEGV inside
+		// compileThreadFunc once enough had piled up. One pool per request, matching the
+		// same per-operation scope MetalRenderer::GetCommandBuffer() and
+		// GetTemporaryRenderCommandEncoder() already use for the identical reason.
+		auto pool = NS::AutoreleasePool::alloc()->init();
 		request->Compile(true, false, true);
 		delete request;
+		pool->release();
 	}
 }
 
@@ -141,7 +154,16 @@ PipelineObject* MetalPipelineCache::GetRenderPipelineState(const LatteFetchShade
 	else
 	{
 	    // Also force compile to ensure that the pipeline is ready
+	    //
+	    // Same reasoning as compileThreadFunc's pool: this runs on the render thread,
+	    // which - like the compile threads - has no run loop of its own here and so no
+	    // implicit autorelease pool either (MetalRenderer.cpp wraps its own individual
+	    // calls in local pools for the same reason, rather than relying on one ambient
+	    // pool covering the whole thread). A cache miss on this synchronous path
+	    // creates the same autoreleased objects Compile() always does.
+	    auto pool = NS::AutoreleasePool::alloc()->init();
         cemu_assert_debug(compiler->Compile(true, true, true));
+        pool->release();
         delete compiler;
 	}
 
