@@ -41,6 +41,11 @@ none has been run on a device.
   range (not just the 16 controls actually exercised) before any title thread
   exists - exactly the write-once-then-safe guarantee the item asked to
   verify. No gap found.
+- **#33 fixed** — `metal-shader-compile-failure-logging` branch: each Metal
+  shader compile failure now also gets its own file under
+  `shaderCache/failedCompiles/`, instead of being buried and truncated in
+  log.txt alongside every other line from the session. Purely additive on an
+  already-failure path.
 - **#80-84 partially addressed** — `ios-interpreter-thread-qos` branch: CPU-
   emulation scheduler threads now explicitly request
   `QOS_CLASS_USER_INTERACTIVE` instead of inheriting whatever priority they
