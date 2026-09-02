@@ -198,6 +198,29 @@ none has been run on a device.
   `MetalPipelineCache::GetRenderPipelineState()`'s synchronous compile path
   (runs on the render thread when async compile isn't allowed — same
   missing-pool situation). Not yet confirmed on-device; going into v15.
+- **Added Decrypt to Files.** Void's ask: decrypt a ROM using keys.txt,
+  either replace the encrypted original or export a copy. Only export is
+  implemented — replacing a user's only copy of a legally-owned dump in
+  place is a real risk (a crash or full disk mid-write with nothing
+  recoverable) not worth taking without a device to test the failure paths
+  on. No new crypto: `IOSTitleDecrypt_ExtractToFolder()` opens the source
+  through the same `FSTVolume::OpenFromDiscImage()` every boot already
+  depends on, walks the FST's own directory tree
+  (`OpenDirectoryIterator`/`Next`, the same API `fscDeviceWud.cpp` already
+  uses), and writes out whatever `ReadFile()` returns — builds its own
+  path strings while walking rather than trusting `FSTVolume::GetPath()`,
+  which carries its own `// test this case` admission about nesting depth
+  it isn't confident in. Output is a plain code/, content/, meta/ tree —
+  the same layout a folder dump already has, so nothing in the existing
+  HOST_FS mount path needs to change to import and boot it. "Decrypt to
+  Files" on the long-press context menu, gated to .wud/.wux/.wua. Not yet
+  confirmed on-device.
+- **Added a VSync toggle.** Checked first: the existing `vsync` config
+  value only ever reached the Vulkan backend — nothing on the Metal side
+  (all this port uses) has ever set `CAMetalLayer.displaySyncEnabled`, so
+  it's effectively always been on (Metal's own default). Added
+  `g_metal_vsyncEnabled`, applied in `InitializeLayer()`, toggle in
+  Settings > Performance. Not yet confirmed on-device.
 
 ---
 
