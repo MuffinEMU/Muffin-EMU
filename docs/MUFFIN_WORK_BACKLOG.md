@@ -91,6 +91,34 @@ none has been run on a device.
   disabled); `UIFileSharingEnabled` verified surviving a clean v6/v7 release
   build via `PlistBuddy` on the actual downloaded IPA; no other Info.plist key
   found silently dropped by the same Xcode merge quirk.
+- **Interpreter audit (3 subagents, full read of the retail/HLE interpreter's
+  ALU/SPR, FPU/paired-single, and load-store/dispatch files) — 3 real bugs
+  found and fixed, all merged to `main` + `preview/showcase-sneak-peek`:**
+  - `mfspr DEC` hit an unconditional `assert_dbg()`/SIGTRAP on every read in
+    the retail (Slim/HLE) interpreter — guaranteed crash on an ordinary,
+    common instruction. `mtspr DEC` was a silent no-op. Both fixed; `SRAWI`
+    also replaced with a verified-equivalent closed-form (perf only, no
+    behavior change).
+  - `fctiw`/`fctiwz` (float→int convert) relied on C-cast UB for NaN input;
+    x86 happens to yield the Power-ISA-correct `0x80000000`, ARM64's `FCVTZS`
+    yields `0` instead — silently wrong value, no crash, ARM64-specific.
+    `fcmpo`/`ps_cmpo0` had incorrect VXSNAN/VXVC FPSCR flag logic (VXVC was
+    spuriously set on ordinary non-NaN compares). All three fixed to match
+    real Power ISA semantics.
+  - `PPCInterpreter_TW` (trap instruction) could hang the core forever: the
+    instruction-pointer advance was gated on `TO != 0`, but `TO=0` is a valid
+    no-op encoding (also used by the debugger/gdbstub to inject breakpoints
+    via an `rA` marker) — a `TO=0` trap with a non-marker `rA` fell through
+    every branch with nothing advancing the IP. Fixed to advance in every
+    case except an actual matching debugger marker.
+  - Flagged, deliberately NOT fixed (out of scope for tonight, don't affect
+    the retail/Slim-HLE path used by real games): inconsistent
+    `flushDenormalToZero()` application across paired-single ops; `DSI_EXIT()`
+    missing from ~47 of ~50 load/store handlers in the LLE/supervisor+MMU
+    interpreter (only reachable via `PPCSchedulerLLE.cpp`, not the retail
+    path); `LFS`/`STFS`-family accessors in the same LLE class skip MMU
+    translation entirely. All real, all scoped to the unused-tonight LLE path
+    — logged here rather than guessed at blind.
 
 ---
 
