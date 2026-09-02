@@ -216,7 +216,13 @@ class GameManager: ObservableObject {
     /// src/Cafe/Filesystem/WUHB/WUHBReader.cpp and fscDeviceWuhb.cpp are upstream Cemu,
     /// not new engineering - so this is only the iOS-side import allowlist catching up to
     /// what the engine underneath it already supports.
-    static let supportedROMExtensions: Set<String> = ["wux", "wud", "wua", "iso", "rpx", "wuhb"]
+    ///
+    /// .elf is the same story: IOSTitleLaunch_PrepareForegroundTitle already recognizes
+    /// CafeTitleFileType::ELF and boots it through the exact same
+    /// PrepareForegroundTitleFromStandaloneRPX() path as a .rpx (desktop's own file-open
+    /// filter has always been "*.rpx;*.elf" together) - this allowlist was just never
+    /// updated to let one reach that code.
+    static let supportedROMExtensions: Set<String> = ["wux", "wud", "wua", "iso", "rpx", "wuhb", "elf"]
 
     /// Staging directory inside Documents/Roms. A single-file import lands here first
     /// and is only moved up into Roms/ once it has passed validation. Two reasons: a
@@ -257,7 +263,7 @@ class GameManager: ObservableObject {
         guard supportedROMExtensions.contains(ext) else { return false }
 
         switch ext {
-        case "rpx":
+        case "rpx", "elf":
             return fileMagic(at: url) == Data([0x7F, 0x45, 0x4C, 0x46])
         case "wux":
             return fileMagic(at: url) == Data([0x57, 0x55, 0x58, 0x30])
