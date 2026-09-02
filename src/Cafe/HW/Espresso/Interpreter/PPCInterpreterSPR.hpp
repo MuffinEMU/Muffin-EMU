@@ -622,6 +622,18 @@ static uint32 PPCSprSupervisor_get(PPCInterpreter_t* hCPU, uint32 spr)
 	case SPR_XER:
 		v = PPCInterpreter_getXER(hCPU);
 		break;
+	case SPR_DEC:
+	{
+		// was previously unhandled here (fell to default -> logged + debug-build assert) even
+		// though the non-supervisor PPCSpr_get() implements it correctly. Mirror that logic so
+		// mfspr DEC also works in the full/LLE (allowSupervisorMode == true) interpreter.
+		uint64 passedCycled = PPCInterpreter_getMainCoreCycleCounter() - ppcMainThreadDECCycleStart;
+		if (passedCycled >= (uint64)ppcMainThreadDECCycleValue)
+			v = 0;
+		else
+			v = (uint32)(ppcMainThreadDECCycleValue - passedCycled);
+	}
+	break;
 	case SPR_UPIR:
 		v = hCPU->spr.UPIR;
 		break;
@@ -816,7 +828,13 @@ static uint32 PPCSpr_get(PPCInterpreter_t* hCPU, uint32 spr)
 	case SPR_DEC:
 		// special handling for DEC register
 	{
-		assert_dbg();
+		// this path is live: PPCInterpreterSlim (allowSupervisorMode == false) is the interpreter
+		// actually used for retail/HLE gameplay, and mfspr DEC is a completely ordinary PowerPC
+		// instruction (timing/busy-wait loops use it routinely). The unconditional assert_dbg()
+		// that used to sit here was unguarded by CEMU_DEBUG_ASSERT, so it fired as a hard
+		// SIGTRAP/__debugbreak on every single DEC read instead of only in debug builds -
+		// removed. The computation below is the pre-existing, correct logic (same math as the
+		// commented-out legacy implementation further down this file).
 		uint64 passedCycled = PPCInterpreter_getMainCoreCycleCounter() - ppcMainThreadDECCycleStart;
 		if (passedCycled >= (uint64)ppcMainThreadDECCycleValue)
 			v = 0;
