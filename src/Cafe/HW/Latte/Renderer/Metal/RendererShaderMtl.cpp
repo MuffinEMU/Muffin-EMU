@@ -3,11 +3,13 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalCommon.h"
 
 //#include "Cemu/FileCache/FileCache.h"
-//#include "config/ActiveSettings.h"
+#include "config/ActiveSettings.h"
 #include "Cemu/Logging/CemuLogging.h"
 #include "Common/precompiled.h"
 #include "GameProfile/GameProfile.h"
 #include "util/helpers/helpers.h"
+
+#include <fstream>
 
 #define METAL_AIR_CACHE_NAME "Cemu_AIR_cache"
 #define METAL_AIR_CACHE_PATH "/Volumes/" METAL_AIR_CACHE_NAME
@@ -286,6 +288,28 @@ bool RendererShaderMtl::ShouldCountCompilation() const
     return !s_isLoadingShadersMtl && m_isGameShader;
 }
 
+// A game that fails to compile dozens of shaders across a session leaves dozens of
+// "failed to create library from source" lines buried in log.txt, each one truncating
+// the full generated MSL to a single line - in practice indistinguishable from each
+// other in scrollback and unusable for actually diagnosing which shader broke. Each
+// failure instead gets its own file, so it survives independently of how much else got
+// logged after it and can be pulled straight out of Files/Finder (UIFileSharingEnabled
+// is on) without needing the whole session's log.txt at all.
+static void LogShaderCompileFailure(const char* errorDetail, const std::string& mslCode, RendererShader::ShaderType type)
+{
+    static std::atomic<uint32> s_failureCounter{0};
+    const char* typeName = type == RendererShader::ShaderType::kVertex ? "vertex"
+        : type == RendererShader::ShaderType::kFragment ? "fragment" : "geometry";
+    std::error_code ec;
+    const auto dir = ActiveSettings::GetCachePath("shaderCache/failedCompiles");
+    fs::create_directories(dir, ec);
+    const auto path = dir / fmt::format("{:04}_{}.metal", s_failureCounter.fetch_add(1), typeName);
+    std::ofstream out(path, std::ios::out | std::ios::trunc);
+    if (!out.is_open())
+        return;
+    out << "// " << errorDetail << "\n\n" << mslCode;
+}
+
 MTL::Library* RendererShaderMtl::LibraryFromSource()
 {
     // Compile from source
@@ -303,7 +327,9 @@ MTL::Library* RendererShaderMtl::LibraryFromSource()
 	MTL::Library* library = m_mtlr->GetDevice()->newLibrary(ToNSString(m_mslCode), options, &error);
 	if (error)
     {
-        cemuLog_log(LogType::Force, "failed to create library from source: {} -> {}", error->localizedDescription()->utf8String(), m_mslCode.c_str());
+        const char* errorDetail = error->localizedDescription()->utf8String();
+        cemuLog_log(LogType::Force, "failed to create library from source: {} -> {}", errorDetail, m_mslCode.c_str());
+        LogShaderCompileFailure(errorDetail, m_mslCode, GetType());
         return nullptr;
     }
 
