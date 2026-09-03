@@ -628,6 +628,38 @@ go deep here.
 142. `fix-confirmed-render-bugs`.
 143. `fix-ios-log-format-crash`.
 144. For each of the above: either merge to `main`, document why it's intentionally parked, or delete it — don't leave "is this live work or dead?" ambiguous for the next session.
+
+**#126-144 status, checked 2026-09-03** (merge-base against both `main` and
+`preview/showcase-sneak-peek`, not just skimmed): `ios-bundle-data-files`,
+`ios-launch-log-overlay`, `ios-livecontainer-resilience`, `ios-controls-custom`,
+`ios-v137-controls` no longer exist on `ci` at all - already cleaned up or
+never pushed under that name, nothing to do. `ios-controls-on-extras`,
+`ios-gamepad-clone-layout`, `ios-tv-window-presentation`,
+`ios-console-logging-and-layer-ownership`, `ios-coreaudio-backend`,
+`ios-v137-base`, `ios-v137-extras`, `ios-vulkan-moltenvk`,
+`fix-confirmed-render-bugs`, `fix-ios-log-format-crash`, and
+`ios-cpu-mode-and-render-scale` are all fully merged already (0 commits ahead
+of either branch) - safe to delete whenever someone wants the branch list
+tidied, nothing live on them. `metal-buffer-storage-mode-fix`,
+`ios-interpreter-thread-qos`, `ios-jit-sentinel-clear-timing`,
+`latte-scan-buffer-drop-per-target-log`, `metal-shader-compile-failure-logging`
+were fixed-but-unmerged-into-main until tonight (see the progress log entry
+above) - now merged into both, same "safe to delete" status as the rest.
+Three remain genuinely live, not ambiguous, just not mergeable as-is:
+`ios-audio-and-renderscale` (33 commits, its own dedicated push-trigger in
+`build-ios-app.yml` - a deliberately separate CI line, not parked work) and
+`ios-v138-renderer-restore` (34 commits, same deliberate-separate-line
+pattern, per its own tag-naming comment in that workflow file) are
+intentionally quarantined integration lines, not things waiting to land.
+`ios-geometry-shader-emulation` (36 commits) is explicitly compiles-only,
+never run on a device, per its own project-memory note - not safe to merge
+until that changes. `metal-shader-binary-archive` is intentionally
+sneak-peek-only (the feature itself was never meant for `main`). The one
+remaining open question: `ios-launch-intro` (16 commits, merges
+`ios-audio-and-renderscale` plus more) - looks like a larger in-progress
+integration effort of unclear current status. Left alone rather than guessed
+at; worth asking Void directly whether it's still wanted before anyone
+merges or deletes it.
 145. Fix the underlying tag-rot problem for real: re-point `kiddreads/` release tags at the commits their IPAs actually built from, per the queued-but-not-done fix noted in memory.
 146. Once tags are fixed, add a CI step that refuses to publish a release whose tag doesn't match `headSha` of the build that produced its asset — prevents the whole class of bug from recurring.
 147. Reconcile `origin` (bward-dev1) vs `ci` (kiddreads) branch divergence — confirm both remotes carry the same commit for every "live" branch, not just `main`.
