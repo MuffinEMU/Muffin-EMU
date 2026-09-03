@@ -242,6 +242,68 @@ none has been run on a device.
   re-signs the app afterward, which this repo doesn't control — if it
   doesn't help, the existing pre-flight check still does its job exactly
   as before. Going into v17.
+- **Full recompiler audit (3 subagents, Void's explicit request after
+  "crashes instantly when jit is active and recompiler is on"): 3 real
+  bugs fixed, 1 real use-after-free found and fixed independently, 1
+  significant lead flagged and left unfixed.**
+  - `stwcx.` (store-conditional) was self-assigning CR0's SO bit to itself
+    instead of copying it from XER — the overflow-condition flag never
+    actually updated. Fixed to match the interpreter's own correct
+    behavior.
+  - `fmsub`'s `frB==frD` register-aliasing fast path emitted correct IML
+    but then `return false`d, which tells the recompiler "unsupported
+    instruction" — that aborts JIT generation for the *entire containing
+    function*, permanently falling back to the interpreter with zero
+    error surfaced. Every sibling instruction (FMADD, FNMSUB) returns
+    `true` from the equivalent branch; only FMSUB had the inversion. A
+    real, additional, silent reason the recompiler could "not even try"
+    on some functions, separate from the JIT-permission question.
+  - A `uint8` field being assigned `-999` as an "unused" sentinel silently
+    truncated to `25`, aliasing a real opcode value (`PPCREC_IML_OP_FPR_
+    ABS`). Confirmed not actually misread anywhere today (every reader
+    branches on `.type` first), but a real landmine — fixed to use the
+    existing `PPCREC_IML_OP_INVALID` sentinel.
+  - **The big one, found while investigating a lead the AArch64-backend
+    audit agent correctly declined to fix blind**: `PPCRecompiler_init()`
+    unconditionally freed and reallocated `ppcRecompilerInstanceData` to a
+    fresh address on *every* call, with no once-guard. But the AArch64
+    interface trampolines (`enterRecompilerCode`/`leaveRecompilerCode_*`,
+    which every recompiled function's entry/exit routes through) bake
+    that pointer's address into the generated machine code as an
+    immediate, and are themselves generated exactly once per process.
+    Result: first title launch bakes in address A; title stops
+    (`PPCRecompiler_Shutdown()` runs), a second title launches (or the
+    same one relaunches) without the app process restarting — the normal
+    case on iOS, and the exact pattern in essentially every crash log
+    tonight — `PPCRecompiler_init()` runs again, frees address A,
+    allocates fresh address B, but the already-generated trampolines
+    still have A baked in. Every recompiled-function entry/exit for the
+    rest of that session dereferences freed memory. Fixed by allocating
+    the instance data exactly once for the process's lifetime, matching
+    the trampolines' own lifetime — safe, not just less wasteful, because
+    `PPCRecompiler_Shutdown()` + `PPCRecompiler_allocateRange()` already
+    correctly reset a title's worth of state within whatever allocation
+    exists; the base allocation just needed to stop moving out from under
+    them.
+  - Flagged, not fixed: a register-allocator lambda that dedups fixed
+    call-parameter register requirements by position only, not by
+    register — if one virtual register is reused across two parameter
+    slots of a single `CALL_IMM`, the second requirement is silently
+    dropped rather than triggering the (currently-stubbed)
+    conflict-resolution pass, which the register allocator's own
+    `cemu_assert_unimplemented()` never gets a chance to catch since only
+    one requirement makes it into the list. Real, but needs either
+    implementing real conflict resolution or verifying no real call site
+    hits this — an architectural call, correctly left alone for tonight.
+    Also `x86Size` on AArch64 was reading `getMaxSize()` (allocated
+    capacity) instead of `getSize()` (actual emitted bytes) — not an
+    out-of-bounds read, but wrong for the diagnostic dump/codeHash log/
+    crash-range-correlation consumers that read it. Fixed.
+  - Not yet confirmed on-device (none of tonight's work has been, per the
+    standing no-local-iOS-SDK constraint) but the use-after-free fix in
+    particular is a very strong match for the reported symptom and the
+    exact multi-launch-per-process pattern in every log sent tonight.
+    Going into the next build.
 
 ---
 
