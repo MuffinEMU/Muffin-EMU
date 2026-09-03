@@ -349,12 +349,49 @@ class GameManager: ObservableObject {
                 throw ROMImportError.notAWiiUDump(source.lastPathComponent)
             }
 
+            // Same staging-then-promote pattern as the single-file path below, and for
+            // the same reason: a multi-GB dump copy is exactly the kind of operation
+            // that can get cut short - the app backgrounded mid-copy and iOS reclaiming
+            // it, a full disk, a yanked USB drive. Copying straight to `destination`
+            // meant a cut-short copy left a half-there folder sitting inside Roms/
+            // itself, where the NEXT launch's loadGames() would scan it again - passing
+            // looksLikeWiiUDump (it only checks that code/ and meta/ exist, not that
+            // everything inside them arrived) but then finding no .rpx inside code/ and
+            // silently skipping it, forever, with no error ever shown. That is exactly a
+            // game that never "sticks" in the catalog. Staging it under .incoming first
+            // and only renaming it into Roms/ once the COPY (not just the source) has
+            // been re-validated means a cut-short copy simply never reaches the catalog
+            // at all, rather than reaching it in a broken, unrecoverable half-state.
+            let stagingPath = romsPath.appendingPathComponent(Self.stagingDirectoryName)
+            try? fileManager.createDirectory(at: stagingPath, withIntermediateDirectories: true)
+            let stagedDirectory = stagingPath.appendingPathComponent(source.lastPathComponent)
+
+            do {
+                if fileManager.fileExists(atPath: stagedDirectory.path) {
+                    try fileManager.removeItem(at: stagedDirectory)
+                }
+                try fileManager.copyItem(at: source, to: stagedDirectory)
+            } catch {
+                try? fileManager.removeItem(at: stagedDirectory)
+                throw ROMImportError.copyFailed(error)
+            }
+
+            let copyIsComplete = (Self.looksLikeWiiUDump(stagedDirectory) && Self.executableInDump(stagedDirectory) != nil)
+                || Self.looksLikeNUSDump(stagedDirectory)
+            guard copyIsComplete else {
+                try? fileManager.removeItem(at: stagedDirectory)
+                throw ROMImportError.copyFailed(CocoaError(.fileReadCorruptFile))
+            }
+
             do {
                 if fileManager.fileExists(atPath: destination.path) {
                     try fileManager.removeItem(at: destination)
                 }
-                try fileManager.copyItem(at: source, to: destination)
+                // Same volume, so this is a rename, not a second copy of the bytes -
+                // same reasoning as the single-file promotion below.
+                try fileManager.moveItem(at: stagedDirectory, to: destination)
             } catch {
+                try? fileManager.removeItem(at: stagedDirectory)
                 throw ROMImportError.copyFailed(error)
             }
 
