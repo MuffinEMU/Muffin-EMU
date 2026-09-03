@@ -138,40 +138,37 @@ private struct IconOptionCard: View {
         }
     }
 
-    /// Every card was blank because UIImage(named:) cannot load an app icon.
+    /// Every card was blank because UIImage(named:) cannot load an App-Icon-type asset
+    /// catalog entry - on any iOS version, regardless of whether it's declared through
+    /// ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES or a plain CFBundleIconName/
+    /// CFBundleAlternateIcons reference. App Icon sets compile into a special icon-only
+    /// area of Assets.car that only the system's own icon-rendering (springboard,
+    /// UIApplication.icon on 26+) can read - general image lookup, UIImage(named:)
+    /// included, simply doesn't see them. A previous version of this function tried to
+    /// work around that by searching the bundle for loose PNG files, on the theory that
+    /// Xcode compiles alternate icons out to the bundle root - it doesn't for this
+    /// project's icons, which are genuine .appiconset entries in Assets.xcassets (single
+    /// 1024x1024 source image each, confirmed by reading their Contents.json), so that
+    /// search always found nothing and every single card silently fell back to the
+    /// placeholder initials tile.
     ///
-    /// Alternate icons declared through ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES are
-    /// not left in the asset catalog: Xcode compiles them out to loose files at the bundle
-    /// root, named like AltIcon-dark60x60@2x.png. UIImage(named:) looks in the catalog, so
-    /// it finds nothing and every preview fell through to the placeholder.
-    ///
-    /// So the bundle is searched directly. The exact filenames are Xcode's business and
-    /// have changed between versions, which is why this matches on prefix and takes the
-    /// largest match rather than guessing one name.
+    /// Real fix: a companion plain .imageset - "<name>-preview", one per .appiconset,
+    /// same source PNG - since a normal (non-app-icon) image set has none of the
+    /// App-Icon-type restriction and loads via UIImage(named:) exactly like any other
+    /// image asset. AppIcon itself gets one too (AppIcon-preview), since the "original"
+    /// card hit the exact same restriction.
     static func previewImage(for icon: AppIconOption) -> UIImage? {
         let assetName = icon.id == "original" ? "AppIcon" : icon.alternateIconName
-        if let image = UIImage(named: assetName) {
-            return image
-        }
         if let cached = previewCache[assetName] {
             return cached
         }
-        let prefix = icon.id == "original" ? "AppIcon" : icon.alternateIconName
-        let candidates = Bundle.main.paths(forResourcesOfType: "png", inDirectory: nil)
-            .filter { ($0 as NSString).lastPathComponent.hasPrefix(prefix) }
-        // Largest file is the highest-resolution variant, which is the one worth showing
-        // in a grid of cards.
-        let best = candidates.max { lhs, rhs in
-            let l = (try? FileManager.default.attributesOfItem(atPath: lhs)[.size] as? Int) ?? 0
-            let r = (try? FileManager.default.attributesOfItem(atPath: rhs)[.size] as? Int) ?? 0
-            return (l ?? 0) < (r ?? 0)
-        }
-        let image = best.flatMap { UIImage(contentsOfFile: $0) }
+        let image = UIImage(named: "\(assetName)-preview")
         previewCache[assetName] = image
         return image
     }
 
-    /// The bundle listing is a directory walk, and this view redraws it for every card in
-    /// a scrolling grid of thirty. Done once per icon instead.
+    /// UIImage(named:) already caches internally, but this view redraws its whole grid
+    /// (thirty-plus cards) on every selection change, and the dictionary lookup avoids
+    /// even that repeated named-lookup cost.
     private static var previewCache: [String: UIImage?] = [:]
 }
