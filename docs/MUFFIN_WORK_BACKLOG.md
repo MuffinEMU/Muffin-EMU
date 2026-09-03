@@ -304,6 +304,29 @@ none has been run on a device.
     particular is a very strong match for the reported symptom and the
     exact multi-launch-per-process pattern in every log sent tonight.
     Going into the next build.
+- **Fixed app icon preview images — every card fell back to the
+  placeholder tile.** A previous fix attempt assumed alternate icons
+  compile out to loose PNG files at the bundle root and searched for
+  those; this project's icons are genuine `.appiconset` entries in
+  `Assets.xcassets`, so that search always found nothing. Real cause: a
+  platform restriction, not a packaging quirk — `UIImage(named:)` cannot
+  load an App-Icon-type asset catalog entry on any iOS version, App Icon
+  sets compile into a special icon-only area of `Assets.car` that only the
+  system's own icon-rendering can read. Fixed with a companion plain
+  `.imageset` per icon (`<name>-preview`, 31 total including
+  `AppIcon-preview` for "original") — a normal image set has none of that
+  restriction, so `UIImage(named:)` loads it like any other asset. The old
+  broken bundle-search fallback is gone.
+- **SideStore Documents-folder visibility — checked, not something fixable
+  from this side.** Void reported the app's folder is hidden from Files
+  when installed via SideStore. `UIFileSharingEnabled` and
+  `LSSupportsOpeningDocumentsInPlace` are both correctly set (already
+  specifically verified surviving a real downloaded IPA earlier this
+  session) — that's the complete, correct key set for this feature. If
+  it's still hidden specifically under SideStore, that points at how
+  SideStore itself signs/registers the app, not Muffin's config. Asked
+  Void for more detail (not listed at all vs. listed but empty) before
+  concluding there's nothing further to check.
 
 ---
 
