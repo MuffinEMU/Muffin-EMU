@@ -26,6 +26,16 @@ if(PLATFORM_IOS)
         CemuInput
     )
 
+    # IOSTitleDecrypt.cpp and IOSCoverArt.cpp both need TitleInfo.h, which pulls in
+    # <zarchive/...> headers directly (for the WUA writer and for verifying a written
+    # archive). CemuCafe already links ZArchive::zarchive, but PRIVATEly - a PRIVATE
+    # link's usage requirements (its include directories included) don't propagate to
+    # iosgui just because iosgui links CemuCafe PUBLIC, so iosgui needs its own direct
+    # link to pick up the same include path.
+    target_link_libraries(iosgui PRIVATE
+        ZArchive::zarchive
+    )
+
     # iOS frameworks
     target_link_libraries(iosgui PRIVATE
         "-framework Foundation"
