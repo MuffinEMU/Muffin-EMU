@@ -17,6 +17,9 @@ struct SettingsView: View {
     @State private var showingKeysRemovalConfirmation = false
     @State private var keyCount = WiiUKeys.installedKeyCount()
     @State private var keysErrorMessage: String?
+    @State private var premiumUnlocked = PremiumUnlock.isUnlocked
+    @State private var premiumCodeInput = ""
+    @State private var premiumCodeError: String?
     /// Shared with EmulatorViewOptimized by key, not by binding - the emulator view is
     /// not in this sheet's hierarchy, and AppStorage is what makes the setting outlive
     /// the sheet anyway.
@@ -616,6 +619,37 @@ struct SettingsView: View {
                     } message: { message in
                         Text(message)
                     }
+
+                    Section("Premium") {
+                        if premiumUnlocked {
+                            Label("Premium unlocked", systemImage: "sparkles")
+                                .foregroundColor(MuffinTheme.brownDarkest)
+                        } else {
+                            VStack(alignment: .leading, spacing: 8) {
+                                TextField("Unlock code", text: $premiumCodeInput)
+                                    #if os(iOS)
+                                    .textInputAutocapitalization(.characters)
+                                    .autocorrectionDisabled(true)
+                                    #endif
+                                Button("Unlock") {
+                                    if PremiumUnlock.attemptUnlock(code: premiumCodeInput) {
+                                        premiumUnlocked = true
+                                        premiumCodeInput = ""
+                                        premiumCodeError = nil
+                                    } else {
+                                        premiumCodeError = "That code didn't work."
+                                    }
+                                }
+                                .disabled(premiumCodeInput.isEmpty)
+                                if let premiumCodeError {
+                                    Text(premiumCodeError)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .foregroundColor(MuffinTheme.brownDarkest)
 
                     Section("About") {
                         SettingsRow(label: "Version", value: Bundle.main.appVersionString)
