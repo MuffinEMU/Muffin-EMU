@@ -374,6 +374,67 @@ none has been run on a device.
   caller frees a reservation twice (still open), but converts the crash
   into a logged anomaly plus an early return, with the pooled reservation
   object still freed either way. Going into v20.
+- **Decrypt-to-WUA + NUS-folder import added** — the existing Decrypt-to-Files
+  feature now asks raw-source vs WUA before starting; the WUA writer is an
+  iOS port of the Android app's `WuaConverter.cpp` (`TitleInfo::Mount` + the
+  `fsc_*` virtual filesystem walk + `ZArchiveWriter`, all already
+  platform-agnostic — only the JNI `CompressTitleCallbacks` shim didn't carry
+  over, and it held no conversion logic of its own). The import menu also
+  recognizes a decrypted NUS dump (`title.tmd` + `.app` files) alongside the
+  existing code/content/meta layout, matching `TitleInfo::DetectFormat`'s
+  existing support.
+- **Folder-dump import made atomic** — a directory import used to copy
+  straight into the live `Roms/` folder `loadGames()` scans on every launch.
+  A copy cut short (backgrounded mid-copy, full disk, unplugged drive) left a
+  half-there folder sitting right there permanently: `looksLikeWiiUDump` only
+  checks that `code/` and `meta/` exist, not that everything inside arrived,
+  so it silently failed to find a `.rpx` and got skipped forever with no
+  error shown. Now stages under `Roms/.incoming/` and only promotes
+  (renames) into place once the copy re-validates as complete — matches the
+  single-file import's existing staging pattern.
+- **Automatic box art added (GameTDB)** — no picker: a game's real GameTDB
+  Game ID is derived from its own meta.xml (`product_code`'s last 4 chars +
+  `company_code`'s last 2 — verified against the live site, not assumed:
+  `art.gametdb.com/wiiu/cover/US/AGME01.jpg` is a real image for Splatoon's
+  real ID), then fetched in the background after `loadGames()` and cached
+  under `Roms/.boxart/`. Beats the in-game icon, loses to a hand-placed
+  `<gameID>_cover.*`. A game with no listed art gets a "nothing there"
+  marker so it isn't retried every launch.
+- **Metal memory-growth audit (background agent, device-log-driven)** — a
+  real device log showed memory climbing 1032MB→3458MB in ~28s during Super
+  Mario 3D World's boot (fps 44→16), ending with no crash entry — the
+  established signature of a jetsam kill, not an app crash. Two real,
+  independently-verified fixes: (1) `MetalSynchronizedRingAllocator::
+  CleanupBuffer()` only ever inspected `m_buffers.back()` for eviction, so a
+  one-time demand spike (the boot texture burst) permanently pinned every
+  buffer except whichever happened to be last — now scans all buffers.
+  Genuine leak, but its ~22-60s idle threshold likely exceeds this specific
+  28s window, so it explains memory never coming back down more than the
+  fast climb itself. (2) `MetalPipelineCache::CalculatePipelineHash()` folded
+  `PA_SU_SC_MODE_CNTL` (cull/winding) and non-`DX_RASTERIZATION_KILL` bits of
+  `PA_CL_CLIP_CNTL` into the cache key, even though both are applied as
+  dynamic `MTLRenderCommandEncoder` state (`setCullMode`/
+  `setFrontFacingWinding`/`setDepthClipMode`), never reaching the compiled
+  `MTLRenderPipelineDescriptor` — independently confirmed via grep, not just
+  trusted from the agent's report. A game alternating cull mode between
+  otherwise-identical draws (opaque vs. mirrored/skybox pass — common)
+  produced a false cache miss every time: a real redundant shader compile
+  plus a permanent duplicate `m_pipelineCache` entry, never evicted. This one
+  plausibly explains both the memory climb and the fps collapse together
+  during a boot compiling many pipelines fast. Removed both from the hash;
+  can only turn false misses into correct hits, cannot cause an incorrect
+  hit.
+- **Individual per-button layout editing fixed** — every button already had
+  its own drag+pinch gesture, and every cluster already had a whole-cluster
+  drag handle, both always attached simultaneously and left to resolve
+  priority by touch position (the assumption being that a button, drawn on
+  top, would win over the handle underneath it). Void confirmed on-device
+  this didn't resolve that way — dragging anywhere in a cluster moved the
+  whole cluster, individual buttons included, with no way to move just one.
+  Fixed with an explicit Grouped/Individual toggle instead of debugging
+  gesture priority: Grouped attaches only the cluster's drag handle,
+  Individual attaches only each button's own gesture — never both at once,
+  so there's no priority left to resolve.
 
 ---
 
