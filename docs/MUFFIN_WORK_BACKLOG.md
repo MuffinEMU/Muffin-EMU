@@ -435,6 +435,29 @@ none has been run on a device.
   gesture priority: Grouped attaches only the cluster's drag handle,
   Individual attaches only each button's own gesture — never both at once,
   so there's no priority left to resolve.
+- **6 already-fixed branches consolidated onto `main`** — `metal-buffer-
+  storage-mode-fix` (#24, the `GetResourceOptions()`/`RequiresFlush()`
+  storage-mode bitmask bug), `ios-interpreter-thread-qos` (#80-84 partial,
+  CPU-emulation threads now request `QOS_CLASS_USER_INTERACTIVE`),
+  `ios-jit-sentinel-clear-timing` (the sentinel-cleared-too-early fix),
+  `latte-scan-buffer-drop-per-target-log` (#8-related, per-target one-shot
+  logging), and `metal-shader-compile-failure-logging` (#33, per-failure
+  `.metal` dump files) were all already correctly fixed and already on
+  `preview/showcase-sneak-peek`, but never made it to `main` — a real gap
+  between "fixed" and "actually shipped everywhere," not new work. All 6
+  commits cherry-picked onto `main` cleanly (2 auto-merged without
+  conflict), each individually re-verified against its stated fix before
+  picking, not just trusted from the backlog note. Checked every other
+  remote branch too: the rest are either fully merged already, deliberately
+  separate/parked CI lines (`ios-audio-and-renderscale`, `ios-v137-*`,
+  `ios-v138-renderer-restore` — each has its own push trigger in
+  `build-ios-app.yml` specifically so it builds independently), explicitly
+  untested/experimental (`ios-geometry-shader-emulation` — compiles-only,
+  never run on device, per its own memory note), or intentionally
+  sneak-peek-only (`metal-shader-binary-archive`). `ios-launch-intro` (16
+  commits, merges `ios-audio-and-renderscale` plus more) looks like a larger
+  in-progress integration effort of unclear current status — left alone
+  rather than guessed at.
 
 ---
 
