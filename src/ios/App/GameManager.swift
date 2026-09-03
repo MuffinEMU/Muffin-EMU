@@ -8,7 +8,7 @@ struct GameMetadata: Codable, Identifiable {
     let id: String
     let title: String
     let romPath: String
-    let coverPath: String?
+    var coverPath: String?
     let region: String
     let releaseDate: String
     let genre: String
@@ -118,7 +118,7 @@ class GameManager: ObservableObject {
                     id: gameID,
                     title: gameID,
                     romPath: bootPath,
-                    coverPath: findCover(for: gameID, in: romsPath, dump: dumpDirectory),
+                    coverPath: findCover(for: gameID, romPath: bootPath, in: romsPath, dump: dumpDirectory),
                     region: "Unknown",
                     releaseDate: "Unknown",
                     genre: "Game"
@@ -129,6 +129,7 @@ class GameManager: ObservableObject {
 
             self.games = discoveredGames.sorted { $0.title < $1.title }
             self.favorites = self.games.filter { $0.isFavorite }
+            enrichMissingCoverArt()
         } catch {
             print("Error scanning Roms directory: \(error)")
         }
@@ -190,7 +191,7 @@ class GameManager: ObservableObject {
     /// `<gameID>_cover.png`, so every card fell through to the placeholder controller
     /// glyph no matter what was installed. The icon has been sitting inside every
     /// dumped title the whole time at meta/iconTex.tga.
-    private func findCover(for gameID: String, in directory: URL, dump: URL?) -> String? {
+    private func findCover(for gameID: String, romPath: String, in directory: URL, dump: URL?) -> String? {
         let fileManager = FileManager.default
 
         // A hand-placed cover wins. Someone who dropped a file in specifically to
@@ -202,11 +203,44 @@ class GameManager: ObservableObject {
             }
         }
 
+        // Real box art already fetched by CoverArtFetcher (see enrichMissingCoverArt())
+        // beats the in-game icon - it is what a person actually recognizes the game by.
+        if let boxArt = CoverArtFetcher.cachedCoverPath(for: gameID, romPath: romPath, in: directory) {
+            return boxArt
+        }
+
         if let dump = dump {
             return WiiUIcon.cachedIconPath(for: gameID, dump: dump, in: directory)
         }
 
         return nil
+    }
+
+    /// Kicks off a background box-art fetch for every game loadGames() just found that
+    /// doesn't already have real cover art (or a remembered "nothing to find" result -
+    /// see CoverArtFetcher.shouldAttemptFetch()). Runs after the fact rather than
+    /// inline in loadGames() itself, since loadGames() has to stay synchronous-feeling
+    /// (it runs on every launch and blocks the library from appearing) and a handful of
+    /// network fetches at even a few hundred ms each would make every launch feel
+    /// slower for a feature that is purely cosmetic upside, never something the app
+    /// depends on to function.
+    private func enrichMissingCoverArt() {
+        let fileManager = FileManager.default
+        guard let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let romsPath = documentsPath.appendingPathComponent(romsDirectory)
+
+        for game in games {
+            guard CoverArtFetcher.shouldAttemptFetch(gameID: game.id, romPath: game.romPath, in: romsPath) else { continue }
+            Task {
+                guard let coverPath = await CoverArtFetcher.fetchAndCache(gameID: game.id, romPath: game.romPath, in: romsPath) else { return }
+                if let index = games.firstIndex(where: { $0.id == game.id }) {
+                    games[index].coverPath = coverPath
+                    if let favIndex = favorites.firstIndex(where: { $0.id == game.id }) {
+                        favorites[favIndex].coverPath = coverPath
+                    }
+                }
+            }
+        }
     }
 
     enum ROMImportError: LocalizedError {
