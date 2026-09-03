@@ -221,6 +221,27 @@ none has been run on a device.
   it's effectively always been on (Metal's own default). Added
   `g_metal_vsyncEnabled`, applied in `InitializeLayer()`, toggle in
   Settings > Performance. Not yet confirmed on-device.
+- **v16's first attempt failed to build.** `CA::MetalLayer::
+  setDisplaySyncEnabled` doesn't exist in this project's vendored
+  metal-cpp, despite every sibling setter on the same layer being present.
+  Fixed via the same runtime-selector-dispatch pattern `MetalCommon.h`
+  already uses for `MTLDevice` capability selectors metal-cpp doesn't
+  cover (`MtlDeviceBoolProperty`) — added `MtlLayerSetBoolProperty()` and
+  routed the vsync call through it. Shipped as v16b.
+- **Added JIT-related entitlements — experimental, explicitly not a
+  confirmed fix.** This project never declared entitlements at all: no
+  `.entitlements` file existed, `CODE_SIGN_ENTITLEMENTS` was unset. The
+  JIT pre-flight check has been consistently refusing `mmap(MAP_JIT)` with
+  errno 22 on Void's device even though `CS_DEBUGGED` is set. Added
+  `get-task-allow`, `com.apple.security.cs.allow-jit`,
+  `com.apple.security.cs.disable-executable-page-protection`, and
+  `dynamic-codesigning` — the standard set a JIT-using iOS app should
+  declare, which the kernel's own enforcement can check in addition to the
+  debugged flag. Whether this actually changes anything depends on how the
+  specific sideloading tool (SideStore/AltStore/LiveContainer) signs and
+  re-signs the app afterward, which this repo doesn't control — if it
+  doesn't help, the existing pre-flight check still does its job exactly
+  as before. Going into v17.
 
 ---
 
