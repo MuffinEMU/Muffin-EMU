@@ -24,6 +24,10 @@ enum ControllerLayoutSettings {
     /// - which is a different place on a phone than on an iPad.
     static let rightStickOffsetXKey = "muffin.controls.rstick.dx"
     static let rightStickOffsetYKey = "muffin.controls.rstick.dy"
+    /// Same reasoning as the pair above, mirrored for the left stick: its own position,
+    /// separate from the d-pad cluster it now sits alongside rather than replaces.
+    static let leftStickOffsetXKey = "muffin.controls.lstick.dx"
+    static let leftStickOffsetYKey = "muffin.controls.lstick.dy"
     /// How much of the stick's travel reads as centred, how the rest of it is shaped, and
     /// what shape it may reach. All three are feel rather than layout, which is why none
     /// of them is in `reset()` below.
@@ -80,6 +84,7 @@ enum ControllerLayoutSettings {
     static func reset() {
         let defaults = UserDefaults.standard
         for key in [scaleKey, opacityKey, rightStickOffsetXKey, rightStickOffsetYKey,
+                    leftStickOffsetXKey, leftStickOffsetYKey,
                     leftOffsetXKey, leftOffsetYKey,
                     rightOffsetXKey, rightOffsetYKey] {
             defaults.removeObject(forKey: key)
@@ -190,30 +195,35 @@ enum ControllerGeometry {
         Control(id: "ZL",    glyph: "ZL", offset: CGPoint(x: -shoulderSpreadX, y: shoulderY), shape: shoulder, style: .shoulder)
     ]
 
-    /// The same left half with the d-pad replaced by an analog stick, for when joystick
-    /// mode is on.
+    /// The left analog stick, for joystick mode: drawn as its own one-control cluster,
+    /// exactly mirroring rightStickCluster below - both are "joystick mode adds a stick
+    /// alongside the measured cluster," never "joystick mode replaces it."
     ///
-    /// The stick is sized to the footprint the d-pad already occupies rather than to a
-    /// number picked by eye: its base diameter is the cross's own measured width
-    /// (2 x crossX + one button), and it sits on the cluster's centre dot. So turning
-    /// this mode on swaps a control scheme and moves nothing else - the shoulders, minus,
-    /// both anchors and the whole right cluster stay exactly where the measurements put
-    /// them, and a pad someone has already dragged into place does not jump.
+    /// This used to replace the d-pad's own four circles + centre dot outright
+    /// (leftClusterJoystick, now gone) - a different, inconsistent behaviour from the
+    /// right side, where joystick mode has only ever ADDED a separate camera stick
+    /// without ever removing A/B/X/Y. Void's ask ("no longer one or the other, make
+    /// them both be there") is exactly that inconsistency: the d-pad now never leaves,
+    /// on either side, in either mode - only whether a stick is ALSO present changes.
     ///
-    /// It takes the d-pad's four circles AND the centre dot, because the dot is L3 and
-    /// the knob would be drawn straight on top of it. L3 is not lost: a tap on the stick
-    /// that does not move it is the click, which is the one gesture a stick has spare.
-    static let leftClusterJoystick: [Control] = [
+    /// L3 is unaffected, same reasoning as R3: it stays the dot in the d-pad's own
+    /// centre in both modes, since this cluster no longer touches it.
+    static let leftStickCluster: [Control] = [
         Control(id: "stickL", glyph: "", offset: .zero,
-                shape: .circle(stickBaseDiameter), style: .joystick),
-        Control(id: "minus", glyph: "\u{2212}", offset: systemOffset,              shape: system, style: .system),
-        Control(id: "L",     glyph: "L",  offset: CGPoint(x: shoulderSpreadX, y: shoulderY),  shape: shoulder, style: .shoulder),
-        Control(id: "ZL",    glyph: "ZL", offset: CGPoint(x: -shoulderSpreadX, y: shoulderY), shape: shoulder, style: .shoulder)
+                shape: .circle(stickBaseDiameter), style: .joystick)
     ]
 
-    /// The stick's outer ring, in layout units: exactly as wide as the d-pad it replaces
-    /// (2 x 1.240 + 1.0), so the cluster's bounds - and therefore the drag handle and the
-    /// off-screen clamp derived from them - barely change between the two modes.
+    /// Where the left stick starts, mirrored from rightStickAnchorOffset (x negated,
+    /// same y) - inboard of the d-pad and a little above it, clearing the minus button
+    /// and sitting below the shoulders rather than beside them, for the same reasons
+    /// rightStickAnchorOffset's own comment gives. Placed rather than measured, same
+    /// caveat as that one: the source photograph has no room for a d-pad and a full
+    /// stick at once.
+    static let leftStickAnchorOffset = CGPoint(x: 5.0, y: -1.6)
+
+    /// The stick's outer ring, in layout units: the d-pad cross's own measured width
+    /// (2 x crossX + one button), reused here as a sensible stick size rather than a
+    /// number picked by eye - both leftStickCluster and rightStickCluster share it.
     static let stickBaseDiameter: CGFloat = 2 * crossX + 1.0
     /// The thumb cap. Close to a face button, so it reads as something you push around
     /// rather than a dot that happens to move.

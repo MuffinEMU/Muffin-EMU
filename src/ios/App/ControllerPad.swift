@@ -48,6 +48,8 @@ struct OptimizedControlPanel: View {
     @AppStorage(ControllerLayoutSettings.rightOffsetYKey) private var rightOffsetY = 0.0
     @AppStorage(ControllerLayoutSettings.rightStickOffsetXKey) private var rightStickOffsetX = 0.0
     @AppStorage(ControllerLayoutSettings.rightStickOffsetYKey) private var rightStickOffsetY = 0.0
+    @AppStorage(ControllerLayoutSettings.leftStickOffsetXKey) private var leftStickOffsetX = 0.0
+    @AppStorage(ControllerLayoutSettings.leftStickOffsetYKey) private var leftStickOffsetY = 0.0
     // Must keep matching SettingsView's declaration of the same key: two @AppStorage
     // defaults for one key that disagree means the toggle and the pad disagree about
     // which control scheme is on.
@@ -65,12 +67,9 @@ struct OptimizedControlPanel: View {
 
             ZStack(alignment: .topLeading) {
                 ControlCluster(
-                    // The only difference between the two schemes. The right cluster,
-                    // both anchors and every offset are shared, so switching modes
-                    // swaps the d-pad for a stick and disturbs nothing else.
-                    controls: joystickMode
-                        ? ControllerGeometry.leftClusterJoystick
-                        : ControllerGeometry.leftCluster,
+                    // Always the d-pad now, in both modes - see leftStickCluster's
+                    // comment for why this changed from swapping to adding.
+                    controls: ControllerGeometry.leftCluster,
                     edge: .leading,
                     skin: skin,
                     unit: unit,
@@ -79,8 +78,32 @@ struct OptimizedControlPanel: View {
                     offsetX: $leftOffsetX,
                     offsetY: $leftOffsetY,
                     onInput: onInput,
+                    // The left half itself has no stick: its centre dot is L3, as the
+                    // measured layout draws it, and the left stick below is its own
+                    // cluster - same reasoning as the right half's onStick below.
                     onStick: { onStick(0, $0) }
                 )
+
+                // The left stick, in joystick mode only - mirrors the camera stick
+                // below exactly. A separate cluster, so it has its own drag handle and
+                // its own stored position: the left half (d-pad, minus, L, ZL) stays
+                // exactly where the measurements put it, and turning the mode on adds
+                // a control rather than rearranging the ones already there.
+                if joystickMode {
+                    ControlCluster(
+                        controls: ControllerGeometry.leftStickCluster,
+                        edge: .leading,
+                        anchorOffset: ControllerGeometry.leftStickAnchorOffset,
+                        skin: skin,
+                        unit: unit,
+                        container: proxy.size,
+                        isEditingLayout: isEditingLayout,
+                        offsetX: $leftStickOffsetX,
+                        offsetY: $leftStickOffsetY,
+                        onInput: onInput,
+                        onStick: { onStick(0, $0) }
+                    )
+                }
 
                 ControlCluster(
                     controls: ControllerGeometry.rightCluster,
@@ -586,11 +609,14 @@ private struct JoystickControl: View {
 
     /// Which button a tap on this stick presses, if any.
     ///
-    /// Only the left one has a click to give. L3 lost its dot when the knob took the
-    /// centre of the left cluster; R3 still has its own, in the middle of A/B/X/Y, so a
-    /// tap on the camera stick has nothing to mean and is better off meaning nothing than
-    /// firing a second control that is already on screen.
-    private var clickButton: String? { control.id == "stickL" ? "L3" : nil }
+    /// Neither one has a click to give anymore. This used to be "stickL" -> "L3": when
+    /// joystick mode replaced the whole d-pad cluster (including its centre L3 dot)
+    /// with the stick, a tap-without-moving was the only gesture left to mean L3. Now
+    /// the d-pad cluster - L3's own dot included - is always present alongside the
+    /// stick, same as A/B/X/Y and R3 always were, so a tap on either stick has nothing
+    /// left to mean and is better off meaning nothing than firing a second control
+    /// that is already on screen.
+    private var clickButton: String? { nil }
 
     /// The settings, held to their declared ranges. UserDefaults is writable by anything
     /// on the device and survives a downgrade, so a value from outside the range the
