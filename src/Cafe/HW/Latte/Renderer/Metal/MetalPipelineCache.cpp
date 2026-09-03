@@ -235,12 +235,29 @@ uint64 MetalPipelineCache::CalculatePipelineHash(const LatteFetchShader* fetchSh
 
 	stateHash = std::rotl<uint64>(stateHash, 13);
 
-	uint32 polygonCtrl = lcr.PA_SU_SC_MODE_CNTL.getRawValue();
-	stateHash += polygonCtrl;
-	stateHash = std::rotl<uint64>(stateHash, 7);
-
-	stateHash += ctxRegister[Latte::REGADDR::PA_CL_CLIP_CNTL];
-	stateHash = std::rotl<uint64>(stateHash, 7);
+	// PA_SU_SC_MODE_CNTL (cull mode / front-face winding) and the rest of
+	// PA_CL_CLIP_CNTL beyond DX_RASTERIZATION_KILL used to be folded into this hash
+	// wholesale. Neither actually reaches MetalPipelineCompiler: cull mode and
+	// winding are applied per-draw as dynamic MTLRenderCommandEncoder state
+	// (renderCommandEncoder->setCullMode()/setFrontFacingWinding() in
+	// MetalRenderer.cpp), never baked into the MTLRenderPipelineDescriptor, and
+	// DX_RASTERIZATION_KILL is the only PA_CL_CLIP_CNTL bit InitFromState*() reads
+	// (via IsRasterizationEnabled(), already folded in above) - so every other bit in
+	// either register was pure noise here. A game that alternates cull mode/winding
+	// or touches any other PA_CL_CLIP_CNTL bit between otherwise-identical draws (a
+	// common pattern: opaque geometry vs. a mirrored/skybox pass, or per-object
+	// double-sided toggles) produced a distinct hash each time even though the
+	// compiled Metal pipeline object would have been byte-for-byte the same one
+	// already sitting in the cache - so GetRenderPipelineState() treated it as a
+	// cache miss, compiled a genuine duplicate MTLRenderPipelineState, and retained
+	// it in m_pipelineCache for the rest of the title's session (that map is never
+	// evicted, by design, since a real cache hit is meant to last the whole title).
+	// During a boot that compiles a lot of shaders fast against varying cull state,
+	// this multiplied the number of live compiled pipelines - and the GPU memory
+	// backing each one - well beyond what the game's actual distinct draw states
+	// require. Removed both from the hash; nothing in the compiled pipeline depends
+	// on them, so this only removes false cache misses, it cannot cause an incorrect
+	// hit.
 
 	const auto colorControlReg = ctxRegister[Latte::REGADDR::CB_COLOR_CONTROL];
 	stateHash += colorControlReg;
