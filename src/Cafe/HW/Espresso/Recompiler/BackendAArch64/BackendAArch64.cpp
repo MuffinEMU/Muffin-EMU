@@ -1806,8 +1806,19 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 	PPCRecompilerAArch64_flushICache(aarch64GenContext.getCode<void*>(), aarch64GenContext.getSize());
 
 	// set code
+	// x86Size must be the number of bytes actually emitted (getSize()), not the AutoGrow
+	// buffer's allocated capacity (getMaxSize()). CodeArray is AUTO_GROW here, so
+	// getMaxSize() can be far larger than what was written - DEFAULT_MAX_CODE_SIZE or a
+	// prior doubling from growMemory(), most of it never initialized as code. The x64
+	// backend already gets this right (PPCRecFunction->x86Size = codeBuffer.size_bytes();
+	// in BackendX64.cpp) - this path did not match it. Nothing downstream currently uses
+	// x86Size to bound a memory access (the allocation itself is sized by getMaxSize()
+	// internally, so this was not an out-of-bounds read), but it is read for the
+	// dump-to-disk debug feature, the optional codeHash log, and PPCRecompiler_findFuncRanges()
+	// - three places that all want "how much of this is real code," not "how big is the
+	// backing allocation."
 	PPCRecFunction->x86Code = aarch64GenContext.getCode<void*>();
-	PPCRecFunction->x86Size = aarch64GenContext.getMaxSize();
+	PPCRecFunction->x86Size = aarch64GenContext.getSize();
 	// set free disabled to skip freeing the code from the CodeGenerator destructor
 	allocator.setFreeDisabled(true);
 	return true;
