@@ -158,18 +158,23 @@ typedef struct {
 /// rather than placeholders. Safe to call from any thread, cheap enough to poll.
 void cemu_bridge_get_progress(CemuBridgeProgress* out);
 
-/// Decrypt-to-Files: takes a WUD/WUX the app already has a working key for and writes a
-/// fully decrypted copy of its file tree to destFolderPath - the same code/, content/,
-/// meta/ layout a folder dump already has, importable and bootable exactly like one.
-/// The source file at srcPath is opened read-only and never modified.
+/// Decrypt-to-Files / Decrypt-to-WUA: takes a WUD/WUX (or a folder/NUS dump) the app
+/// already has a working key for and writes a fully decrypted copy of it to destPath,
+/// in one of two shapes depending on `toWua`:
+///   - false: destPath is a FOLDER, filled with the same code/, content/, meta/ layout
+///     a folder dump already has - importable and bootable exactly like one.
+///   - true: destPath is a single .wua FILE - a portable archive of the same decrypted
+///     contents, matching the format the "Full dump folder" / desktop WUA workflow
+///     already produces and imports.
+/// The source at srcPath is opened read-only and never modified either way.
 ///
 /// Starts the extraction on a background thread and returns immediately; true if it
 /// started, false on a bad argument or if a decrypt is already running (only one runs
 /// at a time - poll cemu_bridge_get_decrypt_progress() and wait for `completed` before
 /// starting another). No decryption logic lives on this side of the bridge at all: it
-/// reuses FSTVolume, the same engine code every ordinary boot already depends on to
-/// read a disc.
-bool cemu_bridge_start_decrypt(const char* srcPath, const char* destFolderPath);
+/// reuses FSTVolume / TitleInfo, the same engine code every ordinary boot already
+/// depends on to read a disc.
+bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool toWua);
 
 typedef struct {
     bool is_running;

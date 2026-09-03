@@ -120,7 +120,10 @@ struct GameContextMenu: View {
         // why a folder dump, homebrew .rpx/.elf, and .wuhb don't get this action.
         if gameSupportsDecryptToFiles(romPath: game.romPath) {
             Button(action: onDecryptToFiles) {
-                Label("Decrypt to Files", systemImage: "lock.open")
+                // Opens a choice of "Decrypt to Raw Source" or "Decrypt to WUA" -
+                // DecryptROMView.swift's formatChoiceBody - so this entry names the
+                // action, not a specific destination.
+                Label("Decrypt\u{2026}", systemImage: "lock.open")
             }
         }
     }

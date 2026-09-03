@@ -146,7 +146,7 @@ struct GameBrowserView: View {
     /// Which game "View Game Options" was opened for - the sheet's own presence, not a
     /// separate Bool, so there is no way for the sheet to open pointed at the wrong game.
     @State private var gameOptionsTarget: GameMetadata?
-    /// Same pattern as gameOptionsTarget, for "Decrypt to Files".
+    /// Same pattern as gameOptionsTarget, for "Decrypt…" (DecryptROMView.swift).
     @State private var decryptTarget: GameMetadata?
     @ObservedObject private var perGameSettings = PerGameSettingsStore.shared
     /// What the picker is being opened for.
@@ -231,7 +231,16 @@ struct GameBrowserView: View {
                                 Button {
                                     beginImport(contentTypes: Self.folderImportTypes)
                                 } label: {
-                                    Label("Game folder (code / content / meta)", systemImage: "folder")
+                                    Label("Full dump folder (code / content / meta)", systemImage: "folder")
+                                }
+                                Button {
+                                    beginImport(contentTypes: Self.folderImportTypes)
+                                } label: {
+                                    // Same folder picker as the entry above - GameManager.importROM
+                                    // tells the two layouts apart on its own - this is a second,
+                                    // clearly-labeled menu entry so a decrypted NUS dump isn't
+                                    // mistaken for something the picker can't take.
+                                    Label("Decrypted dump (title.tmd + .app files)", systemImage: "folder.badge.gearshape")
                                 }
                             } label: {
                                 Image(systemName: "doc.badge.plus")

@@ -47,17 +47,99 @@ func gameSupportsDecryptToFiles(romPath: String) -> Bool {
     return ext == "wud" || ext == "wux" || ext == "wua"
 }
 
+/// The two shapes a decrypt can come out in - see cemu_bridge_start_decrypt's `toWua`
+/// argument in CemuBridge.h for what each one actually produces on disk.
+enum DecryptFormat {
+    case rawSource
+    case wua
+
+    var toWua: Bool { self == .wua }
+    var navigationTitle: String { self == .wua ? "Decrypt to WUA" : "Decrypt to Raw Source" }
+}
+
 struct DecryptROMView: View {
     let game: GameMetadata
     @Environment(\.dismiss) private var dismiss
 
+    /// nil until the user picks one - see the format-choice screen in `body` below.
+    @State private var format: DecryptFormat?
     @State private var progress = DecryptProgress()
     @State private var pollTimer: Timer?
     @State private var destinationPath: String = ""
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 20) {
+            Group {
+                if let chosenFormat = format {
+                    decryptingBody(chosenFormat)
+                } else {
+                    formatChoiceBody
+                }
+            }
+        }
+        .onDisappear { stopPolling() }
+    }
+
+    /// Shown first, before anything starts: "decrypt to raw source" (the existing
+    /// folder-tree export) vs. "decrypt to wua" (a single portable archive file).
+    private var formatChoiceBody: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            Image(systemName: "lock.open.fill")
+                .font(.system(size: 40))
+                .foregroundColor(MuffinTheme.pixelBlue)
+            Text("Decrypt \(game.title)")
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+            Text("The encrypted original is never touched either way.")
+                .font(.system(size: 12, design: .rounded))
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 12) {
+                Button {
+                    format = .rawSource
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Decrypt to Raw Source")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("A code/, content/, meta/ folder - importable and bootable as-is.")
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(MuffinSecondaryButtonStyle())
+
+                Button {
+                    format = .wua
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Decrypt to WUA")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("A single portable .wua archive file.")
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(MuffinSecondaryButtonStyle())
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            Button("Cancel", role: .cancel) { dismiss() }
+                .padding(.bottom, 8)
+        }
+        .padding()
+        .navigationTitle("Decrypt")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+    }
+
+    private func decryptingBody(_ chosenFormat: DecryptFormat) -> some View {
+        VStack(spacing: 20) {
                 Spacer()
 
                 if progress.completed {
@@ -70,7 +152,9 @@ struct DecryptROMView: View {
                         Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten))")
                             .font(.system(size: 13, design: .rounded))
                             .foregroundColor(.secondary)
-                        Text("Saved to Files \u{2192} On My iPad/iPhone \u{2192} Muffin \u{2192} Decrypted \u{2192} \(game.title)")
+                        Text(chosenFormat.toWua
+                            ? "Saved to Files \u{2192} On My iPad/iPhone \u{2192} Muffin \u{2192} Decrypted \u{2192} \(game.id).wua"
+                            : "Saved to Files \u{2192} On My iPad/iPhone \u{2192} Muffin \u{2192} Decrypted \u{2192} \(game.title)")
                             .font(.system(size: 12, design: .rounded))
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -107,26 +191,26 @@ struct DecryptROMView: View {
                     .padding(.bottom, 8)
                 }
             }
-            .padding()
-            .navigationTitle("Decrypt to Files")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                        .disabled(!progress.completed)
-                }
+        .padding()
+        .navigationTitle(chosenFormat.navigationTitle)
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { dismiss() }
+                    .disabled(!progress.completed)
             }
         }
-        .onAppear { start() }
-        .onDisappear { stopPolling() }
+        .onAppear { start(chosenFormat) }
     }
 
-    private func start() {
+    private func start(_ chosenFormat: DecryptFormat) {
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.path ?? ""
-        destinationPath = "\(documentsPath)/Decrypted/\(game.id)"
-        guard cemu_bridge_start_decrypt(game.romPath, destinationPath) else {
+        destinationPath = chosenFormat.toWua
+            ? "\(documentsPath)/Decrypted/\(game.id).wua"
+            : "\(documentsPath)/Decrypted/\(game.id)"
+        guard cemu_bridge_start_decrypt(game.romPath, destinationPath, chosenFormat.toWua) else {
             // Already running (shouldn't happen - this view owns the one decrypt slot) or
             // a bad path. Either way, show it as a poll result rather than silently doing
             // nothing.
@@ -164,7 +248,7 @@ struct DecryptROMView: View {
         switch status {
         case 1: return "Couldn't open this file - it may not be a valid disc image."
         case 2: return "No matching key in keys.txt for this disc. Import the right key and try again."
-        case 3: return "Couldn't write to the destination folder."
+        case 3: return "Couldn't write the decrypted output."
         case 4: return "Cancelled."
         default: return "Something went wrong before decryption could start."
         }
