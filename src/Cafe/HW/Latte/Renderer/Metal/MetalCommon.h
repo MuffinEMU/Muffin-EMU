@@ -65,6 +65,28 @@ inline bool MtlDeviceBoolProperty(MTL::Device* device, const char* selectorName,
 	return reinterpret_cast<BoolPropertyGetter>(objc_msgSend)(deviceObject, selector) != NO;
 }
 
+// Same runtime-dispatch reasoning as MtlDeviceBoolProperty() above, for a setter instead
+// of a getter - needed because CA::MetalLayer::setDisplaySyncEnabled() does not exist in
+// this project's vendored metal-cpp, even though CAMetalLayer.displaySyncEnabled is a
+// real property (confirmed: "no member named 'setDisplaySyncEnabled' in 'CA::MetalLayer'"
+// on a real build) and every sibling setter this file already calls
+// (setFramebufferOnly, setDrawableSize, setDevice, setPixelFormat) IS present - metal-cpp
+// just doesn't cover every CAMetalLayer property, this one included. Silently does
+// nothing if the object does not respond, same fallback behaviour as the getter above,
+// rather than crashing on a selector some future SDK might have removed or renamed.
+inline void MtlLayerSetBoolProperty(void* layerObject, const char* selectorName, bool value)
+{
+	SEL selector = sel_registerName(selectorName);
+
+	using ClassGetter = Class (*)(void*);
+	Class layerClass = reinterpret_cast<ClassGetter>(object_getClass)(layerObject);
+	if (!layerClass || !class_respondsToSelector(layerClass, selector))
+		return;
+
+	using BoolPropertySetter = void (*)(void*, SEL, BOOL);
+	reinterpret_cast<BoolPropertySetter>(objc_msgSend)(layerObject, selector, value ? YES : NO);
+}
+
 struct MetalPixelFormatSupport
 {
 	bool m_supportsR8Unorm_sRGB;

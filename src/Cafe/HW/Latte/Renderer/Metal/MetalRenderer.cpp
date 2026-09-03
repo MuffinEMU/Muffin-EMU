@@ -356,7 +356,12 @@ void MetalRenderer::InitializeLayer(const Vector2i& size, bool mainWindow)
     // once per layer (re)initialization, rather than left to CAMetalLayer's own default
     // every time, so a mid-session toggle in Settings reliably takes effect on the next
     // title launch instead of only on the very first layer this process ever creates.
-    layer.GetLayer()->setDisplaySyncEnabled(g_metal_vsyncEnabled.load(std::memory_order_relaxed));
+    // Through MtlLayerSetBoolProperty() rather than a direct call: this project's
+    // vendored metal-cpp does not wrap displaySyncEnabled, even though every sibling
+    // property this file sets (framebufferOnly, drawableSize, pixelFormat, device) is
+    // present - see that helper's own comment in MetalCommon.h.
+    MtlLayerSetBoolProperty(static_cast<void*>(layer.GetLayer()), "setDisplaySyncEnabled:",
+        g_metal_vsyncEnabled.load(std::memory_order_relaxed));
 }
 
 void MetalRenderer::ShutdownLayer(bool mainWindow)
