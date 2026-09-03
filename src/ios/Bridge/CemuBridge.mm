@@ -14,6 +14,7 @@
 #include "Cemu/Logging/IOSLiveLog.h"
 
 #include <string>
+#include <cstring>
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -418,6 +419,10 @@ void cemu_bridge_start_memory_watchdog(void) {
     int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destPath,
         std::atomic_bool& cancelRequested,
         const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
+
+    // Defined in src/gui/iosgui/IOSCoverArt.cpp - same "header-heavy code stays on the
+    // CMake side" reasoning (TitleInfo.h pulls in pugixml and the config stack).
+    std::string IOSCoverArt_DeriveGameTdbId(const char* romPath);
 
     // SDL's iOS joystick backend is a GameController.framework client, so bring it up on
     // the main thread even though cemu_bridge_initialize() itself runs on GameManager's
@@ -1903,6 +1908,20 @@ void cemu_bridge_get_decrypt_progress(CemuBridgeDecryptProgress* out) {
 void cemu_bridge_cancel_decrypt(void) {
 #if defined(CEMU_CORE_AVAILABLE)
     g_decryptCancelRequested.store(true);
+#endif
+}
+
+bool cemu_bridge_derive_gametdb_id(const char* romPath, char* outGameID, size_t outGameIDSize) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!romPath || !outGameID || outGameIDSize < 7)
+        return false;
+    std::string id = IOSCoverArt_DeriveGameTdbId(romPath);
+    if (id.size() != 6)
+        return false;
+    memcpy(outGameID, id.c_str(), 7); // includes the null terminator
+    return true;
+#else
+    return false;
 #endif
 }
 

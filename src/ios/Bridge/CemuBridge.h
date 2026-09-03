@@ -13,6 +13,7 @@
 #define CEMU_BRIDGE_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -195,6 +196,16 @@ void cemu_bridge_get_decrypt_progress(CemuBridgeDecryptProgress* out);
 /// whether a partial extraction is worth keeping or deleting. No-op if nothing is
 /// running.
 void cemu_bridge_cancel_decrypt(void);
+
+/// Derives the 6-character GameTDB Game ID (e.g. "AGME01") from romPath's own
+/// meta.xml, for fetching real box art automatically on import - see
+/// IOSCoverArt_DeriveGameTdbId() in IOSCoverArt.cpp for the exact derivation and why
+/// it needs no separate region lookup. Writes into outGameID (must be at least 7
+/// bytes: 6 characters plus the null terminator) and returns true on success; returns
+/// false and leaves outGameID untouched if no real ID could be derived (homebrew,
+/// unset metadata, or a title format this doesn't apply to) - not every game has box
+/// art to fetch, and that is a normal outcome, not an error.
+bool cemu_bridge_derive_gametdb_id(const char* romPath, char* outGameID, size_t outGameIDSize);
 
 /// How fast the emulated console believes time is passing, as a right-shift factor:
 /// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
