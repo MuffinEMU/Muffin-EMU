@@ -740,14 +740,29 @@ void PPCRecompiler_init()
 		cemuLog_log(LogType::Force, "Recompiler disabled. Command line --force-interpreter or force-multicore-interpreter was passed");
 		return;
 	}
-	if (ppcRecompilerInstanceData)
+	// Allocated exactly once for the process's lifetime, never moved or freed-and-
+	// reallocated on a later relaunch - this used to unconditionally free and reallocate
+	// ppcRecompilerInstanceData on every call, which is a real bug on any platform where
+	// PPCRecompiler_init() runs more than once per process (a title stopped and a second
+	// one launched, or the same title relaunched, without a full app restart - the normal
+	// case on iOS, where CafeSystem's title-stop path already calls PPCRecompiler_Shutdown()
+	// and the app stays alive for the next launch). The AArch64 interface trampolines
+	// (enterRecompilerCode/leaveRecompilerCode_*, generated exactly once, guarded by their
+	// own initializedInterfaceFunctions flag in BackendAArch64.cpp) bake this pointer's
+	// address into their machine code as an immediate at generation time - if a later call
+	// here moved it to a fresh address, every already-generated trampoline still pointed at
+	// the freed original: a genuine use-after-free hit on every recompiled-function entry/
+	// exit after the first relaunch. PPCRecompiler_Shutdown() plus the per-block
+	// PPCRecompiler_allocateRange() calls just below already correctly reset a title's
+	// worth of state (jump table entries back to PPCRecompiler_leaveRecompilerCode_unvisited,
+	// func table cleared) within whatever allocation already exists - that's what makes
+	// keeping the same allocation across relaunches correct, not just less wasteful.
+	if (!ppcRecompilerInstanceData)
 	{
-		MemMapper::FreeReservation(ppcRecompilerInstanceData, sizeof(PPCRecompilerInstanceData_t));
-		ppcRecompilerInstanceData = nullptr;
+		debug_printf("Allocating %dMB for recompiler instance data...\n", (sint32)(sizeof(PPCRecompilerInstanceData_t) / 1024 / 1024));
+		ppcRecompilerInstanceData = (PPCRecompilerInstanceData_t*)MemMapper::ReserveMemory(nullptr, sizeof(PPCRecompilerInstanceData_t), MemMapper::PAGE_PERMISSION::P_RW);
+		MemMapper::AllocateMemory(&(ppcRecompilerInstanceData->_x64XMM_xorNegateMaskBottom), sizeof(PPCRecompilerInstanceData_t) - offsetof(PPCRecompilerInstanceData_t, _x64XMM_xorNegateMaskBottom), MemMapper::PAGE_PERMISSION::P_RW, true);
 	}
-	debug_printf("Allocating %dMB for recompiler instance data...\n", (sint32)(sizeof(PPCRecompilerInstanceData_t) / 1024 / 1024));
-	ppcRecompilerInstanceData = (PPCRecompilerInstanceData_t*)MemMapper::ReserveMemory(nullptr, sizeof(PPCRecompilerInstanceData_t), MemMapper::PAGE_PERMISSION::P_RW);
-	MemMapper::AllocateMemory(&(ppcRecompilerInstanceData->_x64XMM_xorNegateMaskBottom), sizeof(PPCRecompilerInstanceData_t) - offsetof(PPCRecompilerInstanceData_t, _x64XMM_xorNegateMaskBottom), MemMapper::PAGE_PERMISSION::P_RW, true);
 #ifdef ARCH_X86_64
 	PPCRecompilerX64Gen_generateRecompilerInterfaceFunctions();
 #elif defined(__aarch64__)
