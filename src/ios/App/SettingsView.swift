@@ -170,11 +170,11 @@ struct SettingsView: View {
                     Section {
                         Toggle(isOn: $joystickMode) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Joystick instead of d-pad")
+                                Text("Add analog sticks")
                                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                                 Text(joystickMode
-                                     ? "An analog stick where the d-pad is."
-                                     : "The four-way d-pad from the measured layout.")
+                                     ? "Both sticks shown alongside the d-pad and face buttons, not instead of them."
+                                     : "Just the d-pad and face buttons, from the measured layout.")
                                     .font(.system(size: 12))
                                     .foregroundColor(.secondary)
                             }
