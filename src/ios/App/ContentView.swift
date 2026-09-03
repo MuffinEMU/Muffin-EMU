@@ -571,6 +571,11 @@ struct EmulatorViewOptimized: View {
     /// under you, exactly like the two sliders next to it.
     @AppStorage(ControllerLayoutSettings.joystickKey)
     private var joystickMode = ControllerLayoutSettings.defaultJoystick
+    /// Same key ControllerPad.swift reads to decide which gesture (if either) a
+    /// button/cluster gets. Declared here too so the segmented control below writes to
+    /// the thing actually being edited, same reasoning as the two sliders above it.
+    @AppStorage(ControllerLayoutSettings.individualEditModeKey)
+    private var individualEditMode = ControllerLayoutSettings.defaultIndividualEditMode
     /// Off by default - see the branch on this flag a few lines below for exactly what
     /// it swaps in and why the shipping path is otherwise untouched.
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = false
@@ -886,7 +891,15 @@ struct EmulatorViewOptimized: View {
             if isEditingControlLayout {
                 VStack {
                     VStack(spacing: 10) {
-                        Text("Drag any button to move it on its own, or pinch it to resize. Drag the empty space inside a dashed box to move that whole half. L and ZL move together, and so do R and ZR. Nothing here reaches the game.")
+                        Picker("Edit mode", selection: $individualEditMode) {
+                            Text("Grouped").tag(false)
+                            Text("Individual").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+
+                        Text(individualEditMode
+                             ? "Drag any button to move it on its own, or pinch it to resize. L and ZL move together, and so do R and ZR. Nothing here reaches the game."
+                             : "Drag the empty space inside a dashed box to move that whole half - L/ZL and the rest of the left side together, R/ZR and the right side together. Nothing here reaches the game.")
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                             .foregroundColor(.white.opacity(0.85))
                             .multilineTextAlignment(.center)

@@ -35,6 +35,18 @@ enum ControllerLayoutSettings {
     static let stickCurveKey = "muffin.controls.stick.curve"
     static let stickGateKey = "muffin.controls.stick.gate"
 
+    /// Grouped (false): dragging anywhere on a cluster's dashed box moves the whole
+    /// cluster, and each button's own drag/pinch only fires where it visibly overlaps
+    /// that box - the two gestures were both always attached and left to sort out
+    /// priority between themselves by touch position, which did not resolve the way it
+    /// looked like it should on-device: a drag anywhere in a cluster moved the whole
+    /// cluster, individual buttons included. Individual (true) makes that unambiguous
+    /// instead of trying to fix the priority: the cluster's own drag handle is not
+    /// attached at all, so every touch can only ever be a single button's own drag or
+    /// pinch, with nothing left for it to compete against.
+    static let individualEditModeKey = "muffin.controls.individualEditMode"
+    static let defaultIndividualEditMode = false
+
     static let defaultJoystick = false
 
     /// Fraction of full travel that reads as centred.

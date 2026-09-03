@@ -55,6 +55,8 @@ struct OptimizedControlPanel: View {
     // which control scheme is on.
     @AppStorage(ControllerLayoutSettings.joystickKey)
     private var joystickMode = ControllerLayoutSettings.defaultJoystick
+    @AppStorage(ControllerLayoutSettings.individualEditModeKey)
+    private var individualEditMode = ControllerLayoutSettings.defaultIndividualEditMode
 
     var body: some View {
         // The automatic half of "adjustable + automatic sizing": GeometryReader re-runs
@@ -75,6 +77,7 @@ struct OptimizedControlPanel: View {
                     unit: unit,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
+                    individualEditMode: individualEditMode,
                     offsetX: $leftOffsetX,
                     offsetY: $leftOffsetY,
                     onInput: onInput,
@@ -98,6 +101,7 @@ struct OptimizedControlPanel: View {
                         unit: unit,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
+                        individualEditMode: individualEditMode,
                         offsetX: $leftStickOffsetX,
                         offsetY: $leftStickOffsetY,
                         onInput: onInput,
@@ -112,6 +116,7 @@ struct OptimizedControlPanel: View {
                     unit: unit,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
+                    individualEditMode: individualEditMode,
                     offsetX: $rightOffsetX,
                     offsetY: $rightOffsetY,
                     onInput: onInput,
@@ -137,6 +142,7 @@ struct OptimizedControlPanel: View {
                         unit: unit,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
+                        individualEditMode: individualEditMode,
                         offsetX: $rightStickOffsetX,
                         offsetY: $rightStickOffsetY,
                         onInput: onInput,
@@ -164,6 +170,11 @@ private struct ControlCluster: View {
     let unit: CGFloat
     let container: CGSize
     let isEditingLayout: Bool
+    /// See ControllerLayoutSettings.individualEditModeKey. When true, this cluster's
+    /// own drag handle below is not attached at all - every touch inside the cluster
+    /// can then only ever be a single button's own drag/pinch, with no whole-cluster
+    /// gesture left for it to compete against.
+    let individualEditMode: Bool
     @Binding var offsetX: Double
     @Binding var offsetY: Double
     let onInput: (String, Bool) -> Void
@@ -223,14 +234,15 @@ private struct ControlCluster: View {
             Color.clear
                 .allowsHitTesting(false)
 
-            if isEditingLayout {
+            // Individual mode drops the drag handle entirely rather than leaving it
+            // underneath and relying on touch position to sort out which gesture
+            // should win - that was the old design (see the ForEach comment this one
+            // replaces) and it did not resolve the way it looked like it should
+            // on-device: a drag anywhere in the cluster moved the whole cluster,
+            // individual buttons included, every time.
+            if isEditingLayout && !individualEditMode {
                 dragHandle
             }
-
-            // Drawn after the cluster's drag handle, so where an element overlaps the
-            // handle the element takes the touch. That is what lets one editing mode do
-            // both jobs: drag an element to move that element, drag the empty part of the
-            // dashed box to move the whole cluster.
             ForEach(controls) { control in
                 EditableControl(
                     control: control,
@@ -241,6 +253,7 @@ private struct ControlCluster: View {
                         y: centre.y + control.offset.y * unit
                     ),
                     isEditingLayout: isEditingLayout,
+                    individualEditMode: individualEditMode,
                     onStick: onStick,
                     onInput: onInput
                 )
@@ -300,6 +313,11 @@ private struct EditableControl: View {
     /// Where this control sits with no customisation - the measured default.
     let base: CGPoint
     let isEditingLayout: Bool
+    /// See ControllerLayoutSettings.individualEditModeKey - gates editGesture below so
+    /// it is only ever attached when the cluster's own drag handle (ControlCluster)
+    /// is not, rather than both being attached together and left to sort out priority
+    /// by touch position.
+    let individualEditMode: Bool
     let onStick: (CGPoint) -> Void
     let onInput: (String, Bool) -> Void
 
@@ -331,11 +349,12 @@ private struct EditableControl: View {
             }
         }
         .position(x: base.x + CGFloat(settings.dx), y: base.y + CGFloat(settings.dy))
-        // A dashed ring while editing, so it is obvious which things can be moved and
-        // that L/ZL and R/ZR answer as one.
+        // A dashed ring while editing individually, so it is obvious which things can
+        // be moved and that L/ZL and R/ZR answer as one - shown only in individual
+        // mode, since in grouped mode this control cannot be moved on its own.
         .overlay(
             Group {
-                if isEditingLayout {
+                if isEditingLayout && individualEditMode {
                     Circle()
                         .strokeBorder(Color.white.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                         .frame(width: unit * CGFloat(settings.scale) * 1.25, height: unit * CGFloat(settings.scale) * 1.25)
@@ -344,7 +363,7 @@ private struct EditableControl: View {
                 }
             }
         )
-        .gesture(isEditingLayout ? editGesture : nil)
+        .gesture(isEditingLayout && individualEditMode ? editGesture : nil)
     }
 
     private var editGesture: some Gesture {
