@@ -655,11 +655,44 @@ intentionally quarantined integration lines, not things waiting to land.
 never run on a device, per its own project-memory note - not safe to merge
 until that changes. `metal-shader-binary-archive` is intentionally
 sneak-peek-only (the feature itself was never meant for `main`). The one
-remaining open question: `ios-launch-intro` (16 commits, merges
-`ios-audio-and-renderscale` plus more) - looks like a larger in-progress
-integration effort of unclear current status. Left alone rather than guessed
-at; worth asking Void directly whether it's still wanted before anyone
-merges or deletes it.
+remaining open question - `ios-launch-intro` (16 commits, dated 2026-08-30,
+by a different session's "Claude Opus 5 (1M context)") - is now resolved with
+real evidence rather than left as a guess: it's a mixed bag, not simply live
+or dead.
+- **Confirmed dead**: `0fa78ce3` ("Clear the JIT crash sentinel when the JIT
+  survives, not when a title launches") is an independent, never-merged,
+  now-superseded implementation of the exact same fix tonight's
+  `ios-jit-sentinel-clear-timing` cherry-pick (`b9c1a55f`/`e82a4050`, already
+  on both `main` and sneak-peek) landed properly - same underlying bug, two
+  unrelated sessions, only the later one actually shipped. Don't resurrect
+  this commit; it would reintroduce a second, conflicting sentinel mechanism.
+- **Confirmed genuinely valuable and still missing** (checked - neither
+  exists anywhere on current `main`/sneak-peek under any name): `90ddb104`
+  ("Sketch a muffin onto black, bring it to life, then start the game") is a
+  real, well-designed launch intro animation (plays concurrently with boot,
+  never gates `.running`, auto-suppressed when the launch log is on, has its
+  own Settings toggle) - `src/ios/App/LaunchIntro.swift` plus small
+  `ContentView.swift`/`SettingsView.swift` hooks. `6f949539` ("Make an
+  unknown device knowable") adds a real device-identification/diagnostics
+  report (raw model identifier, GPU name/capabilities, memory ceiling) with
+  a Settings copy button - genuinely useful for exactly the "what hardware is
+  this bug report even from" problem this backlog has hit before.
+- **Not attempted tonight**: porting either forward is real, non-trivial work
+  - `ContentView.swift` and `SettingsView.swift` have both changed
+  substantially since 2026-08-30 (tonight's session alone touched
+  `ContentView.swift` for the import menu, decrypt target, and the
+  Grouped/Individual toggle), so a cherry-pick of either commit would almost
+  certainly conflict extensively rather than apply cleanly - this needs a
+  careful selective re-implementation against current `main`, not a blind
+  merge, and is exactly the kind of scope that should wait for Void's
+  go-ahead rather than being guessed at on a self-paced overnight tick.
+  Flagged to him directly rather than silently left for the next session to
+  rediscover from scratch.
+- The rest of the branch (`ios-audio-and-renderscale` merged in, plus a JIT
+  permission-check commit) is superseded by later, better work already on
+  `main` (tonight's multi-stage `ios_jit_is_permitted()` diagnostics) or
+  belongs to the already-assessed separate-CI-line branch - not worth
+  reviving on its own.
 145. Fix the underlying tag-rot problem for real: re-point `kiddreads/` release tags at the commits their IPAs actually built from, per the queued-but-not-done fix noted in memory.
 146. Once tags are fixed, add a CI step that refuses to publish a release whose tag doesn't match `headSha` of the build that produced its asset — prevents the whole class of bug from recurring.
 147. Reconcile `origin` (bward-dev1) vs `ci` (kiddreads) branch divergence — confirm both remotes carry the same commit for every "live" branch, not just `main`.
