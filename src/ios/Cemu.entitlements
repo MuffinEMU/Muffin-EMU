@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Nothing in this project has ever declared entitlements at all - there was no
+	     .entitlements file, and CODE_SIGN_ENTITLEMENTS wasn't set in project.yml. The
+	     app's own JIT pre-flight check (ios_jit_is_permitted() in CemuBridge.mm) has
+	     been failing consistently on device: "mmap(MAP_JIT, executable at map time)
+	     refused (errno 22 - Invalid argument), even though CS_DEBUGGED is set." Being
+	     debugged (CS_DEBUGGED, which SideStore/AltStore-style sideloading sets via a
+	     momentary debugger attach at launch) is necessary but may not be sufficient on
+	     its own - a JIT-capable process is also expected to declare intent via these
+	     entitlements, which the kernel's mmap(MAP_JIT) enforcement can check in
+	     addition to the debugged flag. Adding them is the standard, correct thing a
+	     JIT-using iOS app should do either way.
+
+	     Said plainly: this is a real gap worth closing, not a confirmed fix. Whether it
+	     actually unlocks MAP_JIT depends on how the specific sideloading tool signs and
+	     re-signs the app afterward (SideStore/AltStore/LiveContainer each handle
+	     entitlement injection differently, and Apple restricts CS_ALLOW_JIT-adjacent
+	     entitlements even for signed apps outside specific approved cases) - none of
+	     which this repo controls. If this doesn't change anything on device, the
+	     existing pre-flight check keeps doing its job: falling back to the interpreter
+	     safely rather than handing the recompiler a mapping already known to crash. -->
+	<key>get-task-allow</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.disable-executable-page-protection</key>
+	<true/>
+	<key>dynamic-codesigning</key>
+	<true/>
+</dict>
+</plist>

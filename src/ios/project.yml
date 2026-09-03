@@ -11,6 +11,10 @@ settings:
   SDKROOT: iphoneos
   IPHONEOS_DEPLOYMENT_TARGET: '15.0'
   CODE_SIGN_IDENTITY: iPhone Developer
+  # See Cemu.entitlements for the full reasoning - an attempt at whatever's needed for
+  # MAP_JIT beyond CS_DEBUGGED alone, not a confirmed fix. Nothing declared entitlements
+  # at all before this.
+  CODE_SIGN_ENTITLEMENTS: Cemu.entitlements
   # Neither "c++2a" nor "gnu++20" via CLANG_CXX_LANGUAGE_DIALECT actually took effect
   # (confirmed from the real compiler invocation in CI: still -std=gnu++14 both times).
   # Force it directly as a raw flag instead - this always wins over whatever the
