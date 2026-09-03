@@ -411,6 +411,14 @@ void cemu_bridge_start_memory_watchdog(void) {
         std::atomic_bool& cancelRequested,
         const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
 
+    // Same file, same reasoning - writes a single .wua archive instead of a loose
+    // code/, content/, meta/ tree. destPath here is the .wua FILE to create, not a
+    // folder (cemu_bridge_start_decrypt's destFolderPath is a folder either way; which
+    // one destPath means is decided entirely by the toWua flag it is called with).
+    int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destPath,
+        std::atomic_bool& cancelRequested,
+        const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
+
     // SDL's iOS joystick backend is a GameController.framework client, so bring it up on
     // the main thread even though cemu_bridge_initialize() itself runs on GameManager's
     // detached launch task. dispatch_sync is safe here specifically because that task is
@@ -1844,9 +1852,9 @@ static std::thread g_decryptThread;
 static std::mutex g_decryptThreadMutex;
 #endif
 
-bool cemu_bridge_start_decrypt(const char* srcPath, const char* destFolderPath) {
+bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool toWua) {
 #if defined(CEMU_CORE_AVAILABLE)
-    if (!srcPath || srcPath[0] == '\0' || !destFolderPath || destFolderPath[0] == '\0')
+    if (!srcPath || srcPath[0] == '\0' || !destPath || destPath[0] == '\0')
         return false;
     if (g_decryptRunning.exchange(true))
         return false; // already running - caller polls progress instead of starting a second one
@@ -1860,13 +1868,15 @@ bool cemu_bridge_start_decrypt(const char* srcPath, const char* destFolderPath) 
     g_decryptFilesWritten.store(0);
 
     std::string src(srcPath);
-    std::string dest(destFolderPath);
-    g_decryptThread = std::thread([src, dest]() {
-        int status = IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested,
-            [](uint64_t bytesWritten, uint32_t filesWritten) {
-                g_decryptBytesWritten.store(bytesWritten);
-                g_decryptFilesWritten.store(filesWritten);
-            });
+    std::string dest(destPath);
+    g_decryptThread = std::thread([src, dest, toWua]() {
+        auto progress = [](uint64_t bytesWritten, uint32_t filesWritten) {
+            g_decryptBytesWritten.store(bytesWritten);
+            g_decryptFilesWritten.store(filesWritten);
+        };
+        int status = toWua
+            ? IOSTitleDecrypt_ExtractToWua(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress)
+            : IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress);
         g_decryptResultStatus.store(status);
         g_decryptCompleted.store(true);
         g_decryptRunning.store(false);

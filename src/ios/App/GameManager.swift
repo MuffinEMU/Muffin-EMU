@@ -93,11 +93,19 @@ class GameManager: ObservableObject {
                 _ = fileManager.fileExists(atPath: item.path, isDirectory: &isDirectory)
 
                 if isDirectory.boolValue {
-                    guard Self.looksLikeWiiUDump(item),
-                          let rpx = Self.executableInDump(item) else { continue }
-                    gameID = item.lastPathComponent
-                    bootPath = rpx.path
-                    dumpDirectory = item
+                    if Self.looksLikeWiiUDump(item), let rpx = Self.executableInDump(item) {
+                        gameID = item.lastPathComponent
+                        bootPath = rpx.path
+                        dumpDirectory = item
+                    } else if let tmd = Self.titleTmdInDump(item) {
+                        // NUS dump: boot path points straight at title.tmd, matching
+                        // TitleInfo::DetectFormat's own NUS-format detection.
+                        gameID = item.lastPathComponent
+                        bootPath = tmd.path
+                        dumpDirectory = item
+                    } else {
+                        continue
+                    }
                 } else {
                     let pathExtension = item.pathExtension.lowercased()
                     guard Self.supportedROMExtensions.contains(pathExtension) else { continue }
@@ -158,6 +166,23 @@ class GameManager: ObservableObject {
             .first
     }
 
+    /// A decrypted NUS dump - the flat "title.tmd plus a pile of .app files" layout
+    /// produced by NUS downloaders/decryptors, as opposed to the code/content/meta
+    /// layout above. TitleInfo::DetectFormat (TitleInfo.cpp) already recognizes this
+    /// shape whenever it is pointed straight at title.tmd - boost::iequals, so the
+    /// match here is case-insensitive too, matching the engine rather than guessing.
+    static func titleTmdInDump(_ directory: URL) -> URL? {
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        return entries.first { $0.lastPathComponent.caseInsensitiveCompare("title.tmd") == .orderedSame }
+    }
+
+    static func looksLikeNUSDump(_ directory: URL) -> Bool {
+        titleTmdInDump(directory) != nil
+    }
+
     /// Art for a game's card, in the order a person would expect it: whatever they put
     /// there themselves first, then the game's own icon out of the dump.
     ///
@@ -199,7 +224,7 @@ class GameManager: ObservableObject {
                 // means the same thing to the person holding the iPad.
                 return "This is not a valid Wii U ROM format."
             case .notAWiiUDump(let name):
-                return "\"\(name)\" doesn't look like a Wii U dump - a dumped game folder has code/, content/ and meta/ inside it."
+                return "\"\(name)\" doesn't look like a Wii U dump - a dumped game folder has code/, content/ and meta/ inside it, or (for a decrypted NUS dump) a title.tmd alongside its .app files."
             case .accessDenied:
                 return "Couldn't access that file."
             case .copyFailed(let error):
@@ -318,8 +343,9 @@ class GameManager: ObservableObject {
             // copy-then-validate is the wrong order: the structural check is free to run
             // against source, whereas copying first would mean recursively duplicating
             // whatever the user tapped - a 30 GB Downloads folder - before earning the
-            // right to say no. Check, then copy.
-            guard Self.looksLikeWiiUDump(source) else {
+            // right to say no. Check, then copy. Accepts either the code/content/meta
+            // layout or a decrypted NUS dump (title.tmd plus its .app files).
+            guard Self.looksLikeWiiUDump(source) || Self.looksLikeNUSDump(source) else {
                 throw ROMImportError.notAWiiUDump(source.lastPathComponent)
             }
 

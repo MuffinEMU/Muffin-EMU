@@ -24,14 +24,23 @@
 // the bridge is compiled by Xcode directly and FST.h pulls in the ncrypto/config stack,
 // so anything header-heavy stays on the CMake side and exposes a flat function.
 #include "Cafe/Filesystem/FST/FST.h"
+#include "Cafe/Filesystem/fsc.h"
+#include "Cafe/TitleList/TitleInfo.h"
 #include "Cemu/Logging/CemuLogging.h"
+
+#include <zarchive/zarchivereader.h>
+#include <zarchive/zarchivewriter.h>
 
 #include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include <fcntl.h>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -178,4 +187,194 @@ int IOSTitleDecrypt_ExtractToFolder(const char* srcPath, const char* destFolderP
 		completed ? "finished" : "cancelled", filesWritten, bytesWritten, dest.string());
 
 	return completed ? IOS_DECRYPT_OK : IOS_DECRYPT_CANCELLED;
+}
+
+// Decrypt-to-WUA. Same source, same underlying decrypt (nothing here does crypto
+// either), different output shape: a single-file .wua archive instead of a loose
+// code/, content/, meta/ tree.
+//
+// This is a from-scratch iOS port of the Android app's WuaConverter.cpp
+// (src/android/app/src/main/cpp/), not a fresh design - that file already does exactly
+// this (TitleInfo::Mount + the fsc_* virtual filesystem walk + ZArchiveWriter) and is
+// almost entirely platform-agnostic C++. The only Android-specific piece was
+// CompressTitleCallbacks, a thin wrapper around a JNI jobject/jmethodID pair used
+// purely to call back into Java - it carries no conversion logic of its own, so it is
+// simply not needed here: this function reports success/failure through the same
+// int return + progressCallback convention IOSTitleDecrypt_ExtractToFolder already
+// uses, with no callback-object indirection at all.
+//
+// TitleInfo(path) is used here instead of FSTVolume::OpenFromDiscImage (as the
+// raw-source path above does) because it is what actually knows how to write the
+// archive's internal layout - {titleId}_v{version}/... - via GetAppTitleId() /
+// GetAppTitleVersion(), and because it means this function works unmodified on any
+// source TitleInfo::DetectFormat already recognizes (WUD/WUX disc image, a folder
+// dump, or an NUS dump pointed at its title.tmd), not just WUD/WUX.
+namespace
+{
+struct WuaWriterContext
+{
+	int fd;
+
+	static void NewOutputFile(const int32_t /*partIndex*/, void* /*ctx*/)
+	{
+		// ZArchive only asks for a new output "part" when a single archive is split
+		// across multiple files - never the case here, one fd for the whole .wua.
+	}
+
+	static void WriteOutputData(const void* data, size_t length, void* ctx)
+	{
+		WuaWriterContext* self = (WuaWriterContext*)ctx;
+		size_t written = 0;
+		const uint8* p = (const uint8*)data;
+		while (written < length)
+		{
+			ssize_t n = write(self->fd, p + written, length - written);
+			if (n <= 0)
+				break; // disk full or similar - AppendData/Finalize have no return value
+			           // to propagate this through, so the truncated .wua is caught by
+			           // the ZArchiveReader verification pass after Finalize() instead.
+			written += (size_t)n;
+		}
+	}
+};
+
+// Mirrors WuaConverter.cpp's RecursivelyAddFiles: walks the fsc_* virtual filesystem
+// tree TitleInfo::Mount() exposes and copies every file straight into the archive
+// writer, one file at a time, never materializing anything on real disk in between.
+bool WuaWalkDirectory(ZArchiveWriter& writer, const std::string& archivePath, const std::string& fscPath,
+	std::atomic_bool& cancelRequested, uint64& bytesWritten, uint32& filesWritten,
+	const std::function<void(uint64 bytesWritten, uint32 filesWritten)>& progressCallback,
+	std::vector<uint8>& scratchBuffer)
+{
+	sint32 fscStatus;
+	std::unique_ptr<FSCVirtualFile, void(*)(FSCVirtualFile*)> dirIterator(
+		fsc_openDirIterator(fscPath.c_str(), &fscStatus), fsc_close);
+	if (!dirIterator)
+	{
+		cemuLog_log(LogType::Force, "Decrypt-to-WUA: could not open directory '{}', skipping it", fscPath);
+		return true; // same skip-not-abort policy as DecryptWalkDirectory above
+	}
+
+	writer.MakeDir(archivePath.c_str(), false);
+
+	FSCDirEntry dirEntry;
+	while (fsc_nextDir(dirIterator.get(), &dirEntry))
+	{
+		if (cancelRequested.load())
+			return false;
+
+		std::string name(dirEntry.GetPath());
+		if (name.empty())
+			continue;
+
+		if (dirEntry.isDirectory)
+		{
+			if (!WuaWalkDirectory(writer, archivePath + name + "/", fscPath + name + "/",
+					cancelRequested, bytesWritten, filesWritten, progressCallback, scratchBuffer))
+				return false;
+			continue;
+		}
+
+		if (!dirEntry.isFile)
+			continue;
+
+		sint32 openStatus;
+		std::unique_ptr<FSCVirtualFile, void(*)(FSCVirtualFile*)> file(
+			fsc_open((fscPath + name).c_str(), FSC_ACCESS_FLAG::OPEN_FILE | FSC_ACCESS_FLAG::READ_PERMISSION, &openStatus),
+			fsc_close);
+		if (!file)
+		{
+			cemuLog_log(LogType::Force, "Decrypt-to-WUA: could not open '{}', skipping it", fscPath + name);
+			continue;
+		}
+
+		writer.StartNewFile((archivePath + name).c_str());
+		if (scratchBuffer.size() < kDecryptChunkSize)
+			scratchBuffer.resize(kDecryptChunkSize);
+
+		uint32 got;
+		while ((got = file->fscReadData(scratchBuffer.data(), (uint32)scratchBuffer.size())) != 0)
+		{
+			if (cancelRequested.load())
+				return false;
+			writer.AppendData(scratchBuffer.data(), got);
+			bytesWritten += got;
+		}
+		filesWritten++;
+		if (progressCallback)
+			progressCallback(bytesWritten, filesWritten);
+	}
+	return true;
+}
+} // namespace
+
+int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destWuaPath,
+	std::atomic_bool& cancelRequested,
+	const std::function<void(uint64 bytesWritten, uint32 filesWritten)>& progressCallback)
+{
+	if (!srcPath || srcPath[0] == '\0' || !destWuaPath || destWuaPath[0] == '\0')
+		return IOS_DECRYPT_UNABLE_TO_MOUNT;
+
+	fs::path dest(destWuaPath);
+	std::error_code ec;
+	fs::create_directories(dest.parent_path(), ec);
+
+	TitleInfo titleInfo{fs::path(srcPath)};
+	if (!titleInfo.IsValid())
+	{
+		cemuLog_log(LogType::Force, "Decrypt-to-WUA: could not recognize '{}' as a title", srcPath);
+		return IOS_DECRYPT_UNABLE_TO_MOUNT;
+	}
+
+	int fd = open(destWuaPath, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0)
+	{
+		cemuLog_log(LogType::Force, "Decrypt-to-WUA: destination '{}' is not writable", dest.string());
+		return IOS_DECRYPT_DEST_NOT_WRITABLE;
+	}
+
+	WuaWriterContext writerCtx{fd};
+	ZArchiveWriter archiveWriter(&WuaWriterContext::NewOutputFile, &WuaWriterContext::WriteOutputData, &writerCtx);
+
+	std::string mountPath = TitleInfo::GetUniqueTempMountingPath();
+	titleInfo.Mount(mountPath, "", FSC_PRIORITY_BASE);
+
+	std::string archiveRoot = fmt::format("{:016x}_v{}/", titleInfo.GetAppTitleId(), titleInfo.GetAppTitleVersion());
+
+	uint64 bytesWritten = 0;
+	uint32 filesWritten = 0;
+	std::vector<uint8> scratchBuffer;
+	bool completed = WuaWalkDirectory(archiveWriter, archiveRoot, mountPath, cancelRequested,
+		bytesWritten, filesWritten, progressCallback, scratchBuffer);
+
+	titleInfo.Unmount(mountPath);
+
+	if (!completed)
+	{
+		close(fd);
+		std::error_code rmEc;
+		fs::remove(dest, rmEc); // a cancelled .wua is not a valid archive - don't leave it behind
+		cemuLog_log(LogType::Force, "Decrypt-to-WUA: cancelled - '{}' removed", dest.string());
+		return IOS_DECRYPT_CANCELLED;
+	}
+
+	archiveWriter.Finalize();
+	close(fd);
+
+	// Same verification WuaConverter.cpp does on Android: open what was just written
+	// back up as a reader before calling it done, so a truncated or corrupt .wua is
+	// caught here rather than surfacing later as an unbootable file the user has to
+	// debug on their own.
+	ZArchiveReader* verify = ZArchiveReader::OpenFromFile(dest);
+	if (!verify)
+	{
+		cemuLog_log(LogType::Force, "Decrypt-to-WUA: '{}' failed verification after writing", dest.string());
+		return IOS_DECRYPT_DEST_NOT_WRITABLE;
+	}
+	delete verify;
+
+	cemuLog_log(LogType::Force, "Decrypt-to-WUA: finished - {} files, {} bytes written to '{}'",
+		filesWritten, bytesWritten, dest.string());
+
+	return IOS_DECRYPT_OK;
 }
