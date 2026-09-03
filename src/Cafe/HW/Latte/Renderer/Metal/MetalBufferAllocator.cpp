@@ -124,15 +124,36 @@ void MetalSynchronizedRingAllocator::CleanupBuffer(MTL::CommandBuffer* latestFin
 			itr.cleanupCounter++;
 	}
 
-	// check if last buffer is available for deletion
-	if (m_buffers.size() >= 2)
+	// Release any buffer that has gone fully idle (no pending sync points) for long
+	// enough - scanning every buffer, not just m_buffers.back().
+	//
+	// The old code only ever inspected the last element of m_buffers and popped it
+	// with pop_back() once its cleanupCounter reached the threshold. AllocateBufferMemory()
+	// does a first-fit scan from the FRONT of m_buffers, so under sustained pressure
+	// (e.g. the texture-upload burst during boot, where many GX2 textures are decoded
+	// and staged faster than command buffers retire) new buffers get appended to the
+	// back to cover the overflow while the earlier ones keep getting reused. Once the
+	// burst subsides, an EARLIER buffer can go idle while whatever is currently last
+	// in the vector is still in rotation - and that earlier buffer's cleanupCounter
+	// climbs right alongside everyone else's (the loop above already tracks it), but
+	// the release check below never looked at index i < m_buffers.size()-1. Worse,
+	// even a buffer that legitimately becomes "the last one" and starts accumulating
+	// idle cycles stops being eligible the moment one more buffer is pushed after it,
+	// so a single peak in demand permanently pins every buffer it allocated beyond
+	// the first for the rest of the process's life - a monotonically growing amount
+	// of staging memory that this function was supposed to be able to shrink back
+	// down, but structurally never could except for whichever buffer happened to be
+	// last. Iterate back-to-front instead (erasing from the back first keeps earlier
+	// indices valid for the rest of the loop) so every idle buffer is eligible, while
+	// still always keeping at least one buffer around.
+	for (sint32 i = (sint32)m_buffers.size() - 1; i >= 0 && m_buffers.size() > 1; i--)
 	{
-		auto& lastBuffer = m_buffers.back();
-		if (lastBuffer.cleanupCounter >= 1000)
+		auto& buffer = m_buffers[i];
+		if (buffer.cleanupCounter >= 1000)
 		{
 			// release buffer
-			lastBuffer.mtlBuffer->release();
-			m_buffers.pop_back();
+			buffer.mtlBuffer->release();
+			m_buffers.erase(m_buffers.begin() + i);
 		}
 	}
 }
