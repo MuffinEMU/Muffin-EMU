@@ -327,6 +327,35 @@ none has been run on a device.
   SideStore itself signs/registers the app, not Muffin's config. Asked
   Void for more detail (not listed at all vs. listed but empty) before
   concluding there's nothing further to check.
+- **Added dark mode.** The whole app was hardcoded to one light
+  "kawaii-bakery" cream/orange palette — `MuffinTheme`'s tokens were all
+  plain `Color(hex:)`, no dark variant existed at all. Made every token
+  trait-collection-adaptive via a new `Color(light:dark:)` initializer
+  (wraps `UIColor`'s dynamic-provider closure) — a single-file change that
+  applies everywhere `MuffinTheme` is used (120+ call sites across 9
+  files) without touching any of them, and reacts live to a system theme
+  change while running. The dark palette is a deliberate warm
+  "midnight-bakery" register, not a straight inversion — deep umber
+  surfaces instead of cream, the muffin-top/pixel-blue accents pulled
+  warmer/brighter so they still read as accents, text flipped from
+  dark-on-cream to cream-on-umber, shadow re-derived for contrast against
+  its own (now dark) ground rather than literally darkened.
+- **D-pad and analog sticks now both show, not as alternatives.** Void:
+  "no longer one or the other; d-pad or joysticks, make them both be
+  there." The right half already worked this way — A/B/X/Y + R3 always
+  shown, joystick mode adds a separate camera-stick cluster alongside it.
+  The left half was inconsistent: joystick mode *replaced* the whole d-pad
+  cluster (L3's own dot included) with a single stick in the same
+  footprint — which is why the d-pad could look "missing" whenever
+  joystick mode was on. Made the left half match the right half's
+  already-correct pattern: the d-pad cluster is now always shown; joystick
+  mode adds a separate left stick alongside it (own drag handle, own
+  stored offset, position mirrored off the existing right-camera-stick
+  placement — the source reference photo has no measured position for
+  this since it has no room for a d-pad and full stick at once). Also
+  retired the now-stale "tap the stick to press L3" special case, since
+  L3's own dot is never removed anymore — consistent with R3, which never
+  had that special case either.
 
 ---
 
