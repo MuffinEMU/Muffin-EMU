@@ -59,11 +59,13 @@ static std::atomic_bool sTitleListInitialized{false};
 //
 // No CafeTitleList::Refresh() on purpose. A refresh scans the MLC and any configured
 // game paths on a background thread and writes title_list_cache.xml; the launch path
-// below adds the one title being launched explicitly, so a scan buys nothing for a
-// plain "boot this file" and would put an unbounded directory walk in front of every
-// first launch. The cost is that updates and DLC already installed into Documents/mlc
-// are not discovered, so a base game boots unpatched. That is a real limitation and it
-// is deliberate for now, not an oversight.
+// below adds the one title being launched explicitly, so a full scan buys nothing for a
+// plain "boot this file" and would put an unbounded directory walk (over every configured
+// ROM path) in front of every first launch. Updates and DLC installed into Documents/mlc
+// ARE discovered despite that - see CafeTitleList::ScanMLCUsrTitleOnly(), called below
+// right before the title launches, which is the one part of a full Refresh() that stays
+// cheap regardless of how large the ROM library is (it only walks usr/title, which holds
+// just the user's own installed titles).
 void IOSTitleLaunch_InitializeTitleList()
 {
 	if (sTitleListInitialized.exchange(true))
@@ -108,6 +110,14 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 			cemuLog_log(LogType::Force, "iOS: no base title found for {:016x} - an update or DLC was launched without its base game", (uint64)launchTitle.GetAppTitleId());
 			return IOS_TITLE_LAUNCH_BASE_NOT_FOUND;
 		}
+		// Picks up anything DlcUpdateImport.swift has installed into Documents/mlc since
+		// the title list was last populated - bounded to usr/title alone (see
+		// ScanMLCUsrTitleOnly's own comment), so this is the one piece of the Refresh()
+		// this file otherwise deliberately skips that is cheap enough to always do. Without
+		// this, CafeSystem::PrepareForegroundTitle below builds its GameInfo2 from
+		// whatever CafeTitleList::AddTitleFromPath just added above (the base game only)
+		// and boots unpatched even when an update/DLC is sitting right there on disk.
+		CafeTitleList::ScanMLCUsrTitleOnly();
 		cemuLog_log(LogType::Force, "iOS: launching real title {:016x} from {}", (uint64)baseTitleId, _pathToUtf8(launchPath));
 		CafeSystem::PREPARE_STATUS_CODE r = CafeSystem::PrepareForegroundTitle(baseTitleId);
 		switch (r)

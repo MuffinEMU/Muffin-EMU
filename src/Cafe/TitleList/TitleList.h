@@ -47,6 +47,16 @@ public:
 	static GameInfo2 GetGameInfo(TitleId titleId);
 	static TitleInfo GetTitleInfoByUID(uint64 uid);
 
+	// Synchronous, bounded version of the usr/title half of Refresh()'s scan - just the
+	// installed base/update/AOC titles under the MLC path, none of the configured game
+	// ROM paths and none of sys/title. Exists for a caller that needs freshly-installed
+	// DLC/update to be visible to GetGameInfo() right now, without paying for a full
+	// background Refresh() over every game path - see IOSTitleLaunch.cpp's launch path
+	// on iOS, where a full Refresh() before every boot was deliberately ruled out as an
+	// unbounded directory walk, but usr/title on its own is not: it holds only the
+	// user's own installed titles, not their whole ROM library.
+	static void ScanMLCUsrTitleOnly();
+
 private:
 	static bool RefreshWorkerThread();
 	static void ScanGamePath(const fs::path& path);
