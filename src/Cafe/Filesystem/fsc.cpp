@@ -87,6 +87,34 @@ void fsc_reset()
 }
 
 /*
+ * Makes sure the per-priority root nodes exist.
+ *
+ * s_fscRootNodePerPrio is zero-initialised and only ever populated by fsc_reset(), which
+ * runs from fsc_init() inside CafeSystem::Initialize() - that is, when a title boots.
+ * Anything that touches the filesystem BEFORE a title boots therefore walked a null root
+ * and took SIGSEGV.
+ *
+ * That is not hypothetical: the iOS library screen derives cover art by constructing a
+ * TitleInfo for each game at app launch, which mounts, which lands here long before any
+ * title has started. The crash log showed exactly that path - loadGames ->
+ * enrichMissingCoverArt -> TitleInfo::Mount -> fsc_mount -> signal 11.
+ *
+ * Fixing it at the three read sites rather than at that one caller, because the caller
+ * was not doing anything unreasonable and the next one to mount early would hit the same
+ * null. Costs one predictable branch on paths that already take a mutex.
+ */
+static void fsc_ensureRootNodes()
+{
+	fscEnter();
+	for (sint32 i = 0; i < FSC_PRIORITY_COUNT; i++)
+	{
+		if (!s_fscRootNodePerPrio[i])
+			s_fscRootNodePerPrio[i] = new FSCMountPathNode(nullptr);
+	}
+	fscLeave();
+}
+
+/*
  * Creates a node chain for the given mount path. Returns the bottom node.
  * If the path already exists for the given priority, NULL is returned (we can't mount two devices to the same path with the same priority)
  * But we can map devices to subdirectories. Something like this is possible:
@@ -97,6 +125,7 @@ void fsc_reset()
 FSCMountPathNode* fsc_createMountPath(const FSCPath& mountPath, sint32 priority)
 {
 	cemu_assert(priority >= 0 && priority < FSC_PRIORITY_COUNT);
+	fsc_ensureRootNodes();
 	fscEnter();
 	FSCMountPathNode* nodeParent = s_fscRootNodePerPrio[priority];
 	for (size_t i=0; i< mountPath.GetNodeCount(); i++)
@@ -202,6 +231,7 @@ void fsc_unmountAll()
 bool fsc_lookupPath(const char* path, std::string& devicePathOut, fscDeviceC** fscDeviceOut, void** ctxOut, sint32 priority = FSC_PRIORITY_BASE)
 {
 	FSCPath parsedPath(path);
+	fsc_ensureRootNodes();
 	FSCMountPathNode* nodeParent = s_fscRootNodePerPrio[priority];
 	size_t i;
 	fscEnter();
@@ -254,6 +284,7 @@ bool fsc_lookupPath(const char* path, std::string& devicePathOut, fscDeviceC** f
 FSCMountPathNode* fsc_lookupPathVirtualNode(const char* path, sint32 priority)
 {
 	FSCPath parsedPath(path);
+	fsc_ensureRootNodes();
 	FSCMountPathNode* nodeCurrentDir = s_fscRootNodePerPrio[priority];
 	fscEnter();
 	for (size_t i = 0; i < parsedPath.GetNodeCount(); i++)
