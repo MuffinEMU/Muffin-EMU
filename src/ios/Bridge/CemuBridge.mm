@@ -505,6 +505,12 @@ void cemu_bridge_start_memory_watchdog(void) {
     // CMake side" reasoning (TitleInfo.h pulls in pugixml and the config stack).
     std::string IOSCoverArt_DeriveGameTdbId(const char* romPath);
 
+    // Defined in src/gui/iosgui/IOSDlcUpdateImport.cpp - same reasoning as
+    // IOSCoverArt_DeriveGameTdbId above.
+    bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64_t* titleIdOut);
+    uint64_t IOSDlcUpdateImport_DeriveBaseTitleId(uint64_t titleId);
+    int IOSDlcUpdateImport_GetTitleType(uint64_t titleId);
+
     // SDL's iOS joystick backend is a GameController.framework client, so bring it up on
     // the main thread even though cemu_bridge_initialize() itself runs on GameManager's
     // detached launch task. dispatch_sync is safe here specifically because that task is
@@ -2026,6 +2032,32 @@ bool cemu_bridge_derive_gametdb_id(const char* romPath, char* outGameID, size_t 
     return true;
 #else
     return false;
+#endif
+}
+
+bool cemu_bridge_derive_title_id(const char* romPath, uint64_t* outTitleId) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!romPath || !outTitleId)
+        return false;
+    return IOSDlcUpdateImport_DeriveTitleId(romPath, outTitleId);
+#else
+    return false;
+#endif
+}
+
+uint64_t cemu_bridge_derive_base_title_id(uint64_t titleId) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return IOSDlcUpdateImport_DeriveBaseTitleId(titleId);
+#else
+    return titleId;
+#endif
+}
+
+int cemu_bridge_get_title_type(uint64_t titleId) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return IOSDlcUpdateImport_GetTitleType(titleId);
+#else
+    return 0xFF; // TitleIdParser::TITLE_TYPE::UNKNOWN
 #endif
 }
 
