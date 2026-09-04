@@ -558,6 +558,9 @@ struct SettingsView: View {
                     Section("Library") {
                         SettingsRow(label: "Games", value: "\(gameManager.games.count)")
                         SettingsRow(label: "Favorites", value: "\(gameManager.favorites.count)")
+                        NavigationLink("Graphic Packs") {
+                            GraphicPacksView()
+                        }
                     }
                     .foregroundColor(MuffinTheme.brownDarkest)
 

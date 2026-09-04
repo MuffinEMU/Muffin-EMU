@@ -27,6 +27,7 @@
 #include "Cafe/TitleList/TitleInfo.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
+#include "Cafe/GraphicPack/GraphicPack2.h"
 #include "config/ActiveSettings.h"
 #include "Cemu/Logging/CemuLogging.h"
 
@@ -75,6 +76,12 @@ void IOSTitleLaunch_InitializeTitleList()
 	if (!mlcPath.empty())
 		CafeTitleList::SetMLCPath(mlcPath);
 	cemuLog_log(LogType::Force, "iOS: title list initialized (mlc: {})", _pathToUtf8(mlcPath));
+
+	// Nothing on iOS ever called this before - GraphicPack2::ActivateForCurrentTitle()
+	// further down CafeSystem's own (shared, unconditional) boot path has always run
+	// here too, it just always found an empty list, since GetGraphicPacks() has nothing
+	// in it until LoadAll() has scanned Documents/mlc/graphicPacks/ at least once.
+	GraphicPack2::LoadAll();
 }
 
 // Prepares whatever the user actually picked, mirroring the same decision tree the

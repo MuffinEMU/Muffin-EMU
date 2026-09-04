@@ -262,6 +262,27 @@ bool cemu_bridge_inspect_title(const char* romPath, uint64_t* outTitleId, uint16
 /// installed DLC/update on disk without needing a file to re-derive it from.
 uint64_t cemu_bridge_derive_content_title_id(uint64_t baseTitleId, bool isUpdate);
 
+/// Rescans Documents/mlc/graphicPacks/ for graphic packs (GraphicPack2::LoadAll) - call
+/// once at startup and again whenever the user might have dropped in new pack folders.
+/// A no-op, not an error, while a title is currently running.
+void cemu_bridge_graphic_packs_refresh(void);
+
+/// One pack per record, most-recently-scanned order. Records are separated by 0x1E,
+/// fields within a record by 0x1F: index, name, description, "1"/"0" for enabled, then
+/// a comma-joined list of the pack's own title IDs (16 lowercase hex chars each, empty
+/// if the pack applies to everything). index is stable only until the next refresh -
+/// pass it straight back to cemu_bridge_graphic_pack_set_enabled.
+///
+/// Same ownership as cemu_bridge_device_report and friends: the returned pointer is
+/// into a static buffer this function owns, valid until the next call to this same
+/// function - copy it (e.g. String(cString:)) before calling again, never free it.
+const char* cemu_bridge_graphic_packs_list(void);
+
+/// Enables or disables the pack at `index` (from the most recent
+/// cemu_bridge_graphic_packs_list call) and persists the change immediately - it will
+/// still be enabled/disabled the same way after the next refresh or app relaunch.
+void cemu_bridge_graphic_pack_set_enabled(int index, bool enabled);
+
 /// How fast the emulated console believes time is passing, as a right-shift factor:
 /// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
 /// Cemu's own `ActiveSettings::SetTimerShiftFactor()`, which desktop Cemu exposes as its

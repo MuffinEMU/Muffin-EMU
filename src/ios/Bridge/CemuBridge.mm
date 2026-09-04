@@ -515,6 +515,11 @@ void cemu_bridge_start_memory_watchdog(void) {
         int* outRegion, int* outInvalidReason);
     uint64_t IOSDlcUpdateImport_DeriveContentTitleId(uint64_t baseTitleId, bool isUpdate);
 
+    // Defined in src/gui/iosgui/IOSGraphicPacks.cpp.
+    std::string IOSGraphicPacks_List();
+    void IOSGraphicPacks_Refresh();
+    void IOSGraphicPacks_SetEnabled(int index, bool enabled);
+
     // SDL's iOS joystick backend is a GameController.framework client, so bring it up on
     // the main thread even though cemu_bridge_initialize() itself runs on GameManager's
     // detached launch task. dispatch_sync is safe here specifically because that task is
@@ -2091,6 +2096,28 @@ uint64_t cemu_bridge_derive_content_title_id(uint64_t baseTitleId, bool isUpdate
     return IOSDlcUpdateImport_DeriveContentTitleId(baseTitleId, isUpdate);
 #else
     return 0;
+#endif
+}
+
+void cemu_bridge_graphic_packs_refresh(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    IOSGraphicPacks_Refresh();
+#endif
+}
+
+const char* cemu_bridge_graphic_packs_list(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    static std::string g_graphicPacksList;
+    g_graphicPacksList = IOSGraphicPacks_List();
+    return g_graphicPacksList.c_str();
+#else
+    return "";
+#endif
+}
+
+void cemu_bridge_graphic_pack_set_enabled(int index, bool enabled) {
+#if defined(CEMU_CORE_AVAILABLE)
+    IOSGraphicPacks_SetEnabled(index, enabled);
 #endif
 }
 
