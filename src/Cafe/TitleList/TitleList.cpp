@@ -259,6 +259,22 @@ void CafeTitleList::AddTitleFromPath(fs::path path)
 		delete titleInfo;
 }
 
+void CafeTitleList::ScanMLCUsrTitleOnly()
+{
+	sTLMutex.lock();
+	fs::path mlcPath = sTLMLCPath;
+	sTLMutex.unlock();
+	if (mlcPath.empty())
+		return;
+	std::error_code ec;
+	for (auto& it : fs::directory_iterator(mlcPath / "usr/title", ec))
+	{
+		if (!it.is_directory(ec))
+			continue;
+		ScanMLCPath(it.path());
+	}
+}
+
 bool CafeTitleList::RefreshWorkerThread()
 {
 	SetThreadName("TitleListWorker");
