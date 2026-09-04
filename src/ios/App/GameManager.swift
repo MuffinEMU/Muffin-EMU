@@ -13,9 +13,14 @@ struct GameMetadata: Codable, Identifiable {
     let releaseDate: String
     let genre: String
     var isFavorite: Bool = false
+    // The base game's title ID (already reduced via cemu_bridge_derive_base_title_id -
+    // never a DLC/update ID) - nil for a title the bridge couldn't parse, which import
+    // matching then has no choice but to fall back to manual selection for. See
+    // DlcUpdateImport.swift.
+    var titleId: UInt64?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, romPath, coverPath, region, releaseDate, genre
+        case id, title, romPath, coverPath, region, releaseDate, genre, titleId
     }
 }
 
@@ -121,7 +126,8 @@ class GameManager: ObservableObject {
                     coverPath: findCover(for: gameID, romPath: bootPath, in: romsPath, dump: dumpDirectory),
                     region: "Unknown",
                     releaseDate: "Unknown",
-                    genre: "Game"
+                    genre: "Game",
+                    titleId: Self.deriveBaseTitleId(romPath: bootPath)
                 )
 
                 discoveredGames.append(gameMetadata)
@@ -182,6 +188,20 @@ class GameManager: ObservableObject {
 
     static func looksLikeNUSDump(_ directory: URL) -> Bool {
         titleTmdInDump(directory) != nil
+    }
+
+    /// Wraps cemu_bridge_derive_title_id + cemu_bridge_derive_base_title_id (see
+    /// CemuBridge.h) to get a game's identity for DLC/update matching in one call.
+    /// Already reduced to the BASE title ID - a library entry is always a base game
+    /// (see the loadGames() switch above), so there is nothing here that could itself
+    /// be a DLC/update needing the reduction skipped.
+    private static func deriveBaseTitleId(romPath: String) -> UInt64? {
+        var titleId: UInt64 = 0
+        let ok = romPath.withCString { cPath in
+            cemu_bridge_derive_title_id(cPath, &titleId)
+        }
+        guard ok else { return nil }
+        return cemu_bridge_derive_base_title_id(titleId)
     }
 
     /// Art for a game's card, in the order a person would expect it: whatever they put
