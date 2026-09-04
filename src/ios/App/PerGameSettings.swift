@@ -105,6 +105,8 @@ struct GameContextMenu: View {
     @ObservedObject var store: PerGameSettingsStore
     let onViewOptions: () -> Void
     let onDecryptToFiles: () -> Void
+    let onImportDLC: () -> Void
+    let onImportUpdate: () -> Void
 
     var body: some View {
         Toggle(isOn: Binding(
@@ -125,6 +127,16 @@ struct GameContextMenu: View {
                 // action, not a specific destination.
                 Label("Decrypt\u{2026}", systemImage: "lock.open")
             }
+        }
+        // Both go through DlcUpdateImport - see that file for the actual copy/match/
+        // install logic. Long-pressing a specific game is what tells the import which
+        // game the content is FOR when auto-matching by title ID can't (the manual
+        // fallback), so these live here rather than behind the general import menu.
+        Button(action: onImportDLC) {
+            Label("Import DLC\u{2026}", systemImage: "shippingbox")
+        }
+        Button(action: onImportUpdate) {
+            Label("Import Update\u{2026}", systemImage: "arrow.triangle.2.circlepath")
         }
     }
 }

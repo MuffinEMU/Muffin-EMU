@@ -173,6 +173,16 @@ struct GameBrowserView: View {
 
     @State private var romImportErrorMessage: String?
 
+    /// See DlcUpdateImport.swift for the actual copy/match/install logic this drives.
+    @State private var dlcImportErrorMessage: String?
+    /// Set only when an import failed with .noBaseGameMatch - auto-matching by title ID
+    /// couldn't place the file, so this asks whether to fall back to the game that was
+    /// long-pressed to start the import, per Void's "automatic matching with manual
+    /// fallback" spec. Retrying is what actually calls DlcUpdateImport.import again
+    /// with manualMatch set; dismissing without confirming leaves nothing on disk,
+    /// same as any other rejected import.
+    @State private var pendingManualMatchConfirmation: (source: URL, kind: DlcUpdateImport.ContentKind, game: GameMetadata)?
+
     var filteredGames: [GameMetadata] {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
         return searchText.isEmpty
@@ -299,7 +309,9 @@ struct GameBrowserView: View {
                                             game: game,
                                             store: perGameSettings,
                                             onViewOptions: { gameOptionsTarget = game },
-                                            onDecryptToFiles: { decryptTarget = game }
+                                            onDecryptToFiles: { decryptTarget = game },
+                                            onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
+                                            onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) }
                                         )
                                     }
                                 }
@@ -333,6 +345,24 @@ struct GameBrowserView: View {
         } message: { message in
             Text(message)
         }
+        .alert("Couldn't import", isPresented: .constant(dlcImportErrorMessage != nil), presenting: dlcImportErrorMessage) { _ in
+            Button("OK") { dlcImportErrorMessage = nil }
+        } message: { message in
+            Text(message)
+        }
+        .alert(
+            "No automatic match",
+            isPresented: .constant(pendingManualMatchConfirmation != nil),
+            presenting: pendingManualMatchConfirmation
+        ) { pending in
+            Button("Add to \"\(pending.game.title)\"") {
+                pendingManualMatchConfirmation = nil
+                runDlcUpdateImport(from: pending.source, kind: pending.kind, longPressedGame: pending.game, manualMatch: pending.game)
+            }
+            Button("Cancel", role: .cancel) { pendingManualMatchConfirmation = nil }
+        } message: { pending in
+            Text("Couldn't automatically match this \(pending.kind.displayName) to a game already in your library. Add it to \"\(pending.game.title)\" - the game you long-pressed?")
+        }
     }
 
     private func beginImport(contentTypes: [UTType]) {
@@ -356,6 +386,46 @@ struct GameBrowserView: View {
             }
         case .failure(let error):
             romImportErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func beginDlcUpdateImport(for game: GameMetadata, kind: DlcUpdateImport.ContentKind) {
+        // A dumped DLC/update is a directory (code/content/meta), same as a game dump -
+        // DlcUpdateImport.swift explicitly doesn't support a loose .wua yet, so there's
+        // no reason to offer the file picker here the way the ROM import menu does.
+        DocumentImport.present(contentTypes: Self.folderImportTypes) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                runDlcUpdateImport(from: url, kind: kind, longPressedGame: game, manualMatch: nil)
+            case .failure(let error):
+                dlcImportErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func runDlcUpdateImport(
+        from url: URL,
+        kind: DlcUpdateImport.ContentKind,
+        longPressedGame: GameMetadata,
+        manualMatch: GameMetadata?
+    ) {
+        Task {
+            do {
+                _ = try await DlcUpdateImport.import(
+                    from: url,
+                    kind: kind,
+                    library: gameManager.games,
+                    manualMatch: manualMatch
+                )
+            } catch DlcUpdateImport.ImportError.noBaseGameMatch {
+                // Auto-matching by title ID came up empty - fall back to whichever game
+                // was long-pressed to start this import, but only after confirming, since
+                // an unmatched title ID is also what a flat-out wrong file looks like.
+                pendingManualMatchConfirmation = (source: url, kind: kind, game: longPressedGame)
+            } catch {
+                dlcImportErrorMessage = error.localizedDescription
+            }
         }
     }
 }
