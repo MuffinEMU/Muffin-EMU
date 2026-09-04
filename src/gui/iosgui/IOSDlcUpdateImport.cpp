@@ -92,6 +92,26 @@ uint64 IOSDlcUpdateImport_DeriveBaseTitleId(uint64 titleId)
 	return (uint64)baseTitleId;
 }
 
+// The reverse direction of IOSDlcUpdateImport_DeriveBaseTitleId - what would this
+// base game's update or AOC title ID be, so removal can find it on disk without
+// re-deriving it from a file that may no longer exist. Returns 0 (never a real Wii U
+// title ID) if baseTitleId can't have the requested kind at all.
+uint64 IOSDlcUpdateImport_DeriveContentTitleId(uint64 baseTitleId, bool isUpdate)
+{
+	TitleIdParser tip((TitleId)baseTitleId);
+	if (isUpdate)
+	{
+		if (!tip.CanHaveSeparateUpdateTitleId())
+			return 0;
+		return (uint64)tip.GetSeparateUpdateTitleId();
+	}
+	// AOC/DLC - TitleIdParser only has a public helper for base->update, not base->AOC,
+	// so this mirrors the one place engine code already computes that direction:
+	// CafeTitleList::GetGameInfo()'s own "for now we assume there is a direct match of
+	// ids" AOC lookup in TitleList.cpp.
+	return baseTitleId | 0xC00000000ull;
+}
+
 // Writes the two path components CafeTitleList::ScanMLCPath expects under
 // <mlc>/usr/title/ - the upper 32 bits of titleId as 8 lowercase hex chars (the
 // type-prefix directory, e.g. "0005000c" for AOC), then the lower 32 bits the same

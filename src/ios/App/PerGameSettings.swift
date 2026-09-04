@@ -107,6 +107,8 @@ struct GameContextMenu: View {
     let onDecryptToFiles: () -> Void
     let onImportDLC: () -> Void
     let onImportUpdate: () -> Void
+    let onRemoveDLC: () -> Void
+    let onRemoveUpdate: () -> Void
 
     var body: some View {
         Toggle(isOn: Binding(
@@ -137,6 +139,20 @@ struct GameContextMenu: View {
         }
         Button(action: onImportUpdate) {
             Label("Import Update\u{2026}", systemImage: "arrow.triangle.2.circlepath")
+        }
+        // Checked fresh each time the menu opens, against what's actually on disk under
+        // Documents/mlc - not a separately-kept record, which could drift from it. A
+        // game with nothing installed simply doesn't offer a removal action for it.
+        let installed = DlcUpdateImport.installedContent(for: game)
+        if installed.hasDLC {
+            Button(role: .destructive, action: onRemoveDLC) {
+                Label("Remove DLC", systemImage: "trash")
+            }
+        }
+        if installed.hasUpdate {
+            Button(role: .destructive, action: onRemoveUpdate) {
+                Label("Remove Update", systemImage: "trash")
+            }
         }
     }
 }

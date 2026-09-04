@@ -256,6 +256,12 @@ typedef enum {
 bool cemu_bridge_inspect_title(const char* romPath, uint64_t* outTitleId, uint16_t* outVersion,
     int* outRegion, int* outInvalidReason);
 
+/// The reverse of cemu_bridge_derive_base_title_id: what baseTitleId's update (isUpdate
+/// true) or AOC/DLC (isUpdate false) title ID would be. Returns 0 (never a real title
+/// ID) if baseTitleId can't have that kind of content at all. Lets removal locate an
+/// installed DLC/update on disk without needing a file to re-derive it from.
+uint64_t cemu_bridge_derive_content_title_id(uint64_t baseTitleId, bool isUpdate);
+
 /// How fast the emulated console believes time is passing, as a right-shift factor:
 /// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
 /// Cemu's own `ActiveSettings::SetTimerShiftFactor()`, which desktop Cemu exposes as its
