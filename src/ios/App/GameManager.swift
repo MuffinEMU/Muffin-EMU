@@ -231,21 +231,39 @@ class GameManager: ObservableObject {
 
         // One Task, sequential, not one Task per game. CoverArtFetcher's ID lookup
         // constructs a real TitleInfo, and TitleInfo's constructor auto-mounts through
-        // fsc_mount() as a side effect of parsing meta.xml - fsc.cpp's mount-point tree
-        // (FSCMountPathNode, a plain parented tree with no locking anywhere in the
-        // file) has always assumed only one thread ever touches it at a time, which is
-        // true everywhere else this engine is used (title boot is single-threaded
-        // through this path). Firing one Task per eligible game broke that assumption
-        // for the first time: multiple games' TitleInfo constructions mutating the same
-        // global tree concurrently, unsynchronized, crashed with a real signal 11 on
-        // device (confirmed from an actual crash log - fsc_mount -> TitleInfo::Mount ->
-        // TitleInfo::ParseXmlInfo -> TitleInfo::TitleInfo -> IOSCoverArt_DeriveGameTdbId
-        // -> CoverArtFetcher.deriveGameTdbId -> enrichMissingCoverArt, this function).
-        // Running the games one at a time, awaiting each before starting the next,
-        // guarantees only one TitleInfo/fsc_mount call from this path is ever in
-        // flight - the correct fix is serializing the caller, not adding locking to
-        // fsc.cpp's global tree, which the rest of the engine already depends on
-        // staying simple and single-threaded.
+        // fsc_mount() as a side effect of parsing meta.xml.
+        //
+        // CORRECTION to what this comment said before: fsc.cpp is NOT unlocked. It
+        // declares `std::recursive_mutex s_fscMutex` (fsc.cpp:69) and takes it at 21
+        // sites, including wrapped directly around the tree mutation this comment used
+        // to blame:
+        //
+        //     fscEnter();
+        //     FSCMountPathNode* node = fsc_createMountPath(parsedMountPath, priority);
+        //     node->AssignDevice(fscDevice, ctx, targetPathWithSlash);
+        //     fscLeave();
+        //
+        // So concurrent TitleInfo constructions were already serialised by that mutex,
+        // and a data race there was not what produced the signal 11 in the crash log.
+        //
+        // The actual cause was a null root: s_fscRootNodePerPrio is `{}` at file scope
+        // and is only ever populated by fsc_reset() <- fsc_init() <-
+        // CafeSystem::Initialize(), which runs at TITLE BOOT. Cover art builds a
+        // TitleInfo during loadGames at app launch, before any title has booted, so
+        // fsc_createMountPath read a null root and dereferenced nodeParent->subnodes.
+        // Deterministic, single-threaded, on the first call - which is why it crashed
+        // every launch rather than intermittently. Fixed in fsc.cpp by
+        // fsc_ensureRootNodes(), which allocates any missing root under that same mutex.
+        //
+        // The sequential pass below is KEPT, on its own merits rather than as the crash
+        // fix: one TitleInfo mount at a time is less startup load than N concurrent
+        // ones, and doing the eligibility check off the main actor keeps it off the UI
+        // thread. It would not, by itself, have fixed a null dereference - the first
+        // call still hits it.
+        //
+        // The correction matters because "fsc.cpp has no locking anywhere" is the kind
+        // of premise that gets a second mutex added to a file that already has one, or
+        // gets the next crash in it misdiagnosed.
         let candidates = games
         guard !candidates.isEmpty else { return }
 
