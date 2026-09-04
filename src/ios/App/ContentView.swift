@@ -599,6 +599,13 @@ struct EmulatorViewOptimized: View {
     @StateObject private var launchLog = LaunchLogStore()
     @State private var launchLogDismissed = false
 
+    /// Armed on every entry into this view, which is once per game launch. Cleared by
+    /// the intro itself when it has finished playing.
+    @State private var showLaunchIntro = true
+    /// A way out. The intro is theatre and theatre gets old on the fiftieth launch, so
+    /// it is a setting rather than a fact of the app.
+    @AppStorage("muffin.showLaunchIntro") private var launchIntroEnabled = true
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -859,6 +866,25 @@ struct EmulatorViewOptimized: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color.black)
+            }
+
+            // The launch intro sits ON TOP of the booting overlay rather than replacing
+            // it, and it is the thing you actually see. Underneath, boot proceeds at
+            // exactly the pace it always did - the intro adds no wait of its own, it
+            // occupies a wait that was already there and was previously a spinner.
+            //
+            // It clears itself when finished. It does NOT gate .running: the engine
+            // flips that on its own schedule and the intro fading out reveals whatever
+            // state the emulator has genuinely reached, which keeps the animation
+            // honest about the boot instead of pretending to drive it.
+            //
+            // Hidden while the launch log is up. Someone who has turned that on is
+            // diagnosing a boot, and covering the log with an animation would be
+            // exactly the wrong call.
+            if showLaunchIntro && launchIntroEnabled && !showLaunchLog {
+                LaunchIntroView { showLaunchIntro = false }
+                    .transition(.opacity)
+                    .zIndex(10)
             }
 
             // Deliberately outlives .loading. emulationState flips to .running the
