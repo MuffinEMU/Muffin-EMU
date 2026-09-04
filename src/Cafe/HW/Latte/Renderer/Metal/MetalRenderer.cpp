@@ -1283,7 +1283,34 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 
     bool usesGeometryShader = UseGeometryShader(LatteGPUState.contextNew, geometryShader != nullptr);
     if (usesGeometryShader && !m_supportsMeshShaders)
+    {
+        // This GPU has no mesh shaders, and the mesh pipeline is the only route this
+        // backend has for a geometry shader or a RECTS primitive, so the draw cannot be
+        // issued. It used to be discarded by a bare return with no record kept, which is
+        // why "everything renders grey" arrives with an empty log and reads as having no
+        // visible reason.
+        //
+        // The two causes need separating because they mean different things on screen and
+        // want different fixes. A real geometry shader usually means missing geometry -
+        // particles, grass, effects. RECTS is what titles use for copy and
+        // post-processing passes, so dropping those can leave the raw HDR buffer on
+        // screen with no tonemap or colour grade applied, which looks washed out and grey
+        // rather than absent. Counting them separately is what tells those two apart from
+        // a log instead of from guesswork.
+        if (geometryShader)
+            m_droppedDrawsGeometryShader++;
+        else
+            m_droppedDrawsRects++;
+
+        const uint64 total = m_droppedDrawsGeometryShader + m_droppedDrawsRects;
+        if (total == 1 || total - m_droppedDrawsLastReported >= 1000)
+        {
+            m_droppedDrawsLastReported = total;
+            cemuLog_log(LogType::Force, "Metal: {} draws dropped for want of mesh shaders ({} geometry shader, {} RECTS). Geometry shader means missing geometry; RECTS means post-processing and copy passes are not running, which shows up as washed-out or grey colour.",
+                total, m_droppedDrawsGeometryShader, m_droppedDrawsRects);
+        }
         return;
+    }
 
     bool fetchVertexManually = (usesGeometryShader || fetchShader->mtlFetchVertexManually);
 
