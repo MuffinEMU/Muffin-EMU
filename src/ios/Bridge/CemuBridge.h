@@ -235,6 +235,27 @@ int cemu_bridge_get_title_type(uint64_t titleId);
 /// base game's.
 void cemu_bridge_get_mlc_title_path_components(uint64_t titleId, char* outUpperHex, char* outLowerHex);
 
+/// TitleInfo::InvalidReason values, mirrored here for the Swift side of the DLC/update
+/// import flow - see TitleInfo.h for the authoritative definitions and the reasoning
+/// behind each one.
+typedef enum {
+    CemuTitleValid = 0,
+    CemuTitleBadPathOrInaccessible = 1,
+    CemuTitleUnknownFormat = 2,
+    CemuTitleNoDiscKey = 3,
+    CemuTitleNoTicket = 4,
+    CemuTitleMissingXmlFiles = 5,
+} CemuTitleInvalidReason;
+
+/// Inspects romPath as a candidate DLC/update import in one pass: on success (true),
+/// fills outTitleId/outVersion/outRegion (outRegion is a CafeConsoleRegion bitmask
+/// value, e.g. 0x2 for USA) and leaves outInvalidReason at CemuTitleValid. On failure
+/// (false), fills only outInvalidReason with the specific reason - not a generic
+/// "import failed" - and leaves the others untouched. Any out-pointer may be NULL if
+/// the caller doesn't need that field.
+bool cemu_bridge_inspect_title(const char* romPath, uint64_t* outTitleId, uint16_t* outVersion,
+    int* outRegion, int* outInvalidReason);
+
 /// How fast the emulated console believes time is passing, as a right-shift factor:
 /// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
 /// Cemu's own `ActiveSettings::SetTimerShiftFactor()`, which desktop Cemu exposes as its
