@@ -231,16 +231,13 @@ struct GameBrowserView: View {
                                 Button {
                                     beginImport(contentTypes: Self.folderImportTypes)
                                 } label: {
-                                    Label("Full dump folder (code / content / meta)", systemImage: "folder")
-                                }
-                                Button {
-                                    beginImport(contentTypes: Self.folderImportTypes)
-                                } label: {
-                                    // Same folder picker as the entry above - GameManager.importROM
-                                    // tells the two layouts apart on its own - this is a second,
-                                    // clearly-labeled menu entry so a decrypted NUS dump isn't
-                                    // mistaken for something the picker can't take.
-                                    Label("Decrypted dump (title.tmd + .app files)", systemImage: "folder.badge.gearshape")
+                                    // One folder picker, one entry - it was two identical buttons
+                                    // with different labels (both called beginImport with the same
+                                    // folderImportTypes; GameManager.importROM already tells the two
+                                    // layouts apart on its own regardless of which button was
+                                    // tapped), so there was nothing for a second entry to actually
+                                    // distinguish. This label just says what the one picker accepts.
+                                    Label("Game folder (code/content/meta, or title.tmd + .app files)", systemImage: "folder")
                                 }
                             } label: {
                                 Image(systemName: "doc.badge.plus")
