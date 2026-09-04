@@ -521,6 +521,11 @@ private:
 	bool m_hasUnifiedMemory;
 	bool m_supportsMetal3;
 	bool m_supportsMeshShaders;
+	// Draws this GPU cannot issue, split by cause. Kept because the alternative - a bare
+	// return - made a whole class of visual bug arrive with nothing in the log.
+	uint64 m_droppedDrawsGeometryShader = 0;
+	uint64 m_droppedDrawsRects = 0;
+	uint64 m_droppedDrawsLastReported = 0;
 	uint32 m_recommendedMaxVRAMUsage;
 	MetalPixelFormatSupport m_pixelFormatSupport;
 
