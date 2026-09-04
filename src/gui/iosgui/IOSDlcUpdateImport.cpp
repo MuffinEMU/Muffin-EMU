@@ -14,6 +14,9 @@
 //   3. What TYPE of title is this - actually a DLC, actually an update, or something
 //      else entirely? (IOSDlcUpdateImport_GetTitleType) - this is what lets the import
 //      flow say "that's an update, not DLC" instead of silently accepting anything.
+//   4. Is this actually a valid, complete title at all - and if not, specifically why
+//      not, plus (when it is) its version and region for comparing against what's
+//      already installed? (IOSDlcUpdateImport_Inspect)
 #include "Cafe/TitleList/TitleInfo.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleId.h"
@@ -30,6 +33,50 @@ bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64* titleIdOut)
 		return false;
 
 	*titleIdOut = (uint64)titleInfo.GetAppTitleId();
+	return true;
+}
+
+// One TitleInfo construction (real disk I/O + XML parsing) covering everything the
+// import flow needs to either accept a candidate DLC/update or explain specifically
+// why not - TitleInfo::InvalidReason already distinguishes "not a real Wii U title
+// structure" from "the ticket is missing" from "the XML itself is unreadable", which
+// is exactly the specific-not-generic diagnosis Void asked for; nothing here
+// invents new categories on top of what the engine already determined while parsing.
+// Returns false (and only outInvalidReason) for an invalid title; true (and
+// everything else, outInvalidReason left at NONE) for a valid one.
+bool IOSDlcUpdateImport_Inspect(const char* romPath, uint64* outTitleId, uint16* outVersion,
+	int* outRegion, int* outInvalidReason)
+{
+	if (outInvalidReason)
+		*outInvalidReason = 0; // TitleInfo::InvalidReason::NONE
+
+	if (!romPath || romPath[0] == '\0')
+	{
+		if (outInvalidReason)
+			*outInvalidReason = 1; // BAD_PATH_OR_INACCESSIBLE
+		return false;
+	}
+
+	TitleInfo titleInfo{fs::path(romPath)};
+	if (!titleInfo.IsValid())
+	{
+		if (outInvalidReason)
+			*outInvalidReason = (int)titleInfo.GetInvalidReason();
+		return false;
+	}
+	if (!titleInfo.HasValidXmlInfo())
+	{
+		if (outInvalidReason)
+			*outInvalidReason = 5; // MISSING_XML_FILES
+		return false;
+	}
+
+	if (outTitleId)
+		*outTitleId = (uint64)titleInfo.GetAppTitleId();
+	if (outVersion)
+		*outVersion = titleInfo.GetAppTitleVersion();
+	if (outRegion)
+		*outRegion = (int)titleInfo.GetMetaRegion();
 	return true;
 }
 
