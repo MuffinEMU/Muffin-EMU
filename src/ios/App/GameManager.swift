@@ -229,14 +229,37 @@ class GameManager: ObservableObject {
         guard let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let romsPath = documentsPath.appendingPathComponent(romsDirectory)
 
-        for game in games {
-            guard CoverArtFetcher.shouldAttemptFetch(gameID: game.id, romPath: game.romPath, in: romsPath) else { continue }
-            Task {
-                guard let coverPath = await CoverArtFetcher.fetchAndCache(gameID: game.id, romPath: game.romPath, in: romsPath) else { return }
-                if let index = games.firstIndex(where: { $0.id == game.id }) {
-                    games[index].coverPath = coverPath
-                    if let favIndex = favorites.firstIndex(where: { $0.id == game.id }) {
-                        favorites[favIndex].coverPath = coverPath
+        // One Task, sequential, not one Task per game. CoverArtFetcher's ID lookup
+        // constructs a real TitleInfo, and TitleInfo's constructor auto-mounts through
+        // fsc_mount() as a side effect of parsing meta.xml - fsc.cpp's mount-point tree
+        // (FSCMountPathNode, a plain parented tree with no locking anywhere in the
+        // file) has always assumed only one thread ever touches it at a time, which is
+        // true everywhere else this engine is used (title boot is single-threaded
+        // through this path). Firing one Task per eligible game broke that assumption
+        // for the first time: multiple games' TitleInfo constructions mutating the same
+        // global tree concurrently, unsynchronized, crashed with a real signal 11 on
+        // device (confirmed from an actual crash log - fsc_mount -> TitleInfo::Mount ->
+        // TitleInfo::ParseXmlInfo -> TitleInfo::TitleInfo -> IOSCoverArt_DeriveGameTdbId
+        // -> CoverArtFetcher.deriveGameTdbId -> enrichMissingCoverArt, this function).
+        // Running the games one at a time, awaiting each before starting the next,
+        // guarantees only one TitleInfo/fsc_mount call from this path is ever in
+        // flight - the correct fix is serializing the caller, not adding locking to
+        // fsc.cpp's global tree, which the rest of the engine already depends on
+        // staying simple and single-threaded.
+        let candidates = games
+        guard !candidates.isEmpty else { return }
+
+        Task.detached { [romsPath] in
+            for game in candidates {
+                guard CoverArtFetcher.shouldAttemptFetch(gameID: game.id, romPath: game.romPath, in: romsPath) else { continue }
+                guard let coverPath = await CoverArtFetcher.fetchAndCache(gameID: game.id, romPath: game.romPath, in: romsPath) else { continue }
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    if let index = self.games.firstIndex(where: { $0.id == game.id }) {
+                        self.games[index].coverPath = coverPath
+                        if let favIndex = self.favorites.firstIndex(where: { $0.id == game.id }) {
+                            self.favorites[favIndex].coverPath = coverPath
+                        }
                     }
                 }
             }
