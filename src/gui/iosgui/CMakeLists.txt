@@ -7,6 +7,7 @@ if(PLATFORM_IOS)
         IOSTitleDecrypt.cpp
         IOSCoverArt.cpp
         IOSDlcUpdateImport.cpp
+        IOSGraphicPacks.cpp
     )
 
     # Without this, IOSWindowSystem.cpp never sees precompiled.h's aarch64 wrappers
