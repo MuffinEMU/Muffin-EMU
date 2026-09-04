@@ -360,6 +360,15 @@ const char* cemu_bridge_status_text(void);
 /// surviving log alone.
 void cemu_bridge_log_checkpoint(const char* message);
 
+/// One line describing the machine: model identifier, iOS version, RAM, core layout,
+/// how much memory iOS will let this app have, and the build. Stable for the process's
+/// lifetime, owned by the bridge, safe to hold.
+///
+/// This exists so a report from a device nobody here owns is answerable. Every finding
+/// on this port so far has depended on knowing the target hardware, and until now the
+/// log never recorded it.
+const char* cemu_bridge_device_report(void);
+
 /// Current memory position of this process, in bytes. `availableBytes` is the
 /// headroom iOS will allow before it kills the process (os_proc_available_memory),
 /// `footprintBytes` is what the process is currently billed for (phys_footprint).

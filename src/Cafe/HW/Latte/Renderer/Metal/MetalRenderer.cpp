@@ -214,6 +214,18 @@ MetalRenderer::MetalRenderer()
     m_recommendedMaxVRAMUsage = m_device->recommendedMaxWorkingSetSize();
     m_pixelFormatSupport = MetalPixelFormatSupport(m_device);
 
+    // Named, not just described. The same reasoning as the device report on the iOS
+    // side: a rendering bug reported from hardware nobody here owns is unanswerable
+    // without knowing which GPU produced it, and "Apple GPU" is not an answer - the
+    // whole BC-texture and mesh-shader story on this port turns on the difference
+    // between an A12 and an A13.
+    cemuLog_log(LogType::Force, "Metal: GPU '{}' | Apple family {} | Metal3 {} | mesh shaders {}{}",
+        m_device->name() ? m_device->name()->utf8String() : "unknown",
+        m_isAppleGPU ? "yes" : "no",
+        m_supportsMetal3 ? "yes" : "no",
+        m_supportsMeshShaders ? "yes" : "no",
+        m_supportsMeshShaders ? "" : " - geometry-shader and RECTS draws are dropped on this GPU");
+
     CheckForPixelFormatSupport(m_pixelFormatSupport);
 
     // Command queue

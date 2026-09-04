@@ -11,6 +11,7 @@
 //
 #import "CemuBridge.h"
 #import <Foundation/Foundation.h>
+#include <sys/sysctl.h>
 #include "Cemu/Logging/IOSLiveLog.h"
 
 #include <string>
@@ -249,6 +250,86 @@ namespace {
                  (unsigned long long)(footprintBytes / (1024ull * 1024ull)));
         cemu_bridge_log_checkpoint(line);
     }
+}
+
+// A description of the machine this is running on, written once at startup and
+// available to the UI on demand.
+//
+// WHY: until now the log recorded RAM and the iOS version and never once said WHICH
+// DEVICE it ran on. Every diagnosis on this port so far has quietly depended on
+// knowing the target is an A12Z iPad Pro - that is how "no BC texture formats" and
+// "no mesh shaders" were reached at all. A log from anybody else's device would have
+// been unactionable, because the first question about any of those findings is "what
+// hardware?" and nothing in the file could answer it.
+//
+// The raw model identifier (iPad8,11 and so on) rather than a marketing name: there is
+// no way to map identifiers to names without shipping a table that is out of date the
+// moment a new device exists, and a wrong name is worse than an identifier anyone can
+// look up.
+static std::string g_deviceReport;
+
+static std::string cemu_sysctl_string(const char* name)
+{
+    size_t len = 0;
+    if (sysctlbyname(name, nullptr, &len, nullptr, 0) != 0 || len == 0)
+        return std::string();
+    std::string out(len, '\0');
+    if (sysctlbyname(name, out.data(), &len, nullptr, 0) != 0)
+        return std::string();
+    if (!out.empty() && out.back() == '\0') out.pop_back();
+    return out;
+}
+
+static uint64_t cemu_sysctl_u64(const char* name)
+{
+    uint64_t v = 0; size_t len = sizeof(v);
+    if (sysctlbyname(name, &v, &len, nullptr, 0) == 0) return v;
+    uint32_t v32 = 0; len = sizeof(v32);
+    if (sysctlbyname(name, &v32, &len, nullptr, 0) == 0) return v32;
+    return 0;
+}
+
+extern "C" const char* cemu_bridge_device_report(void)
+{
+    if (!g_deviceReport.empty())
+        return g_deviceReport.c_str();
+
+    const std::string model = cemu_sysctl_string("hw.machine");
+    const uint64_t memBytes = cemu_sysctl_u64("hw.memsize");
+    const uint64_t cores    = cemu_sysctl_u64("hw.ncpu");
+    const uint64_t pcores   = cemu_sysctl_u64("hw.perflevel0.logicalcpu");
+    const uint64_t ecores   = cemu_sysctl_u64("hw.perflevel1.logicalcpu");
+
+    unsigned long long avail = 0, foot = 0;
+    cemu_bridge_memory_status(&avail, &foot);
+
+    char buf[1024];
+    snprintf(buf, sizeof(buf),
+        "device: %s | iOS %s | RAM %llu MB | cores %llu",
+        model.empty() ? "unknown" : model.c_str(),
+        [[[NSProcessInfo processInfo] operatingSystemVersionString] UTF8String],
+        (unsigned long long)(memBytes / (1024ull * 1024ull)),
+        (unsigned long long)cores);
+    g_deviceReport = buf;
+
+    if (pcores && ecores)
+    {
+        snprintf(buf, sizeof(buf), " (%llu perf + %llu eff)",
+                 (unsigned long long)pcores, (unsigned long long)ecores);
+        g_deviceReport += buf;
+    }
+    if (avail)
+    {
+        snprintf(buf, sizeof(buf), " | %llu MB available to this app before iOS kills it",
+                 (unsigned long long)(avail / (1024ull * 1024ull)));
+        g_deviceReport += buf;
+    }
+    // Two appends, not literal juxtaposition. BUILD_VERSION_STRING is a parenthesised
+    // expression - ("2" "." "0" ...) - not a bare string literal, so writing
+    // " | build " BUILD_VERSION_STRING parses as calling a char array.
+    g_deviceReport += " | build ";
+    g_deviceReport += BUILD_VERSION_STRING;
+    return g_deviceReport.c_str();
 }
 
 bool cemu_bridge_memory_status(unsigned long long* availableBytes, unsigned long long* footprintBytes) {
@@ -1191,6 +1272,11 @@ void cemu_bridge_initialize(const char* mlcPath) {
     std::error_code fontsEc, profilesEc;
     const bool haveFonts = fs::exists(dataPath / "resources" / "sharedFonts" / "CafeStd.ttf", fontsEc);
     const bool haveProfiles = fs::exists(dataPath / "gameProfiles" / "default", profilesEc);
+    // First line of every boot, before anything that might fail. If a log reaches us
+    // from a device nobody here owns, this is the line that makes the rest of it mean
+    // something.
+    cemuLog_log(LogType::Force, "iOS {}", cemu_bridge_device_report());
+
     cemuLog_log(LogType::Force, "iOS data path: {} (shared fonts present: {}, default game profiles present: {})",
         _pathToUtf8(dataPath), haveFonts, haveProfiles);
 
