@@ -231,4 +231,44 @@ enum DlcUpdateImport {
 
         return ImportedContent(titleId: titleId, baseTitleId: baseTitleId, matchedGame: matchedGame)
     }
+
+    /// Whether `game` has an installed update and/or DLC, checked directly against
+    /// what's on disk under Documents/mlc - not any record kept separately, since the
+    /// mlc folder is the only thing the engine itself will actually read from at boot.
+    static func installedContent(for game: GameMetadata) -> (hasUpdate: Bool, hasDLC: Bool) {
+        guard let baseTitleId = game.titleId else { return (false, false) }
+        return (
+            hasUpdate: mlcDestination(forContentTitleId: cemu_bridge_derive_content_title_id(baseTitleId, true)) != nil,
+            hasDLC: mlcDestination(forContentTitleId: cemu_bridge_derive_content_title_id(baseTitleId, false)) != nil
+        )
+    }
+
+    /// Deletes `kind`'s installed content for `game`, if any is actually there. Returns
+    /// false (not an error) when there was nothing to remove - a menu action offered
+    /// for content that turned out already gone should read as a no-op, not a failure.
+    @discardableResult
+    static func remove(kind: ContentKind, for game: GameMetadata) throws -> Bool {
+        guard let baseTitleId = game.titleId else { return false }
+        let contentTitleId = cemu_bridge_derive_content_title_id(baseTitleId, kind == .update)
+        guard let destination = mlcDestination(forContentTitleId: contentTitleId) else { return false }
+        try FileManager.default.removeItem(at: destination)
+        return true
+    }
+
+    /// nil for titleId 0 (cemu_bridge_derive_content_title_id's "not applicable"
+    /// sentinel) or a path that isn't actually there - the two cases a caller only ever
+    /// needs to tell apart from "yes, something is installed."
+    private static func mlcDestination(forContentTitleId titleId: UInt64) -> URL? {
+        guard titleId != 0, let mlcRoot = mlcRoot() else { return nil }
+
+        var upperHexBuf = [CChar](repeating: 0, count: 9)
+        var lowerHexBuf = [CChar](repeating: 0, count: 9)
+        cemu_bridge_get_mlc_title_path_components(titleId, &upperHexBuf, &lowerHexBuf)
+
+        let destination = mlcRoot
+            .appendingPathComponent("usr/title")
+            .appendingPathComponent(String(cString: upperHexBuf))
+            .appendingPathComponent(String(cString: lowerHexBuf))
+        return FileManager.default.fileExists(atPath: destination.path) ? destination : nil
+    }
 }

@@ -182,6 +182,9 @@ struct GameBrowserView: View {
     /// with manualMatch set; dismissing without confirming leaves nothing on disk,
     /// same as any other rejected import.
     @State private var pendingManualMatchConfirmation: (source: URL, kind: DlcUpdateImport.ContentKind, game: GameMetadata)?
+    /// Set by "Remove DLC"/"Remove Update" - deletion itself waits for the confirm
+    /// alert below, since it deletes a directory outright with no undo.
+    @State private var pendingRemoval: (game: GameMetadata, kind: DlcUpdateImport.ContentKind)?
 
     var filteredGames: [GameMetadata] {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
@@ -311,7 +314,9 @@ struct GameBrowserView: View {
                                             onViewOptions: { gameOptionsTarget = game },
                                             onDecryptToFiles: { decryptTarget = game },
                                             onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
-                                            onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) }
+                                            onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
+                                            onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
+                                            onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) }
                                         )
                                     }
                                 }
@@ -362,6 +367,23 @@ struct GameBrowserView: View {
             Button("Cancel", role: .cancel) { pendingManualMatchConfirmation = nil }
         } message: { pending in
             Text("Couldn't automatically match this \(pending.kind.displayName) to a game already in your library. Add it to \"\(pending.game.title)\" - the game you long-pressed?")
+        }
+        .alert(
+            "Remove content?",
+            isPresented: .constant(pendingRemoval != nil),
+            presenting: pendingRemoval
+        ) { pending in
+            Button("Remove", role: .destructive) {
+                pendingRemoval = nil
+                do {
+                    try DlcUpdateImport.remove(kind: pending.kind, for: pending.game)
+                } catch {
+                    dlcImportErrorMessage = error.localizedDescription
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingRemoval = nil }
+        } message: { pending in
+            Text("Remove the \(pending.kind.displayName) installed for \"\(pending.game.title)\"? This can't be undone - you'll need to import it again.")
         }
     }
 
