@@ -14,6 +14,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -206,6 +207,24 @@ void cemu_bridge_cancel_decrypt(void);
 /// unset metadata, or a title format this doesn't apply to) - not every game has box
 /// art to fetch, and that is a normal outcome, not an error.
 bool cemu_bridge_derive_gametdb_id(const char* romPath, char* outGameID, size_t outGameIDSize);
+
+/// Derives the raw 64-bit title ID from romPath's own meta.xml/app.xml (via
+/// TitleInfo::GetAppTitleId() - see IOSDlcUpdateImport.cpp), for matching an imported
+/// DLC or update against the base game already in the library. Returns false and
+/// leaves outTitleId untouched if romPath isn't a valid, fully-parsed title.
+bool cemu_bridge_derive_title_id(const char* romPath, uint64_t* outTitleId);
+
+/// Reduces any title ID - base, update, or AOC/DLC - to its base title's ID, using the
+/// same bit-math CafeTitleList::FindBaseTitleId() already uses for the real boot path.
+/// Two different titles with the same base ID belong to the same game; this is how the
+/// import flow finds which installed game a DLC/update belongs to.
+uint64_t cemu_bridge_derive_base_title_id(uint64_t titleId);
+
+/// Returns the raw title-type byte for titleId (TitleIdParser::TITLE_TYPE from
+/// TitleId.h: 0x00 base, 0x0E update, 0x0C AOC/DLC, 0xFF unknown, etc.) - lets the
+/// import flow reject a file that isn't actually the type the user said it was (e.g.
+/// "Import DLC" on something that's really an update).
+int cemu_bridge_get_title_type(uint64_t titleId);
 
 /// How fast the emulated console believes time is passing, as a right-shift factor:
 /// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
