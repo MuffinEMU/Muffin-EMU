@@ -226,6 +226,15 @@ uint64_t cemu_bridge_derive_base_title_id(uint64_t titleId);
 /// "Import DLC" on something that's really an update).
 int cemu_bridge_get_title_type(uint64_t titleId);
 
+/// Writes the two path components the engine's own MLC scanner expects under
+/// <mlc>/usr/title/ for titleId: the type-prefix directory (upper 32 bits, e.g.
+/// "0005000c" for AOC) into outUpperHex, then the title's own directory (lower 32
+/// bits, holding code/content/meta) into outLowerHex. Both buffers must be at least 9
+/// bytes (8 hex chars plus the null terminator). Pass the DLC/update's own title ID
+/// here, not its base-reduced form - a DLC/update installs under its own ID, not the
+/// base game's.
+void cemu_bridge_get_mlc_title_path_components(uint64_t titleId, char* outUpperHex, char* outLowerHex);
+
 /// How fast the emulated console believes time is passing, as a right-shift factor:
 /// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
 /// Cemu's own `ActiveSettings::SetTimerShiftFactor()`, which desktop Cemu exposes as its

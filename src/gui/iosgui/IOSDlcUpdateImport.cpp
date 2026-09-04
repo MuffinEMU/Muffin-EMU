@@ -18,6 +18,8 @@
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleId.h"
 
+#include <cstdio>
+
 bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64* titleIdOut)
 {
 	if (!romPath || romPath[0] == '\0' || !titleIdOut)
@@ -41,6 +43,20 @@ uint64 IOSDlcUpdateImport_DeriveBaseTitleId(uint64 titleId)
 	if (!CafeTitleList::FindBaseTitleId((TitleId)titleId, baseTitleId))
 		return titleId;
 	return (uint64)baseTitleId;
+}
+
+// Writes the two path components CafeTitleList::ScanMLCPath expects under
+// <mlc>/usr/title/ - the upper 32 bits of titleId as 8 lowercase hex chars (the
+// type-prefix directory, e.g. "0005000c" for AOC), then the lower 32 bits the same
+// way (the title's own directory, holding code/content/meta). Both buffers must be at
+// least 9 bytes (8 chars plus the null terminator). ScanMLCPath's own hex check is
+// case-insensitive, but lowercase matches how real Wii U dumps are named.
+void IOSDlcUpdateImport_GetMlcTitlePathComponents(uint64 titleId, char* outUpperHex, char* outLowerHex)
+{
+	uint32 upper = (uint32)(titleId >> 32);
+	uint32 lower = (uint32)(titleId & 0xFFFFFFFFu);
+	snprintf(outUpperHex, 9, "%08x", upper);
+	snprintf(outLowerHex, 9, "%08x", lower);
 }
 
 // Returns the raw TitleIdParser::TITLE_TYPE byte value directly (0x00 base, 0x0E

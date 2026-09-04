@@ -510,6 +510,7 @@ void cemu_bridge_start_memory_watchdog(void) {
     bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64_t* titleIdOut);
     uint64_t IOSDlcUpdateImport_DeriveBaseTitleId(uint64_t titleId);
     int IOSDlcUpdateImport_GetTitleType(uint64_t titleId);
+    void IOSDlcUpdateImport_GetMlcTitlePathComponents(uint64_t titleId, char* outUpperHex, char* outLowerHex);
 
     // SDL's iOS joystick backend is a GameController.framework client, so bring it up on
     // the main thread even though cemu_bridge_initialize() itself runs on GameManager's
@@ -2058,6 +2059,17 @@ int cemu_bridge_get_title_type(uint64_t titleId) {
     return IOSDlcUpdateImport_GetTitleType(titleId);
 #else
     return 0xFF; // TitleIdParser::TITLE_TYPE::UNKNOWN
+#endif
+}
+
+void cemu_bridge_get_mlc_title_path_components(uint64_t titleId, char* outUpperHex, char* outLowerHex) {
+#if defined(CEMU_CORE_AVAILABLE)
+    if (!outUpperHex || !outLowerHex)
+        return;
+    IOSDlcUpdateImport_GetMlcTitlePathComponents(titleId, outUpperHex, outLowerHex);
+#else
+    if (outUpperHex) outUpperHex[0] = '\0';
+    if (outLowerHex) outLowerHex[0] = '\0';
 #endif
 }
 
