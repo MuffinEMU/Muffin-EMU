@@ -290,7 +290,8 @@ MetalPipelineCompiler::~MetalPipelineCompiler()
 void MetalPipelineCompiler::InitFromState(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* geometryShader, const LatteDecompilerShader* pixelShader, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr)
 {
     m_usesGeometryShader = UseGeometryShader(lcr, geometryShader != nullptr);
-    if (m_usesGeometryShader && !m_mtlr->SupportsMeshShaders())
+    m_emulateGeometryShader = m_usesGeometryShader && !m_mtlr->SupportsMeshShaders() && m_mtlr->UseGeometryShaderEmulation();
+    if (m_usesGeometryShader && !m_mtlr->SupportsMeshShaders() && !m_emulateGeometryShader)
         return;
 
     // Rasterization
@@ -306,7 +307,9 @@ void MetalPipelineCompiler::InitFromState(const LatteFetchShader* fetchShader, c
         m_geometryShaderMtl = nullptr;
     m_pixelShaderMtl = static_cast<RendererShaderMtl*>(pixelShader->shader);
 
-    if (m_usesGeometryShader)
+    if (m_emulateGeometryShader)
+        InitFromStateGeometryEmulation(lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr);
+    else if (m_usesGeometryShader)
         InitFromStateMesh(fetchShader, lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr);
     else
         InitFromStateRender(fetchShader, vertexShader, lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr);
@@ -314,7 +317,7 @@ void MetalPipelineCompiler::InitFromState(const LatteFetchShader* fetchShader, c
 
 bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool showInOverlay)
 {
-    if (m_usesGeometryShader && !m_mtlr->SupportsMeshShaders())
+    if (m_usesGeometryShader && !m_mtlr->SupportsMeshShaders() && !m_emulateGeometryShader)
         return false;
 
     if (forceCompile)
@@ -343,7 +346,7 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
     NS::Error* error = nullptr;
 
     auto start = std::chrono::high_resolution_clock::now();
-    if (m_usesGeometryShader)
+    if (m_usesGeometryShader && !m_emulateGeometryShader)
     {
         auto desc = static_cast<MTL::MeshRenderPipelineDescriptor*>(m_pipelineDescriptor);
 
@@ -362,8 +365,23 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
     {
         auto desc = static_cast<MTL::RenderPipelineDescriptor*>(m_pipelineDescriptor);
 
-        // Shaders
-        desc->setVertexFunction(m_vertexShaderMtl->GetFunction());
+        // Shaders. When emulating a geometry shader the vertex stage has already run as
+        // compute; what is left to rasterize is whatever the geometry kernel wrote, and
+        // the passthrough entry point in that same shader's library is what reads it.
+        if (m_emulateGeometryShader)
+        {
+            MTL::Function* passthrough = m_geometryShaderMtl ? m_geometryShaderMtl->GetPassthroughFunction() : nullptr;
+            if (!passthrough)
+            {
+                cemuLog_logOnce(LogType::Force, "Metal: geometry-shader emulation is on but the shader has no passthrough entry point - dropping this pipeline");
+                return false;
+            }
+            desc->setVertexFunction(passthrough);
+        }
+        else
+        {
+            desc->setVertexFunction(m_vertexShaderMtl->GetFunction());
+        }
         if (m_rasterizationEnabled)
             desc->setFragmentFunction(m_pixelShaderMtl->GetFunction());
 
@@ -470,6 +488,16 @@ void MetalPipelineCompiler::InitFromStateRender(const LatteFetchShader* fetchSha
 
 	SetFragmentState(desc, lastUsedAttachmentsInfo, activeAttachmentsInfo, m_rasterizationEnabled, lcr);
 
+	m_pipelineDescriptor = desc;
+}
+
+void MetalPipelineCompiler::InitFromStateGeometryEmulation(const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr)
+{
+	// A perfectly ordinary render pipeline, and deliberately with no vertex descriptor:
+	// the passthrough vertex shader takes no stage_in at all, it indexes the buffer the
+	// geometry kernel filled using its own vertex_id.
+	MTL::RenderPipelineDescriptor* desc = MTL::RenderPipelineDescriptor::alloc()->init();
+	SetFragmentState(desc, lastUsedAttachmentsInfo, activeAttachmentsInfo, m_rasterizationEnabled, lcr);
 	m_pipelineDescriptor = desc;
 }
 

@@ -211,6 +211,7 @@ MetalRenderer::MetalRenderer()
     m_hasUnifiedMemory = m_device->hasUnifiedMemory();
     m_supportsMetal3 = m_device->supportsFamily(MTL::GPUFamilyMetal3);
     m_supportsMeshShaders = (m_supportsMetal3 && (m_vendor != GfxVendor::Intel || GetConfig().force_mesh_shaders.GetValue())); // Intel GPUs have issues with mesh shaders
+    m_emulateGeometryShader = !m_supportsMeshShaders && GeometryShaderEmulationEnabled();
     m_recommendedMaxVRAMUsage = m_device->recommendedMaxWorkingSetSize();
     m_pixelFormatSupport = MetalPixelFormatSupport(m_device);
 
@@ -224,7 +225,7 @@ MetalRenderer::MetalRenderer()
         m_isAppleGPU ? "yes" : "no",
         m_supportsMetal3 ? "yes" : "no",
         m_supportsMeshShaders ? "yes" : "no",
-        m_supportsMeshShaders ? "" : " - geometry-shader and RECTS draws are dropped on this GPU");
+        m_supportsMeshShaders ? "" : (m_emulateGeometryShader ? " - no mesh shaders, so geometry shaders are emulated with compute passes (RECTS draws are still dropped)" : " - geometry-shader and RECTS draws are dropped on this GPU"));
 
     CheckForPixelFormatSupport(m_pixelFormatSupport);
 
@@ -324,6 +325,12 @@ MetalRenderer::MetalRenderer()
 
 MetalRenderer::~MetalRenderer()
 {
+    if (m_emulateGeometryShader)
+    {
+        cemuLog_log(LogType::Force, "Metal: geometry-shader emulation drew {} draws that would otherwise have been dropped ({} skipped as too large)", m_gsEmulatedDraws, m_gsOversizedDraws);
+    }
+    ReleaseGeometryEmulationResources();
+
     if (m_isAppleGPU)
         delete m_copyBufferToBufferPipeline;
     //delete m_copyTextureToTexturePipeline;
@@ -1215,6 +1222,30 @@ void MetalRenderer::draw_beginSequence()
 		m_state.m_skipDrawSequence = true;
 }
 
+// Must match GS_MAX_VERTICES in the emitted shader source.
+static constexpr uint32 MTL_GS_MAX_VERTICES = 32;
+
+static uint32 MtlGsPrimitivesPerInvocation(uint32 gsOutPrimType)
+{
+    // The inverse of the emitter's GET_PRIMITIVE_COUNT, at the worst-case vertex count.
+    switch (gsOutPrimType)
+    {
+    case 1:  return MTL_GS_MAX_VERTICES - 1; // line strip
+    case 2:  return MTL_GS_MAX_VERTICES - 2; // triangle strip
+    default: return MTL_GS_MAX_VERTICES;     // points
+    }
+}
+
+static uint32 MtlGsVerticesPerOutPrimitive(uint32 gsOutPrimType)
+{
+    switch (gsOutPrimType)
+    {
+    case 1:  return 2;
+    case 2:  return 3;
+    default: return 1;
+    }
+}
+
 void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, bool isFirst)
 {
     if (m_state.m_skipDrawSequence)
@@ -1282,7 +1313,13 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     auto mtlPrimitiveType = GetMtlPrimitiveType(primitiveMode);
 
     bool usesGeometryShader = UseGeometryShader(LatteGPUState.contextNew, geometryShader != nullptr);
-    if (usesGeometryShader && !m_supportsMeshShaders)
+    // Only a real geometry shader is emulated. RECTS also needs the mesh path, but its
+    // stand-in shader is generated rather than decompiled, so it carries none of the
+    // layout information the emulation needs -- and the device log for this hardware
+    // recorded zero RECTS draws against nineteen thousand geometry-shader ones, so it is
+    // not where the missing geometry is.
+    const bool emulateGeometryShader = usesGeometryShader && !m_supportsMeshShaders && m_emulateGeometryShader && geometryShader != nullptr;
+    if (usesGeometryShader && !m_supportsMeshShaders && !emulateGeometryShader)
     {
         // This GPU has no mesh shaders, and the mesh pipeline is the only route this
         // backend has for a geometry shader or a RECTS primitive, so the draw cannot be
@@ -1340,6 +1377,105 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     	// synchronize vertex and uniform cache and update buffer bindings
     	// We need to call this before getting the render command encoder, since it can cause buffer copies
     	LatteBufferCache_Sync(indexMin + baseVertex, indexMax + baseVertex, baseInstance, instanceCount);
+	}
+
+	// Geometry-shader emulation runs its two stages here, before the render pass is
+	// opened, so that taking the render encoder afterwards is itself the ordering
+	// guarantee that the draw sees what these dispatches wrote.
+	uint32 gsDrawVertexCount = 0;
+	MTL::PrimitiveType gsOutMtlPrimitiveType = MTL::PrimitiveTypeTriangle;
+	if (emulateGeometryShader)
+	{
+		auto vertexShaderMtl = static_cast<RendererShaderMtl*>(vertexShader->shader);
+		auto geometryShaderMtl = static_cast<RendererShaderMtl*>(geometryShader->shader);
+		if (!vertexShaderMtl->IsCompiled())
+			vertexShaderMtl->PreponeCompilation(true);
+		if (!geometryShaderMtl->IsCompiled())
+			geometryShaderMtl->PreponeCompilation(true);
+
+		// Exactly the primitive count the mesh path would have used as its threadgroup
+		// count, because the emulated stages are dispatched on the same footing.
+		const uint32 verticesPerPrimitive = GetVerticesPerPrimitive(primitiveMode);
+		uint32 primitiveCount = count * instanceCount;
+		if (PrimitiveRequiresConnection(primitiveMode))
+			primitiveCount = (primitiveCount >= verticesPerPrimitive) ? (primitiveCount - (verticesPerPrimitive - 1)) : 0;
+		else
+			primitiveCount /= verticesPerPrimitive;
+
+		const uint32 gsOutPrimType = LatteGPUState.contextRegister[mmVGT_GS_OUT_PRIM_TYPE];
+		const uint32 primsPerInvocation = MtlGsPrimitivesPerInvocation(gsOutPrimType);
+		const uint32 verticesPerOutPrimitive = MtlGsVerticesPerOutPrimitive(gsOutPrimType);
+		gsOutMtlPrimitiveType = (gsOutPrimType == 1) ? MTL::PrimitiveTypeLine : ((gsOutPrimType == 2) ? MTL::PrimitiveTypeTriangle : MTL::PrimitiveTypePoint);
+
+		const uint32 payloadStride = vertexShader->mtlGsPayloadStride;
+		const uint32 gsVertexStride = geometryShader->mtlGsVertexStride;
+
+		MTL::ComputePipelineState* vertexPipeline = GetGeometryEmulationComputePipeline(vertexShaderMtl->GetFunction());
+		MTL::ComputePipelineState* geometryPipeline = GetGeometryEmulationComputePipeline(geometryShaderMtl->GetFunction());
+
+		const size_t payloadBytes = (size_t)primitiveCount * payloadStride;
+		const size_t outBytes = (size_t)primitiveCount * MTL_GS_MAX_VERTICES * gsVertexStride;
+		const size_t primCountBytes = (size_t)primitiveCount * sizeof(uint32);
+
+		if (primitiveCount == 0 || !payloadStride || !gsVertexStride || !vertexPipeline || !geometryPipeline)
+		{
+			// Nothing to draw, or the shader could not be built. Either way this draw
+			// contributes nothing and the render pass below has no work to do for it.
+			LatteStreamout_PrepareDrawcall(count, instanceCount);
+			LatteStreamout_FinishDrawcall(m_memoryManager->UseHostMemoryForCache());
+			return;
+		}
+		if (!EnsureGeometryEmulationBuffers(payloadBytes, outBytes, primCountBytes))
+		{
+			m_gsOversizedDraws++;
+			cemuLog_logOnce(LogType::Force, "Metal: a geometry-shader draw needed more scratch memory than emulation will allocate, so it is being skipped. Geometry from draws this large will be missing.");
+			LatteStreamout_PrepareDrawcall(count, instanceCount);
+			LatteStreamout_FinishDrawcall(m_memoryManager->UseHostMemoryForCache());
+			return;
+		}
+
+		// The support buffer carries this to the vertex kernel, and BindStageResources
+		// reads it out of here, so it has to be set before the binds rather than at the
+		// point further down where the non-emulated path sets it.
+		m_state.m_streamoutState.verticesPerInstance = count;
+		LatteStreamout_PrepareDrawcall(count, instanceCount);
+
+		MTL::ComputeCommandEncoder* computeCommandEncoder = GetComputeCommandEncoder();
+
+		// Stage 1: the vertex shader, one thread per vertex of every primitive.
+		computeCommandEncoder->setComputePipelineState(vertexPipeline);
+		BindStageResources(computeCommandEncoder, vertexShader, usesGeometryShader);
+		for (uint8 i = 0; i < MAX_MTL_VERTEX_BUFFERS; i++)
+		{
+			size_t offset = m_state.m_vertexBufferOffsets[i];
+			if (offset != INVALID_OFFSET)
+				computeCommandEncoder->setBuffer(m_memoryManager->GetBufferCache(), offset, GET_MTL_VERTEX_BUFFER_INDEX(i));
+		}
+		if (hostIndexType != INDEX_TYPE::NONE)
+			computeCommandEncoder->setBuffer(indexAllocationMtl->mtlBuffer, indexAllocationMtl->bufferOffset, vertexShader->resourceMapping.indexBufferBinding);
+		uint8 hostIndexTypeU8 = (uint8)hostIndexType;
+		computeCommandEncoder->setBytes(&hostIndexTypeU8, sizeof(hostIndexTypeU8), vertexShader->resourceMapping.indexTypeBinding);
+		computeCommandEncoder->setBuffer(m_gsPayloadBuffer, 0, vertexShader->resourceMapping.gsPayloadBinding);
+		// Non-uniform threadgroup sizes are supported on every GPU that can run this
+		// backend, so the dispatch is sized exactly and the kernels need no bounds check.
+		computeCommandEncoder->dispatchThreads(MTL::Size(primitiveCount * verticesPerPrimitive, 1, 1), MTL::Size(std::min<uint32>(verticesPerPrimitive * 32u, 256u), 1, 1));
+
+		// Stage 2: the geometry shader, one thread per primitive. Same encoder, so Metal
+		// orders it after stage 1 with no barrier of ours.
+		computeCommandEncoder->setComputePipelineState(geometryPipeline);
+		BindStageResources(computeCommandEncoder, geometryShader, usesGeometryShader);
+		computeCommandEncoder->setBuffer(m_gsPayloadBuffer, 0, geometryShader->resourceMapping.gsPayloadBinding);
+		computeCommandEncoder->setBuffer(m_gsOutBuffer, 0, geometryShader->resourceMapping.gsOutBinding);
+		computeCommandEncoder->setBuffer(m_gsPrimCountBuffer, 0, geometryShader->resourceMapping.gsPrimCountBinding);
+		computeCommandEncoder->dispatchThreads(MTL::Size(primitiveCount, 1, 1), MTL::Size(std::min<uint32>(primitiveCount, 256u), 1, 1));
+
+		// Stage 3 is sized for the worst case, because how many vertices each invocation
+		// actually emitted is only known on the GPU. The passthrough shader clips the
+		// slots that were never filled.
+		gsDrawVertexCount = primitiveCount * primsPerInvocation * verticesPerOutPrimitive;
+
+		m_gsEmulatedDraws++;
+		cemuLog_logOnce(LogType::Force, "Metal: emulating geometry shaders with compute passes - this GPU has no mesh shaders. Draws that used to be dropped are now being drawn.");
 	}
 
 	// Render pass
@@ -1538,29 +1674,54 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 
 	// Resources
 
-	// Vertex buffers
-    for (uint8 i = 0; i < MAX_MTL_VERTEX_BUFFERS; i++)
-    {
-        size_t offset = m_state.m_vertexBufferOffsets[i];
-        if (offset != INVALID_OFFSET)
+	// Vertex buffers. Skipped when emulating: the vertex stage already ran as compute and
+	// read these there, and the passthrough shader that runs here has no vertex inputs at
+	// all -- it reads the geometry stage's output buffer by vertex id.
+	if (!emulateGeometryShader)
+	{
+        for (uint8 i = 0; i < MAX_MTL_VERTEX_BUFFERS; i++)
         {
-            // Bind
-            SetBuffer(renderCommandEncoder, GetMtlShaderType(vertexShader->shaderType, usesGeometryShader), m_memoryManager->GetBufferCache(), offset, GET_MTL_VERTEX_BUFFER_INDEX(i));
+            size_t offset = m_state.m_vertexBufferOffsets[i];
+            if (offset != INVALID_OFFSET)
+            {
+                // Bind
+                SetBuffer(renderCommandEncoder, GetMtlShaderType(vertexShader->shaderType, usesGeometryShader), m_memoryManager->GetBufferCache(), offset, GET_MTL_VERTEX_BUFFER_INDEX(i));
+            }
         }
-    }
+	}
 
-	// Prepare streamout
-	m_state.m_streamoutState.verticesPerInstance = count;
-	LatteStreamout_PrepareDrawcall(count, instanceCount);
+	// Prepare streamout. Already done above on the emulated path, which had to have it in
+	// place before the compute binds could read it.
+	if (!emulateGeometryShader)
+	{
+    	m_state.m_streamoutState.verticesPerInstance = count;
+    	LatteStreamout_PrepareDrawcall(count, instanceCount);
+	}
 
 	// Uniform buffers, textures and samplers
-	BindStageResources(renderCommandEncoder, vertexShader, usesGeometryShader);
-	if (usesGeometryShader && geometryShader)
-	    BindStageResources(renderCommandEncoder, geometryShader, usesGeometryShader);
-	BindStageResources(renderCommandEncoder, pixelShader, usesGeometryShader);
+	if (emulateGeometryShader)
+	{
+		// Only the fragment stage is a real shader here. The passthrough vertex shader's
+		// two buffers are its own, at fixed indices, because it is a separate entry point
+		// with its own binding namespace rather than anything the decompiler assigned.
+		SetBuffer(renderCommandEncoder, METAL_SHADER_TYPE_VERTEX, m_gsOutBuffer, 0, 0);
+		SetBuffer(renderCommandEncoder, METAL_SHADER_TYPE_VERTEX, m_gsPrimCountBuffer, 0, 1);
+		BindStageResources(renderCommandEncoder, pixelShader, false);
+	}
+	else
+	{
+    	BindStageResources(renderCommandEncoder, vertexShader, usesGeometryShader);
+    	if (usesGeometryShader && geometryShader)
+    	    BindStageResources(renderCommandEncoder, geometryShader, usesGeometryShader);
+    	BindStageResources(renderCommandEncoder, pixelShader, usesGeometryShader);
+	}
 
 	// Draw
-	if (usesGeometryShader)
+	if (emulateGeometryShader)
+	{
+		renderCommandEncoder->drawPrimitives(gsOutMtlPrimitiveType, (NS::UInteger)0, (NS::UInteger)gsDrawVertexCount);
+	}
+	else if (usesGeometryShader)
 	{
 	    if (hostIndexType != INDEX_TYPE::NONE)
 		    SetBuffer(renderCommandEncoder, METAL_SHADER_TYPE_OBJECT, indexAllocationMtl->mtlBuffer, indexAllocationMtl->bufferOffset, vertexShader->resourceMapping.indexBufferBinding);
@@ -2218,7 +2379,131 @@ bool MetalRenderer::CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader)
 }
 */
 
-void MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader)
+
+// --- Geometry-shader emulation -------------------------------------------------------
+//
+// A12-class GPUs have no mesh shaders, and the mesh pipeline is this backend's only route
+// for a geometry shader, so those draws were simply thrown away. The same work is rebuilt
+// here out of pieces the hardware does have:
+//
+//   1. the vertex stage runs as a compute kernel, writing what the object stage used to
+//      put in a threadgroup payload into a device buffer instead;
+//   2. the geometry stage runs as a second compute kernel, reading that buffer and writing
+//      its expanded vertices plus a per-invocation primitive count;
+//   3. a passthrough vertex shader draws those vertices, discarding the slots the geometry
+//      stage did not fill by pushing them outside the clip volume.
+//
+// The two dispatches share one compute encoder, and Metal orders dispatches within an
+// encoder, so step 2 sees step 1's writes with no barrier of our own. Step 3 is on a
+// different encoder again, which orders it after both. Keeping everything in one render
+// encoder with a memory barrier would be faster and avoid the encoder switch, but a
+// barrier that turned out not to be honoured here would show up as flickering geometry
+// rather than as an error, and that is not a failure worth risking for the speed.
+
+
+static std::atomic<bool> s_geometryShaderEmulationEnabled{false};
+
+void MetalRenderer::SetGeometryShaderEmulationEnabled(bool enabled)
+{
+    s_geometryShaderEmulationEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+bool MetalRenderer::GeometryShaderEmulationEnabled()
+{
+    return s_geometryShaderEmulationEnabled.load(std::memory_order_relaxed);
+}
+
+MTL::ComputePipelineState* MetalRenderer::GetGeometryEmulationComputePipeline(MTL::Function* function)
+{
+    if (!function)
+        return nullptr;
+    auto it = m_gsComputePipelines.find(function);
+    if (it != m_gsComputePipelines.end())
+        return it->second;
+
+    NS::Error* error = nullptr;
+    MTL::ComputePipelineState* pipeline = m_device->newComputePipelineState(function, &error);
+    if (!pipeline)
+    {
+        cemuLog_log(LogType::Force, "Metal: failed to build a compute pipeline for geometry-shader emulation: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
+        if (error)
+            error->release();
+        // Cached as null on purpose: a shader that failed to build will fail identically
+        // every frame, and logging it thousands of times helps nobody.
+        m_gsComputePipelines[function] = nullptr;
+        return nullptr;
+    }
+    m_gsComputePipelines[function] = pipeline;
+    return pipeline;
+}
+
+bool MetalRenderer::EnsureGeometryEmulationBuffers(size_t payloadBytes, size_t outBytes, size_t primCountBytes)
+{
+    // A draw wide enough to need more than this is not one we can serve, and quietly
+    // allocating hundreds of megabytes on a 6 GB device to try would be worse than
+    // skipping it.
+    constexpr size_t MAX_TOTAL = 96ull * 1024ull * 1024ull;
+    if (payloadBytes + outBytes + primCountBytes > MAX_TOTAL)
+        return false;
+
+    auto grow = [&](MTL::Buffer*& buffer, size_t& currentSize, size_t needed, const char* label) -> bool
+    {
+        if (buffer && currentSize >= needed)
+            return true;
+        if (buffer)
+            buffer->release();
+        // Round up so a slowly growing draw does not reallocate every frame.
+        size_t allocSize = std::max<size_t>(needed, 64u * 1024u);
+        allocSize = (allocSize + 0xFFFFull) & ~0xFFFFull;
+        buffer = m_device->newBuffer(allocSize, MTL::ResourceStorageModePrivate);
+        if (!buffer)
+        {
+            currentSize = 0;
+            cemuLog_logOnce(LogType::Force, "Metal: could not allocate the {} buffer for geometry-shader emulation", label);
+            return false;
+        }
+        currentSize = allocSize;
+        return true;
+    };
+
+    return grow(m_gsPayloadBuffer, m_gsPayloadBufferSize, payloadBytes, "payload")
+        && grow(m_gsOutBuffer, m_gsOutBufferSize, outBytes, "vertex output")
+        && grow(m_gsPrimCountBuffer, m_gsPrimCountBufferSize, primCountBytes, "primitive count");
+}
+
+void MetalRenderer::ReleaseGeometryEmulationResources()
+{
+    for (auto& [function, pipeline] : m_gsComputePipelines)
+    {
+        if (pipeline)
+            pipeline->release();
+    }
+    m_gsComputePipelines.clear();
+    if (m_gsPayloadBuffer) { m_gsPayloadBuffer->release(); m_gsPayloadBuffer = nullptr; m_gsPayloadBufferSize = 0; }
+    if (m_gsOutBuffer) { m_gsOutBuffer->release(); m_gsOutBuffer = nullptr; m_gsOutBufferSize = 0; }
+    if (m_gsPrimCountBuffer) { m_gsPrimCountBuffer->release(); m_gsPrimCountBuffer = nullptr; m_gsPrimCountBufferSize = 0; }
+}
+
+void MetalRenderer::SetBuffer(MTL::ComputeCommandEncoder* computeCommandEncoder, MetalShaderType shaderType, MTL::Buffer* buffer, size_t offset, uint32 index)
+{
+    (void)shaderType;
+    computeCommandEncoder->setBuffer(buffer, offset, index);
+}
+
+void MetalRenderer::SetTexture(MTL::ComputeCommandEncoder* computeCommandEncoder, MetalShaderType shaderType, MTL::Texture* texture, uint32 index)
+{
+    (void)shaderType;
+    computeCommandEncoder->setTexture(texture, index);
+}
+
+void MetalRenderer::SetSamplerState(MTL::ComputeCommandEncoder* computeCommandEncoder, MetalShaderType shaderType, MTL::SamplerState* samplerState, uint32 index)
+{
+    (void)shaderType;
+    computeCommandEncoder->setSamplerState(samplerState, index);
+}
+
+template<typename EncoderT>
+void MetalRenderer::BindStageResources(EncoderT* encoder, LatteDecompilerShader* shader, bool usesGeometryShader)
 {
     auto mtlShaderType = GetMtlShaderType(shader->shaderType, usesGeometryShader);
 
@@ -2264,21 +2549,21 @@ void MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
 		if (!textureView)
 		{
             if (textureDim == Latte::E_DIM::DIM_1D)
-                SetTexture(renderCommandEncoder, mtlShaderType, m_nullTexture1D, binding);
+                SetTexture(encoder, mtlShaderType, m_nullTexture1D, binding);
            	else
-                SetTexture(renderCommandEncoder, mtlShaderType, m_nullTexture2D, binding);
-            SetSamplerState(renderCommandEncoder, mtlShaderType, m_nearestSampler, binding);
+                SetTexture(encoder, mtlShaderType, m_nullTexture2D, binding);
+            SetSamplerState(encoder, mtlShaderType, m_nearestSampler, binding);
             continue;
 		}
 
 		if (textureDim == Latte::E_DIM::DIM_1D && (textureView->dim != Latte::E_DIM::DIM_1D))
 		{
-		    SetTexture(renderCommandEncoder, mtlShaderType, m_nullTexture1D, binding);
+		    SetTexture(encoder, mtlShaderType, m_nullTexture1D, binding);
 			continue;
 		}
 		else if (textureDim == Latte::E_DIM::DIM_2D && (textureView->dim != Latte::E_DIM::DIM_2D && textureView->dim != Latte::E_DIM::DIM_2D_MSAA))
 		{
-		    SetTexture(renderCommandEncoder, mtlShaderType, m_nullTexture2D, binding);
+		    SetTexture(encoder, mtlShaderType, m_nullTexture2D, binding);
 			continue;
 		}
 
@@ -2309,13 +2594,13 @@ void MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
 		{
 		    sampler = m_nearestSampler;
 		}
-        SetSamplerState(renderCommandEncoder, mtlShaderType, sampler, binding);
+        SetSamplerState(encoder, mtlShaderType, sampler, binding);
 
 		// get texture register word 0
 		uint32 word4 = LatteGPUState.contextRegister[texUnitRegIndex + 4];
 		auto& boundTexture = m_state.m_encoderState.m_textures[mtlShaderType][binding];
 		MTL::Texture* mtlTexture = textureView->GetSwizzledView(word4);
-		SetTexture(renderCommandEncoder, mtlShaderType, mtlTexture, binding);
+		SetTexture(encoder, mtlShaderType, mtlTexture, binding);
 	}
 
 	// Support buffer
@@ -2405,7 +2690,7 @@ void MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
 		memcpy(allocation.memPtr, supportBufferData, size);
 		bufferAllocator.FlushReservation(allocation);
 
-		SetBuffer(renderCommandEncoder, mtlShaderType, allocation.mtlBuffer, allocation.bufferOffset, shader->resourceMapping.uniformVarsBufferBindingPoint);
+		SetBuffer(encoder, mtlShaderType, allocation.mtlBuffer, allocation.bufferOffset, shader->resourceMapping.uniformVarsBufferBindingPoint);
 	}
 
 	// Uniform buffers
@@ -2424,16 +2709,19 @@ void MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
     		if (offset == INVALID_OFFSET)
                 continue;
 
-            SetBuffer(renderCommandEncoder, mtlShaderType, m_memoryManager->GetBufferCache(), offset, binding);
+            SetBuffer(encoder, mtlShaderType, m_memoryManager->GetBufferCache(), offset, binding);
 		}
 	}
 
 	// Storage buffer
 	if (shader->resourceMapping.tfStorageBindingPoint >= 0)
 	{
-        SetBuffer(renderCommandEncoder, mtlShaderType, m_xfbRingBuffer, 0, shader->resourceMapping.tfStorageBindingPoint);
+        SetBuffer(encoder, mtlShaderType, m_xfbRingBuffer, 0, shader->resourceMapping.tfStorageBindingPoint);
 	}
 }
+
+template void MetalRenderer::BindStageResources<MTL::RenderCommandEncoder>(MTL::RenderCommandEncoder*, LatteDecompilerShader*, bool);
+template void MetalRenderer::BindStageResources<MTL::ComputeCommandEncoder>(MTL::ComputeCommandEncoder*, LatteDecompilerShader*, bool);
 
 void MetalRenderer::ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a)
 {

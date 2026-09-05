@@ -676,6 +676,12 @@ class GameManager: ObservableObject {
             cemu_bridge_set_vsync_enabled(
                 UserDefaults.standard.object(forKey: "muffin.render.vsync") as? Bool ?? true)
 
+            // Same reason, and more strictly: this one is read when the renderer starts
+            // and is then baked into every shader the session generates, so setting it
+            // after boot would produce a pipeline built from two incompatible dialects.
+            cemu_bridge_set_geometry_shader_emulation_enabled(
+                UserDefaults.standard.object(forKey: "muffin.geometryShaderEmulation") as? Bool ?? false)
+
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)
             cemu_bridge_log_checkpoint("launchGame: engine.boot() returned [background]")

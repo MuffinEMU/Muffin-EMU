@@ -90,6 +90,10 @@ public:
 
 	GfxVendor GetVendor() const { return m_vendor; }
 	virtual bool UseTFViaSSBO() const { return false; }
+	// True when the backend cannot run a geometry shader natively and instead rebuilds it
+	// out of compute passes. Changes the generated shader source, so anything that caches
+	// compiled output has to include it in its key.
+	virtual bool UseGeometryShaderEmulation() const { return false; }
 	virtual void AppendOverlayDebugInfo() = 0;
 
 	// rendertarget

@@ -67,6 +67,13 @@ struct LatteDecompilerShaderResourceMapping
 	sint8 verticesPerInstanceBinding{-1};
 	sint8 indexBufferBinding{-1};
 	sint8 indexTypeBinding{-1};
+	// Geometry-shader emulation (no mesh shaders). The object payload becomes a device
+	// buffer the vertex kernel writes and the geometry kernel reads; the geometry kernel
+	// writes its expanded vertices and a per-invocation primitive count for the
+	// passthrough vertex shader to read back.
+	sint8 gsPayloadBinding{-1};
+	sint8 gsOutBinding{-1};
+	sint8 gsPrimCountBinding{-1};
 
 	sint32 getTextureCount()
 	{
@@ -192,6 +199,12 @@ struct LatteDecompilerShader
 	// analyzer stage (geometry shader parameters/inputs)
 	uint32 ringParameterCount{ 0 };
 	uint32 ringParameterCountFromPrevStage{ 0 }; // used in geometry shader to hold VS ringParameterCount
+	// Geometry-shader emulation (Metal without mesh shaders): byte strides of the two
+	// device buffers the emulated stages hand to each other. The emitter records them
+	// because it is the only place that knows the layout of the structs it just generated
+	// -- the renderer would otherwise have to re-derive it and could silently disagree.
+	uint32 mtlGsPayloadStride{ 0 };
+	uint32 mtlGsVertexStride{ 0 };
 	// analyzer stage (misc)
 	std::bitset<LATTE_NUM_STREAMOUT_BUFFER> streamoutBufferWriteMask;
 	bool hasStreamoutBufferWrite{ false };
@@ -265,6 +278,10 @@ struct LatteDecompilerOutputUniformOffsets
 struct LatteDecompilerOptions
 {
 	bool usesGeometryShader{ false };
+	// Metal only: usesGeometryShader is true but the GPU has no mesh shaders, so the
+	// vertex and geometry stages are emitted as compute kernels writing to buffers
+	// instead of as an object/mesh pipeline.
+	bool geometryShaderEmulation{ false };
 	// floating point math
 	bool strictMul{}; // if true, 0*anything=0 rule is emulated
 	// Vulkan-specific

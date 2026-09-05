@@ -3769,7 +3769,17 @@ void LatteDecompiler_emitClauseCodeMSL(LatteDecompilerShaderContext* shaderConte
 		// write point size
 		if (shaderContext->analyzer.outputPointSize && shaderContext->analyzer.writesPointSize == false)
 			src->add("out.pointSize = supportBuffer.pointSize;" _CRLF);
-		src->add("mesh.set_vertex(vertexIndex, out);" _CRLF);
+		if (shaderContext->options->geometryShaderEmulation)
+		{
+			// Guarded, unlike the mesh path's set_vertex. Overrunning a mesh output is
+			// undefined behaviour inside the mesh API; overrunning a device buffer
+			// corrupts whatever the allocator put next to it.
+			src->add("if (vertexIndex < GS_MAX_VERTICES) gsOut[gid * GS_MAX_VERTICES + vertexIndex] = out;" _CRLF);
+		}
+		else
+		{
+			src->add("mesh.set_vertex(vertexIndex, out);" _CRLF);
+		}
 		src->add("vertexIndex++;" _CRLF);
 		// increment transform feedback pointer
 		for (sint32 i = 0; i < LATTE_NUM_STREAMOUT_BUFFER; i++)
@@ -4177,7 +4187,12 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 			src->add(inputFetchDefinition.c_str());
 		}
 
-		if (usesGeometryShader)
+		if (usesGeometryShader && shaderContext->options->geometryShaderEmulation)
+		{
+			functionType = "kernel";
+			outputTypeName = "void";
+		}
+		else if (usesGeometryShader)
 		{
 			functionType = "[[object, max_total_threads_per_threadgroup(VERTICES_PER_VERTEX_PRIMITIVE), max_total_threadgroups_per_mesh_grid(1)]]";
 			outputTypeName = "void";
@@ -4192,7 +4207,7 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 		}
 		break;
 	case LatteConst::ShaderType::Geometry:
-        functionType = "[[mesh, max_total_threads_per_threadgroup(1)]]";
+        functionType = shaderContext->options->geometryShaderEmulation ? "kernel" : "[[mesh, max_total_threads_per_threadgroup(1)]]";
         outputTypeName = "void";
         break;
 	case LatteConst::ShaderType::Pixel:
@@ -4210,6 +4225,14 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 		{
             if (usesGeometryShader)
             {
+                if (shaderContext->options->geometryShaderEmulation)
+                {
+                    // Recover the object stage's threadgroup/thread split from the flat
+                    // compute thread id. The dispatch is sized exactly, so there is no
+                    // out-of-range thread to guard against.
+                    src->add("uint tig = gid / VERTICES_PER_VERTEX_PRIMITIVE;" _CRLF);
+                    src->add("uint tid = gid % VERTICES_PER_VERTEX_PRIMITIVE;" _CRLF);
+                }
            	    // Calculate the imaginary vertex id
                 LattePrimitiveMode vsOutPrimType = shaderContext->contextRegistersNew->VGT_PRIMITIVE_TYPE.get_PRIMITIVE_MODE();
                 if (PrimitiveRequiresConnection(vsOutPrimType))
@@ -4223,15 +4246,21 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
           		src->add("VertexIn in = fetchVertex(vid, iid, indexBuffer, indexType VERTEX_BUFFERS);" _CRLF);
 
           		// Output is defined as object payload
-          		src->add("object_data VertexOut& out = objectPayload.vertexOut[tid];" _CRLF);
-                // Publish which primitive this threadgroup is, for the mesh stage's
-                // streamout base. Only on the real geometry-shader path: the RECTS
-                // emulation declares its own ObjectPayload without this field, and its
-                // generated geometry shader never reads it.
+                if (shaderContext->options->geometryShaderEmulation)
+                    src->add("device VertexOut& out = gsPayload[tig].vertexOut[tid];" _CRLF);
+                else
+              		src->add("object_data VertexOut& out = objectPayload.vertexOut[tid];" _CRLF);
+                // Publish which primitive this threadgroup is, for the geometry stage's
+                // streamout base - Metal has no primitive-id builtin to read it from.
+                //
+                // Not on the RECTS path: that declares its own ObjectPayload without the
+                // field, and its generated geometry shader never reads it.
                 //
                 // One writer only - every thread in this threadgroup has the same tig, so
                 // letting all of them store it is a pointless write race on payload memory.
-                if (!isRectVertexShader)
+                if (shaderContext->options->geometryShaderEmulation)
+                    src->add("if (tid == 0) gsPayload[tig].primitiveId = tig;" _CRLF);
+                else if (!isRectVertexShader)
                     src->add("if (tid == 0) objectPayload.primitiveId = tig;" _CRLF);
             }
             else
@@ -4242,6 +4271,10 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 		}
 		else if (shader->shaderType == LatteConst::ShaderType::Geometry)
 		{
+            // Named so that every objectPayload.* reference the body emits is identical to
+            // the mesh path's; only where it lives differs.
+            if (shaderContext->options->geometryShaderEmulation)
+                src->add("const device ObjectPayload& objectPayload = gsPayloadIn[gid];" _CRLF);
 		    src->add("GeometryOut out;" _CRLF);
 			// The index of the current vertex that is being emitted
 			src->add("uint vertexIndex = 0;" _CRLF);
@@ -4489,10 +4522,22 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 	{
     	if (shader->shaderType == LatteConst::ShaderType::Vertex)
     	{
-    	    src->add("if (tid == 0) {" _CRLF);
-            src->add("meshGridProperties.set_threadgroups_per_grid(uint3(1, 1, 1));" _CRLF);
-    		src->add("}" _CRLF);
+            // Nothing to do when emulating: the geometry stage is a separate dispatch
+            // sized on the host, not a mesh grid this stage has to launch.
+            if (!shaderContext->options->geometryShaderEmulation)
+            {
+        	    src->add("if (tid == 0) {" _CRLF);
+                src->add("meshGridProperties.set_threadgroups_per_grid(uint3(1, 1, 1));" _CRLF);
+        		src->add("}" _CRLF);
+            }
     	}
+        else if (shader->shaderType == LatteConst::ShaderType::Geometry && shaderContext->options->geometryShaderEmulation)
+        {
+            // GET_PRIMITIVE_COUNT subtracts 1 or 2 for strip topologies, so a shader that
+            // emitted fewer vertices than one primitive needs would wrap to a huge unsigned
+            // count and the passthrough stage would read far past the buffer.
+            src->add("gsPrimCount[gid] = (vertexIndex < VERTICES_PER_OUT_PRIMITIVE) ? 0u : (uint)GET_PRIMITIVE_COUNT(vertexIndex);" _CRLF);
+        }
         else if (shader->shaderType == LatteConst::ShaderType::Geometry)
         {
             src->add("mesh.set_primitive_count(GET_PRIMITIVE_COUNT(vertexIndex));" _CRLF);
@@ -4527,6 +4572,35 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 
 	// end of shader main
 	src->add("}" _CRLF);
+
+	// The geometry stage above only fills buffers -- nothing has been rasterized yet. This
+	// second entry point is what actually draws: one vertex per slot of the worst-case
+	// expansion, reading back what the geometry kernel wrote. It lives in the same library
+	// as main0 because it has to agree with GeometryOut exactly, and that struct is
+	// generated per shader.
+	//
+	// The index arithmetic is deliberately the same mapping the mesh path builds with
+	// set_index(): strip vertex (localPrimitive + vertexInPrimitive). Matching it, rather
+	// than improving on it, is what makes this produce the same image a Metal 3 device does.
+	if (shader->shaderType == LatteConst::ShaderType::Geometry && shaderContext->options->geometryShaderEmulation)
+	{
+		src->add(_CRLF);
+		src->add("vertex GeometryOutRaster gsPassthroughVS(uint vid [[vertex_id]], const device GeometryOut* gsOut [[buffer(0)]], const device uint* gsPrimCount [[buffer(1)]]) {" _CRLF);
+		src->add("uint prim = vid / VERTICES_PER_OUT_PRIMITIVE;" _CRLF);
+		src->add("uint vtx = vid % VERTICES_PER_OUT_PRIMITIVE;" _CRLF);
+		src->add("uint inv = prim / MAX_PRIMS_PER_INVOCATION;" _CRLF);
+		src->add("uint lp = prim % MAX_PRIMS_PER_INVOCATION;" _CRLF);
+		src->add("GeometryOut o = gsOut[inv * GS_MAX_VERTICES + min(lp + vtx, (uint)(GS_MAX_VERTICES - 1u))];" _CRLF);
+		// Slots the geometry kernel never filled still get drawn -- the draw is sized for
+		// the worst case because the real count only exists on the GPU. Putting the vertex
+		// outside the clip volume makes the whole primitive get clipped away, which is
+		// well defined for points, lines and triangles alike; a zero-area triangle would
+		// not be, and would still light up a pixel as a line or a point.
+		src->add("if (lp >= gsPrimCount[inv]) o.position = float4(2.0, 2.0, 2.0, 1.0);" _CRLF);
+		src->add("return gsToRaster(o);" _CRLF);
+		src->add("}" _CRLF);
+	}
+
 	src->shrink_to_fit();
 	shader->strBuf_shaderSource = src;
 }
