@@ -224,6 +224,13 @@ public:
 	void DeleteFontTextures() override;
 
 	bool UseTFViaSSBO() const override { return true; }
+	bool UseGeometryShaderEmulation() const override { return m_emulateGeometryShader; }
+
+	// Set before a title starts. It is baked into every shader generated afterwards, so
+	// it is read once at renderer init and never re-read while a title is running --
+	// flipping it mid-session would leave two incompatible shader dialects in one pipeline.
+	static void SetGeometryShaderEmulationEnabled(bool enabled);
+	static bool GeometryShaderEmulationEnabled();
 	void AppendOverlayDebugInfo() override;
 
 	// rendertarget
@@ -360,7 +367,18 @@ public:
         return m_state.m_encoderState;
     }
 
+    MTL::ComputePipelineState* GetGeometryEmulationComputePipeline(MTL::Function* function);
+    bool EnsureGeometryEmulationBuffers(size_t payloadBytes, size_t outBytes, size_t primCountBytes);
+    void ReleaseGeometryEmulationResources();
+
     void SetBuffer(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::Buffer* buffer, size_t offset, uint32 index);
+    // Compute counterparts, so BindStageResources can be one template instead of two
+    // copies. They bind unconditionally rather than consulting encoderState: the compute
+    // encoder is created fresh for each emulated draw, so a cache of what the *previous*
+    // encoder held would only ever be wrong.
+    void SetBuffer(MTL::ComputeCommandEncoder* computeCommandEncoder, MetalShaderType shaderType, MTL::Buffer* buffer, size_t offset, uint32 index);
+    void SetTexture(MTL::ComputeCommandEncoder* computeCommandEncoder, MetalShaderType shaderType, MTL::Texture* texture, uint32 index);
+    void SetSamplerState(MTL::ComputeCommandEncoder* computeCommandEncoder, MetalShaderType shaderType, MTL::SamplerState* samplerState, uint32 index);
     void SetTexture(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::Texture* texture, uint32 index);
     void SetSamplerState(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::SamplerState* samplerState, uint32 index);
 
@@ -380,7 +398,8 @@ public:
     void ResolvePositionInvariance();
 
     //bool CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader);
-    void BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader);
+    template<typename EncoderT>
+    void BindStageResources(EncoderT* encoder, LatteDecompilerShader* shader, bool usesGeometryShader);
 
     void ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a);
 
@@ -521,8 +540,24 @@ private:
 	bool m_hasUnifiedMemory;
 	bool m_supportsMetal3;
 	bool m_supportsMeshShaders;
-	// Draws this GPU cannot issue, split by cause. Kept because the alternative - a bare
-	// return - made a whole class of visual bug arrive with nothing in the log.
+	// Rebuild a geometry shader out of compute passes because there is no mesh pipeline
+	// to run it through. Read once at init: it is baked into every shader this session
+	// generates, so it cannot change while a title is running.
+	bool m_emulateGeometryShader = false;
+	MTL::Buffer* m_gsPayloadBuffer = nullptr;
+	MTL::Buffer* m_gsOutBuffer = nullptr;
+	MTL::Buffer* m_gsPrimCountBuffer = nullptr;
+	size_t m_gsPayloadBufferSize = 0;
+	size_t m_gsOutBufferSize = 0;
+	size_t m_gsPrimCountBufferSize = 0;
+	std::map<MTL::Function*, MTL::ComputePipelineState*> m_gsComputePipelines;
+	uint64 m_gsEmulatedDraws = 0;
+	uint64 m_gsOversizedDraws = 0;
+
+	// Draws this GPU cannot issue, split by cause. Kept alongside the emulation above
+	// rather than replaced by it: emulation handles real geometry shaders, so anything
+	// still landing here is a case emulation declined (RECTS, or a draw too large for
+	// the scratch buffers), and that needs to stay visible rather than silent.
 	uint64 m_droppedDrawsGeometryShader = 0;
 	uint64 m_droppedDrawsRects = 0;
 	uint64 m_droppedDrawsLastReported = 0;

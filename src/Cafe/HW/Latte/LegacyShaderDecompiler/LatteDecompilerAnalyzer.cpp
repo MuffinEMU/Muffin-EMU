@@ -1121,4 +1121,16 @@ void LatteDecompiler_analyze(LatteDecompilerShaderContext* shaderContext, LatteD
 	shaderContext->output->resourceMappingMTL.verticesPerInstanceBinding = shaderContext->currentBufferBindingPointMTL++;
 	shaderContext->output->resourceMappingMTL.indexBufferBinding = shaderContext->currentBufferBindingPointMTL++;
 	shaderContext->output->resourceMappingMTL.indexTypeBinding = shaderContext->currentBufferBindingPointMTL++;
+	// Allocated only in emulation mode. Doing it unconditionally would shift every
+	// later binding point on the mesh path too, for buffers that path never binds.
+	if (shaderContext->options->geometryShaderEmulation &&
+		(shaderContext->shaderType == LatteConst::ShaderType::Vertex || shaderContext->shaderType == LatteConst::ShaderType::Geometry))
+	{
+		shaderContext->output->resourceMappingMTL.gsPayloadBinding = shaderContext->currentBufferBindingPointMTL++;
+		if (shaderContext->shaderType == LatteConst::ShaderType::Geometry)
+		{
+			shaderContext->output->resourceMappingMTL.gsOutBinding = shaderContext->currentBufferBindingPointMTL++;
+			shaderContext->output->resourceMappingMTL.gsPrimCountBinding = shaderContext->currentBufferBindingPointMTL++;
+		}
+	}
 }

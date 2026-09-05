@@ -36,6 +36,15 @@ public:
 	    return m_function;
 	}
 
+	// Only ever non-null for a geometry shader compiled with emulation on. The geometry
+	// kernel only fills buffers; this is the entry point that turns them into a draw, and
+	// it ships in the same library because it has to agree with that shader's own
+	// GeometryOut layout.
+	MTL::Function* GetPassthroughFunction() const
+	{
+	    return m_passthroughFunction;
+	}
+
 	void PreponeCompilation(bool isRenderThread) override;
 	bool IsCompiled() override;
 	bool WaitForCompiled() override;
@@ -44,6 +53,7 @@ private:
     class MetalRenderer* m_mtlr;
 
 	MTL::Function* m_function = nullptr;
+	MTL::Function* m_passthroughFunction = nullptr;
 
 	StateSemaphore<COMPILATION_STATE> m_compilationState{ COMPILATION_STATE::NONE };
 
