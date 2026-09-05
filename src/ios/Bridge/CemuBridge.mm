@@ -395,7 +395,22 @@ void cemu_bridge_start_memory_watchdog(void) {
             bool report = false;
             if (footBucket > lastFootBucket) report = true;
             if (availBucket < lastAvailBucket) report = true;
-            if (now - lastForced >= std::chrono::seconds(5)) report = true;
+            // Once a minute, not once every five seconds. The bucketing above already
+            // means real movement is always written; this heartbeat exists only to show
+            // the sampler is still alive. At 5s it defeated the bucketing it sits next
+            // to - a title that reaches a steady footprint still emitted a line every
+            // five seconds forever, and a few minutes of play buried everything else.
+            //
+            // That is not hypothetical. A log sent back to diagnose dropped draws was
+            // almost entirely MEM samples, and the one line being looked for could not
+            // be found in it.
+            //
+            // The sampler has also already answered the question it was added for: on an
+            // A12Z iPad the footprint plateaus near 2.1 GB with about 2.4 GB still
+            // available, so jetsam is ruled out as the cause of the crashes it was
+            // watching for. It stays because footprint is still worth tracking, but it
+            // no longer needs to shout.
+            if (now - lastForced >= std::chrono::seconds(60)) report = true;
             lastFootBucket = footBucket;
             lastAvailBucket = availBucket;
 
