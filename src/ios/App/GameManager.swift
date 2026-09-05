@@ -73,6 +73,18 @@ class GameManager: ObservableObject {
         // game has been launched and before the engine has ever been initialized.
         WiiUKeys.ensureDirectoryExists()
 
+        // Without this, every encrypted disc image (.wud/.wux/.iso - i.e. almost every
+        // real Wii U game) fails TitleInfo's construction with NO_DISC_KEY right here,
+        // even when keys.txt is present and correct: KeyCache_Reload() was previously
+        // only ever called from the launch path (IOSTitleLaunch.cpp), never before this
+        // scan. That silently broke both DLC/update title-ID matching below and cover-
+        // art derivation (IOSCoverArt.cpp does the same TitleInfo construction) for
+        // every game on first launch, with no error surfaced anywhere - it just looked
+        // like "the updates and DLC stuff doesn't work" and "no cover art ever shows up
+        // until later." Reusing the exact same reload already proven safe on the launch
+        // path, not writing a new one.
+        _ = cemu_bridge_reload_and_count_keys()
+
         do {
             let contents = try fileManager.contentsOfDirectory(
                 at: romsPath,
