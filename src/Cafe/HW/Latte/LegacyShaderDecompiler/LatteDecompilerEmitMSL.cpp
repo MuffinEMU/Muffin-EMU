@@ -2387,8 +2387,43 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     			src->add("), 0");
     			// todo - lod
     		}
+    		else if (texDim == Latte::E_DIM::DIM_2D_ARRAY)
+    		{
+    			// Texel fetch on an array texture. This branch did not exist, and the only
+    			// thing below it was cemu_assert_debug(false), which compiles to nothing in
+    			// a release build. So the emitter wrote "tex0.read(" and then closed it with
+    			// no arguments at all, producing lines like:
+    			//
+    			//     R3f.xz = (tex0.read().xz);
+    			//
+    			// Every Metal read() overload needs at least a coordinate, so the shader
+    			// failed to compile and every draw using it drew nothing. A device log from
+    			// an A12Z iPad showed 4,609 shader compile failures containing 9,216 of
+    			// these calls; the compiler's own candidate list named metal_texture2d_array,
+    			// which is what identified this branch.
+    			//
+    			// Coordinates match the DIM_2D case above. The array slice is the third
+    			// component, taken as an integer the way the sampling path does it.
+    			src->add("uint2(");
+    			src->add("float2(");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, texCoordDataType);
+    			src->addFmt(", ");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, texCoordDataType);
+    			src->addFmt(")*supportBuffer.tex{}Scale", texInstruction->textureFetch.textureIndex);
+    			src->add("), uint(");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, texCoordDataType);
+    			src->add("), 0"); // array slice, then lod
+    		}
     		else
+    		{
+    			// 3D and cubemap texel fetches are still unhandled. Emitting nothing is what
+    			// caused the bug above, so say so rather than silently writing a call with no
+    			// arguments: a shader that fails with a message naming the dimension is far
+    			// easier to chase than one that fails with "no matching member function".
+    			cemuLog_log(LogType::Force, "MSL: texel fetch on unsupported texture dimension {} - this shader will not compile", (int)texDim);
+    			src->add("/* unsupported texel fetch dimension */");
     			cemu_assert_debug(false);
+    		}
     	}
     	else /* useTexelCoordinates == false */
     	{
