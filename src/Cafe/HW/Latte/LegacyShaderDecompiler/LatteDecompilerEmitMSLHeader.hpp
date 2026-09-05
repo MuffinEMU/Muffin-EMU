@@ -328,6 +328,14 @@ namespace LatteDecompiler
     			src->add("};" _CRLF _CRLF);
                 src->add("struct ObjectPayload {" _CRLF);
                 src->add("VertexOut vertexOut[VERTICES_PER_VERTEX_PRIMITIVE];" _CRLF);
+                // The geometry stage's streamout writes are indexed by which primitive is
+                // being processed. GLSL hands a geometry shader gl_PrimitiveIDIn for that;
+                // Metal has no equivalent in a mesh shader, and the mesh stage cannot work
+                // it out for itself because it is spawned with a grid of exactly 1, so its
+                // own threadgroup position is always zero. The object stage IS dispatched
+                // one threadgroup per primitive, so it knows the number - this is how it
+                // crosses the boundary.
+                src->add("uint primitiveId;" _CRLF);
                 src->add("};" _CRLF _CRLF);
     		}
     		if (decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
@@ -341,6 +349,15 @@ namespace LatteDecompiler
 
                 src->add("struct GeometryOut {" _CRLF);
                 src->add("float4 position [[position]];" _CRLF);
+                // Declared for the same reason VertexOut declares it. Without this the
+                // emitter still writes out.pointSize for every emitted vertex (see
+                // GPU7_CF_INST_EMIT_VERTEX and the point-size export in
+                // LatteDecompilerEmitMSL.cpp, both guarded by this same flag), and Metal
+                // rejects the whole shader with "no member named 'pointSize' in
+                // 'GeometryOut'" - one error per emitted vertex. A device log showed
+                // exactly four of those.
+                if (decompilerContext->analyzer.outputPointSize)
+                    src->add("float pointSize [[point_size]];" _CRLF);
     			for (sint32 p = 0; p < decompilerContext->parsedGSCopyShader->numParam; p++)
     			{
     				if (decompilerContext->parsedGSCopyShader->paramMapping[p].exportType != 2)

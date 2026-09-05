@@ -4224,6 +4224,15 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 
           		// Output is defined as object payload
           		src->add("object_data VertexOut& out = objectPayload.vertexOut[tid];" _CRLF);
+                // Publish which primitive this threadgroup is, for the mesh stage's
+                // streamout base. Only on the real geometry-shader path: the RECTS
+                // emulation declares its own ObjectPayload without this field, and its
+                // generated geometry shader never reads it.
+                //
+                // One writer only - every thread in this threadgroup has the same tig, so
+                // letting all of them store it is a pointless write race on payload memory.
+                if (!isRectVertexShader)
+                    src->add("if (tid == 0) objectPayload.primitiveId = tig;" _CRLF);
             }
             else
             {
@@ -4359,7 +4368,13 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 
 				cemu_assert_debug(gsOutPrimType == 0); // currently we only properly handle GS output primitive points
 
-				src->addFmt("int sbBase{} = supportBuffer.streamoutBufferBase{}/4 + (gl_PrimitiveIDIn * {})*{};" _CRLF, i, i, maxVerticesInGS, shaderContext->output->streamoutBufferStride[i] / 4);
+				// gl_PrimitiveIDIn is a GLSL builtin and does not exist in Metal - emitting it
+				// here produced "use of undeclared identifier 'gl_PrimitiveIDIn'" and the
+				// whole geometry shader failed to compile, so the geometry it was meant to
+				// produce never appeared. Metal has no primitive-id builtin in a mesh
+				// shader either, which is why the object stage passes the number across in
+				// the payload (see ObjectPayload::primitiveId).
+				src->addFmt("int sbBase{} = supportBuffer.streamoutBufferBase{}/4 + (objectPayload.primitiveId * {})*{};" _CRLF, i, i, maxVerticesInGS, shaderContext->output->streamoutBufferStride[i] / 4);
 			}
 		}
 
