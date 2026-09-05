@@ -2414,14 +2414,49 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
     			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, texCoordDataType);
     			src->add("), 0"); // array slice, then lod
     		}
+    		else if (texDim == Latte::E_DIM::DIM_3D)
+    		{
+    			// texture3d<float>::read(uint3 coord, uint lod). tex{}Scale is only a float2,
+    			// so x and y are scaled as everywhere else and the depth component is passed
+    			// through unscaled - there is no third scale factor to apply.
+    			src->add("uint3(uint2(float2(");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, texCoordDataType);
+    			src->addFmt(", ");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, texCoordDataType);
+    			src->addFmt(")*supportBuffer.tex{}Scale), uint(", texInstruction->textureFetch.textureIndex);
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, texCoordDataType);
+    			src->add(")), 0");
+    		}
+    		else if (texDim == Latte::E_DIM::DIM_CUBEMAP)
+    		{
+    			// Declared as texturecube_array<float> (see the type emitter), so the read
+    			// signature is read(uint2 coord, uint face, uint array, uint lod).
+    			//
+    			// GX2 addresses a cubemap array as a flat slice index where slice = array*6 +
+    			// face, which is why the third component splits by 6 here. That convention is
+    			// what the declaration implies and what the sampling path's cubeMapArrayIndex
+    			// assumes; it is NOT verified against hardware, because no shader that does a
+    			// texel fetch on a cubemap has come through a log yet. If cubemap fetches ever
+    			// render wrongly rather than failing to compile, this decomposition is the
+    			// first thing to doubt.
+    			src->add("uint2(float2(");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 0, texCoordDataType);
+    			src->addFmt(", ");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 1, texCoordDataType);
+    			src->addFmt(")*supportBuffer.tex{}Scale), uint(", texInstruction->textureFetch.textureIndex);
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, texCoordDataType);
+    			src->add(") % 6u, uint(");
+    			_emitTEXSampleCoordInputComponent(shaderContext, texInstruction, 2, texCoordDataType);
+    			src->add(") / 6u, 0");
+    		}
     		else
     		{
-    			// 3D and cubemap texel fetches are still unhandled. Emitting nothing is what
-    			// caused the bug above, so say so rather than silently writing a call with no
-    			// arguments: a shader that fails with a message naming the dimension is far
-    			// easier to chase than one that fails with "no matching member function".
-    			cemuLog_log(LogType::Force, "MSL: texel fetch on unsupported texture dimension {} - this shader will not compile", (int)texDim);
-    			src->add("/* unsupported texel fetch dimension */");
+    			// Nothing should reach here - every dimension the type emitter can declare is
+    			// handled above. Emitting nothing silently is what produced tex0.read() with
+    			// no arguments and cost a 71 MB log to find, so this says which dimension it
+    			// was rather than leaving a call that fails with "no matching member function".
+    			cemuLog_log(LogType::Force, "MSL: texel fetch on unhandled texture dimension {} - this shader will not compile", (int)texDim);
+    			src->add("/* unhandled texel fetch dimension */");
     			cemu_assert_debug(false);
     		}
     	}
