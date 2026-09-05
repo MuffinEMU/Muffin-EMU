@@ -1085,6 +1085,22 @@ bool cemu_bridge_reduce_encoder_splitting(void) {
 #endif
 }
 
+void cemu_bridge_set_geometry_shader_emulation_enabled(bool enabled) {
+#if defined(CEMU_CORE_AVAILABLE)
+    MetalRenderer::SetGeometryShaderEmulationEnabled(enabled);
+#else
+    (void)enabled;
+#endif
+}
+
+bool cemu_bridge_geometry_shader_emulation_enabled(void) {
+#if defined(CEMU_CORE_AVAILABLE)
+    return MetalRenderer::GeometryShaderEmulationEnabled();
+#else
+    return false;
+#endif
+}
+
 void cemu_bridge_set_vsync_enabled(bool enabled) {
 #if defined(CEMU_CORE_AVAILABLE)
     g_metal_vsyncEnabled.store(enabled, std::memory_order_relaxed);

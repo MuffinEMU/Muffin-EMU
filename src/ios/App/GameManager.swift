@@ -679,8 +679,13 @@ class GameManager: ObservableObject {
             // Same reason, and more strictly: this one is read when the renderer starts
             // and is then baked into every shader the session generates, so setting it
             // after boot would produce a pipeline built from two incompatible dialects.
+            // Defaults ON now, where it defaulted off when it was written and untested. A
+            // device log has since shown 44,001 draws thrown away on this hardware for
+            // want of mesh shaders - 39,098 of them RECTS, which is post-processing not
+            // running. Leaving the fix for that switched off by default would mean
+            // shipping a build that still drops them.
             cemu_bridge_set_geometry_shader_emulation_enabled(
-                UserDefaults.standard.object(forKey: "muffin.geometryShaderEmulation") as? Bool ?? false)
+                UserDefaults.standard.object(forKey: "muffin.geometryShaderEmulation") as? Bool ?? true)
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)

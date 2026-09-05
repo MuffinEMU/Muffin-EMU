@@ -388,6 +388,12 @@ bool cemu_bridge_reduce_encoder_splitting(void);
 /// settings on this page - it takes effect on the NEXT title launch, not the one already
 /// running.
 void cemu_bridge_set_vsync_enabled(bool enabled);
+
+/// Rebuild geometry shaders and RECTS out of compute passes on a GPU with no mesh
+/// shaders. Read once when the renderer starts and then baked into every shader the
+/// session generates, so it cannot change while a title is running.
+void cemu_bridge_set_geometry_shader_emulation_enabled(bool enabled);
+bool cemu_bridge_geometry_shader_emulation_enabled(void);
 bool cemu_bridge_vsync_enabled(void);
 
 /// Shader cache maintenance. Two different things get called "the shader cache" and
