@@ -185,6 +185,11 @@ struct GameBrowserView: View {
     /// Set by "Remove DLC"/"Remove Update" - deletion itself waits for the confirm
     /// alert below, since it deletes a directory outright with no undo.
     @State private var pendingRemoval: (game: GameMetadata, kind: DlcUpdateImport.ContentKind)?
+    /// Set only for an import started from the general menu (no long-pressed game) when
+    /// auto-matching fails - presents DlcUpdateGamePickerSheet to ask outright.
+    @State private var gamePickerContext: (source: URL, kind: DlcUpdateImport.ContentKind)?
+    /// A successful import is otherwise silent - see runDlcUpdateImport.
+    @State private var dlcUpdateSuccessMessage: String?
 
     var filteredGames: [GameMetadata] {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
@@ -251,6 +256,17 @@ struct GameBrowserView: View {
                                     // tapped), so there was nothing for a second entry to actually
                                     // distinguish. This label just says what the one picker accepts.
                                     Label("Game folder (code/content/meta, or title.tmd + .app files)", systemImage: "folder")
+                                }
+                                Divider()
+                                Button {
+                                    beginGeneralDlcUpdateImport(kind: .dlc)
+                                } label: {
+                                    Label("Import DLC\u{2026}", systemImage: "shippingbox")
+                                }
+                                Button {
+                                    beginGeneralDlcUpdateImport(kind: .update)
+                                } label: {
+                                    Label("Import Update\u{2026}", systemImage: "arrow.triangle.2.circlepath")
                                 }
                             } label: {
                                 Image(systemName: "doc.badge.plus")
@@ -345,6 +361,21 @@ struct GameBrowserView: View {
         .sheet(item: $decryptTarget) { game in
             DecryptROMView(game: game)
         }
+        .sheet(isPresented: Binding(
+            get: { gamePickerContext != nil },
+            set: { if !$0 { gamePickerContext = nil } }
+        )) {
+            if let context = gamePickerContext {
+                DlcUpdateGamePickerSheet(games: gameManager.games, kind: context.kind) { game in
+                    runDlcUpdateImport(from: context.source, kind: context.kind, longPressedGame: nil, manualMatch: game)
+                }
+            }
+        }
+        .alert("Added", isPresented: .constant(dlcUpdateSuccessMessage != nil), presenting: dlcUpdateSuccessMessage) { _ in
+            Button("OK") { dlcUpdateSuccessMessage = nil }
+        } message: { message in
+            Text(message)
+        }
         .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
             Button("OK") { romImportErrorMessage = nil }
         } message: { message in
@@ -426,27 +457,88 @@ struct GameBrowserView: View {
         }
     }
 
+    /// Entry point from the general import menu, next to "Game file"/"Game folder" -
+    /// unlike the per-game long-press entry, there's no game already in hand, so a
+    /// failed auto-match has to ask which game outright (gamePickerContext) rather than
+    /// confirm against one the user already picked.
+    private func beginGeneralDlcUpdateImport(kind: DlcUpdateImport.ContentKind) {
+        DocumentImport.present(contentTypes: Self.folderImportTypes) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                runDlcUpdateImport(from: url, kind: kind, longPressedGame: nil, manualMatch: nil)
+            case .failure(let error):
+                dlcImportErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
     private func runDlcUpdateImport(
         from url: URL,
         kind: DlcUpdateImport.ContentKind,
-        longPressedGame: GameMetadata,
+        longPressedGame: GameMetadata?,
         manualMatch: GameMetadata?
     ) {
         Task {
             do {
-                _ = try await DlcUpdateImport.import(
+                let result = try await DlcUpdateImport.import(
                     from: url,
                     kind: kind,
                     library: gameManager.games,
                     manualMatch: manualMatch
                 )
+                // A successful import is otherwise silent - nothing on screen changes
+                // for the imported game unless it happens to already be visible, and
+                // that silence is exactly what "doesn't work" looks like from the
+                // outside. Naming which game it landed on matters most here since
+                // whoever started this from the general menu never picked one.
+                if let matched = result.matchedGame {
+                    dlcUpdateSuccessMessage = "Added \(kind.displayName) for \"\(matched.title)\"."
+                }
             } catch DlcUpdateImport.ImportError.noBaseGameMatch {
-                // Auto-matching by title ID came up empty - fall back to whichever game
-                // was long-pressed to start this import, but only after confirming, since
-                // an unmatched title ID is also what a flat-out wrong file looks like.
-                pendingManualMatchConfirmation = (source: url, kind: kind, game: longPressedGame)
+                // Auto-matching by title ID came up empty. A long-pressed game gets a
+                // quick confirm (an unmatched title ID is also what a flat-out wrong
+                // file looks like); starting from the general menu means there is no
+                // game to confirm against, so ask outright instead.
+                if let longPressedGame {
+                    pendingManualMatchConfirmation = (source: url, kind: kind, game: longPressedGame)
+                } else {
+                    gamePickerContext = (source: url, kind: kind)
+                }
             } catch {
                 dlcImportErrorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// The manual-match fallback for a DLC/update import started from the general menu -
+/// see runDlcUpdateImport's gamePickerContext branch. Long-press already has a game in
+/// hand and just confirms against it; this is what "ask outright" looks like when there
+/// isn't one.
+struct DlcUpdateGamePickerSheet: View {
+    let games: [GameMetadata]
+    let kind: DlcUpdateImport.ContentKind
+    let onPick: (GameMetadata) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            List(games) { game in
+                Button {
+                    onPick(game)
+                    dismiss()
+                } label: {
+                    Text(game.title)
+                        .foregroundColor(MuffinTheme.brownDarkest)
+                }
+            }
+            .navigationTitle("Add \(kind.displayName) to which game?")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
             }
         }
     }
