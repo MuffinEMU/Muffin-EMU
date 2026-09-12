@@ -76,10 +76,19 @@ enum RenderScale: String, CaseIterable, Identifiable {
 }
 
 /// Whether the picture fills the view's own aspect ratio instead of keeping the Wii U's
-/// 1280x720, letterboxed. A viewer choice, not a correctness fix - MetalRenderer's own
-/// quad math (createScreenQuad) already produces a correct, undistorted picture; this
-/// exists for someone who would rather fill every pixel of an odd-shaped screen than see
-/// bars on two sides of it.
+/// 1280x720, letterboxed. A viewer choice, not a correctness fix: it exists for someone
+/// who would rather fill every pixel of an odd-shaped screen than see bars on two sides.
+///
+/// This key is the storage; the behaviour lives in the engine. SettingsView pushes changes
+/// through cemu_bridge_set_stretch_to_fill() and GameManager re-applies the stored value
+/// before each boot, which sets Cemu's own fullscreen_scaling - the value
+/// LatteRenderTarget_getScreenImageArea() uses to size the real output blit.
+///
+/// It previously described createScreenQuad() in src/ios/Rendering/MetalRenderer.swift as
+/// the consumer. That function is real but unreachable: it belongs to
+/// AdvancedMetalRenderer, which nothing in the tree ever instantiates, so isEnabled below
+/// had no reachable reader and the Settings toggle did nothing. Reading it directly is
+/// therefore not how the setting takes effect - see the two call sites above.
 enum FrameStretch {
     static let storageKey = "muffin.render.stretchToFit"
     static let defaultValue = false

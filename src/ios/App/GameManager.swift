@@ -675,6 +675,14 @@ class GameManager: ObservableObject {
             // makes a mid-session Settings change take effect on the next launch.
             cemu_bridge_set_vsync_enabled(
                 UserDefaults.standard.object(forKey: "muffin.render.vsync") as? Bool ?? true)
+            // Same "sync from UserDefaults before boot" reason as the calls above, but for a
+            // different lifetime: fullscreen_scaling is re-read every time the output blit
+            // is sized, so Settings can change it mid-title and the next frame honours it.
+            // This call is still needed, because a value set in Settings during a previous
+            // session only lives in UserDefaults until something pushes it into the engine.
+            cemu_bridge_set_stretch_to_fill(
+                UserDefaults.standard.object(forKey: FrameStretch.storageKey) as? Bool
+                    ?? FrameStretch.defaultValue)
 
             // Same reason, and more strictly: this one is read when the renderer starts
             // and is then baked into every shader the session generates, so setting it
@@ -684,6 +692,9 @@ class GameManager: ObservableObject {
             // want of mesh shaders - 39,098 of them RECTS, which is post-processing not
             // running. Leaving the fix for that switched off by default would mean
             // shipping a build that still drops them.
+            // Kept as a belt-and-braces re-push. The one that actually decides anything
+            // is in CemuApp.init() - by the time launchGame runs, MetalRenderer's
+            // constructor has already latched the value (see the comment there).
             cemu_bridge_set_geometry_shader_emulation_enabled(
                 UserDefaults.standard.object(forKey: "muffin.geometryShaderEmulation") as? Bool ?? true)
 
@@ -708,6 +719,31 @@ class GameManager: ObservableObject {
 
     func stopEmulation() {
         stopFrameRateMonitor()
+        #if os(iOS)
+        // Resume before stopping, unconditionally, even though nothing here knows or
+        // cares whether the title was paused.
+        //
+        // stop() is CafeSystem::ShutdownTitle(), which has to join the guest threads
+        // before it can tear the title down. cemu_bridge_pause() suspends exactly those
+        // threads (SuspendActiveThreads(), via PauseTitle()), and a suspended thread
+        // never reaches the end of itself - so shutting down a paused title deadlocks
+        // in the join, with the UI already switched to "paused" and the whole app hung
+        // behind it. That is a hang, not a slow exit: nothing later un-suspends them,
+        // because the view whose .onChange(of: scenePhase) would have called resume has
+        // already gone away by then.
+        //
+        // It also clears the Metal GPU thread's drawable gate, the other half
+        // cemu_bridge_pause() sets. That half does NOT survive the title - the gate is a
+        // member of the renderer, and CemuBridge.mm resets g_renderer on shutdown, so
+        // the next launch builds a fresh one already ungated. It is cleared here because
+        // the gate has to be open for the frames the shutdown path itself still draws,
+        // not to protect the next title.
+        //
+        // Unconditional on purpose. ResumeTitle() no-ops when no title is running and
+        // clearing an already-clear flag costs nothing, so there is no state to check
+        // and therefore no way for this to get out of sync with whatever paused it.
+        cemu_bridge_resume()
+        #endif
         emulationEngine?.stop()
         #if os(iOS)
         // engine.stop() is CafeSystem::ShutdownTitle(), which reaches

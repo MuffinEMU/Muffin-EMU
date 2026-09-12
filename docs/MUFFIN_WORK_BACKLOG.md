@@ -11,6 +11,92 @@ Repo: `kiddreads/cemu-ios-muffin` is canonical (`git push ci <branch>`).
 Current HEAD: `metal-shader-binary-archive`. Target device: iPad Pro 12.9" 4th
 gen, A12Z, 6 GB, fanless — no Metal3/mesh shaders, no BC texture formats.
 
+> ## Correction block — 2026-09-10 (documentation-only reality check, no code changed)
+>
+> Added by a later, separate pass that re-verified this backlog's numbered P0-P7
+> items against the current source and `git log`, from an isolated worktree
+> based on `HEAD` = `fbcff902` (2026-09-05). **Nothing below this block was
+> changed or renumbered** — the items and the progress log stay exactly as
+> originally written, as history. Where this block says an item is done or
+> stale, trust this block over the item text below it.
+>
+> **Done — false premise, the thing asked for already exists:**
+> - **#3** ("Implement the real resize path: expose `MetalRenderer::ResizeLayer()`
+>   through the bridge — currently no bridge function calls it") — done.
+>   `cemu_bridge_resize_render_surface()` (`CemuBridge.h:114`,
+>   `CemuBridge.mm:1690-1735`) is wired end-to-end from
+>   `DisplayRouter.swift`'s `resizeTVSurfaceIfRegistered()`.
+> - **#4** ("Fix `MetalLayerHandle::Resize()` to update the `CALayer` frame, not
+>   just the drawable size") — done. `ResizeMetalLayer()` (`MetalLayer.mm:119-131`)
+>   sets `metalLayer.frame` directly, separately from the drawable-size call.
+> - **#63, #64** (map on-screen controller skins / MFi controllers to Cemu's
+>   `src/input`) — done. On-screen: `ContentView.swift`'s `onInput`/`onStick`
+>   closures call `cemu_bridge_set_button_state()`/`cemu_bridge_set_stick_axis()`
+>   directly, not empty closures. MFi/Bluetooth: auto-bound through Cemu's
+>   existing SDL controller backend (`InputManager.cpp`'s
+>   `iosBindFirstAvailableController()`), hotplug included. `InputManager` is
+>   now actually constructed on iOS at all, which it never was before.
+> - **#73** ("Wire a CoreAudio backend into Cemu's audio subsystem — currently
+>   unimplemented per ROADMAP M4") — done. `src/audio/CoreAudioAPI.{h,mm}`
+>   (commit `ddce3513`, 2026-08-27) is a real AudioUnit RemoteIO + AVAudioSession
+>   backend, registered in `IAudioAPI.cpp`, built for iOS in
+>   `src/audio/CMakeLists.txt`. Written and compiles; **not** confirmed to make
+>   sound on a device — #75-79 in this same section are still the right open
+>   items, unchanged.
+>
+> **Stale premise — the item's setup is no longer accurate, even though the
+> underlying concern may still be worth asking:**
+> - **#1** ("Confirm on-device whether `MetalRenderer: presented the first frame
+>   to the TV window (WxH pixels)` fires on current `main`") — the question this
+>   stood in for (does a picture ever reach the screen) has since been answered
+>   yes, by stronger, more direct evidence than that log line: Void reporting
+>   FAST Racing Neo actually rendering — wrong-colored, but rendering — on
+>   device (commits `db79f2e8`, `53cb04ba`, both 2026-09-04). Whether that
+>   *specific log line* has ever fired is still not confirmed by anything in
+>   `git log` — if the exact diagnostic still matters to someone, it's open, but
+>   "no picture at all" is answered.
+> - **#2** ("the geometry defect is next — `MetalViewIOS.makeUIView()` passes
+>   `UIScreen.main.bounds`") — the defect is real and still open, but it has
+>   moved. `MetalViewIOS.makeUIView()` (`MetalView.swift:29-43`) no longer
+>   computes any geometry itself; it delegates entirely to `DisplayRouter`. The
+>   actual defect is now in `DisplayRouter.swift`'s private `tvGeometry()`
+>   (lines 351-360), which still unconditionally returns `UIScreen.main.bounds`
+>   for `deviceOnly`/`deviceMirrored` placement. Being worked on a separate
+>   branch as of this check, not yet landed on the branch this check covers.
+>
+> **In progress elsewhere, not confirmed on the branch this check covers —
+> flagged so nobody assumes either "still fully unbuilt" or "already done":**
+> - **#25-35** (port the non-mesh geometry-shader path for real via compute,
+>   `ios-geometry-shader-emulation`) — real compute-based geometry-shader/RECTS
+>   emulation commits exist in this repository's branches (`f125dbd3`,
+>   `8bcca9c8`, dated 2026-09-05), separate from the still-parked, still-never-
+>   run `ios-geometry-shader-emulation` branch these items were written
+>   against. **Neither is an ancestor of the `HEAD` this check was performed
+>   against** (checked with `git merge-base --is-ancestor`, not assumed from a
+>   plain `git log --all` match — this repo has several concurrent sibling
+>   branches sharing this object store, e.g. `muffin/display-geometry`,
+>   `muffin/audio-hardening`, and a bare `--all` search over-collects across
+>   them). Recorded as "exists somewhere, not verified on this branch," not as
+>   done — re-check ancestry against whatever branch actually ships next.
+>
+> **Also worth knowing, not tied to one numbered item:** `ba3ace06` (two
+> geometry shaders that could never compile on Metal), `97fca6a2`/`75c8543a`
+> (texel-fetch-on-array/3D/cubemap fix), `eab9ae73` (BC-texture decompression
+> fallback) and `db79f2e8` (the geometry-shader/RECTS silent-drop now logged
+> instead of hidden) are all real, are all confirmed ancestors of this check's
+> `HEAD`, and together are why item #1 above is answered — see `STATUS.md`/
+> `ROADMAP.md` M3 for the full account. Separately, a real Vulkan/MoltenVK path
+> was added to the engine build on 2026-08-27 (`b45c0e8c`) — present in the
+> CMake/CI build, but dead code in the shipping Xcode app (`ENABLE_VULKAN` is
+> not in `src/ios/project.yml`'s preprocessor definitions), so the app that
+> ships is still Metal-only.
+>
+> **This reality check is the resolution of #155/#156 for `STATUS.md`, and of
+> the equivalent ask for `ROADMAP.md`/`README.md`/`docs/CEMU_FEATURE_PARITY.md`**
+> — see those files' own 2026-09-10 notes for what changed and why. #154
+> (update `ARCHITECTURE.md`) was already done earlier, per this backlog's own
+> progress log below.
+
 ## Progress log (overnight session, 2026-08-31 → 2026-09-01)
 
 Real outcomes as of the 2026-09-01 14:00 check-in and after, so the next session
@@ -356,6 +442,22 @@ none has been run on a device.
   retired the now-stale "tap the stick to press L3" special case, since
   L3's own dot is never removed anymore — consistent with R3, which never
   had that special case either.
+- **Fixed shader binary archive save silently failing for a whole
+  session (sneak-peek only — the binary-archive feature itself was never
+  merged to `main`).** Real device log from v19: `serializeToURL()`
+  failing outright with "expecting 'fragment' stage in pipeline".
+  `MetalPipelineCompiler::Compile()` added every non-mesh pipeline to the
+  binary archive unconditionally, but a rasterization-disabled pipeline
+  (shadow maps, depth-only passes — common) never gets a fragment
+  function set, and Apple's own archive packer can't serialize an entry
+  missing one. `addRenderPipelineFunctions()` itself succeeds at add
+  time; the failure only surfaces later when `Close()` serializes the
+  *whole* archive in one call — so one fragment-less pipeline anywhere in
+  a session silently failed to persist every pipeline learned that
+  session, directly undermining Persistent Shader Cache. Fixed the same
+  way mesh pipelines already handle "can't go in the archive format":
+  skip adding it, gated on the same `m_rasterizationEnabled` check that
+  already governs the fragment function itself.
 - **Fixed a real crash hit twice tonight: `FreeReservation` dereferenced
   an invalid iterator on a double-free.** Two independent device crashes,
   both signal 11 inside `MetalSynchronizedHeapAllocator::FreeReservation`

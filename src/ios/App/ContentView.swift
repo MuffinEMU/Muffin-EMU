@@ -735,12 +735,33 @@ struct EmulatorViewOptimized: View {
     @ObservedObject var gameManager: GameManager
     @Binding var isRunning: Bool
     @Binding var controllerSkin: WiiUControllerSkin
+    // Read so the app can pause the emulator itself when it leaves the foreground -
+    // see the .onChange(of: scenePhase) below - rather than relying on the emulator
+    // to notice on its own that nobody is looking at it, which nothing in this codebase
+    // does. iOS terminates apps that keep submitting Metal command buffers while
+    // backgrounded, so this is not a nicety; see cemu_bridge_pause() in CemuBridge.mm
+    // for the other half of what actually stops that.
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showSkinSelector = false
     /// Turns the pad into something you position rather than something you press. Local
     /// state, not AppStorage: nobody wants to come back to a game and find the controls
     /// still in edit mode because that is how they last left them.
     @State private var isEditingControlLayout = false
     @State private var isPaused = false
+    /// True only when isPaused was set by leaving the foreground, not by the pause
+    /// button below. Read on the way back to .active: the app should resume a title
+    /// it paused on the way out, but must not resume one the person playing paused
+    /// on purpose right before backgrounding it. Both look identical in isPaused
+    /// alone, which is exactly why this needs its own bit.
+    @State private var pausedByLifecycle = false
+    /// Visible only while the preview pad is on. Exists purely to answer one question
+    /// with certainty and without needing log.txt: does a tap on the preview pad even
+    /// reach this closure at all. If this counter never moves when you tap a button,
+    /// the break is in the SwiftUI gesture layer (PreviewControllerPad/HeldControl); if
+    /// it does move but the game still doesn't react, the break is further down, in the
+    /// bridge or the engine's input override path.
+    @State private var previewInputDebugText = "no input yet"
+    @State private var previewInputDebugCount = 0
     /// The same two keys the pad itself reads. Declared here as well so the in-game
     /// sliders write to the thing being dragged, with no plumbing between them.
     @AppStorage(ControllerLayoutSettings.scaleKey)
@@ -759,7 +780,7 @@ struct EmulatorViewOptimized: View {
     private var individualEditMode = ControllerLayoutSettings.defaultIndividualEditMode
     /// Off by default - see the branch on this flag a few lines below for exactly what
     /// it swaps in and why the shipping path is otherwise untouched.
-    @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = false
+    @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
     @ObservedObject private var previewPad = PreviewPadStore.shared
     // The two feel settings, offered here as well as in Settings for the same reason the
     // toggle is: a deadzone is not something you can judge from a settings screen with no
@@ -826,11 +847,13 @@ struct EmulatorViewOptimized: View {
                         .buttonStyle(MuffinSecondaryButtonStyle())
 
                         // cemu_bridge_pause/resume wrap CafeSystem::PauseTitle()/
-                        // ResumeTitle(), which already exist and were never called from
-                        // anywhere on iOS - this is the first thing to use them.
+                        // ResumeTitle() (and, since the app-lifecycle work, also the
+                        // Metal GPU thread's own drawable gate - see CemuBridge.mm).
                         // isPaused is local state rather than a query, because there is
-                        // no cemu_bridge_is_paused() to ask - only this button ever
-                        // changes it, so it cannot drift out of sync with the engine.
+                        // no cemu_bridge_is_paused() to ask. Two things change it now:
+                        // this button and the .onChange(of: scenePhase) below - so it is
+                        // pausedByLifecycle, not isPaused itself, that keeps the two from
+                        // fighting over what a return to .active should do.
                         Button(action: {
                             isPaused.toggle()
                             if isPaused {
@@ -941,9 +964,13 @@ struct EmulatorViewOptimized: View {
                         PreviewControllerPad(
                             store: previewPad,
                             onInput: { label, pressed in
+                                previewInputDebugCount += 1
+                                previewInputDebugText = "\(label) \(pressed ? "down" : "up") (#\(previewInputDebugCount))"
                                 cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
                             },
                             onStick: { stick, position in
+                                previewInputDebugCount += 1
+                                previewInputDebugText = "stick\(stick) (\(String(format: "%.2f", position.x)), \(String(format: "%.2f", position.y))) (#\(previewInputDebugCount))"
                                 cemu_bridge_set_stick_axis(
                                     stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
                                     Float(position.x), Float(position.y)
@@ -951,11 +978,34 @@ struct EmulatorViewOptimized: View {
                             },
                             isEditingLayout: $isEditingControlLayout
                         )
+
+                        // Debug HUD: proves whether SwiftUI ever calls onInput/onStick at
+                        // all, which is exactly the question a "controls don't do anything"
+                        // report can't answer from the outside. Temporary, and gone the
+                        // moment the real bug is found - not something to leave shipping.
+                        VStack {
+                            Text("PAD DEBUG: \(previewInputDebugText)")
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.yellow)
+                                .padding(6)
+                                .background(Color.black.opacity(0.7))
+                                .cornerRadius(6)
+                                .padding(.top, 4)
+                            Spacer()
+                        }
+                        .allowsHitTesting(false)
                     }
                 } else {
                     #if os(iOS)
                     MetalViewIOS(gameManager: gameManager)
                         .ignoresSafeArea()
+                        // Defense in depth: tvGeometry() now sizes the TV CAMetalLayer
+                        // from the real container instead of the whole screen, but
+                        // .clipped() means a future regression of that (or a Vulkan/
+                        // pad-surface path that inherits the same bug) shows a
+                        // squashed picture instead of one bleeding past this view's
+                        // edges into whatever SwiftUI content sits below it.
+                        .clipped()
                     #else
                     MetalView(gameManager: gameManager)
                         .ignoresSafeArea()
@@ -1227,6 +1277,43 @@ struct EmulatorViewOptimized: View {
         }
         .onChange(of: showLaunchLog) { enabled in
             if enabled { launchLog.start() } else { launchLog.stop() }
+        }
+        // The whole reason this exists: before it, nothing anywhere in this app
+        // hooked app lifecycle at all - switching apps or locking the screen left
+        // the emulator running full tilt, guest CPU and all, which both burns
+        // battery/CPU in the background and keeps the Latte thread submitting
+        // Metal work. iOS terminates apps that submit Metal command buffers while
+        // backgrounded, so that second half is not just wasteful, it is a crash
+        // waiting to happen - and a very plausible cause of reported
+        // crashes/instability whenever backgrounding was involved.
+        //
+        // .inactive and .background both count as "left the foreground" and are
+        // treated identically: .inactive already precedes .background on the way
+        // out, so waiting for .background specifically would spend part of iOS's
+        // few-second grace window before suspension instead of all of it.
+        //
+        // cemu_bridge_pause()/cemu_bridge_resume() (CemuBridge.mm) are safe to call
+        // even if nothing has finished booting yet - CafeSystem::PauseTitle()/
+        // ResumeTitle() no-op when no title is running, and the Metal GPU-thread
+        // gate they also flip is harmless to set on a renderer that exists but has
+        // not presented a frame yet. Nothing here checks emulationState first
+        // because there is nothing safer to gate on: this view does not exist
+        // unless a game is loading, running, or paused (see ContentView's switch
+        // over emulationState) - so "pause when nothing is loaded" is already a
+        // structural no-op rather than something to re-check here, and re-checking
+        // via cemu_bridge_is_title_running() would only narrow the window in which
+        // the GPU gate above gets closed, not widen any safety margin.
+        .onChange(of: scenePhase) { newPhase in
+            if newPhase == .active {
+                guard pausedByLifecycle else { return }
+                pausedByLifecycle = false
+                isPaused = false
+                cemu_bridge_resume()
+            } else if !isPaused {
+                isPaused = true
+                pausedByLifecycle = true
+                cemu_bridge_pause()
+            }
         }
     }
 }

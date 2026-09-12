@@ -98,6 +98,19 @@ final class PreviewPadStore: ObservableObject {
     static let shared = PreviewPadStore()
 
     static let enabledKey = "muffin.preview.enabled"
+
+    /// The ONE default for enabledKey. It existed twice before, as two bare literals in
+    /// two @AppStorage declarations that disagreed: SettingsView.swift said `true` and
+    /// ContentView.swift said `false`. b43ea77a deliberately flipped both on for the
+    /// sneak-peek build and the merge in 22f22340 took only one of them back, so the
+    /// Settings row read "on" while the game screen behaved as "off" - a toggle that
+    /// showed the opposite of what it did, for anyone who had never touched it.
+    ///
+    /// Kept at false, which is the behaviour users have actually been getting; making it
+    /// true would have changed what the pad does rather than just stopping the UI from
+    /// misreporting it. ControllerLayoutSettings already does exactly this for every one
+    /// of its own keys - a named constant is why none of those drifted.
+    static let defaultEnabled = false
     static let layoutPresetKey = "muffin.preview.layoutPreset"
     static let colourPresetKey = "muffin.preview.colourPreset"
     static let displayModeKey = "muffin.preview.displayMode"
