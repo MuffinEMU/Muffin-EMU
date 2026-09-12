@@ -1,0 +1,182 @@
+name: CPU core check
+
+# A two-minute gate in front of the Espresso CPU core.
+#
+# WHAT A GREEN RUN MEANS: the CPU core still parses and type-checks. Nothing more.
+#
+# WHAT IT DOES NOT MEAN: that the build is green. ci/syntax-stubs/ supplies fake boost,
+# fmt and glm headers that implement signatures and not semantics, nothing here links,
+# and nothing here runs a single guest instruction. A device is still the only authority
+# on whether the emulator works, and the full build is still the only authority on
+# whether it builds.
+#
+# WHY IT EXISTS ANYWAY: the real build needs vcpkg to cross-compile boost, openssl and
+# the rest for arm64-ios, which takes about 25 minutes (see build-ios-core.yml). A
+# recompiler edit that does not even compile should cost two minutes to discover, not
+# twenty-five. ci/syntax-check.sh is the same script used by hand on a laptop, so a
+# local pass and a CI pass mean exactly the same thing - the whole point is that there
+# is no second, subtly different set of rules to be surprised by here. It does the whole
+# 31-file core in 17 seconds on an M-series laptop; almost all of this workflow's wall
+# clock is checkout.
+
+on:
+  # No branch filter, deliberately. The build workflows are pinned to particular
+  # branches, and this line ships from main-v3.8 rather than main, so a `branches: [main]`
+  # filter here would have produced a workflow that looked configured and never ran once.
+  # A check this cheap should run wherever the work happens.
+  push:
+    paths:
+      - 'src/Cafe/HW/Espresso/**'
+      - 'ci/syntax-check.sh'
+      - 'ci/syntax-stubs/**'
+      # The version gate below is useless if a push that touches only the version files
+      # does not trigger it, so they are in the same filter. A VERSION edit also has a
+      # real way of breaking the type-check itself - see the root-VERSION step.
+      - 'ci/VERSION'
+      - 'ci/version.sh'
+      - '.github/workflows/cpu-core-check.yml'
+  workflow_dispatch: {}
+
+# Pushing three commits in a row should tell us about the newest one, not spend three
+# runners telling us about two commits nobody is looking at any more.
+concurrency:
+  group: cpu-core-check-${{ github.ref }}
+  cancel-in-progress: true
+
+# Reads the tree, reports a status, writes nothing.
+permissions:
+  contents: read
+
+jobs:
+  syntax-check:
+    name: Espresso type-check
+    # macOS because the CPU core is type-checked with Apple clang against the iOS
+    # configuration (-DCEMU_PLATFORM_IOS, -arch arm64), which is the target that actually
+    # ships. A green run under a different vendor's libc++ would not answer the question
+    # being asked.
+    runs-on: macos-14
+    steps:
+      - name: Check out (no submodules)
+        uses: actions/checkout@v4
+        with:
+          # Explicitly off rather than left to the default, because the obvious thing to
+          # copy from the build workflows is `submodules: recursive`, and that clones
+          # vcpkg (which .gitmodules deliberately does not mark shallow), ZArchive,
+          # cubeb, imgui, metal-cpp and Vulkan-Headers. That is minutes of cloning for a
+          # 17-second check that needs exactly one of them.
+          submodules: false
+
+      - name: Fetch the one submodule that must be real - xbyak_aarch64
+        # Stubs are the right answer for boost, fmt and glm: the check only needs their
+        # signatures, and ci/syntax-stubs/ says so at length. xbyak_aarch64 is the one
+        # dependency where that reasoning fails, and it is deliberately not stubbed. It
+        # is the assembler the AArch64 backend emits every instruction through
+        # (BackendAArch64.cpp: #include <xbyak_aarch64.h>), so its real headers are what
+        # decide whether an emitter call is well-typed. A stub would accept a wrong
+        # register class, a wrong operand width or a wrong addressing mode in complete
+        # silence - which is the exact class of mistake this gate is here to catch, so
+        # stubbing it would leave a check that passes and means nothing.
+        run: |
+          set -eu
+          # --depth 1 first, for speed. Fall back to a full fetch: a shallow submodule
+          # fetch gets the default branch tip, so if upstream has moved past the commit
+          # this tree pins, the pinned commit is simply not in what was fetched and the
+          # shallow form fails. The repository is small, the fallback costs seconds, and
+          # a dependency that could not be fetched must never be reported as a code
+          # defect.
+          git submodule update --init --depth 1 dependencies/xbyak_aarch64 \
+            || git submodule update --init dependencies/xbyak_aarch64
+
+      - name: Confirm xbyak_aarch64 is actually populated
+        # Checked against this tree, with the include path removed: the backend fails
+        # with "fatal error: 'xbyak_aarch64.h' file not found". That is a red run for an
+        # empty submodule directory wearing the costume of a red run for a broken edit,
+        # and somebody would go looking at the recompiler. Fail here instead, where the
+        # message says what is really wrong.
+        run: |
+          set -eu
+          for h in xbyak_aarch64.h xbyak_aarch64_util.h; do
+            if [ ! -f "dependencies/xbyak_aarch64/xbyak_aarch64/$h" ]; then
+              echo "::error::dependencies/xbyak_aarch64 is missing $h - the submodule did not populate."
+              echo "::error::This is a checkout problem, not a code problem. Do not go looking at the recompiler."
+              exit 1
+            fi
+          done
+          echo "xbyak_aarch64 at $(git -C dependencies/xbyak_aarch64 rev-parse --short HEAD)"
+
+      - name: Refuse a repository-root VERSION file
+        # This looks like pedantry and is not. ci/version.sh explains why the version
+        # file lives in ci/ and never at the repository root: macOS is case-insensitive,
+        # ci/syntax-check.sh compiles with -I . , and C++20 has a standard header named
+        # <version>. clang resolves #include <version> against ./VERSION and includes the
+        # version string as though it were that header. Reproduced directly: clang warns
+        # -Wnonportable-include-path ("specified path differs in case from file name on
+        # disk") and then reports errors from inside the include - and syntax-check.sh
+        # passes -Wno-everything, so the one line that would have explained it is
+        # suppressed and all that is left is errors apparently inside libc++. It took the
+        # core from 31/31 clean to 0/31 that way, and would do the same to the real build.
+        #
+        # Because the filesystem is case-insensitive, this test catches ./version too.
+        run: |
+          set -eu
+          if [ -e VERSION ]; then
+            echo "::error::A VERSION file exists at the repository root. It shadows the C++20 <version> header"
+            echo "::error::(case-insensitive filesystem + -I .) and breaks every translation unit."
+            echo "::error::The version file belongs at ci/VERSION. See the comment at the top of ci/version.sh."
+            exit 1
+          fi
+
+      - name: Type-check the Espresso CPU core
+        # No arguments: check every .cpp under src/Cafe/HW/Espresso. The script's own
+        # tail prints N/31 clean and exits non-zero if any file failed.
+        #
+        # Note what is NOT covered, so a green tick is not read as more than it is:
+        # src/Cafe/HW/Latte (needs the metal-cpp headers), any .mm, and all Swift. Those
+        # only ever get checked by a real build.
+        run: |
+          set -eu
+          clang++ --version | head -n 1
+          ./ci/syntax-check.sh
+
+  version-file:
+    name: ci/VERSION is a number
+    # Same runner family as the release build that consumes this, so the shell and the
+    # BSD userland it runs under are the ones that matter. A green run on GNU tools would
+    # not be evidence about the path that actually stamps an IPA.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Shell script and a text file. No dependency of any kind.
+          submodules: false
+
+      - name: ci/version.sh must print a major.minor number
+        # WHY THIS IS WORTH A JOB: ci/VERSION is now the sole source of the version, read
+        # by ci/version.sh in build-ios-app.yml to stamp CFBundleShortVersionString and
+        # to refuse a release whose dotted tag disagrees with it. That read happens after
+        # the ~25 minute cross-compile, so a malformed file today means a release that
+        # dies at the very last step. Catching it here costs about fifteen seconds.
+        #
+        # The regex is deliberately stricter than the one inside version.sh. That one is a
+        # shell case glob, which has no repetition operator, so `[0-9]*.[0-9]*` accepts
+        # more than it looks like it does - verified: it accepts "3.8-rc1", "9x.8" and
+        # "1.2.3". The last is the dangerous one, because it is plausible rather than
+        # obviously wrong: the tag check in build-ios-app.yml pulls only the first two
+        # components out of a tag, so VERSION="1.2.3" can never equal the "1.2" it reads
+        # from tag v1.2.3, and every dotted-tag release would fail at the stamping step
+        # with every earlier step green. The owner's rule is one number up by 0.1 per
+        # release, so two components anchored end to end is exactly the rule, and this is
+        # where it gets enforced rather than discovered.
+        run: |
+          set -u
+          if ! VER=$(./ci/version.sh); then
+            echo "::error::ci/version.sh failed. ci/VERSION is missing or malformed (its own message is above)."
+            exit 1
+          fi
+          if ! printf '%s' "$VER" | grep -qE '^[0-9]+\.[0-9]+$'; then
+            echo "::error::ci/version.sh printed '$VER', which is not a bare major.minor number."
+            echo "::error::Write exactly two numbers separated by a dot into ci/VERSION, e.g. 3.8 - no 'v',"
+            echo "::error::no third component, no suffix. A release build stamps this string verbatim."
+            exit 1
+          fi
+          echo "ci/VERSION -> $VER"
