@@ -15,7 +15,7 @@ Reads GITHUB_TOKEN from the environment when present (raises the API rate limit)
 """
 import json, os, re, sys, urllib.request, argparse
 
-PAGES = "https://kiddreads.github.io/cemu-ios-muffin"
+PAGES = "https://kiddreads.github.io/muffin-emu"
 
 def releases(repo, token):
     req = urllib.request.Request(
@@ -137,7 +137,7 @@ def build_source(rels, asset_name, ident, name, subtitle, app_subtitle, extra_no
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--repo", default="kiddreads/cemu-ios-muffin")
+    ap.add_argument("--repo", default="kiddreads/muffin-emu")
     ap.add_argument("--out-dir", default="docs")
     a = ap.parse_args()
 

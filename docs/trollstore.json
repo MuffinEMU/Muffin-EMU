@@ -3,8 +3,8 @@
   "identifier": "com.kiddreads.muffin.trollstore",
   "subtitle": "Wii U emulation on iOS - TrollStore build.",
   "description": "The source for Muffin - a genuine port of the Cemu Wii U emulator to iOS, built from source in the open. Work in progress, and honest about it: see STATUS.md in the repository for exactly what works and what does not. This source serves the ad-hoc signed build for TrollStore and jailbroken devices, with the JIT entitlements embedded so the recompiler can actually get executable memory. On SideStore or AltStore use the standard source instead - those re-sign at install and would strip these entitlements.",
-  "iconURL": "https://kiddreads.github.io/cemu-ios-muffin/icon.png",
-  "website": "https://kiddreads.github.io/cemu-ios-muffin/",
+  "iconURL": "https://kiddreads.github.io/muffin-emu/icon.png",
+  "website": "https://kiddreads.github.io/muffin-emu/",
   "tintColor": "E5652E",
   "apps": [
     {
@@ -13,57 +13,17 @@
       "developerName": "kiddreads",
       "subtitle": "Wii U emulator - TrollStore build",
       "localizedDescription": "Muffin is the Cemu Wii U emulator, ported to iOS - iPhone and iPad, iOS 15 and later. The real C++ engine - PowerPC interpreter, ARM64 recompiler, the full Cafe OS HLE stack and Cemu's native Metal renderer - running under a SwiftUI shell.\n\nThis is in-progress software. A picture reaches the screen for real titles, but it is not yet a correct one, and no title has been confirmed playable end to end. The project documents its own state honestly rather than claiming more than it delivers - read STATUS.md before installing.\n\nThis source serves the ad-hoc signed build for TrollStore and jailbroken devices, with the JIT entitlements embedded so the recompiler can actually get executable memory. On SideStore or AltStore use the standard source instead - those re-sign at install and would strip these entitlements.\n\nBring your own games. No copyrighted content is distributed here.",
-      "iconURL": "https://kiddreads.github.io/cemu-ios-muffin/icon.png",
+      "iconURL": "https://kiddreads.github.io/muffin-emu/icon.png",
       "tintColor": "E5652E",
       "category": "games",
       "screenshotURLs": [],
-      "versions": [
-        {
-          "version": "4.8",
-          "date": "2026-09-11T17:41:15Z",
-          "localizedDescription": "Unsigned iOS build from commit abba52e796bd0e948e97b97b5bc3fd3631e614d8.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `main`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v47-blob-fix...v4.8-brighter-themes",
-          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v4.8-brighter-themes/Cemu-fakesigned.ipa",
-          "size": 60847316,
-          "minOSVersion": "15.0"
-        },
-        {
-          "version": "4.7",
-          "date": "2026-09-11T17:07:22Z",
-          "localizedDescription": "Unsigned iOS build from commit 36ba73f3cb7a392dfae474402e65f3f7b183e49e.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `muffin/v47-blob-fix`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v41-all-fixes-merged...v47-blob-fix",
-          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v47-blob-fix/Cemu-fakesigned.ipa",
-          "size": 60847290,
-          "minOSVersion": "15.0"
-        },
-        {
-          "version": "4.6",
-          "date": "2026-09-11T03:01:19Z",
-          "localizedDescription": "Unsigned iOS build from commit c922df2c62d4d62172f67f8950eca707eb45c496.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `muffin/v46-fix-exit-freeze`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v36-geometry-shader-fixes...v46-exit-fix-and-archive-versioning",
-          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v46-exit-fix-and-archive-versioning/Cemu-fakesigned.ipa",
-          "size": 60847087,
-          "minOSVersion": "15.0"
-        },
-        {
-          "version": "4.4",
-          "date": "2026-09-11T00:45:03Z",
-          "localizedDescription": "Unsigned iOS build from commit 29ee027b12f94dc5b21f64881eb1e52753ec9be6.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `muffin/v44`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v36-geometry-shader-fixes...v44-pipeline-cache-fixes",
-          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v44-pipeline-cache-fixes/Cemu-fakesigned.ipa",
-          "size": 60847585,
-          "minOSVersion": "15.0"
-        },
-        {
-          "version": "4.2",
-          "date": "2026-09-10T23:35:05Z",
-          "localizedDescription": "Unsigned iOS build from commit 73cac6ba715528525b1d290780f79f8db81fe396.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `muffin/next-release`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v36-geometry-shader-fixes...v42-geometry-and-scheduling",
-          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v42-geometry-and-scheduling/Cemu-fakesigned.ipa",
-          "size": 60837941,
-          "minOSVersion": "15.0"
-        }
-      ],
+      "versions": [],
       "appPermissions": {
         "entitlements": [],
         "privacy": {}
       }
     }
   ],
-  "news": []
+  "news": [],
+  "_note": "Regenerated empty: this line was restored from ea2d6e05 and has published no releases yet. The previous contents advertised builds from an abandoned line that renders incorrectly, and a stale feed installs them silently."
 }

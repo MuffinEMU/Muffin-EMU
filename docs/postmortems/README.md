@@ -12,7 +12,25 @@ reinstall. Skip it for ordinary bugs found and fixed in the same sitting.
 Each is here because breaking it actually cost us something. They are ordered by
 how much.
 
-### 1. An always-false condition may be load-bearing
+### 1. A tag is a label, not a provenance record
+
+Two releases were tagged at the same commit and shipped different binaries. A
+GitHub release resolves its target at publish time; the IPA comes from a workflow
+run that resolved its own `headSha` when the run started. Nothing forces those to
+agree and nothing reports it when they do not.
+
+Both facts were true at once: the tags really did point at one commit, and the
+two IPAs really were different code. That is what made checking the tags feel
+conclusive while settling nothing.
+
+If you need to know what is in a binary, ask the build, not the tag. And when
+someone's device disagrees with your repository, the device is right - the
+repository says what should be true, the device says what is.
+
+See `2026-09-12-two-tags-one-commit.md`. Listed first because it cost the most:
+about a week spent on the wrong line.
+
+### 2. An always-false condition may be load-bearing
 
 The highest-value rule in this file, and the least intuitive.
 
@@ -30,7 +48,7 @@ later nobody will suspect the "obviously correct" one-line correction.
 
 See `2026-09-11-write-combined-blobs.md`, which is exactly this.
 
-### 2. Never report success for work that failed
+### 3. Never report success for work that failed
 
 `Compile()` returned `true` while handing back a null pipeline. Every caller
 believed it. The null was cached permanently, and every draw that needed it was
@@ -40,7 +58,7 @@ A function that cannot fail should return `void`. A function that can must
 report it, and its callers must handle it. "Log it and return true" is not error
 handling; it is a lie with a receipt.
 
-### 3. Never silently drop work
+### 4. Never silently drop work
 
 `if (!pipelineObj->m_pipeline) return;` — a draw call vanishing with no log. The
 guest asked for something, the emulator did nothing, and nothing recorded it.
@@ -51,7 +69,7 @@ site, so the first caller permanently silences every other one — that has alre
 caused two separate diagnostic blind spots here (the TV/pad `CAMetalLayer` logs,
 and the scan-buffer drop logs).
 
-### 4. Anything written to disk must carry a version
+### 5. Anything written to disk must carry a version
 
 `MTL::BinaryArchive` had none. When the pipeline hash was corrected, every
 machine still held an archive built under the old, colliding hash — and kept
@@ -63,7 +81,7 @@ rather than opened and mistrusted, and delete other versions on startup so a
 stale file cannot lurk. Bump it whenever anything that decides *what a cache
 entry means* changes.
 
-### 5. If the same rule is implemented twice, change both or neither
+### 6. If the same rule is implemented twice, change both or neither
 
 The app's version string is derived in two places: a shell expression in
 `build-ios-app.yml` that stamps `CFBundleShortVersionString`, and `version_of()`
@@ -84,7 +102,7 @@ these now say the other exists and has to move with it - that is cheaper than
 collapsing them across a YAML/Python boundary, and it is what would have caught
 this.
 
-### 6. Ask when the symptom started before trusting attribution
+### 7. Ask when the symptom started before trusting attribution
 
 A regression reported right after a batch of changes is not evidence those
 changes caused it. In the incident below, the trigger predated the suspected work
