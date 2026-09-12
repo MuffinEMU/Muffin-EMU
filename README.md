@@ -70,7 +70,7 @@ Two sources, because the two install paths need different builds:
 
 - **SideStore / AltStore / LiveContainer** — `https://kiddreads.github.io/cemu-ios-muffin/apps.json`
   (`Cemu.ipa`, unsigned on purpose; these tools re-sign with your own Apple ID at install).
-- **TrollStore / jailbroken** — `https://kiddreads.github.io/cemu-ios-muffin/trollstore.json`
+- **TrollStore / jailbroken** — `https://kiddreads.github.io/muffin-emu/trollstore.json`
   (`Cemu-fakesigned.ipa`, ad-hoc signed with the JIT entitlements genuinely embedded, which
   a SideStore re-sign would strip).
 
