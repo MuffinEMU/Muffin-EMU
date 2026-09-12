@@ -1,6 +1,6 @@
 # Handoff — BW-198, the GamePad-clone pad layout
 
-Branch `ios-gamepad-clone-layout` on `kiddreads/cemu-ios-muffin`, cut from
+Branch `ios-gamepad-clone-layout` on `kiddreads/muffin-emu`, cut from
 `ios-controls-on-extras` (`e1de779b`). **Nothing in this branch is in the build.**
 
 ## State

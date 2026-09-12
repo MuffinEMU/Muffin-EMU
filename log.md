@@ -28,6 +28,72 @@ recording a fix — arguably more, because it stops the next person re-walking i
 
 ---
 
+## 2026-09-12 — v3.9 was the traitor, and the tags could never have told us
+
+**What happened.** The owner installed the v3.8 IPA, launched a retail game,
+played it, and it rendered correctly. He then installed the v3.9 IPA on the same
+device and got garbled geometry and wrong colours. He said they must be different
+commits — how else would this be?
+
+I had checked, twice, and told him they were not:
+
+```
+v38-geometry-rects-emulation -> fbcff902  tree b26f6e54
+v39-rects-emulation          -> fbcff902  tree b26f6e54
+```
+
+Same SHA, same tree, zero commits between. Verifiable, precise, and answering a
+question nobody had asked. He did not ask what the tags pointed at. He asked why
+two binaries behaved differently.
+
+**The mechanism.** A GitHub release does not record the commit its assets were
+built from. It resolves its target at publish time; the IPA comes from a workflow
+run that resolved its own `headSha` when the run *started*. Nothing forces those
+to agree.
+
+| Release | Published | Build ran | Built from | Result |
+|---|---|---|---|---|
+| v3.8 | 22:09 | 21:42 | `ea2d6e05` | plays a game correctly |
+| v3.9 | 01:33 | 01:14 | `8bcca9c8` | garbled geometry |
+
+Both tags really did point at one commit **and** the two IPAs really were
+different code. Both true at once, which is exactly why checking the tags felt
+conclusive and settled nothing.
+
+**The culprit.** `8bcca9c8`, *"Metal: emulate RECTS with compute, not just real
+geometry shaders"* — the only commit between the two builds that can render
+anything. Its own message ends: *"Whether the colours come back with it is the
+open question this was built to answer."* The device answered no.
+
+The owner had told me this on day one: *"the second that session worked on
+texture colours and fixing them, everything broke."* He was describing this
+commit. It took a week and an abandoned repository to catch up with him.
+
+**The trap in the obvious conclusion.** *Rip out RECTS emulation* is wrong.
+`ea2d6e05` — the build that works — already has compute-based geometry-shader and
+RECTS emulation; `f125dbd3` added it and `ea2d6e05` switched it on. The working
+build has the feature. `8bcca9c8` broke rendering by **extending** it. Removing
+the feature wholesale would have produced a third broken line.
+
+**What we did.** Restored the line at `ea2d6e05` as `kiddreads/muffin-emu`,
+carried across everything with no emulation surface (app shell, themes, docs,
+tooling, CI), left every emulation file byte-identical, and set `ci/VERSION` to
+**3.8** — because that is what it is. It works back up by 0.1 rather than
+renaming itself into a number it has not earned.
+
+`MetalRenderer.cpp` and `MetalPipelineCompiler.cpp` are off limits to agents for
+now. That is where `8bcca9c8` lived.
+
+**What it cost.** About a week on the wrong line, one abandoned repository, and a
+diagnosis that named the wrong culprit twice — first write-combined buffers, then
+the binary archive. Post-mortem:
+`docs/postmortems/2026-09-12-two-tags-one-commit.md`.
+
+**The rule.** When someone's device disagrees with your repository, the device is
+right. The repository says what *should* be true; the device says what *is*.
+
+---
+
 ## 2026-09-11 (later still) — One A12Z log, four defects, and the mode nobody knew we were in
 
 **Device:** iPad Pro A12Z (`iPad8,11`), iOS 26.6.1, FAST Racing NEO. A real user log,

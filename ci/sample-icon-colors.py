@@ -10,7 +10,7 @@ Pure-Python PNG decode: zlib inflate, then undo the per-scanline filters
 """
 import json, struct, zlib
 
-REPO = "/Users/kiddreads/cemu-ios-muffin"
+REPO = "/Users/kiddreads/muffin-emu"
 ORDER = ["original", "double-chocolate", "blueberry-blast", "strawberry", "lemon-zest",
          "fix-the-world", "autism-awareness", "pro-gold-vip", "pro-holographic", "pro-diamond-ice"]
 
