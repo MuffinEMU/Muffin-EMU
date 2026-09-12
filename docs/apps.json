@@ -1,0 +1,597 @@
+{
+  "name": "Muffin",
+  "identifier": "com.kiddreads.muffin",
+  "subtitle": "Wii U emulation on iOS, in the open.",
+  "description": "The source for Muffin - a genuine port of the Cemu Wii U emulator to iOS, built from source in the open. Work in progress, and honest about it: see STATUS.md in the repository for exactly what works and what does not. This source serves the standard build for SideStore, AltStore and LiveContainer, which re-sign it with your own Apple ID at install.",
+  "iconURL": "https://kiddreads.github.io/cemu-ios-muffin/icon.png",
+  "website": "https://kiddreads.github.io/cemu-ios-muffin/",
+  "tintColor": "E5652E",
+  "apps": [
+    {
+      "name": "Muffin",
+      "bundleIdentifier": "com.cemu.Cemu",
+      "developerName": "kiddreads",
+      "subtitle": "Wii U emulator for iPhone and iPad",
+      "localizedDescription": "Muffin is the Cemu Wii U emulator, ported to iOS - iPhone and iPad, iOS 15 and later. The real C++ engine - PowerPC interpreter, ARM64 recompiler, the full Cafe OS HLE stack and Cemu's native Metal renderer - running under a SwiftUI shell.\n\nThis is in-progress software. A picture reaches the screen for real titles, but it is not yet a correct one, and no title has been confirmed playable end to end. The project documents its own state honestly rather than claiming more than it delivers - read STATUS.md before installing.\n\nThis source serves the standard build for SideStore, AltStore and LiveContainer, which re-sign it with your own Apple ID at install.\n\nBring your own games. No copyrighted content is distributed here.",
+      "iconURL": "https://kiddreads.github.io/cemu-ios-muffin/icon.png",
+      "tintColor": "E5652E",
+      "category": "games",
+      "screenshotURLs": [],
+      "versions": [
+        {
+          "version": "4.8",
+          "date": "2026-09-11T17:41:15Z",
+          "localizedDescription": "Unsigned iOS build from commit abba52e796bd0e948e97b97b5bc3fd3631e614d8.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `main`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v47-blob-fix...v4.8-brighter-themes",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v4.8-brighter-themes/Cemu.ipa",
+          "size": 60670171,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "4.7",
+          "date": "2026-09-11T17:07:22Z",
+          "localizedDescription": "Unsigned iOS build from commit 36ba73f3cb7a392dfae474402e65f3f7b183e49e.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `muffin/v47-blob-fix`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v41-all-fixes-merged...v47-blob-fix",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v47-blob-fix/Cemu.ipa",
+          "size": 60670108,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "4.6",
+          "date": "2026-09-11T03:01:19Z",
+          "localizedDescription": "Unsigned iOS build from commit c922df2c62d4d62172f67f8950eca707eb45c496.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `muffin/v46-fix-exit-freeze`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v36-geometry-shader-fixes...v46-exit-fix-and-archive-versioning",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v46-exit-fix-and-archive-versioning/Cemu.ipa",
+          "size": 60669894,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "4.5",
+          "date": "2026-09-11T01:22:55Z",
+          "localizedDescription": "Unsigned iOS build from commit a9a246d272c69c41a63687c142d41c38253317d4.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `muffin/v45-no-texture-decoders`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v36-geometry-shader-fixes...v45-no-texture-decoders",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v45-no-texture-decoders/Cemu.ipa",
+          "size": 60671240,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "4.4",
+          "date": "2026-09-11T00:45:03Z",
+          "localizedDescription": "Unsigned iOS build from commit 29ee027b12f94dc5b21f64881eb1e52753ec9be6.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `muffin/v44`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v36-geometry-shader-fixes...v44-pipeline-cache-fixes",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v44-pipeline-cache-fixes/Cemu.ipa",
+          "size": 60670425,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "4.2",
+          "date": "2026-09-10T23:35:05Z",
+          "localizedDescription": "Unsigned iOS build from commit 73cac6ba715528525b1d290780f79f8db81fe396.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `muffin/next-release`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v36-geometry-shader-fixes...v42-geometry-and-scheduling",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v42-geometry-and-scheduling/Cemu.ipa",
+          "size": 60661118,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "4.1",
+          "date": "2026-09-10T23:30:47Z",
+          "localizedDescription": "Unsigned iOS build from commit 68e47ec4b47829b8f04c53cc90a6504cf6d168d5.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `main`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v36-geometry-shader-fixes...v41-all-fixes-merged",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v41-all-fixes-merged/Cemu.ipa",
+          "size": 60662420,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "4.0",
+          "date": "2026-09-06T03:43:36Z",
+          "localizedDescription": "Unsigned iOS build from commit ca9bad2b0d4a107412eaac48b775967e64427786.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `feature/icon-matched-themes`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v34-shader-texelfetch-fix...v40-icon-matched-themes",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v40-icon-matched-themes/Cemu.ipa",
+          "size": 60648580,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "3.9",
+          "date": "2026-09-06T01:33:43Z",
+          "localizedDescription": "Unsigned iOS build from commit 8bcca9c879babfe456335e51e8d0ede1be21bd1d.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `feat/geometry-shader-emulation-v2`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v34-shader-texelfetch-fix...v39-rects-emulation",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v39-rects-emulation/Cemu.ipa",
+          "size": 60628437,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "3.8",
+          "date": "2026-09-05T22:09:23Z",
+          "localizedDescription": "Unsigned iOS build from commit ea2d6e05b49b65b491f6dfe40679eb5de8842c7e.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `feat/geometry-shader-emulation-v2`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v34-shader-texelfetch-fix...v38-geometry-rects-emulation",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v38-geometry-rects-emulation/Cemu.ipa",
+          "size": 60626176,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "3.7",
+          "date": "2026-09-05T19:32:58Z",
+          "localizedDescription": "Unsigned iOS build from commit fbcff902ec76102049b4486d3194008639eb08e8.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `main`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v34-shader-texelfetch-fix...v37-dlc-keycache-and-import-buttons",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v37-dlc-keycache-and-import-buttons/Cemu.ipa",
+          "size": 60615348,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "3.6",
+          "date": "2026-09-05T19:12:02Z",
+          "localizedDescription": "Unsigned iOS build from commit ba3ace06c94001aab976ad92ca7900dc3d8dc1b4.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `main`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v34-shader-texelfetch-fix...v36-geometry-shader-fixes",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v36-geometry-shader-fixes/Cemu.ipa",
+          "size": 60600527,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "3.4",
+          "date": "2026-09-05T05:06:49Z",
+          "localizedDescription": "Unsigned iOS build from commit 97fca6a228ca90742aeb95f686d0224a2fa7c6e7.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `main`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v33-dropped-draw-diagnostics...v34-shader-texelfetch-fix",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v34-shader-texelfetch-fix/Cemu.ipa",
+          "size": 60601597,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "3.3",
+          "date": "2026-09-04T21:06:37Z",
+          "localizedDescription": "Unsigned iOS build from commit db79f2e8227c155626fe28284c28c6bf422eb7c9.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `main`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260904-v32...v33-dropped-draw-diagnostics",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v33-dropped-draw-diagnostics/Cemu.ipa",
+          "size": 60513987,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260904-v32",
+          "date": "2026-09-04T20:33:28Z",
+          "localizedDescription": "Unsigned iOS build from commit fad6dff74f9edf24711fd8d0da029954b7e71c40.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260904-v31...preview-showcase-20260904-v32",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260904-v32/Cemu.ipa",
+          "size": 60516496,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260904-v31",
+          "date": "2026-09-04T20:09:31Z",
+          "localizedDescription": "Unsigned iOS build from commit 49e620334fae8ac5ae42894a7afbf6dc66ea99b2.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v30-fsc-crashfix...preview-showcase-20260904-v31",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260904-v31/Cemu.ipa",
+          "size": 60515292,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "3.0",
+          "date": "2026-09-04T20:05:59Z",
+          "localizedDescription": "Unsigned iOS build from commit e16feb28337d9a8bb941cb5372133108c0f6f251.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `fix/fsc-null-root-at-startup`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260904-v29...v30-fsc-crashfix",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v30-fsc-crashfix/Cemu.ipa",
+          "size": 60513525,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260904-v29",
+          "date": "2026-09-04T18:35:11Z",
+          "localizedDescription": "Unsigned iOS build from commit d3e883767d1ba01f3a09d4cb31b1fc8072fa9a2c.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260903-v28...preview-showcase-20260904-v29",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260904-v29/Cemu.ipa",
+          "size": 60516403,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260903-v28",
+          "date": "2026-09-03T04:29:28Z",
+          "localizedDescription": "Unsigned iOS build from commit 05617b47de1ca9ada891caaa5056cfcbbd7e5c22.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260903-v21...preview-showcase-20260903-v28",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260903-v28/Cemu.ipa",
+          "size": 60475909,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260903-v21",
+          "date": "2026-09-03T02:59:15Z",
+          "localizedDescription": "Unsigned iOS build from commit 6ba5a15f8d35d6d4e3150523ac2eff47722940fc.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260903-v18...preview-showcase-20260903-v21",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260903-v21/Cemu.ipa",
+          "size": 60419320,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260903-v19",
+          "date": "2026-09-03T02:08:54Z",
+          "localizedDescription": "Unsigned iOS build from commit f7b6c1184a4a5bd0fad0690932b7fb3dae5c63b4.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260903-v17...preview-showcase-20260903-v19",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260903-v19/Cemu.ipa",
+          "size": 60419159,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260903-v18",
+          "date": "2026-09-03T01:47:35Z",
+          "localizedDescription": "Unsigned iOS build from commit 33c200864b0b9307848a1eedfef3b133c2c3a410.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260903-v17...preview-showcase-20260903-v18",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260903-v18/Cemu.ipa",
+          "size": 48960562,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260903-v17",
+          "date": "2026-09-03T01:18:04Z",
+          "localizedDescription": "Unsigned iOS build from commit 8ad82d929b78cf294b91c1640aa8045b03887a67.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260903-v16b...preview-showcase-20260903-v17",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260903-v17/Cemu.ipa",
+          "size": 48960259,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260903-v16b",
+          "date": "2026-09-03T00:30:18Z",
+          "localizedDescription": "Unsigned iOS build from commit c0bb7c441facc691d11fd412779b48f502a0decf.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260902-v15...preview-showcase-20260903-v16b",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260903-v16b/Cemu.ipa",
+          "size": 48960261,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260902-v15",
+          "date": "2026-09-02T23:47:54Z",
+          "localizedDescription": "Unsigned iOS build from commit 5d53c46d2982528d2579f8c9edc0c5c8dfe8e2c4.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260902-v14...preview-showcase-20260902-v15",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260902-v15/Cemu.ipa",
+          "size": 48935205,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260902-v14",
+          "date": "2026-09-02T21:32:04Z",
+          "localizedDescription": "Unsigned iOS build from commit 7c8ecae49b62d7756a80af0b528cd765aeb49588.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260902-v13...preview-showcase-20260902-v14",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260902-v14/Cemu.ipa",
+          "size": 48934677,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260902-v13",
+          "date": "2026-09-02T21:06:11Z",
+          "localizedDescription": "Unsigned iOS build from commit 00e38a9e309295853d662b02c2644646acd4e96e.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260902-v11...preview-showcase-20260902-v13",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260902-v13/Cemu.ipa",
+          "size": 48933077,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260902-v11",
+          "date": "2026-09-02T20:21:14Z",
+          "localizedDescription": "Unsigned iOS build from commit 7d569389a89ad27ce644ed894d26cc3250794e62.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260902-v10...preview-showcase-20260902-v11",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260902-v11/Cemu.ipa",
+          "size": 48932401,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260902-v10",
+          "date": "2026-09-02T19:53:36Z",
+          "localizedDescription": "Unsigned iOS build from commit 70a5f0344ad5273ec76dbb303bad899385c1fcfb.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260902-v8...preview-showcase-20260902-v10",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260902-v10/Cemu.ipa",
+          "size": 48933189,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260902-v8",
+          "date": "2026-09-02T18:44:21Z",
+          "localizedDescription": "Unsigned iOS build from commit d4c2dada0ca8d907bd5be4717099db06164666d3.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260901-v6...preview-showcase-20260902-v8",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260902-v8/Cemu.ipa",
+          "size": 48927977,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260901-v7",
+          "date": "2026-09-01T04:54:00Z",
+          "localizedDescription": "Unsigned iOS build from commit 80d6ed13bdbff8fba78ba143ebf92f0070ce0f95.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260831-v4...preview-showcase-20260901-v7",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260901-v7/Cemu.ipa",
+          "size": 48926156,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260901-v6",
+          "date": "2026-09-01T04:26:09Z",
+          "localizedDescription": "Unsigned iOS build from commit b43ea77aff85ad1c7ccbc6869b51c745c14e23be.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/preview-showcase-20260831-v4...preview-showcase-20260901-v6",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260901-v6/Cemu.ipa",
+          "size": 48919079,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "preview-showcase-20260831-v4",
+          "date": "2026-09-01T03:19:20Z",
+          "localizedDescription": "Unsigned iOS build from commit 627b61fd42c6db1b077d7f1bab351eb800f94823.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nBuilt from `preview/showcase-sneak-peek`.\n\nCheck the `Init Cemu <sha>` line at the top of the log before judging a\nbuild — it names the commit that is actually in the binary, and it is the\nonly reliable way to tell one build from another.\n\nSee `STATUS.md` for what does and does not work.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/auto-b6740207a11fbcb0f1c3bad517036e572342112a...preview-showcase-20260831-v4",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/preview-showcase-20260831-v4/Cemu.ipa",
+          "size": 48919067,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2.2",
+          "date": "2026-08-31T01:29:51Z",
+          "localizedDescription": "Unsigned iOS build from commit b8d76841a86f87349d443a5352c5007c07893836.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.16...v2.2",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v2.2/Cemu.ipa",
+          "size": 48717918,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2.1",
+          "date": "2026-08-31T00:47:58Z",
+          "localizedDescription": "Unsigned iOS build from commit c7206f15eff6696bed16b57db6c8be9e70ef08a1.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.16...v2.1-intro-beta",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v2.1-intro-beta/Cemu.ipa",
+          "size": 48751656,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "2.0",
+          "date": "2026-08-30T23:48:26Z",
+          "localizedDescription": "Unsigned iOS build from commit 90ddb104a334805ecf0fb5508784ca8caf430a02.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.16...v2.0-intro-beta",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v2.0-intro-beta/Cemu.ipa",
+          "size": 48746527,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.38",
+          "date": "2026-08-30T22:50:21Z",
+          "localizedDescription": "Unsigned iOS build from commit 19bb79b7a32c2e9c48a0c04814be8af2f00287ca.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.38",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.38/Cemu.ipa",
+          "size": 48702987,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.37",
+          "date": "2026-08-29T18:44:14Z",
+          "localizedDescription": "Unsigned iOS build from commit e6afad02574fca5c0dfb15b21dc5e4e014065693.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.37",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.37/Cemu.ipa",
+          "size": 48702609,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.36",
+          "date": "2026-08-29T18:35:03Z",
+          "localizedDescription": "Unsigned iOS build from commit 5e0bde7ddd1330970a8012212ef49a82b6fd4b41.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.36",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.36/Cemu.ipa",
+          "size": 48686217,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.35",
+          "date": "2026-08-29T18:23:12Z",
+          "localizedDescription": "Unsigned iOS build from commit d463f2593f84d534572952c9e8c57ecf55d9fcda.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.35",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.35/Cemu.ipa",
+          "size": 48680846,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.34",
+          "date": "2026-08-29T18:00:27Z",
+          "localizedDescription": "Unsigned iOS build from commit 826f3d91f087786dc06d7f7b2d9b237594f2d9ea.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.34",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.34/Cemu.ipa",
+          "size": 48662407,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.30",
+          "date": "2026-08-29T07:49:33Z",
+          "localizedDescription": "Unsigned iOS build from commit 43c9a3edbdddc26f1a24f6994784d393ad4c7a4e.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.30",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.30/Cemu.ipa",
+          "size": 48654709,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.29",
+          "date": "2026-08-29T01:35:45Z",
+          "localizedDescription": "Unsigned iOS build from commit 0ee041611914f8da7e28823e11f8be6a14b62ab8.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.29",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.29/Cemu.ipa",
+          "size": 48629620,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.28",
+          "date": "2026-08-28T20:11:55Z",
+          "localizedDescription": "Unsigned iOS build from commit 5d81e77cb7fa1d18b43bbb972c5240afbc79ab86.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.28",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.28/Cemu.ipa",
+          "size": 48630169,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.27",
+          "date": "2026-08-28T20:03:58Z",
+          "localizedDescription": "Unsigned iOS build from commit 4c57e98257f1dfcd9079b86bccf6b3519fd9e156.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.27",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.27/Cemu.ipa",
+          "size": 48630388,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.26",
+          "date": "2026-08-28T13:06:51Z",
+          "localizedDescription": "Unsigned iOS build from commit b54cc0349dabd1b0ba9ff2ceba88e043bc5a7c37.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.26",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.26/Cemu.ipa",
+          "size": 48635878,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.25",
+          "date": "2026-08-28T03:22:50Z",
+          "localizedDescription": "Unsigned iOS build from commit 0ce24b6ccf2f768c94b35c0c2e3475e5d6c7a4c9.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.25",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.25/Cemu.ipa",
+          "size": 48633015,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.23",
+          "date": "2026-08-28T02:35:53Z",
+          "localizedDescription": "Unsigned iOS build from commit cd5286a618ce17a8e2ad88e1b94b826121750b09.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.23",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.23/Cemu.ipa",
+          "size": 48627082,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.22",
+          "date": "2026-08-28T02:23:35Z",
+          "localizedDescription": "Unsigned iOS build from commit 6d56127b8792fd405366df1432867424f9c3ebe4.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.22",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.22/Cemu.ipa",
+          "size": 48619325,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.21",
+          "date": "2026-08-27T21:37:46Z",
+          "localizedDescription": "Unsigned iOS build from commit a8e91ba73300a99fb4aa33495173de8098d847fc.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.21",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.21/Cemu.ipa",
+          "size": 48618686,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.20",
+          "date": "2026-08-27T21:19:59Z",
+          "localizedDescription": "Unsigned iOS build from commit 53f3eb502a65fe2cfe8a140d7bbe678b82859871.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.20",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.20/Cemu.ipa",
+          "size": 48617297,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.19",
+          "date": "2026-08-27T21:06:26Z",
+          "localizedDescription": "Unsigned iOS build from commit b14e0523da238aeea9adfe456a436cd46e302fc8.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.19",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.19/Cemu.ipa",
+          "size": 48616830,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.18",
+          "date": "2026-08-27T21:06:21Z",
+          "localizedDescription": "Unsigned iOS build from commit eb43a43b2653289a0ec5768b0d30a302f00c86fc.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.18",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.18/Cemu.ipa",
+          "size": 48617047,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.17",
+          "date": "2026-08-27T19:15:30Z",
+          "localizedDescription": "Unsigned iOS build from commit a2dfd54007e5bf206dd708010f7b4acedea7cc12.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.17",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.17/Cemu.ipa",
+          "size": 48597278,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.16",
+          "date": "2026-08-27T19:13:51Z",
+          "localizedDescription": "Unsigned iOS build from commit babe2a8a047b0ce6ee77ab6960e9057c251913d5.\n\nInstall with SideStore/AltStore, which re-signs with your own Apple ID.\n`Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nThis is a bring-up build. See `STATUS.md` in the repo for what does and\ndoes not work — as of this writing no Wii U title has been shown to boot.\n\n\n**Full Changelog**: https://github.com/kiddreads/cemu-ios-muffin/compare/v1.13...v1.16",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.16/Cemu.ipa",
+          "size": 48596923,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.13",
+          "date": "2026-08-18T15:26:57Z",
+          "localizedDescription": "Cosmetic-only change from v1.12: the upload button's icon is now `doc.badge.plus` instead of `arrow.up.doc`. No behavior changed - it's the same file-picker/import flow shipped in v1.12, just a different glyph on the button. `doc.badge.plus` matches the badge-plus pattern iOS uses elsewhere for \"add a new item to a local library\" (Photos, Files, etc.), which is a slightly better semantic fit for adding a ROM to Muffin's game library than either arrow direction.\n\nEverything else is unchanged from v1.12/v1.11 - still waiting on the graphics diagnostic test (`GX2SwapScanBuffers() reached for the first time` in the log, from `helloworld.rpx`) whenever you get to it.",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.13/Cemu.ipa",
+          "size": 31515929,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.12",
+          "date": "2026-08-18T15:26:45Z",
+          "localizedDescription": "New feature: in-app ROM upload.\n\nPreviously the only way to get a ROM onto the device was Files-app file sharing into Documents/Roms. This adds a real upload button in the library header (next to favorites/settings) that opens the system file picker directly - Files, iCloud Drive, or anywhere else a ROM might live.\n\n- Icon: `arrow.up.doc` (a document with an upward arrow - importing a file in, not Apple's Share glyph `square.and.arrow.up`).\n- Validates the picked file's extension against the same formats the library already scans for (`wua`/`wud`/`iso`/`rpx`).\n- Copies it into `Documents/Roms`, releasing security-scoped access whether the copy succeeds or fails.\n- Refreshes the library immediately after a successful import.\n- Shows an alert if the file's unsupported or the copy fails, instead of silently doing nothing.\n\nAlso includes everything from v1.11 (the always-on GX2SwapScanBuffers diagnostic marker, still waiting on that test result) plus the macOS build-regression fix from the earlier audit pass - no iOS rendering behavior changed since v1.11.\n\n## To test\n\n1. Sideload `Cemu.ipa`.\n2. Tap the new upload icon in the library header, pick any file - confirm the system picker opens and, for a valid ROM, it copies in and shows up in the library immediately.\n3. Try picking something invalid (e.g. a random photo) to confirm the error alert shows instead of a silent failure or crash.\n4. Same graphics test as v1.11 whenever you get to it: load `helloworld.rpx`, tap play, wait a...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.12/Cemu.ipa",
+          "size": 31515794,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.11",
+          "date": "2026-08-18T15:26:18Z",
+          "localizedDescription": "v1.10 fixed the CAMetalLayer zero-size bug, but your test still showed a black game screen (controls visible, game area black). Good question you raised: is it the renderer, or does helloworld.rpx just never draw anything?\n\n## What this build adds\n\nOne diagnostic-only change (no rendering behavior changed): an always-on log line that fires the *first time* the ROM calls `GX2SwapScanBuffers` - the real \"present this frame\" request a Wii U title makes. The existing log for this call was gated behind a logging category this build has no settings UI to enable, so there was no way to see it before.\n\nA follow-up audit also found and fixed a real (but unrelated) macOS build regression from the v1.10 fix, and flagged a separate, currently-harmless oversized-drawable inefficiency on iOS for a later coordinated fix - neither changes iOS runtime behavior in this build.\n\n## What to look for this time\n\nSideload, load `helloworld.rpx`, tap play - same as before, but **wait longer than last time** before concluding it's stuck. The interpreter (recompiler disabled) is very slow, so the ROM may simply not have reached its first draw call yet in the time you gave it before.\n\nLook for this exact line in the log:\n```\nGX2SwapScanBuffers() reached for the first time - title has issued its first swap request\n```\n\n- **If it appears:** the ROM is actively trying to render — the black screen is a real bug somewhere between \"frame presented\" and \"content actually visible\", worth digging into next.\n- **...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.11/Cemu.ipa",
+          "size": 31505586,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.10",
+          "date": "2026-08-18T15:26:06Z",
+          "localizedDescription": "v1.9 fixed the recurring crash (MetalLayerHandle double-release) - confirmed on your iPad Pro 2020 test: no crash, boot completes, log reaches \"Run title\". But the screen stayed black.\n\n## The bug\n\n`CreateMetalLayer()` (MetalLayer.mm) set the on-screen `CAMetalLayer`'s frame from `view.bounds`, read synchronously the instant the render surface registers - which happens in `makeUIView`, before SwiftUI has necessarily laid the owning view out to a nonzero size. `view.bounds` was frequently still `CGRectZero` at that exact moment, producing a layer that renders correctly internally but occupies zero screen space - invisible. Nothing later re-synced the frame either, since a manually-added sublayer doesn't auto-resize with its superlayer.\n\n## The fix\n\nPass the already-known pixel size straight into `CreateMetalLayer` instead of trusting `view.bounds`, so the on-screen frame is correct regardless of SwiftUI's layout timing.\n\n## Confidence\n\nThis matches the black-screen-with-clean-logs symptom exactly, and the code path is simple enough to be confident in the diagnosis - but same as always, wants a real device test before calling it done.\n\n## How to test\n\n1. Sideload `Cemu.ipa`.\n2. Launch - should not crash (confirmed already in v1.9).\n3. Load `helloworld.rpx` (included) and tap play.\n4. This time, watch for something to actually appear on screen, not just a clean log.\n5. Check `Documents/CemuCrashLog.txt` either way.",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.10/Cemu.ipa",
+          "size": 31505565,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.9",
+          "date": "2026-08-18T15:25:53Z",
+          "localizedDescription": "This is the fix for the real, root-cause bug behind the recurring crash - found by tracing why two prior fixes both failed at the exact same crash location.\n\n## The actual bug\n\nMetalLayerHandle (the class wrapping the real drawing surface) has a destructor that releases its underlying layer, but no matching move or copy behavior defined - a specific, well-known C++ rule violation. Every single time the drawing surface got set up, the code assigns a freshly-built handle into a slot that already exists. Because of how C++ handles that exact combination (a destructor without matching move operations), the freshly-built temporary's destructor runs immediately afterward and releases the very same object the persistent slot just took ownership of. The surface gets deallocated inside its own setup function, before that function even returns - and every draw call after that reads freed memory.\n\nThis explains why the crash sometimes looked like a plain crash and sometimes said \"unrecognized selector\" - it depends entirely on what happens to reuse that freed memory first, not two different bugs. It also explains why v1.7's view-retain fix and v1.8's drop-MTKView fix both failed at the identical crash site: neither touched the actual bug, which was never in Swift/SwiftUI at all.\n\nThis is very likely a bug that's always existed, invisible on desktop (where this only runs once at startup, so the leftover dangling pointer can sit untouched for a whole session) - not something introduced by...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.9/Cemu.ipa",
+          "size": 31505540,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.8",
+          "date": "2026-08-18T15:25:40Z",
+          "localizedDescription": "Fixes the recurring crash (BeginFrame -> nextDrawable) that survived the v1.7 fix. This is a real, structural fix, not another guess - but I want to be upfront: I'm not calling this \"the last one\" until it's actually confirmed.\n\n## What was actually wrong\n\nv1.7's fix (retaining the render surface's view) was real and necessary, but it wasn't the whole story - the crash kept recurring at the exact same spot afterward. The surface being used was an MTKView, which comes with its own built-in Metal rendering loop running 60 times a second - a leftover Swift-side placeholder from before the real C++ engine renderer existed. The real renderer's actual drawing surface was being added as a sublayer underneath that already-active, competing render loop: two independent Metal renderers fighting over the same piece of screen, one driven by the main thread, one by the game engine's own thread. That's exactly the kind of setup that produces intermittent, hard-to-pin-down crashes right at the drawable-request step - explaining why the crash location stayed identical even after the first, real fix.\n\n## Fix\n\nDropped MTKView for this surface entirely and use a plain, ordinary view instead - one with no rendering machinery of its own, so the real engine has that screen space uncontested rather than sharing it with a leftover placeholder that was never actually connected to real game frames anyway.\n\n## How to test\n\n1. Sideload `Cemu.ipa`.\n2. Launch - should not crash.\n3. Load `helloworld.rpx` (...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.8/Cemu.ipa",
+          "size": 31505546,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.7",
+          "date": "2026-08-18T15:25:25Z",
+          "localizedDescription": "Fixes the SIGSEGV you hit testing v1.6 - and this time the fix has strong independent confirmation, not just my own guess.\n\n## What happened on v1.6\n\nReal progress: the depth24Stencil8 fix from v1.6 worked completely - no more of that exception at all. Boot completed cleanly and the GPU thread actually started drawing frames. It then crashed with a genuine SIGSEGV inside MetalRenderer::BeginFrame() -> AcquireDrawable() -> nextDrawable().\n\nLiveContainer's own crash reporter gave a more precise picture than our own log:\n\n  -[OS_dispatch_data nextDrawable]: unrecognized selector sent to instance\n\nThat's the exact signature of a use-after-free: the object our code was calling nextDrawable on wasn't a CAMetalLayer anymore - the memory it used to occupy had been freed and reused by something completely unrelated (a GCD dispatch_data object), and our code was still holding the old, now-meaningless pointer.\n\n## Root cause\n\nThe real CAMetalLayer is added as a sublayer of the SwiftUI-managed MTKView's own layer - and the C++ side holds a bare, unmanaged pointer to that sublayer with no memory-management awareness of its own. The Swift code handed that view to the C++ side without retaining it, meaning SwiftUI was free to tear down and recreate the view during the loading-screen transition - and when it did, the view's layer (and our sublayer) went with it, right out from under the GPU thread mid-use.\n\n## Fix\n\nRetain that view for the app's lifetime instead of letting SwiftUI manage it ...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.7/Cemu.ipa",
+          "size": 31505371,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.6",
+          "date": "2026-08-18T15:25:12Z",
+          "localizedDescription": "This build fixes the exact crash you hit testing v1.5 - and unlike every previous fix tonight, this one comes with real confidence behind it, not a guess.\n\n## What happened on v1.5\n\nReal progress: boot completed end to end, no crash, no hang - the game screen actually appeared with buttons. That's M2's real finish line. The renderer still failed to construct, but survivably this time (the exception-safety fix from earlier caught it and logged the real reason instead of crashing):\n\n  MetalRenderer construction/InitializeLayer threw: NSInvalidArgumentException\n  - -[AGXA12XDevice isDepth24Stencil8PixelFormatSupported]: unrecognized\n  selector sent to instance\n\n## What that actually was\n\nNot a mystery this time - a real, verifiable fact about the platform. `depth24Stencil8PixelFormatSupported` is a genuine, documented MTLDevice method, but Apple deliberately excludes it from the Metal API on iOS entirely. The legacy 24-bit-depth-plus-8-bit-stencil packed format isn't relevant to Apple Silicon GPUs (which use 32-bit-depth formats instead - already correctly handled elsewhere in this codebase regardless of this flag). Calling that method was always going to throw on every iOS device, every time - nothing specific to your hardware.\n\nGuarded it, defaulted to false on iOS (the objectively correct answer), and it was the only call to that method anywhere in the code.\n\n## What to expect this test\n\nIf that was the only Metal API compatibility issue in the constructor, the renderer shoul...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.6/Cemu.ipa",
+          "size": 31505761,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.5",
+          "date": "2026-08-18T15:24:42Z",
+          "localizedDescription": "Fixes the crash you hit testing v1.4 (signal 6, \"===CEMU CRASH: signal 6===\" right after tapping play). That crash was real progress, not a regression - both boot-freeze fixes and last night's render-surface-registration timing fix all worked. This is a different, later failure point.\n\n## What the crash actually was\n\nPulled the v1.4 dSYM and symbolicated the exact crash address (not a guess): it resolves precisely to `MetalRenderer::MetalRenderer()` - the C++ Metal renderer's constructor. The backtrace (objc_exception_throw, CoreFoundation message-forwarding frames) confirms this was a genuine, uncaught Objective-C/Metal exception - not a null-pointer bug. This constructor does real work that had never been exercised this early in the boot sequence before: Metal device/queue/texture creation, and compiling a Metal shader from source text at runtime.\n\n## The fix\n\nM2's actual goal is the interpreter/OS-HLE stack booting cleanly - not working rendering (that's the separate M3 milestone, still in progress). A renderer construction failure should never be able to crash the whole app over that. Wrapped both places that construct the renderer in `@try/@catch` (only possible in the Objective-C++ bridge file, not the plain C++ renderer code - Objective-C and C++ exceptions share one unwinding mechanism on Darwin, so this still catches it). If it throws, the real exception name and reason now get logged to the crash log instead of just crashing blind - and a couple builds got burned to...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.5/Cemu.ipa",
+          "size": 31505463,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.4",
+          "date": "2026-08-18T15:24:30Z",
+          "localizedDescription": "Fixes the exact freeze you just hit testing v1.3 - stuck on the \"Booting...\" screen with zero log progress, not even the earliest boot checkpoint. That absence was the clue: it meant boot() was never even being called, not that it hung inside the C++ engine.\n\n## Root cause of the v1.3 freeze\n\n`MetalViewIOS` (the Metal-backed view that registers the render surface with the C++ bridge) sits in a plain SwiftUI VStack with no explicit `.frame(maxWidth:.infinity, maxHeight:.infinity)`. The registration code was waiting for that view's own `.bounds` to become nonzero before registering - a SwiftUI/UIKit layout-timing dependency that apparently never resolved. No crash, no log, no progress: indistinguishable from a real engine hang from the outside, but it was a Swift-side wiring gap, not a C++ bug.\n\n**Fix:** register the surface immediately from `makeUIView()`, using `UIScreen.main.bounds` (always available, never zero) instead of waiting on the view's own layout. Exact pixel size only matters once M3 (real rendering) is further along; right now the GPU thread just needs a non-null surface to exist before it starts.\n\n## Everything cumulatively in this build\n\n- `PPCTimer_init()` was never called on iOS, causing the *original* freeze (main thread spinning forever waiting for a calibration thread that never started).\n- `g_renderer` was never constructed before boot, a null-pointer risk on the GPU thread.\n- M3 groundwork: the game screen now mounts as soon as you tap play (`.loading`, ...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.4/Cemu.ipa",
+          "size": 31506017,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.3",
+          "date": "2026-08-18T15:24:18Z",
+          "localizedDescription": "First build that actually links and runs since v1.2 testing surfaced a real boot freeze. Supersedes v1.2 - test this one, not that one.\n\n## What's in this build\n\n**Boot-freeze fixes** (from tonight's \"press play, nothing happens, just freezes\" investigation):\n- `PPCTimer_init()` was never called anywhere in the iOS bridge - only desktop's `main.cpp` calls it. Without it, `LaunchForegroundTitle()`'s `PPCTimer_waitForInit()` spun forever on the main thread the instant boot() was called. Checkpoint logs confirmed this precisely: they stopped right after \"about to call engine.boot()\" and never reached \"returned\".\n- `g_renderer` was never constructed before boot - only `cemu_bridge_register_render_surface()` did that, and nothing in the Swift app called it yet. The newly-spawned GPU thread calling `g_renderer->Initialize()` on a null pointer was a second freeze/crash risk chronologically *before* the PPCTimer fix even mattered.\n\n**M3 groundwork - render surface registered before boot, not after** (untested on device, first build containing it):\n- The game screen (and its Metal view) now mounts as soon as you tap play (`.loading` state, with a \"Booting...\" overlay), instead of waiting for `.running` - it needs to exist and register itself with the C++ bridge *before* boot() runs, since the GPU thread reads the window size synchronously the instant boot() spawns it.\n- Actual init/boot moved off the main thread onto a background task, so a slow or buggy boot can't freeze the UI regar...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.3/Cemu.ipa",
+          "size": 31506353,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.2",
+          "date": "2026-08-18T15:24:05Z",
+          "localizedDescription": "All-in-one package: sideload the IPA, load the included test RPX, check logs. Supersedes m2-audit-fixed-2026-07-19 (same build, same commit `0d4ca58f`) — packaged here with the test ROM included so testing needs only this one release.\n\n## What's in this build\n\n**Launch-crash fix** — three `Xbyak_aarch64` JIT-context globals and a `util::Cpu` global were running non-trivial C++ constructors at static-init time, before `main()`/SwiftUI, with no way to catch the failure. Converted all four to lazy function-local statics. This was the original instant-crash-on-launch bug.\n\n**Boot-crash fix** — the same JIT executable-memory allocation problem resurfaced at first `boot()` (when `PPCRecompiler_init()` actually runs), since sideloaded iOS apps can't reliably get `PROT_EXEC` mmap pages. Forced the engine into full PPC-interpreter mode (`LaunchSettings::SetForceInterpreter`) to sidestep it — real JIT-on-sideloaded-iOS remains a separate, harder open question, not solved here.\n\n**20-agent audit fixes**, applied and CI-verified:\n- Save data was completely non-functional (missing `MountBaseDirectories()` call in the iOS launch path) — fixed.\n- Per-title settings were leaking between titles (missing `gameProfile_load()` call) — fixed.\n- A severe logging bug silently dropped almost all plain-string log lines on iOS (template overload was matching and discarding them before reaching the real logger) — fixed. This means `Documents/mlc/log.txt` is now actually reliable as evidence of what the...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/v1.2/Cemu.ipa",
+          "size": 31311497,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "m2-rootcause-fix-2026-07-19",
+          "date": "2026-08-18T15:23:53Z",
+          "localizedDescription": "**This should fix the launch crash.** Root cause found via the crash logger from the last release, confirmed by an actual on-device SIGABRT backtrace:\n\nThree global JIT-context objects in \\`BackendAArch64.cpp\\` (the ARM64 recompiler backend) were declared at file scope, so C++ constructed them during static initialization - at binary load time, before \\`main()\\`, before Swift/SwiftUI ever ran. Each one's constructor eagerly allocated **executable JIT memory** via \\`Xbyak_aarch64::MmapAllocator::alloc()\\` (an \\`mmap(PROT_EXEC)\\` call). On iOS that needs a JIT/dynamic-codesigning entitlement a sideloaded app doesn't reliably have yet at pure launch - LiveContainer's JIT-enabling is a separate, slower, out-of-process step. The failed mmap threw an uncaught C++ exception with nothing to catch it (impossible at global-constructor scope), so the process \\`abort()\\`'d on every single launch.\n\nFix: converted all three to function-local statics, so construction is now lazy - deferred to first actual JIT use, which only happens well after the app has fully launched.\n\n**How to test:**\n1. Sideload this release's \\`Cemu.ipa\\`.\n2. Open the app - it should no longer crash immediately.\n3. If it still crashes for any reason, check \\`Documents/CemuCrashLog.txt\\` via Finder (Files tab) same as before - the checkpoint/crash logger from the last release is still in this build.\n4. Try booting the homebrew test RPX from the game library (M2's real exit test - see earlier instructions).\n\n\\`Cemu.app....",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/m2-rootcause-fix-2026-07-19/Cemu.ipa",
+          "size": 31290432,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "m2-full-2026-07-19",
+          "date": "2026-08-18T15:23:41Z",
+          "localizedDescription": "Latest build - includes everything so far:\n\n1. **The launch-crash fix** (same as m2-rootcause-fix-2026-07-19): three global\n   JIT-context objects in BackendAArch64.cpp were eagerly allocating executable\n   JIT memory at C++ static-init time (before main()), which crashed on every\n   launch since iOS doesn't grant the JIT entitlement that early. Fixed by making\n   them function-local statics (lazy, first-use-only construction).\n2. **Checkpoint logging around the actual boot path** (engine.initialize()/\n   engine.boot() in GameManager.swift) - so if tapping a game hits a crash, the\n   same Documents/CemuCrashLog.txt trail covers that too, not just app launch.\n3. **M3 groundwork**: added cemu_bridge_register_render_surface() - wires the\n   real native Metal renderer to an actual UIView surface (previously it was\n   never constructed at all on iOS). Not yet called from Swift - the SwiftUI\n   view-creation ordering still needs to change so a surface exists before\n   boot() runs, which is a UX decision, not done yet.\n\n**How to test:** sideload, open the app (should not crash), tap the homebrew\ntest RPX (gh run download 29694775573 -n hello-world-test-rpx), check\nDocuments/CemuCrashLog.txt and Documents/mlc/log.txt via Finder either way.",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/m2-full-2026-07-19/Cemu.ipa",
+          "size": 31298412,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "m2-crashlog-2026-07-19",
+          "date": "2026-08-18T15:23:27Z",
+          "localizedDescription": "Diagnostic build for chasing down the on-device launch crash (LiveContainer, GPU/AGX driver panic - `bug_type 284`, `BIF0 page fault` - not a normal catchable signal, and attributed to the `LiveContainer` process name since it hosts the guest binary rather than getting its own OS-level process).\n\n**What's in this build (commit 9b7ae122):**\n- M2 milestone: the real Cemu C++ core links into the SwiftUI app end-to-end (`ActiveSettings::SetPaths()` wired so the MLC path/log file land in the writable, Finder-visible Documents folder).\n- Full icon picker (31 icons) + kawaii-bakery reskin, verified compiling clean on the iOS 15.0 deployment target.\n- **New:** a checkpoint/crash logger writing to `Documents/CemuCrashLog.txt` (visible via Finder thanks to `UIFileSharingEnabled`) - a high-priority C++ constructor installs a signal handler as early as physically possible in process startup, plus checkpoint calls at `CemuApp.init()` and `ContentView.onAppear`, so even an uncatchable GPU panic leaves a trail showing exactly how far execution got.\n\n**How to test:**\n1. Sideload `Cemu.ipa` via SideStore/LiveContainer.\n2. Open the app.\n3. Whether it crashes or not, check `Documents/CemuCrashLog.txt` via Finder (Files tab) - if it crashes again, that file tells us whether the crash happens before or after Swift's own app lifecycle starts.\n\n`Cemu.app.dSYM.zip` is included to symbolicate any real iOS crash report (e.g. via Console.app) alongside the checkpoint log.\n\nNot yet included: checkpoint ...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/m2-crashlog-2026-07-19/Cemu.ipa",
+          "size": 31290241,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "m2-audit-fixed-2026-07-19",
+          "date": "2026-08-18T15:23:15Z",
+          "localizedDescription": "Latest build - use this one. Includes everything so far:\n\n**1. The original launch crash, fixed** - a global JIT-context object was\nallocating executable memory at C++ static-init time (before main()), which\niOS doesn't allow that early for a sideloaded app. Fixed by deferring\nconstruction to first actual use.\n\n**2. The boot crash, fixed** - the same underlying JIT-memory-allocation\nproblem resurfaced the first time a title was actually booted (tapping the\ngame). Fixed by forcing interpreter mode - M2's exit test is about the\ninterpreter/OS-HLE stack, not JIT performance, so this sidesteps the open\nquestion of whether genuine JIT memory allocation is even possible for a\nsideloaded iOS app at all.\n\n**3. A 20-agent audit, then fixes applied for what's real and relevant:**\n- A second sibling of the exact static-init bug (CPU-feature-detection\n  code that could also crash on some device/OS combos)\n- A global background thread that was also spawning at static-init time\n- Save games were completely non-functional (a required mount call was\n  missing on the only launch path iOS uses)\n- Per-title settings (CPU mode, audio, shaders) were leaking between titles\n- Most plain log() calls throughout the whole engine were being silently\n  dropped on iOS - meaning log.txt may have been incomplete every time it\n  was checked this session\n- An iOS-unavailable Metal API call in the renderer (relevant to upcoming\n  M3 work)\n- Two bugs in the new crash-logging code itself\n- Two Swift crash risks...",
+          "downloadURL": "https://github.com/kiddreads/cemu-ios-muffin/releases/download/m2-audit-fixed-2026-07-19/Cemu.ipa",
+          "size": 31311497,
+          "minOSVersion": "15.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}

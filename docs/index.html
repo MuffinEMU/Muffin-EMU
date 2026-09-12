@@ -1,21 +1,203 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="en"><head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>cemu-ios-muffin docs</title>
+<title>Muffin — Wii U emulation on iOS</title>
+<meta name="description" content="A genuine port of the Cemu Wii U emulator to iOS. One game confirmed playable on an A12Z iPad Pro. Work in progress, and specific about what is and is not proven.">
+<link rel="icon" href="icon.png">
+<meta property="og:title" content="Muffin — Wii U emulation on iOS">
+<meta property="og:description" content="A genuine port of the Cemu Wii U emulator to iOS. One game confirmed playable on an A12Z iPad Pro. Work in progress, and specific about what is and is not proven.">
+<meta property="og:image" content="https://kiddreads.github.io/cemu-ios-muffin/icon.png">
 <style>
-:root{color-scheme:light dark}
-body{margin:0;min-height:100vh;display:grid;place-items:center;
-  font:15px/1.6 "IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  background:#EEF0F5;color:#171A21}
-@media (prefers-color-scheme:dark){body{background:#101218;color:#E7EAF2}}
-main{max-width:34rem;padding:2rem;display:flex;flex-direction:column;gap:.75rem}
-h1{font-size:1.4rem;margin:0}
-a{color:#3C5FB8}
-@media (prefers-color-scheme:dark){a{color:#8FAEF5}}
-p{margin:0;opacity:.8}
+:root{
+  --bg-top:#F6A94F; --bg-bottom:#E5652E;
+  --cream:#FDF6EC; --wrapper:#F0DFC3;
+  --ink:#2E1B10; --ink-mid:#5C2E10; --ink-soft:#7A4A22;
+  --accent:#6C63FF; --navy:#453765; --blush:#F2A6A0;
+  --sparkle:#FFF3DD; --shadow:rgba(74,36,16,.18);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg-top:#7A4A22; --bg-bottom:#4A2410;
+  --cream:#241813; --wrapper:#3A2A1E;
+  --ink:#FBEBD8; --ink-mid:#E8CBA8; --ink-soft:#C9A47C;
+  --accent:#8A82FF; --navy:#8177AD; --blush:#E08880;
+  --shadow:rgba(0,0,0,.45);
+}}
+*{box-sizing:border-box}
+body{margin:0;padding:0 16px;min-height:100vh;
+  font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  color:var(--ink);
+  background:linear-gradient(165deg,var(--bg-top),var(--bg-bottom) 70%);
+  background-attachment:fixed;}
+main{max-width:46rem;margin:0 auto;padding-block:clamp(2rem,7vw,4rem) 4rem}
+.card{background:var(--cream);border-radius:20px;padding:clamp(1.25rem,4vw,2rem);
+  box-shadow:0 6px 22px var(--shadow);margin-bottom:1.25rem}
+header{text-align:center;color:var(--sparkle);margin-bottom:1.75rem}
+header img{width:112px;height:112px;border-radius:26px;box-shadow:0 8px 26px var(--shadow)}
+h1{font-size:clamp(2rem,7vw,2.7rem);margin:.6rem 0 .2rem;letter-spacing:-.02em}
+.tag{font-size:1.05rem;opacity:.95;margin:0}
+h2{font-size:1.15rem;margin:0 0 .6rem;color:var(--ink)}
+h2 .em{font-size:1.25rem;margin-right:.4rem}
+p{margin:0 0 .9rem}
+p:last-child{margin-bottom:0}
+a{color:var(--accent);text-decoration-thickness:.08em;text-underline-offset:.15em}
+.cta{display:flex;flex-wrap:wrap;gap:.7rem;margin:.4rem 0 1rem}
+.btn{display:inline-block;padding:.72rem 1.15rem;border-radius:13px;font-weight:650;
+  text-decoration:none;border:2px solid transparent}
+.btn-primary{background:linear-gradient(150deg,#E3A254,#A8622A);color:#FFF3DD;
+  box-shadow:0 4px 13px var(--shadow)}
+.btn-secondary{background:var(--wrapper);color:var(--ink);border-color:var(--ink-soft)}
+code,.url{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;
+  background:var(--wrapper);padding:.18em .45em;border-radius:6px;
+  overflow-wrap:anywhere;color:var(--ink)}
+.url{display:block;padding:.7rem .85rem;margin-top:.5rem}
+.note{border-left:4px solid var(--blush);padding-left:.95rem;margin:1rem 0}
+.log{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78em;line-height:1.5;
+  background:var(--wrapper);color:var(--ink);padding:.8rem .9rem;border-radius:10px;
+  overflow-x:auto;white-space:pre;margin:.6rem 0 .9rem}
+ul{margin:0;padding-left:1.15rem}
+li{margin-bottom:.42rem}
+li:last-child{margin-bottom:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:.6rem 1.4rem}
+.ok::before{content:"✅ ";}
+.no::before{content:"⬜ ";}
+.wip::before{content:"🚧 ";}
+footer{text-align:center;color:var(--sparkle);font-size:.9rem;opacity:.92;padding-bottom:1rem}
+footer a{color:var(--sparkle)}
 </style></head>
 <body><main>
-<h1>cemu-ios-muffin &mdash; docs</h1>
-<p><a href="gamepad-layout/">The on-screen pad, measured off the GamePad</a> &mdash; hardware geometry,
-the four responsive laws, and resolved coordinates for every iPhone, iPad and window size (BW-198).</p>
+
+<header>
+  <img src="icon.png" alt="Muffin app icon">
+  <h1>Muffin</h1>
+  <p class="tag">Wii U emulation on iOS — in the open.</p>
+</header>
+
+<section class="card">
+  <h2><span class="em">🧁</span>Install</h2>
+  <p>Two sources, because the two install paths need different builds. Pick the one that matches how you sideload.</p>
+  <p style="color:var(--ink-soft);font-size:.94rem">iPhone and iPad, iOS 15 or later. Landscape.</p>
+
+  <h3 style="font-size:1rem;margin:1.1rem 0 .3rem">SideStore / AltStore / LiveContainer</h3>
+  <p style="margin-bottom:.5rem">These re-sign with your own Apple ID at install, so they take the standard unsigned build.</p>
+  <div class="cta">
+    <a class="btn btn-primary" href="sidestore://source?url=https://kiddreads.github.io/cemu-ios-muffin/apps.json">Add to SideStore</a>
+    <a class="btn btn-secondary" href="altstore://source?url=https://kiddreads.github.io/cemu-ios-muffin/apps.json">Add to AltStore</a>
+  </div>
+  <span class="url">https://kiddreads.github.io/cemu-ios-muffin/apps.json</span>
+
+  <h3 style="font-size:1rem;margin:1.3rem 0 .3rem">TrollStore / jailbroken</h3>
+  <p style="margin-bottom:.5rem">Takes the ad-hoc signed build, with the JIT entitlements actually embedded &mdash; which is what lets the recompiler get executable memory. A SideStore re-sign would strip them, which is why this is a separate source. The interpreter needs none of this, and it is what every confirmed run so far has used.</p>
+  <span class="url">https://kiddreads.github.io/cemu-ios-muffin/trollstore.json</span>
+  <p style="margin-top:.6rem;font-size:.94rem;color:var(--ink-soft)">Or grab <code>Cemu-fakesigned.ipa</code> directly from <a href="https://github.com/kiddreads/cemu-ios-muffin/releases">Releases</a>.</p>
+
+  <div class="note">
+    <p><strong>Which file is which?</strong> <code>Cemu.ipa</code> is unsigned on purpose.
+    <code>Cemu-fakesigned.ipa</code> is ad-hoc signed. Ad-hoc signing has no certificate and no
+    team ID, so most tools describe it as &ldquo;not signed&rdquo; &mdash; that is what fake-signing is,
+    not a fault. To tell them apart: <code>codesign -dv Payload/Cemu.app</code> reports
+    <code>Signature=adhoc</code> for the fake-signed one.</p>
+  </div>
+</section>
+
+<section class="card">
+  <h2><span class="em">📋</span>Where this actually is</h2>
+  <p><strong>One retail game has been confirmed running at a playable speed, on one device.</strong>
+  FAST Racing NEO, on an iPad Pro (A12Z, <code>iPad8,11</code>, iOS&nbsp;26.6.1). That is the whole of
+  the evidence: one game, one device, a picture and a framerate &mdash; not a confirmed controller
+  and not a confirmed sound.</p>
+  <div class="grid">
+    <span class="ok">Cemu's real C++ engine, built for arm64 iOS</span>
+    <span class="ok">Ships as an installable IPA</span>
+    <span class="ok">Titles boot and run</span>
+    <span class="ok">A picture reaches the screen</span>
+    <span class="ok">One game playable, one device</span>
+    <span class="wip">Correct picture in every scene: not established</span>
+    <span class="wip">Touch + MFi controllers wired, unfelt</span>
+    <span class="no">Audio never confirmed on a device</span>
+  </div>
+  <p style="margin-top:1rem">Measured on that device, over 66 seconds, so a later log can be
+  compared against it rather than remembered:</p>
+  <div class="log">Metal: GPU 'Apple A12Z GPU' | Apple family yes | Metal3 no | mesh shaders no
+JIT check: mmap(MAP_JIT, executable at map time) refused (errno 22) ... Forcing the interpreter
+Emulated timebase: shift 6 (0.125x real time)
+Heartbeat: 66.2s - 5844241011 instr (+154196171,  50.00 MIPS), GX2 frames 2426 (+10,  3.24 fps)
+Heartbeat: 69.3s - 6433282371 instr (+589041360, 190.64 MIPS), GX2 frames 2496 (+70, 22.65 fps)
+Memory: 2416 MB in use, 2191 MB of headroom left before iOS kills this process</div>
+  <p>The on-screen framerate in that session swung between 21 and 61&nbsp;FPS inside a single
+  scene. The heartbeat's own frame counter disagrees with the overlay, and that has not been
+  run down yet.</p>
+</section>
+
+<section class="card">
+  <h2><span class="em">⚡</span>The recompiler, and the interpreter that did the work</h2>
+  <p><strong>Every confirmed run of this port has been interpreter-only.</strong> Not by choice:
+  the JIT capability probe asked for <code>PROT_EXEC</code> at <code>mmap()</code> time, which is the
+  x86_64 shape of that API and something iOS arm64 never grants, so it failed with
+  <code>EINVAL</code> on every launch &mdash; including fake-signed TrollStore builds with the
+  entitlements genuinely embedded. The recompiler was unreachable the whole time.</p>
+  <p>Which makes the number above worth stating plainly rather than hiding: the interpreter
+  alone, at an eighth of real time, measured <strong>50&ndash;190 MIPS</strong> on a 2020 tablet and
+  got to a framerate the game was played at. The 0.125&times; clock was a consequence of the
+  failed probe, not a separate setting.</p>
+  <p>The probe now tests what the platform actually permits. That makes the recompiler
+  <em>reachable</em>; it does not make it correct. It has still never been proven to execute a PPC
+  instruction correctly on device, it stays <strong>off by default</strong> in Settings, and that fix
+  shipped in <code>v5.2-jit-and-rects</code>.</p>
+  <p>Both CPU modes are first-class here. &ldquo;Use the JIT&rdquo; is not a fix for anything in this
+  project.</p>
+</section>
+
+<section class="card">
+  <h2><span class="em">🔧</span>Known wrong, and why</h2>
+  <ul>
+    <li><strong>Post-processing was dropped on every A12Z-class device, always.</strong>
+    Geometry-shader/RECTS emulation existed but could never switch on &mdash; the renderer latched the
+    flag at construction, and the only code that set it ran afterwards. The device log counted
+    44,001 dropped draws, 39,098 of them RECTS, which is the full-screen copy and post-processing
+    path: the tonemap and composite chain never ran. Now enabled; not yet confirmed by a device log
+    taken after the fix.</li>
+    <li><strong>The Metal binary archive is deliberately disabled.</strong> It matched cached entries
+    to pipelines by rules the code cannot inspect, silently ran the wrong compiled shader, and is
+    what broke rendering across the whole v4 release line. Off behind a named constant, with the
+    evidence and the re-enable test written at the site. Costs first-launch compile time and
+    nothing else.</li>
+    <li><strong>BC1&ndash;BC5 textures are decompressed on the CPU.</strong> No Apple GPU up to and
+    including the A12Z has block-compression hardware, and Metal aborts the process rather than
+    refusing the descriptor. Costs CPU per upload and memory per texture &mdash; BC1 goes from half a
+    byte per texel to four &mdash; on a device already sitting at 2416&nbsp;MB.</li>
+    <li><strong>Shader compilation is the stutter.</strong> One session compiled 1991 new shaders
+    (1699 async) and 25 pipelines. The Wii U only reveals a shader when it first draws with it, so
+    no cache avoids the first encounter; async compile turns the hitch into something appearing
+    late rather than removing the work.</li>
+    <li><strong>282 million idle spins in 66 seconds</strong>, still climbing ~19M per heartbeat.
+    A core alive with nothing runnable, spinning rather than sleeping. Cause not established.</li>
+    <li><strong>Audio has never made a confirmed sound on a device.</strong> The CoreAudio backend is
+    real and is initialised on iOS now. Nothing confirms output. It will not be claimed until
+    something does.</li>
+  </ul>
+</section>
+
+<section class="card">
+  <h2><span class="em">📖</span>Read the project</h2>
+  <ul>
+    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/STATUS.md">STATUS.md</a> — the long-form inspection: a citation per claim, and what each one does not establish</li>
+    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/ROADMAP.md">ROADMAP.md</a> — the milestone gates, none checked off without a demonstration</li>
+    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/log.md">log.md</a> — the journal: what was tried, what the device showed, which theories died</li>
+    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/tree/main/docs/postmortems">Post-mortems</a> — regressions worth never repeating, and the rules they produced</li>
+    <li><a href="gamepad-layout/">The on-screen pad</a> — measured off real GamePad hardware</li>
+  </ul>
+</section>
+
+<section class="card">
+  <h2><span class="em">⚖️</span>Games</h2>
+  <p>Bring your own. No copyrighted content is distributed here — not games, not system files, not keys.
+  Muffin is a port of <a href="https://github.com/cemu-project/Cemu">Cemu</a>, licensed under
+  <a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/LICENSE.txt">MPL 2.0</a>.</p>
+</section>
+
+<footer>
+  <p><a href="https://github.com/kiddreads/cemu-ios-muffin">github.com/kiddreads/cemu-ios-muffin</a></p>
+</footer>
+
 </main></body></html>

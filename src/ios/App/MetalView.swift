@@ -4,6 +4,23 @@ import MetalKit
 import UIKit
 #endif
 
+/// Plain `UIView` has no hook that fires when its own bounds change - UIKit posts no
+/// "bounds changed" notification, and SwiftUI only calls `updateUIView` in response to
+/// state changes, not layout passes - so without this override `DisplayRouter` had no
+/// way to learn that the container it was handed had settled into a new size, and the
+/// TV/pad `CAMetalLayer` sublayers (and the C++-side geometry `WindowSystem` keeps for
+/// them) kept whatever size they were given at registration time for the rest of the
+/// session, even through a rotation or (`UIRequiresFullScreen` is not set in
+/// `project.yml`, so this is a real, reachable case) an iPad Split View/Slide Over
+/// resize. `layoutSubviews()` is the one hook UIKit reliably calls whenever this
+/// view's own bounds actually change, regardless of what drove the change.
+final class DeviceContainerView: UIView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        DisplayRouter.shared.deviceContainerDidLayout(self)
+    }
+}
+
 struct MetalViewIOS: UIViewRepresentable {
     var gameManager: GameManager
 
@@ -27,7 +44,7 @@ struct MetalViewIOS: UIViewRepresentable {
     // ordinary CALayer with no competing rendering machinery of its own, so the C++
     // sublayer has the view's layer tree to itself.
     func makeUIView(context: Context) -> UIView {
-        let container = UIView()
+        let container = DeviceContainerView()
         container.backgroundColor = .black
 
         // Arm display detection before anything is registered, so a TV that is already

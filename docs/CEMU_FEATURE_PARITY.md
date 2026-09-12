@@ -11,6 +11,22 @@ alone shipped decrypt/WUA, memory fixes, dark mode, and more), the code wins.
 **How this doc is organized:** four buckets, roughly cheapest-to-most-expensive.
 Within each bucket, entries are grouped by desktop source area.
 
+> **Correction, 2026-09-10 (documentation-only reality check, no code changed):**
+> two entries below were overtaken by work that landed within hours to a few
+> days of this doc being written and were never followed up here. **Graphics
+> packs** (bucket 2) got a real Settings UI on 2026-09-04 (`6c063087`, the same
+> day as this doc's own `b61d4ff2` commit) — `LoadAll()` is now called and
+> Settings > Library > Graphic Packs lists/toggles what's in
+> `Documents/mlc/graphicPacks/`. **DLC and Update import/management** (bucket 3)
+> was built in full over 2026-09-04/05 (`83a94e4c` through `fbcff902`): title-ID
+> derivation and matching, an import flow with a manual-match picker, discovery
+> of already-installed content at launch, and removal via long-press — see
+> `docs/MUFFIN_WORK_BACKLOG.md`'s own correction block for the commit list. Both
+> entries are left in place below with an inline note rather than moved, so the
+> bucket structure and rough counts stay traceable to what this doc originally
+> found; treat the inline notes as authoritative over the bucket they still sit
+> in.
+
 ---
 
 ## 1. Already have it
@@ -59,12 +75,21 @@ Real desktop features iOS already covers, confirmed by reading both sides.
 The C++ engine already implements these; nothing on the iOS Swift side
 reaches them. This is the cheapest bucket — no engine work, just wiring.
 
-- **Graphics packs** — `src/Cafe/GraphicPack/GraphicPack2.cpp` (+
+- **Graphics packs** — **DONE as of 2026-09-04 (`6c063087`), corrected
+  2026-09-10; no longer a gap.** `src/Cafe/GraphicPack/GraphicPack2.cpp` (+
   `GraphicPack2Patches*.cpp`) is a complete, working mod/texture-pack engine:
   loads pack definitions, applies shader/texture patches, per-pack
   enable/disable. Desktop UI: `GraphicPacksWindow2.cpp` (718 lines — pack
-  list, per-pack toggle, download manager). iOS: **zero UI**, not even a
-  settings row. This is graphics *mods* (community texture packs, aspect
+  list, per-pack toggle, download manager). iOS now has Settings > Library >
+  Graphic Packs, listing `Documents/mlc/graphicPacks/` with a per-pack toggle
+  persisted through the same `graphic_pack_entries` config desktop reads —
+  the fix was calling `LoadAll()`, which iOS never did, so `GetGraphicPacks()`
+  was always empty even though `CafeSystem.cpp` already activated packs
+  unconditionally on every boot. Preset selection is still not exposed (a
+  pack activates with whichever preset was already default), and packs
+  using geometry shaders or RECTS won't render correctly on this hardware
+  until the compute-emulation work in `STATUS.md`/`ROADMAP.md` M3 is finished
+  — said so in the UI. This is graphics *mods* (community texture packs, aspect
   ratio fixes, FPS unlocks per game) — a real, popular desktop feature with
   no iOS surface at all. Feasible on iOS: yes, packs are just files in a
   known folder structure (`graphicPacks/`) — the constraint is *importing*
@@ -77,15 +102,17 @@ reaches them. This is the cheapest bucket — no engine work, just wiring.
 - **Title/storage manager** — `TitleManager.cpp` (907 lines): list every
   installed base/update/DLC title, storage used, uninstall, "open folder."
   iOS's game browser lists base titles only; there's no per-title DLC/update
-  breakdown or storage accounting anywhere. Directly feeds the DLC/update
-  ask below — this is the natural home for "Uninstall DLC"/"Uninstall
-  Update" once that exists.
-- **DLC/update install matching (see full writeup below)** — the *matching
-  logic* isn't really "missing," it's a few lines of bit arithmetic already
-  proven correct on desktop (`TitleId.h`'s `TitleIdParser`). The gap is
-  entirely the iOS import flow and UI; the identification problem Void's
-  plan worried about ("if it cannot determine the correct match, prompt the
-  user") mostly doesn't exist — see below.
+  breakdown or storage accounting anywhere. **Narrower update, 2026-09-10:**
+  "Uninstall DLC"/"Uninstall Update" itself now exists (long-press context
+  menu, checked live against `Documents/mlc`, see the entry below) — what's
+  still missing is the dedicated manager screen this bullet is actually
+  about: a storage-accounting breakdown and an "open folder" action. Still a
+  real gap, just a smaller one than before.
+- **DLC/update install matching (see full writeup below)** — **DONE as of
+  2026-09-04/05, corrected 2026-09-10.** The matching logic was already
+  proven correct on desktop, as this entry says, and the gap it names — "the
+  iOS import flow and UI" — is now built. See the corrected entry in bucket 3
+  above for the commit range.
 - **Multiple Wii U user accounts** — `src/Cafe/Account/Account.cpp` — real
   account emulation (save-data segregation per account slot). iOS: no
   account-switching UI found anywhere in SettingsView or elsewhere; presumably
@@ -97,8 +124,18 @@ reaches them. This is the cheapest bucket — no engine work, just wiring.
 
 Real gaps with a clear, buildable path on iOS.
 
-- **DLC and Update import/management (Void's plan, items 2-4)** — this is
-  the big one, full findings below.
+- **DLC and Update import/management (Void's plan, items 2-4)** — **DONE as
+  of 2026-09-04/05 (`83a94e4c` through `fbcff902`), corrected 2026-09-10; no
+  longer a gap.** Built in full: title-ID-based base/update/DLC matching
+  (`cemu_bridge_derive_content_title_id` and friends, using the same bit
+  arithmetic desktop's `TitleIdParser` already proves correct — see the
+  writeup below, which is otherwise still accurate), an import flow from both
+  a game's long-press menu and the general import menu (with a manual
+  "which game is this for" picker when auto-match fails), discovery of
+  already-installed DLC/update at launch so a base game no longer boots
+  unpatched, and removal via long-press. The matching logic and the general
+  shape of the writeup below held up; what was missing was purely the iOS
+  wiring, exactly as this doc predicted.
 - **Per-game profile depth** — desktop's `GameProfile.cpp` stores far more
   than iOS's current per-game slice: per-game CPU mode override, per-game
   graphics-API-level tweaks, per-game controller profile. iOS has the
@@ -198,6 +235,12 @@ redesign.
 
 ## Rough counts
 
+_(as originally counted; not re-tallied for the 2026-09-10 correction above —
+graphics packs and DLC/update matching/plumbing, both counted below as gaps,
+are now done. Left as-is rather than renumbered, so this section stays a
+record of what the original pass found rather than a second thing to keep in
+sync by hand.)_
+
 - Already have it: 10
 - Backend exists, iOS UI-only gap: 4 (graphics packs, title/storage manager,
   DLC/update install plumbing, multi-account)
@@ -208,4 +251,5 @@ Graphics packs is the single most surprising finding — a complete, working
 engine-side feature with literally no iOS entry point, likely because it
 was never on anyone's radar rather than because it's hard. Worth strong
 consideration alongside the DLC/update work given how little net-new code
-it needs.
+it needs. **Both since built — see the 2026-09-10 correction near the top of
+this file.**

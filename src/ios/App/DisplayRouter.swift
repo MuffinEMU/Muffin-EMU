@@ -91,6 +91,22 @@ final class DisplayRouter {
     private var observing = false
     private var tvSurfaceRegistered = false
 
+    // Set for exactly the span of placeTVOnDevice()/placeTVOnExternalDisplay() that
+    // removes tvRenderView from one superview and adds it to another. Both already
+    // call resizeTVSurfaceIfRegistered() themselves right after settling the move
+    // with a geometry they know is current; in case UIKit calls back into
+    // deviceContainer's layoutSubviews() as a side effect of the addSubview/
+    // removeFromSuperview calls below, this keeps that callback from racing the
+    // deliberate resize with a view tree that has not finished moving.
+    private var isReparentingTV = false
+
+    // The last size deviceContainerDidLayout() actually acted on. UIKit calls
+    // layoutSubviews() on every layout pass, not only the ones where the view's size
+    // changed, and most passes have nothing to do with this container getting bigger
+    // or smaller - without this check, ordinary layout churn would send a resize to
+    // the GPU thread every time.
+    private var lastDeviceContainerLayoutSize: CGSize?
+
     private init() {}
 
     // MARK: - Lifecycle
@@ -245,9 +261,11 @@ final class DisplayRouter {
         // registration without the router having decided anything about it.
         guard let tvRenderView = tvRenderViewStorage else { return }
         if tvRenderView.superview !== container {
+            isReparentingTV = true
             tvRenderView.removeFromSuperview()
             tvRenderView.frame = container.bounds
             container.addSubview(tvRenderView)
+            isReparentingTV = false
             resizeTVSurfaceIfRegistered()
         }
         if let externalWindow {
@@ -274,11 +292,32 @@ final class DisplayRouter {
         guard let host = externalWindow?.rootViewController?.view else { return }
         guard let tvRenderView = tvRenderViewStorage else { return }
         if tvRenderView.superview !== host {
+            isReparentingTV = true
             tvRenderView.removeFromSuperview()
             tvRenderView.frame = host.bounds
             host.addSubview(tvRenderView)
+            isReparentingTV = false
             resizeTVSurfaceIfRegistered()
         }
+    }
+
+    /// Called by `DeviceContainerView.layoutSubviews()` (see `MetalView.swift`) every
+    /// time the container `MetalViewIOS` returns settles into a real size: first
+    /// layout, rotation, or - since `UIRequiresFullScreen` is not set in
+    /// `project.yml` - an iPad Split View/Slide Over resize. Before this there was no
+    /// `layoutSubviews`, `viewDidLayoutSubviews`, bounds observer or
+    /// `traitCollectionDidChange` anywhere under `src/ios`, so the registered TV/pad
+    /// surfaces kept whatever size `tvGeometry()`/`syncPadSurface()` read once at
+    /// registration time for the rest of the session, however the real view around
+    /// them changed shape afterwards.
+    func deviceContainerDidLayout(_ container: UIView) {
+        guard container === deviceContainer else { return }
+        guard !isReparentingTV else { return }
+        let size = container.bounds.size
+        if let lastSize = lastDeviceContainerLayoutSize, lastSize == size { return }
+        lastDeviceContainerLayoutSize = size
+        resizeTVSurfaceIfRegistered()
+        resizePadSurfaceIfRegistered()
     }
 
     private func resizeTVSurfaceIfRegistered() {
@@ -289,6 +328,24 @@ final class DisplayRouter {
             Int32(geometry.size.height),
             geometry.scale,
             true
+        )
+    }
+
+    /// Mirrors resizeTVSurfaceIfRegistered() for the GamePad surface. The only caller
+    /// today is deviceContainerDidLayout(): a registered pad surface is always
+    /// hosted on this device (syncPadSurface() below only ever creates one in
+    /// .dualScreen, where the TV moves to the external display and the pad stays
+    /// here), so it is sized from the same container as the TV surface and needs the
+    /// same layout-triggered resize.
+    private func resizePadSurfaceIfRegistered() {
+        guard cemu_bridge_has_pad_render_surface(), let container = deviceContainer else { return }
+        let size = container.bounds.size == .zero ? UIScreen.main.bounds.size : container.bounds.size
+        let scale = (container.window?.screen ?? UIScreen.main).effectiveRenderScale
+        cemu_bridge_resize_render_surface(
+            Int32(size.width),
+            Int32(size.height),
+            scale,
+            false
         )
     }
 
@@ -352,11 +409,28 @@ final class DisplayRouter {
         if placement == .dualScreen, let window = externalWindow {
             return (window.bounds.size, window.screen.effectiveRenderScale)
         }
-        // Deliberately the screen's bounds, not the container's, for the on-device case.
-        // The container is frequently still CGRectZero when this first runs, and boot
-        // waits on registration happening at all — the reasoning is spelled out in
-        // MetalViewIOS.makeUIView and has not changed.
-        return (UIScreen.main.bounds.size, UIScreen.main.effectiveRenderScale)
+        // This used to return UIScreen.main.bounds unconditionally - the WHOLE
+        // screen, including the header bar area that is not part of
+        // `deviceContainer` (the area MetalViewIOS actually carves out for the
+        // emulator view - see MetalView.swift). CreateMetalLayer() sizes the TV
+        // CAMetalLayer from this value and adds it as a sublayer of tvRenderView,
+        // which IS sized to deviceContainer (placeTVOnDevice() below sets
+        // `tvRenderView.frame = container.bounds`). CALayer does not clip an
+        // oversized sublayer, and the shipping SwiftUI path did not call .clipped()
+        // either, so a sublayer taller than the view hosting it simply rendered past
+        // that view's - and the screen's - bottom edge. The letterboxing inside that
+        // sublayer (LatteRenderTarget_getScreenImageArea) was never the problem; it
+        // was centering the image correctly inside a canvas that was the wrong size.
+        //
+        // Same `bounds == .zero ? screen : bounds` fallback syncPadSurface() already
+        // uses below, and for the same reason: this runs from registerSurfaces(),
+        // called from MetalViewIOS.makeUIView() before SwiftUI has necessarily laid
+        // deviceContainer out, and boot depends on registration happening at all
+        // rather than waiting for a nonzero size. Kept deliberately.
+        let containerSize = deviceContainer?.bounds.size ?? .zero
+        let size = containerSize == .zero ? UIScreen.main.bounds.size : containerSize
+        let scale = (deviceContainer?.window?.screen ?? UIScreen.main).effectiveRenderScale
+        return (size, scale)
     }
 
     private func describeScreens() -> String {

@@ -1,0 +1,61 @@
+name: Update SideStore source
+
+# Regenerates docs/apps.json from the repository's real releases and commits it to
+# main, so the source feed cannot drift from what is actually downloadable. Without
+# this, every release would need someone to remember to hand-edit a JSON file - and
+# a source that advertises a build nobody can install is worse than no source.
+
+on:
+  release:
+    types: [published, edited, deleted]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sidestore-source
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Regenerate docs/apps.json
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 ci/generate-sidestore-source.py --repo "$GITHUB_REPOSITORY" --out-dir docs
+
+      - name: Verify it is valid and non-empty
+        # A malformed or empty source silently breaks installs for everyone who added
+        # it, so this is a gate before committing, not a report afterwards.
+        run: |
+          python3 - <<'PY'
+          import json,glob,sys
+          files=sorted(glob.glob("docs/*.json"))
+          assert files, "no source feeds produced"
+          for f in files:
+              d=json.load(open(f)); app=d["apps"][0]
+              assert app["versions"], f"{f}: no versions"
+              for v in app["versions"]:
+                  for k in ("version","date","downloadURL","size"):
+                      assert v.get(k) is not None, f"{f}: version missing {k}"
+                  assert v["downloadURL"].startswith("https://"), f"{f}: non-https downloadURL"
+              print(f"ok: {f} - {len(app['versions'])} versions, newest v{app['versions'][0]['version']}")
+          PY
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet -- docs/*.json; then
+            echo "source already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/*.json
+          git commit -m "Update install sources for $GITHUB_REF_NAME"
+          git push

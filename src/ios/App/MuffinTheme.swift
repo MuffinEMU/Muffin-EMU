@@ -43,72 +43,100 @@ extension Color {
 /// surfaces instead of cream, the same muffin-top oranges and pixel-blue accent
 /// pulled slightly warmer/brighter so they still pop against a dark ground instead
 /// of washing out, and text flipped from dark-brown-on-cream to cream-on-dark-brown.
+///
+/// Every token below used to be a `static let` hardcoded to the Bakery hex pair
+/// above. They're `static var`s reading through MuffinThemeStore.shared.current now,
+/// so every one of this enum's 120+ existing call sites across 9 files picks up
+/// whichever theme is selected (see MuffinThemeStore.swift, MuffinThemePresets.swift,
+/// ThemePickerView.swift) without any of those call sites changing - `MuffinTheme.
+/// pixelBlue` still means "the current theme's accent", it's just no longer
+/// hardcoded to Bakery's.
 enum MuffinTheme {
-    // Background gradient (warm orange) - dark keeps the same hue family, deepened
-    // and desaturated slightly so a full-screen gradient isn't retina-searing at
-    // night, the same way iOS's own dark backgrounds are never just "black".
-    static let backgroundTop = Color(light: "#F6A94F", dark: "#7A4A22")
-    static let backgroundBottom = Color(light: "#E5652E", dark: "#4A2410")
+    private static var t: MuffinThemeDefinition { MuffinThemeStore.shared.current }
+
+    // Background gradient (warm orange in Bakery) - dark keeps the same hue family,
+    // deepened and desaturated slightly so a full-screen gradient isn't
+    // retina-searing at night, the same way iOS's own dark backgrounds are never
+    // just "black".
+    static var backgroundTop: Color { Color(light: t.backgroundTopLight, dark: t.backgroundTopDark) }
+    static var backgroundBottom: Color { Color(light: t.backgroundBottomLight, dark: t.backgroundBottomDark) }
 
     // Muffin-top gradient - kept closer to its light values than most tokens here,
     // since this gradient fills buttons/accents that need to stay recognizably
     // "muffin-colored" and readable against dark surfaces, not blend into them.
-    static let muffinTopLight = Color(light: "#E3A254", dark: "#C98A46")
-    static let muffinTopDark = Color(light: "#A8622A", dark: "#8A4E20")
+    static var muffinTopLight: Color { Color(light: t.muffinTopLightLight, dark: t.muffinTopLightDark) }
+    static var muffinTopDark: Color { Color(light: t.muffinTopDarkLight, dark: t.muffinTopDarkDark) }
 
     // Cream / wrapper - the big one. These are card/background fills, so dark mode
     // needs them to actually be dark (deep umber, not just a duller cream) for
     // every MuffinCard-backed screen to read as a real dark theme rather than a
     // slightly-tinted light one.
-    static let cream = Color(light: "#FDF6EC", dark: "#241813")
-    static let wrapper = Color(light: "#F0DFC3", dark: "#3A2A1E")
+    static var cream: Color { Color(light: t.creamLight, dark: t.creamDark) }
+    static var wrapper: Color { Color(light: t.wrapperLight, dark: t.wrapperDark) }
 
     // Blueberry navy accent - lightened for dark mode so it still reads as a
     // distinct accent against dark cream/wrapper surfaces instead of nearly
     // vanishing into them.
-    static let blueberryNavy = Color(light: "#453765", dark: "#8177AD")
+    static var blueberryNavy: Color { Color(light: t.blueberryNavyLight, dark: t.blueberryNavyDark) }
 
     // Pixel-blue accent (the "EMU" nod) - brightened slightly, same reasoning as
     // blueberryNavy: an accent this saturated needs a touch more lightness to keep
     // reading as an accent once the surfaces around it go dark instead of cream.
-    static let pixelBlue = Color(light: "#6C63FF", dark: "#8A82FF")
+    static var pixelBlue: Color { Color(light: t.pixelBlueLight, dark: t.pixelBlueDark) }
 
     // Blush pink - warmed slightly rather than lightened, keeps it feeling like the
     // same pink instead of turning pastel-on-dark.
-    static let blushPink = Color(light: "#F2A6A0", dark: "#E08880")
+    static var blushPink: Color { Color(light: t.blushPinkLight, dark: t.blushPinkDark) }
 
     // Dark brown (text / line work) - these were always meant to be "ink on cream",
     // so in dark mode they flip to light cream tones and become "ink on umber"
     // instead. brownDarkest (highest-contrast text) becomes the lightest of the
     // three, mirroring its light-mode role as the highest-contrast choice.
-    static let brownDarkest = Color(light: "#2E1B10", dark: "#FBEBD8")
-    static let brownDark = Color(light: "#5C2E10", dark: "#E8CBA8")
-    static let brownMid = Color(light: "#7A4A22", dark: "#C9A47C")
+    static var brownDarkest: Color { Color(light: t.brownDarkestLight, dark: t.brownDarkestDark) }
+    static var brownDark: Color { Color(light: t.brownDarkLight, dark: t.brownDarkDark) }
+    static var brownMid: Color { Color(light: t.brownMidLight, dark: t.brownMidDark) }
 
     // Sparkle cream - stays light in both modes on purpose: it's used as button
     // text painted onto the muffin-top gradient fill, which stays a mid-warm-orange
     // in both themes, so the same light, high-contrast text color works for both.
-    static let sparkleCream = Color(light: "#FFF3DD", dark: "#FFF3DD")
+    static var sparkleCream: Color { Color(light: t.sparkleCreamLight, dark: t.sparkleCreamDark) }
 
     // Shadow - lightened rather than darkened. A shadow needs to read as "recessed
-    // relative to its surface" in both themes; #4A2410 against the light cream
-    // background reads as a shadow, but the same color against the dark umber
-    // background (#241813) is barely distinguishable from the surface itself, so
-    // dark mode needs a shadow color with more contrast against ITS ground, not a
-    // literal darkening.
-    static let shadow = Color(light: "#4A2410", dark: "#000000")
+    // relative to its surface" in both themes; a light-mode shadow colour against
+    // the dark cream/wrapper surface is often barely distinguishable from the
+    // surface itself, so dark mode needs a shadow colour with more contrast against
+    // ITS ground, not a literal darkening.
+    static var shadow: Color { Color(light: t.shadowLight, dark: t.shadowDark) }
 
-    static let backgroundGradient = LinearGradient(
-        colors: [backgroundTop, backgroundBottom],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    static var backgroundGradient: LinearGradient {
+        // A theme may define more than two stops (see backgroundStopsLight). Each index
+        // is a light/dark pair built through the same Color(light:dark:) provider as
+        // every other token, so a multi-stop background re-evaluates on a trait change
+        // exactly like a two-stop one does. Falls back to top -> bottom whenever the
+        // stops are absent or the two arrays disagree in length, which is every theme
+        // but one and also the only sane thing to do with a malformed pair.
+        let lightStops = t.backgroundStopsLight
+        let darkStops = t.backgroundStopsDark
+        if lightStops.count >= 2 && lightStops.count == darkStops.count {
+            let colors = zip(lightStops, darkStops).map { Color(light: $0, dark: $1) }
+            let locations = t.backgroundStopLocations
+            // Straight top-to-bottom rather than the diagonal the two-stop path uses.
+            // A multi-stop background exists to put specific colour at a specific HEIGHT
+            // - a rainbow across the header, one calm colour under the content - and a
+            // diagonal smears every band across the corners, which reads as a mess
+            // rather than as bands.
+            if locations.count == colors.count {
+                let stops = zip(colors, locations).map { Gradient.Stop(color: $0, location: $1) }
+                return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
+            }
+            return LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
+        }
+        return LinearGradient(colors: [backgroundTop, backgroundBottom], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
 
-    static let muffinTopGradient = LinearGradient(
-        colors: [muffinTopLight, muffinTopDark],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    static var muffinTopGradient: LinearGradient {
+        LinearGradient(colors: [muffinTopLight, muffinTopDark], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
 }
 
 /// A warm cream card with a soft rounded corner and gentle drop shadow - the base

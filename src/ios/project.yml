@@ -63,6 +63,17 @@ settings:
   GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1 CEMU_PLATFORM_IOS=1 ENABLE_METAL=1 HAS_COREAUDIO=1'
   HEADER_SEARCH_PATHS:
     - '$(SRCROOT)/..'
+    # src/Cafe itself, not just src/. The CMake build has always had both (see
+    # src/Cafe/CMakeLists.txt's target_include_directories), and 17 headers under
+    # src/Cafe are written against the shorter root - e.g. LatteTextureMtl.h says
+    # #include "HW/Latte/ISA/LatteReg.h", not "Cafe/HW/...". That never mattered while
+    # those headers were only ever compiled into libCemuCafe.a by CMake; it broke the
+    # moment CemuBridge.mm - compiled by Xcode, not CMake - first included one of them
+    # directly, which it now does to read the Metal cache counters for the memory log.
+    # Adding the root here rather than rewriting 17 files' includes: the includes are
+    # consistent with how the engine builds, it is the app target that was missing half
+    # of the engine's own include environment.
+    - '$(SRCROOT)/../Cafe'
     - '$(SRCROOT)/../Common/glm_stub'
     - '$(SRCROOT)/../../build-ios/vcpkg_installed/arm64-ios/include'
     - '$(SRCROOT)/../../dependencies/metal-cpp'
