@@ -3,8 +3,8 @@
   "identifier": "com.kiddreads.muffin",
   "subtitle": "Wii U emulation on iOS, in the open.",
   "description": "The source for Muffin - a genuine port of the Cemu Wii U emulator to iOS, built from source in the open. Work in progress, and honest about it: see STATUS.md in the repository for exactly what works and what does not. This source serves the standard build for SideStore, AltStore and LiveContainer, which re-sign it with your own Apple ID at install.",
-  "iconURL": "https://kiddreads.github.io/muffin-emu/icon.png",
-  "website": "https://kiddreads.github.io/muffin-emu/",
+  "iconURL": "https://kiddreads.github.io/cemu-ios-muffin/icon.png",
+  "website": "https://kiddreads.github.io/cemu-ios-muffin/",
   "tintColor": "E5652E",
   "apps": [
     {
@@ -13,7 +13,7 @@
       "developerName": "kiddreads",
       "subtitle": "Wii U emulator for iPhone and iPad",
       "localizedDescription": "Muffin is the Cemu Wii U emulator, ported to iOS - iPhone and iPad, iOS 15 and later. The real C++ engine - PowerPC interpreter, ARM64 recompiler, the full Cafe OS HLE stack and Cemu's native Metal renderer - running under a SwiftUI shell.\n\nThis is in-progress software. A picture reaches the screen for real titles, but it is not yet a correct one, and no title has been confirmed playable end to end. The project documents its own state honestly rather than claiming more than it delivers - read STATUS.md before installing.\n\nThis source serves the standard build for SideStore, AltStore and LiveContainer, which re-sign it with your own Apple ID at install.\n\nBring your own games. No copyrighted content is distributed here.",
-      "iconURL": "https://kiddreads.github.io/muffin-emu/icon.png",
+      "iconURL": "https://kiddreads.github.io/cemu-ios-muffin/icon.png",
       "tintColor": "E5652E",
       "category": "games",
       "screenshotURLs": [],

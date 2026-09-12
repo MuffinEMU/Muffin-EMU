@@ -16,7 +16,7 @@ decode and no quality loss.
 """
 import json, struct, zlib
 
-REPO = "/Users/kiddreads/muffin-emu"
+REPO = "/Users/kiddreads/cemu-ios-muffin"
 PW, PH = 612.0, 792.0
 CW, CH = 252.0, 144.0
 COLS = [54.0, 306.0]
@@ -266,8 +266,8 @@ def back(c, x, y, iid):
     panel = mix(p["ink"], p["bottom"], 0.12)
     c.roundrect(M, M, CW - 2 * M, 21.0, 5.0, panel)
     on = (1.0, 0.99, 0.96) if lum(panel) < 0.5 else (0.13, 0.10, 0.08)
-    c.text(M + 9, M + 11.5, "Helvetica-Bold", 7.6, on, "kiddreads.github.io/muffin-emu")
-    c.text(M + 9, M + 4.0, "Helvetica", 6.4, mix(on, panel, 0.35), "github.com/kiddreads/muffin-emu")
+    c.text(M + 9, M + 11.5, "Helvetica-Bold", 7.6, on, "kiddreads.github.io/cemu-ios-muffin")
+    c.text(M + 9, M + 4.0, "Helvetica", 6.4, mix(on, panel, 0.35), "github.com/kiddreads/cemu-ios-muffin")
     c << "Q"
 
 

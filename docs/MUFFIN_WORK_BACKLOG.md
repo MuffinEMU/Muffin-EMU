@@ -7,7 +7,7 @@ work down from P0, pick anything unblocked, keep both `origin` (bward-dev1) and
 **new branch** per item (never re-push a branch mid-CI-run), and don't stop for
 questions until the 2026-09-01 14:00 check-in.
 
-Repo: `kiddreads/muffin-emu` is canonical (`git push ci <branch>`).
+Repo: `kiddreads/cemu-ios-muffin` is canonical (`git push ci <branch>`).
 Current HEAD: `metal-shader-binary-archive`. Target device: iPad Pro 12.9" 4th
 gen, A12Z, 6 GB, fanless — no Metal3/mesh shaders, no BC texture formats.
 

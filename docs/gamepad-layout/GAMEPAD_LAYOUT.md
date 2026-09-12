@@ -1,7 +1,7 @@
 # The on-screen pad, taken from the GamePad itself
 
 BW-198. Branch `ios-gamepad-clone-layout`, cut from `ios-controls-on-extras` (`e1de779b`).
-Live: <https://kiddreads.github.io/muffin-emu/gamepad-layout/>
+Live: <https://kiddreads.github.io/cemu-ios-muffin/gamepad-layout/>
 
 The shipping `ControllerGeometry` is measured from `IMG_3278.jpeg`, a screenshot of an
 on-screen pad. This is measured from the hardware: the official Wii U GamePad front
