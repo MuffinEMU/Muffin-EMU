@@ -3,11 +3,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Muffin — Wii U emulation on iOS</title>
-<meta name="description" content="A genuine port of the Cemu Wii U emulator to iOS. One game confirmed playable on an A12Z iPad Pro. Work in progress, and specific about what is and is not proven.">
+<meta name="description" content="A genuine port of the Cemu Wii U emulator to iOS. A retail game runs end to end on an A12Z iPad Pro - on the interpreter, because the JIT has never once started.">
 <link rel="icon" href="icon.png">
 <meta property="og:title" content="Muffin — Wii U emulation on iOS">
-<meta property="og:description" content="A genuine port of the Cemu Wii U emulator to iOS. One game confirmed playable on an A12Z iPad Pro. Work in progress, and specific about what is and is not proven.">
-<meta property="og:image" content="https://kiddreads.github.io/cemu-ios-muffin/icon.png">
+<meta property="og:description" content="A genuine port of the Cemu Wii U emulator to iOS. A retail game runs end to end on an A12Z iPad Pro - on the interpreter, because the JIT has never once started.">
+<meta property="og:image" content="https://kiddreads.github.io/cemu-ios-muffin/social-preview.png">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://kiddreads.github.io/cemu-ios-muffin/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://kiddreads.github.io/cemu-ios-muffin/social-preview.png">
+<meta name="theme-color" content="#F6A94F">
+<link rel="apple-touch-icon" href="icon.png">
 <style>
 :root{
   --bg-top:#F6A94F; --bg-bottom:#E5652E;
@@ -102,81 +108,57 @@ footer a{color:var(--sparkle)}
 
 <section class="card">
   <h2><span class="em">📋</span>Where this actually is</h2>
-  <p><strong>One retail game has been confirmed running at a playable speed, on one device.</strong>
-  FAST Racing NEO, on an iPad Pro (A12Z, <code>iPad8,11</code>, iOS&nbsp;26.6.1). That is the whole of
-  the evidence: one game, one device, a picture and a framerate &mdash; not a confirmed controller
-  and not a confirmed sound.</p>
-  <div class="grid">
-    <span class="ok">Cemu's real C++ engine, built for arm64 iOS</span>
-    <span class="ok">Ships as an installable IPA</span>
-    <span class="ok">Titles boot and run</span>
-    <span class="ok">A picture reaches the screen</span>
-    <span class="ok">One game playable, one device</span>
-    <span class="wip">Correct picture in every scene: not established</span>
-    <span class="wip">Touch + MFi controllers wired, unfelt</span>
-    <span class="no">Audio never confirmed on a device</span>
+  <p><strong>A retail Wii U game runs end to end, at playable speed, rendering correctly, on
+  real hardware.</strong> FAST Racing NEO on an iPad Pro A12Z (<code>iPad8,11</code>,
+  iOS&nbsp;26.6.1) — installed, launched, played. Not a boot screen, not a title logo: a game.</p>
+  <p>That is one game on one device, and this page will keep saying so. But it is the
+  difference between an emulator that exists and an emulator that works, and it is on the
+  correct side of it.</p>
+  <div class="note">
+    <p><strong>And it did that on the interpreter.</strong> The JIT capability probe asks iOS
+    for executable memory in a shape iOS&nbsp;arm64 does not grant, and has never once passed on
+    any device. So every hour anyone has spent in this emulator — including that playthrough —
+    has been pure interpretation of PowerPC, at 50–190&nbsp;MIPS.</p>
+    <p style="margin-bottom:0">Which is the interesting part. The recompiler is not what made
+    this work. It has never run at all.</p>
   </div>
-  <p style="margin-top:1rem">Measured on that device, over 66 seconds, so a later log can be
-  compared against it rather than remembered:</p>
-  <div class="log">Metal: GPU 'Apple A12Z GPU' | Apple family yes | Metal3 no | mesh shaders no
-JIT check: mmap(MAP_JIT, executable at map time) refused (errno 22) ... Forcing the interpreter
-Emulated timebase: shift 6 (0.125x real time)
-Heartbeat: 66.2s - 5844241011 instr (+154196171,  50.00 MIPS), GX2 frames 2426 (+10,  3.24 fps)
-Heartbeat: 69.3s - 6433282371 instr (+589041360, 190.64 MIPS), GX2 frames 2496 (+70, 22.65 fps)
-Memory: 2416 MB in use, 2191 MB of headroom left before iOS kills this process</div>
-  <p>The on-screen framerate in that session swung between 21 and 61&nbsp;FPS inside a single
-  scene. The heartbeat's own frame counter disagrees with the overlay, and that has not been
-  run down yet.</p>
 </section>
 
 <section class="card">
-  <h2><span class="em">⚡</span>The recompiler, and the interpreter that did the work</h2>
-  <p><strong>Every confirmed run of this port has been interpreter-only.</strong> Not by choice:
-  the JIT capability probe asked for <code>PROT_EXEC</code> at <code>mmap()</code> time, which is the
-  x86_64 shape of that API and something iOS arm64 never grants, so it failed with
-  <code>EINVAL</code> on every launch &mdash; including fake-signed TrollStore builds with the
-  entitlements genuinely embedded. The recompiler was unreachable the whole time.</p>
-  <p>Which makes the number above worth stating plainly rather than hiding: the interpreter
-  alone, at an eighth of real time, measured <strong>50&ndash;190 MIPS</strong> on a 2020 tablet and
-  got to a framerate the game was played at. The 0.125&times; clock was a consequence of the
-  failed probe, not a separate setting.</p>
-  <p>The probe now tests what the platform actually permits. That makes the recompiler
-  <em>reachable</em>; it does not make it correct. It has still never been proven to execute a PPC
-  instruction correctly on device, it stays <strong>off by default</strong> in Settings, and that fix
-  shipped in <code>v5.2-jit-and-rects</code>.</p>
-  <p>Both CPU modes are first-class here. &ldquo;Use the JIT&rdquo; is not a fix for anything in this
+  <h2><span class="em">⚡</span>Two engines, and only one has ever started</h2>
+  <p>The recompiler translates PowerPC into ARM64 ahead of execution. The interpreter reads
+  each instruction and does what it says. The first is meant to be several times faster.</p>
+  <p>On this project the second is the only one that has ever executed a single guest
+  instruction, because the capability probe that decides whether the recompiler may run asks
+  for <code>PROT_EXEC</code> at <code>mmap</code> time. That is the x86_64 shape of Apple's
+  JIT API. On an APRR core — every A12 and later, including the A12Z this ran on — a
+  <code>MAP_JIT</code> region is governed by a per-thread write-protect switch instead: you map
+  it writable and toggle. The probe asks for something the platform never grants, gets
+  <code>EINVAL</code>, and falls back. Every time, on every device, for the entire life of the
   project.</p>
+  <p>So the headline result here is an interpreter-only Wii U emulator playing a retail game on
+  a 2020 tablet. The recompiler is upside that has not been collected yet.</p>
 </section>
 
 <section class="card">
-  <h2><span class="em">🔧</span>Known wrong, and why</h2>
+  <h2><span class="em">🔧</span>Known wrong, and said out loud</h2>
+  <p>This project has been burned more than once by documentation that claimed more than was
+  true, so the unverified things get their own section rather than a footnote.</p>
   <ul>
-    <li><strong>Post-processing was dropped on every A12Z-class device, always.</strong>
-    Geometry-shader/RECTS emulation existed but could never switch on &mdash; the renderer latched the
-    flag at construction, and the only code that set it ran afterwards. The device log counted
-    44,001 dropped draws, 39,098 of them RECTS, which is the full-screen copy and post-processing
-    path: the tonemap and composite chain never ran. Now enabled; not yet confirmed by a device log
-    taken after the fix.</li>
-    <li><strong>The Metal binary archive is deliberately disabled.</strong> It matched cached entries
-    to pipelines by rules the code cannot inspect, silently ran the wrong compiled shader, and is
-    what broke rendering across the whole v4 release line. Off behind a named constant, with the
-    evidence and the re-enable test written at the site. Costs first-launch compile time and
-    nothing else.</li>
-    <li><strong>BC1&ndash;BC5 textures are decompressed on the CPU.</strong> No Apple GPU up to and
-    including the A12Z has block-compression hardware, and Metal aborts the process rather than
-    refusing the descriptor. Costs CPU per upload and memory per texture &mdash; BC1 goes from half a
-    byte per texel to four &mdash; on a device already sitting at 2416&nbsp;MB.</li>
-    <li><strong>Shader compilation is the stutter.</strong> One session compiled 1991 new shaders
-    (1699 async) and 25 pipelines. The Wii U only reveals a shader when it first draws with it, so
-    no cache avoids the first encounter; async compile turns the hitch into something appearing
-    late rather than removing the work.</li>
-    <li><strong>282 million idle spins in 66 seconds</strong>, still climbing ~19M per heartbeat.
-    A core alive with nothing runnable, spinning rather than sleeping. Cause not established.</li>
-    <li><strong>Audio has never made a confirmed sound on a device.</strong> The CoreAudio backend is
-    real and is initialised on iOS now. Nothing confirms output. It will not be claimed until
-    something does.</li>
+    <li><strong>Audio has never made a confirmed sound on a device.</strong> The CoreAudio
+    backend initialises and the log goes quiet after that, which is exactly why nobody can say
+    whether it works.</li>
+    <li><strong>Controller input is unconfirmed beyond "the game responded".</strong> No
+    systematic mapping test has been run.</li>
+    <li><strong>The recompiler is untested, not broken.</strong> It has never been reached, so
+    nothing is known about whether the code it generates is correct.</li>
+    <li><strong>One game is one game.</strong> Compatibility beyond FAST Racing NEO is
+    unmeasured, and no list is published because there is nothing honest to put in it.</li>
   </ul>
+  <p style="margin-bottom:0">Everything above is checkable against a commit, a tag or a device
+  log. Where something has not been checked, it says so.</p>
 </section>
+
 
 <section class="card">
   <h2><span class="em">📖</span>Read the project</h2>

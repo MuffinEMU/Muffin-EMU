@@ -6,7 +6,6 @@
 #include <atomic>
 #include <mutex>
 #include <type_traits>
-#include <unordered_map>
 
 class PPCItpCafeOSUsermode
 {
@@ -1248,24 +1247,48 @@ public:
 	// freshly claimed block is in - unable to dispatch: it names handler 0, which is null, which
 	// is read as a miss. Without that reservation an all-zero entry would be indistinguishable
 	// from a legitimately cached opcode 0x00000000.
-	static inline uint32 s_handlerCount = 1;
+	static inline std::atomic<uint32> s_handlerCount{1};
 	static inline bool s_reportedHandlerTableFull = false;
 	static inline std::mutex s_handlerMutex;
-	static inline std::unordered_map<PPCInstructionHandler, uint32> s_handlerIds;
 
-	// Cold path only - once per distinct handler for the life of the process. Returns 0, the
-	// never-dispatchable index, if the table is full, which just means that opcode keeps decoding
-	// the slow way rather than anything going wrong.
+	// Handler -> table index. Returns 0, the never-dispatchable index, if the table is full, which
+	// only means that opcode keeps decoding the slow way rather than anything going wrong.
+	//
+	// The lookup is a lock-free scan and the insert is the only thing that takes the lock. That is
+	// not premature: the set of handlers is fixed, small, and fully populated within the first
+	// moments of execution, so in the steady state this never touches the mutex - and there is one
+	// case where taking a process-wide lock here would be genuinely bad. An address whose
+	// instruction word keeps changing misses the cache on EVERY execution: self-modifying guest
+	// code, or a debugger breakpoint being installed and removed around a hot instruction. Three
+	// cores serialising on one mutex per guest instruction would be far worse than the decode this
+	// is trying to save. The scan walks a 4 KB array that stays in L1, and because the first
+	// instructions a title executes are the common ones, the common handlers end up at low indices
+	// and are found in the first few steps.
 	PPCITP_NOINLINE static uint32 internHandler(PPCInstructionHandler h)
 	{
+		// Acquire: pairs with the release store of the count below, which is what makes the slot
+		// write that preceded it visible. Slots below the count are written once and never change,
+		// so reading them relaxed is safe.
+		uint32 count = s_handlerCount.load(std::memory_order_acquire);
+		for (uint32 i = 1; i < count; i++)
+		{
+			if (s_handlerTable[i].load(std::memory_order_relaxed) == h)
+				return i;
+		}
 		std::lock_guard<std::mutex> lock(s_handlerMutex);
-		auto it = s_handlerIds.find(h);
-		if (it != s_handlerIds.end())
-			return it->second;
-		if (s_handlerCount >= kMaxHandlers)
+		// Re-scanned under the lock because another core may have added this handler, or others,
+		// since the scan above. Skipping this would not be incorrect, but it would let two cores
+		// give one handler two indices and waste table slots.
+		count = s_handlerCount.load(std::memory_order_relaxed);
+		for (uint32 i = 1; i < count; i++)
+		{
+			if (s_handlerTable[i].load(std::memory_order_relaxed) == h)
+				return i;
+		}
+		if (count >= kMaxHandlers)
 		{
 			// There are 237 distinct handlers today against a table of 512, so this is headroom
-			// rather than a limit - but a future wave that adds a lot of opcodes should be told
+			// rather than a limit - but a later wave that adds a lot of opcodes should be told
 			// rather than silently losing the cache for whatever it added. Said once; this runs
 			// under the lock, so a plain bool is enough.
 			if (!s_reportedHandlerTableFull)
@@ -1275,14 +1298,13 @@ public:
 			}
 			return 0;
 		}
-		uint32 idx = s_handlerCount;
-		// Release, and the slot is filled before the index naming it can appear in any cache
-		// entry. A core that reads the index therefore either sees the handler or sees null and
-		// treats it as a miss; it can never see a different handler.
-		s_handlerTable[idx].store(h, std::memory_order_release);
-		s_handlerCount = idx + 1;
-		s_handlerIds[h] = idx;
-		return idx;
+		// The slot is filled before the count that publishes it, and the count is what another
+		// core has to read before it can look at that slot. So no core can reach a slot that has
+		// not been written. The dispatch path does not read the count at all and instead treats a
+		// null slot as a miss, which covers the same hazard from the other direction.
+		s_handlerTable[count].store(h, std::memory_order_release);
+		s_handlerCount.store(count + 1, std::memory_order_release);
+		return count;
 	}
 
 	// Cold: the first time any instruction inside this 4 KB guest page executes. Returns the block
