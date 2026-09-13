@@ -566,7 +566,9 @@ void IMLOptimizer_DebugPrintSeg(ppcImlGenContext_t& ppcImlGenContext, IMLSegment
 	fflush(stdout);
 }
 
-void IMLOptimizer_RemoveDeadCodeFromSegment(IMLOptimizerRegIOAnalysis& regIoAnalysis, IMLSegment& seg)
+// runs a single backward liveness sweep over the segment and converts provably dead instructions to no-ops
+// returns true if at least one instruction was newly turned into a no-op
+bool IMLOptimizer_RemoveDeadCodeFromSegment(IMLOptimizerRegIOAnalysis& regIoAnalysis, IMLSegment& seg)
 {
 	// algorithm works like this:
 	// Calculate which registers need to be preserved at the end of each segment
@@ -574,6 +576,11 @@ void IMLOptimizer_RemoveDeadCodeFromSegment(IMLOptimizerRegIOAnalysis& regIoAnal
 	// - Iterate instructions backwards
 	// - Maintain a list of registers which are read at a later point (initially this is the list from the first step)
 	// - If an instruction only modifies registers which are not in the read list and has no side effects, then it is dead code and can be replaced with a no-op
+	// Note: a single sweep only catches one "layer" of dead code. If instruction B is removed because its
+	// result is unused, the instruction A that fed B's now-dropped input isn't revisited within this same
+	// sweep, so A still looks used to this pass. The caller reruns this function until it reports no more
+	// changes so chains of dead code (e.g. an unused Rc-form/XER carry result feeding nothing) fully collapse.
+	bool madeChanges = false;
 
 	std::unordered_set<IMLRegID> regsNeeded = regIoAnalysis.GetRegistersNeededAtEndOfSegment(seg);
 
@@ -614,9 +621,12 @@ void IMLOptimizer_RemoveDeadCodeFromSegment(IMLOptimizerRegIOAnalysis& regIoAnal
 		});
 		if(!imlInstruction.HasSideEffects() && onlyWritesRedundantRegisters)
 		{
+			if (imlInstruction.type != PPCREC_IML_TYPE_NO_OP)
+				madeChanges = true;
 			imlInstruction.make_no_op();
 		}
 	}
+	return madeChanges;
 }
 
 void IMLOptimizerX86_SubstituteCJumpForEflagsJump(IMLOptimizerRegIOAnalysis& regIoAnalysis, IMLSegment& seg)
@@ -701,7 +711,13 @@ void IMLOptimizerX86_SubstituteCJumpForEflagsJump(IMLOptimizerRegIOAnalysis& reg
 
 void IMLOptimizer_StandardOptimizationPassForSegment(IMLOptimizerRegIOAnalysis& regIoAnalysis, IMLSegment& seg)
 {
-	IMLOptimizer_RemoveDeadCodeFromSegment(regIoAnalysis, seg);
+	// iterate DCE to a fixpoint: removing one dead instruction can expose another (the instruction that
+	// only fed the one just removed), so keep sweeping until a full sweep makes no further changes.
+	// This must fully finish before the x86-specific pass below, which introduces an eflags-setting
+	// PPCREC_IML_OP_X86_CMP that DCE cannot see the implicit flag side effect of.
+	while (IMLOptimizer_RemoveDeadCodeFromSegment(regIoAnalysis, seg))
+	{
+	}
 
 #ifdef ARCH_X86_64
 	// x86 specific optimizations
