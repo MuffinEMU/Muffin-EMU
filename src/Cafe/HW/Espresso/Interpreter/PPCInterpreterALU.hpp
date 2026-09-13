@@ -30,115 +30,6 @@ static bool checkAdditionOverflow(uint32 x, uint32 y, uint32 r)
 	return (((x ^ r) & (y ^ r)) >> 31) != 0;
 }
 
-// Add with carry-out, computed the way the hardware computes it: one 33-bit addition whose
-// bit 32 IS the carry.
-//
-// WHY: every PPC carry-producing add - addc/addic/adde/addze/addme, plus the subtract forms,
-// which are the same adder fed ~rA - needs two things out of one addition: the truncated
-// 32-bit sum, and the carry out of bit 31. The shape this replaces (ppc_carry_3) threw the
-// sum away and rebuilt it to find the carry: it added a+b, compared, added a+b+c again,
-// compared again, ORed the two answers. Done in 64-bit registers the carry simply falls out
-// of the same addition, and arm64 has nothing but 64-bit registers - a 32-bit load has
-// already zero-extended the operands into them, so widening costs literally nothing. On
-// arm64 the result is add/add/lsr with no compares and no branches, against the old form's
-// two adds, two compares and a select - for adde, 3 instructions where there were 5, and a
-// shorter dependency chain, since the old carry could not be computed until the second
-// addition retired. Measured in isolation: adde +9%, subfme +29%, subfc +8%, subfze +9%.
-//
-// Note that this is not a pessimisation even where the old shape was already optimal. Where
-// only one addend is variable - addic and subfic, whose second operand is a 16-bit immediate
-// - clang folds the 64-bit form straight back into the same adds/cset it generated before,
-// instruction for instruction. So the widening is a hint about what is wanted, not a demand
-// for wider arithmetic, and the compiler still picks the flag form when that is better.
-//
-// Exact for every operand combination this interpreter can pass, including the 0xFFFFFFFF
-// operands that addme/subfme use: the largest reachable sum is 0xFFFFFFFF + 0xFFFFFFFF + 1
-// = 0x1FFFFFFFF, so bit 32 is the carry and bits 33..63 are always zero. This is checked,
-// not assumed - see the note on each call site below for which exact expression it replaces.
-static inline uint32 ppc_addWithCarryOut(uint32 a, uint32 b, uint32 carryIn, uint8& carryOut)
-{
-	uint64 sum = (uint64)a + (uint64)b + (uint64)carryIn;
-	carryOut = (uint8)(sum >> 32);
-	return (uint32)sum;
-}
-
-// Write all four bits of one CR field from the outcome of an integer compare.
-//
-// Only two host comparisons are needed. LT, GT and EQ are mutually exclusive and exhaustive
-// for an integer compare, so GT is simply "neither of the other two" - the same identity
-// ppc_update_cr0() already relies on. SO is COPIED from XER, never recomputed: it is the
-// sticky summary-overflow bit, cmp/cmpl have no opinion about it, and the only things that
-// may ever set it are the OE-form instructions via PPCInterpreter_setXerOV().
-//
-// WHY: the four compare handlers used to zero all four CR bytes, then branch three ways to
-// put a 1 back into exactly one of them, then store SO - six byte stores and a dependent
-// cmp/csinc/csel chain to produce four values that are all known up front. Writing the four
-// bytes once, unconditionally, is shorter and has no branch. This is the largest win
-// available in this file, because compares are the densest CR producers in compiled PowerPC
-// code: every loop condition and every branch on a value is one, and unlike an Rc-form
-// arithmetic instruction a compare has no other work to hide the cost behind.
-//
-// Deliberately four byte stores and NOT one packed 32-bit store. The four bytes are adjacent
-// and packing them looks like the obvious next step, but measured on arm64 it is consistently
-// SLOWER (239 vs 261 Minstr/s through a cmp-heavy dispatch loop) because forming the word
-// costs more ALU work than it saves in store slots - Apple cores coalesce adjacent byte
-// stores perfectly well on their own. Do not "improve" this into a packed store without
-// re-measuring it; it has already been tried.
-static inline void ppc_update_crf_compare(PPCInterpreter_t* hCPU, uint32 crfD, bool isLess, bool isEqual)
-{
-	uint8 lt = isLess ? 1 : 0;
-	uint8 eq = isEqual ? 1 : 0;
-	uint8 gt = (uint8)((lt | eq) ^ 1);
-	uint8* crField = hCPU->cr + crfD * 4;
-	crField[CR_BIT_LT] = lt;
-	crField[CR_BIT_GT] = gt;
-	crField[CR_BIT_EQ] = eq;
-	crField[CR_BIT_SO] = hCPU->xer_so;
-}
-
-// The mask selected by a rotate-and-mask instruction's MB/ME pair.
-//
-// Same value as ppc_mask() in PPCInterpreterHelper.h - which is left alone because the
-// recompiler's IML generator also calls it, where it runs once per translated instruction
-// rather than once per execution and the cost does not matter.
-//
-// The point is that the wrapped case (MB > ME) is not a special case at all. The mask is
-// always exactly n = ((ME - MB) mod 32) + 1 consecutive set bits whose first bit sits at
-// MSB-numbered position MB and which wrap around the end of the word. So: build n bits
-// aligned to the top of the word, then rotate them right by MB. The old form instead built
-// two half-masks, computed both the AND and the OR of them, and selected between the two
-// results on MB <= ME.
-//
-// Two identities keep it to four instructions with no masking and no possibility of an
-// out-of-range shift: 31 - ((ME-MB) & 31) == ((ME-MB) ^ 31) & 31, and both the shift and the
-// rotate consult only the low 5 bits of their count. On arm64 this is sub/eor/lsl/ror -
-// four instructions against the previous seven, and no conditional select.
-//
-// Verified equal to ppc_mask() exhaustively over all 1024 (MB, ME) pairs, which is the whole
-// input domain: both are 5-bit instruction fields.
-static inline uint32 ppc_maskFromMBME(uint32 MB, uint32 ME)
-{
-	uint32 topAlignedMask = 0xFFFFFFFFu << (((ME - MB) ^ 31u) & 31u);
-	return std::rotr(topAlignedMask, (int)(MB & 31u));
-}
-
-// ppc_update_cr0() in PPCInterpreterInternal.h is DELIBERATELY left as it is. It is the
-// obvious target - it runs on every Rc-form instruction in this file - and it looks like a
-// chain of conditionals, so it invites exactly the rewrite applied to the compares above.
-// It was checked, and there is nothing there to win:
-//
-//   - It is already branchless. clang recognises that (r != 0) & (r >> 31) is just r >> 31,
-//     that (r == 0) is a cset, and that reading cr[EQ] and cr[LT] back out of memory to
-//     compute GT can be done in registers instead. There is no store-to-load stall.
-//   - Rewriting it as a single packed 32-bit store, or with the (lt|eq)^1 form used above,
-//     produced byte-for-byte the same instruction count on arm64: ten instructions and four
-//     byte stores either way. Measured, the two are indistinguishable.
-//
-// So the win in this file is in the compares and in the carry chain, not here. If you are
-// looking at this function because Rc-form instructions are slow, the cost is the four
-// stores themselves, and the only way to remove those is to not perform the update - which
-// an interpreter cannot know is safe, since it cannot see whether the next instruction reads
-// CR0. That is a job for the recompiler's dead-flag analysis, not for this code.
 static void PPCInterpreter_ADD(PPCInterpreter_t* hCPU, uint32 opcode)
 {
 	PPC_OPC_TEMPL3_XO();
@@ -163,8 +54,12 @@ static void PPCInterpreter_ADDO(PPCInterpreter_t* hCPU, uint32 opcode)
 static void PPCInterpreter_ADDC(PPCInterpreter_t* hCPU, uint32 opcode)
 {
 	PPC_OPC_TEMPL3_XO();
-	// replaces: gpr[rD] = a + b; xer_ca = (gpr[rD] < a)
-	hCPU->gpr[rD] = ppc_addWithCarryOut(hCPU->gpr[rA], hCPU->gpr[rB], 0, hCPU->xer_ca);
+	uint32 a = hCPU->gpr[rA];
+	hCPU->gpr[rD] = a + hCPU->gpr[rB];
+	if (hCPU->gpr[rD] < a)
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -175,11 +70,13 @@ static void PPCInterpreter_ADDCO(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_OPC_TEMPL3_XO();
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = hCPU->gpr[rB];
-	// replaces: gpr[rD] = a + b; xer_ca = (gpr[rD] < a)
-	uint32 result = ppc_addWithCarryOut(a, b, 0, hCPU->xer_ca);
-	hCPU->gpr[rD] = result;
+	hCPU->gpr[rD] = a + b;
+	if (hCPU->gpr[rD] < a)
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	// set SO/OV
-	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(a, b, result));
+	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(a, b, hCPU->gpr[rD]));
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -191,8 +88,12 @@ static void PPCInterpreter_ADDE(PPCInterpreter_t* hCPU, uint32 opcode)
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = hCPU->gpr[rB];
 	uint32 ca = hCPU->xer_ca;
-	// replaces: gpr[rD] = a + b + ca; xer_ca = ppc_carry_3(a, b, ca)
-	hCPU->gpr[rD] = ppc_addWithCarryOut(a, b, ca, hCPU->xer_ca);
+	hCPU->gpr[rD] = a + b + ca;
+	// update xer
+	if (ppc_carry_3(a, b, ca))
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -205,10 +106,13 @@ static void PPCInterpreter_ADDEO(PPCInterpreter_t* hCPU, uint32 opcode)
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = hCPU->gpr[rB];
 	uint32 ca = hCPU->xer_ca;
-	// replaces: gpr[rD] = a + b + ca; xer_ca = ppc_carry_3(a, b, ca)
-	uint32 result = ppc_addWithCarryOut(a, b, ca, hCPU->xer_ca);
-	hCPU->gpr[rD] = result;
-	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(a, b, result));
+	hCPU->gpr[rD] = a + b + ca;
+	// update xer carry
+	if (ppc_carry_3(a, b, ca))
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
+	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(a, b, hCPU->gpr[rD]));
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -228,8 +132,13 @@ static void PPCInterpreter_ADDIC(PPCInterpreter_t* hCPU, uint32 opcode)
 	sint32 rD, rA;
 	uint32 imm;
 	PPC_OPC_TEMPL_D_SImm(opcode, rD, rA, imm);
-	// update XER. Replaces: gpr[rD] = a + imm; xer_ca = (gpr[rD] < a)
-	hCPU->gpr[rD] = ppc_addWithCarryOut(hCPU->gpr[rA], imm, 0, hCPU->xer_ca);
+	uint32 a = hCPU->gpr[rA];
+	hCPU->gpr[rD] = a + imm;
+	// update XER
+	if (hCPU->gpr[rD] < a)
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
@@ -238,8 +147,13 @@ static void PPCInterpreter_ADDIC_(PPCInterpreter_t* hCPU, uint32 opcode)
 	sint32 rD, rA;
 	uint32 imm;
 	PPC_OPC_TEMPL_D_SImm(opcode, rD, rA, imm);
-	// update XER. Replaces: gpr[rD] = a + imm; xer_ca = (gpr[rD] < a)
-	hCPU->gpr[rD] = ppc_addWithCarryOut(hCPU->gpr[rA], imm, 0, hCPU->xer_ca);
+	uint32 a = hCPU->gpr[rA];
+	hCPU->gpr[rD] = a + imm;
+	// update XER
+	if (hCPU->gpr[rD] < a)
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
 }
@@ -259,10 +173,11 @@ static void PPCInterpreter_ADDZE(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_ASSERT(rB == 0);
 	uint32 a = hCPU->gpr[rA];
 	uint32 ca = hCPU->xer_ca;
-	// replaces: gpr[rD] = a + ca; xer_ca = (a == 0xffffffff && ca). Carry out of a + 0 + ca
-	// is set exactly when a is all ones and ca is 1, so this is the same rule as the adder's
-	// - verified exhaustively over all 2^32 values of a for both values of ca.
-	hCPU->gpr[rD] = ppc_addWithCarryOut(a, 0, ca, hCPU->xer_ca);
+	hCPU->gpr[rD] = a + ca;
+	if ((a == 0xffffffff) && ca)
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -274,10 +189,12 @@ static void PPCInterpreter_ADDZEO(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_ASSERT(rB == 0);
 	uint32 a = hCPU->gpr[rA];
 	uint32 ca = hCPU->xer_ca;
-	// replaces: gpr[rD] = a + ca; xer_ca = (a == 0xffffffff && ca) - see ADDZE above
-	uint32 result = ppc_addWithCarryOut(a, 0, ca, hCPU->xer_ca);
-	hCPU->gpr[rD] = result;
-	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(a, 0, result));
+	hCPU->gpr[rD] = a + ca;
+	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(a, 0, hCPU->gpr[rD]));
+	if ((a == 0xffffffff) && ca)
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -289,10 +206,11 @@ static void PPCInterpreter_ADDME(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_ASSERT(rB == 0);
 	uint32 a = hCPU->gpr[rA];
 	uint32 ca = hCPU->xer_ca;
-	// replaces: gpr[rD] = a + ca + 0xffffffff; xer_ca = (a || ca). Carry out of
-	// a + 0xffffffff + ca is set exactly when a + ca >= 1, i.e. when either is non-zero -
-	// the same rule, verified exhaustively over all 2^32 values of a for both values of ca.
-	hCPU->gpr[rD] = ppc_addWithCarryOut(a, 0xFFFFFFFF, ca, hCPU->xer_ca);
+	hCPU->gpr[rD] = a + ca + 0xffffffff;
+	if (a || ca)
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -304,10 +222,12 @@ static void PPCInterpreter_ADDMEO(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_ASSERT(rB == 0);
 	uint32 a = hCPU->gpr[rA];
 	uint32 ca = hCPU->xer_ca;
-	// replaces: gpr[rD] = a + ca + 0xffffffff; xer_ca = (a || ca) - see ADDME above
-	uint32 result = ppc_addWithCarryOut(a, 0xFFFFFFFF, ca, hCPU->xer_ca);
-	hCPU->gpr[rD] = result;
-	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(a, 0xffffffff, result));
+	hCPU->gpr[rD] = a + ca + 0xffffffff;
+	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(a, 0xffffffff, hCPU->gpr[rD]));
+	if (a || ca)
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -340,8 +260,12 @@ static void PPCInterpreter_SUBFC(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_OPC_TEMPL3_XO();
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = hCPU->gpr[rB];
-	// update xer. Replaces: gpr[rD] = ~a + b + 1; xer_ca = ppc_carry_3(~a, b, 1)
-	hCPU->gpr[rD] = ppc_addWithCarryOut(~a, b, 1, hCPU->xer_ca);
+	hCPU->gpr[rD] = ~a + b + 1;
+	// update xer
+	if (ppc_carry_3(~a, b, 1))
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -353,11 +277,14 @@ static void PPCInterpreter_SUBFCO(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_OPC_TEMPL3_XO();
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = hCPU->gpr[rB];
-	// update carry. Replaces: gpr[rD] = ~a + b + 1; xer_ca = ppc_carry_3(~a, b, 1)
-	uint32 result = ppc_addWithCarryOut(~a, b, 1, hCPU->xer_ca);
-	hCPU->gpr[rD] = result;
+	hCPU->gpr[rD] = ~a + b + 1;
+	// update carry
+	if (ppc_carry_3(~a, b, 1))
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	// update xer SO/OV
-	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(~a, b, result));
+	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(~a, b, hCPU->gpr[rD]));
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -368,8 +295,12 @@ static void PPCInterpreter_SUBFIC(PPCInterpreter_t* hCPU, uint32 opcode)
 	sint32 rD, rA;
 	uint32 imm;
 	PPC_OPC_TEMPL_D_SImm(opcode, rD, rA, imm);
-	// replaces: gpr[rD] = ~a + imm + 1; xer_ca = ppc_carry_3(~a, imm, 1)
-	hCPU->gpr[rD] = ppc_addWithCarryOut(~hCPU->gpr[rA], imm, 1, hCPU->xer_ca);
+	uint32 a = hCPU->gpr[rA];
+	hCPU->gpr[rD] = ~a + imm + 1;
+	if (ppc_carry_3(~a, imm, 1))
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
@@ -379,8 +310,12 @@ static void PPCInterpreter_SUBFE(PPCInterpreter_t* hCPU, uint32 opcode)
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = hCPU->gpr[rB];
 	uint32 ca = hCPU->xer_ca;
-	// update xer carry. Replaces: gpr[rD] = ~a + b + ca; xer_ca = ppc_carry_3(~a, b, ca)
-	hCPU->gpr[rD] = ppc_addWithCarryOut(~a, b, ca, hCPU->xer_ca);
+	hCPU->gpr[rD] = ~a + b + ca;
+	// update xer carry
+	if (ppc_carry_3(~a, b, ca))
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -392,9 +327,13 @@ static void PPCInterpreter_SUBFEO(PPCInterpreter_t* hCPU, uint32 opcode)
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = hCPU->gpr[rB];
 	uint32 ca = hCPU->xer_ca;
-	// update xer carry. Replaces: result = ~a + b + ca; xer_ca = ppc_carry_3(~a, b, ca)
-	uint32 result = ppc_addWithCarryOut(~a, b, ca, hCPU->xer_ca);
+	uint32 result = ~a + b + ca;
 	hCPU->gpr[rD] = result;
+	// update xer carry
+	if (ppc_carry_3(~a, b, ca))
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(~a, b, result));
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
@@ -407,10 +346,11 @@ static void PPCInterpreter_SUBFZE(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_ASSERT(rB == 0);
 	uint32 a = hCPU->gpr[rA];
 	uint32 ca = hCPU->xer_ca;
-	// replaces: gpr[rD] = ~a + ca; xer_ca = (a == 0 && ca). Carry out of ~a + 0 + ca is set
-	// exactly when ~a is all ones and ca is 1, i.e. when a is zero and ca is 1 - the same
-	// rule, verified exhaustively over all 2^32 values of a for both values of ca.
-	hCPU->gpr[rD] = ppc_addWithCarryOut(~a, 0, ca, hCPU->xer_ca);
+	hCPU->gpr[rD] = ~a + ca;
+	if (a == 0 && ca)
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -422,10 +362,12 @@ static void PPCInterpreter_SUBFZEO(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_ASSERT(rB == 0);
 	uint32 a = hCPU->gpr[rA];
 	uint32 ca = hCPU->xer_ca;
-	// replaces: gpr[rD] = ~a + ca; xer_ca = (a == 0 && ca) - see SUBFZE above
-	uint32 result = ppc_addWithCarryOut(~a, 0, ca, hCPU->xer_ca);
-	hCPU->gpr[rD] = result;
-	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(~a, 0, result));
+	hCPU->gpr[rD] = ~a + ca;
+	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(~a, 0, hCPU->gpr[rD]));
+	if (a == 0 && ca)
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -437,9 +379,12 @@ static void PPCInterpreter_SUBFME(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_ASSERT(rB == 0);
 	uint32 a = hCPU->gpr[rA];
 	uint32 ca = hCPU->xer_ca;
-	// update xer carry. Replaces: gpr[rD] = ~a + 0xFFFFFFFF + ca;
-	// xer_ca = ppc_carry_3(~a, 0xFFFFFFFF, ca)
-	hCPU->gpr[rD] = ppc_addWithCarryOut(~a, 0xFFFFFFFF, ca, hCPU->xer_ca);
+	hCPU->gpr[rD] = ~a + 0xFFFFFFFF + ca;
+	// update xer carry
+	if (ppc_carry_3(~a, 0xFFFFFFFF, ca))
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opcode & PPC_OPC_RC)
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -451,11 +396,13 @@ static void PPCInterpreter_SUBFMEO(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_ASSERT(rB == 0);
 	uint32 a = hCPU->gpr[rA];
 	uint32 ca = hCPU->xer_ca;
-	// update xer carry. Replaces: gpr[rD] = ~a + 0xFFFFFFFF + ca;
-	// xer_ca = ppc_carry_3(~a, 0xFFFFFFFF, ca)
-	uint32 result = ppc_addWithCarryOut(~a, 0xFFFFFFFF, ca, hCPU->xer_ca);
-	hCPU->gpr[rD] = result;
-	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(~a, 0xFFFFFFFF, result));
+	hCPU->gpr[rD] = ~a + 0xFFFFFFFF + ca;
+	PPCInterpreter_setXerOV(hCPU, checkAdditionOverflow(~a, 0xFFFFFFFF, hCPU->gpr[rD]));
+	// update xer carry
+	if (ppc_carry_3(~a, 0xFFFFFFFF, ca))
+		hCPU->xer_ca = 1;
+	else
+		hCPU->xer_ca = 0;
 	if (opcode & PPC_OPC_RC)
 		ppc_update_cr0(hCPU, hCPU->gpr[rD]);
 	PPCInterpreter_nextInstruction(hCPU);
@@ -813,7 +760,7 @@ static void PPCInterpreter_RLWIMI(PPCInterpreter_t* hCPU, uint32 opcode)
 	int rS, rA, SH, MB, ME;
 	PPC_OPC_TEMPL_M(opcode, rS, rA, SH, MB, ME);
 	uint32 v = ppc_word_rotl(hCPU->gpr[rS], SH);
-	uint32 mask = ppc_maskFromMBME((uint32)MB, (uint32)ME);
+	uint32 mask = ppc_mask(MB, ME);
 	hCPU->gpr[rA] = (v & mask) | (hCPU->gpr[rA] & ~mask);
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rA]);
@@ -825,7 +772,7 @@ static void PPCInterpreter_RLWINM(PPCInterpreter_t* hCPU, uint32 opcode)
 	sint32 rS, rA, SH, MB, ME;
 	PPC_OPC_TEMPL_M(opcode, rS, rA, SH, MB, ME);
 	uint32 v = ppc_word_rotl(hCPU->gpr[rS], SH);
-	uint32 mask = ppc_maskFromMBME((uint32)MB, (uint32)ME);
+	uint32 mask = ppc_mask(MB, ME);
 	hCPU->gpr[rA] = v & mask;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rA]);
@@ -837,7 +784,7 @@ static void PPCInterpreter_RLWNM(PPCInterpreter_t* hCPU, uint32 opcode)
 	int rS, rA, rB, MB, ME;
 	PPC_OPC_TEMPL_M(opcode, rS, rA, rB, MB, ME);
 	uint32 v = ppc_word_rotl(hCPU->gpr[rS], hCPU->gpr[rB]);
-	uint32 mask = ppc_maskFromMBME((uint32)MB, (uint32)ME);
+	uint32 mask = ppc_mask(MB, ME);
 	hCPU->gpr[rA] = v & mask;
 	if (opHasRC())
 		ppc_update_cr0(hCPU, hCPU->gpr[rA]);
@@ -964,12 +911,19 @@ static void PPCInterpreter_CMP(PPCInterpreter_t* hCPU, uint32 opcode)
 	sint32 rA, rB;
 	PPC_OPC_TEMPL_X(opcode, cr, rA, rB);
 	cr >>= 2;
-	// cmpw: SIGNED word compare. This is the half of the cmpw/cmplw pair whose operands are
-	// read as two's complement, so the sint32 is the entire difference between this handler
-	// and PPCInterpreter_CMPL below and must not be "tidied" into the register's own type.
-	sint32 a = (sint32)hCPU->gpr[rA];
-	sint32 b = (sint32)hCPU->gpr[rB];
-	ppc_update_crf_compare(hCPU, cr, a < b, a == b);
+	sint32 a = hCPU->gpr[rA];
+	sint32 b = hCPU->gpr[rB];
+	hCPU->cr[cr * 4 + 0] = 0;
+	hCPU->cr[cr * 4 + 1] = 0;
+	hCPU->cr[cr * 4 + 2] = 0;
+	hCPU->cr[cr * 4 + 3] = 0;
+	if (a < b)
+		hCPU->cr[cr * 4 + CR_BIT_LT] = 1;
+	else if (a > b)
+		hCPU->cr[cr * 4 + CR_BIT_GT] = 1;
+	else 
+		hCPU->cr[cr * 4 + CR_BIT_EQ] = 1;
+	hCPU->cr[cr * 4 + CR_BIT_SO] = hCPU->xer_so;
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
@@ -979,11 +933,19 @@ static void PPCInterpreter_CMPL(PPCInterpreter_t* hCPU, uint32 opcode)
 	int rA, rB;
 	PPC_OPC_TEMPL_X(opcode, cr, rA, rB);
 	cr >>= 2;
-	// cmplw: UNSIGNED word compare - the operands stay uint32 here, which is what separates
-	// it from PPCInterpreter_CMP above.
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = hCPU->gpr[rB];
-	ppc_update_crf_compare(hCPU, cr, a < b, a == b);
+	hCPU->cr[cr * 4 + 0] = 0;
+	hCPU->cr[cr * 4 + 1] = 0;
+	hCPU->cr[cr * 4 + 2] = 0;
+	hCPU->cr[cr * 4 + 3] = 0;
+	if (a < b)
+		hCPU->cr[cr * 4 + CR_BIT_LT] = 1;
+	else if (a > b)
+		hCPU->cr[cr * 4 + CR_BIT_GT] = 1;
+	else
+		hCPU->cr[cr * 4 + CR_BIT_EQ] = 1;
+	hCPU->cr[cr * 4 + CR_BIT_SO] = hCPU->xer_so;
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
@@ -994,10 +956,19 @@ static void PPCInterpreter_CMPI(PPCInterpreter_t* hCPU, uint32 opcode)
 	uint32 imm;
 	PPC_OPC_TEMPL_D_SImm(opcode, cr, rA, imm);
 	cr >>= 2;
-	// cmpwi: SIGNED, against the SIGN-EXTENDED immediate that PPC_OPC_TEMPL_D_SImm produced.
-	sint32 a = (sint32)hCPU->gpr[rA];
-	sint32 b = (sint32)imm;
-	ppc_update_crf_compare(hCPU, cr, a < b, a == b);
+	sint32 a = hCPU->gpr[rA];
+	sint32 b = imm;
+	hCPU->cr[cr * 4 + 0] = 0;
+	hCPU->cr[cr * 4 + 1] = 0;
+	hCPU->cr[cr * 4 + 2] = 0;
+	hCPU->cr[cr * 4 + 3] = 0;
+	if (a < b)
+		hCPU->cr[cr * 4 + CR_BIT_LT] = 1;
+	else if (a > b)
+		hCPU->cr[cr * 4 + CR_BIT_GT] = 1;
+	else 
+		hCPU->cr[cr * 4 + CR_BIT_EQ] = 1;
+	hCPU->cr[cr * 4 + CR_BIT_SO] = hCPU->xer_so;
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
@@ -1008,11 +979,19 @@ static void PPCInterpreter_CMPLI(PPCInterpreter_t* hCPU, uint32 opcode)
 	uint32 imm;
 	PPC_OPC_TEMPL_D_UImm(opcode, cr, rA, imm);
 	cr >>= 2;
-	// cmplwi: UNSIGNED, against the ZERO-EXTENDED immediate that PPC_OPC_TEMPL_D_UImm
-	// produced. Sign extension here would be a silent, very hard to find wrong answer.
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = imm;
-	ppc_update_crf_compare(hCPU, cr, a < b, a == b);
+	hCPU->cr[cr * 4 + 0] = 0;
+	hCPU->cr[cr * 4 + 1] = 0;
+	hCPU->cr[cr * 4 + 2] = 0;
+	hCPU->cr[cr * 4 + 3] = 0;
+	if (a < b)
+		hCPU->cr[cr * 4 + CR_BIT_LT] = 1;
+	else if (a > b)
+		hCPU->cr[cr * 4 + CR_BIT_GT] = 1;
+	else
+		hCPU->cr[cr * 4 + CR_BIT_EQ] = 1;
+	hCPU->cr[cr * 4 + CR_BIT_SO] = hCPU->xer_so;
 	PPCInterpreter_nextInstruction(hCPU);
 }
 

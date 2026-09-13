@@ -41,88 +41,19 @@ typedef struct
 	uint64 tb;
 }PPCInterpreterGlobal_t;
 
-// Field order below is chosen for the cache, and the alignas(64) is what makes that choice
-// mean anything. Both engines - interpreter and recompiler - touch this struct on nearly
-// every instruction, so it is worth spelling out the reasoning at length.
-//
-// WHY THE ALIGNMENT COMES FIRST
-//
-// Every claim of the form "these fields share a cache line" is a claim about offsetof()
-// PLUS the alignment of the instance. Until this alignas, the instance had alignment 8.
-// The two live instantiations are OSHostThread::ppcInstance - a member sitting behind an
-// OSThread_t*, a Fiber and 128 KiB of recompiler stack padding - and the three-element
-// cores[] array inside PPCInterpreterLLEContext_t. Neither was forced to begin on a line
-// boundary, so which fields shared a line was an accident of the surrounding struct and
-// would silently change when an unrelated member of it did. alignas(64) turns the grouping
-// below from a coincidence into a property that holds.
-//
-// It also removes the only real false-sharing hazard between the three emulated cores.
-// PPCInterpreterLLEContext_t holds `PPCInterpreter_t cores[3]` back to back. At the old
-// size of 1192 bytes - not a multiple of any line size - cores[1] started 1192 bytes in,
-// i.e. 40 bytes into a line whose first 24 bytes still belonged to cores[0]. Two cores'
-// hottest fields therefore shared a line, and every write by one invalidated it for the
-// other. alignas(64) both starts each instance on a line and rounds sizeof() up to a
-// multiple of one, which makes that arrangement impossible. The HLE path - the one retail
-// titles actually run on - never had this problem: each guest thread gets its own
-// OSHostThread allocation and the 128 KiB padding array keeps instances far apart.
-//
-// 64 rather than 128: the A-series parts this port targets (A9X, A12Z) have a 64-byte L1
-// data line. On a 128-byte-line host - an M-series Mac running the desktop build - the
-// first two 64-byte groups below pair into one line, and that is the right pairing to get:
-// the per-instruction control block together with the first half of the GPR file.
-//
-// THE GROUPS, ordered by how often the interpreter touches them
-//
-//   0..63     everything touched by (nearly) every instruction: the instruction pointer,
-//             the timeslice counter that the execution loop decrements once per
-//             instruction, the condition register, the XER carry/overflow bytes, FPSCR,
-//             and the lwarx/stwcx reservation. One line, exactly full. These used to live
-//             at offsets 648..703 - at the far end of the FPR file - so an integer-only
-//             instruction touched a line 600 bytes away from the one holding its own
-//             instruction pointer.
-//   64..191   gpr[32]: two lines, exactly, both aligned. gpr used to start at offset 4
-//             because instructionPointer came first, so 128 bytes of registers straddled
-//             THREE lines and gpr[31] - r31, which compiled PowerPC code uses constantly -
-//             sat by itself in a third line it shared with fpr[0..3].
-//   192..255  the user-visible SPRs (LR, CTR, XER, UPIR, the eight UGQRs) plus the
-//             recompiler's GPR temporaries. One line. LR and CTR are the hottest things
-//             here: bl/blr and bdnz.
-//   256..767  fpr[32]: eight lines, exactly, line-aligned, so paired-single code walks
-//             whole lines instead of straddling.
-//   768+      recompiler scratch, then the supervisor-only SPRs that Cafe OS usermode
-//             never reads at all.
-//
-// WHY MOVING FIELDS IS SAFE HERE
-//
-// Both backends address this struct only through offsetof() - verified across
-// BackendX64/*, BackendAArch64.cpp and the IML layer; there is not one hardcoded numeric
-// offset and no hand-written assembly that touches it - so generated code cannot
-// desynchronise from the interpreter when a field moves. The one way a move here COULD
-// break the JIT is by pushing a field out of range of the backend's addressing immediate,
-// and BackendAArch64.cpp already static_asserts every offset it emits against the AdrUimm
-// range, so that failure is a build error rather than a mis-assembled load. The asserts
-// after this struct pin the grouping above, so a later edit that quietly undoes it also
-// fails the build instead of just getting slower.
-struct alignas(64) PPCInterpreter_t
+struct PPCInterpreter_t
 {
-	// ---- bytes 0..63: touched by (nearly) every instruction ----
-	uint32 instructionPointer;	// 0
-	sint32 remainingCycles;		// 4  - if this value goes below zero, the next thread is scheduled. The execution loop decrements it once per instruction.
-	sint32 skippedCycles;		// 8  - number of skipped cycles
-	uint32 fpscr;			// 12
-	uint8 xer_ca;			// 16 - carry from xer
-	uint8 xer_so;			// 17 - STICKY overflow. Copied into CR0, never recomputed.
-	uint8 xer_ov;			// 18
-	uint8 LSQE;			// 19
-	uint8 PSE;			// 20
-	bool memoryException;		// 21 - interpreter control
-	uint8 reservedPad0[2];		// 22..23 - explicit rather than compiler-inserted, so the line budget above stays readable
-	uint8 cr[32];			// 24..55 - 0 -> bit not set, 1 -> bit set (upper 7 bits of each byte must always be zero) (cr0 starts at index 0, cr1 at index 4 ..)
-	uint32 reservedMemAddr;		// 56 - LWARX and STWCX
-	uint32 reservedMemValue;	// 60
-	// ---- bytes 64..191: the general purpose register file, exactly two aligned lines ----
+	uint32 instructionPointer;
 	uint32 gpr[32];
-	// ---- bytes 192..255: user-visible SPRs and the recompiler's GPR temporaries ----
+	FPR_t fpr[32];
+	uint32 fpscr;
+	uint8 cr[32]; // 0 -> bit not set, 1 -> bit set (upper 7 bits of each byte must always be zero) (cr0 starts at index 0, cr1 at index 4 ..)
+	uint8 xer_ca;  // carry from xer
+	uint8 xer_so;
+	uint8 xer_ov;
+	// thread remaining cycles
+	sint32 remainingCycles; // if this value goes below zero, the next thread is scheduled
+	sint32 skippedCycles; // number of skipped cycles
 	struct
 	{
 		uint32 LR;
@@ -130,21 +61,14 @@ struct alignas(64) PPCInterpreter_t
 		uint32 XER;
 		uint32 UPIR;
 		uint32 UGQR[8];
-	}spr;				// 192..239
-	uint32 temporaryGPR_reg[4];	// 240..255
-	// ---- bytes 256..767: the floating point register file, eight aligned lines ----
-	FPR_t fpr[32];
-	// ---- cold from here on ----
+	}spr;
+	// LWARX and STWCX
+	uint32 reservedMemAddr;
+	uint32 reservedMemValue;
 	// temporary storage for recompiler
-	FPR_t temporaryFPR[8];		// 768..895 - BackendAArch64 loads these with ldr q, whose immediate must be a multiple of 16, so this offset is asserted below
-	uint32 temporaryGPR[4];		// 896..911 - deprecated, refactor backend dependency on this away
-	// core context (starts at 0xFFFFFF00?)
-	/* 0xFFFFFFE4 */ uint32 coreInterruptMask;	// 912
-	uint32 reservedPad1;		// 916 - keeps the two pointers below 8-byte aligned without the compiler guessing
-	// global CPU values
-	PPCInterpreterGlobal_t* global;	// 920
-	// extra variables for recompiler
-	void* rspTemp;			// 928
+	FPR_t temporaryFPR[8];
+	uint32 temporaryGPR[4]; // deprecated, refactor backend dependency on this away
+	uint32 temporaryGPR_reg[4];
 	// values below this are not used by Cafe OS usermode
 	struct
 	{
@@ -168,19 +92,19 @@ struct alignas(64) PPCInterpreter_t
 		uint32 ibatL[8];
 		uint32 sr[16];
 		uint32 sdr1;
-	}sprExtended;			// 936..1187
-};
+	}sprExtended;
+	uint8 LSQE;
+	uint8 PSE;
+	// global CPU values
+	PPCInterpreterGlobal_t* global;
+	// interpreter control
+	bool memoryException;
+	// core context (starts at 0xFFFFFF00?)
+	/* 0xFFFFFFE4 */ uint32 coreInterruptMask;
 
-// The layout contract described above, pinned. These are not decoration: the whole point
-// of the ordering is that the hot fields sit in a known, small set of lines, and that is
-// exactly the kind of property a later unrelated edit undoes without anyone noticing.
-static_assert(alignof(PPCInterpreter_t) == 64, "the cache-line grouping above is only true if the instance itself starts on a line");
-static_assert(sizeof(PPCInterpreter_t) % 64 == 0, "a size that is not a whole number of lines lets two instances in an array share one - which is the false sharing between emulated cores this alignment exists to prevent");
-static_assert(offsetof(PPCInterpreter_t, instructionPointer) == 0, "");
-static_assert(offsetof(PPCInterpreter_t, reservedMemValue) + sizeof(uint32) == 64, "the per-instruction control block must fit in exactly one cache line");
-static_assert(offsetof(PPCInterpreter_t, gpr) == 64 && sizeof(PPCInterpreter_t::gpr) == 128, "gpr must cover exactly two aligned cache lines and no third");
-static_assert(offsetof(PPCInterpreter_t, fpr) % 64 == 0, "the FPR file should start on a line, not straddle one");
-static_assert(offsetof(PPCInterpreter_t, temporaryFPR) % 16 == 0, "BackendAArch64 addresses temporaryFPR with ldr/str q, whose scaled immediate must be a multiple of 16");
+	// extra variables for recompiler
+	void* rspTemp;
+};
 
 // parameter access (legacy C style)
 
@@ -304,13 +228,6 @@ uint64 PPCTimer_getFromRDTSC();
 
 // Told when the emulated clock rate changes, so the timebase can carry its current value
 // into a new anchor instead of jumping. No-op where the timebase is not anchor-based.
-//
-// Calling it is now an optimisation, not a requirement: it had zero callers in the whole
-// tree, which meant every timer-shift change was silently discarded on the anchor-based
-// (arm64) path, so PPCTimer_getFromRDTSC_fast() detects a changed shift on the read path
-// itself. Calling this makes the change take effect at once instead of on the next timebase
-// read, which is the difference between a guest seeing the new rate immediately and seeing
-// it a few microseconds later. Nothing breaks if it is never called.
 void PPCTimer_onTimerShiftFactorChanged();
 // Falls back to the original spinlock timebase. Only meaningful on ARM, where the
 // lock-free rewrite is the default; it exists so that a wrong clock can be ruled in or

@@ -29,14 +29,6 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include <libkern/OSCacheControl.h>
-// For the JIT pre-flight probe further down. dlfcn because
-// pthread_jit_write_protect_np() is declared __API_UNAVAILABLE(ios) and so has to be
-// resolved at runtime rather than named; vm_map/vm_region because the probe reads the
-// max_protection of the MAP_JIT region it just created, and <mach/mach_vm.h> (the
-// mach_vm_region spelling) is not shipped in the iOS SDK while these two are.
-#include <dlfcn.h>
-#include <mach/vm_map.h>
-#include <mach/vm_region.h>
 #include <cstring>
 #include <cmath>   // std::sqrt/std::isnan, for the stick-axis clamp
 #include <cstdlib>
@@ -698,119 +690,25 @@ static void ios_timebase_ladder_stop();
 // the launch that died, and the device log ends exactly there, on "Entering stage 2 -
 // calling into the page", on every single launch.
 //
-// So nothing is executed here, and nothing ever will be. That rule stands.
+// So nothing is executed here any more. Two non-fatal facts are checked instead:
 //
-// ---------------------------------------------------------------------------
-// THIRD ROUND, and this is the round that matters, because the probe as written could
-// not have returned true on any iPhone or iPad ever made.
+//   1. mmap RW + mprotect R+X. If either is refused we have the answer plus an errno,
+//      and the recompiler could never work here regardless. The page is never entered.
+//   2. csops(CS_OPS_STATUS) & CS_DEBUGGED. Marking a page executable is not the
+//      permission that matters on iOS - the kernel checks code signing at the moment
+//      of the instruction fetch. CS_DEBUGGED is the flag that waives that check, and
+//      it is what every JIT-enabling path on a sideloaded device actually produces (a
+//      debugger attached over debugserver, StikJIT/SideStore/LiveContainer arranging
+//      the same thing, or a real dynamic-codesigning entitlement). Without it,
+//      mprotect(R+X) succeeding means nothing: the jump is still fatal. That is
+//      precisely the state this device was in - stage 1 passed, stage 2 was death.
 //
-// It required mmap(PROT_READ | PROT_WRITE | PROT_EXEC, ..., MAP_JIT). That is the
-// x86_64 shape of the API, where a MAP_JIT region really is an ordinary RWX mapping
-// and W^X is advisory. It is not how an APRR core works. On A12 and later (and on
-// every Apple silicon Mac) a MAP_JIT region is mapped once and then governed by a
-// PER-THREAD hardware permission register: pthread_jit_write_protect_np(0) makes the
-// region writable for the calling thread, pthread_jit_write_protect_np(1) makes it
-// executable for the calling thread, and one thread never has both at once. Asking
-// mmap for PROT_EXEC on such a region asks for a permission the region does not
-// express that way, and the kernel answers EINVAL. EINVAL is errno 22, which is
-// precisely, literally, what every device log this project has ever collected says:
-//
-//     JIT check: mmap(MAP_JIT, executable at map time) refused (errno 22) -> interpreter
-//
-// Not "this device is locked down". Not "sideloading does not grant JIT". The probe
-// asked the wrong question, got the correct answer to that wrong question, and the
-// emulator has been interpreter-only ever since - on every device, for every user,
-// including the session where a retail game ran at a playable framerate.
-//
-// So the probe now tests the mechanism iOS arm64 actually implements, in the order a
-// real JIT allocator uses it:
-//
-//   1. mmap(PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_JIT). MAP_JIT stays a
-//      HARD requirement and always will. A plain anonymous mapping promoted RW -> RX by
-//      mprotect() passes every syscall it makes and then takes SIGBUS on the first
-//      instruction fetch, because code-signing enforcement never saw a JIT region. That
-//      is not a hypothesis, it is the v1.37 crash: CS_DEBUGGED set, mprotect(R+X)
-//      returning 0, "Recompiler initialized", then signal 10 the first time anything
-//      entered generated code. A promoted mapping is never accepted here.
-//
-//   2. vm_region_64(VM_REGION_BASIC_INFO_64) on the page that came back, requiring
-//      max_protection to carry VM_PROT_EXECUTE. max_protection is what a region could
-//      EVER become, as against what it is right now, and it is the only way to ask that
-//      question without trying it. A MAP_JIT region whose max_protection comes back
-//      without execute is the kernel saying, in the one way it can short of failing the
-//      call, that this region will never run code. Refusing on that is cheap.
-//
-//   3. dlsym(RTLD_DEFAULT, "pthread_jit_write_protect_np"). Resolved rather than called
-//      directly because <pthread.h> declares it
-//          __API_AVAILABLE(macos(11.0)) __API_UNAVAILABLE(ios, tvos, watchos, driverkit)
-//      so naming it from an iOS target does not compile, even though libsystem_pthread on
-//      a modern arm64 iOS carries the symbol and drives the same APRR hardware. dlsym
-//      asks the runtime what is there instead of asking the SDK what Apple documents.
-//
-//   4. Open the write switch, store one word through the mapping, read it back, close the
-//      switch. This is the only step that touches the memory, and it is a WRITE, never a
-//      jump. It ends with the switch closed, the state every thread starts in, so the
-//      calling thread is left exactly as it was found.
-//
-// A9X and other pre-APRR targets are not an afterthought here. On a core with no W^X
-// switch there is nothing to open: pthread_jit_write_protect_supported_np() reports
-// false, the MAP_JIT region is plainly writable, and calling the toggle would be
-// meaningless rather than harmless. So step 4 asks first and only opens a switch that is
-// actually in force. "The switch is missing" is a refusal only when the runtime also says
-// the switch is required.
-//
-// WHAT IS DELIBERATELY NO LONGER A GATE: CS_DEBUGGED.
-//
-// It is still read and reported in every outcome, because when MAP_JIT is refused it is
-// almost always the reason and it is the one thing the user can act on ("launch through
-// StikJIT"). But it is a proxy for "the kernel will not kill us at instruction fetch",
-// and steps 1-4 test that same permission directly, through the exact mechanism the
-// allocator uses. Keeping a proxy as the gate would refuse a build that genuinely carries
-// dynamic-codesigning - src/ios/Cemu.entitlements now declares exactly that, and an
-// entitled process has MAP_JIT without ever being debugged - which is the same class of
-// mistake as demanding PROT_EXEC: testing the stand-in instead of the thing.
-//
-// ---------------------------------------------------------------------------
-// THE SENTINEL, AND THE LIFECYCLE BUG THIS ROUND EXISTS TO KILL.
-//
-// The crash sentinel is a file written before generated code can run and deleted once
-// generated code has run and returned alive. If the app dies in between, the next launch
-// finds it and refuses the recompiler. That design is sound.
-//
-// What is not sound, and what made the JIT toggle permanently inert twice, is arming it
-// for a launch that was never going to run the recompiler at all. Nothing then clears it,
-// and the next launch of the same build refuses JIT citing a crash that never happened.
-// Two ways that has happened, both of which this file now structurally cannot do:
-//
-//   PATH 1 - armed from the Settings toggle. cemu_bridge_set_recompiler_enabled() is
-//     called on EVERY FLICK of the switch in SettingsView.swift, including by someone who
-//     never launches a game afterwards. So that function writes NOTHING to disk and runs
-//     no probe. It is a preference write and nothing else.
-//
-//   PATH 2 - armed at engine init, for a boot where PPCRecompiler_init() then declined
-//     for its own reasons and returned normally. It has four such returns (force-disabled
-//     by the user's own toggle, SinglecoreInterpreter configured, the ForceInterpreter /
-//     ForceMultiCoreInterpreter launch flags, and the AArch64 interface functions failing
-//     to land in executable memory) and only the last of them looks like a failure. So
-//     ios_jit_is_permitted() does not arm anything either. It answers a question.
-//
-// Arming happens in exactly one place: ios_jit_arm_for_launch(), called immediately before
-// CafeSystem::LaunchForegroundTitle(), after the prepare step that runs PPCRecompiler_init()
-// has returned, and only when ppcRecompilerEnabled - the recompiler's own final answer
-// about itself - is true. At that moment the next thing that can happen is a title thread
-// entering generated code, and nothing between there and that entry can change the answer.
-// Every exit from the armed state is walked, one at a time, in that function's comment.
-//
-// One more, separate guard: step 4 is the only part of the probe that can kill the
-// process. Apple documents pthread_jit_write_protect_np() as terminating a caller that
-// lacks JIT permission, and while reaching it requires MAP_JIT to have already succeeded,
-// this project has been killed by its own probe once before and the device log ended on
-// the line that did it. So that one step is bracketed by its own small sentinel, written
-// immediately before and removed immediately after, synchronously, on one thread, with
-// nothing asynchronous in between - which is what makes its lifecycle airtight in a way
-// the boot sentinel's could never be. If it is found at startup, the probe that wrote it
-// did not come back, and this build declines to take that step again. It carries the build
-// id for the same reason the crash sentinel does: shipping a fix has to be able to clear it.
+// The sentinel stays, but it now guards the thing that is genuinely dangerous: a whole
+// boot with the recompiler live, since PPCRecompiler_init() generates and enters real
+// code long after this function has returned. It is armed only when JIT is being left
+// enabled, and disarmed once a title has actually launched. A sentinel present at
+// startup therefore means "the last launch that trusted JIT did not survive it", and
+// this install falls back to the interpreter from then on rather than dying forever.
 //
 // The caveat that must not get lost: the AArch64 recompiler has only ever been proven
 // to COMPILE for iOS. It has never executed one instruction on device. A passing check
@@ -827,35 +725,9 @@ constexpr unsigned int kCsOpsStatus = 0;       // CS_OPS_STATUS
 constexpr uint32_t     kCsDebugged  = 0x10000000u; // CS_DEBUGGED
 
 std::filesystem::path g_jitSentinelPath;
-std::filesystem::path g_jitProbeGuardPath;
 std::atomic<bool> g_jitSentinelArmed{false};
 
-// The probe's verdict, kept because two later decisions need it and neither can re-run the
-// probe. Undecided is a real third state rather than a placeholder: SettingsView can flick
-// the recompiler switch before the engine has ever initialized, and "nobody has looked yet"
-// has to be answerable as itself rather than as "no".
-enum class JitVerdict : int { Undecided = 0, Refused = 1, Permitted = 2 };
-std::atomic<JitVerdict> g_jitVerdict{JitVerdict::Undecided};
-
-// Same reasoning as cpuModeDetailf() further up - vsnprintf rather than fmt::format,
-// because this runs before the engine is up and a diagnostic string is not worth making
-// dependent on Cemu's formatting library being in this translation unit. Separate from
-// cpuModeDetailf() only for the buffer size: these are log lines, not UI strings, and 512
-// bytes truncates them mid-sentence.
-[[maybe_unused]] __attribute__((format(printf, 1, 2)))
-std::string jitTextf(const char* format, ...)
-{
-	char buffer[1024];
-	va_list args;
-	va_start(args, format);
-	const int written = vsnprintf(buffer, sizeof(buffer), format, args);
-	va_end(args);
-	if (written < 0)
-		return std::string();
-	return std::string(buffer);
-}
-
-// Reads back the build id stamped on a sentinel's first line. Returns an empty string
+// Reads back the build id stamped on the sentinel's first line. Returns an empty string
 // for a sentinel written by a build that predates the stamp, which reads as "not this
 // build" and therefore gets a retry - the desired answer for exactly those builds.
 std::string ios_jit_read_sentinel_build(const std::filesystem::path& sentinelPath)
@@ -879,218 +751,14 @@ std::string ios_jit_read_sentinel_build(const std::filesystem::path& sentinelPat
 	return firstLine;
 }
 
-// fsync before close, not for tidiness but because the entire value of these files is
-// being on disk when the process is killed without warning. A write still sitting in the
-// buffer cache when the kernel takes the process records nothing.
-bool ios_jit_write_build_stamped_file(const std::filesystem::path& path, const char* note)
-{
-	const int fd = open(path.string().c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (fd < 0)
-		return false;
-	const std::string body = std::string(BUILD_VERSION_STRING) + "\n" + note + "\n";
-	const bool wrote = write(fd, body.data(), body.size()) == (ssize_t)body.size();
-	// errno is carried out deliberately. Callers report it, and fsync() and close() both
-	// set it on their own account, so a short write's reason would otherwise be replaced by
-	// whatever the two calls that clean up happened to leave behind.
-	const int writeErrno = wrote ? 0 : errno;
-	(void)fsync(fd);
-	close(fd);
-	if (!wrote)
-		errno = writeErrno;
-	return wrote;
-}
-
-// Defined further down; forward-declared so ios_jit_arm_for_launch() can register it as
-// PPCRecompiler's survived-first-entry callback before its own definition is reached.
+// Defined further down; forward-declared so ios_jit_is_permitted() below can register it
+// as PPCRecompiler's survived-first-entry callback before its own definition is reached.
 void ios_jit_survived_boot();
 
-// Steps 1 through 4 of the header comment. Split out from ios_jit_is_permitted() so the
-// mapping mechanics and the policy around them can be read separately: this function is
-// about what arm64 permits, its caller is about what this app does with the answer.
-//
-// On failure it fills in both strings, because they are for different readers and say
-// different things on purpose - logLine goes to whoever reads a device log, userDetail to
-// whoever reads the Settings screen.
-bool ios_jit_probe_map_and_toggle(std::string& logLine, std::string& userDetail)
-{
-	const size_t pageSize = (size_t)sysconf(_SC_PAGESIZE);
-
-	// STEP 1. Read-write, not read-write-execute. See the header comment: PROT_EXEC on a
-	// MAP_JIT region is the x86_64 spelling, and it is what has been returning EINVAL on
-	// every device for the life of this project.
-	void* jitPage = mmap(nullptr, pageSize, PROT_READ | PROT_WRITE,
-		MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0);
-	if (jitPage == MAP_FAILED)
-	{
-		const int err = errno;
-		logLine = jitTextf("mmap(MAP_JIT, read-write) refused (errno %d - %s). MAP_JIT is a hard "
-			"requirement: every other way to get executable memory on iOS passes its own syscalls and "
-			"then takes SIGBUS on the first instruction fetch, so there is no fallback worth having.",
-			err, strerror(err));
-		userDetail = jitTextf("This process cannot create a JIT memory region (mmap MAP_JIT errno "
-			"%d - %s). Launching through StikJIT, SideStore or LiveContainer is what normally grants "
-			"that; without it the interpreter is the only safe choice.", err, strerror(err));
-		return false;
-	}
-
-	// Not RAII. Everything below is straight-line code with one owner on one thread, and a
-	// scope guard would be more machinery than the thing it guards. Every path unmaps.
-	auto unmapAndFail = [&]() { munmap(jitPage, pageSize); return false; };
-
-	// STEP 2. vm_region_64 rather than mach_vm_region because <mach/mach_vm.h> is not
-	// shipped in the iOS SDK while <mach/vm_map.h> is, and on arm64 vm_address_t and
-	// vm_size_t are already 64-bit so nothing is truncated by using the older spelling.
-	{
-		vm_address_t regionAddress = (vm_address_t)jitPage;
-		vm_size_t regionSize = 0;
-		vm_region_basic_info_data_64_t info{};
-		mach_msg_type_number_t infoCount = VM_REGION_BASIC_INFO_COUNT_64;
-		mach_port_t objectName = MACH_PORT_NULL;
-		const kern_return_t kr = vm_region_64(mach_task_self(), &regionAddress, &regionSize,
-			VM_REGION_BASIC_INFO_64, (vm_region_info_t)&info, &infoCount, &objectName);
-		// This flavour hands back MACH_PORT_NULL, but leaking a send right on every launch
-		// because "this flavour does not return one" is the kind of thing that stops being
-		// true in a later OS.
-		if (objectName != MACH_PORT_NULL)
-			mach_port_deallocate(mach_task_self(), objectName);
-
-		if (kr != KERN_SUCCESS)
-		{
-			logLine = jitTextf("vm_region_64 would not describe the MAP_JIT page that had just been "
-				"mapped (kern_return %d), so whether it can ever hold code is unknown, and unknown is "
-				"not yes.", (int)kr);
-			userDetail = jitTextf("A JIT memory region was created but the system would not describe "
-				"it (kern_return %d), so whether it can ever hold executable code is unknown. Unknown "
-				"is not yes.", (int)kr);
-			return unmapAndFail();
-		}
-
-		// vm_region_64 returns the region CONTAINING the address or, failing that, the next
-		// one after it. Without this test a page that had somehow gone away would be reported
-		// on using some entirely different region's protections.
-		const vm_address_t probeAddress = (vm_address_t)jitPage;
-		if (regionAddress > probeAddress || probeAddress >= regionAddress + regionSize)
-		{
-			logLine = "vm_region_64 returned a region that does not contain the page just mapped, so "
-				"nothing it said describes the JIT mapping.";
-			userDetail = "The JIT memory region could not be identified after it was created, so the "
-				"interpreter is the only safe choice on this launch.";
-			return unmapAndFail();
-		}
-
-		if ((info.max_protection & VM_PROT_EXECUTE) == 0)
-		{
-			logLine = jitTextf("the MAP_JIT region came back with max_protection 0x%x, which does not "
-				"include VM_PROT_EXECUTE. The kernel is saying this region can never become executable, "
-				"so the recompiler could not run from it however it were written to.",
-				(unsigned int)info.max_protection);
-			userDetail = jitTextf("A JIT memory region was created, but the system marked it as one "
-				"that can never hold executable code (max_protection 0x%x). The recompiler cannot work "
-				"here.", (unsigned int)info.max_protection);
-			return unmapAndFail();
-		}
-	}
-
-	// STEP 3. Both symbols by dlsym - see the header comment for why the SDK declarations
-	// cannot be named from an iOS target.
-	using pthread_jit_write_protect_fn = void (*)(int);
-	using pthread_jit_write_protect_supported_fn = int (*)(void);
-	auto writeProtect = (pthread_jit_write_protect_fn)dlsym(RTLD_DEFAULT, "pthread_jit_write_protect_np");
-	auto writeProtectSupported =
-		(pthread_jit_write_protect_supported_fn)dlsym(RTLD_DEFAULT, "pthread_jit_write_protect_supported_np");
-
-	// Whether this core actually enforces per-thread W^X on JIT regions. Asked rather than
-	// assumed because the A9X-class targets this port still aims at predate APRR entirely:
-	// there the region is plainly writable, there is no switch, and demanding one would
-	// refuse a device where the JIT would have worked. When the runtime cannot be asked,
-	// the presence of the toggle itself is the best available answer, and assuming the
-	// switch IS in force is the conservative half of that guess - it means the write below
-	// only ever happens with the switch deliberately opened.
-	const bool wxSwitchInForce = writeProtectSupported ? (writeProtectSupported() != 0)
-	                                                   : (writeProtect != nullptr);
-
-	if (wxSwitchInForce && !writeProtect)
-	{
-		logLine = "this core enforces per-thread W^X on JIT regions but pthread_jit_write_protect_np "
-			"is not present in this process, so there is no way to open the write switch and the "
-			"recompiler would have a region it could never fill.";
-		userDetail = "This system enforces a JIT write switch but does not provide the call that opens "
-			"it, so code can never be written into a JIT region here.";
-		return unmapAndFail();
-	}
-
-	// STEP 4, and the only step that can kill us. Bracketed by its own sentinel - see the
-	// header comment. The bracket is as tight as it can be made: write the file, run four
-	// statements, remove the file. Anything else inside it would be blamed for a death it
-	// did not cause.
-	if (wxSwitchInForce)
-	{
-		if (!g_jitProbeGuardPath.empty() &&
-			!ios_jit_write_build_stamped_file(g_jitProbeGuardPath,
-				"muffin was opening the JIT write switch and did not come back"))
-		{
-			const int err = errno;
-			logLine = jitTextf("could not write the probe guard at %s (errno %d - %s), and the write "
-				"switch is not opened without one: Apple documents pthread_jit_write_protect_np as "
-				"terminating a caller that lacks JIT permission, and a death with nothing on disk is "
-				"how this project lost a week before.",
-				_pathToUtf8(g_jitProbeGuardPath).c_str(), err, strerror(err));
-			userDetail = "JIT memory is available, but Muffin could not write the small file it uses "
-				"to notice if the next step kills it, so it did not take that step.";
-			return unmapAndFail();
-		}
-		// 0 = write protection OFF: this thread may now WRITE the region and may not execute
-		// it. That is the direction the recompiler needs while it is emitting.
-		writeProtect(0);
-	}
-
-	volatile uint32_t* slot = (volatile uint32_t*)jitPage;
-	*slot = 0xD503201Fu;  // AArch64 NOP, chosen only so a hex dump of a crash reads cleanly
-	const uint32_t readBack = *slot;
-
-	if (wxSwitchInForce)
-	{
-		// 1 = write protection ON, which is the state every thread starts in. Restoring it
-		// matters because this runs on GameManager's launch thread, which goes on to do
-		// other work; leaving a thread write-enabled is a change nothing downstream asked for.
-		writeProtect(1);
-		if (!g_jitProbeGuardPath.empty())
-		{
-			std::error_code ec;
-			std::filesystem::remove(g_jitProbeGuardPath, ec);
-		}
-	}
-
-	if (readBack != 0xD503201Fu)
-	{
-		logLine = jitTextf("a word written into the MAP_JIT region with the write switch open read "
-			"back as 0x%08x instead of 0xd503201f, so the region does not really hold what is written "
-			"to it and nothing the recompiler emitted would survive.", readBack);
-		userDetail = "A JIT memory region was created but would not hold what was written to it, so "
-			"the recompiler has nowhere to put code. The interpreter is the only safe choice.";
-		return unmapAndFail();
-	}
-
-	logLine = jitTextf("MAP_JIT read-write mapping accepted, max_protection carries VM_PROT_EXECUTE, "
-		"and the per-thread write switch %s",
-		wxSwitchInForce ? "opened and closed without faulting."
-		                : "is not enforced on this core, so there was none to open.");
-	munmap(jitPage, pageSize);
-	return true;
-}
-
-// Answers a question. Writes no crash sentinel, registers no callback, changes no setting.
-// The only things it touches on disk are a stale sentinel left by an older build, which it
-// clears, and its own probe guard, which it removes as soon as the step it guards is past.
 bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 {
 	namespace fs = std::filesystem;
 	std::error_code ec;
-
-	// Stored rather than passed around, because arming happens much later - at title launch,
-	// from ios_jit_arm_for_launch() - and by then nobody has the path in hand.
-	g_jitSentinelPath = sentinelPath;
-	g_jitProbeGuardPath = sentinelPath.parent_path() / "jit_probe_did_not_finish";
 
 	if (fs::exists(sentinelPath, ec))
 	{
@@ -1110,7 +778,6 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 			setCpuModeDetail("This build turned the recompiler on and did not survive it, so it stays on "
 				"the interpreter. Install a newer build, or delete jit_enabled_boot_did_not_finish in "
 				"Muffin's Documents folder, to let it try again.");
-			g_jitVerdict.store(JitVerdict::Refused);
 			return false;
 		}
 
@@ -1121,79 +788,158 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 		fs::remove(sentinelPath, ec);
 	}
 
-	// The probe guard gets the same build-stamped treatment, for the same reason: a build
-	// that fixes whatever killed the probe has to be allowed to run the probe.
-	if (fs::exists(g_jitProbeGuardPath, ec))
+	const size_t pageSize = (size_t)sysconf(_SC_PAGESIZE);
+	void* page = mmap(nullptr, pageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (page == MAP_FAILED)
 	{
-		const std::string guardedBy = ios_jit_read_sentinel_build(g_jitProbeGuardPath);
-		if (guardedBy == BUILD_VERSION_STRING)
-		{
-			cemuLog_log(LogType::Force,
-				"JIT check: this build ({}) was killed while opening the JIT write switch (probe guard at "
-				"{} is still there) - not taking that step again. Forcing the interpreter.",
-				BUILD_VERSION_STRING, _pathToUtf8(g_jitProbeGuardPath));
-			setCpuModeDetail("Muffin was killed the last time it tested this device's JIT write switch, so "
-				"it will not test it again on this build. A newer build gets to try once more.");
-			g_jitVerdict.store(JitVerdict::Refused);
-			return false;
-		}
-		fs::remove(g_jitProbeGuardPath, ec);
-	}
-
-	// Read first and reported in every outcome below, but NOT a gate - see the header
-	// comment on why a proxy stopped being allowed to decide this.
-	uint32_t csFlags = 0;
-	const bool csFlagsKnown = csops(getpid(), kCsOpsStatus, &csFlags, sizeof(csFlags)) == 0;
-	const int csopsErr = errno;
-	const std::string csFlagsText = csFlagsKnown
-		? jitTextf("cs_flags 0x%08x", (unsigned int)csFlags)
-		: jitTextf("cs_flags unreadable, csops errno %d - %s", csopsErr, strerror(csopsErr));
-
-	std::string probeText;
-	std::string probeDetail;
-	if (!ios_jit_probe_map_and_toggle(probeText, probeDetail))
-	{
-		if (csFlagsKnown && (csFlags & kCsDebugged) == 0)
-		{
-			// The single most actionable sentence this app can print, and it only belongs on
-			// a failure: saying it on a launch that already has JIT would be telling someone
-			// to go fix something that is not broken.
-			cemuLog_log(LogType::Force,
-				"JIT check: {} CS_DEBUGGED is not set ({}), which is the usual reason. Launch through a "
-				"JIT enabler (StikJIT / SideStore / LiveContainer), or install a build whose entitlements "
-				"survived re-signing. Forcing the interpreter.",
-				probeText, csFlagsText);
-			setCpuModeDetail(jitTextf("%s Muffin is not being debugged (%s), which is normally why. "
-				"Launching through StikJIT, SideStore or LiveContainer is the single biggest speed "
-				"difference available here, and it needs no new build.",
-				probeDetail.c_str(), csFlagsText.c_str()));
-		}
-		else
-		{
-			cemuLog_log(LogType::Force, "JIT check: {} Forcing the interpreter. ({})",
-				probeText, csFlagsText);
-			setCpuModeDetail(std::move(probeDetail));
-		}
-		g_jitVerdict.store(JitVerdict::Refused);
+		const int err = errno;
+		cemuLog_log(LogType::Force,
+			"JIT check: mmap(RW) refused (errno {} - {}). Forcing the interpreter.",
+			err, strerror(err));
+		setCpuModeDetail(cpuModeDetailf("The system refused to hand this process a writable page at all "
+			"(mmap errno %d - %s), so the recompiler has nowhere to emit code.", err, strerror(err)));
 		return false;
 	}
 
+	const bool canMarkExecutable = mprotect(page, pageSize, PROT_READ | PROT_EXEC) == 0;
+	const int mprotectErr = errno;
+	munmap(page, pageSize);
+
+	if (!canMarkExecutable)
+	{
+		cemuLog_log(LogType::Force,
+			"JIT check: mprotect(R+X) refused (errno {} - {}). This process cannot get executable pages at "
+			"all, so the recompiler could never work here. Forcing the interpreter.",
+			mprotectErr, strerror(mprotectErr));
+		setCpuModeDetail(cpuModeDetailf("This process cannot obtain executable memory (mprotect R+X "
+			"errno %d - %s), so the recompiler could not work here under any launcher.",
+			mprotectErr, strerror(mprotectErr)));
+		return false;
+	}
+
+	uint32_t csFlags = 0;
+	if (csops(getpid(), kCsOpsStatus, &csFlags, sizeof(csFlags)) != 0)
+	{
+		const int err = errno;
+		cemuLog_log(LogType::Force,
+			"JIT check: csops(CS_OPS_STATUS) failed (errno {} - {}), so whether this process may execute its "
+			"own pages is unknown. Unknown is not yes. Forcing the interpreter.",
+			err, strerror(err));
+		setCpuModeDetail(cpuModeDetailf("Could not ask the kernel whether this process may execute its "
+			"own pages (csops errno %d - %s). Unknown is not yes, so the interpreter it is.",
+			err, strerror(err)));
+		return false;
+	}
+
+	if ((csFlags & kCsDebugged) == 0)
+	{
+		cemuLog_log(LogType::Force,
+			"JIT check: pages can be marked executable, but CS_DEBUGGED is not set (cs_flags 0x{:08x}), so the "
+			"kernel kills this process the moment it fetches an instruction from one. Forcing the interpreter. "
+			"To get JIT here, launch through a JIT enabler (StikJIT / SideStore / LiveContainer) or install a "
+			"build that actually carries dynamic-codesigning.",
+			csFlags);
+		setCpuModeDetail(cpuModeDetailf("Executable pages are available, but CS_DEBUGGED is not set "
+			"(cs_flags 0x%08x) - the kernel would kill Muffin the moment it ran recompiled code. Launch "
+			"through StikJIT, SideStore or LiveContainer to turn the recompiler on. That is the single "
+			"biggest speed difference available here, and it needs no new build.",
+			(unsigned int)csFlags));
+		return false;
+	}
+
+	// The check above (mmap RW, then mprotect to RX) is NOT the same guarantee as this
+	// one, and a real crash log is why this exists. AppleJitAllocator (BackendAArch64.cpp)
+	// tries four strategies in order; only the first - mmap(..., PROT_EXEC, MAP_JIT) -
+	// maps pages that are BOTH executable at map time AND rooted in the process's actual
+	// JIT region. Every fallback strategy, including the mprotect-promoted RW->RX path
+	// this function was already testing, can succeed at the syscall level - mprotect()
+	// returns 0 - and still SIGBUS the instant code-signing enforcement sees the first
+	// instruction fetch from a page that was never MAP_JIT to begin with. That is exactly
+	// what happened on-device: CS_DEBUGGED was set, mprotect(R+X) succeeded, this check
+	// returned true, MAP_JIT itself then failed inside the real allocator and it fell
+	// back to the mprotect-promoted path, and PPCRecompiler_enter's first jump into
+	// generated code took signal 10. Test the actual mechanism the allocator depends on,
+	// not a stand-in for it.
+	{
+		const size_t jitPageSize = (size_t)sysconf(_SC_PAGESIZE);
+		void* jitPage = mmap(nullptr, jitPageSize, PROT_READ | PROT_WRITE | PROT_EXEC,
+			MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0);
+		if (jitPage == MAP_FAILED)
+		{
+			const int err = errno;
+			cemuLog_log(LogType::Force,
+				"JIT check: mmap(MAP_JIT, executable at map time) refused (errno {} - {}), even though "
+				"CS_DEBUGGED is set. This is the one allocation strategy that has ever been confirmed to "
+				"survive execution on iOS - every fallback strategy can pass its own syscalls and still "
+				"SIGBUS on first entry into generated code, which is what happened before this check "
+				"existed. Forcing the interpreter rather than handing the recompiler a mapping already "
+				"known to be unsafe.",
+				err, strerror(err));
+			setCpuModeDetail(cpuModeDetailf("Executable pages are available and CS_DEBUGGED is set, but "
+				"mmap(MAP_JIT) itself was refused (errno %d - %s). Every other way to get executable "
+				"memory here is known to crash the instant recompiled code actually runs, so the "
+				"interpreter is the only safe choice on this launch.", err, strerror(err)));
+			return false;
+		}
+		munmap(jitPage, jitPageSize);
+	}
+
+	// Arm the sentinel for the whole recompiler-enabled boot, not for a single call.
+	// Disarmed by ios_jit_survived_boot() once a title has actually launched.
+	const std::string sentinelNative = sentinelPath.string();
+	const int sentinelFd = open(sentinelNative.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (sentinelFd < 0)
+	{
+		const int err = errno;
+		cemuLog_log(LogType::Force,
+			"JIT check: could not create the crash sentinel at {} (errno {} - {}). Refusing to hand the "
+			"recompiler an untested device with no way to record that it killed us. Forcing the interpreter.",
+			_pathToUtf8(sentinelPath), err, strerror(err));
+		setCpuModeDetail(cpuModeDetailf("JIT is permitted here, but the crash sentinel could not be "
+			"written (errno %d - %s), and the recompiler is not handed an untested device with no way to "
+			"record that it killed us.", err, strerror(err)));
+		return false;
+	}
+	// The build id on the first line is what makes the sentinel clearable by shipping a
+	// fix rather than by hand. ios_jit_read_sentinel_build() reads exactly this back.
+	const std::string sentinelNote = std::string(BUILD_VERSION_STRING) +
+		"\ncemu-ios enabled the PPC recompiler and did not reach a launched title\n";
+	(void)write(sentinelFd, sentinelNote.data(), sentinelNote.size());
+	(void)fsync(sentinelFd);
+	close(sentinelFd);
+
+	g_jitSentinelPath = sentinelPath;
+	g_jitSentinelArmed.store(true);
+
+	// Registers the ONLY correct place left to clear this sentinel: PPCRecompiler_enter()
+	// already calls this back the first time control returns alive from generated code
+	// (see its own comment - "the first and only proof that the recompiler actually
+	// works on this machine"), but nothing ever registered a callback, so that mechanism
+	// has been a complete no-op since it was written. This bridge instead cleared the
+	// sentinel itself, synchronously, right after LaunchForegroundTitle() returned - and
+	// LaunchForegroundTitle() only spawns and detaches the title thread, it does not wait
+	// for it. So the sentinel was disarmed the instant a launch was REQUESTED, not
+	// launched, which is exactly the ~3-second-too-early clear that let a crash-looping
+	// recompiler re-arm itself clean on every single boot. Idempotent to call more than
+	// once (it is just a store), so registering it here on every JIT-permitted boot is
+	// harmless.
+	PPCRecompiler_setSurvivedFirstEntryCallback(ios_jit_survived_boot);
+
 	cemuLog_log(LogType::Force,
-		"JIT check: PASSED - {} ({}) Nothing was executed to prove it, on purpose. The AArch64 "
-		"recompiler has never run a PPC instruction on iOS, so the first boot that uses it is its first "
-		"run and not a known-good path - and that boot, not this check, is what arms the crash sentinel "
-		"at {}.",
-		probeText, csFlagsText, _pathToUtf8(sentinelPath));
-	setCpuModeDetail("This device does grant JIT memory: a MAP_JIT region was created, marked "
-		"executable-capable, and its write switch opened and closed cleanly. Turn on \"Use the "
-		"recompiler (JIT)\" to use it. Nothing was executed to prove it, on purpose - the recompiler "
-		"has never run on iOS before, so the first game you launch with it on is the experiment.");
-	g_jitVerdict.store(JitVerdict::Permitted);
+		"JIT check: PASSED - executable pages are available and CS_DEBUGGED is set (cs_flags 0x{:08x}), so the "
+		"recompiler is left enabled. Nothing was executed to prove that, on purpose. The AArch64 recompiler has "
+		"never run a PPC instruction on iOS, so this boot is its first run, not a known-good path; if it does "
+		"not survive, the sentinel at {} makes the next launch fall back to the interpreter.",
+		csFlags, _pathToUtf8(sentinelPath));
+	setCpuModeDetail(cpuModeDetailf("Executable pages are available and CS_DEBUGGED is set (cs_flags "
+		"0x%08x), so the PPC recompiler is enabled. Nothing was executed to prove that, on purpose - "
+		"this is the recompiler's first run on this device, not a known-good path.",
+		(unsigned int)csFlags));
 	return true;
 }
 
-// Called once generated code has actually run and returned alive. Until this runs, the
-// sentinel on disk says the last JIT boot did not finish.
+// Called once a title has actually launched with the recompiler live. Until this runs,
+// the sentinel on disk says the last JIT boot did not finish.
 void ios_jit_survived_boot()
 {
 	if (!g_jitSentinelArmed.exchange(false))
@@ -1201,130 +947,7 @@ void ios_jit_survived_boot()
 	std::error_code ec;
 	std::filesystem::remove(g_jitSentinelPath, ec);
 	cemuLog_log(LogType::Force,
-		"JIT check: control returned alive from recompiled code - clearing the crash sentinel.");
-}
-
-// The one place the sentinel is cleared for a reason other than "the recompiler worked":
-// the process is demonstrably still alive and the window the file describes is over.
-void ios_jit_disarm_sentinel(const char* why)
-{
-	if (!g_jitSentinelArmed.exchange(false))
-		return;
-	// Unregister as well as delete. Otherwise a second title launched later in the same
-	// process could fire this launch's callback and clear a sentinel it did not arm.
-	PPCRecompiler_setSurvivedFirstEntryCallback(nullptr);
-	std::error_code ec;
-	std::filesystem::remove(g_jitSentinelPath, ec);
-	cemuLog_log(LogType::Force, "JIT check: clearing the crash sentinel - {}.", why);
-}
-
-// The LAST moment before generated code can run, and the ONLY place that arms.
-//
-// Called from cemu_bridge_boot_rpx() and cemu_bridge_boot_title() after the prepare step
-// returned SUCCESS - prepare is what calls PPCRecompiler_init(), so by here the recompiler
-// has already made its own final decision and recorded it in ppcRecompilerEnabled - and
-// immediately before CafeSystem::LaunchForegroundTitle(), which spawns the title thread
-// that can enter generated code.
-//
-// Every exit from the armed state, walked one at a time:
-//
-//   a. Generated code runs and returns alive -> PPCRecompiler_enter() fires the
-//      survived-first-entry callback -> ios_jit_survived_boot() removes the file. The
-//      intended exit, and the only one that means "the JIT works on this device".
-//   b. The recompiler declined - any of PPCRecompiler_init()'s four early returns,
-//      including the user's own Settings toggle -> ppcRecompilerEnabled is false -> this
-//      function never arms, and clears anything a previous title left armed. This is
-//      PATH 2 from the header comment, and it is closed by construction: the arm is
-//      downstream of the decline, not upstream of it.
-//   c. The title is stopped or shut down before it ever entered generated code ->
-//      cemu_bridge_shutdown_title() calls ios_jit_disarm_sentinel(). The process is
-//      demonstrably alive at that point, which is the exact claim the file makes, so
-//      leaving it would be a lie about this launch.
-//   d. A second title is launched in the same process without a shutdown in between ->
-//      this function runs again, disarming first and re-arming only if the recompiler is
-//      live for the new title. The file therefore always describes the launch in progress.
-//   e. The process dies with generated code never having returned alive -> the file stays,
-//      which is precisely what it is for.
-//   f. The write itself fails -> nothing is armed and the log says so loudly; see below.
-//
-// What this function does NOT do is decide anything about the recompiler. It reads
-// ppcRecompilerEnabled, it never writes it. A probe that changed the thing it measures is
-// how the last two attempts at this went wrong.
-void ios_jit_arm_for_launch()
-{
-	// Case (d), unconditionally first. A relaunch inside one process must not inherit the
-	// previous title's armed state; if the recompiler is live this is immediately followed
-	// by a fresh arm, so the gap is a few statements wide and on one thread.
-	ios_jit_disarm_sentinel("a new title is starting");
-
-	// The recompiler's own answer about itself, set by PPCRecompiler_init() on this same
-	// thread moments ago - CafeSystem::PrepareForegroundTitle* calls it synchronously - so
-	// this read is ordered by the call sequence and needs no synchronisation of its own.
-	const bool recompilerLive = ppcRecompilerEnabled;
-
-	// Provisional at engine-init time, final here. This is what the timebase ladder reads
-	// to decide whether to run at all; until now it could only ever see the probe's verdict,
-	// which is a different question from "is the recompiler actually running".
-	g_cpuMode.store(recompilerLive ? kCpuModeRecompiler : kCpuModeInterpreter);
-
-	if (!recompilerLive)
-	{
-		cemuLog_log(LogType::Force,
-			"JIT check: this title is launching on the interpreter, so no crash sentinel is armed. The "
-			"recompiler was either not permitted here, or is switched off in Settings, or declined to "
-			"initialize.");
-		return;
-	}
-
-	// The emulated timebase, which is not cosmetic on this port.
-	//
-	// Under the interpreter the emulated CPU is roughly two orders of magnitude slower than
-	// the Espresso it stands in for while the guest's own clock keeps advancing at host
-	// wall-clock rate, so every deadline the title sets itself is already expired by the
-	// time it is serviced. Slowing the guest's clock is the compensation for that, and it is
-	// why cemu_bridge_initialize() installs shift 6. With the recompiler actually live that
-	// premise does not hold, and the guest should get real time.
-	//
-	// Only when nobody has chosen a speed by hand. cemu_bridge_timebase_auto_enabled() is
-	// precisely that flag: TimebaseScale.applyStoredChoiceIfAny() turns it off whenever a
-	// stored choice exists, and SettingsView turns it off the moment the picker is touched.
-	// Overriding a deliberate choice because the CPU mode turned out differently would be
-	// the same class of bug as the ladder overriding it, which that flag exists to prevent.
-	if (cemu_bridge_timebase_auto_enabled() && cemu_bridge_get_timebase_shift() != 3)
-	{
-		cemuLog_log(LogType::Force,
-			"Emulated timebase: the recompiler is live for this launch, so the guest gets real time "
-			"rather than the interpreter's default. No speed has been chosen by hand.");
-		cemu_bridge_set_timebase_shift(3);
-	}
-
-	// Registered here rather than once at init, so the callback and the armed file are put
-	// in place together and cannot disagree. Idempotent - it is two stores.
-	PPCRecompiler_setSurvivedFirstEntryCallback(ios_jit_survived_boot);
-
-	if (!ios_jit_write_build_stamped_file(g_jitSentinelPath,
-		"muffin enabled the PPC recompiler and generated code never returned alive"))
-	{
-		// Case (f), and deliberately not a refusal. By this point PPCRecompiler_init() has
-		// already generated the interface trampolines and the title thread is about to start;
-		// there is no "turn it back off" left to take that would not be worse than this. What
-		// there is, is a loud line saying that if this launch dies, the next one will not
-		// know. The probe proved this directory writable seconds ago, so reaching here at all
-		// means something changed underneath us.
-		const int err = errno;
-		cemuLog_log(LogType::Force,
-			"JIT check: the recompiler is live but the crash sentinel could not be written to {} "
-			"(errno {} - {}). If this launch does not survive, the next one will retry the recompiler "
-			"instead of falling back to the interpreter.",
-			_pathToUtf8(g_jitSentinelPath), err, strerror(err));
-		return;
-	}
-
-	g_jitSentinelArmed.store(true);
-	cemuLog_log(LogType::Force,
-		"JIT check: the recompiler is live for this launch - crash sentinel armed at {}. It clears the "
-		"first time control returns alive from generated code, and on a clean title shutdown.",
-		_pathToUtf8(g_jitSentinelPath));
+		"JIT check: a title launched with the recompiler enabled - clearing the crash sentinel.");
 }
 
 }  // namespace
@@ -1497,35 +1120,6 @@ bool cemu_bridge_vsync_enabled(void) {
 void cemu_bridge_set_recompiler_enabled(bool enabled) {
 #if defined(CEMU_CORE_AVAILABLE)
     PPCRecompiler_setForceDisabled(!enabled);
-
-    // PATH 1 from the JIT probe's header comment, and the reason this function's body has
-    // to be read as carefully as the probe's. SettingsView.swift calls this on EVERY FLICK
-    // of the recompiler switch, and GameManager.swift calls it once per launch from
-    // UserDefaults. So it must never write a file, never arm a sentinel, and never run a
-    // probe: somebody who turns the switch on in Settings and then closes the app has
-    // started nothing, and a sentinel armed for that boot would never be cleared by
-    // anything, which is exactly how this toggle was made permanently inert twice.
-    //
-    // What it does do is keep the interpreter's launch flags in step with the switch, and
-    // it is the right place for that because of the call order. GameManager.launchGame()
-    // runs cemu_bridge_initialize() FIRST and this SECOND, so at init time the user's
-    // choice is not yet known (PPCRecompiler_isForceDisabled() still holds either its
-    // process default or the previous launch's value). This call is therefore the last word
-    // before a boot, and the only point where both halves of the answer - the probe's
-    // verdict and the user's switch - are in hand at once.
-    //
-    // Why it matters rather than being tidiness: CafeSystem.cpp gates the three-host-thread
-    // path on
-    //     (GetCPUMode() == MulticoreRecompiler || ForceMultiCoreInterpreter()) && !ForceInterpreter()
-    // and PPCRecompiler_init() returns early on ForceInterpreter() || ForceMultiCoreInterpreter().
-    // Setting ForceMultiCoreInterpreter exactly when the recompiler will not run keeps the
-    // three-core interpreter - the CPU-side gain this port already depends on - and makes
-    // the boot log say "Multi-core interpreter" instead of claiming a recompiler mode that
-    // a later line contradicts. Leaving it set when the recompiler WILL run would silently
-    // disable the recompiler the user just asked for.
-    const bool willRecompile = enabled && g_jitVerdict.load() == JitVerdict::Permitted;
-    LaunchSettings::SetForceInterpreter(false);
-    LaunchSettings::SetForceMultiCoreInterpreter(!willRecompile);
 #else
     (void)enabled;
 #endif
@@ -1749,15 +1343,13 @@ void cemu_bridge_initialize(const char* mlcPath) {
     //
     // That open question is now asked directly rather than assumed - see
     // ios_jit_is_permitted() above. The interpreter is forced whenever the answer is no,
-    // or unknown, or a previous JIT-enabled launch died. The one case that leaves the
-    // recompiler available is a MAP_JIT region that the kernel marks executable-capable and
-    // whose per-thread write switch opens and closes cleanly - the mechanism the AArch64
-    // allocator actually depends on, rather than a stand-in for it. Nothing is executed to
-    // find that out, because on iOS the wrong answer to that experiment is the process
-    // dying, and "available" is still not "in use": the Settings switch and
-    // PPCRecompiler_init() each get a veto after this.
+    // or unknown, or a previous JIT-enabled launch died; the only case that leaves the
+    // recompiler enabled is executable pages being obtainable AND the kernel having been
+    // told to stop checking their signature. Nothing is executed to find that out,
+    // because on iOS the wrong answer to that experiment is the process dying.
     const fs::path jitSentinel = userDataPath / "jit_enabled_boot_did_not_finish";
     const bool jitPermitted = ios_jit_is_permitted(jitSentinel);
+    if (!jitPermitted)
     {
         // Multi-core, not single-core. Both run the exact same interpreter; the only
         // difference is _LaunchTitleThread()'s OSSchedulerBegin(3) vs OSSchedulerBegin(1)
@@ -1773,44 +1365,20 @@ void cemu_bridge_initialize(const char* mlcPath) {
         // would be a no-op that still logged "Single-core interpreter". Clearing it is
         // safe because PPCRecompiler_init() returns early on
         //     ForceInterpreter() || ForceMultiCoreInterpreter()
-        // - it never reaches Xbyak's mmap at all - so the recompiler stays just as off as
-        // it was, and nothing here weakens the MAP_JIT reasoning above.
+        // - it never reaches Xbyak's PROT_EXEC mmap - so the recompiler stays just as
+        // off as it was, and nothing here weakens the CS_DEBUGGED reasoning above.
         //
         // What this is NOT: a substitute for the recompiler, or anything close to one.
         // Interpreting Espresso stays roughly two orders of magnitude off recompiling
         // it, and three threads of that is still three threads of that. It is simply
-        // the only CPU-side gain that exists whenever the recompiler is not running, and
-        // it costs nothing to take.
-        //
-        // Set on BOTH answers now, rather than only when JIT was refused. Not a style
-        // change: PPCRecompiler_init() can run more than once per process (title stopped,
-        // another launched) and LaunchSettings is static, so leaving these alone on the
-        // permitted path meant inheriting whatever the previous title left behind. And
-        // cemu_bridge_set_recompiler_enabled() - which Swift calls immediately after this
-        // function, and which is the only point that knows the user's own switch - now
-        // writes the same two flags from the full answer. This is the conservative opening
-        // value it then refines, so the window in between is never the wrong one.
+        // the only CPU-side gain that exists while CS_DEBUGGED is unset, and it costs
+        // nothing to take.
         LaunchSettings::SetForceInterpreter(false);
-        LaunchSettings::SetForceMultiCoreInterpreter(!jitPermitted);
+        LaunchSettings::SetForceMultiCoreInterpreter(true);
     }
-    // Provisional, and marked as such because it is about to be answered properly.
-    //
-    // The probe says whether this DEVICE permits the recompiler; it cannot say whether the
-    // recompiler will RUN, because the user's switch has not been read yet (Swift calls
-    // cemu_bridge_set_recompiler_enabled() after this function returns) and
-    // PPCRecompiler_init() has not had its own say either. Claiming kCpuModeRecompiler here
-    // would report the recompiler as live for the default configuration, where it is off.
-    // ios_jit_arm_for_launch() overwrites this at title launch from ppcRecompilerEnabled,
-    // which is the recompiler's own verdict about itself. Until then the honest claim is the
-    // interpreter, because that is what a launch from here would actually get.
-    g_cpuMode.store(kCpuModeInterpreter);
-    if (jitPermitted)
-    {
-        cemuLog_log(LogType::Force,
-            "JIT check: the recompiler is permitted on this device. Whether it actually runs is decided "
-            "per launch, by the Settings switch and by PPCRecompiler_init(); the CPU mode reported until "
-            "then is the interpreter, because that is what a launch would get.");
-    }
+    // The probe has already recorded WHY. This records WHICH, from the probe's own
+    // return value, so the two can never disagree about the same launch.
+    g_cpuMode.store(jitPermitted ? kCpuModeRecompiler : kCpuModeInterpreter);
 
     // Emulated timebase. See cemu_bridge_set_timebase_shift() in CemuBridge.h for why
     // this is not cosmetic on this port.
@@ -1828,20 +1396,8 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // why Settings exposes the whole range rather than this being hardcoded. Swift
     // overrides it immediately after this call when the user has chosen a value.
     //
-    // Unconditionally the interpreter's default, and that is the correction. This used to
-    // read `jitPermitted ? 3 : 6`, which took the probe's verdict about the DEVICE as a
-    // statement about this launch - and the recompiler defaults OFF (GameManager.swift
-    // passes false unless UserDefaults says otherwise), so on any device where the probe
-    // passed the interpreter would have been handed real time. That is precisely the
-    // condition this setting exists to relieve: the guest's deadlines all expire before they
-    // are serviced, one frame is presented, and the title appears to hang. A probe fix that
-    // silently did that to every user would have cost more than it gained.
-    //
-    // The recompiler's own case is not lost, it is just made at the right moment:
-    // ios_jit_arm_for_launch() raises the clock to real time at title launch, when
-    // ppcRecompilerEnabled says the recompiler is genuinely live, and only when nobody has
-    // chosen a speed by hand.
-    cemu_bridge_set_timebase_shift(6);
+    // With the recompiler the premise does not hold, so the default there is real time.
+    cemu_bridge_set_timebase_shift(jitPermitted ? 3 : 6);
 
     // Audio had TWO independent faults, and fixing either one alone still leaves a
     // silent device:
@@ -2276,23 +1832,14 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath) {
     cemu_bridge_log_checkpoint("boot_rpx: PrepareForegroundTitleFromStandaloneRPX returned");
     switch (status) {
         case CafeSystem::PREPARE_STATUS_CODE::SUCCESS:
-            // Here, and only here, and only on the SUCCESS arm. Prepare is what calls
-            // PPCRecompiler_init(), so the recompiler's own verdict about itself
-            // (ppcRecompilerEnabled) is final by now; LaunchForegroundTitle() on the next
-            // line is what spawns the thread that can enter generated code. That makes this
-            // the last instant at which arming the crash sentinel is still a statement about
-            // a boot that is genuinely going to try the recompiler. See
-            // ios_jit_arm_for_launch() for the walk of every exit from the armed state.
-            ios_jit_arm_for_launch();
             cemu_bridge_log_checkpoint("boot_rpx: about to call LaunchForegroundTitle");
             CafeSystem::LaunchForegroundTitle();
             cemu_bridge_log_checkpoint("boot_rpx: LaunchForegroundTitle returned");
             // The sentinel is no longer cleared here - LaunchForegroundTitle() only
             // spawns and detaches the title thread, it does not wait for generated code
             // to actually run, so clearing at this point was ~3 seconds too early to mean
-            // anything. See ios_jit_arm_for_launch() just above for where the sentinel is
-            // armed, and PPCRecompiler_enter()'s survived-first-entry callback for where it
-            // is cleared - the first moment control comes back alive out of generated code.
+            // anything. See ios_jit_is_permitted()'s PPCRecompiler_setSurvivedFirstEntryCallback
+            // registration for where this now happens correctly.
             // After the launch call, not before: the ladder measures time from a title that
             // is actually running, and starting it during prepare would spend its first step
             // on disc mounting rather than on anything the clock affects.
@@ -2337,17 +1884,12 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
 
     switch (prepared) {
         case 0: // IOS_TITLE_LAUNCH_OK
-            // Same reasoning, same instant, as the matching call in cemu_bridge_boot_rpx():
-            // after the prepare that ran PPCRecompiler_init(), before the launch that can
-            // enter generated code. This is the arm that matters in practice, because
-            // EmulationEngine.bootBlocking() sends every real launch through this function.
-            ios_jit_arm_for_launch();
             cemu_bridge_log_checkpoint("boot_title: about to call LaunchForegroundTitle");
             CafeSystem::LaunchForegroundTitle();
             cemu_bridge_log_checkpoint("boot_title: LaunchForegroundTitle returned");
             // No sentinel clear here either - see the matching comment in
-            // cemu_bridge_boot_rpx() above for why, and ios_jit_arm_for_launch() for where
-            // the arming now happens.
+            // cemu_bridge_boot_rpx() above for why, and ios_jit_is_permitted() for where
+            // it now actually happens.
             // EmulationEngine.bootBlocking() goes to cemu_bridge_boot_title() for
             // everything: disc images, archives, dumped folders, and standalone homebrew
             // alike (the RPX case falls through inside IOSTitleLaunch_PrepareForegroundTitle,
@@ -2814,19 +2356,6 @@ void cemu_bridge_shutdown_title(void) {
 #if defined(CEMU_CORE_AVAILABLE)
     ios_timebase_ladder_stop();
     CafeSystem::ShutdownTitle();
-    // Exit (c) of ios_jit_arm_for_launch()'s enumeration, and the one that keeps the
-    // sentinel honest for the common case of a title that never got far enough to enter
-    // recompiled code. The sentinel's claim is "a launch that trusted the recompiler did not
-    // survive it". Reaching this line disproves that claim for this launch: the process is
-    // alive, it is winding a title down in an orderly way, and there is no longer any
-    // generated code that could enter. Leaving the file there would make the next launch of
-    // this build refuse the recompiler over a crash that never happened - the precise
-    // failure that made this toggle permanently inert twice.
-    //
-    // After ShutdownTitle(), not before: ShutdownTitle() stops the PPC threads, and until
-    // they are stopped a core could still be one instruction away from entering generated
-    // code and dying there.
-    ios_jit_disarm_sentinel("the title shut down cleanly, so this process survived the launch");
     setStatus("Title shut down.");
 #endif
 }
@@ -2834,12 +2363,6 @@ void cemu_bridge_shutdown_title(void) {
 void cemu_bridge_shutdown(void) {
 #if defined(CEMU_CORE_AVAILABLE)
     CafeSystem::Shutdown();
-    // Nothing in Swift calls this today - EmulationEngine only ever calls
-    // cemu_bridge_shutdown_title() - so this line is here to keep the sentinel's exit set
-    // closed rather than because a path currently needs it. If a caller is ever added, the
-    // reasoning is identical to shutdown_title's: reaching here means the process outlived
-    // the launch, which is the exact claim the file on disk makes.
-    ios_jit_disarm_sentinel("the engine shut down, so this process survived the launch");
     g_initialized.store(false);
     setStatus("Cemu core shut down.");
 #endif
