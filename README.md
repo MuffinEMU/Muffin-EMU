@@ -1,18 +1,25 @@
-# Cemu — iOS port (Wii U emulator), work in progress
+# Muffin — Wii U emulation on iOS
 
-An iOS port of [Cemu](https://github.com/cemu-project/Cemu), the Wii U emulator written in
-C/C++. This fork builds the genuine Cemu engine for iOS arm64 and drives it from a SwiftUI
-shell — it is not a reimplementation.
+A genuine port of [Cemu](https://github.com/cemu-project/Cemu), the Wii U emulator, built for
+iOS arm64 and driven from a SwiftUI shell. The real C/C++ engine — not a reimplementation.
 
-**Where it actually is, as of 2026-09-12:** one retail game has been confirmed running at a
-playable speed, on one device, by the owner — FAST Racing NEO on an iPad Pro (A12Z,
-`iPad8,11`, iOS 26.6.1). That is the entire body of "it works" evidence. One game, one
-device, and — as the next section spells out — a picture and a framerate, not a confirmed
-controller and not a confirmed sound.
+**A retail Wii U game runs end to end, at playable speed, rendering correctly, on real
+hardware.** FAST Racing NEO on an iPad Pro A12Z (`iPad8,11`, iOS 26.6.1) — installed,
+launched, played. Not a boot screen and not a title logo: a game.
 
-Every line below is meant to be checkable against a commit, a tag, or a device log. Where
-something has not been checked, it says so. A document that overstates costs somebody a
-debugging session to disprove, which is worse than having no document.
+**And it did that on the interpreter.** The JIT capability probe asks iOS for executable
+memory in a shape iOS arm64 does not grant, so it has never once passed on any device. Every
+hour anyone has spent in this emulator — including that playthrough — has been pure
+interpretation of PowerPC, at 50–190 MIPS. The recompiler is upside that has not been
+collected yet, not the thing that made this work.
+
+That is one game on one device, and this document will keep saying so. It is also the
+difference between an emulator that exists and an emulator that works.
+
+Everything below is checkable against a commit, a tag, or a device log. Where something has
+not been checked, it says so — this project has been burned by documentation that claimed
+more than was true, and an overstated document costs somebody a debugging session to
+disprove.
 
 ## Confirmed on device
 

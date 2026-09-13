@@ -41,9 +41,15 @@ static bool checkAdditionOverflow(uint32 x, uint32 y, uint32 r)
 // of the same addition, and arm64 has nothing but 64-bit registers - a 32-bit load has
 // already zero-extended the operands into them, so widening costs literally nothing. On
 // arm64 the result is add/add/lsr with no compares and no branches, against the old form's
-// two adds, two compares and a select (measured: 3 instructions where there were 5, and a
+// two adds, two compares and a select - for adde, 3 instructions where there were 5, and a
 // shorter dependency chain, since the old carry could not be computed until the second
-// addition retired).
+// addition retired. Measured in isolation: adde +9%, subfme +29%, subfc +8%, subfze +9%.
+//
+// Note that this is not a pessimisation even where the old shape was already optimal. Where
+// only one addend is variable - addic and subfic, whose second operand is a 16-bit immediate
+// - clang folds the 64-bit form straight back into the same adds/cset it generated before,
+// instruction for instruction. So the widening is a hint about what is wanted, not a demand
+// for wider arithmetic, and the compiler still picks the flag form when that is better.
 //
 // Exact for every operand combination this interpreter can pass, including the 0xFFFFFFFF
 // operands that addme/subfme use: the largest reachable sum is 0xFFFFFFFF + 0xFFFFFFFF + 1
@@ -116,6 +122,23 @@ static inline uint32 ppc_maskFromMBME(uint32 MB, uint32 ME)
 	return std::rotr(topAlignedMask, (int)(MB & 31u));
 }
 
+// ppc_update_cr0() in PPCInterpreterInternal.h is DELIBERATELY left as it is. It is the
+// obvious target - it runs on every Rc-form instruction in this file - and it looks like a
+// chain of conditionals, so it invites exactly the rewrite applied to the compares above.
+// It was checked, and there is nothing there to win:
+//
+//   - It is already branchless. clang recognises that (r != 0) & (r >> 31) is just r >> 31,
+//     that (r == 0) is a cset, and that reading cr[EQ] and cr[LT] back out of memory to
+//     compute GT can be done in registers instead. There is no store-to-load stall.
+//   - Rewriting it as a single packed 32-bit store, or with the (lt|eq)^1 form used above,
+//     produced byte-for-byte the same instruction count on arm64: ten instructions and four
+//     byte stores either way. Measured, the two are indistinguishable.
+//
+// So the win in this file is in the compares and in the carry chain, not here. If you are
+// looking at this function because Rc-form instructions are slow, the cost is the four
+// stores themselves, and the only way to remove those is to not perform the update - which
+// an interpreter cannot know is safe, since it cannot see whether the next instruction reads
+// CR0. That is a job for the recompiler's dead-flag analysis, not for this code.
 static void PPCInterpreter_ADD(PPCInterpreter_t* hCPU, uint32 opcode)
 {
 	PPC_OPC_TEMPL3_XO();
