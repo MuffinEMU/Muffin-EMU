@@ -387,6 +387,10 @@ bool cemu_bridge_reduce_encoder_splitting(void);
 /// MetalRenderer::InitializeLayer() right after setPixelFormat(), so - like the other
 /// settings on this page - it takes effect on the NEXT title launch, not the one already
 /// running.
+// Frame stretching. Drives the engine's own fullscreen_scaling, the same config value
+// desktop's "Fullscreen scaling" radio box sets - kStretch fills the window,
+// kKeepAspectRatio letterboxes 1280x720 inside it.
+void cemu_bridge_set_stretch_to_fill(bool enabled);
 void cemu_bridge_set_vsync_enabled(bool enabled);
 
 /// Rebuild geometry shaders and RECTS out of compute passes on a GPU with no mesh

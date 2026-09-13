@@ -61,7 +61,14 @@ enum PremiumUnlock {
 
     /// Salt and iteration count are public by construction - they are in the
     /// binary either way. They are not secrets; the entropy of the code is.
-    private static let salt = Data("866c34124d50b59e6ce5cc08283e0019".utf8)
+    /// The salt, as the 16 RAW BYTES the hex spells - NOT the ASCII of the hex string.
+    ///
+    /// The generator that produced the stored hashes salted with the decoded bytes
+    /// (Python `bytes.fromhex`). Salting with `Data("...".utf8)` fed PBKDF2 a
+    /// different 32-byte salt, so every hash came out different and every valid
+    /// code would have been rejected - with no error a user could act on, because
+    /// "that code didn't work" is all the UI can say.
+    private static let salt = Data([0x86, 0x6c, 0x34, 0x12, 0x4d, 0x50, 0xb5, 0x9e, 0x6c, 0xe5, 0xcc, 0x08, 0x28, 0x3e, 0x00, 0x19])
     private static let iterations = 200000
 
     /// PBKDF2-HMAC-SHA256 of the normalized code. Codes themselves never appear.
@@ -107,19 +114,28 @@ enum PremiumUnlock {
 
     // MARK: - derivation
 
+    /// PBKDF2-HMAC-SHA256, implemented on CryptoKit rather than CommonCrypto.
+    ///
+    /// CommonCrypto needs `import CommonCrypto`, which is a module this target does
+    /// not link, and its C pointer API does not bridge cleanly from a Swift
+    /// `[UInt8]` - the first attempt failed the build on both counts
+    /// (`cannot find 'CCKeyDerivationPBKDF' in scope`, and `UnsafePointer<UInt8>`
+    /// has no `assumingMemoryBound`). CryptoKit is already imported, already used
+    /// for the HMAC below, and is pure Swift at the call site.
+    ///
+    /// This is the standard construction from RFC 2898: for each block, U1 = PRF
+    /// (password, salt || INT(i)), then U2..Uc = PRF(password, U(n-1)), all XORed
+    /// together. One block is enough - SHA-256 gives 32 bytes and that is the whole
+    /// output length.
     private static func pbkdf2(_ s: String) -> String {
-        var out = [UInt8](repeating: 0, count: 32)
-        let pw = Array(s.utf8)
-        let saltBytes = Array(salt)
-        _ = pw.withUnsafeBufferPointer { p in
-            saltBytes.withUnsafeBufferPointer { sp in
-                CCKeyDerivationPBKDF(CCPBKDFAlgorithm(kCCPBKDF2),
-                                     p.baseAddress?.assumingMemoryBound(to: CChar.self), pw.count,
-                                     sp.baseAddress, saltBytes.count,
-                                     CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256),
-                                     UInt32(iterations),
-                                     &out, out.count)
-            }
+        let key = SymmetricKey(data: Data(s.utf8))
+        var block = salt
+        block.append(contentsOf: [0, 0, 0, 1])          // INT(1), big-endian
+        var u = Data(HMAC<SHA256>.authenticationCode(for: block, using: key))
+        var out = [UInt8](u)
+        for _ in 1..<iterations {
+            u = Data(HMAC<SHA256>.authenticationCode(for: u, using: key))
+            for (i, b) in u.enumerated() { out[i] ^= b }
         }
         return out.map { String(format: "%02x", $0) }.joined()
     }
