@@ -107,74 +107,62 @@ footer a{color:var(--sparkle)}
 </section>
 
 <section class="card">
-  <h2><span class="em">📋</span>Where this actually is</h2>
+  <h2><span class="em">🎮</span>Status</h2>
   <p><strong>A retail Wii U game runs end to end, at playable speed, rendering correctly, on
   real hardware.</strong> FAST Racing NEO on an iPad Pro A12Z (<code>iPad8,11</code>,
-  iOS&nbsp;26.6.1) — installed, launched, played. Not a boot screen, not a title logo: a game.</p>
-  <p>That is one game on one device, and this page will keep saying so. But it is the
-  difference between an emulator that exists and an emulator that works, and it is on the
-  correct side of it.</p>
+  iOS&nbsp;26.6.1) — installed, launched, played.</p>
   <div class="note">
-    <p><strong>And it did that on the interpreter.</strong> The JIT capability probe asks iOS
-    for executable memory in a shape iOS&nbsp;arm64 does not grant, and has never once passed on
-    any device. So every hour anyone has spent in this emulator — including that playthrough —
-    has been pure interpretation of PowerPC, at 50–190&nbsp;MIPS.</p>
-    <p style="margin-bottom:0">Which is the interesting part. The recompiler is not what made
-    this work. It has never run at all.</p>
+    <p style="margin-bottom:0"><strong>It does that on the interpreter.</strong> The recompiler
+    exists in the codebase, but its capability probe has never succeeded on iOS, so it has
+    never executed a single instruction. Every guest instruction anyone has run — including
+    that playthrough — has gone through pure PowerPC interpretation, measured at
+    50–190&nbsp;MIPS.</p>
   </div>
 </section>
 
 <section class="card">
-  <h2><span class="em">⚡</span>Two engines, and only one has ever started</h2>
-  <p>The recompiler translates PowerPC into ARM64 ahead of execution. The interpreter reads
-  each instruction and does what it says. The first is meant to be several times faster.</p>
-  <p>On this project the second is the only one that has ever executed a single guest
-  instruction, because the capability probe that decides whether the recompiler may run asks
-  for <code>PROT_EXEC</code> at <code>mmap</code> time. That is the x86_64 shape of Apple's
-  JIT API. On an APRR core — every A12 and later, including the A12Z this ran on — a
-  <code>MAP_JIT</code> region is governed by a per-thread write-protect switch instead: you map
-  it writable and toggle. The probe asks for something the platform never grants, gets
-  <code>EINVAL</code>, and falls back. Every time, on every device, for the entire life of the
-  project.</p>
-  <p>So the headline result here is an interpreter-only Wii U emulator playing a retail game on
-  a 2020 tablet. The recompiler is upside that has not been collected yet.</p>
+  <h2><span class="em">🖥️</span>Under the hood</h2>
+  <p>The renderer is Metal. GPUs without mesh shader support — the A12Z and similar — emulate
+  geometry shaders and RECTS primitives with compute passes instead. The same GPUs don't
+  decode BC textures in hardware, so BC1–BC5 textures are decompressed on the CPU using NEON.</p>
+  <p style="margin-bottom:0">The interpreter runs from a predecoded instruction cache rather
+  than re-decoding each instruction on every pass.</p>
 </section>
 
 <section class="card">
-  <h2><span class="em">🔧</span>Known wrong, and said out loud</h2>
-  <p>This project has been burned more than once by documentation that claimed more than was
-  true, so the unverified things get their own section rather than a footnote.</p>
-  <ul>
-    <li><strong>Audio has never made a confirmed sound on a device.</strong> The CoreAudio
-    backend initialises and the log goes quiet after that, which is exactly why nobody can say
-    whether it works.</li>
-    <li><strong>Controller input is unconfirmed beyond "the game responded".</strong> No
-    systematic mapping test has been run.</li>
-    <li><strong>The recompiler is untested, not broken.</strong> It has never been reached, so
-    nothing is known about whether the code it generates is correct.</li>
-    <li><strong>One game is one game.</strong> Compatibility beyond FAST Racing NEO is
-    unmeasured, and no list is published because there is nothing honest to put in it.</li>
-  </ul>
-  <p style="margin-bottom:0">Everything above is checkable against a commit, a tag or a device
-  log. Where something has not been checked, it says so.</p>
+  <h2><span class="em">🎨</span>Themes</h2>
+  <p style="margin-bottom:0">31 app icons, each with a matching colour theme. Three are
+  premium, unlocked by code.</p>
 </section>
 
+<section class="card">
+  <h2><span class="em">⬜</span>Not yet confirmed</h2>
+  <ul>
+    <li><strong>Audio</strong> — the backend initialises, but no sound has been confirmed on a
+    device.</li>
+    <li><strong>Controller input</strong> — works at a basic level; not tested systematically
+    beyond that.</li>
+    <li><strong>The recompiler</strong> — untested, because it has never run.</li>
+    <li><strong>Compatibility</strong> — unmeasured beyond the one confirmed game.</li>
+  </ul>
+</section>
 
 <section class="card">
   <h2><span class="em">📖</span>Read the project</h2>
   <ul>
-    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/STATUS.md">STATUS.md</a> — the long-form inspection: a citation per claim, and what each one does not establish</li>
-    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/ROADMAP.md">ROADMAP.md</a> — the milestone gates, none checked off without a demonstration</li>
-    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/log.md">log.md</a> — the journal: what was tried, what the device showed, which theories died</li>
-    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/tree/main/docs/postmortems">Post-mortems</a> — regressions worth never repeating, and the rules they produced</li>
+    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/ARCHITECTURE.md">ARCHITECTURE.md</a> — how the SwiftUI shell drives the Cemu core</li>
+    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/STATUS.md">STATUS.md</a> — detailed subsystem status</li>
+    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/ROADMAP.md">ROADMAP.md</a> — planned work</li>
+    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/notes/log.md">log.md</a> — the development journal</li>
     <li><a href="gamepad-layout/">The on-screen pad</a> — measured off real GamePad hardware</li>
   </ul>
 </section>
 
 <section class="card">
-  <h2><span class="em">⚖️</span>Games</h2>
+  <h2><span class="em">⚖️</span>Games &amp; license</h2>
   <p>Bring your own. No copyrighted content is distributed here — not games, not system files, not keys.
-  Muffin is a port of <a href="https://github.com/cemu-project/Cemu">Cemu</a>, licensed under
+  Muffin is a port of <a href="https://github.com/cemu-project/Cemu">Cemu</a>, the excellent
+  Wii U emulator this project ports to iOS, licensed under
   <a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/LICENSE.txt">MPL 2.0</a>.</p>
 </section>
 
