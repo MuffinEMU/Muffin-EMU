@@ -2,7 +2,6 @@
 #include "Cafe/HW/Latte/Renderer/Metal/LatteTextureMtl.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #include "Cafe/HW/Latte/Renderer/Metal/LatteToMtl.h"
-#include "Cemu/Logging/CemuLogging.h"
 #include "Metal/MTLTexture.hpp"
 
 uint32 LatteTextureMtl_AdjustTextureCompSel(Latte::E_GX2SURFFMT format, uint32 compSel)
@@ -181,24 +180,8 @@ MTL::Texture* LatteTextureViewMtl::CreateSwizzledView(uint32 gpuSamplerSwizzle)
     swizzle.blue = GetMtlTextureSwizzle(compSelB);
     swizzle.alpha = GetMtlTextureSwizzle(compSelA);
 
-    // Clamp mip levels. firstMip/numMip come straight from GX2 register values and are only
-    // checked (LatteTextureMtl::CreateView, debug-only) against the *declared* mip count of
-    // the base texture - not against the level count the underlying MTL::Texture actually
-    // has, which LatteTextureMtl's constructor separately clamps down to maxPossibleMipLevels.
-    // So a view can legitimately ask for a base level at or past maxPossibleMipLevels - the
-    // same out-of-range mip request the OpenGL backend guards against in
-    // LatteTextureViewGL::InitAliasView. baseLevel must be clamped first: doing the
-    // subtraction before checking it let "maxPossibleMipLevels - baseLevel" underflow (both
-    // sides are unsigned), turning into a huge levelCount instead of a shrunk one, and hasn't
-    // been reached under the confirmed-working game's draws so far - this is exactly the kind
-    // of adjacent, rarely-hit path that hasn't been exercised yet.
-    uint32 maxMipLevels = std::max((uint32)m_baseTexture->maxPossibleMipLevels, (uint32)1);
-    if (baseLevel >= maxMipLevels)
-    {
-        cemuLog_logDebug(LogType::Force, "LatteTextureViewMtl::CreateSwizzledView(): out of bounds mip level requested");
-        baseLevel = maxMipLevels - 1;
-    }
-    levelCount = std::min(levelCount, maxMipLevels - baseLevel);
+    // Clamp mip levels
+    levelCount = std::min(levelCount, m_baseTexture->maxPossibleMipLevels - baseLevel);
     levelCount = std::max(levelCount, (uint32)1);
 
     auto pixelFormat = GetMtlPixelFormat(format, m_baseTexture->isDepth);

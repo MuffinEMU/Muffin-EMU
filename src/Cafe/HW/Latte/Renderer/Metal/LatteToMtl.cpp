@@ -77,14 +77,8 @@ std::map<Latte::E_GX2SURFFMT, MetalPixelFormatInfo> MTL_DEPTH_FORMAT_TABLE = {
     {Latte::E_GX2SURFFMT::INVALID_FORMAT, {MTL::PixelFormatInvalid, MetalDataType::NONE, 0}},
 
 	{Latte::E_GX2SURFFMT::D24_S8_UNORM, {MTL::PixelFormatDepth24Unorm_Stencil8, MetalDataType::NONE, 4, {1, 1}, true}},
-	// bytesPerBlock has to match the per-texel size the registered TextureDecoder below actually
-	// produces: GetMtlTextureBytesPerRow() turns it directly into the row stride texture_loadSlice
-	// hands to the upload blit. These two were out of sync with their decoders (TextureDecoder_NullData64
-	// and TextureDecoder_D32_S8_UINT_X24 both write 8 bytes/texel, sizeof(uint64)) - a stale 4 and 5
-	// here would misalign every row past the first the moment either format is loaded from real
-	// texture data instead of only ever being cleared as a render target.
-	{Latte::E_GX2SURFFMT::D24_S8_FLOAT, {MTL::PixelFormatDepth32Float_Stencil8, MetalDataType::NONE, 8, {1, 1}, true}},
-	{Latte::E_GX2SURFFMT::D32_S8_FLOAT, {MTL::PixelFormatDepth32Float_Stencil8, MetalDataType::NONE, 8, {1, 1}, true}},
+	{Latte::E_GX2SURFFMT::D24_S8_FLOAT, {MTL::PixelFormatDepth32Float_Stencil8, MetalDataType::NONE, 4, {1, 1}, true}},
+	{Latte::E_GX2SURFFMT::D32_S8_FLOAT, {MTL::PixelFormatDepth32Float_Stencil8, MetalDataType::NONE, 5, {1, 1}, true}},
 	{Latte::E_GX2SURFFMT::D16_UNORM, {MTL::PixelFormatDepth16Unorm, MetalDataType::NONE, 2, {1, 1}}},
 	{Latte::E_GX2SURFFMT::D32_FLOAT, {MTL::PixelFormatDepth32Float, MetalDataType::NONE, 4, {1, 1}}},
 };
@@ -223,37 +217,17 @@ const MetalPixelFormatInfo GetMtlPixelFormatInfo(Latte::E_GX2SURFFMT format, boo
     {
         auto it = MTL_DEPTH_FORMAT_TABLE.find(format);
         if (it == MTL_DEPTH_FORMAT_TABLE.end())
-        {
-            // No exact mapping for this GX2 depth format. A silent fallback here is exactly the shape of
-            // the bug that just crash-looped the confirmed-working game (see MetalPipelineCompiler.cpp's
-            // rasterizer-discard fix): a plausible-looking wrong result with nothing in the log pointing
-            // at it. Log once so a broken depth test is traceable here.
-            cemuLog_logOnce(LogType::Force, "Metal: no depth pixel format mapping for GX2 format 0x{:x} - falling back to Depth16Unorm, depth testing/writes for this surface will likely be wrong", (uint32)format);
             return {MTL::PixelFormatDepth16Unorm, MetalDataType::NONE, 2}; // Fallback
-        }
-        return it->second;
+        else
+            return it->second;
     }
     else
     {
         auto it = MTL_COLOR_FORMAT_TABLE.find(format);
         if (it == MTL_COLOR_FORMAT_TABLE.end())
-        {
-            // Same reasoning as the depth branch above.
-            cemuLog_logOnce(LogType::Force, "Metal: no color pixel format mapping for GX2 format 0x{:x} - falling back to R8Unorm, this surface will render as garbage", (uint32)format);
             return {MTL::PixelFormatR8Unorm, MetalDataType::FLOAT, 1}; // Fallback
-        }
-
-        if (format == Latte::E_GX2SURFFMT::R10_G10_B10_A2_SRGB)
-        {
-            // Metal has no RGB10A2 sRGB pixel format at all (see the table above), so this is approximated
-            // with the plain Unorm variant: the GPU will treat stored values as linear instead of
-            // sRGB-encoded, which is a real colour error (too dark/too bright), not a rounding difference.
-            // Nothing in this function can fix that - log once so a wrong-looking render using this format
-            // points here in one step instead of being re-diagnosed as a shader or blend-state bug.
-            cemuLog_logOnce(LogType::Force, "Metal: R10_G10_B10_A2_SRGB has no matching Metal pixel format - approximating with linear RGB10A2Unorm, colours will be wrong");
-        }
-
-        return it->second;
+        else
+            return it->second;
     }
 }
 

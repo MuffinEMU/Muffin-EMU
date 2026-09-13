@@ -7,37 +7,11 @@
 // return true if an instruction has side effects on top of just reading and writing registers
 bool IMLInstruction::HasSideEffects() const
 {
-	// Instructions listed here are pure register (or register+immediate) computations whose entire
-	// effect is described by CheckRegisterUsage(). This includes the three-operand ALU shape
-	// (R_R_R/R_R_R_CARRY) and the carry-producing immediate form (R_R_S32_CARRY) used for Rc-form
-	// results and XER carry - those outputs are frequently written but never read again, and unless
-	// they are recognized as side-effect-free here, DCE can never remove the dead write.
-	// Everything else (memory access, control flow, calls, macros, name/context transfers) keeps
-	// side effects because part of their effect (memory state, control flow, implicit flags) is not
-	// captured by the read/write register sets alone.
-	switch (type)
-	{
-	case PPCREC_IML_TYPE_NO_OP:
-	case PPCREC_IML_TYPE_R_R:
-	case PPCREC_IML_TYPE_R_R_S32:
-	case PPCREC_IML_TYPE_R_R_S32_CARRY:
-	case PPCREC_IML_TYPE_R_R_R:
-	case PPCREC_IML_TYPE_R_R_R_CARRY:
-	case PPCREC_IML_TYPE_COMPARE:
-	case PPCREC_IML_TYPE_COMPARE_S32:
-	case PPCREC_IML_TYPE_FPR_R:
-	case PPCREC_IML_TYPE_FPR_R_R:
-	case PPCREC_IML_TYPE_FPR_R_R_R:
-	case PPCREC_IML_TYPE_FPR_R_R_R_R:
-	case PPCREC_IML_TYPE_FPR_COMPARE:
-		return false;
-	case PPCREC_IML_TYPE_R_S32:
-		// PPCREC_IML_OP_X86_CMP implicitly sets the x86 eflags register, which CheckRegisterUsage()
-		// does not report - removing it would silently break a later eflags-based conditional jump.
-		return operation == PPCREC_IML_OP_X86_CMP;
-	default:
-		return true;
-	}
+	bool hasSideEffects = true;
+	if(type == PPCREC_IML_TYPE_R_R || type == PPCREC_IML_TYPE_R_R_S32 || type == PPCREC_IML_TYPE_COMPARE || type == PPCREC_IML_TYPE_COMPARE_S32)
+		hasSideEffects = false;
+	// todo - add more cases
+	return hasSideEffects;
 }
 
 void IMLInstruction::CheckRegisterUsage(IMLUsedRegisters* registersUsed) const
