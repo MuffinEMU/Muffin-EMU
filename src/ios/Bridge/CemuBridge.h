@@ -396,6 +396,18 @@ void cemu_bridge_set_geometry_shader_emulation_enabled(bool enabled);
 bool cemu_bridge_geometry_shader_emulation_enabled(void);
 bool cemu_bridge_vsync_enabled(void);
 
+/// Frame stretching. Drives the engine's own fullscreen_scaling, the same config value
+/// desktop's "Fullscreen scaling" radio box sets - kStretch fills the window,
+/// kKeepAspectRatio letterboxes 1280x720 inside it. Re-read every time the output blit
+/// is sized, so unlike vsync above it takes effect on the next frame, not the next launch.
+///
+/// This declaration is the half of the pair that the ea2d6e05 engine restore dropped:
+/// f57b840c put the definition back into CemuBridge.mm but not this line, and Swift only
+/// sees what this header declares - SettingsView.swift and GameManager.swift both call
+/// it, so without it the app target does not compile. The comm(1) check described on the
+/// definition in CemuBridge.mm has to be run against this file as well as the .mm.
+void cemu_bridge_set_stretch_to_fill(bool enabled);
+
 /// Shader cache maintenance. Two different things get called "the shader cache" and
 /// deleting them has very different consequences, so they are separate:
 ///
