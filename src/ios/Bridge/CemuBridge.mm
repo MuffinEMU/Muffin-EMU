@@ -755,6 +755,60 @@ std::string ios_jit_read_sentinel_build(const std::filesystem::path& sentinelPat
 // as PPCRecompiler's survived-first-entry callback before its own definition is reached.
 void ios_jit_survived_boot();
 
+// True once ios_jit_is_permitted() has passed every check this process. The setting
+// that decides whether the recompiler is actually used arrives later and can flip
+// between boots in the same process, so the probe's verdict has to be remembered
+// separately from whether the sentinel is currently on disk.
+std::atomic<bool> g_jitProbePassed{false};
+
+// Writes the sentinel at g_jitSentinelPath and registers the callback that clears it.
+// Split out of ios_jit_is_permitted() so cemu_bridge_set_recompiler_enabled() can
+// re-arm it when the toggle goes back on after a boot that had it off; see
+// ios_jit_disarm_sentinel_recompiler_off() for why that boot disarms it.
+bool ios_jit_arm_sentinel()
+{
+	if (g_jitSentinelArmed.load())
+		return true;
+	const std::string sentinelNative = g_jitSentinelPath.string();
+	const int sentinelFd = open(sentinelNative.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (sentinelFd < 0)
+	{
+		const int err = errno;
+		cemuLog_log(LogType::Force,
+			"JIT check: could not create the crash sentinel at {} (errno {} - {}). Refusing to hand the "
+			"recompiler an untested device with no way to record that it killed us. Forcing the interpreter.",
+			_pathToUtf8(g_jitSentinelPath), err, strerror(err));
+		setCpuModeDetail(cpuModeDetailf("JIT is permitted here, but the crash sentinel could not be "
+			"written (errno %d - %s), and the recompiler is not handed an untested device with no way to "
+			"record that it killed us.", err, strerror(err)));
+		return false;
+	}
+	// The build id on the first line is what makes the sentinel clearable by shipping a
+	// fix rather than by hand. ios_jit_read_sentinel_build() reads exactly this back.
+	const std::string sentinelNote = std::string(BUILD_VERSION_STRING) +
+		"\ncemu-ios enabled the PPC recompiler and did not reach a launched title\n";
+	(void)write(sentinelFd, sentinelNote.data(), sentinelNote.size());
+	(void)fsync(sentinelFd);
+	close(sentinelFd);
+
+	g_jitSentinelArmed.store(true);
+
+	// Registers the ONLY correct place left to clear this sentinel: PPCRecompiler_enter()
+	// already calls this back the first time control returns alive from generated code
+	// (see its own comment - "the first and only proof that the recompiler actually
+	// works on this machine"), but nothing ever registered a callback, so that mechanism
+	// has been a complete no-op since it was written. This bridge instead cleared the
+	// sentinel itself, synchronously, right after LaunchForegroundTitle() returned - and
+	// LaunchForegroundTitle() only spawns and detaches the title thread, it does not wait
+	// for it. So the sentinel was disarmed the instant a launch was REQUESTED, not
+	// launched, which is exactly the ~3-second-too-early clear that let a crash-looping
+	// recompiler re-arm itself clean on every single boot. Idempotent to call more than
+	// once (it is just a store), so registering it here on every JIT-permitted boot is
+	// harmless.
+	PPCRecompiler_setSurvivedFirstEntryCallback(ios_jit_survived_boot);
+	return true;
+}
+
 bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 {
 	namespace fs = std::filesystem;
@@ -886,44 +940,12 @@ bool ios_jit_is_permitted(const std::filesystem::path& sentinelPath)
 
 	// Arm the sentinel for the whole recompiler-enabled boot, not for a single call.
 	// Disarmed by ios_jit_survived_boot() once a title has actually launched.
-	const std::string sentinelNative = sentinelPath.string();
-	const int sentinelFd = open(sentinelNative.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	if (sentinelFd < 0)
-	{
-		const int err = errno;
-		cemuLog_log(LogType::Force,
-			"JIT check: could not create the crash sentinel at {} (errno {} - {}). Refusing to hand the "
-			"recompiler an untested device with no way to record that it killed us. Forcing the interpreter.",
-			_pathToUtf8(sentinelPath), err, strerror(err));
-		setCpuModeDetail(cpuModeDetailf("JIT is permitted here, but the crash sentinel could not be "
-			"written (errno %d - %s), and the recompiler is not handed an untested device with no way to "
-			"record that it killed us.", err, strerror(err)));
-		return false;
-	}
-	// The build id on the first line is what makes the sentinel clearable by shipping a
-	// fix rather than by hand. ios_jit_read_sentinel_build() reads exactly this back.
-	const std::string sentinelNote = std::string(BUILD_VERSION_STRING) +
-		"\ncemu-ios enabled the PPC recompiler and did not reach a launched title\n";
-	(void)write(sentinelFd, sentinelNote.data(), sentinelNote.size());
-	(void)fsync(sentinelFd);
-	close(sentinelFd);
-
 	g_jitSentinelPath = sentinelPath;
-	g_jitSentinelArmed.store(true);
-
-	// Registers the ONLY correct place left to clear this sentinel: PPCRecompiler_enter()
-	// already calls this back the first time control returns alive from generated code
-	// (see its own comment - "the first and only proof that the recompiler actually
-	// works on this machine"), but nothing ever registered a callback, so that mechanism
-	// has been a complete no-op since it was written. This bridge instead cleared the
-	// sentinel itself, synchronously, right after LaunchForegroundTitle() returned - and
-	// LaunchForegroundTitle() only spawns and detaches the title thread, it does not wait
-	// for it. So the sentinel was disarmed the instant a launch was REQUESTED, not
-	// launched, which is exactly the ~3-second-too-early clear that let a crash-looping
-	// recompiler re-arm itself clean on every single boot. Idempotent to call more than
-	// once (it is just a store), so registering it here on every JIT-permitted boot is
-	// harmless.
-	PPCRecompiler_setSurvivedFirstEntryCallback(ios_jit_survived_boot);
+	if (!ios_jit_arm_sentinel())
+		return false;
+	// Only now: a probe whose sentinel could not be written returns false above and the
+	// caller forces the interpreter, so it must not be remembered as a pass.
+	g_jitProbePassed.store(true);
 
 	cemuLog_log(LogType::Force,
 		"JIT check: PASSED - executable pages are available and CS_DEBUGGED is set (cs_flags 0x{:08x}), so the "
@@ -948,6 +970,29 @@ void ios_jit_survived_boot()
 	std::filesystem::remove(g_jitSentinelPath, ec);
 	cemuLog_log(LogType::Force,
 		"JIT check: a title launched with the recompiler enabled - clearing the crash sentinel.");
+}
+
+// The sentinel is armed by ios_jit_is_permitted(), which runs inside
+// cemu_bridge_initialize() - before the app has had a chance to say whether the user
+// even wants the recompiler. GameManager applies that toggle afterwards, through
+// cemu_bridge_set_recompiler_enabled(), and its default is OFF. So on any launcher
+// that passes the probe (StikJIT, SideStore, LiveContainer) the ordinary sequence was:
+// probe passes -> sentinel written -> recompiler force-disabled by setting ->
+// PPCRecompiler_init() never generates code -> the survived-first-entry callback,
+// the only thing that clears the sentinel, never fires. The next launch of the same
+// build then found the sentinel and reported "this build enabled the recompiler and
+// did not survive it", which never happened - and from then on refused the
+// recompiler even after the user turned the toggle on, until they deleted the file
+// by hand or a new build shipped. A boot the recompiler never takes part in is not a
+// boot the sentinel can say anything about, so take it back down.
+void ios_jit_disarm_sentinel_recompiler_off()
+{
+	if (!g_jitSentinelArmed.exchange(false))
+		return;
+	std::error_code ec;
+	std::filesystem::remove(g_jitSentinelPath, ec);
+	cemuLog_log(LogType::Force,
+		"JIT check: the recompiler is turned off in settings, so this boot will not test it - clearing the crash sentinel armed by the probe.");
 }
 
 }  // namespace
@@ -1101,6 +1146,28 @@ bool cemu_bridge_geometry_shader_emulation_enabled(void) {
 #endif
 }
 
+void cemu_bridge_set_stretch_to_fill(bool enabled) {
+#if defined(CEMU_CORE_AVAILABLE)
+    // Drives the engine's own fullscreen_scaling, which is what actually letterboxes:
+    // LatteRenderTarget_getScreenImageArea() branches on it to size the output blit,
+    // kKeepAspectRatio fitting 1280x720 inside the window and kStretch filling it. Not a
+    // new mechanism - this is the same config value desktop's "Fullscreen scaling" radio
+    // box and Android's setFullscreenScaling() both set.
+    //
+    // This function has now gone missing from this file TWICE - once when a wholesale
+    // `git checkout <branch> -- CemuBridge.mm` replaced the file with an older snapshot,
+    // and again when the whole engine was reset to commit ea2d6e05 (a commit that
+    // predates this function entirely). Both times the header still declared it, so the
+    // failure surfaced as a LINKER error in Xcode, not a local compile error - nothing
+    // that runs on this laptop catches a declaration with no definition. If this file is
+    // ever reset to an older commit again, check `comm -23 <(grep cemu_bridge_ App/*.swift)
+    // <(grep cemu_bridge_ CemuBridge.mm)` before assuming the reset is safe.
+    GetConfig().fullscreen_scaling = enabled ? (sint32)kStretch : (sint32)kKeepAspectRatio;
+#else
+    (void)enabled;
+#endif
+}
+
 void cemu_bridge_set_vsync_enabled(bool enabled) {
 #if defined(CEMU_CORE_AVAILABLE)
     g_metal_vsyncEnabled.store(enabled, std::memory_order_relaxed);
@@ -1120,6 +1187,33 @@ bool cemu_bridge_vsync_enabled(void) {
 void cemu_bridge_set_recompiler_enabled(bool enabled) {
 #if defined(CEMU_CORE_AVAILABLE)
     PPCRecompiler_setForceDisabled(!enabled);
+    // Keep the crash sentinel and the reported CPU mode in step with what this boot
+    // will actually run. The probe in cemu_bridge_initialize() armed the sentinel and
+    // reported "recompiler" before this toggle was known; with the toggle off, neither
+    // is true for the boot that follows, and a sentinel left armed here is read by the
+    // next launch as a crash that never happened (see
+    // ios_jit_disarm_sentinel_recompiler_off()). With the toggle back on, and only if
+    // the probe passed, arm it again so a recompiler boot is never run unrecorded.
+    if (!enabled)
+    {
+        ios_jit_disarm_sentinel_recompiler_off();
+        if (g_cpuMode.load() == kCpuModeRecompiler)
+        {
+            g_cpuMode.store(kCpuModeInterpreter);
+            setCpuModeDetail("The recompiler is permitted on this launch but turned off in settings, so "
+                "the interpreter is running. Turn it on in Settings to use it.");
+        }
+    }
+    else if (g_jitProbePassed.load() && ios_jit_arm_sentinel())
+    {
+        if (g_cpuMode.load() == kCpuModeInterpreter)
+        {
+            g_cpuMode.store(kCpuModeRecompiler);
+            setCpuModeDetail("Executable pages are available and CS_DEBUGGED is set, so the PPC "
+                "recompiler is enabled for this boot. This is not a known-good path; if the boot does "
+                "not survive, the crash sentinel makes the next launch fall back to the interpreter.");
+        }
+    }
 #else
     (void)enabled;
 #endif
