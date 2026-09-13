@@ -8,6 +8,34 @@ name: Build iOS Core (bring-up)
 # compiler/linker error to fix on the road to booting a title (see ROADMAP.md M1).
 # Full logs are uploaded as an artifact every run. vcpkg deps are cached across
 # runs via the GitHub Actions cache so only the first run pays the full dep cost.
+#
+# JIT SMOKE GATE — investigated, not added, and here is why:
+#
+# The JIT capability probe (CemuBridge.mm) was fixed to test what iOS arm64 actually
+# grants and has never run on a device or in CI. A Mac CI runner cannot stand in for
+# that: it doesn't have the iOS MAP_JIT/CS_DEBUGGED story an on-device TrollStore/
+# SideStore JIT enabler provides, so a green run here would prove nothing about the
+# probe and would be worse than no gate at all — a false "JIT verified" signal.
+#
+# What COULD be a real, host-side gate is a standalone PowerPC conformance/differential
+# harness: run a sequence through the interpreter and the AArch64 recompiler on desktop
+# x64 and diff architectural state. Searched for one across this tree (working copy,
+# `main`, `origin/main`) and its full git history: `RecompilerTests.cpp/.h` existed
+# upstream (Cemu proper) but was deleted by upstream in "cleanup code" (8c741580,
+# 2025-02-08) — years before this fork's iOS-specific work began — and nothing replaced
+# it. No CMakeLists.txt in this tree has add_test/enable_testing or any target that
+# builds such a harness; grepping for differential/conformance/harness/"architectural
+# state" turns up nothing else. There is currently no such harness to wire in.
+#
+# So: no step is added here. A step that runs on a Mac runner and calls itself a JIT
+# smoke test without exercising real iOS JIT grants, or that "diffs" nothing because
+# there is no harness to run, would be exactly the shape the previous crash (a code
+# path nobody actually exercised, reported as fine) already burned this project on.
+# Building the harness is real work — a small standalone target (interpreter + AArch64
+# recompiler + a corpus of instruction sequences + a state-diff routine), buildable for
+# desktop x64 without touching MetalRenderer.cpp/MetalPipelineCompiler.cpp/CemuBridge.mm/
+# PPCTimer.cpp/PPCState.h — and belongs in its own change, reviewed on its own, not
+# implied into existence by a CI step that references it.
 
 on:
   workflow_dispatch: {}
