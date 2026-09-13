@@ -1,64 +1,51 @@
-# Cemu iOS — Honest Status
+# Status
 
-_Last full inspection: 2026-08-10; amended 2026-08-18 for the bundled-data-files change only (the rest of the file has not been re-inspected since the 10th). This file describes what the code **actually does today**, not what it's meant to do. If something here is wrong, the code changed — fix this file._
+A retail Wii U game runs end to end, at playable speed, rendering correctly, on an iPad Pro
+A12Z (iPad8,11, iOS 26.6.1). The game is FAST Racing NEO — installed, launched, played.
 
-## TL;DR
+## Engine
 
-**A title now boots and runs on device. Nobody has seen a frame yet.** The genuine upstream Cemu C++ core compiles for `arm64-apple-ios`, the SwiftUI app links against it end-to-end and ships as an installable unsigned IPA, and as of the first device log that reached `------- Run title -------` the engine gets a homebrew RPX all the way through RPL link, the HLE export scan, module load and `LaunchForegroundTitle()`. M1 and M2 are done. M3 (Metal) is partly built: the native Metal renderer is wired to a real `CAMetalLayer`, and `IOSWindowSystem` reports real sizes/DPI/FPS instead of stubs — but no frame has been confirmed on screen, and until the logging added on 2026-08-10 the log could not even say whether the TV window ever presented one.
+Runs on the C++ PowerPC interpreter, the real upstream Cemu core compiled for
+`arm64-apple-ios`. Uses a predecoded instruction cache instead of re-decoding every
+instruction on each pass. Measured throughput: 50–190 MIPS.
 
-The last several weeks of commits are a black-screen/crash hunt on device — read `git log` for the trail, each commit message states the actual root cause it found. See `ROADMAP.md` for the gates.
+The ARM64 JIT recompiler is in the tree and compiles clean, but its capability probe has
+never succeeded on iOS. It has never executed a single instruction.
 
-This repo (`cemu-ios-muffin`) consolidates the two prior forks (`cemu-ios-playable`, `cemu-ios-a-chip`) onto the more advanced one (`playable`'s bridge-to-real-C++-engine strategy). `a-chip`'s from-scratch Swift reimplementation of the Latte-shader-to-MSL translator was not carried forward — it duplicated logic upstream Cemu already has in `HW/Latte/LegacyShaderDecompiler/LatteDecompilerEmitMSL.cpp`, which this repo's native Metal renderer already uses.
+## Renderer
 
-## What is real and verified
+Metal, wired to a real `CAMetalLayer`. Presents correctly on device.
 
-- **The real Cemu engine compiles for iOS arm64** (`libCemuCafe.a`, M1). Verified in CI, 410/410 objects, zero errors — Bitrise `build-ios-core` #3 (2026-07-19), and re-verified by every `Build iOS Core (bring-up)` run since (latest: GitHub Actions [30925927945](https://github.com/bward-dev1/cemu-ios-muffin/actions/runs/30925927945), 2026-08-04). This includes the ARM64 JIT recompiler backend, the C++ PPC interpreter, the full HLE OS stack, and the native Metal GPU renderer with its Latte-shader-to-MSL compiler.
-- **The app target links end-to-end and produces an installable IPA.** GitHub Actions `Build iOS App (M2)` — first green 2026-07-19 (run 29679018901), latest [30925953638](https://github.com/bward-dev1/cemu-ios-muffin/actions/runs/30925953638) (2026-08-04). `** BUILD SUCCEEDED **`, real `Ld .../Cemu.app/Cemu`, a compiled `default.metallib`, plus an unsigned `Payload/Cemu.app` IPA and a dSYM as artifacts. Not code-signed (CI runs `CODE_SIGNING_ALLOWED=NO`); SideStore/AltStore re-sign at install.
-- **`CEMU_CORE_AVAILABLE` is genuinely defined**, so `src/ios/Bridge/CemuBridge.mm` calls the real `CafeSystem`, not the honest-stub path. `cemu_bridge_core_available()` compiles to `return true`.
-- **A real iOS platform seam exists**: `src/gui/iosgui/IOSWindowSystem.cpp` implements Cemu's actual `WindowSystem` interface. Window size, physical size, DPI scale and the frame-rate readout are real; input/error-dialog/game-list hooks are still no-ops.
-- **The app has been run on device.** That is how the last ~15 commits' root causes were found (JIT alloc at static init, `PPCTimer_init()` never called, a `MetalLayerHandle` double-release, a zero-sized `CAMetalLayer`, a `fmt` null-pointer abort). Those are real crashes that were really diagnosed and really fixed.
-- **A title boots and runs.** The first device log to get past those fixes contains, in order: the RPL link time, the HLE export scan, `Loaded module 'helloworld (1)'`, the `------- Active settings -------` block, and `------- Run title -------`. That last line is emitted from `cemu_initForGame()` *after* `Latte_Start()` has already returned, i.e. the GPU thread finished initializing and `LaunchForegroundTitle()` handed control to the title thread. This is M2's exit test, met.
-- **The PPC interpreter is what executes, single-core.** `cemu_bridge_initialize()` calls `LaunchSettings::SetForceInterpreter(true)`, which makes `PPCRecompiler_init()` return before `ppcRecompilerEnabled` is ever set, and makes `_LaunchTitleThread()` take the `OSSchedulerBegin(1)` branch. **The ARM64 JIT is not being exercised at all**, so nothing about it — including whether a sideloaded process can get `PROT_EXEC` memory — has been tested. The device log used to contradict itself here (`Recompiler disabled…` followed by `CPU-Mode: Multi-core recompiler`) because `InfoLog_PrintActiveSettings()` printed the *config* value and ignored the override; fixed 2026-08-10 so the line reports the mode that runs.
+GPUs without mesh shader support (A12Z and similar) emulate geometry shaders and RECTS
+primitives with compute passes. The same GPUs don't decode BC textures in hardware, so
+BC1–BC5 textures are decompressed on the CPU with NEON.
 
-- **Logging works, and is what produced all of the above.** Two sinks: `Documents/log.txt` (Files-visible via `UIFileSharingEnabled`) and, as of 2026-08-10, `os_log` under subsystem `com.cemu.ios` so the boot can be watched live. Formatted log lines only started working on iOS on 2026-08-03; before that every line with `{}` arguments was silently dropped, which matters when reading any older device log. Separately, `Documents/CemuCrashLog.txt` carries synchronous checkpoint/signal-handler output.
-- **The TV window's `CAMetalLayer` exists.** Not asserted — deduced from the log. `Latte_ThreadEntry()` calls `DrawEmptyFrame(true)` before anything touches the pad window, so a missing TV layer would have logged `mainWindow=true` first. What the log carries instead is `mainWindow=false`, twice. Whether a drawable was then presented, and whether it reached the glass, is the open question below.
+## Distribution
 
-## Written but NOT verified (the honest middle ground)
+Two IPAs per release:
+- Ad-hoc signed, for TrollStore.
+- Unsigned, for SideStore / AltStore / LiveContainer.
 
-Everything here is implemented against the real API and compiles. None of it has been demonstrated to do its job on a device.
+Source feeds at kiddreads.github.io/cemu-ios-muffin/apps.json and /trollstore.json.
 
-- **Cemu's own data files in the app bundle (2026-08-18).** Until now `src/ios/project.yml` copied only `src/ios/Resources`, so neither `bin/resources/sharedFonts` (26 MB of Wii U system fonts) nor `bin/gameProfiles/` (944 KB of per-title `.ini` workarounds) reached `Cemu.app` — and `cemu_bridge_initialize()` passed `Documents/mlc` as `ActiveSettings`' *data* path as well as its user-data path, so a bundled copy would not have been found even if one existed. Both halves are fixed: `ci/copy-bundle-data.sh` runs as a post-build script and stages the two trees at the layout `ActiveSettings::GetDataPath()`'s callers hardcode (`Cemu.app/resources/sharedFonts`, `Cemu.app/gameProfiles`), and the data path now points at the bundle. The wxWidgets translation catalogs under `bin/resources/<lang>/` are deliberately left out — their only reader is the wx GUI, which is excluded from the iOS target. What this should fix, once a device log confirms it: `Shared font CafeCn.ttf is not present` and the stub shared-data region it causes, and every per-title game profile silently resolving to the default (including the position-invariance setting `MetalRenderer::ResolvePositionInvariance()` reads at `Initialize()` for BOTW, Mario Kart 8 and others — a rendering-correctness setting, not just a compatibility one). `cemu_bridge_initialize()` now logs `iOS data path: … (shared fonts present: …, default game profiles present: …)` so the next device log says outright whether the copy landed. **Verified only that it builds; no device log has shown the new line yet.**
+31 app icons with matching themes, three premium (unlocked by code).
 
-- **Metal presentation.** The C++ renderer's `CAMetalLayer` is created as a sublayer of a real `UIView`, sized in points, and marked opaque. The markers that would settle whether a frame reaches the screen — `presented the first frame to the TV window (WxH pixels)`, and a `Scan buffer dropped` line if the title's frame has no window to go to — were added 2026-08-10 and have never been seen in a real log.
-- **The `dualScreen` display placement.** Written against the real UIKit API, compiles, and has never run with a display attached. The app also ships no external-display scene configuration, so `UIApplication.connectedScenes` is not expected to contain a scene for an external screen today and the router should land on `deviceMirrored` instead. Adding `UIApplicationSceneManifest` external-display roles plus a scene delegate is the follow-up that would make `dualScreen` reachable; it was not done blind, because it can break app launch and nothing here can be tested without a device. **Do not claim dual-screen works until a device log shows `placement=dualScreen`.**
-- **Display routing (`src/ios/App/DisplayRouter.swift`, 2026-08-10).** Which physical display each Wii U screen goes to is decided at runtime and re-decided on every screen connect/disconnect and scene activation, not sampled once at launch. Three placements, and the engine log always names the one in force:
-  - `deviceOnly` — no external display. Wii U TV screen on the device; GamePad screen not rendered.
-  - `deviceMirrored` — an external display is connected but the app has no `UIWindowScene` for it, which is what plain AirPlay/screen mirroring looks like from inside the app. TV screen stays on the device and reaches the TV through the mirror; GamePad screen not rendered.
-  - `dualScreen` — an external display *and* a scene for it. TV screen goes there, GamePad screen stays on the device. **Written, never exercised** — see below.
+iOS 15+, iPhone and iPad, landscape. Current version 3.9; versions step by 0.1.
 
-  "Not rendered" means *no pad surface is registered at all*, never a surface that fails. `MetalRenderer::IsPadWindowActive()` is exactly "the pad layer exists", and as of 2026-08-10 every renderer entry point that can touch the pad window tests it first (`SwapBuffers`, `DrawEmptyFrame`, `ClearColorbuffer`, `BeginFrame`, `ImguiBegin`, `DrawBackbufferQuad`) — the same test the Latte core's GX2 scan-buffer path always applied. `AcquireDrawable` finding no layer is now a bug marker, not a routine event. That is what the two `mainWindow=false` lines in the first successful device log were, and they were misleading twice over: worded as failures, and `cemuLog_logOnce()` keys its one-shot flag on the *call site*, so the pad window (with no layer from the very first frame) permanently silenced the TV window's own reporting. Both fixed; the flags are per-window now.
+## Not yet confirmed
 
-  Moving the TV screen between displays **reparents the hosting `UIView`** rather than rebuilding its `CAMetalLayer` — the GPU thread's bare pointer stays valid and there is no teardown to race. Only a resize crosses the bridge. The one place a layer really is destroyed, dropping the pad surface when its display goes away, is deferred to the GPU thread's next frame boundary (`MetalRenderer::RequestPadLayerRelease`).
+- Audio — backend initializes, no sound confirmed on device.
+- Controller input — basic response only, not tested systematically.
+- The recompiler — untested, has never run.
+- Compatibility — unmeasured beyond the one confirmed game.
 
-## What is fake / non-functional (do not trust)
+## Milestones
 
-- **The archived docs in `docs/_archive_original_claims/`** (`DELIVERY_COMPLETE.md`, `IMPLEMENTATION_COMPLETE.md`, `PHASE*_FINAL_STATUS.md`, the "benchmarks" in the old optimization guide, etc.) describe a finished product that does not exist. They are kept only for history. **Do not treat any of them as accurate.**
-- **`src/ios/Rendering/MetalRenderer.swift` and `MetalView.swift`'s macOS path** are placeholder MTKView renderers with nothing to draw: they consume `GameManager.getFrameTexture()`, which always returns nil and correctly so — the C++ renderer presents into its own layer and never hands a texture back. Dead weight, not a feature.
-- **The on-screen controller skins** are drawn and selectable, but `OptimizedControlPanel`'s `onDPadInput`/`onButtonInput` callbacks are empty closures. Nothing is wired to Cemu's input layer (that is M4).
-- **No audio backend exists** (also M4).
-
-## Hard external constraints (not code problems — reality)
-
-1. **JIT.** Cemu has a real **ARM64** recompiler backend (`src/Cafe/HW/Espresso/Recompiler/BackendAArch64`) and it compiles clean for iOS. iOS still blocks JIT for normal apps — you need SideStore/AltStore/TrollStore + a JIT-enable step. _(Device side is handled: the target iPad Pro has JIT enabled via SideStore/LiveContainer.)_ It is currently force-disabled anyway (see above). Whether it *works* on iOS is untested.
-2. **GPU.** No MoltenVK needed. Cemu ships a **native Metal renderer** (`src/Cafe/HW/Latte/Renderer/Metal/`), which is what this fork builds; Vulkan and OpenGL are excluded from the iOS target entirely.
-3. **Performance.** Wii U emulation on an A-/M-series chip will be slow on the interpreter. Getting from "boots" to "playable" is its own mountain.
-
-## Things that look wrong in a device log but are not
-
-- **`.../Documents/Data/Application/<UUID>/Documents/mlc/mlc01`.** The `Documents/…/Documents` nesting is the host container, not double construction: `GameManager` asks `FileManager` for the app's Documents directory, and under LiveContainer that is itself a folder inside LiveContainer's own Documents. The only path this repo builds is `<Documents>/mlc` (passed to `ActiveSettings::SetPaths()` as the user-data root) plus Cemu's own `mlc01` subfolder, since `GetMlcPath()` is `GetUserDataPath("mlc01")`. One construction, not two. Passing that same path as the *data* path is a real (separate) problem — see the data-files bullet above.
-- **`couldn't initialize SDL`, every audio backend unsupported, `can't initialize tv audio: failed to find selected device`.** There is no iOS audio backend yet; that is M4. Expected, not a regression.
-- **`Shared font CafeCn.ttf is not present`** — **in any log captured before 2026-08-18.** `bin/resources/sharedFonts` was in the repo but not in the app bundle. Fixed on 2026-08-18 (see above); in a log from a build after that date this line is a real regression, so check the `iOS data path:` line first — it reports whether the fonts made it into the bundle.
-
-## Bottom line
-
-Treat this as **"real engine, real app binary, a title that runs, and no picture."** M2 is met. The whole of M3 now rests on one question the next device log should answer outright: does `MetalRenderer: presented the first frame to the TV window (…)` appear? If it does, the engine is presenting and the problem is where that layer sits on screen. If it does not, look for `Scan buffer dropped` and `GX2SwapScanBuffers() reached for the first time` — between them they say whether the title ever produced a frame at all.
+- M1 — core compiles for iOS arm64. Done.
+- M2 — boots a title to its entry point. Done.
+- M3 — renders a frame via Metal. Done — a full game renders correctly and runs at playable
+  speed.
+- M4 — input + audio. Partial. Controller responds at a basic level; audio backend
+  initializes but no sound confirmed.
+- M5 — actually playable. Met for one game. Broader compatibility, performance, and
+  stability work is still ahead — see ROADMAP.md.
