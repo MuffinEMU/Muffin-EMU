@@ -81,13 +81,22 @@ static float dequantize(uint32 data, sint32 type, uint8 scale)
 		f = (float)(sint8)data;
 		f *= LD_SCALE[scale];
 		break;
-	case 7: // float
+	case 7: // s16
+		// NOT float, despite what this label used to say. The quantisation type table is
+		// listed above PPCInterpreter_PSQ_ST in PPCInterpreterLoadStore.hpp: 4=u8, 5=u16,
+		// 6=s8, 7=s16, 0=float32. Type 7 is the signed halfword, and the code below has
+		// always done the right thing - only the comment was wrong, which is exactly the
+		// kind of thing that gets "fixed" into a real bug later.
 		f = (float)(sint16)data;
 		f *= LD_SCALE[scale];
 		break;
 	case 0:
 	default:
-		f = *((float *)&data);
+		// reinterpret the 32 bits as a float. This was `*((float*)&data)`, which reads a
+		// uint32 object through a float lvalue - undefined behaviour under the strict
+		// aliasing rules, and this tree is built at -O2 with no -fno-strict-aliasing to
+		// disarm them. std::bit_cast is the same single register move with no UB.
+		f = std::bit_cast<float>(data);
 		// scale does not apply when loading floats
 		break;
 	}
@@ -126,8 +135,11 @@ static uint32 quantize(float data, sint32 type, uint8 scale)
 		break;
 	case 0: // float
 	default: 
-		// scale does not apply when storing floats
-		*((float*)&val) = data; 
+		// scale does not apply when storing floats.
+		// same reasoning as the load side in dequantize(): this was `*((float*)&val) = data`,
+		// which writes a uint32 object through a float lvalue. std::bit_cast is the identical
+		// bit pattern without the aliasing violation.
+		val = std::bit_cast<uint32>(data);
 		break;
 	}
 	return val;

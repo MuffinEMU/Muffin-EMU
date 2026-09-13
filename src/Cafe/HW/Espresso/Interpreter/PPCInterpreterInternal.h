@@ -2,6 +2,23 @@
 
 #include "Cafe/HW/Espresso/PPCState.h"
 
+#include <type_traits>
+
+// Every interpreter instruction handler has this shape, and PPCInterpreterImpl.cpp now stores
+// pointers of this type in its predecoded instruction cache instead of re-walking the decode
+// switch on every execution. Declared here rather than locally because it is a contract about
+// the whole handler set, which is spread across PPCInterpreterOPC/FPU/PS.cpp and the .hpp files
+// included into the interpreter template: a handler that does not match this signature cannot be
+// dispatched, and the compile error should point at something that says so.
+using PPCInstructionHandler = void(*)(PPCInterpreter_t*, uint32);
+
+// A handful of handlers - the paired-single quantised load/stores - spell their operand as
+// `unsigned int` rather than uint32. Those are the same type on every target this project builds
+// for, and an implicit conversion papers over the difference at a CALL site, but function POINTER
+// types have to match exactly. Asserted so that a toolchain where they diverge fails the build
+// loudly here instead of failing to dispatch somewhere much less obvious.
+static_assert(std::is_same_v<uint32, unsigned int>, "interpreter handler pointers require uint32 and unsigned int to be the same type");
+
 // SPR constants
 #define SPR_XER		1	
 #define SPR_LR		8	
