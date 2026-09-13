@@ -290,58 +290,24 @@ static void PPCTimer_republishAnchor(bool resetToZero)
 		cemuLog_log(LogType::Force, "Emulated timebase: multiplier does not fit 64 bits at a counter frequency of {} Hz - the guest clock would run at the wrong rate", freq);
 	}
 	const uint64 mulFixed = (uint64)scaled;
-	const uint8 newShift = ActiveSettings::GetTimerShiftFactor();
-
-	// Everything that does not depend on the counter happens FIRST, and the counter is read
-	// as late as it can be, immediately before publication.
-	//
-	// The counter used to be sampled up here, before the shift read, before the carry
-	// arithmetic and before this allocation - and only then exchanged in. Real time keeps
-	// moving across all of that. A reader using the OLD anchor during that window derives a
-	// tick from a LATER counter value than the one the new anchor is about to claim
-	// corresponds to carriedTick, so at the instant of publication the guest clock could
-	// step BACKWARDS. That is the exact hazard the monotonicity guard below exists to catch,
-	// reintroduced upstream of it by the order of two statements. A heap allocation is an
-	// unbounded amount of time to leave in that gap.
-	auto* fresh = new TimebaseAnchor{0, 0, mulFixed, newShift};
-
 	const uint64 now = __rdtsc();
 
 	uint64 carriedTick = 0;
-	// Seeded with newShift so that the very first publish - which has no previous anchor to
-	// compare against - is not reported as a rate change.
-	uint8 previousShift = newShift;
-	if (TimebaseAnchor* previous = s_timebaseAnchor.load(std::memory_order_acquire))
+	if (!resetToZero)
 	{
-		previousShift = previous->shift;
-		if (!resetToZero)
+		if (TimebaseAnchor* previous = s_timebaseAnchor.load(std::memory_order_acquire))
 		{
 			const uint64 delta = now - previous->cntAtAnchor;
 			carriedTick = previous->tickAtAnchor + (PPCTimer_guestTicks(delta, previous->mulFixed) >> previous->shift);
 		}
 	}
 
-	fresh->cntAtAnchor = now;
-	fresh->tickAtAnchor = carriedTick;
+	auto* fresh = new TimebaseAnchor{now, carriedTick, mulFixed, ActiveSettings::GetTimerShiftFactor()};
 	TimebaseAnchor* old = s_timebaseAnchor.exchange(fresh, std::memory_order_acq_rel);
 	if (old)
 		s_retiredAnchors.push_back(old);
 
 	s_anchorWriteLock.unlock();
-
-	// Outside the lock, because it is file I/O and the readers of this anchor are three
-	// interpreter cores and the GPU thread.
-	//
-	// Logged at Force because the rate at which the guest believes time passes is the single
-	// setting that most changes how a title behaves, and until now a change to it was
-	// invisible here - see PPCTimer_getFromRDTSC_fast() for how changes were being dropped
-	// altogether. A run whose log does not say which rate was actually in force cannot be
-	// compared against another run.
-	if (previousShift != newShift)
-	{
-		cemuLog_log(LogType::Force, "Emulated timebase: guest clock rate now shift {} ({:.4g}x real time), was shift {} ({:.4g}x). The tick was carried across, so it did not jump.",
-			newShift, 8.0 / (double)(1u << newShift), previousShift, 8.0 / (double)(1u << previousShift));
-	}
 }
 
 void PPCTimer_onTimerShiftFactorChanged()
@@ -354,79 +320,16 @@ void PPCTimer_onTimerShiftFactorChanged()
 static uint64 PPCTimer_getFromRDTSC_fast()
 {
 	TimebaseAnchor* anchor = s_timebaseAnchor.load(std::memory_order_acquire);
-	// THE TIMER SHIFT WAS BEING IGNORED ENTIRELY ON ARM64, AND THIS IS WHERE IT WAS LOST.
-	//
-	// The shift is captured into the anchor when the anchor is published, which is what makes
-	// the read below lock-free - the anchor's fields never change. The consequence is that a
-	// change to the setting only reaches the guest if something republishes.
-	// PPCTimer_onTimerShiftFactorChanged() exists for exactly that and had ZERO callers in the
-	// whole tree: ActiveSettings::SetTimerShiftFactor() writes the byte and returns. So on
-	// arm64 - the only path iOS ever takes - every shift change after PPCTimer_start() was
-	// silently discarded. The iOS automatic clock ladder walked the setting 3 -> 4 -> 5 -> 6,
-	// logging each step, while the live clock stayed at whatever shift the title had started
-	// with; the manual speed picker did nothing at all. A device log annotated
-	// "Emulated timebase: shift 6 (0.125x real time)" was describing a console still running
-	// its clock at 1x, which quietly invalidates any conclusion drawn from that run about
-	// whether slowing the guest clock helps.
-	//
-	// Checked on the read path rather than left to the notifier, because a notifier that
-	// nobody calls is precisely how this got lost, and the next person will not remember to
-	// call it either. The read path cannot forget.
-	//
-	// The cost is one load of the setting plus a branch that predicts perfectly, against an
-	// mrs cntvct_el0, an acquire load and a 128-bit multiply that this function already does -
-	// and note that the legacy implementation below reads the very same setting on every
-	// single call and was never thought expensive for it. A few cycles here buys a control
-	// that actually controls something.
-	if (!anchor || anchor->shift != ActiveSettings::GetTimerShiftFactor()) [[unlikely]]
+	if (!anchor) [[unlikely]]
 	{
-		// resetToZero only when there is no anchor at all. A shift change must CARRY the
-		// current tick into the new anchor rather than rebase it: the guest timebase is
-		// monotonic, and a title that saw it jump backwards would compute negative elapsed
-		// times for everything it is part-way through animating.
-		PPCTimer_republishAnchor(anchor == nullptr);
+		PPCTimer_republishAnchor(true);
 		anchor = s_timebaseAnchor.load(std::memory_order_acquire);
 		if (!anchor)
 			return 0;
-		// If two threads both saw the mismatch, both republished; the write lock serialises
-		// them and the second carries forward from the first, so the result is still monotonic
-		// and still correct.
 	}
 	// cntvct_el0 is monotonic, so this subtraction cannot go negative and needs no clamp.
-	uint64 delta = __rdtsc() - anchor->cntAtAnchor;
-	uint64 tick = anchor->tickAtAnchor + (PPCTimer_guestTicks(delta, anchor->mulFixed) >> anchor->shift);
-	// Guards against a hazard that only becomes reachable now that anchors are republished
-	// while guest code is running, and that the original code never had to face because
-	// nothing ever republished after PPCTimer_start().
-	//
-	// A replacement anchor carries tick = oldCurve(publishTime). If we loaded an anchor, were
-	// then descheduled - iOS will do that to a thread at any instruction - and read the
-	// counter after that anchor had already been retired, our result follows the OLD curve
-	// past the point where the new one took over. At a lower shift the old curve rises faster,
-	// so the value we would hand back can sit AHEAD of everything the new anchor will produce,
-	// and the guest's timebase would appear to step backwards on its next read. Titles compute
-	// frame deltas as unsigned subtractions of this value; a backwards step there does not
-	// read as a small error, it reads as an enormous one.
-	//
-	// A relaxed load is the right tool: nothing is dereferenced through it, it is only asked
-	// whether the pointer we already used is still the live one.
-	//
-	// One redo, deliberately not a loop. It is enough to be reading a live anchor unless the
-	// shift is being changed as fast as the timebase is read, which nothing does - the
-	// automatic ladder steps every twelve seconds and the manual picker is a person - and an
-	// unbounded retry on a path that three interpreter cores and the GPU thread hit constantly
-	// is a worse failure mode than a reading a few hundred nanoseconds stale. What remains
-	// after this is a window the width of one republish (a lock, a 128-bit divide, an
-	// allocation), not the width of a scheduling quantum.
-	if (s_timebaseAnchor.load(std::memory_order_relaxed) != anchor) [[unlikely]]
-	{
-		anchor = s_timebaseAnchor.load(std::memory_order_acquire);
-		// Non-null by construction: the only transition to a non-null anchor is one-way, and
-		// the branch above already returned for the null case.
-		delta = __rdtsc() - anchor->cntAtAnchor;
-		tick = anchor->tickAtAnchor + (PPCTimer_guestTicks(delta, anchor->mulFixed) >> anchor->shift);
-	}
-	return tick;
+	const uint64 delta = __rdtsc() - anchor->cntAtAnchor;
+	return anchor->tickAtAnchor + (PPCTimer_guestTicks(delta, anchor->mulFixed) >> anchor->shift);
 }
 
 #endif // __aarch64__

@@ -80,42 +80,6 @@ namespace coreinit
 	SysAllocator<OSThreadQueue, 3> g_coreRunQueue;
 	CounterSemaphore g_coreRunQueueThreadCount[3];
 
-	// Second, timed wake-up channel, used only by the main core's idle wait.
-	//
-	// g_coreRunQueueThreadCount above already carries one - CounterSemaphore owns a
-	// condition variable - and the non-main cores park on it directly. The main core
-	// cannot: waitUntilNonZero() is untimed, and that core owes guest alarms and AX audio
-	// a tick even when nothing at all is runnable (the long explanation is at the wait in
-	// __OSThreadCoreIdle). decrementWithWaitAndTimeout() is no good either, because it
-	// consumes a count that belongs to the run queue. Hence a channel of its own, declared
-	// next to the counter it shadows so the two are read together.
-	//
-	// g_idleWakeSeq is what turns "a thread became runnable while I was deciding to sleep"
-	// from a lost wakeup into a detected one: the waiter samples it before it re-checks the
-	// run queues, so any queueing that races with that decision either shows up in the
-	// re-check or moves the sequence. It is bumped while holding g_idleWakeMtx so a waiter
-	// that has already evaluated its predicate is woken rather than missed.
-	std::mutex g_idleWakeMtx;
-	std::condition_variable g_idleWakeCv;
-	std::atomic<uint64> g_idleWakeSeq{0};
-
-	// Call AFTER the run-queue counters have been incremented, never before - the waiter's
-	// sample-then-re-check ordering in __OSThreadCoreIdle() depends on that.
-	//
-	// Lock order is scheduler lock -> g_idleWakeMtx and never the reverse: the idle loop
-	// always releases the scheduler lock before it waits, so this is safe to call with the
-	// scheduler lock held, which is where every caller happens to be. One uncontended mutex
-	// per thread-wake is not free, but it is what buys a waiter that does not have to poll,
-	// and it is nothing against the 6.2 million polls a second it replaces.
-	void __OSNotifyRunQueueChanged()
-	{
-		{
-			std::lock_guard lk(g_idleWakeMtx);
-			g_idleWakeSeq.fetch_add(1);
-		}
-		g_idleWakeCv.notify_all();
-	}
-
 	bool g_isMulticoreMode;
 
 	thread_local uint32 t_assignedCoreIndex;
@@ -844,7 +808,6 @@ namespace coreinit
 			return;
 		if (thread->suspendCounter != 0)
 			return;
-		bool queuedAnywhere = false;
 		for (sint32 i = 0; i < PPC_CORE_COUNT; i++)
 		{
 			if (thread->currentRunQueue[i] != nullptr)
@@ -855,15 +818,7 @@ namespace coreinit
 			g_coreRunQueue.GetPtr()[i].addThread(thread, thread->linkRun + i);
 			thread->currentRunQueue[i] = (g_coreRunQueue.GetPtr() + i);
 			g_coreRunQueueThreadCount[i].increment();
-			queuedAnywhere = true;
 		}
-		// The increment above is enough to wake a non-main core, which is parked on that very
-		// semaphore. The main core sleeps on the separate timed channel instead, so it has to
-		// be told here - otherwise a thread signalled from another core waits out the idle
-		// timeout before it runs, and this is the path by which every OSSignalEvent,
-		// OSResumeThread and mutex release eventually reaches a runnable thread.
-		if (queuedAnywhere)
-			__OSNotifyRunQueueChanged();
 	}
 
 	void __OSRemoveThreadFromRunQueues(OSThread_t* thread)
@@ -1346,12 +1301,6 @@ namespace coreinit
 
 	Fiber* g_idleLoopFiber[3]{};
 
-	// Both are explained at the wait in __OSThreadCoreIdle() that uses them; the short
-	// version is "spin about as long as blocking would have cost" and "wake often enough
-	// that guest alarms and AX never notice".
-	constexpr uint32 kIdleSpinBudget = 32;
-	constexpr auto kIdleWakeTimeout = std::chrono::microseconds(250);
-
 	// idle fiber per core if no thread is runnable
 	// this is necessary since we can't block in __OSThreadSwitchToNext() (__OSStoreThread + thread switch must happen inside same scheduler lock)
 	void __OSThreadCoreIdle(void* unusedParam)
@@ -1370,10 +1319,6 @@ namespace coreinit
 		// ever reached at all. "idle spins 0" in the heartbeat with this line absent means
 		// the fiber switch above never delivered control.
 		cemuLog_log(LogType::Force, "Boot stage: core {} idle fiber running", coreIndex);
-		// Consecutive idle iterations in which no PPC thread took a timeslice. It gates the
-		// main core's timed wait below; why it is this counter and not
-		// g_coreRunQueueThreadCount is spelled out at the wait itself.
-		uint32 emptyRunQueueSpins = 0;
 		while (true)
 		{
 			// Counted before the run-queue check, so this ticks even on the iteration that
@@ -1381,7 +1326,6 @@ namespace coreinit
 			// with no runnable thread is alive but starved, which looks exactly like a dead
 			// core from every other counter in the emulator.
 			PPCCore_noteCoreIdleSpin();
-			bool ranGuestThread = false;
 			if (!g_coreRunQueueThreadCount[coreIndex].isZero()) // avoid hammering the lock on the main core if there is no runable thread
 			{
 				__OSLockScheduler();
@@ -1390,127 +1334,11 @@ namespace coreinit
 				{
 					cemu_assert_debug(nextThread->state == OSThread_t::THREAD_STATE::STATE_RUNNING);
 					__OSSwitchToThreadFiber(nextThread, coreIndex);
-					ranGuestThread = true;
 				}
 				__OSUnlockScheduler();
 			}
-			if (ranGuestThread)
-			{
-				// Reset on a thread actually getting a timeslice, not merely on the counter
-				// having been non-zero. The two come apart in exactly one place -
-				// OSSchedulerEnd() bumps every core's counter without queueing anything, to
-				// shake the cores loose - and resetting there would hold this loop in its hot
-				// phase for the whole of shutdown, the one moment it has nothing left to be
-				// hot for.
-				emptyRunQueueSpins = 0;
-			}
-			else if (isMainCore)
-			{
-				// Why the main core does not simply park the way the two below it do, and why
-				// it used to spin instead: this loop is the emulator's ONLY driver for guest
-				// timers and audio. __OSCheckSystemEvents() further down is the sole caller of
-				// coreinit::alarm_update() and snd_core::AXOut_update(), and there is no host
-				// timer thread behind either - coreinit_Alarm.cpp keeps a set and a
-				// soonest-fire tick and nothing else walks it. A main core parked on an untimed
-				// wait therefore stops every OSAlarm and every AX block submission until some
-				// other core happens to make a thread runnable.
-				//
-				// So it was left as a bare spin: PPCCore_noteCoreIdleSpin() and
-				// __OSCheckSystemEvents() back to back, as fast as the host allows, for as long
-				// as the title leaves this core with nothing to run. There is a measurement of
-				// that now, from an iPad Pro (A12Z, iPadOS 26.6.1) running FAST Racing NEO: the
-				// heartbeat read 282,032,513 idle spins at 66s, +19,126,157 across one 3.1s
-				// interval. That is 6.2M iterations a second, ~160ns each - one whole
-				// performance core held at 100% re-reading a run-queue counter and a clock, on a
-				// fanless two-performance-core tablet, next to three PPC threads and a Latte
-				// thread that are all USER_INTERACTIVE and all want that core. It is also a
-				// plausible cause of the framerate swinging 21-61 FPS inside one scene: the die
-				// heats until iOS throttles it. Note that a std::this_thread::yield() here would
-				// not fix it - yield hands the core over only if something else is runnable at
-				// that instant and hands it straight back otherwise, so the loop still runs flat
-				// out and the die still heats.
-				//
-				// What replaces it: a bounded spin, then a real wait with a timeout.
-				//
-				// The spin stays because the common idle episode is short - a thread blocks on
-				// an event another core is about to signal - and a condition-variable round trip
-				// costs microseconds, worth avoiding when the answer arrives in one.
-				// kIdleSpinBudget iterations is ~5us at the 160ns/iteration the device
-				// measured, the same order as the sleep/wake it stands in for. Nothing about
-				// this core changes below that budget, __OSCheckSystemEvents() included, so
-				// short idle gaps behave exactly as they did.
-				//
-				// Past the budget the core blocks on g_idleWakeCv, which
-				// __OSAddReadyThreadToRunQueue() signals whenever a thread becomes runnable on
-				// any core. That is what keeps this from trading a spin for latency: a guest
-				// thread signalled from another core still starts on the next scheduler tick,
-				// not on the next timeout.
-				//
-				// The timeout exists only for the alarm/AX duty above - nothing signals that
-				// condition variable when all that has happened is that time passed.
-				// kIdleWakeTimeout sits well under the shortest cadence __OSCheckSystemEvents()
-				// feeds: AXOut_update() enforces a 1.7ms minimum spacing and aims for
-				// 2.9-3.0ms, so AX's own pacing still decides when audio blocks go out, and a
-				// guest alarm can be at most 250us late - a sixtieth of a 60Hz frame. The
-				// timeout's own cost while fully idle is ~4000 wakeups a second in place of 6.2
-				// million, comfortably under 1% of a core.
-				//
-				// Why this cannot stall a title: the sequence number is sampled before the run
-				// queues are re-checked, so a thread queued concurrently is caught either by
-				// the re-check or by the predicate - there is no lost-wakeup window. And
-				// because the wait is bounded anyway, a signal lost to some path nobody thought
-				// of costs 250us of latency, not a deadlock. In single-core mode (isMainCore is
-				// true for all three rotating core indices) the worst case is two timeouts,
-				// ~500us, because the index this iteration examined may not be the one the
-				// newly runnable thread has affinity for; still bounded, and single-core is not
-				// the mode the device above runs in.
-				//
-				// A regression here would look like audio glitching or underruns, or timers
-				// running visibly late, on a title that leaves this core idle - which is to say
-				// under light CPU load. That points at kIdleWakeTimeout specifically.
-				if (++emptyRunQueueSpins > kIdleSpinBudget)
-				{
-					const uint64 wakeSeq = g_idleWakeSeq.load();
-					// Deliberately NOT also gated on g_coreRunQueueThreadCount being zero.
-					//
-					// That counter is not the run-queue depth. OSSchedulerEnd() increments every
-					// core's copy without queueing anything, purely to shake paused cores loose
-					// at shutdown, and nothing ever takes those phantom counts back off. So from
-					// the SECOND title launch of a session onward every counter is permanently
-					// non-zero, isZero() never returns true, and a sleep gated on it never arms -
-					// the core silently returns to the 100% spin this whole change exists to
-					// remove, with nothing in any log to say so. Launch a game, go back, launch
-					// another, and the fix is gone. (Review caught exactly this on the first
-					// version of this change; it is written down here so it is not re-added.)
-					//
-					// emptyRunQueueSpins is the trustworthy signal: it counts consecutive
-					// iterations in which no thread actually took a timeslice, and it resets only
-					// when one does. If kIdleSpinBudget iterations in a row found no work, there
-					// is no work, whatever the counter claims.
-					{
-						std::unique_lock lk(g_idleWakeMtx);
-						g_idleWakeCv.wait_for(lk, kIdleWakeTimeout, [&wakeSeq]() {
-							return g_idleWakeSeq.load() != wakeSeq || !sSchedulerActive.load(std::memory_order::relaxed);
-						});
-					}
-					// Hold at the budget rather than resetting: once this core has gone to sleep
-					// once it should keep going to sleep until a thread actually runs, not spin
-					// up another kIdleSpinBudget iterations first. It also keeps the counter from
-					// ever wrapping on a long idle.
-					emptyRunQueueSpins = kIdleSpinBudget;
-				}
-			}
 			if (isMainCore)
 			{
-				// The same exit the non-main branch below has always had, which this core never
-				// did. It matters more now that this core can be asleep: OSSchedulerEnd() clears
-				// sSchedulerActive and bumps the run-queue counters to shake the cores loose, and
-				// the other two take it and leave, but an idle main core would find nothing
-				// runnable behind that bump and loop here forever with std::thread::join()
-				// waiting on it. In single-core mode this is the only core there is, so that is
-				// the whole shutdown. Costs one relaxed load per pass through the idle fiber.
-				if (!sSchedulerActive.load(std::memory_order::relaxed))
-					Fiber::Switch(*t_schedulerFiber); // switch back to original thread to exit
 				__OSCheckSystemEvents();
 				if(g_isMulticoreMode == false)
 					coreIndex = (coreIndex + 1) % 3;
@@ -1775,7 +1603,6 @@ namespace coreinit
 		sSchedulerActive.store(false);
 		for (size_t i = 0; i < Espresso::CORE_COUNT; i++)
 			g_coreRunQueueThreadCount[i].increment(); // make sure to wake up cores if they are paused and waiting for runnable threads
-		__OSNotifyRunQueueChanged(); // and the main core, which is not parked on those counters
 		// wait for threads to stop execution
 		for (auto& threadItr : sSchedulerThreads)
 			threadItr.join();
