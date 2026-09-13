@@ -370,6 +370,27 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
         // the passthrough entry point in that same shader's library is what reads it.
         if (m_emulateGeometryShader)
         {
+            // The vertex and geometry stages already ran as compute, before the render
+            // pass was even opened (see the comment on that dispatch in
+            // MetalRenderer::draw_execute) - so whatever this draw needed to produce,
+            // stream-out writes included, is already done. This render pipeline exists
+            // only to rasterize what the geometry kernel wrote, and with rasterization
+            // off there is nothing left for it to do.
+            //
+            // Building it anyway does not just waste the attempt - it cannot succeed.
+            // Metal requires a render pipeline whose rasterizationEnabled is false to
+            // have a void-returning vertex function, and the passthrough function below
+            // returns real vertex output for the rasterizer to read. Handing that to
+            // newRenderPipelineState() with rasterization off fails every time with
+            // "RasterizationEnabled is false but the vertex shader's return type is not
+            // void" - and on a title that uses geometry-shader stream-out (any
+            // rasterizer-discard draw with a geometry shader, which is what this branch
+            // is for), that is every frame the effect is active.
+            if (!m_rasterizationEnabled)
+            {
+                cemuLog_logOnce(LogType::Force, "Metal: a geometry-shader draw with rasterization disabled was fully handled by the compute emulation - no render pipeline needed for it");
+                return false;
+            }
             MTL::Function* passthrough = m_geometryShaderMtl ? m_geometryShaderMtl->GetPassthroughFunction() : nullptr;
             if (!passthrough)
             {

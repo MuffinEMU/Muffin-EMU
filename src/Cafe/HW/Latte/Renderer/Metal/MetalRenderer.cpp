@@ -1484,7 +1484,22 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     // Render pipeline state
     PipelineObject* pipelineObj = m_pipelineCache->GetRenderPipelineState(fetchShader, vertexShader, geometryShader, pixelShader, m_state.m_lastUsedFBO.m_attachmentsInfo, m_state.m_activeFBO.m_attachmentsInfo, m_state.m_activeFBO.m_fbo->m_size, count, LatteGPUState.contextNew);
     if (!pipelineObj->m_pipeline)
+    {
+        // On the emulateGeometryShader path, LatteStreamout_PrepareDrawcall() already ran
+        // above (before the render pass was even opened - see the comment there), and
+        // every OTHER early return in this function pairs it with FinishDrawcall before
+        // returning. This was the one exit that did not: a rasterizer-discard
+        // geometry-shader draw hits exactly this branch on every single frame it is
+        // issued (the compute stages that do its real work still ran; only the
+        // now-pointless render pipeline is missing), so the unpaired Prepare leaked
+        // whatever it holds open - on device, steadily, for as long as the effect using
+        // it stayed on screen, until iOS killed the process for memory. Calling Finish
+        // here is a no-op when Prepare was never called (it checks its own
+        // _transformFeedbackIsActive flag), so this is safe on every path through here,
+        // not only the one that broke it.
+        LatteStreamout_FinishDrawcall(m_memoryManager->UseHostMemoryForCache());
         return;
+    }
 
     if (pipelineObj->m_pipeline != encoderState.m_renderPipelineState)
    	{
