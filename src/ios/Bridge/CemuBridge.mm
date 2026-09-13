@@ -1509,6 +1509,22 @@ bool cemu_bridge_geometry_shader_emulation_enabled(void) {
 #endif
 }
 
+void cemu_bridge_set_stretch_to_fill(bool enabled) {
+#if defined(CEMU_CORE_AVAILABLE)
+    // Drives the engine's own fullscreen_scaling, which is what actually letterboxes:
+    // LatteRenderTarget_getScreenImageArea() (LatteRenderTarget.cpp:830) branches on it
+    // to size the output blit, kKeepAspectRatio fitting 1280x720 inside the window and
+    // kStretch filling it. Not a new mechanism - this is the same config value desktop's
+    // "Fullscreen scaling" radio box and Android's setFullscreenScaling() both set.
+    // Cast is explicit because fullscreen_scaling is a ConfigValue<sint32>, not a
+    // ConfigValue<FullscreenScaling> - the enum is unscoped and would convert anyway,
+    // but naming the stored type keeps the assignment unambiguous.
+    GetConfig().fullscreen_scaling = enabled ? (sint32)kStretch : (sint32)kKeepAspectRatio;
+#else
+    (void)enabled;
+#endif
+}
+
 void cemu_bridge_set_vsync_enabled(bool enabled) {
 #if defined(CEMU_CORE_AVAILABLE)
     g_metal_vsyncEnabled.store(enabled, std::memory_order_relaxed);
