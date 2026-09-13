@@ -78,26 +78,12 @@ void PPCInterpreter_MFCR(PPCInterpreter_t* hCPU, uint32 Opcode)
 	
 	// in our array: cr0.LT is entry with index 0
 	// in GPR: cr0.LT is in MSB
-	//
-	// Unrolled a nibble at a time rather than looped over all 32 bits. The bit-for-bit
-	// semantics are unchanged - each byte still contributes (byte != 0), NOT the byte itself,
-	// so this stays correct even if some writer ever leaves a value other than 0 or 1 in
-	// hCPU->cr[] despite the invariant PPCState.h asks for. What changes is only the shape:
-	// clang kept the 32-iteration form as a rolled loop of seven instructions per bit plus a
-	// loop branch each time (~224 instructions for one guest mfcr), and fully unrolls this
-	// one into loads and shifted ORs with no branch at all.
-	//
-	// Worth unrolling because mfcr is not rare: the ABI has no callee-saved condition
-	// register, so compiled code saves and restores CR around calls with mfcr/mtcrf, and
-	// GCC-built titles emit it constantly.
 	uint32 cr = 0;
-	for (uint32 i = 0; i < 32; i += 4)
+	for (sint32 i = 0; i < 32; i++)
 	{
-		cr = (cr << 4)
-			| ((uint32)(hCPU->cr[i + 0] != 0) << 3)
-			| ((uint32)(hCPU->cr[i + 1] != 0) << 2)
-			| ((uint32)(hCPU->cr[i + 2] != 0) << 1)
-			| ((uint32)(hCPU->cr[i + 3] != 0));
+		cr <<= 1;
+		if (ppc_getCRBit(hCPU, i) != 0)
+			cr |= 1;
 	}
 	hCPU->gpr[rD] = cr;
 	PPCInterpreter_nextInstruction(hCPU);

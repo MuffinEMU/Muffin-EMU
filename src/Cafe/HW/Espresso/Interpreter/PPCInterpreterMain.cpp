@@ -12,51 +12,12 @@ uint64 ppcCyclesSince2000 = 0;
 uint64 ppcCyclesSince2000TimerClock = 0;
 uint64 ppcCyclesSince2000_UTC = 0;
 
-// Allocates a standalone interpreter instance.
-//
-// Worth knowing before reading it: nothing in the tree calls this. The two instances that
-// actually execute guest code are members of larger objects - OSHostThread::ppcInstance for
-// the Cafe OS HLE path that retail titles run on, and PPCInterpreterLLEContext_t::cores[3]
-// for the LLE scheduler - and each of those supplies its own prefix area as a plain member
-// array (128 KiB, considerably more than the 0x6000 here). This function is kept because it
-// is the declared way to make an instance, but it is not on any hot path and has not been
-// exercised, so it is fixed rather than trusted.
-//
-// WHAT THE PREFIX AREA IS FOR: it is an x64-backend requirement, not a general one.
-// BackendX64 keeps the hCPU pointer in RSP (REG_RESV_HCPU == X86_REG_RSP), so anything that
-// pushes - a call out of recompiled code, the exception handler - writes to memory BELOW the
-// struct. The slack in front of it is what stops those writes landing in another
-// allocation. The aarch64 backend uses x29 for hCPU and has no such need, but the area is
-// allocated unconditionally because the struct layout must not differ between backends.
 PPCInterpreter_t* PPCInterpreter_createInstance(unsigned int Entrypoint)
 {
-	constexpr size_t prefixAreaSize = 0x6000;
-	constexpr size_t instanceAlignment = alignof(PPCInterpreter_t);
-	// The old body was malloc(...) + prefixAreaSize. That is no longer a correct allocator
-	// for this type: PPCInterpreter_t is now alignas(64) (see the layout comment in
-	// PPCState.h for why the alignment is load-bearing rather than cosmetic), and malloc
-	// only promises 16. An instance starting 16 or 32 bytes into a cache line makes every
-	// "these fields share one line" claim in that comment false, and reaching an
-	// over-aligned type through an under-aligned pointer is undefined behaviour besides.
-	static_assert(prefixAreaSize % instanceAlignment == 0, "offsetting past the prefix area must preserve the instance's alignment, or aligning the base buys nothing");
-	// Rounded up so that, if this ever allocates an array, element 1 is still line-aligned -
-	// the same property that stops two emulated cores sharing a line in the LLE context.
-	const size_t instanceSize = (sizeof(PPCInterpreter_t) + instanceAlignment - 1) & ~(instanceAlignment - 1);
-	uint8* baseAllocation;
-#if defined(_MSC_VER)
-	baseAllocation = (uint8*)_aligned_malloc(prefixAreaSize + instanceSize, instanceAlignment);
-#else
-	void* alignedAllocation = nullptr;
-	if (posix_memalign(&alignedAllocation, instanceAlignment, prefixAreaSize + instanceSize) != 0)
-		alignedAllocation = nullptr;
-	baseAllocation = (uint8*)alignedAllocation;
-#endif
-	// Previously a failed malloc was dereferenced immediately. Reporting the failure is the
-	// only honest option here, since the caller is the only code that knows whether running
-	// without a CPU instance is survivable.
-	if (!baseAllocation)
-		return nullptr;
-	PPCInterpreter_t* pData = (PPCInterpreter_t*)(baseAllocation + prefixAreaSize);
+	PPCInterpreter_t* pData;
+	// create instance
+	uint32 prefixAreaSize = 0x6000; // we need to allocate some bytes before the interpreter struct because the recompiler will use it as stack area (specifically when the exception handler is called)
+	pData = (PPCInterpreter_t*)((uint8*)malloc(sizeof(PPCInterpreter_t)+prefixAreaSize)+prefixAreaSize);
 	memset((void*)pData, 0x00, sizeof(PPCInterpreter_t));
 	// set instruction pointer to entrypoint
 	pData->instructionPointer = (uint32)Entrypoint;
