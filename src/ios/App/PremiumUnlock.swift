@@ -81,6 +81,7 @@ enum PremiumUnlock {
         "1a945ab350f3356a7ac68f69c6568e29429f8cfd67b5d5929b1f3dac013503cd",
         "17f6719b1e31212193b4356e77f241248dad80a49f1bf938d1010c3ca2bbc7aa",
         "d1cc7b7020654e58d2ca4051df6a85c506dae714039b9938801a5d30ac34e3b9",
+        "b76c370d93223d1abf9efc74ff92d971fab2fe1f24a4b5c7e88b70592a2f3df7",
     ]
 
     static var isUnlocked: Bool {
