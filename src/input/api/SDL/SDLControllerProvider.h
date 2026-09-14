@@ -67,5 +67,3 @@ private:
 
 	inline static std::unordered_map<SDL_JoystickID, MotionState> s_motion_states{};
 };
-
-#endif // HAS_SDL
