@@ -18,6 +18,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 		parser = new_parser;
 
 	// general settings
+    cpu_mode = parser.get("cpu_mode", cpu_mode.GetInitValue());
 	log_flag = parser.get("logflag", log_flag.GetInitValue());
 	cemuLog_setActiveLoggingFlags(GetConfig().log_flag.GetValue());
 	advanced_ppc_logging = parser.get("advanced_ppc_logging", advanced_ppc_logging.GetInitValue());
@@ -138,10 +139,15 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	userDisplayGamma = graphic.get("UserDisplayGamma", 2.2f);
 	if(userDisplayGamma < 0)
 		userDisplayGamma = 2.2f;
-	gx2drawdone_sync = graphic.get("GX2DrawdoneSync", true);
+	gx2drawdone_sync = graphic.get("GX2DrawdoneSync", false);
+	render_upside_down = graphic.get("RenderUpsideDown", render_upside_down.GetInitValue());
 	upscale_filter = graphic.get("UpscaleFilter", kBicubicHermiteFilter);
 	downscale_filter = graphic.get("DownscaleFilter", kLinearFilter);
 	fullscreen_scaling = graphic.get("FullscreenScaling", kKeepAspectRatio);
+	texture_resolution_scale = graphic.get("TextureResolutionScale", 1.0f);
+	if (texture_resolution_scale.GetValue() < 0.5f || texture_resolution_scale.GetValue() > 2.0f)
+		texture_resolution_scale = 1.0f;
+	precompiled_shaders = graphic.get("PrecompiledShaders", precompiled_shaders.GetInitValue());
 	async_compile = graphic.get("AsyncCompile", async_compile);
 	vk_accurate_barriers = graphic.get("vkAccurateBarriers", true); // this used to be "VulkanAccurateBarriers" but because we changed the default to true in 1.27.1 the option name had to be changed
 #ifdef ENABLE_METAL
@@ -155,6 +161,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 		overlay.text_color = overlay_node.get("TextColor", 0xFFFFFFFF);
 		overlay.text_scale = overlay_node.get("TextScale", 100);
 		overlay.fps = overlay_node.get("FPS", true);
+        overlay.cpu_mode = overlay_node.get("CPUMode", true);
 		overlay.drawcalls = overlay_node.get("DrawCalls", false);
 		overlay.cpu_usage = overlay_node.get("CPUUsage", false);
 		overlay.cpu_per_core_usage = overlay_node.get("CPUPerCoreUsage", false);
@@ -196,8 +203,11 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 
 	// audio
 	auto audio = parser.get("Audio");
-	audio_api = audio.get("api", 0);
+	audio_api = audio.get("api", audio_api);
 	audio_delay = audio.get("delay", 2);
+	microphone_enabled = audio.get("MicrophoneEnabled", microphone_enabled);
+	tv_audio_enabled = audio.get("TVAudioEnabled", tv_audio_enabled);
+	pad_audio_enabled = audio.get("PadAudioEnabled", pad_audio_enabled);
 	tv_channels = audio.get("TVChannels", kStereo);
 	pad_channels = audio.get("PadChannels", kStereo);
 	input_channels = audio.get("InputChannels", kMono);
@@ -273,6 +283,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 	crash_dump = debug.get("CrashDumpUnix", crash_dump);
 #endif
 	gdb_port = debug.get("GDBPort", 1337);
+	disable_streamout = debug.get("DisableStreamout", false);
 #ifdef ENABLE_METAL
 	gpu_capture_dir = debug.get("GPUCaptureDir", "");
 	framebuffer_fetch = debug.get("FramebufferFetch", true);
@@ -280,6 +291,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 
 	// input
 	auto input = parser.get("Input");
+	disable_motion = input.get("DisableMotion", false);
 	auto dsuc = input.get("DSUC");
 	dsu_client.host = dsuc.get_attribute("host", dsu_client.host);
 	dsu_client.port = dsuc.get_attribute("port", dsu_client.port);
@@ -303,9 +315,10 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	config.set<bool>("permanent_storage", permanent_storage);
 	config.set("proxy_server", proxy_server.GetValue().c_str());
 	config.set<bool>("play_boot_sound", play_boot_sound);
+	config.set("disable_screensaver", disable_screensaver.GetValue());
 
-	// config.set("cpu_mode", cpu_mode.GetValue());
-	//config.set("console_region", console_region.GetValue());
+	config.set("cpu_mode", cpu_mode.GetValue());
+	// config.set("console_region", console_region.GetValue());
 	config.set("console_language", console_language.GetValue());
 
 	// game paths
@@ -359,8 +372,8 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 
 	// graphics
 	auto graphic = config.set("Graphic");
-	graphic.set("api", graphic_api);
-	graphic.set("device", legacy_graphic_device_uuid);
+    graphic.set("api", graphic_api);
+	// graphic.set("device", legacy_graphic_device_uuid);
 	graphic.set("vkDevice", vk_graphic_device_uuid);
 	graphic.set("mtlDevice", mtl_graphic_device_uuid);
 	graphic.set("VSync", vsync);
@@ -368,13 +381,15 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	graphic.set("OverrideGammaValue", overrideGammaValue);
 	graphic.set("UserDisplayGamma", userDisplayGamma);
 	graphic.set("GX2DrawdoneSync", gx2drawdone_sync);
+	graphic.set("RenderUpsideDown", render_upside_down.GetValue());
 #ifdef ENABLE_METAL
 	graphic.set("ForceMeshShaders", force_mesh_shaders);
 #endif
-	//graphic.set("PrecompiledShaders", precompiled_shaders.GetValue());
+	graphic.set("PrecompiledShaders", precompiled_shaders.GetValue());
 	graphic.set("UpscaleFilter", upscale_filter);
 	graphic.set("DownscaleFilter", downscale_filter);
 	graphic.set("FullscreenScaling", fullscreen_scaling);
+	graphic.set("TextureResolutionScale", texture_resolution_scale);
 	graphic.set("AsyncCompile", async_compile.GetValue());
 	graphic.set("vkAccurateBarriers", vk_accurate_barriers);
 
@@ -383,6 +398,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	overlay_node.set("TextColor", overlay.text_color);
 	overlay_node.set("TextScale", overlay.text_scale);
 	overlay_node.set("FPS", overlay.fps);
+    overlay_node.set("CPUMode", overlay.cpu_mode);
 	overlay_node.set("DrawCalls", overlay.drawcalls);
 	overlay_node.set("CPUUsage", overlay.cpu_usage);
 	overlay_node.set("CPUPerCoreUsage", overlay.cpu_per_core_usage);
@@ -403,6 +419,9 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	auto audio = config.set("Audio");
 	audio.set("api", audio_api);
 	audio.set("delay", audio_delay);
+	audio.set("MicrophoneEnabled", microphone_enabled);
+	audio.set("TVAudioEnabled", tv_audio_enabled);
+	audio.set("PadAudioEnabled", pad_audio_enabled);
 	audio.set("TVChannels", tv_channels);
 	audio.set("PadChannels", pad_channels);
 	audio.set("InputChannels", input_channels);
@@ -437,6 +456,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 	debug.set("CrashDumpUnix", crash_dump.GetValue());
 #endif
 	debug.set("GDBPort", gdb_port);
+	debug.set("DisableStreamout", disable_streamout.GetValue());
 #ifdef ENABLE_METAL
 	debug.set("GPUCaptureDir", gpu_capture_dir);
 	debug.set("FramebufferFetch", framebuffer_fetch);
@@ -444,6 +464,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 
 	// input
 	auto input = config.set("Input");
+	input.set("DisableMotion", disable_motion.GetValue());
 	auto dsuc = input.set("DSUC");
 	dsuc.set_attribute("host", dsu_client.host);
 	dsuc.set_attribute("port", dsu_client.port);

@@ -358,7 +358,6 @@ public:
 		FileStream* fs = FileStream::openFile(filename.c_str());
 		if (!fs)
 		{
-			cemuLog_logDebug(LogType::Force, "XMLConfig::Load > failed \"{}\" with error {}", boost::nowide::narrow(filename), errno);
 			return false;
 		}
 		std::vector<uint8> xmlData;
@@ -369,10 +368,6 @@ public:
 		tinyxml2::XMLDocument doc;		
 		const tinyxml2::XMLError error = doc.Parse((const char*)xmlData.data(), xmlData.size());
 		const bool success = error == tinyxml2::XML_SUCCESS;
-		if (error != 0)
-		{
-			cemuLog_logDebug(LogType::Force, "XMLConfig::Load > LoadFile {}", error);
-		}
 
 		if (!success)
 		{
@@ -399,23 +394,23 @@ public:
 	bool Save(const std::wstring& filename)
 	{
 		std::wstring tmp_name = fmt::format(L"{}_{}.tmp", filename,rand() % 1000);
+		const fs::path parentPath = fs::path(filename).parent_path();
+
 		std::error_code err;
-		fs::create_directories(fs::path(filename).parent_path(), err);
+		fs::create_directories(parentPath, err);
 		if (err)
 		{
-			cemuLog_log(LogType::Force, "can't create parent path for save file: {}", err.message());
 			return false;
 		}
 
 		FILE* file = nullptr;
 #if BOOST_OS_WINDOWS
-        file = _wfopen(tmp_name.c_str(), L"wb");
+	        file = _wfopen(fs::resolvePathCI(fs::path(tmp_name)).c_str(), L"wb");
 #else
-		file = fopen(boost::nowide::narrow(tmp_name).c_str(), "wb");
+		file = fopen(_pathToUtf8(fs::resolvePathCI(fs::path(tmp_name))).c_str(), "wb");
 #endif
         if (!file)
         {
-			cemuLog_logDebug(LogType::Force, "XMLConfig::Save > failed \"{}\" with error {}", boost::nowide::narrow(filename), errno);
             return false;
         }
 
@@ -423,32 +418,61 @@ public:
 		const auto declaration = doc.NewDeclaration();
 		doc.InsertFirstChild(declaration);
 
-		auto parser = XMLConfigParser(&doc);
-		auto parentParser = m_instance.Save(parser);
+		try
+		{
+			auto parser = XMLConfigParser(&doc);
+			auto parentParser = m_instance.Save(parser);
 
-		for (auto [save, load] : m_childConfigParsers)
-			save(parentParser);
+			for (auto [save, load] : m_childConfigParsers)
+				save(parentParser);
+		}
+		catch (const std::exception&)
+		{
+			fclose(file);
+			std::error_code cleanupError;
+			fs::remove(tmp_name, cleanupError);
+			return false;
+		}
+		catch (...)
+		{
+			fclose(file);
+			std::error_code cleanupError;
+			fs::remove(tmp_name, cleanupError);
+			return false;
+		}
 
 		const tinyxml2::XMLError error = doc.SaveFile(file);
-		const bool success = error == tinyxml2::XML_SUCCESS;
-		if(error != 0)
-			cemuLog_logDebug(LogType::Force, "XMLConfig::Save > SaveFile {}", error);
+		bool success = error == tinyxml2::XML_SUCCESS;
 
-		fflush(file);
-		fclose(file);
+		const int flushResult = fflush(file);
+		if (flushResult != 0)
+			success = false;
+		const int closeResult = fclose(file);
+		if (closeResult != 0)
+			success = false;
+		if (!success)
+		{
+			std::error_code cleanupError;
+			fs::remove(tmp_name, cleanupError);
+			return false;
+		}
 
 		fs::rename(tmp_name, filename, err);
 		if(err)
 		{
-			cemuLog_log(LogType::Force, "Unable to save settings to file: {}", err.message().c_str());
-			fs::remove(tmp_name, err);
+			std::error_code cleanupError;
+			fs::remove(tmp_name, cleanupError);
+			return false;
 		}
 
 		return success;
 	}
 
 	[[nodiscard]] const std::wstring& GetFilename() const { return m_filename; }
-	void SetFilename(const std::wstring& filename) { m_filename = filename; }
+	void SetFilename(const std::wstring& filename)
+	{
+		m_filename = filename;
+	}
 
 	std::unique_lock<std::mutex> Lock() { return std::unique_lock(m_mutex); }
 

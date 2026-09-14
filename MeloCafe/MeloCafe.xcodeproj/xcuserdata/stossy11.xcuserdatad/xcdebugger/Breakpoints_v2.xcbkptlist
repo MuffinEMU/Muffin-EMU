@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Bucket
+   uuid = "3EDBD2A7-923F-44D2-9253-79C8A3C57149"
+   type = "1"
+   version = "2.0">
+   <Breakpoints>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "858F4208-282D-48F4-8367-F620CF8CB996"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../src/Cafe/OS/libs/coreinit/coreinit_Thread.cpp"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "1357"
+            endingLineNumber = "1357"
+            landmarkName = "__OSFiberThreadEntry(_high, _low)"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "CD2BC0C9-DE05-4BDB-AAD9-E07A9E32FF64"
+            shouldBeEnabled = "No"
+            nameForDebugger = "wow"
+            condition = "hCPU-&gt;instructionPointer == 0x02746768 &amp;&amp; hCPU-&gt;gpr[4] == 0xffffffff"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../src/Cafe/HW/Espresso/Interpreter/PPCInterpreterLoadStore.hpp"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "507"
+            endingLineNumber = "507"
+            landmarkName = "PPCInterpreter_LBZU(hCPU, Opcode)"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "13945D2C-A9D3-4828-8C84-1AAB84376FFF"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../src/Cafe/HW/Espresso/Interpreter/PPCInterpreterLoadStore.hpp"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "504"
+            endingLineNumber = "504"
+            landmarkName = "PPCInterpreter_LBZU(hCPU, Opcode)"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "1813B7EF-CF4D-466E-8DB9-6231F96C6781"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../src/Cafe/OS/libs/coreinit/coreinit_FS.cpp"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "2630"
+            endingLineNumber = "2630"
+            landmarkName = "FSAMount(client, source, target, flags, arg_buf, arg_len)"
+            landmarkType = "9">
+         </BreakpointContent>
+      </BreakpointProxy>
+   </Breakpoints>
+</Bucket>

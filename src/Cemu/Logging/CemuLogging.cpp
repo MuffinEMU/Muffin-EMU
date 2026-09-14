@@ -161,7 +161,7 @@ void cemuLog_createLogFile(bool triggeredByCrash)
 		return;
 
 	const auto path = cemuLog_GetLogFilePath();
-	LogContext.file_stream.open(path, std::ios::out);
+	LogContext.file_stream.open(fs::resolvePathCI(path), std::ios::out);
 	if (LogContext.file_stream.fail())
 	{
 		cemu_assert_debug(false);

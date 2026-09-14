@@ -165,6 +165,40 @@ void gx2SurfaceCopySoftware(
 // For GX2 CPU copies -> Submit as async command to the renderer (will be processed asap) and stall until completed
 // For GX2 GPU copies -> Submit as HLE command to Latte's command queue to be executed in order
 
+static bool GX2CopySurface_IsKnownExpensiveDynamicCopy(const GX2Surface* srcSurface, const GX2Surface* dstSurface, Latte::E_GX2SURFFMT srcFormat)
+{
+	bool isDynamicTexCopy = false;
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->imagePtr >= 0xF4000000 && srcSurface->width >= 800 && srcFormat == Latte::E_GX2SURFFMT::R11_G11_B10_FLOAT); // SM3DW
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->imagePtr >= 0xF4000000 && srcSurface->width >= 800 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_UNORM); // Trine 2
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->imagePtr >= 0xF4000000 && srcSurface->width == 0xA0 && srcFormat == Latte::E_GX2SURFFMT::R32_FLOAT); // Little Inferno
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->imagePtr >= 0xF4000000 && srcSurface->width == 1280 && srcFormat == Latte::E_GX2SURFFMT::R32_FLOAT); // Donkey Kong Tropical Freeze
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->imagePtr >= 0xF4000000 && srcSurface->width == 640 && srcSurface->height == 320 && srcFormat == Latte::E_GX2SURFFMT::R11_G11_B10_FLOAT); // SM3DW Switch Scramble Circus
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 1280 && srcSurface->height == 720 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_UNORM && srcSurface->tileMode != Latte::E_GX2TILEMODE::TM_LINEAR_ALIGNED); // Affordable Space Adventures
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 854 && srcSurface->height == 480 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_UNORM); // Affordable Space Adventures
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->imagePtr >= 0xF4000000 && srcSurface->width == 1152 && srcSurface->height == 720 && srcFormat == Latte::E_GX2SURFFMT::R11_G11_B10_FLOAT && (srcSurface->resFlag & GX2_RESFLAG_USAGE_COLOR_BUFFER) != 0); // Star Fox Zero
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->imagePtr >= 0xF4000000 && srcSurface->width == 680 && srcSurface->height == 480 && srcFormat == Latte::E_GX2SURFFMT::R11_G11_B10_FLOAT && (srcSurface->resFlag & GX2_RESFLAG_USAGE_COLOR_BUFFER) != 0); // Star Fox Zero
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->imagePtr >= 0xF4000000 && srcSurface->width == 1280 && srcSurface->height == 720 && srcFormat == Latte::E_GX2SURFFMT::R16_G16_B16_A16_FLOAT); // Qube
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 322 && srcSurface->height == 182 && srcFormat == Latte::E_GX2SURFFMT::R16_G16_B16_A16_UNORM); // Qube
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 640 && srcSurface->height == 360 && srcFormat == Latte::E_GX2SURFFMT::R16_G16_B16_A16_FLOAT); // Qube
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 1920 && srcSurface->height == 1080 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_UNORM && dstSurface->resFlag == 0x80000003); // Cosmophony
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 854 && srcSurface->height == 480 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_UNORM && dstSurface->resFlag == 0x3); // Cosmophony
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 1280 && srcSurface->height == 720 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_SRGB && dstSurface->resFlag == 0x3); // The Fall
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 854 && srcSurface->height == 480 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_SRGB && dstSurface->resFlag == 0x3); // The Fall
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 1280 && srcSurface->height == 720 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_SRGB && dstSurface->resFlag == 0x80000003); // The Fall
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 1280 && srcSurface->height == 720 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_SRGB && srcSurface->resFlag == 0x80000003); // Nano Assault Neo
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->imagePtr >= 0xF4000000 && srcSurface->width == 1280 && srcSurface->height == 720 && srcFormat == Latte::E_GX2SURFFMT::R10_G10_B10_A2_UNORM); // Mario Party 10
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->imagePtr >= 0xF4000000 && srcSurface->width == 854 && srcSurface->height == 480 && srcFormat == Latte::E_GX2SURFFMT::R10_G10_B10_A2_UNORM); // Mario Party 10
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 1920 && srcSurface->height == 1080 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_UNORM && dstSurface->resFlag == 0x3); // Hello Kitty Kruisers
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 1024 && srcSurface->height == 1024 && srcFormat == Latte::E_GX2SURFFMT::R32_FLOAT && dstSurface->resFlag == 0x5); // Art Academy
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 260 && srcSurface->height == 148 && srcFormat == Latte::E_GX2SURFFMT::R16_G16_B16_A16_FLOAT && dstSurface->resFlag == 0x3); // Transformers: Rise of the Dark Spark
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 1040 && srcSurface->height == 592 && srcFormat == Latte::E_GX2SURFFMT::R16_G16_B16_A16_FLOAT && dstSurface->resFlag == 0x3); // Transformers: Rise of the Dark Spark
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 854 && srcSurface->height == 480 && srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_SRGB && srcSurface->resFlag == 0x3); // Nano Assault Neo
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 1024 && srcSurface->height == 576 && srcFormat == Latte::E_GX2SURFFMT::D24_S8_UNORM && srcSurface->resFlag == 0x1); // Skylanders SuperChargers
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 1152 && srcSurface->height == 648 && (srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_UNORM || srcFormat == Latte::E_GX2SURFFMT::R16_G16_B16_A16_FLOAT) && srcSurface->resFlag == 0x1); // Watch Dogs
+	isDynamicTexCopy = isDynamicTexCopy || (srcSurface->width == 576 && srcSurface->height == 324 && (srcFormat == Latte::E_GX2SURFFMT::R8_G8_B8_A8_UNORM || srcFormat == Latte::E_GX2SURFFMT::R16_G16_B16_A16_FLOAT) && srcSurface->resFlag == 0x1); // Watch Dogs
+	return isDynamicTexCopy;
+}
+
 void GX2CopySurfaceInternal(GX2Surface* srcSurface, uint32 srcMip, uint32 srcSlice, GX2Surface* dstSurface, uint32 dstMip, uint32 dstSlice)
 {
 	sint32 dstWidth = dstSurface->width;
@@ -289,13 +323,16 @@ void GX2CopySurfaceInternal(GX2Surface* srcSurface, uint32 srcMip, uint32 srcSli
 	// copy via GPU commands
 	// for simplicity and performance Cemu uses a HLE command to handle surface copies,
 	// a more accurate implementation would setup actual drawcalls to copy the texture data
-	GX2::GX2ReserveCmdSpace(23);
-	gx2WriteGather_submit(pm4HeaderType3(IT_HLE_COPY_SURFACE_NEW, 4+9*2),
+	const bool skipCPUReadback = GX2CopySurface_IsKnownExpensiveDynamicCopy(srcSurface, dstSurface, srcFormat);
+	const uint32 copyFlags = skipCPUReadback ? LATTE_SURFACE_COPY_FLAG_SKIP_CPU_READBACK : 0;
+	GX2::GX2ReserveCmdSpace(24);
+	gx2WriteGather_submit(pm4HeaderType3(IT_HLE_COPY_SURFACE_NEW, 5+9*2),
 	// copy rect
 	(uint32)0, // x
 	(uint32)0, // y
 	(uint32)copyWidth,
 	(uint32)copyHeight,
+	copyFlags,
 	// src
 	(uint32)MEMPTR<void>(srcDataPtr).GetMPTR(),
 	(uint32)srcSurface->swizzle,

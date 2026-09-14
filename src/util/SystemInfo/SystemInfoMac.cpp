@@ -22,7 +22,7 @@ uint64 QueryRamUsage()
 
 // apple official documentation is non-existsent.
 // based on https://github.com/giampaolo/psutil/blob/master/psutil/_psutil_osx.c#L623
-void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
+void QueryCoreTimes(std::vector<ProcessorTime>& out)
 {
 	// initialize default
 	for (auto i = 0; i < out.size(); ++i)
@@ -44,8 +44,10 @@ void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
 
 	processor_cpu_load_info_data_t* cpuLoad = (processor_cpu_load_info_data_t*) info_array;
 
-	for (auto i = 0; i < cpu_count; ++i)
-	{
+    out.resize(cpu_count);
+
+    for (natural_t i = 0; i < cpu_count; ++i)
+    {
 		uint64 system = cpuLoad[i].cpu_ticks[CPU_STATE_SYSTEM];
 		uint64 user = cpuLoad[i].cpu_ticks[CPU_STATE_USER] + cpuLoad[i].cpu_ticks[CPU_STATE_NICE];
 		uint64 idle = cpuLoad[i].cpu_ticks[CPU_STATE_IDLE];

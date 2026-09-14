@@ -129,7 +129,7 @@ void CafeTitleList::StoreCacheFile()
 	}
 
 	fs::path tmpPath = fs::path(sTLCacheFilePath.parent_path()).append(fmt::format("{}__tmp", _pathToUtf8(sTLCacheFilePath.filename())));
-	std::ofstream fileOut(tmpPath, std::ios::out | std::ios::binary | std::ios::trunc);
+	std::ofstream fileOut(fs::resolvePathCI(tmpPath), std::ios::out | std::ios::binary | std::ios::trunc);
 	if (!fileOut.is_open())
 	{
 		cemuLog_log(LogType::Force, "Unable to store title list in {}", _pathToUtf8(tmpPath));

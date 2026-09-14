@@ -35,6 +35,21 @@ void _emitTypeConversionPrefixMSL(LatteDecompilerShaderContext* shaderContext, s
 void _emitTypeConversionSuffixMSL(LatteDecompilerShaderContext* shaderContext, sint32 sourceType, sint32 destinationType);
 void LatteDecompiler_emitClauseCodeMSL(LatteDecompilerShaderContext* shaderContext, LatteDecompilerCFInstruction* cfInstruction, bool isSubroutine);
 
+static bool _useFramebufferFetchMSL(LatteDecompilerShaderContext* shaderContext, sint32 textureUnit)
+{
+	if (!g_renderer ||
+		g_renderer->GetType() != RendererAPI::Metal ||
+		!static_cast<MetalRenderer*>(g_renderer.get())->SupportsFramebufferFetch())
+		return false;
+
+	uint8 renderTargetIndex = shaderContext->shader->textureRenderTargetIndex[textureUnit];
+	if (renderTargetIndex == 255)
+		return false;
+
+	auto format = LatteMRT::GetColorBufferFormat(renderTargetIndex, *shaderContext->contextRegistersNew);
+	return GetMtlPixelFormat(format, false) != MTL::PixelFormatInvalid;
+}
+
 static const char* _getElementStrByIndex(uint32 channel)
 {
 	switch (channel)
@@ -2294,7 +2309,7 @@ static void _emitTEXSampleTextureCode(LatteDecompilerShaderContext* shaderContex
 
 	// Do a framebuffer fetch if possible
 	uint8 renderTargetIndex = shaderContext->shader->textureRenderTargetIndex[texInstruction->textureFetch.textureIndex];
-	if (static_cast<MetalRenderer*>(g_renderer.get())->SupportsFramebufferFetch() && renderTargetIndex != 255)
+	if (_useFramebufferFetchMSL(shaderContext, texInstruction->textureFetch.textureIndex))
 	{
 	    // TODO: support comparison samplers
 		// TODO: support swizzling
@@ -2676,7 +2691,7 @@ static void _emitTEXGetTextureResInfoCode(LatteDecompilerShaderContext* shaderCo
 
 	// todo - mip index parameter?
 
-	if (static_cast<MetalRenderer*>(g_renderer.get())->SupportsFramebufferFetch() && shaderContext->shader->textureRenderTargetIndex[texInstruction->textureFetch.textureIndex] != 255)
+	if (_useFramebufferFetchMSL(shaderContext, texInstruction->textureFetch.textureIndex))
 	{
 	    // TODO: use the render target size
 	    src->addFmt(" = int4(1920, 1080, 1, 1).");
@@ -2747,7 +2762,7 @@ static void _emitTEXGetCompTexLodCode(LatteDecompilerShaderContext* shaderContex
 	src->add(" = ");
 	_emitTypeConversionPrefixMSL(shaderContext, LATTE_DECOMPILER_DTYPE_FLOAT, shaderContext->typeTracker.defaultDataType);
 
-	if (static_cast<MetalRenderer*>(g_renderer.get())->SupportsFramebufferFetch() && shaderContext->shader->textureRenderTargetIndex[texInstruction->textureFetch.textureIndex] != 255)
+	if (_useFramebufferFetchMSL(shaderContext, texInstruction->textureFetch.textureIndex))
 	{
 	    // We assume that textures accessed as framebuffer fetch are always sampled at pixel coordinates, therefore the lod would always be 0.0
 	    src->add("float4(0.0, 0.0, 0.0, 0.0)");
@@ -3363,54 +3378,38 @@ static void _emitCFRingWriteCode(LatteDecompilerShaderContext* shaderContext, La
 	// for geometry shaders with streamout, MEM_RING_WRITE is used to pass the data to the copy shader, which then uses STREAM*_WRITE
 	if (shaderContext->shaderType == LatteConst::ShaderType::Geometry && shaderContext->analyzer.hasStreamoutEnable)
 	{
-		// if streamout is enabled, we generate transform feedback output code instead of the normal gs output
+        
 		for (uint32 burstIndex = 0; burstIndex < (cfInstruction->exportBurstCount + 1); burstIndex++)
 		{
-			parameterOffset = ((cfInstruction->exportArrayBase * 4 + burstIndex*0x10) % bytesPerVertex);
-			// find matching stream write in copy shader
-			LatteGSCopyShaderStreamWrite_t* streamWrite = nullptr;
+			uint32 streamParameterOffset = ((cfInstruction->exportArrayBase * 4 + burstIndex * 0x10) % bytesPerVertex);
+			bool foundStreamWrite = false;
 			for (auto& it : shaderContext->parsedGSCopyShader->list_streamWrites)
 			{
-				if (it.offset == parameterOffset)
+				if (it.offset != streamParameterOffset)
+					continue;
+				foundStreamWrite = true;
+				for (sint32 i = 0; i < 4; i++)
 				{
-					streamWrite = &it;
-					break;
+					if ((cfInstruction->memWriteCompMask&(1 << i)) == 0)
+						continue;
+
+					uint32 u32Offset = it.exportArrayBase + i;
+					uint32 strideWords = shaderContext->output->streamoutBufferStride[it.bufferIndex] / 4;
+					src->addFmt("writeStreamout(sb, supportBuffer.streamoutBufferBase{}/4, supportBuffer.streamoutBufferSize{}/4, streamoutVertexIndex, {}, {}, ",
+						it.bufferIndex, it.bufferIndex, strideWords, u32Offset);
+
+					_emitTypeConversionPrefixMSL(shaderContext, shaderContext->typeTracker.defaultDataType, LATTE_DECOMPILER_DTYPE_SIGNED_INT);
+					src->addFmt("{}", _getRegisterVarName(shaderContext, cfInstruction->exportSourceGPR + burstIndex));
+					_appendChannelAccess(src, i);
+					_emitTypeConversionSuffixMSL(shaderContext, shaderContext->typeTracker.defaultDataType, LATTE_DECOMPILER_DTYPE_SIGNED_INT);
+					src->add(");" _CRLF);
 				}
 			}
-			if (streamWrite == nullptr)
-			{
-				cemu_assert_suspicious();
-				return;
-			}
-
-			for (sint32 i = 0; i < 4; i++)
-			{
-				if ((cfInstruction->memWriteCompMask&(1 << i)) == 0)
-					continue;
-
-				uint32 u32Offset = streamWrite->exportArrayBase + i;
-				src->addFmt("sb[sbBase{} + {}]", streamWrite->bufferIndex, u32Offset);
-
-				src->add(" = ");
-
-				_emitTypeConversionPrefixMSL(shaderContext, shaderContext->typeTracker.defaultDataType, LATTE_DECOMPILER_DTYPE_SIGNED_INT);
-
-				src->addFmt("{}.", _getRegisterVarName(shaderContext, cfInstruction->exportSourceGPR+burstIndex));
-				if (i == 0)
-					src->add("x");
-				else if (i == 1)
-					src->add("y");
-				else if (i == 2)
-					src->add("z");
-				else if (i == 3)
-					src->add("w");
-
-				_emitTypeConversionSuffixMSL(shaderContext, shaderContext->typeTracker.defaultDataType, LATTE_DECOMPILER_DTYPE_SIGNED_INT);
-
-				src->add(";" _CRLF);
-			}
+#ifdef CEMU_DEBUG_ASSERT
+			if (!foundStreamWrite)
+				src->add("// GS ring value is not captured by streamout" _CRLF);
+#endif
 		}
-		return;
 	}
 
 	if (shaderContext->shaderType == LatteConst::ShaderType::Vertex)
@@ -3447,9 +3446,7 @@ static void _emitCFRingWriteCode(LatteDecompilerShaderContext* shaderContext, La
 			uint32 parameterExportBase = 0;
 			if (LatteGSCopyShaderParser_getExportTypeByOffset(shaderContext->parsedGSCopyShader, parameterOffset + burstIndex * (cfInstruction->memWriteElemSize+1)*4, &parameterExportType, &parameterExportBase) == false)
 			{
-				cemu_assert_debug(false);
-				shaderContext->hasError = true;
-				return;
+				continue;
 			}
 
 			if (parameterExportType == 1 && parameterExportBase == GPU7_DECOMPILER_CF_EXPORT_BASE_POSITION)
@@ -3508,9 +3505,9 @@ static void _emitStreamWriteCode(LatteDecompilerShaderContext* shaderContext, La
 				continue;
 
 			uint32 u32Offset = cfInstruction->exportArrayBase + i;
-			src->addFmt("sb[sbBase{} + {}]", streamoutBufferIndex, u32Offset);
-
-			src->add(" = ");
+			uint32 strideWords = shaderContext->output->streamoutBufferStride[streamoutBufferIndex] / 4;
+			src->addFmt("writeStreamout(sb, supportBuffer.streamoutBufferBase{}/4, supportBuffer.streamoutBufferSize{}/4, streamoutVertexIndex, {}, {}, ",
+				streamoutBufferIndex, streamoutBufferIndex, strideWords, u32Offset);
 
 			_emitTypeConversionPrefixMSL(shaderContext, shaderContext->typeTracker.defaultDataType, LATTE_DECOMPILER_DTYPE_SIGNED_INT);
 
@@ -3518,7 +3515,7 @@ static void _emitStreamWriteCode(LatteDecompilerShaderContext* shaderContext, La
 			_appendChannelAccess(src, i);
 			_emitTypeConversionSuffixMSL(shaderContext, shaderContext->typeTracker.defaultDataType, LATTE_DECOMPILER_DTYPE_SIGNED_INT);
 
-			src->add(";" _CRLF);
+			src->add(");" _CRLF);
 		}
 	}
 	else
@@ -3699,16 +3696,12 @@ void LatteDecompiler_emitClauseCodeMSL(LatteDecompilerShaderContext* shaderConte
 		// write point size
 		if (shaderContext->analyzer.outputPointSize && shaderContext->analyzer.writesPointSize == false)
 			src->add("out.pointSize = supportBuffer.pointSize;" _CRLF);
+		src->add("if (vertexIndex < MTL_MAX_VERTEX_COUNT) {" _CRLF);
 		src->add("mesh.set_vertex(vertexIndex, out);" _CRLF);
+		src->add("}" _CRLF);
 		src->add("vertexIndex++;" _CRLF);
-		// increment transform feedback pointer
-		for (sint32 i = 0; i < LATTE_NUM_STREAMOUT_BUFFER; i++)
-		{
-			if (!shaderContext->output->streamoutBufferWriteMask[i])
-				continue;
-			cemu_assert_debug((shaderContext->output->streamoutBufferStride[i] & 3) == 0);
-			src->addFmt("sbBase{} += {};" _CRLF, i, shaderContext->output->streamoutBufferStride[i] / 4);
-		}
+		if (shaderContext->output->streamoutBufferWriteMask.any())
+			src->add("if (streamoutVertexIndex != 0xffffffffu) streamoutVertexIndex++;" _CRLF);
 
 		if( shaderContext->analyzer.modifiesPixelActiveState )
 			src->add("}" _CRLF);
@@ -3939,7 +3932,13 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 {
     bool isRectVertexShader = UseRectEmulation(*shaderContext->contextRegistersNew);
     bool usesGeometryShader = UseGeometryShader(*shaderContext->contextRegistersNew, shaderContext->options->usesGeometryShader);
-    bool fetchVertexManually = (usesGeometryShader || (shaderContext->fetchShader && shaderContext->fetchShader->mtlFetchVertexManually));
+	const bool usesLogicalVertexIds =
+		shaderContext->shaderType == LatteConst::ShaderType::Vertex &&
+		(usesGeometryShader || shaderContext->analyzer.useSSBOForStreamout);
+    bool fetchVertexManually =
+		usesGeometryShader ||
+		shaderContext->analyzer.useSSBOForStreamout ||
+		(shaderContext->fetchShader && shaderContext->fetchShader->mtlFetchVertexManually);
 
 	StringBuf* src = new StringBuf(1024*1024*12); // reserve 12MB for generated source (we resize-to-fit at the end)
 	shaderContext->shaderSource = src;
@@ -3957,6 +3956,17 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 	LatteDecompiler::emitHeader(shaderContext, isRectVertexShader, usesGeometryShader, fetchVertexManually);
 	// helper functions
 	LatteDecompiler_emitHelperFunctions(shaderContext, src);
+	if (shaderContext->analyzer.useSSBOForStreamout)
+	{
+		src->add("static inline void writeStreamout(device int* buffer, uint baseWord, uint capacityWords, uint vertexIndex, uint strideWords, uint componentWord, int value) {" _CRLF);
+		src->add("if (strideWords != 0 && vertexIndex > 0xffffffffu / strideWords) return;" _CRLF);
+		src->add("uint relativeWord = vertexIndex * strideWords;" _CRLF);
+		src->add("if (componentWord > 0xffffffffu - relativeWord) return;" _CRLF);
+		src->add("relativeWord += componentWord;" _CRLF);
+		src->add("if (relativeWord >= capacityWords || baseWord > 0xffffffffu - relativeWord) return;" _CRLF);
+		src->add("buffer[baseWord + relativeWord] = value;" _CRLF);
+		src->add("}" _CRLF);
+	}
 	const char* functionType = "";
 	const char* outputTypeName = "";
 	switch (shader->shaderType)
@@ -3971,25 +3981,50 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
             std::string vertexBufferDefinitions = "#define VERTEX_BUFFER_DEFINITIONS ";
             std::string vertexBuffers = "#define VERTEX_BUFFERS ";
             std::string inputFetchDefinition = "VertexIn fetchVertex(";
-            if (usesGeometryShader)
+            if (usesLogicalVertexIds)
                 inputFetchDefinition += "thread uint&";
             else
                 inputFetchDefinition += "uint";
-            inputFetchDefinition += " vid, uint iid";
-            if (usesGeometryShader)
-                inputFetchDefinition += ", device uint* indexBuffer, uchar indexType";
+            inputFetchDefinition += " vid, ";
+			if (usesLogicalVertexIds)
+				inputFetchDefinition += "thread uint&";
+			else
+				inputFetchDefinition += "uint";
+            inputFetchDefinition += " iid";
+            if (usesLogicalVertexIds)
+                inputFetchDefinition += ", const device uchar* indexBuffer, uint indexBufferSize, uint indexType, int baseVertex, uint baseInstance";
             inputFetchDefinition += " VERTEX_BUFFER_DEFINITIONS) {\n";
 
 			// Index buffer
-			if (usesGeometryShader)
+			if (usesLogicalVertexIds)
 			{
-                inputFetchDefinition += "if (indexType == 1) // UShort\n";
-                inputFetchDefinition += "vid = ((device ushort*)indexBuffer)[vid];\n";
-                inputFetchDefinition += "else if (indexType == 2) // UInt\n";
-                inputFetchDefinition += "vid = ((device uint*)indexBuffer)[vid];\n";
+                inputFetchDefinition += "if (indexType == 1) { // UShort\n";
+				inputFetchDefinition += "if (indexBufferSize >= 2 && vid <= (indexBufferSize - 2) / 2) vid = ((const device ushort*)indexBuffer)[vid]; else vid = 0;\n";
+				inputFetchDefinition += "}\n";
+                inputFetchDefinition += "else if (indexType == 2) { // UInt\n";
+				inputFetchDefinition += "if (indexBufferSize >= 4 && vid <= (indexBufferSize - 4) / 4) vid = ((const device uint*)indexBuffer)[vid]; else vid = 0;\n";
+				inputFetchDefinition += "}\n";
+				inputFetchDefinition += "vid = uint(int(vid) + baseVertex);\n";
+				inputFetchDefinition += "iid += baseInstance;\n";
 			}
 
-            inputFetchDefinition += "VertexIn in;\n";
+			src->add("static inline uint readVertexU8(const device uchar* ptr, uint size, uint elementOffset, uint componentOffset) {\n");
+			src->add("if (componentOffset > 0xffffffffu - elementOffset) return 0;\n");
+			src->add("uint offset = elementOffset + componentOffset;\n");
+			src->add("return offset < size ? uint(ptr[offset]) : 0;\n}\n");
+			src->add("static inline uint readVertexU16(const device uchar* ptr, uint size, uint elementOffset, uint componentOffset) {\n");
+			src->add("if (componentOffset > 0xffffffffu - elementOffset) return 0;\n");
+			src->add("uint offset = elementOffset + componentOffset;\n");
+			src->add("if (offset >= size || size - offset < 2) return 0;\n");
+			src->add("return uint(ptr[offset]) | (uint(ptr[offset + 1]) << 8);\n}\n");
+			src->add("static inline uint readVertexU32(const device uchar* ptr, uint size, uint elementOffset, uint componentOffset) {\n");
+			src->add("if (componentOffset > 0xffffffffu - elementOffset) return 0;\n");
+			src->add("uint offset = elementOffset + componentOffset;\n");
+			src->add("if (offset >= size || size - offset < 4) return 0;\n");
+			src->add("return uint(ptr[offset]) | (uint(ptr[offset + 1]) << 8) | (uint(ptr[offset + 2]) << 16) | (uint(ptr[offset + 3]) << 24);\n}\n");
+
+            inputFetchDefinition += "VertexIn in = {};\n";
+			uint32 manualFetchAttrIndex = 0;
             for (auto& bufferGroup : shaderContext->fetchShader->bufferGroups)
 			{
                 std::optional<LatteConst::VertexFetchType2> fetchType;
@@ -4006,59 +4041,62 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
               		if (semanticId == (uint32)-1)
              			continue; // attribute not used?
 
-                    std::string formatName;
                     uint8 componentCount = 0;
                     switch (GetMtlVertexFormat(attr.format))
                     {
                     case MTL::VertexFormatUChar:
-                        formatName = "uchar";
                         componentCount = 1;
                         break;
                     case MTL::VertexFormatUChar2:
-                        formatName = "uchar2";
                         componentCount = 2;
                         break;
                     case MTL::VertexFormatUChar3:
-                        formatName = "uchar3";
                         componentCount = 3;
                         break;
                     case MTL::VertexFormatUChar4:
-                        formatName = "uchar4";
                         componentCount = 4;
                         break;
                     case MTL::VertexFormatUShort:
-                        formatName = "ushort";
                         componentCount = 1;
                         break;
                     case MTL::VertexFormatUShort2:
-                        formatName = "ushort2";
                         componentCount = 2;
                         break;
                     case MTL::VertexFormatUShort3:
-                        formatName = "ushort3";
                         componentCount = 3;
                         break;
                     case MTL::VertexFormatUShort4:
-                        formatName = "ushort4";
                         componentCount = 4;
                         break;
                     case MTL::VertexFormatUInt:
-                        formatName = "uint";
                         componentCount = 1;
                         break;
                     case MTL::VertexFormatUInt2:
-                        formatName = "uint2";
                         componentCount = 2;
                         break;
                     case MTL::VertexFormatUInt3:
-                        formatName = "uint3";
                         componentCount = 3;
                         break;
                     case MTL::VertexFormatUInt4:
-                        formatName = "uint4";
                         componentCount = 4;
                         break;
                     }
+
+					uint32 formatSize = GetMtlVertexFormatSize(attr.format);
+					uint32 bytesPerComponent = componentCount ? (formatSize / componentCount) : 0;
+					const char* readFunc;
+					if (bytesPerComponent == 1)
+						readFunc = "readVertexU8";
+					else if (bytesPerComponent == 2)
+						readFunc = "readVertexU16";
+					else if (bytesPerComponent == 4)
+						readFunc = "readVertexU32";
+					else
+					{
+						cemuLog_log(LogType::Force, "unsupported Metal manual vertex fetch component size {}", bytesPerComponent);
+						cemu_assert_debug(false);
+						readFunc = "readVertexU8";
+					}
 
                     // Get the fetch type
                     std::string fetchTypeStr;
@@ -4069,16 +4107,39 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
                     else if (attr.fetchType == LatteConst::VertexFetchType2::NO_INDEX_OFFSET_DATA)
                         fetchTypeStr = "0"; // TODO: correct?
 
-                    // Fetch the attribute
-                    inputFetchDefinition += fmt::format("in.ATTRIBUTE_NAME{} = uint4(uint", semanticId);
-                    if (componentCount != 1)
-                        inputFetchDefinition += fmt::format("{}", componentCount);
-                    inputFetchDefinition += fmt::format("(*(device {}*)", formatName);
-                    inputFetchDefinition += fmt::format("(vertexBuffer{}", attr.attributeBufferIndex);
-                    inputFetchDefinition += fmt::format(" + {} * {} + {}))", fetchTypeStr, bufferStride, attr.offset);
-                    for (uint8 i = 0; i < (4 - componentCount); i++)
-                        inputFetchDefinition += ", 0";
+					// Fetch the attribute
+					const bool usesArgumentBuffer = shaderContext->output->resourceMappingMTL.argumentBufferBindingPoint >= 0;
+					if (usesArgumentBuffer)
+					{
+						inputFetchDefinition += fmt::format("uint attrOffset{} = 0xffffffffu;\n", manualFetchAttrIndex);
+						if (bufferStride == 0)
+							inputFetchDefinition += fmt::format("attrOffset{} = {};\n", manualFetchAttrIndex, attr.offset);
+						else
+							inputFetchDefinition += fmt::format("if (({}) <= (0xffffffffu - {}) / {}) attrOffset{} = ({}) * {} + {};\n",
+								fetchTypeStr, attr.offset, bufferStride, manualFetchAttrIndex, fetchTypeStr, bufferStride, attr.offset);
+					}
+					else
+						inputFetchDefinition += fmt::format("const device uchar* attrPtr{} = vertexBuffer{} + {} * {} + {};\n", manualFetchAttrIndex, attr.attributeBufferIndex, fetchTypeStr, bufferStride, attr.offset);
+                    inputFetchDefinition += fmt::format("in.ATTRIBUTE_NAME{} = uint4(", semanticId);
+					for (uint8 i = 0; i < 4; i++)
+					{
+						if (i != 0)
+							inputFetchDefinition += ", ";
+						if (i < componentCount)
+						{
+							if (usesArgumentBuffer)
+								inputFetchDefinition += fmt::format("{}(vertexBuffer{}, vertexBufferSize{}, attrOffset{}, {})",
+									readFunc, attr.attributeBufferIndex, attr.attributeBufferIndex, manualFetchAttrIndex, i * bytesPerComponent);
+							else
+								inputFetchDefinition += fmt::format("uint(*(const device {}*)(attrPtr{} + {}))",
+									bytesPerComponent == 1 ? "uchar" : (bytesPerComponent == 2 ? "ushort" : "uint"),
+									manualFetchAttrIndex, i * bytesPerComponent);
+						}
+						else
+							inputFetchDefinition += "0";
+					}
                     inputFetchDefinition += ");\n";
+					manualFetchAttrIndex++;
 
               		if (fetchType.has_value())
              			cemu_assert_debug(fetchType == attr.fetchType);
@@ -4093,8 +4154,16 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 
                 // TODO: fetch type
 
-				vertexBufferDefinitions += fmt::format(", device uchar* vertexBuffer{} [[buffer({})]]", bufferIndex, GET_MTL_VERTEX_BUFFER_INDEX(bufferIndex));
-				vertexBuffers += fmt::format(", vertexBuffer{}", bufferIndex);
+				if (shaderContext->output->resourceMappingMTL.argumentBufferBindingPoint >= 0)
+				{
+					vertexBufferDefinitions += fmt::format(", const device uchar* vertexBuffer{}, uint vertexBufferSize{}", bufferIndex, bufferIndex);
+					vertexBuffers += fmt::format(", stageResources.vertexBuffer{}, stageResources.vertexBufferSize{}", bufferIndex, bufferIndex);
+				}
+				else
+				{
+					vertexBufferDefinitions += fmt::format(", const device uchar* vertexBuffer{} [[buffer({})]]", bufferIndex, GET_MTL_VERTEX_BUFFER_INDEX(bufferIndex));
+					vertexBuffers += fmt::format(", vertexBuffer{}", bufferIndex);
+				}
 			}
 
 			inputFetchDefinition += "return in;\n";
@@ -4136,25 +4205,39 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 	src->add(") {" _CRLF);
 	if (fetchVertexManually && (shader->shaderType == LatteConst::ShaderType::Vertex || shader->shaderType == LatteConst::ShaderType::Geometry))
 	{
-	    if (shader->shaderType == LatteConst::ShaderType::Vertex)
-		{
-            if (usesGeometryShader)
-            {
-           	    // Calculate the imaginary vertex id
+		    if (shader->shaderType == LatteConst::ShaderType::Vertex)
+			{
+	            if (usesGeometryShader)
+	            {
                 LattePrimitiveMode vsOutPrimType = shaderContext->contextRegistersNew->VGT_PRIMITIVE_TYPE.get_PRIMITIVE_MODE();
                 if (PrimitiveRequiresConnection(vsOutPrimType))
-           	        src->add("uint vid = tig + tid;" _CRLF);
+					src->add("uint primitivesPerInstance = supportBuffer.verticesPerInstance >= VERTICES_PER_VERTEX_PRIMITIVE ? supportBuffer.verticesPerInstance - VERTICES_PER_VERTEX_PRIMITIVE + 1 : 0;" _CRLF);
                 else
-       	            src->add("uint vid = tig * VERTICES_PER_VERTEX_PRIMITIVE + tid;" _CRLF);
-          		src->add("uint iid = vid / supportBuffer.verticesPerInstance;" _CRLF);
-                src->add("vid %= supportBuffer.verticesPerInstance;" _CRLF);
+					src->add("uint primitivesPerInstance = supportBuffer.verticesPerInstance / VERTICES_PER_VERTEX_PRIMITIVE;" _CRLF);
+					src->add("uint iid = primitivesPerInstance != 0 ? tig / primitivesPerInstance : 0;" _CRLF);
+					src->add("uint primitiveIndex = primitivesPerInstance != 0 ? tig % primitivesPerInstance : 0;" _CRLF);
+					if (PrimitiveRequiresConnection(vsOutPrimType))
+						src->add("uint vid = primitiveIndex + tid;" _CRLF);
+	                else
+						src->add("uint vid = primitiveIndex * VERTICES_PER_VERTEX_PRIMITIVE + tid;" _CRLF);
+				src->add("if (tid == 0) objectPayload.primitiveID = tig;" _CRLF);
 
           		// Fetch the input
-          		src->add("VertexIn in = fetchVertex(vid, iid, indexBuffer, indexType VERTEX_BUFFERS);" _CRLF);
+				if (shaderContext->output->resourceMappingMTL.argumentBufferBindingPoint >= 0)
+					src->add("VertexIn in = fetchVertex(vid, iid, stageResources.indexBuffer, stageResources.indexBufferSize, stageResources.indexType, supportBuffer.baseVertex, supportBuffer.baseInstance VERTEX_BUFFERS);" _CRLF);
+				else
+					src->add("VertexIn in = fetchVertex(vid, iid, (const device uchar*)indexBuffer, 0xffffffffu, indexType, supportBuffer.baseVertex, supportBuffer.baseInstance VERTEX_BUFFERS);" _CRLF);
 
           		// Output is defined as object payload
           		src->add("object_data VertexOut& out = objectPayload.vertexOut[tid];" _CRLF);
             }
+			else if (shaderContext->analyzer.useSSBOForStreamout)
+			{
+				src->add("uint streamoutVertexIndex = 0xffffffffu;" _CRLF);
+				src->add("if (supportBuffer.verticesPerInstance != 0 && iid <= ((0xffffffffu - vid) / supportBuffer.verticesPerInstance))" _CRLF);
+				src->add("streamoutVertexIndex = vid + supportBuffer.verticesPerInstance * iid;" _CRLF);
+				src->add("VertexIn in = fetchVertex(vid, iid, stageResources.indexBuffer, stageResources.indexBufferSize, stageResources.indexType, supportBuffer.baseVertex, supportBuffer.baseInstance VERTEX_BUFFERS);" _CRLF);
+			}
             else
             {
           		// Fetch the input
@@ -4164,6 +4247,7 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 		else if (shader->shaderType == LatteConst::ShaderType::Geometry)
 		{
 		    src->add("GeometryOut out;" _CRLF);
+			src->add("uint primitiveID = objectPayload.primitiveID;" _CRLF);
 			// The index of the current vertex that is being emitted
 			src->add("uint vertexIndex = 0;" _CRLF);
 		}
@@ -4269,30 +4353,14 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 			continue;
 		src->addFmt("float cubeMapArrayIndex{} = 0.0;" _CRLF, i);
 	}
-	// init base offset for streamout buffer writes
-	if (shader->shaderType == LatteConst::ShaderType::Vertex || shader->shaderType == LatteConst::ShaderType::Geometry)
+	// Stable logical output index used by all checked streamout stores.
+	if (shader->shaderType == LatteConst::ShaderType::Geometry && shaderContext->output->streamoutBufferWriteMask.any())
 	{
-		for (sint32 i = 0; i < LATTE_NUM_STREAMOUT_BUFFER; i++)
-		{
-			if(!shaderContext->output->streamoutBufferWriteMask[i])
-				continue;
-
-			cemu_assert_debug((shaderContext->output->streamoutBufferStride[i]&3) == 0);
-
-			if (shader->shaderType == LatteConst::ShaderType::Vertex) // vertex shader
-				src->addFmt("int sbBase{} = supportBuffer.streamoutBufferBase{}/4 + (vid + supportBuffer.verticesPerInstance * iid)*{};" _CRLF, i, i, shaderContext->output->streamoutBufferStride[i] / 4);
-			else // geometry shader
-			{
-				uint32 gsOutPrimType = shaderContext->contextRegisters[mmVGT_GS_OUT_PRIM_TYPE];
-				uint32 bytesPerVertex = shaderContext->contextRegisters[mmSQ_GS_VERT_ITEMSIZE] * 4;
-				uint32 maxVerticesInGS = ((shaderContext->contextRegisters[mmSQ_GSVS_RING_ITEMSIZE] & 0x7FFF) * 4) / bytesPerVertex;
-
-				cemu_assert_debug(gsOutPrimType == 0); // currently we only properly handle GS output primitive points
-
-				src->addFmt("int sbBase{} = supportBuffer.streamoutBufferBase{}/4 + (gl_PrimitiveIDIn * {})*{};" _CRLF, i, i, maxVerticesInGS, shaderContext->output->streamoutBufferStride[i] / 4);
-			}
-		}
-
+		uint32 bytesPerVertex = std::max<uint32>(shaderContext->contextRegisters[mmSQ_GS_VERT_ITEMSIZE] * 4, 1);
+		uint32 maxVerticesInGS = ((shaderContext->contextRegisters[mmSQ_GSVS_RING_ITEMSIZE] & 0x7FFF) * 4) / bytesPerVertex;
+		maxVerticesInGS = std::max<uint32>(maxVerticesInGS, 1);
+		src->add("uint streamoutVertexIndex = 0xffffffffu;" _CRLF);
+		src->addFmt("if (primitiveID <= 0xffffffffu / {}) streamoutVertexIndex = primitiveID * {};" _CRLF, maxVerticesInGS, maxVerticesInGS);
 	}
 	// code to load inputs from previous stage
 	if( shader->shaderType == LatteConst::ShaderType::Vertex )
@@ -4410,24 +4478,28 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
     	}
         else if (shader->shaderType == LatteConst::ShaderType::Geometry)
         {
-            src->add("mesh.set_primitive_count(GET_PRIMITIVE_COUNT(vertexIndex));" _CRLF);
+            src->add("uint emittedVertexCount = min(vertexIndex, (uint)MTL_MAX_VERTEX_COUNT);" _CRLF);
+            src->add("uint emittedPrimitiveCount = GET_PRIMITIVE_COUNT(emittedVertexCount);" _CRLF);
+            src->add("mesh.set_primitive_count(emittedPrimitiveCount);" _CRLF);
 
             // Set indices
             if (shaderContext->contextRegisters[mmVGT_GS_OUT_PRIM_TYPE] == 1) // Line strip
             {
-                src->add("for (uint8_t i = 0; i < GET_PRIMITIVE_COUNT(vertexIndex) * 2; i++) {" _CRLF);
-                src->add("mesh.set_index(i, (i 2 3) + i % 2);" _CRLF);
+                src->add("for (uint i = 0; i < emittedPrimitiveCount * 2; i++) {" _CRLF);
+                src->add("mesh.set_index(i, (i / 2) + i % 2);" _CRLF);
                 src->add("}" _CRLF);
             }
             else if (shaderContext->contextRegisters[mmVGT_GS_OUT_PRIM_TYPE] == 2) // Triangle strip
             {
-                src->add("for (uint8_t i = 0; i < GET_PRIMITIVE_COUNT(vertexIndex) * 3; i++) {" _CRLF);
-                src->add("mesh.set_index(i, (i / 3) + i % 3);" _CRLF);
+                src->add("for (uint i = 0; i < emittedPrimitiveCount * 3; i++) {" _CRLF);
+                src->add("uint primitive = i / 3;" _CRLF);
+                src->add("uint corner = i % 3;" _CRLF);
+                src->add("mesh.set_index(i, primitive + ((primitive & 1) && corner < 2 ? 1 - corner : corner));" _CRLF);
                 src->add("}" _CRLF);
             }
             else
             {
-                src->add("for (uint8_t i = 0; i < vertexIndex; i++) {" _CRLF);
+                src->add("for (uint i = 0; i < emittedVertexCount; i++) {" _CRLF);
                 src->add("mesh.set_index(i, i);" _CRLF);
                 src->add("}" _CRLF);
             }

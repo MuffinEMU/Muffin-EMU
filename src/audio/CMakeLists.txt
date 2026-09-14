@@ -3,6 +3,7 @@ add_library(CemuAudio
 	IAudioAPI.h
 	IAudioInputAPI.cpp
 	IAudioInputAPI.h
+	AudioRingBuffer.h
 )
 
 set_property(TARGET CemuAudio PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -28,6 +29,20 @@ if(ENABLE_CUBEB)
 		CubebInputAPI.h
 	)
 	#add_compile_definitions(HAS_CUBEB)
+endif()
+
+if(IOS)
+	target_sources(CemuAudio PRIVATE
+		iOSAudioAPI.mm
+		iOSAudioAPI.h
+		iOSAudioInputAPI.mm
+		iOSAudioInputAPI.h
+		iOSDeviceDescription.h
+	)
+	target_link_libraries(CemuAudio PRIVATE
+		"-framework AudioToolbox"
+		"-framework AVFoundation"
+	)
 endif()
 
 target_include_directories(CemuAudio PUBLIC "../")

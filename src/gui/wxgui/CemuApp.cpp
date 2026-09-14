@@ -585,7 +585,7 @@ bool CemuApp::CreateDefaultMLCFiles(const fs::path& mlc)
 		auto langFile = fs::path(langDir).append("language.txt");
 		if (!fs::exists(langFile))
 		{
-			std::ofstream file(langFile);
+			std::ofstream file(fs::resolvePathCI(langFile));
 			if (file.is_open())
 			{
 				const char* langStrings[] = { "ja","en","fr","de","it","es","zh","ko","nl","pt","ru","zh" };
@@ -600,7 +600,7 @@ bool CemuApp::CreateDefaultMLCFiles(const fs::path& mlc)
 		auto countryFile = fs::path(langDir).append("country.txt");
 		if (!fs::exists(countryFile))
 		{
-			std::ofstream file(countryFile);
+			std::ofstream file(fs::resolvePathCI(countryFile));
 			for (sint32 i = 0; i < NCrypto::GetCountryCount(); i++)
 			{
 				const char* countryCode = NCrypto::GetCountryAsString(i);
@@ -614,7 +614,7 @@ bool CemuApp::CreateDefaultMLCFiles(const fs::path& mlc)
 		}
 		// create a dummy file in the mlc folder to check if it's writable
 		const auto dummyFile = fs::path(mlc).append("writetestdummy");
-		std::ofstream file(dummyFile);
+		std::ofstream file(fs::resolvePathCI(dummyFile));
 		if (!file.is_open())
 			return false;
 		file.close();

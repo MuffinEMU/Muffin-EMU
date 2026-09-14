@@ -218,6 +218,7 @@ size_t RemoveDuplicatesKeepOrder(std::vector<T>& vec)
 }
 
 void SetThreadName(const char* name);
+void SetHighSpeedCores();
 
 inline uint64 MakeU64(uint32 high, uint32 low)
 {

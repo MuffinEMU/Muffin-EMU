@@ -405,7 +405,7 @@ void PipelineCompiler::InitVertexInputState(const LatteContextRegister& latteReg
 		uint32 bufferStride = (latteRegister.GetRawView()[bufferBaseRegisterIndex + 2] >> 11) & 0xFFFF;
 
 		VkVertexInputBindingDescription entry{};
-#if BOOST_OS_MACOS
+#if BOOST_OS_MACOS || BOOST_OS_IOS
 		if (bufferStride % 4 != 0) {
 			bufferStride = bufferStride + (4-(bufferStride % 4));
 		}
@@ -605,7 +605,7 @@ void PipelineCompiler::InitBlendState(const LatteContextRegister& latteRegister,
 			// force-disable blending for integer formats
 			entry.blendEnable = VK_FALSE;
 		}
-		
+
 		const auto& blendControlReg = latteRegister.CB_BLENDN_CONTROL[i];
 
 		entry.colorWriteMask = (renderTargetMask >> (i * 4)) & 0xF;

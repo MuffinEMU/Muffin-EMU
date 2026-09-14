@@ -205,7 +205,7 @@ enum
 {
 	PPCREC_IML_TYPE_NONE,
 	PPCREC_IML_TYPE_NO_OP,				// no-op instruction
-	PPCREC_IML_TYPE_R_R,				// r* = (op) *r			(can also be r* (op) *r) 
+	PPCREC_IML_TYPE_R_R,				// r* = (op) *r			(can also be r* (op) *r)
 	PPCREC_IML_TYPE_R_R_R,				// r* = r* (op) r*
 	PPCREC_IML_TYPE_R_R_R_CARRY,		// r* = r* (op) r*		(reads and/or updates carry)
 	PPCREC_IML_TYPE_R_R_S32,			// r* = r* (op) s32*
@@ -262,7 +262,8 @@ enum // IMLName
 	PPCREC_NAME_CR = 7000, // CR register bits (31 to 0)
 	PPCREC_NAME_CR_LAST = PPCREC_NAME_CR+31,
 	PPCREC_NAME_CPU_MEMRES_EA = 8000,
-	PPCREC_NAME_CPU_MEMRES_VAL = 8001
+	PPCREC_NAME_CPU_MEMRES_VAL = 8001,
+    PPCREC_NAME_V0 = 9000
 };
 
 #define PPC_REC_INVALID_REGISTER	0xFF	// deprecated. Use IMLREG_INVALID instead
@@ -351,7 +352,7 @@ struct IMLUsedRegisters
 struct IMLInstruction
 {
 	IMLInstruction() {}
-	IMLInstruction(const IMLInstruction& other) 
+	IMLInstruction(const IMLInstruction& other)
 	{
 		memcpy(this, &other, sizeof(IMLInstruction));
 	}
@@ -483,7 +484,7 @@ struct IMLInstruction
 			IMLReg registerBool;
 			bool mustBeTrue;
 		}op_conditional_jump;
-		struct  
+		struct
 		{
 			IMLReg regEA;
 			IMLReg regCompareValue;

@@ -1,0 +1,102 @@
+{
+  "fill" : {
+    "automatic-gradient" : "display-p3:0.29810,0.64502,0.85791,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "extended-gray:1.00000,1.00000"
+              }
+            },
+            {
+              "appearance" : "tinted",
+              "value" : {
+                "solid" : "extended-gray:1.00000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "Melo Seeds.svg",
+          "name" : "Melo Seeds",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0.291996550514682,
+              -274.9529017202934
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "layer-color",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "blur-material" : 0.5,
+      "layers" : [
+        {
+          "image-name" : "Cup2.svg",
+          "name" : "Cup2",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              0,
+              170.88412242310324
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency-specializations" : [
+        {
+          "appearance" : "tinted",
+          "value" : {
+            "enabled" : true,
+            "value" : 0.7
+          }
+        }
+      ]
+    },
+    {
+      "layers" : [
+        {
+          "image-name" : "Handle.svg",
+          "name" : "Handle",
+          "position" : {
+            "scale" : 1,
+            "translation-in-points" : [
+              292.75659552203865,
+              120
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

@@ -4,6 +4,78 @@
 
 #include "Common/FileStream.h"
 
+namespace
+{
+void logMlcDirectory(const fs::path& directory)
+{
+	cemuLog_log(LogType::Force, "MLC-PATH listing=\"{}\" (up to 40 entries)", _pathToUtf8(directory));
+	std::error_code ec;
+	fs::directory_iterator it(directory, ec);
+	uint32 count = 0;
+	while (!ec && it != fs::directory_iterator{} && count < 40)
+	{
+		std::error_code entryEc;
+		const auto status = it->symlink_status(entryEc);
+		cemuLog_log(LogType::Force, "MLC-PATH entry=\"{}\" type={} ec={} ({})",
+			_pathToUtf8(it->path().filename()), static_cast<int>(status.type()),
+			entryEc.value(), entryEc ? entryEc.message() : "ok");
+		++count;
+		it.increment(ec);
+	}
+	if (ec)
+		cemuLog_log(LogType::Force, "MLC-PATH listing-error={} ({})", ec.value(), ec.message());
+	else if (it != fs::directory_iterator{})
+		cemuLog_log(LogType::Force, "MLC-PATH listing truncated");
+}
+
+void logMlcLookup(const fs::path& path)
+{
+	const auto root = ActiveSettings::GetMlcPath();
+	const auto relative = path.lexically_relative(root);
+	
+	if (relative != fs::path("sys/title/0005001b/1005c000/content") &&
+		relative != fs::path("sys/title/0005001b/1005c000/content/language.txt") &&
+		relative != fs::path("sys/title/0005001b/10051000/content/00/erreula/erreula.pack"))
+		return;
+	cemuLog_log(LogType::Force,
+		"MLC-PATH BEGIN requested=\"{}\" active-root=\"{}\" default-root=\"{}\" configured={} launch-override={}",
+		_pathToUtf8(path), _pathToUtf8(root), _pathToUtf8(ActiveSettings::GetDefaultMLCPath()),
+		ActiveSettings::IsCustomMlcPath(), ActiveSettings::IsCommandLineMlcPath());
+	std::error_code canonicalEc;
+	const auto canonical = fs::weakly_canonical(path, canonicalEc);
+	cemuLog_log(LogType::Force, "MLC-PATH canonical=\"{}\" ec={} ({})",
+		_pathToUtf8(canonical), canonicalEc.value(), canonicalEc ? canonicalEc.message() : "ok");
+	logMlcDirectory(root);
+	fs::path current;
+	for (const auto& component : path)
+	{
+		current /= component;
+		std::error_code ec;
+		const auto status = fs::status(current, ec);
+		std::error_code linkEc;
+		const auto linkStatus = fs::symlink_status(current, linkEc);
+		cemuLog_log(LogType::Force,
+			"MLC-PATH component=\"{}\" exists={} directory={} symlink={} ec={} ({}) link-ec={}",
+			_pathToUtf8(current), fs::exists(status), fs::is_directory(status), fs::is_symlink(linkStatus),
+			ec.value(), ec ? ec.message() : "ok", linkEc.value());
+		if (fs::is_symlink(linkStatus))
+		{
+			const auto target = fs::read_symlink(current, linkEc);
+			cemuLog_log(LogType::Force, "MLC-PATH symlink-target=\"{}\" ec={}", _pathToUtf8(target), linkEc.value());
+		}
+		if (ec || !fs::exists(status))
+		{
+			cemuLog_log(LogType::Force, "MLC-PATH first-unavailable=\"{}\"", _pathToUtf8(current));
+			logMlcDirectory(current.parent_path());
+			break;
+		}
+		if (current == path && fs::is_directory(status))
+			logMlcDirectory(current);
+	}
+	cemuLog_log(LogType::Force, "MLC-PATH END");
+}
+}
+
 /* FSCVirtualFile implementation for HostFS */
 
 FSCVirtualFile_Host::~FSCVirtualFile_Host()
@@ -159,6 +231,7 @@ bool FSCVirtualFile_Host::fscDirNext(FSCDirEntry* dirEntry)
 
 FSCVirtualFile* FSCVirtualFile_Host::OpenFile(const fs::path& path, FSC_ACCESS_FLAG accessFlags, sint32& fscStatus)
 {
+	// logMlcLookup(path);
 	if (!HAS_FLAG(accessFlags, FSC_ACCESS_FLAG::OPEN_FILE) && !HAS_FLAG(accessFlags, FSC_ACCESS_FLAG::OPEN_DIR))
 		cemu_assert_debug(false); // not allowed. At least one of both flags must be set
 

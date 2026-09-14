@@ -9,6 +9,7 @@
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
+#include "Cafe/HW/Latte/Core/LatteTextureLoaderASTC.h"
 
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.h"
 
@@ -119,7 +120,7 @@ std::vector<VulkanRenderer::DeviceInfo> VulkanRenderer::GetDevices()
 	else if (backend == WindowSystem::WindowHandleInfo::Backend::Wayland)
 		requiredExtensions.emplace_back(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
 	#endif
-	#elif BOOST_OS_MACOS
+	#elif BOOST_OS_MACOS || BOOST_OS_IOS
 	requiredExtensions.emplace_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
 	#endif
 
@@ -469,6 +470,7 @@ static void LinuxBreathOfTheWildWorkaround(VkInstance& instance, const VkInstanc
 VulkanRenderer::VulkanRenderer()
 {
 	glslang::InitializeProcess();
+    InitializeGlobalVulkan();
 
 	cemuLog_log(LogType::Force, "------- Init Vulkan graphics backend -------");
 
@@ -617,6 +619,8 @@ VulkanRenderer::VulkanRenderer()
 	VkPhysicalDeviceFeatures2 deviceFeatures2 = {};
 	deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
 	vkGetPhysicalDeviceFeatures2(m_physicalDevice, &deviceFeatures2);
+	m_supportedFormatInfo.fmt_bc = deviceFeatures2.features.textureCompressionBC;
+	m_supportedFormatInfo.fmt_astc = deviceFeatures2.features.textureCompressionASTC_LDR;
 
 	deviceFeatures.independentBlend = VK_TRUE;
 	deviceFeatures.samplerAnisotropy = VK_TRUE;
@@ -625,16 +629,18 @@ VulkanRenderer::VulkanRenderer()
 	deviceFeatures.logicOp = deviceFeatures2.features.logicOp;
 	if (!deviceFeatures.logicOp) {
 		cemuLog_log(LogType::Force, "LogicOp not supported by the driver, some rendering issues might occur");
-#if BOOST_OS_MACOS
+#if BOOST_OS_MACOS || BOOST_OS_IOS
 		cemuLog_log(LogType::Force, "Install the privateapi variant of MoltenVK to get logicOp support on macOS");
 #endif
 	}
-#if !BOOST_OS_MACOS
+#if !BOOST_OS_MACOS && !BOOST_OS_IOS
 	deviceFeatures.geometryShader = VK_TRUE;
 #endif
 	deviceFeatures.occlusionQueryPrecise = VK_TRUE;
 	deviceFeatures.depthClamp = VK_TRUE;
 	deviceFeatures.depthBiasClamp = VK_TRUE;
+	deviceFeatures.textureCompressionBC = m_supportedFormatInfo.fmt_bc;
+	deviceFeatures.textureCompressionASTC_LDR = m_supportedFormatInfo.fmt_astc;
 
 	if (m_featureControl.deviceExtensions.pipeline_robustness)
 	{
@@ -1442,7 +1448,7 @@ std::vector<const char*> VulkanRenderer::CheckInstanceExtensionSupport(FeatureCo
 	else if (backend == WindowSystem::WindowHandleInfo::Backend::Wayland)
 		requiredInstanceExtensions.emplace_back(VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
 	#endif
-	#elif BOOST_OS_MACOS
+	#elif BOOST_OS_MACOS || BOOST_OS_IOS
 	requiredInstanceExtensions.emplace_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
 	#endif
 	if (cemuLog_isLoggingEnabled(LogType::VulkanValidation))
@@ -1593,7 +1599,7 @@ VkSurfaceKHR VulkanRenderer::CreateFramebufferSurface(VkInstance instance, Windo
 		return CreateWaylandSurface(instance, static_cast<wl_display*>(windowInfo.display), static_cast<wl_surface*>(windowInfo.surface));
 	#endif
 	return {};
-#elif BOOST_OS_MACOS
+#elif BOOST_OS_MACOS || BOOST_OS_IOS
 	return CreateCocoaSurface(instance, windowInfo.surface);
 #endif
 }
@@ -1801,6 +1807,7 @@ void VulkanRenderer::ImguiInit()
 void VulkanRenderer::Initialize()
 {
 	Renderer::Initialize();
+	StartRenderWorker("VulkanSubmit");
 	InitFirstCommandBuffer();
 	CreatePipelineCache();
 	ImguiInit();
@@ -1811,6 +1818,7 @@ void VulkanRenderer::Shutdown()
 {
 	SubmitCommandBuffer();
 	WaitDeviceIdle();
+	StopRenderWorker();
 	// stop compilation threads
 	RendererShaderVk::Shutdown();
 	PipelineCompiler::CompileThreadPool_Stop();
@@ -1912,6 +1920,37 @@ void VulkanRenderer::QueryMemoryInfo()
 void VulkanRenderer::QueryAvailableFormats()
 {
 	VkFormatProperties fmtProp{};
+	auto supportsSampledTexture = [this](VkFormat format)
+	{
+		VkFormatProperties properties{};
+		vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format, &properties);
+		constexpr VkFormatFeatureFlags requiredFeatures = VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+		return (properties.optimalTilingFeatures & requiredFeatures) == requiredFeatures;
+	};
+
+	const VkFormat bcFormats[] =
+	{
+		VK_FORMAT_BC1_RGBA_SRGB_BLOCK,
+		VK_FORMAT_BC1_RGBA_UNORM_BLOCK,
+		VK_FORMAT_BC2_UNORM_BLOCK,
+		VK_FORMAT_BC2_SRGB_BLOCK,
+		VK_FORMAT_BC3_UNORM_BLOCK,
+		VK_FORMAT_BC3_SRGB_BLOCK,
+		VK_FORMAT_BC4_UNORM_BLOCK,
+		VK_FORMAT_BC4_SNORM_BLOCK,
+		VK_FORMAT_BC5_UNORM_BLOCK,
+		VK_FORMAT_BC5_SNORM_BLOCK,
+	};
+	m_supportedFormatInfo.fmt_bc = m_supportedFormatInfo.fmt_bc && std::all_of(std::begin(bcFormats), std::end(bcFormats), supportsSampledTexture);
+	m_supportedFormatInfo.fmt_astc = m_supportedFormatInfo.fmt_astc &&
+		supportsSampledTexture(VK_FORMAT_ASTC_4x4_UNORM_BLOCK) &&
+		supportsSampledTexture(VK_FORMAT_ASTC_4x4_SRGB_BLOCK);
+
+	if (!m_supportedFormatInfo.fmt_bc)
+	{
+		cemuLog_log(LogType::Force, "BC texture compression is unavailable; using {} fallback", m_supportedFormatInfo.fmt_astc ? "ASTC 4x4" : "uncompressed");
+	}
+
 	vkGetPhysicalDeviceFormatProperties(m_physicalDevice, VK_FORMAT_D24_UNORM_S8_UINT, &fmtProp);
 	// D24S8
 	if (fmtProp.optimalTilingFeatures != 0) // todo - more restrictive check
@@ -2146,41 +2185,48 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 
 	vkEndCommandBuffer(m_state.currentCommandBuffer);
 
-	VkSubmitInfo submitInfo = {};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &m_state.currentCommandBuffer;
-
 	// signal current command buffer semaphore
-	VkSemaphore signalSemArray[2];
+	std::array<VkSemaphore, 2> signalSemArray{};
+	uint32 signalSemaphoreCount = 0;
 	if (signalSemaphore != VK_NULL_HANDLE)
 	{
-		submitInfo.signalSemaphoreCount = 2;
-		signalSemArray[0] = m_commandBufferSemaphores[m_commandBufferIndex]; // signal current
-		signalSemArray[1] = signalSemaphore; // signal current
-		submitInfo.pSignalSemaphores = signalSemArray;
+		signalSemaphoreCount = 2;
+		signalSemArray[0] = m_commandBufferSemaphores[m_commandBufferIndex];
+		signalSemArray[1] = signalSemaphore;
 	}
 	else
 	{
-		submitInfo.signalSemaphoreCount = 1;
-		submitInfo.pSignalSemaphores = &m_commandBufferSemaphores[m_commandBufferIndex]; // signal current
+		signalSemaphoreCount = 1;
+		signalSemArray[0] = m_commandBufferSemaphores[m_commandBufferIndex];
 	}
 
 	// wait for previous command buffer semaphore
 	VkSemaphore prevSem = GetLastSubmittedCmdBufferSemaphore();
-	const VkPipelineStageFlags semWaitStageMask[2] = { VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT };
-	VkSemaphore waitSemArray[2];
-	submitInfo.waitSemaphoreCount = 0;
+	std::array<VkSemaphore, 2> waitSemArray{};
+	uint32 waitSemaphoreCount = 0;
 	if (m_numSubmittedCmdBuffers > 0)
-		waitSemArray[submitInfo.waitSemaphoreCount++] = prevSem; // wait on semaphore from previous submit
+		waitSemArray[waitSemaphoreCount++] = prevSem; // wait on semaphore from previous submit
 	if (waitSemaphore != VK_NULL_HANDLE)
-		waitSemArray[submitInfo.waitSemaphoreCount++] = waitSemaphore;
-	submitInfo.pWaitDstStageMask = semWaitStageMask;
-	submitInfo.pWaitSemaphores = waitSemArray;
+		waitSemArray[waitSemaphoreCount++] = waitSemaphore;
 
-	const VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_cmd_buffer_fences[m_commandBufferIndex]);
-	if (result != VK_SUCCESS)
-		UnrecoverableError(fmt::format("failed to submit command buffer. Error {}", result).c_str());
+	const VkCommandBuffer submittedCommandBuffer = m_state.currentCommandBuffer;
+	const VkFence submittedFence = m_cmd_buffer_fences[m_commandBufferIndex];
+	QueueRenderWorkerJob([this, submittedCommandBuffer, submittedFence, signalSemArray, signalSemaphoreCount, waitSemArray, waitSemaphoreCount] {
+		const VkPipelineStageFlags semWaitStageMask[2] = { VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT };
+		VkSubmitInfo submitInfo = {};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &submittedCommandBuffer;
+		submitInfo.signalSemaphoreCount = signalSemaphoreCount;
+		submitInfo.pSignalSemaphores = signalSemArray.data();
+		submitInfo.waitSemaphoreCount = waitSemaphoreCount;
+		submitInfo.pWaitDstStageMask = semWaitStageMask;
+		submitInfo.pWaitSemaphores = waitSemArray.data();
+
+		const VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, submittedFence);
+		if (result != VK_SUCCESS)
+			UnrecoverableError(fmt::format("failed to submit command buffer. Error {}", result).c_str());
+	});
 	m_numSubmittedCmdBuffers++;
 
 	// check if any previously submitted command buffers have finished execution
@@ -2250,6 +2296,7 @@ void VulkanRenderer::WaitCommandBufferFinished(uint64 commandBufferId)
 {
 	if (commandBufferId == m_numSubmittedCmdBuffers)
 		SubmitCommandBuffer();
+	WaitRenderWorkerIdle();
 	while (HasCommandBufferFinished(commandBufferId) == false)
 		WaitForNextFinishedCommandBuffer();
 }
@@ -2304,7 +2351,7 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 			if (res == VK_SUCCESS)
 			{
 
-				auto file = std::ofstream(filename, std::ios::out | std::ios::binary);
+				auto file = std::ofstream(fs::resolvePathCI(filename), std::ios::out | std::ios::binary);
 				if (file.is_open())
 				{
 					file.write((char*)cacheData.data(), cacheData.size());
@@ -2338,7 +2385,7 @@ void VulkanRenderer::CreatePipelineCache()
 	if (fs::exists(dir))
 	{
 		const auto filename = dir / fmt::format("{:016x}.bin", CafeSystem::GetForegroundTitleId());
-		auto file = std::ifstream(filename, std::ios::in | std::ios::binary | std::ios::ate);
+		auto file = std::ifstream(fs::resolvePathCI(filename), std::ios::in | std::ios::binary | std::ios::ate);
 		if (file.is_open())
 		{
 			const size_t fileSize = file.tellg();
@@ -2649,44 +2696,174 @@ void VulkanRenderer::GetTextureFormatInfoVK(Latte::E_GX2SURFFMT format, bool isD
 			break;
 			// compressed formats
 		case Latte::E_GX2SURFFMT::BC1_SRGB:
-			formatInfoOut->vkImageFormat = VK_FORMAT_BC1_RGBA_SRGB_BLOCK; // todo - verify
-			formatInfoOut->decoder = TextureDecoder_BC1::getInstance();
+			if (m_supportedFormatInfo.fmt_bc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_BC1_RGBA_SRGB_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC1::getInstance();
+			}
+			else if (m_supportedFormatInfo.fmt_astc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC1_SRGB_to_ASTC::getInstance();
+			}
+			else
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_SRGB;
+				formatInfoOut->decoder = TextureDecoder_BC1_RGBA8::getInstance();
+			}
 			break;
 		case Latte::E_GX2SURFFMT::BC1_UNORM:
-			formatInfoOut->vkImageFormat = VK_FORMAT_BC1_RGBA_UNORM_BLOCK; // todo - verify
-			formatInfoOut->decoder = TextureDecoder_BC1::getInstance();
+			if (m_supportedFormatInfo.fmt_bc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_BC1_RGBA_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC1::getInstance();
+			}
+			else if (m_supportedFormatInfo.fmt_astc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC1_UNORM_to_ASTC::getInstance();
+			}
+			else
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+				formatInfoOut->decoder = TextureDecoder_BC1_RGBA8::getInstance();
+			}
 			break;
 		case Latte::E_GX2SURFFMT::BC2_UNORM:
-			formatInfoOut->vkImageFormat = VK_FORMAT_BC2_UNORM_BLOCK; // todo - verify
-			formatInfoOut->decoder = TextureDecoder_BC2::getInstance();
+			if (m_supportedFormatInfo.fmt_bc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_BC2_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC2::getInstance();
+			}
+			else if (m_supportedFormatInfo.fmt_astc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC2_UNORM_to_ASTC::getInstance();
+			}
+			else
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+				formatInfoOut->decoder = TextureDecoder_BC2_RGBA8::getInstance();
+			}
 			break;
 		case Latte::E_GX2SURFFMT::BC2_SRGB:
-			formatInfoOut->vkImageFormat = VK_FORMAT_BC2_SRGB_BLOCK; // todo - verify
-			formatInfoOut->decoder = TextureDecoder_BC2::getInstance();
+			if (m_supportedFormatInfo.fmt_bc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_BC2_SRGB_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC2::getInstance();
+			}
+			else if (m_supportedFormatInfo.fmt_astc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC2_SRGB_to_ASTC::getInstance();
+			}
+			else
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_SRGB;
+				formatInfoOut->decoder = TextureDecoder_BC2_RGBA8::getInstance();
+			}
 			break;
 		case Latte::E_GX2SURFFMT::BC3_UNORM:
-			formatInfoOut->vkImageFormat = VK_FORMAT_BC3_UNORM_BLOCK;
-			formatInfoOut->decoder = TextureDecoder_BC3::getInstance();
+			if (m_supportedFormatInfo.fmt_bc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_BC3_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC3::getInstance();
+			}
+			else if (m_supportedFormatInfo.fmt_astc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC3_UNORM_to_ASTC::getInstance();
+			}
+			else
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+				formatInfoOut->decoder = TextureDecoder_BC3_RGBA8::getInstance();
+			}
 			break;
 		case Latte::E_GX2SURFFMT::BC3_SRGB:
-			formatInfoOut->vkImageFormat = VK_FORMAT_BC3_SRGB_BLOCK;
-			formatInfoOut->decoder = TextureDecoder_BC3::getInstance();
+			if (m_supportedFormatInfo.fmt_bc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_BC3_SRGB_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC3::getInstance();
+			}
+			else if (m_supportedFormatInfo.fmt_astc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC3_SRGB_to_ASTC::getInstance();
+			}
+			else
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8B8A8_SRGB;
+				formatInfoOut->decoder = TextureDecoder_BC3_RGBA8::getInstance();
+			}
 			break;
 		case Latte::E_GX2SURFFMT::BC4_UNORM:
-			formatInfoOut->vkImageFormat = VK_FORMAT_BC4_UNORM_BLOCK;
-			formatInfoOut->decoder = TextureDecoder_BC4::getInstance();
+			if (m_supportedFormatInfo.fmt_bc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_BC4_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC4::getInstance();
+			}
+			else if (m_supportedFormatInfo.fmt_astc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC4_UNORM_to_ASTC::getInstance();
+			}
+			else
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_R8_UNORM;
+				formatInfoOut->decoder = TextureDecoder_BC4_UNORM_To_R8::getInstance();
+			}
 			break;
 		case Latte::E_GX2SURFFMT::BC4_SNORM:
-			formatInfoOut->vkImageFormat = VK_FORMAT_BC4_SNORM_BLOCK;
-			formatInfoOut->decoder = TextureDecoder_BC4::getInstance();
+			if (m_supportedFormatInfo.fmt_bc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_BC4_SNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC4::getInstance();
+			}
+			else if (m_supportedFormatInfo.fmt_astc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC4_SNORM_to_ASTC::getInstance();
+			}
+			else
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_R8_SNORM;
+				formatInfoOut->decoder = TextureDecoder_BC4_SNORM_To_R8::getInstance();
+			}
 			break;
 		case Latte::E_GX2SURFFMT::BC5_UNORM:
-			formatInfoOut->vkImageFormat = VK_FORMAT_BC5_UNORM_BLOCK;
-			formatInfoOut->decoder = TextureDecoder_BC5::getInstance();
+			if (m_supportedFormatInfo.fmt_bc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_BC5_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC5::getInstance();
+			}
+			else if (m_supportedFormatInfo.fmt_astc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC5_UNORM_to_ASTC::getInstance();
+			}
+			else
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8_UNORM;
+				formatInfoOut->decoder = TextureDecoder_BC5_UNORM_To_RG8::getInstance();
+			}
 			break;
 		case Latte::E_GX2SURFFMT::BC5_SNORM:
-			formatInfoOut->vkImageFormat = VK_FORMAT_BC5_SNORM_BLOCK;
-			formatInfoOut->decoder = TextureDecoder_BC5::getInstance();
+			if (m_supportedFormatInfo.fmt_bc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_BC5_SNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC5::getInstance();
+			}
+			else if (m_supportedFormatInfo.fmt_astc)
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+				formatInfoOut->decoder = TextureDecoder_BC5_SNORM_to_ASTC::getInstance();
+			}
+			else
+			{
+				formatInfoOut->vkImageFormat = VK_FORMAT_R8G8_SNORM;
+				formatInfoOut->decoder = TextureDecoder_BC5_SNORM_To_RG8::getInstance();
+			}
 			break;
 		case Latte::E_GX2SURFFMT::R24_X8_UNORM:
 			formatInfoOut->vkImageFormat = VK_FORMAT_R32_SFLOAT;
@@ -2851,9 +3028,21 @@ bool VulkanRenderer::AcquireNextSwapchainImage(bool mainWindow)
 	}
 
 	auto& chainInfo = GetChainInfo(mainWindow);
+	auto& presentPending = m_swapchainPresentPending[mainWindow ? 0 : 1];
+	if (presentPending.load(std::memory_order_acquire))
+	{
+		WaitRenderWorkerIdle();
+		presentPending.store(false, std::memory_order_release);
+	}
 
 	if (chainInfo.swapchainImageIndex != -1)
 		return true; // image already reserved
+
+#if BOOST_OS_IOS
+	const auto outputBit = mainWindow ? 1u : 2u;
+	if (!(WindowSystem::GetWindowInfo().visible_outputs.load() & outputBit))
+		return false;
+#endif
 
 	if (!UpdateSwapchainProperties(mainWindow))
 		return false;
@@ -2958,58 +3147,60 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
 
 	chainInfo.WaitAvailableFence();
 
-	VkPresentIdKHR presentId = {};
-
-	VkPresentInfoKHR presentInfo = {};
-	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	presentInfo.swapchainCount = 1;
-	presentInfo.pSwapchains = &chainInfo.m_swapchain;
-	presentInfo.pImageIndices = &chainInfo.swapchainImageIndex;
-	// wait on command buffer semaphore
-	presentInfo.waitSemaphoreCount = 1;
-	presentInfo.pWaitSemaphores = &presentSemaphore;
-
-	// if present_wait is available and enabled, add frame markers to present requests
-	// and limit the number of queued present operations
-	if (m_featureControl.deviceExtensions.present_wait && chainInfo.m_maxQueued > 0)
-	{
-		presentId.sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
-		presentId.swapchainCount = 1;
-		presentId.pPresentIds = &chainInfo.m_presentId;
-
-		presentInfo.pNext = &presentId;
-
-		if(chainInfo.m_queueDepth >= chainInfo.m_maxQueued)
-		{
-			uint64 waitFrameId = chainInfo.m_presentId - chainInfo.m_queueDepth;
-			vkWaitForPresentKHR(m_logicalDevice, chainInfo.m_swapchain, waitFrameId, 40'000'000);
-			chainInfo.m_queueDepth--;
-		}
-	}
-
-	VkResult result = vkQueuePresentKHR(m_presentQueue, &presentInfo);
-	if (result < 0 && result != VK_ERROR_OUT_OF_DATE_KHR)
-	{
-		throw std::runtime_error(fmt::format("Failed to present image: {}", result));
-	}
-	if(result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
-		chainInfo.m_shouldRecreate = true;
-
-	if(result >= 0)
-	{
-		chainInfo.m_queueDepth++;
-		chainInfo.m_presentId++;
-	}
-
-	chainInfo.hasDefinedSwapchainImage = false;
-
-	chainInfo.swapchainImageIndex = -1;
+	auto& presentPending = m_swapchainPresentPending[mainWindow ? 0 : 1];
+	presentPending.store(true, std::memory_order_release);
+    QueueRenderWorkerJob([this, &chainInfo, &presentPending, presentSemaphore] {
+        VkPresentIdKHR presentId = {};
+        
+        VkPresentInfoKHR presentInfo = {};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &chainInfo.m_swapchain;
+        presentInfo.pImageIndices = &chainInfo.swapchainImageIndex;
+        // wait on command buffer semaphore
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = &presentSemaphore;
+        
+        if (m_featureControl.deviceExtensions.present_wait && chainInfo.m_maxQueued > 0)
+        {
+            presentId.sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
+            presentId.swapchainCount = 1;
+            presentId.pPresentIds = &chainInfo.m_presentId;
+            
+            presentInfo.pNext = &presentId;
+            
+            if(chainInfo.m_queueDepth >= chainInfo.m_maxQueued)
+            {
+                uint64 waitFrameId = chainInfo.m_presentId - chainInfo.m_queueDepth;
+                vkWaitForPresentKHR(m_logicalDevice, chainInfo.m_swapchain, waitFrameId, 40'000'000);
+                chainInfo.m_queueDepth--;
+            }
+        }
+        
+        VkResult result = vkQueuePresentKHR(m_presentQueue, &presentInfo);
+        if(result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR)
+            chainInfo.m_shouldRecreate = true;
+        
+        if(result >= 0)
+        {
+            chainInfo.m_queueDepth++;
+            chainInfo.m_presentId++;
+        }
+        
+        chainInfo.hasDefinedSwapchainImage = false;
+        chainInfo.swapchainImageIndex = -1;
+        presentPending.store(false, std::memory_order_release);
+        
+        if (result < 0 && result != VK_ERROR_OUT_OF_DATE_KHR)
+            throw std::runtime_error(fmt::format("Failed to present image: {}", result));
+    });
 }
 
 void VulkanRenderer::Flush(bool waitIdle)
 {
 	if (m_recordedDrawcalls > 0 || m_submitOnIdle)
 		SubmitCommandBuffer();
+	WaitRenderWorkerIdle();
 	if (waitIdle)
 		WaitCommandBufferFinished(GetCurrentCommandBufferId());
 }
@@ -3573,9 +3764,9 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 }
 
 LatteTexture* VulkanRenderer::texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels,
-	uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth)
+	uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget)
 {
-	return new LatteTextureVk(this, dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth);
+	return new LatteTextureVk(this, dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth, isRenderTarget);
 }
 
 void VulkanRenderer::texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit)

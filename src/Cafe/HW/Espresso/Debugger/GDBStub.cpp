@@ -847,6 +847,9 @@ void GDBServer::CMDWriteMemory(std::unique_ptr<CommandContext>& context)
 			values[i] = hexValue;
 		}
 	}
+	PPCRecompiler_invalidateRange(
+		static_cast<uint32>(addr),
+		static_cast<uint32>(addr + length));
 	return context->QueueResponse(RESPONSE_OK);
 }
 

@@ -51,7 +51,8 @@ void ActiveSettings::Init()
 {
 	cemu_assert_debug(s_setPathsCalled);
 	std::string additionalErrorInfo;
-	s_has_required_online_files = iosuCrypt_checkRequirementsForOnlineMode(additionalErrorInfo) == IOS_CRYPTO_ONLINE_REQ_OK;
+	const sint32 onlineRequirement = iosuCrypt_checkRequirementsForOnlineMode(additionalErrorInfo);
+	s_has_required_online_files = onlineRequirement == IOS_CRYPTO_ONLINE_REQ_OK;
 }
 
 bool ActiveSettings::LoadSharedLibrariesEnabled()
@@ -66,6 +67,10 @@ bool ActiveSettings::DisplayDRCEnabled()
 
 CPUMode ActiveSettings::GetCPUMode()
 {
+#if BOOST_OS_IOS
+    return GetConfig().cpu_mode.GetValue();
+#else
+
 	auto mode = g_current_game_profile->GetCPUMode().value_or(CPUMode::Auto);
 
 	if (mode == CPUMode::Auto)
@@ -79,6 +84,7 @@ CPUMode ActiveSettings::GetCPUMode()
 		mode = CPUMode::MulticoreRecompiler;
 
 	return mode;
+#endif
 }
 
 uint8 ActiveSettings::GetTimerShiftFactor()
@@ -93,7 +99,7 @@ void ActiveSettings::SetTimerShiftFactor(uint8 shiftFactor)
 
 PrecompiledShaderOption ActiveSettings::GetPrecompiledShadersOption()
 {
-	return PrecompiledShaderOption::Auto; // g_current_game_profile->GetPrecompiledShadersState().value_or(GetConfig().precompiled_shaders);
+	return g_current_game_profile->GetPrecompiledShadersState().value_or(GetConfig().precompiled_shaders);
 }
 
 bool ActiveSettings::RenderUpsideDownEnabled()
@@ -300,4 +306,3 @@ fs::path ActiveSettings::GetDefaultMLCPath()
 {
 	return GetUserDataPath("mlc01");
 }
-

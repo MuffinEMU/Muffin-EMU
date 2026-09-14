@@ -24,7 +24,7 @@ struct LatteSamplerState
 class LatteTexture
 {
 public:
-	LatteTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth);
+	LatteTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget);
 	virtual ~LatteTexture();
 
 	virtual void AllocateOnHost() = 0;
@@ -142,6 +142,7 @@ public:
 	// data info
 	bool isDataDefined{};
 	bool isDepth;
+	bool isRenderTarget{};
 	bool hasStencil{}; // for depth textures
 	// info per mip/slice
 	struct LatteTextureSliceMipInfo* sliceMipInfo{};
@@ -330,7 +331,7 @@ std::vector<LatteTextureInformation> LatteTexture_QueryCacheInfo();
 
 float* LatteTexture_getEffectiveTextureScale(LatteConst::ShaderType shaderType, sint32 texUnit);
 
-LatteTextureView* LatteTexture_CreateTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth);
+LatteTextureView* LatteTexture_CreateTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget = false);
 void LatteTexture_Delete(LatteTexture* texture);
 
 void LatteTextureLoader_writeReadbackTextureToMemory(LatteTextureDefinition* textureData, uint32 sliceIndex, uint32 mipIndex, uint8* linearPixelData);
@@ -347,11 +348,12 @@ void LatteTexture_TrackTextureGPUWrite(LatteTexture* texture, uint32 slice, uint
 void LatteTexture_InitSliceAndMipInfo(LatteTexture* texture);
 void LatteTexture_RegisterTextureMemoryOccupancy(LatteTexture* texture);
 void LatteTexture_UnregisterTextureMemoryOccupancy(LatteTexture* texture);
+void LatteTexture_NotifyDCFlush(MPTR physAddress, uint32 size);
 
 void LatteTexture_DeleteTextureRelations(LatteTexture* texture);
 void LatteTexture_DeleteDataOverlapTracking(LatteTexture* texture);
 
-LatteTextureView* LatteTexture_CreateMapping(MPTR physAddr, MPTR physMipAddr, sint32 width, sint32 height, sint32 depth, sint32 pitch, Latte::E_HWTILEMODE tileMode, uint32 swizzle, sint32 firstMip, sint32 numMip, sint32 firstSlice, sint32 numSlice, Latte::E_GX2SURFFMT format, Latte::E_DIM dimBase, Latte::E_DIM dimView, bool isDepth, bool allowCreateNewDataTexture = true);
+LatteTextureView* LatteTexture_CreateMapping(MPTR physAddr, MPTR physMipAddr, sint32 width, sint32 height, sint32 depth, sint32 pitch, Latte::E_HWTILEMODE tileMode, uint32 swizzle, sint32 firstMip, sint32 numMip, sint32 firstSlice, sint32 numSlice, Latte::E_GX2SURFFMT format, Latte::E_DIM dimBase, Latte::E_DIM dimView, bool isDepth, bool allowCreateNewDataTexture = true, bool isRenderTarget = false);
 
 LatteTextureView* LatteTC_LookupTextureByData(MPTR physAddr, sint32 width, sint32 height, sint32 pitch, sint32 firstMip, sint32 numMip, sint32 firstSlice, sint32 numSlice, sint32* searchIndex);
 void LatteTC_LookupTexturesByPhysAddr(MPTR physAddr, std::vector<LatteTexture*>& list_textures);

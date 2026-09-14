@@ -510,7 +510,17 @@ namespace LatteDecompiler
 			{
 				if ((decompilerContext->shader->pixelColorOutputMask&(1 << i)) != 0)
 				{
+					const auto outputType = GetGLSLPixelOutputType(i, *decompilerContext->contextRegistersNew);
+					if (outputType != GLSLPixelOutputType::Float)
+					{
+						src->add("#ifdef VULKAN" _CRLF);
+						src->addFmt("layout(location = {}) out {} passPixelColor{};" _CRLF, i,
+							outputType == GLSLPixelOutputType::SignedInt ? "ivec4" : "uvec4", i);
+						src->add("#else" _CRLF);
+					}
 					src->addFmt("layout(location = {}) out vec4 passPixelColor{};" _CRLF, i, i);
+					if (outputType != GLSLPixelOutputType::Float)
+						src->add("#endif" _CRLF);
 				}
 			}
 		}

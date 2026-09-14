@@ -765,7 +765,7 @@ void GraphicPack2::LoadShaders()
 			}
 			else if (filename == L"output.glsl")
 			{
-				std::ifstream file(p);
+				std::ifstream file(fs::resolvePathCI(p));
 				if (!file.is_open())
 					throw std::runtime_error(fmt::format("can't open graphic pack file: {}", _pathToUtf8(p.filename())));
 
@@ -778,7 +778,7 @@ void GraphicPack2::LoadShaders()
 			}
 			else if (filename == L"upscaling.glsl")
 			{
-				std::ifstream file(p);
+				std::ifstream file(fs::resolvePathCI(p));
 				if (!file.is_open())
 					throw std::runtime_error(fmt::format("can't open graphic pack file: {}", _pathToUtf8(p.filename())));
 
@@ -791,7 +791,7 @@ void GraphicPack2::LoadShaders()
 			}
 			else if (filename == L"downscaling.glsl")
 			{
-				std::ifstream file(p);
+				std::ifstream file(fs::resolvePathCI(p));
 				if (!file.is_open())
 					throw std::runtime_error(fmt::format("can't open graphic pack file: {}", _pathToUtf8(p.filename())));
 
@@ -1314,7 +1314,7 @@ GraphicPack2::CustomShader GraphicPack2::LoadShader(const fs::path& path, uint64
 {
 	CustomShader shader;
 
-	std::ifstream file(path);
+	std::ifstream file(fs::resolvePathCI(path));
 	if (!file.is_open())
 		throw std::runtime_error("can't open shader file");
 

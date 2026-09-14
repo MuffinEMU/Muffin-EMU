@@ -7,7 +7,7 @@ using namespace Latte;
 namespace LatteAddrLib
 {
 
-#if BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_BSD
+#if BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_BSD || BOOST_OS_IOS
 	unsigned char _BitScanReverse(uint32* _Index, uint32 _Mask)
 	{
 		if (!_Mask)

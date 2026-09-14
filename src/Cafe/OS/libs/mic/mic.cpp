@@ -78,6 +78,9 @@ bool mic_isConnected(uint32 drcIndex)
 	if( drcIndex != 0 )
 		return false;
 
+	if (!GetConfig().microphone_enabled)
+		return false;
+
 	return InputManager::instance().get_vpad_controller(drcIndex) != nullptr;
 }
 
@@ -144,7 +147,11 @@ void micExport_MICInit(PPCInterpreter_t* hCPU)
 	osLib_returnFromFunction(hCPU, (drcIndex==0)?MIC_HANDLE_DRC0:MIC_HANDLE_DRC1); // success
 
 	auto& config = GetConfig();
-	const auto audio_api = IAudioInputAPI::Cubeb; // change this if more input apis get implemented
+#if BOOST_OS_IOS
+	const auto audio_api = IAudioInputAPI::IOSAudio;
+#else
+	const auto audio_api = IAudioInputAPI::Cubeb;
+#endif
 
 	std::unique_lock lock(g_audioInputMutex);
 	if (!g_inputAudio)
@@ -156,6 +163,8 @@ void micExport_MICInit(PPCInterpreter_t* hCPU)
 			const auto it = std::find_if(devices.begin(), devices.end(), [&config](const auto& d) {return d->GetIdentifier() == config.input_device; });
 			if (it != devices.end())
 				device_description = *it;
+			else if (!devices.empty())
+				device_description = devices.front();
 		}
 
 		if (device_description)

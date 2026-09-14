@@ -3,6 +3,7 @@
 #include "Cemu/ncrypto/ncrypto.h"
 #include "Cafe/Filesystem/WUD/wud.h"
 #include "util/crypto/aes128.h"
+#include "util/helpers/helpers.h"
 #include "openssl/sha.h" /* SHA1 / SHA256 */
 #include "fstUtil.h"
 
@@ -30,44 +31,281 @@ protected:
 class FSTDataSourceWUD : public FSTDataSource
 {
 public:
-
-	static FSTDataSourceWUD* Open(const fs::path& path)
-	{
-		wud_t* wudFile = wud_open(path);
-		if (!wudFile)
-			return nullptr;
-		FSTDataSourceWUD* ds = new FSTDataSourceWUD();
-		ds->m_wudFile = wudFile;
-		return ds;
-	}
-
-	void SetBaseOffset(uint64 baseOffset)
-	{
-		m_baseOffset = baseOffset;
-	}
-
-	uint64 GetBaseOffset() const
-	{
-		return m_baseOffset;
-	}
-
-	uint64 readData(uint16 clusterIndex, uint64 clusterOffset, uint64 offset, void* data, uint64 size) override
-	{
-		cemu_assert_debug(size <= 0xFFFFFFFF);
-		return wud_readData(m_wudFile, data, (uint32)size, clusterOffset + offset + m_baseOffset);
-	}
-
-	~FSTDataSourceWUD() override
-	{
-		if(m_wudFile)
-			wud_close(m_wudFile);
-	}
-
+    
+    static FSTDataSourceWUD* Open(const fs::path& path)
+    {
+        wud_t* wudFile = wud_open(path);
+        if (!wudFile)
+            return nullptr;
+        FSTDataSourceWUD* ds = new FSTDataSourceWUD();
+        ds->m_wudFile = wudFile;
+        ds->m_directWudFile = wud_open(path);
+        ds->m_path = path;
+        ds->m_prefetchThread = std::thread(&FSTDataSourceWUD::PrefetchThread, ds);
+        return ds;
+    }
+    
+    void SetBaseOffset(uint64 baseOffset)
+    {
+        m_baseOffset = baseOffset;
+    }
+    
+    uint64 GetBaseOffset() const
+    {
+        return m_baseOffset;
+    }
+    
+    uint64 readData(uint16 clusterIndex, uint64 clusterOffset, uint64 offset, void* data, uint64 size) override
+    {
+        cemu_assert_debug(size <= 0xFFFFFFFF);
+        return ReadCached(clusterOffset + offset + m_baseOffset, data, size);
+    }
+    
+    ~FSTDataSourceWUD() override
+    {
+        {
+            std::lock_guard lock(m_prefetchMutex);
+            m_prefetchShutdown = true;
+        }
+        m_prefetchCV.notify_one();
+        if (m_prefetchThread.joinable())
+            m_prefetchThread.join();
+        if (m_directWudFile)
+            wud_close(m_directWudFile);
+        if(m_wudFile)
+            wud_close(m_wudFile);
+    }
+    
 protected:
-	FSTDataSourceWUD() {}	
-	wud_t* m_wudFile;
-	uint64 m_baseOffset{};
-	std::vector<uint64> m_clusterOffset;
+    static constexpr uint64 WUD_CACHE_BLOCK_SIZE = 2ULL * 1024ULL * 1024ULL;
+    static constexpr uint64 WUD_CACHE_MIN_FOREGROUND_FILL_SIZE = WUD_CACHE_BLOCK_SIZE;
+    static constexpr size_t WUD_CACHE_MAX_BYTES = 128ULL * 1024ULL * 1024ULL;
+    static constexpr uint32 WUD_READAHEAD_BLOCK_COUNT = 4;
+    static constexpr size_t WUD_READAHEAD_MAX_QUEUE = 32;
+    
+    struct WUDCacheBlock
+    {
+        std::vector<uint8> data;
+        uint64 lastAccess{};
+    };
+    
+    FSTDataSourceWUD() {}
+    
+    uint64 ReadDirect(uint64 offset, void* data, uint64 size)
+    {
+        if (m_directWudFile)
+        {
+            std::lock_guard lock(m_directWudMutex);
+            return wud_readData(m_directWudFile, data, (uint32)size, offset);
+        }
+        std::lock_guard lock(m_wudMutex);
+        return wud_readData(m_wudFile, data, (uint32)size, offset);
+    }
+    
+    WUDCacheBlock* FindCachedBlock(uint64 blockIndex)
+    {
+        auto itr = m_cache.find(blockIndex);
+        if (itr == m_cache.end())
+            return nullptr;
+        itr->second->lastAccess = ++m_cacheAccessCounter;
+        return itr->second.get();
+    }
+    
+    void TrimCacheLocked()
+    {
+        while (m_cacheBytes > WUD_CACHE_MAX_BYTES && !m_cache.empty())
+        {
+            auto dropItr = std::min_element(m_cache.begin(), m_cache.end(), [](const auto& a, const auto& b) {
+                return a.second->lastAccess < b.second->lastAccess;
+            });
+            if (dropItr == m_cache.end())
+                return;
+            m_cacheBytes -= dropItr->second->data.size();
+            m_cache.erase(dropItr);
+        }
+    }
+    
+    bool StoreCacheBlock(uint64 blockIndex, std::vector<uint8>&& data)
+    {
+        if (data.empty())
+            return false;
+        std::lock_guard lock(m_cacheMutex);
+        if (m_cache.find(blockIndex) != m_cache.end())
+            return true;
+        auto block = std::make_unique<WUDCacheBlock>();
+        block->lastAccess = ++m_cacheAccessCounter;
+        block->data = std::move(data);
+        m_cacheBytes += block->data.size();
+        m_cache.emplace(blockIndex, std::move(block));
+        TrimCacheLocked();
+        return true;
+    }
+    
+    bool LoadBlock(wud_t* wudFile, uint64 blockIndex)
+    {
+        uint64 blockOffset = blockIndex * WUD_CACHE_BLOCK_SIZE;
+        long long bytesLeft = wud_getWUDSize(wudFile) - (long long)blockOffset;
+        if (bytesLeft <= 0)
+            return false;
+        uint32 bytesToRead = (uint32)std::min<uint64>((uint64)bytesLeft, WUD_CACHE_BLOCK_SIZE);
+        std::vector<uint8> data(bytesToRead);
+        uint32 bytesRead = wud_readData(wudFile, data.data(), bytesToRead, blockOffset);
+        if (bytesRead != bytesToRead)
+            data.resize(bytesRead);
+        return StoreCacheBlock(blockIndex, std::move(data));
+    }
+    
+    bool LoadBlockForeground(uint64 blockIndex)
+    {
+        std::lock_guard lock(m_wudMutex);
+        return LoadBlock(m_wudFile, blockIndex);
+    }
+    
+    void QueueReadAhead(uint64 firstBlockIndex)
+    {
+        std::lock_guard prefetchLock(m_prefetchMutex);
+        for (uint32 i = 0; i < WUD_READAHEAD_BLOCK_COUNT; i++)
+        {
+            uint64 blockIndex = firstBlockIndex + i;
+            {
+                std::lock_guard cacheLock(m_cacheMutex);
+                if (m_cache.find(blockIndex) != m_cache.end())
+                    continue;
+            }
+            if (m_prefetchQueuedBlocks.find(blockIndex) != m_prefetchQueuedBlocks.end())
+                continue;
+            if (m_prefetchQueue.size() >= WUD_READAHEAD_MAX_QUEUE)
+            {
+                m_prefetchQueuedBlocks.erase(m_prefetchQueue.front());
+                m_prefetchQueue.pop_front();
+            }
+            m_prefetchQueue.emplace_back(blockIndex);
+            m_prefetchQueuedBlocks.emplace(blockIndex);
+        }
+        m_prefetchCV.notify_one();
+    }
+    
+    void PrefetchThread()
+    {
+        SetThreadName("WUD ReadAhead");
+        wud_t* prefetchWud = wud_open(m_path);
+        if (!prefetchWud)
+            return;
+        while (true)
+        {
+            uint64 blockIndex = 0;
+            {
+                std::unique_lock lock(m_prefetchMutex);
+                m_prefetchCV.wait(lock, [this]() {
+                    return m_prefetchShutdown || !m_prefetchQueue.empty();
+                });
+                if (m_prefetchShutdown)
+                    break;
+                blockIndex = m_prefetchQueue.front();
+                m_prefetchQueue.pop_front();
+                m_prefetchQueuedBlocks.erase(blockIndex);
+            }
+            {
+                std::lock_guard cacheLock(m_cacheMutex);
+                if (m_cache.find(blockIndex) != m_cache.end())
+                    continue;
+            }
+            LoadBlock(prefetchWud, blockIndex);
+        }
+        wud_close(prefetchWud);
+    }
+    
+    bool TryReadCachedOnly(uint64 offset, void* data, uint64 size)
+    {
+        uint8* dataOut = (uint8*)data;
+        uint64 remaining = size;
+        uint64 currentOffset = offset;
+        std::lock_guard lock(m_cacheMutex);
+        while (remaining > 0)
+        {
+            uint64 blockIndex = currentOffset / WUD_CACHE_BLOCK_SIZE;
+            uint64 blockOffset = currentOffset % WUD_CACHE_BLOCK_SIZE;
+            WUDCacheBlock* block = FindCachedBlock(blockIndex);
+            if (!block)
+                return false;
+            if (blockOffset >= block->data.size())
+                return false;
+            
+            uint32 bytesToCopy = (uint32)std::min<uint64>(remaining, block->data.size() - blockOffset);
+            std::memcpy(dataOut, block->data.data() + blockOffset, bytesToCopy);
+            dataOut += bytesToCopy;
+            currentOffset += bytesToCopy;
+            remaining -= bytesToCopy;
+        }
+        return true;
+    }
+    
+    uint64 ReadCached(uint64 offset, void* data, uint64 size)
+    {
+        if (size < WUD_CACHE_MIN_FOREGROUND_FILL_SIZE)
+        {
+            if (TryReadCachedOnly(offset, data, size))
+                return size;
+            return ReadDirect(offset, data, size);
+        }
+        
+        uint8* dataOut = (uint8*)data;
+        uint64 remaining = size;
+        uint64 bytesReadTotal = 0;
+        uint64 currentOffset = offset;
+        while (remaining > 0)
+        {
+            uint64 blockIndex = currentOffset / WUD_CACHE_BLOCK_SIZE;
+            uint64 blockOffset = currentOffset % WUD_CACHE_BLOCK_SIZE;
+            bool blockCached = false;
+            {
+                std::lock_guard lock(m_cacheMutex);
+                blockCached = FindCachedBlock(blockIndex) != nullptr;
+            }
+            if (!blockCached)
+            {
+                QueueReadAhead(blockIndex + 1);
+                if (!LoadBlockForeground(blockIndex))
+                    break;
+            }
+            
+            {
+                std::lock_guard lock(m_cacheMutex);
+                WUDCacheBlock* block = FindCachedBlock(blockIndex);
+                if (!block)
+                    break;
+                if (blockOffset >= block->data.size())
+                    break;
+                
+                uint32 bytesToCopy = (uint32)std::min<uint64>(remaining, block->data.size() - blockOffset);
+                std::memcpy(dataOut, block->data.data() + blockOffset, bytesToCopy);
+                dataOut += bytesToCopy;
+                currentOffset += bytesToCopy;
+                remaining -= bytesToCopy;
+                bytesReadTotal += bytesToCopy;
+            }
+            QueueReadAhead(blockIndex + 1);
+        }
+        return bytesReadTotal;
+    }
+    
+    fs::path m_path;
+    wud_t* m_wudFile{};
+    wud_t* m_directWudFile{};
+    uint64 m_baseOffset{};
+    std::vector<uint64> m_clusterOffset;
+    std::mutex m_wudMutex;
+    std::mutex m_directWudMutex;
+    std::mutex m_cacheMutex;
+    std::unordered_map<uint64, std::unique_ptr<WUDCacheBlock>> m_cache;
+    size_t m_cacheBytes{};
+    uint64 m_cacheAccessCounter{};
+    std::thread m_prefetchThread;
+    std::mutex m_prefetchMutex;
+    std::condition_variable m_prefetchCV;
+    std::deque<uint64> m_prefetchQueue;
+    std::unordered_set<uint64> m_prefetchQueuedBlocks;
+    bool m_prefetchShutdown{};
 };
 
 class FSTDataSourceApp : public FSTDataSource
@@ -820,6 +1058,7 @@ uint32 FSTVolume::ReadFile(FSTFileHandle& fileHandle, uint32 offset, uint32 size
 constexpr size_t BLOCK_SIZE = 0x10000;
 constexpr size_t BLOCK_HASH_SIZE = 0x0400;
 constexpr size_t BLOCK_FILE_SIZE = 0xFC00;
+constexpr size_t FST_DECRYPTED_BLOCK_CACHE_MAX_BYTES = 128ULL * 1024ULL * 1024ULL;
 
 struct FSTRawBlock
 {
@@ -889,8 +1128,8 @@ void FSTVolume::TrimCacheIfRequired(FSTCachedRawBlock** droppedRawBlock, FSTCach
 		cacheSize += itr.second->blockData.rawData.size();
 	for (auto& itr : m_cacheDecryptedHashedBlocks)
 		cacheSize += sizeof(FSTCachedHashedBlock) + sizeof(FSTHashedBlock);
-	// only trim if cache is full (larger than 2MB)
-	if (cacheSize < 2*1024*1024) // 2MB
+	// keep enough decrypted FST data for large sequential asset loads -stossy11
+	if (cacheSize < FST_DECRYPTED_BLOCK_CACHE_MAX_BYTES)
 		return;
 	// scan both cache lists to find least recently accessed block to drop
 	auto dropRawItr = std::min_element(m_cacheDecryptedRawBlocks.begin(), m_cacheDecryptedRawBlocks.end(), [](const auto& a, const auto& b) -> bool

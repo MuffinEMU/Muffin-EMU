@@ -1,0 +1,15 @@
+{
+  "originHash" : "4baa326121b089c5992380d8385ee254ff9e033dd9cf98d2f09269e72308c24f",
+  "pins" : [
+    {
+      "identity" : "melo-controller",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stossy11/Melo-Controller",
+      "state" : {
+        "branch" : "main",
+        "revision" : "e39c6b7b87dc44dbbf548dc1e28fd6f0b0a5d609"
+      }
+    }
+  ],
+  "version" : 3
+}

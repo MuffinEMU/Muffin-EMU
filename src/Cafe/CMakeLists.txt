@@ -82,6 +82,7 @@ add_library(CemuCafe
   HW/Espresso/Recompiler/PPCRecompilerImlGen.cpp
   HW/Espresso/Recompiler/PPCRecompilerImlGenFPU.cpp
   HW/Espresso/Recompiler/PPCRecompilerIml.h
+  HW/Espresso/Recompiler/PPCRecompilerThreadPool.h
   HW/Espresso/Recompiler/PPCRecompilerIntermediate.cpp
   HW/Espresso/Recompiler/BackendX64/BackendX64AVX.cpp
   HW/Espresso/Recompiler/BackendX64/BackendX64BMI.cpp
@@ -137,6 +138,7 @@ add_library(CemuCafe
   HW/Latte/Core/LatteTextureLegacy.cpp
   HW/Latte/Core/LatteTextureLoader.cpp
   HW/Latte/Core/LatteTextureLoader.h
+  HW/Latte/Core/LatteTextureLoaderASTC.h
   HW/Latte/Core/LatteTextureReadback.cpp
   HW/Latte/Core/LatteTextureReadbackInfo.h
   HW/Latte/Core/LatteTextureView.cpp
@@ -489,6 +491,29 @@ add_library(CemuCafe
   TitleList/TitleInfo.h
   TitleList/TitleList.cpp
   TitleList/TitleList.h
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc.h"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_averages_and_directions.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_block_sizes.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_color_quantize.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_color_unquantize.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_compress_symbolic.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_compute_variance.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_decompress_symbolic.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_diagnostic_trace.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_entry.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_find_best_partitioning.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_ideal_endpoints_and_weights.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_image.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_integer_sequence.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_mathlib.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_mathlib_softfloat.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_partition_tables.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_percentile_tables.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_pick_best_endpoint_format.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_quantization.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_symbolic_physical.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_weight_align.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_weight_quant_xfer_tables.cpp"
 )
 
 if (ENABLE_OPENGL)
@@ -628,6 +653,10 @@ endif()
 
 set_property(TARGET CemuCafe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+target_compile_options(CemuCafe PRIVATE "$<$<CONFIG:Release,RelWithDebInfo>:-O3>")
+set_property(TARGET CemuCafe PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+set_property(TARGET CemuCafe PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
+
 cemu_use_precompiled_header(CemuCafe)
 
 if (ENABLE_LIBUSB)
@@ -638,6 +667,8 @@ if (ENABLE_LIBUSB)
 endif()
 
 target_include_directories(CemuCafe PUBLIC "../")
+target_include_directories(CemuCafe PRIVATE "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source")
+
 
 if (glslang_VERSION VERSION_LESS "15.0.0")
 	set(glslang_target "glslang::SPIRV")
@@ -658,7 +689,9 @@ target_link_libraries(CemuCafe PRIVATE
   ${glslang_target}
   PUBLIC
   OpenSSL::SSL
+  Boost::context
 )
+
 
 if (ENABLE_WAYLAND)
 	# PUBLIC because wayland-client.h is included in VulkanAPI.h

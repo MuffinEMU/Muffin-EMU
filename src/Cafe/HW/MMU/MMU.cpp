@@ -4,9 +4,49 @@
 #include "WindowSystem.h"
 #include "util/MemMapper/MemMapper.h"
 #include "config/ActiveSettings.h"
+#if BOOST_OS_IOS
+#include "util/MemMapper/SparseReservation.h"
+#endif
 
-uint8* memory_base = NULL; // base address of the reserved 4GB space
+uint8* memory_base = NULL; // origin of the guest address space (gaps may be unreserved)
 uint8* memory_elfCodeArena = NULL;
+
+#if BOOST_OS_IOS
+static MemMapper::SparseReservation s_sparseReservation;
+static bool s_usingSparseReservation = false;
+static uintptr_t s_failedSparseAddress = 0;
+static size_t s_failedSparseSize = 0;
+
+static void memory_releaseSparseRange(uintptr_t address, size_t size)
+{
+	MemMapper::FreeReservation(reinterpret_cast<void*>(address), size);
+}
+
+static bool memory_reserveSparseRange(uintptr_t base, uint64_t offset, uint64_t size)
+{
+	return s_sparseReservation.Ensure(base, offset, size, MemMapper::GetPageSize(),
+		[](uintptr_t address, size_t length) {
+			if (MemMapper::ReserveMemory(reinterpret_cast<void*>(address), length,
+				MemMapper::PAGE_PERMISSION::P_NONE) == reinterpret_cast<void*>(address))
+				return true;
+			s_failedSparseAddress = address;
+			s_failedSparseSize = length;
+			return false;
+		}, memory_releaseSparseRange);
+}
+#endif
+
+static void* memory_commitRange(uint32 offset, uint32 size)
+{
+#if BOOST_OS_IOS
+	if (s_usingSparseReservation && !memory_reserveSparseRange(reinterpret_cast<uintptr_t>(memory_base), offset, size))
+	{
+		cemuLog_log(LogType::Force, "Sparse reservation failed: host {:#x}, size {:#x}", s_failedSparseAddress, s_failedSparseSize);
+		return nullptr;
+	}
+#endif
+	return MemMapper::AllocateMemory(memory_base + offset, size, MemMapper::PAGE_PERMISSION::P_RW, true);
+}
 
 void checkMemAlloc(void* result)
 {
@@ -41,7 +81,7 @@ void memory_initPhysicalLayout()
 
 	//// kernel memory
 	//// currently it is unknown if this is it's own physical memory region or if this is mapped somehow
-	//// considering the ancast is never copied here and no memory mapping is setup it seems like a hardwired mirror to 0x08000000? 
+	//// considering the ancast is never copied here and no memory mapping is setup it seems like a hardwired mirror to 0x08000000?
 	////checkMemAlloc(VirtualAlloc(memory_base + 0xFFE00000, 0x180000, MEM_COMMIT, PAGE_READWRITE));
 	//HANDLE hKernelMem = CreateFileMappingA(
 	//	INVALID_HANDLE_VALUE,    // use paging file
@@ -89,7 +129,7 @@ MMURange::MMURange(const uint32 baseAddress, const uint32 size, MMU_MEM_AREA_ID 
 void MMURange::mapMem()
 {
 	cemu_assert_debug(!m_isMapped);
-	if (MemMapper::AllocateMemory(memory_base + baseAddress, size, MemMapper::PAGE_PERMISSION::P_RW, true) == nullptr)
+	if (memory_commitRange(baseAddress, size) == nullptr)
 	{
 		std::string errorMsg = _tr("Unable to allocate {} memory", name);
 		WindowSystem::ShowErrorDialog(errorMsg, _tr("Error"));
@@ -127,14 +167,46 @@ MMURange mmuRange_HIGHMEM				{ 0xFFFFF000, 0x00001000, MMU_MEM_AREA_ID::CPU_PER_
 
 void memory_init()
 {
-	// reserve a continous range of 4GB
-	if(!memory_base)
-		memory_base = (uint8*)MemMapper::ReserveMemory(nullptr, (size_t)0x100000000, MemMapper::PAGE_PERMISSION::P_RW);
+	if (!memory_base)
+		memory_base = (uint8*)MemMapper::ReserveMemory(nullptr, size_t{0x100000000ULL}, MemMapper::PAGE_PERMISSION::P_RW);
+#if BOOST_OS_IOS
+	if (!memory_base)
+	{
+		// this kinda doesn't work, but it produces practically the same result as without it except giving me more info, so like i'll keep it -stossy11
+		cemuLog_log(LogType::Force, "Contiguous guest reservation failed; trying sparse reservations (host page size: {})", MemMapper::GetPageSize());
+        
+		for (uintptr_t base = 0x10000000ULL; base < 0x1000000000ULL; base += 0x10000000ULL)
+		{
+			bool success = true;
+			for (auto* range : g_mmuRanges)
+			{
+				if (!memory_reserveSparseRange(base, range->getBase(), range->getSize()))
+				{
+					success = false;
+					break;
+				}
+			}
+			
+			if (success)
+				success = memory_reserveSparseRange(base, 0x00800000, 0x00800000);
+			if (success)
+			{
+				memory_base = reinterpret_cast<uint8*>(base);
+				s_usingSparseReservation = true;
+				cemuLog_log(LogType::Force, "Using sparse iOS guest memory reservations");
+				break;
+			}
+			s_sparseReservation.ReleaseAll(base, memory_releaseSparseRange);
+		}
+		if (!memory_base)
+			cemuLog_log(LogType::Force, "Sparse guest reservation failed: last host address {:#x}, size {:#x}", s_failedSparseAddress, s_failedSparseSize);
+	}
+#endif
 	if( !memory_base )
 	{
-		debug_printf("memory_init(): Unable to reserve 4GB of memory\n");
+		debug_printf("memory_init(): Unable to reserve guest memory regions\n");
 		debugBreakpoint();
-		WindowSystem::ShowErrorDialog(_tr("Unable to reserve 4GB of memory"), _tr("Error"));
+		WindowSystem::ShowErrorDialog(_tr("Unable to reserve guest memory regions"), _tr("Error"));
 		exit(-1);
 	}
 	for (auto& itr : g_mmuRanges)
@@ -244,7 +316,7 @@ void memory_enableHBLELFCodeArea()
 {
 	if (memory_elfCodeArena != NULL)
 		return;
-	memory_elfCodeArena = (uint8*)MemMapper::AllocateMemory(memory_base + 0x00800000, 0x00800000, MemMapper::PAGE_PERMISSION::P_RW, true);
+	memory_elfCodeArena = (uint8*)memory_commitRange(0x00800000, 0x00800000);
 	if (memory_elfCodeArena == NULL)
 	{
 		debug_printf("memory_enableHBLELFCodeArea(): Unable to allocate memory for ELF arena\n");
@@ -380,6 +452,25 @@ uint16 memory_readU16(uint32 address)
 uint8 memory_readU8(uint32 address)
 {
 	return *(uint8*)(memory_getPointerFromVirtualOffset(address));
+}
+
+uint32 memory_getContiguousReadableBytes(uint32 virtualAddress)
+{
+    uint32 maxBytes = 0;
+	
+    for (auto& r : g_mmuRanges)
+    {
+        if (!r->isMapped())
+            continue;
+		
+        if (virtualAddress >= r->getBase() && virtualAddress < r->getEnd())
+        {
+            uint32 remaining = r->getEnd() - virtualAddress;
+            return remaining;
+        }
+    }
+	
+    return 0;
 }
 
 extern "C" DLLEXPORT void* memory_getBase()

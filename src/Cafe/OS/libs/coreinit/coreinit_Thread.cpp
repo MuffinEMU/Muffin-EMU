@@ -52,7 +52,7 @@ void nnNfp_update();
 
 namespace coreinit
 {
-#ifdef __arm64__
+#if defined(__arm64__) && !BOOST_OS_IOS
 	void __OSFiberThreadEntry(uint32, uint32);
 #else
 	void __OSFiberThreadEntry(void* thread);
@@ -1338,7 +1338,7 @@ namespace coreinit
 		__OSThreadStartTimeslice(hostThread->m_thread, &hostThread->ppcInstance);
 	}
 
-#ifdef __arm64__
+#if defined(__arm64__) && !BOOST_OS_IOS
 	void __OSFiberThreadEntry(uint32 _high, uint32 _low)
 	{
 		uint64 _thread = (uint64) _high << 32 | _low;
@@ -1356,15 +1356,9 @@ namespace coreinit
 		__OSUnlockScheduler(); // lock is always held when switching to a fiber, so we need to unlock it here
 		while (true)
 		{
-			if (hCPU->remainingCycles > 0)
-			{
-				// try to enter recompiler immediately
-				PPCRecompiler_attemptEnterWithoutRecompile(hCPU, hCPU->instructionPointer);
-				// keep executing as long as there are cycles left
-				while ((--hCPU->remainingCycles) >= 0)
-					PPCInterpreterSlim_executeInstruction(hCPU);
-			}
-
+            if (hCPU->remainingCycles > 0)
+                attemptEnterThread(hCPU);
+            
 			// reset reservation
 			hCPU->reservedMemAddr = 0;
 			hCPU->reservedMemValue = 0;

@@ -15,7 +15,7 @@
 #include <X11/extensions/Xrender.h>
 #include <X11/Xutil.h>
 #include "Common/unix/platform.h"
-#elif BOOST_OS_MACOS
+#elif BOOST_OS_MACOS || BOOST_OS_IOS
 #include <libkern/OSByteOrder.h>
 #include "Common/unix/platform.h"
 #endif

@@ -91,7 +91,7 @@ std::vector<fs::path> _getCachesPaths(const TitleId& titleId)
 // Convert PNG to Apple icon image format
 bool writeICNS(const fs::path& pngPath, const fs::path& icnsPath) {
 	// Read PNG file
-	std::ifstream pngFile(pngPath, std::ios::binary);
+	std::ifstream pngFile(fs::resolvePathCI(pngPath), std::ios::binary);
 	if (!pngFile)
 		return false;
 
@@ -104,7 +104,7 @@ bool writeICNS(const fs::path& pngPath, const fs::path& icnsPath) {
 	uint32 totalSize = 8 + 8 + pngSize;
 
 	// Create output file
-	std::ofstream icnsFile(icnsPath, std::ios::binary);
+	std::ofstream icnsFile(fs::resolvePathCI(icnsPath), std::ios::binary);
 	if (!icnsFile)
 		return false;
 
@@ -1439,7 +1439,7 @@ void wxGameList::CreateShortcut(GameInfo2& gameInfo)
 		}
 
 		iconPath = outIconDir / fmt::format("{:016x}.png", gameInfo.GetBaseTitleId());
-		wxFileOutputStream pngFileStream(_pathToUtf8(iconPath.value()));
+		wxFileOutputStream pngFileStream(_pathToUtf8(fs::resolvePathCI(iconPath.value())));
 
 		const auto icon = m_image_list_data.GetIcon(iconIdx);
 		wxBitmap bitmap{icon};
@@ -1473,7 +1473,7 @@ void wxGameList::CreateShortcut(GameInfo2& gameInfo)
 	if (flatpakId)
 		desktopEntryString += fmt::format("X-Flatpak={}\n", flatpakId);
 
-	std::ofstream outputStream(output_path.utf8_string());
+	std::ofstream outputStream(fs::resolvePathCI(fs::path(output_path.utf8_string())));
 	if (!outputStream.good())
 	{
 		auto errorMsg = formatWxString(_("Failed to save desktop entry to {}"), output_path.utf8_string());
@@ -1532,7 +1532,7 @@ void wxGameList::CreateShortcut(GameInfo2& gameInfo)
 		}
 
 		iconPath = outIconDir / fmt::format("{:016x}.png", gameInfo.GetBaseTitleId());
-		wxFileOutputStream pngFileStream(_pathToUtf8(iconPath.value()));
+		wxFileOutputStream pngFileStream(_pathToUtf8(fs::resolvePathCI(iconPath.value())));
 
 		const auto icon = m_image_list_data.GetIcon(iconIdx);
 		wxBitmap bitmap{icon};
@@ -1575,8 +1575,8 @@ void wxGameList::CreateShortcut(GameInfo2& gameInfo)
 	std::to_string(gameInfo.GetVersion())
 	);
 	// write Info.plist to infoPath
-	std::ofstream infoStream(infoPath);
-	std::ofstream scriptStream(scriptPath);
+	std::ofstream infoStream(fs::resolvePathCI(infoPath));
+	std::ofstream scriptStream(fs::resolvePathCI(scriptPath));
 	if (!infoStream.good() || !scriptStream.good())
 	{
 		auto errorMsg = formatWxString(_("Failed to save app shortcut to {}"), output_path.utf8_string());
@@ -1653,7 +1653,7 @@ void wxGameList::CreateShortcut(GameInfo2& gameInfo)
 		wxBitmap bitmap{icon};
 
 		icon_path = folder / fmt::format("{:016x}.ico", titleId);
-		auto stream = wxFileOutputStream(icon_path->wstring());
+		auto stream = wxFileOutputStream(fs::resolvePathCI(*icon_path).wstring());
 		auto image = bitmap.ConvertToImage();
 		wxICOHandler icohandler{};
 		if (!icohandler.SaveFile(&image, stream, false))

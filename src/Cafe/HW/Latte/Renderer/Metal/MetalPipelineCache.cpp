@@ -175,6 +175,8 @@ uint64 MetalPipelineCache::CalculatePipelineHash(const LatteFetchShader* fetchSh
 	{
 		stateHash += GetMtlPixelFormat(lastUsedAttachmentsInfo.depthFormat, true);
 		stateHash = std::rotl<uint64>(stateHash, 7);
+		stateHash += lastUsedAttachmentsInfo.hasStencil ? 1 : 0;
+		stateHash = std::rotl<uint64>(stateHash, 1);
 
 		if (activeAttachmentsInfo.depthFormat == Latte::E_GX2SURFFMT::INVALID_FORMAT)
 		{
@@ -204,12 +206,17 @@ uint64 MetalPipelineCache::CalculatePipelineHash(const LatteFetchShader* fetchSh
 	uint32* ctxRegister = lcr.GetRawView();
 
 	if (vertexShader)
-		stateHash += vertexShader->baseHash;
+		stateHash += vertexShader->baseHash + std::rotl<uint64>(vertexShader->auxHash, 17);
+    
+	stateHash = std::rotl<uint64>(stateHash, 13);
+    
+	if (geometryShader)
+		stateHash += geometryShader->baseHash + std::rotl<uint64>(geometryShader->auxHash, 29);
 
 	stateHash = std::rotl<uint64>(stateHash, 13);
 
 	if (pixelShader)
-		stateHash += pixelShader->baseHash + pixelShader->auxHash;
+		stateHash += pixelShader->baseHash + std::rotl<uint64>(pixelShader->auxHash, 41);
 
 	stateHash = std::rotl<uint64>(stateHash, 13);
 
@@ -238,7 +245,7 @@ uint64 MetalPipelineCache::CalculatePipelineHash(const LatteFetchShader* fetchSh
 	}
 
 	// Mesh pipeline
-	const LattePrimitiveMode primitiveMode = static_cast<LattePrimitiveMode>(LatteGPUState.contextRegister[mmVGT_PRIMITIVE_TYPE]);
+	const LattePrimitiveMode primitiveMode = static_cast<LattePrimitiveMode>(lcr.GetRawView()[mmVGT_PRIMITIVE_TYPE]);
     bool isPrimitiveRect = (primitiveMode == Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PRIMITIVE_TYPE::RECTS);
 
     bool usesGeometryShader = (geometryShader != nullptr || isPrimitiveRect);
@@ -531,6 +538,7 @@ bool MetalPipelineCache::SerializePipeline(MemStreamWriter& memWriter, CachedPip
 	for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
 	    memWriter.writeBE<uint16>((uint16)cachedPipeline.lastUsedAttachmentsInfo.colorFormats[i]);
 	memWriter.writeBE<uint16>((uint16)cachedPipeline.lastUsedAttachmentsInfo.depthFormat);
+    memWriter.writeBE<uint8>(cachedPipeline.lastUsedAttachmentsInfo.hasStencil ? 1 : 0);
 
 	Latte::SerializeRegisterState(cachedPipeline.gpuState, memWriter);
 
@@ -569,6 +577,7 @@ bool MetalPipelineCache::DeserializePipeline(MemStreamReader& memReader, CachedP
 	for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
 	    cachedPipeline.lastUsedAttachmentsInfo.colorFormats[i] = (Latte::E_GX2SURFFMT)memReader.readBE<uint16>();
 	cachedPipeline.lastUsedAttachmentsInfo.depthFormat = (Latte::E_GX2SURFFMT)memReader.readBE<uint16>();
+    cachedPipeline.lastUsedAttachmentsInfo.hasStencil = memReader.readBE<uint8>() != 0;
 
 	// deserialize GPU state
 	if (!Latte::DeserializeRegisterState(cachedPipeline.gpuState, memReader))

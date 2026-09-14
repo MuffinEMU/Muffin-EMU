@@ -1188,7 +1188,10 @@ void PPCRecompilerX64Gen_imlInstruction_r_name(PPCRecFunction_t* PPCRecFunction,
 		}
 		else if (name >= PPCREC_NAME_CR && name <= PPCREC_NAME_CR_LAST)
 		{
-			x64Emit_movZX_reg64_mem8(x64GenContext, regR, REG_RESV_HCPU, offsetof(PPCInterpreter_t, cr) + (name - PPCREC_NAME_CR));
+			const uint32 bitIndex = name - PPCREC_NAME_CR;
+			x64Emit_mov_reg64_mem32(x64GenContext, regR, REG_RESV_HCPU, offsetof(PPCInterpreter_t, cr));
+			x64Gen_shr_reg64Low32_imm8(x64GenContext, regR, 31 - bitIndex);
+			x64GenContext->emitter->AND_di8((x86Assembler64::GPR32)regR, 1);
 		}
 		else if (name == PPCREC_NAME_CPU_MEMRES_EA)
 		{
@@ -1266,7 +1269,14 @@ void PPCRecompilerX64Gen_imlInstruction_name_r(PPCRecFunction_t* PPCRecFunction,
 		}
 		else if (name >= PPCREC_NAME_CR && name <= PPCREC_NAME_CR_LAST)
 		{
-			x64GenContext->emitter->MOV_bb_l(REG_RESV_HCPU, offsetof(PPCInterpreter_t, cr) + (name - PPCREC_NAME_CR), X86_REG_NONE, 0, _reg8_from_reg64(regR));
+			const uint32 bitIndex = name - PPCREC_NAME_CR;
+			const uint32 bitMask = 1u << (31 - bitIndex);
+			x64Emit_mov_reg64_mem32(x64GenContext, REG_RESV_TEMP, REG_RESV_HCPU, offsetof(PPCInterpreter_t, cr));
+			x64Gen_and_reg64Low32_imm32(x64GenContext, REG_RESV_TEMP, ~bitMask);
+			x64Gen_mov_reg64Low32_reg64Low32(x64GenContext, REG_RESV_TEMP2, regR);
+			x64Gen_shl_reg64Low32_imm8(x64GenContext, REG_RESV_TEMP2, 31 - bitIndex);
+			x64Gen_or_reg64Low32_reg64Low32(x64GenContext, REG_RESV_TEMP, REG_RESV_TEMP2);
+			x64Emit_mov_mem32_reg64(x64GenContext, REG_RESV_HCPU, offsetof(PPCInterpreter_t, cr), REG_RESV_TEMP);
 		}
 		else if (name == PPCREC_NAME_CPU_MEMRES_EA)
 		{
@@ -1669,4 +1679,3 @@ void PPCRecompilerX64Gen_generateRecompilerInterfaceFunctions()
 	PPCRecompiler_leaveRecompilerCode_visited = (void ATTR_MS_ABI (*)())PPCRecompilerX64Gen_generateLeaveRecompilerCode();
 	cemu_assert_debug(PPCRecompiler_leaveRecompilerCode_unvisited != PPCRecompiler_leaveRecompilerCode_visited);
 }
-

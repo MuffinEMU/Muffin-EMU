@@ -36,14 +36,25 @@ public:
 	    return m_function;
 	}
 
+	MTL::ArgumentEncoder* GetArgumentEncoder() const
+	{
+		return m_argumentEncoder;
+	}
+
+	uint32 GetArgumentBufferEncodedLength() const
+	{
+		return m_argumentEncoder ? static_cast<uint32>(m_argumentEncoder->encodedLength()) : 0;
+	}
+
 	void PreponeCompilation(bool isRenderThread) override;
 	bool IsCompiled() override;
 	bool WaitForCompiled() override;
 
 private:
-    class MetalRenderer* m_mtlr;
+	class MetalRenderer* m_mtlr;
 
 	MTL::Function* m_function = nullptr;
+	MTL::ArgumentEncoder* m_argumentEncoder = nullptr;
 
 	StateSemaphore<COMPILATION_STATE> m_compilationState{ COMPILATION_STATE::NONE };
 

@@ -43,11 +43,6 @@ uint64 PPCInterpreter_getMainCoreCycleCounter()
 	return PPCTimer_getFromRDTSC();
 }
 
-void PPCInterpreter_nextInstruction(PPCInterpreter_t* cpuInterpreter)
-{
-	cpuInterpreter->instructionPointer += 4;
-}
-
 void PPCInterpreter_jumpToInstruction(PPCInterpreter_t* cpuInterpreter, uint32 newIP)
 {
 	cpuInterpreter->instructionPointer = (uint32)newIP;

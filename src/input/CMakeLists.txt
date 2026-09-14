@@ -87,6 +87,14 @@ if (SUPPORTS_WIIMOTE)
 	endif()
 endif ()
 
+if(IOS)
+	target_sources(CemuInput PRIVATE
+		api/iOS/GCController.h
+		api/iOS/GCController.mm
+		api/iOS/GCControllerProvider.h
+		api/iOS/GCControllerProvider.mm
+	)
+endif()
 
 if(ENABLE_SDL)
 	target_sources(CemuInput PRIVATE

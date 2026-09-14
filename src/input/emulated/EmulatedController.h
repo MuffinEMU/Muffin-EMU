@@ -23,9 +23,9 @@ public:
 	virtual void load(const pugi::xml_node& node){};
 	virtual void save(pugi::xml_node& node){};
 
-	enum Type
+	enum Type: uint8
 	{
-		VPAD,
+		VPAD = 0,
 		Pro,
 		Classic,
 		Wiimote,

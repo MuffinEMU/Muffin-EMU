@@ -16,19 +16,31 @@ struct ppcRecRange_t
 	void* storedRange;
 };
 
+
+struct DualMapRegion
+{
+    void*  rwAlias  = nullptr;
+    void*  rxAlias  = nullptr;
+    size_t size     = 0;
+};
+
+struct JITAlloc { void* rw; void* rx; };
+
 struct PPCRecFunction_t
 {
 	struct JumpTableEntry
 	{
 		MPTR ppcAddr;
 		void* hostEntrypoint;
-		
+
 		JumpTableEntry(MPTR ppcAddr, void* hostEntrypoint) : ppcAddr(ppcAddr), hostEntrypoint(hostEntrypoint) {};
 	};
 
 	uint32 ppcAddress;
 	uint32 ppcSize; // ppc code size of function
 	void*  x86Code; // pointer to x86 code
+    void*  x86CodeWritable = nullptr;
+    DualMapRegion dualMapRegion{}; // pointer to arm code
 	size_t x86Size;
 	std::vector<ppcRecRange_t> list_ranges;
 	boost::container::small_vector<JumpTableEntry, 2> jumpTableEntries;
@@ -65,7 +77,7 @@ struct ppcImlGenContext_t
 	// code generation control
 	bool hasFPUInstruction; // if true, PPCEnter macro will create FP_UNAVAIL checks -> Not needed in user mode
 	// analysis info
-	struct  
+	struct
 	{
 		bool modifiesGQR[8];
 	}tracking;
@@ -127,7 +139,7 @@ struct ppcImlGenContext_t
 
 typedef void ATTR_MS_ABI (*PPCREC_JUMP_ENTRY)();
 
-typedef struct  
+typedef struct
 {
 	PPCREC_JUMP_ENTRY ppcRecompilerDirectJumpTable[PPC_REC_ALIGN_TO_4MB(PPC_REC_CODE_AREA_SIZE/4)]; // lookup table for ppc offset to native code function
 	// x64 data
@@ -161,6 +173,14 @@ void PPCRecompiler_Disable();
 void PPCRecompiler_allocateRange(uint32 startAddress, uint32 size);
 
 void PPCRecompiler_invalidateRange(uint32 startAddr, uint32 endAddr);
+void PPCRecompiler_invalidateRangeFromICBI(uint32 startAddr, uint32 endAddr);
+bool PPCRecompiler_isDualMapJITEnabled();
+bool PPCRecompiler_Init26();
+DualMapRegion PPCRecompiler_allocateDualMap(size_t size);
+void PPCRecompiler_freeDualMap(const DualMapRegion& region);
+DualMapRegion PPCRecompiler_allocateJitArena(size_t size);
+void PPCRecompiler_releaseJitArena(const DualMapRegion& region);
+void PPCRecompiler_flushInstructionCache(void* codePtr, size_t codeSize);
 
 extern void ATTR_MS_ABI (*PPCRecompiler_enterRecompilerCode)(uint64 codeMem, uint64 ppcInterpreterInstance);
 extern void ATTR_MS_ABI (*PPCRecompiler_leaveRecompilerCode_visited)();
@@ -171,3 +191,5 @@ extern void ATTR_MS_ABI (*PPCRecompiler_leaveRecompilerCode_unvisited)();
 void PPCRecompiler_recompileIfUnvisited(uint32 enterAddress);
 void PPCRecompiler_attemptEnter(struct PPCInterpreter_t* hCPU, uint32 enterAddress);
 void PPCRecompiler_attemptEnterWithoutRecompile(struct PPCInterpreter_t* hCPU, uint32 enterAddress);
+bool PPCRecompiler_enabled();
+void PPCRecompiler_notifyWorkers();

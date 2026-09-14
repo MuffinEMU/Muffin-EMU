@@ -16,3 +16,7 @@ void LatteBufferCache_incrementalCleanup();
 void LatteBufferCache_getStats(uint32& heapSize, uint32& allocationSize, uint32& allocNum);
 
 void LatteBufferCache_notifySwapTVScanBuffer();
+
+void LatteBufferCache_hostSetVolatilityTracking(bool enabled);
+void LatteBufferCache_hostRotateVolatility();
+bool LatteBufferCache_hostIsRangeVolatile(MPTR physAddress, uint32 size);

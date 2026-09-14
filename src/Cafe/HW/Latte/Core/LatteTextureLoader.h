@@ -44,6 +44,7 @@ void decodeBC1Block(uint8* inputData, float* output4x4RGBA);
 void decodeBC2Block_UNORM(uint8* inputData, float* imageRGBA);
 void decodeBC3Block_UNORM(uint8* inputData, float* imageRGBA);
 void decodeBC4Block_UNORM(uint8* blockStorage, float* rOutput);
+void decodeBC4Block_SNORM(uint8* blockStorage, float* rOutput);
 void decodeBC5Block_UNORM(uint8* blockStorage, float* rgOutput);
 void decodeBC5Block_SNORM(uint8* blockStorage, float* rgOutput);
 
@@ -2164,5 +2165,280 @@ public:
 		*(outputPixel + 1) = (uint8)(green * 255.0f);
 		*(outputPixel + 2) = 0;
 		*(outputPixel + 3) = 255;
+	}
+};
+
+static inline uint8 TextureDecoder_BC_floatToUNorm8(float v)
+{
+	v = (std::max)(0.0f, (std::min)(1.0f, v));
+	return (uint8)(v * 255.0f + 0.5f);
+}
+
+static inline uint8 TextureDecoder_BC_floatToSNorm8(float v)
+{
+	v = (std::max)(-1.0f, (std::min)(1.0f, v));
+	sint32 i = (sint32)(v * 127.0f + (v >= 0.0f ? 0.5f : -0.5f));
+	i = (std::max)(-127, (std::min)(127, i));
+	return (uint8)(sint8)i;
+}
+
+template<typename DecodeFn>
+static void TextureDecoder_BC_decodeRGBA8(DecodeFn decodeFn, LatteTextureLoaderCtx* textureLoader, uint8* outputData)
+{
+	for (sint32 y = 0; y < textureLoader->height; y += textureLoader->stepY)
+	{
+		for (sint32 x = 0; x < textureLoader->width; x += textureLoader->stepX)
+		{
+			uint8* blockData = LatteTextureLoader_GetInput(textureLoader, x, y);
+			sint32 blockSizeX = (std::min)(4, textureLoader->width - x);
+			sint32 blockSizeY = (std::min)(4, textureLoader->height - y);
+			float rgbaBlock[4 * 4 * 4];
+			decodeFn(blockData, rgbaBlock);
+
+			for (sint32 py = 0; py < blockSizeY; py++)
+			{
+				sint32 yc = y + py;
+				for (sint32 px = 0; px < blockSizeX; px++)
+				{
+					uint8* dst = outputData + (x + px + yc * textureLoader->width) * 4;
+					const float* src = rgbaBlock + (px + py * 4) * 4;
+					dst[0] = TextureDecoder_BC_floatToUNorm8(src[0]);
+					dst[1] = TextureDecoder_BC_floatToUNorm8(src[1]);
+					dst[2] = TextureDecoder_BC_floatToUNorm8(src[2]);
+					dst[3] = TextureDecoder_BC_floatToUNorm8(src[3]);
+				}
+			}
+		}
+	}
+}
+
+template<typename DecodeFn, bool IsSigned>
+static void TextureDecoder_BC_decodeR8(DecodeFn decodeFn, LatteTextureLoaderCtx* textureLoader, uint8* outputData)
+{
+	for (sint32 y = 0; y < textureLoader->height; y += textureLoader->stepY)
+	{
+		for (sint32 x = 0; x < textureLoader->width; x += textureLoader->stepX)
+		{
+			uint8* blockData = LatteTextureLoader_GetInput(textureLoader, x, y);
+			sint32 blockSizeX = (std::min)(4, textureLoader->width - x);
+			sint32 blockSizeY = (std::min)(4, textureLoader->height - y);
+			float rBlock[4 * 4];
+			decodeFn(blockData, rBlock);
+
+			for (sint32 py = 0; py < blockSizeY; py++)
+			{
+				sint32 yc = y + py;
+				for (sint32 px = 0; px < blockSizeX; px++)
+				{
+					float r = rBlock[px + py * 4];
+					outputData[x + px + yc * textureLoader->width] = IsSigned ? TextureDecoder_BC_floatToSNorm8(r) : TextureDecoder_BC_floatToUNorm8(r);
+				}
+			}
+		}
+	}
+}
+
+template<typename DecodeFn, bool IsSigned>
+static void TextureDecoder_BC_decodeRG8(DecodeFn decodeFn, LatteTextureLoaderCtx* textureLoader, uint8* outputData)
+{
+	for (sint32 y = 0; y < textureLoader->height; y += textureLoader->stepY)
+	{
+		for (sint32 x = 0; x < textureLoader->width; x += textureLoader->stepX)
+		{
+			uint8* blockData = LatteTextureLoader_GetInput(textureLoader, x, y);
+			sint32 blockSizeX = (std::min)(4, textureLoader->width - x);
+			sint32 blockSizeY = (std::min)(4, textureLoader->height - y);
+			float rgBlock[4 * 4 * 2];
+			decodeFn(blockData, rgBlock);
+
+			for (sint32 py = 0; py < blockSizeY; py++)
+			{
+				sint32 yc = y + py;
+				for (sint32 px = 0; px < blockSizeX; px++)
+				{
+					uint8* dst = outputData + (x + px + yc * textureLoader->width) * 2;
+					const float* src = rgBlock + (px + py * 4) * 2;
+					if constexpr (IsSigned)
+					{
+						dst[0] = TextureDecoder_BC_floatToSNorm8(src[0]);
+						dst[1] = TextureDecoder_BC_floatToSNorm8(src[1]);
+					}
+					else
+					{
+						dst[0] = TextureDecoder_BC_floatToUNorm8(src[0]);
+						dst[1] = TextureDecoder_BC_floatToUNorm8(src[1]);
+					}
+				}
+			}
+		}
+	}
+}
+
+class TextureDecoder_BC1_RGBA8 : public TextureDecoder, public SingletonClass<TextureDecoder_BC1_RGBA8>
+{
+public:
+	sint32 getBytesPerTexel(LatteTextureLoaderCtx* textureLoader) override
+	{
+		return 4;
+	}
+
+	void decode(LatteTextureLoaderCtx* textureLoader, uint8* outputData) override
+	{
+		TextureDecoder_BC_decodeRGBA8(decodeBC1Block, textureLoader, outputData);
+	}
+
+	void decodePixelToRGBA(uint8* blockData, uint8* outputPixel, uint8 blockOffsetX, uint8 blockOffsetY) override
+	{
+		BC1_GetPixel(blockData, blockOffsetX, blockOffsetY, outputPixel);
+	}
+};
+
+class TextureDecoder_BC2_RGBA8 : public TextureDecoder, public SingletonClass<TextureDecoder_BC2_RGBA8>
+{
+public:
+	sint32 getBytesPerTexel(LatteTextureLoaderCtx* textureLoader) override
+	{
+		return 4;
+	}
+
+	void decode(LatteTextureLoaderCtx* textureLoader, uint8* outputData) override
+	{
+		TextureDecoder_BC_decodeRGBA8(decodeBC2Block_UNORM, textureLoader, outputData);
+	}
+
+	void decodePixelToRGBA(uint8* blockData, uint8* outputPixel, uint8 blockOffsetX, uint8 blockOffsetY) override
+	{
+		float rgbaBlock[4 * 4 * 4];
+		decodeBC2Block_UNORM(blockData, rgbaBlock);
+		const float* src = rgbaBlock + (blockOffsetX + blockOffsetY * 4) * 4;
+		outputPixel[0] = TextureDecoder_BC_floatToUNorm8(src[0]);
+		outputPixel[1] = TextureDecoder_BC_floatToUNorm8(src[1]);
+		outputPixel[2] = TextureDecoder_BC_floatToUNorm8(src[2]);
+		outputPixel[3] = TextureDecoder_BC_floatToUNorm8(src[3]);
+	}
+};
+
+class TextureDecoder_BC3_RGBA8 : public TextureDecoder, public SingletonClass<TextureDecoder_BC3_RGBA8>
+{
+public:
+	sint32 getBytesPerTexel(LatteTextureLoaderCtx* textureLoader) override
+	{
+		return 4;
+	}
+
+	void decode(LatteTextureLoaderCtx* textureLoader, uint8* outputData) override
+	{
+		TextureDecoder_BC_decodeRGBA8(decodeBC3Block_UNORM, textureLoader, outputData);
+	}
+
+	void decodePixelToRGBA(uint8* blockData, uint8* outputPixel, uint8 blockOffsetX, uint8 blockOffsetY) override
+	{
+		float rgbaBlock[4 * 4 * 4];
+		decodeBC3Block_UNORM(blockData, rgbaBlock);
+		const float* src = rgbaBlock + (blockOffsetX + blockOffsetY * 4) * 4;
+		outputPixel[0] = TextureDecoder_BC_floatToUNorm8(src[0]);
+		outputPixel[1] = TextureDecoder_BC_floatToUNorm8(src[1]);
+		outputPixel[2] = TextureDecoder_BC_floatToUNorm8(src[2]);
+		outputPixel[3] = TextureDecoder_BC_floatToUNorm8(src[3]);
+	}
+};
+
+class TextureDecoder_BC4_UNORM_To_R8 : public TextureDecoder, public SingletonClass<TextureDecoder_BC4_UNORM_To_R8>
+{
+public:
+	sint32 getBytesPerTexel(LatteTextureLoaderCtx* textureLoader) override
+	{
+		return 1;
+	}
+
+	void decode(LatteTextureLoaderCtx* textureLoader, uint8* outputData) override
+	{
+		TextureDecoder_BC_decodeR8<decltype(&decodeBC4Block_UNORM), false>(decodeBC4Block_UNORM, textureLoader, outputData);
+	}
+
+	void decodePixelToRGBA(uint8* blockData, uint8* outputPixel, uint8 blockOffsetX, uint8 blockOffsetY) override
+	{
+		float rBlock[4 * 4];
+		decodeBC4Block_UNORM(blockData, rBlock);
+		uint8 r = TextureDecoder_BC_floatToUNorm8(rBlock[blockOffsetX + blockOffsetY * 4]);
+		outputPixel[0] = r;
+		outputPixel[1] = 0;
+		outputPixel[2] = 0;
+		outputPixel[3] = 255;
+	}
+};
+
+class TextureDecoder_BC4_SNORM_To_R8 : public TextureDecoder, public SingletonClass<TextureDecoder_BC4_SNORM_To_R8>
+{
+public:
+	sint32 getBytesPerTexel(LatteTextureLoaderCtx* textureLoader) override
+	{
+		return 1;
+	}
+
+	void decode(LatteTextureLoaderCtx* textureLoader, uint8* outputData) override
+	{
+		TextureDecoder_BC_decodeR8<decltype(&decodeBC4Block_SNORM), true>(decodeBC4Block_SNORM, textureLoader, outputData);
+	}
+
+	void decodePixelToRGBA(uint8* blockData, uint8* outputPixel, uint8 blockOffsetX, uint8 blockOffsetY) override
+	{
+		float rBlock[4 * 4];
+		decodeBC4Block_SNORM(blockData, rBlock);
+		uint8 r = TextureDecoder_BC_floatToUNorm8(rBlock[blockOffsetX + blockOffsetY * 4] * 0.5f + 0.5f);
+		outputPixel[0] = r;
+		outputPixel[1] = 0;
+		outputPixel[2] = 0;
+		outputPixel[3] = 255;
+	}
+};
+
+class TextureDecoder_BC5_UNORM_To_RG8 : public TextureDecoder, public SingletonClass<TextureDecoder_BC5_UNORM_To_RG8>
+{
+public:
+	sint32 getBytesPerTexel(LatteTextureLoaderCtx* textureLoader) override
+	{
+		return 2;
+	}
+
+	void decode(LatteTextureLoaderCtx* textureLoader, uint8* outputData) override
+	{
+		TextureDecoder_BC_decodeRG8<decltype(&decodeBC5Block_UNORM), false>(decodeBC5Block_UNORM, textureLoader, outputData);
+	}
+
+	void decodePixelToRGBA(uint8* blockData, uint8* outputPixel, uint8 blockOffsetX, uint8 blockOffsetY) override
+	{
+		float rgBlock[4 * 4 * 2];
+		decodeBC5Block_UNORM(blockData, rgBlock);
+		const float* src = rgBlock + (blockOffsetX + blockOffsetY * 4) * 2;
+		outputPixel[0] = TextureDecoder_BC_floatToUNorm8(src[0]);
+		outputPixel[1] = TextureDecoder_BC_floatToUNorm8(src[1]);
+		outputPixel[2] = 0;
+		outputPixel[3] = 255;
+	}
+};
+
+class TextureDecoder_BC5_SNORM_To_RG8 : public TextureDecoder, public SingletonClass<TextureDecoder_BC5_SNORM_To_RG8>
+{
+public:
+	sint32 getBytesPerTexel(LatteTextureLoaderCtx* textureLoader) override
+	{
+		return 2;
+	}
+
+	void decode(LatteTextureLoaderCtx* textureLoader, uint8* outputData) override
+	{
+		TextureDecoder_BC_decodeRG8<decltype(&decodeBC5Block_SNORM), true>(decodeBC5Block_SNORM, textureLoader, outputData);
+	}
+
+	void decodePixelToRGBA(uint8* blockData, uint8* outputPixel, uint8 blockOffsetX, uint8 blockOffsetY) override
+	{
+		float rgBlock[4 * 4 * 2];
+		decodeBC5Block_SNORM(blockData, rgBlock);
+		const float* src = rgBlock + (blockOffsetX + blockOffsetY * 4) * 2;
+		outputPixel[0] = TextureDecoder_BC_floatToUNorm8(src[0] * 0.5f + 0.5f);
+		outputPixel[1] = TextureDecoder_BC_floatToUNorm8(src[1] * 0.5f + 0.5f);
+		outputPixel[2] = 0;
+		outputPixel[3] = 255;
 	}
 };

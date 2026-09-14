@@ -7,6 +7,10 @@
 #include <xbyak_aarch64_util.h>
 
 #include <cstddef>
+#include <limits>
+#include <thread>
+#include <unordered_map>
+#include <unordered_set>
 
 #include "../PPCRecompiler.h"
 #include "Common/precompiled.h"
@@ -62,39 +66,119 @@ static const util::Cpu s_cpu;
 
 class AArch64Allocator : public Allocator
 {
-  private:
-#ifdef XBYAK_USE_MMAP_ALLOCATOR
-	inline static MmapAllocator s_allocator;
+    const bool m_dualMap = PPCRecompiler_isDualMapJITEnabled();
+    const bool m_useArena;
+    std::unordered_map<uint32_t*, DualMapRegion> m_allocations;
+    uint32_t* m_released = nullptr;
+
+    void releaseMapping(const DualMapRegion& region)
+    {
+        if (m_useArena)
+            PPCRecompiler_releaseJitArena(region);
+        else if (m_dualMap)
+            PPCRecompiler_freeDualMap(region);
+        else
+        {
+#if defined(_WIN32)
+            VirtualFree(region.rwAlias, 0, MEM_RELEASE);
 #else
-	inline static Allocator s_allocator;
+            munmap(region.rwAlias, region.size);
 #endif
-	Allocator* m_allocatorImpl;
-	bool m_freeDisabled = false;
+        }
+    }
 
   public:
-	AArch64Allocator()
-		: m_allocatorImpl(reinterpret_cast<Allocator*>(&s_allocator)) {}
+    explicit AArch64Allocator(bool useArena = true) : m_useArena(m_dualMap && useArena) {}
 
-	uint32* alloc(size_t size) override
-	{
-		return m_allocatorImpl->alloc(size);
-	}
+    uint32_t* alloc(size_t size) override
+    {
+        const size_t alignment = m_useArena ? 16 : inner::getPageSize();
+        if (!size || size > std::numeric_limits<size_t>::max() - (alignment - 1))
+            throw Error(ERR_CANT_ALLOC);
+        size = (size + alignment - 1) & ~(alignment - 1);
+        DualMapRegion region;
+        if (m_useArena)
+            region = PPCRecompiler_allocateJitArena(size);
+        else if (m_dualMap)
+            region = PPCRecompiler_allocateDualMap(size);
+        else
+        {
+#if defined(_WIN32)
+            void* ptr = VirtualAlloc(nullptr, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+#else
+            void* ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+            if (ptr == MAP_FAILED)
+                ptr = nullptr;
+#endif
+            region = {ptr, ptr, size};
+        }
+        if (!region.rwAlias || !region.rxAlias)
+            throw Error(ERR_CANT_ALLOC);
+        auto* ptr = static_cast<uint32_t*>(region.rwAlias);
+        try
+        {
+            m_allocations.emplace(ptr, region);
+        }
+        catch (...)
+        {
+            releaseMapping(region);
+            throw;
+        }
+        return ptr;
+    }
 
-	void setFreeDisabled(bool disabled)
-	{
-		m_freeDisabled = disabled;
-	}
+    void free(uint32_t* ptr) override
+    {
+        if (!ptr || ptr == m_released)
+            return;
+        auto it = m_allocations.find(ptr);
+        if (it == m_allocations.end())
+            throw Error(ERR_BAD_PARAMETER);
+        releaseMapping(it->second);
+        m_allocations.erase(it);
+    }
 
-	void free(uint32* p) override
-	{
-		if (!m_freeDisabled)
-			m_allocatorImpl->free(p);
-	}
+    bool useProtect() const override { return false; }
 
-	[[nodiscard]] bool useProtect() const override
-	{
-		return !m_freeDisabled && m_allocatorImpl->useProtect();
-	}
+    DualMapRegion finalize(uint32_t* ptr, size_t size)
+    {
+        auto& region = m_allocations.at(ptr);
+        if (!size || size > region.size)
+            throw Error(ERR_BAD_PARAMETER);
+        if (m_useArena)
+        {
+            const size_t used = (size + 15) & ~size_t(15);
+            if (used < region.size)
+            {
+                PPCRecompiler_releaseJitArena({(uint8_t*)region.rwAlias + used,
+                    (uint8_t*)region.rxAlias + used, region.size - used});
+                region.size = used;
+            }
+        }
+        if (!m_dualMap && !CodeArray::protect(ptr, region.size, CodeArray::PROTECT_RE))
+            throw Error(ERR_CANT_PROTECT);
+#if !defined(_WIN32)
+        if (!m_dualMap)
+        {
+            const size_t pageSize = inner::getPageSize();
+            const size_t used = (size + pageSize - 1) & ~(pageSize - 1);
+            if (used < region.size)
+            {
+                if (munmap((uint8_t*)ptr + used, region.size - used) != 0)
+                    throw Error(ERR_MUNMAP);
+                region.size = used;
+            }
+        }
+#endif
+        PPCRecompiler_flushInstructionCache(region.rxAlias, size);
+        return region;
+    }
+
+    void detach(uint32_t* ptr)
+    {
+        m_allocations.erase(ptr);
+        m_released = ptr;
+    }
 };
 
 struct UnconditionalJumpInfo
@@ -122,7 +206,7 @@ using JumpInfo = std::variant<
 
 struct AArch64GenContext_t : CodeGenerator
 {
-	explicit AArch64GenContext_t(Allocator* allocator = nullptr);
+	explicit AArch64GenContext_t(Allocator* allocator);
 	void enterRecompilerCode();
 	void leaveRecompilerCode();
 
@@ -169,7 +253,8 @@ struct AArch64GenContext_t : CodeGenerator
 
 	bool processAllJumps()
 	{
-		for (auto jump : jumps)
+		const size_t finalSize = getSize();
+		for (const auto& jump : jumps)
 		{
 			auto jumpStart = jump.first;
 			auto jumpInfo = jump.second;
@@ -179,13 +264,21 @@ struct AArch64GenContext_t : CodeGenerator
 					sint64 targetAddress = segmentStarts.at(jump.target);
 					sint64 addressOffset = targetAddress - jumpStart;
 					return handleJump(addressOffset, jump);
-				},
-				jumpInfo);
+					},
+					jumpInfo);
 			if (!success)
 			{
+				setSize(finalSize);
+				return false;
+			}
+			if (getSize() > jumpStart + MAX_JUMP_INSTR_COUNT * sizeof(uint32))
+			{
+				cemu_assert_suspicious();
+				setSize(finalSize);
 				return false;
 			}
 		}
+		setSize(finalSize);
 		return true;
 	}
 
@@ -371,7 +464,7 @@ static_assert(isAdrImmRangeValidGPR(offsetof(PPCInterpreter_t, spr.UGQR), sizeof
 static_assert(isAdrImmRangeValidGPR(offsetof(PPCInterpreter_t, temporaryGPR_reg), sizeof(uint32) * 3));
 static_assert(isAdrImmValidGPR(offsetof(PPCInterpreter_t, xer_ca), 8));
 static_assert(isAdrImmValidGPR(offsetof(PPCInterpreter_t, xer_so), 8));
-static_assert(isAdrImmRangeValidGPR(offsetof(PPCInterpreter_t, cr), PPCREC_NAME_CR_LAST - PPCREC_NAME_CR, 8));
+static_assert(isAdrImmValidGPR(offsetof(PPCInterpreter_t, cr)));
 static_assert(isAdrImmValidGPR(offsetof(PPCInterpreter_t, reservedMemAddr)));
 static_assert(isAdrImmValidGPR(offsetof(PPCInterpreter_t, reservedMemValue)));
 static_assert(isAdrImmRangeValidFpr(offsetof(PPCInterpreter_t, fpr), sizeof(FPR_t) * 63, 64));
@@ -417,7 +510,9 @@ void AArch64GenContext_t::r_name(IMLInstruction* imlInstruction)
 		}
 		else if (name >= PPCREC_NAME_CR && name <= PPCREC_NAME_CR_LAST)
 		{
-			ldrb(regR, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, cr) + (name - PPCREC_NAME_CR)));
+			const uint32 bitIndex = name - PPCREC_NAME_CR;
+			ldr(regR, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, cr)));
+			ubfm(regR, regR, 31 - bitIndex, 31 - bitIndex);
 		}
 		else if (name == PPCREC_NAME_CPU_MEMRES_EA)
 		{
@@ -498,7 +593,10 @@ void AArch64GenContext_t::name_r(IMLInstruction* imlInstruction)
 		}
 		else if (name >= PPCREC_NAME_CR && name <= PPCREC_NAME_CR_LAST)
 		{
-			strb(regR, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, cr) + (name - PPCREC_NAME_CR)));
+			const uint32 bitIndex = name - PPCREC_NAME_CR;
+			ldr(TEMP_GPR1.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, cr)));
+			bfi(TEMP_GPR1.WReg, regR, 31 - bitIndex, 1);
+			str(TEMP_GPR1.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, cr)));
 		}
 		else if (name == PPCREC_NAME_CPU_MEMRES_EA)
 		{
@@ -1435,167 +1533,91 @@ void AArch64GenContext_t::call_imm(IMLInstruction* imlInstruction)
 	ldr(x30, AdrPostImm(sp, 16));
 }
 
-bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext)
+bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext) try
 {
 	AArch64Allocator allocator;
 	AArch64GenContext_t aarch64GenContext{&allocator};
 
 	// generate iml instruction code
-	bool codeGenerationFailed = false;
-	for (IMLSegment* segIt : ppcImlGenContext->segmentList2)
-	{
-		if (codeGenerationFailed)
-			break;
-		segIt->x64Offset = aarch64GenContext.getSize();
+    bool codeGenerationFailed = false;
+    for (IMLSegment* segIt : ppcImlGenContext->segmentList2)
+    {
+        if (codeGenerationFailed)
+            break;
+        segIt->x64Offset = aarch64GenContext.getSize();
+        aarch64GenContext.storeSegmentStart(segIt);
 
-		aarch64GenContext.storeSegmentStart(segIt);
-
-		for (size_t i = 0; i < segIt->imlList.size(); i++)
-		{
-			IMLInstruction* imlInstruction = segIt->imlList.data() + i;
-			if (imlInstruction->type == PPCREC_IML_TYPE_R_NAME)
-			{
-				aarch64GenContext.r_name(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_NAME_R)
-			{
-				aarch64GenContext.name_r(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R)
-			{
-				if (!aarch64GenContext.r_r(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_S32)
-			{
-				if (!aarch64GenContext.r_s32(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_S32)
-			{
-				if (!aarch64GenContext.r_r_s32(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_S32_CARRY)
-			{
-				if (!aarch64GenContext.r_r_s32_carry(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_R)
-			{
-				if (!aarch64GenContext.r_r_r(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_R_CARRY)
-			{
-				if (!aarch64GenContext.r_r_r_carry(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_COMPARE)
-			{
-				aarch64GenContext.compare(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_COMPARE_S32)
-			{
-				aarch64GenContext.compare_s32(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_CONDITIONAL_JUMP)
-			{
-				aarch64GenContext.cjump(imlInstruction, segIt);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_JUMP)
-			{
-				aarch64GenContext.jump(segIt);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_CJUMP_CYCLE_CHECK)
-			{
-				aarch64GenContext.conditionalJumpCycleCheck(segIt);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_MACRO)
-			{
-				if (!aarch64GenContext.macro(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_LOAD)
-			{
-				if (!aarch64GenContext.load(imlInstruction, false))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_LOAD_INDEXED)
-			{
-				if (!aarch64GenContext.load(imlInstruction, true))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_STORE)
-			{
-				if (!aarch64GenContext.store(imlInstruction, false))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_STORE_INDEXED)
-			{
-				if (!aarch64GenContext.store(imlInstruction, true))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_ATOMIC_CMP_STORE)
-			{
-				aarch64GenContext.atomic_cmp_store(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_CALL_IMM)
-			{
-				aarch64GenContext.call_imm(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_NO_OP)
-			{
-				// no op
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_LOAD)
-			{
-				if (!aarch64GenContext.fpr_load(imlInstruction, false))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_LOAD_INDEXED)
-			{
-				if (!aarch64GenContext.fpr_load(imlInstruction, true))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_STORE)
-			{
-				if (!aarch64GenContext.fpr_store(imlInstruction, false))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_STORE_INDEXED)
-			{
-				if (!aarch64GenContext.fpr_store(imlInstruction, true))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R)
-			{
-				aarch64GenContext.fpr_r_r(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R_R)
-			{
-				aarch64GenContext.fpr_r_r_r(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R_R_R)
-			{
-				aarch64GenContext.fpr_r_r_r_r(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R)
-			{
-				aarch64GenContext.fpr_r(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_COMPARE)
-			{
-				aarch64GenContext.fpr_compare(imlInstruction);
-			}
-			else
-			{
-				codeGenerationFailed = true;
-				cemu_assert_suspicious();
-				cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): Unsupported iml type {}", imlInstruction->type);
-			}
-		}
-	}
+        for (size_t i = 0; i < segIt->imlList.size(); i++)
+        {
+            IMLInstruction* imlInstruction = segIt->imlList.data() + i;
+            if (imlInstruction->type == PPCREC_IML_TYPE_R_NAME)
+                aarch64GenContext.r_name(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_NAME_R)
+                aarch64GenContext.name_r(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_R)
+            { if (!aarch64GenContext.r_r(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_S32)
+            { if (!aarch64GenContext.r_s32(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_S32)
+            { if (!aarch64GenContext.r_r_s32(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_S32_CARRY)
+            { if (!aarch64GenContext.r_r_s32_carry(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_R)
+            { if (!aarch64GenContext.r_r_r(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_R_CARRY)
+            { if (!aarch64GenContext.r_r_r_carry(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_COMPARE)
+                aarch64GenContext.compare(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_COMPARE_S32)
+                aarch64GenContext.compare_s32(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_CONDITIONAL_JUMP)
+                aarch64GenContext.cjump(imlInstruction, segIt);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_JUMP)
+                aarch64GenContext.jump(segIt);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_CJUMP_CYCLE_CHECK)
+                aarch64GenContext.conditionalJumpCycleCheck(segIt);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_MACRO)
+            { if (!aarch64GenContext.macro(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_LOAD)
+            { if (!aarch64GenContext.load(imlInstruction, false)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_LOAD_INDEXED)
+            { if (!aarch64GenContext.load(imlInstruction, true)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_STORE)
+            { if (!aarch64GenContext.store(imlInstruction, false)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_STORE_INDEXED)
+            { if (!aarch64GenContext.store(imlInstruction, true)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_ATOMIC_CMP_STORE)
+                aarch64GenContext.atomic_cmp_store(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_CALL_IMM)
+                aarch64GenContext.call_imm(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_NO_OP)
+            { /* no op */ }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_LOAD)
+            { if (!aarch64GenContext.fpr_load(imlInstruction, false)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_LOAD_INDEXED)
+            { if (!aarch64GenContext.fpr_load(imlInstruction, true)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_STORE)
+            { if (!aarch64GenContext.fpr_store(imlInstruction, false)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_STORE_INDEXED)
+            { if (!aarch64GenContext.fpr_store(imlInstruction, true)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R)
+                aarch64GenContext.fpr_r_r(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R_R)
+                aarch64GenContext.fpr_r_r_r(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R_R_R)
+                aarch64GenContext.fpr_r_r_r_r(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R)
+                aarch64GenContext.fpr_r(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_COMPARE)
+                aarch64GenContext.fpr_compare(imlInstruction);
+            else
+            {
+                codeGenerationFailed = true;
+                cemu_assert_suspicious();
+                cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): Unsupported iml type {}", imlInstruction->type);
+            }
+        }
+    }
 
 	// handle failed code generation
 	if (codeGenerationFailed)
@@ -1609,22 +1631,32 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 		return false;
 	}
 
-	aarch64GenContext.readyRE();
-
-	// set code
-	PPCRecFunction->x86Code = aarch64GenContext.getCode<void*>();
-	PPCRecFunction->x86Size = aarch64GenContext.getMaxSize();
-	// set free disabled to skip freeing the code from the CodeGenerator destructor
-	allocator.setFreeDisabled(true);
-	return true;
+    if (!aarch64GenContext.getSize())
+        return false;
+    aarch64GenContext.ready(CodeArray::PROTECT_RW);
+    auto* writable = aarch64GenContext.getCode<uint32_t*>();
+    const auto region = allocator.finalize(writable, aarch64GenContext.getSize());
+    PPCRecFunction->x86Code = region.rxAlias;
+    PPCRecFunction->x86Size = aarch64GenContext.getSize();
+    const bool dualMap = PPCRecompiler_isDualMapJITEnabled();
+    PPCRecFunction->x86CodeWritable = dualMap ? region.rwAlias : nullptr;
+    PPCRecFunction->dualMapRegion = dualMap ? region : DualMapRegion{};
+    allocator.detach(writable);
+    return true;
+}
+catch (const std::exception& error)
+{
+    cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): {}", error.what());
+    return false;
 }
 
 void PPCRecompiler_cleanupAArch64Code(void* code, size_t size)
 {
-	AArch64Allocator allocator;
-	if (allocator.useProtect())
-		CodeArray::protect(code, size, CodeArray::PROTECT_RW);
-	allocator.free(static_cast<uint32*>(code));
+#if defined(_WIN32)
+    VirtualFree(code, 0, MEM_RELEASE);
+#else
+    munmap(code, size);
+#endif
 }
 
 void AArch64GenContext_t::enterRecompilerCode()
@@ -1670,26 +1702,36 @@ void AArch64GenContext_t::leaveRecompilerCode()
 	ret();
 }
 
-bool initializedInterfaceFunctions = false;
-AArch64GenContext_t enterRecompilerCode_ctx{};
-
-AArch64GenContext_t leaveRecompilerCode_unvisited_ctx{};
-AArch64GenContext_t leaveRecompilerCode_visited_ctx{};
 void PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions()
 {
-	if (initializedInterfaceFunctions)
-		return;
-	initializedInterfaceFunctions = true;
+    static bool initialized = false;
+    if (initialized)
+        return;
 
-	enterRecompilerCode_ctx.enterRecompilerCode();
-	enterRecompilerCode_ctx.readyRE();
-	PPCRecompiler_enterRecompilerCode = enterRecompilerCode_ctx.getCode<decltype(PPCRecompiler_enterRecompilerCode)>();
+    cemu_assert(ppcRecompilerInstanceData != nullptr);
+    cemu_assert(memory_base != nullptr);
 
-	leaveRecompilerCode_unvisited_ctx.leaveRecompilerCode();
-	leaveRecompilerCode_unvisited_ctx.readyRE();
-	PPCRecompiler_leaveRecompilerCode_unvisited = leaveRecompilerCode_unvisited_ctx.getCode<decltype(PPCRecompiler_leaveRecompilerCode_unvisited)>();
+    AArch64Allocator enterAllocator(false), leaveAllocator(false);
+    AArch64GenContext_t enterContext(&enterAllocator), leaveContext(&leaveAllocator);
+    enterContext.enterRecompilerCode();
+    enterContext.ready(CodeArray::PROTECT_RW);
 
-	leaveRecompilerCode_visited_ctx.leaveRecompilerCode();
-	leaveRecompilerCode_visited_ctx.readyRE();
-	PPCRecompiler_leaveRecompilerCode_visited = leaveRecompilerCode_visited_ctx.getCode<decltype(PPCRecompiler_leaveRecompilerCode_visited)>();
+    leaveContext.leaveRecompilerCode();
+    while (leaveContext.getSize() % 16)
+        leaveContext.nop();
+    const size_t visitedOffset = leaveContext.getSize();
+    leaveContext.leaveRecompilerCode();
+    leaveContext.ready(CodeArray::PROTECT_RW);
+
+    auto* enterWritable = enterContext.getCode<uint32_t*>();
+    auto* leaveWritable = leaveContext.getCode<uint32_t*>();
+    const auto enter = enterAllocator.finalize(enterWritable, enterContext.getSize());
+    const auto leave = leaveAllocator.finalize(leaveWritable, leaveContext.getSize());
+
+    PPCRecompiler_enterRecompilerCode = reinterpret_cast<decltype(PPCRecompiler_enterRecompilerCode)>(enter.rxAlias);
+    PPCRecompiler_leaveRecompilerCode_unvisited = reinterpret_cast<decltype(PPCRecompiler_leaveRecompilerCode_unvisited)>(leave.rxAlias);
+    PPCRecompiler_leaveRecompilerCode_visited = reinterpret_cast<decltype(PPCRecompiler_leaveRecompilerCode_visited)>((uint8_t*)leave.rxAlias + visitedOffset);
+    enterAllocator.detach(enterWritable);
+    leaveAllocator.detach(leaveWritable);
+    initialized = true;
 }

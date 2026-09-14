@@ -97,6 +97,7 @@ MTL::SamplerState* MetalSamplerCache::GetSamplerState(const LatteContextRegister
 
 
     NS_STACK_SCOPED MTL::SamplerDescriptor* samplerDescriptor = MTL::SamplerDescriptor::alloc()->init();
+	samplerDescriptor->setSupportArgumentBuffers(true);
 
     // lod
     uint32 iMinLOD = samplerWords->WORD1.get_MIN_LOD();

@@ -63,10 +63,46 @@ add_subdirectory(util)
 add_subdirectory(imgui)
 add_subdirectory(resource)
 
-add_executable(CemuBin
-	main.cpp
-	mainLLE.cpp
-)
+if(BUILD_HEADLESS_DYLIB)
+    add_library(CemuBin SHARED
+        main.cpp
+        mainLLE.cpp
+    )
+
+
+    set_target_properties(CemuBin PROPERTIES
+        CXX_VISIBILITY_PRESET default
+        VISIBILITY_INLINES_HIDDEN OFF
+        MACOSX_FRAMEWORK_IDENTIFIER com.stossy11.Cemu
+        FRAMEWORK TRUE
+    )
+    if(IOS)
+        set_target_properties(CemuBin PROPERTIES
+            INSTALL_NAME_DIR "@rpath"
+            BUILD_WITH_INSTALL_RPATH TRUE
+        )
+    endif()
+else()
+	add_executable(CemuBin
+		main.cpp
+		mainLLE.cpp
+	)
+endif()
+
+if(IOS)
+	target_sources(CemuBin PRIVATE
+		config/CemuConfigWrapper.h
+		config/CemuConfigWrapper.mm
+		config/GraphicPackWrapper.h
+		config/GraphicPackWrapper.mm
+		gui/uikit/EmulatedUSBDevices.h
+		gui/uikit/EmulatedUSBDevices.mm
+	)
+	set_source_files_properties(gui/uikit/EmulatedUSBDevices.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+	target_link_libraries(CemuBin PRIVATE
+		"-framework Foundation"
+	)
+endif()
 
 cemu_use_precompiled_header(CemuBin)
 
@@ -93,7 +129,7 @@ string(TIMESTAMP CURRENT_YEAR "%Y" UTC)
 
 set_property(TARGET CemuBin PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set_property(TARGET CemuBin PROPERTY WIN32_EXECUTABLE $<NOT:$<CONFIG:Debug>>)
-set(OUTPUT_NAME "Cemu_$<LOWER_CASE:$<CONFIG>>")
+set(OUTPUT_NAME "Cemu")
 
 if (MACOS_BUNDLE)
 	set_property(TARGET CemuBin PROPERTY MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/resource/MacOSXBundleInfo.plist.in")
@@ -109,8 +145,8 @@ if (MACOS_BUNDLE)
 	set(MACOSX_BUNDLE_COPYRIGHT "Copyright © ${CURRENT_YEAR} Cemu Project")
 
 	set(MACOSX_BUNDLE_CATEGORY "public.app-category.games")
- 	set(MACOSX_MINIMUM_SYSTEM_VERSION "13.4")
-  	set(MACOSX_BUNDLE_TYPE_EXTENSION "wua")
+	set(MACOSX_MINIMUM_SYSTEM_VERSION "12.0")
+	set(MACOSX_BUNDLE_TYPE_EXTENSION "wua")
 
 	set_target_properties(CemuBin PROPERTIES
 		MACOSX_BUNDLE true
@@ -132,7 +168,7 @@ if (MACOS_BUNDLE)
 			message(FATAL_ERROR "failed to find libMoltenVK.dylib")
 		endif ()
   endif()
-  
+
 	if (ENABLE_LIBUSB)
 		if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 		    set(LIBUSB_PATH "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/lib/libusb-1.0.0.dylib")
@@ -148,7 +184,7 @@ if (MACOS_BUNDLE)
 
 	if (ENABLE_VULKAN)
 		add_custom_command(TARGET CemuBin POST_BUILD
-			COMMAND ${CMAKE_COMMAND} -E copy 
+			COMMAND ${CMAKE_COMMAND} -E copy
 				"${MOLTENVK_PATH}"
 				"${FRAMEWORKS_DIR}/libMoltenVK.dylib"
 		)
@@ -211,7 +247,8 @@ set_target_properties(CemuBin PROPERTIES
 	OUTPUT_NAME "${OUTPUT_NAME}"
 )
 
-target_link_libraries(CemuBin PRIVATE
+
+target_link_libraries(CemuBin PUBLIC
 	CemuAudio
 	CemuCafe
 	CemuCommon

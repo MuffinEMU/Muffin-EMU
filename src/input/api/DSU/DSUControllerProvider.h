@@ -33,7 +33,7 @@ struct DSUProviderSettings : public ControllerProviderSettings
 
 	bool operator==(const ControllerProviderSettings& s) const override
 	{
-		const auto* ptr = dynamic_cast<const DSUProviderSettings*>(&s);
+		const auto* ptr = static_cast<const DSUProviderSettings*>(&s);
 		return ptr && *this == *ptr;
 	}
 };

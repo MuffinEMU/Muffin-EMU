@@ -169,10 +169,11 @@ bool DirectSoundAPI::Stop()
 bool DirectSoundAPI::FeedBlock(sint16* data)
 {
 	std::lock_guard lock(m_mutex);
-	if (m_buffer.size() > kBlockCount)
+	const uint32 maxQueuedBlocks = kBlockCount;
+	while (m_buffer.size() + 1 > maxQueuedBlocks && !m_buffer.empty())
 	{
-		cemuLog_logDebug(LogType::Force, "dropped direct sound block since too many buffers are queued");
-		return false;
+		m_buffer.pop();
+		cemuLog_logDebug(LogType::SoundAPI, "DirectSound: dropped stale audio block to avoid playback lag");
 	}
 
 	auto tmp = std::make_unique<uint8[]>(m_bytesPerBlock);
@@ -192,7 +193,7 @@ void DirectSoundAPI::SetVolume(sint32 volume)
 bool DirectSoundAPI::NeedAdditionalBlocks() const
 {
 	std::shared_lock lock(m_mutex);
-	return m_buffer.size() < GetAudioDelay();
+	return m_buffer.size() < GetTargetQueuedBlocks();
 }
 
 std::vector<DirectSoundAPI::DeviceDescriptionPtr> DirectSoundAPI::GetDevices()

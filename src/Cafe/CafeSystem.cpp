@@ -3,6 +3,7 @@
 #include "Cafe/OS/libs/gx2/GX2.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
+#include "Cafe/HW/Espresso/Const.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 #include "Cafe/HW/Espresso/Debugger/Debugger.h"
 #include "Cafe/OS/RPL/rpl_symbol_storage.h"
@@ -23,6 +24,7 @@
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/Filesystem/FST/FST.h"
+#include "Cafe/Filesystem/MlcTitleDirectoryCase.h"
 #include "Common/FileStream.h"
 #include "GamePatch.h"
 #include "HW/Espresso/Debugger/GDBStub.h"
@@ -69,7 +71,7 @@
 
 #if BOOST_OS_LINUX
 #include <sys/sysinfo.h>
-#elif BOOST_OS_MACOS || BOOST_OS_BSD
+#elif BOOST_OS_MACOS || BOOST_OS_IOS || BOOST_OS_BSD
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #endif
@@ -480,7 +482,7 @@ namespace CafeSystem
 		struct sysinfo info {};
 		sysinfo(&info);
 		cemuLog_log(LogType::Force, "RAM: {}MB", ((static_cast<uint64_t>(info.totalram) * info.mem_unit) / 1024LL / 1024LL));
-		#elif BOOST_OS_MACOS
+		#elif BOOST_OS_MACOS || BOOST_OS_IOS
 		int64_t totalRam;
 		size_t size = sizeof(totalRam);
 		int result = sysctlbyname("hw.memsize", &totalRam, &size, NULL, 0);
@@ -560,6 +562,8 @@ namespace CafeSystem
 		}
 		else
 			platform = "Linux";
+		#elif BOOST_OS_IOS
+			platform = "iOS";
 		#elif BOOST_OS_MACOS
 		char productVersion[256]{};
 		size_t productVersionSize = sizeof(productVersion);
@@ -577,7 +581,7 @@ namespace CafeSystem
 			buffer = "macOS";
 
 		platform = buffer.c_str();
-		
+
 		#elif BOOST_OS_BSD
 		#if defined(__FreeBSD__)
 		platform = "FreeBSD";
@@ -825,15 +829,15 @@ namespace CafeSystem
 		if (tip.GetType() == TitleIdParser::TITLE_TYPE::AOC || tip.GetType() == TitleIdParser::TITLE_TYPE::BASE_TITLE_UPDATE)
 			cemuLog_log(LogType::Force, "Launched titleId is not the base of a title");
         // mount mlc storage
-        MountBaseDirectories();
+		MountBaseDirectories();
         // mount title folders
 		PREPARE_STATUS_CODE r = LoadAndMountForegroundTitle(titleId);
 		if (r != PREPARE_STATUS_CODE::SUCCESS)
 			return r;
 		gameProfile_load();
 		// setup memory space and PPC recompiler
-        SetupMemorySpace();
-        PPCRecompiler_init();
+		SetupMemorySpace();
+		PPCRecompiler_init();
 		r = PrepareExecutable(); // load RPX
 		if (r != PREPARE_STATUS_CODE::SUCCESS)
 			return r;
@@ -890,8 +894,8 @@ namespace CafeSystem
 			module->TitleStart();
 		cemu_initForGame();
 		// enter scheduler
-		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
-			coreinit::OSSchedulerBegin(3);
+		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || ActiveSettings::GetCPUMode() == CPUMode::MulticoreInterpreter || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
+			coreinit::OSSchedulerBegin(Espresso::CORE_COUNT);
 		else
 			coreinit::OSSchedulerBegin(1);
 	}

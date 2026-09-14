@@ -9,6 +9,8 @@
 #include "config/NetworkSettings.h"
 #include "config/LaunchSettings.h"
 #include "input/InputManager.h"
+#include "Cafe/Filesystem/fsc.h"
+#include "Cafe/Filesystem/FST/FST.h"
 
 #include "Cafe/CafeSystem.h"
 #include "Cafe/TitleList/TitleList.h"
@@ -17,8 +19,18 @@
 #include "Common/ExceptionHandler/ExceptionHandler.h"
 #include "Common/cpu_features.h"
 
+#include "Cemu/Logging/CemuLogging.h"
 #include "util/helpers/helpers.h"
 #include "config/ActiveSettings.h"
+#ifdef ENABLE_VULKAN
+#include "Cafe/HW/Latte/Renderer/Vulkan/VsyncDriver.h"
+#include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
+#endif
+#ifdef ENABLE_METAL
+#include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
+#endif
+
+#include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 
 #include "Cafe/IOSU/legacy/iosu_crypto.h"
 #include "Cafe/OS/libs/vpad/vpad.h"
@@ -38,11 +50,28 @@
 #if BOOST_OS_LINUX
 #define _putenv(__s) putenv((char*)(__s))
 #include <sys/sysinfo.h>
-#elif BOOST_OS_MACOS || BOOST_OS_BSD
+#elif BOOST_OS_MACOS || BOOST_OS_IOS || BOOST_OS_BSD
 #define _putenv(__s) putenv((char*)(__s))
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #endif
+
+#include <mutex>
+#include <condition_variable>
+
+struct GameInfo {
+    unsigned long long titleId;
+    const char* name;
+    const char* path;
+    bool isBaseGame;
+};
+
+
+static std::vector<GameInfo> g_games;
+static std::mutex g_gamesMutex;
+static std::condition_variable g_gamesCV;
+static bool g_scanFinished = false;
+static int g_callbackId = -1;
 
 #if BOOST_OS_WINDOWS
 extern "C"
@@ -55,6 +84,7 @@ extern "C"
 std::atomic_bool g_isGPUInitFinished = false;
 
 std::wstring executablePath;
+
 
 // some implementations of _putenv dont copy the string and instead only store a pointer
 // thus we use a helper to keep a permanent copy
@@ -111,6 +141,7 @@ void WindowsInitCwd()
 	SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
 	#endif
 }
+
 
 void CemuCommonInit()
 {
@@ -172,28 +203,18 @@ void UnitTests()
 bool isConsoleConnected = false;
 void requireConsole()
 {
-    #if BOOST_OS_WINDOWS
-    if (isConsoleConnected)
-        return;
+	#if BOOST_OS_WINDOWS
+	if (isConsoleConnected)
+		return;
 
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD dwFileType = GetFileType(hOut);
-
-    if (dwFileType == FILE_TYPE_UNKNOWN || dwFileType == FILE_TYPE_CHAR)
-    {
-        if (AttachConsole(ATTACH_PARENT_PROCESS) != FALSE)
-        {
-            freopen("CONOUT$", "w", stdout);
-            freopen("CONOUT$", "w", stderr);
-            freopen("CONIN$", "r", stdin);
-            isConsoleConnected = true;
-        }
-    }
-    else
-    {
-        isConsoleConnected = true; 
-    }
-    #endif
+	if (AttachConsole(ATTACH_PARENT_PROCESS) != FALSE)
+	{
+		freopen("CONIN$", "r", stdin);
+		freopen("CONOUT$", "w", stdout);
+		freopen("CONOUT$", "w", stderr);
+		isConsoleConnected = true;
+	}
+	#endif
 }
 
 void HandlePostUpdate()
@@ -265,7 +286,11 @@ int main(int argc, char* argv[])
 #else
 
 int BreathOfTheWildChildProcessMain();
+#if BOOST_OS_IOS
+int main_cemu(int argc, char *argv[])
+#else
 int main(int argc, char *argv[])
+#endif
 {
 #if BOOST_OS_LINUX && defined(ENABLE_VULKAN)
 	if (getenv("CEMU_DETECT_RADV") != nullptr)
@@ -285,4 +310,275 @@ int main(int argc, char *argv[])
 extern "C" DLLEXPORT uint64 gameMeta_getTitleId()
 {
 	return CafeSystem::GetForegroundTitleId();
+}
+
+static bool gInitialized = false;
+
+std::vector<GameInfo> GetAllGames(bool includeUpdates = false, bool includeDLC = false)
+{
+    std::vector<GameInfo> result;
+    CafeTitleList::WaitForMandatoryScan();
+    auto list = CafeTitleList::AcquireInternalList();
+
+    for (TitleInfo* t : list)
+    {
+        if (!t || !t->IsValid()) continue;
+        if (t->IsSystemDataTitle()) continue;
+
+        auto type = t->GetTitleType();
+        bool isBase   = type == TitleIdParser::TITLE_TYPE::BASE_TITLE ||
+                        type == TitleIdParser::TITLE_TYPE::HOMEBREW;
+        bool isUpdate = type == TitleIdParser::TITLE_TYPE::BASE_TITLE_UPDATE;
+        bool isDLC    = type == TitleIdParser::TITLE_TYPE::AOC;
+
+        if (!includeUpdates && isUpdate) continue;
+        if (!includeDLC && isDLC) continue;
+
+        std::string nameStr = t->GetMetaTitleName();
+        std::string pathStr = _pathToUtf8(t->GetPath());
+
+        GameInfo g;
+        g.titleId    = t->GetAppTitleId();
+        g.name       = strdup(nameStr.c_str());
+        g.path       = strdup(pathStr.c_str());
+        g.isBaseGame = isBase;
+
+        result.push_back(g);
+    }
+
+    CafeTitleList::ReleaseInternalList();
+    return result;
+}
+
+
+extern "C"
+{
+
+// Initialize emulator
+void CemuInitialize(const char* execPath, const char* user_data_path, const char* config_path, const char* cache_path, const char*  data_path)
+{
+    if (gInitialized)
+        return;
+
+    SDL_SetMainReady();
+    SDL_SetiOSEventPump(true);
+    
+    SDL_SetHint(SDL_HINT_APP_NAME, "MeloCafe");
+    SDL_SetHint(SDL_HINT_JOYSTICK_ENHANCED_REPORTS, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_SWITCH_HOME_LED, "0");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_JOY_CONS, "1");
+    SDL_SetHint(SDL_HINT_VIDEO_ALLOW_SCREENSAVER, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_COMBINE_JOY_CONS, "0");
+    
+    if (!SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMEPAD | SDL_INIT_HAPTIC | SDL_INIT_EVENTS))
+        throw std::runtime_error(fmt::format("couldn't initialize SDL: {}", SDL_GetError()));
+    
+    
+    AES128_init();
+    
+    PPCTimer_init();
+    
+    IAudioAPI::InitializeStatic();
+    
+    InitializeGlobalVulkan();
+    
+    std::set<fs::path> failedAccess;
+    ActiveSettings::SetPaths(true, execPath, user_data_path, config_path, cache_path, data_path, failedAccess);
+    cemuLog_createLogFile(false);
+    
+    fsc_init();
+    CafeTitleList::SetMLCPath(ActiveSettings::GetMlcPath());
+    CafeSaveList::SetMLCPath(ActiveSettings::GetMlcPath());
+    
+    CafeTitleList::Initialize(ActiveSettings::GetUserDataPath("title_list_cache.xml"));
+    CafeTitleList::Refresh();
+    
+    
+    ExceptionHandler_Init();
+    // read config
+    GetConfigHandle().SetFilename(ActiveSettings::GetConfigPath("config.xml").generic_wstring());
+    GetConfigHandle().Load();
+    if (NetworkConfig::XMLExists())
+        n_config.Load();
+    
+    ActiveSettings::Init();
+    
+    std::future<int> futureInitAudioAPI = std::async(std::launch::async, []{ IAudioAPI::InitializeStatic(); IAudioInputAPI::InitializeStatic(); return 0; });
+    std::future<int> futureInitGraphicPacks = std::async(std::launch::async, []{ GraphicPack2::LoadAll(); return 0; });
+    InputManager::instance().load();
+    futureInitAudioAPI.wait();
+    futureInitGraphicPacks.wait();
+    
+    CafeSaveList::Initialize();
+    CafeSystem::Initialize();
+    gInitialized = true;
+}
+
+
+bool CemuLoadTitle(uint64_t titleId)
+{
+    if (!gInitialized)
+        return false;
+
+    auto status = CafeSystem::PrepareForegroundTitle(titleId);
+
+    return status == CafeSystem::PREPARE_STATUS_CODE::SUCCESS;
+}
+
+unsigned long long CemuLoadFile(const char* launchPath, bool load)
+{
+    
+    TitleInfo launchTitle{ launchPath };
+    CafeTitleList::AddTitleFromPath(launchPath);
+    if (load) {
+        if (launchTitle.IsValid())
+        {
+            TitleId baseTitleId;
+            if (!CafeTitleList::FindBaseTitleId(launchTitle.GetAppTitleId(), baseTitleId))
+            {
+                return -1;
+            }
+            
+            return baseTitleId;
+        } else {
+            CafeTitleFileType fileType = DetermineCafeSystemFileType(launchPath);
+            
+            if (fileType == CafeTitleFileType::UNKNOWN) {
+                return -1;
+            }
+            
+            if (load) {
+                if (fileType == CafeTitleFileType::RPX || fileType == CafeTitleFileType::ELF)
+                {
+                    CafeSystem::PREPARE_STATUS_CODE r = CafeSystem::PrepareForegroundTitleFromStandaloneRPX(launchPath);
+                    if (r != CafeSystem::PREPARE_STATUS_CODE::SUCCESS)
+                    {
+                        return -1;
+                    }
+                }
+            }
+        }
+    }
+    
+    return 0;
+}
+
+struct GameIconResult {
+    uint8_t* data;
+    uint32_t size;
+};
+
+void Cemu_FreeGameIcon(GameIconResult* icon) {
+    if (icon && icon->data) {
+        free(icon->data);
+        icon->data = nullptr;
+        icon->size = 0;
+    }
+}
+
+GameIconResult CemuGetGameIcon(uint64 titleId) {
+    GameIconResult result{nullptr, 0};
+    
+    TitleInfo titleInfo;
+    if (!CafeTitleList::GetFirstByTitleId(titleId, titleInfo))
+        return result;
+    
+    std::string tempMountPath = TitleInfo::GetUniqueTempMountingPath();
+    if (!titleInfo.Mount(tempMountPath, "", FSC_PRIORITY_BASE))
+        return result;
+    
+    auto iconData = fsc_extractFile((tempMountPath + "/meta/iconTex.tga").c_str());
+    
+    if (!iconData) {
+        iconData = fsc_extractFile((tempMountPath + "/meta/iconTex.tga.gz").c_str());
+        if (iconData) {
+            auto decompressed = zlibDecompress(*iconData, 70 * 1024);
+            std::swap(iconData, decompressed);
+        }
+    }
+    
+    titleInfo.Unmount(tempMountPath);
+    
+    if (iconData && iconData->size() > 16) {
+        result.size = static_cast<uint32_t>(iconData->size());
+        result.data = static_cast<uint8_t*>(malloc(result.size));
+        if (result.data) {
+            memcpy(result.data, iconData->data(), result.size);
+        } else {
+            result.size = 0;
+        }
+    }
+    
+    return result;
+}
+
+
+GameInfo* CemuGetAllGames(bool includeUpdates, bool includeDLC, int* outCount)
+{
+    *outCount = 0;
+    std::vector<GameInfo> cppGames = GetAllGames(includeUpdates, includeDLC);
+
+    *outCount = static_cast<int>(cppGames.size());
+    GameInfo* result = (GameInfo*)malloc(sizeof(GameInfo) * (*outCount));
+
+    for (int i = 0; i < *outCount; i++) {
+        result[i] = cppGames[i];
+        cppGames[i].name = nullptr;
+        cppGames[i].path = nullptr;
+    }
+
+    return result;
+}
+
+void CemuFreeGameList(GameInfo* list, int count)
+{
+    if (!list) return;
+    for (int i = 0; i < count; i++) {
+        free((void*)list[i].name);
+        free((void*)list[i].path);
+    }
+    free(list);
+}
+
+void CemuUIKit_InitializeLayer(bool main);
+
+bool SetInterpreter(bool interpreter) {
+    return LaunchSettings::SetInterpreter(interpreter);
+}
+
+void CemuUIKit_SetMetal(bool metals);
+
+// Start execution
+void CemuRun()
+{
+#ifdef ENABLE_METAL
+    if (ActiveSettings::GetGraphicsAPI() == kMetal)
+        g_renderer = std::make_unique<MetalRenderer>();
+#endif
+
+#ifdef ENABLE_VULKAN
+    if (!g_renderer)
+        g_renderer = std::make_unique<VulkanRenderer>();
+#endif
+
+    cemu_assert(g_renderer != nullptr);
+    CemuUIKit_SetMetal(ActiveSettings::GetGraphicsAPI() == kMetal);
+    CemuUIKit_InitializeLayer(true);
+    CemuUIKit_InitializeLayer(false);
+
+    CafeSystem::LaunchForegroundTitle();
+}
+
+
+bool CemuInitJIT() {
+    PPCRecompiler_Init26();
+}
+
+
+void CemuShutdown()
+{
+    CafeSystem::Shutdown();
+}
+
 }

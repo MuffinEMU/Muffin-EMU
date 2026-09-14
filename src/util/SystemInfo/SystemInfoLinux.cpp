@@ -10,7 +10,7 @@ uint64 QueryRamUsage()
 		return 0;
 	}
 
-	std::ifstream file("/proc/self/statm");
+	std::ifstream file(fs::resolvePathCI(fs::path("/proc/self/statm")));
 	if (file)
 	{
 		file.ignore(std::numeric_limits<std::streamsize>::max(), ' ');
@@ -22,9 +22,11 @@ uint64 QueryRamUsage()
 	return 0;
 }
 
-void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
+void QueryCoreTimes(std::vector<ProcessorTime>& out)
 {
-	std::ifstream file("/proc/stat");
+	out.resize(GetProcessorCount());
+
+	std::ifstream file(fs::resolvePathCI(fs::path("/proc/stat")));
 	if (file)
 	{
 		file.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
@@ -43,6 +45,6 @@ void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
 	}
 	else
 	{
-		for (auto i = 0; i < count; ++i) out[i] = { };
+		for (auto i = 0; i < out.size(); ++i) out[i] = { };
 	}
 }

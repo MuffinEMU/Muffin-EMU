@@ -20,6 +20,8 @@ struct VkSupportedFormatInfo_t
 	bool fmt_r5g6b5_unorm_pack{};
 	bool fmt_r4g4b4a4_unorm_pack{};
 	bool fmt_a1r5g5b5_unorm_pack{};
+	bool fmt_bc{};
+	bool fmt_astc{};
 };
 
 struct VkDescriptorSetInfo
@@ -220,7 +222,11 @@ public:
 
 	VkDescriptorPool GetDescriptorPool() const { return m_descriptorPool; }
 
-	void WaitDeviceIdle() const { vkDeviceWaitIdle(m_logicalDevice); }
+	void WaitDeviceIdle()
+	{
+		WaitRenderWorkerIdle();
+		vkDeviceWaitIdle(m_logicalDevice);
+	}
 
 	void Initialize() override;
 	void Shutdown() override;
@@ -291,7 +297,7 @@ public:
 
 	void texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize) override;
 
-	LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth) override;
+	LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget) override;
 
 	void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) override;
 
@@ -415,6 +421,7 @@ private:
 
 	std::unique_ptr<SwapchainInfoVk> m_mainSwapchainInfo{}, m_padSwapchainInfo{};
 	std::atomic_flag m_destroyPadSwapchainNextAcquire{};
+	std::array<std::atomic_bool, 2> m_swapchainPresentPending{};
 	bool IsSwapchainInfoValid(bool mainWindow) const;
 
 	VkRenderPass m_imguiRenderPass = VK_NULL_HANDLE;
@@ -639,7 +646,7 @@ private:
 	MPTR m_importedMemBaseAddress = 0;
 
 	// command buffer, garbage collection, synchronization
-	static constexpr uint32 kCommandBufferPoolSize = 128;
+	static constexpr uint32 kCommandBufferPoolSize = 16;
 
 	size_t m_commandBufferIndex = 0; // current buffer being filled
 	size_t m_commandBufferSyncIndex = 0; // latest buffer that finished execution (updated on submit)

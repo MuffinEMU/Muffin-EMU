@@ -11,6 +11,7 @@ struct MetalPixelFormatSupport
 	bool m_supportsRG8Unorm_sRGB;
 	bool m_supportsPacked16BitFormats;
 	bool m_supportsDepth24Unorm_Stencil8;
+    bool m_supportsBCFormats;
 
 	MetalPixelFormatSupport() = default;
 	MetalPixelFormatSupport(MTL::Device* device)
@@ -18,7 +19,8 @@ struct MetalPixelFormatSupport
         m_supportsR8Unorm_sRGB = device->supportsFamily(MTL::GPUFamilyApple1);
         m_supportsRG8Unorm_sRGB = device->supportsFamily(MTL::GPUFamilyApple1);
         m_supportsPacked16BitFormats = device->supportsFamily(MTL::GPUFamilyApple1);
-        m_supportsDepth24Unorm_Stencil8 = device->depth24Stencil8PixelFormatSupported();
+        m_supportsDepth24Unorm_Stencil8 = false; //device->depth24Stencil8PixelFormatSupported();
+        m_supportsBCFormats = device->supportsBCTextureCompression();
 	}
 };
 
@@ -41,6 +43,22 @@ struct MetalQueryRange
 #define GET_HELPER_BUFFER_BINDING(index) (28 + index)
 #define GET_HELPER_TEXTURE_BINDING(index) (29 + index)
 #define GET_HELPER_SAMPLER_BINDING(index) (14 + index)
+
+namespace MetalArgumentBuffer
+{
+	constexpr uint32 BindingIndex = 0;
+	constexpr uint32 Dummy = 0;
+	constexpr uint32 SupportBuffer = 1;
+	constexpr uint32 UniformBufferBase = 2;
+	constexpr uint32 StreamoutBuffer = UniformBufferBase + LATTE_NUM_MAX_UNIFORM_BUFFERS;
+	constexpr uint32 TextureBase = StreamoutBuffer + 1;
+	constexpr uint32 SamplerBase = TextureBase + LATTE_NUM_MAX_TEX_UNITS;
+	constexpr uint32 VertexBufferBase = SamplerBase + MAX_MTL_SAMPLERS;
+	constexpr uint32 VertexBufferSizeBase = VertexBufferBase + LATTE_MAX_VERTEX_BUFFERS;
+	constexpr uint32 IndexBuffer = VertexBufferSizeBase + LATTE_MAX_VERTEX_BUFFERS;
+	constexpr uint32 IndexBufferSize = IndexBuffer + 1;
+	constexpr uint32 IndexType = IndexBufferSize + 1;
+}
 
 constexpr uint32 INVALID_UINT32 = std::numeric_limits<uint32>::max();
 constexpr size_t INVALID_OFFSET = std::numeric_limits<size_t>::max();
@@ -107,7 +125,9 @@ inline bool FormatIsRenderable(Latte::E_GX2SURFFMT format)
 template <typename... T>
 inline bool executeCommand(fmt::format_string<T...> fmt, T&&... args) {
     std::string command = fmt::format(fmt, std::forward<T>(args)...);
-    int res = system(command.c_str());
+    // int res = system(command.c_str());
+
+    int res = 0;
     if (res != 0)
     {
         cemuLog_log(LogType::Force, "command \"{}\" failed with exit code {}", command, res);
@@ -195,6 +215,8 @@ inline uint32 GetVerticesPerPrimitive(LattePrimitiveMode primitiveMode)
         return 2;
     case LattePrimitiveMode::TRIANGLES:
         return 3;
+    case LattePrimitiveMode::TRIANGLE_STRIP:
+        return 3;
     case LattePrimitiveMode::RECTS:
         return 3;
     default:
@@ -205,7 +227,8 @@ inline uint32 GetVerticesPerPrimitive(LattePrimitiveMode primitiveMode)
 
 inline bool PrimitiveRequiresConnection(LattePrimitiveMode primitiveMode)
 {
-    if (primitiveMode == LattePrimitiveMode::LINE_STRIP)
+    if (primitiveMode == LattePrimitiveMode::LINE_STRIP ||
+        primitiveMode == LattePrimitiveMode::TRIANGLE_STRIP)
         return true;
     else
         return false;

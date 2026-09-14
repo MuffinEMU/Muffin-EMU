@@ -8,6 +8,7 @@ namespace InputAPI
 	{
 		Keyboard,
 		SDLController,
+        GCController,
 		XInput,
 		DirectInput,
 		DSUClient,
@@ -26,6 +27,8 @@ namespace InputAPI
 		{
 		case Keyboard:
 			return "Keyboard";
+        case GCController:
+            return "GCController";
 		case DirectInput:
 			return "DirectInput";
 		case XInput:
@@ -65,9 +68,11 @@ namespace InputAPI
 			return DSUClient;
 		else if (str == to_string(SDLController))
 			return SDLController;
+        else if (str == to_string(GCController))
+            return GCController;
 		else if (str == "DSU") // legacy
 			return DSUClient;
-		
+
 		//else if (str == "WGIGamepad")
 		//	return WGIGamepad;
 		//

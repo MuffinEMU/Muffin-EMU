@@ -4,8 +4,8 @@
 #include "Cafe/HW/Latte/Renderer/Metal/LatteToMtl.h"
 
 LatteTextureMtl::LatteTextureMtl(class MetalRenderer* mtlRenderer, Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle,
-	Latte::E_HWTILEMODE tileMode, bool isDepth)
-	: LatteTexture(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth), m_mtlr(mtlRenderer)
+	Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget)
+	: LatteTexture(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth, isRenderTarget), m_mtlr(mtlRenderer)
 {
     NS_STACK_SCOPED MTL::TextureDescriptor* desc = MTL::TextureDescriptor::alloc()->init();
     desc->setStorageMode(MTL::StorageModePrivate);

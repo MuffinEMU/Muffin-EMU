@@ -83,7 +83,272 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-namespace fs = std::filesystem;
+// iOS is case sensitive while macOS is not.
+namespace fs
+{
+using namespace std::filesystem;
+
+inline std::filesystem::path resolvePathCI(const std::filesystem::path& path)
+{
+#if !BOOST_OS_IOS
+	return path;
+#else
+	if (std::filesystem::exists(path))
+		return path;
+
+	const auto fileName = path.filename();
+	auto parentPath = path.parent_path();
+	if (parentPath.empty())
+		parentPath = ".";
+	else if (!std::filesystem::exists(parentPath))
+		parentPath = resolvePathCI(parentPath);
+
+	std::error_code ec;
+	for (const auto& entry : std::filesystem::directory_iterator(parentPath, ec))
+	{
+		if (boost::iequals(entry.path().filename().string(), fileName.string()))
+			return entry.path();
+	}
+
+	return parentPath / fileName;
+#endif
+}
+
+inline bool exists(const std::filesystem::path& path)
+{
+	return std::filesystem::exists(resolvePathCI(path));
+}
+
+inline bool exists(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::exists(resolvePathCI(path), ec);
+}
+
+inline bool exists(std::filesystem::file_status status)
+{
+	return std::filesystem::exists(status);
+}
+
+inline bool is_directory(const std::filesystem::path& path)
+{
+	return std::filesystem::is_directory(resolvePathCI(path));
+}
+
+inline bool is_directory(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::is_directory(resolvePathCI(path), ec);
+}
+
+inline bool is_directory(std::filesystem::file_status status)
+{
+	return std::filesystem::is_directory(status);
+}
+
+inline bool is_regular_file(const std::filesystem::path& path)
+{
+	return std::filesystem::is_regular_file(resolvePathCI(path));
+}
+
+inline bool is_regular_file(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::is_regular_file(resolvePathCI(path), ec);
+}
+
+inline bool is_regular_file(std::filesystem::file_status status)
+{
+	return std::filesystem::is_regular_file(status);
+}
+
+inline bool is_empty(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::is_empty(resolvePathCI(path), ec);
+}
+
+inline bool is_empty(const std::filesystem::path& path)
+{
+	return std::filesystem::is_empty(resolvePathCI(path));
+}
+
+inline bool is_symlink(const std::filesystem::path& path)
+{
+	return std::filesystem::is_symlink(resolvePathCI(path));
+}
+
+inline bool is_symlink(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::is_symlink(resolvePathCI(path), ec);
+}
+
+inline bool is_symlink(std::filesystem::file_status status)
+{
+	return std::filesystem::is_symlink(status);
+}
+
+inline std::filesystem::file_status status(const std::filesystem::path& path)
+{
+	return std::filesystem::status(resolvePathCI(path));
+}
+
+inline std::filesystem::file_status status(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::status(resolvePathCI(path), ec);
+}
+
+inline std::filesystem::file_status symlink_status(const std::filesystem::path& path)
+{
+	return std::filesystem::symlink_status(resolvePathCI(path));
+}
+
+inline std::filesystem::file_status symlink_status(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::symlink_status(resolvePathCI(path), ec);
+}
+
+inline std::uintmax_t file_size(const std::filesystem::path& path)
+{
+	return std::filesystem::file_size(resolvePathCI(path));
+}
+
+inline std::uintmax_t file_size(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::file_size(resolvePathCI(path), ec);
+}
+
+inline bool create_directory(const std::filesystem::path& path)
+{
+	return std::filesystem::create_directory(resolvePathCI(path));
+}
+
+inline bool create_directory(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::create_directory(resolvePathCI(path), ec);
+}
+
+inline bool create_directories(const std::filesystem::path& path)
+{
+	return std::filesystem::create_directories(resolvePathCI(path));
+}
+
+inline bool create_directories(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::create_directories(resolvePathCI(path), ec);
+}
+
+inline bool remove(const std::filesystem::path& path)
+{
+	return std::filesystem::remove(resolvePathCI(path));
+}
+
+inline bool remove(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::remove(resolvePathCI(path), ec);
+}
+
+inline std::uintmax_t remove_all(const std::filesystem::path& path)
+{
+	return std::filesystem::remove_all(resolvePathCI(path));
+}
+
+inline std::uintmax_t remove_all(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::remove_all(resolvePathCI(path), ec);
+}
+
+inline void rename(const std::filesystem::path& from, const std::filesystem::path& to)
+{
+	std::filesystem::rename(resolvePathCI(from), resolvePathCI(to));
+}
+
+inline void rename(const std::filesystem::path& from, const std::filesystem::path& to, std::error_code& ec)
+{
+	std::filesystem::rename(resolvePathCI(from), resolvePathCI(to), ec);
+}
+
+inline std::filesystem::space_info space(const std::filesystem::path& path)
+{
+	return std::filesystem::space(resolvePathCI(path));
+}
+
+inline std::filesystem::space_info space(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::space(resolvePathCI(path), ec);
+}
+
+inline std::filesystem::path read_symlink(const std::filesystem::path& path)
+{
+	return std::filesystem::read_symlink(resolvePathCI(path));
+}
+
+inline std::filesystem::path read_symlink(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::read_symlink(resolvePathCI(path), ec);
+}
+
+inline bool equivalent(const std::filesystem::path& left, const std::filesystem::path& right, std::error_code& ec)
+{
+	return std::filesystem::equivalent(resolvePathCI(left), resolvePathCI(right), ec);
+}
+
+inline std::filesystem::path weakly_canonical(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::weakly_canonical(resolvePathCI(path), ec);
+}
+
+inline std::filesystem::path relative(const std::filesystem::path& path, const std::filesystem::path& base)
+{
+	return std::filesystem::relative(resolvePathCI(path), resolvePathCI(base));
+}
+
+inline std::filesystem::path relative(const std::filesystem::path& path, const std::filesystem::path& base, std::error_code& ec)
+{
+	return std::filesystem::relative(resolvePathCI(path), resolvePathCI(base), ec);
+}
+
+inline void permissions(const std::filesystem::path& path, std::filesystem::perms permissions,
+	std::filesystem::perm_options options = std::filesystem::perm_options::replace)
+{
+	std::filesystem::permissions(resolvePathCI(path), permissions, options);
+}
+
+inline void permissions(const std::filesystem::path& path, std::filesystem::perms permissions,
+	std::filesystem::perm_options options, std::error_code& ec)
+{
+	std::filesystem::permissions(resolvePathCI(path), permissions, options, ec);
+}
+
+inline bool copy_file(const std::filesystem::path& from, const std::filesystem::path& to, std::error_code& ec)
+{
+	return std::filesystem::copy_file(resolvePathCI(from), resolvePathCI(to), ec);
+}
+
+inline bool copy_file(const std::filesystem::path& from, const std::filesystem::path& to,
+	std::filesystem::copy_options options, std::error_code& ec)
+{
+	return std::filesystem::copy_file(resolvePathCI(from), resolvePathCI(to), options, ec);
+}
+
+class directory_iterator : public std::filesystem::directory_iterator
+{
+using base = std::filesystem::directory_iterator;
+
+public:
+	using base::base;
+	directory_iterator() = default;
+	explicit directory_iterator(const std::filesystem::path& path) : base(resolvePathCI(path)) {}
+	directory_iterator(const std::filesystem::path& path, std::error_code& ec) : base(resolvePathCI(path), ec) {}
+};
+
+class recursive_directory_iterator : public std::filesystem::recursive_directory_iterator
+{
+using base = std::filesystem::recursive_directory_iterator;
+
+public:
+	using base::base;
+	recursive_directory_iterator() = default;
+	explicit recursive_directory_iterator(const std::filesystem::path& path) : base(resolvePathCI(path)) {}
+	recursive_directory_iterator(const std::filesystem::path& path, std::error_code& ec) : base(resolvePathCI(path), ec) {}
+};
+}
 
 #include "enumFlags.h"
 
@@ -182,7 +447,7 @@ inline sint16 _swapEndianS16(sint16 v)
 #else
 inline uint64 _swapEndianU64(uint64 v)
 {
-#if BOOST_OS_MACOS
+#if BOOST_OS_MACOS || BOOST_OS_IOS
     return OSSwapInt64(v);
 #elif BOOST_OS_BSD
 #ifdef __OpenBSD__
@@ -197,7 +462,7 @@ inline uint64 _swapEndianU64(uint64 v)
 
 inline uint32 _swapEndianU32(uint32 v)
 {
-#if BOOST_OS_MACOS
+#if BOOST_OS_MACOS || BOOST_OS_IOS
     return OSSwapInt32(v);
 #elif BOOST_OS_BSD
 #ifdef __OpenBSD__
@@ -212,7 +477,7 @@ inline uint32 _swapEndianU32(uint32 v)
 
 inline sint32 _swapEndianS32(sint32 v)
 {
-#if BOOST_OS_MACOS
+#if BOOST_OS_MACOS || BOOST_OS_IOS
     return (sint32)OSSwapInt32((uint32)v);
 #elif BOOST_OS_BSD
 #ifdef __OpenBSD__
@@ -312,7 +577,7 @@ inline uint64 _udiv128(uint64 highDividend, uint64 lowDividend, uint64 divisor, 
     #define DEBUG_BREAK __debugbreak()
 #else
     #include <csignal>
-    #define DEBUG_BREAK raise(SIGTRAP) 
+    #define DEBUG_BREAK raise(SIGTRAP)
 #endif
 
 #if defined(_MSC_VER)
@@ -508,7 +773,7 @@ bool match_any_of(T1&& value, Types&&... others)
 	clock_gettime(CLOCK_MONOTONIC_RAW, &tp);
 	return std::chrono::steady_clock::time_point(
 		std::chrono::seconds(tp.tv_sec) + std::chrono::nanoseconds(tp.tv_nsec));
-#elif BOOST_OS_MACOS
+#elif BOOST_OS_MACOS || BOOST_OS_IOS
 	return std::chrono::steady_clock::time_point(
 		std::chrono::nanoseconds(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)));
 #elif BOOST_OS_BSD

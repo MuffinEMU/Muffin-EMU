@@ -5,6 +5,7 @@
 #include "Cafe/OS/RPL/rpl_symbol_storage.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 #include "Cafe/HW/Espresso/Debugger/DebugSymbolStorage.h"
+#include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 
 bool _relocateAddress(PatchGroup* group, PatchContext_t* ctx, uint32 addr, uint32& relocatedAddress)
 {
@@ -407,6 +408,7 @@ void PatchEntryInstruction::applyPatch()
 	memcpy(m_dataBackup, patchAddr, m_length);
 	memcpy(patchAddr, m_dataWithRelocs, m_length);
 	PPCRecompiler_invalidateRange(addr, addr + m_length);
+    PPCInterpreter_invalidateBlockCacheRange(addr, m_length);
 }
 
 void PatchEntryInstruction::undoPatch()
@@ -420,6 +422,7 @@ void PatchEntryInstruction::undoPatch()
 	uint8* patchAddr = (uint8*)memory_base + addr;
 	memcpy(patchAddr, m_dataBackup, m_length);
 	PPCRecompiler_invalidateRange(addr, addr + m_length);
+    PPCInterpreter_invalidateBlockCacheRange(addr, m_length);
 	rplSymbolStorage_removeRange(addr, m_length, RPL_STORED_SYMBOL_PATCH);
 	DebugSymbolStorage::ClearRange(addr, m_length);
 }

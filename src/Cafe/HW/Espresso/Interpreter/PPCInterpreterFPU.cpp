@@ -168,31 +168,23 @@ void fcmpu_espresso(PPCInterpreter_t* hCPU, int crfD, double a, double b)
 {
 	uint32 c;
 
-	ppc_setCRBit(hCPU, crfD + 0, 0);
-	ppc_setCRBit(hCPU, crfD + 1, 0);
-	ppc_setCRBit(hCPU, crfD + 2, 0);
-	ppc_setCRBit(hCPU, crfD + 3, 0);
-
 	if (IS_NAN(*(uint64*)&a) || IS_NAN(*(uint64*)&b))
 	{
 		c = 1;
-		ppc_setCRBit(hCPU, crfD + CR_BIT_SO, 1);
 	}
 	else if (a < b)
 	{
 		c = 8;
-		ppc_setCRBit(hCPU, crfD + CR_BIT_LT, 1);
 	}
 	else if (a > b)
 	{
 		c = 4;
-		ppc_setCRBit(hCPU, crfD + CR_BIT_GT, 1);
 	}
 	else
 	{
 		c = 2;
-		ppc_setCRBit(hCPU, crfD + CR_BIT_EQ, 1);
 	}
+	ppc_setCRField(hCPU, crfD / 4, c);
 
 	if (IS_SNAN(*(uint64*)&a) || IS_SNAN(*(uint64*)&b))
 		hCPU->fpscr |= FPSCR_VXSNAN;
@@ -650,32 +642,25 @@ void PPCInterpreter_FCMPO(PPCInterpreter_t* hCPU, uint32 Opcode)
 	int crfD, frA, frB;
 	PPC_OPC_TEMPL_X(Opcode, crfD, frA, frB);
 	crfD >>= 2;
-	hCPU->cr[crfD*4+0] = 0;
-	hCPU->cr[crfD*4+1] = 0;
-	hCPU->cr[crfD*4+2] = 0;
-	hCPU->cr[crfD*4+3] = 0;
 
 	uint32 c;
 	if(IS_NAN(hCPU->fpr[frA].guint) || IS_NAN(hCPU->fpr[frB].guint))
 	{
 		c = 1;
-		hCPU->cr[crfD*4+CR_BIT_SO] = 1;
 	}
     else if(hCPU->fpr[frA].fpr < hCPU->fpr[frB].fpr)
 	{
 		c = 8;
-		hCPU->cr[crfD*4+CR_BIT_LT] = 1;
 	}
 	else if(hCPU->fpr[frA].fpr > hCPU->fpr[frB].fpr)
 	{
 		c = 4;
-		hCPU->cr[crfD*4+CR_BIT_GT] = 1;
 	}
 	else
 	{
 		c = 2;
-		hCPU->cr[crfD*4+CR_BIT_EQ] = 1;
 	}
+	ppc_setCRField(hCPU, crfD, c);
 
     hCPU->fpscr = (hCPU->fpscr & 0xffff0fff) | (c << 12);
 

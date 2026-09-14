@@ -227,6 +227,8 @@ RendererShaderMtl::RendererShaderMtl(MetalRenderer* mtlRenderer, ShaderType type
 
 RendererShaderMtl::~RendererShaderMtl()
 {
+	if (m_argumentEncoder)
+		m_argumentEncoder->release();
     if (m_function)
         m_function->release();
 }
@@ -265,7 +267,7 @@ bool RendererShaderMtl::IsCompiled()
 bool RendererShaderMtl::WaitForCompiled()
 {
 	m_compilationState.waitUntilValue(COMPILATION_STATE::DONE);
-	return true;
+	return m_function != nullptr;
 }
 
 bool RendererShaderMtl::ShouldCountCompilation() const
@@ -288,9 +290,9 @@ MTL::Library* RendererShaderMtl::LibraryFromSource()
 
     NS::Error* error = nullptr;
 	MTL::Library* library = m_mtlr->GetDevice()->newLibrary(ToNSString(m_mslCode), options, &error);
-	if (error)
+	if (!library)
     {
-        cemuLog_log(LogType::Force, "failed to create library from source: {} -> {}", error->localizedDescription()->utf8String(), m_mslCode.c_str());
+        cemuLog_log(LogType::Force, "failed to create library from source: {} -> {}", error ? error->localizedDescription()->utf8String() : "unknown error", m_mslCode.c_str());
         return nullptr;
     }
 
@@ -316,6 +318,7 @@ MTL::Library* RendererShaderMtl::LibraryFromAIR(std::span<uint8> data)
 
 void RendererShaderMtl::CompileInternal()
 {
+	NS_STACK_SCOPED NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
     MTL::Library* library = nullptr;
 
     // First, try to retrieve the compiled shader from the AIR cache
@@ -355,6 +358,18 @@ void RendererShaderMtl::CompileInternal()
     m_function = library->newFunction(ToNSString("main0"));
     library->release();
 
+	if (m_function && m_isGameShader)
+	{
+		m_argumentEncoder = m_function->newArgumentEncoder(MetalArgumentBuffer::BindingIndex);
+		if (!m_argumentEncoder)
+		{
+			cemuLog_log(LogType::Force, "failed to create Metal argument encoder for shader {:016x}", m_baseHash);
+			m_function->release();
+			m_function = nullptr;
+			return;
+		}
+	}
+
 	// Count shader compilation
 	if (ShouldCountCompilation())
 	    g_compiled_shaders_total++;
@@ -371,7 +386,7 @@ void RendererShaderMtl::CompileToAIR()
 
 	// Source
 	std::ofstream mslFile;
-    mslFile.open(fmt::format("{}.metal", baseFilename));
+    mslFile.open(fs::resolvePathCI(fs::path(fmt::format("{}.metal", baseFilename))));
     mslFile << m_mslCode;
     mslFile.close();
 

@@ -1,0 +1,18 @@
+//
+//  MeloNX.xcconfig
+//  MeloNX
+//
+//  Created by Stossy11 on 06/03/2025.
+//
+
+// Configuration settings file format documentation can be found at:
+// https://help.apple.com/xcode/#/dev745c5c974
+
+VERSION = 1.0
+
+DEVELOPMENT_TEAM = XYZ0123456
+PRODUCT_BUNDLE_IDENTIFIER = com.stossy11.MeloNX
+CODE_SIGN_IDENTITY  = -
+DEVELOPMENT_TEAM = XYZ0123456
+CODE_SIGN_STYLE = Manual
+AD_HOC_CODE_SIGNING_ALLOWED = YES

@@ -32,11 +32,11 @@ extern bool g_vulkan_available;
 		#define VKFUNC_INSTANCE(__FUNC__)
 		#define VKFUNC_DEVICE(__FUNC__)
 	#elif defined(VKFUNC_INSTANCE_INIT)
-		#define VKFUNC(__FUNC__) 
+		#define VKFUNC(__FUNC__)
 		#define VKFUNC_INSTANCE(__FUNC__) __FUNC__ = (PFN_##__FUNC__)vkGetInstanceProcAddr(instance, #__FUNC__)
 		#define VKFUNC_DEVICE(__FUNC__)
 	#elif defined(VKFUNC_DEVICE_INIT)
-		#define VKFUNC(__FUNC__) 
+		#define VKFUNC(__FUNC__)
 		#define VKFUNC_INSTANCE(__FUNC__)
 		#define VKFUNC_DEVICE(__FUNC__) __FUNC__ = (PFN_##__FUNC__)vkGetDeviceProcAddr(device, #__FUNC__)
 	#else
@@ -142,7 +142,7 @@ VKFUNC_INSTANCE(vkCreateWaylandSurfaceKHR);
 VKFUNC_INSTANCE(vkCreateWin32SurfaceKHR);
 #endif
 
-#if BOOST_OS_MACOS
+#if BOOST_OS_MACOS || BOOST_OS_IOS
 VKFUNC_INSTANCE(vkCreateMetalSurfaceEXT);
 #endif
 

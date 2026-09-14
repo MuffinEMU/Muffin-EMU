@@ -59,6 +59,7 @@ static void PPCInterpreter_STWCX(PPCInterpreter_t* hCPU, uint32 Opcode)
 	// todo - this isnt accurate. STWCX can succeed even with a different EA if the reserved value remained untouched
 	if (hCPU->reservedMemAddr == ea)
 	{
+		uint32 crField = hCPU->xer_so;
 		uint32be reservedValue = hCPU->reservedMemValue; // this is the value we expect in memory (if it does not match, STWCX fails)
 		std::atomic<uint32be>* wordPtr;		
 		if constexpr(ppcItpCtrl::allowSupervisorMode)
@@ -74,19 +75,14 @@ static void PPCInterpreter_STWCX(PPCInterpreter_t* hCPU, uint32 Opcode)
 		if (!wordPtr->compare_exchange_strong(reservedValue, newValue))
 		{
 			// failed
-			ppc_setCRBit(hCPU, CR_BIT_LT, 0);
-			ppc_setCRBit(hCPU, CR_BIT_GT, 0);
-			ppc_setCRBit(hCPU, CR_BIT_EQ, 0);
 		}
 		else
 		{
 			// success, new value has been written
-			ppc_setCRBit(hCPU, CR_BIT_LT, 0);
-			ppc_setCRBit(hCPU, CR_BIT_GT, 0);
-			ppc_setCRBit(hCPU, CR_BIT_EQ, 1);
+			crField |= 2;
 		}
 		cemu_assert_debug(hCPU->xer_so <= 1);
-		ppc_setCRBit(hCPU, CR_BIT_SO, hCPU->xer_so);
+		ppc_setCRField(hCPU, 0, crField);
 		// remove reservation
 		hCPU->reservedMemAddr = 0;
 		hCPU->reservedMemValue = 0;
@@ -94,9 +90,7 @@ static void PPCInterpreter_STWCX(PPCInterpreter_t* hCPU, uint32 Opcode)
 	else
 	{
 		// failed
-		ppc_setCRBit(hCPU, CR_BIT_LT, 0);
-		ppc_setCRBit(hCPU, CR_BIT_GT, 0);
-		ppc_setCRBit(hCPU, CR_BIT_EQ, 0);
+		ppc_setCRField(hCPU, 0, hCPU->xer_so);
 	}
 	PPCInterpreter_nextInstruction(hCPU);
 }
@@ -125,6 +119,20 @@ static void PPCInterpreter_STMW(PPCInterpreter_t* hCPU, uint32 Opcode)
 	uint32 imm;
 	PPC_OPC_TEMPL_D_SImm(Opcode, rS, rA, imm);
 	uint32 ea = (rA ? hCPU->gpr[rA] : 0) + imm;
+	if constexpr (!ppcItpCtrl::allowSupervisorMode)
+	{
+		if (ea <= 0xFFFFFFFFu - 4u * (31u - rS))
+		{
+			uint8* ptr = memory_getPointerFromVirtualOffset(ea);
+			for (; rS <= 31; ++rS, ptr += 4)
+			{
+				const uint32 value = CPU_swapEndianU32(hCPU->gpr[rS]);
+				std::memcpy(ptr, &value, sizeof(value));
+			}
+			PPCInterpreter_nextInstruction(hCPU);
+			return;
+		}
+	}
 	while (rS <= 31)
 	{
 		ppcItpCtrl::ppcMem_writeDataU32(hCPU, ea, hCPU->gpr[rS]);
@@ -304,6 +312,21 @@ static void PPCInterpreter_LMW(PPCInterpreter_t* hCPU, uint32 Opcode)
 	uint32 imm;
 	PPC_OPC_TEMPL_D_SImm(Opcode, rD, rA, imm);
 	uint32 ea = (rA ? hCPU->gpr[rA] : 0) + imm;
+	if constexpr (!ppcItpCtrl::allowSupervisorMode)
+	{
+		if (ea <= 0xFFFFFFFFu - 4u * (31u - rD))
+		{
+			uint8* ptr = memory_getPointerFromVirtualOffset(ea);
+			for (; rD <= 31; ++rD, ptr += 4)
+			{
+				uint32 value;
+				std::memcpy(&value, ptr, sizeof(value));
+				hCPU->gpr[rD] = CPU_swapEndianU32(value);
+			}
+			PPCInterpreter_nextInstruction(hCPU);
+			return;
+		}
+	}
 	while (rD <= 31)
 	{
 		hCPU->gpr[rD] = ppcItpCtrl::ppcMem_readDataU32(hCPU, ea);
@@ -481,6 +504,7 @@ static void PPCInterpreter_LBZU(PPCInterpreter_t* hCPU, uint32 Opcode)
 	uint8 r;
 	uint32 ea = hCPU->gpr[rA] + imm;
 	hCPU->gpr[rA] = ea;
+
 	r = ppcItpCtrl::ppcMem_readDataU8(hCPU, ea);
 	hCPU->gpr[rD] = r;
 	PPCInterpreter_nextInstruction(hCPU);
@@ -867,6 +891,61 @@ static void PPCInterpreter_STFIWX(PPCInterpreter_t* hCPU, uint32 Opcode)
 #define PSWX         (opcode & (1<<(7+3)))
 #define PSIX         ((opcode >> 7) & 7)
 
+template<int Type>
+static inline uint32 PPCInterpreter_psqRead(PPCInterpreter_t* hCPU, uint32 ea)
+{
+	if constexpr (Type == 4 || Type == 6)
+		return ppcItpCtrl::ppcMem_readDataU8(hCPU, ea);
+	else if constexpr (Type == 5 || Type == 7)
+		return ppcItpCtrl::ppcMem_readDataU16(hCPU, ea);
+	else
+		return ppcItpCtrl::ppcMem_readDataU32(hCPU, ea);
+}
+
+template<int Type>
+static inline void PPCInterpreter_psqWrite(PPCInterpreter_t* hCPU, uint32 ea, uint32 value)
+{
+	if constexpr (Type == 4 || Type == 6)
+		ppcItpCtrl::ppcMem_writeDataU8(hCPU, ea, value);
+	else if constexpr (Type == 5 || Type == 7)
+		ppcItpCtrl::ppcMem_writeDataU16(hCPU, ea, value);
+	else
+		ppcItpCtrl::ppcMem_writeDataU32(hCPU, ea, value);
+}
+
+template<int Type, bool Store>
+static inline void PPCInterpreter_psqTransfer(PPCInterpreter_t* hCPU, uint32 ea, int frD, uint8 scale, bool single)
+{
+	constexpr uint32 stride = (Type == 4 || Type == 6) ? 1 : (Type == 5 || Type == 7) ? 2 : 4;
+    
+	if constexpr (Store)
+	{
+		PPCInterpreter_psqWrite<Type>(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, Type, scale));
+		if (!single)
+			PPCInterpreter_psqWrite<Type>(hCPU, ea + stride, quantize((float)hCPU->fpr[frD].fp1, Type, scale));
+	}
+	else
+	{
+		const uint32 data0 = PPCInterpreter_psqRead<Type>(hCPU, ea);
+		const uint32 data1 = single ? 0 : PPCInterpreter_psqRead<Type>(hCPU, ea + stride);
+		hCPU->fpr[frD].fp0 = (double)dequantize(data0, Type, scale);
+		hCPU->fpr[frD].fp1 = single ? 1.0 : (double)dequantize(data1, Type, scale);
+	}
+}
+
+template<bool Store>
+static inline void PPCInterpreter_psqTransfer(PPCInterpreter_t* hCPU, uint32 ea, int frD, int type, uint8 scale, bool single)
+{
+	switch (type)
+	{
+	case 4: PPCInterpreter_psqTransfer<4, Store>(hCPU, ea, frD, scale, single); break;
+	case 5: PPCInterpreter_psqTransfer<5, Store>(hCPU, ea, frD, scale, single); break;
+	case 6: PPCInterpreter_psqTransfer<6, Store>(hCPU, ea, frD, scale, single); break;
+	case 7: PPCInterpreter_psqTransfer<7, Store>(hCPU, ea, frD, scale, single); break;
+	default: PPCInterpreter_psqTransfer<0, Store>(hCPU, ea, frD, scale, single); break;
+	}
+}
+
 static void PPCInterpreter_PSQ_ST(PPCInterpreter_t* hCPU, unsigned int opcode)
 {
 	FPUCheckAvailable();
@@ -881,22 +960,7 @@ static void PPCInterpreter_PSQ_ST(PPCInterpreter_t* hCPU, unsigned int opcode)
 	sint32 type = ST_TYPE(PSI);
 	uint8 scale = (uint8)ST_SCALE(PSI);
 
-	if (opcode & 0x8000) // PSW?
-	{
-		if ((type == 4) || (type == 6)) ppcItpCtrl::ppcMem_writeDataU8(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else if ((type == 5) || (type == 7)) ppcItpCtrl::ppcMem_writeDataU16(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else ppcItpCtrl::ppcMem_writeDataU32(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-	}
-	else
-	{
-		if ((type == 4) || (type == 6)) ppcItpCtrl::ppcMem_writeDataU8(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else if ((type == 5) || (type == 7)) ppcItpCtrl::ppcMem_writeDataU16(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else ppcItpCtrl::ppcMem_writeDataU32(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-
-		if ((type == 4) || (type == 6)) ppcItpCtrl::ppcMem_writeDataU8(hCPU, ea + 1, quantize((float)hCPU->fpr[frD].fp1, type, scale));
-		else if ((type == 5) || (type == 7)) ppcItpCtrl::ppcMem_writeDataU16(hCPU, ea + 2, quantize((float)hCPU->fpr[frD].fp1, type, scale));
-		else ppcItpCtrl::ppcMem_writeDataU32(hCPU, ea + 4, quantize((float)hCPU->fpr[frD].fp1, type, scale));
-	}
+	PPCInterpreter_psqTransfer<true>(hCPU, ea, frD, type, scale, PSW != 0);
 
 	PPCInterpreter_nextInstruction(hCPU);
 }
@@ -919,22 +983,7 @@ static void PPCInterpreter_PSQ_STU(PPCInterpreter_t* hCPU, unsigned int opcode)
 	sint32 type = ST_TYPE((opcode >> 12) & 0x7);
 	uint8 scale = (uint8)ST_SCALE(PSI);
 
-	if (opcode & 0x8000) //PSW?
-	{
-		if ((type == 4) || (type == 6)) ppcItpCtrl::ppcMem_writeDataU8(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else if ((type == 5) || (type == 7)) ppcItpCtrl::ppcMem_writeDataU16(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else ppcItpCtrl::ppcMem_writeDataU32(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-	}
-	else
-	{
-		if ((type == 4) || (type == 6)) ppcItpCtrl::ppcMem_writeDataU8(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else if ((type == 5) || (type == 7)) ppcItpCtrl::ppcMem_writeDataU16(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else ppcItpCtrl::ppcMem_writeDataU32(hCPU, ea, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-
-		if ((type == 4) || (type == 6)) ppcItpCtrl::ppcMem_writeDataU8(hCPU, ea + 1, quantize((float)hCPU->fpr[frD].fp1, type, scale));
-		else if ((type == 5) || (type == 7)) ppcItpCtrl::ppcMem_writeDataU16(hCPU, ea + 2, quantize((float)hCPU->fpr[frD].fp1, type, scale));
-		else ppcItpCtrl::ppcMem_writeDataU32(hCPU, ea + 4, quantize((float)hCPU->fpr[frD].fp1, type, scale));
-	}
+	PPCInterpreter_psqTransfer<true>(hCPU, ea, frD, type, scale, PSW != 0);
 
 	PPCInterpreter_nextInstruction(hCPU);
 }
@@ -957,22 +1006,7 @@ static void PPCInterpreter_PSQ_STX(PPCInterpreter_t* hCPU, unsigned int opcode)
 	sint32 type = ST_TYPE(PSIX);
 	uint8 scale = (uint8)ST_SCALE(PSIX);
 
-	if (PSWX)
-	{
-		if ((type == 4) || (type == 6)) ppcItpCtrl::ppcMem_writeDataU8(hCPU, EA, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else if ((type == 5) || (type == 7)) ppcItpCtrl::ppcMem_writeDataU16(hCPU, EA, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else ppcItpCtrl::ppcMem_writeDataU32(hCPU, EA, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-	}
-	else
-	{
-		if ((type == 4) || (type == 6)) ppcItpCtrl::ppcMem_writeDataU8(hCPU, EA, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else if ((type == 5) || (type == 7)) ppcItpCtrl::ppcMem_writeDataU16(hCPU, EA, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-		else ppcItpCtrl::ppcMem_writeDataU32(hCPU, EA, quantize((float)hCPU->fpr[frD].fp0, type, scale));
-
-		if ((type == 4) || (type == 6)) ppcItpCtrl::ppcMem_writeDataU8(hCPU, EA + 1, quantize((float)hCPU->fpr[frD].fp1, type, scale));
-		else if ((type == 5) || (type == 7)) ppcItpCtrl::ppcMem_writeDataU16(hCPU, EA + 2, quantize((float)hCPU->fpr[frD].fp1, type, scale));
-		else ppcItpCtrl::ppcMem_writeDataU32(hCPU, EA + 4, quantize((float)hCPU->fpr[frD].fp1, type, scale));
-	}
+	PPCInterpreter_psqTransfer<true>(hCPU, EA, frD, type, scale, PSWX != 0);
 }
 
 static void PPCInterpreter_PSQ_L(PPCInterpreter_t* hCPU, unsigned int opcode)
@@ -985,7 +1019,7 @@ static void PPCInterpreter_PSQ_L(PPCInterpreter_t* hCPU, unsigned int opcode)
 	uint32 imm;
 	PPC_OPC_TEMPL_D_SImm(opcode, frD, rA, imm);
 
-	uint32 EA, data0 = 0, data1 = 0;
+	uint32 EA;
 	sint32 type = LD_TYPE(PSI);
 	uint8 scale = (uint8)LD_SCALE(PSI);
 
@@ -993,48 +1027,7 @@ static void PPCInterpreter_PSQ_L(PPCInterpreter_t* hCPU, unsigned int opcode)
 
 	if (rA) EA += hCPU->gpr[rA];
 
-	if (opcode & 0x8000)
-	{
-		if ((type == 4) || (type == 6)) *(uint8*)&data0 = ppcItpCtrl::ppcMem_readDataU8(hCPU, EA);
-		else if ((type == 5) || (type == 7)) *(uint16*)&data0 = ppcItpCtrl::ppcMem_readDataU16(hCPU, EA);
-		else *(uint32*)&data0 = ppcItpCtrl::ppcMem_readDataU32(hCPU, EA);
-		if (type == 6) if (data0 & 0x80) data0 |= 0xffffff00;
-		if (type == 7) if (data0 & 0x8000) data0 |= 0xffff0000;
-
-		hCPU->fpr[frD].fp0 = (double)dequantize(data0, type, scale);
-		hCPU->fpr[frD].fp1 = 1.0f;
-	}
-	else
-	{
-		if ((type == 4) || (type == 6))
-		{
-			*(uint8*)&data0 = ppcItpCtrl::ppcMem_readDataU8(hCPU, EA);
-			*(uint8*)&data1 = ppcItpCtrl::ppcMem_readDataU8(hCPU, EA + 1);
-		}
-		else if ((type == 5) || (type == 7))
-		{
-			*(uint16*)&data0 = ppcItpCtrl::ppcMem_readDataU16(hCPU, EA);
-			*(uint16*)&data1 = ppcItpCtrl::ppcMem_readDataU16(hCPU, EA + 2);
-		}
-		else
-		{
-			*(uint32*)&data0 = ppcItpCtrl::ppcMem_readDataU32(hCPU, EA);
-			*(uint32*)&data1 = ppcItpCtrl::ppcMem_readDataU32(hCPU, EA + 4);
-		}
-		if (type == 6)
-		{
-			if (data0 & 0x80) data0 |= 0xffffff00;
-			if (data1 & 0x80) data1 |= 0xffffff00;
-		}
-		if (type == 7)
-		{
-			if (data0 & 0x8000) data0 |= 0xffff0000;
-			if (data1 & 0x8000) data1 |= 0xffff0000;
-		}
-
-		hCPU->fpr[frD].fp0 = (double)dequantize(data0, type, scale);
-		hCPU->fpr[frD].fp1 = (double)dequantize(data1, type, scale);
-	}
+	PPCInterpreter_psqTransfer<false>(hCPU, EA, frD, type, scale, PSW != 0);
 }
 
 static void PPCInterpreter_PSQ_LU(PPCInterpreter_t* hCPU, unsigned int opcode)
@@ -1047,7 +1040,7 @@ static void PPCInterpreter_PSQ_LU(PPCInterpreter_t* hCPU, unsigned int opcode)
 	uint32 imm;
 	PPC_OPC_TEMPL_D_SImm(opcode, frD, rA, imm);
 
-	uint32 EA = opcode & 0xfff, data0 = 0, data1 = 0;
+	uint32 EA = opcode & 0xfff;
 	sint32 type = LD_TYPE(PSI);
 	uint8 scale = (uint8)LD_SCALE(PSI);
 
@@ -1059,34 +1052,7 @@ static void PPCInterpreter_PSQ_LU(PPCInterpreter_t* hCPU, unsigned int opcode)
 		hCPU->gpr[rA] = EA;
 	}
 
-	if (opcode & 0x8000)
-	{
-		if ((type == 4) || (type == 6)) *(uint8*)&data0 = ppcItpCtrl::ppcMem_readDataU8(hCPU, EA);
-		else if ((type == 5) || (type == 7)) *(uint16*)&data0 = ppcItpCtrl::ppcMem_readDataU16(hCPU, EA);
-		else *(uint32*)&data0 = ppcItpCtrl::ppcMem_readDataU32(hCPU, EA);
-		if (type == 6) if (data0 & 0x80) data0 |= 0xffffff00;
-		if (type == 7) if (data0 & 0x8000) data0 |= 0xffff0000;
-
-		hCPU->fpr[frD].fp0 = (double)dequantize(data0, type, scale);
-		hCPU->fpr[frD].fp1 = 1.0f;
-	}
-	else
-	{
-		if ((type == 4) || (type == 6)) *(uint8*)&data0 = ppcItpCtrl::ppcMem_readDataU8(hCPU, EA);
-		else if ((type == 5) || (type == 7)) *(uint16*)&data0 = ppcItpCtrl::ppcMem_readDataU16(hCPU, EA);
-		else *(uint32*)&data0 = ppcItpCtrl::ppcMem_readDataU32(hCPU, EA);
-		if (type == 6) if (data0 & 0x80) data0 |= 0xffffff00;
-		if (type == 7) if (data0 & 0x8000) data0 |= 0xffff0000;
-
-		if ((type == 4) || (type == 6)) *(uint8*)&data1 = ppcItpCtrl::ppcMem_readDataU8(hCPU, EA + 1);
-		else if ((type == 5) || (type == 7)) *(uint16*)&data1 = ppcItpCtrl::ppcMem_readDataU16(hCPU, EA + 2);
-		else *(uint32*)&data1 = ppcItpCtrl::ppcMem_readDataU32(hCPU, EA + 4);
-		if (type == 6) if (data1 & 0x80) data1 |= 0xffffff00;
-		if (type == 7) if (data1 & 0x8000) data1 |= 0xffff0000;
-
-		hCPU->fpr[frD].fp0 = (double)dequantize(data0, type, scale);
-		hCPU->fpr[frD].fp1 = (double)dequantize(data1, type, scale);
-	}
+	PPCInterpreter_psqTransfer<false>(hCPU, EA, frD, type, scale, PSW != 0);
 }
 
 static void PPCInterpreter_PSQ_LX(PPCInterpreter_t* hCPU, unsigned int opcode)
@@ -1104,38 +1070,10 @@ static void PPCInterpreter_PSQ_LX(PPCInterpreter_t* hCPU, unsigned int opcode)
 
 	uint32 EA = (rA ? hCPU->gpr[rA] : 0) + hCPU->gpr[rB];
 
-	uint32 data0 = 0, data1 = 0;
 	sint32 type = LD_TYPE(PSIX);
 	uint8 scale = (uint8)LD_SCALE(PSIX);
 
-	if (PSWX)
-	{
-		if ((type == 4) || (type == 6)) *(uint8*)&data0 = ppcItpCtrl::ppcMem_readDataU8(hCPU, EA);
-		else if ((type == 5) || (type == 7)) *(uint16*)&data0 = ppcItpCtrl::ppcMem_readDataU16(hCPU, EA);
-		else *(uint32*)&data0 = ppcItpCtrl::ppcMem_readDataU32(hCPU, EA);
-		if (type == 6) if (data0 & 0x80) data0 |= 0xffffff00;
-		if (type == 7) if (data0 & 0x8000) data0 |= 0xffff0000;
-
-		hCPU->fpr[frD].fp0 = (double)dequantize(data0, type, scale);
-		hCPU->fpr[frD].fp1 = 1.0f;
-	}
-	else
-	{
-		if ((type == 4) || (type == 6)) *(uint8*)&data0 = ppcItpCtrl::ppcMem_readDataU8(hCPU, EA);
-		else if ((type == 5) || (type == 7)) *(uint16*)&data0 = ppcItpCtrl::ppcMem_readDataU16(hCPU, EA);
-		else *(uint32*)&data0 = ppcItpCtrl::ppcMem_readDataU32(hCPU, EA);
-		if (type == 6) if (data0 & 0x80) data0 |= 0xffffff00;
-		if (type == 7) if (data0 & 0x8000) data0 |= 0xffff0000;
-
-		if ((type == 4) || (type == 6)) *(uint8*)&data1 = ppcItpCtrl::ppcMem_readDataU8(hCPU, EA + 1);
-		else if ((type == 5) || (type == 7)) *(uint16*)&data1 = ppcItpCtrl::ppcMem_readDataU16(hCPU, EA + 2);
-		else *(uint32*)&data1 = ppcItpCtrl::ppcMem_readDataU32(hCPU, EA + 4);
-		if (type == 6) if (data1 & 0x80) data1 |= 0xffffff00;
-		if (type == 7) if (data1 & 0x8000) data1 |= 0xffff0000;
-
-		hCPU->fpr[frD].fp0 = (double)dequantize(data0, type, scale);
-		hCPU->fpr[frD].fp1 = (double)dequantize(data1, type, scale);
-	}
+	PPCInterpreter_psqTransfer<false>(hCPU, EA, frD, type, scale, PSWX != 0);
 }
 
 // misc

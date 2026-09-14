@@ -2,6 +2,9 @@
 #if HAS_CUBEB
 #include "CubebInputAPI.h"
 #endif
+#if BOOST_OS_IOS
+#include "iOSAudioInputAPI.h"
+#endif
 
 std::shared_mutex g_audioInputMutex;
 AudioInputAPIPtr g_inputAudio;
@@ -9,7 +12,7 @@ AudioInputAPIPtr g_inputAudio;
 std::array<bool, IAudioInputAPI::AudioInputAPIEnd> IAudioInputAPI::s_availableApis{};
 
 IAudioInputAPI::IAudioInputAPI(uint32 samplerate, uint32 channels, uint32 samples_per_block, uint32 bits_per_sample)
-	: m_samplerate(samplerate), m_channels(channels), m_samplesPerBlock(samples_per_block), m_bitsPerSample(bits_per_sample) 
+	: m_samplerate(samplerate), m_channels(channels), m_samplesPerBlock(samples_per_block), m_bitsPerSample(bits_per_sample)
 {
 	m_bytesPerBlock = samples_per_block * channels * (bits_per_sample / 8);
 }
@@ -18,12 +21,18 @@ void IAudioInputAPI::PrintLogging()
 {
 	cemuLog_log(LogType::Force, "------- Init Audio input backend -------");
 	cemuLog_log(LogType::Force, "Cubeb: {}", s_availableApis[Cubeb] ? "available" : "not supported");
+#if BOOST_OS_IOS
+	cemuLog_log(LogType::Force, "iOS: {}", s_availableApis[IOSAudio] ? "available" : "not supported");
+#endif
 }
 
 void IAudioInputAPI::InitializeStatic()
 {
 #if HAS_CUBEB
 	s_availableApis[Cubeb] = CubebInputAPI::InitializeStatic();
+#endif
+#if BOOST_OS_IOS
+	s_availableApis[IOSAudio] = true;
 #endif
 }
 
@@ -50,6 +59,12 @@ AudioInputAPIPtr IAudioInputAPI::CreateDevice(AudioInputAPI api, const DeviceDes
 		return std::make_unique<CubebInputAPI>(tmp->GetDeviceId(), samplerate, channels, samples_per_block, bits_per_sample);
 	}
 #endif
+#if BOOST_OS_IOS
+	case IOSAudio:
+	{
+		return std::make_unique<IOSAudioInputAPI>(samplerate, channels, samples_per_block, bits_per_sample);
+	}
+#endif
 	default:
 		throw std::runtime_error(fmt::format("invalid audio api: {}", api));
 	}
@@ -59,13 +74,19 @@ std::vector<IAudioInputAPI::DeviceDescriptionPtr> IAudioInputAPI::GetDevices(Aud
 {
 	if (!IsAudioInputAPIAvailable(api))
 		return {};
-	
+
 	switch(api)
 	{
 #if HAS_CUBEB
 	case Cubeb:
 	{
 		return CubebInputAPI::GetDevices();
+	}
+#endif
+#if BOOST_OS_IOS
+	case IOSAudio:
+	{
+		return IOSAudioInputAPI::GetDevices();
 	}
 #endif
 	default:

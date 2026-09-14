@@ -3,6 +3,7 @@
 #include "Cafe/OS/RPL/rpl_structs.h"
 #include "Cemu/PPCAssembler/ppcAssembler.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
+#include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 #include "Cemu/ExpressionParser/ExpressionParser.h"
 
 #include "Cafe/OS/libs/coreinit/coreinit.h"
@@ -142,8 +143,10 @@ void debugger_updateMemoryU32(uint32 address, uint32 newValue)
 	if (newValue != memory_readU32(address))
 		memChanged = true;
 	memory_writeU32(address, newValue);
-	if(memChanged)
-		PPCRecompiler_invalidateRange(address, address + 4);
+    if(memChanged) {
+        PPCRecompiler_invalidateRange(address, address + 4);
+        PPCInterpreter_invalidateBlockCacheRange(address, 4);
+    }
 }
 
 void debugger_updateExecutionBreakpoint(uint32 address, bool forceRestore)
@@ -416,7 +419,7 @@ PPCSnapshot debugger_getSnapshotFromSession(PPCInterpreter_t* hCPU)
 	memcpy(snapshot.fpr, hCPU->fpr, sizeof(FPR_t) * 32);
 	snapshot.spr_lr = hCPU->spr.LR;
 	for (uint32 i = 0; i < 32; i++)
-		snapshot.cr[i] = hCPU->cr[i];
+		snapshot.cr[i] = (uint8)((hCPU->cr >> (31 - i)) & 1);
 	return snapshot;
 }
 
@@ -555,6 +558,7 @@ void debugger_createPatch(uint32 address, std::span<uint8> patchData)
 		{
 			memcpy(memory_getPointerFromVirtualOffset(address + i * 4), patchData.data() + i * 4, 4);
 			PPCRecompiler_invalidateRange(address, address + 4);
+            PPCInterpreter_invalidateBlockCacheRange(address, 4);
 		}
 	}
 }
@@ -590,6 +594,7 @@ void debugger_removePatch(uint32 address)
 		// restore original data
 		memcpy(MEMPTR<void>(startAddress).GetPtr(), patch->origData.data(), patch->length);
 		PPCRecompiler_invalidateRange(startAddress, endAddress);
+        PPCInterpreter_invalidateBlockCacheRange(startAddress, patch->length);
 		// remove patch
 		delete patch;
 		s_debuggerState.patches.erase(s_debuggerState.patches.begin() + i);

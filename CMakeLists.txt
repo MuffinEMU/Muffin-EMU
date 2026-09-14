@@ -11,6 +11,15 @@ set(EMULATOR_VERSION_PATCH "0" CACHE STRING "")
 
 set(THREADS_PREFER_PTHREAD_FLAG true) # needs to be set before vcpkg
 
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+	set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum iOS deployment target" FORCE)
+	set(CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum iOS deployment target" FORCE)
+	list(PREPEND VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_LIST_DIR}/triplets")
+	list(REMOVE_DUPLICATES VCPKG_OVERLAY_TRIPLETS)
+	set(VCPKG_OVERLAY_TRIPLETS "${VCPKG_OVERLAY_TRIPLETS}" CACHE STRING "Project vcpkg overlay triplets" FORCE)
+	set(VCPKG_TARGET_TRIPLET "arm64-ios" CACHE STRING "vcpkg target triplet" FORCE)
+endif()
+
 execute_process(
 		COMMAND git log --format=%h -1
 		WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
@@ -95,11 +104,28 @@ endif()
 
 if(CMAKE_GENERATOR STREQUAL "Xcode")
 	set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY XCODE_STARTUP_PROJECT CemuBin)
+	# YES selects monolithic LTO in Xcode; YES_THIN selects ThinLTO.
+	set(CMAKE_XCODE_ATTRIBUTE_LLVM_LTO "$<IF:$<CONFIG:Release,RelWithDebInfo>,YES,NO>")
 endif()
 
 if (APPLE)
     enable_language(OBJC OBJCXX)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.4")
+
+    # CMake defaults to ThinLTO for Clang. Use monolithic LTO for IPO builds.
+    foreach(lang C CXX OBJC OBJCXX)
+        if(CMAKE_${lang}_COMPILER_ID MATCHES "^(AppleClang|Clang)$")
+            set(CMAKE_${lang}_COMPILE_OPTIONS_IPO "-flto=full")
+        endif()
+    endforeach()
+
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(IOS TRUE)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0")
+        set(CMAKE_XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0")
+    else()
+        set(IOS FALSE)
+        set(CMAKE_OSX_DEPLOYMENT_TARGET "13.4")
+    endif()
 endif()
 
 if (UNIX AND NOT APPLE)
@@ -120,6 +146,16 @@ option(ENABLE_OPENGL "Enables the OpenGL backend" ${ENABLE_OPENGL_DEFAULT})
 option(ENABLE_VULKAN "Enables the Vulkan backend" ON)
 option(ENABLE_METAL "Enables the Metal backend" ${ENABLE_METAL_DEFAULT})
 option(ENABLE_DISCORD_RPC "Enables the Discord Rich Presence feature" ON)
+option(ENABLE_IOS_NATIVE_RECORDING "Enables lightweight in-app Metal recording on iOS" ON)
+
+if (IOS)
+	set(ENABLE_OPENGL OFF CACHE BOOL "OpenGL is not supported on iOS" FORCE)
+	set(ENABLE_VULKAN ON CACHE BOOL "Vulkan is enabled for MeloCafe on iOS" FORCE)
+	set(ENABLE_METAL ON CACHE BOOL "Metal is required on iOS" FORCE)
+	set(ENABLE_DISCORD_RPC OFF CACHE BOOL "Discord RPC is not available on iOS" FORCE)
+	set(ENABLE_HIDAPI OFF CACHE BOOL "HIDAPI is not available on iOS" FORCE)
+	set(ENABLE_LIBUSB OFF CACHE BOOL "libusb is not available on iOS" FORCE)
+endif()
 
 if (ENABLE_METAL AND NOT APPLE)
     message(FATAL_ERROR "Metal backend is only supported on Apple platforms")
@@ -132,8 +168,8 @@ if (WIN32)
 	add_compile_definitions(HAS_DIRECTINPUT)
 endif()
 
-option(ENABLE_HIDAPI "Build with HIDAPI" ON)
 option(ENABLE_SDL "Enables the SDLController backend" ON)
+option(ENABLE_HIDAPI "Build with HIDAPI" ON)
 option(ENABLE_LIBUSB "Build with libusb support" ON)
 
 if (ENABLE_LIBUSB)
@@ -145,15 +181,23 @@ if (WIN32)
 	option(ENABLE_DIRECTAUDIO "Enables the directaudio backend" ON)
 	option(ENABLE_XAUDIO "Enables the xaudio backend" ON)
 endif()
-option(ENABLE_CUBEB "Enabled cubeb backend" ON)
+if (IOS)
+	set(ENABLE_CUBEB_DEFAULT OFF)
+	set(ENABLE_WXWIDGETS_DEFAULT OFF)
+else()
+	set(ENABLE_CUBEB_DEFAULT ON)
+	set(ENABLE_WXWIDGETS_DEFAULT ON)
+endif()
 
-option(ENABLE_WXWIDGETS "Build with wxWidgets UI (Currently required)" ON)
+option(ENABLE_CUBEB "Enabled cubeb backend" ${ENABLE_CUBEB_DEFAULT})
+
+option(ENABLE_WXWIDGETS "Build with wxWidgets UI" ${ENABLE_WXWIDGETS_DEFAULT})
 
 find_package(Threads REQUIRED)
 find_package(CURL REQUIRED)
 find_package(pugixml REQUIRED)
 find_package(RapidJSON REQUIRED)
-find_package(Boost COMPONENTS program_options filesystem nowide REQUIRED)
+find_package(Boost COMPONENTS program_options filesystem nowide context REQUIRED)
 find_package(libzip REQUIRED)
 find_package(glslang REQUIRED)
 find_package(ZLIB REQUIRED)
@@ -213,6 +257,10 @@ if (ENABLE_METAL)
     include_directories(${CMAKE_SOURCE_DIR}/dependencies/metal-cpp)
 
     add_compile_definitions(ENABLE_METAL)
+endif()
+
+if (IOS AND ENABLE_IOS_NATIVE_RECORDING)
+	add_compile_definitions(ENABLE_IOS_NATIVE_RECORDING)
 endif()
 
 if (ENABLE_DISCORD_RPC)

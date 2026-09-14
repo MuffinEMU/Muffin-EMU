@@ -20,6 +20,9 @@ struct LatteSurfaceCopyRect
 	uint32 y;
 	uint32 width; // in pixels
 	uint32 height;
+	bool skipCPUReadback = false;
 };
+
+constexpr uint32 LATTE_SURFACE_COPY_FLAG_SKIP_CPU_READBACK = 1u << 0;
 
 void LatteSurfaceCopy_copySurfaceNew(const LatteSurfaceCopyParam& src, const LatteSurfaceCopyParam& dst, const LatteSurfaceCopyRect& rect);

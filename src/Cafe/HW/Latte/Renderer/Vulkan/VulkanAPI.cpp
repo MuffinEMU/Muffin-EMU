@@ -3,7 +3,7 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include <numeric> // for std::iota
 
-#if BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_BSD
+#if BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_BSD || BOOST_OS_IOS
 #include <dlfcn.h>
 #endif
 
@@ -100,7 +100,7 @@ bool InitializeGlobalVulkan()
 		FreeLibrary(hmodule);
 		return false;
 	}
-	
+
 	g_vulkan_available = true;
 	return true;
 }
@@ -113,7 +113,7 @@ bool InitializeInstanceVulkan(VkInstance instance)
 
 	#define VKFUNC_INSTANCE_INIT
 	#include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
-	
+
 	return true;
 }
 
@@ -142,8 +142,10 @@ void* dlopen_vulkan_loader()
 	void* vulkan_so = dlopen("libvulkan.so", RTLD_NOW);
 	if(!vulkan_so)
 		vulkan_so = dlopen("libvulkan.so.1", RTLD_NOW);
-#elif BOOST_OS_MACOS
+#elif BOOST_OS_MACOS || BOOST_OS_IOS
 	void* vulkan_so = dlopen("libMoltenVK.dylib", RTLD_NOW);
+    if (!vulkan_so)
+        vulkan_so = dlopen("MoltenVK.framework/MoltenVK", RTLD_NOW);
 #endif
 	return vulkan_so;
 }
@@ -169,7 +171,7 @@ bool InitializeGlobalVulkan()
 		cemuLog_log(LogType::Force, "vkEnumerateInstanceVersion not available. Outdated graphics driver or Vulkan runtime?");
 		return false;
 	}
-	
+
 	g_vulkan_available = true;
 	return true;
 }

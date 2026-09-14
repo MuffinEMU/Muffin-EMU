@@ -160,7 +160,10 @@ uint32 LatteCP_readU32Deprc()
 		LatteThread_HandleOSScreen(); // check if new frame was presented via OSScreen API
 
 		if ( TCL::TCLGPUReadRBWord(cmdWord) )
+		{
+			performanceMonitor.gpuTime_idleTime.endMeasuring();
 			return cmdWord;
+		}
 		if (Latte_GetStopSignal())
 			LatteThread_Exit();
 
@@ -806,13 +809,15 @@ LatteCMDPtr LatteCP_itHLEBottomOfPipeCB(LatteCMDPtr cmd, uint32 nWords)
 // GPU-side handler for GX2CopySurface/GX2CopySurfaceEx and similar
 LatteCMDPtr LatteCP_itHLECopySurfaceNew(LatteCMDPtr cmd, uint32 nWords)
 {
-	cemu_assert_debug(nWords == 4+9*2);
+	cemu_assert_debug(nWords == 4+9*2 || nWords == 5+9*2);
 	// copy rect
 	LatteSurfaceCopyRect copyRect;
 	copyRect.x = LatteReadCMD();
 	copyRect.y = LatteReadCMD();
 	copyRect.width = LatteReadCMD();
 	copyRect.height = LatteReadCMD();
+	if (nWords == 5+9*2)
+		copyRect.skipCPUReadback = (LatteReadCMD() & LATTE_SURFACE_COPY_FLAG_SKIP_CPU_READBACK) != 0;
 	// src
 	LatteSurfaceCopyParam src{};
 	src.physDataAddr = LatteReadCMD();

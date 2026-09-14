@@ -6,6 +6,7 @@
 #include "Cafe/OS/RPL/rpl_structs.h"
 #include "Cafe/OS/RPL/rpl_symbol_storage.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
+#include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 #include "Cafe/HW/Espresso/Debugger/Debugger.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
 #include "util/ChunkedHeap/ChunkedHeap.h"
@@ -30,6 +31,7 @@ public:
 		uint32 allocSize = getAllocationSizeFromAddr(addr);
 		MPTR ppcAddr = memory_getVirtualOffsetFromPointer(addr);
 		PPCRecompiler_invalidateRange(ppcAddr, ppcAddr + allocSize);
+        PPCInterpreter_invalidateBlockCacheRange(ppcAddr, allocSize);
 		VHeap::free(addr);
 	}
 };
@@ -136,6 +138,15 @@ uint32 RPLLoader_GetMaxCodeOffset()
 
 #define PPCASM_OPC_R_TEMPL_SIMM(_rD, _rA, _IMM) (((_rD)<<21)|((_rA)<<16)|((_IMM)&0xFFFF))
 
+static void RPLLoader_PublishGeneratedCode(MPTR startAddress, uint32 size)
+{
+	if (size == 0)
+		return;
+
+	PPCRecompiler_invalidateRange(startAddress, startAddress + size);
+    PPCInterpreter_invalidateBlockCacheRange(startAddress, size);
+}
+
 // generates 32-bit jump. Modifies R11 and CTR
 MPTR _generateTrampolineFarJump(RPLModule* rplLoaderContext, MPTR destAddr)
 {
@@ -158,6 +169,7 @@ MPTR _generateTrampolineFarJump(RPLModule* rplLoaderContext, MPTR destAddr)
 	memory_writeU32(trampolineAddr + 0x8, 0x7D6903A6);
 	// BCTR
 	memory_writeU32(trampolineAddr + 0xC, 0x4E800420);
+	RPLLoader_PublishGeneratedCode(trampolineAddr, 4 * sizeof(uint32));
 	// if the destination is a known symbol, create a proxy (duplicate) symbol at the jump
 	rplSymbolStorage_createJumpProxySymbol(trampolineAddr, destAddr);
 	rplLoaderContext->trampolineMap.emplace(destAddr, trampolineAddr);
@@ -729,6 +741,7 @@ uint32 RPLLoader_MakePPCCallable(void(*ppcCallableExport)(PPCInterpreter_t* hCPU
 	MPTR codeAddr = memory_getVirtualOffsetFromPointer(RPLLoader_AllocateTrampolineCodeSpace(4));
 	uint32 opcode = (1 << 26) | functionIndex;
 	memory_write<uint32>(codeAddr, opcode);
+	RPLLoader_PublishGeneratedCode(codeAddr, sizeof(opcode));
 	g_map_callableExports[ppcCallableExport] = codeAddr;
 	return codeAddr;
 }
@@ -767,6 +780,7 @@ uint32 rpl_mapHLEImport(RPLModule* rplLoaderContext, const char* rplName, const 
 		MPTR codeAddr = memory_getVirtualOffsetFromPointer(RPLLoader_AllocateTrampolineCodeSpace(4));
 		uint32 opcode = (1 << 26) | functionIndex;
 		memory_write<uint32>(codeAddr, opcode);
+		RPLLoader_PublishGeneratedCode(codeAddr, sizeof(opcode));
 		// register mapped import
 		mappedFunctionImport_t newImport;
 		newImport.hash1 = mappedImportHash1;
@@ -802,6 +816,7 @@ uint32 rpl_mapHLEImport(RPLModule* rplLoaderContext, const char* rplName, const 
 	currentAddress++;
 	// align address to 4 byte boundary
 	currentAddress = (currentAddress + 3)&~3;
+	RPLLoader_PublishGeneratedCode(codeStart, currentAddress - codeStart);
 	// register mapped import
 	mappedFunctionImport_t newImport;
 	newImport.hash1 = mappedImportHash1;
@@ -1674,6 +1689,7 @@ void RPLLoader_FlushMemory(RPLModule* rpl)
 	{
 		MEMPTR<void> memVirtual = mem;
 		PPCRecompiler_invalidateRange(memVirtual.GetMPTR(), memVirtual.GetMPTR() + size);
+        PPCInterpreter_invalidateBlockCacheRange(memVirtual.GetMPTR(), size);
 	});
 }
 
