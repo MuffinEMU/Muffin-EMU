@@ -114,6 +114,16 @@ bool cemu_bridge_has_pad_render_surface(void);
 /// already-registered surface(s) are visible without registering or releasing anything.
 void cemu_bridge_set_visible_outputs(bool tv, bool pad);
 
+/// The GamePad's own touchscreen - a real Wii U input, and a distinct one from every
+/// button on the pad. `x`/`y` are in the SAME physical-pixel space
+/// cemu_bridge_resize_render_surface()'s width/height already are for the pad surface
+/// (points times the render scale actually in effect, not raw SwiftUI points) - the core
+/// maps them into Wii U touchscreen coordinates by treating them as a position inside
+/// the GamePad window's current phys size, the same way the desktop build's wxWidgets
+/// pad-window mouse/gesture handlers already do. `down` false on release; the position
+/// on that final call does not matter, only the transition does.
+void cemu_bridge_set_pad_touch(double x, double y, bool down);
+
 /// Re-sizes an already-registered surface after its hosting view moved or its display
 /// changed - both the drawable and the CALayer's own frame/backing scale, which nothing
 /// else maintains for a manually added sublayer. `mainWindow` selects TV vs GamePad.
