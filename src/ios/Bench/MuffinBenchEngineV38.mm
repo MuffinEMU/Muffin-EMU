@@ -13,14 +13,24 @@
 
 #include <string>
 
+// Engine A and engine C build this same file, so both are driven identically. Only the
+// label differs, chosen by the build.
+#if defined(MBENCH_VARIANT_MELOFIXES)
+#define MBENCH_ENGINE_ID "muffin-v38-melofixes"
+#define MBENCH_ENGINE_NAME "Muffin v3.8 engine + MeloCafe changes"
+#else
+#define MBENCH_ENGINE_ID "muffin-v38"
+#define MBENCH_ENGINE_NAME "Muffin v3.8 engine"
+#endif
+
 namespace {
     bool s_initialized = false;
     std::string s_logPath;
 }
 
 int mbench_api_version(void) { return MBENCH_API_VERSION; }
-const char* mbench_engine_id(void) { return "muffin-v38"; }
-const char* mbench_engine_name(void) { return "Muffin v3.8 engine"; }
+const char* mbench_engine_id(void) { return MBENCH_ENGINE_ID; }
+const char* mbench_engine_name(void) { return MBENCH_ENGINE_NAME; }
 const char* mbench_engine_commit(void) { return MBENCH_COMMIT; }
 
 MBenchStatus mbench_initialize(const char* dataDir)
