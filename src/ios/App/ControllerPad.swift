@@ -1,5 +1,8 @@
 import SwiftUI
 import Dispatch
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// The on-screen pad.
 ///
@@ -69,6 +72,20 @@ struct OptimizedControlPanel: View {
         GeometryReader { proxy in
             let unit = ControllerGeometry.automaticDiameter(in: proxy.size) * CGFloat(userScale)
 
+            // Anchors and clamps below used to be built from proxy.size alone, which is the
+            // full bounds of the view including the unsafe strip - so in landscape a cluster
+            // anchored "in from the near edge" of that raw rect sat partly under the Dynamic
+            // Island, and on a notched iPhone the bottom anchor crowded the home indicator.
+            // GamePadGeometry's PadLayout.resolve hits the same problem and solves it the
+            // same way: inset the rect the layout is measured against, once, before anything
+            // downstream reads it. CGRect has no .inset(by:) that takes SwiftUI's own
+            // EdgeInsets (only UIKit's UIEdgeInsets, a different type), so it is built by
+            // hand rather than reached for an extension that does not apply here.
+            let insets = proxy.safeAreaInsets
+            let safeArea = CGRect(x: insets.leading, y: insets.top,
+                                  width: proxy.size.width - insets.leading - insets.trailing,
+                                  height: proxy.size.height - insets.top - insets.bottom)
+
             // Comfort controls only has somewhere to send L/ZL/minus and R/ZR/plus while
             // the sticks they are moving to are actually on screen - with joystick mode
             // off there is no stick cluster here for them to join, so this only takes
@@ -85,7 +102,7 @@ struct OptimizedControlPanel: View {
                     edge: .leading,
                     skin: skin,
                     unit: unit,
-                    container: proxy.size,
+                    container: safeArea,
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
                     offsetX: $leftOffsetX,
@@ -113,7 +130,7 @@ struct OptimizedControlPanel: View {
                         anchorOffset: ControllerGeometry.leftStickAnchorOffset,
                         skin: skin,
                         unit: unit,
-                        container: proxy.size,
+                        container: safeArea,
                         isEditingLayout: isEditingLayout,
                         individualEditMode: individualEditMode,
                         offsetX: $leftStickOffsetX,
@@ -130,7 +147,7 @@ struct OptimizedControlPanel: View {
                     edge: .trailing,
                     skin: skin,
                     unit: unit,
-                    container: proxy.size,
+                    container: safeArea,
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
                     offsetX: $rightOffsetX,
@@ -159,7 +176,7 @@ struct OptimizedControlPanel: View {
                         anchorOffset: ControllerGeometry.rightStickAnchorOffset,
                         skin: skin,
                         unit: unit,
-                        container: proxy.size,
+                        container: safeArea,
                         isEditingLayout: isEditingLayout,
                         individualEditMode: individualEditMode,
                         offsetX: $rightStickOffsetX,
@@ -187,7 +204,11 @@ private struct ControlCluster: View {
     var anchorOffset: CGPoint = .zero
     let skin: WiiUControllerSkin
     let unit: CGFloat
-    let container: CGSize
+    /// The safe area, not the raw GeometryReader size - see OptimizedControlPanel.body.
+    /// Everything below measures from this rect's edges rather than from (0, 0) and
+    /// proxy.size, so a cluster's near-edge anchor and its drag clamp both stay inside the
+    /// safe area instead of reaching under a notch or behind the home indicator.
+    let container: CGRect
     let isEditingLayout: Bool
     /// See ControllerLayoutSettings.individualEditModeKey. When true, this cluster's
     /// own drag handle below is not attached at all - every touch inside the cluster
@@ -214,8 +235,8 @@ private struct ControlCluster: View {
     private var anchor: CGPoint {
         let inset = ControllerGeometry.centreFromNearEdge * unit
         return CGPoint(
-            x: (edge == .leading ? inset : container.width - inset) + anchorOffset.x * unit,
-            y: container.height - ControllerGeometry.centreFromBottom * unit + anchorOffset.y * unit
+            x: (edge == .leading ? container.minX + inset : container.maxX - inset) + anchorOffset.x * unit,
+            y: container.maxY - ControllerGeometry.centreFromBottom * unit + anchorOffset.y * unit
         )
     }
 
@@ -227,10 +248,10 @@ private struct ControlCluster: View {
     }
 
     private func clamped(_ point: CGPoint) -> CGPoint {
-        let minX = -box.minX * unit
-        let maxX = container.width - box.maxX * unit
-        let minY = -box.minY * unit
-        let maxY = container.height - box.maxY * unit
+        let minX = container.minX - box.minX * unit
+        let maxX = container.maxX - box.maxX * unit
+        let minY = container.minY - box.minY * unit
+        let maxY = container.maxY - box.maxY * unit
         // A cluster wider or taller than the container has no valid range at all; centre
         // it rather than letting min > max produce a nonsense clamp.
         return CGPoint(
@@ -383,6 +404,17 @@ private struct EditableControl: View {
             }
         )
         .gesture(isEditingLayout && individualEditMode ? editGesture : nil)
+        // If this view goes away mid-gesture - individual edit mode toggled off, the
+        // cluster it belongs to changing under comfort mode - the gesture's own onEnded
+        // never runs, and whatever custom.move/setScale wrote this drag is only in memory
+        // (see ControllerCustomLayout.write). Committing here as well is the same safety
+        // net HeldControl's onDisappear already is for a stuck button, applied to a drag
+        // that would otherwise be silently lost the next time the app quits.
+        .onDisappear {
+            if dragOrigin != nil || scaleOrigin != nil { custom.commit() }
+            dragOrigin = nil
+            scaleOrigin = nil
+        }
     }
 
     private var editGesture: some Gesture {
@@ -392,7 +424,13 @@ private struct EditableControl: View {
                 if dragOrigin == nil { dragOrigin = origin }
                 custom.move(control.id, to: value.translation, from: origin)
             }
-            .onEnded { _ in dragOrigin = nil }
+            .onEnded { _ in
+                dragOrigin = nil
+                // custom.move only kept this drag in memory - see
+                // ControllerCustomLayout.write - so the finger lifting is what writes it
+                // to disk, once, instead of on every touch-move.
+                custom.commit()
+            }
 
         let pinch = MagnificationGesture()
             .onChanged { value in
@@ -400,7 +438,10 @@ private struct EditableControl: View {
                 if scaleOrigin == nil { scaleOrigin = origin }
                 custom.setScale(origin * Double(value), for: control.id)
             }
-            .onEnded { _ in scaleOrigin = nil }
+            .onEnded { _ in
+                scaleOrigin = nil
+                custom.commit()
+            }
 
         // Simultaneous rather than exclusive: a pinch is two fingers moving, and an
         // exclusive pair would let the first finger's travel be read as a drag and shove
@@ -426,7 +467,7 @@ private struct ControlButton: View {
     private static let neutralLabel = Color(white: 0.22)
 
     var body: some View {
-        HeldControl(onPressChange: { onInput(control.id, $0) }) { isPressed in
+        HeldControl(onPressChange: { onInput(control.id, $0) }, isInteractive: isInteractive) { isPressed in
             ZStack {
                 shape(isPressed: isPressed)
                 Text(control.glyph)
@@ -520,9 +561,19 @@ private struct ControlButton: View {
 /// different controls both register.
 struct HeldControl<Content: View>: View {
     let onPressChange: (Bool) -> Void
+    /// Whether this control can be pressed right now - the same flag the call site already
+    /// hands to its own `.allowsHitTesting`. Watched here too, and not left to that modifier
+    /// alone: turning hit-testing off does not retroactively end a drag already in
+    /// progress, so nothing else resets `isPressed` when, say, edit mode switches on
+    /// mid-press - and a button that is still drawn highlighted but can no longer be
+    /// touched to release it is stuck exactly the way a jammed physical button would be.
+    let isInteractive: Bool
     let content: (Bool) -> Content
 
     @State private var isPressed = false
+
+    @AppStorage(ControllerLayoutSettings.hapticsKey)
+    private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     var body: some View {
         content(isPressed)
@@ -540,6 +591,9 @@ struct HeldControl<Content: View>: View {
             // removed mid-press never delivers onEnded, and a button stuck down is a
             // title stuck walking into a wall.
             .onDisappear { setPressed(false) }
+            .onChange(of: isInteractive) { active in
+                if !active { setPressed(false) }
+            }
     }
 
     // onChanged repeats for every touch-move, so guard - both to keep the highlight from
@@ -547,8 +601,36 @@ struct HeldControl<Content: View>: View {
     private func setPressed(_ value: Bool) {
         guard isPressed != value else { return }
         isPressed = value
+        if value, hapticsEnabled { PadHaptics.shared.fire() }
         onPressChange(value)
     }
+}
+
+/// One shared impact generator for the whole pad, prepared once rather than allocated fresh
+/// on every press. `UIImpactFeedbackGenerator` is meant to be created ahead of the impact
+/// and `prepare()`d so the Taptic Engine is already spun up when `impactOccurred()` is
+/// called - a generator built fresh per tap would pay that latency on every single input,
+/// which on a d-pad held during normal play is dozens of times a second.
+final class PadHaptics {
+    static let shared = PadHaptics()
+
+    #if canImport(UIKit)
+    private let generator = UIImpactFeedbackGenerator(style: .rigid)
+
+    private init() { generator.prepare() }
+
+    func fire() {
+        generator.impactOccurred()
+        // Re-prime immediately rather than waiting for the next press to ask for it: the
+        // Taptic Engine is allowed to spin back down after it has been idle, and a pad
+        // fires presses far more often than it sits still, so priming eagerly is the
+        // common case, not the wasted one.
+        generator.prepare()
+    }
+    #else
+    private init() {}
+    func fire() {}
+    #endif
 }
 
 /// The stick's gate, as a shape.
@@ -632,6 +714,8 @@ private struct JoystickControl: View {
     private var curveSetting = ControllerLayoutSettings.defaultStickCurve
     @AppStorage(ControllerLayoutSettings.stickGateKey)
     private var gateSetting = ControllerLayoutSettings.defaultStickGateRaw
+    @AppStorage(ControllerLayoutSettings.hapticsKey)
+    private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     /// Where the knob is drawn, in points from the ring's centre. Already clamped to the
     /// travel radius, so this is also what the axis is derived from - one number, not a
@@ -723,7 +807,11 @@ private struct JoystickControl: View {
         // clamp above already turns that into full deflection at the vertex. Hit-testing
         // the octagon would drop it on the floor instead.
         .contentShape(Circle())
-        .accessibilityLabel(clickButton == nil ? "Camera stick" : "Left stick")
+        // clickButton is nil for both sticks now (see its own doc comment above), so it
+        // cannot tell VoiceOver which stick this is - that always read "Camera stick",
+        // left and right alike. control.id can: it is "stickL" or "stickR" for every
+        // instance ControllerGeometry actually creates.
+        .accessibilityLabel(control.id == "stickL" ? "Left stick" : "Right stick")
         .allowsHitTesting(isInteractive)
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -816,6 +904,7 @@ private struct JoystickControl: View {
     private func click() {
         guard let clickButton else { return }
         clickRelease?.cancel()
+        if hapticsEnabled { PadHaptics.shared.fire() }
         onInput(clickButton, true)
         let release = DispatchWorkItem { onInput(clickButton, false) }
         clickRelease = release

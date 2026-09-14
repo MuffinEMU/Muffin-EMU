@@ -93,6 +93,17 @@ final class ControllerCustomLayout: ObservableObject {
 
     var hasCustomisations: Bool { !overrides.isEmpty }
 
+    /// Call once a drag or pinch ends, to write to disk what `write(_:for:)` below only
+    /// kept in `overrides` while the gesture was live.
+    ///
+    /// Safe to call even when nothing actually changed since the last commit - it always
+    /// re-encodes and rewrites the whole dictionary, which is already what every other
+    /// caller of `persist()` here does, so there is no separate "was it dirty" state to
+    /// get out of sync.
+    func commit() {
+        persist()
+    }
+
     private func write(_ value: ControlOverride, for controlID: String) {
         let key = Self.groupID(for: controlID)
         // An override equal to the default is stored as nothing at all. Otherwise dragging
@@ -103,7 +114,11 @@ final class ControllerCustomLayout: ObservableObject {
         } else {
             overrides[key] = value
         }
-        persist()
+        // No persist() here. `move`/`setScale` call this on every DragGesture/
+        // MagnificationGesture onChanged tick - at 60 Hz that is a JSON encode and a
+        // UserDefaults write every 16 ms for the length of a drag. `overrides` is
+        // @Published, so the view still updates immediately either way; only the disk
+        // write waits for the caller's onEnded to call commit() above.
     }
 
     private func persist() {

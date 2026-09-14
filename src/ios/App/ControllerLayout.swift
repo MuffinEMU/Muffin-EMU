@@ -55,6 +55,15 @@ enum ControllerLayoutSettings {
     static let individualEditModeKey = "muffin.controls.individualEditMode"
     static let defaultIndividualEditMode = false
 
+    /// Whether a press fires a light haptic tap. On by default - a pad with no physical
+    /// switches under the glass loses the one confirmation a real button gives for free,
+    /// and the tap is the cheapest way to give some of it back. Left as a setting rather
+    /// than unconditional because it is still a buzz against the hand on every single
+    /// input, which is exactly the kind of thing that reads as delightful at first and
+    /// grating by the tenth hour of play for some people.
+    static let hapticsKey = "muffin.pad.haptics"
+    static let defaultHaptics = true
+
     static let defaultJoystick = false
 
     /// Fraction of full travel that reads as centred.
