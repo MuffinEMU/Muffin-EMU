@@ -5,6 +5,7 @@ import Foundation
 
 struct ContentView: View {
     @StateObject var gameManager = GameManager()
+    @AppStorage(OnboardingState.completedKey) private var onboardingCompleted = false
     @State private var selectedGame: GameMetadata?
     @State private var showingGameBrowser = true
     @State private var showingFavorites = false
@@ -51,6 +52,13 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+        // First launch, and again whenever Settings > About resets the flag.
+        .fullScreenCover(isPresented: Binding(
+            get: { !onboardingCompleted },
+            set: { if !$0 { onboardingCompleted = true } }
+        )) {
+            OnboardingView(gameManager: gameManager) { onboardingCompleted = true }
+        }
     }
 }
 
