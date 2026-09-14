@@ -104,6 +104,7 @@ bool IOSTitlePause_Pause();
 bool IOSTitlePause_Resume();
 bool IOSTitlePause_IsPaused();
 void IOSTitlePause_Forget();
+void IOSSystemImplementation_Install();
 
 // ---------------------------------------------------------------------------
 // Crash trail
@@ -1108,6 +1109,8 @@ void cemu_bridge_initialize(const char* mlcPath) {
         return;
     }
     cemu_bridge_log_checkpoint("initialize: CemuInitialize() returned");
+    // Before any title can run: CafeSystem calls back through this without a null check.
+    IOSSystemImplementation_Install();
 
     // OSReport and the OS libs' parameter errors are what homebrew narrates its progress
     // through. Without these a ROM that is working looks exactly like one that never started.
