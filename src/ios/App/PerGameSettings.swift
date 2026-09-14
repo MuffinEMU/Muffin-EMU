@@ -14,6 +14,14 @@ struct GameOverrides: Codable, Equatable {
     /// Settings' "Compile shaders in the background", true/false pin this one game.
     var preCompileShaders: Bool?
 
+    /// Same escape hatch, for Settings' "Favour accuracy". A new Optional field on an
+    /// existing Codable struct decodes to nil for every override already saved on
+    /// disk before this existed - Swift's synthesized Decodable calls
+    /// decodeIfPresent for Optional properties, so old JSON with no
+    /// "favourAccuracy" key is not a decode failure, it's just nil, which is
+    /// exactly the "follow the global default" behaviour a game nobody has
+    /// overridden yet should have.
+    var favourAccuracy: Bool?
 
     static let identity = GameOverrides()
     var isIdentity: Bool { self == GameOverrides.identity }
@@ -61,6 +69,27 @@ final class PerGameSettingsStore: ObservableObject {
         write(next, for: gameID)
     }
 
+    /// Same "per-game override first, global default underneath" read GameManager
+    /// already does for shader compilation, for the lead's Favour accuracy push
+    /// before boot - see cemu_bridge_set_favour_accuracy's call site.
+    func effectiveFavourAccuracy(for gameID: String) -> Bool {
+        let globalDefault = defaults.object(forKey: "muffin.cpu.favourAccuracy") as? Bool ?? false
+        return overrides(for: gameID).favourAccuracy ?? globalDefault
+    }
+
+    func setFavourAccuracy(_ value: Bool?, for gameID: String) {
+        var next = overrides(for: gameID)
+        next.favourAccuracy = value
+        write(next, for: gameID)
+    }
+
+    /// Clears every per-game override at once - used by Settings > About > "Reset
+    /// Settings and Per-Game Options", the only path that touches this store from
+    /// the global reset. Ordinary "Reset Settings" leaves it alone entirely.
+    func removeAllOverrides() {
+        overridesByGame = [:]
+        persist()
+    }
 
     private func write(_ value: GameOverrides, for gameID: String) {
         if value.isIdentity {
@@ -182,6 +211,10 @@ struct GameOptionsView: View {
         binding(for: \.preCompileShaders) { store.setPreCompileShaders($0, for: game.id) }
     }
 
+    private var favourAccuracyChoice: Binding<TriState> {
+        binding(for: \.favourAccuracy) { store.setFavourAccuracy($0, for: game.id) }
+    }
+
     var body: some View {
         NavigationView {
             Form {
@@ -191,10 +224,19 @@ struct GameOptionsView: View {
                             Text(choice.title).tag(choice)
                         }
                     }
+                    // Next to Pre-Compile Shaders rather than its own section: both
+                    // are the same shape of override on the same screen, and Favour
+                    // accuracy is exactly the setting Nano Assault Neo's own
+                    // shader-compile override sits next to in Settings itself.
+                    Picker("Favour Accuracy", selection: favourAccuracyChoice) {
+                        ForEach(TriState.allCases) { choice in
+                            Text(choice.title).tag(choice)
+                        }
+                    }
                 } header: {
-                    Text("Shader Compilation")
+                    Text("Overrides")
                 } footer: {
-                    Text("Renders and compiles every shader ahead of time so the game runs faster even without the recompiler. Most games want this on; Nano Assault Neo specifically breaks with it on, which is why this is a per-game choice rather than only a global one.\n\n\"Use Global Default\" tracks whatever Settings > Shader Compilation currently says, even if you change it later. On/Off pins this game regardless of what the global setting does.")
+                    Text("Pre-Compile Shaders renders and compiles every shader ahead of time so the game runs faster even without the recompiler. Most games want this on; Nano Assault Neo specifically breaks with it on, which is why this is a per-game choice rather than only a global one.\n\nFavour Accuracy trades speed for stability on a game that glitches, desyncs or crashes - see Settings > CPU for what it changes.\n\n\"Use Global Default\" tracks whatever Settings currently says for that setting, even if you change it later. On/Off pins this game regardless of what the global setting does.")
                 }
 
             }

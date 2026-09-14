@@ -650,8 +650,9 @@ class GameManager: ObservableObject {
             // bridge falls back to the interpreter by itself when no JIT enabler is attached.
             cemu_bridge_set_recompiler_enabled(
                 UserDefaults.standard.object(forKey: "muffin.cpu.recompiler") as? Bool ?? true)
+            // Per-game override first, the global switch underneath it.
             cemu_bridge_set_favour_accuracy(
-                UserDefaults.standard.object(forKey: "muffin.cpu.favourAccuracy") as? Bool ?? false)
+                PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.id))
             // Per-game override first, global default underneath it - PerGameSettingsStore
             // reads the same UserDefaults key directly for exactly the reason above: an
             // override that only lived in a @Published property would revert the moment
