@@ -1058,7 +1058,6 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // data path is the read-only CemuData directory the build copies into the bundle
     // (shared fonts, game profiles). CemuData rather than the bundle root, because a
     // top-level directory named `resources` makes CFBundle misread the whole bundle.
-    namespace fs = std::filesystem;
     fs::path userDataPath = (mlcPath && mlcPath[0] != '\0') ? fs::path(mlcPath) : fs::path(".");
     std::error_code ec;
     fs::create_directories(userDataPath / "cache", ec);
