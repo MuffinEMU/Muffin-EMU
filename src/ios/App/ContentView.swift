@@ -1038,6 +1038,22 @@ struct EmulatorViewOptimized: View {
     /// on purpose right before backgrounding it. Both look identical in isPaused
     /// alone, which is exactly why this needs its own bit.
     @State private var pausedByLifecycle = false
+    /// cemu_bridge_pause()/resume() suspend or resume every active guest thread under
+    /// the core's own scheduler lock (IOSTitlePause.cpp) - a lock plenty of other guest
+    /// activity (message queues, alarms, spinlocks) also takes briefly, and calling this
+    /// straight from a SwiftUI button's action, or from .onChange(of: scenePhase), runs
+    /// it ON THE MAIN THREAD. If a guest thread happens to be holding that lock while
+    /// itself waiting on something that only finishes once the main run loop is free -
+    /// a Metal command buffer's completion handler, which is commonly dispatched back to
+    /// the main queue, is exactly this shape - the main thread blocks waiting on the
+    /// guest thread, the guest thread is waiting on the main thread, and neither ever
+    /// moves again: not a slow pause, the whole app stops responding to anything, pause
+    /// button included, until it is force-quit. Routing the actual bridge call through
+    /// this serial queue instead keeps the main thread free to keep pumping the run loop
+    /// (and therefore keep servicing that completion handler) while the suspend/resume
+    /// runs - a serial queue, not a concurrent one, so a resume dispatched right behind a
+    /// pause can never run first and unpause a title the pause never reached.
+    private static let titlePauseQueue = DispatchQueue(label: "muffin.title.pause", qos: .userInitiated)
     /// Visible only while the preview pad is on. Exists purely to answer one question
     /// with certainty and without needing log.txt: does a tap on the preview pad even
     /// reach this closure at all. If this counter never moves when you tap a button,
@@ -1132,6 +1148,86 @@ struct EmulatorViewOptimized: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
+            // The video, as its own base layer beneath everything else in this ZStack -
+            // not a member of the VStack of UI chrome below, which used to hold it as its
+            // last child. A VStack allocates space top-to-bottom among its own children,
+            // so the video was only ever getting "whatever height is left after the top
+            // bar", not the full screen .ignoresSafeArea() on a couple of these individual
+            // views implied it should have; the top bar is what belongs in a VStack (it
+            // has a natural height to lay out), the video does not (it wants the whole
+            // screen, with the bar floating over it, not carving into it).
+            if previewPadEnabled && !useMeloControls {
+                // Video and pad have to agree on the exact same rect for Native mode
+                // to mean anything - a mismatch between two independent resolves
+                // would put the picture in one place and the "never overlaps it"
+                // guarantee somewhere else. So both are siblings inside ONE
+                // GeometryReader here, sharing one PreviewResolved.
+                GeometryReader { proxy in
+                    let insets = proxy.safeAreaInsets
+                    let full = proxy.frame(in: .local)
+                    let safeArea = CGRect(x: full.minX + insets.leading, y: full.minY + insets.top,
+                                          width: full.width - insets.leading - insets.trailing,
+                                          height: full.height - insets.top - insets.bottom)
+                    let resolved = previewPad.resolve(container: proxy.size, safeArea: safeArea,
+                                                      pointsPerInch: DeviceMetrics.current().pointsPerInch)
+                    ZStack(alignment: .topLeading) {
+                        #if os(iOS)
+                        MetalViewIOS(gameManager: gameManager)
+                        #else
+                        MetalView(gameManager: gameManager)
+                        #endif
+                    }
+                    .frame(width: previewPad.displayMode == .native ? resolved.video.width : proxy.size.width,
+                          height: previewPad.displayMode == .native ? resolved.video.height : proxy.size.height)
+                    .position(x: previewPad.displayMode == .native ? resolved.video.midX : proxy.size.width / 2,
+                             y: previewPad.displayMode == .native ? resolved.video.midY : proxy.size.height / 2)
+                    .clipped()
+
+                    PreviewControllerPad(
+                        store: previewPad,
+                        onInput: { label, pressed in
+                            previewInputDebugCount += 1
+                            previewInputDebugText = "\(label) \(pressed ? "down" : "up") (#\(previewInputDebugCount))"
+                            cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
+                        },
+                        onStick: { stick, position in
+                            previewInputDebugCount += 1
+                            previewInputDebugText = "stick\(stick) (\(String(format: "%.2f", position.x)), \(String(format: "%.2f", position.y))) (#\(previewInputDebugCount))"
+                            cemu_bridge_set_stick_axis(
+                                stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
+                                Float(position.x), Float(position.y)
+                            )
+                        },
+                        isEditingLayout: $isEditingControlLayout
+                    )
+
+                    #if DEBUG
+                    // Debug HUD: proves whether SwiftUI ever calls onInput/onStick at
+                    // all, which is exactly the question a "controls don't do anything"
+                    // report can't answer from the outside. Temporary, and gone the
+                    // moment the real bug is found - not something to leave shipping.
+                    VStack {
+                        Text("PAD DEBUG: \(previewInputDebugText)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.yellow)
+                            .padding(6)
+                            .background(Color.black.opacity(0.7))
+                            .cornerRadius(6)
+                            .padding(.top, 4)
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
+                    #endif
+                }
+            } else {
+                #if os(iOS)
+                screenLayoutComposition
+                #else
+                MetalView(gameManager: gameManager)
+                    .ignoresSafeArea()
+                #endif
+            }
+
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 12) {
                     Button(action: {
@@ -1183,6 +1279,24 @@ struct EmulatorViewOptimized: View {
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
 
+                        #if os(iOS)
+                        // Was a floating circle over the top-left corner of the game;
+                        // moved in here with the rest of the in-game buttons instead,
+                        // per Void's own instruction, rather than floating alone on
+                        // top of whatever the game is drawing underneath it. Same
+                        // action, same gating as before: only means anything in Single
+                        // Screen, and only while a real external display isn't already
+                        // deciding this for a genuine second screen.
+                        if showLocalSwapButton, screenLayout == .singleScreen, displayRouter.placement != .dualScreen {
+                            Button(action: { localSwapped.toggle() }) {
+                                Image(systemName: "rectangle.2.swap")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .accessibilityLabel("Swap TV and GamePad")
+                        }
+                        #endif
+
                         // cemu_bridge_pause/resume wrap CafeSystem::PauseTitle()/
                         // ResumeTitle() (and, since the app-lifecycle work, also the
                         // Metal GPU thread's own drawable gate - see CemuBridge.mm).
@@ -1193,10 +1307,13 @@ struct EmulatorViewOptimized: View {
                         // fighting over what a return to .active should do.
                         Button(action: {
                             isPaused.toggle()
-                            if isPaused {
-                                cemu_bridge_pause()
-                            } else {
-                                cemu_bridge_resume()
+                            let shouldPause = isPaused
+                            Self.titlePauseQueue.async {
+                                if shouldPause {
+                                    cemu_bridge_pause()
+                                } else {
+                                    cemu_bridge_resume()
+                                }
                             }
                         }) {
                             Image(systemName: isPaused ? "play.fill" : "pause.fill")
@@ -1264,114 +1381,12 @@ struct EmulatorViewOptimized: View {
                         .background(Color.black.opacity(0.7))
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
-
-                if previewPadEnabled && !useMeloControls {
-                    // Video and pad have to agree on the exact same rect for Native mode
-                    // to mean anything - a mismatch between two independent resolves
-                    // would put the picture in one place and the "never overlaps it"
-                    // guarantee somewhere else. So both are siblings inside ONE
-                    // GeometryReader here, sharing one PreviewResolved, rather than the
-                    // video living in the VStack and the pad spanning the full screen the
-                    // way the shipping OptimizedControlPanel does below. The trade is
-                    // real and worth stating plainly: in this preview path the pad no
-                    // longer draws over the top bar/skin-selector area above it. The
-                    // shipping path (this flag off, the default) is untouched by any of
-                    // this - same MetalView, same .ignoresSafeArea(), same full-screen pad.
-                    GeometryReader { proxy in
-                        let insets = proxy.safeAreaInsets
-                        let full = proxy.frame(in: .local)
-                        let safeArea = CGRect(x: full.minX + insets.leading, y: full.minY + insets.top,
-                                              width: full.width - insets.leading - insets.trailing,
-                                              height: full.height - insets.top - insets.bottom)
-                        let resolved = previewPad.resolve(container: proxy.size, safeArea: safeArea,
-                                                          pointsPerInch: DeviceMetrics.current().pointsPerInch)
-                        ZStack(alignment: .topLeading) {
-                            #if os(iOS)
-                            MetalViewIOS(gameManager: gameManager)
-                            #else
-                            MetalView(gameManager: gameManager)
-                            #endif
-                        }
-                        .frame(width: previewPad.displayMode == .native ? resolved.video.width : proxy.size.width,
-                              height: previewPad.displayMode == .native ? resolved.video.height : proxy.size.height)
-                        .position(x: previewPad.displayMode == .native ? resolved.video.midX : proxy.size.width / 2,
-                                 y: previewPad.displayMode == .native ? resolved.video.midY : proxy.size.height / 2)
-                        .clipped()
-
-                        PreviewControllerPad(
-                            store: previewPad,
-                            onInput: { label, pressed in
-                                previewInputDebugCount += 1
-                                previewInputDebugText = "\(label) \(pressed ? "down" : "up") (#\(previewInputDebugCount))"
-                                cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
-                            },
-                            onStick: { stick, position in
-                                previewInputDebugCount += 1
-                                previewInputDebugText = "stick\(stick) (\(String(format: "%.2f", position.x)), \(String(format: "%.2f", position.y))) (#\(previewInputDebugCount))"
-                                cemu_bridge_set_stick_axis(
-                                    stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
-                                    Float(position.x), Float(position.y)
-                                )
-                            },
-                            isEditingLayout: $isEditingControlLayout
-                        )
-
-                        #if DEBUG
-                        // Debug HUD: proves whether SwiftUI ever calls onInput/onStick at
-                        // all, which is exactly the question a "controls don't do anything"
-                        // report can't answer from the outside. Temporary, and gone the
-                        // moment the real bug is found - not something to leave shipping.
-                        VStack {
-                            Text("PAD DEBUG: \(previewInputDebugText)")
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.yellow)
-                                .padding(6)
-                                .background(Color.black.opacity(0.7))
-                                .cornerRadius(6)
-                                .padding(.top, 4)
-                            Spacer()
-                        }
-                        .allowsHitTesting(false)
-                        #endif
-                    }
-                } else {
-                    #if os(iOS)
-                    screenLayoutComposition
-                    #else
-                    MetalView(gameManager: gameManager)
-                        .ignoresSafeArea()
-                    #endif
-                }
             }
-
-            #if os(iOS)
-            // Settings > External Display > "Screen Layout" (ported from MeloCafe's own
-            // feature of the same name - see DisplayRouter.ScreenLayout). Top-leading,
-            // matching MeloCafe's own placement; the OTHER swap button this app already
-            // has (DisplayLayoutSettings, for a genuine external display) sits
-            // top-trailing, so the two can never overlap regardless of which are on.
-            if showLocalSwapButton, screenLayout == .singleScreen, displayRouter.placement != .dualScreen {
-                VStack {
-                    HStack {
-                        Button {
-                            localSwapped.toggle()
-                        } label: {
-                            Image(systemName: "rectangle.2.swap")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color.black.opacity(0.55))
-                                .clipShape(Circle())
-                        }
-                        .accessibilityLabel("Swap TV and GamePad")
-                        .padding(.top, 8)
-                        .padding(.leading, 12)
-                        Spacer()
-                    }
-                    Spacer()
-                }
-            }
-            #endif
+            // Pinned to the top rather than left to fill the ZStack the way a VStack's
+            // last-and-only-flexible child would: the video is what wants the whole
+            // screen now (see the top of this ZStack), and this is only the bar and
+            // whatever drops down from it, sized to its own content and nothing more.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
             // Unconditional: no showControls state, no tap-to-toggle, no transition.
             // The pad is on screen for as long as the emulator view is, and floating
@@ -1761,17 +1776,20 @@ struct EmulatorViewOptimized: View {
                 guard pausedByLifecycle else { return }
                 pausedByLifecycle = false
                 isPaused = false
-                cemu_bridge_resume()
+                Self.titlePauseQueue.async { cemu_bridge_resume() }
             } else {
                 // Released on every trip out of .active, paused or not. A touch in
                 // progress when the app resigns active is cancelled by UIKit, which does
                 // not reliably deliver the gesture's end, so without this a held button or
-                // deflected stick would still be held when the game comes back.
+                // deflected stick would still be held when the game comes back. Not
+                // routed through titlePauseQueue: it only touches the input mutex, not
+                // the guest scheduler lock cemu_bridge_pause/resume take, so it carries
+                // none of the main-thread deadlock risk that sends those two there.
                 cemu_bridge_release_all_buttons()
                 guard !isPaused else { return }
                 isPaused = true
                 pausedByLifecycle = true
-                cemu_bridge_pause()
+                Self.titlePauseQueue.async { cemu_bridge_pause() }
             }
         }
         // Keeps the home indicator (and the system's own edge-swipe gestures) from
