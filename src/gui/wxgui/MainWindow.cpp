@@ -162,6 +162,7 @@ wxDEFINE_EVENT(wxEVT_SET_WINDOW_TITLE, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_REQUEST_GAMELIST_REFRESH, wxCommandEvent);
 wxDEFINE_EVENT(wxEVT_LAUNCH_GAME, wxLaunchGameEvent);
 wxDEFINE_EVENT(wxEVT_REQUEST_RECREATE_CANVAS, wxCommandEvent);
+wxDEFINE_EVENT(wxEVT_REQUEST_GAME_EXIT, wxCommandEvent);
 
 wxBEGIN_EVENT_TABLE(MainWindow, wxFrame)
 EVT_TIMER(MAINFRAME_ID_TIMER1, MainWindow::OnTimer)
@@ -243,6 +244,7 @@ EVT_COMMAND(wxID_ANY, wxEVT_ACCOUNTLIST_REFRESH, MainWindow::OnAccountListRefres
 EVT_COMMAND(wxID_ANY, wxEVT_SET_WINDOW_TITLE, MainWindow::OnSetWindowTitle)
 
 EVT_COMMAND(wxID_ANY, wxEVT_REQUEST_RECREATE_CANVAS, MainWindow::OnRequestRecreateCanvas)
+EVT_COMMAND(wxID_ANY, wxEVT_REQUEST_GAME_EXIT, MainWindow::OnRequestGameExit)
 
 wxEND_EVENT_TABLE()
 
@@ -2317,6 +2319,7 @@ void MainWindow::RecreateMenu()
 	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::Socket), _("nsysnet API"))->Check(cemuLog_isLoggingEnabled(LogType::Socket));
 	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::H264), _("h264 API"))->Check(cemuLog_isLoggingEnabled(LogType::H264));
 	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::GX2), _("gx2 API"))->Check(cemuLog_isLoggingEnabled(LogType::GX2));
+	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::SWKBD), _("swkbd API"))->Check(cemuLog_isLoggingEnabled(LogType::SWKBD));
 	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::SoundAPI), _("Audio API"))->Check(cemuLog_isLoggingEnabled(LogType::SoundAPI));
 	logCosModulesMenu->AppendCheckItem(MAINFRAME_MENU_ID_DEBUG_LOGGING0 + stdx::to_underlying(LogType::InputAPI), _("Input API"))->Check(cemuLog_isLoggingEnabled(LogType::InputAPI));
 
@@ -2475,6 +2478,27 @@ void MainWindow::CafeRecreateCanvas()
 	evt->SetClientData((void*)&sem);
 	wxQueueEvent(g_mainFrame, evt);
 	sem.decrementWithWait();
+}
+
+void MainWindow::CafePPCProcessExit()
+{
+	// this is called from the emulated PPC thread, so queue an event instead of handling it directly
+	wxQueueEvent(g_mainFrame, new wxCommandEvent(wxEVT_REQUEST_GAME_EXIT));
+}
+
+void MainWindow::OnRequestGameExit(wxCommandEvent& event)
+{
+	// if the title was launched via the command line we close Cemu and use the foreground title's exit status as Cemu's process return code (via CemuApp:OnExit)
+	// this is useful for homebrew testing setups that use Cemu via CLI
+	// otherwise the title was launched from the game list, so we just stop it and return to the game list instead of closing Cemu
+	if (LaunchSettings::GetLoadFile() || LaunchSettings::GetLoadTitleID())
+	{
+		Close();
+	}
+	else
+	{
+		EndEmulation();
+	}
 }
 
 bool MainWindow::FullscreenEnabled() const
