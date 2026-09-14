@@ -149,6 +149,11 @@ final class BenchRunner: ObservableObject {
         // mbench_attach_surface must run on the main thread, before any mbench_boot -
         // this is the one call in the whole per-engine sequence that hops back.
         let attachStatus: BenchStatus = await MainActor.run {
+            // Muffin's engines draw into a CAMetalLayer they add as a sublayer of this view;
+            // MeloCafe draws into the view's own layer. A previous engine's sublayer outlives
+            // its shutdown and would sit on top of the next engine's output, costing it
+            // compositing work, so every engine starts from a bare view.
+            view.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
             let scale = view.window?.screen.scale ?? UIScreen.main.scale
             return engine.attachSurface(
                 uiView: view,
