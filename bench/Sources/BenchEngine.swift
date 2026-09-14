@@ -258,9 +258,7 @@ final class LoadedEngine {
             var names: [String] = []
             names.reserveCapacity(Int(classCount))
             for j in 0..<Int(classCount) {
-                if let cName = classList[j] {
-                    names.append(String(cString: cName))
-                }
+                names.append(String(cString: classList[j]))
             }
             return names.sorted()
         }
