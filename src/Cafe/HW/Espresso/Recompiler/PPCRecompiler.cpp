@@ -1335,11 +1335,42 @@ void PPCRecompiler_init()
     }
     
     bool init26 = false;
-    if (s_dualMapJITEnabled && !ppcRecompilerInited)
+    // Whether PPCRecompiler_Init26() actually ran THIS call, as opposed to init26 simply
+    // defaulting to false because dual-map was already set up by an earlier call
+    // (ppcRecompilerInited already true - see the UAF fix above, the arena and
+    // ppcRecompilerInstanceData are both allocated once for the process, not re-touched
+    // on a second title launch). Only this case means "we just tried and it failed";
+    // the other three call sites of `!init26` below only mean "we didn't need to try".
+    const bool attemptedInit26 = s_dualMapJITEnabled && !ppcRecompilerInited;
+    if (attemptedInit26)
     {
         init26 = PPCRecompiler_Init26();
     }
-    
+
+    if (attemptedInit26 && !init26)
+    {
+        // Dual-mapped JIT was actually attempted just now and genuinely failed - a real
+        // vm_remap/allocation failure, logged by PPCRecompiler_Init26() itself
+        // ("JIT arena allocation failed, disabling JIT"), which already set
+        // ppcRecompilerEnabled = false. This used to fall straight through to the
+        // `!init26` fallback below regardless of why init26 was false, which on iOS is
+        // the DUAL-MAP path's own one-time setup, not a working alternative JIT scheme -
+        // and control then reached "Recompiler initialized" / ppcRecompilerEnabled =
+        // true unconditionally a few lines down, silently overwriting the `false`
+        // PPCRecompiler_Init26() had just set. The result: a title reported as running
+        // the recompiler while every actual code-generation request failed forever
+        // ("JIT arena: no free range for 4096 bytes", over and over) because the arena
+        // backing it was never allocated - the CPU thread never made progress again
+        // while audio, input and whatever frame was already on screen kept going,
+        // which is exactly what looks like "everything but rendering is frozen" from
+        // outside. Bail to the interpreter here instead, the same way the CS_DEBUGGED
+        // and command-line checks above already do.
+        cemuLog_log(LogType::Force, "Recompiler disabled: the JIT memory arena could not be allocated");
+        ppcRecompilerEnabled = false;
+        PPCCore_InitializePointer(false);
+        return;
+    }
+
     if (!init26) {
         // Same reasoning as PPCRecompiler_Init26() above: allocate once per process, not
         // on every call, or the platform's recompiler trampolines outlive the memory
