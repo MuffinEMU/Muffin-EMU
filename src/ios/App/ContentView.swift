@@ -1073,6 +1073,12 @@ struct EmulatorViewOptimized: View {
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
     @AppStorage(MeloControlsSetting.storageKey) private var useMeloControls = MeloControlsSetting.defaultValue
     @ObservedObject private var previewPad = PreviewPadStore.shared
+    /// Same key Settings > External Display reads. Declared here too, rather than read
+    /// once at boot, so turning it off takes effect on the button already on screen
+    /// instead of only on the next launch.
+    @AppStorage(DisplayLayoutSettings.showSwapButtonKey)
+    private var showSwapButton = DisplayLayoutSettings.defaultShowSwapButton
+    @ObservedObject private var displayRouter = DisplayRouter.shared
     // The two feel settings, offered here as well as in Settings for the same reason the
     // toggle is: a deadzone is not something you can judge from a settings screen with no
     // game under it. This is the panel you have open while steering.
@@ -1378,6 +1384,33 @@ struct EmulatorViewOptimized: View {
                     },
                     isEditingLayout: $isEditingControlLayout
                 )
+            }
+
+            // Settings > External Display > "Show swap button (TV <-> Pad)". Only ever
+            // visible in .dualScreen - the only placement where there are two physical
+            // screens to swap between at all - so it can't appear and do nothing on a
+            // plain iPad. Top-trailing, out of the pad's own footprint regardless of
+            // skin or comfort-controls layout.
+            if showSwapButton, displayRouter.placement == .dualScreen {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button {
+                            DisplayRouter.shared.toggleScreenLayoutFromSwapButton()
+                        } label: {
+                            Image(systemName: "rectangle.2.swap")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(10)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Circle())
+                        }
+                        .accessibilityLabel("Swap TV and GamePad screens")
+                        .padding(.top, 8)
+                        .padding(.trailing, 12)
+                    }
+                    Spacer()
+                }
             }
 
             // Above the pad (which stays on screen and interactive-looking underneath
