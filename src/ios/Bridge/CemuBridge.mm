@@ -441,6 +441,8 @@ namespace {
 
     std::atomic<bool> g_titleRunning{false};
     std::atomic<bool> g_padRegistered{false};
+    // The MoltenVK build selected for this launch, "" before initialize.
+    std::string g_activeMoltenVK;
 }
 
 static void ios_timebase_ladder_start();
@@ -1026,6 +1028,10 @@ const char* cemu_bridge_cpu_mode_detail(void) {
     return detail;
 }
 
+const char* cemu_bridge_active_moltenvk(void) {
+    return g_activeMoltenVK.c_str();
+}
+
 bool cemu_bridge_core_available(void) {
     return true;
 }
@@ -1068,6 +1074,29 @@ void cemu_bridge_initialize(const char* mlcPath) {
     const std::string userData = userDataPath.string();
     const std::string cache = (userDataPath / "cache").string();
     const std::string data = dataPath.string();
+
+    // Which MoltenVK the Vulkan renderer loads this launch. Both builds are embedded and
+    // neither is linked, so exactly one is ever loaded: two copies in one process would
+    // register the same Objective-C classes twice. The core's loader tries this path first
+    // (VulkanAPI.cpp), and a loaded MoltenVK stays for the life of the process, so a change
+    // in Settings applies on the next launch.
+    {
+        NSString* choice = [[NSUserDefaults standardUserDefaults] stringForKey:@"muffin.render.moltenVK"];
+        const bool legacy = [choice isEqualToString:@"1.2.8"];
+        NSString* path = [[[NSBundle mainBundle] privateFrameworksPath] stringByAppendingPathComponent:
+            legacy ? @"MoltenVK128.framework/MoltenVK128" : @"MoltenVK.framework/MoltenVK"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:path])
+        {
+            setenv("MUFFIN_MOLTENVK_PATH", path.fileSystemRepresentation, 1);
+            g_activeMoltenVK = legacy ? "1.2.8" : "1.4.3";
+            cemu_bridge_log_checkpoint(("MoltenVK: using " + g_activeMoltenVK + " for the Vulkan renderer this launch").c_str());
+        }
+        else
+        {
+            cemu_bridge_log_checkpoint((std::string("MoltenVK: ") + path.fileSystemRepresentation +
+                " is missing from the bundle - the core falls back to its own search").c_str());
+        }
+    }
 
     cemu_bridge_log_checkpoint("initialize: about to call MeloCafe CemuInitialize()");
     try

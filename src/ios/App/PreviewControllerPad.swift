@@ -1,4 +1,5 @@
 import SwiftUI
+import Dispatch
 
 extension Color {
     /// MuffinColourPresets' colours are plain RGBA (so a .muffinclr stays hand-editable
@@ -92,8 +93,16 @@ private struct PreviewGroupView: View {
         // bounding area moves the pair together, matching how ControllerCustomLayout
         // already groups them.
         .contentShape(Rectangle())
-        .gesture(isEditingLayout ? moveGesture : nil)
-        .gesture(isEditingLayout ? resizeGesture : nil)
+        .gesture(isEditingLayout ? editGesture : nil)
+    }
+
+    /// Move and resize as one attached gesture, not two separate `.gesture()` modifiers -
+    /// two independent, exclusive gestures on the same view compete for the same touches,
+    /// so a two-finger pinch was read as a one-finger drag by whichever of the two claimed
+    /// it first. `SimultaneousGesture` is what `EditableControl.editGesture` already uses
+    /// for the shipping pad's own per-element drag/pinch, for the identical reason.
+    private var editGesture: some Gesture {
+        SimultaneousGesture(moveGesture, resizeGesture)
     }
 
     private func captionOffset(for group: PadGroup) -> CGFloat {
@@ -149,7 +158,7 @@ private struct PreviewControlView: View {
             } else if id.hasPrefix("knob") {
                 EmptyView() // drawn by the stick itself
             } else {
-                HeldControl(onPressChange: { onInput(id, $0) }) { isPressed in
+                HeldControl(onPressChange: { onInput(id, $0) }, isInteractive: !isEditingLayout) { isPressed in
                     ZStack {
                         Circle()
                             .fill(Color(colours.fill(id)).opacity(colours.alpha(id, pressed: isPressed)))
@@ -176,7 +185,7 @@ private struct PreviewControlView: View {
             }
 
         case .pill(let centre, let size, let corner):
-            HeldControl(onPressChange: { onInput(id, $0) }) { isPressed in
+            HeldControl(onPressChange: { onInput(id, $0) }, isInteractive: !isEditingLayout) { isPressed in
                 ZStack {
                     RoundedRectangle(cornerRadius: corner, style: .continuous)
                         .fill(Color(colours.fill(id)).opacity(colours.alpha(id, pressed: isPressed)))
@@ -272,10 +281,22 @@ private struct PreviewStickView: View {
 
     @State private var knobOffset: CGSize = .zero
     @State private var pushed = false
+    /// The pending release of a tap-click, so a view that goes away mid-click cannot leave
+    /// L3/R3 held. Mirrors JoystickControl's own clickRelease in ControllerPad.swift.
+    @State private var clickRelease: DispatchWorkItem?
+
+    @AppStorage(ControllerLayoutSettings.hapticsKey)
+    private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     private var radius: CGFloat { diameter / 2 }
     private var knobRadius: CGFloat { diameter * 0.28 }
     private var travel: CGFloat { radius - knobRadius }
+
+    /// Same reasoning and the same value as JoystickControl.clickHoldSeconds: a press and
+    /// release fired back to back in one call stack is not observable by a title polling
+    /// VPADRead on its own schedule under the forced interpreter, so the click has to be
+    /// held open for a few frames instead of pulsed.
+    private static let clickHoldSeconds = 0.12
 
     var body: some View {
         ZStack {
@@ -308,16 +329,31 @@ private struct PreviewStickView: View {
                     onStick(id == "stickL" ? 0 : 1, CGPoint(x: nx, y: ny))
                 }
                 .onEnded { _ in
-                    if !pushed { onInput(clickID, true); onInput(clickID, false) }
+                    if !pushed { click() }
                     pushed = false
                     withAnimation(.spring(response: 0.2, dampingFraction: 0.6)) { knobOffset = .zero }
                     onStick(id == "stickL" ? 0 : 1, .zero)
                 }
         )
         .onDisappear {
+            clickRelease?.cancel()
+            clickRelease = nil
+            // A view that disappears mid-click must not leave L3/R3 held forever waiting
+            // for a release that will now never come - the unconditional call here is the
+            // same insurance JoystickControl's onDisappear takes.
+            onInput(clickID, false)
             pushed = false
             knobOffset = .zero
             onStick(id == "stickL" ? 0 : 1, .zero)
         }
+    }
+
+    private func click() {
+        clickRelease?.cancel()
+        if hapticsEnabled { PadHaptics.shared.fire() }
+        onInput(clickID, true)
+        let release = DispatchWorkItem { onInput(clickID, false) }
+        clickRelease = release
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.clickHoldSeconds, execute: release)
     }
 }

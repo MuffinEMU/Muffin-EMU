@@ -9,7 +9,10 @@ struct GameMetadata: Codable, Identifiable {
     let title: String
     let romPath: String
     var coverPath: String?
-    let region: String
+    // Was a hardcoded "Unknown" for every game. Optional now: nil means "not derived
+    // yet, or the dump has no console region to report" and the card hides the label
+    // rather than showing a placeholder value. See GameManager.enrichMissingCoverArt.
+    var region: String?
     let releaseDate: String
     let genre: String
     var isFavorite: Bool = false
@@ -18,9 +21,70 @@ struct GameMetadata: Codable, Identifiable {
     // matching then has no choice but to fall back to manual selection for. See
     // DlcUpdateImport.swift.
     var titleId: UInt64?
+    /// Root of the dumped title directory (code/content/meta, or a flat NUS dump) -
+    /// nil for a single-file dump (.wux/.wud/.wua), whose meta/ lives inside the
+    /// container where only the engine can read it. Lets the background enrichment
+    /// pass in enrichMissingCoverArt() find meta/iconTex.tga without re-deriving a
+    /// dump path from romPath.
+    var dumpDirectoryPath: String?
+    /// The title's real display name, from meta.xml via cemu_bridge_get_title_name -
+    /// filled in by the background enrichment pass, same as `region` above. nil until
+    /// that pass has run, or if the title's own meta.xml has no name at all: `title`
+    /// (the filename) is what the card falls back to showing, and what search always
+    /// matches against, so a dump with no derivable name is never unfindable.
+    var displayTitle: String?
+    /// The ROM/dump's own file creation date, for "recently added" sorting. Not part
+    /// of CodingKeys - games.json isn't actually used (see gameListFile) and this is
+    /// cheap enough to just re-read from the filesystem on every loadGames().
+    var addedDate: Date? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, title, romPath, coverPath, region, releaseDate, genre, titleId
+        case id, title, romPath, coverPath, region, releaseDate, genre, titleId, dumpDirectoryPath, displayTitle
+    }
+}
+
+/// Mid-flight state of GameManager.importROM()'s own byte copy. Published so the UI
+/// can show something other than a frozen screen while a multi-GB .wud/.wux/folder
+/// moves - the copy itself no longer runs on the main actor (see importROM), but
+/// something still has to tell the UI it is happening.
+enum ImportState: Equatable {
+    case idle
+    case copying(name: String)
+}
+
+/// Region and real title name are both derived from a dump's own meta.xml via the
+/// bridge - real answers, but not free ones (region needs cemu_bridge_inspect_title to
+/// open and parse the title; the name needs a second bridge call on top of that) - so
+/// both are cached by game ID the first time they're derived, rather than re-derived
+/// on every launch. UserDefaults, not a file: this is a handful of short strings per
+/// game, nowhere near what would justify its own cache file the way CoverArtFetcher's
+/// image cache does.
+private enum LibraryMetadataCache {
+    private static let regionKey = "muffin.library.regionByGameID"
+    private static let titleNameKey = "muffin.library.titleNameByGameID"
+
+    /// nil means "never checked yet." "" means "checked - meta.xml genuinely has
+    /// nothing here." Both are real, distinct answers, and the difference is the
+    /// whole reason this isn't just a plain optional cache: only the first one should
+    /// ever trigger another trip through the bridge.
+    static func cachedRegion(for gameID: String) -> String? {
+        (UserDefaults.standard.dictionary(forKey: regionKey) as? [String: String])?[gameID]
+    }
+
+    static func setCachedRegion(_ region: String?, for gameID: String) {
+        var stored = (UserDefaults.standard.dictionary(forKey: regionKey) as? [String: String]) ?? [:]
+        stored[gameID] = region ?? ""
+        UserDefaults.standard.set(stored, forKey: regionKey)
+    }
+
+    static func cachedTitleName(for gameID: String) -> String? {
+        (UserDefaults.standard.dictionary(forKey: titleNameKey) as? [String: String])?[gameID]
+    }
+
+    static func setCachedTitleName(_ name: String?, for gameID: String) {
+        var stored = (UserDefaults.standard.dictionary(forKey: titleNameKey) as? [String: String]) ?? [:]
+        stored[gameID] = name ?? ""
+        UserDefaults.standard.set(stored, forKey: titleNameKey)
     }
 }
 
@@ -39,12 +103,19 @@ class GameManager: ObservableObject {
     /// Refreshed alongside `frameRate`. See `EmulatorProgress` below for why a second
     /// source of frame information is not redundant with the first.
     @Published private(set) var progress = EmulatorProgress()
+    @Published private(set) var importState: ImportState = .idle
+    /// Set by the UI (ContentView) to ask "a game/dump named `name` already exists in
+    /// the library - replace it?" before importROM() overwrites anything. Returning
+    /// false, or leaving this nil (nobody wired up a prompt), cancels the import
+    /// outright rather than ever silently deleting what was already there.
+    var confirmOverwrite: ((String) async -> Bool)?
     private var frameRateTimer: Timer?
 
     private let romsDirectory = "Roms"
     private let gameListFile = "games.json"
     private var emulationEngine: EmulationEngine?
     private var surfaceRegistered = false
+    private static let favoriteIDsKey = "muffin.library.favoriteGameIDs"
 
     init() {
         emulationEngine = EmulationEngine()
@@ -131,18 +202,32 @@ class GameManager: ObservableObject {
                     dumpDirectory = nil
                 }
 
+                let addedDate = (try? fileManager.attributesOfItem(atPath: item.path))?[.creationDate] as? Date
+
                 let gameMetadata = GameMetadata(
                     id: gameID,
                     title: gameID,
                     romPath: bootPath,
-                    coverPath: findCover(for: gameID, romPath: bootPath, in: romsPath, dump: dumpDirectory),
-                    region: "Unknown",
+                    coverPath: findCover(for: gameID, romPath: bootPath, in: romsPath),
+                    region: Self.nonEmptyOrNil(LibraryMetadataCache.cachedRegion(for: gameID)),
                     releaseDate: "Unknown",
                     genre: "Game",
-                    titleId: Self.deriveBaseTitleId(romPath: bootPath)
+                    titleId: Self.deriveBaseTitleId(romPath: bootPath),
+                    dumpDirectoryPath: dumpDirectory?.path,
+                    displayTitle: Self.nonEmptyOrNil(LibraryMetadataCache.cachedTitleName(for: gameID)),
+                    addedDate: addedDate
                 )
 
                 discoveredGames.append(gameMetadata)
+            }
+
+            // Favorites used to be rebuilt false on every scan - nothing anywhere
+            // wrote them back out, so a favorited game forgot it the moment the app
+            // relaunched. Applied here, against a real on-disk record, before the
+            // array is even published.
+            let favoriteIDs = Self.loadFavoriteIDs()
+            for index in discoveredGames.indices {
+                discoveredGames[index].isFavorite = favoriteIDs.contains(discoveredGames[index].id)
             }
 
             self.games = discoveredGames.sorted { $0.title < $1.title }
@@ -156,7 +241,7 @@ class GameManager: ObservableObject {
     /// A dumped Wii U title is a directory containing code/, content/ and meta/.
     /// code/ is the one that actually matters (it holds the .rpx we boot); meta/ is
     /// required too because its absence is exactly what makes Cemu drop to standalone.
-    static func looksLikeWiiUDump(_ directory: URL) -> Bool {
+    nonisolated static func looksLikeWiiUDump(_ directory: URL) -> Bool {
         let fileManager = FileManager.default
         var isDirectory: ObjCBool = false
 
@@ -172,7 +257,7 @@ class GameManager: ObservableObject {
 
     /// The .rpx inside a dump's code/ directory. Case matters on nothing here, but the
     /// extension does: code/ also holds .rpl libraries, which are not entry points.
-    static func executableInDump(_ directory: URL) -> URL? {
+    nonisolated static func executableInDump(_ directory: URL) -> URL? {
         let codePath = directory.appendingPathComponent("code")
         let entries = (try? FileManager.default.contentsOfDirectory(
             at: codePath,
@@ -190,7 +275,7 @@ class GameManager: ObservableObject {
     /// layout above. TitleInfo::DetectFormat (TitleInfo.cpp) already recognizes this
     /// shape whenever it is pointed straight at title.tmd - boost::iequals, so the
     /// match here is case-insensitive too, matching the engine rather than guessing.
-    static func titleTmdInDump(_ directory: URL) -> URL? {
+    nonisolated static func titleTmdInDump(_ directory: URL) -> URL? {
         let entries = (try? FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil
@@ -198,7 +283,7 @@ class GameManager: ObservableObject {
         return entries.first { $0.lastPathComponent.caseInsensitiveCompare("title.tmd") == .orderedSame }
     }
 
-    static func looksLikeNUSDump(_ directory: URL) -> Bool {
+    nonisolated static func looksLikeNUSDump(_ directory: URL) -> Bool {
         titleTmdInDump(directory) != nil
     }
 
@@ -217,13 +302,14 @@ class GameManager: ObservableObject {
     }
 
     /// Art for a game's card, in the order a person would expect it: whatever they put
-    /// there themselves first, then the game's own icon out of the dump.
+    /// there themselves first, then real box art already fetched. The dump's own icon
+    /// (meta/iconTex.tga) is a THIRD tier below both, applied later by the background
+    /// enrichment pass rather than here - see enrichMissingCoverArt().
     ///
-    /// Before this, only the first half existed - and nothing in the app ever wrote a
-    /// `<gameID>_cover.png`, so every card fell through to the placeholder controller
-    /// glyph no matter what was installed. The icon has been sitting inside every
-    /// dumped title the whole time at meta/iconTex.tga.
-    private func findCover(for gameID: String, romPath: String, in directory: URL, dump: URL?) -> String? {
+    /// Before this existed at all, nothing in the app ever wrote a `<gameID>_cover.png`,
+    /// so every card fell through to the placeholder controller glyph no matter what
+    /// was installed.
+    private func findCover(for gameID: String, romPath: String, in directory: URL) -> String? {
         let fileManager = FileManager.default
 
         // A hand-placed cover wins. Someone who dropped a file in specifically to
@@ -241,10 +327,11 @@ class GameManager: ObservableObject {
             return boxArt
         }
 
-        if let dump = dump {
-            return WiiUIcon.cachedIconPath(for: gameID, dump: dump, in: directory)
-        }
-
+        // No icon fallback here any more. Decoding meta/iconTex.tga used to happen
+        // inline, right here, on the main actor, for every dump loadGames() found -
+        // real work (a TGA decode, sometimes a PNG write) blocking the whole library
+        // from appearing. It happens in enrichMissingCoverArt() instead, off the main
+        // actor, using GameMetadata.dumpDirectoryPath.
         return nil
     }
 
@@ -299,21 +386,117 @@ class GameManager: ObservableObject {
         let candidates = games
         guard !candidates.isEmpty else { return }
 
-        Task.detached { [romsPath] in
+        Task.detached { [weak self, romsPath] in
             for game in candidates {
-                guard CoverArtFetcher.shouldAttemptFetch(gameID: game.id, romPath: game.romPath, in: romsPath) else { continue }
-                guard let coverPath = await CoverArtFetcher.fetchAndCache(gameID: game.id, romPath: game.romPath, in: romsPath) else { continue }
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    if let index = self.games.firstIndex(where: { $0.id == game.id }) {
-                        self.games[index].coverPath = coverPath
-                        if let favIndex = self.favorites.firstIndex(where: { $0.id == game.id }) {
-                            self.favorites[favIndex].coverPath = coverPath
-                        }
+                // Box art, when there's a real ID to look it up by and nothing already
+                // cached (or already known-missing) for it.
+                if CoverArtFetcher.shouldAttemptFetch(gameID: game.id, romPath: game.romPath, in: romsPath),
+                   let coverPath = await CoverArtFetcher.fetchAndCache(gameID: game.id, romPath: game.romPath, in: romsPath) {
+                    await self?.applyCoverPath(coverPath, forGameID: game.id)
+                } else if game.coverPath == nil, let dumpPath = game.dumpDirectoryPath {
+                    // No box art (or none to look up) and nothing already found by
+                    // loadGames()'s own findCover() - fall back to the console's own
+                    // icon. This is the TGA decode that used to run inline inside
+                    // loadGames() on the main actor for every freshly-discovered dump;
+                    // it runs here instead so the library appears immediately and
+                    // icons fill in afterward rather than the whole scan waiting on
+                    // every dump's decode.
+                    if let iconPath = WiiUIcon.cachedIconPath(
+                        for: game.id, dump: URL(fileURLWithPath: dumpPath), in: romsPath
+                    ) {
+                        await self?.applyCoverPath(iconPath, forGameID: game.id)
                     }
+                }
+
+                // Region and the title's real name both come from the same
+                // cemu_bridge_inspect_title()/cemu_bridge_get_title_name() pass over
+                // meta.xml - real, but not free, so both are cached by game ID (see
+                // LibraryMetadataCache) and only re-derived once per game, ever.
+                if LibraryMetadataCache.cachedRegion(for: game.id) == nil
+                    || LibraryMetadataCache.cachedTitleName(for: game.id) == nil {
+                    await self?.deriveAndApplyRegionAndTitleName(for: game)
                 }
             }
         }
+    }
+
+    /// Applies a newly-found cover path (box art or the console's own icon) to `games`
+    /// and, if present, its mirror in `favorites` - the two arrays hold independent
+    /// copies of the same struct, so a change to one is invisible to the other unless
+    /// both are updated. Runs on the main actor like every other mutation of
+    /// `games`/`favorites`; the background pass in enrichMissingCoverArt() hops here
+    /// with `await` rather than mutating either array directly off-actor.
+    private func applyCoverPath(_ coverPath: String, forGameID gameID: String) {
+        guard let index = games.firstIndex(where: { $0.id == gameID }) else { return }
+        games[index].coverPath = coverPath
+        if let favIndex = favorites.firstIndex(where: { $0.id == gameID }) {
+            favorites[favIndex].coverPath = coverPath
+        }
+    }
+
+    /// Derives `game`'s real region and title name (both from meta.xml, via the
+    /// bridge) off the main actor, caches whatever was found - including a definite
+    /// "nothing there," so a title with no name or no region isn't re-inspected on
+    /// every future launch - then applies the result on the main actor. Called at most
+    /// once per game per cold start of the cache; see enrichMissingCoverArt().
+    private nonisolated func deriveAndApplyRegionAndTitleName(for game: GameMetadata) async {
+        var version: UInt16 = 0
+        var regionBitmask: Int32 = 0
+        var invalidReason: Int32 = 0
+        let inspected = game.romPath.withCString { cPath in
+            cemu_bridge_inspect_title(cPath, nil, &version, &regionBitmask, &invalidReason)
+        }
+        let region = inspected ? Self.regionLabel(forBitmask: regionBitmask) : nil
+        LibraryMetadataCache.setCachedRegion(region, for: game.id)
+
+        // 256 bytes is generous for a Wii U meta.xml longname (in practice UTF-8 and a
+        // few dozen bytes at most) - this only needs to be big enough to never
+        // truncate a real name, not tight.
+        var nameBuffer = [CChar](repeating: 0, count: 256)
+        let hasName = game.romPath.withCString { cPath in
+            nameBuffer.withUnsafeMutableBufferPointer { buffer in
+                cemu_bridge_get_title_name(cPath, buffer.baseAddress, buffer.count)
+            }
+        }
+        let titleName = hasName ? Self.nonEmptyOrNil(String(cString: nameBuffer)) : nil
+        LibraryMetadataCache.setCachedTitleName(titleName, for: game.id)
+
+        await MainActor.run { [weak self] in
+            guard let self else { return }
+            if let index = self.games.firstIndex(where: { $0.id == game.id }) {
+                self.games[index].region = region
+                self.games[index].displayTitle = titleName
+            }
+            if let favIndex = self.favorites.firstIndex(where: { $0.id == game.id }) {
+                self.favorites[favIndex].region = region
+                self.favorites[favIndex].displayTitle = titleName
+            }
+        }
+    }
+
+    /// Human-readable region for the console-region bitmask cemu_bridge_inspect_title
+    /// hands back (0x1 JPN, 0x2 USA, 0x4 EUR, 0x8 CHN, 0x10 KOR, 0x20 TWN). A real dump
+    /// is very often flagged for more than one region at once, so every set bit is
+    /// listed rather than only the first one found. nil for 0 (nothing set) - the card
+    /// treats that as "no known region" and hides the label, rather than showing an
+    /// empty string.
+    private nonisolated static func regionLabel(forBitmask bitmask: Int32) -> String? {
+        var labels: [String] = []
+        if bitmask & 0x1  != 0 { labels.append("JPN") }
+        if bitmask & 0x2  != 0 { labels.append("USA") }
+        if bitmask & 0x4  != 0 { labels.append("EUR") }
+        if bitmask & 0x8  != 0 { labels.append("CHN") }
+        if bitmask & 0x10 != 0 { labels.append("KOR") }
+        if bitmask & 0x20 != 0 { labels.append("TWN") }
+        return labels.isEmpty ? nil : labels.joined(separator: "/")
+    }
+
+    /// nil for both nil and "" - the second is LibraryMetadataCache's own way of
+    /// recording "checked, there's nothing here" (see that type), and both mean the
+    /// same thing to a caller that just wants a value to show or store.
+    private nonisolated static func nonEmptyOrNil(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        return value
     }
 
     enum ROMImportError: LocalizedError {
@@ -368,7 +551,7 @@ class GameManager: ObservableObject {
     /// First count bytes of url, or nil if they cannot be read (missing, unreadable, or
     /// shorter than count). Only ever called on a file already copied into our own
     /// sandbox, so a failure here says something about the file, not about permissions.
-    private static func fileMagic(at url: URL, count: Int = 4) -> Data? {
+    private nonisolated static func fileMagic(at url: URL, count: Int = 4) -> Data? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let data = try? handle.read(upToCount: count), data.count == count else {
@@ -390,7 +573,7 @@ class GameManager: ObservableObject {
     /// wrongly refusing one is a far worse failure than accepting a mislabelled file
     /// the engine will refuse a moment later anyway. So a renamed archive named
     /// game.rpx or game.wux is caught here; one named game.wud is not.
-    static func isValidROMFile(at url: URL) -> Bool {
+    nonisolated static func isValidROMFile(at url: URL) -> Bool {
         let ext = url.pathExtension.lowercased()
         guard supportedROMExtensions.contains(ext) else { return false }
 
@@ -423,6 +606,9 @@ class GameManager: ObservableObject {
         // Security scope has to be claimed BEFORE anything reads the URL. For a folder
         // pick, the scope covers the whole tree, so the recursive copy below inherits
         // it - but only while the claim is held, hence the copy happening inside it.
+        // The claim stays live for as long as this function hasn't returned, which
+        // includes the whole `await` on the detached copy task below - `defer` runs at
+        // function exit, not when execution merely suspends.
         guard source.startAccessingSecurityScopedResource() else {
             throw ROMImportError.accessDenied
         }
@@ -445,6 +631,16 @@ class GameManager: ObservableObject {
 
         let destination = romsPath.appendingPathComponent(source.lastPathComponent)
 
+        // Ask before clobbering something already in the library under this name.
+        // This used to just delete whatever was there - fine for our own scratch
+        // staging directory, not fine for a game or dump someone already imported.
+        // Checked (and asked about) up front, before any of the actual copying below,
+        // so declining costs nothing: no multi-GB copy was wasted getting here.
+        if fileManager.fileExists(atPath: destination.path) {
+            let shouldReplace = await confirmOverwrite?(destination.lastPathComponent) ?? false
+            guard shouldReplace else { return }
+        }
+
         if isDirectory.boolValue {
             // A dumped game is a directory, not a file, and it is the one case where
             // copy-then-validate is the wrong order: the structural check is free to run
@@ -456,51 +652,21 @@ class GameManager: ObservableObject {
                 throw ROMImportError.notAWiiUDump(source.lastPathComponent)
             }
 
-            // Same staging-then-promote pattern as the single-file path below, and for
-            // the same reason: a multi-GB dump copy is exactly the kind of operation
-            // that can get cut short - the app backgrounded mid-copy and iOS reclaiming
-            // it, a full disk, a yanked USB drive. Copying straight to `destination`
-            // meant a cut-short copy left a half-there folder sitting inside Roms/
-            // itself, where the NEXT launch's loadGames() would scan it again - passing
-            // looksLikeWiiUDump (it only checks that code/ and meta/ exist, not that
-            // everything inside them arrived) but then finding no .rpx inside code/ and
-            // silently skipping it, forever, with no error ever shown. That is exactly a
-            // game that never "sticks" in the catalog. Staging it under .incoming first
-            // and only renaming it into Roms/ once the COPY (not just the source) has
-            // been re-validated means a cut-short copy simply never reaches the catalog
-            // at all, rather than reaching it in a broken, unrecoverable half-state.
             let stagingPath = romsPath.appendingPathComponent(Self.stagingDirectoryName)
             try? fileManager.createDirectory(at: stagingPath, withIntermediateDirectories: true)
-            let stagedDirectory = stagingPath.appendingPathComponent(source.lastPathComponent)
 
-            do {
-                if fileManager.fileExists(atPath: stagedDirectory.path) {
-                    try fileManager.removeItem(at: stagedDirectory)
-                }
-                try fileManager.copyItem(at: source, to: stagedDirectory)
-            } catch {
-                try? fileManager.removeItem(at: stagedDirectory)
-                throw ROMImportError.copyFailed(error)
-            }
+            importState = .copying(name: source.lastPathComponent)
+            defer { importState = .idle }
 
-            let copyIsComplete = (Self.looksLikeWiiUDump(stagedDirectory) && Self.executableInDump(stagedDirectory) != nil)
-                || Self.looksLikeNUSDump(stagedDirectory)
-            guard copyIsComplete else {
-                try? fileManager.removeItem(at: stagedDirectory)
-                throw ROMImportError.copyFailed(CocoaError(.fileReadCorruptFile))
-            }
-
-            do {
-                if fileManager.fileExists(atPath: destination.path) {
-                    try fileManager.removeItem(at: destination)
-                }
-                // Same volume, so this is a rename, not a second copy of the bytes -
-                // same reasoning as the single-file promotion below.
-                try fileManager.moveItem(at: stagedDirectory, to: destination)
-            } catch {
-                try? fileManager.removeItem(at: stagedDirectory)
-                throw ROMImportError.copyFailed(error)
-            }
+            // GameManager is @MainActor, and copyItem/moveItem on a multi-GB directory
+            // are real, slow disk I/O - running them inline here blocked the main
+            // thread (and therefore all of SwiftUI) for as long as the copy took.
+            // Task.detached calls a `nonisolated` static function with no `self`, so
+            // this actually runs off the main actor rather than just hoping the
+            // caller's context wasn't already on it.
+            try await Task.detached {
+                try Self.stageAndPromoteDirectory(source: source, destination: destination, stagingPath: stagingPath)
+            }.value
 
             await loadGames()
             return
@@ -511,6 +677,66 @@ class GameManager: ObservableObject {
         // actually landed, then promote it.
         let stagingPath = romsPath.appendingPathComponent(Self.stagingDirectoryName)
         try? fileManager.createDirectory(at: stagingPath, withIntermediateDirectories: true)
+
+        importState = .copying(name: source.lastPathComponent)
+        defer { importState = .idle }
+
+        try await Task.detached {
+            try Self.stageAndPromoteFile(source: source, destination: destination, stagingPath: stagingPath)
+        }.value
+
+        await loadGames()
+    }
+
+    /// The actual byte-moving for a directory-dump import: stage, re-validate the
+    /// staged COPY (not the source), then promote. `nonisolated` and `static` (no
+    /// `self`) so Task.detached in importROM() above genuinely runs it off the main
+    /// actor - see that function for why this used to block the UI thread.
+    private nonisolated static func stageAndPromoteDirectory(source: URL, destination: URL, stagingPath: URL) throws {
+        let fileManager = FileManager.default
+        let stagedDirectory = stagingPath.appendingPathComponent(source.lastPathComponent)
+
+        // Same reasoning as the single-file path below: a multi-GB dump copy is
+        // exactly the kind of operation that can get cut short - backgrounded mid-copy
+        // and reclaimed, a full disk, a yanked USB drive. Staging it under .incoming
+        // first and only renaming it into Roms/ once the COPY (not just the source)
+        // has been re-validated means a cut-short copy never reaches the catalog at
+        // all, rather than reaching it in a broken, unrecoverable half-state that
+        // loadGames() would silently skip forever.
+        do {
+            if fileManager.fileExists(atPath: stagedDirectory.path) {
+                try fileManager.removeItem(at: stagedDirectory)
+            }
+            try fileManager.copyItem(at: source, to: stagedDirectory)
+        } catch {
+            try? fileManager.removeItem(at: stagedDirectory)
+            throw ROMImportError.copyFailed(error)
+        }
+
+        let copyIsComplete = (looksLikeWiiUDump(stagedDirectory) && executableInDump(stagedDirectory) != nil)
+            || looksLikeNUSDump(stagedDirectory)
+        guard copyIsComplete else {
+            try? fileManager.removeItem(at: stagedDirectory)
+            throw ROMImportError.copyFailed(CocoaError(.fileReadCorruptFile))
+        }
+
+        do {
+            if fileManager.fileExists(atPath: destination.path) {
+                try fileManager.removeItem(at: destination)
+            }
+            // Same volume, so this is a rename, not a second copy of the bytes -
+            // same reasoning as the single-file promotion below.
+            try fileManager.moveItem(at: stagedDirectory, to: destination)
+        } catch {
+            try? fileManager.removeItem(at: stagedDirectory)
+            throw ROMImportError.copyFailed(error)
+        }
+    }
+
+    /// The single-file counterpart to stageAndPromoteDirectory above - same shape,
+    /// same reason for being `nonisolated static`.
+    private nonisolated static func stageAndPromoteFile(source: URL, destination: URL, stagingPath: URL) throws {
+        let fileManager = FileManager.default
         let staged = stagingPath.appendingPathComponent(source.lastPathComponent)
 
         do {
@@ -523,7 +749,7 @@ class GameManager: ObservableObject {
             throw ROMImportError.copyFailed(error)
         }
 
-        guard Self.isValidROMFile(at: staged) else {
+        guard isValidROMFile(at: staged) else {
             // Leave no orphans: the copy the user never asked to keep goes away before
             // the error message reaches them, so a rejected import changes nothing on
             // disk and the library looks exactly as it did a second earlier.
@@ -541,8 +767,6 @@ class GameManager: ObservableObject {
             try? fileManager.removeItem(at: staged)
             throw ROMImportError.copyFailed(error)
         }
-
-        await loadGames()
     }
 
     func toggleFavorite(_ game: GameMetadata) {
@@ -554,7 +778,25 @@ class GameManager: ObservableObject {
             } else {
                 favorites.removeAll { $0.id == game.id }
             }
+
+            // Written immediately, not batched - a toggle that only lived in memory
+            // is exactly what made favorites forget themselves on every relaunch.
+            var favoriteIDs = Self.loadFavoriteIDs()
+            if games[index].isFavorite {
+                favoriteIDs.insert(game.id)
+            } else {
+                favoriteIDs.remove(game.id)
+            }
+            Self.saveFavoriteIDs(favoriteIDs)
         }
+    }
+
+    private nonisolated static func loadFavoriteIDs() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: favoriteIDsKey) ?? [])
+    }
+
+    private nonisolated static func saveFavoriteIDs(_ ids: Set<String>) {
+        UserDefaults.standard.set(Array(ids), forKey: favoriteIDsKey)
     }
 
     func launchGame(_ game: GameMetadata) {
@@ -650,8 +892,9 @@ class GameManager: ObservableObject {
             // bridge falls back to the interpreter by itself when no JIT enabler is attached.
             cemu_bridge_set_recompiler_enabled(
                 UserDefaults.standard.object(forKey: "muffin.cpu.recompiler") as? Bool ?? true)
+            // Per-game override first, the global switch underneath it.
             cemu_bridge_set_favour_accuracy(
-                UserDefaults.standard.object(forKey: "muffin.cpu.favourAccuracy") as? Bool ?? false)
+                PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.id))
             // Per-game override first, global default underneath it - PerGameSettingsStore
             // reads the same UserDefaults key directly for exactly the reason above: an
             // override that only lived in a @Published property would revert the moment
@@ -671,6 +914,17 @@ class GameManager: ObservableObject {
             cemu_bridge_set_stretch_to_fill(
                 UserDefaults.standard.object(forKey: FrameStretch.storageKey) as? Bool
                     ?? FrameStretch.defaultValue)
+
+            // Renderer and scaling filters. CemuRun() constructs the renderer for whichever
+            // API is configured when the title starts, so these are pushed here, before
+            // boot, like everything above. Defaults match Settings: Metal, bicubic up,
+            // linear down.
+            cemu_bridge_set_graphics_api(
+                Int32(UserDefaults.standard.object(forKey: "muffin.render.graphicsAPI") as? Int ?? 2))
+            cemu_bridge_set_upscale_filter(
+                Int32(UserDefaults.standard.object(forKey: "muffin.render.upscaleFilter") as? Int ?? 1))
+            cemu_bridge_set_downscale_filter(
+                Int32(UserDefaults.standard.object(forKey: "muffin.render.downscaleFilter") as? Int ?? 0))
 
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")

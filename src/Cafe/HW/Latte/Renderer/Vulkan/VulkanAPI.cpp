@@ -143,7 +143,15 @@ void* dlopen_vulkan_loader()
 	if(!vulkan_so)
 		vulkan_so = dlopen("libvulkan.so.1", RTLD_NOW);
 #elif BOOST_OS_MACOS || BOOST_OS_IOS
-	void* vulkan_so = dlopen("libMoltenVK.dylib", RTLD_NOW);
+	void* vulkan_so = nullptr;
+#if BOOST_OS_IOS
+	// MuffinEMU embeds two MoltenVK builds and chooses one per launch; its bridge names the
+	// chosen one here before the engine initializes.
+	if (const char* chosen = getenv("MUFFIN_MOLTENVK_PATH"))
+		vulkan_so = dlopen(chosen, RTLD_NOW);
+#endif
+	if (!vulkan_so)
+		vulkan_so = dlopen("libMoltenVK.dylib", RTLD_NOW);
     if (!vulkan_so)
         vulkan_so = dlopen("MoltenVK.framework/MoltenVK", RTLD_NOW);
 #endif

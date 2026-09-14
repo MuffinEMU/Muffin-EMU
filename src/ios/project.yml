@@ -74,9 +74,15 @@ targets:
     dependencies:
       - framework: ../../build-ios/out/Cemu.framework
         embed: true
-      # The Vulkan backend's MoltenVK. Embedded so the core can load it at runtime.
+      # Two MoltenVK builds for the Vulkan renderer, embedded and deliberately not linked:
+      # the bridge picks one per launch (Settings > Graphics > MoltenVK) and the core loads
+      # only that one. Linking either would load it at launch next to the other.
       - framework: ../../dependencies/MoltenVK.xcframework
         embed: true
+        link: false
+      - framework: ../../dependencies/MoltenVK128.framework
+        embed: true
+        link: false
 
     # Cemu's own data files (bin/resources/sharedFonts, bin/gameProfiles), copied into
     # Cemu.app/CemuData - the data path cemu_bridge_initialize() hands the core. A copy
