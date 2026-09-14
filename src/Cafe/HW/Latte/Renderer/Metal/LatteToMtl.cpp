@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/LatteToMtl.h"
 #include "Cemu/Logging/CemuLogging.h"
 #include "HW/Latte/Core/LatteTextureLoader.h"
+#include "HW/Latte/Core/LatteTextureLoaderASTC.h"
 #include "HW/Latte/Renderer/Metal/MetalCommon.h"
 
 #include <unordered_map>
@@ -140,20 +141,7 @@ void CheckForPixelFormatSupport(const MetalPixelFormatSupport& support)
    	MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::R24_X8_UNORM].textureDecoder = TextureDecoder_R24_X8::getInstance();
    	MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::X24_G8_UINT].textureDecoder = TextureDecoder_X24_G8_UINT::getInstance();
 
-    if (!support.m_supportsBCFormats)
-    {
-        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_UNORM] = {MTL::PixelFormatRGBA8Unorm, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC1_RGBA8::getInstance()};
-        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_SRGB] = {MTL::PixelFormatRGBA8Unorm_sRGB, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC1_RGBA8::getInstance()};
-        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_UNORM] = {MTL::PixelFormatRGBA8Unorm, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC2_RGBA8::getInstance()};
-        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_SRGB] = {MTL::PixelFormatRGBA8Unorm_sRGB, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC2_RGBA8::getInstance()};
-        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC3_UNORM] = {MTL::PixelFormatRGBA8Unorm, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC3_RGBA8::getInstance()};
-        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC3_SRGB] = {MTL::PixelFormatRGBA8Unorm_sRGB, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC3_RGBA8::getInstance()};
-        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_UNORM] = {MTL::PixelFormatR8Unorm, MetalDataType::FLOAT, 1, {1, 1}, false, TextureDecoder_BC4_UNORM_To_R8::getInstance()};
-        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_SNORM] = {MTL::PixelFormatR8Snorm, MetalDataType::FLOAT, 1, {1, 1}, false, TextureDecoder_BC4_SNORM_To_R8::getInstance()};
-        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_UNORM] = {MTL::PixelFormatRG8Unorm, MetalDataType::FLOAT, 2, {1, 1}, false, TextureDecoder_BC5_UNORM_To_RG8::getInstance()};
-        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_SNORM] = {MTL::PixelFormatRG8Snorm, MetalDataType::FLOAT, 2, {1, 1}, false, TextureDecoder_BC5_SNORM_To_RG8::getInstance()};
-    }
-    else
+    if (support.m_supportsBCFormats)
     {
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_UNORM] = {MTL::PixelFormatBC1_RGBA, MetalDataType::FLOAT, 8, {4, 4}, false, TextureDecoder_BC1::getInstance()};
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_SRGB] = {MTL::PixelFormatBC1_RGBA_sRGB, MetalDataType::FLOAT, 8, {4, 4}, false, TextureDecoder_BC1::getInstance()};
@@ -165,6 +153,40 @@ void CheckForPixelFormatSupport(const MetalPixelFormatSupport& support)
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_SNORM] = {MTL::PixelFormatBC4_RSnorm, MetalDataType::FLOAT, 8, {4, 4}, false, TextureDecoder_BC4::getInstance()};
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_UNORM] = {MTL::PixelFormatBC5_RGUnorm, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC5::getInstance()};
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_SNORM] = {MTL::PixelFormatBC5_RGSnorm, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC5::getInstance()};
+    }
+    else if (support.m_supportsASTCFormats)
+    {
+        // No Apple GPU this app targets supports the desktop BC formats natively, but every one of
+        // them supports ASTC LDR as a baseline feature - the same fallback the Vulkan backend already
+        // takes via MoltenVK on this exact hardware (see VulkanRenderer.cpp's m_supportedFormatInfo.fmt_astc
+        // branch). Re-encoding BC blocks to a real GPU-compressed ASTC format, rather than decompressing
+        // all the way to plain RGBA8 on the CPU, is what made colors correct under Vulkan while native
+        // Metal (stuck on the RGBA8 branch below, unconditionally, until this branch existed) got them
+        // wrong - BC5 has no signed two-channel ASTC equivalent worth adding here, so it still falls
+        // through to the RGBA8-tier decoders below regardless of this branch.
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_UNORM] = {MTL::PixelFormatASTC_4x4_LDR, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC1_UNORM_to_ASTC::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_SRGB] = {MTL::PixelFormatASTC_4x4_sRGB, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC1_SRGB_to_ASTC::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_UNORM] = {MTL::PixelFormatASTC_4x4_LDR, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC2_UNORM_to_ASTC::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_SRGB] = {MTL::PixelFormatASTC_4x4_sRGB, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC2_SRGB_to_ASTC::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC3_UNORM] = {MTL::PixelFormatASTC_4x4_LDR, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC3_UNORM_to_ASTC::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC3_SRGB] = {MTL::PixelFormatASTC_4x4_sRGB, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC3_SRGB_to_ASTC::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_UNORM] = {MTL::PixelFormatASTC_4x4_LDR, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC4_UNORM_to_ASTC::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_SNORM] = {MTL::PixelFormatASTC_4x4_LDR, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC4_SNORM_to_ASTC::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_UNORM] = {MTL::PixelFormatRG8Unorm, MetalDataType::FLOAT, 2, {1, 1}, false, TextureDecoder_BC5_UNORM_To_RG8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_SNORM] = {MTL::PixelFormatRG8Snorm, MetalDataType::FLOAT, 2, {1, 1}, false, TextureDecoder_BC5_SNORM_To_RG8::getInstance()};
+    }
+    else
+    {
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_UNORM] = {MTL::PixelFormatRGBA8Unorm, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC1_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_SRGB] = {MTL::PixelFormatRGBA8Unorm_sRGB, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC1_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_UNORM] = {MTL::PixelFormatRGBA8Unorm, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC2_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_SRGB] = {MTL::PixelFormatRGBA8Unorm_sRGB, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC2_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC3_UNORM] = {MTL::PixelFormatRGBA8Unorm, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC3_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC3_SRGB] = {MTL::PixelFormatRGBA8Unorm_sRGB, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC3_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_UNORM] = {MTL::PixelFormatR8Unorm, MetalDataType::FLOAT, 1, {1, 1}, false, TextureDecoder_BC4_UNORM_To_R8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_SNORM] = {MTL::PixelFormatR8Snorm, MetalDataType::FLOAT, 1, {1, 1}, false, TextureDecoder_BC4_SNORM_To_R8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_UNORM] = {MTL::PixelFormatRG8Unorm, MetalDataType::FLOAT, 2, {1, 1}, false, TextureDecoder_BC5_UNORM_To_RG8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_SNORM] = {MTL::PixelFormatRG8Snorm, MetalDataType::FLOAT, 2, {1, 1}, false, TextureDecoder_BC5_SNORM_To_RG8::getInstance()};
     }
 
 
