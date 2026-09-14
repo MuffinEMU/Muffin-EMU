@@ -62,6 +62,12 @@ MetalLayerHandle& MetalLayerHandle::operator=(MetalLayerHandle&& other) noexcept
 
 void MetalLayerHandle::Resize(const Vector2i& size)
 {
+    // Reachable before InitializeLayer() has ever run for this window - iOS now calls
+    // this from CemuUIKit_UpdateMainWindowSize()/UpdatePadWindowSize() on every layout
+    // change, not only after a layer exists for it (a default-constructed handle, with
+    // m_layer still null, is a real and expected state here, not a bug on its own).
+    if (!m_layer)
+        return;
     m_layer->setDrawableSize(CGSize{(float)size.x * m_layerScaleX, (float)size.y * m_layerScaleY});
 }
 
