@@ -74,6 +74,7 @@ void CemuUIKit_InitializeLayer(bool main);
 void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale);
 void CemuUIKit_UpdatePadWindowSize(void);
 void CemuUIKit_SetVisibleOutputs(bool tv, bool pad);
+void CemuUIKit_SetPadTouch(CGFloat x, CGFloat y, bool down);
 void* GCControllerBridge_add(const GCBridgeControllerDesc* desc);
 void GCControllerBridge_remove(void* handle);
 void GCControllerBridge_notifyChanged(void);
@@ -1329,6 +1330,10 @@ bool cemu_bridge_has_pad_render_surface(void) {
 
 void cemu_bridge_set_visible_outputs(bool tv, bool pad) {
     CemuUIKit_SetVisibleOutputs(tv, pad);
+}
+
+void cemu_bridge_set_pad_touch(double x, double y, bool down) {
+    CemuUIKit_SetPadTouch((CGFloat)x, (CGFloat)y, down);
 }
 
 void cemu_bridge_resize_render_surface(int width, int height, double dpiScale, bool mainWindow) {

@@ -1031,6 +1031,12 @@ struct EmulatorViewOptimized: View {
     /// state, not AppStorage: nobody wants to come back to a game and find the controls
     /// still in edit mode because that is how they last left them.
     @State private var isEditingControlLayout = false
+    /// Local, not AppStorage - the same reasoning as isEditingControlLayout above:
+    /// nobody wants to come back to a game and find the pad missing because that was
+    /// how they last left it. For touching the GamePad screen's own touchscreen
+    /// unobstructed, where the physical control overlay would otherwise sit on top of
+    /// it and eat every touch before it reaches PadMetalViewIOS underneath.
+    @State private var padControlsHidden = false
     @State private var isPaused = false
     /// True only when isPaused was set by leaving the foreground, not by the pause
     /// button below. Read on the way back to .active: the app should resume a title
@@ -1295,6 +1301,28 @@ struct EmulatorViewOptimized: View {
                             .buttonStyle(MuffinSecondaryButtonStyle())
                             .accessibilityLabel("Swap TV and GamePad")
                         }
+
+                        // Only worth showing while the GamePad's own screen is actually
+                        // the one on top - hiding the pad to touch a TV that has no
+                        // touchscreen of its own would just take the controls away for
+                        // nothing. Releases every held button/stick on the way in, the
+                        // same as the edit-layout button above it: a button the overlay
+                        // stops drawing cannot report its own release any more, and one
+                        // still held inside the title when the overlay vanishes would
+                        // stay held.
+                        if isPadViewVisible {
+                            Button(action: {
+                                padControlsHidden.toggle()
+                                if padControlsHidden {
+                                    cemu_bridge_release_all_buttons()
+                                }
+                            }) {
+                                Image(systemName: padControlsHidden ? "hand.raised.slash.fill" : "hand.raised.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .accessibilityLabel(padControlsHidden ? "Show controls" : "Hide controls to touch the GamePad screen")
+                        }
                         #endif
 
                         // cemu_bridge_pause/resume wrap CafeSystem::PauseTitle()/
@@ -1413,31 +1441,33 @@ struct EmulatorViewOptimized: View {
             // the video it shares a coordinate space with - so the shipping pad only
             // renders when that flag is off, which is also its default.
             // Melo-Controller's pad, when chosen, takes the place of both of MuffinEMU's.
-            if useMeloControls {
-                MeloControlsOverlay(
-                    gameID: gameManager.currentGame?.id,
-                    isEditing: isEditingControlLayout
-                )
-            } else if !previewPadEnabled {
-                OptimizedControlPanel(
-                    skin: controllerSkin,
-                    onInput: { label, pressed in
-                        cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
-                    },
-                    // The axis path. Deliberately not routed through the button call above:
-                    // the bridge keeps sticks and buttons apart because the engine does, and
-                    // a stick sent as a press reaches VPADRead's button loop, which skips
-                    // the stick mappings outright.
-                    onStick: { stick, position in
-                        cemu_bridge_set_stick_axis(
-                            stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
-                            Float(position.x),
-                            Float(position.y)
-                        )
-                    },
-                    isEditingLayout: $isEditingControlLayout,
-                    isPaused: isPaused
-                )
+            if !padControlsHidden {
+                if useMeloControls {
+                    MeloControlsOverlay(
+                        gameID: gameManager.currentGame?.id,
+                        isEditing: isEditingControlLayout
+                    )
+                } else if !previewPadEnabled {
+                    OptimizedControlPanel(
+                        skin: controllerSkin,
+                        onInput: { label, pressed in
+                            cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
+                        },
+                        // The axis path. Deliberately not routed through the button call above:
+                        // the bridge keeps sticks and buttons apart because the engine does, and
+                        // a stick sent as a press reaches VPADRead's button loop, which skips
+                        // the stick mappings outright.
+                        onStick: { stick, position in
+                            cemu_bridge_set_stick_axis(
+                                stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
+                                Float(position.x),
+                                Float(position.y)
+                            )
+                        },
+                        isEditingLayout: $isEditingControlLayout,
+                        isPaused: isPaused
+                    )
+                }
             }
 
             // Settings > External Display > "Show swap button (TV <-> Pad)". Only ever
@@ -1792,6 +1822,14 @@ struct EmulatorViewOptimized: View {
                 Self.titlePauseQueue.async { cemu_bridge_pause() }
             }
         }
+        // Scoped to actually looking at the GamePad screen, not a standing setting:
+        // hiding the controls to touch it and then swapping back to the TV (or to a
+        // layout where the pad isn't shown at all) must bring them back on its own,
+        // or a player who forgot the button exists would have no way to control the
+        // TV-side game at all until they remembered to look for it again.
+        .onChange(of: isPadViewVisible) { visible in
+            if !visible { padControlsHidden = false }
+        }
         // Keeps the home indicator (and the system's own edge-swipe gestures) from
         // popping up mid-game - a stray swipe near the bottom edge no longer competes
         // with on-screen controls sitting right where it appears.
@@ -1823,7 +1861,22 @@ struct EmulatorViewOptimized: View {
                     .frame(width: regions.pad.width, height: regions.pad.height)
                     .position(x: regions.pad.midX, y: regions.pad.midY)
                     .opacity(regions.padHidden ? 0 : 1)
-                    .allowsHitTesting(false)
+                    // The GamePad's own touchscreen - a real Wii U input distinct from
+                    // every button on the pad, and previously dead on iOS: nothing ever
+                    // called the one bridge entry point for it. Hit-testable only while
+                    // this is the screen actually on top (never in Single Screen while
+                    // the TV is showing - a touch meant for the TV must still reach the
+                    // TV underneath, unchanged from before). Coordinates are local to
+                    // this view's own frame, in points; the bridge wants the same
+                    // physical-pixel space cemu_bridge_resize_render_surface() already
+                    // sizes this surface in, so they're scaled here the same way that
+                    // sizing is - see RenderScale.swift's effectiveRenderScale.
+                    .allowsHitTesting(!regions.padHidden)
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in sendPadTouch(value.location, down: true) }
+                            .onEnded { value in sendPadTouch(value.location, down: false) }
+                    )
             }
         }
         .ignoresSafeArea()
@@ -1832,6 +1885,32 @@ struct EmulatorViewOptimized: View {
         .onChange(of: localSwapped) { _ in applyLocalVisibleOutputs() }
         .onDisappear {
             DisplayRouter.shared.updateLocalVisibleOutputs(showTV: true, showPad: false)
+            // Same reasoning as cemu_bridge_release_all_buttons() elsewhere in this
+            // view: a touch in progress when this view goes away must not leave the
+            // GamePad's touchscreen stuck "down" for a title that is still running
+            // (Both Screens/inset layouts keep the pad mounted through most
+            // navigation, but a full teardown - quitting the game - still needs this).
+            cemu_bridge_set_pad_touch(0, 0, false)
+        }
+    }
+
+    /// `value.location` is already local to `PadMetalViewIOS`'s own frame (SwiftUI
+    /// gesture coordinates are relative to the view the gesture is attached to, not
+    /// global) - scaled to the physical-pixel space the bridge expects, same as every
+    /// other size this surface is described in.
+    private func sendPadTouch(_ location: CGPoint, down: Bool) {
+        let scale = UIScreen.main.effectiveRenderScale
+        cemu_bridge_set_pad_touch(Double(location.x) * scale, Double(location.y) * scale, down)
+    }
+
+    /// Whether PadMetalViewIOS is currently the screen actually on top - mirrors
+    /// regionFrames()'s own padHidden logic without needing this view's size, since the
+    /// top bar (where this drives a button's visibility) has no GeometryReader of its
+    /// own to compute a real CGSize from.
+    private var isPadViewVisible: Bool {
+        switch screenLayout {
+        case .singleScreen: return localSwapped
+        case .bothScreens, .smallGamePadTopRight: return true
         }
     }
 
