@@ -30,5 +30,11 @@
 	<true/>
 	<key>dynamic-codesigning</key>
 	<true/>
+	<!-- Raises the memory iOS lets MuffinEMU use before terminating it, the same request
+	     MeloCafe's own app makes. It matters most on 6 GB devices like the A12Z iPad Pro,
+	     where the default limit sits close to what a retail title needs. Honoured when the
+	     signature carries it (the ad-hoc signed IPA always does). -->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
 </dict>
 </plist>

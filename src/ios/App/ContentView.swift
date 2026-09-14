@@ -1023,6 +1023,7 @@ struct EmulatorViewOptimized: View {
     /// Off by default - see the branch on this flag a few lines below for exactly what
     /// it swaps in and why the shipping path is otherwise untouched.
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
+    @AppStorage(MeloControlsSetting.storageKey) private var useMeloControls = MeloControlsSetting.defaultValue
     @ObservedObject private var previewPad = PreviewPadStore.shared
     // The two feel settings, offered here as well as in Settings for the same reason the
     // toggle is: a deadzone is not something you can judge from a settings screen with no
@@ -1193,7 +1194,7 @@ struct EmulatorViewOptimized: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                if previewPadEnabled {
+                if previewPadEnabled && !useMeloControls {
                     // Video and pad have to agree on the exact same rect for Native mode
                     // to mean anything - a mismatch between two independent resolves
                     // would put the picture in one place and the "never overlaps it"
@@ -1304,7 +1305,13 @@ struct EmulatorViewOptimized: View {
             // Preview mode draws its own pad inside the GeometryReader above, alongside
             // the video it shares a coordinate space with - so the shipping pad only
             // renders when that flag is off, which is also its default.
-            if !previewPadEnabled {
+            // Melo-Controller's pad, when chosen, takes the place of both of MuffinEMU's.
+            if useMeloControls {
+                MeloControlsOverlay(
+                    gameID: gameManager.currentGame?.id,
+                    isEditing: isEditingControlLayout
+                )
+            } else if !previewPadEnabled {
                 OptimizedControlPanel(
                     skin: controllerSkin,
                     onInput: { label, pressed in
