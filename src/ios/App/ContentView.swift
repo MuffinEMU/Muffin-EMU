@@ -1,6 +1,7 @@
 import SwiftUI
 import MetalKit
 import UniformTypeIdentifiers
+import Foundation
 
 struct ContentView: View {
     @StateObject var gameManager = GameManager()
@@ -135,6 +136,90 @@ struct BootFailureView: View {
     }
 }
 
+/// How the library grid orders games, offered next to the search field. Persisted via
+/// `sortOrderRaw` below rather than reset every launch - a choice someone made once
+/// shouldn't need remaking every time they open the app.
+enum LibrarySortOrder: String, CaseIterable, Hashable {
+    case title
+    case recentlyAdded
+    case favoritesFirst
+
+    var title: String {
+        switch self {
+        case .title: return "Title"
+        case .recentlyAdded: return "Recently added"
+        case .favoritesFirst: return "Favorites first"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .title: return "textformat"
+        case .recentlyAdded: return "clock"
+        case .favoritesFirst: return "heart"
+        }
+    }
+
+    /// Applies this order to an already-filtered list.
+    ///
+    /// `recentlyAdded` falls back to title order for two games whose dates couldn't be
+    /// read (addedDate nil, e.g. the attribute lookup failed) - there's nothing to
+    /// compare, and title order at least keeps those entries in a stable place instead
+    /// of an arbitrary one.
+    ///
+    /// `favoritesFirst` groups favorites first and sorts by title WITHIN each group -
+    /// not a stable no-op, since "grouped, but otherwise still alphabetical" is what
+    /// actually makes the option useful once there's more than a couple of favorites.
+    func sorted(_ games: [GameMetadata]) -> [GameMetadata] {
+        switch self {
+        case .title:
+            return games.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        case .recentlyAdded:
+            return games.sorted { lhs, rhs in
+                switch (lhs.addedDate, rhs.addedDate) {
+                case let (l?, r?): return l > r
+                case (nil, nil): return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                case (nil, _): return false
+                case (_, nil): return true
+                }
+            }
+        case .favoritesFirst:
+            return games.sorted { lhs, rhs in
+                if lhs.isFavorite != rhs.isFavorite { return lhs.isFavorite && !rhs.isFavorite }
+                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+            }
+        }
+    }
+}
+
+/// A small pinned banner for a background operation that's mid-flight - importing a
+/// ROM/DLC/update, or removing installed content. Not an alert: those are exactly the
+/// operations where blocking the whole screen would be the slowness this work exists
+/// to remove.
+struct LibraryActivityBanner: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .tint(MuffinTheme.brownDarkest)
+            Text(text)
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundColor(MuffinTheme.brownDarkest)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(MuffinTheme.cream)
+        .cornerRadius(14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(MuffinTheme.wrapper, lineWidth: 1)
+        )
+        .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+    }
+}
+
 struct GameBrowserView: View {
     @ObservedObject var gameManager: GameManager
     @Binding var selectedGame: GameMetadata?
@@ -171,7 +256,24 @@ struct GameBrowserView: View {
     private static let fileImportTypes: [UTType] = [.item]
     private static let folderImportTypes: [UTType] = [.folder]
 
+    /// Persisted so the chosen order survives a relaunch, same reasoning as favorites.
+    @AppStorage("muffin.library.sortOrder") private var sortOrderRaw = LibrarySortOrder.title.rawValue
+    private var sortOrder: LibrarySortOrder {
+        get { LibrarySortOrder(rawValue: sortOrderRaw) ?? .title }
+        set { sortOrderRaw = newValue.rawValue }
+    }
+
     @State private var romImportErrorMessage: String?
+    /// Answers GameManager.confirmOverwrite - see the .onAppear wiring below. A plain
+    /// closure captured from the continuation rather than storing the continuation
+    /// type directly, so the two alert buttons don't need to know anything about
+    /// CheckedContinuation.
+    @State private var pendingOverwriteConfirmation: (name: String, resume: (Bool) -> Void)?
+    /// Set while DlcUpdateImport.remove() is running in the background (see the
+    /// "Remove content?" alert below) - shown as a LibraryActivityBanner, same as
+    /// GameManager.importState, rather than blocking the screen for what is, on a
+    /// large installed DLC, a real recursive delete.
+    @State private var removingContentMessage: String?
 
     /// See DlcUpdateImport.swift for the actual copy/match/install logic this drives.
     @State private var dlcImportErrorMessage: String?
@@ -193,9 +295,10 @@ struct GameBrowserView: View {
 
     var filteredGames: [GameMetadata] {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
-        return searchText.isEmpty
+        let searched = searchText.isEmpty
             ? gamesToShow
             : gamesToShow.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+        return sortOrder.sorted(searched)
     }
 
     var body: some View {
@@ -230,6 +333,7 @@ struct GameBrowserView: View {
                             .frame(width: 44, height: 44)
                             .background(MuffinTheme.sparkleCream.opacity(0.15))
                             .cornerRadius(14)
+                            .accessibilityLabel("Settings")
 
                             Button(action: { showingFavorites.toggle() }) {
                                 Image(systemName: showingFavorites ? "heart.fill" : "heart")
@@ -239,6 +343,7 @@ struct GameBrowserView: View {
                             .frame(width: 44, height: 44)
                             .background(MuffinTheme.sparkleCream.opacity(0.15))
                             .cornerRadius(14)
+                            .accessibilityLabel(showingFavorites ? "Show all games" : "Show favorites only")
 
                             Menu {
                                 Button {
@@ -276,6 +381,7 @@ struct GameBrowserView: View {
                                     .background(MuffinTheme.sparkleCream.opacity(0.15))
                                     .cornerRadius(14)
                             }
+                            .accessibilityLabel("Import")
 
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text("\(filteredGames.count)")
@@ -291,15 +397,37 @@ struct GameBrowserView: View {
                 .padding(20)
 
                 VStack(spacing: 12) {
-                    SearchBarPolished(text: $searchText)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
+                    HStack(spacing: 10) {
+                        SearchBarPolished(text: $searchText)
+
+                        Menu {
+                            ForEach(LibrarySortOrder.allCases, id: \.self) { order in
+                                Button {
+                                    sortOrder = order
+                                } label: {
+                                    if sortOrder == order {
+                                        Label(order.title, systemImage: "checkmark")
+                                    } else {
+                                        Label(order.title, systemImage: order.systemImage)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "arrow.up.arrow.down.circle")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(MuffinTheme.brownMid)
+                                .frame(width: 44, height: 44)
+                        }
+                        .accessibilityLabel("Sort games")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
 
                     if gameManager.isLoading {
                         LoadingView()
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if filteredGames.isEmpty {
-                        EmptyGamesView()
+                        EmptyGamesView(onImportTapped: { beginImport(contentTypes: Self.fileImportTypes) })
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         ScrollView(showsIndicators: false) {
@@ -347,6 +475,32 @@ struct GameBrowserView: View {
                         .clipShape(RoundedCorner(radius: 28, corners: [.topLeft, .topRight]))
                         .ignoresSafeArea(edges: .bottom)
                 )
+                // Lets the whole library area - loading, empty, or the grid itself -
+                // accept a drag from Files (or another app's share tray) as an import,
+                // not just the toolbar's own picker. Same import path either way: a
+                // dropped file is validated and staged exactly like a picked one.
+                .onDrop(of: [UTType.item], isTargeted: nil, perform: handleDrop)
+                .overlay(alignment: .top) {
+                    if case .copying(let name) = gameManager.importState {
+                        LibraryActivityBanner(text: "Importing \(name)…")
+                            .padding(.top, 8)
+                    } else if let removingContentMessage {
+                        LibraryActivityBanner(text: removingContentMessage)
+                            .padding(.top, 8)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            // Answers "a game/dump named `name` already exists - replace it?" for
+            // GameManager.importROM. Set here rather than left nil so declining to
+            // wire this up was never an option - importROM treats a nil closure as an
+            // automatic "no," which is safe but would make every duplicate-name import
+            // silently do nothing instead of asking.
+            gameManager.confirmOverwrite = { name in
+                await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                    pendingOverwriteConfirmation = (name: name, resume: { continuation.resume(returning: $0) })
+                }
             }
         }
         .sheet(isPresented: $showingIconPicker) {
@@ -406,15 +560,44 @@ struct GameBrowserView: View {
         ) { pending in
             Button("Remove", role: .destructive) {
                 pendingRemoval = nil
-                do {
-                    try DlcUpdateImport.remove(kind: pending.kind, for: pending.game)
-                } catch {
-                    dlcImportErrorMessage = error.localizedDescription
+                removingContentMessage = "Removing \(pending.kind.displayName) for \"\(pending.game.title)\"…"
+                Task {
+                    // DlcUpdateImport.remove() is a recursive delete of whatever's
+                    // installed - on a real DLC pack that's real disk I/O, and running
+                    // it inline in this button's action closure blocked the main
+                    // thread (and the whole UI) for as long as it took. Task.detached
+                    // for the same reason as GameManager.importROM's own copy.
+                    do {
+                        try await Task.detached {
+                            try DlcUpdateImport.remove(kind: pending.kind, for: pending.game)
+                        }.value
+                    } catch {
+                        dlcImportErrorMessage = error.localizedDescription
+                    }
+                    removingContentMessage = nil
                 }
             }
             Button("Cancel", role: .cancel) { pendingRemoval = nil }
         } message: { pending in
             Text("Remove the \(pending.kind.displayName) installed for \"\(pending.game.title)\"? This can't be undone - you'll need to import it again.")
+        }
+        .alert(
+            "Replace existing file?",
+            isPresented: .constant(pendingOverwriteConfirmation != nil),
+            presenting: pendingOverwriteConfirmation
+        ) { pending in
+            Button("Replace", role: .destructive) {
+                let resume = pending.resume
+                pendingOverwriteConfirmation = nil
+                resume(true)
+            }
+            Button("Cancel", role: .cancel) {
+                let resume = pending.resume
+                pendingOverwriteConfirmation = nil
+                resume(false)
+            }
+        } message: { pending in
+            Text("\"\(pending.name)\" already exists in your library. Replacing it can't be undone.")
         }
     }
 
@@ -440,6 +623,25 @@ struct GameBrowserView: View {
         case .failure(let error):
             romImportErrorMessage = error.localizedDescription
         }
+    }
+
+    /// The .onDrop target for the whole library area - a drag from Files (or another
+    /// app's share tray) lands on the exact same handleImport() path as the toolbar's
+    /// own picker, so a dropped file is validated and staged identically either way.
+    /// Only the first provider is used: `.fileImporter`/DocumentImport don't allow
+    /// multiple selection either, and a game/dump import only ever means one thing at
+    /// a time.
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first(where: { $0.canLoadObject(ofClass: URL.self) }) else {
+            return false
+        }
+        _ = provider.loadObject(ofClass: URL.self) { url, _ in
+            guard let url else { return }
+            DispatchQueue.main.async {
+                handleImport(.success([url]))
+            }
+        }
+        return true
     }
 
     private func beginDlcUpdateImport(for game: GameMetadata, kind: DlcUpdateImport.ContentKind) {
@@ -596,7 +798,13 @@ struct GameCardOptimized: View {
                                 .frame(width: 32, height: 32)
                                 .background(MuffinTheme.brownDarkest.opacity(0.35))
                                 .cornerRadius(10)
+                                // The visible circle stays 32x32 - the tappable area
+                                // around it grows to the standard 44x44 minimum without
+                                // changing how the button looks.
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
+                        .accessibilityLabel(game.isFavorite ? "Remove from favorites" : "Add to favorites")
                         .padding(8)
                     }
                     Spacer()
@@ -605,15 +813,21 @@ struct GameCardOptimized: View {
             .aspectRatio(3 / 4, contentMode: .fit)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(game.title)
+                Text(game.displayTitle ?? game.title)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(2)
                     .foregroundColor(MuffinTheme.brownDarkest)
 
                 HStack(spacing: 8) {
-                    Label(game.region, systemImage: "globe")
-                        .font(.system(size: 11, weight: .regular, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownMid)
+                    // Was a hardcoded "Unknown" for every single game - hidden now
+                    // rather than shown as a placeholder once the region is a real,
+                    // derived value (see GameManager.enrichMissingCoverArt) that can
+                    // honestly be absent.
+                    if let region = game.region {
+                        Label(region, systemImage: "globe")
+                            .font(.system(size: 11, weight: .regular, design: .rounded))
+                            .foregroundColor(MuffinTheme.brownMid)
+                    }
                     Spacer()
                 }
 
@@ -660,7 +874,12 @@ struct SearchBarPolished: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(MuffinTheme.brownMid)
+                        // Visible glyph stays the same size; the tappable area grows
+                        // to the standard 44x44 minimum around it.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
+                .accessibilityLabel("Clear search")
             }
         }
         .frame(height: 44)
@@ -698,6 +917,8 @@ struct LoadingView: View {
 }
 
 struct EmptyGamesView: View {
+    let onImportTapped: () -> Void
+
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "doc.questionmark")
@@ -719,6 +940,21 @@ struct EmptyGamesView: View {
                         .foregroundColor(MuffinTheme.brownMid)
                 }
             }
+
+            // Same import flow as the toolbar's menu (GameBrowserView.beginImport) -
+            // an empty library used to have no way to start an import except that
+            // small menu button up top, which is easy to miss on a screen whose whole
+            // point is "there's nothing here yet."
+            Button(action: onImportTapped) {
+                HStack(spacing: 6) {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Import a Game")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                }
+            }
+            .buttonStyle(MuffinPrimaryButtonStyle())
+            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -813,6 +1049,12 @@ struct EmulatorViewOptimized: View {
     /// A way out. The intro is theatre and theatre gets old on the fiftieth launch, so
     /// it is a setting rather than a fact of the app.
     @AppStorage("muffin.showLaunchIntro") private var launchIntroEnabled = true
+    /// Guards the top-bar Back button while a title is actually running or paused -
+    /// tapping it used to stop the game outright with no confirmation, which is one
+    /// stray tap away from losing whatever progress the title itself hasn't saved.
+    /// Not shown for .loading (nothing to lose yet) or .error (BootFailureView's own
+    /// "Back to games" already IS the confirmation - there's no session underneath it).
+    @State private var showingBackConfirmation = false
 
     var body: some View {
         ZStack {
@@ -821,8 +1063,12 @@ struct EmulatorViewOptimized: View {
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 12) {
                     Button(action: {
-                        gameManager.stopEmulation()
-                        isRunning = true
+                        if gameManager.emulationState == .loading {
+                            gameManager.stopEmulation()
+                            isRunning = true
+                        } else {
+                            showingBackConfirmation = true
+                        }
                     }) {
                         HStack(spacing: 6) {
                             Image(systemName: "chevron.left")
@@ -832,6 +1078,19 @@ struct EmulatorViewOptimized: View {
                         }
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
+                    .confirmationDialog(
+                        "Quit \(game.title)?",
+                        isPresented: $showingBackConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Quit", role: .destructive) {
+                            gameManager.stopEmulation()
+                            isRunning = true
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Any progress the game itself hasn't saved will be lost.")
+                    }
 
                     VStack(alignment: .center, spacing: 2) {
                         Text(game.title)
@@ -1342,6 +1601,30 @@ struct EmulatorViewOptimized: View {
                 cemu_bridge_pause()
             }
         }
+        // Keeps the home indicator (and the system's own edge-swipe gestures) from
+        // popping up mid-game - a stray swipe near the bottom edge no longer competes
+        // with on-screen controls sitting right where it appears.
+        .hidingSystemOverlaysDuringPlay()
+    }
+}
+
+/// `.persistentSystemOverlays` is iOS 16+; this makes calling it from a 15-deployment-
+/// target file a real no-op on 15 rather than an availability error. The pad's own
+/// hit-testing is the only defense against an edge swipe on iOS 15 - there is no
+/// system API here to fall back to.
+private struct HideSystemOverlaysIfAvailable: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 16.0, *) {
+            content.persistentSystemOverlays(.hidden)
+        } else {
+            content
+        }
+    }
+}
+
+private extension View {
+    func hidingSystemOverlaysDuringPlay() -> some View {
+        modifier(HideSystemOverlaysIfAvailable())
     }
 }
 

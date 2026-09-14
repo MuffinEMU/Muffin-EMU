@@ -118,6 +118,9 @@ enum DlcUpdateImport {
         guard source.startAccessingSecurityScopedResource() else {
             throw ImportError.accessDenied
         }
+        // The claim stays live for as long as `import` hasn't returned, which includes
+        // the whole `await` on the detached task below - `defer` runs at function
+        // exit, not when execution merely suspends.
         defer { source.stopAccessingSecurityScopedResource() }
 
         guard let mlcRoot = mlcRoot() else { throw ImportError.accessDenied }
@@ -135,6 +138,31 @@ enum DlcUpdateImport {
             throw ImportError.wuaNotYetSupported
         }
 
+        // Everything past this point is real I/O against a directory that can be
+        // several GB - copyItem, cemu_bridge_inspect_title opening and parsing the
+        // title, the final move. This used to run inline on whatever called `import`,
+        // which in practice was a plain `Task { }` in ContentView - Task.detached is
+        // what actually guarantees a background thread here, rather than trusting that
+        // caller's task to not have inherited the main actor.
+        return try await Task.detached {
+            try copyInspectAndInstall(
+                source: source, kind: kind, library: library, manualMatch: manualMatch, mlcRoot: mlcRoot
+            )
+        }.value
+    }
+
+    /// The actual work of `import(from:kind:library:manualMatch:)` above, split out so
+    /// it can run inside that function's Task.detached. DlcUpdateImport has no `self` -
+    /// it's an enum namespace, not a type with instance state - so nothing here needed
+    /// to change to become safe to run off the main thread; only the call site did.
+    private static func copyInspectAndInstall(
+        source: URL,
+        kind: ContentKind,
+        library: [GameMetadata],
+        manualMatch: GameMetadata?,
+        mlcRoot: URL
+    ) throws -> ImportedContent {
+        let fileManager = FileManager.default
         let stagingRoot = mlcRoot.appendingPathComponent(stagingDirectoryName)
         try? fileManager.createDirectory(at: stagingRoot, withIntermediateDirectories: true)
         let staged = stagingRoot.appendingPathComponent(source.lastPathComponent)
