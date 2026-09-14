@@ -122,6 +122,12 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 		// the title list was last populated. Without it PrepareForegroundTitle below builds
 		// its GameInfo2 from the base game alone and boots unpatched.
 		IOSTitleLaunch_RescanInstalledContent();
+		// The rescan drops every title it did not rediscover under the game paths or the MLC,
+		// and a title launched from Documents/Roms is under neither, so the entry added above
+		// is gone by now. Without adding it back, PrepareForegroundTitle finds no base title
+		// and fails with "Game meta information is either missing...". Re-adding is
+		// synchronous and deduplicated by location.
+		CafeTitleList::AddTitleFromPath(launchPath);
 		cemuLog_log(LogType::Force, "iOS: launching real title {:016x} from {}", (uint64)baseTitleId, _pathToUtf8(launchPath));
 		CafeSystem::PREPARE_STATUS_CODE r = CafeSystem::PrepareForegroundTitle(baseTitleId);
 		switch (r)
