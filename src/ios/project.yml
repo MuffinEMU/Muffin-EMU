@@ -1,108 +1,51 @@
 name: Cemu-iOS
 
 options:
-  bundleIdPrefix: com.cemu
+  bundleIdPrefix: com.kiddreads
   deploymentTarget:
     iOS: '15.0'
   xcodeVersion: '15.0'
 
 settings:
   PRODUCT_NAME: Cemu
+  # Its own identifier, so MuffinEMU installs next to Muffin instead of over it: a
+  # different identifier is a different app container, and Muffin's library, keys and
+  # saves stay exactly where they are.
+  PRODUCT_BUNDLE_IDENTIFIER: com.kiddreads.MuffinEMU
   SDKROOT: iphoneos
   IPHONEOS_DEPLOYMENT_TARGET: '15.0'
   CODE_SIGN_IDENTITY: iPhone Developer
-  # See Cemu.entitlements for the full reasoning - an attempt at whatever's needed for
-  # MAP_JIT beyond CS_DEBUGGED alone, not a confirmed fix. Nothing declared entitlements
-  # at all before this.
+  # See Cemu.entitlements. Only the ad-hoc signed IPA actually carries these.
   CODE_SIGN_ENTITLEMENTS: Cemu.entitlements
-  # Neither "c++2a" nor "gnu++20" via CLANG_CXX_LANGUAGE_DIALECT actually took effect
-  # (confirmed from the real compiler invocation in CI: still -std=gnu++14 both times).
-  # Force it directly as a raw flag instead - this always wins over whatever the
-  # dialect setting resolves to. precompiled.h uses std::filesystem (C++17) and
-  # enumFlags.h uses a requires-clause (C++20); gnu++20 matches the CMake build.
-  CLANG_CXX_LANGUAGE_DIALECT: gnu++20
-  OTHER_CPLUSPLUSFLAGS: '-std=gnu++20 $(inherited)'
-  GCC_C_LANGUAGE_DIALECT: c99
-  # Swift <-> C++ engine bridge (src/ios/Bridge/CemuBridge.{h,mm})
   SWIFT_OBJC_BRIDGING_HEADER: Bridge/Cemu-Bridging-Header.h
   CLANG_ENABLE_MODULES: 'YES'
-  # CemuBridge.mm includes real Cemu headers (Cafe/CafeSystem.h -> ... -> rpl.h) that
-  # assume Cemu's core type aliases (uint32/sint32/MPTR/...) are already visible via
-  # precompiled.h — exactly the iosgui bug from ROADMAP.md M2 (see
-  # src/gui/iosgui/CMakeLists.txt's cemu_use_precompiled_header comment), just hit via
-  # Xcode's own build instead of CMake. Swift files ignore these settings; only
-  # Bridge/CemuBridge.mm is affected.
-  GCC_PREFIX_HEADER: '$(SRCROOT)/../Common/precompiled.h'
-  GCC_PRECOMPILE_PREFIX_HEADER: 'YES'
-  # M1 (ROADMAP.md) is done: the real Cemu core builds via CMake as static libs
-  # (libCemuCafe.a, libiosgui.a, ...) scattered across build-ios/ (src/Cafe,
-  # src/gui/iosgui, vcpkg_installed/.../lib, dependencies/ih264d, ...). Rather than
-  # recompile ~500 C++/Cafe files a second time inside Xcode's own build system
-  # (which has no story for providing boost/fmt/curl/etc. — that's what vcpkg solved
-  # for the CMake build), this app target LINKS against those already-built
-  # libraries. ci/generate-link-flags.sh (run by the preBuildScript below) finds
-  # every .a under build-ios/ and lists them by FULL PATH in a linker response file —
-  # not -l<name> + LIBRARY_SEARCH_PATHS, since new libs kept turning up in
-  # subdirectories not already hand-listed there, each one a fresh "library not
-  # found" link failure even though the file existed.
-  # CEMU_PLATFORM_IOS was missing here entirely - CemuBridge.mm was silently taking
-  # precompiled.h's #elif BOOST_OS_MACOS branch instead of the #if CEMU_PLATFORM_IOS
-  # one (boost.predef doesn't distinguish iOS from macOS without this define forcing
-  # it, per Common/platform.h's own comment on the same issue). Root cause of the
-  # OSSwapInt32/64 "undeclared identifier" errors, and would have silently affected
-  # every other CEMU_PLATFORM_IOS-gated branch in the bridge file too.
-  # ENABLE_METAL was also missing entirely. Without it, every #if ENABLE_METAL guard
-  # in the Cafe source (the Metal renderer selection paths in LatteShaderCache.cpp,
-  # etc.) evaluates false, so RendererShaderMtl.h/MetalPipelineCache.h never even get
-  # included - matches the CMake build's own -DENABLE_METAL=1 (see top-level
-  # CMakeLists.txt: `if (ENABLE_METAL) add_definitions(-DENABLE_METAL=1)`).
-  # HAS_COREAUDIO must match the CMake side (top-level CMakeLists.txt sets it for
-  # PLATFORM_IOS). Xcode compiles src/ios/Bridge/CemuBridge.mm itself rather than
-  # through CMake, so without it here the audio bring-up block in that file would
-  # preprocess away to nothing and iOS would stay silent with no error anywhere.
-  GCC_PREPROCESSOR_DEFINITIONS: 'CEMU_CORE_AVAILABLE=1 CEMU_PLATFORM_IOS=1 ENABLE_METAL=1 HAS_COREAUDIO=1'
+  # The whole engine - MeloCafe's Cemu core with CemuBridge.mm and its glue compiled into
+  # it - arrives as one framework, built by CMake before this project is generated (see
+  # .github/workflows/build-ios-app.yml). This target compiles Swift and nothing else, so
+  # it needs no engine headers, no prefix header and no list of static libraries: the
+  # bridging header is plain C and lives in Bridge/.
   HEADER_SEARCH_PATHS:
-    - '$(SRCROOT)/..'
-    # src/Cafe itself, not just src/. The CMake build has always had both (see
-    # src/Cafe/CMakeLists.txt's target_include_directories), and 17 headers under
-    # src/Cafe are written against the shorter root - e.g. LatteTextureMtl.h says
-    # #include "HW/Latte/ISA/LatteReg.h", not "Cafe/HW/...". That never mattered while
-    # those headers were only ever compiled into libCemuCafe.a by CMake; it broke the
-    # moment CemuBridge.mm - compiled by Xcode, not CMake - first included one of them
-    # directly, which it now does to read the Metal cache counters for the memory log.
-    # Adding the root here rather than rewriting 17 files' includes: the includes are
-    # consistent with how the engine builds, it is the app target that was missing half
-    # of the engine's own include environment.
-    - '$(SRCROOT)/../Cafe'
-    - '$(SRCROOT)/../Common/glm_stub'
-    - '$(SRCROOT)/../../build-ios/vcpkg_installed/arm64-ios/include'
-    - '$(SRCROOT)/../../dependencies/metal-cpp'
-  OTHER_LDFLAGS: '@$(SRCROOT)/link-flags.txt $(inherited)'
-  # No physical Info.plist exists in this tree and none was ever configured, so the
-  # final app-bundling step failed: "Build input file cannot be found: .../Info.plist".
-  # GENERATE_INFOPLIST_FILE has modern Xcode synthesize one from build settings.
+    - '$(SRCROOT)/Bridge'
+  FRAMEWORK_SEARCH_PATHS:
+    - '$(SRCROOT)/../../build-ios/out'
+  LD_RUNPATH_SEARCH_PATHS: '$(inherited) @executable_path/Frameworks'
   GENERATE_INFOPLIST_FILE: 'YES'
-  # CFBundleIcons/CFBundleAlternateIcons is a nested dictionary - too complex for the
-  # flat INFOPLIST_KEY_<name> scheme GENERATE_INFOPLIST_FILE otherwise handles. Xcode
-  # supports merging a small hand-written partial Info.plist alongside the generated
-  # one via INFOPLIST_FILE for exactly this case, without disturbing any of the
-  # INFOPLIST_KEY_* settings already verified working in the M2 milestone build.
+  # CFBundleIcons/CFBundleAlternateIcons and the file-sharing keys are nested or were
+  # dropped by the generated plist, so they live in this partial plist and are merged in.
   INFOPLIST_FILE: 'Info-AlternateIcons.plist'
   ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: 'AltIcon-dark AltIcon-happy AltIcon-retro AltIcon-mint-matcha AltIcon-blueberry-blast AltIcon-strawberry AltIcon-double-chocolate AltIcon-lemon-zest AltIcon-neon-cyber AltIcon-pumpkin-spice AltIcon-holiday-frost AltIcon-spooky-halloween AltIcon-rainbow-pride AltIcon-summer-beach AltIcon-galaxy-space AltIcon-progress-pride AltIcon-transgender-pride AltIcon-equality AltIcon-fix-the-world AltIcon-autism-awareness AltIcon-adhd-awareness AltIcon-audhd-awareness AltIcon-disability-pride AltIcon-mental-health-pride AltIcon-lesbian-pride AltIcon-bisexual-pride AltIcon-nonbinary-pride AltIcon-pro-gold-vip AltIcon-pro-holographic AltIcon-pro-diamond-ice'
-  MARKETING_VERSION: '0.1.0'
+  MARKETING_VERSION: '1.0'
   CURRENT_PROJECT_VERSION: '1'
+  INFOPLIST_KEY_CFBundleDisplayName: MuffinEMU
   INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
   INFOPLIST_KEY_UIApplicationSceneManifest_Generation: 'YES'
   INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
-  # GameManager.swift scans Documents/Roms/ for .rpx/.wud/... - without these two
-  # keys that folder is sandboxed and invisible to Finder/Files, so there'd be no
-  # way to actually get a test RPX onto the device once the app is sideloaded.
-  # NOT declared here as INFOPLIST_KEY_* - confirmed on a real built IPA that
-  # xcodebuild's GENERATE_INFOPLIST_FILE+INFOPLIST_FILE merge silently drops
-  # UIFileSharingEnabled while keeping LSSupportsOpeningDocumentsInPlace, even
-  # though both land identically in the generated pbxproj. Both keys are written
-  # literally into Info-AlternateIcons.plist instead - see the comment there.
+  INFOPLIST_KEY_GCSupportsControllerUserInteraction: 'YES'
+  INFOPLIST_KEY_UIStatusBarHidden: 'YES'
+  # MeloCafe's core opens the microphone when a title asks for GamePad microphone input.
+  # Without a usage string iOS terminates the app at that moment instead of asking.
+  INFOPLIST_KEY_NSMicrophoneUsageDescription: 'MuffinEMU uses the microphone only when a Wii U game asks for GamePad microphone input.'
 
 targets:
   Cemu:
@@ -119,32 +62,27 @@ targets:
         type: group
       - path: Bridge
         type: group
+        # Headers only. The .mm and .cpp files are compiled into Cemu.framework by CMake;
+        # compiling them here too would need the whole engine include environment again.
+        excludes:
+          - '*.mm'
+          - '*.cpp'
+          - 'Core/**'
       - path: Resources
         type: group
 
-    preBuildScripts:
-      - name: Generate Version
-        script: |
-          echo "Generating version info..."
-      - name: Generate linker response file for CMake-built libs
-        script: |
-          "$SRCROOT/../../ci/generate-link-flags.sh" "$SRCROOT/link-flags.txt"
+    dependencies:
+      - framework: ../../build-ios/out/Cemu.framework
+        embed: true
+      # The Vulkan backend's MoltenVK. Embedded so the core can load it at runtime.
+      - framework: ../../dependencies/MoltenVK.xcframework
+        embed: true
 
-    # Cemu's own data files (bin/resources/sharedFonts, bin/gameProfiles) live
-    # outside src/ios, so the `sources:` list above never carried them into the
-    # bundle - STATUS.md's "None of Cemu's own data files ship in the app". A copy
-    # step rather than a folder reference under `sources:`, because the paths the
-    # engine looks them up at (ActiveSettings::GetDataPath("resources/sharedFonts/...")
-    # and ("gameProfiles/default/...")) do not match the on-disk layout, and because
-    # a folder reference on bin/resources would also drag in ~1.1 MB of wxWidgets
-    # translation catalogs that nothing in the iOS target can read.
-    #
-    # postBuildScripts, not preBuildScripts: the app bundle it writes into does not
-    # exist yet when a pre-build script runs.
+    # Cemu's own data files (bin/resources/sharedFonts, bin/gameProfiles), copied into
+    # Cemu.app/CemuData - the data path cemu_bridge_initialize() hands the core. A copy
+    # step after the build, because the bundle does not exist before it.
     postBuildScripts:
       - name: Copy Cemu data files (shared fonts, game profiles) into the bundle
-        # No inputFiles/outputFiles to derive from, and correctness matters more
-        # here than skipping a ~26 MB incremental rsync, so run it every build.
         basedOnDependencyAnalysis: false
         script: |
           "$SRCROOT/../../ci/copy-bundle-data.sh"

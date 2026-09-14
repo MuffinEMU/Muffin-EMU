@@ -5,6 +5,7 @@
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteDraw.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
+#include "Cafe/HW/Latte/Core/LatteCachedFBO.h"
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.h"
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompilerInternal.h"
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompilerInstructions.h"
@@ -32,6 +33,23 @@ void LatteDecompiler_emitAttributeDecodeGLSL(LatteDecompilerShader* shaderContex
 void _emitTypeConversionPrefix(LatteDecompilerShaderContext* shaderContext, sint32 sourceType, sint32 destinationType);
 void _emitTypeConversionSuffix(LatteDecompilerShaderContext* shaderContext, sint32 sourceType, sint32 destinationType);
 void LatteDecompiler_emitClauseCode(LatteDecompilerShaderContext* shaderContext, LatteDecompilerCFInstruction* cfInstruction, bool isSubroutine);
+
+enum class GLSLPixelOutputType
+{
+	Float,
+	SignedInt,
+	UnsignedInt,
+};
+
+static GLSLPixelOutputType GetGLSLPixelOutputType(uint32 index, const LatteContextRegister& lcr)
+{
+	const uint32 format = (uint32)LatteMRT::GetColorBufferFormat(index, lcr);
+	if ((format & (uint32)Latte::E_GX2SURFFMT::FMT_BIT_INT) == 0)
+		return GLSLPixelOutputType::Float;
+	if ((format & (uint32)Latte::E_GX2SURFFMT::FMT_BIT_SIGNED) != 0)
+		return GLSLPixelOutputType::SignedInt;
+	return GLSLPixelOutputType::UnsignedInt;
+}
 
 const char* _getShaderUniformBlockInterfaceName(LatteConst::ShaderType mode)
 {
@@ -3315,10 +3333,21 @@ void _emitExportCode(LatteDecompilerShaderContext* shaderContext, LatteDecompile
 					src->add(" uf_alphaTestRef");
 					src->add(") == false) discard;" _CRLF);
 				}
-				// pixel color output
+				const auto outputType = GetGLSLPixelOutputType(pixelColorOutputIndex, *shaderContext->contextRegistersNew);
+				if (outputType != GLSLPixelOutputType::Float)
+				{
+					src->add("#ifdef VULKAN" _CRLF);
+					src->addFmt("passPixelColor{} = {}(", pixelColorOutputIndex,
+						outputType == GLSLPixelOutputType::SignedInt ? "floatBitsToInt" : "floatBitsToUint");
+					_emitExportGPRReadCode(shaderContext, cfInstruction, LATTE_DECOMPILER_DTYPE_FLOAT, i);
+					src->add(");" _CRLF);
+					src->add("#else" _CRLF);
+				}
 				src->addFmt("passPixelColor{} = ", pixelColorOutputIndex);
 				_emitExportGPRReadCode(shaderContext, cfInstruction, LATTE_DECOMPILER_DTYPE_FLOAT, i);
 				src->add(";" _CRLF);
+				if (outputType != GLSLPixelOutputType::Float)
+					src->add("#endif" _CRLF);
 
 				if( cfInstruction->exportArrayBase+i >= 8 )
 					cemu_assert_unimplemented();
@@ -3965,12 +3994,6 @@ void LatteDecompiler_emitGLSLShader(LatteDecompilerShaderContext* shaderContext,
 	// start of main
 	src->add("void main()" _CRLF);
 	src->add("{" _CRLF);
-
-	if (shaderContext->options->usesGeometryShader == false && shaderContext->shaderType == LatteConst::ShaderType::Vertex)
-	{
-		src->add("dummyPassParamInit();" _CRLF);
-	}
-
 	// variable definition
 	if (shaderContext->typeTracker.useArrayGPRs == false)
 	{

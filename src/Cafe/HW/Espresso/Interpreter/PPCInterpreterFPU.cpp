@@ -8,17 +8,6 @@
 
 #include <limits>
 #include <array>
-#include <cstring>
-#include <bit>
-
-// NOTE ON NEON IN THIS FILE: unlike PPCInterpreterPS.cpp there is nothing here to
-// vectorise. Every instruction below is a *scalar* double operation on a single FPR, so
-// there is no second lane to pair with - fadd/fmul/fdiv/fmadd are already one ARM64
-// instruction each and the `if (PPC_PSE) fp1 = fp0;` paired-single splat that follows the
-// single-precision ops already compiles to `dup.2d v0, v0[0]` plus one 16-byte `str q`
-// (verified at -O3 on arm64 for FADDS and FMADDS). The real cost in this file is the
-// compare path; fcmpu_espresso below is fixed, fcmpo is deliberately not - see the note
-// above PPCInterpreter_FCMPO for the measurement that rejected the same change there.
 
 const int ieee_double_e_bits = 11; // exponent bits
 const int ieee_double_m_bits = 52; // mantissa bits
@@ -175,86 +164,32 @@ ATTR_MS_ABI double fres_espresso(double input)
 	return *(double*)&x;
 }
 
-// A CR field is four consecutive bytes of hCPU->cr (that array stores one whole byte per CR
-// bit). Every compare below clears the field and then sets exactly one bit, so the field
-// only ever takes one of four values and each of those is a compile-time constant. Writing
-// it as one 32-bit store instead of four byte-stores is worth doing because crfD is a
-// runtime value, so the compiler cannot prove the field is 4-byte aligned and will not
-// merge the byte stores itself.
-//
-// The word is built with std::bit_cast from a byte array indexed by the CR_BIT_* constants
-// rather than by shifting bytes into a word, so it carries no little-endian assumption: on
-// any host, byte i of the array lands at cr[crfD+i], which is exactly where the four
-// separate byte-stores used to put it.
-static constexpr uint32 ppc_makeCRField(int setBit)
-{
-	std::array<uint8, 4> b{ 0, 0, 0, 0 };
-	b[setBit] = 1;
-	return std::bit_cast<uint32>(b);
-}
-static constexpr uint32 kCRField_LT = ppc_makeCRField(CR_BIT_LT);
-static constexpr uint32 kCRField_GT = ppc_makeCRField(CR_BIT_GT);
-static constexpr uint32 kCRField_EQ = ppc_makeCRField(CR_BIT_EQ);
-static constexpr uint32 kCRField_SO = ppc_makeCRField(CR_BIT_SO);
-
-// Shared body of fcmpu / ps_cmpu0 / ps_cmpu1, so it runs on every floating point compare the
-// guest makes. 65 -> 55 instructions at -O3 with branches 10 -> 7, and 6 byte-stores to
-// hCPU->cr replaced by one 32-bit store. FCMPU, which inlines this, went 69 -> 58 and became
-// entirely branchless. The cost removed was all structural rather than arithmetic, and none
-// of it changes a result:
-//
-//  1. Four zeroing byte-stores into hCPU->cr, each with its own address computation, then a
-//     fifth byte-store of the one bit actually set. crfD is a runtime value here, so the
-//     compiler could not prove 4-byte alignment and would not merge them. Replaced by one
-//     store of a precomputed constant word (see ppc_makeCRField above).
-//  2. IS_NAN() and IS_SNAN() are each a 64-bit exponent mask/compare plus a mantissa test,
-//     and asking them in separate branch regions defeats CSE. Classify once up front.
-//  3. Two read-modify-write cycles on hCPU->fpscr became one. This is value-identical
-//     because FPSCR_VXSNAN is bit 24 and survives the `& 0xffff0fff` that clears FPRF, so
-//     OR-ing it before or after that mask produces the same word.
-//
-// Checked against the previous implementation over every pairing of 20 edge-case operands
-// (+/-0, +/-1, +/-inf, QNaN, SNaN with and without payload, smallest/largest denormals,
-// smallest/largest normals) x all 8 CR fields x 6 starting FPSCR values including all-ones
-// and VE-set: 19200 cases, identical cr[] and fpscr in every one.
 void fcmpu_espresso(PPCInterpreter_t* hCPU, int crfD, double a, double b)
 {
 	uint32 c;
 
-	const uint64 ia = *(uint64*)&a;
-	const uint64 ib = *(uint64*)&b;
-	const bool anyNaN = IS_NAN(ia) || IS_NAN(ib);
-	const bool anySNaN = IS_SNAN(ia) || IS_SNAN(ib);
-
-	uint32 crField;
-
-	if (anyNaN)
+	if (IS_NAN(*(uint64*)&a) || IS_NAN(*(uint64*)&b))
 	{
 		c = 1;
-		crField = kCRField_SO;
 	}
 	else if (a < b)
 	{
 		c = 8;
-		crField = kCRField_LT;
 	}
 	else if (a > b)
 	{
 		c = 4;
-		crField = kCRField_GT;
 	}
 	else
 	{
 		c = 2;
-		crField = kCRField_EQ;
 	}
+	ppc_setCRField(hCPU, crfD / 4, c);
 
-	memcpy(&hCPU->cr[crfD], &crField, sizeof(crField));
+	if (IS_SNAN(*(uint64*)&a) || IS_SNAN(*(uint64*)&b))
+		hCPU->fpscr |= FPSCR_VXSNAN;
 
-	uint32 fpscr = hCPU->fpscr;
-	if (anySNaN)
-		fpscr |= FPSCR_VXSNAN;
-	hCPU->fpscr = (fpscr & 0xffff0fff) | (c << 12);
+	hCPU->fpscr = (hCPU->fpscr & 0xffff0fff) | (c << 12);
 }
 
 void PPCInterpreter_FMR(PPCInterpreter_t* hCPU, uint32 Opcode)
@@ -293,17 +228,7 @@ void PPCInterpreter_FCTIWZ(PPCInterpreter_t* hCPU, uint32 Opcode)
 
 	double b = hCPU->fpr[frB].fpr;
 	uint64 v;
-	if (IS_NAN(*(uint64*)&b))
-	{
-		// Power ISA: NaN operand -> FRT = 0x8000_0000 (same sentinel as negative overflow).
-		// Must be an explicit check, not left to fall through to the plain (sint32)b cast below:
-		// double->int32 conversion of NaN is UB in C++ and platform-dependent in practice -
-		// x86 cvttsd2si happens to yield 0x80000000 for NaN (matching the spec by accident),
-		// but AArch64 FCVTZS is defined to yield 0 for NaN. Since this is an ARM64 target,
-		// omitting this check silently produced the wrong result (0 instead of 0x80000000).
-		v = (uint64)0x80000000;
-	}
-	else if (b > (double)0x7FFFFFFF)
+	if (b > (double)0x7FFFFFFF)
 	{
 		v = (uint64)0x7FFFFFFF;
 	}
@@ -333,13 +258,7 @@ void PPCInterpreter_FCTIW(PPCInterpreter_t* hCPU, uint32 Opcode)
 
 	double b = hCPU->fpr[frB].fpr;
 	uint64 v;
-	if (IS_NAN(*(uint64*)&b))
-	{
-		// see PPCInterpreter_FCTIWZ - same NaN -> 0x8000_0000 rule, same ARM64 UB pitfall
-		// (here it would otherwise fall into the (sint32)t cast below via b+0.5 == NaN)
-		v = (uint64)0x80000000;
-	}
-	else if (b > (double)0x7FFFFFFF)
+	if (b > (double)0x7FFFFFFF)
 	{
 		v = (uint64)0x7FFFFFFF;
 	}
@@ -716,16 +635,6 @@ void PPCInterpreter_FNMSUBS(PPCInterpreter_t* hCPU, uint32 Opcode)
 
 // Compare
 
-// MEASURED AND REJECTED: fcmpo has exactly the redundancy that fcmpu_espresso above had -
-// IS_NAN/IS_SNAN asked twice, the CR field written a byte at a time, FPSCR read-modified-
-// written up to three times - and the identical rewrite was tried here. It made fcmpo WORSE:
-// 78 -> 101 instructions, branches 10 -> 9. The difference from fcmpu_espresso is fcmpo's
-// nested VXVC/VE logic: once anyNaN/anySNaN exist as values rather than as branch
-// conditions, clang flattens that nest into a csel forest and duplicates the FPSCR tail,
-// which costs more than the byte-stores it saves. Left in its original branchy form on
-// purpose; re-measure before changing it. (See PPCInterpreter_PS_CMPO0 in
-// PPCInterpreterPS.cpp, which is the paired-single twin of this function and was rejected
-// for the same reason.)
 void PPCInterpreter_FCMPO(PPCInterpreter_t* hCPU, uint32 Opcode)
 {
 	FPUCheckAvailable();
@@ -733,56 +642,32 @@ void PPCInterpreter_FCMPO(PPCInterpreter_t* hCPU, uint32 Opcode)
 	int crfD, frA, frB;
 	PPC_OPC_TEMPL_X(Opcode, crfD, frA, frB);
 	crfD >>= 2;
-	hCPU->cr[crfD*4+0] = 0;
-	hCPU->cr[crfD*4+1] = 0;
-	hCPU->cr[crfD*4+2] = 0;
-	hCPU->cr[crfD*4+3] = 0;
 
 	uint32 c;
 	if(IS_NAN(hCPU->fpr[frA].guint) || IS_NAN(hCPU->fpr[frB].guint))
 	{
 		c = 1;
-		hCPU->cr[crfD*4+CR_BIT_SO] = 1;
 	}
     else if(hCPU->fpr[frA].fpr < hCPU->fpr[frB].fpr)
 	{
 		c = 8;
-		hCPU->cr[crfD*4+CR_BIT_LT] = 1;
 	}
 	else if(hCPU->fpr[frA].fpr > hCPU->fpr[frB].fpr)
 	{
 		c = 4;
-		hCPU->cr[crfD*4+CR_BIT_GT] = 1;
 	}
 	else
 	{
 		c = 2;
-		hCPU->cr[crfD*4+CR_BIT_EQ] = 1;
 	}
+	ppc_setCRField(hCPU, crfD, c);
 
     hCPU->fpscr = (hCPU->fpscr & 0xffff0fff) | (c << 12);
 
-	// fcmpo is an *ordered* compare: any NaN operand is an invalid-operation condition.
-	// Previous logic set VXVC whenever VE==0 regardless of whether a NaN was even involved
-	// (the `!(fpscr & FPSCR_VE)` term was OR'd in as a standalone condition of the non-SNaN
-	// else-branch, not gated on NaN presence) - so VXVC was being raised on ordinary,
-	// non-NaN comparisons any time VE was disabled, which is the default/typical state.
-	// Correct rule (Power ISA): VXVC is set only when a NaN is present, and then only if
-	// it's a QNaN, or it's an SNaN with VE==0 (VXSNAN is always set for an SNaN regardless).
-	if (IS_NAN(hCPU->fpr[frA].guint) || IS_NAN(hCPU->fpr[frB].guint))
-	{
-		if (IS_SNAN(hCPU->fpr[frA].guint) || IS_SNAN(hCPU->fpr[frB].guint))
-		{
-			hCPU->fpscr |= FPSCR_VXSNAN;
-			if (!(hCPU->fpscr & FPSCR_VE))
-				hCPU->fpscr |= FPSCR_VXVC;
-		}
-		else
-		{
-			// QNaN present, no SNaN
-			hCPU->fpscr |= FPSCR_VXVC;
-		}
-	}
+	if (IS_SNAN (hCPU->fpr[frA].guint) || IS_SNAN (hCPU->fpr[frB].guint))
+		hCPU->fpscr |= FPSCR_VXSNAN;
+	else if (!(hCPU->fpscr & FPSCR_VE) || IS_QNAN (hCPU->fpr[frA].guint) || IS_QNAN (hCPU->fpr[frB].guint))
+		hCPU->fpscr |= FPSCR_VXVC;
 
 	PPCInterpreter_nextInstruction(hCPU);
 }

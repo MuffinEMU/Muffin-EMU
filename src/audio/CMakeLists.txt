@@ -3,6 +3,7 @@ add_library(CemuAudio
 	IAudioAPI.h
 	IAudioInputAPI.cpp
 	IAudioInputAPI.h
+	AudioRingBuffer.h
 )
 
 set_property(TARGET CemuAudio PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -30,19 +31,17 @@ if(ENABLE_CUBEB)
 	#add_compile_definitions(HAS_CUBEB)
 endif()
 
-if(PLATFORM_IOS)
+if(IOS)
 	target_sources(CemuAudio PRIVATE
-		CoreAudioAPI.mm
-		CoreAudioAPI.h
+		iOSAudioAPI.mm
+		iOSAudioAPI.h
+		iOSAudioInputAPI.mm
+		iOSAudioInputAPI.h
+		iOSDeviceDescription.h
 	)
-	# The shared precompiled header is compiled as C++. clang will not apply a C++ PCH
-	# to an Objective-C++ translation unit, so this one file opts out and includes
-	# precompiled.h the ordinary way.
-	set_source_files_properties(CoreAudioAPI.mm PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 	target_link_libraries(CemuAudio PRIVATE
 		"-framework AudioToolbox"
 		"-framework AVFoundation"
-		"-framework Foundation"
 	)
 endif()
 

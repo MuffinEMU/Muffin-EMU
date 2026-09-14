@@ -34,22 +34,15 @@ long CubebInputAPI::data_cb(cubeb_stream* stream, void* user, const void* inputb
 	auto* thisptr = (CubebInputAPI*)user;
 
 	const auto size = (size_t)nframes * thisptr->m_channels * (thisptr->m_bitsPerSample / 8);
-
-	std::unique_lock lock(thisptr->m_mutex);
-	if (thisptr->m_buffer.capacity() <= thisptr->m_buffer.size() + size)
-	{
-		cemuLog_logDebug(LogType::Force, "dropped input sound block since too many buffers are queued");
-		return nframes;
-	}
-
-	thisptr->m_buffer.insert(thisptr->m_buffer.end(), (uint8*)inputbuffer, (uint8*)inputbuffer + size);
+	thisptr->m_buffer.write(reinterpret_cast<const std::uint8_t*>(inputbuffer), size);
 
 	return nframes;
 }
 
 CubebInputAPI::CubebInputAPI(cubeb_devid devid, uint32 samplerate, uint32 channels, uint32 samples_per_block,
                    uint32 bits_per_sample)
-	: IAudioInputAPI(samplerate, channels, samples_per_block, bits_per_sample)
+	: IAudioInputAPI(samplerate, channels, samples_per_block, bits_per_sample),
+	  m_buffer((size_t)samples_per_block * channels * (bits_per_sample / 8) * kBlockCount)
 {
 	cubeb_stream_params input_params;
 
@@ -80,8 +73,6 @@ CubebInputAPI::CubebInputAPI(cubeb_devid devid, uint32 samplerate, uint32 channe
 	uint32 latency = 1;
 	cubeb_get_min_latency(s_context, &input_params, &latency);
 
-	m_buffer.reserve((size_t)m_bytesPerBlock * kBlockCount);
-
 	if (cubeb_stream_init(s_context, &m_stream, "Cemu Cubeb input",
 	                      devid, &input_params,
                           nullptr, nullptr,
@@ -102,22 +93,9 @@ CubebInputAPI::~CubebInputAPI()
 
 bool CubebInputAPI::ConsumeBlock(sint16* data)
 {
-	std::unique_lock lock(m_mutex);
-	if (m_buffer.empty())
-	{
-		// we got no data, just write silence
-		memset(data, 0x00, m_bytesPerBlock);
-	}
-	else
-	{
-		const auto copied = std::min(m_buffer.size(), (size_t)m_bytesPerBlock);
-		memcpy(data, m_buffer.data(), copied);
-		m_buffer.erase(m_buffer.begin(), std::next(m_buffer.begin(), copied));
-		lock.unlock();
-		// fill rest with silence
-		if (copied != m_bytesPerBlock)
-			memset((uint8*)data + copied, 0x00, m_bytesPerBlock - copied);
-	}
+	const auto copied = m_buffer.read(reinterpret_cast<std::uint8_t*>(data), m_bytesPerBlock);
+	if (copied != m_bytesPerBlock)
+		memset(reinterpret_cast<std::uint8_t*>(data) + copied, 0x00, m_bytesPerBlock - copied);
 
 	return true;
 }

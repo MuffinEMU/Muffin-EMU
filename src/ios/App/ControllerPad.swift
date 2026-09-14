@@ -55,6 +55,8 @@ struct OptimizedControlPanel: View {
     // which control scheme is on.
     @AppStorage(ControllerLayoutSettings.joystickKey)
     private var joystickMode = ControllerLayoutSettings.defaultJoystick
+    @AppStorage(ControllerLayoutSettings.comfortControlsKey)
+    private var comfortControls = ControllerLayoutSettings.defaultComfortControls
     @AppStorage(ControllerLayoutSettings.individualEditModeKey)
     private var individualEditMode = ControllerLayoutSettings.defaultIndividualEditMode
 
@@ -67,11 +69,19 @@ struct OptimizedControlPanel: View {
         GeometryReader { proxy in
             let unit = ControllerGeometry.automaticDiameter(in: proxy.size) * CGFloat(userScale)
 
+            // Comfort controls only has somewhere to send L/ZL/minus and R/ZR/plus while
+            // the sticks they are moving to are actually on screen - with joystick mode
+            // off there is no stick cluster here for them to join, so this only takes
+            // effect with both settings on rather than making the toggle silently do
+            // nothing (or worse, dropping three buttons) whenever joystick mode is off.
+            let comfortActive = comfortControls && joystickMode
+
             ZStack(alignment: .topLeading) {
                 ControlCluster(
                     // Always the d-pad now, in both modes - see leftStickCluster's
-                    // comment for why this changed from swapping to adding.
-                    controls: ControllerGeometry.leftCluster,
+                    // comment for why this changed from swapping to adding. Comfort
+                    // controls trims L/ZL/minus back out of it; see leftClusterComfort.
+                    controls: comfortActive ? ControllerGeometry.leftClusterComfort : ControllerGeometry.leftCluster,
                     edge: .leading,
                     skin: skin,
                     unit: unit,
@@ -94,7 +104,11 @@ struct OptimizedControlPanel: View {
                 // a control rather than rearranging the ones already there.
                 if joystickMode {
                     ControlCluster(
-                        controls: ControllerGeometry.leftStickCluster,
+                        // Comfort controls adds L/ZL/minus onto this cluster - see
+                        // leftStickClusterComfort - so dragging or resizing the stick
+                        // moves them with it, the same way L/ZL/minus already travel
+                        // with the d-pad above.
+                        controls: comfortActive ? ControllerGeometry.leftStickClusterComfort : ControllerGeometry.leftStickCluster,
                         edge: .leading,
                         anchorOffset: ControllerGeometry.leftStickAnchorOffset,
                         skin: skin,
@@ -110,7 +124,9 @@ struct OptimizedControlPanel: View {
                 }
 
                 ControlCluster(
-                    controls: ControllerGeometry.rightCluster,
+                    // Comfort controls trims R/ZR/plus back out of it; see
+                    // rightClusterComfort.
+                    controls: comfortActive ? ControllerGeometry.rightClusterComfort : ControllerGeometry.rightCluster,
                     edge: .trailing,
                     skin: skin,
                     unit: unit,
@@ -135,7 +151,10 @@ struct OptimizedControlPanel: View {
                 // control rather than rearranging the ones already there.
                 if joystickMode {
                     ControlCluster(
-                        controls: ControllerGeometry.rightStickCluster,
+                        // Comfort controls adds R/ZR/plus onto this cluster - see
+                        // rightStickClusterComfort - for the same reason the left stick
+                        // picks up L/ZL/minus above.
+                        controls: comfortActive ? ControllerGeometry.rightStickClusterComfort : ControllerGeometry.rightStickCluster,
                         edge: .trailing,
                         anchorOffset: ControllerGeometry.rightStickAnchorOffset,
                         skin: skin,

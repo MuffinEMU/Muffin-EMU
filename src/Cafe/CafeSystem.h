@@ -21,17 +21,6 @@ namespace CafeSystem
 		UNABLE_TO_MOUNT, // failed to mount through TitleInfo (most likely caused by an invalid or outdated path)
 	};
 
-	class CafeSystemCallbacks
-	{
-	public:
-		virtual void updateWindowTitles(bool isIdle, bool isLoading, double fps) = 0;
-		virtual void notifyGameLoaded() = 0;
-	};
-
-	void registerCafeSystemCallbacks(CafeSystemCallbacks* cafeSystemCallbacks);
-	void unregisterCafeSystemCallbacks();
-	CafeSystemCallbacks* getCafeSystemCallbacks();
-
 	void Initialize();
 	void SetImplementation(SystemImplementation* impl);
     void Shutdown();
@@ -40,9 +29,6 @@ namespace CafeSystem
 	PREPARE_STATUS_CODE PrepareForegroundTitleFromStandaloneRPX(const fs::path& path);
 	void LaunchForegroundTitle();
 	bool IsTitleRunning();
-
-	void PauseTitle();
-	void ResumeTitle();
 
 	bool GetOverrideArgStr(std::vector<std::string>& args);
 	void SetOverrideArgs(std::span<std::string> args);

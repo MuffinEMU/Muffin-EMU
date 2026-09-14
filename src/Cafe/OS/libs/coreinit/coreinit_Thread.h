@@ -508,9 +508,6 @@ namespace coreinit
 
 	void InitializeConcurrency();
 
-	void SuspendActiveThreads();
-	void ResumeActiveThreads();
-
 	bool __CemuIsMulticoreMode();
 
 	OSThread_t* OSGetDefaultThread(sint32 coreIndex);
@@ -613,6 +610,7 @@ namespace coreinit
 	// scheduler
 	void OSSchedulerBegin(sint32 numCPUEmulationThreads);
 	void OSSchedulerEnd();
+	bool OSIsSchedulerActive();
 
 	// internal
 	void __OSAddReadyThreadToRunQueue(OSThread_t* thread);

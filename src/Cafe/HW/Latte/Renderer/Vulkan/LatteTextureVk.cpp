@@ -4,8 +4,8 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 
 LatteTextureVk::LatteTextureVk(class VulkanRenderer* vkRenderer, Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle,
-	Latte::E_HWTILEMODE tileMode, bool isDepth)
-	: LatteTexture(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth), m_vkr(vkRenderer)
+	Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget)
+	: LatteTexture(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth, isRenderTarget), m_vkr(vkRenderer)
 {
 	vkObjTex = new VKRObjectTexture();
 
@@ -94,7 +94,7 @@ LatteTextureVk::LatteTextureVk(class VulkanRenderer* vkRenderer, Latte::E_DIM di
 		objName.objectType = VK_OBJECT_TYPE_IMAGE;
 		objName.pNext = nullptr;
 		objName.objectHandle = (uint64_t)vkObjTex->m_image;
-		auto objNameStr = fmt::format("tex_{:08x}_fmt{:04x}", physAddress, (uint32)format);
+		auto objNameStr = fmt::format("tex_{:08x}_fmt{:04x}_tm{:x}", physAddress, (uint32)format, (uint32)tileMode);
 		objName.pObjectName = objNameStr.c_str();
 		vkSetDebugUtilsObjectNameEXT(m_vkr->GetLogicalDevice(), &objName);
 	}

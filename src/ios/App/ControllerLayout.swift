@@ -18,6 +18,14 @@ enum ControllerLayoutSettings {
     /// the measured layout is a d-pad, and a control scheme is not something to change
     /// under someone who did not ask for it.
     static let joystickKey = "muffin.controls.joystick"
+    /// Whether L/ZL/minus and R/ZR/plus are anchored to the analog sticks instead of the
+    /// d-pad/A-B-X-Y clusters. Only has anything to attach to while `joystickKey` is also
+    /// on - see the comfortControls read site in ControllerPad for what happens when it
+    /// isn't. Off by default, same reasoning as `joystickKey`: the measured layout puts
+    /// these six buttons at the d-pad/face clusters, and a control scheme is not
+    /// something to change under someone who did not ask for it.
+    static let comfortControlsKey = "muffin.pad.comfortControls"
+    static let defaultComfortControls = false
     /// Where the camera stick has been dragged to. Its own pair rather than sharing the
     /// right cluster's: it is a separate cluster, positioned separately, and the whole
     /// point of it is that it sits where the right thumb reaches without leaving A/B/X/Y
@@ -207,6 +215,19 @@ enum ControllerGeometry {
         Control(id: "ZL",    glyph: "ZL", offset: CGPoint(x: -shoulderSpreadX, y: shoulderY), shape: shoulder, style: .shoulder)
     ]
 
+    /// Comfort controls: the d-pad half with L, ZL and minus taken back out of it - they
+    /// move onto leftStickClusterComfort below instead. Everything that is left keeps the
+    /// exact offsets leftCluster already uses, so the d-pad and its L3 dot do not shift by
+    /// so much as a point when comfort mode turns on; only where the other three buttons
+    /// live changes.
+    static let leftClusterComfort: [Control] = [
+        Control(id: "up",    glyph: "\u{25B2}", offset: CGPoint(x: 0, y: -crossY), shape: button, style: .dpad),
+        Control(id: "left",  glyph: "\u{25C0}", offset: CGPoint(x: -crossX, y: 0), shape: button, style: .dpad),
+        Control(id: "right", glyph: "\u{25B6}", offset: CGPoint(x: crossX, y: 0),  shape: button, style: .dpad),
+        Control(id: "down",  glyph: "\u{25BC}", offset: CGPoint(x: 0, y: crossY),  shape: button, style: .dpad),
+        Control(id: "L3",    glyph: "",         offset: .zero,                     shape: stick,  style: .stick)
+    ]
+
     /// The left analog stick, for joystick mode: drawn as its own one-control cluster,
     /// exactly mirroring rightStickCluster below - both are "joystick mode adds a stick
     /// alongside the measured cluster," never "joystick mode replaces it."
@@ -223,6 +244,25 @@ enum ControllerGeometry {
     static let leftStickCluster: [Control] = [
         Control(id: "stickL", glyph: "", offset: .zero,
                 shape: .circle(stickBaseDiameter), style: .joystick)
+    ]
+
+    /// Comfort controls: L, ZL and minus, re-anchored to the left stick's own centre
+    /// instead of the d-pad's.
+    ///
+    /// The offsets are not new numbers - they are `leftCluster`'s own `shoulderSpreadX`/
+    /// `shoulderY`/`systemOffset`, copied verbatim and given a different centre to sit
+    /// around. That is the whole of what "comfort" changes here: which cluster a button's
+    /// offset is measured from, never the offset itself or the button's size. Since this
+    /// cluster's own footprint is a single circle only a little smaller than the d-pad's
+    /// diamond-plus-cross, the same spacing that kept these three clear of the d-pad keeps
+    /// them clear of the stick too - see the ControllerPad comfort-mode note for the
+    /// worked distance that makes this provably non-overlapping at the default position.
+    static let leftStickClusterComfort: [Control] = [
+        Control(id: "stickL", glyph: "", offset: .zero,
+                shape: .circle(stickBaseDiameter), style: .joystick),
+        Control(id: "minus", glyph: "\u{2212}", offset: systemOffset, shape: system, style: .system),
+        Control(id: "L",     glyph: "L",  offset: CGPoint(x: shoulderSpreadX, y: shoulderY),  shape: shoulder, style: .shoulder),
+        Control(id: "ZL",    glyph: "ZL", offset: CGPoint(x: -shoulderSpreadX, y: shoulderY), shape: shoulder, style: .shoulder)
     ]
 
     /// Where the left stick starts, mirrored from rightStickAnchorOffset (x negated,
@@ -324,6 +364,19 @@ enum ControllerGeometry {
                 shape: .circle(stickBaseDiameter), style: .joystick)
     ]
 
+    /// Comfort controls: R, ZR and plus, re-anchored to the camera stick's own centre
+    /// instead of A/B/X/Y's - mirrors leftStickClusterComfort exactly, same reasoning and
+    /// the same borrowed offsets (systemOffset mirrored the same way rightCluster's own
+    /// plus already mirrors it, shoulderSpreadX/shoulderY unmirrored since they are
+    /// already signed per side).
+    static let rightStickClusterComfort: [Control] = [
+        Control(id: "stickR", glyph: "", offset: .zero,
+                shape: .circle(stickBaseDiameter), style: .joystick),
+        Control(id: "plus", glyph: "\u{FF0B}", offset: CGPoint(x: -systemOffset.x, y: systemOffset.y), shape: system, style: .system),
+        Control(id: "R",    glyph: "R",  offset: CGPoint(x: -shoulderSpreadX, y: shoulderY), shape: shoulder, style: .shoulder),
+        Control(id: "ZR",   glyph: "ZR", offset: CGPoint(x: shoulderSpreadX, y: shoulderY),  shape: shoulder, style: .shoulder)
+    ]
+
     /// Where the camera stick starts, as an offset in units from the right cluster's
     /// anchor: inboard of A/B/X/Y and a little above it.
     ///
@@ -358,6 +411,16 @@ enum ControllerGeometry {
         Control(id: "plus", glyph: "\u{FF0B}", offset: CGPoint(x: -systemOffset.x, y: systemOffset.y), shape: system, style: .system),
         Control(id: "R",    glyph: "R",  offset: CGPoint(x: -shoulderSpreadX, y: shoulderY), shape: shoulder, style: .shoulder),
         Control(id: "ZR",   glyph: "ZR", offset: CGPoint(x: shoulderSpreadX, y: shoulderY),  shape: shoulder, style: .shoulder)
+    ]
+
+    /// Comfort controls: the A/B/X/Y half with R, ZR and plus taken back out of it -
+    /// mirrors leftClusterComfort exactly, same reasoning.
+    static let rightClusterComfort: [Control] = [
+        Control(id: "X", glyph: "X", offset: CGPoint(x: 0, y: -crossY), shape: button, style: .face),
+        Control(id: "Y", glyph: "Y", offset: CGPoint(x: -crossX, y: 0), shape: button, style: .face),
+        Control(id: "A", glyph: "A", offset: CGPoint(x: crossX, y: 0),  shape: button, style: .face),
+        Control(id: "B", glyph: "B", offset: CGPoint(x: 0, y: crossY),  shape: button, style: .face),
+        Control(id: "R3", glyph: "", offset: .zero, shape: stick, style: .stick)
     ]
 
     /// The rectangle a cluster actually covers, in layout units, relative to its centre

@@ -159,7 +159,7 @@ bool OpenGLRenderer::ImguiBegin(bool mainWindow)
 {
 	if (!mainWindow)
 	{
-		m_openGLCallbacks->GLCanvas_MakeCurrent(true);
+		GLCanvas_MakeCurrent(true);
 		m_isPadViewContext = true;
 	}
 
@@ -186,7 +186,7 @@ void OpenGLRenderer::ImguiEnd()
 
 	if (m_isPadViewContext)
 	{
-		m_openGLCallbacks->GLCanvas_MakeCurrent(false);
+		GLCanvas_MakeCurrent(false);
 		m_isPadViewContext = false;
 	}
 
@@ -242,11 +242,6 @@ void LoadOpenGLImports()
 #define GLFUNC(__type, __name)	__name = (__type)_GetOpenGLFunction(hLib, STRINGIFY(__name));
 #include "Common/GLInclude/glFunctions.h"
 #undef GLFUNC
-}
-#elif BOOST_PLAT_ANDROID
-void LoadOpenGLImports()
-{
-	cemu_assert_unimplemented();
 }
 #elif BOOST_OS_LINUX || BOOST_OS_BSD
 GL_IMPORT _GetOpenGLFunction(void* hLib, PFNGLXGETPROCADDRESSPROC func, const char* name)
@@ -306,7 +301,7 @@ void OpenGLRenderer::Initialize()
 	auto lock = cemuLog_acquire();
 	cemuLog_log(LogType::Force, "------- Init OpenGL graphics backend -------");
 
-	m_openGLCallbacks->GLCanvas_MakeCurrent(false);
+	GLCanvas_MakeCurrent(false);
 	LoadOpenGLImports();
 	GetVendorInformation();	
 
@@ -399,7 +394,7 @@ void OpenGLRenderer::Initialize()
 
 bool OpenGLRenderer::IsPadWindowActive()
 {
-	return m_openGLCallbacks->GLCanvas_HasPadViewOpen();
+	return GLCanvas_HasPadViewOpen();
 }
 
 void OpenGLRenderer::Flush(bool waitIdle)
@@ -414,15 +409,6 @@ void OpenGLRenderer::NotifyLatteCommandProcessorIdle()
 	glFlush();
 }
 
-void OpenGLRenderer::RegisterOpenGLCallbacks(OpenGLCallbacks* openGLCallbacks)
-{
-	m_openGLCallbacks = openGLCallbacks;
-}
-
-void OpenGLRenderer::UnregisterOpenGLCallbacks()
-{
-	m_openGLCallbacks = nullptr;
-}
 void OpenGLRenderer::GetVendorInformation()
 {
 	// example vendor strings:
@@ -496,7 +482,7 @@ void OpenGLRenderer::EnableDebugMode()
 
 void OpenGLRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
-	m_openGLCallbacks->GLCanvas_SwapBuffers(swapTV, swapDRC);
+	GLCanvas_SwapBuffers(swapTV, swapDRC);
 
 	if (swapTV)
 		cleanupAfterFrame();
@@ -507,7 +493,7 @@ bool OpenGLRenderer::BeginFrame(bool mainWindow)
 	if (!mainWindow && !IsPadWindowActive())
 		return false;
 
-	m_openGLCallbacks->GLCanvas_MakeCurrent(!mainWindow);
+	GLCanvas_MakeCurrent(!mainWindow);
 
 	ClearColorbuffer(!mainWindow);
 	return true;
@@ -600,7 +586,7 @@ void OpenGLRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
 		return;
 
 	catchOpenGLError();
-	m_openGLCallbacks->GLCanvas_MakeCurrent(padView);
+	GLCanvas_MakeCurrent(padView);
 
 	renderstate_resetColorControl();
 	renderstate_resetDepthControl();
@@ -662,7 +648,7 @@ void OpenGLRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutpu
 
 	// switch back to TV context
 	if (padView)
-		m_openGLCallbacks->GLCanvas_MakeCurrent(false);
+		GLCanvas_MakeCurrent(false);
 }
 
 void OpenGLRenderer::renderTarget_setViewport(float x, float y, float width, float height, float nearZ, float farZ, bool halfZ /*= false*/)
@@ -1175,9 +1161,9 @@ void OpenGLRenderer::texture_clearSlice(LatteTexture* hostTextureGeneric, sint32
 }
 
 LatteTexture* OpenGLRenderer::texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels,
-	uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth)
+	uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget)
 {
-	return new LatteTextureGL(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth);
+	return new LatteTextureGL(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth, isRenderTarget);
 }
 
 void OpenGLRenderer::texture_setActiveTextureUnit(sint32 index)

@@ -173,16 +173,3 @@ uint32 osLib_getPointer(const char* libraryName, const char* functionName)
 	}
 	return 0xFFFFFFFF;
 }
-
-void osLib_returnFromFunction(PPCInterpreter_t* hCPU, uint32 returnValue)
-{
-	hCPU->gpr[3] = returnValue;
-	hCPU->instructionPointer = hCPU->spr.LR;
-}
-
-void osLib_returnFromFunction64(PPCInterpreter_t* hCPU, uint64 returnValue64)
-{
-	hCPU->gpr[3] = (returnValue64>>32)&0xFFFFFFFF;
-	hCPU->gpr[4] = (returnValue64>>0)&0xFFFFFFFF;
-	hCPU->instructionPointer = hCPU->spr.LR;
-}

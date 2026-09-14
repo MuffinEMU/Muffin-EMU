@@ -10,6 +10,7 @@
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "Cafe/GraphicPack/GraphicPack2.h"
+#include "HW/Latte/Renderer/RendererCore.h"
 #include "config/ActiveSettings.h"
 #include "WindowSystem.h"
 #include "Cafe/OS/libs/erreula/erreula.h"
@@ -222,7 +223,7 @@ void LatteMRT::BindDepthBufferOnly(LatteTextureView* view)
 
 LatteTextureView* LatteMRT_CreateDepthBuffer(MPTR depthBufferPhysMem, uint32 width, uint32 height, uint32 pitch, Latte::E_HWTILEMODE tileMode, Latte::E_GX2SURFFMT format, uint32 swizzle, sint32 viewSlice)
 {
-	LatteTextureView* textureView = LatteTexture_CreateMapping(depthBufferPhysMem, MPTR_NULL, width, height, viewSlice+1, pitch, tileMode, swizzle, 0, 1, viewSlice, 1, format, viewSlice > 0 ? Latte::E_DIM::DIM_2D_ARRAY : Latte::E_DIM::DIM_2D, Latte::E_DIM::DIM_2D, true);
+	LatteTextureView* textureView = LatteTexture_CreateMapping(depthBufferPhysMem, MPTR_NULL, width, height, viewSlice+1, pitch, tileMode, swizzle, 0, 1, viewSlice, 1, format, viewSlice > 0 ? Latte::E_DIM::DIM_2D_ARRAY : Latte::E_DIM::DIM_2D, Latte::E_DIM::DIM_2D, true, true, true);
 	LatteMRT::SetDepthAndStencilAttachment(textureView, textureView->baseTexture->hasStencil);
 	return textureView;
 }
@@ -303,7 +304,7 @@ LatteTextureView* LatteMRT::GetColorAttachmentTexture(uint32 index, bool createN
 	if (colorBufferView == nullptr)
 	{
 		// create color buffer view
-		colorBufferView = LatteTexture_CreateMapping(colorBufferPhysMem, 0, colorBufferWidth, colorBufferHeight, (viewFirstSlice + viewNumSlices), colorBufferPitch, colorBufferTileMode, colorBufferSwizzle>>8, viewFirstMip, 1, viewFirstSlice, viewNumSlices, (Latte::E_GX2SURFFMT)colorBufferFormat, (viewFirstSlice + viewNumSlices)>1? Latte::E_DIM::DIM_2D_ARRAY: Latte::E_DIM::DIM_2D, Latte::E_DIM::DIM_2D, false, true);
+		colorBufferView = LatteTexture_CreateMapping(colorBufferPhysMem, 0, colorBufferWidth, colorBufferHeight, (viewFirstSlice + viewNumSlices), colorBufferPitch, colorBufferTileMode, colorBufferSwizzle>>8, viewFirstMip, 1, viewFirstSlice, viewNumSlices, (Latte::E_GX2SURFFMT)colorBufferFormat, (viewFirstSlice + viewNumSlices)>1? Latte::E_DIM::DIM_2D_ARRAY: Latte::E_DIM::DIM_2D, Latte::E_DIM::DIM_2D, false, true, true);
 		LatteGPUState.repeatTextureInitialization = true;
 		checkForTextureChanges = false;
 	}
@@ -574,7 +575,7 @@ bool LatteMRT::UpdateCurrentFBO()
 				if (!depthBufferView)
 				{
 					// create new depth buffer view and if it doesn't exist then also create the texture
-					depthBufferView = LatteTexture_CreateMapping(depthBufferPhysMem, 0, depthBufferWidth, depthBufferHeight, depthBufferViewFirstSlice+1, depthBufferPitch, depthBufferTileMode, depthBufferSwizzle, 0, 1, depthBufferViewFirstSlice, 1, depthBufferFormat, depthBufferViewFirstSlice > 0 ? Latte::E_DIM::DIM_2D_ARRAY : Latte::E_DIM::DIM_2D, Latte::E_DIM::DIM_2D, true, true);
+					depthBufferView = LatteTexture_CreateMapping(depthBufferPhysMem, 0, depthBufferWidth, depthBufferHeight, depthBufferViewFirstSlice+1, depthBufferPitch, depthBufferTileMode, depthBufferSwizzle, 0, 1, depthBufferViewFirstSlice, 1, depthBufferFormat, depthBufferViewFirstSlice > 0 ? Latte::E_DIM::DIM_2D_ARRAY : Latte::E_DIM::DIM_2D, Latte::E_DIM::DIM_2D, true, true, true);
 					LatteGPUState.repeatTextureInitialization = true;
 				}
 				else
@@ -694,7 +695,9 @@ void LatteRenderTarget_itHLESwapScanBuffer()
 	performanceMonitor.gpuTime_frameTime.beginMeasuring();
 
 	LatteTC_CleanupUnusedTextures();
+#ifdef ENABLE_OPENGL
 	LatteDraw_cleanupAfterFrame();
+#endif
 	LatteQuery_CancelActiveGPU7Queries();
 	LatteBufferCache_notifySwapTVScanBuffer();
 	LattePerformanceMonitor_frameBegin();
@@ -788,7 +791,7 @@ void LatteRenderTarget_itHLEClearColorDepthStencil(uint32 clearMask,
 		{
 			// create new texture with matching format
 			cemu_assert_debug(colorBufferViewNumSlice <= 1);
-			LatteTextureView* newColorView = LatteTexture_CreateMapping(colorBufferMPTR, MPTR_NULL, colorBufferWidth, colorBufferHeight, colorBufferViewFirstSlice+1, colorBufferPitch, colorBufferTilemode, colorBufferSwizzle, 0, 1, colorBufferViewFirstSlice, 1, colorBufferFormat, colorBufferViewFirstSlice > 0 ? Latte::E_DIM::DIM_2D_ARRAY : Latte::E_DIM::DIM_2D, Latte::E_DIM::DIM_2D, false);
+			LatteTextureView* newColorView = LatteTexture_CreateMapping(colorBufferMPTR, MPTR_NULL, colorBufferWidth, colorBufferHeight, colorBufferViewFirstSlice+1, colorBufferPitch, colorBufferTilemode, colorBufferSwizzle, 0, 1, colorBufferViewFirstSlice, 1, colorBufferFormat, colorBufferViewFirstSlice > 0 ? Latte::E_DIM::DIM_2D_ARRAY : Latte::E_DIM::DIM_2D, Latte::E_DIM::DIM_2D, false, true, true);
 			LatteRenderTarget_applyTextureColorClear(newColorView->baseTexture, colorBufferViewFirstSlice, colorBufferMipIndex, r, g, b, a, eventCounter);
 		}
 	}
@@ -967,9 +970,7 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	g_renderer->HandleScreenshotRequest(textureView, isPadView);
 	if (!g_renderer->ImguiBegin(!isPadView))
 		return;
-#if !BOOST_PLAT_ANDROID
-	swkbd::render(!isPadView);
-#endif
+	swkbd_render(!isPadView);
 	nn::erreula::render(!isPadView);
 	LatteOverlay_render(isPadView);
 	g_renderer->ImguiEnd();
@@ -1008,45 +1009,20 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 		isDRCPrimary = !isDRCPrimary;
 	togglePressedLast = togglePressed;
 
-	bool showDRC = swkbd::hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
-
-	const bool drawToPad = (renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive();
-	const bool drawToMain = ((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC);
-
-	if (drawToPad)
+	bool showDRC = swkbd_hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
+#if BOOST_OS_IOS
+	const auto visibleOutputs = WindowSystem::GetWindowInfo().visible_outputs.load();
+	if ((visibleOutputs & 2u) && (renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
 		LatteRenderTarget_copyToBackbuffer(texView, true);
-	if (drawToMain)
+	if ((visibleOutputs & 1u) && (renderTarget & RENDER_TARGET_TV))
 		LatteRenderTarget_copyToBackbuffer(texView, false);
+	return;
+#endif
 
-	// Both conditions above can be false at once, and when they are, a scan buffer the
-	// title genuinely produced is discarded without reaching any window. The reachable
-	// case is a DRC-only copy on a host with no pad window: drawToPad needs the pad
-	// window to exist, and drawToMain needs showDRC, which the user toggles with Tab or
-	// a VPAD screen button - neither of which exists on a touch-only host. The result
-	// is a permanently black screen that looks exactly like the renderer being broken.
-	// This is the line that distinguishes the two, so a device log can settle it
-	// without another round of guessing. Deliberately only logged, not "fixed" by
-	// redirecting the frame to the TV window: a title that copies TV and DRC in
-	// separate calls would then have its DRC copy overwrite the TV image every frame.
-	if (!drawToPad && !drawToMain)
-	{
-		// cemuLog_logOnce() keys its static on the call site, not on renderTarget - so
-		// whichever combination (TV-only, DRC-only, or both) drops first permanently
-		// silences the others for the rest of the session. A title that drops a DRC
-		// scan buffer early (the routine, expected case on a host with no pad window)
-		// would then hide a LATER, unrelated TV drop for a completely different reason
-		// - exactly the diagnostic blind spot already found and fixed for the
-		// TV/pad-window CAMetalLayer case in MetalRenderer.cpp (see its comment there).
-		// Index by just the two known bits so an unexpected extra bit in renderTarget
-		// can't index out of bounds.
-		static bool s_scanBufferDroppedLogged[4] = {};
-		const uint32 targetIndex = ((renderTarget & RENDER_TARGET_TV) ? 1 : 0) | ((renderTarget & RENDER_TARGET_DRC) ? 2 : 0);
-		if (!s_scanBufferDroppedLogged[targetIndex])
-		{
-			s_scanBufferDroppedLogged[targetIndex] = true;
-			cemuLog_log(LogType::Force, "Scan buffer dropped: renderTarget={} (TV={}, DRC={}), showDRC={}, pad window active={}. The title produced a frame that has no window to go to.", renderTarget, (renderTarget & RENDER_TARGET_TV) != 0, (renderTarget & RENDER_TARGET_DRC) != 0, showDRC, g_renderer->IsPadWindowActive());
-		}
-	}
+	if ((renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
+		LatteRenderTarget_copyToBackbuffer(texView, true);
+	if (((renderTarget & RENDER_TARGET_TV) && !showDRC) || ((renderTarget & RENDER_TARGET_DRC) && showDRC))
+		LatteRenderTarget_copyToBackbuffer(texView, false);
 }
 
 

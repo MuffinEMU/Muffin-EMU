@@ -8,6 +8,8 @@
 
 class IAudioAPI
 {
+	friend class GeneralSettings2;
+
 public:
 	class DeviceDescription
 	{
@@ -43,15 +45,12 @@ public:
 		XAudio27,
 		XAudio2,
 		Cubeb,
-		// Appended, not inserted: audio_api is persisted to settings.xml as a plain
-		// integer, so renumbering the existing entries would silently repoint an
-		// existing config at a different backend.
-		CoreAudio,
+        IOSAudio,
 
 		AudioAPIEnd,
 	};
 	static constexpr uint32 kBlockCount = 24;
-	
+
 	IAudioAPI(uint32 samplerate, uint32 channels, uint32 samples_per_block, uint32 bits_per_sample);
 	virtual ~IAudioAPI() = default;
 	virtual AudioAPI GetType() const = 0;
@@ -72,17 +71,19 @@ public:
 	static void PrintLogging();
 	static void InitializeStatic();
 	static bool IsAudioAPIAvailable(AudioAPI api);
-	static void SetAudioDelay(uint32 audioDelay) { s_audioDelay = audioDelay; }
+
 	static std::unique_ptr<IAudioAPI> CreateDeviceFromConfig(AudioType type, sint32 rate, sint32 samples_per_block, sint32 bits_per_sample);
 	static std::unique_ptr<IAudioAPI> CreateDeviceFromConfig(AudioType type, sint32 rate, sint32 channels, sint32 samples_per_block, sint32 bits_per_sample);
 	static std::unique_ptr<IAudioAPI> CreateDevice(AudioAPI api, const DeviceDescriptionPtr& device, sint32 samplerate, sint32 channels, sint32 samples_per_block, sint32 bits_per_sample);
 	static std::vector<DeviceDescriptionPtr> GetDevices(AudioAPI api);
 
 protected:
+	uint32 GetTargetQueuedBlocks() const;
+
 #if BOOST_OS_WINDOWS
 	WAVEFORMATEXTENSIBLE m_wfx{};
 #endif
-	
+
 	uint32 m_samplerate, m_channels, m_samplesPerBlock, m_bitsPerSample;
 	uint32 m_bytesPerBlock;
 
@@ -98,7 +99,7 @@ private:
 	static AudioChannels AudioTypeToChannels(AudioType type);
 	static std::wstring GetDeviceFromType(AudioType type);
 	static sint32 GetVolumeFromType(AudioType type);
-	
+
 };
 
 using AudioAPIPtr = std::unique_ptr<IAudioAPI>;

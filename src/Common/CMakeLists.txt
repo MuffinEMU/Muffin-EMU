@@ -53,20 +53,7 @@ if(LINUX)
 	)
 endif()
 
-if(ANDROID)
-  target_sources(CemuCommon PRIVATE
-    android/FileStream_android.cpp
-    android/FileStream_android.h
-    android/FdStream.h
-    android/FileStream_saf.cpp
-    android/FileStream_saf.h
-    android/FilesystemAndroid.cpp
-    android/FilesystemAndroid.h
-  )
-endif()
-
-# CemuCommon always builds the precompiled header (iOS included now that it has
-# real dependencies — precompiled.h pulls in fmt/boost/nowide).
+# CemuCommon always builts the precompiled header
 target_precompile_headers(CemuCommon PRIVATE precompiled.h)
 target_include_directories(CemuCommon PUBLIC "../")
 
@@ -74,11 +61,7 @@ target_link_libraries(CemuCommon PRIVATE
 	glm::glm
 )
 
-if(ANDROID)
-  target_link_libraries(CemuCommon PRIVATE Boost::iostreams)
-endif()
-
-if (UNIX AND NOT APPLE AND NOT ANDROID)
+if (UNIX AND NOT APPLE)
 	target_link_libraries(CemuCommon PRIVATE X11::X11 X11::Xrender X11::Xutil)
 endif()
 

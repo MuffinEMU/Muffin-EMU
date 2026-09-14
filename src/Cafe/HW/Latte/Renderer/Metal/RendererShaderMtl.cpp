@@ -3,13 +3,11 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalCommon.h"
 
 //#include "Cemu/FileCache/FileCache.h"
-#include "config/ActiveSettings.h"
+//#include "config/ActiveSettings.h"
 #include "Cemu/Logging/CemuLogging.h"
 #include "Common/precompiled.h"
 #include "GameProfile/GameProfile.h"
 #include "util/helpers/helpers.h"
-
-#include <fstream>
 
 #define METAL_AIR_CACHE_NAME "Cemu_AIR_cache"
 #define METAL_AIR_CACHE_PATH "/Volumes/" METAL_AIR_CACHE_NAME
@@ -98,20 +96,7 @@ public:
 			job->m_compilationState.setValue(RendererShaderMtl::COMPILATION_STATE::COMPILING);
 			s_compilationQueueMutex.unlock();
 			// compile
-			//
-			// Same missing-pool bug as MetalPipelineCache.cpp's compileThreadFunc, and for
-			// the same reason: this loop runs forever on a raw std::thread with no run loop
-			// of its own, so it never gets an implicit autorelease pool. CompileInternal()
-			// -> LibraryFromSource() creates an autoreleased NS::String on every call via
-			// ToNSString() (NS::String::string() is the Cocoa "stringWith..." factory
-			// convention, not alloc/init - see MetalCommon.h), twice per shader counting
-			// CompileInternal()'s own "main0" one, plus the NSError* out-param from
-			// newLibrary() whenever compilation fails. Two threads, every shader compiled
-			// while playing, all leaking for the rest of the process's life with no pool to
-			// ever drain them into.
-			auto pool = NS::AutoreleasePool::alloc()->init();
 			job->CompileInternal();
-			pool->release();
 			if (job->ShouldCountCompilation())
 			    ++g_compiled_shaders_async;
 			// mark as compiled
@@ -242,10 +227,10 @@ RendererShaderMtl::RendererShaderMtl(MetalRenderer* mtlRenderer, ShaderType type
 
 RendererShaderMtl::~RendererShaderMtl()
 {
+	if (m_argumentEncoder)
+		m_argumentEncoder->release();
     if (m_function)
         m_function->release();
-    if (m_passthroughFunction)
-        m_passthroughFunction->release();
 }
 
 void RendererShaderMtl::PreponeCompilation(bool isRenderThread)
@@ -282,34 +267,12 @@ bool RendererShaderMtl::IsCompiled()
 bool RendererShaderMtl::WaitForCompiled()
 {
 	m_compilationState.waitUntilValue(COMPILATION_STATE::DONE);
-	return true;
+	return m_function != nullptr;
 }
 
 bool RendererShaderMtl::ShouldCountCompilation() const
 {
     return !s_isLoadingShadersMtl && m_isGameShader;
-}
-
-// A game that fails to compile dozens of shaders across a session leaves dozens of
-// "failed to create library from source" lines buried in log.txt, each one truncating
-// the full generated MSL to a single line - in practice indistinguishable from each
-// other in scrollback and unusable for actually diagnosing which shader broke. Each
-// failure instead gets its own file, so it survives independently of how much else got
-// logged after it and can be pulled straight out of Files/Finder (UIFileSharingEnabled
-// is on) without needing the whole session's log.txt at all.
-static void LogShaderCompileFailure(const char* errorDetail, const std::string& mslCode, RendererShader::ShaderType type)
-{
-    static std::atomic<uint32> s_failureCounter{0};
-    const char* typeName = type == RendererShader::ShaderType::kVertex ? "vertex"
-        : type == RendererShader::ShaderType::kFragment ? "fragment" : "geometry";
-    std::error_code ec;
-    const auto dir = ActiveSettings::GetCachePath("shaderCache/failedCompiles");
-    fs::create_directories(dir, ec);
-    const auto path = dir / fmt::format("{:04}_{}.metal", s_failureCounter.fetch_add(1), typeName);
-    std::ofstream out(path, std::ios::out | std::ios::trunc);
-    if (!out.is_open())
-        return;
-    out << "// " << errorDetail << "\n\n" << mslCode;
 }
 
 MTL::Library* RendererShaderMtl::LibraryFromSource()
@@ -327,11 +290,9 @@ MTL::Library* RendererShaderMtl::LibraryFromSource()
 
     NS::Error* error = nullptr;
 	MTL::Library* library = m_mtlr->GetDevice()->newLibrary(ToNSString(m_mslCode), options, &error);
-	if (error)
+	if (!library)
     {
-        const char* errorDetail = error->localizedDescription()->utf8String();
-        cemuLog_log(LogType::Force, "failed to create library from source: {} -> {}", errorDetail, m_mslCode.c_str());
-        LogShaderCompileFailure(errorDetail, m_mslCode, GetType());
+        cemuLog_log(LogType::Force, "failed to create library from source: {} -> {}", error ? error->localizedDescription()->utf8String() : "unknown error", m_mslCode.c_str());
         return nullptr;
     }
 
@@ -357,6 +318,7 @@ MTL::Library* RendererShaderMtl::LibraryFromAIR(std::span<uint8> data)
 
 void RendererShaderMtl::CompileInternal()
 {
+	NS_STACK_SCOPED NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
     MTL::Library* library = nullptr;
 
     // First, try to retrieve the compiled shader from the AIR cache
@@ -394,10 +356,19 @@ void RendererShaderMtl::CompileInternal()
     }
 
     m_function = library->newFunction(ToNSString("main0"));
-    // Absent unless this is an emulated geometry shader, so a null here is normal and not
-    // a failure worth logging.
-    m_passthroughFunction = library->newFunction(ToNSString("gsPassthroughVS"));
     library->release();
+
+	if (m_function && m_isGameShader)
+	{
+		m_argumentEncoder = m_function->newArgumentEncoder(MetalArgumentBuffer::BindingIndex);
+		if (!m_argumentEncoder)
+		{
+			cemuLog_log(LogType::Force, "failed to create Metal argument encoder for shader {:016x}", m_baseHash);
+			m_function->release();
+			m_function = nullptr;
+			return;
+		}
+	}
 
 	// Count shader compilation
 	if (ShouldCountCompilation())
@@ -415,7 +386,7 @@ void RendererShaderMtl::CompileToAIR()
 
 	// Source
 	std::ofstream mslFile;
-    mslFile.open(fmt::format("{}.metal", baseFilename));
+    mslFile.open(fs::resolvePathCI(fs::path(fmt::format("{}.metal", baseFilename))));
     mslFile << m_mslCode;
     mslFile.close();
 

@@ -646,30 +646,18 @@ class GameManager: ObservableObject {
             // of these once while a title starts and cannot see UserDefaults. A switch
             // that silently reverts on every relaunch is worse than no switch.
             //
-            // The recompiler defaults OFF. It is reported to crash on device, and a crash
-            // in the emulated CPU makes every other fault impossible to judge.
+            // The recompiler defaults ON: MeloCafe's recompiler is the fast path, and the
+            // bridge falls back to the interpreter by itself when no JIT enabler is attached.
             cemu_bridge_set_recompiler_enabled(
-                UserDefaults.standard.object(forKey: "muffin.cpu.recompiler") as? Bool ?? false)
-            cemu_bridge_set_legacy_timebase(
-                UserDefaults.standard.object(forKey: "muffin.cpu.legacyTimebase") as? Bool ?? false)
+                UserDefaults.standard.object(forKey: "muffin.cpu.recompiler") as? Bool ?? true)
+            cemu_bridge_set_favour_accuracy(
+                UserDefaults.standard.object(forKey: "muffin.cpu.favourAccuracy") as? Bool ?? false)
             // Per-game override first, global default underneath it - PerGameSettingsStore
             // reads the same UserDefaults key directly for exactly the reason above: an
             // override that only lived in a @Published property would revert the moment
             // this background task started fresh on a relaunch.
             cemu_bridge_set_async_shader_compile(
                 PerGameSettingsStore.shared.effectivePreCompileShaders(for: game.id))
-            // Experimental, off by default - see CemuBridge.h and MetalCommon.h for what
-            // this actually changes and why it is a per-game dial rather than a fix
-            // applied unconditionally.
-            cemu_bridge_set_reduce_encoder_splitting(
-                PerGameSettingsStore.shared.effectiveReduceEncoderSplitting(for: game.id))
-            // Same "sync from UserDefaults before boot" reason as the two calls above -
-            // LatteShaderCache_Load() reads this exactly once, right at the top, before
-            // any cache file is opened for this launch. Global rather than per-game:
-            // it gates disk persistence itself, not a rendering behaviour a single title
-            // might dislike.
-            cemu_bridge_set_shader_cache_persistence(
-                UserDefaults.standard.object(forKey: "muffin.shaders.persistentCache") as? Bool ?? true)
             // Global, not per-game - see CemuBridge.h's cemu_bridge_set_vsync_enabled().
             // Applied once per layer (re)init, so reading it here before boot is what
             // makes a mid-session Settings change take effect on the next launch.
@@ -684,19 +672,6 @@ class GameManager: ObservableObject {
                 UserDefaults.standard.object(forKey: FrameStretch.storageKey) as? Bool
                     ?? FrameStretch.defaultValue)
 
-            // Same reason, and more strictly: this one is read when the renderer starts
-            // and is then baked into every shader the session generates, so setting it
-            // after boot would produce a pipeline built from two incompatible dialects.
-            // Defaults ON now, where it defaulted off when it was written and untested. A
-            // device log has since shown 44,001 draws thrown away on this hardware for
-            // want of mesh shaders - 39,098 of them RECTS, which is post-processing not
-            // running. Leaving the fix for that switched off by default would mean
-            // shipping a build that still drops them.
-            // Kept as a belt-and-braces re-push. The one that actually decides anything
-            // is in CemuApp.init() - by the time launchGame runs, MetalRenderer's
-            // constructor has already latched the value (see the comment there).
-            cemu_bridge_set_geometry_shader_emulation_enabled(
-                UserDefaults.standard.object(forKey: "muffin.geometryShaderEmulation") as? Bool ?? true)
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)

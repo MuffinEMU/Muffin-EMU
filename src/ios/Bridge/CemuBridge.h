@@ -1,13 +1,10 @@
 //
 //  CemuBridge.h
-//  Real Swift <-> Cemu C++ engine bridge.
+//  MuffinEMU's Swift <-> engine bridge.
 //
-//  Pure-C interface so it can be imported from Swift via the bridging header.
-//  The implementation (CemuBridge.mm) calls the genuine CafeSystem API.
-//
-//  Until the real Cemu core is compiled for iOS (ROADMAP.md M1), this is built
-//  WITHOUT the CEMU_CORE_AVAILABLE flag and every call honestly reports
-//  CEMU_BRIDGE_CORE_NOT_BUILT instead of pretending to emulate.
+//  Pure-C interface so it can be imported from Swift via the bridging header. The
+//  implementation (CemuBridge.mm) runs on MeloCafe's Cemu core and is compiled into
+//  Cemu.framework next to it; the app target never sees an engine header.
 //
 #ifndef CEMU_BRIDGE_H
 #define CEMU_BRIDGE_H
@@ -151,6 +148,7 @@ typedef struct {
     bool gx2_init_reached;
     unsigned long long gx2_frame_count;
     double gx2_frames_per_second;
+    // Always 0 on MeloCafe's core, which does not count OSScreen scanouts separately.
     unsigned long long os_screen_scanouts;
     unsigned int guest_flip_requests;
 } CemuBridgeProgress;
@@ -350,10 +348,16 @@ int cemu_bridge_cpu_mode(void);
 /// isolates a subsystem that has been wrong before.
 void cemu_bridge_set_recompiler_enabled(bool enabled);
 bool cemu_bridge_recompiler_enabled(void);
-/// Falls back to the original spinlock timebase. The rewritten one had an overflow that
-/// ran the emulated console's clock 65 times too slow.
-void cemu_bridge_set_legacy_timebase(bool useLegacy);
-bool cemu_bridge_legacy_timebase(void);
+
+/// Speed first, or accuracy first. MuffinEMU is tuned for speed by default: the multi-core
+/// recompiler (the multi-core interpreter when no JIT enabler is attached), shaders built
+/// in the background, and the work that only buys accuracy - accurate Vulkan barriers and
+/// GX2DrawDone synchronisation - skipped. On, this takes Cemu's most compatible choice for
+/// each instead: one emulated CPU core, every shader built before the frame that needs it,
+/// accurate barriers and draw-done sync. For the titles that glitch, desync or crash on
+/// the fast path. Read when a title starts.
+void cemu_bridge_set_favour_accuracy(bool enabled);
+bool cemu_bridge_favour_accuracy(void);
 
 /// Whether shaders and pipelines are compiled in the background instead of the game
 /// waiting for each one.
@@ -366,15 +370,6 @@ bool cemu_bridge_legacy_timebase(void);
 void cemu_bridge_set_async_shader_compile(bool enabled);
 bool cemu_bridge_async_shader_compile(void);
 
-/// Experimental, off by default. Restricts the Metal renderer's mid-frame auto-commit
-/// check to only run when a Render encoder ends, not a Blit or Compute one - see
-/// MetalCommon.h's g_metal_reduceEncoderSplitting for the full reasoning. Aimed at
-/// intermittent, self-correcting garbage/rainbow geometry that coincides with Metal's own
-/// runtime warning about heavy blit-encoder interleaving on some titles; not a confirmed
-/// fix, which is why it is a toggle - some games may render fine either way, and this has
-/// not been verified against the actual bug on device.
-void cemu_bridge_set_reduce_encoder_splitting(bool enabled);
-bool cemu_bridge_reduce_encoder_splitting(void);
 
 /// VSync for both Wii U screens' Metal layers - CAMetalLayer.displaySyncEnabled, which
 /// nothing on this port has ever set before (Cemu's own `vsync` config value only ever
@@ -389,11 +384,6 @@ bool cemu_bridge_reduce_encoder_splitting(void);
 /// running.
 void cemu_bridge_set_vsync_enabled(bool enabled);
 
-/// Rebuild geometry shaders and RECTS out of compute passes on a GPU with no mesh
-/// shaders. Read once when the renderer starts and then baked into every shader the
-/// session generates, so it cannot change while a title is running.
-void cemu_bridge_set_geometry_shader_emulation_enabled(bool enabled);
-bool cemu_bridge_geometry_shader_emulation_enabled(void);
 bool cemu_bridge_vsync_enabled(void);
 
 /// Frame stretching. Drives the engine's own fullscreen_scaling, the same config value
@@ -423,12 +413,6 @@ long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includ
 /// Returns 0 on success. Either out pointer may be null.
 int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLearnedBytes, long long* outCompiledBytes);
 
-/// Master on/off for BOTH caches above - see LatteShader.h's g_shaderCachePersistenceEnabled
-/// for exactly what turning this off skips. Defaults on; this is the toggle Void asked
-/// for after reporting shaders don't feel remembered between launches. Takes effect on the
-/// NEXT title launch (LatteShaderCache_Load() only runs at boot), not the running game.
-void cemu_bridge_set_shader_cache_persistence(bool enabled);
-bool cemu_bridge_shader_cache_persistence(void);
 
 /// The reason behind cemu_bridge_cpu_mode(), in a sentence the person holding the iPad
 /// can act on - which is the point: the answer used to be obtainable only by reading a

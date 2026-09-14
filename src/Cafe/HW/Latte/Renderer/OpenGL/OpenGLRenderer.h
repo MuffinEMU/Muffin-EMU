@@ -96,7 +96,7 @@ public:
 	void texture_clearColorSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a) override;
 	void texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue) override;
 
-	LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth) override;
+	LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget) override;
 
 	void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) override;
 	void texture_bindAndActivate(LatteTextureView* textureView, uint32 textureUnit);
@@ -176,26 +176,12 @@ public:
 	void occlusionQuery_updateState() override {};
 
 private:
-
-	class OpenGLCallbacks
-	{
-	   public:
-		virtual bool GLCanvas_HasPadViewOpen() = 0;
-		virtual bool GLCanvas_MakeCurrent(bool padView) = 0;
-		virtual void GLCanvas_SwapBuffers(bool swapTV, bool swapDRC) = 0;
-	};
-
-	void RegisterOpenGLCallbacks(OpenGLCallbacks* openGLCallbacks);
-	void UnregisterOpenGLCallbacks();
-
 	void GetVendorInformation() override;
 
 	void texture_setActiveTextureUnit(sint32 index);
 
 	void texture_syncSliceSpecialBC4(LatteTexture* srcTexture, sint32 srcSliceIndex, sint32 srcMipIndex, LatteTexture* dstTexture, sint32 dstSliceIndex, sint32 dstMipIndex);
 	void texture_syncSliceSpecialIntegerToBC3(LatteTexture* srcTexture, sint32 srcSliceIndex, sint32 srcMipIndex, LatteTexture* dstTexture, sint32 dstSliceIndex, sint32 dstMipIndex);
-
-	OpenGLCallbacks* m_openGLCallbacks = nullptr;
 
 	GLuint m_pipeline = 0;
 

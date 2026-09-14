@@ -12,10 +12,10 @@ namespace WindowSystem
 			Wayland,
 			Cocoa,
 			Windows,
-			Android,
+            UIKit
 		} backend;
-		std::atomic<void*> display = nullptr;
-		std::atomic<void*> surface = nullptr;
+		void* display = nullptr;
+		void* surface = nullptr;
 	};
 
 	enum struct PlatformKeyCodes : uint32
@@ -33,6 +33,8 @@ namespace WindowSystem
 		std::atomic_int32_t width, height;			 // client size of main window
 		std::atomic_int32_t phys_width, phys_height; // client size of main window in physical pixels
 		std::atomic<double> dpi_scale;
+
+        std::atomic_uint32_t visible_outputs{1};
 
 		std::atomic_bool pad_open;							 // if separate pad view is open
 		std::atomic_int32_t pad_width, pad_height;			 // client size of pad window

@@ -3,7 +3,9 @@
 #include "HW/Latte/Core/LatteTextureLoader.h"
 #include "HW/Latte/Renderer/Metal/MetalCommon.h"
 
-std::map<Latte::E_GX2SURFFMT, MetalPixelFormatInfo> MTL_COLOR_FORMAT_TABLE = {
+#include <unordered_map>
+
+std::unordered_map<Latte::E_GX2SURFFMT, MetalPixelFormatInfo> MTL_COLOR_FORMAT_TABLE = {
     {Latte::E_GX2SURFFMT::INVALID_FORMAT, {MTL::PixelFormatInvalid, MetalDataType::NONE, 0}},
 
 	{Latte::E_GX2SURFFMT::R4_G4_UNORM, {MTL::PixelFormatABGR4Unorm, MetalDataType::FLOAT, 2}},
@@ -73,12 +75,12 @@ std::map<Latte::E_GX2SURFFMT, MetalPixelFormatInfo> MTL_COLOR_FORMAT_TABLE = {
 	{Latte::E_GX2SURFFMT::BC5_SNORM, {MTL::PixelFormatBC5_RGSnorm, MetalDataType::FLOAT, 16, {4, 4}}}, // TODO: correct?
 };
 
-std::map<Latte::E_GX2SURFFMT, MetalPixelFormatInfo> MTL_DEPTH_FORMAT_TABLE = {
+std::unordered_map<Latte::E_GX2SURFFMT, MetalPixelFormatInfo> MTL_DEPTH_FORMAT_TABLE = {
     {Latte::E_GX2SURFFMT::INVALID_FORMAT, {MTL::PixelFormatInvalid, MetalDataType::NONE, 0}},
 
 	{Latte::E_GX2SURFFMT::D24_S8_UNORM, {MTL::PixelFormatDepth24Unorm_Stencil8, MetalDataType::NONE, 4, {1, 1}, true}},
-	{Latte::E_GX2SURFFMT::D24_S8_FLOAT, {MTL::PixelFormatDepth32Float_Stencil8, MetalDataType::NONE, 4, {1, 1}, true}},
-	{Latte::E_GX2SURFFMT::D32_S8_FLOAT, {MTL::PixelFormatDepth32Float_Stencil8, MetalDataType::NONE, 5, {1, 1}, true}},
+	{Latte::E_GX2SURFFMT::D24_S8_FLOAT, {MTL::PixelFormatDepth32Float_Stencil8, MetalDataType::NONE, 8, {1, 1}, true}},
+	{Latte::E_GX2SURFFMT::D32_S8_FLOAT, {MTL::PixelFormatDepth32Float_Stencil8, MetalDataType::NONE, 8, {1, 1}, true}},
 	{Latte::E_GX2SURFFMT::D16_UNORM, {MTL::PixelFormatDepth16Unorm, MetalDataType::NONE, 2, {1, 1}}},
 	{Latte::E_GX2SURFFMT::D32_FLOAT, {MTL::PixelFormatDepth32Float, MetalDataType::NONE, 4, {1, 1}}},
 };
@@ -138,6 +140,34 @@ void CheckForPixelFormatSupport(const MetalPixelFormatSupport& support)
    	MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::R24_X8_UNORM].textureDecoder = TextureDecoder_R24_X8::getInstance();
    	MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::X24_G8_UINT].textureDecoder = TextureDecoder_X24_G8_UINT::getInstance();
 
+    if (!support.m_supportsBCFormats)
+    {
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_UNORM] = {MTL::PixelFormatRGBA8Unorm, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC1_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_SRGB] = {MTL::PixelFormatRGBA8Unorm_sRGB, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC1_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_UNORM] = {MTL::PixelFormatRGBA8Unorm, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC2_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_SRGB] = {MTL::PixelFormatRGBA8Unorm_sRGB, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC2_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC3_UNORM] = {MTL::PixelFormatRGBA8Unorm, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC3_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC3_SRGB] = {MTL::PixelFormatRGBA8Unorm_sRGB, MetalDataType::FLOAT, 4, {1, 1}, false, TextureDecoder_BC3_RGBA8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_UNORM] = {MTL::PixelFormatR8Unorm, MetalDataType::FLOAT, 1, {1, 1}, false, TextureDecoder_BC4_UNORM_To_R8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_SNORM] = {MTL::PixelFormatR8Snorm, MetalDataType::FLOAT, 1, {1, 1}, false, TextureDecoder_BC4_SNORM_To_R8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_UNORM] = {MTL::PixelFormatRG8Unorm, MetalDataType::FLOAT, 2, {1, 1}, false, TextureDecoder_BC5_UNORM_To_RG8::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_SNORM] = {MTL::PixelFormatRG8Snorm, MetalDataType::FLOAT, 2, {1, 1}, false, TextureDecoder_BC5_SNORM_To_RG8::getInstance()};
+    }
+    else
+    {
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_UNORM] = {MTL::PixelFormatBC1_RGBA, MetalDataType::FLOAT, 8, {4, 4}, false, TextureDecoder_BC1::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_SRGB] = {MTL::PixelFormatBC1_RGBA_sRGB, MetalDataType::FLOAT, 8, {4, 4}, false, TextureDecoder_BC1::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_UNORM] = {MTL::PixelFormatBC2_RGBA, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC2::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_SRGB] = {MTL::PixelFormatBC2_RGBA_sRGB, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC2::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC3_UNORM] = {MTL::PixelFormatBC3_RGBA, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC3::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC3_SRGB] = {MTL::PixelFormatBC3_RGBA_sRGB, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC3::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_UNORM] = {MTL::PixelFormatBC4_RUnorm, MetalDataType::FLOAT, 8, {4, 4}, false, TextureDecoder_BC4::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC4_SNORM] = {MTL::PixelFormatBC4_RSnorm, MetalDataType::FLOAT, 8, {4, 4}, false, TextureDecoder_BC4::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_UNORM] = {MTL::PixelFormatBC5_RGUnorm, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC5::getInstance()};
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC5_SNORM] = {MTL::PixelFormatBC5_RGSnorm, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC5::getInstance()};
+    }
+
+
     if (!support.m_supportsPacked16BitFormats)
     {
         // B5G6R5Unorm
@@ -147,6 +177,7 @@ void CheckForPixelFormatSupport(const MetalPixelFormatSupport& support)
 
         // A1BGR5Unorm
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::A1_B5_G5_R5_UNORM].pixelFormat = MTL::PixelFormatRGBA8Unorm;
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::A1_B5_G5_R5_UNORM].bytesPerBlock = 4;
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::A1_B5_G5_R5_UNORM].textureDecoder = TextureDecoder_A1_B5_G5_R5_UNORM_vulkan_To_RGBA8::getInstance();
 
         // ABGR4Unorm
@@ -160,39 +191,8 @@ void CheckForPixelFormatSupport(const MetalPixelFormatSupport& support)
 
         // BGR5A1Unorm
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::R5_G5_B5_A1_UNORM].pixelFormat = MTL::PixelFormatRGBA8Unorm;
+        MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::R5_G5_B5_A1_UNORM].bytesPerBlock = 4;
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::R5_G5_B5_A1_UNORM].textureDecoder = TextureDecoder_R5_G5_B5_A1_UNORM_swappedRB_To_RGBA8::getInstance();
-    }
-
-    if (!support.m_supportsBCTextureCompression)
-    {
-        // No block-compression hardware here - every Apple GPU up to and including the
-        // A12Z. Metal doesn't fail a BC descriptor politely, it aborts the process, so
-        // decode the blocks on the CPU into plain uncompressed formats instead. This is
-        // the same fallback the Vulkan backend takes when fmt_bc* comes back false, and
-        // it reuses the same decoders. It costs texture memory - BC1 goes from half a
-        // byte per texel to four - which matters on a 6 GB device, but the alternative
-        // is not booting at all.
-        auto decompressBC = [](Latte::E_GX2SURFFMT format, MTL::PixelFormat pixelFormat, size_t bytesPerTexel, TextureDecoder* textureDecoder)
-        {
-            auto& formatInfo = MTL_COLOR_FORMAT_TABLE[format];
-            formatInfo.pixelFormat = pixelFormat;
-            formatInfo.bytesPerBlock = bytesPerTexel;
-            formatInfo.blockTexelSize = {1, 1};
-            formatInfo.textureDecoder = textureDecoder;
-        };
-
-        decompressBC(Latte::E_GX2SURFFMT::BC1_UNORM, MTL::PixelFormatRGBA8Unorm, 4, TextureDecoder_BC1_To_R8G8B8A8::getInstance());
-        decompressBC(Latte::E_GX2SURFFMT::BC1_SRGB, MTL::PixelFormatRGBA8Unorm_sRGB, 4, TextureDecoder_BC1_To_R8G8B8A8::getInstance());
-        decompressBC(Latte::E_GX2SURFFMT::BC2_UNORM, MTL::PixelFormatRGBA8Unorm, 4, TextureDecoder_BC2_To_R8G8B8A8::getInstance());
-        decompressBC(Latte::E_GX2SURFFMT::BC2_SRGB, MTL::PixelFormatRGBA8Unorm_sRGB, 4, TextureDecoder_BC2_To_R8G8B8A8::getInstance());
-        decompressBC(Latte::E_GX2SURFFMT::BC3_UNORM, MTL::PixelFormatRGBA8Unorm, 4, TextureDecoder_BC3_To_R8G8B8A8::getInstance());
-        decompressBC(Latte::E_GX2SURFFMT::BC3_SRGB, MTL::PixelFormatRGBA8Unorm_sRGB, 4, TextureDecoder_BC3_To_R8G8B8A8::getInstance());
-        decompressBC(Latte::E_GX2SURFFMT::BC4_UNORM, MTL::PixelFormatR8Unorm, 1, TextureDecoder_BC4_To_R8::getInstance());
-        decompressBC(Latte::E_GX2SURFFMT::BC4_SNORM, MTL::PixelFormatR8Snorm, 1, TextureDecoder_BC4_To_R8::getInstance());
-        decompressBC(Latte::E_GX2SURFFMT::BC5_UNORM, MTL::PixelFormatRG8Unorm, 2, TextureDecoder_BC5_To_R8G8<decodeBC5Block_UNORM>::getInstance());
-        decompressBC(Latte::E_GX2SURFFMT::BC5_SNORM, MTL::PixelFormatRG8Snorm, 2, TextureDecoder_BC5_To_R8G8<decodeBC5Block_SNORM>::getInstance());
-
-        cemuLog_log(LogType::Force, "Metal: this GPU has no BC texture support, so BC1-BC5 textures are decompressed on the CPU");
     }
 
     // Depth
@@ -206,18 +206,21 @@ void CheckForPixelFormatSupport(const MetalPixelFormatSupport& support)
     {
         // Depth24Unorm_Stencil8
         MTL_DEPTH_FORMAT_TABLE[Latte::E_GX2SURFFMT::D24_S8_UNORM].pixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
-        // TODO: implement the decoder
-        //MTL_DEPTH_FORMAT_TABLE[Latte::E_GX2SURFFMT::D24_S8_UNORM].textureDecoder = TextureDecoder_D24_S8_To_D32_S8::getInstance();
+        MTL_DEPTH_FORMAT_TABLE[Latte::E_GX2SURFFMT::D24_S8_UNORM].bytesPerBlock = 8;
+        MTL_DEPTH_FORMAT_TABLE[Latte::E_GX2SURFFMT::D24_S8_UNORM].textureDecoder = TextureDecoder_NullData64::getInstance();
     }
 }
 
-const MetalPixelFormatInfo GetMtlPixelFormatInfo(Latte::E_GX2SURFFMT format, bool isDepth)
+const MetalPixelFormatInfo& GetMtlPixelFormatInfo(Latte::E_GX2SURFFMT format, bool isDepth)
 {
+    static const MetalPixelFormatInfo depthFallback{MTL::PixelFormatDepth16Unorm, MetalDataType::NONE, 2};
+    static const MetalPixelFormatInfo colorFallback{MTL::PixelFormatR8Unorm, MetalDataType::FLOAT, 1};
+
     if (isDepth)
     {
         auto it = MTL_DEPTH_FORMAT_TABLE.find(format);
         if (it == MTL_DEPTH_FORMAT_TABLE.end())
-            return {MTL::PixelFormatDepth16Unorm, MetalDataType::NONE, 2}; // Fallback
+            return depthFallback;
         else
             return it->second;
     }
@@ -225,7 +228,7 @@ const MetalPixelFormatInfo GetMtlPixelFormatInfo(Latte::E_GX2SURFFMT format, boo
     {
         auto it = MTL_COLOR_FORMAT_TABLE.find(format);
         if (it == MTL_COLOR_FORMAT_TABLE.end())
-            return {MTL::PixelFormatR8Unorm, MetalDataType::FLOAT, 1}; // Fallback
+            return colorFallback;
         else
             return it->second;
     }

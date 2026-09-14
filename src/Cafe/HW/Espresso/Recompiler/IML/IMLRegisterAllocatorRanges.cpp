@@ -200,7 +200,7 @@ void PPCRecRARange_removeLink_allSegmentRanges(raLivenessRange** root, raLivenes
 #endif
 }
 
-MemoryPoolPermanentObjects<raLivenessRange> memPool_livenessSubrange(4096);
+static thread_local MemoryPoolPermanentObjects<raLivenessRange> memPool_livenessSubrange(4096);
 
 // startPosition and endPosition are inclusive
 raLivenessRange* IMLRA_CreateRange(ppcImlGenContext_t* ppcImlGenContext, IMLSegment* imlSegment, IMLRegID virtualRegister, IMLName name, raInstructionEdge startPosition, raInstructionEdge endPosition)

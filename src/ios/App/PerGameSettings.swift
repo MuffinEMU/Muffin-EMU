@@ -14,12 +14,6 @@ struct GameOverrides: Codable, Equatable {
     /// Settings' "Compile shaders in the background", true/false pin this one game.
     var preCompileShaders: Bool?
 
-    /// nil = follow Settings' "Reduce Command-Buffer Splitting (Experimental)".
-    /// Per-game because it targets an unconfirmed hypothesis, not a proven fix - it may
-    /// help the games that show the intermittent rainbow/garbage geometry and do nothing
-    /// (or, in principle, something worse) on others, which is exactly why this needs to
-    /// be a per-game dial rather than one global switch.
-    var reduceEncoderSplitting: Bool?
 
     static let identity = GameOverrides()
     var isIdentity: Bool { self == GameOverrides.identity }
@@ -67,19 +61,6 @@ final class PerGameSettingsStore: ObservableObject {
         write(next, for: gameID)
     }
 
-    /// Same resolution order as shaders: per-game override first, the global
-    /// "Reduce Command-Buffer Splitting" toggle underneath it. Off both ways unless
-    /// someone has actually turned it on somewhere - see GameOverrides.reduceEncoderSplitting.
-    func effectiveReduceEncoderSplitting(for gameID: String) -> Bool {
-        let globalDefault = defaults.object(forKey: "muffin.render.reduceEncoderSplitting") as? Bool ?? false
-        return overrides(for: gameID).reduceEncoderSplitting ?? globalDefault
-    }
-
-    func setReduceEncoderSplitting(_ value: Bool?, for gameID: String) {
-        var next = overrides(for: gameID)
-        next.reduceEncoderSplitting = value
-        write(next, for: gameID)
-    }
 
     private func write(_ value: GameOverrides, for gameID: String) {
         if value.isIdentity {
@@ -200,9 +181,6 @@ struct GameOptionsView: View {
     private var shaderChoice: Binding<TriState> {
         binding(for: \.preCompileShaders) { store.setPreCompileShaders($0, for: game.id) }
     }
-    private var encoderSplittingChoice: Binding<TriState> {
-        binding(for: \.reduceEncoderSplitting) { store.setReduceEncoderSplitting($0, for: game.id) }
-    }
 
     var body: some View {
         NavigationView {
@@ -219,17 +197,6 @@ struct GameOptionsView: View {
                     Text("Renders and compiles every shader ahead of time so the game runs faster even without the recompiler. Most games want this on; Nano Assault Neo specifically breaks with it on, which is why this is a per-game choice rather than only a global one.\n\n\"Use Global Default\" tracks whatever Settings > Shader Compilation currently says, even if you change it later. On/Off pins this game regardless of what the global setting does.")
                 }
 
-                Section {
-                    Picker("Reduce Command-Buffer Splitting", selection: encoderSplittingChoice) {
-                        ForEach(TriState.allCases) { choice in
-                            Text(choice.title).tag(choice)
-                        }
-                    }
-                } header: {
-                    Text("Rendering (Experimental)")
-                } footer: {
-                    Text("Aimed at intermittent rainbow or garbled geometry some games show for a few seconds at a time. Not a confirmed fix - try On if this game shows that glitch, and leave it Off (or set it back to Use Global Default) if it doesn't help or makes things render worse.")
-                }
             }
             .navigationTitle(game.title)
             #if os(iOS)

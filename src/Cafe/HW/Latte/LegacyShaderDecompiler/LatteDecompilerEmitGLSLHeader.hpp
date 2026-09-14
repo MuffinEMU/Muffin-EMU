@@ -243,7 +243,7 @@ namespace LatteDecompiler
 					cemu_assert_debug(decompilerContext->output->resourceMappingVK.attributeMapping[i] >= 0);
 					cemu_assert_debug(decompilerContext->output->resourceMappingGL.attributeMapping[i] == decompilerContext->output->resourceMappingVK.attributeMapping[i]);
 
-					shaderSrc->addFmt("ATTR_LAYOUT({}, {}) in uvec4 attrDataSem{};" _CRLF, (sint32)decompilerContext->output->resourceMappingVK.setIndex, (sint32)decompilerContext->output->resourceMappingVK.attributeMapping[i], i);
+					shaderSrc->addFmt("ATTR_LAYOUT({}) in uvec4 attrDataSem{};" _CRLF, (sint32)decompilerContext->output->resourceMappingVK.attributeMapping[i], i);
 				}
 			}
 		}
@@ -255,7 +255,7 @@ namespace LatteDecompiler
 		// OpenGL/Vulkan ifdefs
 		src->add("#ifdef VULKAN" _CRLF);
 		// Vulkan defines
-		src->add("#define ATTR_LAYOUT(__vkSet, __location) layout(set = __vkSet, location = __location)" _CRLF);
+		src->add("#define ATTR_LAYOUT(__location) layout(location = __location)" _CRLF);
 		src->add("#define UNIFORM_BUFFER_LAYOUT(__glLocation, __vkSet, __vkLocation) layout(set = __vkSet, binding = __vkLocation, std140)" _CRLF);
 		src->add("#define TEXTURE_LAYOUT(__glLocation, __vkSet, __vkLocation) layout(set = __vkSet, binding = __vkLocation)" _CRLF);
 		if (decompilerContext->shaderType == LatteConst::ShaderType::Vertex || decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
@@ -293,7 +293,7 @@ namespace LatteDecompiler
 		}
 		src->add("#else" _CRLF);
 		// OpenGL defines
-		src->add("#define ATTR_LAYOUT(__vkSet, __location) layout(location = __location)" _CRLF);
+		src->add("#define ATTR_LAYOUT(__location) layout(location = __location)" _CRLF);
 		src->add("#define UNIFORM_BUFFER_LAYOUT(__glLocation, __vkSet, __vkLocation) layout(binding = __glLocation, std140) " _CRLF);
 		src->add("#define TEXTURE_LAYOUT(__glLocation, __vkSet, __vkLocation) layout(binding = __glLocation)" _CRLF);
 		if (decompilerContext->shaderType == LatteConst::ShaderType::Vertex || decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
@@ -355,8 +355,6 @@ namespace LatteDecompiler
 
 	void _emitVSExports(LatteDecompilerShaderContext* shaderContext)
 	{
-		std::array<bool, 32> activePassParams{};
-
 		auto* src = shaderContext->shaderSource;
 		LatteShaderPSInputTable* psInputTable = LatteSHRC_GetPSInputTable();
 		auto parameterMask = shaderContext->shader->outputParameterMask;
@@ -380,8 +378,6 @@ namespace LatteDecompiler
 			if (psInputIndex == -1)
 				continue; // no ps input
 
-			activePassParams.at(psInputIndex) = true;
-
 			src->addFmt("layout(location = {}) ", psInputIndex);
 			if (psInputTable->import[psInputIndex].isFlat)
 				src->add("flat ");
@@ -390,21 +386,6 @@ namespace LatteDecompiler
 			src->add("out");
 			src->addFmt(" vec4 passParameterSem{};" _CRLF, psInputTable->import[psInputIndex].semanticId);
 		}
-
-		// TODO: fix this
-		for (uint32 i = 0; i < 32; i++)
-		{
-			if (!activePassParams[i])
-				src->addFmt("layout(location = {0}) out vec4 dummyPassParameterSem{0};" _CRLF, i);
-		}
-
-		src->add("void dummyPassParamInit() {" _CRLF);
-		for (uint32 i = 0; i < 32; i++)
-		{
-			if (!activePassParams[i])
-				src->addFmt("dummyPassParameterSem{} = vec4(0.0, 0.0, 0.0, 0.0);" _CRLF, i);
-		}
-		src->add("}" _CRLF);
 	}
 
 	void _emitPSImports(LatteDecompilerShaderContext* shaderContext)
@@ -529,7 +510,17 @@ namespace LatteDecompiler
 			{
 				if ((decompilerContext->shader->pixelColorOutputMask&(1 << i)) != 0)
 				{
+					const auto outputType = GetGLSLPixelOutputType(i, *decompilerContext->contextRegistersNew);
+					if (outputType != GLSLPixelOutputType::Float)
+					{
+						src->add("#ifdef VULKAN" _CRLF);
+						src->addFmt("layout(location = {}) out {} passPixelColor{};" _CRLF, i,
+							outputType == GLSLPixelOutputType::SignedInt ? "ivec4" : "uvec4", i);
+						src->add("#else" _CRLF);
+					}
 					src->addFmt("layout(location = {}) out vec4 passPixelColor{};" _CRLF, i, i);
+					if (outputType != GLSLPixelOutputType::Float)
+						src->add("#endif" _CRLF);
 				}
 			}
 		}

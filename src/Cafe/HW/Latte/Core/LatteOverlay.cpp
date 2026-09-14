@@ -93,9 +93,10 @@ void LatteOverlay_renderOverlay(ImVec2& position, ImVec2& pivot, sint32 directio
 
 			if (config.overlay.cpu_per_core_usage)
 			{
-				for (sint32 i = 0; i < g_state.processor_count; ++i)
+				const size_t cpuCoreCount = std::min<size_t>(g_state.processor_count, g_state.cpu_per_core.size());
+				for (size_t i = 0; i < cpuCoreCount; ++i)
 				{
-					ImGui::Text("CPU #%d: %.2lf%%", i + 1, g_state.cpu_per_core[i]);
+					ImGui::Text("CPU #%zu: %.2lf%%", i + 1, g_state.cpu_per_core[i]);
 				}
 			}
 
@@ -562,7 +563,7 @@ void LatteOverlay_render(bool pad_view)
 
 void LatteOverlay_init()
 {
-	g_state.processor_count = GetProcessorCount();
+	g_state.processor_count = std::max<int>(1, GetProcessorCount());
 
 	g_state.processor_times.resize(g_state.processor_count);
 	g_state.cpu_per_core.resize(g_state.processor_count);
@@ -574,7 +575,7 @@ static void UpdateStats_CemuCpu()
 	QueryProcTime(now);
 	
 	double cpu = ProcessorTime::Compare(g_state.processor_time_cemu, now);
-	cpu /= g_state.processor_count;
+	cpu /= std::max(1, g_state.processor_count);
 	
 	g_state.cpu_usage = cpu * 100;
 	g_state.processor_time_cemu = now;
@@ -582,8 +583,22 @@ static void UpdateStats_CemuCpu()
 
 static void UpdateStats_CpuPerCore()
 {
-	std::vector<ProcessorTime> now(g_state.processor_count);
-	QueryCoreTimes(g_state.processor_count, now);
+	std::vector<ProcessorTime> now(g_state.processor_times.size());
+	QueryCoreTimes(now);
+	if (now.empty())
+	{
+		g_state.processor_count = 0;
+		g_state.processor_times.clear();
+		g_state.cpu_per_core.clear();
+		return;
+	}
+
+	if (g_state.processor_times.size() != now.size())
+	{
+		g_state.processor_count = (int)now.size();
+		g_state.processor_times.resize(now.size());
+		g_state.cpu_per_core.resize(now.size());
+	}
 
 	for (int32_t i = 0; i < g_state.processor_count; ++i)
 	{
@@ -602,12 +617,18 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
 	g_state.fps = fps;
 	g_state.draw_calls_per_frame = drawcalls;
 	g_state.fast_draw_calls_per_frame = fastDrawcalls;
-	UpdateStats_CemuCpu();
-	UpdateStats_CpuPerCore();
+
+	const auto& overlay = GetConfig().overlay;
+	if (overlay.cpu_usage)
+		UpdateStats_CemuCpu();
+	if (overlay.cpu_per_core_usage)
+		UpdateStats_CpuPerCore();
 
 	// update ram
-	g_state.ram_usage = (QueryRamUsage() / 1000) / 1000;
+	if (overlay.ram_usage)
+		g_state.ram_usage = (QueryRamUsage() / 1000) / 1000;
 
 	// update vram
-	g_renderer->GetVRAMInfo(g_state.vramUsage, g_state.vramTotal);
+	if (overlay.vram_usage && g_renderer)
+		g_renderer->GetVRAMInfo(g_state.vramUsage, g_state.vramTotal);
 }

@@ -17,7 +17,7 @@ DirectSoundAPI::DirectSoundAPI(GUID* guid, sint32 samplerate, sint32 channels, s
 	if (DirectSoundCreate8(guid, &m_direct_sound, nullptr) != DS_OK)
 		throw std::runtime_error("can't create directsound device");
 
-	if (FAILED(m_direct_sound->SetCooperativeLevel(static_cast<HWND>(WindowSystem::GetWindowInfo().window_main.surface.load()), DSSCL_PRIORITY)))
+	if (FAILED(m_direct_sound->SetCooperativeLevel(static_cast<HWND>(WindowSystem::GetWindowInfo().window_main.surface), DSSCL_PRIORITY)))
 		throw std::runtime_error("can't set directsound priority");
 
 	DSBUFFERDESC bd{};
@@ -169,10 +169,11 @@ bool DirectSoundAPI::Stop()
 bool DirectSoundAPI::FeedBlock(sint16* data)
 {
 	std::lock_guard lock(m_mutex);
-	if (m_buffer.size() > kBlockCount)
+	const uint32 maxQueuedBlocks = kBlockCount;
+	while (m_buffer.size() + 1 > maxQueuedBlocks && !m_buffer.empty())
 	{
-		cemuLog_logDebug(LogType::Force, "dropped direct sound block since too many buffers are queued");
-		return false;
+		m_buffer.pop();
+		cemuLog_logDebug(LogType::SoundAPI, "DirectSound: dropped stale audio block to avoid playback lag");
 	}
 
 	auto tmp = std::make_unique<uint8[]>(m_bytesPerBlock);
@@ -192,7 +193,7 @@ void DirectSoundAPI::SetVolume(sint32 volume)
 bool DirectSoundAPI::NeedAdditionalBlocks() const
 {
 	std::shared_lock lock(m_mutex);
-	return m_buffer.size() < GetAudioDelay();
+	return m_buffer.size() < GetTargetQueuedBlocks();
 }
 
 std::vector<DirectSoundAPI::DeviceDescriptionPtr> DirectSoundAPI::GetDevices()

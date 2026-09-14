@@ -392,6 +392,58 @@ void decodeBC4Block_UNORM(uint8* blockStorage, float* rOutput)
 	}
 }
 
+void decodeBC4Block_SNORM(uint8* blockStorage, float* rOutput)
+{
+    uint8* blockInput = (uint8*)blockStorage;
+    float red[8];
+
+    int8_t r0raw = (int8_t)blockInput[0];
+    int8_t r1raw = (int8_t)blockInput[1];
+    red[0] = (r0raw == -128) ? -1.0f : (float)r0raw / 127.0f;
+    red[1] = (r1raw == -128) ? -1.0f : (float)r1raw / 127.0f;
+
+    if (r0raw > r1raw)
+    {
+        // 6 interpolated color values
+        red[2] = (6 * red[0] + 1 * red[1]) / 7.0f;
+        red[3] = (5 * red[0] + 2 * red[1]) / 7.0f;
+        red[4] = (4 * red[0] + 3 * red[1]) / 7.0f;
+        red[5] = (3 * red[0] + 4 * red[1]) / 7.0f;
+        red[6] = (2 * red[0] + 5 * red[1]) / 7.0f;
+        red[7] = (1 * red[0] + 6 * red[1]) / 7.0f;
+    }
+    else
+    {
+        // 4 interpolated color values
+        red[2] = (4 * red[0] + 1 * red[1]) / 5.0f;
+        red[3] = (3 * red[0] + 2 * red[1]) / 5.0f;
+        red[4] = (2 * red[0] + 3 * red[1]) / 5.0f;
+        red[5] = (1 * red[0] + 4 * red[1]) / 5.0f;
+        red[6] = -1.0f;   // bit code 110
+        red[7] =  1.0f;   // bit code 111
+    }
+
+    uint8* bitIndices = blockInput + 2;
+    uint32 redRow0 = (((uint32)bitIndices[2]) << 16) | (((uint32)bitIndices[1]) << 8) | (((uint32)bitIndices[0]) << 0);
+    uint32 redRow1 = (((uint32)bitIndices[5]) << 16) | (((uint32)bitIndices[4]) << 8) | (((uint32)bitIndices[3]) << 0);
+
+    uint8 pRed[16];
+    for (sint32 i = 0; i < 8; i++)
+    {
+        pRed[i]     = (redRow0 >> (i * 3)) & 7;
+        pRed[i + 8] = (redRow1 >> (i * 3)) & 7;
+    }
+
+    float* pixelOutput = rOutput;
+    for (sint32 py = 0; py < 4; py++)
+    {
+        for (sint32 px = 0; px < 4; px++)
+        {
+            *pixelOutput++ = red[pRed[px + py * 4]];
+        }
+    }
+}
+
 void decodeBC5Block_UNORM(uint8* blockStorage, float* rgOutput)
 {
 	uint8* blockInput = (uint8*)blockStorage;
@@ -641,10 +693,12 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	LARGE_INTEGER benchmark_freq;
 	QueryPerformanceCounter(&benchmark_begin);
 #endif
+
 	if (tex->overwriteInfo.hasFormatOverwrite == false && tex->overwriteInfo.hasResolutionOverwrite == false)
 	{
 		texDecoder->decode(&textureLoader, pixelData);
 	}
+
 #ifdef BENCHMARK_TEXTURE_DECODING
 	QueryPerformanceCounter(&benchmark_end);
 	QueryPerformanceFrequency(&benchmark_freq);
@@ -680,6 +734,7 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	}
 	// load slice
 	//debug_printf("[Load Slice] Addr: %08x MIP: %02d Slice: %02d Res %04x/%04x Texel Res %04x/%04x Fmt %04x Tm %d\n", textureLoader.physAddress, mipIndex, sliceIndex, textureLoader.width, textureLoader.height, textureLoader.texelCountX, textureLoader.texelCountY, (int)format, tileMode);
+
 	LatteTextureLoader_loadTextureDataIntoSlice(tex, textureLoader.width, textureLoader.height, depth, mipLevels, pixelData, sliceIndex, mipIndex, imageSize);
 	// write texture dump
 	if (textureLoader.dump)

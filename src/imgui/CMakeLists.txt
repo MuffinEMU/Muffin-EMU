@@ -3,14 +3,19 @@ add_library(imguiImpl
 	imgui_extension.h
 )
 
-# Backend impls only when their API is enabled (iOS = Metal only; no OpenGL/Vulkan).
 if (ENABLE_OPENGL)
-	target_sources(imguiImpl PRIVATE imgui_impl_opengl3.cpp imgui_impl_opengl3.h)
-endif ()
+	target_sources(imguiImpl PRIVATE
+		imgui_impl_opengl3.cpp
+		imgui_impl_opengl3.h
+	)
+endif()
 
 if (ENABLE_VULKAN)
-	target_sources(imguiImpl PRIVATE imgui_impl_vulkan.cpp imgui_impl_vulkan.h)
-endif ()
+	target_sources(imguiImpl PRIVATE
+		imgui_impl_vulkan.cpp
+		imgui_impl_vulkan.h
+	)
+endif()
 
 if (ENABLE_METAL)
     target_sources(imguiImpl PRIVATE

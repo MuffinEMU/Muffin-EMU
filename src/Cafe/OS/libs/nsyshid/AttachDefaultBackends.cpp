@@ -1,7 +1,7 @@
 #include "nsyshid.h"
 #include "Backend.h"
 #include "BackendEmulated.h"
-#if !defined(CEMU_PLATFORM_IOS)
+#ifdef HAS_LIBUSB
 #include "BackendLibusb.h"
 #endif
 
@@ -9,8 +9,8 @@ namespace nsyshid::backend
 {
 	void AttachDefaultBackends()
 	{
-#if !defined(CEMU_PLATFORM_IOS)
-		// add libusb backend (real USB HID peripherals — not available on iOS)
+	#ifdef HAS_LIBUSB
+		// add libusb backend
 		{
 			auto backendLibusb = std::make_shared<backend::libusb::BackendLibusb>();
 			if (backendLibusb->IsInitialisedOk())
@@ -18,7 +18,7 @@ namespace nsyshid::backend
 				AttachBackend(backendLibusb);
 			}
 		}
-#endif
+	#endif
 	   // add emulated backend
 		{
 			auto backendEmulated = std::make_shared<backend::emulated::BackendEmulated>();

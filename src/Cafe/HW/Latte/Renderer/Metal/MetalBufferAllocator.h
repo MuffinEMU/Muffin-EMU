@@ -7,28 +7,9 @@
 
 #include <utility>
 
-// Storage mode is a multi-bit FIELD inside MTL::ResourceOptions, at bits 4-5 (Shared=0,
-// Managed=16, Private=32, Memoryless=48 - MTL::StorageMode's own values shifted left by
-// Apple's MTLResourceStorageModeShift=4), not a single flag bit. Testing it with a plain
-// `options & MTL::ResourceStorageModeSomething` only works by accident for the one value
-// (Managed=16) whose bit pattern happens not to collide with any other field's bits; it
-// is flatly wrong for Shared (`options & 0` is 0 for every options value, so that branch
-// can never be taken) and for Memoryless vs Managed (Memoryless=48=0b110000 shares bit 4
-// with Managed=16=0b010000, so `options & ResourceStorageModeManaged` is also true for a
-// Memoryless buffer). Mask out just this field before comparing, everywhere it matters.
-inline MTL::ResourceOptions GetStorageMode(MTL::ResourceOptions options)
-{
-    constexpr MTL::ResourceOptions storageModeMask = 0x30;
-    return options & storageModeMask;
-}
-
 inline MTL::ResourceOptions GetResourceOptions(MTL::ResourceOptions options)
 {
-    // Shared-storage buffers (the common CPU-write/GPU-read case for Cemu's dynamically
-    // updated vertex/uniform buffers) never got ResourceCPUCacheModeWriteCombined before
-    // this used GetStorageMode() - see that function's comment for why.
-    const MTL::ResourceOptions storageMode = GetStorageMode(options);
-    if (storageMode == MTL::ResourceStorageModeShared || storageMode == MTL::ResourceStorageModeManaged)
+    if (options & MTL::ResourceStorageModeShared || options & MTL::ResourceStorageModeManaged)
         options |= MTL::ResourceCPUCacheModeWriteCombined;
 
     return options;
@@ -60,10 +41,7 @@ class MetalBufferChunkedHeap : private ChunkedHeap<>
 
     bool RequiresFlush() const
     {
-        // See GetStorageMode()'s comment: a raw `m_options & ResourceStorageModeManaged`
-        // also matched Memoryless (shares bit 4 with Managed), which would have called
-        // didModifyRange() - only valid for Managed buffers - on a Memoryless one.
-        return GetStorageMode(m_options) == MTL::ResourceStorageModeManaged;
+        return m_options & MTL::ResourceStorageModeManaged;
     }
 
 	void GetStats(uint32& numBuffers, size_t& totalBufferSize, size_t& freeBufferSize) const
@@ -107,7 +85,6 @@ public:
 		uint32 size;
 		uint32 writeIndex;
 		std::queue<BufferSyncPoint_t> queue_syncPoints;
-		MTL::CommandBuffer* lastSyncpointCommandBuffer{ nullptr };
 		uint32 index;
 		uint32 cleanupCounter{ 0 }; // increased by one every time CleanupBuffer() is called if there is no sync point. If it reaches 300 then the buffer is released
 	};
@@ -128,10 +105,7 @@ public:
 
     bool RequiresFlush() const
     {
-        // See GetStorageMode()'s comment: a raw `m_options & ResourceStorageModeManaged`
-        // also matched Memoryless (shares bit 4 with Managed), which would have called
-        // didModifyRange() - only valid for Managed buffers - on a Memoryless one.
-        return GetStorageMode(m_options) == MTL::ResourceStorageModeManaged;
+        return m_options & MTL::ResourceStorageModeManaged;
     }
 
 	void GetStats(uint32& numBuffers, size_t& totalBufferSize, size_t& freeBufferSize) const;

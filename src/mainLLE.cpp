@@ -2,7 +2,6 @@
 #include "WindowSystem.h"
 #include "Common/FileStream.h"
 
-void gui_create();
 void CemuCommonInit();
 
 typedef struct  

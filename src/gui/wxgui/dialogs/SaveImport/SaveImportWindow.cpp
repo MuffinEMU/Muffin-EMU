@@ -91,7 +91,7 @@ void SaveImportWindow::OnImport(wxCommandEvent& event)
 	const std::string zipfile = source_path.ToUTF8().data();
 	
 	int ziperr;
-	auto* zip = zip_open(zipfile.c_str(), ZIP_RDONLY, &ziperr);
+	auto* zip = zip_open(fs::resolvePathCI(fs::path(zipfile)).string().c_str(), ZIP_RDONLY, &ziperr);
 	if (zip)
 	{
 		const sint32 numEntries = zip_get_num_entries(zip, 0);
@@ -218,7 +218,7 @@ void SaveImportWindow::OnImport(wxCommandEvent& event)
 		return;
 	}
 
-	zip = zip_open(zipfile.c_str(), ZIP_RDONLY, &ziperr);
+	zip = zip_open(fs::resolvePathCI(fs::path(zipfile)).string().c_str(), ZIP_RDONLY, &ziperr);
 	if (!zip)
 	{
 		const auto error_msg = formatWxString(_("Error when opening the import zip file:\n{}"), GetSystemErrorMessage(ec));
@@ -269,7 +269,7 @@ void SaveImportWindow::OnImport(wxCommandEvent& event)
 		auto buffer = std::make_unique<char[]>(sb.size);
 		if (zip_fread(zip_file, buffer.get(), sb.size) == sb.size)
 		{
-			std::ofstream file(path, std::ios::out | std::ios::binary);
+			std::ofstream file(fs::resolvePathCI(path), std::ios::out | std::ios::binary);
 			if (file.is_open())
 				file.write(buffer.get(), sb.size);
 		}

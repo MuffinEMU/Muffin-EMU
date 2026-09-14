@@ -89,7 +89,7 @@ void ModuleWindow::OnGameLoaded()
 		{
 			wxListItem item;
 			item.SetId(i);
-			item.SetText(module->moduleName2);
+			item.SetText(module->moduleName);
 
 			const auto index = m_modules->InsertItem(item);
 			m_modules->SetItem(index, ColumnAddress, wxString::Format("%08x", module->regionMappingBase_text.GetMPTR()));
@@ -129,6 +129,5 @@ void ModuleWindow::OnLeftDClick(wxMouseEvent& event)
 	const auto address = std::stoul(text.ToStdString(), nullptr, 16);
 	if (address == 0)
 		return;
-	debuggerState.debugSession.instructionPointer = address;
-	g_debuggerDispatcher.MoveIP();
+	debugger_jumpToAddressInDisasm(address);
 }

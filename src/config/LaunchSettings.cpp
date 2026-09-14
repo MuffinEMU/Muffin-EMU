@@ -271,7 +271,7 @@ bool LaunchSettings::ExtractorTool(std::wstring_view wud_path, std::string_view 
 			p.remove_filename();
 			
 			fs::create_directories(p);
-			std::ofstream file(filename, std::ios::out | std::ios::binary);
+			std::ofstream file(fs::resolvePathCI(filename), std::ios::out | std::ios::binary);
 			file.write((const char*)fileData.data(), fileData.size());
 			file.flush();
 			file.close();

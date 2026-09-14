@@ -46,8 +46,11 @@ void QueryProcTime(uint64 &out_now, uint64 &out_user, uint64 &out_kernel)
 	}
 }
 
-void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
+void QueryCoreTimes(std::vector<ProcessorTime>& out)
 {
+	const uint32 count = GetProcessorCount();
+	out.resize(count);
+
 	std::vector<SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION> sppi(count);
 	if (NT_SUCCESS(NtQuerySystemInformation(SystemProcessorPerformanceInformation, sppi.data(), sizeof(SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION) * count, nullptr)))
 	{
@@ -61,7 +64,7 @@ void QueryCoreTimes(uint32 count, std::vector<ProcessorTime>& out)
 	}
 	else
 	{
-		for (auto i = 0; i < count; ++i)
+		for (auto i = 0; i < out.size(); ++i)
 		{
 			out[i] = { };
 		}

@@ -1,0 +1,57 @@
+// Pause and resume for a running title.
+//
+// MeloCafe's core has no pause of its own - its app only ever shuts a title down - but
+// iOS needs one: the app goes to the background, a sheet covers the game, a call comes
+// in. This suspends every active guest thread under the scheduler lock and resumes them
+// again, using only coreinit functions the core already exports, so the core itself is
+// untouched. It is the same mechanism cemu-ios-muffin's own core used.
+#include "Cafe/CafeSystem.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
+#include "Cemu/Logging/CemuLogging.h"
+
+#include <atomic>
+
+static std::atomic_bool sTitlePaused{false};
+
+bool IOSTitlePause_Pause()
+{
+	if (!CafeSystem::IsTitleRunning() || sTitlePaused.exchange(true))
+		return false;
+	coreinit::__OSLockScheduler();
+	for (sint32 i = 0; i < activeThreadCount; i++)
+	{
+		auto thread = reinterpret_cast<OSThread_t*>(memory_getPointerFromVirtualOffset(activeThread[i]));
+		coreinit::__OSSuspendThreadNolock(thread);
+	}
+	coreinit::__OSUnlockScheduler();
+	cemuLog_log(LogType::Force, "iOS: title paused ({} guest threads suspended)", activeThreadCount);
+	return true;
+}
+
+bool IOSTitlePause_Resume()
+{
+	if (!sTitlePaused.exchange(false))
+		return false;
+	if (!CafeSystem::IsTitleRunning())
+		return false;
+	coreinit::__OSLockScheduler();
+	for (sint32 i = 0; i < activeThreadCount; i++)
+	{
+		auto thread = reinterpret_cast<OSThread_t*>(memory_getPointerFromVirtualOffset(activeThread[i]));
+		coreinit::__OSResumeThreadInternal(thread, 1);
+	}
+	coreinit::__OSUnlockScheduler();
+	cemuLog_log(LogType::Force, "iOS: title resumed");
+	return true;
+}
+
+bool IOSTitlePause_IsPaused()
+{
+	return sTitlePaused.load();
+}
+
+// A title that shuts down while paused must not leave the flag set for the next one.
+void IOSTitlePause_Forget()
+{
+	sTitlePaused.store(false);
+}

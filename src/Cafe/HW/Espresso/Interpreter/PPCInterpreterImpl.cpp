@@ -1,108 +1,103 @@
 #include "PPCInterpreterInternal.h"
+#include <array>
+#include <bit>
+#include <cstring>
+#include <atomic>
+#include <vector>
+#include <algorithm>
 #include "PPCInterpreterHelper.h"
 #include "Cafe/HW/Espresso/Debugger/Debugger.h"
 #include "Cafe/HW/Espresso/Debugger/GDBStub.h"
 
-#include <atomic>
-#include <mutex>
-#include <type_traits>
-#include <unordered_map>
-
 class PPCItpCafeOSUsermode
 {
 public:
-	static const bool allowSupervisorMode = false;
-	static const bool allowDSI = false;
-
-	inline static uint32 memory_readCodeU32(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		return _swapEndianU32(*(uint32*)(memory_base + address));
-	}
-
-	inline static void ppcMem_writeDataDouble(PPCInterpreter_t* hCPU, uint32 address, double vf)
-	{
-		uint64 v = *(uint64*)&vf;
-		uint32 v1 = v & 0xFFFFFFFF;
-		uint32 v2 = v >> 32;
-		uint8* ptr = memory_getPointerFromVirtualOffset(address);
-		*(uint32*)(ptr + 4) = CPU_swapEndianU32(v1);
-		*(uint32*)(ptr + 0) = CPU_swapEndianU32(v2);
-	}
-
-	inline static void ppcMem_writeDataU64(PPCInterpreter_t* hCPU, uint32 address, uint64 v)
-	{
-		*(uint64*)(memory_getPointerFromVirtualOffset(address)) = CPU_swapEndianU64(v);
-	}
-
-	inline static void ppcMem_writeDataU32(PPCInterpreter_t* hCPU, uint32 address, uint32 v)
-	{
-		*(uint32*)(memory_getPointerFromVirtualOffset(address)) = CPU_swapEndianU32(v);
-	}
-
-	inline static void ppcMem_writeDataU16(PPCInterpreter_t* hCPU, uint32 address, uint16 v)
-	{
-		*(uint16*)(memory_getPointerFromVirtualOffset(address)) = CPU_swapEndianU16(v);
-	}
-
-	inline static void ppcMem_writeDataU8(PPCInterpreter_t* hCPU, uint32 address, uint8 v)
-	{
-		*(uint8*)(memory_getPointerFromVirtualOffset(address)) = v;
-	}
-	
-	inline static double ppcMem_readDataDouble(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint32 v[2];
-		v[1] = *(uint32*)(memory_getPointerFromVirtualOffset(address));
-		v[0] = *(uint32*)(memory_getPointerFromVirtualOffset(address) + 4);
-		v[0] = CPU_swapEndianU32(v[0]);
-		v[1] = CPU_swapEndianU32(v[1]);
-		return *(double*)v;
-	}
-
-	inline static float ppcMem_readDataFloat(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint32 v = *(uint32*)(memory_getPointerFromVirtualOffset(address));
-		v = CPU_swapEndianU32(v);
-		return *(float*)&v;
-	}
-
-	inline static uint64 ppcMem_readDataU64(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint64 v = *(uint64*)(memory_getPointerFromVirtualOffset(address));
-		return CPU_swapEndianU64(v);
-	}
-
-	inline static uint32 ppcMem_readDataU32(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint32 v = *(uint32*)(memory_getPointerFromVirtualOffset(address));
-		return CPU_swapEndianU32(v);
-	}
-
-	inline static uint16 ppcMem_readDataU16(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint16 v = *(uint16*)(memory_getPointerFromVirtualOffset(address));
-		return CPU_swapEndianU16(v);
-	}
-
-	inline static uint8 ppcMem_readDataU8(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		return *(uint8*)(memory_getPointerFromVirtualOffset(address));
-	}
-
-	inline static uint64 ppcMem_readDataFloatEx(PPCInterpreter_t* hCPU, uint32 addr)
-	{
-		return ConvertToDoubleNoFTZ(_swapEndianU32(*(uint32*)(memory_base + addr)));
-	}
-
-	inline static void ppcMem_writeDataFloatEx(PPCInterpreter_t* hCPU, uint32 addr, uint64 value)
-	{
-		*(uint32*)(memory_base + addr) = _swapEndianU32(ConvertToSingleNoFTZ(value));
-	}
-
-	inline static uint64 getTB(PPCInterpreter_t* hCPU)
-	{
-		return PPCInterpreter_getMainCoreCycleCounter();
-	}
+    static const bool allowSupervisorMode = false;
+    static const bool allowDSI = false;
+    
+    inline static uint32 memory_readCodeU32(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        return _swapEndianU32(*(uint32*)(memory_base + address));
+    }
+    
+    inline static void ppcMem_writeDataDouble(PPCInterpreter_t* hCPU, uint32 address, double vf)
+    {
+        const uint64 v = CPU_swapEndianU64(std::bit_cast<uint64>(vf));
+        
+        std::memcpy(memory_getPointerFromVirtualOffset(address), &v, sizeof(v));
+    }
+    
+    inline static void ppcMem_writeDataU64(PPCInterpreter_t* hCPU, uint32 address, uint64 v)
+    {
+        *(uint64*)(memory_getPointerFromVirtualOffset(address)) = CPU_swapEndianU64(v);
+    }
+    
+    inline static void ppcMem_writeDataU32(PPCInterpreter_t* hCPU, uint32 address, uint32 v)
+    {
+        *(uint32*)(memory_getPointerFromVirtualOffset(address)) = CPU_swapEndianU32(v);
+    }
+    
+    inline static void ppcMem_writeDataU16(PPCInterpreter_t* hCPU, uint32 address, uint16 v)
+    {
+        *(uint16*)(memory_getPointerFromVirtualOffset(address)) = CPU_swapEndianU16(v);
+    }
+    
+    inline static void ppcMem_writeDataU8(PPCInterpreter_t* hCPU, uint32 address, uint8 v)
+    {
+        *(uint8*)(memory_getPointerFromVirtualOffset(address)) = v;
+    }
+    
+    inline static double ppcMem_readDataDouble(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint64 v;
+        std::memcpy(&v, memory_getPointerFromVirtualOffset(address), sizeof(v));
+        return std::bit_cast<double>(CPU_swapEndianU64(v));
+    }
+    
+    inline static float ppcMem_readDataFloat(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint32 v = *(uint32*)(memory_getPointerFromVirtualOffset(address));
+        v = CPU_swapEndianU32(v);
+        return *(float*)&v;
+    }
+    
+    inline static uint64 ppcMem_readDataU64(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint64 v = *(uint64*)(memory_getPointerFromVirtualOffset(address));
+        return CPU_swapEndianU64(v);
+    }
+    
+    inline static uint32 ppcMem_readDataU32(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint32 v = *(uint32*)(memory_getPointerFromVirtualOffset(address));
+        return CPU_swapEndianU32(v);
+    }
+    
+    inline static uint16 ppcMem_readDataU16(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint16 v = *(uint16*)(memory_getPointerFromVirtualOffset(address));
+        return CPU_swapEndianU16(v);
+    }
+    
+    inline static uint8 ppcMem_readDataU8(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        return *(uint8*)(memory_getPointerFromVirtualOffset(address));
+    }
+    
+    inline static uint64 ppcMem_readDataFloatEx(PPCInterpreter_t* hCPU, uint32 addr)
+    {
+        return ConvertToDoubleNoFTZ(_swapEndianU32(*(uint32*)(memory_base + addr)));
+    }
+    
+    inline static void ppcMem_writeDataFloatEx(PPCInterpreter_t* hCPU, uint32 addr, uint64 value)
+    {
+        *(uint32*)(memory_base + addr) = _swapEndianU32(ConvertToSingleNoFTZ(value));
+    }
+    
+    inline static uint64 getTB(PPCInterpreter_t* hCPU)
+    {
+        return PPCInterpreter_getMainCoreCycleCounter();
+    }
 };
 
 uint32 debug_lastTranslatedHit;
@@ -134,458 +129,475 @@ void generateDSIException(PPCInterpreter_t* hCPU, uint32 dataAddress)
 class PPCItpSupervisorWithMMU
 {
 public:
-	static const bool allowSupervisorMode = true;
-	static const bool allowDSI = true;
+    static const bool allowSupervisorMode = true;
+    static const bool allowDSI = true;
 
-	inline static uint32 ppcMem_translateVirtualDataToPhysicalAddr(PPCInterpreter_t* hCPU, uint32 vAddr)
-	{
-		// check if address translation is disabled for data accesses
-		if (GET_MSR_BIT(MSR_DR) == 0)
-		{
-			return vAddr;
-		}
+    inline static uint32 ppcMem_translateVirtualDataToPhysicalAddr(PPCInterpreter_t* hCPU, uint32 vAddr)
+    {
+        // check if address translation is disabled for data accesses
+        if (GET_MSR_BIT(MSR_DR) == 0)
+        {
+            return vAddr;
+        }
 
 #ifdef CEMU_DEBUG_ASSERT
-		if (hCPU->memoryException)
-			assert_dbg(); // should not be set anymore
+        if (hCPU->memoryException)
+            assert_dbg(); // should not be set anymore
 #endif
 
-		// how to determine if BAT is valid:
-		// BAT_entry_valid = (Vs & ~MSR[PR]) | (Vp & MSR[PR]) (The entry has separate enable flags for usermode and supervisor mode)
-		for (sint32 i = 0; i < 8; i++)
-		{
-			// upper
-			uint32 batU = hCPU->sprExtended.dbatU[i];
-			uint32 BEPI = ((batU >> 17) & 0x7FFF) << 17;
-			uint32 Vp = (batU >> 0) & 1;
-			uint32 Vs = (batU >> 1) & 1;
-			uint32 BL = (((batU >> 2) & 0x7FF) ^ 0x7FF) << 17;
-			BL |= 0xF0000000;
-			if (Vs == 0)
-				continue; // todo - check if in supervisor/usermode
-			// lower
-			uint32 batL = hCPU->sprExtended.dbatL[i];
-			uint32 PP = (batL >> 0) & 3;
-			uint32 WIMG = (batL >> 3) & 0xF;
-			uint32 BRPN = ((batL >> 17) & 0x7FFF) << 17;
+        // how to determine if BAT is valid:
+        // BAT_entry_valid = (Vs & ~MSR[PR]) | (Vp & MSR[PR]) (The entry has separate enable flags for usermode and supervisor mode)
+        for (sint32 i = 0; i < 8; i++)
+        {
+            // upper
+            uint32 batU = hCPU->sprExtended.dbatU[i];
+            uint32 BEPI = ((batU >> 17) & 0x7FFF) << 17;
+            uint32 Vp = (batU >> 0) & 1;
+            uint32 Vs = (batU >> 1) & 1;
+            uint32 BL = (((batU >> 2) & 0x7FF) ^ 0x7FF) << 17;
+            BL |= 0xF0000000;
+            if (Vs == 0)
+                continue; // todo - check if in supervisor/usermode
+            // lower
+            uint32 batL = hCPU->sprExtended.dbatL[i];
+            uint32 PP = (batL >> 0) & 3;
+            uint32 WIMG = (batL >> 3) & 0xF;
+            uint32 BRPN = ((batL >> 17) & 0x7FFF) << 17;
 
-			// check for match
-			if ((vAddr&BL) == BEPI)
-			{
-				// match
-				vAddr = (vAddr&~BL) | (BRPN&BL);
-				debug_lastTranslatedHit = vAddr;
-				return vAddr;
-			}
-		}
+            // check for match
+            if ((vAddr&BL) == BEPI)
+            {
+                // match
+                vAddr = (vAddr&~BL) | (BRPN&BL);
+                debug_lastTranslatedHit = vAddr;
+                return vAddr;
+            }
+        }
 
-		// no match
-		debug_lastTranslatedHit = 0xFFFFFFFF;
+        // no match
+        debug_lastTranslatedHit = 0xFFFFFFFF;
 
-		// find segment
-		uint32 segmentIndex = (vAddr>>28);
-		//uint32 pageIndex = (vAddr >> 12) & 0xFFFF; // for 4KB pages
-		// uint32 byteOffset = vAddr & 0xFFF; // for 4KB pages
-		uint32 pageIndex = (vAddr >> 17) & 0x7FF; // for 128KB pages 
-		uint32 byteOffset = vAddr & 0x1FFFF;
-		uint32 srValue = hCPU->sprExtended.sr[segmentIndex];
-		
-		uint8 sr_ks = (srValue >> 30) & 1; // supervisor
-		uint8 sr_kp = (srValue >> 29) & 1; // user mode
-		uint8 sr_n = (srValue >> 28) & 1; // no-execute
-		uint32 sr_vsid = (srValue & 0xFFFFFF);
-		//uint32 vpn = pageIndex | (sr_vsid << 16); // 40bit virtual page number
-
-
-		// look up in page table
-		//uint32 lookupHash = (sr_vsid ^ pageIndex) & 0x7FFFF; // not correct for 4KB pages? sr_vsid must be shifted?
-		//uint32 lookupHash = (sr_vsid ^ pageIndex) & 0x7FFFF;
-		//uint32 lookupHash = ((sr_vsid>>8) ^ pageIndex) & 0x7FFFF;
-		uint32 lookupHash = ((sr_vsid >> 0) ^ pageIndex) & 0x7FFFF;
-
-		//lookupHash ^= 0x7FFFF;
-
-		uint32 pageTableAddr = hCPU->sprExtended.sdr1&0xFFFF0000;
-		uint32 pageTableMask = hCPU->sprExtended.sdr1&0x1FF;
-
-		for (uint32 ch = 0; ch < 2; ch++)
-		{
-			uint32 ptegSelectLow = (lookupHash & 0x3FF);
-			uint32 maskOR = (lookupHash >> 10) & pageTableMask;
-
-			uint32* pteg = (uint32*)(memory_base + (pageTableAddr | (maskOR << 16)) + ptegSelectLow * 64);
-			for (sint32 t = 0; t < 8; t++)
-			{
-				uint32 w0 = _swapEndianU32(pteg[0]);
-				uint32 w1 = _swapEndianU32(pteg[1]);
-				pteg += 2;
-				if ((w0 & 0x80000000) == 0)
-					continue; // entry not valid
-
-				uint32 abPageIndex = (w0 >> 0) & 0x3F;
-				uint8 h = (w0 >> 6) & 1;
-				uint32 ptegVSID = (w0 >> 7) & 0xFFFFFF;
-
-				if (abPageIndex == (pageIndex >> 5) && ptegVSID == sr_vsid && h == ch)
-				{
-					if (ch == 1)
-						assert_dbg();
-					// match
-					uint32 ptegPhysicalPage = (w1 >> 12) & 0xFFFFF;
-					// replace page (128KB)
-					vAddr = (vAddr & ~0xFFFE0000) | (ptegPhysicalPage << 12);
-					return vAddr;
-
-				}
-			}
-			// calculate hash 2
-			lookupHash = ~lookupHash;
-		}
-
-		cemuLog_logDebug(LogType::Force, "DSI exception at 0x{:08x} DataAddress {:08x}", hCPU->instructionPointer, vAddr);
-
-		generateDSIException(hCPU, vAddr);
-
-		// todo: Check hash func 1
-		// todo: Check protection bits
-		// todo: Check supervisor/usermode bits
+        // find segment
+        uint32 segmentIndex = (vAddr>>28);
+        //uint32 pageIndex = (vAddr >> 12) & 0xFFFF; // for 4KB pages
+        // uint32 byteOffset = vAddr & 0xFFF; // for 4KB pages
+        uint32 pageIndex = (vAddr >> 17) & 0x7FF; // for 128KB pages
+        uint32 byteOffset = vAddr & 0x1FFFF;
+        uint32 srValue = hCPU->sprExtended.sr[segmentIndex];
+        
+        uint8 sr_ks = (srValue >> 30) & 1; // supervisor
+        uint8 sr_kp = (srValue >> 29) & 1; // user mode
+        uint8 sr_n = (srValue >> 28) & 1; // no-execute
+        uint32 sr_vsid = (srValue & 0xFFFFFF);
+        //uint32 vpn = pageIndex | (sr_vsid << 16); // 40bit virtual page number
 
 
-		// also use this function in all the mem stuff below
+        // look up in page table
+        //uint32 lookupHash = (sr_vsid ^ pageIndex) & 0x7FFFF; // not correct for 4KB pages? sr_vsid must be shifted?
+        //uint32 lookupHash = (sr_vsid ^ pageIndex) & 0x7FFFF;
+        //uint32 lookupHash = ((sr_vsid>>8) ^ pageIndex) & 0x7FFFF;
+        uint32 lookupHash = ((sr_vsid >> 0) ^ pageIndex) & 0x7FFFF;
 
-		// note: bat has higher priority than TLB
+        //lookupHash ^= 0x7FFFF;
 
-		// since iterating the bats and page table is too slow, we need to pre-process the data somehow.
+        uint32 pageTableAddr = hCPU->sprExtended.sdr1&0xFFFF0000;
+        uint32 pageTableMask = hCPU->sprExtended.sdr1&0x1FF;
 
-		return vAddr;
-	}
+        for (uint32 ch = 0; ch < 2; ch++)
+        {
+            uint32 ptegSelectLow = (lookupHash & 0x3FF);
+            uint32 maskOR = (lookupHash >> 10) & pageTableMask;
 
-	inline static uint32 ppcMem_translateVirtualCodeToPhysicalAddr(PPCInterpreter_t* hCPU, uint32 vAddr)
-	{
-		// check if address translation is disabled for instruction accesses
-		if (GET_MSR_BIT(MSR_IR) == 0)
-		{
-			return vAddr;
-		}
+            uint32* pteg = (uint32*)(memory_base + (pageTableAddr | (maskOR << 16)) + ptegSelectLow * 64);
+            for (sint32 t = 0; t < 8; t++)
+            {
+                uint32 w0 = _swapEndianU32(pteg[0]);
+                uint32 w1 = _swapEndianU32(pteg[1]);
+                pteg += 2;
+                if ((w0 & 0x80000000) == 0)
+                    continue; // entry not valid
 
-		// how to determine if BAT is valid:
-		// BAT_entry_valid = (Vs & ~MSR[PR]) | (Vp & MSR[PR]) (The entry has separate enable flags for usermode and supervisor mode)
-		for (sint32 i = 0; i < 8; i++)
-		{
-			// upper
-			uint32 batU = hCPU->sprExtended.ibatU[i];
-			uint32 BEPI = ((batU >> 17) & 0x7FFF) << 17;
-			uint32 Vp = (batU >> 0) & 1;
-			uint32 Vs = (batU >> 1) & 1;
-			uint32 BL = (((batU >> 2) & 0x7FF) ^ 0x7FF) << 17;
-			BL |= 0xF0000000;
-			if (Vs == 0)
-				continue; // todo - check if in supervisor/usermode
-			// lower
-			uint32 batL = hCPU->sprExtended.ibatL[i];
-			uint32 PP = (batL >> 0) & 3;
-			uint32 WIMG = (batL >> 3) & 0xF;
-			uint32 BRPN = ((batL >> 17) & 0x7FFF) << 17;
+                uint32 abPageIndex = (w0 >> 0) & 0x3F;
+                uint8 h = (w0 >> 6) & 1;
+                uint32 ptegVSID = (w0 >> 7) & 0xFFFFFF;
 
-			// check for match
-			if ((vAddr&BL) == BEPI)
-			{
-				// match
-				vAddr = (vAddr&~BL) | (BRPN&BL);
-				debug_lastTranslatedHit = vAddr;
-				return vAddr;
-			}
-		}
-		assert_dbg();
+                if (abPageIndex == (pageIndex >> 5) && ptegVSID == sr_vsid && h == ch)
+                {
+                    if (ch == 1)
+                        assert_dbg();
+                    // match
+                    uint32 ptegPhysicalPage = (w1 >> 12) & 0xFFFFF;
+                    // replace page (128KB)
+                    vAddr = (vAddr & ~0xFFFE0000) | (ptegPhysicalPage << 12);
+                    return vAddr;
 
-		// no match
-		// todo - throw exception if translation is enabled?
-		return vAddr;
-	}
+                }
+            }
+            // calculate hash 2
+            lookupHash = ~lookupHash;
+        }
 
-	static uint32 memory_readCodeU32(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		return _swapEndianU32(*(uint32*)(memory_base + ppcMem_translateVirtualCodeToPhysicalAddr(hCPU, address)));
-	}
+        cemuLog_logDebug(LogType::Force, "DSI exception at 0x{:08x} DataAddress {:08x}", hCPU->instructionPointer, vAddr);
 
-	inline static uint8* ppcMem_getDataPtr(PPCInterpreter_t* hCPU, uint32 vAddr)
-	{
-		return memory_base + ppcMem_translateVirtualDataToPhysicalAddr(hCPU, vAddr);
-	}
+        generateDSIException(hCPU, vAddr);
 
-	inline static void ppcMem_writeDataDouble(PPCInterpreter_t* hCPU, uint32 address, double vf)
-	{
-		uint64 v = *(uint64*)&vf;
-		uint32 v1 = v & 0xFFFFFFFF;
-		uint32 v2 = v >> 32;
-		uint8* ptr = ppcMem_getDataPtr(hCPU, address);
-		*(uint32*)(ptr + 4) = CPU_swapEndianU32(v1);
-		*(uint32*)(ptr + 0) = CPU_swapEndianU32(v2);
-	}
+        // todo: Check hash func 1
+        // todo: Check protection bits
+        // todo: Check supervisor/usermode bits
 
-	inline static void ppcMem_writeDataU64(PPCInterpreter_t* hCPU, uint32 address, uint64 v)
-	{
-		*(uint64*)(ppcMem_getDataPtr(hCPU, address)) = CPU_swapEndianU64(v);
-	}
 
-	inline static void ppcMem_writeDataU32(PPCInterpreter_t* hCPU, uint32 address, uint32 v)
-	{
-		uint32 pAddr = ppcMem_translateVirtualDataToPhysicalAddr(hCPU, address); 
-		if (hCPU->memoryException)
-			return;
+        // also use this function in all the mem stuff below
 
-		if (pAddr >= 0x0c000000 && pAddr < 0x0d100000)
-		{
-			cemu_assert_unimplemented();
-			return;
-		}
-		*(uint32*)(memory_base + pAddr) = CPU_swapEndianU32(v);
-	}
+        // note: bat has higher priority than TLB
 
-	inline static void ppcMem_writeDataU16(PPCInterpreter_t* hCPU, uint32 address, uint16 v)
-	{
-		*(uint16*)(ppcMem_getDataPtr(hCPU, address)) = CPU_swapEndianU16(v);
-	}
+        // since iterating the bats and page table is too slow, we need to pre-process the data somehow.
 
-	inline static void ppcMem_writeDataU8(PPCInterpreter_t* hCPU, uint32 address, uint8 v)
-	{
-		*(uint8*)(ppcMem_getDataPtr(hCPU, address)) = v;
-	}
+        return vAddr;
+    }
 
-	inline static double ppcMem_readDataDouble(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint32 v[2];
-		v[1] = *(uint32*)(ppcMem_getDataPtr(hCPU, address));
-		v[0] = *(uint32*)(ppcMem_getDataPtr(hCPU, address) + 4);
-		v[0] = CPU_swapEndianU32(v[0]);
-		v[1] = CPU_swapEndianU32(v[1]);
-		return *(double*)v;
-	}
+    inline static uint32 ppcMem_translateVirtualCodeToPhysicalAddr(PPCInterpreter_t* hCPU, uint32 vAddr)
+    {
+        // check if address translation is disabled for instruction accesses
+        if (GET_MSR_BIT(MSR_IR) == 0)
+        {
+            return vAddr;
+        }
 
-	inline static float ppcMem_readDataFloat(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint32 v = *(uint32*)(ppcMem_getDataPtr(hCPU, address));
-		v = CPU_swapEndianU32(v);
-		return *(float*)&v;
-	}
+        // how to determine if BAT is valid:
+        // BAT_entry_valid = (Vs & ~MSR[PR]) | (Vp & MSR[PR]) (The entry has separate enable flags for usermode and supervisor mode)
+        for (sint32 i = 0; i < 8; i++)
+        {
+            // upper
+            uint32 batU = hCPU->sprExtended.ibatU[i];
+            uint32 BEPI = ((batU >> 17) & 0x7FFF) << 17;
+            uint32 Vp = (batU >> 0) & 1;
+            uint32 Vs = (batU >> 1) & 1;
+            uint32 BL = (((batU >> 2) & 0x7FF) ^ 0x7FF) << 17;
+            BL |= 0xF0000000;
+            if (Vs == 0)
+                continue; // todo - check if in supervisor/usermode
+            // lower
+            uint32 batL = hCPU->sprExtended.ibatL[i];
+            uint32 PP = (batL >> 0) & 3;
+            uint32 WIMG = (batL >> 3) & 0xF;
+            uint32 BRPN = ((batL >> 17) & 0x7FFF) << 17;
 
-	inline static uint64 ppcMem_readDataU64(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint64 v = *(uint64*)(ppcMem_getDataPtr(hCPU, address));
-		return CPU_swapEndianU64(v);
-	}
+            // check for match
+            if ((vAddr&BL) == BEPI)
+            {
+                // match
+                vAddr = (vAddr&~BL) | (BRPN&BL);
+                debug_lastTranslatedHit = vAddr;
+                return vAddr;
+            }
+        }
+        assert_dbg();
 
-	inline static uint32 ppcMem_readDataU32(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint32 pAddr = ppcMem_translateVirtualDataToPhysicalAddr(hCPU, address);
-		if (hCPU->memoryException)
-			return 0;
-		if (pAddr >= 0x01FFF000 && pAddr < 0x02000000)
-		{
-			debug_printf("Access u32 boot param block 0x%08x IP %08x LR %08x\n", pAddr, hCPU->instructionPointer, hCPU->spr.LR);
-			cemuLog_logDebug(LogType::Force, "Access u32 boot param block 0x{:08x} (org {:08x}) IP {:08x}", pAddr, address, hCPU->instructionPointer);
-		}
-		if (pAddr >= 0xFFEB73B0 && pAddr < (0xFFEB73B0+0x40C))
-		{
-			debug_printf("Access cached u32 boot param block 0x%08x IP %08x LR %08x\n", pAddr, hCPU->instructionPointer, hCPU->spr.LR);
-			cemuLog_logDebug(LogType::Force, "Access cached u32 boot param block 0x{:08x} (org {:08x}) IP {:08x}", pAddr, address, hCPU->instructionPointer);
-		}
+        // no match
+        // todo - throw exception if translation is enabled?
+        return vAddr;
+    }
 
-		if (pAddr >= 0x0c000000 && pAddr < 0x0d100000)
-		{
-			cemu_assert_unimplemented();
-			return 0;
-		}
-		uint32 v = *(uint32*)(memory_base + pAddr);
-		return CPU_swapEndianU32(v);
-	}
+    static uint32 memory_readCodeU32(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        return _swapEndianU32(*(uint32*)(memory_base + ppcMem_translateVirtualCodeToPhysicalAddr(hCPU, address)));
+    }
 
-	inline static uint16 ppcMem_readDataU16(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint16 v = *(uint16*)(ppcMem_getDataPtr(hCPU, address));
-		return CPU_swapEndianU16(v);
-	}
+    inline static uint8* ppcMem_getDataPtr(PPCInterpreter_t* hCPU, uint32 vAddr)
+    {
+        return memory_base + ppcMem_translateVirtualDataToPhysicalAddr(hCPU, vAddr);
+    }
 
-	inline static uint8 ppcMem_readDataU8(PPCInterpreter_t* hCPU, uint32 address)
-	{
-		uint32 pAddr = ppcMem_translateVirtualDataToPhysicalAddr(hCPU, address);
-		if (pAddr >= 0x0c000000 && pAddr < 0x0d100000)
-		{
-			cemu_assert_unimplemented();
-			return 0;
-		}
-		return *(uint8*)(memory_base + pAddr);
-	}
+    inline static void ppcMem_writeDataDouble(PPCInterpreter_t* hCPU, uint32 address, double vf)
+    {
+        const uint64 v = CPU_swapEndianU64(std::bit_cast<uint64>(vf));
+        
+        std::memcpy(ppcMem_getDataPtr(hCPU, address), &v, sizeof(v));
+    }
 
-	inline static uint64 ppcMem_readDataFloatEx(PPCInterpreter_t* hCPU, uint32 addr)
-	{
-		return ConvertToDoubleNoFTZ(_swapEndianU32(*(uint32*)(memory_base + addr)));
-	}
+    inline static void ppcMem_writeDataU64(PPCInterpreter_t* hCPU, uint32 address, uint64 v)
+    {
+        *(uint64*)(ppcMem_getDataPtr(hCPU, address)) = CPU_swapEndianU64(v);
+    }
 
-	inline static void ppcMem_writeDataFloatEx(PPCInterpreter_t* hCPU, uint32 addr, uint64 value)
-	{
-		*(uint32*)(memory_base + addr) = _swapEndianU32(ConvertToSingleNoFTZ(value));
-	}
+    inline static void ppcMem_writeDataU32(PPCInterpreter_t* hCPU, uint32 address, uint32 v)
+    {
+        uint32 pAddr = ppcMem_translateVirtualDataToPhysicalAddr(hCPU, address);
+        if (hCPU->memoryException)
+            return;
 
-	inline static uint64 getTB(PPCInterpreter_t* hCPU)
-	{
-		return hCPU->global->tb / 20ULL;
-	}
+        if (pAddr >= 0x0c000000 && pAddr < 0x0d100000)
+        {
+            cemu_assert_unimplemented();
+            return;
+        }
+        *(uint32*)(memory_base + pAddr) = CPU_swapEndianU32(v);
+    }
+
+    inline static void ppcMem_writeDataU16(PPCInterpreter_t* hCPU, uint32 address, uint16 v)
+    {
+        *(uint16*)(ppcMem_getDataPtr(hCPU, address)) = CPU_swapEndianU16(v);
+    }
+
+    inline static void ppcMem_writeDataU8(PPCInterpreter_t* hCPU, uint32 address, uint8 v)
+    {
+        *(uint8*)(ppcMem_getDataPtr(hCPU, address)) = v;
+    }
+
+    inline static double ppcMem_readDataDouble(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint64 v;
+        std::memcpy(&v, ppcMem_getDataPtr(hCPU, address), sizeof(v));
+        return std::bit_cast<double>(CPU_swapEndianU64(v));
+    }
+
+    inline static float ppcMem_readDataFloat(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint32 v = *(uint32*)(ppcMem_getDataPtr(hCPU, address));
+        v = CPU_swapEndianU32(v);
+        return *(float*)&v;
+    }
+
+    inline static uint64 ppcMem_readDataU64(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint64 v = *(uint64*)(ppcMem_getDataPtr(hCPU, address));
+        return CPU_swapEndianU64(v);
+    }
+
+    inline static uint32 ppcMem_readDataU32(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint32 pAddr = ppcMem_translateVirtualDataToPhysicalAddr(hCPU, address);
+        if (hCPU->memoryException)
+            return 0;
+        if (pAddr >= 0x01FFF000 && pAddr < 0x02000000)
+        {
+            debug_printf("Access u32 boot param block 0x%08x IP %08x LR %08x\n", pAddr, hCPU->instructionPointer, hCPU->spr.LR);
+            cemuLog_logDebug(LogType::Force, "Access u32 boot param block 0x{:08x} (org {:08x}) IP {:08x}", pAddr, address, hCPU->instructionPointer);
+        }
+        if (pAddr >= 0xFFEB73B0 && pAddr < (0xFFEB73B0+0x40C))
+        {
+            debug_printf("Access cached u32 boot param block 0x%08x IP %08x LR %08x\n", pAddr, hCPU->instructionPointer, hCPU->spr.LR);
+            cemuLog_logDebug(LogType::Force, "Access cached u32 boot param block 0x{:08x} (org {:08x}) IP {:08x}", pAddr, address, hCPU->instructionPointer);
+        }
+
+        if (pAddr >= 0x0c000000 && pAddr < 0x0d100000)
+        {
+            cemu_assert_unimplemented();
+            return 0;
+        }
+        uint32 v = *(uint32*)(memory_base + pAddr);
+        return CPU_swapEndianU32(v);
+    }
+
+    inline static uint16 ppcMem_readDataU16(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint16 v = *(uint16*)(ppcMem_getDataPtr(hCPU, address));
+        return CPU_swapEndianU16(v);
+    }
+
+    inline static uint8 ppcMem_readDataU8(PPCInterpreter_t* hCPU, uint32 address)
+    {
+        uint32 pAddr = ppcMem_translateVirtualDataToPhysicalAddr(hCPU, address);
+        if (pAddr >= 0x0c000000 && pAddr < 0x0d100000)
+        {
+            cemu_assert_unimplemented();
+            return 0;
+        }
+        return *(uint8*)(memory_base + pAddr);
+    }
+
+    inline static uint64 ppcMem_readDataFloatEx(PPCInterpreter_t* hCPU, uint32 addr)
+    {
+        return ConvertToDoubleNoFTZ(_swapEndianU32(*(uint32*)(memory_base + addr)));
+    }
+
+    inline static void ppcMem_writeDataFloatEx(PPCInterpreter_t* hCPU, uint32 addr, uint64 value)
+    {
+        *(uint32*)(memory_base + addr) = _swapEndianU32(ConvertToSingleNoFTZ(value));
+    }
+
+    inline static uint64 getTB(PPCInterpreter_t* hCPU)
+    {
+        return hCPU->global->tb / 20ULL;
+    }
 };
 
-// ================================================================================================
-// Predecoded instruction cache
-//
-// WHY THIS EXISTS
-//
-// executeInstruction() used to re-derive the handler for an instruction from the raw opcode bits
-// on every single execution: a switch on the primary opcode, then for the dense categories (4,
-// 19, 31, 59, 63) a second switch on the extended opcode, and for the paired-single compare and
-// merge groups a third. A hot loop walked that entire decision tree again on every iteration, to
-// arrive at the same answer it arrived at the previous time. Decode is a pure function of the
-// 32-bit opcode word, so every walk after the first is waste - and on this port the interpreter
-// is not a fallback, it is the only CPU engine, because the JIT capability probe asks for
-// PROT_EXEC at mmap time and iOS arm64 never grants that on an APRR core.
-//
-// So: decode once per guest instruction address, remember the answer, and afterwards dispatch
-// straight through a function pointer.
-//
-// HOW CORRECTNESS IS GUARANTEED - this is the important part
-//
-// The cache is SELF-VALIDATING. Every entry stores the opcode word it was decoded from next to
-// the handler, and an entry is only used when that stored word still equals the word currently
-// in guest memory at that address. The handler is by construction decodeInstruction(storedWord),
-// so a match means the cached handler is bit-for-bit what a fresh decode would have produced.
-// A stale entry cannot be used, because "stale" is exactly the case the comparison rejects.
-//
-// That is why there is deliberately NO invalidation hook here. The recompiler's invalidation path
-// is PPCRecompiler_invalidateRange() in Recompiler/PPCRecompiler.cpp, reached from
-// coreinit_CodeGen (the guest's own icbi/flush path), RPL load and unload, graphic pack patching
-// and the debugger. Subscribing a second listener to that signal would create two schemes that
-// can disagree about what is live, and a disagreement there is a corruption bug nobody can
-// diagnose from a screenshot. Worse, on this port that signal is not even live:
-// PPCRecompiler_invalidateRange() returns immediately when ppcRecompilerEnabled is false, which
-// on iOS it always is, so a cache that trusted it would never be invalidated at all. Comparing
-// the opcode word cannot disagree with anything, because it asks guest memory directly, every
-// time, and it costs one compare against a word the interpreter had to load anyway.
-//
-// Cases that are handled correctly for free, none of which have to know this cache exists:
-//   - self-modifying guest code, and icbi
-//   - an RPL's text being unloaded and another module being mapped over the same addresses
-//   - graphic pack code patches
-//   - debugger execution breakpoints, which work by writing a trap opcode over the instruction
-//     and restoring the original word afterwards
-//   - guest code executed through an address that is not 4-byte aligned: two such addresses can
-//     share a slot, and they then simply keep evicting each other's entry, still correct
-//
-// MEMORY
-//
-// One 8-byte entry per 4-byte guest instruction, i.e. twice the size of the code it describes,
-// and only for 4 KB pages the title actually executes. Entries are carved from a single fixed
-// 32 MB arena, which is what bounds the whole feature: 16 MB of distinct guest code, far more
-// than any title's hot set, and once it is exhausted the pages that missed out keep decoding the
-// old way instead of anything failing. The device log this work is aimed at showed 2416 MB in
-// use with 2191 MB of headroom before iOS kills the process, so a table keyed on every possible
-// guest address (256 MB of code space -> 512 MB of entries) was never an option. The arena is
-// calloc'd once, so at first it is only address space; it becomes resident a host page at a time
-// as blocks are actually written.
-//
-// THREADING
-//
-// Three emulated cores run this concurrently on three host threads and share one cache per
-// interpreter flavour. An entry is a single naturally aligned uint64 holding {opcode word,
-// handler index}, published with one atomic store and read with one atomic load, so it can never
-// be seen half-updated. That matters: a torn entry could pair the opcode word one core wrote
-// with the handler index another core wrote, which is the one way this design could dispatch a
-// wrong handler. Everything else is arranged so the hot path needs no barrier at all - the arena
-// is zeroed before any core thread exists, blocks are never freed or reused, and a handler table
-// slot is filled before the index naming it is ever published and never changes afterwards. A
-// reader that somehow ran ahead of a handler table write sees a null slot, which is simply
-// treated as a miss.
-// ================================================================================================
 
-#if defined(_MSC_VER) && !defined(__clang__)
-#define PPCITP_NOINLINE __declspec(noinline)
+#if !defined(PPC_INTERPRETER_DISABLE_BLOCK_CACHE) && (defined(__aarch64__) || defined(PPC_INTERPRETER_FORCE_BLOCK_CACHE))
+#define PPC_INTERPRETER_BLOCK_CACHE 1
 #else
-#define PPCITP_NOINLINE __attribute__((noinline))
+#define PPC_INTERPRETER_BLOCK_CACHE 0
 #endif
 
-// Internal linkage for the cache tables and for the interpreter template that owns them. Not
-// cosmetic: with external linkage the dispatch path has to reach s_blockTable and s_handlerTable
-// through the GOT, which is an extra dependent load each, on every guest instruction. Internal,
-// clang addresses them with adrp+add and the two loads disappear. Nothing outside this file has
-// ever referred to PPCInterpreterContainer - the two exported entry points at the bottom are the
-// whole interface - so this costs nothing.
-namespace
+using PPCBlockHandler = void (*)(PPCInterpreter_t*, uint32);
+
+enum class PPCBlockTerm : uint8
 {
+    None = 0,  // block hit the length cap, falls through to the next address
+    BX,
+    BCX,
+    BCLRX,
+    BCCTR,
+    Generic,
+};
 
-namespace PPCPredecode
+struct PPCBlockEntry
 {
-	// Guest code only ever lives below 0x10000000: CODELOW0 at 0x00010000, the RPL trampoline and
-	// import area at 0x00E00000, the code cave at 0x01800000 and the 224 MB code area at
-	// 0x02000000. This is the same bound the recompiler works to (PPC_REC_CODE_AREA_END), and it
-	// is checked rather than assumed - an instruction pointer outside it is not cached and falls
-	// through to a plain decode, which is always correct, just not faster.
-	static constexpr uint32 kCodeAreaEnd = 0x10000000u;
+    PPCBlockHandler fn;
+    uint32 opcode;
+    uint32 _pad;
+};
+static_assert(sizeof(PPCBlockEntry) == 16);
 
-	static constexpr uint32 kBlockShift = 12;                              // 4 KB of guest code per block
-	static constexpr uint32 kBlockSize = 1u << kBlockShift;
-	static constexpr uint32 kEntriesPerBlock = kBlockSize / 4u;             // 1024 instructions
-	static constexpr uint32 kBlockTableSize = kCodeAreaEnd >> kBlockShift;  // 65536 possible pages
+struct PPCBlockRef
+{
+    uint32 startAddr;
+    uint32 firstEntry;
+    uint16 count;
+    PPCBlockTerm term;
+    uint8 _pad;
+};
 
-	// 4096 blocks * 8 KB = 32 MB of entries, describing 16 MB of distinct guest code.
-	static constexpr uint32 kArenaBlocks = 4096;
-	static constexpr size_t kArenaEntries = (size_t)kArenaBlocks * kEntriesPerBlock;
+class PPCBlockCache
+{
+public:
+    static constexpr uint32 TABLE_BITS = 18;
+    static constexpr uint32 TABLE_SIZE = 1u << TABLE_BITS;
+    static constexpr uint32 TABLE_MAX_USED = TABLE_SIZE * 3 / 4;
+    static constexpr uint32 MAX_BLOCK_LENGTH = 64;
+    static constexpr size_t MAX_POOL_ENTRIES = 1024 * 1024;
 
-	// Constructed during static initialisation, i.e. before any core thread exists. That is not
-	// incidental: it is what lets the dispatch path load a block pointer with relaxed ordering
-	// and read the block's contents with no acquire barrier, because the zeroing of every block
-	// happens-before the creation of every thread that can observe it.
-	struct Arena
-	{
-		uint64* base;
-		std::atomic<uint32> nextBlock;
+    PPCBlockCache()
+    {
+        m_table.resize(TABLE_SIZE);
+        m_entries.reserve(64 * 1024);
+        clear("init");
+    }
 
-		Arena() : base(nullptr), nextBlock(0)
-		{
-			// calloc rather than new[]: for a request this size every allocator hands back fresh
-			// zero pages from the kernel, so nothing is touched here and the 32 MB costs address
-			// space only. new[] with value-initialisation would write all 32 MB up front and make
-			// the whole arena resident on a device that measures its headroom in hundreds of MB.
-			base = (uint64*)calloc(kArenaEntries, sizeof(uint64));
-			// A failed allocation is not fatal. base stays null, no block is ever handed out, and
-			// every instruction decodes the way it did before this cache existed.
-		}
-	};
+    static uint32 hashSlot(uint32 addr)
+    {
+        return ((addr >> 2) * 0x9E3779B1u) >> (32 - TABLE_BITS);
+    }
 
-	inline Arena g_arena;
-	inline std::atomic<bool> g_reportedArenaFull{false};
+    PPCBlockRef* lookup(uint32 addr)
+    {
+        uint32 i = hashSlot(addr);
+        for (;;)
+        {
+            PPCBlockRef& r = m_table[i];
+            if (r.count == 0)
+                return nullptr;
+            if (r.startAddr == addr)
+                return &r;
+            i = (i + 1) & (TABLE_SIZE - 1);
+        }
+    }
+    
+    PPCBlockRef* allocSlot(uint32 addr)
+    {
+        if (m_used >= TABLE_MAX_USED) [[unlikely]]
+            clear("table full");
+        else if (m_entries.size() + MAX_BLOCK_LENGTH > MAX_POOL_ENTRIES) [[unlikely]]
+            clear("pool full");
+        
+        uint32 i = hashSlot(addr);
+        
+        while (m_table[i].count != 0)
+            i = (i + 1) & (TABLE_SIZE - 1);
+        
+        m_used++;
+        return &m_table[i];
+    }
 
-	// Hands out one zeroed block, or nullptr once the arena is full. Blocks are never returned,
-	// so there is no reuse policy to get wrong and no pointer that can be freed underneath a
-	// core that is still dispatching through it.
-	inline uint64* allocBlock()
-	{
-		if (!g_arena.base)
-			return nullptr;
-		// Checked before the fetch_add so that an exhausted arena does not turn every subsequent
-		// cache miss into a contended atomic increment across three cores forever.
-		if (g_arena.nextBlock.load(std::memory_order_relaxed) >= kArenaBlocks)
-		{
-			// Said once, and worth saying. Every page that fails to get a block from here keeps
-			// re-decoding on every execution, so a title whose code footprint outgrows the arena
-			// would just look slower than the others for no visible reason. This line turns that
-			// into "raise kArenaBlocks", which is a one-word fix.
-			if (!g_reportedArenaFull.exchange(true, std::memory_order_relaxed))
-				cemuLog_log(LogType::Force, "Interpreter predecode cache: arena full after {} pages ({} MB of guest code). Pages claimed from here on will decode on every execution.", kArenaBlocks, (kArenaBlocks * kBlockSize) / (1024u * 1024u));
-			return nullptr;
-		}
-		uint32 idx = g_arena.nextBlock.fetch_add(1, std::memory_order_relaxed);
-		if (idx >= kArenaBlocks)
-			return nullptr;
-		return g_arena.base + (size_t)idx * kEntriesPerBlock;
-	}
+    void clear(const char* reason)
+    {
+        std::fill(m_table.begin(), m_table.end(), PPCBlockRef{});
+        
+        m_entries.clear();
+        m_used = 0;
+        m_clears++;
+        
+        if (m_clears <= 16 || (m_clears & 0xFF) == 0)
+            cemuLog_log(LogType::Force, "PPC block cache: clear #{} ({}), {} blocks decoded since start", m_clears, reason, m_decodes);
+    }
+
+    std::vector<PPCBlockRef> m_table;
+    std::vector<PPCBlockEntry> m_entries;
+    uint32 m_used = 0;
+    uint32 m_generation = 0;
+    uint64 m_decodes = 0;
+    uint32 m_clears = 0;
+};
+
+
+static std::atomic<uint32> s_blockCacheGeneration{1};
+static std::atomic<uint32> s_blockCacheCodePages[(1u << 20) / 32]; // 4 GiB / 4 KiB pages, 1 bit each
+
+static inline void PPCBlockCache_markCodePage(uint32 addr)
+{
+    const uint32 page = addr >> 12;
+    
+    s_blockCacheCodePages[page >> 5].fetch_or(1u << (page & 31), std::memory_order_relaxed);
 }
+
+static inline bool PPCBlockCache_isCodePage(uint32 addr)
+{
+    const uint32 page = addr >> 12;
+    
+    return (s_blockCacheCodePages[page >> 5].load(std::memory_order_relaxed) >> (page & 31)) & 1;
+}
+
+void PPCInterpreter_invalidateBlockCache()
+{
+    for (auto& w : s_blockCacheCodePages)
+        w.store(0, std::memory_order_relaxed);
+    
+    const uint32 gen = s_blockCacheGeneration.fetch_add(1, std::memory_order_release) + 1;
+    
+    if (gen <= 16 || (gen & 0xFF) == 0)
+        cemuLog_log(LogType::Force, "PPC block cache: global invalidation #{}", gen);
+}
+
+void PPCInterpreter_invalidateBlockCacheRange(uint32 addr, uint32 size)
+{
+    const uint32 firstPage = addr >> 12;
+    const uint32 lastPage = (addr + (size ? size - 1 : 0)) >> 12;
+    for (uint32 page = firstPage; page <= lastPage; page++)
+    {
+        if (PPCBlockCache_isCodePage(page << 12))
+        {
+            PPCInterpreter_invalidateBlockCache();
+            return;
+        }
+        if (page == 0xFFFFF)
+            break;
+    }
+}
+
+static thread_local PPCBlockCache* t_ppcBlockCache = nullptr;
+
+TLS_WORKAROUND_NOINLINE static PPCBlockCache& PPCBlockCache_getForCurrentThread()
+{
+    if (!t_ppcBlockCache)
+        t_ppcBlockCache = new PPCBlockCache();
+    return *t_ppcBlockCache;
+}
+
+#if (defined(__clang__) || defined(__GNUC__)) && !defined(PPC_INTERPRETER_DISABLE_THREADED_DISPATCH) && !defined(__DEBUG_OUTPUT_INSTRUCTION)
+#define PPC_PRIMARY_CASE(value) case value: ppc_op_##value:
+#define PPC_PRIMARY_DEFAULT default: ppc_unknown:
+#define PPC_DISPATCH_NEXT() do { \
+    if constexpr (!runTimeslice) return; \
+    if (--hCPU->remainingCycles < 0) return; \
+    if constexpr (ppcItpCtrl::allowSupervisorMode) ++hCPU->global->tb; \
+    opcode = ppcItpCtrl::memory_readCodeU32(hCPU, hCPU->instructionPointer); \
+    goto *dispatch[opcode >> 26]; \
+} while (false)
+#else
+#define PPC_PRIMARY_CASE(value) case value:
+#define PPC_PRIMARY_DEFAULT default:
+#define PPC_DISPATCH_NEXT() break
+#endif
 
 template <typename ppcItpCtrl>
 class PPCInterpreterContainer
@@ -595,818 +607,1023 @@ public:
 #include "PPCInterpreterOPC.hpp"
 #include "PPCInterpreterLoadStore.hpp"
 #include "PPCInterpreterALU.hpp"
+    
+    static constexpr std::array<PPCBlockHandler, 1024> makeHandlerTable19()
+    {
+        std::array<PPCBlockHandler, 1024> result{};
+        result[0] = PPCInterpreter_MCRF;
+        result[16] = PPCInterpreter_BCLRX;
+        result[33] = PPCInterpreter_CRNOR;
+        result[50] = PPCInterpreter_RFI;
+        result[129] = PPCInterpreter_CRANDC;
+        result[150] = PPCInterpreter_ISYNC;
+        result[193] = PPCInterpreter_CRXOR;
+        result[225] = PPCInterpreter_CRNAND;
+        result[257] = PPCInterpreter_CRAND;
+        result[289] = PPCInterpreter_CREQV;
+        result[417] = PPCInterpreter_CRORC;
+        result[449] = PPCInterpreter_CROR;
+        result[528] = PPCInterpreter_BCCTR;
+        return result;
+    }
+    
+    
+    static constexpr std::array<PPCBlockHandler, 1024> makeHandlerTable31()
+    {
+        std::array<PPCBlockHandler, 1024> result{};
+        result[0] = PPCInterpreter_CMP;
+        result[4] = PPCInterpreter_TW;
+        result[8] = PPCInterpreter_SUBFC;
+        result[10] = PPCInterpreter_ADDC;
+        result[11] = PPCInterpreter_MULHWU_;
+        result[19] = PPCInterpreter_MFCR;
+        result[20] = PPCInterpreter_LWARX;
+        result[23] = PPCInterpreter_LWZX;
+        result[24] = PPCInterpreter_SLWX;
+        result[26] = PPCInterpreter_CNTLZW;
+        result[28] = PPCInterpreter_ANDX;
+        result[32] = PPCInterpreter_CMPL;
+        result[40] = PPCInterpreter_SUBF;
+        result[54] = PPCInterpreter_DCBST;
+        result[55] = PPCInterpreter_LWZXU;
+        result[60] = PPCInterpreter_ANDCX;
+        result[75] = PPCInterpreter_MULHW_;
+        result[83] = PPCInterpreter_MFMSR;
+        result[86] = PPCInterpreter_DCBF;
+        result[87] = PPCInterpreter_LBZX;
+        result[104] = PPCInterpreter_NEG;
+        result[119] = PPCInterpreter_LBZXU; // Sonic Lost World
+        result[124] = PPCInterpreter_NORX;
+        result[136] = PPCInterpreter_SUBFE;
+        result[138] = PPCInterpreter_ADDE;
+        result[144] = PPCInterpreter_MTCRF;
+        result[146] = PPCInterpreter_MTMSR;
+        result[150] = PPCInterpreter_STWCX;
+        result[151] = PPCInterpreter_STWX;
+        result[183] = PPCInterpreter_STWUX;
+        result[200] = PPCInterpreter_SUBFZE;
+        result[202] = PPCInterpreter_ADDZE;
+        result[210] = PPCInterpreter_MTSR;
+        result[215] = PPCInterpreter_STBX;
+        result[232] = PPCInterpreter_SUBFME; // Trine 2
+        result[234] = PPCInterpreter_ADDME;
+        result[235] = PPCInterpreter_MULLW;
+        result[247] = PPCInterpreter_STBUX;
+        result[266] = PPCInterpreter_ADD;
+        result[278] = PPCInterpreter_DCBT;
+        result[279] = PPCInterpreter_LHZX;
+        result[284] = PPCInterpreter_EQV;
+        result[306] = PPCInterpreter_TLBIE;
+        result[311] = PPCInterpreter_LHZUX; // Wii U Menu v177 (US)
+        result[316] = PPCInterpreter_XOR;
+        result[339] = PPCInterpreter_MFSPR;
+        result[343] = PPCInterpreter_LHAX;
+        result[371] = PPCInterpreter_MFTB;
+        result[375] = PPCInterpreter_LHAUX; // Wii U Menu v177 (US)
+        result[407] = PPCInterpreter_STHX;
+        result[412] = PPCInterpreter_ORC;
+        result[439] = PPCInterpreter_STHUX;
+        result[444] = PPCInterpreter_OR;
+        result[459] = PPCInterpreter_DIVWU;
+        result[467] = PPCInterpreter_MTSPR;
+        result[470] = PPCInterpreter_DCBI;
+        result[476] = PPCInterpreter_NANDX;
+        result[491] = PPCInterpreter_DIVW;
+        result[512] = PPCInterpreter_MCRXR;
+        result[520] = PPCInterpreter_SUBFCO; // Affordable Space Adventures + other Unity games
+        result[522] = PPCInterpreter_ADDCO;
+        result[523] = PPCInterpreter_MULHWU_; // 11 | OE; OE is ignored
+        result[533] = PPCInterpreter_LSWX;
+        result[534] = PPCInterpreter_LWBRX;
+        result[535] = PPCInterpreter_LFSX;
+        result[536] = PPCInterpreter_SRWX;
+        result[552] = PPCInterpreter_SUBFO;
+        result[566] = PPCInterpreter_TLBSYNC;
+        result[567] = PPCInterpreter_LFSUX;
+        result[587] = PPCInterpreter_MULHW_; // 75 | OE; OE is ignored for MULHW
+        result[595] = PPCInterpreter_MFSR;
+        result[597] = PPCInterpreter_LSWI;
+        result[598] = PPCInterpreter_SYNC;
+        result[599] = PPCInterpreter_LFDX;
+        result[616] = PPCInterpreter_NEGO;
+        result[631] = PPCInterpreter_LFDUX;
+        result[648] = PPCInterpreter_SUBFEO; // 136 | OE
+        result[650] = PPCInterpreter_ADDEO; // 138 | OE
+        result[662] = PPCInterpreter_STWBRX;
+        result[663] = PPCInterpreter_STFSX;
+        result[661] = PPCInterpreter_STSWX;
+        result[695] = PPCInterpreter_STFSUX;
+        result[712] = PPCInterpreter_SUBFZEO; // 200 | OE
+        result[714] = PPCInterpreter_ADDZEO; // 202 | OE
+        result[725] = PPCInterpreter_STSWI;
+        result[727] = PPCInterpreter_STFDX;
+        result[744] = PPCInterpreter_SUBFMEO; // 232 | OE
+        result[746] = PPCInterpreter_ADDMEO; // 234 | OE
+        result[747] = PPCInterpreter_MULLWO;
+        result[759] = PPCInterpreter_STFDUX;
+        result[778] = PPCInterpreter_ADDO;
+        result[790] = PPCInterpreter_LHBRX;
+        result[792] = PPCInterpreter_SRAW;
+        result[824] = PPCInterpreter_SRAWI;
+        result[854] = PPCInterpreter_EIEIO;
+        result[918] = PPCInterpreter_STHBRX;
+        result[922] = PPCInterpreter_EXTSH;
+        result[954] = PPCInterpreter_EXTSB;
+        result[971] = PPCInterpreter_DIVWUO;
+        result[982] = PPCInterpreter_ICBI;
+        result[983] = PPCInterpreter_STFIWX;
+        result[1003] = PPCInterpreter_DIVWO;
+        result[1014] = PPCInterpreter_DCBZ;
+        return result;
+    }
 
-	// ---- handlers that used to be written inline in the decode switch ---------------------------
-	//
-	// decodeInstruction() below has to be a pure opcode -> handler function with no side effects,
-	// because that purity is the entire basis on which a cached handler can be trusted. The cases
-	// the old switch handled inline - the invalid primary opcodes, TWI, and every "unknown
-	// extended opcode" default - therefore become ordinary handlers. Their bodies are unchanged,
-	// including which of them advance the instruction pointer and which deliberately do not, and
-	// they still run at EXECUTION time, so the diagnostics they log appear exactly as often as
-	// they did before.
-
-	static void PPCInterpreter_opcodeZero(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		debug_printf("ZERO[NOP] | 0x%08X\n", (unsigned int)hCPU->instructionPointer);
-#ifdef CEMU_DEBUG_ASSERT
-		assert_dbg();
-		while (true) std::this_thread::sleep_for(std::chrono::seconds(1));
+    template<bool runTimeslice = false>
+    static void executeInstruction(PPCInterpreter_t* hCPU)
+    {
+#if (defined(__clang__) || defined(__GNUC__)) && !defined(PPC_INTERPRETER_DISABLE_THREADED_DISPATCH) && !defined(__DEBUG_OUTPUT_INSTRUCTION)
+        static void* const dispatch[64] = {
+            &&ppc_op_0, &&ppc_op_1, &&ppc_unknown, &&ppc_op_3, &&ppc_op_4, &&ppc_unknown, &&ppc_unknown, &&ppc_op_7,
+            &&ppc_op_8, &&ppc_unknown, &&ppc_op_10, &&ppc_op_11, &&ppc_op_12, &&ppc_op_13, &&ppc_op_14, &&ppc_op_15,
+            &&ppc_op_16, &&ppc_op_17, &&ppc_op_18, &&ppc_op_19, &&ppc_op_20, &&ppc_op_21, &&ppc_unknown, &&ppc_op_23,
+            &&ppc_op_24, &&ppc_op_25, &&ppc_op_26, &&ppc_op_27, &&ppc_op_28, &&ppc_op_29, &&ppc_unknown, &&ppc_op_31,
+            &&ppc_op_32, &&ppc_op_33, &&ppc_op_34, &&ppc_op_35, &&ppc_op_36, &&ppc_op_37, &&ppc_op_38, &&ppc_op_39,
+            &&ppc_op_40, &&ppc_op_41, &&ppc_op_42, &&ppc_op_43, &&ppc_op_44, &&ppc_op_45, &&ppc_op_46, &&ppc_op_47,
+            &&ppc_op_48, &&ppc_op_49, &&ppc_op_50, &&ppc_op_51, &&ppc_op_52, &&ppc_op_53, &&ppc_op_54, &&ppc_op_55,
+            &&ppc_op_56, &&ppc_op_57, &&ppc_unknown, &&ppc_op_59, &&ppc_op_60, &&ppc_op_61, &&ppc_unknown, &&ppc_op_63
+        };
 #endif
-		hCPU->instructionPointer += 4;
-	}
+        if constexpr (runTimeslice)
+        {
+            if (--hCPU->remainingCycles < 0)
+                return;
+        }
 
-	static void PPCInterpreter_unsupportedTWI(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unsupported TWI instruction executed at {:08x}", hCPU->instructionPointer);
-		PPCInterpreter_nextInstruction(hCPU);
-	}
-
-	static void PPCInterpreter_unsupported17(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unsupported Opcode [0x17 --> 0x0]");
-		cemu_assert_unimplemented();
-		hCPU->instructionPointer += 4;
-	}
-
-	static void PPCInterpreter_unknown_4_0(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [4->0] at {:08x}", PPC_getBits(opcode, 25, 5), hCPU->instructionPointer);
-		cemu_assert_unimplemented();
-		hCPU->instructionPointer += 4;
-	}
-
-	static void PPCInterpreter_unknown_4_8(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [4->8] at {:08x}", PPC_getBits(opcode, 25, 5), hCPU->instructionPointer);
-		cemu_assert_unimplemented();
-		hCPU->instructionPointer += 4;
-	}
-
-	static void PPCInterpreter_unknown_4_16(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [4->16] at {:08x}", PPC_getBits(opcode, 25, 5), hCPU->instructionPointer);
-		cemu_assert_unimplemented();
-		hCPU->instructionPointer += 4;
-	}
-
-	static void PPCInterpreter_unknown_4(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [4] at {:08x}", PPC_getBits(opcode, 30, 5), hCPU->instructionPointer);
-		cemu_assert_unimplemented();
-		hCPU->instructionPointer += 4;
-	}
-
-	static void PPCInterpreter_unknown_19(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [19] at {:08x}\n", PPC_getBits(opcode, 30, 10), hCPU->instructionPointer);
-		cemu_assert_unimplemented();
-		hCPU->instructionPointer += 4;
-	}
-
-	static void PPCInterpreter_unknown_31(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [31] at {:08x}\n", PPC_getBits(opcode, 30, 10), hCPU->instructionPointer);
-		cemu_assert_unimplemented();
-		hCPU->instructionPointer += 4;
-	}
-
-	static void PPCInterpreter_unknown_59(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [59] at {:08x}\n", PPC_getBits(opcode, 30, 10), hCPU->instructionPointer);
-		cemu_assert_unimplemented();
-		hCPU->instructionPointer += 4;
-	}
-
-	static void PPCInterpreter_unknown_63(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [63] at {:08x}\n", PPC_getBits(opcode, 30, 10), hCPU->instructionPointer);
-		cemu_assert_unimplemented();
-		PPCInterpreter_nextInstruction(hCPU);
-	}
-
-	// Note the absence of an instruction pointer advance. The old top-level default did not have
-	// one either, so an unknown primary opcode re-executes forever in a release build. That is
-	// preserved on purpose: this is a decode change, and turning a hang into a silent skip would
-	// change what the emulator does with bad code, which is not this change's business.
-	static void PPCInterpreter_unknownPrimary(PPCInterpreter_t* hCPU, uint32 opcode)
-	{
-		cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} at {:08x}\n", PPC_getBits(opcode, 5, 6), (unsigned int)hCPU->instructionPointer);
-		cemu_assert_unimplemented();
-	}
-
-	// Pure. The same opcode word always maps to the same handler, and nothing in here may read
-	// hCPU or guest memory - that is what lets the cache below be correct on nothing more than an
-	// opcode word comparison. Kept out of line so that the dispatch path stays a handful of
-	// instructions instead of inlining the whole decision tree it exists to avoid.
-	PPCITP_NOINLINE static PPCInstructionHandler decodeInstruction(uint32 opcode)
-	{
-		switch ((opcode >> 26))
-		{
-		case 0:
-			return &PPCInterpreter_opcodeZero;
-		case 1: // virtual HLE
-			return &PPCInterpreter_virtualHLE;
-		case 3:
-			return &PPCInterpreter_unsupportedTWI;
-		case 4:
-			switch (PPC_getBits(opcode, 30, 5))
-			{
-			case 0: // subcategory compare
-				switch (PPC_getBits(opcode, 25, 5))
-				{
-				case 0: // Sonic All Stars Racing
-					return &PPCInterpreter_PS_CMPU0;
-				case 1:
-					return &PPCInterpreter_PS_CMPO0;
-				case 2: // Assassin's Creed 3, Sonic All Stars Racing
-					return &PPCInterpreter_PS_CMPU1;
-				default:
-					return &PPCInterpreter_unknown_4_0;
-				}
-				break;
-			case 6:
-				return &PPCInterpreter_PSQ_LX;
-			case 7:
-				return &PPCInterpreter_PSQ_STX;
-			case 8:
-				switch (PPC_getBits(opcode, 25, 5))
-				{
-				case 1:
-					return &PPCInterpreter_PS_NEG;
-				case 2:
-					return &PPCInterpreter_PS_MR;
-				case 4:
-					return &PPCInterpreter_PS_NABS;
-				case 8:
-					return &PPCInterpreter_PS_ABS;
-				default:
-					return &PPCInterpreter_unknown_4_8;
-				}
-				break;
-			case 10:
-				return &PPCInterpreter_PS_SUM0;
-			case 11:
-				return &PPCInterpreter_PS_SUM1;
-			case 12:
-				return &PPCInterpreter_PS_MULS0;
-			case 13:
-				return &PPCInterpreter_PS_MULS1;
-			case 14:
-				return &PPCInterpreter_PS_MADDS0;
-			case 15:
-				return &PPCInterpreter_PS_MADDS1;
-			case 16: // sub category - merge
-				switch (PPC_getBits(opcode, 25, 5))
-				{
-				case 16:
-					return &PPCInterpreter_PS_MERGE00;
-				case 17:
-					return &PPCInterpreter_PS_MERGE01;
-				case 18:
-					return &PPCInterpreter_PS_MERGE10;
-				case 19:
-					return &PPCInterpreter_PS_MERGE11;
-				default:
-					return &PPCInterpreter_unknown_4_16;
-				}
-				break;
-			case 18:
-				return &PPCInterpreter_PS_DIV;
-			case 20:
-				return &PPCInterpreter_PS_SUB;
-			case 21:
-				return &PPCInterpreter_PS_ADD;
-			case 22:
-				return &PPCInterpreter_DCBZL;
-			case 23:
-				return &PPCInterpreter_PS_SEL;
-			case 24:
-				return &PPCInterpreter_PS_RES;
-			case 25:
-				return &PPCInterpreter_PS_MUL;
-			case 26: // sub category with only one entry - RSQRTE
-				return &PPCInterpreter_PS_RSQRTE;
-			case 28:
-				return &PPCInterpreter_PS_MSUB;
-			case 29:
-				return &PPCInterpreter_PS_MADD;
-			case 30:
-				return &PPCInterpreter_PS_NMSUB;
-			case 31:
-				return &PPCInterpreter_PS_NMADD;
-			default:
-				return &PPCInterpreter_unknown_4;
-			}
-			break;
-		case 7:
-			return &PPCInterpreter_MULLI;
-		case 8:
-			return &PPCInterpreter_SUBFIC;
-		case 10:
-			return &PPCInterpreter_CMPLI;
-		case 11:
-			return &PPCInterpreter_CMPI;
-		case 12:
-			return &PPCInterpreter_ADDIC;
-		case 13:
-			return &PPCInterpreter_ADDIC_;
-		case 14:
-			return &PPCInterpreter_ADDI;
-		case 15:
-			return &PPCInterpreter_ADDIS;
-		case 16:
-			return &PPCInterpreter_BCX;
-		case 17:
-			if (PPC_getBits(opcode, 30, 1) == 1)
-				return &PPCInterpreter_SC;
-			return &PPCInterpreter_unsupported17;
-		case 18:
-			return &PPCInterpreter_BX;
-		case 19: // opcode category
-			switch (PPC_getBits(opcode, 30, 10))
-			{
-			case 0:
-				return &PPCInterpreter_MCRF;
-			case 16:
-				return &PPCInterpreter_BCLRX;
-			case 33:
-				return &PPCInterpreter_CRNOR;
-			case 50:
-				return &PPCInterpreter_RFI;
-			case 129:
-				return &PPCInterpreter_CRANDC;
-			case 150:
-				return &PPCInterpreter_ISYNC;
-			case 193:
-				return &PPCInterpreter_CRXOR;
-			case 225:
-				return &PPCInterpreter_CRNAND;
-			case 257:
-				return &PPCInterpreter_CRAND;
-			case 289:
-				return &PPCInterpreter_CREQV;
-			case 417:
-				return &PPCInterpreter_CRORC;
-			case 449:
-				return &PPCInterpreter_CROR;
-			case 528:
-				return &PPCInterpreter_BCCTR;
-			default:
-				return &PPCInterpreter_unknown_19;
-			}
-			break;
-		case 20:
-			return &PPCInterpreter_RLWIMI;
-		case 21:
-			return &PPCInterpreter_RLWINM;
-		case 23:
-			return &PPCInterpreter_RLWNM;
-		case 24:
-			return &PPCInterpreter_ORI;
-		case 25:
-			return &PPCInterpreter_ORIS;
-		case 26:
-			return &PPCInterpreter_XORI;
-		case 27:
-			return &PPCInterpreter_XORIS;
-		case 28:
-			return &PPCInterpreter_ANDI_;
-		case 29:
-			return &PPCInterpreter_ANDIS_;
-		case 31: // opcode category
-			switch (PPC_getBits(opcode, 30, 10))
-			{
-			case 0:
-				return &PPCInterpreter_CMP;
-			case 4:
-				return &PPCInterpreter_TW;
-			case 8:
-				return &PPCInterpreter_SUBFC;
-			case 10:
-				return &PPCInterpreter_ADDC;
-			case 11:
-				return &PPCInterpreter_MULHWU_;
-			case 19:
-				return &PPCInterpreter_MFCR;
-			case 20:
-				return &PPCInterpreter_LWARX;
-			case 23:
-				return &PPCInterpreter_LWZX;
-			case 24:
-				return &PPCInterpreter_SLWX;
-			case 26:
-				return &PPCInterpreter_CNTLZW;
-			case 28:
-				return &PPCInterpreter_ANDX;
-			case 32:
-				return &PPCInterpreter_CMPL;
-			case 40:
-				return &PPCInterpreter_SUBF;
-			case 54:
-				return &PPCInterpreter_DCBST;
-			case 55:
-				return &PPCInterpreter_LWZXU;
-			case 60:
-				return &PPCInterpreter_ANDCX;
-			case 75:
-				return &PPCInterpreter_MULHW_;
-			case 83:
-				return &PPCInterpreter_MFMSR;
-			case 86:
-				return &PPCInterpreter_DCBF;
-			case 87:
-				return &PPCInterpreter_LBZX;
-			case 104:
-				return &PPCInterpreter_NEG;
-			case 119: // Sonic Lost World
-				return &PPCInterpreter_LBZXU;
-			case 124:
-				return &PPCInterpreter_NORX;
-			case 136:
-				return &PPCInterpreter_SUBFE;
-			case 138:
-				return &PPCInterpreter_ADDE;
-			case 144:
-				return &PPCInterpreter_MTCRF;
-			case 146:
-				return &PPCInterpreter_MTMSR;
-			case 150:
-				return &PPCInterpreter_STWCX;
-			case 151:
-				return &PPCInterpreter_STWX;
-			case 183:
-				return &PPCInterpreter_STWUX;
-			case 200:
-				return &PPCInterpreter_SUBFZE;
-			case 202:
-				return &PPCInterpreter_ADDZE;
-			case 210:
-				return &PPCInterpreter_MTSR;
-			case 215:
-				return &PPCInterpreter_STBX;
-			case 232: // Trine 2
-				return &PPCInterpreter_SUBFME;
-			case 234:
-				return &PPCInterpreter_ADDME;
-			case 235:
-				return &PPCInterpreter_MULLW;
-			case 247:
-				return &PPCInterpreter_STBUX;
-			case 266:
-				return &PPCInterpreter_ADD;
-			case 278:
-				return &PPCInterpreter_DCBT;
-			case 279:
-				return &PPCInterpreter_LHZX;
-			case 284:
-				return &PPCInterpreter_EQV;
-			case 306:
-				return &PPCInterpreter_TLBIE;
-			case 311: // Wii U Menu v177 (US)
-				return &PPCInterpreter_LHZUX;
-			case 316:
-				return &PPCInterpreter_XOR;
-			case 339:
-				return &PPCInterpreter_MFSPR;
-			case 343:
-				return &PPCInterpreter_LHAX;
-			case 371:
-				return &PPCInterpreter_MFTB;
-			case 375: // Wii U Menu v177 (US)
-				return &PPCInterpreter_LHAUX;
-			case 407:
-				return &PPCInterpreter_STHX;
-			case 412:
-				return &PPCInterpreter_ORC;
-			case 439:
-				return &PPCInterpreter_STHUX;
-			case 444:
-				return &PPCInterpreter_OR;
-			case 459:
-				return &PPCInterpreter_DIVWU;
-			case 467:
-				return &PPCInterpreter_MTSPR;
-			case 470:
-				return &PPCInterpreter_DCBI;
-			case 476:
-				return &PPCInterpreter_NANDX;
-			case 491:
-				return &PPCInterpreter_DIVW;
-			case 512:
-				return &PPCInterpreter_MCRXR;
-			case 520: // Affordable Space Adventures + other Unity games
-				return &PPCInterpreter_SUBFCO;
-			case 522:
-				return &PPCInterpreter_ADDCO;
-			case 523: // 11 | OE
-				return &PPCInterpreter_MULHWU_; // OE is ignored
-			case 533:
-				return &PPCInterpreter_LSWX;
-			case 534:
-				return &PPCInterpreter_LWBRX;
-			case 535:
-				return &PPCInterpreter_LFSX;
-			case 536:
-				return &PPCInterpreter_SRWX;
-			case 552:
-				return &PPCInterpreter_SUBFO;
-			case 566:
-				return &PPCInterpreter_TLBSYNC;
-			case 567:
-				return &PPCInterpreter_LFSUX;
-			case 587: // 75 | OE
-				return &PPCInterpreter_MULHW_; // OE is ignored for MULHW
-			case 595:
-				return &PPCInterpreter_MFSR;
-			case 597:
-				return &PPCInterpreter_LSWI;
-			case 598:
-				return &PPCInterpreter_SYNC;
-			case 599:
-				return &PPCInterpreter_LFDX;
-			case 616:
-				return &PPCInterpreter_NEGO;
-			case 631:
-				return &PPCInterpreter_LFDUX;
-			case 648: // 136 | OE
-				return &PPCInterpreter_SUBFEO;
-			case 650: // 138 | OE
-				return &PPCInterpreter_ADDEO;
-			case 662:
-				return &PPCInterpreter_STWBRX;
-			case 663:
-				return &PPCInterpreter_STFSX;
-			case 661:
-				return &PPCInterpreter_STSWX;
-			case 695:
-				return &PPCInterpreter_STFSUX;
-			case 712: // 200 | OE
-				return &PPCInterpreter_SUBFZEO;
-			case 714: // 202 | OE
-				return &PPCInterpreter_ADDZEO;
-			case 725:
-				return &PPCInterpreter_STSWI;
-			case 727:
-				return &PPCInterpreter_STFDX;
-			case 744: // 232 | OE
-				return &PPCInterpreter_SUBFMEO;
-			case 746: // 234 | OE
-				return &PPCInterpreter_ADDMEO;
-			case 747:
-				return &PPCInterpreter_MULLWO;
-			case 759:
-				return &PPCInterpreter_STFDUX;
-			case 778:
-				return &PPCInterpreter_ADDO;
-			case 790:
-				return &PPCInterpreter_LHBRX;
-			case 792:
-				return &PPCInterpreter_SRAW;
-			case 824:
-				return &PPCInterpreter_SRAWI;
-			case 854:
-				return &PPCInterpreter_EIEIO;
-			case 918:
-				return &PPCInterpreter_STHBRX;
-			case 922:
-				return &PPCInterpreter_EXTSH;
-			case 954:
-				return &PPCInterpreter_EXTSB;
-			case 971:
-				return &PPCInterpreter_DIVWUO;
-			case 982:
-				return &PPCInterpreter_ICBI;
-			case 983:
-				return &PPCInterpreter_STFIWX;
-			case 1003:
-				return &PPCInterpreter_DIVWO;
-			case 1014:
-				return &PPCInterpreter_DCBZ;
-			default:
-				return &PPCInterpreter_unknown_31;
-			}
-			break;
-		case 32:
-			return &PPCInterpreter_LWZ;
-		case 33:
-			return &PPCInterpreter_LWZU;
-		case 34:
-			return &PPCInterpreter_LBZ;
-		case 35:
-			return &PPCInterpreter_LBZU;
-		case 36:
-			return &PPCInterpreter_STW;
-		case 37:
-			return &PPCInterpreter_STWU;
-		case 38:
-			return &PPCInterpreter_STB;
-		case 39:
-			return &PPCInterpreter_STBU;
-		case 40:
-			return &PPCInterpreter_LHZ;
-		case 41:
-			return &PPCInterpreter_LHZU;
-		case 42:
-			return &PPCInterpreter_LHA;
-		case 43:
-			return &PPCInterpreter_LHAU;
-		case 44:
-			return &PPCInterpreter_STH;
-		case 45:
-			return &PPCInterpreter_STHU;
-		case 46:
-			return &PPCInterpreter_LMW;
-		case 47:
-			return &PPCInterpreter_STMW;
-		case 48:
-			return &PPCInterpreter_LFS;
-		case 49:
-			return &PPCInterpreter_LFSU;
-		case 50:
-			return &PPCInterpreter_LFD;
-		case 51:
-			return &PPCInterpreter_LFDU;
-		case 52:
-			return &PPCInterpreter_STFS;
-		case 53:
-			return &PPCInterpreter_STFSU;
-		case 54:
-			return &PPCInterpreter_STFD;
-		case 55:
-			return &PPCInterpreter_STFDU;
-		case 56:
-			return &PPCInterpreter_PSQ_L;
-		case 57:
-			return &PPCInterpreter_PSQ_LU;
-		case 59: // opcode category
-			switch (PPC_getBits(opcode, 30, 5))
-			{
-			case 18:
-				return &PPCInterpreter_FDIVS;
-			case 20:
-				return &PPCInterpreter_FSUBS;
-			case 21:
-				return &PPCInterpreter_FADDS;
-			case 24:
-				return &PPCInterpreter_FRES;
-			case 25:
-				return &PPCInterpreter_FMULS;
-			case 28:
-				return &PPCInterpreter_FMSUBS;
-			case 29:
-				return &PPCInterpreter_FMADDS;
-			case 30:
-				return &PPCInterpreter_FNMSUBS;
-			case 31:
-				return &PPCInterpreter_FNMADDS;
-			default:
-				return &PPCInterpreter_unknown_59;
-			}
-			break;
-		case 60:
-			return &PPCInterpreter_PSQ_ST;
-		case 61:
-			return &PPCInterpreter_PSQ_STU;
-		case 63: // opcode category
-			switch (PPC_getBits(opcode, 30, 5))
-			{
-			case 0:
-				return &PPCInterpreter_FCMPU;
-			case 12:
-				return &PPCInterpreter_FRSP;
-			case 15:
-				return &PPCInterpreter_FCTIWZ;
-			case 18:
-				return &PPCInterpreter_FDIV;
-			case 20:
-				return &PPCInterpreter_FSUB;
-			case 21:
-				return &PPCInterpreter_FADD;
-			case 23:
-				return &PPCInterpreter_FSEL;
-			case 25:
-				return &PPCInterpreter_FMUL;
-			case 26:
-				return &PPCInterpreter_FRSQRTE;
-			case 28:
-				return &PPCInterpreter_FMSUB;
-			case 29:
-				return &PPCInterpreter_FMADD;
-			case 30:
-				return &PPCInterpreter_FNMSUB;
-			case 31:
-				return &PPCInterpreter_FNMADD;
-			default:
-				switch (PPC_getBits(opcode, 30, 10))
-				{
-				case 14:
-					return &PPCInterpreter_FCTIW;
-				case 32:
-					return &PPCInterpreter_FCMPO;
-				case 38:
-					return &PPCInterpreter_MTFSB1X;
-				case 40:
-					return &PPCInterpreter_FNEG;
-				case 72:
-					return &PPCInterpreter_FMR;
-				case 136: // Darksiders 2
-					return &PPCInterpreter_FNABS;
-				case 264:
-					return &PPCInterpreter_FABS;
-				case 583:
-					return &PPCInterpreter_MFFS;
-				case 711:
-					return &PPCInterpreter_MTFSF;
-				default:
-					return &PPCInterpreter_unknown_63;
-				}
-			}
-			break;
-		default:
-			return &PPCInterpreter_unknownPrimary;
-		}
-		// Not reachable: every path of the switch above returns, including its default. Present so
-		// the function has a defined return value if a later edit ever adds a path that does not.
-		return &PPCInterpreter_unknownPrimary;
-	}
-
-	// ---- the predecoded instruction cache, one per interpreter flavour --------------------------
-	//
-	// Slim (CafeOS usermode) and Full (LLE, with MMU translation) resolve the same opcode word to
-	// DIFFERENT handler functions, because the handlers are members of this template and reach
-	// memory through ppcItpCtrl. So the tables have to be per instantiation: one shared table
-	// would eventually hand an LLE instruction to Slim's linear-memory accessors, or the reverse,
-	// and that is a silent wrong-memory bug rather than a crash. Being per instantiation costs
-	// nothing for a flavour that never runs - the block table is zero-initialised BSS whose pages
-	// are never faulted in, and no arena block is claimed until an instruction actually executes.
-
-	static constexpr uint32 kMaxHandlers = 512; // power of two, so the index mask below is exact
-	static inline std::atomic<PPCInstructionHandler> s_handlerTable[kMaxHandlers]{};
-	static inline std::atomic<uint64*> s_blockTable[PPCPredecode::kBlockTableSize]{};
-	// Index 0 is permanently null. That is what makes a zeroed cache entry - the state every
-	// freshly claimed block is in - unable to dispatch: it names handler 0, which is null, which
-	// is read as a miss. Without that reservation an all-zero entry would be indistinguishable
-	// from a legitimately cached opcode 0x00000000.
-	static inline uint32 s_handlerCount = 1;
-	static inline bool s_reportedHandlerTableFull = false;
-	static inline std::mutex s_handlerMutex;
-	static inline std::unordered_map<PPCInstructionHandler, uint32> s_handlerIds;
-
-	// Cold path only - once per distinct handler for the life of the process. Returns 0, the
-	// never-dispatchable index, if the table is full, which just means that opcode keeps decoding
-	// the slow way rather than anything going wrong.
-	PPCITP_NOINLINE static uint32 internHandler(PPCInstructionHandler h)
-	{
-		std::lock_guard<std::mutex> lock(s_handlerMutex);
-		auto it = s_handlerIds.find(h);
-		if (it != s_handlerIds.end())
-			return it->second;
-		if (s_handlerCount >= kMaxHandlers)
-		{
-			// There are 237 distinct handlers today against a table of 512, so this is headroom
-			// rather than a limit - but a future wave that adds a lot of opcodes should be told
-			// rather than silently losing the cache for whatever it added. Said once; this runs
-			// under the lock, so a plain bool is enough.
-			if (!s_reportedHandlerTableFull)
-			{
-				s_reportedHandlerTableFull = true;
-				cemuLog_log(LogType::Force, "Interpreter predecode cache: handler table full at {} entries. Opcodes beyond it will decode on every execution - raise kMaxHandlers.", kMaxHandlers);
-			}
-			return 0;
-		}
-		uint32 idx = s_handlerCount;
-		// Release, and the slot is filled before the index naming it can appear in any cache
-		// entry. A core that reads the index therefore either sees the handler or sees null and
-		// treats it as a miss; it can never see a different handler.
-		s_handlerTable[idx].store(h, std::memory_order_release);
-		s_handlerCount = idx + 1;
-		s_handlerIds[h] = idx;
-		return idx;
-	}
-
-	// Cold: the first time any instruction inside this 4 KB guest page executes. Returns the block
-	// that ends up published for the page, or nullptr when the arena is exhausted - in which case
-	// this page is simply never cached.
-	PPCITP_NOINLINE static uint64* claimBlockForPage(std::atomic<uint64*>& tableSlot)
-	{
-		uint64* block = PPCPredecode::allocBlock();
-		if (!block)
-			return nullptr;
-		uint64* expected = nullptr;
-		if (!tableSlot.compare_exchange_strong(expected, block, std::memory_order_relaxed, std::memory_order_relaxed))
-		{
-			// Another core published a block for this page first. Ours is left unused for the rest
-			// of the run; that wastes at most one block per page and needs no cleanup path, which
-			// is worth more here than reclaiming 8 KB.
-			return expected;
-		}
-		return block;
-	}
-
-	// Returns the cache slot for a guest address, or nullptr if the address cannot be cached.
-	// Cold path only - reached from executeUncached, never from the hit path.
-	static uint64* predecodeSlot(uint32 ip)
-	{
-		if (ip >= PPCPredecode::kCodeAreaEnd) [[unlikely]]
-			return nullptr;
-		std::atomic<uint64*>& tableSlot = s_blockTable[ip >> PPCPredecode::kBlockShift];
-		// Relaxed, and this is the one load where it is worth saying why no acquire is needed.
-		// The block this pointer names was zeroed by calloc during static initialisation, before
-		// any core thread existed, and the only writes to it afterwards are the single-uint64
-		// entry publications below, each carrying its own opcode tag. So there is no "initialised"
-		// state a reader can arrive too early for: it either sees a zero entry, which is a miss,
-		// or a whole published entry, which is self-checking.
-		uint64* block = tableSlot.load(std::memory_order_relaxed);
-		if (!block) [[unlikely]]
-		{
-			block = claimBlockForPage(tableSlot);
-			if (!block)
-				return nullptr;
-		}
-		return block + ((ip & (PPCPredecode::kBlockSize - 1u)) >> 2);
-	}
-
-	// Every reason a dispatch can fail to be a hit, in one place: first execution of this address,
-	// the instruction word changed underneath the entry, this page has no block yet, the arena is
-	// full, or the address is outside the guest code area. Decode, remember it if there is
-	// somewhere to remember it, and run it.
-	//
-	// One function, and noinline, for a reason that is visible in the generated code rather than
-	// aesthetic. With the cold work inlined, executeInstruction needed four callee-saved registers
-	// and a 64-byte frame to carry hCPU across the cold calls, and paid the prologue and epilogue
-	// for that frame on every HIT as well. Outlined, the hit path touches no callee-saved register
-	// and needs no frame, so clang finishes it with a tail branch straight to the handler - which
-	// means the handler's own `ret` returns directly to the execution loop, with no stack growth
-	// and no second return hop. That is the shape a threaded interpreter wants, obtained from the
-	// ordinary optimiser instead of from musttail.
-	PPCITP_NOINLINE static void executeUncached(PPCInterpreter_t* hCPU, uint32 ip, uint32 opcode)
-	{
-		const PPCInstructionHandler h = decodeInstruction(opcode);
-		uint64* slot = predecodeSlot(ip);
-		if (slot)
-		{
-			const uint32 idx = internHandler(h);
-			if (idx != 0)
-				// stdx::, not std::. precompiled.h:778 carries a fallback because Xcode 16's
-				// libc++ has no std::atomic_ref, and the CI runner is one of the toolchains
-				// without it - this exact line failed the CPU-core gate as std::. It compiles
-				// on this laptop either way, which is precisely why it has to be stdx:: here.
-				stdx::atomic_ref<uint64>(*slot).store(((uint64)idx << 32) | (uint64)opcode, std::memory_order_release);
-		}
-		// Not cacheable, or not cached yet - either way the instruction still executes exactly as
-		// it did before this cache existed. Nothing here is a degraded fallback.
-		h(hCPU, opcode);
-	}
-
-	static void executeInstruction(PPCInterpreter_t* hCPU)
-	{
-		if constexpr(ppcItpCtrl::allowSupervisorMode)
-		{
-			hCPU->global->tb++;
-		}
+    ppc_fetch:
+        if constexpr(ppcItpCtrl::allowSupervisorMode)
+        {
+            hCPU->global->tb++;
+        }
 
 #ifdef __DEBUG_OUTPUT_INSTRUCTION
-		debug_printf("%08x: ", hCPU->instructionPointer);
+        debug_printf("%08x: ", hCPU->instructionPointer);
 #endif
 
-		const uint32 ip = hCPU->instructionPointer;
-		const uint32 opcode = ppcItpCtrl::memory_readCodeU32(hCPU, ip);
+        uint32 opcode = ppcItpCtrl::memory_readCodeU32(hCPU, hCPU->instructionPointer);
 
-		// This is the whole hot path: bounds check, block pointer, entry, handler, tail call.
-		// Anything that is not a hit leaves via executeUncached below, so that none of the cold
-		// work costs the hit path a register or a stack frame.
-		if (ip < PPCPredecode::kCodeAreaEnd) [[likely]]
-		{
-			uint64* block = s_blockTable[ip >> PPCPredecode::kBlockShift].load(std::memory_order_relaxed);
-			if (block) [[likely]]
-			{
-				const uint64 entry = stdx::atomic_ref<uint64>(block[(ip & (PPCPredecode::kBlockSize - 1u)) >> 2]).load(std::memory_order_relaxed);
-				// The entire validity check: the word this entry was decoded from is still the
-				// word sitting in guest memory. If the title rewrote this instruction, a patch or
-				// a breakpoint replaced it, or a different module was mapped over the address,
-				// the comparison fails and it is decoded again.
-				if ((uint32)entry == opcode) [[likely]]
-				{
-					// Masked rather than bounds-checked. Every index written here came from
-					// internHandler and is already in range, so the mask is not what makes it
-					// valid - it is there so that no value a 64-bit word in shared memory could
-					// possibly hold can index outside the table, whatever goes wrong elsewhere.
-					// kMaxHandlers is a power of two, so it costs one AND.
-					const PPCInstructionHandler h = s_handlerTable[(uint32)(entry >> 32) & (kMaxHandlers - 1u)].load(std::memory_order_relaxed);
-					if (h) [[likely]]
-					{
-						h(hCPU, opcode);
-						return;
-					}
-				}
-			}
-		}
-		executeUncached(hCPU, ip, opcode);
-	}
+#if (defined(__clang__) || defined(__GNUC__)) && !defined(PPC_INTERPRETER_DISABLE_THREADED_DISPATCH) && !defined(__DEBUG_OUTPUT_INSTRUCTION)
+        goto *dispatch[opcode >> 26];
+#endif
+        switch ((opcode >> 26))
+        {
+        PPC_PRIMARY_CASE(0)
+            debug_printf("ZERO[NOP] | 0x%08X\n", (unsigned int)hCPU->instructionPointer);
+    #ifdef CEMU_DEBUG_ASSERT
+            assert_dbg();
+            while (true) std::this_thread::sleep_for(std::chrono::seconds(1));
+    #endif
+            hCPU->instructionPointer += 4;
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(1) // virtual HLE
+            PPCInterpreter_virtualHLE(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(3)
+            cemuLog_logDebug(LogType::Force, "Unsupported TWI instruction executed at {:08x}", hCPU->instructionPointer);
+            PPCInterpreter_nextInstruction(hCPU);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(4)
+            switch (PPC_getBits(opcode, 30, 5))
+            {
+            case 0: // subcategory compare
+                switch (PPC_getBits(opcode, 25, 5))
+                {
+                case 0: // Sonic All Stars Racing
+                    PPCInterpreter_PS_CMPU0(hCPU, opcode);
+                    break;
+                case 1:
+                    PPCInterpreter_PS_CMPO0(hCPU, opcode);
+                    break;
+                case 2: // Assassin's Creed 3, Sonic All Stars Racing
+                    PPCInterpreter_PS_CMPU1(hCPU, opcode);
+                    break;
+                default:
+                    cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [4->0] at {:08x}", PPC_getBits(opcode, 25, 5), hCPU->instructionPointer);
+                    cemu_assert_unimplemented();
+                    hCPU->instructionPointer += 4;
+                    break;
+                }
+                break;
+            case 6:
+                PPCInterpreter_PSQ_LX(hCPU, opcode);
+                break;
+            case 7:
+                PPCInterpreter_PSQ_STX(hCPU, opcode);
+                break;
+            case 8:
+                switch (PPC_getBits(opcode, 25, 5))
+                {
+                case 1:
+                    PPCInterpreter_PS_NEG(hCPU, opcode);
+                    break;
+                case 2:
+                    PPCInterpreter_PS_MR(hCPU, opcode);
+                    break;
+                case 4:
+                    PPCInterpreter_PS_NABS(hCPU, opcode);
+                    break;
+                case 8:
+                    PPCInterpreter_PS_ABS(hCPU, opcode);
+                    break;
+                default:
+                    cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [4->8] at {:08x}", PPC_getBits(opcode, 25, 5), hCPU->instructionPointer);
+                    cemu_assert_unimplemented();
+                    hCPU->instructionPointer += 4;
+                    break;
+                }
+                break;
+            case 10:
+                PPCInterpreter_PS_SUM0(hCPU, opcode);
+                break;
+            case 11:
+                PPCInterpreter_PS_SUM1(hCPU, opcode);
+                break;
+            case 12:
+                PPCInterpreter_PS_MULS0(hCPU, opcode);
+                break;
+            case 13:
+                PPCInterpreter_PS_MULS1(hCPU, opcode);
+                break;
+            case 14:
+                PPCInterpreter_PS_MADDS0(hCPU, opcode);
+                break;
+            case 15:
+                PPCInterpreter_PS_MADDS1(hCPU, opcode);
+                break;
+            case 16: // sub category - merge
+                switch (PPC_getBits(opcode, 25, 5))
+                {
+                case 16:
+                    PPCInterpreter_PS_MERGE00(hCPU, opcode);
+                    break;
+                case 17:
+                    PPCInterpreter_PS_MERGE01(hCPU, opcode);
+                    break;
+                case 18:
+                    PPCInterpreter_PS_MERGE10(hCPU, opcode);
+                    break;
+                case 19:
+                    PPCInterpreter_PS_MERGE11(hCPU, opcode);
+                    break;
+                default:
+                    cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [4->16] at {:08x}", PPC_getBits(opcode, 25, 5), hCPU->instructionPointer);
+                    cemu_assert_unimplemented();
+                    hCPU->instructionPointer += 4;
+                    break;
+                }
+                break;
+            case 18:
+                PPCInterpreter_PS_DIV(hCPU, opcode);
+                break;
+            case 20:
+                PPCInterpreter_PS_SUB(hCPU, opcode);
+                break;
+            case 21:
+                PPCInterpreter_PS_ADD(hCPU, opcode);
+                break;
+            case 22:
+                PPCInterpreter_DCBZL(hCPU, opcode);
+                break;
+            case 23:
+                PPCInterpreter_PS_SEL(hCPU, opcode);
+                break;
+            case 24:
+                PPCInterpreter_PS_RES(hCPU, opcode);
+                break;
+            case 25:
+                PPCInterpreter_PS_MUL(hCPU, opcode);
+                break;
+            case 26:
+                PPCInterpreter_PS_RSQRTE(hCPU, opcode);
+                break;
+            case 28:
+                PPCInterpreter_PS_MSUB(hCPU, opcode);
+                break;
+            case 29:
+                PPCInterpreter_PS_MADD(hCPU, opcode);
+                break;
+            case 30:
+                PPCInterpreter_PS_NMSUB(hCPU, opcode);
+                break;
+            case 31:
+                PPCInterpreter_PS_NMADD(hCPU, opcode);
+                break;
+            default:
+                cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [4] at {:08x}", PPC_getBits(opcode, 30, 5), hCPU->instructionPointer);
+                cemu_assert_unimplemented();
+                hCPU->instructionPointer += 4;
+                break;
+            }
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(7)
+            PPCInterpreter_MULLI(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(8)
+            PPCInterpreter_SUBFIC(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(10)
+            PPCInterpreter_CMPLI(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(11)
+            PPCInterpreter_CMPI(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(12)
+            PPCInterpreter_ADDIC(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(13)
+            PPCInterpreter_ADDIC_(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(14)
+            PPCInterpreter_ADDI(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(15)
+            PPCInterpreter_ADDIS(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(16)
+            PPCInterpreter_BCX(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(17)
+            if (PPC_getBits(opcode, 30, 1) == 1)
+            {
+                PPCInterpreter_SC(hCPU, opcode);
+            }
+            else
+            {
+                cemuLog_logDebug(LogType::Force, "Unsupported Opcode [0x17 > 0x0]");
+                cemu_assert_unimplemented();
+                hCPU->instructionPointer += 4;
+            }
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(18)
+            PPCInterpreter_BX(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(19) // opcode category
+            {
+                static constexpr auto handlers = makeHandlerTable19();
+                if (auto handler = handlers[PPC_getBits(opcode, 30, 10)])
+                    handler(hCPU, opcode);
+                else
+                {
+                    cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [19] at {:08x}\n", PPC_getBits(opcode, 30, 10), hCPU->instructionPointer);
+                    cemu_assert_unimplemented();
+                    hCPU->instructionPointer += 4;
+                }
+            }
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(20)
+            PPCInterpreter_RLWIMI(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(21)
+            PPCInterpreter_RLWINM(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(23)
+            PPCInterpreter_RLWNM(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(24)
+            PPCInterpreter_ORI(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(25)
+            PPCInterpreter_ORIS(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(26)
+            PPCInterpreter_XORI(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(27)
+            PPCInterpreter_XORIS(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(28)
+            PPCInterpreter_ANDI_(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(29)
+            PPCInterpreter_ANDIS_(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(31) // opcode category
+            {
+                static constexpr auto handlers = makeHandlerTable31();
+                if (auto handler = handlers[PPC_getBits(opcode, 30, 10)])
+                    handler(hCPU, opcode);
+                else
+                {
+                    cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [31] at {:08x}\n", PPC_getBits(opcode, 30, 10), hCPU->instructionPointer);
+                    cemu_assert_unimplemented();
+                    hCPU->instructionPointer += 4;
+                }
+            }
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(32)
+            PPCInterpreter_LWZ(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(33)
+            PPCInterpreter_LWZU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(34)
+            PPCInterpreter_LBZ(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(35)
+            PPCInterpreter_LBZU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(36)
+            PPCInterpreter_STW(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(37)
+            PPCInterpreter_STWU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(38)
+            PPCInterpreter_STB(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(39)
+            PPCInterpreter_STBU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(40)
+            PPCInterpreter_LHZ(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(41)
+            PPCInterpreter_LHZU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(42)
+            PPCInterpreter_LHA(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(43)
+            PPCInterpreter_LHAU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(44)
+            PPCInterpreter_STH(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(45)
+            PPCInterpreter_STHU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(46)
+            PPCInterpreter_LMW(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(47)
+            PPCInterpreter_STMW(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(48)
+            PPCInterpreter_LFS(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(49)
+            PPCInterpreter_LFSU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(50)
+            PPCInterpreter_LFD(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(51)
+            PPCInterpreter_LFDU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(52)
+            PPCInterpreter_STFS(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(53)
+            PPCInterpreter_STFSU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(54)
+            PPCInterpreter_STFD(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(55)
+            PPCInterpreter_STFDU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(56)
+            PPCInterpreter_PSQ_L(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(57)
+            PPCInterpreter_PSQ_LU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(59) // opcode category
+            switch (PPC_getBits(opcode, 30, 5))
+            {
+            case 18:
+                PPCInterpreter_FDIVS(hCPU, opcode);
+                break;
+            case 20:
+                PPCInterpreter_FSUBS(hCPU, opcode);
+                break;
+            case 21:
+                PPCInterpreter_FADDS(hCPU, opcode);
+                break;
+            case 24:
+                PPCInterpreter_FRES(hCPU, opcode);
+                break;
+            case 25:
+                PPCInterpreter_FMULS(hCPU, opcode);
+                break;
+            case 28:
+                PPCInterpreter_FMSUBS(hCPU, opcode);
+                break;
+            case 29:
+                PPCInterpreter_FMADDS(hCPU, opcode);
+                break;
+            case 30:
+                PPCInterpreter_FNMSUBS(hCPU, opcode);
+                break;
+            case 31:
+                PPCInterpreter_FNMADDS(hCPU, opcode);
+                break;
+            default:
+                cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [59] at {:08x}\n", PPC_getBits(opcode, 30, 10), hCPU->instructionPointer);
+                cemu_assert_unimplemented();
+                hCPU->instructionPointer += 4;
+                break;
+            }
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(60)
+            PPCInterpreter_PSQ_ST(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(61)
+            PPCInterpreter_PSQ_STU(hCPU, opcode);
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_CASE(63) // opcode category
+            switch (PPC_getBits(opcode, 30, 5))
+            {
+            case 0:
+                PPCInterpreter_FCMPU(hCPU, opcode);
+                break;
+            case 12:
+                PPCInterpreter_FRSP(hCPU, opcode);
+                break;
+            case 15:
+                PPCInterpreter_FCTIWZ(hCPU, opcode);
+                break;
+            case 18:
+                PPCInterpreter_FDIV(hCPU, opcode);
+                break;
+            case 20:
+                PPCInterpreter_FSUB(hCPU, opcode);
+                break;
+            case 21:
+                PPCInterpreter_FADD(hCPU, opcode);
+                break;
+            case 23:
+                PPCInterpreter_FSEL(hCPU, opcode);
+                break;
+            case 25:
+                PPCInterpreter_FMUL(hCPU, opcode);
+                break;
+            case 26:
+                PPCInterpreter_FRSQRTE(hCPU, opcode);
+                break;
+            case 28:
+                PPCInterpreter_FMSUB(hCPU, opcode);
+                break;
+            case 29:
+                PPCInterpreter_FMADD(hCPU, opcode);
+                break;
+            case 30:
+                PPCInterpreter_FNMSUB(hCPU, opcode);
+                break;
+            case 31:
+                PPCInterpreter_FNMADD(hCPU, opcode);
+                break;
+            default:
+                switch (PPC_getBits(opcode, 30, 10))
+                {
+                case 14:
+                    PPCInterpreter_FCTIW(hCPU, opcode);
+                    break;
+                case 32:
+                    PPCInterpreter_FCMPO(hCPU, opcode);
+                    break;
+                case 38:
+                    PPCInterpreter_MTFSB1X(hCPU, opcode);
+                    break;
+                case 40:
+                    PPCInterpreter_FNEG(hCPU, opcode);
+                    break;
+                case 72:
+                    PPCInterpreter_FMR(hCPU, opcode);
+                    break;
+                case 136: // Darksiders 2
+                    PPCInterpreter_FNABS(hCPU, opcode);
+                    break;
+                case 264:
+                    PPCInterpreter_FABS(hCPU, opcode);
+                    break;
+                case 583:
+                    PPCInterpreter_MFFS(hCPU, opcode);
+                    break;
+                case 711:
+                    PPCInterpreter_MTFSF(hCPU, opcode);
+                    break;
+                default:
+                    cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} as [63] at {:08x}\n", PPC_getBits(opcode, 30, 10), hCPU->instructionPointer);
+                    cemu_assert_unimplemented();
+                    PPCInterpreter_nextInstruction(hCPU);
+                    break;
+                }
+            }
+            PPC_DISPATCH_NEXT();
+        PPC_PRIMARY_DEFAULT
+            cemuLog_logDebug(LogType::Force, "Unknown execute {:04x} at {:08x}\n", PPC_getBits(opcode, 5, 6), (unsigned int)hCPU->instructionPointer);
+            cemu_assert_unimplemented();
+            PPC_DISPATCH_NEXT();
+        }
+        
+        if constexpr (runTimeslice)
+        {
+            if (--hCPU->remainingCycles >= 0)
+                goto ppc_fetch;
+        }
+    }
+    
+    
+    static void blockFallbackStep(PPCInterpreter_t* hCPU, uint32 /*opcode*/)
+    {
+        executeInstruction<false>(hCPU);
+    }
+    
+    static void blockICBI(PPCInterpreter_t* hCPU, uint32 opcode)
+    {
+        PPCInterpreter_ICBI(hCPU, opcode);
+        sint32 rD, rA, rB;
+        PPC_OPC_TEMPL_X(opcode, rD, rA, rB);
+        const uint32 ea = (rA ? hCPU->gpr[rA] : 0) + hCPU->gpr[rB];
+        PPCInterpreter_invalidateBlockCacheRange(ea & ~31u, 32);
+    }
+    
+    static PPCBlockEntry decodeEntry(uint32 opcode, PPCBlockTerm& term)
+    {
+        static constexpr auto s_table19 = makeHandlerTable19();
+        static constexpr auto s_table31 = makeHandlerTable31();
+        term = PPCBlockTerm::None;
+        PPCBlockHandler fn = nullptr;
+        switch (opcode >> 26)
+        {
+        case 4:
+            switch (PPC_getBits(opcode, 30, 5))
+            {
+            case 0:
+                switch (PPC_getBits(opcode, 25, 5))
+                {
+                case 0: fn = PPCInterpreter_PS_CMPU0; break;
+                case 1: fn = PPCInterpreter_PS_CMPO0; break;
+                case 2: fn = PPCInterpreter_PS_CMPU1; break;
+                default: break;
+                }
+                break;
+            case 6: fn = PPCInterpreter_PSQ_LX; break;
+            case 7: fn = PPCInterpreter_PSQ_STX; break;
+            case 8:
+                switch (PPC_getBits(opcode, 25, 5))
+                {
+                case 1: fn = PPCInterpreter_PS_NEG; break;
+                case 2: fn = PPCInterpreter_PS_MR; break;
+                case 4: fn = PPCInterpreter_PS_NABS; break;
+                case 8: fn = PPCInterpreter_PS_ABS; break;
+                default: break;
+                }
+                break;
+            case 10: fn = PPCInterpreter_PS_SUM0; break;
+            case 11: fn = PPCInterpreter_PS_SUM1; break;
+            case 12: fn = PPCInterpreter_PS_MULS0; break;
+            case 13: fn = PPCInterpreter_PS_MULS1; break;
+            case 14: fn = PPCInterpreter_PS_MADDS0; break;
+            case 15: fn = PPCInterpreter_PS_MADDS1; break;
+            case 16:
+                switch (PPC_getBits(opcode, 25, 5))
+                {
+                case 16: fn = PPCInterpreter_PS_MERGE00; break;
+                case 17: fn = PPCInterpreter_PS_MERGE01; break;
+                case 18: fn = PPCInterpreter_PS_MERGE10; break;
+                case 19: fn = PPCInterpreter_PS_MERGE11; break;
+                default: break;
+                }
+                break;
+            case 18: fn = PPCInterpreter_PS_DIV; break;
+            case 20: fn = PPCInterpreter_PS_SUB; break;
+            case 21: fn = PPCInterpreter_PS_ADD; break;
+            case 22: fn = PPCInterpreter_DCBZL; break;
+            case 23: fn = PPCInterpreter_PS_SEL; break;
+            case 24: fn = PPCInterpreter_PS_RES; break;
+            case 25: fn = PPCInterpreter_PS_MUL; break;
+            case 26: fn = PPCInterpreter_PS_RSQRTE; break;
+            case 28: fn = PPCInterpreter_PS_MSUB; break;
+            case 29: fn = PPCInterpreter_PS_MADD; break;
+            case 30: fn = PPCInterpreter_PS_NMSUB; break;
+            case 31: fn = PPCInterpreter_PS_NMADD; break;
+            default: break;
+            }
+            break;
+        case 7: fn = PPCInterpreter_MULLI; break;
+        case 8: fn = PPCInterpreter_SUBFIC; break;
+        case 10: fn = PPCInterpreter_CMPLI; break;
+        case 11: fn = PPCInterpreter_CMPI; break;
+        case 12: fn = PPCInterpreter_ADDIC; break;
+        case 13: fn = PPCInterpreter_ADDIC_; break;
+        case 14: fn = PPCInterpreter_ADDI; break;
+        case 15: fn = PPCInterpreter_ADDIS; break;
+        case 16: term = PPCBlockTerm::BCX; break;
+        case 18: term = PPCBlockTerm::BX; break;
+        case 19:
+        {
+            const uint32 ext = PPC_getBits(opcode, 30, 10);
+            if (ext == 16)
+                term = PPCBlockTerm::BCLRX;
+            else if (ext == 528)
+                term = PPCBlockTerm::BCCTR;
+            else if (ext == 50 || ext == 150) // rfi, isync > classic path, terminate
+                term = PPCBlockTerm::Generic;
+            else
+                fn = s_table19[ext]; // cr ops, mcrf: straight-line
+            break;
+        }
+        case 20: fn = PPCInterpreter_RLWIMI; break;
+        case 21: fn = PPCInterpreter_RLWINM; break;
+        case 23: fn = PPCInterpreter_RLWNM; break;
+        case 24: fn = PPCInterpreter_ORI; break;
+        case 25: fn = PPCInterpreter_ORIS; break;
+        case 26: fn = PPCInterpreter_XORI; break;
+        case 27: fn = PPCInterpreter_XORIS; break;
+        case 28: fn = PPCInterpreter_ANDI_; break;
+        case 29: fn = PPCInterpreter_ANDIS_; break;
+        case 31:
+        {
+            const uint32 ext = PPC_getBits(opcode, 30, 10);
+            if (ext == 982) // icbi
+            {
+                fn = blockICBI;
+                term = PPCBlockTerm::Generic;
+            }
+            else if (ext == 4 || ext == 146) // tw, mtmsr -> classic path, terminate
+                term = PPCBlockTerm::Generic;
+            else
+                fn = s_table31[ext];
+            break;
+        }
+        case 32: fn = PPCInterpreter_LWZ; break;
+        case 33: fn = PPCInterpreter_LWZU; break;
+        case 34: fn = PPCInterpreter_LBZ; break;
+        case 35: fn = PPCInterpreter_LBZU; break;
+        case 36: fn = PPCInterpreter_STW; break;
+        case 37: fn = PPCInterpreter_STWU; break;
+        case 38: fn = PPCInterpreter_STB; break;
+        case 39: fn = PPCInterpreter_STBU; break;
+        case 40: fn = PPCInterpreter_LHZ; break;
+        case 41: fn = PPCInterpreter_LHZU; break;
+        case 42: fn = PPCInterpreter_LHA; break;
+        case 43: fn = PPCInterpreter_LHAU; break;
+        case 44: fn = PPCInterpreter_STH; break;
+        case 45: fn = PPCInterpreter_STHU; break;
+        case 46: fn = PPCInterpreter_LMW; break;
+        case 47: fn = PPCInterpreter_STMW; break;
+        case 48: fn = PPCInterpreter_LFS; break;
+        case 49: fn = PPCInterpreter_LFSU; break;
+        case 50: fn = PPCInterpreter_LFD; break;
+        case 51: fn = PPCInterpreter_LFDU; break;
+        case 52: fn = PPCInterpreter_STFS; break;
+        case 53: fn = PPCInterpreter_STFSU; break;
+        case 54: fn = PPCInterpreter_STFD; break;
+        case 55: fn = PPCInterpreter_STFDU; break;
+        case 56: fn = PPCInterpreter_PSQ_L; break;
+        case 57: fn = PPCInterpreter_PSQ_LU; break;
+        case 59:
+            switch (PPC_getBits(opcode, 30, 5))
+            {
+            case 18: fn = PPCInterpreter_FDIVS; break;
+            case 20: fn = PPCInterpreter_FSUBS; break;
+            case 21: fn = PPCInterpreter_FADDS; break;
+            case 24: fn = PPCInterpreter_FRES; break;
+            case 25: fn = PPCInterpreter_FMULS; break;
+            case 28: fn = PPCInterpreter_FMSUBS; break;
+            case 29: fn = PPCInterpreter_FMADDS; break;
+            case 30: fn = PPCInterpreter_FNMSUBS; break;
+            case 31: fn = PPCInterpreter_FNMADDS; break;
+            default: break;
+            }
+            break;
+        case 60: fn = PPCInterpreter_PSQ_ST; break;
+        case 61: fn = PPCInterpreter_PSQ_STU; break;
+        case 63:
+            switch (PPC_getBits(opcode, 30, 5))
+            {
+            case 0: fn = PPCInterpreter_FCMPU; break;
+            case 12: fn = PPCInterpreter_FRSP; break;
+            case 15: fn = PPCInterpreter_FCTIWZ; break;
+            case 18: fn = PPCInterpreter_FDIV; break;
+            case 20: fn = PPCInterpreter_FSUB; break;
+            case 21: fn = PPCInterpreter_FADD; break;
+            case 23: fn = PPCInterpreter_FSEL; break;
+            case 25: fn = PPCInterpreter_FMUL; break;
+            case 26: fn = PPCInterpreter_FRSQRTE; break;
+            case 28: fn = PPCInterpreter_FMSUB; break;
+            case 29: fn = PPCInterpreter_FMADD; break;
+            case 30: fn = PPCInterpreter_FNMSUB; break;
+            case 31: fn = PPCInterpreter_FNMADD; break;
+            default:
+                switch (PPC_getBits(opcode, 30, 10))
+                {
+                case 14: fn = PPCInterpreter_FCTIW; break;
+                case 32: fn = PPCInterpreter_FCMPO; break;
+                case 38: fn = PPCInterpreter_MTFSB1X; break;
+                case 40: fn = PPCInterpreter_FNEG; break;
+                case 72: fn = PPCInterpreter_FMR; break;
+                case 136: fn = PPCInterpreter_FNABS; break;
+                case 264: fn = PPCInterpreter_FABS; break;
+                case 583: fn = PPCInterpreter_MFFS; break;
+                case 711: fn = PPCInterpreter_MTFSF; break;
+                default: break;
+                }
+                break;
+            }
+            break;
+        case 1:
+            fn = PPCInterpreter_virtualHLE;
+            term = PPCBlockTerm::Generic;
+            break;
+        default:
+            break;
+        }
+
+        // anything we can't map (or explicitly routed to Generic without a handler) uses the old path -stossy11
+        if (term == PPCBlockTerm::None && fn == nullptr)
+            term = PPCBlockTerm::Generic;
+        if (term == PPCBlockTerm::Generic && fn == nullptr)
+            fn = blockFallbackStep;
+        return PPCBlockEntry{fn, opcode, 0};
+    }
+
+    static PPCBlockRef* decodeBlock(PPCInterpreter_t* hCPU, PPCBlockCache& cache, uint32 startAddr)
+    {
+        PPCBlockRef* ref = cache.allocSlot(startAddr);
+        cache.m_decodes++;
+        
+        PPCBlockCache_markCodePage(startAddr);
+
+        const uint32 firstEntry = (uint32)cache.m_entries.size();
+        uint32 addr = startAddr;
+        uint32 count = 0;
+        PPCBlockTerm term = PPCBlockTerm::None;
+        while (count < PPCBlockCache::MAX_BLOCK_LENGTH)
+        {
+            if ((addr & 0xFFF) == 0 && addr != startAddr)
+                PPCBlockCache_markCodePage(addr);
+            const uint32 opcode = ppcItpCtrl::memory_readCodeU32(hCPU, addr);
+            cache.m_entries.push_back(decodeEntry(opcode, term));
+            count++;
+            addr += 4;
+            if (term != PPCBlockTerm::None)
+                break;
+            if (addr == 0) // wrapped around the address space
+                break;
+        }
+
+        ref->startAddr = startAddr;
+        ref->firstEntry = firstEntry;
+        ref->count = (uint16)count;
+        ref->term = term;
+        return ref;
+    }
+
+    static inline void blockTermBX(PPCInterpreter_t* hCPU, uint32 opcode)
+    {
+        uint32 li;
+        PPC_OPC_TEMPL_I(opcode, li);
+        if ((opcode & PPC_OPC_AA) == 0)
+            li += (uint32)hCPU->instructionPointer;
+        if (opcode & PPC_OPC_LK)
+            hCPU->spr.LR = (uint32)hCPU->instructionPointer + 4;
+        hCPU->instructionPointer = li;
+    }
+
+    static inline void blockTermBCX(PPCInterpreter_t* hCPU, uint32 opcode)
+    {
+        uint32 BO, BI, BD;
+        PPC_OPC_TEMPL_B(opcode, BO, BI, BD);
+        if (!(BO & 4))
+            hCPU->spr.CTR--;
+        const bool bo2 = (BO & 2) != 0;
+        const bool bo8 = (BO & 8) != 0;
+        const bool cr = ppc_getCRBit(hCPU, BI) != 0;
+        if (((BO & 4) || ((hCPU->spr.CTR != 0) ^ bo2))
+            && ((BO & 16) || (!(cr ^ bo8))))
+        {
+            if (!(opcode & PPC_OPC_AA))
+                BD += (uint32)hCPU->instructionPointer;
+            else
+                cemu_assert_unimplemented();
+            if (opcode & PPC_OPC_LK)
+                hCPU->spr.LR = (uint32)hCPU->instructionPointer + 4;
+            hCPU->instructionPointer = BD;
+        }
+        else
+            hCPU->instructionPointer += 4;
+    }
+
+    static inline void blockTermBCLRX(PPCInterpreter_t* hCPU, uint32 opcode)
+    {
+        uint32 BO, BI, BD;
+        PPC_OPC_TEMPL_XL(opcode, BO, BI, BD);
+        if (!(BO & 4))
+            hCPU->spr.CTR--;
+        const bool bo2 = (BO & 2) != 0;
+        const bool bo8 = (BO & 8) != 0;
+        const bool cr = ppc_getCRBit(hCPU, BI) != 0;
+        if (((BO & 4) || ((hCPU->spr.CTR != 0) ^ bo2))
+            && ((BO & 16) || (!(cr ^ bo8))))
+        {
+            const uint32 target = hCPU->spr.LR & 0xfffffffc;
+            if (opcode & PPC_OPC_LK)
+                hCPU->spr.LR = (uint32)hCPU->instructionPointer + 4;
+            hCPU->instructionPointer = target;
+        }
+        else
+            hCPU->instructionPointer += 4;
+    }
+
+    static inline void blockTermBCCTR(PPCInterpreter_t* hCPU, uint32 opcode)
+    {
+        uint32 BO, BI, BD;
+        PPC_OPC_TEMPL_XL(opcode, BO, BI, BD);
+        const bool bo8 = (BO & 8) != 0;
+        const bool cr = ppc_getCRBit(hCPU, BI) != 0;
+        if ((BO & 16) || (!(cr ^ bo8)))
+        {
+            if (opcode & PPC_OPC_LK)
+                hCPU->spr.LR = (uint32)hCPU->instructionPointer + 4;
+            hCPU->instructionPointer = hCPU->spr.CTR & 0xfffffffc;
+        }
+        else
+            hCPU->instructionPointer += 4;
+    }
+    
+    
+    static void executeTimesliceCached(PPCInterpreter_t* hCPU)
+    {
+        PPCBlockCache* cache = &PPCBlockCache_getForCurrentThread();
+        while (hCPU->remainingCycles > 0)
+        {
+            const uint32 gen = s_blockCacheGeneration.load(std::memory_order_acquire);
+            if (gen != cache->m_generation) [[unlikely]]
+            {
+                cache->clear("code invalidated");
+                cache->m_generation = gen;
+            }
+
+            const uint32 ip = (uint32)hCPU->instructionPointer;
+            PPCBlockRef* block = cache->lookup(ip);
+            if (!block) [[unlikely]]
+                block = decodeBlock(hCPU, *cache, ip);
+
+            const uint32 count = block->count;
+            const PPCBlockTerm term = block->term;
+            const uint32 straight = (term == PPCBlockTerm::None) ? count : count - 1;
+            
+            hCPU->remainingCycles -= (sint32)count;
+
+            const PPCBlockEntry* e = cache->m_entries.data() + block->firstEntry;
+            const PPCBlockEntry* const end = e + straight;
+            for (; e != end; ++e)
+                e->fn(hCPU, e->opcode);
+
+#ifdef CEMU_DEBUG_ASSERT
+            if (hCPU->instructionPointer != ip + straight * 4)
+                assert_dbg();
+#endif
+
+            switch (term)
+            {
+            case PPCBlockTerm::None:
+                break;
+            case PPCBlockTerm::BX:
+                blockTermBX(hCPU, e->opcode);
+                break;
+            case PPCBlockTerm::BCX:
+                blockTermBCX(hCPU, e->opcode);
+                break;
+            case PPCBlockTerm::BCLRX:
+                blockTermBCLRX(hCPU, e->opcode);
+                break;
+            case PPCBlockTerm::BCCTR:
+                blockTermBCCTR(hCPU, e->opcode);
+                break;
+            case PPCBlockTerm::Generic:
+                e->fn(hCPU, e->opcode);
+                cache = &PPCBlockCache_getForCurrentThread();
+                break;
+            }
+        }
+    }
+
 };
 
-} // anonymous namespace
+#undef PPC_PRIMARY_CASE
+#undef PPC_PRIMARY_DEFAULT
+#undef PPC_DISPATCH_NEXT
+
+void PPCInterpreterSlim_executeTimeslice(PPCInterpreter_t* hCPU)
+{
+#if PPC_INTERPRETER_BLOCK_CACHE
+    PPCInterpreterContainer<PPCItpCafeOSUsermode>::executeTimesliceCached(hCPU);
+#else
+    PPCInterpreterContainer<PPCItpCafeOSUsermode>::executeInstruction<true>(hCPU);
+#endif
+}
 
 // Slim interpreter, trades some features for extra performance
 // Used when emulator runs in CafeOS HLE mode
@@ -1417,12 +1634,12 @@ public:
 // - Paired single mode is always enabled
 void PPCInterpreterSlim_executeInstruction(PPCInterpreter_t* hCPU)
 {
-	PPCInterpreterContainer<PPCItpCafeOSUsermode>::executeInstruction(hCPU);
+    PPCInterpreterContainer<PPCItpCafeOSUsermode>::executeInstruction(hCPU);
 }
 
 // Full interpreter, supports most PowerPC features
 // Used when emulator runs in LLE mode
 void PPCInterpreterFull_executeInstruction(PPCInterpreter_t* hCPU)
 {
-	PPCInterpreterContainer<PPCItpSupervisorWithMMU>::executeInstruction(hCPU);
+    PPCInterpreterContainer<PPCItpSupervisorWithMMU>::executeInstruction(hCPU);
 }

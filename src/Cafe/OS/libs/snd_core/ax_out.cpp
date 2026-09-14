@@ -400,7 +400,14 @@ namespace snd_core
 		numQueuedFramesSndGeneric = 0;
 
 		std::unique_lock lock(g_audioMutex);
-		if (!g_tvAudio)
+		auto& config = GetConfig();
+
+		if (!config.tv_audio_enabled && g_tvAudio)
+		{
+			g_tvAudio->Stop();
+			g_tvAudio.reset();
+		}
+		if (config.tv_audio_enabled && !g_tvAudio)
 		{
 			try
 			{
@@ -412,8 +419,13 @@ namespace snd_core
 			}
 		}
 
-		g_padVolume = GetConfig().pad_volume;
-		if (!g_padAudio)
+		g_padVolume = config.pad_volume;
+		if (!config.pad_audio_enabled && g_padAudio)
+		{
+			g_padAudio->Stop();
+			g_padAudio.reset();
+		}
+		if (config.pad_audio_enabled && !g_padAudio)
 		{
 			try
 			{

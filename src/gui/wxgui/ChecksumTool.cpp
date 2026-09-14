@@ -191,7 +191,7 @@ void ChecksumTool::LoadOnlineData() const
 		{
 			std::string current_commit;
 			// check for current version
-			std::ifstream file(checksum_path / "commit.txt");
+			std::ifstream file(fs::resolvePathCI(checksum_path / "commit.txt"));
 			if (file.is_open())
 			{
 				std::getline(file, current_commit);
@@ -312,7 +312,7 @@ void ChecksumTool::LoadOnlineData() const
 					std::vector<char> buffer(sb.size);
 					if (zip_fread(zipFile, buffer.data(), sb.size) == sb.size)
 					{
-						std::ofstream file(path);
+						std::ofstream file(fs::resolvePathCI(path));
 						if (file.is_open())
 						{
 							file.write(buffer.data(), sb.size);
@@ -324,7 +324,7 @@ void ChecksumTool::LoadOnlineData() const
 					zip_fclose(zipFile);
 				}
 
-				std::ofstream file(checksum_path / "commit.txt");
+				std::ofstream file(fs::resolvePathCI(checksum_path / "commit.txt"));
 				if (file.is_open())
 				{
 					file << latest_commit;
@@ -402,7 +402,7 @@ void ChecksumTool::OnExportChecksums(wxCommandEvent& event)
 	std::filesystem::path target_file{ dialog.GetPath().c_str().AsInternal() };
 	target_file /= fmt::format("{}_v{}.json", title_id_str, m_info.GetAppTitleVersion());
 	
-	std::ofstream file(target_file);
+	std::ofstream file(fs::resolvePathCI(target_file));
 	if(file.is_open())
 	{
 		rapidjson::OStreamWrapper osw(file);
@@ -498,7 +498,7 @@ void ChecksumTool::VerifyJsonEntry(const rapidjson::Document& doc)
 					return;
 
 				const std::string path = dialog.GetPath().utf8_string();
-				std::ofstream file(path);
+				std::ofstream file(fs::resolvePathCI(path));
 				if (file.is_open())
 				{
 					if (!missing_files.empty())
@@ -602,7 +602,7 @@ void ChecksumTool::OnVerifyOnline(wxCommandEvent& event)
 	if(!exists(checksum_path))
 		return;
 	
-	std::ifstream file(checksum_path);
+	std::ifstream file(fs::resolvePathCI(checksum_path));
 	if (!file.is_open())
 	{
 		wxMessageBox(_("Can't open file!"), _("Error"), wxOK | wxCENTRE | wxICON_ERROR, this);
@@ -630,7 +630,7 @@ void ChecksumTool::OnVerifyLocal(wxCommandEvent& event)
 		return;
 
 	std::filesystem::path filename{ file_dialog.GetPath().c_str().AsInternal() };
-	std::ifstream file(filename);
+	std::ifstream file(fs::resolvePathCI(filename));
 	if(!file.is_open())
 	{
 		wxMessageBox(_("Can't open file!"), _("Error"), wxOK | wxCENTRE | wxICON_ERROR, this);

@@ -6,9 +6,7 @@
 bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext);
 void PPCRecompiler_cleanupAArch64Code(void* code, size_t size);
 
-// Returns false if the recompiler's executable memory could not be set up (iOS without
-// a JIT-enabled process). The caller must fall back to the interpreter in that case.
-bool PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions();
+void PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions();
 
 // architecture specific constants
 namespace IMLArchAArch64

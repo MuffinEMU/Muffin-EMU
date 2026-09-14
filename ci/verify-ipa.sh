@@ -135,7 +135,10 @@ ok "not encrypted (cryptid=${CRYPTID:-absent})"
 # Only the top level matters: nested copies are invisible to this probe, which is why
 # the data files now live under Cemu.app/CemuData/resources/sharedFonts and this check
 # passes.
-RESERVED='Contents|Resources|Support Files|MacOS|Frameworks|PlugIns|SharedFrameworks|SharedSupport|Versions'
+# Frameworks/ and PlugIns/ are left off: an iOS app embeds its frameworks at exactly that
+# path (MuffinEMU ships Cemu.framework and MoltenVK.framework there), and CFBundle does not
+# use either name to decide the bundle's shape - check 12 below still proves it reads.
+RESERVED='Contents|Resources|Support Files|MacOS|SharedFrameworks|SharedSupport|Versions'
 TOP_LEVEL="$(sed -n "s|^Payload/$APP_NAME/\([^/][^/]*\)/.*|\1|p" "$WORK/names.txt" | sort -u)"
 while IFS= read -r d; do
     [ -n "$d" ] || continue

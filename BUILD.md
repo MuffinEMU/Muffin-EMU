@@ -20,7 +20,6 @@
    - [Installing Tool Dependencies](#installing-tool-dependencies)
    - [Installing Library Dependencies](#installing-library-dependencies)
    - [Build Cemu using CMake](#build-cemu-using-cmake)
-- [Android](#android)
 - [FreeBSD](#freebsd)
 	- [Installing Dependencies](#installing-dependencies)
 	- [Build Cemu on BSD with CMake](#build-cemu-on-bsd-with-cmake)
@@ -165,7 +164,7 @@ To install the dependencies required to build Cemu, you will need to install Hom
 
 The following dependencies are required. You can install them using Homebrew with the following command:
 
-`brew install git cmake ninja nasm automake libtool boost`
+`brew install automake boost cmake git libtool nasm ninja pkgconf`
 
 ### MoltenVK
 
@@ -190,20 +189,14 @@ Alternatively, you can use the non-privateapi version of MoltenVK, but you may e
 4. `cmake --build build`
 5. You should now have a Cemu executable file in the /bin folder, which you can run using `./bin/Cemu_release`.
 
+#### Creating an app bundle
+- If you want to create an app bundle instead of a raw executable, append the following flag to the command in step 3:
+   - `-DMACOS_BUNDLE=ON`
+
 #### Troubleshooting steps
 - If step 3 gives you an error about not being able to find ninja, try appending the following to the command and try again:
    - **On an Apple Silicon Mac:** `-DCMAKE_MAKE_PROGRAM=/opt/homebrew/bin/ninja`
    - **On an Intel Mac:** `-DCMAKE_MAKE_PROGRAM=/usr/local/bin/ninja`
-
-## Android
-Prerequisites:
-- git
-- [Android studio](https://developer.android.com/studio)
-
-Instructions:
-1. Run `git clone --recursive https://github.com/cemu-project/Cemu`
-2. Open the project located in `src/android` in Android Studio
-3. Click Build > Make Project
 
 ## FreeBSD
 
@@ -251,12 +244,13 @@ Example usage: `cmake -S . -B build -DCMAKE_BUILD_TYPE=release -DENABLE_SDL=ON -
 | CEMU_CXX_FLAGS     |   | Flags passed straight to the compiler, e.g. `-march=native`, `-Wall`, `/W3` | ""      |                    |
 | ENABLE_CUBEB       |   | Enable cubeb audio backend                                                  | ON      |                    |
 | ENABLE_DISCORD_RPC |   | Enable Discord Rich presence support                                        | ON      |                    |
-| ENABLE_OPENGL      |   | Enable OpenGL graphics backend                                              | ON      | Currently required |
+| ENABLE_OPENGL      |   | Enable OpenGL graphics backend                                              | ON      |                    |
 | ENABLE_HIDAPI      |   | Enable HIDAPI (used for Wiimote controller API)                             | ON      |                    |
-| ENABLE_SDL         |   | Enable SDLController controller API                                         | ON      | Currently required |
+| ENABLE_SDL         |   | Enable SDLController controller API                                         | ON      |                    |
 | ENABLE_VCPKG       |   | Use VCPKG package manager to obtain dependencies                            | ON      |                    |
 | ENABLE_VULKAN      |   | Enable the Vulkan graphics backend                                          | ON      |                    |
 | ENABLE_WXWIDGETS   |   | Enable wxWidgets UI                                                         | ON      | Currently required |
+| ENABLE_LIBUSB      |   | Enable libusb                                                               | ON      |                    |
 
 ### Windows
 | Flag               | Description                       | Default | Note               |

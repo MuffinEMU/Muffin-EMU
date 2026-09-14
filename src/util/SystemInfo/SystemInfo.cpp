@@ -1,17 +1,20 @@
 #include "util/SystemInfo/SystemInfo.h"
 
-uint64 ProcessorTime::work()
+uint64 ProcessorTime::work() const
 {
 	return user + kernel;
 }
 
-uint64 ProcessorTime::total()
+uint64 ProcessorTime::total() const
 {
 	return idle + user + kernel;
 }
 
-double ProcessorTime::Compare(ProcessorTime &last, ProcessorTime &now)
+double ProcessorTime::Compare(const ProcessorTime& last, const ProcessorTime& now)
 {
+	if (now.work() < last.work() || now.total() <= last.total())
+		return 0.0;
+
 	auto dwork = now.work() - last.work();
 	auto dtotal = now.total() - last.total();
 
@@ -20,7 +23,7 @@ double ProcessorTime::Compare(ProcessorTime &last, ProcessorTime &now)
 
 uint32 GetProcessorCount()
 {
-	return std::thread::hardware_concurrency();
+	return std::max(1u, std::thread::hardware_concurrency());
 }
 
 void QueryProcTime(ProcessorTime &out)

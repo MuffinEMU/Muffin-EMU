@@ -1,6 +1,6 @@
 #pragma once
 
-struct PPCInterpreter_t;
+#include "Cafe/HW/Espresso/PPCState.h"
 
 #define OSLIB_FUNCTIONTABLE_TYPE_FUNCTION	(1)
 #define OSLIB_FUNCTIONTABLE_TYPE_POINTER	(2)
@@ -13,8 +13,18 @@ void osLib_addFunctionInternal(const char* libraryName, const char* functionName
 #define osLib_addFunction(__p1, __p2, __p3) osLib_addFunctionInternal((const char*)__p1, __p2, __p3)
 void osLib_addVirtualPointer(const char* libraryName, const char* functionName, uint32 vPtr);
 
-void osLib_returnFromFunction(PPCInterpreter_t* hCPU, uint32 returnValue);
-void osLib_returnFromFunction64(PPCInterpreter_t* hCPU, uint64 returnValue64);
+FORCE_INLINE void osLib_returnFromFunction(PPCInterpreter_t* hCPU, uint32 returnValue)
+{
+	hCPU->gpr[3] = returnValue;
+	hCPU->instructionPointer = hCPU->spr.LR;
+}
+
+FORCE_INLINE void osLib_returnFromFunction64(PPCInterpreter_t* hCPU, uint64 returnValue64)
+{
+	hCPU->gpr[3] = (uint32)(returnValue64 >> 32);
+	hCPU->gpr[4] = (uint32)returnValue64;
+	hCPU->instructionPointer = hCPU->spr.LR;
+}
 
 // libs
 #include "Cafe/OS/libs/coreinit/coreinit.h"

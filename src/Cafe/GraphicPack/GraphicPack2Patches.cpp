@@ -58,8 +58,8 @@ void PatchErrorHandler::showStageErrorMessageBox()
 			.append("\n");
 		for (auto& itr : errorMessages)
 		{
-			errorMsg += itr;
-			errorMsg += "\n";
+			errorMsg.append(itr);
+			errorMsg.append("\n");
 		}
 	}
 

@@ -1,7 +1,5 @@
-#if !defined(CEMU_PLATFORM_IOS)
 #include "config/ActiveSettings.h"
 #include "config/CemuConfig.h"
-#endif
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 #include "Cafe/HW/Espresso/PPCState.h"
@@ -61,11 +59,7 @@ void ExceptionHandler_LogGeneralInfo()
         CrashLog_WriteLine("Game: ", false);
         CrashLog_WriteLine(CafeSystem::GetForegroundTitleName());
         // title id
-#if !defined(CEMU_PLATFORM_IOS)
         CrashLog_WriteLine(fmt::format("TitleId: {:016x}", CafeSystem::GetForegroundTitleId()));
-#else
-        CrashLog_WriteLine("TitleId: (iOS Phase 0 - disabled)");
-#endif
         // rpx hash
         sprintf(dumpLine, "RPXHash: %08x (Update: %08x)", CafeSystem::GetRPXHashBase(), CafeSystem::GetRPXHashUpdated());
         CrashLog_WriteLine(dumpLine);
@@ -101,7 +95,7 @@ void ExceptionHandler_LogGeneralInfo()
         MPTR currentStackVAddr = hCPU->gpr[1];
         CrashLog_WriteLine("");
         CrashLog_WriteHeader("PPC stack trace");
-        DebugLogStackTrace(currentThread, currentStackVAddr, true);
+        DebugLogStackTrace(currentThread, currentStackVAddr);
 
         // stack dump
         CrashLog_WriteLine("");

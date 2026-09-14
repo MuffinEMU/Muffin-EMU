@@ -393,8 +393,6 @@ public:
 		return m_userData;
 	}
 
-	void setOnGameListRefreshRequested(const std::function<void()>& onGameListRefreshRequested);
-
 	// register/unregister callbacks
 	// setting valid callbacks will also trigger transfer of the entire title/package state and the current status message
 	void registerCallbacks(
@@ -452,7 +450,6 @@ public:
 	}
 
 private:
-	std::function<void()> m_onGameListRefreshRequested;
 	void(*m_cbUpdateConnectStatus)(std::string statusText, DLMGR_STATUS_CODE statusCode) { nullptr };
 	void(*m_cbAddDownloadableTitle)(const DlMgrTitleReport& titleInfo);
 	void(*m_cbRemoveDownloadableTitle)(uint64 titleId, uint16 version);

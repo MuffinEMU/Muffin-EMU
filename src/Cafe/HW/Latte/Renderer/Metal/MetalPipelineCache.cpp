@@ -42,21 +42,8 @@ static void compileThreadFunc(sint32 threadIndex)
 
 		lock.unlock();
 
-		// This loop runs forever on a raw std::thread with no run loop of its own, so
-		// unlike the main thread it never gets an implicit autorelease pool - and
-		// Compile() creates autoreleased objects on every single call (NS::Array::array()
-		// for setBinaryArchives(), the NSError* out-param from newRenderPipelineState()).
-		// With no pool anywhere on this thread's stack to ever drain them, every compile
-		// on every one of these threads (up to 8, see initCompileThread()) leaked for the
-		// rest of the process's life - the exact shape of a real device crash: memory
-		// climbing steadily through heavy pipeline compilation, SIGSEGV inside
-		// compileThreadFunc once enough had piled up. One pool per request, matching the
-		// same per-operation scope MetalRenderer::GetCommandBuffer() and
-		// GetTemporaryRenderCommandEncoder() already use for the identical reason.
-		auto pool = NS::AutoreleasePool::alloc()->init();
 		request->Compile(true, false, true);
 		delete request;
-		pool->release();
 	}
 }
 
@@ -154,16 +141,7 @@ PipelineObject* MetalPipelineCache::GetRenderPipelineState(const LatteFetchShade
 	else
 	{
 	    // Also force compile to ensure that the pipeline is ready
-	    //
-	    // Same reasoning as compileThreadFunc's pool: this runs on the render thread,
-	    // which - like the compile threads - has no run loop of its own here and so no
-	    // implicit autorelease pool either (MetalRenderer.cpp wraps its own individual
-	    // calls in local pools for the same reason, rather than relying on one ambient
-	    // pool covering the whole thread). A cache miss on this synchronous path
-	    // creates the same autoreleased objects Compile() always does.
-	    auto pool = NS::AutoreleasePool::alloc()->init();
         cemu_assert_debug(compiler->Compile(true, true, true));
-        pool->release();
         delete compiler;
 	}
 
@@ -197,6 +175,8 @@ uint64 MetalPipelineCache::CalculatePipelineHash(const LatteFetchShader* fetchSh
 	{
 		stateHash += GetMtlPixelFormat(lastUsedAttachmentsInfo.depthFormat, true);
 		stateHash = std::rotl<uint64>(stateHash, 7);
+		stateHash += lastUsedAttachmentsInfo.hasStencil ? 1 : 0;
+		stateHash = std::rotl<uint64>(stateHash, 1);
 
 		if (activeAttachmentsInfo.depthFormat == Latte::E_GX2SURFFMT::INVALID_FORMAT)
 		{
@@ -226,38 +206,26 @@ uint64 MetalPipelineCache::CalculatePipelineHash(const LatteFetchShader* fetchSh
 	uint32* ctxRegister = lcr.GetRawView();
 
 	if (vertexShader)
-		stateHash += vertexShader->baseHash;
+		stateHash += vertexShader->baseHash + std::rotl<uint64>(vertexShader->auxHash, 17);
+    
+	stateHash = std::rotl<uint64>(stateHash, 13);
+    
+	if (geometryShader)
+		stateHash += geometryShader->baseHash + std::rotl<uint64>(geometryShader->auxHash, 29);
 
 	stateHash = std::rotl<uint64>(stateHash, 13);
 
 	if (pixelShader)
-		stateHash += pixelShader->baseHash + pixelShader->auxHash;
+		stateHash += pixelShader->baseHash + std::rotl<uint64>(pixelShader->auxHash, 41);
 
 	stateHash = std::rotl<uint64>(stateHash, 13);
 
-	// PA_SU_SC_MODE_CNTL (cull mode / front-face winding) and the rest of
-	// PA_CL_CLIP_CNTL beyond DX_RASTERIZATION_KILL used to be folded into this hash
-	// wholesale. Neither actually reaches MetalPipelineCompiler: cull mode and
-	// winding are applied per-draw as dynamic MTLRenderCommandEncoder state
-	// (renderCommandEncoder->setCullMode()/setFrontFacingWinding() in
-	// MetalRenderer.cpp), never baked into the MTLRenderPipelineDescriptor, and
-	// DX_RASTERIZATION_KILL is the only PA_CL_CLIP_CNTL bit InitFromState*() reads
-	// (via IsRasterizationEnabled(), already folded in above) - so every other bit in
-	// either register was pure noise here. A game that alternates cull mode/winding
-	// or touches any other PA_CL_CLIP_CNTL bit between otherwise-identical draws (a
-	// common pattern: opaque geometry vs. a mirrored/skybox pass, or per-object
-	// double-sided toggles) produced a distinct hash each time even though the
-	// compiled Metal pipeline object would have been byte-for-byte the same one
-	// already sitting in the cache - so GetRenderPipelineState() treated it as a
-	// cache miss, compiled a genuine duplicate MTLRenderPipelineState, and retained
-	// it in m_pipelineCache for the rest of the title's session (that map is never
-	// evicted, by design, since a real cache hit is meant to last the whole title).
-	// During a boot that compiles a lot of shaders fast against varying cull state,
-	// this multiplied the number of live compiled pipelines - and the GPU memory
-	// backing each one - well beyond what the game's actual distinct draw states
-	// require. Removed both from the hash; nothing in the compiled pipeline depends
-	// on them, so this only removes false cache misses, it cannot cause an incorrect
-	// hit.
+	uint32 polygonCtrl = lcr.PA_SU_SC_MODE_CNTL.getRawValue();
+	stateHash += polygonCtrl;
+	stateHash = std::rotl<uint64>(stateHash, 7);
+
+	stateHash += ctxRegister[Latte::REGADDR::PA_CL_CLIP_CNTL];
+	stateHash = std::rotl<uint64>(stateHash, 7);
 
 	const auto colorControlReg = ctxRegister[Latte::REGADDR::CB_COLOR_CONTROL];
 	stateHash += colorControlReg;
@@ -277,7 +245,7 @@ uint64 MetalPipelineCache::CalculatePipelineHash(const LatteFetchShader* fetchSh
 	}
 
 	// Mesh pipeline
-	const LattePrimitiveMode primitiveMode = static_cast<LattePrimitiveMode>(LatteGPUState.contextRegister[mmVGT_PRIMITIVE_TYPE]);
+	const LattePrimitiveMode primitiveMode = static_cast<LattePrimitiveMode>(lcr.GetRawView()[mmVGT_PRIMITIVE_TYPE]);
     bool isPrimitiveRect = (primitiveMode == Latte::LATTE_VGT_PRIMITIVE_TYPE::E_PRIMITIVE_TYPE::RECTS);
 
     bool usesGeometryShader = (geometryShader != nullptr || isPrimitiveRect);
@@ -570,6 +538,7 @@ bool MetalPipelineCache::SerializePipeline(MemStreamWriter& memWriter, CachedPip
 	for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
 	    memWriter.writeBE<uint16>((uint16)cachedPipeline.lastUsedAttachmentsInfo.colorFormats[i]);
 	memWriter.writeBE<uint16>((uint16)cachedPipeline.lastUsedAttachmentsInfo.depthFormat);
+    memWriter.writeBE<uint8>(cachedPipeline.lastUsedAttachmentsInfo.hasStencil ? 1 : 0);
 
 	Latte::SerializeRegisterState(cachedPipeline.gpuState, memWriter);
 
@@ -608,6 +577,7 @@ bool MetalPipelineCache::DeserializePipeline(MemStreamReader& memReader, CachedP
 	for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
 	    cachedPipeline.lastUsedAttachmentsInfo.colorFormats[i] = (Latte::E_GX2SURFFMT)memReader.readBE<uint16>();
 	cachedPipeline.lastUsedAttachmentsInfo.depthFormat = (Latte::E_GX2SURFFMT)memReader.readBE<uint16>();
+    cachedPipeline.lastUsedAttachmentsInfo.hasStencil = memReader.readBE<uint8>() != 0;
 
 	// deserialize GPU state
 	if (!Latte::DeserializeRegisterState(cachedPipeline.gpuState, memReader))
