@@ -40,6 +40,18 @@ struct OptimizedControlPanel: View {
     /// responding - otherwise the first touch of a drag would also press whatever it
     /// landed on, and moving the pad would mean firing a button into the running title.
     @Binding var isEditingLayout: Bool
+    /// True whenever the app is not in .active scenePhase - see EmulatorViewOptimized's
+    /// .onChange(of: scenePhase). Threaded down to DpadTouchSurface's own isInteractive,
+    /// which is the one thing that reliably clears its held-direction state: a touch in
+    /// progress when the app resigns active is cancelled by UIKit without a guaranteed
+    /// .onEnded (the same fact cemu_bridge_release_all_buttons()'s call site documents),
+    /// so without this, a direction held at the moment of an interruption - a phone call,
+    /// a notification banner, Control Center, a screen lock - stays stuck in the SwiftUI
+    /// pressed-state (and keeps being reported to the game) even though the bridge's own
+    /// button bits were correctly zeroed. Every other button on the pad has its own
+    /// per-control HeldControl safety net for the same case; the d-pad's shared touch
+    /// surface needed this one explicitly since it owns all four directions' state itself.
+    let isPaused: Bool
 
     @AppStorage(ControllerLayoutSettings.scaleKey)
     private var userScale = ControllerLayoutSettings.defaultScale
@@ -104,6 +116,7 @@ struct OptimizedControlPanel: View {
                     unit: unit,
                     container: safeArea,
                     isEditingLayout: isEditingLayout,
+                    isPaused: isPaused,
                     individualEditMode: individualEditMode,
                     offsetX: $leftOffsetX,
                     offsetY: $leftOffsetY,
@@ -132,6 +145,7 @@ struct OptimizedControlPanel: View {
                         unit: unit,
                         container: safeArea,
                         isEditingLayout: isEditingLayout,
+                        isPaused: isPaused,
                         individualEditMode: individualEditMode,
                         offsetX: $leftStickOffsetX,
                         offsetY: $leftStickOffsetY,
@@ -149,6 +163,7 @@ struct OptimizedControlPanel: View {
                     unit: unit,
                     container: safeArea,
                     isEditingLayout: isEditingLayout,
+                    isPaused: isPaused,
                     individualEditMode: individualEditMode,
                     offsetX: $rightOffsetX,
                     offsetY: $rightOffsetY,
@@ -178,6 +193,7 @@ struct OptimizedControlPanel: View {
                         unit: unit,
                         container: safeArea,
                         isEditingLayout: isEditingLayout,
+                        isPaused: isPaused,
                         individualEditMode: individualEditMode,
                         offsetX: $rightStickOffsetX,
                         offsetY: $rightStickOffsetY,
@@ -210,6 +226,9 @@ private struct ControlCluster: View {
     /// safe area instead of reaching under a notch or behind the home indicator.
     let container: CGRect
     let isEditingLayout: Bool
+    /// See OptimizedControlPanel's own doc comment on this property - passed straight
+    /// through to DpadTouchSurface below, which is the only thing here that needs it.
+    let isPaused: Bool
     /// See ControllerLayoutSettings.individualEditModeKey. When true, this cluster's
     /// own drag handle below is not attached at all - every touch inside the cluster
     /// can then only ever be a single button's own drag/pinch, with no whole-cluster
@@ -302,7 +321,10 @@ private struct ControlCluster: View {
                     box: ControllerGeometry.bounds(of: dpadControls),
                     centre: centre,
                     unit: unit,
-                    isInteractive: !isEditingLayout,
+                    // isPaused, not just isEditingLayout: see OptimizedControlPanel's
+                    // doc comment on isPaused for why the app resigning active needs to
+                    // reach this the same way editing does.
+                    isInteractive: !isEditingLayout && !isPaused,
                     onInput: onInput,
                     held: $dpadHeld
                 )

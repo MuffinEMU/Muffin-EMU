@@ -1420,7 +1420,8 @@ struct EmulatorViewOptimized: View {
                             Float(position.y)
                         )
                     },
-                    isEditingLayout: $isEditingControlLayout
+                    isEditingLayout: $isEditingControlLayout,
+                    isPaused: isPaused
                 )
             }
 
