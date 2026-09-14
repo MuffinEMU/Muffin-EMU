@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- CS_DEBUGGED (set by SideStore/AltStore/LiveContainer-style sideloading via a
+	     momentary debugger attach at launch) is what actually gates mmap(MAP_JIT) on
+	     device; these entitlements are the standard declaration of intent an app using
+	     JIT is expected to carry alongside it. mbench_jit_permitted() is each engine's
+	     own runtime check of the real answer - this file does not make JIT work by
+	     itself, it is what a JIT-using app is supposed to ship regardless. -->
+	<key>get-task-allow</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>dynamic-codesigning</key>
+	<true/>
+	<!-- Three engine frameworks stay mapped in one process for the whole run (iOS never
+	     unloads a dlopen'd image) plus MoltenVK plus whichever engine's own guest memory
+	     and code cache is live at the time - raising the memory ceiling and letting the
+	     address space span more than the default 32-bit-ish window both matter here in
+	     a way they might not for an app that only ever runs one engine. -->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
+</dict>
+</plist>
