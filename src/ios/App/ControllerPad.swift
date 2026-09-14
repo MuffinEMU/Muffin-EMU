@@ -228,7 +228,24 @@ private struct ControlCluster: View {
     /// screen on the first slow drag.
     @State private var dragOrigin: CGSize?
 
+    /// Which of this cluster's own four directions DpadTouchSurface currently has down -
+    /// lifted up to here, rather than kept inside the surface itself, because the four
+    /// direction ControlButtons below also need it, to draw the pressed state a touch on
+    /// the surface now stands for instead of one on the button itself.
+    @State private var dpadHeld: Set<String> = []
+
+    /// The ids DpadTouchSurface owns. A cluster with a d-pad in it (leftCluster,
+    /// leftClusterComfort) has all four; a stick cluster or the face-button half has none.
+    private static let directionIDs: Set<String> = ["up", "down", "left", "right"]
+
     private var box: CGRect { ControllerGeometry.bounds(of: controls) }
+
+    /// This cluster's own four direction Controls, if it has any - what DpadTouchSurface
+    /// hit-tests against. Filtered from `controls` rather than assumed, so a cluster with
+    /// no d-pad in it (either stick cluster, the face-button half) simply gets no surface.
+    private var dpadControls: [ControllerGeometry.Control] {
+        controls.filter { Self.directionIDs.contains($0.id) }
+    }
 
     /// The unmoved position from the measured layout: a fixed number of button-widths in
     /// from the near edge and up from the bottom.
@@ -274,6 +291,23 @@ private struct ControlCluster: View {
             Color.clear
                 .allowsHitTesting(false)
 
+            // The d-pad's four directions, hit-tested as one shape instead of as four
+            // separate buttons - see DpadTouchSurface for why. Sits behind everything
+            // else here, L3 included: L3 keeps its own small hit square exactly as it
+            // was and claims a touch there before this surface ever sees it, the same
+            // way Color.clear's allowsHitTesting(false) above lets the game view claim
+            // whatever is not on the pad at all.
+            if !dpadControls.isEmpty {
+                DpadTouchSurface(
+                    box: ControllerGeometry.bounds(of: dpadControls),
+                    centre: centre,
+                    unit: unit,
+                    isInteractive: !isEditingLayout,
+                    onInput: onInput,
+                    held: $dpadHeld
+                )
+            }
+
             // Individual mode drops the drag handle entirely rather than leaving it
             // underneath and relying on touch position to sort out which gesture
             // should win - that was the old design (see the ForEach comment this one
@@ -295,7 +329,11 @@ private struct ControlCluster: View {
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
                     onStick: onStick,
-                    onInput: onInput
+                    onInput: onInput,
+                    // Only the four directions are driven by DpadTouchSurface above -
+                    // every other control, L3 included, still answers for its own touch
+                    // exactly as before, so this is nil for all of them.
+                    externallyPressed: Self.directionIDs.contains(control.id) ? dpadHeld.contains(control.id) : nil
                 )
             }
         }
@@ -340,6 +378,102 @@ private struct ControlCluster: View {
     }
 }
 
+/// One shared touch surface for the d-pad's four directions, replacing four separate
+/// per-button gestures.
+///
+/// Real d-pad play rolls a thumb across the cross - up sliding into right, or straight
+/// through a diagonal - but a SwiftUI touch belongs to whichever view it began in for the
+/// whole gesture and never hands off. Four separate `HeldControl`s, each claiming its own
+/// touch the moment it lands, means a roll leaves the first direction stuck down and the
+/// second never presses. `GamePadGeometry.PadLayout.dpadDirections` already solves exactly
+/// this for the preview pad, by hit-testing the cross as one shape, by angle, instead of
+/// as four rects that happen to meet at a point - this calls that same function rather
+/// than reimplementing it, so the two pads can never disagree about what a given touch
+/// means. What is new here is only the geometry it is called with: the preview pad's d-pad
+/// is one solid cross, and this one is a diamond of four separate circles, so `box` is the
+/// union of their frames rather than a shape GamePadGeometry already had a size for.
+///
+/// Sits behind everything else in ControlCluster's stack, including L3. Only the four
+/// direction ControlButtons are made non-hit-testable (see EditableControl and
+/// ControlButton's `externallyPressed`) so this surface is what actually receives their
+/// touches; L3 is untouched and keeps its own small hit square, which is why it still
+/// claims a tap there before a touch ever reaches this surface underneath it - the same
+/// front-wins-if-hit-testable rule that already lets ControlCluster's own `Color.clear`
+/// hand off everything outside the pad to the game view.
+private struct DpadTouchSurface: View {
+    /// The union of the four direction buttons' own frames, in layout units relative to
+    /// the cluster's centre - `ControllerGeometry.bounds(of:)` applied to just those four
+    /// Controls, not the whole cluster, so the touchable area cannot grow into a
+    /// neighbour (minus, L, ZL) the way hit-testing the whole cluster's box would.
+    let box: CGRect
+    /// The cluster's own centre point, in the same absolute space every other control in
+    /// it is positioned from.
+    let centre: CGPoint
+    let unit: CGFloat
+    let isInteractive: Bool
+    let onInput: (String, Bool) -> Void
+    /// Which directions are currently down - lifted up into ControlCluster (see its own
+    /// `dpadHeld`) rather than kept private here, since the four ControlButtons need it
+    /// too, to draw the pressed state a touch on this surface now stands for.
+    @Binding var held: Set<String>
+
+    @AppStorage(ControllerLayoutSettings.hapticsKey)
+    private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
+
+    private var width: CGFloat { box.width * unit }
+    private var height: CGFloat { box.height * unit }
+
+    var body: some View {
+        // A SwiftUI Color is hit-testable even when it is clear - the same fact
+        // ControlCluster's own background relies on - which is what makes it usable here
+        // as a shape with nothing to draw.
+        Color.clear
+            .frame(width: width, height: height)
+            .contentShape(Rectangle())
+            .position(x: centre.x + box.midX * unit, y: centre.y + box.midY * unit)
+            .allowsHitTesting(isInteractive)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        // In this view's own local space - (0, 0) at its top-left corner,
+                        // (width, height) at its bottom-right - which is unaffected by
+                        // .position() above and needs no translation back to the
+                        // cluster's coordinate space at all.
+                        let local = CGPoint(x: width / 2, y: height / 2)
+                        let next = PadLayout.dpadDirections(at: value.location, centre: local,
+                                                            size: CGSize(width: width, height: height))
+                        for id in held.subtracting(next) { onInput(id, false) }
+                        for id in next.subtracting(held) {
+                            // Once per newly pressed direction, not on every tick this
+                            // onChanged fires while a direction is already held - the
+                            // same "only on the transition" rule HeldControl's own
+                            // setPressed applies for every other control on the pad.
+                            if hapticsEnabled { PadHaptics.shared.fire() }
+                            onInput(id, true)
+                        }
+                        held = next
+                    }
+                    .onEnded { _ in release() }
+            )
+            // The same safety net HeldControl keeps for every other control: a gesture
+            // the system cancels, or this view disappearing mid-touch, must not leave a
+            // direction stuck down forever.
+            .onDisappear { release() }
+            .onChange(of: isInteractive) { active in
+                if !active { release() }
+            }
+            // A giant unlabelled rectangle would otherwise sit in the accessibility tree
+            // on top of the four direction buttons it draws nothing over; hiding it
+            // leaves VoiceOver exactly the four ControlButtons below, unchanged.
+            .accessibilityHidden(true)
+    }
+
+    private func release() {
+        for id in held { onInput(id, false) }
+        held = []
+    }
+}
+
 /// One control, placed where the user put it.
 ///
 /// Its own view rather than a modifier chain inside the ForEach because each element needs
@@ -360,6 +494,10 @@ private struct EditableControl: View {
     let individualEditMode: Bool
     let onStick: (CGPoint) -> Void
     let onInput: (String, Bool) -> Void
+    /// Set only for one of the d-pad's four directions, by DpadTouchSurface's own held
+    /// set - see ControlButton and HeldControl's own doc comments for what this changes.
+    /// nil for every other control, which is unaffected.
+    var externallyPressed: Bool? = nil
 
     @ObservedObject private var custom = ControllerCustomLayout.shared
     @State private var dragOrigin: ControlOverride?
@@ -384,7 +522,8 @@ private struct EditableControl: View {
                     skin: skin,
                     unit: unit * CGFloat(settings.scale),
                     isInteractive: !isEditingLayout,
-                    onInput: onInput
+                    onInput: onInput,
+                    externallyPressed: externallyPressed
                 )
             }
         }
@@ -457,6 +596,11 @@ private struct ControlButton: View {
     let unit: CGFloat
     let isInteractive: Bool
     let onInput: (String, Bool) -> Void
+    /// Non-nil for one of the d-pad's four directions once DpadTouchSurface owns their
+    /// input: the pressed state this button draws, decided by that surface's own angle
+    /// hit test rather than by a gesture attached here. nil - every other control on the
+    /// pad - is unchanged: HeldControl still owns its own touch and its own pressed state.
+    var externallyPressed: Bool? = nil
 
     /// The screenshot draws every button light grey with a dark outline. The coloured
     /// skins are an existing feature with a whole selector behind them, so the skin still
@@ -467,7 +611,8 @@ private struct ControlButton: View {
     private static let neutralLabel = Color(white: 0.22)
 
     var body: some View {
-        HeldControl(onPressChange: { onInput(control.id, $0) }, isInteractive: isInteractive) { isPressed in
+        HeldControl(onPressChange: { onInput(control.id, $0) }, isInteractive: isInteractive,
+                    externallyPressed: externallyPressed) { isPressed in
             ZStack {
                 shape(isPressed: isPressed)
                 Text(control.glyph)
@@ -478,7 +623,11 @@ private struct ControlButton: View {
             .scaleEffect(isPressed ? 0.94 : 1.0)
             .animation(.easeInOut(duration: 0.05), value: isPressed)
         }
-        .allowsHitTesting(isInteractive)
+        // Externally driven means DpadTouchSurface, not this button, answers for the
+        // touch - false here regardless of isInteractive, so edit mode still disables it
+        // the same way it always has and play mode routes the touch to the surface
+        // instead of back to this button.
+        .allowsHitTesting(externallyPressed == nil && isInteractive)
     }
 
     private var size: CGSize {
@@ -569,6 +718,13 @@ struct HeldControl<Content: View>: View {
     /// touched to release it is stuck exactly the way a jammed physical button would be.
     let isInteractive: Bool
     let content: (Bool) -> Content
+    /// Non-nil when something other than this view's own gesture below decides the
+    /// pressed state - DpadTouchSurface, for the d-pad's four directions. Drawing still
+    /// goes through here, so every control on the pad keeps one pressed-state code path,
+    /// but this view attaches no gesture of its own and never calls `onPressChange` in
+    /// that case: the surface calls `onInput` directly instead. `nil`, every other
+    /// control, is this type entirely unchanged from before.
+    var externallyPressed: Bool? = nil
 
     @State private var isPressed = false
 
@@ -576,24 +732,31 @@ struct HeldControl<Content: View>: View {
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     var body: some View {
-        content(isPressed)
+        content(externallyPressed ?? isPressed)
             // Without this the hit area is whatever the label happens to paint, so a
             // finger landing on the transparent corner of a circular button hits the
             // view behind it instead.
             .contentShape(Rectangle())
             .accessibilityAddTraits(.isButton)
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in setPressed(true) }
-                    .onEnded { _ in setPressed(false) }
-            )
+            .gesture(externallyPressed == nil ? ownGesture : nil)
             // A gesture the system cancels (backgrounding, an incoming call) or a view
             // removed mid-press never delivers onEnded, and a button stuck down is a
-            // title stuck walking into a wall.
-            .onDisappear { setPressed(false) }
-            .onChange(of: isInteractive) { active in
-                if !active { setPressed(false) }
+            // title stuck walking into a wall. Skipped when externally driven: isPressed
+            // never left false in that case (the gesture that would have set it true was
+            // never attached above), so there is nothing here for it to undo, and
+            // DpadTouchSurface has its own version of this same safety net.
+            .onDisappear {
+                if externallyPressed == nil { setPressed(false) }
             }
+            .onChange(of: isInteractive) { active in
+                if externallyPressed == nil, !active { setPressed(false) }
+            }
+    }
+
+    private var ownGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { _ in setPressed(true) }
+            .onEnded { _ in setPressed(false) }
     }
 
     // onChanged repeats for every touch-move, so guard - both to keep the highlight from
