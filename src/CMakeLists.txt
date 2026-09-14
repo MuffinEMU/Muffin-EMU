@@ -43,12 +43,6 @@ endif()
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-# iOS Phase 0: Use GLM stubs
-if(PLATFORM_IOS)
-	include_directories(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/Common/glm_stub)
-	message(STATUS "iOS: Using GLM stubs")
-endif()
-
 # on msvc we can reuse the PCH from CemuCommon, on other platforms apply precompiled.h
 # per target. iOS behaves like macOS here — the PCH provides Cemu's core type aliases
 # (uint32/sint32/MPTR/...) and was only opted out during the earlier stub-deps era.
@@ -112,31 +106,20 @@ if(IOS)
 	)
 endif()
 
-	cemu_use_precompiled_header(CemuBin)
+cemu_use_precompiled_header(CemuBin)
 
-    if(ANDROID)
-        add_subdirectory(android/app/src/main/cpp)
-    endif()
-else()
-	add_executable(CemuBin
-		main.cpp
-		mainLLE.cpp
-	)
+if(MSVC AND MSVC_VERSION EQUAL 1940)
+	# workaround for an msvc issue on VS 17.10 where generated ILK files are too large
+	# see https://developercommunity.visualstudio.com/t/After-updating-to-VS-1710-the-size-of-/10665511
+	set_target_properties(CemuBin PROPERTIES LINK_FLAGS "/INCREMENTAL:NO")
+endif()
 
-	cemu_use_precompiled_header(CemuBin)
-
-	if(MSVC AND MSVC_VERSION EQUAL 1940)
-		# workaround for an msvc issue on VS 17.10 where generated ILK files are too large
-		# see https://developercommunity.visualstudio.com/t/After-updating-to-VS-1710-the-size-of-/10665511
-		set_target_properties(CemuBin PROPERTIES LINK_FLAGS "/INCREMENTAL:NO")
-	endif()
-
-	if(WIN32)
-		target_sources(CemuBin PRIVATE
-		resource/cemu.rc
+if(WIN32)
+	target_sources(CemuBin PRIVATE
+	resource/cemu.rc
 	../dist/windows/cemu.manifest
 	)
-	endif()
+endif()
 
 if(APPLE AND CMAKE_GENERATOR STREQUAL "Xcode")
     set_target_properties(CemuBin PROPERTIES
@@ -293,4 +276,42 @@ endif()
 
 if (BSD)
 	target_link_libraries(CemuBin PRIVATE execinfo SPIRV-Tools SPIRV-Tools-opt)
+endif()
+
+# Benchmark build (MuffinEMU Bench). Off for every normal build. Turns CemuBin into
+# MuffinBenchV38Melo: Muffin's v3.8 bridge plus the same benchmark shim engine A uses, on
+# this merged core, exporting only the mbench_* contract (MuffinBenchEngine.h) so dyld
+# cannot coalesce this engine's C++ symbols with another engine in the same process.
+option(MUFFIN_BENCH_ENGINE "Build this engine as a MuffinEMU Bench framework" OFF)
+set(MUFFIN_BENCH_NAME "MuffinBenchV38Melo" CACHE STRING "Benchmark framework name")
+set(MBENCH_COMMIT "unknown" CACHE STRING "Engine commit baked into the benchmark framework")
+if(IOS AND MUFFIN_BENCH_ENGINE)
+	target_sources(CemuBin PRIVATE
+		ios/Bench/MuffinBenchEngine.h
+		ios/Bench/MuffinBenchCommon.h
+		ios/Bench/MuffinBenchEngineV38.mm
+		ios/Bench/IOSWindowSystemFPS.cpp
+		ios/Bridge/CemuBridge.mm
+	)
+	# ARC, as Xcode compiled the bridge for the Muffin app, so off the non-ARC PCH. The
+	# defines are the ones that app target gave CemuBridge.mm.
+	set_source_files_properties(ios/Bench/MuffinBenchEngineV38.mm ios/Bridge/CemuBridge.mm PROPERTIES
+		COMPILE_OPTIONS "-fobjc-arc;-include;${CMAKE_SOURCE_DIR}/src/Common/precompiled.h"
+		COMPILE_DEFINITIONS "CEMU_CORE_AVAILABLE=1;ENABLE_METAL=1;HAS_COREAUDIO=1;MBENCH_VARIANT_MELOFIXES=1"
+		SKIP_PRECOMPILE_HEADERS ON)
+	target_compile_definitions(CemuBin PRIVATE MBENCH_COMMIT="${MBENCH_COMMIT}")
+	target_include_directories(CemuBin PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/Cafe
+		${CMAKE_CURRENT_SOURCE_DIR}/ios/Bridge
+		${CMAKE_CURRENT_SOURCE_DIR}/ios/Bench
+		${CMAKE_SOURCE_DIR}/dependencies/metal-cpp)
+	target_link_libraries(CemuBin PRIVATE
+		iosgui ZArchive::zarchive
+		"-framework UIKit" "-framework Metal" "-framework QuartzCore" "-framework GameController"
+		"-framework AudioToolbox" "-framework AVFoundation")
+	set_target_properties(CemuBin PROPERTIES
+		OUTPUT_NAME "${MUFFIN_BENCH_NAME}"
+		MACOSX_FRAMEWORK_IDENTIFIER "com.kiddreads.bench.${MUFFIN_BENCH_NAME}")
+	target_link_options(CemuBin PRIVATE
+		"-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/ios/Bench/MuffinBenchEngine.exports")
 endif()

@@ -2,7 +2,6 @@ if(PLATFORM_IOS)
     add_library(iosgui STATIC)
 
     target_sources(iosgui PRIVATE
-        IOSWindowSystem.cpp
         IOSTitleLaunch.cpp
         IOSTitleDecrypt.cpp
         IOSCoverArt.cpp
