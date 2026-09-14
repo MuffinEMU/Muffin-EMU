@@ -70,6 +70,10 @@ jobs:
             vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-
 
       - name: Configure MeloCafe core for iOS
+        # CMAKE_MACOSX_BUNDLE=OFF: for an iOS target CMake makes every executable an app
+        # bundle by default, and the ZArchive submodule's zarchiveTool install rule has no
+        # bundle destination, which stops configure. Cemu.framework is a library and is
+        # unaffected.
         run: |
           set -eo pipefail
           mkdir -p .vcpkg-archives
@@ -80,6 +84,7 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DVCPKG_TARGET_TRIPLET=arm64-ios \
             -DBUILD_HEADLESS_DYLIB=ON \
+            -DCMAKE_MACOSX_BUNDLE=OFF \
             -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure.log
 
       - name: Save vcpkg binary cache
