@@ -540,6 +540,16 @@ final class DisplayRouter: ObservableObject {
     /// same layout-triggered resize.
     private func resizePadSurfaceIfRegistered() {
         guard cemu_bridge_has_pad_render_surface() else { return }
+        // Same defensive direct sync as resizeTVSurfaceIfRegistered() now does for
+        // tvRenderView, applied here too even though the report that started that fix
+        // was TV-only: padRenderView's frame is set once, at creation, exactly the same
+        // way tvRenderView's was, and nothing else here re-asserts it on an ordinary
+        // resize - it was relying on the same autoresizingMask-alone assumption that
+        // turned out not to be trustworthy for the TV. Costs nothing when the frame was
+        // already correct.
+        if let host = padRenderView?.superview {
+            padRenderView?.frame = host.bounds
+        }
         let geometry = padGeometry()
         cemu_bridge_resize_render_surface(
             Int32(geometry.size.width),
