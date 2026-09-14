@@ -1,0 +1,200 @@
+name: Build Bench RPX (Homebrew)
+
+# Builds the cross-engine benchmark's guest workloads - homebrew/bench/cpubench
+# and homebrew/bench/gpubench - into cpubench.rpx and gpubench.rpx with the
+# standard devkitPro Wii U toolchain.
+#
+# Same shape and the same reasoning as build-rainbow-rpx.yml and
+# build-showcase-rpx.yml: homebrew RPX files carry no encryption, so this is
+# built from source in a plain Linux container with no relation to the
+# Xcode/iOS build in build-ios-app.yml, and no console keys are involved at
+# any point.
+#
+# Rather than reproduce wut's sample Makefile here - it is a long boilerplate
+# that tracks the toolchain and would silently rot - this copies the official
+# sample's Makefile verbatim from the wut checkout and swaps the sources.
+# TARGET is overridden on the make command line, which wins over the `:=` in
+# the Makefile.
+#
+# gpubench needs one extra thing cpubench and rainbow don't: a compiled GX2
+# shader binary (.gsh). GX2 has no runtime shader compiler on real hardware,
+# so shaders are always precompiled offline. This workflow compiles
+# gpubench/source/shaders/scene.{vs,ps} (plain GLSL) with CafeGLSL's
+# glslcompiler - a PC-hosted GLSL-to-Latte compiler released by Exzap, who
+# also wrote Cemu's own Metal/Vulkan backends and its GX2 shader decompiler,
+# which is the strongest compatibility signal available for a benchmark that
+# only has to run correctly on Cemu-family emulators. See
+# homebrew/bench/README.md for the full story (licensing, the alternative
+# tools that were ruled out, and why) and why gpubench.c embeds the compiled
+# shader as a C byte array instead of loading a .gsh file from an SD card at
+# runtime, the way wut's own gx2_triangle sample does.
+#
+# workflow_call is here (alongside workflow_dispatch) so a later IPA-building
+# workflow can pull in these RPX files as a build step of its own.
+
+on:
+  workflow_dispatch: {}
+  workflow_call: {}
+
+jobs:
+  # The devkitPPC container ships no bash, so Actions falls back to `sh -e {0}`
+  # for every `run:` block here. That is dash, which has no `pipefail` - every
+  # script below stays POSIX and uses `set -eu`, and where a pipeline's exit
+  # status actually matters this checks explicitly afterwards (test -s, a
+  # sha256sum -c, etc.) rather than relying on pipefail to catch it.
+  build-cpubench-rpx:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Install wut (Wii U userland toolchain)
+        run: dkp-pacman -Sy --noconfirm wut
+
+      - name: Clone wut (for its sample Makefile)
+        run: git clone --depth 1 https://github.com/devkitPro/wut.git /tmp/wut
+
+      - name: Assemble the project
+        run: |
+          set -eu
+          cp -r /tmp/wut/samples/make/helloworld /tmp/cpubench
+          rm -f /tmp/cpubench/source/*.c /tmp/cpubench/source/*.cpp
+          cp homebrew/bench/common/bench_marker.h /tmp/cpubench/source/
+          cp homebrew/bench/cpubench/source/cpubench.c /tmp/cpubench/source/
+          ls -la /tmp/cpubench/source
+
+      - name: Build cpubench.rpx
+        run: |
+          set -eu
+          make -C /tmp/cpubench TARGET=cpubench
+          test -f /tmp/cpubench/cpubench.rpx
+
+      # A zero-byte or truncated RPX that still gets uploaded is exactly the
+      # failure this repo has already shipped twice (see build-rainbow-rpx.yml).
+      # Check the file is real here, where failing is free, rather than on a
+      # device.
+      - name: Verify the built RPX
+        run: |
+          set -eu
+          RPX=/tmp/cpubench/cpubench.rpx
+          SIZE=$(stat -c%s "$RPX")
+          echo "cpubench.rpx = $SIZE bytes"
+          test "$SIZE" -gt 4096
+          # RPX is an ELF variant; it must still start with \x7fELF.
+          head -c 4 "$RPX" | od -An -tx1 | tr -d ' \n' | grep -qi '^7f454c46'
+          echo "verify: PASS"
+
+      - name: Upload cpubench.rpx
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-cpubench-rpx
+          path: /tmp/cpubench/cpubench.rpx
+          retention-days: 30
+
+  build-gpubench-rpx:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Install wut (Wii U userland toolchain)
+        run: dkp-pacman -Sy --noconfirm wut
+
+      - name: Clone wut (for its sample Makefile)
+        run: git clone --depth 1 https://github.com/devkitPro/wut.git /tmp/wut
+
+      - name: Assemble the project
+        run: |
+          set -eu
+          cp -r /tmp/wut/samples/make/helloworld /tmp/gpubench
+          rm -f /tmp/gpubench/source/*.c /tmp/gpubench/source/*.cpp
+          cp homebrew/bench/common/bench_marker.h /tmp/gpubench/source/
+          cp homebrew/bench/gpubench/source/gpubench.c /tmp/gpubench/source/
+          ls -la /tmp/gpubench/source
+
+      # glslcompiler.elf is a PC-hosted (x86-64 Linux) tool, not a devkitPPC
+      # target - it runs directly in this container, no cross-compiling
+      # involved. Pinned to a specific release and sha256-verified for the
+      # same reason the RPX gets byte-checked below: a silently-corrupted or
+      # substituted build tool is a worse failure than a build that just
+      # stops. See homebrew/bench/README.md for the license and why this tool
+      # specifically.
+      - name: Download CafeGLSL's glslcompiler (PC-hosted GLSL-to-GX2 compiler)
+        run: |
+          set -eu
+          URL="https://github.com/Exzap/CafeGLSL/releases/download/v0.2.0/glslcompiler.elf"
+          if command -v curl >/dev/null 2>&1; then
+            curl -fsSL -o /tmp/glslcompiler.elf "$URL"
+          elif command -v wget >/dev/null 2>&1; then
+            wget -q -O /tmp/glslcompiler.elf "$URL"
+          else
+            echo "neither curl nor wget is available in this container" >&2
+            exit 1
+          fi
+          echo "067402bde2fbda66fcde65534ae8ffbf99ef46da5ed67af8294cd7b385d84acd  /tmp/glslcompiler.elf" | sha256sum -c -
+          chmod +x /tmp/glslcompiler.elf
+
+      - name: Compile scene.vs/scene.ps to scene.gsh
+        run: |
+          set -eu
+          /tmp/glslcompiler.elf \
+            -vs homebrew/bench/gpubench/source/shaders/scene.vs \
+            -ps homebrew/bench/gpubench/source/shaders/scene.ps \
+            -o /tmp/scene.gsh
+          test -s /tmp/scene.gsh
+          SIZE=$(stat -c%s /tmp/scene.gsh)
+          echo "scene.gsh = $SIZE bytes"
+          # A real vertex+pixel GFD pair is comfortably more than a few dozen
+          # bytes; this only exists to catch glslcompiler silently emitting an
+          # empty/near-empty file instead of failing loudly.
+          test "$SIZE" -gt 64
+
+      # gpubench.rpx embeds the shader as a C byte array rather than loading a
+      # .gsh from an SD card at runtime (the way wut's gx2_triangle sample
+      # does) so the RPX has no external file dependency at all - it has to
+      # run standalone inside three different emulators with no SD card image
+      # set up for it. od/awk/wc are used instead of xxd because this
+      # container's tool inventory beyond wut itself is not something this
+      # workflow assumes - od, awk and wc are POSIX and effectively
+      # guaranteed; xxd is neither.
+      - name: Turn scene.gsh into a bundled C header
+        run: |
+          set -eu
+          od -An -v -tx1 /tmp/scene.gsh | awk '
+            BEGIN {
+              print "// Generated at build time from shaders/scene.vs + shaders/scene.ps"
+              print "// by CafeGLSL glslcompiler. Do not hand-edit this file - edit the"
+              print "// .vs/.ps sources and let the workflow regenerate it."
+              print "static const unsigned char kSceneShaderGsh[] = {"
+            }
+            { for (i = 1; i <= NF; i++) printf "0x%s,", $i }
+            END { print ""; print "};" }
+          ' > /tmp/gpubench/source/scene_gsh.h
+          SIZE=$(wc -c < /tmp/scene.gsh | tr -d ' ')
+          echo "static const unsigned int kSceneShaderGshSize = ${SIZE}u;" >> /tmp/gpubench/source/scene_gsh.h
+          test -s /tmp/gpubench/source/scene_gsh.h
+
+      - name: Build gpubench.rpx
+        run: |
+          set -eu
+          make -C /tmp/gpubench TARGET=gpubench
+          test -f /tmp/gpubench/gpubench.rpx
+
+      - name: Verify the built RPX
+        run: |
+          set -eu
+          RPX=/tmp/gpubench/gpubench.rpx
+          SIZE=$(stat -c%s "$RPX")
+          echo "gpubench.rpx = $SIZE bytes"
+          test "$SIZE" -gt 4096
+          head -c 4 "$RPX" | od -An -tx1 | tr -d ' \n' | grep -qi '^7f454c46'
+          echo "verify: PASS"
+
+      - name: Upload gpubench.rpx
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-gpubench-rpx
+          path: /tmp/gpubench/gpubench.rpx
+          retention-days: 30

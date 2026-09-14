@@ -1,0 +1,21 @@
+// scene.ps - pixel shader for gpubench.rpx's quad-grid scene.
+//
+// Samples the procedural checkerboard texture gpubench.c uploads at runtime
+// and multiplies it by the per-vertex colour/alpha coming from scene.vs, so
+// both the texture path and the alpha-blend path are actually exercised
+// rather than just enabled. See scene.vs and ../../../README.md.
+
+#version 420
+
+layout(binding = 0) uniform sampler2D tex0;
+
+layout(location = 0) in vec4 in_color;
+layout(location = 1) in vec2 in_uv;
+
+layout(location = 0) out vec4 out_color;
+
+void main()
+{
+   vec4 texel = texture(tex0, in_uv);
+   out_color = texel * in_color;
+}

@@ -1,0 +1,409 @@
+name: Build MuffinEMU Bench (iOS)
+
+# One IPA with three complete engines, benchmarked in sequence by the same host code:
+#   MuffinBenchV38      Muffin's v3.8 engine            branch bench/engine-muffin-v38
+#   MuffinBenchMelo     MeloCafe's engine (MuffinEMU)   this branch (main's engine)
+#   MuffinBenchV38Melo  Muffin v3.8 + MeloCafe changes  branch bench/engine-muffin-v38-melofixes
+#
+# Each engine job builds its framework with that engine's own build method and then gates
+# on isolation: the framework may export nothing but the 13 mbench_* functions, or dyld
+# could bind one engine's C++ symbols into another inside the one process.
+#
+# A built framework is cached under a hash of the engine's source trees, so a push that
+# only changes the host app or the workloads reuses it instead of rebuilding for hours.
+
+on:
+  push:
+    branches: [ bench-ipa ]
+    paths-ignore:
+      - '**/*.md'
+
+# Queue rather than cancel: an engine build is hours long, and a cancelled one saves no
+# framework cache for the next run to reuse.
+concurrency:
+  group: bench-ipa-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-archives,readwrite"
+  FRAMEWORK_CACHE_VERSION: v1
+
+jobs:
+  engine-v38:
+    name: Engine - Muffin v3.8 (MuffinBenchV38)
+    runs-on: macos-15
+    timeout-minutes: 330
+    env:
+      NAME: MuffinBenchV38
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bench/engine-muffin-v38
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Identify the engine source
+        id: src
+        run: |
+          set -eo pipefail
+          echo "tree=$(git rev-parse HEAD:src HEAD:dependencies HEAD:cmake HEAD:CMakeLists.txt HEAD:vcpkg.json | shasum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git log -1 --format=%h -- src dependencies cmake CMakeLists.txt vcpkg.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore built framework
+        id: fw
+        uses: actions/cache/restore@v4
+        with:
+          path: build-bench/engines/${{ env.NAME }}.framework
+          key: bench-fw-${{ env.NAME }}-${{ env.FRAMEWORK_CACHE_VERSION }}-${{ steps.src.outputs.tree }}
+
+      - name: Select Xcode and install build tools
+        if: steps.fw.outputs.cache-hit != 'true'
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+          brew install ninja
+
+      # The v3.8 build method, as its own CI ran it: a vcpkg clone, the manifest installed
+      # for arm64-ios, then CMake with the iOS toolchain chainloaded.
+      - name: Set up vcpkg
+        if: steps.fw.outputs.cache-hit != 'true'
+        id: vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+          "$HOME/vcpkg/bootstrap-vcpkg.sh"
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> "$GITHUB_ENV"
+          echo "rev=$(git -C "$HOME/vcpkg" rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg binary cache
+        if: steps.fw.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-archives
+          key: vcpkg-v38-arm64-ios-${{ steps.vcpkg.outputs.rev }}
+          restore-keys: |
+            vcpkg-v38-arm64-ios-
+
+      - name: Cross-compile dependencies for arm64-ios
+        if: steps.fw.outputs.cache-hit != 'true'
+        run: |
+          set -eo pipefail
+          mkdir -p .vcpkg-archives
+          "$HOME/vcpkg/vcpkg" install --triplet arm64-ios --x-manifest-root="$GITHUB_WORKSPACE" 2>&1 | tail -40
+
+      - name: Save vcpkg binary cache
+        if: always() && steps.fw.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-archives
+          key: vcpkg-v38-arm64-ios-${{ steps.vcpkg.outputs.rev }}
+
+      - name: Configure
+        if: steps.fw.outputs.cache-hit != 'true'
+        run: |
+          set -eo pipefail
+          cmake -B build-ios -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/cmake/ios.toolchain.cmake" \
+            -DVCPKG_TARGET_TRIPLET=arm64-ios \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMUFFIN_BENCH_ENGINE=ON \
+            -DMBENCH_COMMIT=${{ steps.src.outputs.commit }} 2>&1 | tee configure.log
+
+      - name: Build the framework
+        if: steps.fw.outputs.cache-hit != 'true'
+        run: |
+          set -eo pipefail
+          cmake --build build-ios --target MuffinBenchEngine 2>&1 | tee build.log
+          FW=$(find build-ios -type d -name "$NAME.framework" -not -path '*/CMakeFiles/*' | head -n1)
+          if [ -z "$FW" ]; then echo "::error::no $NAME.framework was produced"; exit 1; fi
+          mkdir -p build-bench/engines && rm -rf "build-bench/engines/$NAME.framework"
+          cp -R "$FW" build-bench/engines/
+
+      - name: Gate - exports only the mbench_* contract
+        run: |
+          set -eo pipefail
+          BIN="build-bench/engines/$NAME.framework/$NAME"
+          file "$BIN"
+          nm -gU "$BIN" | awk '{print $NF}' | grep -v '^__mh_dylib_header$' | sort -u > exports.txt
+          EXTRA=$(grep -v '^_mbench_' exports.txt || true)
+          if [ -n "$EXTRA" ]; then
+            echo "::error::$NAME exports $(echo "$EXTRA" | wc -l | tr -d ' ') symbols beyond mbench_*"
+            echo "$EXTRA" | head -40
+            exit 1
+          fi
+          COUNT=$(grep -c '^_mbench_' exports.txt)
+          if [ "$COUNT" -ne 13 ]; then echo "::error::$NAME exports $COUNT mbench_* functions, expected 13"; cat exports.txt; exit 1; fi
+          echo "$NAME exports exactly the 13 mbench_* functions"
+
+      - name: Save built framework
+        if: steps.fw.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build-bench/engines/${{ env.NAME }}.framework
+          key: bench-fw-${{ env.NAME }}-${{ env.FRAMEWORK_CACHE_VERSION }}-${{ steps.src.outputs.tree }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ env.NAME }}
+          path: build-bench/engines/${{ env.NAME }}.framework
+          retention-days: 14
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ env.NAME }}
+          path: |
+            configure.log
+            build.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Engines B and C share MeloCafe's build method (MuffinEMU's): the pinned vcpkg submodule
+  # in manifest mode and CemuBin built as a framework. They also share the vcpkg binary
+  # cache key MuffinEMU's own workflow saves on main.
+  engine-melo:
+    name: Engine - ${{ matrix.label }} (${{ matrix.name }})
+    runs-on: macos-15
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: MuffinBenchMelo
+            label: MeloCafe
+            ref: ''
+          - name: MuffinBenchV38Melo
+            label: Muffin v3.8 + MeloCafe changes
+            ref: bench/engine-muffin-v38-melofixes
+    env:
+      NAME: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Identify the engine source
+        id: src
+        run: |
+          set -eo pipefail
+          echo "tree=$(git rev-parse HEAD:src HEAD:dependencies HEAD:cmake HEAD:CMakeLists.txt HEAD:vcpkg.json | shasum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git log -1 --format=%h -- src dependencies cmake CMakeLists.txt vcpkg.json)" >> "$GITHUB_OUTPUT"
+          echo "vcpkg=$(git -C dependencies/vcpkg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore built framework
+        id: fw
+        uses: actions/cache/restore@v4
+        with:
+          path: build-bench/engines/${{ env.NAME }}.framework
+          key: bench-fw-${{ env.NAME }}-${{ env.FRAMEWORK_CACHE_VERSION }}-${{ steps.src.outputs.tree }}
+
+      - name: Select Xcode and install build tools
+        if: steps.fw.outputs.cache-hit != 'true'
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+          brew install ninja
+
+      - name: Restore vcpkg binary cache
+        if: steps.fw.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-archives
+          key: vcpkg-arm64-ios-${{ steps.src.outputs.vcpkg }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
+          restore-keys: |
+            vcpkg-arm64-ios-${{ steps.src.outputs.vcpkg }}-
+
+      - name: Configure
+        if: steps.fw.outputs.cache-hit != 'true'
+        run: |
+          set -eo pipefail
+          mkdir -p .vcpkg-archives
+          cmake -S . -B build-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DVCPKG_TARGET_TRIPLET=arm64-ios \
+            -DBUILD_HEADLESS_DYLIB=ON \
+            -DCMAKE_MACOSX_BUNDLE=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMUFFIN_BENCH_ENGINE=ON \
+            -DMBENCH_COMMIT=${{ steps.src.outputs.commit }} 2>&1 | tee configure.log
+
+      - name: Save vcpkg binary cache
+        if: always() && steps.fw.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-archives
+          key: vcpkg-arm64-ios-${{ steps.src.outputs.vcpkg }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
+
+      - name: Build the framework
+        if: steps.fw.outputs.cache-hit != 'true'
+        run: |
+          set -eo pipefail
+          cmake --build build-ios --target CemuBin 2>&1 | tee build.log
+          FW=$(find build-ios bin -type d -name "$NAME.framework" -not -path '*/CMakeFiles/*' 2>/dev/null | head -n1)
+          if [ -z "$FW" ]; then echo "::error::no $NAME.framework was produced"; exit 1; fi
+          mkdir -p build-bench/engines && rm -rf "build-bench/engines/$NAME.framework"
+          cp -R "$FW" build-bench/engines/
+
+      - name: Gate - exports only the mbench_* contract
+        run: |
+          set -eo pipefail
+          BIN="build-bench/engines/$NAME.framework/$NAME"
+          file "$BIN"
+          nm -gU "$BIN" | awk '{print $NF}' | grep -v '^__mh_dylib_header$' | sort -u > exports.txt
+          EXTRA=$(grep -v '^_mbench_' exports.txt || true)
+          if [ -n "$EXTRA" ]; then
+            echo "::error::$NAME exports $(echo "$EXTRA" | wc -l | tr -d ' ') symbols beyond mbench_*"
+            echo "$EXTRA" | head -40
+            exit 1
+          fi
+          COUNT=$(grep -c '^_mbench_' exports.txt)
+          if [ "$COUNT" -ne 13 ]; then echo "::error::$NAME exports $COUNT mbench_* functions, expected 13"; cat exports.txt; exit 1; fi
+          echo "$NAME exports exactly the 13 mbench_* functions"
+
+      - name: Save built framework
+        if: steps.fw.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build-bench/engines/${{ env.NAME }}.framework
+          key: bench-fw-${{ env.NAME }}-${{ env.FRAMEWORK_CACHE_VERSION }}-${{ steps.src.outputs.tree }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-${{ env.NAME }}
+          path: build-bench/engines/${{ env.NAME }}.framework
+          retention-days: 14
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ env.NAME }}
+          path: |
+            configure.log
+            build.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The guest workloads, cpubench.rpx and gpubench.rpx, from homebrew/bench.
+  rpx:
+    name: Workloads (RPX)
+    uses: ./.github/workflows/build-bench-rpx.yml
+
+  app:
+    name: MuffinEMU Bench IPA
+    needs: [ engine-v38, engine-melo, rpx ]
+    # An engine that failed to build is left out of the IPA, and the app reports it as
+    # not built, so the other engines can still be measured. The workloads are required.
+    if: always() && needs.rpx.result == 'success'
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect engine frameworks
+        uses: actions/download-artifact@v4
+        with:
+          pattern: engine-*
+          path: build-bench/downloaded
+
+      - name: Collect workloads
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bench-*-rpx
+          path: build-bench/rpx
+          merge-multiple: true
+
+      - name: Lay out frameworks; drop engines that did not build
+        run: |
+          set -eo pipefail
+          mkdir -p build-bench/engines
+          ls -la build-bench/downloaded || true
+          ls -la build-bench/rpx
+          test -s build-bench/rpx/cpubench.rpx
+          test -s build-bench/rpx/gpubench.rpx
+          for NAME in MuffinBenchV38 MuffinBenchMelo MuffinBenchV38Melo; do
+            if [ -f "build-bench/downloaded/engine-$NAME/$NAME" ]; then
+              mv "build-bench/downloaded/engine-$NAME" "build-bench/engines/$NAME.framework"
+              echo "$NAME: $(file -b "build-bench/engines/$NAME.framework/$NAME")"
+            else
+              echo "::warning::$NAME did not build; the IPA ships without it"
+              python3 - "$NAME" <<'PY'
+          import re, sys
+          name = sys.argv[1]
+          p = 'bench/project.yml'
+          s = open(p).read()
+          s, n = re.subn(r'      - framework: \.\./build-bench/engines/%s\.framework\n        embed: true\n        link: false\n' % name, '', s)
+          assert n == 1, name
+          open(p, 'w').write(s)
+          PY
+            fi
+          done
+
+      - name: Generate and build the app
+        run: |
+          set -eo pipefail
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          brew install xcodegen
+          cd bench
+          xcodegen generate
+          xcodebuild -project "MuffinEMU Bench.xcodeproj" -scheme MuffinBench -sdk iphoneos \
+            -configuration Release CODE_SIGNING_ALLOWED=NO build 2>&1 | tee ../xcodebuild.log
+
+      - name: Package IPAs
+        run: |
+          set -eo pipefail
+          APP=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinBench.app" -path "*Release-iphoneos*" | head -n1)
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$APP/Info.plist"
+          ls "$APP/Frameworks"
+          rm -rf Payload && mkdir Payload && cp -R "$APP" Payload/
+          zip -qry MuffinBench.ipa Payload
+          # Ad-hoc signed variant with the JIT entitlements embedded, frameworks first.
+          rm -rf signed && mkdir -p signed/Payload && cp -R "$APP" signed/Payload/
+          for fw in signed/Payload/MuffinBench.app/Frameworks/*.framework; do codesign -f -s - "$fw"; done
+          codesign -f -s - --entitlements bench/MuffinBench.entitlements --generate-entitlement-der signed/Payload/MuffinBench.app
+          ( cd signed && zip -qry ../MuffinBench-fakesigned.ipa Payload )
+          unzip -l MuffinBench.ipa | grep -E 'Frameworks/[A-Za-z0-9]+\.framework/[A-Za-z0-9]+$|\.rpx$'
+          du -h MuffinBench.ipa MuffinBench-fakesigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MuffinBench-ipa
+          path: |
+            MuffinBench.ipa
+            MuffinBench-fakesigned.ipa
+          retention-days: 30
+
+      - name: Publish pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: bench-${{ github.sha }}
+          name: MuffinEMU Bench ${{ github.sha }}
+          prerelease: true
+          files: |
+            MuffinBench.ipa
+            MuffinBench-fakesigned.ipa
+          body: |
+            MuffinEMU Bench: Muffin v3.8, MeloCafe, and Muffin v3.8 with MeloCafe's changes,
+            each run through the same CPU (interpreter, recompiler) and Metal renderer
+            workloads by the same host code, one engine at a time, with a single report at
+            the end.
+
+            `MuffinBench.ipa` for SideStore / AltStore / LiveContainer, `MuffinBench-fakesigned.ipa`
+            for TrollStore. The recompiler tests need a JIT enabler; without one they are
+            reported as skipped.
+
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-bench-app
+          path: xcodebuild.log
+          if-no-files-found: ignore
