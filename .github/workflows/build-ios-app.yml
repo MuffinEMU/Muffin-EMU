@@ -107,8 +107,11 @@ jobs:
       - name: Gate - every function Swift can call is in the framework
         run: |
           set -eo pipefail
-          grep -hoE '\b(cemu_bridge|ios_live_log)_[a-z0-9_]+\s*\(' src/ios/Bridge/CemuBridge.h src/ios/Bridge/IOSLiveLog.h \
-            | sed -E 's/\s*\($//' | sort -u > declared.txt
+          # POSIX classes, not \s: the runner's BSD sed reads \s as a literal "s", which
+          # stripped the last letter off every name ending in s (get_fps -> get_fp) and
+          # reported ten exported functions as missing.
+          grep -hoE '(cemu_bridge|ios_live_log)_[a-z0-9_]+[[:space:]]*\(' src/ios/Bridge/CemuBridge.h src/ios/Bridge/IOSLiveLog.h \
+            | sed -E 's/[[:space:]]*\($//' | sort -u > declared.txt
           nm -gU build-ios/out/Cemu.framework/Cemu | grep -oE '_(cemu_bridge|ios_live_log)_[a-z0-9_]+$' \
             | sed 's/^_//' | sort -u > defined.txt
           MISSING=$(comm -23 declared.txt defined.txt)
