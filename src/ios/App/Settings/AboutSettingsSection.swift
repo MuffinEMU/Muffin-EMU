@@ -24,7 +24,9 @@ struct AboutSettingsSection: View {
                 .foregroundColor(.secondary)
 
             // Resets the completion flag, which ContentView watches, so the guide reopens.
-            SettingsOnboardingRow(onRequestReopen: {})
+            SettingsOnboardingRow(onRequestReopen: {
+                NotificationCenter.default.post(name: .muffinReopenOnboarding, object: nil)
+            })
 
             Button(role: .destructive) {
                 showingResetConfirmation = true

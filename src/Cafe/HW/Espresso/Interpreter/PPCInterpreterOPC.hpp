@@ -68,11 +68,14 @@ static void PPCInterpreter_TW(PPCInterpreter_t* hCPU, uint32 opcode)
 	PPC_OPC_TEMPL_X(opcode, to, rA, rB);
 
 	cemu_assert_debug(to == 0);
-	if(to != 0)
+	// A tw 0,... whose rA is neither debugger marker used to fall through both branches
+	// with nothing advancing the instruction pointer, hanging the core on this exact
+	// instruction forever. Only the debugger/gdbstub cases should NOT advance (they
+	// take over execution themselves); everything else must.
+	if (to == 0 && rA == DEBUGGER_BP_T_DEBUGGER)
+		debugger_enterTW(hCPU);
+	else if (to == 0 && rA == DEBUGGER_BP_T_GDBSTUB)
+		g_gdbstub->HandleTrapInstruction(hCPU);
+	else
 		PPCInterpreter_nextInstruction(hCPU);
-
-    if (rA == DEBUGGER_BP_T_DEBUGGER)
-	    debugger_enterTW(hCPU);
-    else if (rA == DEBUGGER_BP_T_GDBSTUB)
-        g_gdbstub->HandleTrapInstruction(hCPU);
 }

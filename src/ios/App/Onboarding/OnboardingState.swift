@@ -54,6 +54,10 @@ enum OnboardingState {
 /// SettingsView/AboutSettingsSection, a small shared ObservableObject flag if that
 /// plumbing is unwelcome, or anything else that ends in ContentView's
 /// `showingOnboarding` becoming true.
+extension Notification.Name {
+    static let muffinReopenOnboarding = Notification.Name("muffin.onboarding.reopen")
+}
+
 struct SettingsOnboardingRow: View {
     var onRequestReopen: () -> Void
 

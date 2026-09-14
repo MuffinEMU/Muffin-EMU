@@ -115,6 +115,22 @@ void LatteThread_HandleOSScreen()
 int Latte_ThreadEntry()
 {
 	SetThreadName("LatteThread");
+
+	// g_renderer can be null here if the renderer's constructor threw (the iOS bridge
+	// catches an NSException from MetalRenderer's constructor around
+	// register_render_surface() and proceeds without a renderer rather than crashing
+	// the app). Two different callers spin-wait on this thread signalling completion
+	// before they proceed (Latte_Start()'s sLatteThreadFinishedInit and
+	// PrepareExecutable()'s g_isGPUInitFinished), so without a renderer this must still
+	// signal both and return, rather than dereference g_renderer or leave the callers
+	// spinning forever.
+	if (!g_renderer)
+	{
+		sLatteThreadFinishedInit = true;
+		g_isGPUInitFinished = true;
+		return 0;
+	}
+
 	sint32 w,h;
 	WindowSystem::GetWindowPhysSize(w,h);
 

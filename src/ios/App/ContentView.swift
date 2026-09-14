@@ -6,6 +6,10 @@ import Foundation
 struct ContentView: View {
     @StateObject var gameManager = GameManager()
     @AppStorage(OnboardingState.completedKey) private var onboardingCompleted = false
+    // Set by SettingsOnboardingRow's "Show welcome guide again" (AboutSettingsSection),
+    // which resets onboardingCompleted but has no view of ContentView's own
+    // fullScreenCover binding to force it to present again if it's already false.
+    @State private var showOnboardingRequested = false
     @State private var selectedGame: GameMetadata?
     @State private var showingGameBrowser = true
     @State private var showingFavorites = false
@@ -53,9 +57,17 @@ struct ContentView: View {
         }
         .ignoresSafeArea()
         // First launch, and again whenever Settings > About resets the flag.
+        .onReceive(NotificationCenter.default.publisher(for: .muffinReopenOnboarding)) { _ in
+            showOnboardingRequested = true
+        }
         .fullScreenCover(isPresented: Binding(
-            get: { !onboardingCompleted },
-            set: { if !$0 { onboardingCompleted = true } }
+            get: { !onboardingCompleted || showOnboardingRequested },
+            set: { presented in
+                if !presented {
+                    onboardingCompleted = true
+                    showOnboardingRequested = false
+                }
+            }
         )) {
             OnboardingView(gameManager: gameManager) { onboardingCompleted = true }
         }

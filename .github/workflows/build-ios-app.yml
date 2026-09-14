@@ -236,6 +236,9 @@ jobs:
       - name: Verify the IPA is structurally sound
         run: ./ci/verify-ipa.sh MuffinEMU.ipa
 
+      - name: Verify the ad-hoc signed IPA is structurally sound
+        run: ./ci/verify-ipa.sh MuffinEMU-fakesigned.ipa
+
       - name: Upload IPAs
         uses: actions/upload-artifact@v4
         with:

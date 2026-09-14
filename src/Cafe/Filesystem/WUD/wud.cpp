@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "wud.h"
 #include "Common/FileStream.h"
+#include "Cemu/Logging/CemuLogging.h"
 
 wud_t* wud_open(const fs::path& path)
 {
@@ -104,6 +105,15 @@ unsigned int wud_readData(wud_t* wud, void* buffer, unsigned int length, long lo
 			unsigned int sectorIndex = (unsigned int)(offset / (long long)wud->sectorSize);
 			unsigned int bytesToRead = (remainingSectorBytes<length)?remainingSectorBytes:length; // read only up to the end of the current sector
 			// look up real sector index
+			if (sectorIndex >= wud->indexTableEntryCount)
+			{
+				cemuLog_log(LogType::Force,
+					"WUX: sector index {} out of range (index table has {} entries) at read "
+					"offset {} - the WUX header's declared size disagrees with its own index "
+					"table. Aborting this read rather than seeking to a garbage file position.",
+					sectorIndex, wud->indexTableEntryCount, offset);
+				return readBytes;
+			}
 			sectorIndex = wud->indexTable[sectorIndex];
 			wud->fs->SetPosition(wud->offsetSectorArray + (long long)sectorIndex * (long long)wud->sectorSize + (long long)sectorOffset);
 			readBytes += (unsigned int)wud->fs->readData(buffer, bytesToRead);
