@@ -2,16 +2,16 @@
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Muffin — Wii U emulation on iOS</title>
-<meta name="description" content="A genuine port of the Cemu Wii U emulator to iOS. A retail game runs end to end on an A12Z iPad Pro - on the interpreter, because the JIT has never once started.">
+<title>MuffinEMU — Wii U emulation on iOS</title>
+<meta name="description" content="MuffinEMU is a Wii U emulator for iPhone and iPad, built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU. Built in the open; honest about what is and isn't confirmed.">
 <link rel="icon" href="icon.png">
-<meta property="og:title" content="Muffin — Wii U emulation on iOS">
-<meta property="og:description" content="A genuine port of the Cemu Wii U emulator to iOS. A retail game runs end to end on an A12Z iPad Pro - on the interpreter, because the JIT has never once started.">
-<meta property="og:image" content="https://kiddreads.github.io/cemu-ios-muffin/social-preview.png">
+<meta property="og:title" content="MuffinEMU — Wii U emulation on iOS">
+<meta property="og:description" content="A Wii U emulator for iPhone and iPad, built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.">
+<meta property="og:image" content="https://kiddreads.github.io/MuffinEMU/social-preview.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://kiddreads.github.io/cemu-ios-muffin/">
+<meta property="og:url" content="https://kiddreads.github.io/MuffinEMU/">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://kiddreads.github.io/cemu-ios-muffin/social-preview.png">
+<meta name="twitter:image" content="https://kiddreads.github.io/MuffinEMU/social-preview.png">
 <meta name="theme-color" content="#F6A94F">
 <link rel="apple-touch-icon" href="icon.png">
 <style>
@@ -21,6 +21,7 @@
   --ink:#2E1B10; --ink-mid:#5C2E10; --ink-soft:#7A4A22;
   --accent:#6C63FF; --navy:#453765; --blush:#F2A6A0;
   --sparkle:#FFF3DD; --shadow:rgba(74,36,16,.18);
+  --good:#2E7D46; --pend:#A8622A;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg-top:#7A4A22; --bg-bottom:#4A2410;
@@ -28,6 +29,7 @@
   --ink:#FBEBD8; --ink-mid:#E8CBA8; --ink-soft:#C9A47C;
   --accent:#8A82FF; --navy:#8177AD; --blush:#E08880;
   --shadow:rgba(0,0,0,.45);
+  --good:#7BC996; --pend:#E3A254;
 }}
 *{box-sizing:border-box}
 body{margin:0;padding:0 16px;min-height:100vh;
@@ -44,6 +46,7 @@ h1{font-size:clamp(2rem,7vw,2.7rem);margin:.6rem 0 .2rem;letter-spacing:-.02em}
 .tag{font-size:1.05rem;opacity:.95;margin:0}
 h2{font-size:1.15rem;margin:0 0 .6rem;color:var(--ink)}
 h2 .em{font-size:1.25rem;margin-right:.4rem}
+h3{font-size:1rem;margin:1.1rem 0 .3rem;color:var(--ink)}
 p{margin:0 0 .9rem}
 p:last-child{margin-bottom:0}
 a{color:var(--accent);text-decoration-thickness:.08em;text-underline-offset:.15em}
@@ -58,116 +61,99 @@ code,.url{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88e
   overflow-wrap:anywhere;color:var(--ink)}
 .url{display:block;padding:.7rem .85rem;margin-top:.5rem}
 .note{border-left:4px solid var(--blush);padding-left:.95rem;margin:1rem 0}
-.log{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78em;line-height:1.5;
-  background:var(--wrapper);color:var(--ink);padding:.8rem .9rem;border-radius:10px;
-  overflow-x:auto;white-space:pre;margin:.6rem 0 .9rem}
 ul{margin:0;padding-left:1.15rem}
 li{margin-bottom:.42rem}
 li:last-child{margin-bottom:0}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));gap:.6rem 1.4rem}
-.ok::before{content:"✅ ";}
-.no::before{content:"⬜ ";}
-.wip::before{content:"🚧 ";}
+.status-list{list-style:none;margin:0;padding:0}
+.status-list li{padding-left:1.7rem;position:relative}
+.status-list .yes::before{content:"✅";position:absolute;left:0}
+.status-list .pending::before{content:"🚧";position:absolute;left:0}
+.status-list .no::before{content:"⬜";position:absolute;left:0}
+.pillrow{display:flex;flex-wrap:wrap;gap:.5rem;margin:.6rem 0 1rem}
+.pill{font-size:.82rem;font-weight:600;padding:.28em .75em;border-radius:999px;
+  background:var(--wrapper);color:var(--ink-mid)}
 footer{text-align:center;color:var(--sparkle);font-size:.9rem;opacity:.92;padding-bottom:1rem}
 footer a{color:var(--sparkle)}
+footer p{margin:0 0 .3rem}
 </style></head>
 <body><main>
 
 <header>
-  <img src="icon.png" alt="Muffin app icon">
-  <h1>Muffin</h1>
-  <p class="tag">Wii U emulation on iOS — in the open.</p>
+  <img src="icon.png" alt="MuffinEMU app icon">
+  <h1>MuffinEMU</h1>
+  <p class="tag">Wii U emulation for iPhone and iPad — built in the open.</p>
 </header>
 
 <section class="card">
   <h2><span class="em">🧁</span>Install</h2>
-  <p>Two sources, because the two install paths need different builds. Pick the one that matches how you sideload.</p>
-  <p style="color:var(--ink-soft);font-size:.94rem">iPhone and iPad, iOS 15 or later. Landscape.</p>
+  <p>Two sources, because the two install paths need different builds. Pick the one that matches how you sideload. iPhone and iPad, iOS 15 or later.</p>
 
-  <h3 style="font-size:1rem;margin:1.1rem 0 .3rem">SideStore / AltStore / LiveContainer</h3>
-  <p style="margin-bottom:.5rem">These re-sign with your own Apple ID at install, so they take the standard unsigned build.</p>
+  <h3>SideStore / AltStore / LiveContainer</h3>
+  <p style="margin-bottom:.5rem">These re-sign the app with your own Apple ID at install, so they take the plain unsigned build.</p>
   <div class="cta">
-    <a class="btn btn-primary" href="sidestore://source?url=https://kiddreads.github.io/cemu-ios-muffin/apps.json">Add to SideStore</a>
-    <a class="btn btn-secondary" href="altstore://source?url=https://kiddreads.github.io/cemu-ios-muffin/apps.json">Add to AltStore</a>
+    <a class="btn btn-primary" href="sidestore://source?url=https://kiddreads.github.io/MuffinEMU/apps.json">Add to SideStore</a>
+    <a class="btn btn-secondary" href="altstore://source?url=https://kiddreads.github.io/MuffinEMU/apps.json">Add to AltStore</a>
   </div>
-  <span class="url">https://kiddreads.github.io/cemu-ios-muffin/apps.json</span>
+  <span class="url">https://kiddreads.github.io/MuffinEMU/apps.json</span>
 
-  <h3 style="font-size:1rem;margin:1.3rem 0 .3rem">TrollStore / jailbroken</h3>
-  <p style="margin-bottom:.5rem">Takes the ad-hoc signed build, with the JIT entitlements actually embedded &mdash; which is what lets the recompiler get executable memory. A SideStore re-sign would strip them, which is why this is a separate source. The interpreter needs none of this, and it is what every confirmed run so far has used.</p>
-  <span class="url">https://kiddreads.github.io/cemu-ios-muffin/trollstore.json</span>
-  <p style="margin-top:.6rem;font-size:.94rem;color:var(--ink-soft)">Or grab <code>Cemu-fakesigned.ipa</code> directly from <a href="https://github.com/kiddreads/cemu-ios-muffin/releases">Releases</a>.</p>
+  <h3>TrollStore / jailbroken</h3>
+  <p style="margin-bottom:.5rem">Takes the ad-hoc signed build, with the JIT entitlements actually embedded — which is what a JIT enabler needs to give the recompiler executable memory. A SideStore re-sign would strip them, which is why this is a separate source.</p>
+  <span class="url">https://kiddreads.github.io/MuffinEMU/trollstore.json</span>
+  <p style="margin-top:.6rem;font-size:.94rem;color:var(--ink-soft)">Or grab <code>MuffinEMU-fakesigned.ipa</code> directly from <a href="https://github.com/kiddreads/MuffinEMU/releases/latest">the latest release</a>.</p>
 
   <div class="note">
-    <p><strong>Which file is which?</strong> <code>Cemu.ipa</code> is unsigned on purpose.
-    <code>Cemu-fakesigned.ipa</code> is ad-hoc signed. Ad-hoc signing has no certificate and no
-    team ID, so most tools describe it as &ldquo;not signed&rdquo; &mdash; that is what fake-signing is,
-    not a fault. To tell them apart: <code>codesign -dv Payload/Cemu.app</code> reports
-    <code>Signature=adhoc</code> for the fake-signed one.</p>
+    <p style="margin-bottom:0"><strong>Which file is which?</strong> <code>MuffinEMU.ipa</code> is unsigned on purpose — the installers above re-sign it themselves. <code>MuffinEMU-fakesigned.ipa</code> is ad-hoc signed, which most tools will still describe as "not signed" since ad-hoc signing has no certificate or team ID. That's expected, not a fault.</p>
   </div>
 </section>
 
 <section class="card">
   <h2><span class="em">🎮</span>Status</h2>
-  <p><strong>A retail Wii U game runs end to end, at playable speed, rendering correctly, on
-  real hardware.</strong> FAST Racing NEO on an iPad Pro A12Z (<code>iPad8,11</code>,
-  iOS&nbsp;26.6.1) — installed, launched, played.</p>
+  <p>MuffinEMU boots real Wii U titles from an imported ROM library on real hardware (confirmed on an iPad Pro A12Z, <code>iPad8,11</code>). A full, confirmed playthrough of a retail title on this exact build is still pending — this page will say so plainly the day one lands, not before.</p>
+  <div class="pillrow">
+    <span class="pill">Metal renderer</span>
+    <span class="pill">Multi-core interpreter</span>
+    <span class="pill">AArch64 recompiler (with a JIT enabler)</span>
+    <span class="pill">iOS 26 dual-mapped JIT</span>
+  </div>
   <div class="note">
-    <p style="margin-bottom:0"><strong>It does that on the interpreter.</strong> The recompiler
-    exists in the codebase, but its capability probe has never succeeded on iOS, so it has
-    never executed a single instruction. Every guest instruction anyone has run — including
-    that playthrough — has gone through pure PowerPC interpretation, measured at
-    50–190&nbsp;MIPS.</p>
+    <p style="margin-bottom:0"><strong>The recompiler is real on this core.</strong> With a JIT enabler attached (StikJIT, SideStore, LiveContainer) and the recompiler switch on in Settings, titles run compiled AArch64 rather than interpreted. Without one, MuffinEMU falls back to the interpreter automatically, and Settings says which one a launch actually got and why.</p>
   </div>
 </section>
 
 <section class="card">
   <h2><span class="em">🖥️</span>Under the hood</h2>
-  <p>The renderer is Metal. GPUs without mesh shader support — the A12Z and similar — emulate
-  geometry shaders and RECTS primitives with compute passes instead. The same GPUs don't
-  decode BC textures in hardware, so BC1–BC5 textures are decompressed on the CPU using NEON.</p>
-  <p style="margin-bottom:0">The interpreter runs from a predecoded instruction cache rather
-  than re-decoding each instruction on every pass.</p>
+  <p>The renderer is Metal, native to this port rather than a Vulkan translation layer, with an optional Vulkan (MoltenVK) path for titles that prefer it. GPUs without mesh shader support — the A12Z and similar — emulate geometry shaders and RECTS primitives with compute passes instead, and decode BC-compressed textures on the CPU rather than in hardware.</p>
+  <p style="margin-bottom:0">Every build carries a curated set of fixes ported from upstream Cemu on top of the core, plus MuffinEMU's own — the project tracks and fixes real crashes and hangs as they're found rather than papering over them.</p>
 </section>
 
 <section class="card">
-  <h2><span class="em">🎨</span>Themes</h2>
-  <p style="margin-bottom:0">31 app icons, each with a matching colour theme. Three are
-  premium, unlocked by code.</p>
-</section>
-
-<section class="card">
-  <h2><span class="em">⬜</span>Not yet confirmed</h2>
-  <ul>
-    <li><strong>Audio</strong> — the backend initialises, but no sound has been confirmed on a
-    device.</li>
-    <li><strong>Controller input</strong> — works at a basic level; not tested systematically
-    beyond that.</li>
-    <li><strong>The recompiler</strong> — untested, because it has never run.</li>
-    <li><strong>Compatibility</strong> — unmeasured beyond the one confirmed game.</li>
+  <h2><span class="em">🎨</span>The app</h2>
+  <ul class="status-list">
+    <li class="yes">A measured on-screen Wii U GamePad, taken off real hardware, with a comfort-controls layout and an alternative pad (melo-controls) as a toggle</li>
+    <li class="yes">31 app icons, each with a matching colour theme — three premium, unlocked by code</li>
+    <li class="yes">External-display routing, decrypt-to-files/WUA, DLC and update import, graphic packs</li>
+    <li class="pending">Audio, controller input beyond the basics, and broad game compatibility — usable, not yet systematically verified</li>
   </ul>
 </section>
 
 <section class="card">
   <h2><span class="em">📖</span>Read the project</h2>
   <ul>
-    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/ARCHITECTURE.md">ARCHITECTURE.md</a> — how the SwiftUI shell drives the Cemu core</li>
-    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/STATUS.md">STATUS.md</a> — detailed subsystem status</li>
-    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/ROADMAP.md">ROADMAP.md</a> — planned work</li>
-    <li><a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/notes/log.md">log.md</a> — the development journal</li>
+    <li><a href="https://github.com/kiddreads/MuffinEMU">github.com/kiddreads/MuffinEMU</a> — source, issues, releases</li>
+    <li><a href="https://github.com/kiddreads/MuffinEMU/blob/main/README.md">README.md</a> — architecture, building from source, how installs are numbered</li>
     <li><a href="gamepad-layout/">The on-screen pad</a> — measured off real GamePad hardware</li>
   </ul>
 </section>
 
 <section class="card">
-  <h2><span class="em">⚖️</span>Games &amp; license</h2>
-  <p>Bring your own. No copyrighted content is distributed here — not games, not system files, not keys.
-  Muffin is a port of <a href="https://github.com/cemu-project/Cemu">Cemu</a>, the excellent
-  Wii U emulator this project ports to iOS, licensed under
-  <a href="https://github.com/kiddreads/cemu-ios-muffin/blob/main/LICENSE.txt">MPL 2.0</a>.</p>
+  <h2><span class="em">⚖️</span>Games, credits &amp; license</h2>
+  <p>Bring your own games and keys. No copyrighted content is distributed here — not games, not system files, not keys.</p>
+  <p>MuffinEMU is built on <a href="https://github.com/cemu-project/Cemu">Cemu</a>. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU, from <a href="https://github.com/stossy11/MeloCafe">stossy11/MeloCafe</a>. The optional melo-controls pad is <a href="https://github.com/stossy11/Melo-Controller">Melo-Controller</a>, also by stossy11 (GPL-3.0). The Vulkan path uses <a href="https://github.com/KhronosGroup/MoltenVK">MoltenVK</a>.</p>
+  <p style="margin-bottom:0">MuffinEMU's own source is <a href="https://github.com/kiddreads/MuffinEMU/blob/main/LICENSE.txt">MPL-2.0</a>, like Cemu and MeloCafe. Because Melo-Controller (GPL-3.0) is linked into every build, a MuffinEMU IPA as a whole is distributed under GPL-3.0, with the repository above as its source.</p>
 </section>
 
 <footer>
-  <p><a href="https://github.com/kiddreads/cemu-ios-muffin">github.com/kiddreads/cemu-ios-muffin</a></p>
+  <p><a href="https://github.com/kiddreads/MuffinEMU">github.com/kiddreads/MuffinEMU</a></p>
 </footer>
 
 </main></body></html>
