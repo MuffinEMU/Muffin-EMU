@@ -150,7 +150,7 @@ option(ENABLE_IOS_NATIVE_RECORDING "Enables lightweight in-app Metal recording o
 
 if (IOS)
 	set(ENABLE_OPENGL OFF CACHE BOOL "OpenGL is not supported on iOS" FORCE)
-	set(ENABLE_VULKAN ON CACHE BOOL "Vulkan is enabled for MeloCafe on iOS" FORCE)
+	set(ENABLE_VULKAN ON CACHE BOOL "Vulkan is enabled on iOS" FORCE)
 	set(ENABLE_METAL ON CACHE BOOL "Metal is required on iOS" FORCE)
 	set(ENABLE_DISCORD_RPC OFF CACHE BOOL "Discord RPC is not available on iOS" FORCE)
 	set(ENABLE_HIDAPI OFF CACHE BOOL "HIDAPI is not available on iOS" FORCE)
