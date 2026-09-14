@@ -48,9 +48,10 @@ MBenchStatus mbench_initialize(const char* dataDir)
     // Real-time guest clock. The bridge defaults to an eighth under the interpreter, which
     // would throttle the GPU workload's frame pacing and make engines incomparable.
     cemu_bridge_set_timebase_shift(3);
-    // Guest OSReport output is LogType::OSCONSOLE, which no bridge enables, and the markers
-    // the host times are OSReport lines. Every engine logs exactly Force + OSCONSOLE.
-    cemuLog_setActiveLoggingFlags(cemuLog_getFlag(LogType::OSCONSOLE));
+    // The markers the host times are guest OSReport lines, which Cemu logs as
+    // LogType::CoreinitLogging. Each bridge enables its own mix of log types at initialize;
+    // every engine is set to exactly Force + CoreinitLogging so logging costs the same.
+    cemuLog_setActiveLoggingFlags(cemuLog_getFlag(LogType::CoreinitLogging));
     s_logPath = _pathToUtf8(cemuLog_GetLogFilePath());
     s_initialized = true;
     return MBENCH_OK;
