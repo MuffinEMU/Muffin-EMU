@@ -15,12 +15,24 @@ import Melo_Controller
 enum MeloControlsSetting {
     static let storageKey = "muffin.pad.useMeloControls"
     static let defaultValue = false
+
+    /// Melo-Controller's own layout editor moves and resizes individual buttons; it has
+    /// no control for scaling the WHOLE pad evenly, which is what this key backs -
+    /// applied as one `.scaleEffect` around the pad as a whole in MeloControlsOverlay
+    /// below, the same "one AppStorage key, one slider in the in-game panel" shape
+    /// ControllerLayoutSettings.scaleKey already uses for MuffinEMU's own pad.
+    static let scaleKey = "muffin.pad.meloControlsScale"
+    static let defaultScale: Double = 1.0
+    static let minScale: Double = 0.5
+    static let maxScale: Double = 1.75
 }
 
 /// Melo-Controller's pad, drawn over the game in place of MuffinEMU's own.
 struct MeloControlsOverlay: View {
     let gameID: String?
     let isEditing: Bool
+
+    @AppStorage(MeloControlsSetting.scaleKey) private var scale = MeloControlsSetting.defaultScale
 
     var body: some View {
         Melo_Controller.ControllerView(
@@ -31,6 +43,13 @@ struct MeloControlsOverlay: View {
         // ControllerView reads isEditing once, into its own @State, so a change has to
         // rebuild it rather than update it.
         .id(isEditing)
+        // Scales the whole pad evenly around its own center, on top of whatever
+        // Melo-Controller's own layout editor already positioned - a uniform view
+        // transform rather than a setting Melo-Controller itself exposes, so it works
+        // the same regardless of how any individual button was moved or resized.
+        // SwiftUI scales hit-testing along with the visuals, so touch targets grow and
+        // shrink with what's drawn rather than drifting out of registration with it.
+        .scaleEffect(scale)
         .onDisappear {
             // A press in flight when the pad goes away would otherwise stay held.
             cemu_bridge_release_all_buttons()

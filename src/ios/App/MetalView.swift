@@ -69,6 +69,39 @@ struct MetalViewIOS: UIViewRepresentable {
     }
 }
 
+/// `MetalViewIOS`'s pad-screen equivalent - see `DisplayRouter.attachLocalPadContainer`/
+/// `localPadContainerDidLayout`. Mounted by `EmulatorViewOptimized` whenever
+/// `ScreenLayout` calls for the GamePad screen to be visible on this device
+/// (`.bothScreens`, `.smallGamePadTopRight`, or `.singleScreen` with the pad currently
+/// the one swapped to) and `DisplayRouter.placement` is not `.dualScreen` - a real
+/// external display still takes the pad exactly as it did before this feature existed.
+///
+/// Deliberately always mounted, never conditionally recreated, whenever ScreenLayout is
+/// showing both screens or Single Screen mode is active - visibility of the region it
+/// occupies is a SwiftUI `.frame`/composition concern (see EmulatorViewOptimized), not a
+/// reason to tear this view down, for the same reason `MetalViewIOS`'s own container is
+/// never rebuilt mid-session: destroying it would take the registered CAMetalLayer with
+/// it, and `DisplayRouter` treats "the container changed" as "go register a fresh one".
+final class PadContainerView: UIView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        DisplayRouter.shared.localPadContainerDidLayout(self)
+    }
+}
+
+struct PadMetalViewIOS: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIView {
+        let container = PadContainerView()
+        container.backgroundColor = .black
+        DisplayRouter.shared.attachLocalPadContainer(container)
+        return container
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        DisplayRouter.shared.attachLocalPadContainer(uiView)
+    }
+}
+
 #if os(macOS)
 struct MetalView: NSViewRepresentable {
     var gameManager: GameManager

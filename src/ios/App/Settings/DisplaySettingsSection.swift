@@ -1,11 +1,25 @@
 import SwiftUI
 
-/// Wii U TV/GamePad screen routing when a genuine second display is connected - see
-/// DisplayRouter.swift for the mechanism (.dualScreen placement) and why plain AirPlay/
-/// screen mirroring doesn't count. Both settings here are inert without one connected;
-/// the footer says so plainly rather than hiding the section, since a control nobody
-/// can see failing silently reads as broken.
+/// Two related but genuinely different features share this section:
+///
+/// - Screen Layout (ScreenLayout in DisplayRouter.swift): how the TV and GamePad
+///   screens share THIS device's own screen. Ported from MeloCafe, which already had
+///   exactly this - Single Screen / Adaptive / GamePad-inset - and this app never did.
+/// - External display routing (DisplayLayoutSettings in DisplayRouter.swift): which of
+///   the two screens goes to a genuine SECOND physical display when one is connected.
+///   Inert without one; the footer says so rather than hiding the controls, since a
+///   control nobody can see failing silently reads as broken.
+///
+/// Screen Layout applies whenever there's no external display taking the TV; external
+/// display routing only matters once one is attached. They cannot both be "in charge"
+/// of the same screen at the same moment, which is why each gets its own swap button
+/// with its own name, rather than trying to share one.
 struct DisplaySettingsSection: View {
+    @AppStorage(LocalScreenLayoutSettings.layoutKey)
+    private var screenLayout = LocalScreenLayoutSettings.defaultLayout
+    @AppStorage(LocalScreenLayoutSettings.showSwapButtonKey)
+    private var showLocalSwapButton = LocalScreenLayoutSettings.defaultShowSwapButton
+
     @AppStorage(DisplayLayoutSettings.swapKey)
     private var swapScreens = DisplayLayoutSettings.defaultSwap
     @AppStorage(DisplayLayoutSettings.showSwapButtonKey)
@@ -13,9 +27,46 @@ struct DisplaySettingsSection: View {
 
     var body: some View {
         Section {
+            HStack {
+                Text("Screen Layout")
+                Button {
+                    // Same info-button-next-to-a-picker shape MeloCafe's own Settings
+                    // row uses for this exact control.
+                    screenLayoutInfoShown = true
+                } label: {
+                    Image(systemName: "info.circle")
+                }
+                .foregroundColor(.secondary)
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Picker("Screen Layout", selection: $screenLayout) {
+                    ForEach(ScreenLayout.allCases) { layout in
+                        Text(layout.string).tag(layout)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+            .alert("Screen Layout", isPresented: $screenLayoutInfoShown) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(screenLayout.description)
+            }
+
+            if screenLayout == .singleScreen {
+                Toggle(isOn: $showLocalSwapButton) {
+                    Text("Show Swap Button (TV ⇄ Pad)")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                }
+                .tint(MuffinTheme.pixelBlue)
+            }
+
+            Divider()
+
             Toggle(isOn: $swapScreens) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Screen layout")
+                    Text("External display: which screen goes there")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(swapScreens
                          ? "GamePad screen on the external display, TV screen on this device."
@@ -25,9 +76,9 @@ struct DisplaySettingsSection: View {
                 }
             }
             .tint(MuffinTheme.pixelBlue)
-            // Live, not just for the next launch: DisplayRouter.toggleScreenLayout()
+            // Live, not just for the next launch: rerouteForScreenLayoutChange()
             // re-routes immediately if a title is already running in .dualScreen, the
-            // same effect the on-screen swap button has. Skip the router's own
+            // same effect the on-screen swap button below has. Skip the router's own
             // UserDefaults write here - it would just be writing the value @AppStorage
             // already wrote - and only ask it to re-route.
             .onChange(of: swapScreens) { _ in
@@ -36,22 +87,24 @@ struct DisplaySettingsSection: View {
 
             Toggle(isOn: $showSwapButton) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Show swap button (TV ⇄ Pad)")
+                    Text("Show swap button (to external display)")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("A small on-screen button while playing with an external display connected, so the screen layout above can be flipped without leaving the game.")
+                    Text("A small on-screen button while playing with an external display connected, so the setting above can be flipped without leaving the game.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
             }
             .tint(MuffinTheme.pixelBlue)
         } header: {
-            Text("External Display")
+            Text("Display")
         } footer: {
             InfoButton.footer(
-                "Only takes effect with a second screen actually connected and this app given a window on it - plain AirPlay/screen mirroring doesn't count.",
-                title: "External Display",
-                text: "The Wii U has two screens, the TV and the GamePad. MuffinEMU can only show both at once with a genuine second display connected, not mirroring - the launch log says \"placement=dualScreen\" when that's active. Otherwise the GamePad screen isn't rendered at all, and these settings have nothing to act on yet.\n\nScreen layout picks which of the two goes to the external display and which stays on this device. The swap button repeats that choice as a button on screen during play, so it can be changed without leaving the game.\n\nDual-screen output is new and has not been exercised on real hardware yet - if it doesn't behave as described, the launch log's placement line is the first thing to check.")
+                "Screen Layout arranges the TV and GamePad on this device. The two toggles below it only take effect with a second screen actually connected and this app given a window on it - plain AirPlay/screen mirroring doesn't count.",
+                title: "Display",
+                text: "The Wii U has two screens, the TV and the GamePad.\n\nScreen Layout decides how both share THIS device's screen: Single Screen shows one at a time with a swap button to switch; Adaptive shows both at once, stacked in portrait and side by side in landscape; the GamePad-top-right layout keeps the TV full size with a small GamePad inset.\n\nThe two toggles below only matter once a genuine second display is connected and this app has a window on it - the launch log says \"placement=dualScreen\" when that's active, and Screen Layout stands down in favour of it. Otherwise those two are inert, which is expected, not broken.\n\nDual-screen output to a real external display is new and has not been exercised on real hardware yet - if it doesn't behave as described, the launch log's placement line is the first thing to check.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
+
+    @State private var screenLayoutInfoShown = false
 }

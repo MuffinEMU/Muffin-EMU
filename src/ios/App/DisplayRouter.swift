@@ -20,6 +20,59 @@ enum DisplayLayoutSettings {
     static let defaultShowSwapButton = true
 }
 
+/// How the TV and GamePad screens share THIS device's own screen - ported from
+/// MeloCafe's `ScreenLayout` (Common/Models/ScreenLayout.swift), same three cases, same
+/// wording, because this is literally that feature: MuffinEMU had never had it, and
+/// nothing here is invented. Independent of `DisplayRouter.Placement` above, which is
+/// about routing to a genuine SECOND physical display - this instead decides how the
+/// two Wii U screens are arranged on the ONE screen most people are actually using, and
+/// only applies while `Placement` is not `.dualScreen` (a real external display still
+/// takes the TV, exactly as before this feature existed).
+enum ScreenLayout: String, CaseIterable, Identifiable {
+    case singleScreen
+    case bothScreens
+    case smallGamePadTopRight
+
+    var id: String { rawValue }
+
+    var string: String {
+        switch self {
+        case .singleScreen: return "Single Screen"
+        case .bothScreens: return "Adaptive (Both Screens)"
+        case .smallGamePadTopRight: return "Both Screens (GamePad Top Right)"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .singleScreen:
+            return "Only the selected screen renders. Use the swap button to switch between TV and GamePad."
+        case .bothScreens:
+            return "TV and GamePad automatically adjust: stacked in portrait and side by side in landscape."
+        case .smallGamePadTopRight:
+            return "A small GamePad appears at the top right in its own column beside the TV View."
+        }
+    }
+
+    var showsBothScreens: Bool { self != .singleScreen }
+}
+
+/// Settings keys for `ScreenLayout` above. Deliberately its own small enum, distinct
+/// from `DisplayLayoutSettings`, even though both back controls in the same Settings
+/// section - `DisplayLayoutSettings` is about a genuine external display, this is about
+/// arranging both Wii U screens on this one, and the two "swap button" features they
+/// each carry are honestly different features that happen to share a name.
+enum LocalScreenLayoutSettings {
+    static let layoutKey = "muffin.display.screenLayout"
+    static let defaultLayout = ScreenLayout.singleScreen
+
+    /// Shown only while `layoutKey` is `.singleScreen` - the only layout where exactly
+    /// one of the two screens is on screen at a time and swapping which one means
+    /// anything. On by default, matching MeloCafe.
+    static let showSwapButtonKey = "muffin.display.showLocalSwapButton"
+    static let defaultShowSwapButton = true
+}
+
 /// Decides which physical display each of the Wii U's two screens goes to, and keeps
 /// that decision current while the app runs.
 ///
@@ -122,6 +175,20 @@ final class DisplayRouter: ObservableObject {
     /// The on-device area SwiftUI gives us (see `MetalViewIOS`). Weak: SwiftUI owns it.
     private weak var deviceContainer: UIView?
 
+    /// The on-device area SwiftUI gives the GamePad screen (see `PadMetalViewIOS`) when
+    /// `ScreenLayout` wants it visible on this device rather than nowhere or on a real
+    /// external display. Weak for the same reason as `deviceContainer`. `nil` whenever
+    /// no such view is currently mounted, which `syncLocalPadSurface()` treats as "the
+    /// current ScreenLayout has nothing local to draw the pad into right now".
+    private weak var localPadContainer: UIView?
+
+    /// Whichever ScreenLayout is current, read fresh each time - this router does not
+    /// cache it, the same reasoning as `swapScreens` above.
+    private var screenLayout: ScreenLayout {
+        (UserDefaults.standard.string(forKey: LocalScreenLayoutSettings.layoutKey))
+            .flatMap(ScreenLayout.init(rawValue:)) ?? LocalScreenLayoutSettings.defaultLayout
+    }
+
     private var externalWindow: UIWindow?
     private var observing = false
     private var tvSurfaceRegistered = false
@@ -141,6 +208,9 @@ final class DisplayRouter: ObservableObject {
     // or smaller - without this check, ordinary layout churn would send a resize to
     // the GPU thread every time.
     private var lastDeviceContainerLayoutSize: CGSize?
+
+    /// Same dedup as `lastDeviceContainerLayoutSize`, for `localPadContainer`.
+    private var lastLocalPadContainerLayoutSize: CGSize?
 
     private init() {}
 
@@ -285,7 +355,30 @@ final class DisplayRouter: ObservableObject {
             placeTVOnDevice(keepExternalWindow: false)
         }
 
+        // A pad surface already registered on the WRONG side of a placement change that
+        // just crossed the dualScreen boundary (e.g. a real external display connecting
+        // while ScreenLayout had a local pad up, or disconnecting while dualScreen had
+        // one) - neither sync function below reparents an existing surface, they only
+        // create one where there is none and release one that shouldn't exist. Forcing
+        // a release here when the existing host disagrees with where `desired` wants
+        // the pad lets whichever sync function actually applies recreate it fresh on
+        // the right host, the same "release and let re-registration do the placing"
+        // approach rerouteForScreenLayoutChange() already uses for the swap button.
+        if cemu_bridge_has_pad_render_surface() {
+            let padIsLocal = padRenderView?.superview === localPadContainer
+            let padShouldBeLocal = tvSurfaceRegistered && desired != .dualScreen
+            if padIsLocal != padShouldBeLocal {
+                cemu_bridge_release_pad_render_surface()
+                padRenderView?.isHidden = true
+                padRenderView = nil
+            }
+        }
+
         syncPadSurface(tvGoesExternal: tvGoesExternal, external: external, scene: scene)
+        // Only one of these two ever actually wants a pad surface at a time: this one
+        // only acts outside .dualScreen, the one above only acts inside it, and
+        // `desired` just became exactly one or the other.
+        syncLocalPadSurface()
 
         if changed || !tvSurfaceRegistered {
             switch desired {
@@ -445,18 +538,19 @@ final class DisplayRouter: ObservableObject {
         )
     }
 
-    /// The GamePad screen's equivalent of `tvGeometry()`. Only ever consulted while a
-    /// pad surface exists, i.e. only in `.dualScreen`, so `placement == .dualScreen` is
-    /// implied rather than checked again here.
+    /// The GamePad screen's equivalent of `tvGeometry()`. Reads straight off whichever
+    /// view currently hosts `padRenderView` - the external window (dualScreen, swapped),
+    /// `deviceContainer` (dualScreen, not swapped), or `localPadContainer` (ScreenLayout
+    /// showing the pad on this device outside dualScreen) - rather than re-deriving
+    /// which of those three applies from `placement`/`swapScreens`/`screenLayout` a
+    /// second time here. One source of truth: whatever `padRenderView` is actually
+    /// inside right now IS its geometry.
     private func padGeometry() -> (size: CGSize, scale: Double) {
-        if swapScreens, let window = externalWindow {
-            return (window.bounds.size, window.screen.effectiveRenderScale)
-        }
-        guard let container = deviceContainer else {
+        guard let host = padRenderView?.superview else {
             return (UIScreen.main.bounds.size, UIScreen.main.effectiveRenderScale)
         }
-        let size = container.bounds.size == .zero ? UIScreen.main.bounds.size : container.bounds.size
-        let scale = (container.window?.screen ?? UIScreen.main).effectiveRenderScale
+        let size = host.bounds.size == .zero ? UIScreen.main.bounds.size : host.bounds.size
+        let scale = (host.window?.screen ?? UIScreen.main).effectiveRenderScale
         return (size, scale)
     }
 
@@ -498,6 +592,83 @@ final class DisplayRouter: ObservableObject {
             padRenderView?.isHidden = true
             padRenderView = nil
         }
+    }
+
+    // MARK: - On-device screen layout (ScreenLayout, independent of Placement)
+
+    /// Called by `PadMetalViewIOS`, mirroring `attach(deviceContainer:)`. The container
+    /// SwiftUI hands this is sized by the composition in `EmulatorViewOptimized` per the
+    /// current `ScreenLayout` - single/both/inset - so this router never has to know
+    /// which of those is active to place the pad correctly; it only has to put the
+    /// surface in whatever container it was given and read that container's own size.
+    func attachLocalPadContainer(_ container: UIView) {
+        guard localPadContainer !== container else { return }
+        localPadContainer = container
+        syncLocalPadSurface()
+    }
+
+    /// `PadContainerView.layoutSubviews()`'s hook, mirroring
+    /// `deviceContainerDidLayout(_:)` for the pad's own container - which can resize
+    /// independently of `deviceContainer` (a rotation changes both differently in the
+    /// side-by-side/stacked layout, and the inset layout's pad box is never the same
+    /// size as the TV region next to it).
+    func localPadContainerDidLayout(_ container: UIView) {
+        guard container === localPadContainer else { return }
+        let size = container.bounds.size
+        if let lastSize = lastLocalPadContainerLayoutSize, lastSize == size { return }
+        lastLocalPadContainerLayoutSize = size
+        resizePadSurfaceIfRegistered()
+    }
+
+    /// Registers a pad surface hosted on `localPadContainer` whenever this device is
+    /// showing both Wii U screens itself and no real external display is in the way -
+    /// releases it otherwise. Placement, not ScreenLayout, decides whether the pad is
+    /// visible at all in Single Screen mode; ScreenLayout and the swap button below only
+    /// decide which of the two an ALREADY-registered pad/TV pair currently draws to,
+    /// via `cemu_bridge_set_visible_outputs` - see `updateLocalVisibleOutputs(showTV:
+    /// showPad:)`. Registering it unconditionally (rather than only once Single Screen
+    /// has picked the pad) is what makes the swap button instant: there is never a
+    /// surface to create or tear down when it is tapped, only which one is visible.
+    private func syncLocalPadSurface() {
+        let wantLocalPad = tvSurfaceRegistered && placement != .dualScreen
+        let havePad = cemu_bridge_has_pad_render_surface()
+
+        if wantLocalPad, !havePad, let container = localPadContainer {
+            let view = MetalLayerView()
+            view.backgroundColor = .black
+            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            view.frame = container.bounds
+            container.addSubview(view)
+            padRenderView = view
+
+            let surface = Unmanaged.passRetained(view).toOpaque()
+            let geometry = padGeometry()
+            cemu_bridge_register_pad_render_surface(surface, Int32(geometry.size.width), Int32(geometry.size.height), geometry.scale)
+        } else if !wantLocalPad, havePad, padRenderView?.superview === localPadContainer {
+            // The `padRenderView?.superview === localPadContainer` guard is what keeps
+            // this from releasing a pad surface the OTHER sync function (dualScreen's)
+            // just created on a different host in the same call to applyPlacement -
+            // syncPadSurface() runs first and, if it just registered one, havePad here
+            // would otherwise read true for a surface this function had no part in.
+            cemu_bridge_release_pad_render_surface()
+            padRenderView?.isHidden = true
+            padRenderView = nil
+        }
+    }
+
+    /// `EmulatorViewOptimized`'s Single Screen swap button and its `.onChange(of:)`
+    /// handlers for `screenLayout`/local-swap state call this - it only ever changes
+    /// which of the two ALREADY-registered surfaces (see `syncLocalPadSurface()` above)
+    /// the renderer actually draws to, via `cemu_bridge_set_visible_outputs`, the same
+    /// register-once/toggle-visibility split MeloCafe's own `updateVisibleOutputs()`
+    /// uses. Releases every held button when the pad screen is the one being hidden -
+    /// same reasoning as the edit-layout toggle button already uses
+    /// (`cemu_bridge_release_all_buttons()`): a press in flight on a screen about to
+    /// disappear would otherwise never see its release.
+    func updateLocalVisibleOutputs(showTV: Bool, showPad: Bool) {
+        guard placement != .dualScreen else { return }
+        if !showPad { cemu_bridge_release_all_buttons() }
+        cemu_bridge_set_visible_outputs(showTV, showPad)
     }
 
     // MARK: - Screen discovery

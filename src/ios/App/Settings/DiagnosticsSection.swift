@@ -38,21 +38,19 @@ struct DeviceReportSection: View {
     }
 }
 
-/// ON by default, which is the reverse of what shipping software should do, and
-/// deliberate while this port is what it is. The release notes say it plainly: no
-/// Wii U title has been shown to boot. Until one does, the log is not a diagnostic
-/// sitting on top of the feature - it IS the feature, and the only thing a failed
-/// launch produces that is worth anything.
-///
-/// The concrete reason it flipped: four builds went out asking for a boot log and
-/// none came back, because seeing one first required knowing this toggle existed
-/// and finding it. On screen it can just be screenshotted. Turn it off here once a
-/// game actually boots.
+/// Was ON by default while no Wii U title had been shown to boot - the log was not a
+/// diagnostic sitting on top of the feature, it WAS the feature, and the only thing a
+/// failed launch produced that was worth anything. Titles boot now (FAST Racing NEO
+/// renders correctly, full speed, on real hardware), so that default started actively
+/// working against the normal experience: it also gates the launch intro (see
+/// ContentView.swift), so an ON-by-default log meant the intro silently never played on
+/// a stock install, every single launch, with nothing in the UI explaining why. OFF by
+/// default now; still one tap away for anyone chasing a black screen.
 struct DiagnosticsSection: View {
     /// Shared with EmulatorViewOptimized by key, not by binding - the emulator view is
     /// not in this sheet's hierarchy, and AppStorage is what makes the setting outlive
     /// the sheet anyway.
-    @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = true
+    @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
     @AppStorage("muffin.showLaunchIntro") private var launchIntroEnabled = true
 
     var body: some View {
