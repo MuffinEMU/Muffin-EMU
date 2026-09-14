@@ -1250,17 +1250,17 @@ bool PPCRecompiler_Init26() {
             g_jitArenaRwBase = s_jitArena.region.rwAlias;
             ppcRecompilerInited = true;
             
-            if (ppcRecompilerInstanceData)
+            // Allocated once for the life of the process, not on every call: the AArch64
+            // trampolines this generates bake ppcRecompilerInstanceData's address in as an
+            // immediate, so freeing and reallocating it here left a second title launch (or
+            // any repeat call) running the recompiler against freed memory.
+            if (!ppcRecompilerInstanceData)
             {
-                MemMapper::FreeReservation(ppcRecompilerInstanceData, sizeof(PPCRecompilerInstanceData_t));
-                ppcRecompilerInstanceData = nullptr;
-            }
-            
             debug_printf("Allocating %dMB for recompiler instance data...\n", (sint32)(sizeof(PPCRecompilerInstanceData_t) / 1024 / 1024));
             ppcRecompilerInstanceData = (PPCRecompilerInstanceData_t*)MemMapper::ReserveMemory(nullptr, sizeof(PPCRecompilerInstanceData_t), MemMapper::PAGE_PERMISSION::P_RW);
             MemMapper::AllocateMemory(&(ppcRecompilerInstanceData->_x64XMM_xorNegateMaskBottom), sizeof(PPCRecompilerInstanceData_t) - offsetof(PPCRecompilerInstanceData_t, _x64XMM_xorNegateMaskBottom), MemMapper::PAGE_PERMISSION::P_RW, true);
-            
             PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions();
+            }
         }
     }
     catch (const std::exception& e)
@@ -1341,12 +1341,11 @@ void PPCRecompiler_init()
     }
     
     if (!init26) {
-        if (ppcRecompilerInstanceData)
+        // Same reasoning as PPCRecompiler_Init26() above: allocate once per process, not
+        // on every call, or the platform's recompiler trampolines outlive the memory
+        // their generated code was pointed at.
+        if (!ppcRecompilerInstanceData)
         {
-            MemMapper::FreeReservation(ppcRecompilerInstanceData, sizeof(PPCRecompilerInstanceData_t));
-            ppcRecompilerInstanceData = nullptr;
-        }
-        
         debug_printf("Allocating %dMB for recompiler instance data...\n", (sint32)(sizeof(PPCRecompilerInstanceData_t) / 1024 / 1024));
         ppcRecompilerInstanceData = (PPCRecompilerInstanceData_t*)MemMapper::ReserveMemory(nullptr, sizeof(PPCRecompilerInstanceData_t), MemMapper::PAGE_PERMISSION::P_RW);
         MemMapper::AllocateMemory(&(ppcRecompilerInstanceData->_x64XMM_xorNegateMaskBottom), sizeof(PPCRecompilerInstanceData_t) - offsetof(PPCRecompilerInstanceData_t, _x64XMM_xorNegateMaskBottom), MemMapper::PAGE_PERMISSION::P_RW, true);
@@ -1355,6 +1354,7 @@ void PPCRecompiler_init()
 #elif defined(__aarch64__)
         PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions();
 #endif
+        }
     }
     
     

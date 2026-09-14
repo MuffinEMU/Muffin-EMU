@@ -337,7 +337,14 @@ int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destWuaPath,
 	ZArchiveWriter archiveWriter(&WuaWriterContext::NewOutputFile, &WuaWriterContext::WriteOutputData, &writerCtx);
 
 	std::string mountPath = TitleInfo::GetUniqueTempMountingPath();
-	titleInfo.Mount(mountPath, "", FSC_PRIORITY_BASE);
+	if (!titleInfo.Mount(mountPath, "", FSC_PRIORITY_BASE))
+	{
+		// Previously ignored: a mount failure here silently produced a well-formed but
+		// empty .wua, reported as success, instead of the real failure.
+		cemuLog_log(LogType::Force, "Decrypt-to-WUA: failed to mount '{}' for reading", srcPath);
+		close(fd);
+		return IOS_DECRYPT_UNABLE_TO_MOUNT;
+	}
 
 	std::string archiveRoot = fmt::format("{:016x}_v{}/", titleInfo.GetAppTitleId(), titleInfo.GetAppTitleVersion());
 

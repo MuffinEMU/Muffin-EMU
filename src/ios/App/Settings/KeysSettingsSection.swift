@@ -52,7 +52,11 @@ struct KeysSettingsSection: View {
         }
         .alert("Remove keys.txt?", isPresented: $showingKeysRemovalConfirmation) {
             Button("Remove", role: .destructive) {
-                try? WiiUKeys.removeKeys()
+                do {
+                    try WiiUKeys.removeKeys()
+                } catch {
+                    keysErrorMessage = "Couldn't remove keys.txt: \(error.localizedDescription)"
+                }
                 keyCount = WiiUKeys.installedKeyCount()
             }
             Button("Cancel", role: .cancel) { }

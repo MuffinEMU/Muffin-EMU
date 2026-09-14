@@ -49,6 +49,7 @@
 #include <dlfcn.h>
 
 #include "Cafe/CafeSystem.h"
+#include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cemu/Logging/CemuLogging.h"
@@ -1096,6 +1097,14 @@ void cemu_bridge_initialize(const char* mlcPath) {
                 " is missing from the bundle - the core falls back to its own search").c_str());
         }
     }
+
+    // The library screen can call KeyCache_Prepare() (via a TitleInfo for a .wud/.wux/
+    // NUS dump already in the library) before this point, which permanently latches the
+    // key cache against whatever keys.txt path was in effect before CemuInitialize() (the
+    // only thing that calls ActiveSettings::SetPaths() on this core) has run. Re-arm the
+    // latch right before that call, so the next KeyCache_Prepare() reads keys.txt from
+    // the real path instead of leaving the cache believing there are none for the session.
+    KeyCache_ResetForNewPaths();
 
     cemu_bridge_log_checkpoint("initialize: about to call CemuInitialize()");
     try

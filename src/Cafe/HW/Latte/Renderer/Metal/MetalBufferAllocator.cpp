@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalBufferAllocator.h"
+#include "Cemu/Logging/CemuLogging.h"
 
 MetalBufferChunkedHeap::~MetalBufferChunkedHeap()
 {
@@ -122,15 +123,17 @@ void MetalSynchronizedRingAllocator::CleanupBuffer(MTL::CommandBuffer* latestFin
 			itr.cleanupCounter++;
 	}
 
-	// check if last buffer is available for deletion
-	if (m_buffers.size() >= 2)
+	// Only the LAST buffer used to be checked here, so a one-time upload burst that
+	// left every buffer but the last one idle (e.g. at GX2Init) pinned all of them for
+	// the rest of the process - only the newest one could ever be freed. Scan every
+	// buffer instead; erasing from the back forward keeps earlier indices valid.
+	for (sint32 i = (sint32)m_buffers.size() - 1; i >= 0 && m_buffers.size() > 1; i--)
 	{
-		auto& lastBuffer = m_buffers.back();
-		if (lastBuffer.cleanupCounter >= 1000)
+		auto& buffer = m_buffers[i];
+		if (buffer.cleanupCounter >= 1000)
 		{
-			// release buffer
-			lastBuffer.mtlBuffer->release();
-			m_buffers.pop_back();
+			buffer.mtlBuffer->release();
+			m_buffers.erase(m_buffers.begin() + i);
 		}
 	}
 }
@@ -184,7 +187,19 @@ void MetalSynchronizedHeapAllocator::FreeReservation(AllocatorReservation* uploa
 	// put the allocation on a delayed release queue for the current command buffer
 	MTL::CommandBuffer* currentCommandBuffer = m_mtlr->GetCurrentCommandBuffer();
 	auto it = std::find_if(m_activeAllocations.begin(), m_activeAllocations.end(), [&uploadReservation](const TrackedAllocation& allocation) { return allocation.allocation.chunkIndex == uploadReservation->bufferIndex && allocation.allocation.offset == uploadReservation->bufferOffset; });
-	cemu_assert_debug(it != m_activeAllocations.end());
+	if (it == m_activeAllocations.end())
+	{
+		// cemu_assert_debug() alone is a no-op in Release, and the two lines below
+		// dereferenced end() unconditionally - a real double-free crash (confirmed on
+		// device, signal 11 in this exact function). Skip the bookkeeping instead.
+		cemuLog_log(LogType::Force,
+			"MetalSynchronizedHeapAllocator::FreeReservation() called on an allocation "
+			"(buffer {}, offset {}) this allocator has no record of - likely a double "
+			"free. Skipping it rather than dereferencing an invalid iterator.",
+			uploadReservation->bufferIndex, uploadReservation->bufferOffset);
+		m_poolAllocatorReservation.freeObj(uploadReservation);
+		return;
+	}
 	m_releaseQueue[currentCommandBuffer].emplace_back(it->allocation);
 	m_activeAllocations.erase(it);
 	m_poolAllocatorReservation.freeObj(uploadReservation);

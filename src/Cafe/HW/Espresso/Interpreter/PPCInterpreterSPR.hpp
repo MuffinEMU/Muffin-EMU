@@ -72,8 +72,11 @@ static void setFPECR(PPCInterpreter_t* hCPU, uint32 newValue)
 
 static void setDEC(PPCInterpreter_t* hCPU, uint32 newValue)
 {
-	debug_printf("Set DEC to 0x%08x\n", newValue);
-	//hCPU->sprExtended.fpecr = newValue;
+	// This used to only debug_printf() the new value, so a write to the decrementer
+	// never actually restarted its countdown - any title that arms DEC for a timed
+	// interrupt would wait forever. PPCInterpreter_setDEC() is the real setter
+	// (PPCInterpreterMain.cpp) and was already exported; nothing here was calling it.
+	PPCInterpreter_setDEC(hCPU, newValue);
 }
 
 static uint32 getSPRG(PPCInterpreter_t* hCPU, uint32 sprgIndex)
@@ -619,6 +622,15 @@ static uint32 PPCSprSupervisor_get(PPCInterpreter_t* hCPU, uint32 spr)
 	case SPR_XER:
 		v = PPCInterpreter_getXER(hCPU);
 		break;
+	case SPR_DEC:
+	{
+		uint64 passedCycled = PPCInterpreter_getMainCoreCycleCounter() - ppcMainThreadDECCycleStart;
+		if (passedCycled >= (uint64)ppcMainThreadDECCycleValue)
+			v = 0;
+		else
+			v = (uint32)(ppcMainThreadDECCycleValue - passedCycled);
+	}
+	break;
 	case SPR_UPIR:
 		v = hCPU->spr.UPIR;
 		break;
@@ -811,9 +823,9 @@ static uint32 PPCSpr_get(PPCInterpreter_t* hCPU, uint32 spr)
 		v = PPCInterpreter_getXER(hCPU);
 		break;
 	case SPR_DEC:
-		// special handling for DEC register
+		// special handling for DEC register - reading it is an ordinary PPC operation
+		// (timing/busy-wait loops use it), not a debugger-only path.
 	{
-		assert_dbg();
 		uint64 passedCycled = PPCInterpreter_getMainCoreCycleCounter() - ppcMainThreadDECCycleStart;
 		if (passedCycled >= (uint64)ppcMainThreadDECCycleValue)
 			v = 0;

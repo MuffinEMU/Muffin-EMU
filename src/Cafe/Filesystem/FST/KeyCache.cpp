@@ -49,6 +49,13 @@ void KeyCache_AddKey128(uint8* key)
 
 bool sKeyCachePrepared = false;
 
+void KeyCache_ResetForNewPaths()
+{
+	mtxKeyCache.lock();
+	sKeyCachePrepared = false;
+	mtxKeyCache.unlock();
+}
+
 void KeyCache_Prepare()
 {
 	mtxKeyCache.lock();
