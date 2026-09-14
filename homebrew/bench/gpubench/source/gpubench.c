@@ -38,6 +38,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+// GCC folds sinf(x) and cosf(x) of the same x into a single sincosf() call, which
+// devkitPPC's newlib does not provide, and the link fails. Keeping each in its own
+// non-inlined function stops the fold.
+static float __attribute__((noinline)) BenchSin(float x) { return sinf(x); }
+static float __attribute__((noinline)) BenchCos(float x) { return cosf(x); }
+
 #ifndef M_PI
 // Not every newlib math.h configuration defines this outside strict-ANSI
 // mode, and this file has no way to test which devkitPPC's does.
@@ -119,8 +125,8 @@ static void Mat4Translate(float m[16], float x, float y, float z)
 static void Mat4RotateY(float m[16], float radians)
 {
    Mat4Identity(m);
-   float s = sinf(radians);
-   float c = cosf(radians);
+   float s = BenchSin(radians);
+   float c = BenchCos(radians);
    m[0]    = c;
    m[2]    = -s;
    m[8]    = s;
