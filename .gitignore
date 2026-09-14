@@ -63,3 +63,5 @@ src/ios/Cemu-iOS.xcodeproj/
 build-ios/
 .vcpkg-archives/
 src/ios/Cemu-iOS.xcodeproj/
+
+__pycache__/
