@@ -107,7 +107,6 @@ public:
 		uint32 size;
 		uint32 writeIndex;
 		std::queue<BufferSyncPoint_t> queue_syncPoints;
-		MTL::CommandBuffer* lastSyncpointCommandBuffer{ nullptr };
 		uint32 index;
 		uint32 cleanupCounter{ 0 }; // increased by one every time CleanupBuffer() is called if there is no sync point. If it reaches 300 then the buffer is released
 	};

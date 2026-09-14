@@ -6,6 +6,7 @@
 #include "IML/IML.h"
 #include "IML/IMLRegisterAllocatorRanges.h"
 #include "PPCFunctionBoundaryTracker.h"
+#include "Cafe/HW/Latte/Core/LatteBufferCache.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
 
 bool PPCRecompiler_decodePPCInstruction(ppcImlGenContext_t* ppcImlGenContext);
@@ -489,6 +490,11 @@ ATTR_MS_ABI uint32 PPCRecompiler_GetTBU()
 	return (uint32)(coreinit::OSGetSystemTime() >> 32);
 }
 
+ATTR_MS_ABI void PPCRecompiler_LatteBufferCache_notifyDCFlush(uint32 address, uint32 size)
+{
+	LatteBufferCache_notifyDCFlush(address, size);
+}
+
 bool PPCRecompilerImlGen_MFTB(ppcImlGenContext_t* ppcImlGenContext, uint32 opcode)
 {
 	uint32 rD, spr1, spr2, spr;
@@ -775,6 +781,29 @@ bool PPCRecompilerImlGen_ISYNC(ppcImlGenContext_t* ppcImlGenContext, uint32 opco
 
 bool PPCRecompilerImlGen_SYNC(ppcImlGenContext_t* ppcImlGenContext, uint32 opcode)
 {
+	return true;
+}
+
+bool PPCRecompilerImlGen_DCBFlush(ppcImlGenContext_t* ppcImlGenContext, uint32 opcode)
+{
+	sint32 rS, rA, rB;
+	PPC_OPC_TEMPL_X(opcode, rS, rA, rB);
+
+	IMLReg regEA = _GetRegTemporary(ppcImlGenContext, 0);
+	IMLReg regB = _GetRegGPR(ppcImlGenContext, rB);
+	if (rA)
+	{
+		IMLReg regA = _GetRegGPR(ppcImlGenContext, rA);
+		ppcImlGenContext->emitInst().make_r_r_r(PPCREC_IML_OP_ADD, regEA, regA, regB);
+	}
+	else
+	{
+		ppcImlGenContext->emitInst().make_r_r(PPCREC_IML_OP_ASSIGN, regEA, regB);
+	}
+
+	IMLReg regSize = _GetRegTemporary(ppcImlGenContext, 1);
+	ppcImlGenContext->emitInst().make_r_s32(PPCREC_IML_OP_ASSIGN, regSize, 32);
+	ppcImlGenContext->emitInst().make_call_imm((uintptr_t)PPCRecompiler_LatteBufferCache_notifyDCFlush, regEA, regSize, IMLREG_INVALID, IMLREG_INVALID);
 	return true;
 }
 
@@ -1604,6 +1633,9 @@ bool PPCRecompilerImlGen_DCBZ(ppcImlGenContext_t* ppcImlGenContext, uint32 opcod
 	// zero out the cacheline
 	for(sint32 i = 0; i < 32; i += 4)
 		ppcImlGenContext->emitInst().make_memory_r(regZero, regMemResEA, i, 32, false);
+	IMLReg regSize = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_TEMPORARY + 2);
+	ppcImlGenContext->emitInst().make_r_s32(PPCREC_IML_OP_ASSIGN, regSize, 32);
+	ppcImlGenContext->emitInst().make_call_imm((uintptr_t)PPCRecompiler_LatteBufferCache_notifyDCFlush, regMemResEA, regSize, IMLREG_INVALID, IMLREG_INVALID);
 	return true;
 }
 
@@ -2294,7 +2326,8 @@ bool PPCRecompiler_decodePPCInstruction(ppcImlGenContext_t* ppcImlGenContext)
 				unsupportedInstructionFound = true;
 			break;
 		case 54:
-			// DBCST - Generates no code
+			if (PPCRecompilerImlGen_DCBFlush(ppcImlGenContext, opcode) == false)
+				unsupportedInstructionFound = true;
 			break;
 		case 55: // LWZUX
 			PPCRecompilerImlGen_LOAD_INDEXED(ppcImlGenContext, opcode, 32, false, true, true);
@@ -2308,7 +2341,8 @@ bool PPCRecompiler_decodePPCInstruction(ppcImlGenContext_t* ppcImlGenContext)
 				unsupportedInstructionFound = true;
 			break;
 		case 86:
-			// DCBF -> No-Op
+			if (PPCRecompilerImlGen_DCBFlush(ppcImlGenContext, opcode) == false)
+				unsupportedInstructionFound = true;
 			break;
 		case 87: // LBZX
 			PPCRecompilerImlGen_LOAD_INDEXED(ppcImlGenContext, opcode, 8, false, true, false);

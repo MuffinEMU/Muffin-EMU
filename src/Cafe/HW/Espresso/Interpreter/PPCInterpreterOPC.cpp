@@ -64,8 +64,7 @@ void PPCInterpreter_MCRF(PPCInterpreter_t* hCPU, uint32 Opcode)
 	PPC_OPC_TEMPL_X(Opcode, crD, crS, b);
 	crD >>= 2;
 	crS >>= 2;
-	for (sint32 i = 0; i<4; i++)
-		ppc_setCRBit(hCPU, crD * 4 + i, ppc_getCRBit(hCPU, crS * 4 + i));
+	ppc_setCRField(hCPU, crD, ppc_getCRField(hCPU, crS));
 
 	PPCInterpreter_nextInstruction(hCPU);
 }
@@ -76,16 +75,7 @@ void PPCInterpreter_MFCR(PPCInterpreter_t* hCPU, uint32 Opcode)
 	int rD, rA, rB;
 	PPC_OPC_TEMPL_X(Opcode, rD, rA, rB);
 	
-	// in our array: cr0.LT is entry with index 0
-	// in GPR: cr0.LT is in MSB
-	uint32 cr = 0;
-	for (sint32 i = 0; i < 32; i++)
-	{
-		cr <<= 1;
-		if (ppc_getCRBit(hCPU, i) != 0)
-			cr |= 1;
-	}
-	hCPU->gpr[rD] = cr;
+	hCPU->gpr[rD] = hCPU->cr;
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
@@ -97,18 +87,8 @@ void PPCInterpreter_MTCRF(PPCInterpreter_t* hCPU, uint32 Opcode)
 	uint32 crfMask;
 	PPC_OPC_TEMPL_XFX(Opcode, rS, crfMask);
 
-	for (sint32 crIndex = 0; crIndex < 8; crIndex++)
-	{
-		if (!ppc_MTCRFMaskHasCRFieldSet(crfMask, crIndex))
-			continue;
-
-		uint32 crBitBase = crIndex * 4;
-		uint8 nibble = (uint8)(hCPU->gpr[rS] >> (28 - crIndex * 4));
-		ppc_setCRBit(hCPU, crBitBase + 0, (nibble >> 3) & 1);
-		ppc_setCRBit(hCPU, crBitBase + 1, (nibble >> 2) & 1);
-		ppc_setCRBit(hCPU, crBitBase + 2, (nibble >> 1) & 1);
-		ppc_setCRBit(hCPU, crBitBase + 3, (nibble >> 0) & 1);
-	}
+	const uint32 mask = ppc_MTCRFMaskToPackedMask(crfMask);
+	hCPU->cr = (hCPU->cr & ~mask) | (hCPU->gpr[rS] & mask);
 
 	PPCInterpreter_nextInstruction(hCPU);
 }
@@ -124,11 +104,10 @@ void PPCInterpreter_MCRXR(PPCInterpreter_t* hCPU, uint32 Opcode)
 	uint32 xer = PPCInterpreter_getXER(hCPU);
 	uint32 xerBits = (xer >> 28) & 0xF;
 
-	// todo - is the order correct?
-	ppc_setCRBit(hCPU, cr * 4 + 0, (xerBits >> 0) & 1);
-	ppc_setCRBit(hCPU, cr * 4 + 1, (xerBits >> 1) & 1);
-	ppc_setCRBit(hCPU, cr * 4 + 2, (xerBits >> 2) & 1);
-	ppc_setCRBit(hCPU, cr * 4 + 3, (xerBits >> 3) & 1);
+	// Preserve the existing bit ordering: XER bit 28 becomes CR field bit 0.
+	const uint32 crField = ((xerBits & 1) << 3) | ((xerBits & 2) << 1) |
+		((xerBits & 4) >> 1) | ((xerBits & 8) >> 3);
+	ppc_setCRField(hCPU, cr, crField);
 
 	// reset copied bits
 	PPCInterpreter_setXER(hCPU, xer&~0xF0000000);
@@ -163,8 +142,7 @@ void PPCInterpreter_BX(PPCInterpreter_t* hCPU, uint32 Opcode)
 		// update LR and IP
 		hCPU->spr.LR = (unsigned int)hCPU->instructionPointer + 4;
 		hCPU->instructionPointer = li;
-		PPCInterpreter_jumpToInstruction(hCPU, li);
-		PPCRecompiler_attemptEnter(hCPU, li);
+        PPCCore_attemptToEnterAddr(hCPU, li);
 		return;
 	}
 	PPCInterpreter_jumpToInstruction(hCPU, li);
@@ -225,8 +203,7 @@ void PPCInterpreter_BCLRX(PPCInterpreter_t* hCPU, uint32 Opcode)
 		{
 			hCPU->spr.LR = (unsigned int)hCPU->instructionPointer + 4;
 		}
-		PPCInterpreter_jumpToInstruction(hCPU, BD);
-		PPCRecompiler_attemptEnter(hCPU, BD);
+        PPCCore_attemptToEnterAddr(hCPU, BD);
 		return;
 	}
 	else

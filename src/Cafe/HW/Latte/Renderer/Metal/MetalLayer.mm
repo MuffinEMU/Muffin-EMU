@@ -150,35 +150,11 @@ void ResizeMetalLayer(void* layer, const Vector2i& sizeInPoints, float scale)
 // unused-parameter warning without pretending it does anything here.
 void* CreateMetalLayer(void* handle, const Vector2i& sizeInPoints, float requestedScale, float& scaleX, float& scaleY)
 {
-	(void)sizeInPoints;
-	// Ignored here, and deliberately: the layer on this branch is MetalView's own backing
-	// layer, whose contentsScale AppKit owns and keeps current across display moves (see
-	// ResizeMetalLayer below). There is no render-scale setting on macOS to honour, and
-	// overriding a framework-managed contentsScale would fight the same machinery the
-	// resize path defers to. The parameter exists because the declaration is shared.
-	(void)requestedScale;
-	NSView* view = (NSView*)handle;
+    CGFloat screenScale = [UIScreen mainScreen].scale;
+    scaleX = (float)screenScale;
+    scaleY = (float)screenScale;
 
-	MetalView* childView = [[MetalView alloc] initWithFrame:view.bounds];
-	childView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-	childView.wantsLayer = YES;
-
-	[view addSubview:childView];
-
-	const NSRect points = [childView frame];
-    const NSRect pixels = [childView convertRectToBacking:points];
-
-	scaleX = (float)(pixels.size.width / points.size.width);
-    scaleY = (float)(pixels.size.height / points.size.height);
-
-	// +1 for the same reason as the iOS branch above: ~MetalLayerHandle() releases
-	// whatever comes back, and childView.layer is owned by childView, not by us. This
-	// is upstream's behavior, not something the iOS work introduced - it is just far
-	// easier to survive here, because on macOS the view hierarchy holding the layer is
-	// normally torn down at the same time as the renderer.
-	CFRetain((__bridge CFTypeRef)childView.layer);
-
-	return childView.layer;
+    return (__bridge void*)handle;
 }
 
 void ResizeMetalLayer(void* layer, const Vector2i& sizeInPoints, float scale)

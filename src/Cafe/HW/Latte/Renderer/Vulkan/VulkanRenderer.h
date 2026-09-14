@@ -20,11 +20,8 @@ struct VkSupportedFormatInfo_t
 	bool fmt_r5g6b5_unorm_pack{};
 	bool fmt_r4g4b4a4_unorm_pack{};
 	bool fmt_a1r5g5b5_unorm_pack{};
-	bool fmt_bc1{};
-	bool fmt_bc2{};
-	bool fmt_bc3{};
-	bool fmt_bc4{};
-	bool fmt_bc5{};
+	bool fmt_bc{};
+	bool fmt_astc{};
 };
 
 struct VkDescriptorSetInfo
@@ -230,7 +227,11 @@ public:
 
 	VkDescriptorPool GetDescriptorPool() const { return m_descriptorPool; }
 
-	void WaitDeviceIdle() const { vkDeviceWaitIdle(m_logicalDevice); }
+	void WaitDeviceIdle()
+	{
+		WaitRenderWorkerIdle();
+		vkDeviceWaitIdle(m_logicalDevice);
+	}
 
 	void Initialize() override;
 	void Shutdown() override;
@@ -301,7 +302,7 @@ public:
 
 	void texture_loadSlice(LatteTexture* hostTexture, sint32 width, sint32 height, sint32 depth, void* pixelData, sint32 sliceIndex, sint32 mipIndex, uint32 compressedImageSize) override;
 
-	LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth) override;
+	LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget) override;
 
 	void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) override;
 
@@ -390,9 +391,6 @@ private:
 			uint32 offset;
 		}currentVertexBinding[LATTE_MAX_VERTEX_BUFFERS]{};
 
-		// transform feedback
-		bool hasActiveXfb{};
-
 		// index buffer
 		Renderer::INDEX_TYPE activeIndexType{};
 		uint32 activeIndexBufferIndex{};
@@ -428,6 +426,7 @@ private:
 
 	std::unique_ptr<SwapchainInfoVk> m_mainSwapchainInfo{}, m_padSwapchainInfo{};
 	std::atomic_flag m_destroyPadSwapchainNextAcquire{};
+	std::array<std::atomic_bool, 2> m_swapchainPresentPending{};
 	bool IsSwapchainInfoValid(bool mainWindow) const;
 
 	VkRenderPass m_imguiRenderPass = VK_NULL_HANDLE;
@@ -452,7 +451,6 @@ private:
 		{
 			// if using new optional extensions add to CheckDeviceExtensionSupport and CreateDeviceCreateInfo
 			bool tooling_info = false; // VK_EXT_tooling_info
-			bool transform_feedback = false;
 			bool depth_range_unrestricted = false;
 			bool nv_fill_rectangle = false; // NV_fill_rectangle
 			bool pipeline_feedback = false;
@@ -489,11 +487,6 @@ private:
 		{
 			bool debug_utils = false; // VK_EXT_DEBUG_UTILS
 		}instanceExtensions;
-
-		struct
-		{
-			bool useTFEmulationViaSSBO = true; // emulate transform feedback via shader writes to a storage buffer
-		}mode;
 
 		struct
 		{
@@ -541,7 +534,10 @@ private:
 	void DeleteFontTextures() override;
 	bool BeginFrame(bool mainWindow) override;
 
-	bool UseTFViaSSBO() const override { return m_featureControl.mode.useTFEmulationViaSSBO; }
+	bool UseTFViaSSBO() const override
+	{
+		return true;
+	}
 
 	// drawcall emulation
 	PipelineInfo* draw_createGraphicsPipeline(uint32 indexCount);
@@ -587,7 +583,6 @@ private:
 	// streamout
 	void streamout_setupXfbBuffer(uint32 bufferIndex, sint32 ringBufferOffset, uint32 rangeAddr, uint32 rangeSize) override;
 	void streamout_begin() override;
-	void streamout_applyTransformFeedbackState();
 	void bufferCache_copyStreamoutToMainBuffer(uint32 srcOffset, uint32 dstOffset, uint32 size) override;
 	void streamout_rendererFinishDrawcall() override;
 
@@ -666,7 +661,7 @@ private:
 	MPTR m_importedMemBaseAddress = 0;
 
 	// command buffer, garbage collection, synchronization
-	static constexpr uint32 kCommandBufferPoolSize = 128;
+	static constexpr uint32 kCommandBufferPoolSize = 16;
 
 	size_t m_commandBufferIndex = 0; // current buffer being filled
 	size_t m_commandBufferSyncIndex = 0; // latest buffer that finished execution (updated on submit)

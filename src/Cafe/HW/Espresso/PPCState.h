@@ -47,7 +47,7 @@ struct PPCInterpreter_t
 	uint32 gpr[32];
 	FPR_t fpr[32];
 	uint32 fpscr;
-	uint8 cr[32]; // 0 -> bit not set, 1 -> bit set (upper 7 bits of each byte must always be zero) (cr0 starts at index 0, cr1 at index 4 ..)
+	uint32 cr; // packed PPC CR value: CR0.LT is bit 31, CR7.SO is bit 0
 	uint8 xer_ca;  // carry from xer
 	uint8 xer_so;
 	uint8 xer_ov;
@@ -66,7 +66,7 @@ struct PPCInterpreter_t
 	uint32 reservedMemAddr;
 	uint32 reservedMemValue;
 	// temporary storage for recompiler
-	FPR_t temporaryFPR[8];
+	alignas(16) FPR_t temporaryFPR[8];
 	uint32 temporaryGPR[4]; // deprecated, refactor backend dependency on this away
 	uint32 temporaryGPR_reg[4];
 	// values below this are not used by Cafe OS usermode
@@ -156,29 +156,18 @@ void PPCInterpreter_setCurrentInstance(PPCInterpreter_t* hCPU);
 
 uint64 PPCInterpreter_getMainCoreCycleCounter();
 
-// Defined here rather than in PPCInterpreterMain.cpp, which is what they used to be.
-//
-// There are ~230 calls to PPCInterpreter_nextInstruction and essentially every interpreter
-// handler ends in one - it is reached once per guest instruction executed. Out of line in
-// another translation unit, that is a cross-TU function call whose entire body is
-// `ip += 4`, and the call, the spill and the return dominate the work by a wide margin.
-//
-// Whether this was already being folded depends on link-time optimisation, which the
-// release build does enable - so on a build where LTO fires this changes nothing, and on
-// one where it does not it removes a call per instruction. It costs ten lines either way,
-// and the interpreter is the only CPU path available when JIT is unavailable, which is the
-// case this port has to be good at.
-inline void PPCInterpreter_nextInstruction(PPCInterpreter_t* cpuInterpreter)
+FORCE_INLINE void PPCInterpreter_nextInstruction(PPCInterpreter_t* cpuInterpreter)
 {
-	cpuInterpreter->instructionPointer += 4;
+    cpuInterpreter->instructionPointer += 4;
 }
 
-inline void PPCInterpreter_jumpToInstruction(PPCInterpreter_t* cpuInterpreter, uint32 newIP)
-{
-	cpuInterpreter->instructionPointer = (uint32)newIP;
-}
+void PPCInterpreter_jumpToInstruction(PPCInterpreter_t* cpuInterpreter, uint32 newIP);
+void PPCCore_attemptToEnterAddr(PPCInterpreter_t* cpuInterpreter, uint32 newIP);
+extern void (*attemptEnterThread)(PPCInterpreter_t*);
+
 
 void PPCInterpreterSlim_executeInstruction(PPCInterpreter_t* hCPU);
+void PPCInterpreterSlim_executeTimeslice(PPCInterpreter_t* hCPU);
 void PPCInterpreterFull_executeInstruction(PPCInterpreter_t* hCPU);
 
 // misc
@@ -316,6 +305,7 @@ using HLEIDX = sint32;
 
 HLEIDX PPCInterpreter_registerHLECall(HLECALL hleCall, std::string hleName);
 HLECALL PPCInterpreter_getHLECall(HLEIDX funcIndex);
+void PPCCore_InitializePointer(bool recompilerEnabled);
 
 // HLE scheduler
 

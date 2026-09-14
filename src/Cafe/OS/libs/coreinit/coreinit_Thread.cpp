@@ -56,10 +56,7 @@ void nnNfp_update();
 
 namespace coreinit
 {
-// The split-pointer entry point below belongs to makecontext, not to arm64. See the
-// definition for why, and util/Fiber/Fiber.h for where CEMU_FIBER_BACKEND_UCONTEXT
-// comes from.
-#if defined(__arm64__) && defined(CEMU_FIBER_BACKEND_UCONTEXT)
+#if defined(__arm64__) && !BOOST_OS_IOS
 	void __OSFiberThreadEntry(uint32, uint32);
 #else
 	void __OSFiberThreadEntry(void* thread);
@@ -1409,26 +1406,7 @@ namespace coreinit
 		__OSThreadStartTimeslice(hostThread->m_thread, &hostThread->ppcInstance);
 	}
 
-	// This entry point is called by the fiber backend, so its signature has to match
-	// the backend's calling convention - which is not the same thing as the CPU
-	// architecture, and conflating the two is what broke iOS.
-	//
-	// makecontext takes int-sized varargs (see the NOTES in its man page), so on 64-bit
-	// it cannot carry a pointer in one argument. FiberUContext.cpp splits userParam into
-	// a high and a low half and passes two, and this function reassembles them. That is
-	// a property of ucontext, and the guard used to say `#ifdef __arm64__`, which happens
-	// to be equivalent on macOS - the only arm64 platform that was on the ucontext
-	// backend when it was written.
-	//
-	// It stopped being equivalent when iOS moved to Boost.Context. jump_fcontext hands
-	// the entry point a single pointer in x0 and leaves x1 holding whatever was there
-	// before, so the reassembly produced ((uint32)ptr << 32 | garbage) and every guest
-	// thread fiber dereferenced a wild OSHostThread the moment it was entered. Android
-	// never hit it because Apple defines __arm64__ and Linux does not - it only defines
-	// __aarch64__ - so Android took the void* branch by accident, correctly.
-	//
-	// Keyed off the backend now, which is what actually decides the convention.
-#if defined(__arm64__) && defined(CEMU_FIBER_BACKEND_UCONTEXT)
+#if defined(__arm64__) && !BOOST_OS_IOS
 	void __OSFiberThreadEntry(uint32 _high, uint32 _low)
 	{
 		uint64 _thread = (uint64) _high << 32 | _low;
@@ -1451,37 +1429,9 @@ namespace coreinit
 		__OSUnlockScheduler(); // lock is always held when switching to a fiber, so we need to unlock it here
 		while (true)
 		{
-			if (hCPU->remainingCycles > 0)
-			{
-				// try to enter recompiler immediately
-				PPCRecompiler_attemptEnterWithoutRecompile(hCPU, hCPU->instructionPointer);
-
-				// Bracketed so the log can say how much of the wall clock is actually
-				// spent executing guest code.
-				//
-				// The existing MIPS figure divides retired instructions by the whole
-				// reporting window, which includes time cores spent idle-spinning with
-				// nothing runnable, time inside HLE, and time blocked on the GPU. So it
-				// FALLS when the title is waiting, which is not a statement about the
-				// interpreter at all. Optimising against it would be optimising against
-				// noise, and that is the trap this exists to avoid.
-				//
-				// Two reads of the raw counter and two relaxed adds per BURST, not per
-				// instruction. On arm64 PPCTimer_getRawTsc() is a single mrs cntvct_el0
-				// with no lock and no divide, so this is comfortably cheaper than the
-				// thing it measures. A per-instruction counter would distort exactly the
-				// loop it was trying to describe.
-				const uint64 burstStartTsc = PPCTimer_getRawTsc();
-				const sint32 burstStartCycles = hCPU->remainingCycles;
-
-				// keep executing as long as there are cycles left
-				while ((--hCPU->remainingCycles) >= 0)
-					PPCInterpreterSlim_executeInstruction(hCPU);
-
-				PPCCore_noteInterpreterBurst(PPCTimer_getRawTsc() - burstStartTsc,
-											 (uint64)(burstStartCycles - hCPU->remainingCycles));
-			}
-
+            if (hCPU->remainingCycles > 0)
+                attemptEnterThread(hCPU);
+            
 			// reset reservation
 			hCPU->reservedMemAddr = 0;
 			hCPU->reservedMemValue = 0;
@@ -1626,6 +1576,11 @@ namespace coreinit
 			delete hostThread;
 		}
 		s_threadToFiber.clear();
+	}
+
+	bool OSIsSchedulerActive()
+	{
+		return sSchedulerActive;
 	}
 
 	SysAllocator<OSThread_t, PPC_CORE_COUNT> s_defaultThreads;

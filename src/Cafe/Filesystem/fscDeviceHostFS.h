@@ -31,5 +31,5 @@ private:
 	bool m_isWritable{ false };
 	// directory
 	std::unique_ptr<std::filesystem::path> m_path{};
-	std::unique_ptr<std::filesystem::directory_iterator> m_dirIterator{};
+	std::unique_ptr<fs::directory_iterator> m_dirIterator{};
 };

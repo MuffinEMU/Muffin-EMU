@@ -6,6 +6,54 @@
 
 namespace LatteDecompiler
 {
+	static bool _useFramebufferFetch(LatteDecompilerShaderContext* decompilerContext, sint32 textureUnit)
+	{
+		if (!g_renderer ||
+			g_renderer->GetType() != RendererAPI::Metal ||
+			!static_cast<MetalRenderer*>(g_renderer.get())->SupportsFramebufferFetch())
+			return false;
+
+		uint8 renderTargetIndex = decompilerContext->shader->textureRenderTargetIndex[textureUnit];
+		if (renderTargetIndex == 255)
+			return false;
+
+		auto format = LatteMRT::GetColorBufferFormat(renderTargetIndex, *decompilerContext->contextRegistersNew);
+		return GetMtlPixelFormat(format, false) != MTL::PixelFormatInvalid;
+	}
+
+	static void _emitTextureTypeMSL(LatteDecompilerShaderContext* shaderContext, sint32 textureUnit)
+	{
+		auto src = shaderContext->shaderSource;
+		if (shaderContext->shader->textureUsesDepthCompare[textureUnit] && IsValidDepthTextureType(shaderContext->shader->textureUnitDim[textureUnit]))
+		    src->add("depth");
+		else
+		    src->add("texture");
+
+		if (shaderContext->shader->textureIsIntegerFormat[textureUnit])
+		{
+			if (shaderContext->shader->textureUnitDim[textureUnit] == Latte::E_DIM::DIM_1D)
+				src->add("1d<uint>");
+			else if (shaderContext->shader->textureUnitDim[textureUnit] == Latte::E_DIM::DIM_2D || shaderContext->shader->textureUnitDim[textureUnit] == Latte::E_DIM::DIM_2D_MSAA)
+				src->add("2d<uint>");
+			else
+				cemu_assert_unimplemented();
+		}
+		else if (shaderContext->shader->textureUnitDim[textureUnit] == Latte::E_DIM::DIM_2D || shaderContext->shader->textureUnitDim[textureUnit] == Latte::E_DIM::DIM_2D_MSAA)
+			src->add("2d<float>");
+		else if (shaderContext->shader->textureUnitDim[textureUnit] == Latte::E_DIM::DIM_1D)
+			src->add("1d<float>");
+		else if (shaderContext->shader->textureUnitDim[textureUnit] == Latte::E_DIM::DIM_2D_ARRAY)
+			src->add("2d_array<float>");
+		else if (shaderContext->shader->textureUnitDim[textureUnit] == Latte::E_DIM::DIM_CUBEMAP)
+			src->add("cube_array<float>");
+		else if (shaderContext->shader->textureUnitDim[textureUnit] == Latte::E_DIM::DIM_3D)
+			src->add("3d<float>");
+		else
+		{
+			cemu_assert_unimplemented();
+		}
+	}
+
 	static void _emitUniformVariables(LatteDecompilerShaderContext* decompilerContext, bool usesGeometryShader)
 	{
 	    auto src = decompilerContext->shaderSource;
@@ -86,21 +134,36 @@ namespace LatteDecompiler
 			uniformCurrentOffset += 8;
 		}
 		// define verticesPerInstance + streamoutBufferBaseX
+		if (shader->shaderType == LatteConst::ShaderType::Vertex &&
+			(usesGeometryShader ||
+			(decompilerContext->analyzer.useSSBOForStreamout && !decompilerContext->options->usesGeometryShader)))
+		{
+			src->add("int baseVertex;" _CRLF);
+			uniformOffsets.offset_baseVertex = uniformCurrentOffset;
+			uniformCurrentOffset += 4;
+			src->add("uint baseInstance;" _CRLF);
+			uniformOffsets.offset_baseInstance = uniformCurrentOffset;
+			uniformCurrentOffset += 4;
+		}
+
 		if ((shader->shaderType == LatteConst::ShaderType::Vertex &&
 		    usesGeometryShader) ||
 	        (decompilerContext->analyzer.useSSBOForStreamout &&
-			(shader->shaderType == LatteConst::ShaderType::Vertex && !decompilerContext->options->usesGeometryShader) ||
-			(shader->shaderType == LatteConst::ShaderType::Geometry)))
+			((shader->shaderType == LatteConst::ShaderType::Vertex && !decompilerContext->options->usesGeometryShader) ||
+			(shader->shaderType == LatteConst::ShaderType::Geometry))))
 		{
-			src->add("int verticesPerInstance;" _CRLF);
+			src->add("uint verticesPerInstance;" _CRLF);
 			uniformOffsets.offset_verticesPerInstance = uniformCurrentOffset;
 			uniformCurrentOffset += 4;
 			for (uint32 i = 0; i < LATTE_NUM_STREAMOUT_BUFFER; i++)
 			{
 				if (decompilerContext->output->streamoutBufferWriteMask[i])
 				{
-					src->addFmt("int streamoutBufferBase{};" _CRLF, i);
+					src->addFmt("uint streamoutBufferBase{};" _CRLF, i);
 					uniformOffsets.offset_streamoutBufferBase[i] = uniformCurrentOffset;
+					uniformCurrentOffset += 4;
+					src->addFmt("uint streamoutBufferSize{};" _CRLF, i);
+					uniformOffsets.offset_streamoutBufferSize[i] = uniformCurrentOffset;
 					uniformCurrentOffset += 4;
 				}
 			}
@@ -238,9 +301,10 @@ namespace LatteDecompiler
 
 		if (isRectVertexShader)
 		{
-		    src->add("struct ObjectPayload {" _CRLF);
-            src->add("VertexOut vertexOut[VERTICES_PER_VERTEX_PRIMITIVE];" _CRLF);
-            src->add("};" _CRLF _CRLF);
+	                src->add("struct ObjectPayload {" _CRLF);
+	                src->add("VertexOut vertexOut[VERTICES_PER_VERTEX_PRIMITIVE];" _CRLF);
+					src->add("uint primitiveID;" _CRLF);
+	                src->add("};" _CRLF _CRLF);
 		}
 	}
 
@@ -338,14 +402,7 @@ namespace LatteDecompiler
                 }
                 src->add("struct ObjectPayload {" _CRLF);
                 src->add("VertexOut vertexOut[VERTICES_PER_VERTEX_PRIMITIVE];" _CRLF);
-                // The geometry stage's streamout writes are indexed by which primitive is
-                // being processed. GLSL hands a geometry shader gl_PrimitiveIDIn for that;
-                // Metal has no equivalent in a mesh shader, and the mesh stage cannot work
-                // it out for itself because it is spawned with a grid of exactly 1, so its
-                // own threadgroup position is always zero. The object stage IS dispatched
-                // one threadgroup per primitive, so it knows the number - this is how it
-                // crosses the boundary.
-                src->add("uint primitiveId;" _CRLF);
+				src->add("uint primitiveID;" _CRLF);
                 src->add("};" _CRLF _CRLF);
     		}
     		if (decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
@@ -395,59 +452,114 @@ namespace LatteDecompiler
     			}
                 src->add("};" _CRLF _CRLF);
 
-                if (gsEmulation)
-                {
-                    uint32 exportedParamCount = 0;
-                    src->add("struct GeometryOutRaster {" _CRLF);
-                    src->add("float4 position [[position]];" _CRLF);
-                    if (decompilerContext->analyzer.outputPointSize)
-                        src->add("float pointSize [[point_size]];" _CRLF);
-                    for (sint32 p = 0; p < decompilerContext->parsedGSCopyShader->numParam; p++)
-                    {
-                        if (decompilerContext->parsedGSCopyShader->paramMapping[p].exportType != 2)
-                            continue;
-                        exportedParamCount++;
-                        src->addFmt("float4 passParameterSem{} [[user(locn{})]];" _CRLF, (sint32)decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam, decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam & 0x7F);
-                    }
-                    src->add("};" _CRLF _CRLF);
-
-                    // float4 members force 16-byte alignment, so the lone float costs a
-                    // full 16 and the total is already a multiple of it.
-                    decompilerContext->shader->mtlGsVertexStride = 16u + (decompilerContext->analyzer.outputPointSize ? 16u : 0u) + exportedParamCount * 16u;
-
-                    src->add("static GeometryOutRaster gsToRaster(GeometryOut o) {" _CRLF);
-                    src->add("GeometryOutRaster r;" _CRLF);
-                    src->add("r.position = o.position;" _CRLF);
-                    if (decompilerContext->analyzer.outputPointSize)
-                        src->add("r.pointSize = o.pointSize;" _CRLF);
-                    for (sint32 p = 0; p < decompilerContext->parsedGSCopyShader->numParam; p++)
-                    {
-                        if (decompilerContext->parsedGSCopyShader->paramMapping[p].exportType != 2)
-                            continue;
-                        src->addFmt("r.passParameterSem{} = o.passParameterSem{};" _CRLF, (sint32)decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam, (sint32)decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam);
-                    }
-                    src->add("return r;" _CRLF);
-                    src->add("}" _CRLF _CRLF);
-                }
-
-                const uint32 MAX_VERTEX_COUNT = 32;
-
-                if (decompilerContext->options->geometryShaderEmulation)
-                {
-                    // No mesh pipeline exists to declare an output type for. The same bound
-                    // instead sizes the device buffer each geometry invocation writes into,
-                    // and it has to be a macro because the emitted body and the passthrough
-                    // vertex shader below both index with it.
-                    src->addFmt("#define GS_MAX_VERTICES {}" _CRLF, MAX_VERTEX_COUNT);
-                    src->addFmt("#define MAX_PRIMS_PER_INVOCATION (GET_PRIMITIVE_COUNT(GS_MAX_VERTICES))" _CRLF);
-                }
-                else
-                {
-                    // Define the mesh shader output type
-                    src->addFmt("using MeshType = mesh<GeometryOut, void, {}, GET_PRIMITIVE_COUNT({}), topology::MTL_PRIMITIVE_TYPE>;" _CRLF, MAX_VERTEX_COUNT, MAX_VERTEX_COUNT);
-                }
-    		}
+				// Define the mesh shader output type
+				src->add("using MeshType = mesh<GeometryOut, void, MTL_MAX_VERTEX_COUNT, MTL_MAX_PRIMITIVE_COUNT, topology::MTL_PRIMITIVE_TYPE>;" _CRLF);
+			}
+			}
 		}
+
+	static void _emitArgumentBufferDefinitions(LatteDecompilerShaderContext* decompilerContext, bool usesGeometryShader, bool fetchVertexManually)
+	{
+		if (decompilerContext->output->resourceMappingMTL.argumentBufferBindingPoint < 0)
+			return;
+
+		auto src = decompilerContext->shaderSource;
+		src->add("struct StageResources {" _CRLF);
+		src->addFmt("uint dummy [[id({})]];" _CRLF, MetalArgumentBuffer::Dummy);
+
+		if (decompilerContext->output->resourceMappingMTL.uniformVarsBufferBindingPoint >= 0)
+			src->addFmt("constant SupportBuffer* supportBuffer [[id({})]];" _CRLF, MetalArgumentBuffer::SupportBuffer);
+
+		if (decompilerContext->shader->uniformMode == LATTE_DECOMPILER_UNIFORM_MODE_FULL_CBANK)
+		{
+			for (uint32 i = 0; i < LATTE_NUM_MAX_UNIFORM_BUFFERS; i++)
+			{
+				if (decompilerContext->analyzer.uniformBufferAccessTracker[i].HasAccess())
+					src->addFmt("constant UBuff{}* ubuff{} [[id({})]];" _CRLF, i, i, MetalArgumentBuffer::UniformBufferBase + i);
+			}
+		}
+
+		if (decompilerContext->output->resourceMappingMTL.tfStorageBindingPoint >= 0)
+			src->addFmt("device int* sb [[id({})]];" _CRLF, MetalArgumentBuffer::StreamoutBuffer);
+
+		bool samplerBindings[MAX_MTL_SAMPLERS]{};
+		for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
+		{
+			if (!decompilerContext->output->textureUnitMask[i] || _useFramebufferFetch(decompilerContext, i))
+				continue;
+
+			src->add(" ");
+			_emitTextureTypeMSL(decompilerContext, i);
+			src->addFmt(" tex{} [[id({})]];" _CRLF, i, MetalArgumentBuffer::TextureBase + i);
+
+			sint32 samplerBinding = decompilerContext->output->resourceMappingMTL.textureUnitToSamplerBindingPoint[i];
+			if (samplerBinding >= 0)
+				samplerBindings[samplerBinding] = true;
+		}
+		for (uint32 samplerBinding = 0; samplerBinding < MAX_MTL_SAMPLERS; samplerBinding++)
+		{
+			if (samplerBindings[samplerBinding])
+				src->addFmt("sampler sampler{} [[id({})]];" _CRLF, samplerBinding, MetalArgumentBuffer::SamplerBase + samplerBinding);
+		}
+
+		if (decompilerContext->shaderType == LatteConst::ShaderType::Vertex && fetchVertexManually)
+		{
+			bool vertexBuffers[LATTE_MAX_VERTEX_BUFFERS]{};
+			for (const auto& bufferGroup : decompilerContext->fetchShader->bufferGroups)
+			{
+				uint32 bufferIndex = bufferGroup.attributeBufferIndex;
+				if (bufferIndex >= LATTE_MAX_VERTEX_BUFFERS || vertexBuffers[bufferIndex])
+					continue;
+				vertexBuffers[bufferIndex] = true;
+			}
+			for (uint32 bufferIndex = 0; bufferIndex < LATTE_MAX_VERTEX_BUFFERS; bufferIndex++)
+			{
+				if (!vertexBuffers[bufferIndex])
+					continue;
+				src->addFmt("const device uchar* vertexBuffer{} [[id({})]];" _CRLF, bufferIndex, MetalArgumentBuffer::VertexBufferBase + bufferIndex);
+			}
+			for (uint32 bufferIndex = 0; bufferIndex < LATTE_MAX_VERTEX_BUFFERS; bufferIndex++)
+			{
+				if (!vertexBuffers[bufferIndex])
+					continue;
+				src->addFmt("uint vertexBufferSize{} [[id({})]];" _CRLF, bufferIndex, MetalArgumentBuffer::VertexBufferSizeBase + bufferIndex);
+			}
+		}
+
+		const bool usesLogicalVertexIds =
+			decompilerContext->shaderType == LatteConst::ShaderType::Vertex &&
+			(usesGeometryShader || decompilerContext->analyzer.useSSBOForStreamout);
+		if (usesLogicalVertexIds)
+		{
+			src->addFmt("const device uchar* indexBuffer [[id({})]];" _CRLF, MetalArgumentBuffer::IndexBuffer);
+			src->addFmt("uint indexBufferSize [[id({})]];" _CRLF, MetalArgumentBuffer::IndexBufferSize);
+			src->addFmt("uint indexType [[id({})]];" _CRLF, MetalArgumentBuffer::IndexType);
+		}
+		src->add("};" _CRLF _CRLF);
+
+		if (decompilerContext->output->resourceMappingMTL.uniformVarsBufferBindingPoint >= 0)
+			src->add("#define supportBuffer (*stageResources.supportBuffer)" _CRLF);
+		if (decompilerContext->shader->uniformMode == LATTE_DECOMPILER_UNIFORM_MODE_FULL_CBANK)
+		{
+			for (uint32 i = 0; i < LATTE_NUM_MAX_UNIFORM_BUFFERS; i++)
+			{
+				if (decompilerContext->analyzer.uniformBufferAccessTracker[i].HasAccess())
+					src->addFmt("#define ubuff{} (*stageResources.ubuff{})" _CRLF, i, i);
+			}
+		}
+		if (decompilerContext->output->resourceMappingMTL.tfStorageBindingPoint >= 0)
+			src->add("#define sb stageResources.sb" _CRLF);
+
+		for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
+		{
+			if (!decompilerContext->output->textureUnitMask[i] || _useFramebufferFetch(decompilerContext, i))
+				continue;
+			src->addFmt("#define tex{} stageResources.tex{}" _CRLF, i, i);
+			sint32 samplerBinding = decompilerContext->output->resourceMappingMTL.textureUnitToSamplerBindingPoint[i];
+			if (samplerBinding >= 0)
+				src->addFmt("#define samplr{} stageResources.sampler{}" _CRLF, i, samplerBinding);
+		}
+		src->add(_CRLF);
 	}
 
 	static void emitHeader(LatteDecompilerShaderContext* decompilerContext, bool isRectVertexShader, bool usesGeometryShader, bool fetchVertexManually)
@@ -458,6 +570,7 @@ namespace LatteDecompiler
         {
             LattePrimitiveMode vsOutPrimType = decompilerContext->contextRegistersNew->VGT_PRIMITIVE_TYPE.get_PRIMITIVE_MODE();
             src->addFmt("#define VERTICES_PER_VERTEX_PRIMITIVE {}" _CRLF, GetVerticesPerPrimitive(vsOutPrimType));
+            src->add("#define MTL_MAX_VERTEX_COUNT 32" _CRLF);
 
             uint32 gsOutPrimType = decompilerContext->contextRegisters[mmVGT_GS_OUT_PRIM_TYPE];
             if (decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
@@ -470,24 +583,17 @@ namespace LatteDecompiler
                     break;
                 case 1: // Line strip
                     src->add("#define MTL_PRIMITIVE_TYPE line" _CRLF);
-                   	src->add("#define GET_PRIMITIVE_COUNT(vertexCount) (vertexCount - 1)" _CRLF);
+                    src->add("#define GET_PRIMITIVE_COUNT(vertexCount) ((vertexCount) > 1 ? (vertexCount) - 1 : 0)" _CRLF);
                     break;
                 case 2: // Triangle strip
                     src->add("#define MTL_PRIMITIVE_TYPE triangle" _CRLF);
-                   	src->add("#define GET_PRIMITIVE_COUNT(vertexCount) (vertexCount - 2)" _CRLF);
+                    src->add("#define GET_PRIMITIVE_COUNT(vertexCount) ((vertexCount) > 2 ? (vertexCount) - 2 : 0)" _CRLF);
                     break;
                 default:
                     cemuLog_log(LogType::Force, "Unknown geometry out primitive type {}", gsOutPrimType);
                     break;
                 }
-                if (decompilerContext->options->geometryShaderEmulation)
-                {
-                    // The mesh path turns the emitted strip into a list with set_index();
-                    // with no mesh stage the passthrough vertex shader has to do the same
-                    // mapping itself, so it needs the list's vertices-per-primitive.
-                    uint32 verticesPerOutPrimitive = (gsOutPrimType == 0) ? 1 : ((gsOutPrimType == 1) ? 2 : 3);
-                    src->addFmt("#define VERTICES_PER_OUT_PRIMITIVE {}" _CRLF, verticesPerOutPrimitive);
-                }
+                src->add("#define MTL_MAX_PRIMITIVE_COUNT GET_PRIMITIVE_COUNT(MTL_MAX_VERTEX_COUNT)" _CRLF);
             }
         }
 
@@ -505,6 +611,8 @@ namespace LatteDecompiler
 		_emitUniformBuffers(decompilerContext);
 		// inputs and outputs
 		_emitInputsAndOutputs(decompilerContext, isRectVertexShader, usesGeometryShader, fetchVertexManually);
+		// indirect game-shader resources
+		_emitArgumentBufferDefinitions(decompilerContext, usesGeometryShader, fetchVertexManually);
 
 		if (dump_shaders_enabled)
 			decompilerContext->shaderSource->add("// end of shader inputs/outputs" _CRLF);
@@ -529,72 +637,43 @@ namespace LatteDecompiler
 	}
 
 	static void _emitTextureDefinitions(LatteDecompilerShaderContext* shaderContext)
-	{
-	    bool renderTargetIndexUsed[LATTE_NUM_COLOR_TARGET] = {false};
+    {
+        bool renderTargetIndexUsed[LATTE_NUM_COLOR_TARGET] = {false};
 
-		auto src = shaderContext->shaderSource;
-		// texture sampler definition
-		for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
-		{
-			if (!shaderContext->output->textureUnitMask[i])
-				continue;
+        auto src = shaderContext->shaderSource;
+        // texture sampler definition
+        for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
+        {
+            if (!shaderContext->output->textureUnitMask[i])
+                continue;
 
-			uint8 renderTargetIndex = shaderContext->shader->textureRenderTargetIndex[i];
-			if (static_cast<MetalRenderer*>(g_renderer.get())->SupportsFramebufferFetch() && renderTargetIndex != 255)
-			{
+            uint8 renderTargetIndex = shaderContext->shader->textureRenderTargetIndex[i];
+            if (_useFramebufferFetch(shaderContext, i))
+            {
                 if (!renderTargetIndexUsed[renderTargetIndex])
-				{
-			        src->addFmt(", {} col{} [[color({})]]", GetDataTypeStr(GetColorBufferDataType(renderTargetIndex, *shaderContext->contextRegistersNew)), renderTargetIndex, renderTargetIndex);
-					renderTargetIndexUsed[renderTargetIndex] = true;
-				}
-			}
+                {
+                    src->addFmt(", {} col{} [[color({})]]", GetDataTypeStr(GetColorBufferDataType(renderTargetIndex, *shaderContext->contextRegistersNew)), renderTargetIndex, renderTargetIndex);
+                    renderTargetIndexUsed[renderTargetIndex] = true;
+                }
+            }
 			else
 			{
+				if (shaderContext->output->resourceMappingMTL.argumentBufferBindingPoint >= 0)
+					continue;
+                uint32 binding = shaderContext->output->resourceMappingMTL.textureUnitToBindingPoint[i];
+                sint32 samplerBinding = shaderContext->output->resourceMappingMTL.textureUnitToSamplerBindingPoint[i];
                 src->add(", ");
-
-    			// Only certain texture dimensions can be used with comparison samplers
-    			if (shaderContext->shader->textureUsesDepthCompare[i] && IsValidDepthTextureType(shaderContext->shader->textureUnitDim[i]))
-    			    src->add("depth");
-    			else
-                    src->add("texture");
-
-    			if (shaderContext->shader->textureIsIntegerFormat[i])
-    			{
-    				// integer samplers
-    				if (shaderContext->shader->textureUnitDim[i] == Latte::E_DIM::DIM_1D)
-    					src->add("1d<uint>");
-    				else if (shaderContext->shader->textureUnitDim[i] == Latte::E_DIM::DIM_2D || shaderContext->shader->textureUnitDim[i] == Latte::E_DIM::DIM_2D_MSAA)
-    					src->add("2d<uint>");
-    				else
-    					cemu_assert_unimplemented();
-    			}
-    			else if (shaderContext->shader->textureUnitDim[i] == Latte::E_DIM::DIM_2D || shaderContext->shader->textureUnitDim[i] == Latte::E_DIM::DIM_2D_MSAA)
-    				src->add("2d<float>");
-    			else if (shaderContext->shader->textureUnitDim[i] == Latte::E_DIM::DIM_1D)
-    				src->add("1d<float>");
-    			else if (shaderContext->shader->textureUnitDim[i] == Latte::E_DIM::DIM_2D_ARRAY)
-    				src->add("2d_array<float>");
-    			else if (shaderContext->shader->textureUnitDim[i] == Latte::E_DIM::DIM_CUBEMAP)
-    				src->add("cube_array<float>");
-    			else if (shaderContext->shader->textureUnitDim[i] == Latte::E_DIM::DIM_3D)
-    				src->add("3d<float>");
-    			else
-    			{
-    				cemu_assert_unimplemented();
-    			}
-
-    			uint32 binding = shaderContext->output->resourceMappingMTL.textureUnitToBindingPoint[i];
-    			//uint32 textureBinding = shaderContext->output->resourceMappingMTL.textureUnitToBindingPoint[i] % 31;
-    			//uint32 samplerBinding = textureBinding % 16;
-    			src->addFmt(" tex{} [[texture({})]]", i, binding);
-    			src->addFmt(", sampler samplr{} [[sampler({})]]", i, binding);
-			}
-		}
-	}
+                _emitTextureTypeMSL(shaderContext, i);
+                src->addFmt(" tex{} [[texture({})]]", i, binding);
+                if (samplerBinding >= 0)
+                    src->addFmt(", sampler samplr{} [[sampler({})]]", i, samplerBinding);
+            }
+        }
+    }
 
 	static void emitInputs(LatteDecompilerShaderContext* decompilerContext, bool isRectVertexShader, bool usesGeometryShader, bool fetchVertexManually)
-	{
-	    auto src = decompilerContext->shaderSource;
+		{
+		    auto src = decompilerContext->shaderSource;
 
 		switch (decompilerContext->shaderType)
 		{
@@ -616,10 +695,11 @@ namespace LatteDecompiler
                 src->add(", mesh_grid_properties meshGridProperties");
                 src->add(", uint tig [[threadgroup_position_in_grid]]");
                 src->add(", uint tid [[thread_index_in_threadgroup]]");
-                // TODO: only include index buffer if needed
-                src->addFmt(", device uint* indexBuffer [[buffer({})]]", decompilerContext->output->resourceMappingMTL.indexBufferBinding);
-                // TODO: put into the support buffer?
-                src->addFmt(", constant uchar& indexType [[buffer({})]]", decompilerContext->output->resourceMappingMTL.indexTypeBinding);
+				if (decompilerContext->output->resourceMappingMTL.argumentBufferBindingPoint < 0)
+				{
+					src->addFmt(", const device uchar* indexBuffer [[buffer({})]]", decompilerContext->output->resourceMappingMTL.indexBufferBinding);
+					src->addFmt(", constant uchar& indexType [[buffer({})]]", decompilerContext->output->resourceMappingMTL.indexTypeBinding);
+				}
 			}
 			else
 			{
@@ -628,9 +708,10 @@ namespace LatteDecompiler
                 src->add(", uint iid [[instance_id]]");
 			}
 
-            if (fetchVertexManually)
+            if (fetchVertexManually &&
+				decompilerContext->output->resourceMappingMTL.argumentBufferBindingPoint < 0)
                 src->add(" VERTEX_BUFFER_DEFINITIONS");
-			else
+			else if (!fetchVertexManually)
 				src->add(", VertexIn in [[stage_in]]");
 
             break;
@@ -658,21 +739,25 @@ namespace LatteDecompiler
             src->add(", bool frontFacing [[front_facing]]");
             break;
         default:
-            break;
+			break;
 		}
 
-		if (decompilerContext->output->resourceMappingMTL.uniformVarsBufferBindingPoint >= 0)
+		const bool usesArgumentBuffer = decompilerContext->output->resourceMappingMTL.argumentBufferBindingPoint >= 0;
+		if (usesArgumentBuffer)
+			src->addFmt(", constant StageResources& stageResources [[buffer({})]]", decompilerContext->output->resourceMappingMTL.argumentBufferBindingPoint);
+		else if (decompilerContext->output->resourceMappingMTL.uniformVarsBufferBindingPoint >= 0)
 		    src->addFmt(", constant SupportBuffer& supportBuffer [[buffer({})]]", decompilerContext->output->resourceMappingMTL.uniformVarsBufferBindingPoint);
 
         // streamout buffer (transform feedback)
-        if ((decompilerContext->shaderType == LatteConst::ShaderType::Vertex && !decompilerContext->options->usesGeometryShader) || decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
+		if (!usesArgumentBuffer && ((decompilerContext->shaderType == LatteConst::ShaderType::Vertex && !decompilerContext->options->usesGeometryShader) || decompilerContext->shaderType == LatteConst::ShaderType::Geometry))
         {
             if (decompilerContext->analyzer.hasStreamoutEnable && decompilerContext->analyzer.hasStreamoutWrite)
                 src->addFmt(", device int* sb [[buffer({})]]" _CRLF, decompilerContext->output->resourceMappingMTL.tfStorageBindingPoint);
-        }
+		}
 
 		// uniform buffers
-		_emitUniformBufferDefinitions(decompilerContext);
+		if (!usesArgumentBuffer)
+			_emitUniformBufferDefinitions(decompilerContext);
 		// textures
 		_emitTextureDefinitions(decompilerContext);
 	}

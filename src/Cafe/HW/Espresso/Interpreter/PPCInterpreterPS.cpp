@@ -450,31 +450,23 @@ void PPCInterpreter_PS_CMPO0(PPCInterpreter_t* hCPU, uint32 Opcode)
 	double a = hCPU->fpr[frA].fp0;
 	double b = hCPU->fpr[frB].fp0;
 
-	ppc_setCRBit(hCPU, crfD*4+0, 0);
-	ppc_setCRBit(hCPU, crfD*4+1, 0);
-	ppc_setCRBit(hCPU, crfD*4+2, 0);
-	ppc_setCRBit(hCPU, crfD*4+3, 0);
-
 	if(IS_NAN(*(uint64*)&a) || IS_NAN(*(uint64*)&b))
 	{
 		c = 1;
-		ppc_setCRBit(hCPU, crfD*4+CR_BIT_SO, 1);
 	}
 	else if(a < b)
 	{
 		c = 8;
-		ppc_setCRBit(hCPU, crfD*4+CR_BIT_LT, 1);
 	}
 	else if(a > b)
 	{
 		c = 4;
-		ppc_setCRBit(hCPU, crfD*4+CR_BIT_GT, 1);
 	}
 	else
 	{
 		c = 2;
-		ppc_setCRBit(hCPU, crfD*4+CR_BIT_EQ, 1);
 	}
+	ppc_setCRField(hCPU, crfD, c);
 
 	hCPU->fpscr = (hCPU->fpscr & 0xffff0fff) | (c << 12);
 

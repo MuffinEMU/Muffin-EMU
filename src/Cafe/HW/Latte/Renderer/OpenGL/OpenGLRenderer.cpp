@@ -1175,9 +1175,9 @@ void OpenGLRenderer::texture_clearSlice(LatteTexture* hostTextureGeneric, sint32
 }
 
 LatteTexture* OpenGLRenderer::texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels,
-	uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth)
+	uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget)
 {
-	return new LatteTextureGL(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth);
+	return new LatteTextureGL(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth, isRenderTarget);
 }
 
 void OpenGLRenderer::texture_setActiveTextureUnit(sint32 index)

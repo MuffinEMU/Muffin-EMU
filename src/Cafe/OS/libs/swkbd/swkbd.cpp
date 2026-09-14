@@ -12,6 +12,10 @@
 #include "util/helpers/helpers.h"
 #include "resource/IconsFontAwesome5.h"
 
+#ifndef ENABLE_WXWIDGETS
+#include "gui/uikit/NativeKeyboard.h"
+#endif
+
 #define SWKBD_FORM_STRING_MAX_LENGTH	(4096) // counted in 16-bit characters
 
 #define SWKBD_STATE_BLANK				(0)	// not visible
@@ -92,11 +96,53 @@ typedef struct
 
 swkbdInternalState_t* swkbdInternalState = NULL;
 
-std::shared_ptr<swkbd::swkbdCallbacks> s_swkbdCallbacks;
+void swkbd_inputStringChanged();
 
-void swkbd::setSwkbdCallbacks(const std::shared_ptr<swkbd::swkbdCallbacks>& swkbdCallbacks)
+static void swkbd_pollNativeInput()
 {
-	s_swkbdCallbacks = swkbdCallbacks;
+#ifndef ENABLE_WXWIDGETS
+	if (!swkbdInternalState || !swkbdInternalState->isActive)
+		return;
+	std::u16string text;
+	bool accepted = false;
+	if (!WindowSystem::PollNativeKeyboard(text, accepted))
+		return;
+	const size_t length = std::min(text.size(), size_t(SWKBD_FORM_STRING_MAX_LENGTH - 1));
+	for (size_t i = 0; i < length; ++i)
+		swkbdInternalState->formStringBuffer[i] = text[i];
+	swkbdInternalState->formStringLength = static_cast<sint32>(length);
+	swkbdInternalState->formStringBuffer[length] = 0;
+	swkbd_inputStringChanged();
+	if (accepted)
+		swkbdInternalState->decideButtonWasPressed = true;
+#endif
+}
+
+static void swkbd_showNativeInput(size_t cursor)
+{
+#ifndef ENABLE_WXWIDGETS
+	std::u16string text;
+	for (sint32 i = 0; i < swkbdInternalState->formStringLength; ++i)
+		text.push_back(static_cast<char16_t>(swkbdInternalState->formStringBuffer[i]));
+	sint32 limit = swkbdInternalState->maxTextLength;
+	if (swkbdInternalState->keyboardOnlyMode)
+	{
+		const sint32 capacity = swkbdInternalState->keyboardArg.receiverArg.stringBufSize;
+		limit = capacity > 0 ? capacity - 1 : 0;
+		const sint32 fixedLimit = swkbdInternalState->keyboardArg.receiverArg.fixedCharLimit;
+		if (fixedLimit >= 0)
+			limit = std::min(limit, fixedLimit);
+	}
+	limit = std::clamp(limit, 0, SWKBD_FORM_STRING_MAX_LENGTH - 1);
+	WindowSystem::ShowNativeKeyboard(std::move(text), limit, cursor);
+#endif
+}
+
+static void swkbd_hideNativeInput()
+{
+#ifndef ENABLE_WXWIDGETS
+	WindowSystem::HideNativeKeyboard();
+#endif
 }
 
 void swkbdExport_SwkbdCreate(PPCInterpreter_t* hCPU)
@@ -113,6 +159,7 @@ void swkbdExport_SwkbdCreate(PPCInterpreter_t* hCPU)
 
 void swkbdExport_SwkbdGetStateKeyboard(PPCInterpreter_t* hCPU)
 {
+	swkbd_pollNativeInput();
 	uint32 r = SWKBD_STATE_BLANK;
 	if( swkbdInternalState->isActive )
 		r = SWKBD_STATE_DISPLAYED;
@@ -121,6 +168,7 @@ void swkbdExport_SwkbdGetStateKeyboard(PPCInterpreter_t* hCPU)
 
 void swkbdExport_SwkbdGetStateInputForm(PPCInterpreter_t* hCPU)
 {
+	swkbd_pollNativeInput();
 	//debug_printf("SwkbdGetStateInputForm__3RplFv LR: %08x\n", hCPU->sprNew.LR);
 	uint32 r = SWKBD_STATE_BLANK;
 	if( swkbdInternalState->isActive )
@@ -174,7 +222,10 @@ void swkbdExport_SwkbdSetReceiver(PPCInterpreter_t* hCPU)
 		return;
 	}
 
+	swkbd_pollNativeInput();
 	swkbdInternalState->keyboardArg.receiverArg = *receiverArg;
+	if (swkbdInternalState->isActive)
+		swkbd_showNativeInput(std::max<sint32>(0, receiverArg->cursorPos));
 
 	osLib_returnFromFunction(hCPU, 0);
 }
@@ -243,9 +294,8 @@ void swkbdExport_SwkbdAppearInputForm(PPCInterpreter_t* hCPU)
 		swkbdInternalState->formStringBuffer[0] = '\0';
 		swkbdInternalState->formStringLength = 0;
 	}
-	if (s_swkbdCallbacks)
-		s_swkbdCallbacks->showSoftwareKeyboard({swkbdInternalState->formStringBuffer, swkbdInternalState->formStringBuffer + swkbdInternalState->formStringLength}, swkbdInternalState->maxTextLength);
-
+	swkbdInternalState->formStringBuffer[swkbdInternalState->formStringLength] = 0;
+	swkbd_showNativeInput(appearArg->cursorIndex);
 	osLib_returnFromFunction(hCPU, 1);
 }
 
@@ -268,34 +318,31 @@ void swkbdExport_SwkbdAppearKeyboard(PPCInterpreter_t* hCPU)
 	swkbdInternalState->formStringBuffer[0] = '\0';
 	swkbdInternalState->formStringLength = 0;
 	swkbdInternalState->keyboardArg = *keyboardArg;
-	if (s_swkbdCallbacks)
-	{
-		sint32 maxLength = std::max(swkbdInternalState->keyboardArg.receiverArg.stringBufSize - 1, 0);
-		s_swkbdCallbacks->showSoftwareKeyboard({swkbdInternalState->formStringBuffer, swkbdInternalState->formStringBuffer + swkbdInternalState->formStringLength}, maxLength);
-	}
+	swkbd_showNativeInput(std::max<sint32>(0, keyboardArg->receiverArg.cursorPos));
 	osLib_returnFromFunction(hCPU, 1);
 }
 
 void swkbdExport_SwkbdDisappearInputForm(PPCInterpreter_t* hCPU)
 {
 	debug_printf("SwkbdDisappearInputForm__3RplFv LR: %08x\n", hCPU->spr.LR);
+	swkbd_pollNativeInput();
 	swkbdInternalState->isActive = false;
-	if (s_swkbdCallbacks)
-		s_swkbdCallbacks->hideSoftwareKeyboard();
+	swkbd_hideNativeInput();
 	osLib_returnFromFunction(hCPU, 1);
 }
 
 void swkbdExport_SwkbdDisappearKeyboard(PPCInterpreter_t* hCPU)
 {
 	debug_printf("SwkbdDisappearKeyboard__3RplFv LR: %08x\n", hCPU->spr.LR);
+	swkbd_pollNativeInput();
 	swkbdInternalState->isActive = false;
-	if (s_swkbdCallbacks)
-		s_swkbdCallbacks->hideSoftwareKeyboard();
+	swkbd_hideNativeInput();
 	osLib_returnFromFunction(hCPU, 1);
 }
 
 void swkbdExport_SwkbdGetInputFormString(PPCInterpreter_t* hCPU)
 {
+	swkbd_pollNativeInput();
 	for(sint32 i=0; i<swkbdInternalState->formStringLength; i++)
 	{
 		swkbdInternalState->formStringBufferBE[i] = _swapEndianU16(swkbdInternalState->formStringBuffer[i]);
@@ -306,6 +353,7 @@ void swkbdExport_SwkbdGetInputFormString(PPCInterpreter_t* hCPU)
 
 void swkbdExport_SwkbdIsDecideOkButton(PPCInterpreter_t* hCPU)
 {
+	swkbd_pollNativeInput();
 	if (swkbdInternalState->decideButtonWasPressed)
 		osLib_returnFromFunction(hCPU, 1);
 	else
@@ -371,6 +419,9 @@ void swkbdExport_SwkbdIsNeedCalcSubThreadPredict(PPCInterpreter_t* hCPU)
 
 void swkbd::render(bool mainWindow)
 {
+#ifndef ENABLE_WXWIDGETS
+	return; // Native UI is driven by the guest API, not the render thread.
+#endif
 	// only render if active
 	if( swkbdInternalState == NULL || swkbdInternalState->isActive == false)
 		return;
@@ -677,7 +728,8 @@ namespace swkbd
 			}
 			else if (reason == coreinit::RplEntryReason::Unloaded)
 			{
-				// todo
+				swkbd_hideNativeInput();
+				swkbdInternalState = nullptr;
 			}
 		}
 	}s_COSswkbdModule;

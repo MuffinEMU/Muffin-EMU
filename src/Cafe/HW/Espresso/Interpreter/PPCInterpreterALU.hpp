@@ -913,17 +913,14 @@ static void PPCInterpreter_CMP(PPCInterpreter_t* hCPU, uint32 opcode)
 	cr >>= 2;
 	sint32 a = hCPU->gpr[rA];
 	sint32 b = hCPU->gpr[rB];
-	hCPU->cr[cr * 4 + 0] = 0;
-	hCPU->cr[cr * 4 + 1] = 0;
-	hCPU->cr[cr * 4 + 2] = 0;
-	hCPU->cr[cr * 4 + 3] = 0;
+	uint32 crField = hCPU->xer_so;
 	if (a < b)
-		hCPU->cr[cr * 4 + CR_BIT_LT] = 1;
+		crField |= 8;
 	else if (a > b)
-		hCPU->cr[cr * 4 + CR_BIT_GT] = 1;
+		crField |= 4;
 	else 
-		hCPU->cr[cr * 4 + CR_BIT_EQ] = 1;
-	hCPU->cr[cr * 4 + CR_BIT_SO] = hCPU->xer_so;
+		crField |= 2;
+	ppc_setCRField(hCPU, cr, crField);
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
@@ -935,17 +932,14 @@ static void PPCInterpreter_CMPL(PPCInterpreter_t* hCPU, uint32 opcode)
 	cr >>= 2;
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = hCPU->gpr[rB];
-	hCPU->cr[cr * 4 + 0] = 0;
-	hCPU->cr[cr * 4 + 1] = 0;
-	hCPU->cr[cr * 4 + 2] = 0;
-	hCPU->cr[cr * 4 + 3] = 0;
+	uint32 crField = hCPU->xer_so;
 	if (a < b)
-		hCPU->cr[cr * 4 + CR_BIT_LT] = 1;
+		crField |= 8;
 	else if (a > b)
-		hCPU->cr[cr * 4 + CR_BIT_GT] = 1;
+		crField |= 4;
 	else
-		hCPU->cr[cr * 4 + CR_BIT_EQ] = 1;
-	hCPU->cr[cr * 4 + CR_BIT_SO] = hCPU->xer_so;
+		crField |= 2;
+	ppc_setCRField(hCPU, cr, crField);
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
@@ -958,17 +952,14 @@ static void PPCInterpreter_CMPI(PPCInterpreter_t* hCPU, uint32 opcode)
 	cr >>= 2;
 	sint32 a = hCPU->gpr[rA];
 	sint32 b = imm;
-	hCPU->cr[cr * 4 + 0] = 0;
-	hCPU->cr[cr * 4 + 1] = 0;
-	hCPU->cr[cr * 4 + 2] = 0;
-	hCPU->cr[cr * 4 + 3] = 0;
+	uint32 crField = hCPU->xer_so;
 	if (a < b)
-		hCPU->cr[cr * 4 + CR_BIT_LT] = 1;
+		crField |= 8;
 	else if (a > b)
-		hCPU->cr[cr * 4 + CR_BIT_GT] = 1;
+		crField |= 4;
 	else 
-		hCPU->cr[cr * 4 + CR_BIT_EQ] = 1;
-	hCPU->cr[cr * 4 + CR_BIT_SO] = hCPU->xer_so;
+		crField |= 2;
+	ppc_setCRField(hCPU, cr, crField);
 	PPCInterpreter_nextInstruction(hCPU);
 }
 
@@ -981,17 +972,13 @@ static void PPCInterpreter_CMPLI(PPCInterpreter_t* hCPU, uint32 opcode)
 	cr >>= 2;
 	uint32 a = hCPU->gpr[rA];
 	uint32 b = imm;
-	hCPU->cr[cr * 4 + 0] = 0;
-	hCPU->cr[cr * 4 + 1] = 0;
-	hCPU->cr[cr * 4 + 2] = 0;
-	hCPU->cr[cr * 4 + 3] = 0;
+	uint32 crField = hCPU->xer_so;
 	if (a < b)
-		hCPU->cr[cr * 4 + CR_BIT_LT] = 1;
+		crField |= 8;
 	else if (a > b)
-		hCPU->cr[cr * 4 + CR_BIT_GT] = 1;
+		crField |= 4;
 	else
-		hCPU->cr[cr * 4 + CR_BIT_EQ] = 1;
-	hCPU->cr[cr * 4 + CR_BIT_SO] = hCPU->xer_so;
+		crField |= 2;
+	ppc_setCRField(hCPU, cr, crField);
 	PPCInterpreter_nextInstruction(hCPU);
 }
-

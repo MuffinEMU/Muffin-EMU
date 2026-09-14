@@ -21,9 +21,8 @@ uint32 MetalBufferChunkedHeap::allocateNewChunk(uint32 chunkIndex, uint32 minimu
 void MetalSynchronizedRingAllocator::addUploadBufferSyncPoint(AllocatorBuffer_t& buffer, uint32 offset)
 {
 	auto commandBuffer = m_mtlr->GetCurrentCommandBuffer();
-	if (commandBuffer == buffer.lastSyncpointCommandBuffer)
+	if (!buffer.queue_syncPoints.empty() && buffer.queue_syncPoints.back().commandBuffer == commandBuffer)
 		return;
-	buffer.lastSyncpointCommandBuffer = commandBuffer;
 	buffer.queue_syncPoints.emplace(commandBuffer, offset);
 }
 

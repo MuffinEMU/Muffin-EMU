@@ -8,6 +8,12 @@
 #include "Cafe/HW/Latte/Core/LatteQueryObject.h"
 #include "Cafe/HW/Latte/Renderer/RendererOuputShader.h"
 
+#include <condition_variable>
+#include <functional>
+#include <mutex>
+#include <queue>
+#include <thread>
+
 #if BOOST_OS_WINDOWS
 #include "util/DXGIWrapper/DXGIWrapper.h"
 #endif
@@ -115,7 +121,7 @@ public:
 	virtual void texture_clearColorSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a) = 0;
 	virtual void texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue) = 0;
 
-	virtual LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth) = 0;
+	virtual LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget) = 0;
 
 	virtual void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) = 0;
 	virtual void texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth) = 0;
@@ -168,6 +174,11 @@ protected:
 	virtual void GetVendorInformation() { }
 	GfxVendor m_vendor = GfxVendor::Generic;
 
+	void StartRenderWorker(const char* threadName);
+	void StopRenderWorker();
+	void QueueRenderWorkerJob(std::function<void()> job);
+	void WaitRenderWorkerIdle();
+
 	static uint8 SRGBComponentToRGB(uint8 ci);
 	static uint8 RGBComponentToSRGB(uint8 cli);
 
@@ -191,6 +202,18 @@ protected:
 #if BOOST_OS_WINDOWS
 	std::unique_ptr<DXGIWrapper> m_dxgi_wrapper{};
 #endif
+
+private:
+	void RenderWorkerThread(std::string threadName);
+	void RethrowRenderWorkerException();
+
+	std::thread m_renderWorkerThread;
+	std::mutex m_renderWorkerMutex;
+	std::condition_variable m_renderWorkerCondition;
+	std::queue<std::function<void()>> m_renderWorkerQueue;
+	bool m_renderWorkerStopRequested = false;
+	bool m_renderWorkerJobActive = false;
+	std::exception_ptr m_renderWorkerException;
 };
 
 extern std::unique_ptr<Renderer> g_renderer;

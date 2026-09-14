@@ -18,16 +18,21 @@ MetalLayerHandle::MetalLayerHandle(MTL::Device* device, const Vector2i& size, bo
 
     m_layer = (CA::MetalLayer*)CreateMetalLayer(windowInfo.surface, size, requestedScale, m_layerScaleX, m_layerScaleY);
     m_layer->setDevice(device);
+
+    const CGSize drawableSize = m_layer->drawableSize();
+    if (size.x > 0 && drawableSize.width > 0.0)
+        m_layerScaleX = (float)drawableSize.width / (float)size.x;
+    if (size.y > 0 && drawableSize.height > 0.0)
+        m_layerScaleY = (float)drawableSize.height / (float)size.y;
+
     m_layer->setDrawableSize(CGSize{(float)size.x * m_layerScaleX, (float)size.y * m_layerScaleY});
     m_layer->setFramebufferOnly(true);
 }
 
 MetalLayerHandle::~MetalLayerHandle()
 {
-    if (m_drawable)
-        m_drawable->release();
-    if (m_layer)
-        m_layer->release();
+    //if (m_layer)
+     //   m_layer->release();
 }
 
 void MetalLayerHandle::Resize(const Vector2i& size)

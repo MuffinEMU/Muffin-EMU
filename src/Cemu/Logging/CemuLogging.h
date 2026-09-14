@@ -91,7 +91,6 @@ bool cemuLog_log(LogType type, std::string_view text);
 bool cemuLog_log(LogType type, std::u8string_view text);
 void cemuLog_waitForFlush(); // wait until all log lines are written
 
-#if !defined(CEMU_PLATFORM_IOS)
 template<typename... TArgs>
 bool cemuLog_log(LogType type, fmt::format_string<TArgs...> formatStr, TArgs&&... args)
 {
@@ -102,6 +101,8 @@ bool cemuLog_log(LogType type, fmt::format_string<TArgs...> formatStr, TArgs&&..
 
 	return true;
 }
+
+#define cemuLog_logOnce(...) { static bool _not_first_call = false; if (!_not_first_call) { _not_first_call = true; cemuLog_log(__VA_ARGS__); } }
 
 // same as cemuLog_log, but only outputs in debug mode
 template<typename ... TArgs>
@@ -232,6 +233,15 @@ bool cemuLog_logDebug(LogType type, const char* format, TArgs&&... args)
 // the always-on GX2SwapScanBuffers() marker added specifically to debug the iOS
 // black screen.
 #define cemuLog_logOnce(...) { static bool _not_first_call = false; if (!_not_first_call) { _not_first_call = true; cemuLog_log(__VA_ARGS__); } }
+
+inline bool cemuLog_logDebug(LogType type, std::string_view message)
+{
+#ifdef CEMU_DEBUG_ASSERT
+	return cemuLog_log(type, message);
+#else
+	return false;
+#endif
+}
 
 inline bool cemuLog_logDebug(LogType type, std::string_view message)
 {

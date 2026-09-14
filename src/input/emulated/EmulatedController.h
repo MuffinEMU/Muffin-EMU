@@ -23,9 +23,9 @@ public:
 	virtual void load(const pugi::xml_node& node){};
 	virtual void save(pugi::xml_node& node){};
 
-	enum Type
+	enum Type: uint8
 	{
-		VPAD,
+		VPAD = 0,
 		Pro,
 		Classic,
 		Wiimote,
@@ -173,6 +173,6 @@ struct fmt::formatter<EmulatedController::Type> : formatter<string_view> {
 		case EmulatedController::Type::Classic: return formatter<string_view>::format("Wii U Classic Controller Pro", ctx);
 		case EmulatedController::Type::Wiimote: return formatter<string_view>::format("Wiimote", ctx);
 		}
-		throw std::invalid_argument(fmt::format("invalid emulated controller type with value {}", to_underlying(v)));
+		throw std::invalid_argument(fmt::format("invalid emulated controller type with value {}", stdx::to_underlying(v)));
 	}
 };

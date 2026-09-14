@@ -118,53 +118,101 @@ void PPCCore_switchToSchedulerWithLock()
 
 void _PPCCore_callbackExit(PPCInterpreter_t* hCPU)
 {
-	PPCInterpreter_relinquishTimeslice();
-	hCPU->instructionPointer = 0;
+    PPCInterpreter_relinquishTimeslice();
+    hCPU->instructionPointer = 0;
+}
+
+static void PPCCore_executeWithJIT(PPCInterpreter_t* hCPU)
+{
+    PPCRecompiler_attemptEnter(hCPU, hCPU->instructionPointer);
+    while ((--hCPU->remainingCycles) >= 0)
+    {
+        PPCRecompiler_attemptEnter(hCPU, hCPU->instructionPointer);
+        if (hCPU->remainingCycles >= 0)
+            PPCInterpreterSlim_executeInstruction(hCPU);
+    }
+}
+
+static void PPCCore_executeWithJITThread(PPCInterpreter_t* hCPU)
+{
+    PPCRecompiler_attemptEnterWithoutRecompile(hCPU, hCPU->instructionPointer);
+    while ((--hCPU->remainingCycles) >= 0)
+    {
+        PPCRecompiler_attemptEnterWithoutRecompile(hCPU, hCPU->instructionPointer);
+        if (hCPU->remainingCycles >= 0)
+            PPCInterpreterSlim_executeInstruction(hCPU);
+    }
+}
+
+static void PPCCore_executeInterpreter(PPCInterpreter_t* hCPU)
+{
+    PPCInterpreterSlim_executeTimeslice(hCPU);
+}
+
+
+void (*attemptEnterAddr)(PPCInterpreter_t* hCPU, uint32 enterAddress) = PPCInterpreter_jumpToInstruction;
+void (*attemptEnter)(PPCInterpreter_t*) = PPCCore_executeInterpreter;
+void (*attemptEnterThread)(PPCInterpreter_t*) = PPCCore_executeInterpreter;
+
+void PPCCore_attemptToEnterAddr(PPCInterpreter_t* hCPU, uint32 enterAddress)
+{
+    hCPU->instructionPointer = enterAddress;
+    attemptEnterAddr(hCPU, enterAddress);
+}
+
+
+void PPCCore_InitializePointer(bool recompilerEnabled)
+{
+    if (recompilerEnabled)
+    {
+        attemptEnterAddr = PPCRecompiler_attemptEnter;
+        attemptEnter = PPCCore_executeWithJIT;
+        attemptEnterThread = PPCCore_executeWithJITThread;
+    }
+    else
+    {
+        attemptEnterAddr = PPCInterpreter_jumpToInstruction;
+        attemptEnter = PPCCore_executeInterpreter;
+        attemptEnterThread = PPCCore_executeInterpreter;
+    }
 }
 
 PPCInterpreter_t* PPCCore_executeCallbackInternal(uint32 functionMPTR)
 {
-	cemu_assert_debug(functionMPTR != 0);
-	PPCInterpreter_t* hCPU = PPCInterpreter_getCurrentInstance();
-	// remember LR and instruction pointer
-	uint32 lr = hCPU->spr.LR;
-	uint32 ip = hCPU->instructionPointer;
-	// save area
-	hCPU->gpr[1] -= 16 * 4;
-	// set LR
-	hCPU->spr.LR = PPCInterpreter_makeCallableExportDepr(_PPCCore_callbackExit);
-	// set instruction pointer
-	hCPU->instructionPointer = functionMPTR;
-	// execute code until we return from the function
-	while (true)
-	{
-		hCPU->remainingCycles = ppcThreadQuantum;
-		hCPU->skippedCycles = 0;
-		if (hCPU->remainingCycles > 0)
-		{
-			// try to enter recompiler immediately
-			PPCRecompiler_attemptEnter(hCPU, hCPU->instructionPointer);
-			// execute any remaining instructions in interpreter
-			while ((--hCPU->remainingCycles) >= 0)
-			{
-				PPCInterpreterSlim_executeInstruction(hCPU);
-			};
-		}
-		if (hCPU->instructionPointer == 0)
-		{
-			// restore remaining cycles
-			hCPU->remainingCycles += hCPU->skippedCycles;
-			hCPU->skippedCycles = 0;
-			break;
-		}
-		coreinit::OSYieldThread();
-	}
-	// save area
-	hCPU->gpr[1] += 16 * 4;
-	// restore LR and instruction pointer
-	hCPU->spr.LR = lr;
-	hCPU->instructionPointer = ip;
-	return hCPU;
+    cemu_assert_debug(functionMPTR != 0);
+    PPCInterpreter_t* hCPU = PPCInterpreter_getCurrentInstance();
+    // remember LR and instruction pointer
+    uint32 lr = hCPU->spr.LR;
+    uint32 ip = hCPU->instructionPointer;
+    // save area
+    hCPU->gpr[1] -= 16 * 4;
+    // set LR
+    hCPU->spr.LR = PPCInterpreter_makeCallableExportDepr(_PPCCore_callbackExit);
+    // set instruction pointer
+    hCPU->instructionPointer = functionMPTR;
+    // execute code until we return from the function
+    while (true)
+    {
+        hCPU->remainingCycles = ppcThreadQuantum;
+        hCPU->skippedCycles = 0;
+        if (hCPU->remainingCycles > 0)
+            attemptEnter(hCPU);
+        
+        if (hCPU->instructionPointer == 0)
+        {
+            // restore remaining cycles
+            hCPU->remainingCycles += hCPU->skippedCycles;
+            hCPU->skippedCycles = 0;
+            break;
+        }
+        coreinit::OSYieldThread();
+    }
+    // save area
+    hCPU->gpr[1] += 16 * 4;
+    // restore LR and instruction pointer
+    hCPU->spr.LR = lr;
+    hCPU->instructionPointer = ip;
+    return hCPU;
 }
 
 void PPCCore_init()

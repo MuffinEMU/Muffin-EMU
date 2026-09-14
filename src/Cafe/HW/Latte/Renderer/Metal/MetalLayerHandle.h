@@ -78,7 +78,8 @@ public:
 
 private:
     CA::MetalLayer* m_layer = nullptr;
-    float m_layerScaleX, m_layerScaleY;
+    float m_layerScaleX = 1.0f;
+    float m_layerScaleY = 1.0f;
 
     CA::MetalDrawable* m_drawable = nullptr;
 };

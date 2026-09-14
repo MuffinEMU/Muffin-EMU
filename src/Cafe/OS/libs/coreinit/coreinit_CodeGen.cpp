@@ -3,6 +3,7 @@
 #include "Cafe/OS/libs/coreinit/coreinit_CodeGen.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 #include "Common/ExceptionHandler/ExceptionHandler.h"
+#include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 
 namespace coreinit
 {
@@ -110,6 +111,8 @@ namespace coreinit
 				// instructions changed
 				// flush cache
 				PPCRecompiler_invalidateRange(ea, ea+0x20);
+                PPCInterpreter_invalidateBlockCacheRange(ea, 0x20);
+                
 				// update icache copy
 				memcpy(cacheCopy, currentState, 32);
 			}

@@ -14,7 +14,7 @@
 #endif
 
 uint64 _rdtscLastMeasure = 0;
-uint64 _rdtscFrequency = 0;
+std::atomic<uint64> _rdtscFrequency = 0;
 
 struct uint128_t
 {
@@ -25,6 +25,70 @@ struct uint128_t
 static_assert(sizeof(uint128_t) == 16);
 
 uint128_t _rdtscAcc{};
+
+uint64 muldiv64(uint64 a, uint64 b, uint64 d);
+
+#if defined(__aarch64__)
+std::atomic<uint64> s_armTimerBaseRaw = 0;
+std::atomic<uint64> s_armTimerBaseSummary = 0;
+std::atomic<uint32> s_armTimerBaseShift = 3;
+FSpinlock sArmTimerRebaseLock;
+
+static FORCE_INLINE uint64 PPCTimer_readArmCounterFrequency()
+{
+	uint64 freq = 0;
+	asm volatile("mrs %0, cntfrq_el0" : "=r" (freq));
+	return freq;
+}
+
+static FORCE_INLINE uint64 PPCTimer_scaleArmCounterDelta(uint64 rawDelta, uint8 shiftFactor, uint64 counterFrequency)
+{
+	uint64 elapsedTick = muldiv64(rawDelta, Espresso::CORE_CLOCK, counterFrequency);
+    
+	elapsedTick <<= 3ULL;
+	elapsedTick >>= shiftFactor;
+	return elapsedTick;
+}
+
+static FORCE_INLINE uint64 PPCTimer_getArmSummary(uint64 rawCounter, uint64 baseRawCounter, uint64 baseSummary, uint8 shiftFactor, uint64 counterFrequency)
+{
+	uint64 rawDelta = rawCounter - baseRawCounter;
+	rawDelta = rawDelta & ~(uint64)((sint64)rawDelta >> 63);
+    
+	return baseSummary + PPCTimer_scaleArmCounterDelta(rawDelta, shiftFactor, counterFrequency);
+}
+
+static FORCE_INLINE void PPCTimer_resetArmBase(uint64 rawCounter)
+{
+    s_armTimerBaseRaw.store(rawCounter, std::memory_order_relaxed);
+    s_armTimerBaseSummary.store(0, std::memory_order_relaxed);
+    s_armTimerBaseShift.store(ActiveSettings::GetTimerShiftFactor(), std::memory_order_relaxed);
+}
+
+static void PPCTimer_rebaseArmTimerIfNeeded(uint64 rawCounter, uint8 requestedShiftFactor)
+{
+    if ((uint8)s_armTimerBaseShift.load(std::memory_order_relaxed) == requestedShiftFactor)
+        return;
+    
+    sArmTimerRebaseLock.lock();
+    
+    const uint8 currentShiftFactor = ActiveSettings::GetTimerShiftFactor();
+    const uint8 baseShiftFactor = (uint8)s_armTimerBaseShift.load(std::memory_order_relaxed);
+    if (baseShiftFactor != currentShiftFactor)
+    {
+        const uint64 counterFrequency = _rdtscFrequency.load(std::memory_order_relaxed);
+        const uint64 baseRawCounter = s_armTimerBaseRaw.load(std::memory_order_relaxed);
+        const uint64 baseSummary = s_armTimerBaseSummary.load(std::memory_order_relaxed);
+        const uint64 rebasedSummary = PPCTimer_getArmSummary(rawCounter, baseRawCounter, baseSummary, baseShiftFactor, counterFrequency);
+        
+        s_armTimerBaseSummary.store(rebasedSummary, std::memory_order_relaxed);
+        s_armTimerBaseRaw.store(rawCounter, std::memory_order_relaxed);
+        s_armTimerBaseShift.store(currentShiftFactor, std::memory_order_relaxed);
+    }
+    
+    sArmTimerRebaseLock.unlock();
+}
+#endif
 
 uint64 muldiv64(uint64 a, uint64 b, uint64 d)
 {
@@ -46,10 +110,11 @@ static void PPCTimer_reportTimebaseRate(uint64 counterHz);
 
 uint64 PPCTimer_estimateRDTSCFrequency()
 {
-    #if defined(ARCH_X86_64)
+#if defined(__aarch64__)
+	return PPCTimer_readArmCounterFrequency();
+#else
 	if (!g_CPUFeatures.x86.invariant_tsc)
 		cemuLog_log(LogType::Force, "Invariant TSC not supported");
-    #endif
 
 	_mm_mfence();
 	uint64 tscStart = __rdtsc();
@@ -80,33 +145,24 @@ uint64 PPCTimer_estimateRDTSCFrequency()
 	//cemuLog_log(LogType::Force, "Multiplier: 0x{:016x}", freqMultiplier);
 
 	return tsc_freq;
+#endif
 }
 
 int PPCTimer_initThread()
 {
-	_rdtscFrequency = PPCTimer_estimateRDTSCFrequency();
+	_rdtscFrequency.store(PPCTimer_estimateRDTSCFrequency(), std::memory_order_release);
 	return 0;
 }
 
 void PPCTimer_init()
 {
 #if defined(__aarch64__)
-	// cntfrq_el0 IS the counter frequency, exactly, so there is nothing to estimate.
-	// That also removes the detached thread that spent three seconds measuring it and
-	// the PPCTimer_waitForInit() poll that waited on the result - three seconds of boot,
-	// and a window during which PPCTimer_isReady() reported false.
-	uint64 f;
-	asm volatile("mrs %0, cntfrq_el0" : "=r"(f));
-	_rdtscFrequency = f;
-	_rdtscLastMeasure = __rdtsc();
-	PPCTimer_republishAnchor(true);
-	// The resulting guest rate, measured out of the published anchor rather than restated
-	// from the constants, and compared against what it is supposed to be. The previous
-	// version of this arithmetic was wrong by a factor of 65 and said nothing, and no
-	// symptom of it looked like a clock - so the number that matters gets printed and
-	// checked, and a mismatch is called out in the log rather than left to be inferred
-	// from a game behaving strangely.
-	PPCTimer_reportTimebaseRate(f);
+	const uint64 rawCounter = __rdtsc();
+    
+	_rdtscFrequency.store(PPCTimer_estimateRDTSCFrequency(), std::memory_order_release);
+	_rdtscLastMeasure = rawCounter;
+    
+	PPCTimer_resetArmBase(rawCounter);
 #else
 	std::thread t(PPCTimer_initThread);
 	t.detach();
@@ -118,11 +174,11 @@ uint64 _tickSummary = 0;
 
 void PPCTimer_start()
 {
-	_rdtscLastMeasure = __rdtsc();
+	const uint64 rawCounter = __rdtsc();
+	_rdtscLastMeasure = rawCounter;
 	_tickSummary = 0;
 #if defined(__aarch64__)
-	// Rebase to zero for the new title, which is what _tickSummary = 0 does above.
-	PPCTimer_republishAnchor(true);
+	PPCTimer_resetArmBase(rawCounter);
 #endif
 }
 
@@ -133,7 +189,7 @@ uint64 PPCTimer_getRawTsc()
 
 uint64 PPCTimer_microsecondsToTsc(uint64 us)
 {
-	return (us * _rdtscFrequency) / 1000000ULL;
+	return (us * _rdtscFrequency.load(std::memory_order_relaxed)) / 1000000ULL;
 }
 
 uint64 PPCTimer_tscToMicroseconds(uint64 us)
@@ -142,14 +198,14 @@ uint64 PPCTimer_tscToMicroseconds(uint64 us)
 	r.low = _umul128(us, 1000000ULL, &r.high);
 
 	uint64 remainder;
-	const uint64 microseconds = _udiv128(r.high, r.low, _rdtscFrequency, &remainder);
+	const uint64 microseconds = _udiv128(r.high, r.low, _rdtscFrequency.load(std::memory_order_relaxed), &remainder);
 
 	return microseconds;
 }
 
 bool PPCTimer_isReady()
 {
-	return _rdtscFrequency != 0;
+	return _rdtscFrequency.load(std::memory_order_acquire) != 0;
 }
 
 void PPCTimer_waitForInit()
@@ -342,6 +398,20 @@ static uint64 PPCTimer_getFromRDTSC_fast()
 // thread safe
 static uint64 PPCTimer_getFromRDTSC_legacy()
 {
+#if defined(__aarch64__)
+	const uint64 counterFrequency = _rdtscFrequency.load(std::memory_order_acquire);
+	cemu_assert_debug(counterFrequency != 0);
+    
+	const uint64 rawCounter = __rdtsc();
+	const uint8 requestedShiftFactor = ActiveSettings::GetTimerShiftFactor();
+	PPCTimer_rebaseArmTimerIfNeeded(rawCounter, requestedShiftFactor);
+    
+	const uint64 baseRawCounter = s_armTimerBaseRaw.load(std::memory_order_relaxed);
+	const uint64 baseSummary = s_armTimerBaseSummary.load(std::memory_order_relaxed);
+	const uint8 shiftFactor = (uint8)s_armTimerBaseShift.load(std::memory_order_relaxed);
+    
+	return PPCTimer_getArmSummary(rawCounter, baseRawCounter, baseSummary, shiftFactor, counterFrequency);
+#else
 	sTimerSpinlock.lock();
 	_mm_mfence();
 	uint64 rdtscCurrentMeasure = __rdtsc();
@@ -366,7 +436,7 @@ static uint64 PPCTimer_getFromRDTSC_legacy()
 	#endif
 
 	uint64 remainder;
-	uint64 elapsedTick = _udiv128(_rdtscAcc.high, _rdtscAcc.low, _rdtscFrequency, &remainder);
+	uint64 elapsedTick = _udiv128(_rdtscAcc.high, _rdtscAcc.low, _rdtscFrequency.load(std::memory_order_relaxed), &remainder);
 
 	_rdtscAcc.low = remainder;
 	_rdtscAcc.high = 0;
@@ -380,6 +450,7 @@ static uint64 PPCTimer_getFromRDTSC_legacy()
 
 	sTimerSpinlock.unlock();
 	return _tickSummary;
+#endif
 }
 
 // Which implementation is live. Read on every timebase read, so it can be changed before

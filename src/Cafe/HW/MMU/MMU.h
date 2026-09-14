@@ -180,7 +180,7 @@ bool memory_isAddressRangeAccessible(MPTR virtualAddress, uint32 size);
 #define CPU_swapEndianU64(_v) bswap_64((uint64)(_v))
 #define CPU_swapEndianU32(_v) bswap_32((uint32)(_v))
 #define CPU_swapEndianU16(_v) bswap_16((uint16)(_v))
-#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
+#elif BOOST_OS_MACOS || BOOST_OS_IOS
 #define CPU_swapEndianU64(_v) OSSwapInt64((uint64)(_v))
 #define CPU_swapEndianU32(_v) OSSwapInt32((uint32)(_v))
 #define CPU_swapEndianU16(_v) OSSwapInt16((uint16)(_v))
@@ -210,6 +210,7 @@ uint64 memory_readU64(uint32 address);
 uint32 memory_readU32(uint32 address);
 uint16 memory_readU16(uint32 address);
 uint8 memory_readU8(uint32 address);
+uint32 memory_getContiguousReadableBytes(uint32 virtualAddress);
 
 void memory_createDump();
 

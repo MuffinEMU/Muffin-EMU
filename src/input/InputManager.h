@@ -9,9 +9,10 @@
 #include "input/api/Wiimote/WiimoteControllerProvider.h"
 #endif
 
-#include "util/helpers/Singleton.h"
-
+#ifdef HAS_SDL
 #include "input/api/SDL/SDLControllerProvider.h"
+#endif
+
 #include "input/api/Keyboard/KeyboardControllerProvider.h"
 #include "input/api/DSU/DSUControllerProvider.h"
 #include "input/api/GameCube/GameCubeControllerProvider.h"
@@ -24,8 +25,7 @@
 #include "input/emulated/VPADController.h"
 #include "input/emulated/WPADController.h"
 
-#include <atomic>
-#include <optional>
+#include "util/helpers/Singleton.h"
 
 class InputManager : public Singleton<InputManager>
 {
@@ -40,12 +40,11 @@ public:
 	constexpr static size_t kMaxController = 8;
 	constexpr static size_t kMaxVPADControllers = 2;
 	constexpr static size_t kMaxWPADControllers = 7;
-	
-	static bool input_config_window_has_focus();
-	static void set_input_config_window_focus(bool has_focus);
 
 	void load() noexcept;
 	bool load(size_t player_index, std::string_view filename = {});
+    void load_gc_controllers();
+
 
 	bool migrate_config(const fs::path& file_path);
 
@@ -54,19 +53,21 @@ public:
 
 	bool is_gameprofile_set(size_t player_index) const;
 
+	void Shutdown();
+
 	EmulatedControllerPtr set_controller(EmulatedControllerPtr controller);
 	EmulatedControllerPtr set_controller(size_t player_index, EmulatedController::Type type);
 	EmulatedControllerPtr set_controller(size_t player_index, EmulatedController::Type type, const std::shared_ptr<ControllerBase>& controller);
 
 	EmulatedControllerPtr delete_controller(size_t player_index, bool delete_profile = false);
-	
+
 	EmulatedControllerPtr get_controller(size_t player_index) const;
 	std::shared_ptr<VPADController> get_vpad_controller(size_t index) const;
 	std::shared_ptr<WPADController> get_wpad_controller(size_t index) const;
 	std::pair<size_t, size_t> get_controller_count() const;
 
 	bool is_api_available(InputAPI::Type api) const { return !m_api_available[api].empty(); }
-	
+
 	ControllerProviderPtr get_api_provider(std::string_view api_name) const;
 	ControllerProviderPtr get_api_provider(InputAPI::Type api) const;
 	// will create the provider with the given settings if it doesn't exist yet
@@ -87,6 +88,9 @@ public:
 	struct MouseInfo
 	{
 		mutable std::shared_mutex m_mutex;
+#if BOOST_OS_IOS
+    std::mutex m_gc_configuration_mutex;
+#endif
 		glm::ivec2 position{};
 		bool left_down = false;
 		bool right_down = false;
@@ -108,6 +112,9 @@ private:
 	std::array<std::vector<ControllerProviderPtr>, InputAPI::MAX> m_api_available{ };
 
 	mutable std::shared_mutex m_mutex;
+#if BOOST_OS_IOS
+    std::mutex m_gc_configuration_mutex;
+#endif
 	std::array<EmulatedControllerPtr, kMaxVPADControllers> m_vpad;
 	std::array<EmulatedControllerPtr, kMaxWPADControllers> m_wpad;
 

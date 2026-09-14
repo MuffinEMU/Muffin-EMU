@@ -178,7 +178,7 @@ static void ImGui_ImplMetal_SetupRenderState(ImDrawData* drawData, id<MTLCommand
     float B = drawData->DisplayPos.y + drawData->DisplaySize.y;
     float N = (float)viewport.znear;
     float F = (float)viewport.zfar;
-    const float ortho_projection[4][4] =
+    alignas(16) const float ortho_projection[4][4] =
     {
         { 2.0f/(R-L),   0.0f,           0.0f,   0.0f },
         { 0.0f,         2.0f/(T-B),     0.0f,   0.0f },

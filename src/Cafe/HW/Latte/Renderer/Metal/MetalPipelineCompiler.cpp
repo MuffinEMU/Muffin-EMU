@@ -189,8 +189,23 @@ uint64 s_cacheTitleId = INVALID_TITLE_ID;
 extern std::atomic_int g_compiled_shaders_total;
 extern std::atomic_int g_compiled_shaders_async;
 
+static bool ShaderReadsFramebufferFetchAttachment(const LatteDecompilerShader* pixelShader, uint8 attachmentIndex)
+{
+	if (!pixelShader)
+		return false;
+    
+    for (sint32 i = 0; i < pixelShader->textureUnitListCount; i++)
+    {
+        sint32 textureIndex = pixelShader->textureUnitList[i];
+        if (pixelShader->textureRenderTargetIndex[textureIndex] == attachmentIndex)
+            return true;
+	}
+
+	return false;
+}
+
 template<typename T>
-void SetFragmentState(T* desc, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, bool rasterizationEnabled, const LatteContextRegister& lcr)
+void SetFragmentState(T* desc, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, bool rasterizationEnabled, bool supportsFramebufferFetch, const LatteContextRegister& lcr, const LatteDecompilerShader* pixelShader)
 {
 	// TODO: check if the pixel shader is valid as well?
 	if (!rasterizationEnabled/* || !pixelShaderMtl*/)
@@ -206,10 +221,19 @@ void SetFragmentState(T* desc, const MetalAttachmentsInfo& lastUsedAttachmentsIn
 	for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
 	{
 	    Latte::E_GX2SURFFMT format = lastUsedAttachmentsInfo.colorFormats[i];
+		if (format == Latte::E_GX2SURFFMT::INVALID_FORMAT && supportsFramebufferFetch && ShaderReadsFramebufferFetchAttachment(pixelShader, i))
+		{
+			format = activeAttachmentsInfo.colorFormats[i];
+			if (format == Latte::E_GX2SURFFMT::INVALID_FORMAT)
+				format = LatteMRT::GetColorBufferFormat(i, lcr);
+		}
 		if (format == Latte::E_GX2SURFFMT::INVALID_FORMAT)
 		    continue;
 
 		MTL::PixelFormat pixelFormat = GetMtlPixelFormat(format, false);
+		if (pixelFormat == MTL::PixelFormatInvalid)
+			continue;
+
 		auto colorAttachment = desc->colorAttachments()->object(i);
 		colorAttachment->setPixelFormat(pixelFormat);
 
@@ -307,17 +331,16 @@ void MetalPipelineCompiler::InitFromState(const LatteFetchShader* fetchShader, c
         m_geometryShaderMtl = nullptr;
     m_pixelShaderMtl = static_cast<RendererShaderMtl*>(pixelShader->shader);
 
-    if (m_emulateGeometryShader)
-        InitFromStateGeometryEmulation(lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr);
-    else if (m_usesGeometryShader)
-        InitFromStateMesh(fetchShader, lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr);
+    if (m_usesGeometryShader)
+        InitFromStateMesh(fetchShader, pixelShader, lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr);
     else
-        InitFromStateRender(fetchShader, vertexShader, lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr);
+        InitFromStateRender(fetchShader, vertexShader, pixelShader, lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr);
 }
 
 bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool showInOverlay)
 {
-    if (m_usesGeometryShader && !m_mtlr->SupportsMeshShaders() && !m_emulateGeometryShader)
+	NS_STACK_SCOPED NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
+    if (m_usesGeometryShader && !m_mtlr->SupportsMeshShaders())
         return false;
 
     if (forceCompile)
@@ -351,10 +374,20 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
         auto desc = static_cast<MTL::MeshRenderPipelineDescriptor*>(m_pipelineDescriptor);
 
         // Shaders
-        desc->setObjectFunction(m_vertexShaderMtl->GetFunction());
-        desc->setMeshFunction(m_geometryShaderMtl->GetFunction());
+        MTL::Function* objectFunction = m_vertexShaderMtl->GetFunction();
+        MTL::Function* meshFunction = m_geometryShaderMtl->GetFunction();
+        MTL::Function* fragmentFunction = m_rasterizationEnabled ? m_pixelShaderMtl->GetFunction() : nullptr;
+        
+        if (!objectFunction || !meshFunction || (m_rasterizationEnabled && !fragmentFunction))
+        {
+            cemuLog_log(LogType::Force, "failed to create Metal mesh pipeline because a shader function is nil");
+            return false;
+        }
+        
+        desc->setObjectFunction(objectFunction);
+        desc->setMeshFunction(meshFunction);
         if (m_rasterizationEnabled)
-            desc->setFragmentFunction(m_pixelShaderMtl->GetFunction());
+            desc->setFragmentFunction(fragmentFunction);
 
 #ifdef CEMU_DEBUG_ASSERT
         desc->setLabel(GetLabel("Mesh render pipeline state", desc));
@@ -365,25 +398,17 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
     {
         auto desc = static_cast<MTL::RenderPipelineDescriptor*>(m_pipelineDescriptor);
 
-        // Shaders. When emulating a geometry shader the vertex stage has already run as
-        // compute; what is left to rasterize is whatever the geometry kernel wrote, and
-        // the passthrough entry point in that same shader's library is what reads it.
-        if (m_emulateGeometryShader)
+        // Shaders
+        MTL::Function* vertexFunction = m_vertexShaderMtl->GetFunction();
+        MTL::Function* fragmentFunction = m_rasterizationEnabled ? m_pixelShaderMtl->GetFunction() : nullptr;
+        if (!vertexFunction || (m_rasterizationEnabled && !fragmentFunction))
         {
-            MTL::Function* passthrough = m_geometryShaderMtl ? m_geometryShaderMtl->GetPassthroughFunction() : nullptr;
-            if (!passthrough)
-            {
-                cemuLog_logOnce(LogType::Force, "Metal: geometry-shader emulation is on but the shader has no passthrough entry point - dropping this pipeline");
-                return false;
-            }
-            desc->setVertexFunction(passthrough);
+            cemuLog_log(LogType::Force, "failed to create Metal render pipeline because a shader function is nil");
+            return false;
         }
-        else
-        {
-            desc->setVertexFunction(m_vertexShaderMtl->GetFunction());
-        }
+        desc->setVertexFunction(vertexFunction);
         if (m_rasterizationEnabled)
-            desc->setFragmentFunction(m_pixelShaderMtl->GetFunction());
+            desc->setFragmentFunction(fragmentFunction);
 
 #ifdef CEMU_DEBUG_ASSERT
         desc->setLabel(GetLabel("Render pipeline state", desc));
@@ -413,13 +438,15 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
 	return true;
 }
 
-void MetalPipelineCompiler::InitFromStateRender(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr)
+void MetalPipelineCompiler::InitFromStateRender(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* pixelShader, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr)
 {
 	// Render pipeline state
 	MTL::RenderPipelineDescriptor* desc = MTL::RenderPipelineDescriptor::alloc()->init();
+	desc->vertexBuffers()->object(MetalArgumentBuffer::BindingIndex)->setMutability(MTL::MutabilityImmutable);
+	desc->fragmentBuffers()->object(MetalArgumentBuffer::BindingIndex)->setMutability(MTL::MutabilityImmutable);
 
     // Vertex descriptor
-    if (!fetchShader->mtlFetchVertexManually)
+    if (!fetchShader->mtlFetchVertexManually && !vertexShader->hasStreamoutBufferWrite)
     {
     	NS_STACK_SCOPED MTL::VertexDescriptor* vertexDescriptor = MTL::VertexDescriptor::alloc()->init();
     	for (auto& bufferGroup : fetchShader->bufferGroups)
@@ -486,27 +513,20 @@ void MetalPipelineCompiler::InitFromStateRender(const LatteFetchShader* fetchSha
     	desc->setVertexDescriptor(vertexDescriptor);
     }
 
-	SetFragmentState(desc, lastUsedAttachmentsInfo, activeAttachmentsInfo, m_rasterizationEnabled, lcr);
+	SetFragmentState(desc, lastUsedAttachmentsInfo, activeAttachmentsInfo, m_rasterizationEnabled, m_mtlr->SupportsFramebufferFetch(), lcr, pixelShader);
 
 	m_pipelineDescriptor = desc;
 }
 
-void MetalPipelineCompiler::InitFromStateGeometryEmulation(const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr)
-{
-	// A perfectly ordinary render pipeline, and deliberately with no vertex descriptor:
-	// the passthrough vertex shader takes no stage_in at all, it indexes the buffer the
-	// geometry kernel filled using its own vertex_id.
-	MTL::RenderPipelineDescriptor* desc = MTL::RenderPipelineDescriptor::alloc()->init();
-	SetFragmentState(desc, lastUsedAttachmentsInfo, activeAttachmentsInfo, m_rasterizationEnabled, lcr);
-	m_pipelineDescriptor = desc;
-}
-
-void MetalPipelineCompiler::InitFromStateMesh(const LatteFetchShader* fetchShader, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr)
+void MetalPipelineCompiler::InitFromStateMesh(const LatteFetchShader* fetchShader, const LatteDecompilerShader* pixelShader, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr)
 {
 	// Render pipeline state
 	MTL::MeshRenderPipelineDescriptor* desc = MTL::MeshRenderPipelineDescriptor::alloc()->init();
+	desc->objectBuffers()->object(MetalArgumentBuffer::BindingIndex)->setMutability(MTL::MutabilityImmutable);
+	desc->meshBuffers()->object(MetalArgumentBuffer::BindingIndex)->setMutability(MTL::MutabilityImmutable);
+	desc->fragmentBuffers()->object(MetalArgumentBuffer::BindingIndex)->setMutability(MTL::MutabilityImmutable);
 
-	SetFragmentState(desc, lastUsedAttachmentsInfo, activeAttachmentsInfo, m_rasterizationEnabled, lcr);
+	SetFragmentState(desc, lastUsedAttachmentsInfo, activeAttachmentsInfo, m_rasterizationEnabled, m_mtlr->SupportsFramebufferFetch(), lcr, pixelShader);
 
 	m_pipelineDescriptor = desc;
 }

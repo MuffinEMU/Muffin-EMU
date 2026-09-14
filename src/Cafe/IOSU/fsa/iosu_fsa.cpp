@@ -9,6 +9,8 @@
 
 #include "Cafe/HW/MMU/MMU.h"
 
+#include <array>
+
 using namespace iosu::kernel;
 
 namespace iosu
@@ -165,7 +167,8 @@ namespace iosu
 		FSCVirtualFile* __FSAOpenNode(FSAClient* client, std::string_view path, FSC_ACCESS_FLAG accessFlags, sint32& fscStatus)
 		{
 			std::string translatedPath = __FSATranslatePath(client, path);
-			return fsc_open(translatedPath.c_str(), accessFlags, &fscStatus);
+			FSCVirtualFile* file = fsc_open(translatedPath.c_str(), accessFlags, &fscStatus);
+			return file;
 		}
 
 		class _FSAHandleTable {

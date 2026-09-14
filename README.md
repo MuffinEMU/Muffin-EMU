@@ -63,12 +63,17 @@ not keys.
 - [`STATUS.md`](STATUS.md) — detailed subsystem status
 - [`ROADMAP.md`](ROADMAP.md) — planned work
 
-## Credits & License
+#### AI generated contributions:
 
-Muffin is built on [Cemu](https://github.com/cemu-project/Cemu), the excellent Wii U emulator
-this project ports to iOS. All credit for the emulation engine itself belongs to the Cemu
-team and contributors.
+We ask that all code submitted is written and understood by a human. You can use AI for planning, designing, reviewing and for asking questions about the codebase, but the code itself needs to be written by you. As a small exception you can use intellisense-style AI code autocompletion for pure boilerplate code as long as it's only a small part of your submission. To further clarify, when we ask for "human written" that excludes letting an AI write the code and then paraphrasing it. In other words, we are asking for human effort.
 
-Cemu is licensed under the [Mozilla Public License 2.0](/LICENSE.txt). Files under
-`dependencies/` and some individual `src/` files carry their original licenses as noted in
-their headers.
+Why this policy exists:
+
+We have relatively low reviewing capacity and requiring human-written code increases the quality and trustworthyness of submitted pull requests. There are also general concerns with AI usage in emulation:
+- LLMs tend to make up solutions that work on the surface but are generally not accurate in the emulation sense
+- There is evidence that LLMs have been trained on leaked proprietary SDKs and we cannot verify the origin of the knowledge. This is especially a problem for core emulation logic
+
+Please keep these points in mind when contributing to Cemu. Contributions that do not follow this policy may be rejected.
+
+## License
+Cemu is licensed under [Mozilla Public License 2.0](/LICENSE.txt). Exempt from this are all files in the dependencies directory for which the licenses of the original code apply as well as some individual files in the src folder, as specified in those file headers respectively.

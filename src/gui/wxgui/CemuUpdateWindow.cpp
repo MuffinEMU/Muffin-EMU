@@ -291,7 +291,7 @@ bool CemuUpdateWindow::ExtractUpdate(const fs::path& zipname, const fs::path& ta
 	cemuFolderName.clear();
 	// open downloaded zip
 	int err;
-	auto* za = zip_open(zipname.string().c_str(), ZIP_RDONLY, &err);
+	auto* za = zip_open(fs::resolvePathCI(zipname).string().c_str(), ZIP_RDONLY, &err);
 	if (za == nullptr)
 	{
 		cemuLog_log(LogType::Force, "Cannot open zip file: {}", zipname.string());
@@ -358,7 +358,7 @@ bool CemuUpdateWindow::ExtractUpdate(const fs::path& zipname, const fs::path& ta
 				return false;
 			}
 
-			auto* file = fopen(fname.string().c_str(), "wb");
+			auto* file = fopen(fs::resolvePathCI(fname).string().c_str(), "wb");
 			if (file == nullptr)
 			{
 				cemuLog_log(LogType::Force, "can't create update file \"{}\"", sb.name);
@@ -616,7 +616,8 @@ void CemuUpdateWindow::OnClose(wxCloseEvent& event)
 	{
 	    const auto tmppath = fs::temp_directory_path() / L"cemu_update/Cemu.dmg";
 	    fs::path exePath = ActiveSettings::GetExecutablePath().parent_path();
-	    const auto apppath = exePath / L"update.sh";
+		const auto appResources = exePath.parent_path().parent_path() / L"Resources";
+		const auto apppath = appResources / L"update.sh";
 	    execlp("sh", "sh", apppath.c_str(), NULL);
         
         exit(0);

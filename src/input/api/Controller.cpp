@@ -154,6 +154,11 @@ float ControllerBase::get_axis_value(uint64 button) const
 	return 0;
 }
 
+bool ControllerBase::use_motion()
+{
+	return has_motion() && m_settings.motion && !GetConfig().disable_motion.GetValue();
+}
+
 const ControllerState& ControllerBase::calibrate()
 {
 	m_default_state = raw_state();

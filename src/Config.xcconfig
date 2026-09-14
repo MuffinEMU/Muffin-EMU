@@ -1,0 +1,15 @@
+//
+//  Config.xcconfig
+//  Cemu
+//
+//  Created by Stossy11 on 4/3/2026.
+//
+
+// Configuration settings file format documentation can be found at:
+// https://developer.apple.com/documentation/xcode/adding-a-build-configuration-file-to-your-project
+CODE_SIGN_IDENTITY  = -
+DEVELOPMENT_TEAM = XYZ0123456
+CODE_SIGN_STYLE = Manual
+AD_HOC_CODE_SIGNING_ALLOWED = YES
+CODE_SIGNING_ALLOWED = NO
+CODE_SIGNING_ENABLED = NO

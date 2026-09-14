@@ -82,6 +82,7 @@ add_library(CemuCafe
   HW/Espresso/Recompiler/PPCRecompilerImlGen.cpp
   HW/Espresso/Recompiler/PPCRecompilerImlGenFPU.cpp
   HW/Espresso/Recompiler/PPCRecompilerIml.h
+  HW/Espresso/Recompiler/PPCRecompilerThreadPool.h
   HW/Espresso/Recompiler/PPCRecompilerIntermediate.cpp
   HW/Espresso/Recompiler/BackendX64/BackendX64AVX.cpp
   HW/Espresso/Recompiler/BackendX64/BackendX64BMI.cpp
@@ -106,9 +107,6 @@ add_library(CemuCafe
   HW/Latte/Core/LatteCachedFBO.h
   HW/Latte/Core/LatteCommandProcessor.cpp
   HW/Latte/Core/LatteConst.h
-  HW/Latte/Core/LatteDefaultShaders.cpp
-  HW/Latte/Core/LatteDefaultShaders.h
-  HW/Latte/Core/LatteDraw.cpp
   HW/Latte/Core/LatteDraw.h
   HW/Latte/Core/LatteGSCopyShaderParser.cpp
   HW/Latte/Core/Latte.h
@@ -128,18 +126,19 @@ add_library(CemuCafe
   HW/Latte/Core/LatteShaderCache.cpp
   HW/Latte/Core/LatteShaderCache.h
   HW/Latte/Core/LatteShader.cpp
-  HW/Latte/Core/LatteShaderGL.cpp
   HW/Latte/Core/LatteShader.h
   HW/Latte/Core/LatteSoftware.cpp
   HW/Latte/Core/LatteSoftware.h
   HW/Latte/Core/LatteStreamoutGPU.cpp
   HW/Latte/Core/LatteSurfaceCopy.cpp
+  HW/Latte/Core/LatteSurfaceCopy.h
   HW/Latte/Core/LatteTextureCache.cpp
   HW/Latte/Core/LatteTexture.cpp
   HW/Latte/Core/LatteTexture.h
   HW/Latte/Core/LatteTextureLegacy.cpp
   HW/Latte/Core/LatteTextureLoader.cpp
   HW/Latte/Core/LatteTextureLoader.h
+  HW/Latte/Core/LatteTextureLoaderASTC.h
   HW/Latte/Core/LatteTextureReadback.cpp
   HW/Latte/Core/LatteTextureReadbackInfo.h
   HW/Latte/Core/LatteTextureView.cpp
@@ -165,6 +164,8 @@ add_library(CemuCafe
   HW/Latte/LegacyShaderDecompiler/LatteDecompilerRegisterDataTypeTracker.cpp
   HW/Latte/Renderer/Renderer.cpp
   HW/Latte/Renderer/Renderer.h
+  HW/Latte/Renderer/RendererCore.cpp
+  HW/Latte/Renderer/RendererCore.h
   HW/Latte/Renderer/RendererOuputShader.cpp
   HW/Latte/Renderer/RendererOuputShader.h
   HW/Latte/Renderer/RendererShader.cpp
@@ -488,105 +489,98 @@ add_library(CemuCafe
   TitleList/TitleInfo.h
   TitleList/TitleList.cpp
   TitleList/TitleList.h
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc.h"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_averages_and_directions.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_block_sizes.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_color_quantize.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_color_unquantize.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_compress_symbolic.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_compute_variance.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_decompress_symbolic.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_diagnostic_trace.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_entry.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_find_best_partitioning.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_ideal_endpoints_and_weights.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_image.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_integer_sequence.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_mathlib.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_mathlib_softfloat.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_partition_tables.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_percentile_tables.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_pick_best_endpoint_format.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_quantization.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_symbolic_physical.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_weight_align.cpp"
+  "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source/astcenc_weight_quant_xfer_tables.cpp"
 )
 
-# OpenGL stays desktop-only: iOS has no GL context to give it and ENABLE_OPENGL is
-# forced OFF for iOS in the top-level CMakeLists.txt. The nsyshid libusb/Skylander
-# backends are desktop-only for the same reason (no libusb on iOS).
-#
-# Vulkan is NOT in this block any more -- see the ENABLE_VULKAN block below. The
-# reason the old comment gave for excluding it ("they'd need a real GL context /
-# MoltenVK loader to ever run") was right about the requirement and wrong about the
-# conclusion: MoltenVK is obtainable on iOS, and it is what the one shipping iOS
-# Cemu build actually renders through.
-if(NOT PLATFORM_IOS)
-	target_sources(CemuCafe PRIVATE
-	    OS/libs/nsyshid/BackendLibusb.cpp
-	    OS/libs/nsyshid/BackendLibusb.h
-	    OS/libs/nsyshid/SkylanderXbox360.cpp
-	    OS/libs/nsyshid/SkylanderXbox360.h
-	    HW/Latte/Renderer/OpenGL/CachedFBOGL.h
-	    HW/Latte/Renderer/OpenGL/LatteTextureGL.cpp
-	    HW/Latte/Renderer/OpenGL/LatteTextureGL.h
-	    HW/Latte/Renderer/OpenGL/LatteTextureViewGL.cpp
-	    HW/Latte/Renderer/OpenGL/LatteTextureViewGL.h
-	    HW/Latte/Renderer/OpenGL/OpenGLQuery.cpp
-	    HW/Latte/Renderer/OpenGL/OpenGLRendererCore.cpp
-	    HW/Latte/Renderer/OpenGL/OpenGLRenderer.cpp
-	    HW/Latte/Renderer/OpenGL/OpenGLRenderer.h
-	    HW/Latte/Renderer/OpenGL/OpenGLRendererStreamout.cpp
-	    HW/Latte/Renderer/OpenGL/OpenGLRendererUniformData.cpp
-	    HW/Latte/Renderer/OpenGL/OpenGLSurfaceCopy.cpp
-	    HW/Latte/Renderer/OpenGL/OpenGLTextureReadback.h
-	    HW/Latte/Renderer/OpenGL/RendererShaderGL.cpp
-	    HW/Latte/Renderer/OpenGL/RendererShaderGL.h
-	    HW/Latte/Renderer/OpenGL/TextureReadbackGL.cpp
-	)
+if (ENABLE_OPENGL)
+  target_sources(CemuCafe PRIVATE
+    HW/Latte/Renderer/OpenGL/CachedFBOGL.h
+    HW/Latte/Renderer/OpenGL/LatteShaderGL.cpp
+    HW/Latte/Renderer/OpenGL/LatteTextureGL.cpp
+    HW/Latte/Renderer/OpenGL/LatteTextureGL.h
+    HW/Latte/Renderer/OpenGL/LatteTextureViewGL.cpp
+    HW/Latte/Renderer/OpenGL/LatteTextureViewGL.h
+    HW/Latte/Renderer/OpenGL/OpenGLQuery.cpp
+    HW/Latte/Renderer/OpenGL/OpenGLRendererCore.cpp
+    HW/Latte/Renderer/OpenGL/OpenGLRenderer.cpp
+    HW/Latte/Renderer/OpenGL/OpenGLRenderer.h
+    HW/Latte/Renderer/OpenGL/OpenGLRendererStreamout.cpp
+    HW/Latte/Renderer/OpenGL/OpenGLRendererUniformData.cpp
+    HW/Latte/Renderer/OpenGL/OpenGLSurfaceCopy.cpp
+    HW/Latte/Renderer/OpenGL/OpenGLTextureReadback.h
+    HW/Latte/Renderer/OpenGL/RendererShaderGL.cpp
+    HW/Latte/Renderer/OpenGL/RendererShaderGL.h
+    HW/Latte/Renderer/OpenGL/TextureReadbackGL.cpp
+  )
 endif()
 
-# The Vulkan backend. On desktop this is unconditional exactly as it always was
-# (NOT PLATFORM_IOS); on iOS it comes in when ENABLE_VULKAN is on, running against
-# MoltenVK. VulkanAPI.h is compiled with VK_NO_PROTOTYPES and every entry point is
-# resolved through dlsym at runtime, so nothing here links against a Vulkan loader
-# at build time.
-if(NOT PLATFORM_IOS OR ENABLE_VULKAN)
-	target_sources(CemuCafe PRIVATE
-	    HW/Latte/Renderer/Vulkan/CachedFBOVk.cpp
-	    HW/Latte/Renderer/Vulkan/CachedFBOVk.h
-	    HW/Latte/Renderer/Vulkan/CocoaSurface.h
-	    HW/Latte/Renderer/Vulkan/LatteTextureViewVk.cpp
-	    HW/Latte/Renderer/Vulkan/LatteTextureViewVk.h
-	    HW/Latte/Renderer/Vulkan/LatteTextureVk.cpp
-	    HW/Latte/Renderer/Vulkan/LatteTextureVk.h
-	    HW/Latte/Renderer/Vulkan/RendererShaderVk.cpp
-	    HW/Latte/Renderer/Vulkan/RendererShaderVk.h
-	    HW/Latte/Renderer/Vulkan/SwapchainInfoVk.cpp
-	    HW/Latte/Renderer/Vulkan/SwapchainInfoVk.h
-	    HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp
-	    HW/Latte/Renderer/Vulkan/VKRBase.h
-	    HW/Latte/Renderer/Vulkan/VKRMemoryManager.cpp
-	    HW/Latte/Renderer/Vulkan/VKRMemoryManager.h
-	    HW/Latte/Renderer/Vulkan/VKRPipelineInfo.cpp
-	    HW/Latte/Renderer/Vulkan/VsyncDriver.cpp
-	    HW/Latte/Renderer/Vulkan/VsyncDriver.h
-	    HW/Latte/Renderer/Vulkan/VulkanAPI.cpp
-	    HW/Latte/Renderer/Vulkan/VulkanAPI.h
-	    HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.cpp
-	    HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.h
-	    HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.cpp
-	    HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.h
-	    HW/Latte/Renderer/Vulkan/VulkanQuery.cpp
-	    HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
-	    HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
-	    HW/Latte/Renderer/Vulkan/VulkanRenderer.h
-	    HW/Latte/Renderer/Vulkan/VulkanSurfaceCopy.cpp
-	    HW/Latte/Renderer/Vulkan/VulkanTextureReadback.h
-	)
+if (ENABLE_VULKAN)
+  target_sources(CemuCafe PRIVATE
+    HW/Latte/Renderer/Vulkan/CachedFBOVk.cpp
+    HW/Latte/Renderer/Vulkan/CachedFBOVk.h
+    HW/Latte/Renderer/Vulkan/CocoaSurface.h
+    HW/Latte/Renderer/Vulkan/LatteTextureViewVk.cpp
+    HW/Latte/Renderer/Vulkan/LatteTextureViewVk.h
+    HW/Latte/Renderer/Vulkan/LatteTextureVk.cpp
+    HW/Latte/Renderer/Vulkan/LatteTextureVk.h
+    HW/Latte/Renderer/Vulkan/RendererShaderVk.cpp
+    HW/Latte/Renderer/Vulkan/RendererShaderVk.h
+    HW/Latte/Renderer/Vulkan/SwapchainInfoVk.cpp
+    HW/Latte/Renderer/Vulkan/SwapchainInfoVk.h
+    HW/Latte/Renderer/Vulkan/TextureReadbackVk.cpp
+    HW/Latte/Renderer/Vulkan/VKRBase.h
+    HW/Latte/Renderer/Vulkan/VKRMemoryManager.cpp
+    HW/Latte/Renderer/Vulkan/VKRMemoryManager.h
+    HW/Latte/Renderer/Vulkan/VKRPipelineInfo.cpp
+    HW/Latte/Renderer/Vulkan/VsyncDriver.cpp
+    HW/Latte/Renderer/Vulkan/VsyncDriver.h
+    HW/Latte/Renderer/Vulkan/VulkanAPI.cpp
+    HW/Latte/Renderer/Vulkan/VulkanAPI.h
+    HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.cpp
+    HW/Latte/Renderer/Vulkan/VulkanPipelineCompiler.h
+    HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.cpp
+    HW/Latte/Renderer/Vulkan/VulkanPipelineStableCache.h
+    HW/Latte/Renderer/Vulkan/VulkanQuery.cpp
+    HW/Latte/Renderer/Vulkan/VulkanRendererCore.cpp
+    HW/Latte/Renderer/Vulkan/VulkanRenderer.cpp
+    HW/Latte/Renderer/Vulkan/VulkanRenderer.h
+    HW/Latte/Renderer/Vulkan/VulkanSurfaceCopy.cpp
+    HW/Latte/Renderer/Vulkan/VulkanTextureReadback.h
+  )
 endif()
 
-# The Vulkan surface. Both platforms end up in vkCreateMetalSurfaceEXT with a
-# CAMetalLayer -- they differ only in how that layer is obtained, so each gets its own
-# implementation of CreateCocoaSurface() behind a single call site. That call site is
-# still #ifdef'd, on BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS), because Boost.Predef
-# zeroes BOOST_OS_MACOS on iOS.
-# macOS: an AppKit NSView subclass whose +layerClass is CAMetalLayer.
-# iOS:    the UIKit CAMetalLayer the Metal backend already knows how to build.
-if(PLATFORM_IOS AND ENABLE_VULKAN)
+if(APPLE)
 	target_sources(CemuCafe PRIVATE
-	    HW/Latte/Renderer/Vulkan/UIKitSurface.mm
-	)
-	target_link_libraries(CemuCafe PUBLIC MoltenVK::MoltenVK)
-endif()
-
-# Desktop-macOS only: CocoaSurface.mm is a MoltenVK/Cocoa Vulkan surface and
-# MetalView.mm is an NSView (AppKit). iOS has neither — it uses the UIKit path in
-# Metal/MetalLayer.mm instead.
-if(APPLE AND NOT PLATFORM_IOS)
-	target_sources(CemuCafe PRIVATE
-	    HW/Latte/Renderer/Vulkan/CocoaSurface.mm
 	    HW/Latte/Renderer/MetalView.mm
 	    HW/Latte/Renderer/MetalView.h
 	)
+	if (ENABLE_VULKAN)
+		target_sources(CemuCafe PRIVATE
+		    HW/Latte/Renderer/Vulkan/CocoaSurface.mm
+		)
+	endif()
 endif()
 
 if(ENABLE_METAL)
@@ -667,9 +661,22 @@ endif()
 
 set_property(TARGET CemuCafe PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+target_compile_options(CemuCafe PRIVATE "$<$<CONFIG:Release,RelWithDebInfo>:-O3>")
+set_property(TARGET CemuCafe PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+set_property(TARGET CemuCafe PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
+
 cemu_use_precompiled_header(CemuCafe)
 
+if (ENABLE_LIBUSB)
+  target_sources(CemuCafe PRIVATE
+    OS/libs/nsyshid/BackendLibusb.cpp
+    OS/libs/nsyshid/BackendLibusb.h
+  )
+endif()
+
 target_include_directories(CemuCafe PUBLIC "../")
+target_include_directories(CemuCafe PRIVATE "${CMAKE_SOURCE_DIR}/dependencies/astc-encoder/Source")
+
 
 if (glslang_VERSION VERSION_LESS "15.0.0")
 	set(glslang_target "glslang::SPIRV")
@@ -698,18 +705,16 @@ target_link_libraries(CemuCafe PRIVATE
   ${glslang_target}
   PUBLIC
   OpenSSL::SSL
+  Boost::context
 )
+
 
 if (ENABLE_WAYLAND)
 	# PUBLIC because wayland-client.h is included in VulkanAPI.h
   target_link_libraries(CemuCafe PUBLIC Wayland::Client)
 endif()
 
-# No libusb on iOS: it's for real-USB HID peripherals (Skylanders/Infinity portals,
-# USB wheels, etc. via BackendLibusb), which don't apply during bring-up and whose
-# vcpkg arm64-ios port doesn't provide a usable libusb-1.0/libusb.h. BackendEmulated
-# (software HID emulation, no physical USB) still covers standard controller input.
-if (NOT PLATFORM_IOS)
+if (ENABLE_LIBUSB)
   if (ENABLE_VCPKG)
     if(WIN32)
       set(PKG_CONFIG_EXECUTABLE "${VCPKG_INSTALLED_DIR}/x64-windows/tools/pkgconf/pkgconf.exe")
@@ -721,7 +726,7 @@ if (NOT PLATFORM_IOS)
     find_package(libusb MODULE REQUIRED)
     target_link_libraries(CemuCafe PRIVATE libusb::libusb)
   endif ()
-endif ()
+endif()
 
 if(WIN32)
 	target_link_libraries(CemuCafe PRIVATE iphlpapi)

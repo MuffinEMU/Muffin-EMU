@@ -114,6 +114,30 @@ void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
     backtraceArray[0] = (void *)uc->uc_mcontext.gregs[REG_RIP];
 #endif
 
+    CrashLog_SetOutputChannels(false, true);
+    CrashLog_WriteLine(fmt::format("Error: signal {}:", sig));
+
+#if defined(__aarch64__) && (BOOST_OS_MACOS || BOOST_OS_IOS)
+    {
+        ucontext_t *uc = (ucontext_t *)context;
+        if (uc && uc->uc_mcontext)
+        {
+            auto* ss = &uc->uc_mcontext->__ss;
+            CrashLog_WriteLine(fmt::format("  PC:  {:p}", (void*)ss->__pc));
+            CrashLog_WriteLine(fmt::format("  LR:  {:p}", (void*)ss->__lr));
+            CrashLog_WriteLine(fmt::format("  SP:  {:p}", (void*)ss->__sp));
+            CrashLog_WriteLine(fmt::format("  FP:  {:p}", (void*)ss->__fp));
+            for (int i = 0; i < 29; i++)
+                CrashLog_WriteLine(fmt::format("  x{}: {:p}", i, (void*)ss->__x[i]));
+        }
+        if (info)
+        {
+            CrashLog_WriteLine(fmt::format("  si_addr: {:p}", info->si_addr));
+            CrashLog_WriteLine(fmt::format("  si_code: {}", info->si_code));
+        }
+    }
+#endif
+
 #if BOOST_OS_LINUX
 	char** symbol_trace = backtrace_symbols(backtraceArray, size);
 
@@ -127,7 +151,17 @@ void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
         CrashLog_WriteLine("Failed to read backtrace");
 	}
 #else
-	backtrace_symbols_fd(backtraceArray, size, STDERR_FILENO);
+    char** symbol_trace = backtrace_symbols(backtraceArray, size);
+    if (symbol_trace)
+    {
+        for (size_t i = 0; i < size; i++)
+            CrashLog_WriteLine(symbol_trace[i]);
+        free(symbol_trace);
+    }
+    else
+    {
+        CrashLog_WriteLine("Failed to read backtrace");
+    }
 #endif
 #endif
 
@@ -136,7 +170,6 @@ void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
     std::cerr << cemuLog_GetLogFilePath().generic_string() << std::endl;
 #endif
 
-    CrashLog_SetOutputChannels(false, true);
     ExceptionHandler_LogGeneralInfo();
     CrashLog_SetOutputChannels(true, true);
 
@@ -184,5 +217,5 @@ void ExceptionHandler_Init()
 	sigaction(SIGQUIT, &action, nullptr);
 	sigaction(SIGSEGV, &action, nullptr);
 	sigaction(SIGSYS, &action, nullptr);
-	sigaction(SIGTRAP, &action, nullptr);
+	// sigaction(SIGTRAP, &action, nullptr);
 }

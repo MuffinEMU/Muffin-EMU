@@ -9,26 +9,7 @@ static bool iequals(const std::string& a, const std::string& b) {
 		                               std::tolower(static_cast<unsigned char>(bc)); });
 }
 
-fs::path findPathCI(const fs::path& path)
-{
-	if (fs::exists(path)) return path;
-
-	fs::path fName = path.filename();
-	fs::path parentPath = path.parent_path();
-	if (parentPath.empty())
-		parentPath = ".";
-	else if (!fs::exists(parentPath))
-		parentPath = findPathCI(parentPath);
-
-	std::error_code listErr;
-	for (auto&& dirEntry : fs::directory_iterator(parentPath, listErr))
-		if (iequals(dirEntry.path().filename().string(), fName.string()))
-			return dirEntry;
-
-	return parentPath / fName;
-}
-
-FileStreamUnix* FileStreamUnix::openFile(std::string_view path)
+FileStream* FileStream::openFile(std::string_view path)
 {
 	return openFile2(path, false);
 }
@@ -59,11 +40,13 @@ FileStreamUnix* FileStreamUnix::createFile(std::string_view path)
 
 FileStreamUnix* FileStreamUnix::createFile2(const fs::path& path)
 {
-	FileStreamUnix* fs = new FileStreamUnix(path, false, false);
-	if (fs->m_isValid)
-		return fs;
-	delete fs;
-	return nullptr;
+    std::error_code ec;
+    fs::create_directories(path.parent_path(), ec);
+    FileStream* fs = new FileStream(path, false, false);
+    if (fs->m_isValid)
+        return fs;
+    delete fs;
+    return nullptr;
 }
 
 std::optional<std::vector<uint8>> FileStreamUnix::LoadIntoMemory(const fs::path& path)
@@ -220,7 +203,7 @@ FileStreamUnix::~FileStreamUnix()
 
 FileStreamUnix::FileStreamUnix(const fs::path& path, bool isOpen, bool isWriteable)
 {
-	fs::path CIPath = findPathCI(path);
+	fs::path CIPath = fs::resolvePathCI(path);
 	if (isOpen)
 	{
 		m_fileStream.open(CIPath, isWriteable ? (std::ios_base::in | std::ios_base::out | std::ios_base::binary) : (std::ios_base::in | std::ios_base::binary));
@@ -231,7 +214,7 @@ FileStreamUnix::FileStreamUnix(const fs::path& path, bool isOpen, bool isWriteab
 		m_fileStream.open(CIPath, std::ios_base::in | std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
 		m_isValid = m_fileStream.is_open();
 	}
-	if(m_isValid && fs::is_directory(path))
+	if(m_isValid && fs::is_directory(CIPath))
 	{
 		m_isValid = false;
 		m_fileStream.close();

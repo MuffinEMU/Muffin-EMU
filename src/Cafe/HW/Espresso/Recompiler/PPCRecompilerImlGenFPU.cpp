@@ -839,6 +839,9 @@ bool PPCRecompilerImlGen_PSQ_L(ppcImlGenContext_t* ppcImlGenContext, uint32 opco
 	uint32 knownGQRValue = 0;
 	if ( !PPCRecompiler_isUGQRValueKnown(ppcImlGenContext, gqrIndex, knownGQRValue) )
 	{
+#if defined(__aarch64__)
+		return false;
+#else
 		// generate complex dynamic handler when we dont know the GQR value ahead of time
 		IMLReg gqrRegister = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_SPR0 + SPR_UGQR0 + gqrIndex);
 		IMLReg loadTypeReg = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_TEMPORARY + 0);
@@ -856,6 +859,7 @@ bool PPCRecompilerImlGen_PSQ_L(ppcImlGenContext_t* ppcImlGenContext, uint32 opco
 			caseSegment[i]->AppendInstruction()->make_jump();
 		}
 		return true;
+#endif
 	}
 
 	Espresso::PSQ_LOAD_TYPE type = static_cast<Espresso::PSQ_LOAD_TYPE>((knownGQRValue >> 16) & 0x7);
@@ -971,6 +975,9 @@ bool PPCRecompilerImlGen_PSQ_ST(ppcImlGenContext_t* ppcImlGenContext, uint32 opc
 	uint32 gqrValue = 0;
 	if ( !PPCRecompiler_isUGQRValueKnown(ppcImlGenContext, gqrIndex, gqrValue) )
 	{
+#if defined(__aarch64__)
+		return false;
+#else
 		// generate complex dynamic handler when we dont know the GQR value ahead of time
 		IMLReg gqrRegister = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_SPR0 + SPR_UGQR0 + gqrIndex);
 		IMLReg loadTypeReg = PPCRecompilerImlGen_loadRegister(ppcImlGenContext, PPCREC_NAME_TEMPORARY + 0);
@@ -987,6 +994,7 @@ bool PPCRecompilerImlGen_PSQ_ST(ppcImlGenContext_t* ppcImlGenContext, uint32 opc
 			ppcImlGenContext->emitInst().make_jump(); // finalize case
 		}
 		return true;
+#endif
 	}
 
 	Espresso::PSQ_LOAD_TYPE type = static_cast<Espresso::PSQ_LOAD_TYPE>((gqrValue >> 0) & 0x7);

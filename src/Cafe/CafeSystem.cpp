@@ -3,6 +3,7 @@
 #include "Cafe/OS/libs/gx2/GX2.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
+#include "Cafe/HW/Espresso/Const.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 #include "Cafe/HW/Espresso/Debugger/Debugger.h"
 #include "Cafe/OS/RPL/rpl_symbol_storage.h"
@@ -23,6 +24,7 @@
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/Filesystem/FST/FST.h"
+#include "Cafe/Filesystem/MlcTitleDirectoryCase.h"
 #include "Common/FileStream.h"
 #include "GamePatch.h"
 #include "HW/Espresso/Debugger/GDBStub.h"
@@ -75,7 +77,7 @@
 // spelling for exactly this reason.
 #if BOOST_OS_LINUX
 #include <sys/sysinfo.h>
-#elif BOOST_OS_MACOS || BOOST_OS_BSD || defined(CEMU_PLATFORM_IOS)
+#elif BOOST_OS_MACOS || BOOST_OS_IOS || BOOST_OS_BSD
 #include <sys/types.h>
 #include <sys/sysctl.h>
 #endif
@@ -175,7 +177,7 @@ void LoadMainExecutable()
 	else
 	{
 		// RPX
-		RPLLoader_AddDependency(_pathToExecutable.c_str());
+		RPLLoader_AddDependency(_pathToExecutable.c_str(), true);
 		applicationRPX = RPLLoader_LoadFromMemory(rpxData, rpxSize, (char*)_pathToExecutable.c_str());
 		if (!applicationRPX)
 		{
@@ -283,7 +285,7 @@ void InfoLog_PrintActiveSettings()
 		if (!GetConfig().vk_accurate_barriers.GetValue())
 			cemuLog_log(LogType::Force, "Accurate barriers are disabled!");
 	}
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 	else if (ActiveSettings::GetGraphicsAPI() == GraphicAPI::kMetal)
 	{
 	    cemuLog_log(LogType::Force, "Async compile: {}", GetConfig().async_compile.GetValue() ? "true" : "false");
@@ -528,10 +530,7 @@ namespace CafeSystem
 		struct sysinfo info {};
 		sysinfo(&info);
 		cemuLog_log(LogType::Force, "RAM: {}MB", ((static_cast<uint64_t>(info.totalram) * info.mem_unit) / 1024LL / 1024LL));
-		#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
-		// BOOST_OS_MACOS is 0 on iOS (see the include block at the top of this file),
-		// so without the explicit CEMU_PLATFORM_IOS here no branch matched at all and
-		// the iOS log simply had no RAM line. hw.memsize is public API on iOS.
+		#elif BOOST_OS_MACOS || BOOST_OS_IOS
 		int64_t totalRam;
 		size_t size = sizeof(totalRam);
 		int result = sysctlbyname("hw.memsize", &totalRam, &size, NULL, 0);
@@ -550,21 +549,43 @@ namespace CafeSystem
 	std::string GetWindowsNamedVersion(uint32& buildNumber)
 	{
 		char productName[256];
+		char buildNumberStr[32];
+		char featureVersion[32];
 		HKEY hKey;
 		DWORD dwType = REG_SZ;
 		DWORD dwSize = sizeof(productName);
+		buildNumber = 0;
+		featureVersion[0] = '\0';
 		if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", 0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS)
 		{
 			if (RegQueryValueExA(hKey, "ProductName", NULL, &dwType, (LPBYTE)productName, &dwSize) != ERROR_SUCCESS)
 				strcpy(productName, "Windows");
+			dwType = REG_SZ;
+			dwSize = sizeof(buildNumberStr);
+			if (RegQueryValueExA(hKey, "CurrentBuildNumber", NULL, &dwType, (LPBYTE)buildNumberStr, &dwSize) == ERROR_SUCCESS)
+				buildNumber = (uint32)atoi(buildNumberStr);
+			dwType = REG_SZ;
+			dwSize = sizeof(featureVersion);
+			if (RegQueryValueExA(hKey, "DisplayVersion", NULL, &dwType, (LPBYTE)featureVersion, &dwSize) != ERROR_SUCCESS)
+			{
+				dwType = REG_SZ;
+				dwSize = sizeof(featureVersion);
+				if (RegQueryValueExA(hKey, "ReleaseId", NULL, &dwType, (LPBYTE)featureVersion, &dwSize) != ERROR_SUCCESS)
+					featureVersion[0] = '\0';
+			}
 			RegCloseKey(hKey);
 		}
-		OSVERSIONINFO osvi;
-		ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
-		osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-		GetVersionEx(&osvi);
-		buildNumber = osvi.dwBuildNumber;
-		return std::string(productName);
+		std::string result(productName);
+		// ProductName still reads as "Windows 10" on Windows 11. Find and replace with "Windows 11" based on build number.
+		if (buildNumber >= 22000)
+		{
+			size_t pos = result.find("Windows 10");
+			if (pos != std::string::npos)
+				result.replace(pos, 10, "Windows 11");
+		}
+		if (featureVersion[0] != '\0')
+			result += fmt::format(" {}", featureVersion);
+		return result;
 	}
 	#endif
 
@@ -618,6 +639,8 @@ namespace CafeSystem
 		}
 		else
 			platform = "Linux";
+		#elif BOOST_OS_IOS
+			platform = "iOS";
 		#elif BOOST_OS_MACOS
 		char productVersion[256]{};
 		size_t productVersionSize = sizeof(productVersion);
@@ -635,7 +658,7 @@ namespace CafeSystem
 			buffer = "macOS";
 
 		platform = buffer.c_str();
-		
+
 		#elif BOOST_OS_BSD
 		#if defined(__FreeBSD__)
 		platform = "FreeBSD";
@@ -886,15 +909,15 @@ namespace CafeSystem
 		if (tip.GetType() == TitleIdParser::TITLE_TYPE::AOC || tip.GetType() == TitleIdParser::TITLE_TYPE::BASE_TITLE_UPDATE)
 			cemuLog_log(LogType::Force, "Launched titleId is not the base of a title");
         // mount mlc storage
-        MountBaseDirectories();
+		MountBaseDirectories();
         // mount title folders
 		PREPARE_STATUS_CODE r = LoadAndMountForegroundTitle(titleId);
 		if (r != PREPARE_STATUS_CODE::SUCCESS)
 			return r;
 		gameProfile_load();
 		// setup memory space and PPC recompiler
-        SetupMemorySpace();
-        PPCRecompiler_init();
+		SetupMemorySpace();
+		PPCRecompiler_init();
 		r = PrepareExecutable(); // load RPX
 		if (r != PREPARE_STATUS_CODE::SUCCESS)
 			return r;
@@ -973,11 +996,8 @@ namespace CafeSystem
 		cemu_initForGame();
 		cemuLog_log(LogType::Force, "Boot stage: cemu_initForGame() returned");
 		// enter scheduler
-		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
-		{
-			cemuLog_log(LogType::Force, "Boot stage: entering scheduler on 3 cores");
-			coreinit::OSSchedulerBegin(3);
-		}
+		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || ActiveSettings::GetCPUMode() == CPUMode::MulticoreInterpreter || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
+			coreinit::OSSchedulerBegin(Espresso::CORE_COUNT);
 		else
 		{
 			cemuLog_log(LogType::Force, "Boot stage: entering scheduler on 1 core");
@@ -1092,19 +1112,30 @@ namespace CafeSystem
 	{
 		if (sLaunchModeIsStandalone)
 			return CosCapabilityBits::All;
+
+		CosCapabilityBits resultMask = static_cast<CosCapabilityBits>(0);
+		for (const auto& pack : GraphicPack2::GetActiveGraphicPacks())
+		{
+			for (const auto& permissionOverrides : pack->GetPermissionOverrides()) 
+			{
+				if (permissionOverrides.first == group)
+					resultMask |= static_cast<CosCapabilityBits>(permissionOverrides.second);
+			}
+		}
+
 		auto& update = sGameInfo_ForegroundTitle.GetUpdate();
 		if (update.IsValid())
 		{
 			ParsedCosXml* cosXml = update.GetCosInfo();
 			if (cosXml)
-				return cosXml->GetCapabilityBits(group);
+				return cosXml->GetCapabilityBits(group) | resultMask;
 		}
 		auto& base = sGameInfo_ForegroundTitle.GetBase();
 		if(base.IsValid())
 		{
 			ParsedCosXml* cosXml = base.GetCosInfo();
 			if (cosXml)
-				return cosXml->GetCapabilityBits(group);
+				return cosXml->GetCapabilityBits(group) | resultMask;
 		}
 		return CosCapabilityBits::All;
 	}

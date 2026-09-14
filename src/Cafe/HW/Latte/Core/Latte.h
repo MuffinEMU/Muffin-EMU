@@ -98,10 +98,6 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 
 void LatteRenderTarget_unloadAll();
 
-// surface copy
-
-void LatteSurfaceCopy_copySurfaceNew(MPTR srcPhysAddr, MPTR srcMipAddr, uint32 srcSwizzle, Latte::E_GX2SURFFMT srcSurfaceFormat, sint32 srcWidth, sint32 srcHeight, sint32 srcDepth, uint32 srcPitch, sint32 srcSlice, Latte::E_DIM srcDim, Latte::E_HWTILEMODE srcTilemode, sint32 srcAA, sint32 srcLevel, MPTR dstPhysAddr, MPTR dstMipAddr, uint32 dstSwizzle, Latte::E_GX2SURFFMT dstSurfaceFormat, sint32 dstWidth, sint32 dstHeight, sint32 dstDepth, uint32 dstPitch, sint32 dstSlice, Latte::E_DIM dstDim, Latte::E_HWTILEMODE dstTilemode, sint32 dstAA, sint32 dstLevel);
-
 // texture cache
 
 void LatteTC_Init();
@@ -129,6 +125,7 @@ void LatteTextureReadback_StartTransfer(LatteTextureView* textureView);
 bool LatteTextureReadback_Update(bool forceStart = false);
 void LatteTextureReadback_NotifyTextureDeletion(LatteTexture* texture);
 void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish);
+bool LatteTextureReadback_ReadbackToLinearBlocking(LatteTextureView* sourceView, uint8* dstPtr, uint32 dstWidth, uint32 dstHeight, uint32 dstPitch);
 
 // query
 
@@ -174,21 +171,3 @@ void Latte_Start();
 void Latte_Stop();
 bool Latte_GetStopSignal(); // returns true if stop was requested or if in stopped state
 void LatteThread_Exit();
-
-// Progress reporting
-//
-// The same four counters the heartbeat prints (LatteThread.cpp), readable on demand so a
-// frontend can show them instead of the user having to export log.txt and mail it
-// somewhere. The distinction they exist to make - "running, just very slow" versus
-// "stopped dead after the first frame" - is invisible in an ordinary FPS readout,
-// because both of those look like zero once the rate is rounded to whole frames.
-struct LatteProgressSnapshot
-{
-	bool gx2InitReached;        // GX2Init() reached, i.e. past OSScreen boot
-	uint64 gx2FrameCount;       // frames the GPU has actually completed
-	double gx2FramesPerSecond;  // the heartbeat's own last measured rate; fractional on purpose
-	uint64 osScreenScanouts;    // pre-GX2 OSScreen presents
-	uint32 guestFlipRequests;   // written by the emulated CPU, so it moves only if the guest is alive
-};
-
-void LatteThread_GetProgress(LatteProgressSnapshot& out);

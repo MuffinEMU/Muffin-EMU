@@ -165,7 +165,7 @@ To install the dependencies required to build Cemu, you will need to install Hom
 
 The following dependencies are required. You can install them using Homebrew with the following command:
 
-`brew install git cmake ninja nasm automake libtool boost`
+`brew install automake boost cmake git libtool nasm ninja pkgconf`
 
 ### MoltenVK
 
@@ -189,6 +189,10 @@ Alternatively, you can use the non-privateapi version of MoltenVK, but you may e
 3. `cmake -S . -B build -DCMAKE_BUILD_TYPE=release -G Ninja`
 4. `cmake --build build`
 5. You should now have a Cemu executable file in the /bin folder, which you can run using `./bin/Cemu_release`.
+
+#### Creating an app bundle
+- If you want to create an app bundle instead of a raw executable, append the following flag to the command in step 3:
+   - `-DMACOS_BUNDLE=ON`
 
 #### Troubleshooting steps
 - If step 3 gives you an error about not being able to find ninja, try appending the following to the command and try again:
@@ -251,12 +255,13 @@ Example usage: `cmake -S . -B build -DCMAKE_BUILD_TYPE=release -DENABLE_SDL=ON -
 | CEMU_CXX_FLAGS     |   | Flags passed straight to the compiler, e.g. `-march=native`, `-Wall`, `/W3` | ""      |                    |
 | ENABLE_CUBEB       |   | Enable cubeb audio backend                                                  | ON      |                    |
 | ENABLE_DISCORD_RPC |   | Enable Discord Rich presence support                                        | ON      |                    |
-| ENABLE_OPENGL      |   | Enable OpenGL graphics backend                                              | ON      | Currently required |
+| ENABLE_OPENGL      |   | Enable OpenGL graphics backend                                              | ON      |                    |
 | ENABLE_HIDAPI      |   | Enable HIDAPI (used for Wiimote controller API)                             | ON      |                    |
-| ENABLE_SDL         |   | Enable SDLController controller API                                         | ON      | Currently required |
+| ENABLE_SDL         |   | Enable SDLController controller API                                         | ON      |                    |
 | ENABLE_VCPKG       |   | Use VCPKG package manager to obtain dependencies                            | ON      |                    |
 | ENABLE_VULKAN      |   | Enable the Vulkan graphics backend                                          | ON      |                    |
 | ENABLE_WXWIDGETS   |   | Enable wxWidgets UI                                                         | ON      | Currently required |
+| ENABLE_LIBUSB      |   | Enable libusb                                                               | ON      |                    |
 
 ### Windows
 | Flag               | Description                       | Default | Note               |

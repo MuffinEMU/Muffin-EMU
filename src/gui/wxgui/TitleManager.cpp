@@ -641,7 +641,7 @@ void TitleManager::OnSaveExport(wxCommandEvent& event)
 
 	const auto path = path_dialog.GetPath();
 	int ze;
-	auto* zip = zip_open(path.ToUTF8().data(), ZIP_CREATE | ZIP_TRUNCATE, &ze);
+	auto* zip = zip_open(fs::resolvePathCI(fs::path(path.ToUTF8().data())).string().c_str(), ZIP_CREATE | ZIP_TRUNCATE, &ze);
 	if (!zip)
 	{
 		zip_error_t ziperror;

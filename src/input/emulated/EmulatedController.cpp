@@ -16,7 +16,7 @@ std::string_view EmulatedController::type_to_string(Type type)
 	case Wiimote: return "Wiimote";
 	}
 
-	throw std::runtime_error(fmt::format("unknown emulated controller: {}", to_underlying(type)));
+	throw std::runtime_error(fmt::format("unknown emulated controller: {}", stdx::to_underlying(type)));
 }
 
 EmulatedController::Type EmulatedController::type_from_string(std::string_view str)
@@ -263,19 +263,7 @@ void EmulatedController::clear_controllers()
 
 float EmulatedController::get_axis_value(uint64 mapping) const
 {
-	const auto overriddenAxisMappingIt = m_overriddenAxisMappings.find(mapping);
-	if (overriddenAxisMappingIt != m_overriddenAxisMappings.cend())
-	{
-		// Loaded once into a local, not read twice. The member is atomic now, so the
-		// test and the return would otherwise be two separate loads of a value the UI
-		// thread is free to change in between - and this is the exact pair that would
-		// then report a stick as deflected while handing back the zero it had just been
-		// re-centred to.
-		const float overridden = overriddenAxisMappingIt->second.load(std::memory_order_relaxed);
-		if (overridden != 0.0f)
-			return overridden;
-	}
-
+	std::shared_lock lock(m_mutex);
 	const auto it = m_mappings.find(mapping);
 	if (it != m_mappings.cend())
 	{
@@ -307,12 +295,7 @@ void EmulatedController::setAxisValue(uint64 mapping, float value)
 
 bool EmulatedController::is_mapping_down(uint64 mapping) const
 {
-	const auto overriddenButtonMappingIt = m_overriddenButtonMappings.find(mapping);
-	if (overriddenButtonMappingIt != m_overriddenButtonMappings.cend() && overriddenButtonMappingIt->second)
-	{
-		return true;
-	}
-
+	std::shared_lock lock(m_mutex);
 	const auto it = m_mappings.find(mapping);
 	if (it != m_mappings.cend())
 	{
@@ -325,6 +308,7 @@ bool EmulatedController::is_mapping_down(uint64 mapping) const
 
 std::string EmulatedController::get_mapping_name(uint64 mapping) const
 {
+	std::shared_lock lock(m_mutex);
 	const auto it = m_mappings.find(mapping);
 	if (it != m_mappings.cend())
 	{
@@ -338,6 +322,7 @@ std::string EmulatedController::get_mapping_name(uint64 mapping) const
 
 std::shared_ptr<ControllerBase> EmulatedController::get_mapping_controller(uint64 mapping) const
 {
+	std::shared_lock lock(m_mutex);
 	const auto it = m_mappings.find(mapping);
 	if (it != m_mappings.cend())
 	{
@@ -351,17 +336,20 @@ std::shared_ptr<ControllerBase> EmulatedController::get_mapping_controller(uint6
 
 void EmulatedController::delete_mapping(uint64 mapping)
 {
+	std::scoped_lock lock(m_mutex);
 	m_mappings.erase(mapping);
 }
 
 void EmulatedController::clear_mappings()
 {
+	std::scoped_lock lock(m_mutex);
 	m_mappings.clear();
 }
 
 void EmulatedController::set_mapping(uint64 mapping, const std::shared_ptr<ControllerBase>& controller,
                                      uint64 button)
 {
+	std::scoped_lock lock(m_mutex);
 	m_mappings[mapping] = { controller, button };
 }
 

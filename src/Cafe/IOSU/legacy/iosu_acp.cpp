@@ -692,7 +692,7 @@ namespace iosu
 
 				const auto outPath = ActiveSettings::GetMlcPath("usr/save/{:08x}/{:08x}/meta/meta.xml", GetTitleIdHigh(titleId), GetTitleIdLow(titleId));
 
-				std::ofstream myFile(outPath, std::ios::out | std::ios::binary);
+				std::ofstream myFile(fs::resolvePathCI(outPath), std::ios::out | std::ios::binary);
 				myFile.write((char*)fileContent.get(), fileSize);
 				myFile.close();
 			}
@@ -708,7 +708,7 @@ namespace iosu
 
 				const auto outPath = ActiveSettings::GetMlcPath("usr/save/{:08x}/{:08x}/meta/iconTex.tga", GetTitleIdHigh(titleId), GetTitleIdLow(titleId));
 
-				std::ofstream myFile(outPath, std::ios::out | std::ios::binary);
+				std::ofstream myFile(fs::resolvePathCI(outPath), std::ios::out | std::ios::binary);
 				myFile.write((char*)fileContent.get(), fileSize);
 				myFile.close();
 			}

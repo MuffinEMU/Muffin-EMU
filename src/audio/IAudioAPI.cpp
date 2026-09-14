@@ -6,6 +6,9 @@
 #include "DirectSoundAPI.h"
 #endif
 #include "config/CemuConfig.h"
+#if BOOST_OS_IOS
+#include "iOSAudioAPI.h"
+#endif
 #if HAS_CUBEB
 #include "CubebAPI.h"
 #endif
@@ -23,24 +26,26 @@ uint32 IAudioAPI::s_audioDelay = 2;
 std::array<bool, IAudioAPI::AudioAPIEnd> IAudioAPI::s_availableApis{};
 
 IAudioAPI::IAudioAPI(uint32 samplerate, uint32 channels, uint32 samples_per_block, uint32 bits_per_sample)
-	: m_samplerate(samplerate), m_channels(channels), m_samplesPerBlock(samples_per_block), m_bitsPerSample(bits_per_sample)
+    : m_samplerate(samplerate), m_channels(channels), m_samplesPerBlock(samples_per_block), m_bitsPerSample(bits_per_sample)
 {
-	m_bytesPerBlock = samples_per_block * channels * (bits_per_sample / 8);
-	InitWFX(m_samplerate, m_channels, m_bitsPerSample);
+    m_bytesPerBlock = samples_per_block * channels * (bits_per_sample / 8);
+    InitWFX(m_samplerate, m_channels, m_bitsPerSample);
 }
 
 void IAudioAPI::PrintLogging()
 {
-	cemuLog_log(LogType::Force, "------- Init Audio backend -------");
-	cemuLog_log(LogType::Force, "DirectSound: {}", s_availableApis[DirectSound] ? "available" : "not supported");
-	cemuLog_log(LogType::Force, "XAudio 2.8: {}", s_availableApis[XAudio2] ? "available" : "not supported");
-	if (!s_availableApis[XAudio2])
-	{
-		cemuLog_log(LogType::Force, "XAudio 2.7: {}", s_availableApis[XAudio27] ? "available" : "not supported");
-	}
+    cemuLog_log(LogType::Force, "------- Init Audio backend -------");
+    cemuLog_log(LogType::Force, "DirectSound: {}", s_availableApis[DirectSound] ? "available" : "not supported");
+    cemuLog_log(LogType::Force, "XAudio 2.8: {}", s_availableApis[XAudio2] ? "available" : "not supported");
+    if (!s_availableApis[XAudio2])
+    {
+        cemuLog_log(LogType::Force, "XAudio 2.7: {}", s_availableApis[XAudio27] ? "available" : "not supported");
+    }
 
-	cemuLog_log(LogType::Force, "Cubeb: {}", s_availableApis[Cubeb] ? "available" : "not supported");
-	cemuLog_log(LogType::Force, "CoreAudio: {}", s_availableApis[CoreAudio] ? "available" : "not supported");
+    cemuLog_log(LogType::Force, "Cubeb: {}", s_availableApis[Cubeb] ? "available" : "not supported");
+#if BOOST_OS_IOS
+    cemuLog_log(LogType::Force, "iOS: {}", s_availableApis[IOSAudio] ? "available" : "not supported");
+#endif
 }
 
 void IAudioAPI::InitWFX(sint32 samplerate, sint32 channels, sint32 bits_per_sample)
@@ -80,7 +85,7 @@ void IAudioAPI::InitWFX(sint32 samplerate, sint32 channels, sint32 bits_per_samp
 
 void IAudioAPI::InitializeStatic()
 {
-	SetAudioDelay(GetConfig().audio_delay);
+    s_audioDelay = GetConfig().audio_delay;
 
 #if BOOST_OS_WINDOWS
 	s_availableApis[DirectSound] = true;
@@ -89,7 +94,10 @@ void IAudioAPI::InitializeStatic()
 		s_availableApis[XAudio27] = XAudio27API::InitializeStatic();
 #endif
 #if HAS_CUBEB
-	s_availableApis[Cubeb] = CubebAPI::InitializeStatic();
+    s_availableApis[Cubeb] = CubebAPI::InitializeStatic();
+#endif
+#if BOOST_OS_IOS
+    s_availableApis[IOSAudio] = true;
 #endif
 #if HAS_COREAUDIO
 	s_availableApis[CoreAudio] = CoreAudioAPI::InitializeStatic();
@@ -113,31 +121,37 @@ AudioAPIPtr IAudioAPI::CreateDeviceFromConfig(AudioType type, sint32 rate, sint3
 
 AudioAPIPtr IAudioAPI::CreateDeviceFromConfig(AudioType type, sint32 rate, sint32 channels, sint32 samples_per_block, sint32 bits_per_sample)
 {
-	AudioAPIPtr audioAPIDev;
+    AudioAPIPtr audioAPIDev;
 
-	auto& config = GetConfig();
+    auto& config = GetConfig();
 
-	const auto audio_api = (IAudioAPI::AudioAPI)config.audio_api;
-	auto selectedDevice = GetDeviceFromType(type);
+    const auto audio_api = (IAudioAPI::AudioAPI)config.audio_api;
+    auto selectedDevice = GetDeviceFromType(type);
 
-	if (selectedDevice.empty())
-		return {};
+    if (selectedDevice.empty())
+        return {};
 
-	IAudioAPI::DeviceDescriptionPtr device_description;
-	if (IAudioAPI::IsAudioAPIAvailable(audio_api))
-	{
-		auto devices = IAudioAPI::GetDevices(audio_api);
-		const auto it = std::find_if(devices.begin(), devices.end(), [&selectedDevice](const auto& d) { return d->GetIdentifier() == selectedDevice; });
-		if (it != devices.end())
-			device_description = *it;
-	}
-	if (!device_description)
-		throw std::runtime_error("failed to find selected device while trying to create audio device");
+    IAudioAPI::DeviceDescriptionPtr device_description;
+    if (IAudioAPI::IsAudioAPIAvailable(audio_api))
+    {
+        auto devices = IAudioAPI::GetDevices(audio_api);
+        const auto it = std::find_if(devices.begin(), devices.end(), [&selectedDevice](const auto& d) { return d->GetIdentifier() == selectedDevice; });
+        if (it != devices.end())
+            device_description = *it;
 
-	audioAPIDev = CreateDevice(audio_api, device_description, rate, channels, samples_per_block, bits_per_sample);
-	audioAPIDev->SetVolume(GetVolumeFromType(type));
+#if BOOST_OS_IOS
+        if (!device_description && !devices.empty())
+            device_description = devices.front();
+#endif
+    }
 
-	return audioAPIDev;
+    if (!device_description)
+        throw std::runtime_error("failed to find selected device while trying to create audio device");
+
+    audioAPIDev = CreateDevice(audio_api, device_description, rate, channels, samples_per_block, bits_per_sample);
+    audioAPIDev->SetVolume(GetVolumeFromType(type));
+
+    return audioAPIDev;
 }
 
 AudioAPIPtr IAudioAPI::CreateDevice(AudioAPI api, const DeviceDescriptionPtr& device, sint32 samplerate, sint32 channels, sint32 samples_per_block, sint32 bits_per_sample)
@@ -171,12 +185,11 @@ AudioAPIPtr IAudioAPI::CreateDevice(AudioAPI api, const DeviceDescriptionPtr& de
 		return std::make_unique<CubebAPI>(tmp->GetDeviceId(), samplerate, channels, samples_per_block, bits_per_sample);
 	}
 #endif
-#if HAS_COREAUDIO
-	case CoreAudio:
-	{
-		// iOS owns output routing, so there is nothing device-specific to pass through.
-		return std::make_unique<CoreAudioAPI>(samplerate, channels, samples_per_block, bits_per_sample);
-	}
+#if BOOST_OS_IOS
+	case IOSAudio:
+    {
+        return std::make_unique<IOSAudioAPI>(samplerate, channels, samples_per_block, bits_per_sample);
+    }
 #endif
 	default:
 		throw std::runtime_error(fmt::format("invalid audio api: {}", api));
@@ -210,11 +223,11 @@ std::vector<IAudioAPI::DeviceDescriptionPtr> IAudioAPI::GetDevices(AudioAPI api)
 		return CubebAPI::GetDevices();
 	}
 #endif
-#if HAS_COREAUDIO
-	case CoreAudio:
-	{
-		return CoreAudioAPI::GetDevices();
-	}
+#if BOOST_OS_IOS
+	case IOSAudio:
+    {
+        return IOSAudioAPI::GetDevices();
+    }
 #endif
 	default:
 		throw std::runtime_error(fmt::format("invalid audio api: {}", api));
@@ -229,6 +242,11 @@ void IAudioAPI::SetAudioDelayOverride(uint32 delay)
 uint32 IAudioAPI::GetAudioDelay() const
 {
 	return m_audioDelayOverride > 0 ? m_audioDelayOverride : s_audioDelay;
+}
+
+uint32 IAudioAPI::GetTargetQueuedBlocks() const
+{
+	return std::clamp<uint32>(GetAudioDelay(), 1, kBlockCount);
 }
 
 AudioChannels IAudioAPI::AudioTypeToChannels(AudioType type)

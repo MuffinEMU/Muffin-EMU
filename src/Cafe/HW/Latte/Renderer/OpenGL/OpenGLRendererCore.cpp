@@ -17,6 +17,7 @@
 #include "Cafe/OS/libs/gx2/GX2.h"
 
 #include "Cafe/GameProfile/GameProfile.h"
+#include "HW/Latte/Renderer/RendererCore.h"
 #include "config/ActiveSettings.h"
 
 
@@ -52,7 +53,7 @@ struct
 	uint32 maxIndex;
 	uint32 minIndex;
 	uint8* indexData;
-	// buffer 
+	// buffer
 	GLuint glIndexCacheBuffer;
 	VirtualBufferHeap_t* indexBufferVirtualHeap;
 	uint8* mappedIndexBuffer;
@@ -371,6 +372,8 @@ void _decodeAndUploadIndexData(indexDataCacheEntry2_t* cacheEntry)
 
 void LatteDraw_cleanupAfterFrame()
 {
+	if (g_renderer->GetType() != RendererAPI::OpenGL)
+		return;
 	// drop everything from cache that is older than 30 frames
 	uint32 frameCounter = LatteGPUState.frameCounter;
 	while (indexDataCacheFirst)
@@ -523,12 +526,6 @@ void LatteDrawGL_prepareIndicesWithGPUCache(MPTR indexDataMPTR, _INDEX_TYPE inde
 	indexState.maxIndex = cacheEntry->maxIndex;
 	indexState.indexData = (uint8*)(size_t)cacheEntry->heapEntry->startOffset;
 }
-
-// LatteDraw_handleSpecialState8_clearAsDepth() moved to the shared
-// Cafe/HW/Latte/Core/LatteDraw.cpp - it's backend-agnostic (the one OpenGL-specific
-// branch inside it already runtime-checks g_renderer->GetType()), but living only
-// here meant MetalRenderer/VulkanRenderer's calls to it were undefined symbols on
-// iOS, which excludes this file entirely (Metal-only build).
 
 void LatteDrawGL_doDraw(_INDEX_TYPE indexType, uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count)
 {
@@ -696,10 +693,6 @@ void OpenGLRenderer::_setupVertexAttributes()
 			SetAttributeArrayState(i, false, -1);
 	}
 }
-
-void rectsEmulationGS_outputSingleVertex(std::string& gsSrc, LatteDecompilerShader* vertexShader, LatteShaderPSInputTable* psInputTable, sint32 vIdx);
-void rectsEmulationGS_outputGeneratedVertex(std::string& gsSrc, LatteDecompilerShader* vertexShader, LatteShaderPSInputTable* psInputTable, const char* variant);
-void rectsEmulationGS_outputVerticesCode(std::string& gsSrc, LatteDecompilerShader* vertexShader, LatteShaderPSInputTable* psInputTable, sint32 p0, sint32 p1, sint32 p2, sint32 p3, const char* variant, const LatteContextRegister& latteRegister);
 
 std::map<uint64, RendererShaderGL*> g_mapGLRectEmulationGS;
 

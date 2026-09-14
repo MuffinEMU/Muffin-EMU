@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IAudioInputAPI.h"
+#include "AudioRingBuffer.h"
 
 #include <cubeb/cubeb.h>
 
@@ -45,7 +46,6 @@ private:
 	cubeb_stream* m_stream = nullptr;
 	bool m_is_playing = false;
 
-	mutable std::shared_mutex m_mutex;
-	std::vector<uint8> m_buffer;
+	AudioRingBuffer m_buffer;
 	static long data_cb(cubeb_stream* stream, void* user, const void* inputbuffer, void* outputbuffer, long nframes);
 };

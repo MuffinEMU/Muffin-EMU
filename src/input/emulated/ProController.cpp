@@ -1,9 +1,9 @@
 #include "input/emulated/ProController.h"
 
 #include "input/api/Controller.h"
-#if HAS_SDL
+#ifdef HAS_SDL
 #include "input/api/SDL/SDLController.h"
-#endif // HAS_SDL
+#endif
 
 ProController::ProController(size_t player_index)
 	: WPADController(player_index, kDataFormat_URCC)
@@ -137,7 +137,7 @@ bool ProController::set_default_mapping(const std::shared_ptr<ControllerBase>& c
 	std::vector<std::pair<uint64, uint64>> mapping;
 	switch (controller->api())
 	{
-#if HAS_SDL
+#ifdef HAS_SDL
 	case InputAPI::SDLController: {
 		const auto sdl_controller = std::static_pointer_cast<SDLController>(controller);
 		if (sdl_controller->get_guid() == SDLController::kLeftJoyCon)
@@ -222,7 +222,7 @@ bool ProController::set_default_mapping(const std::shared_ptr<ControllerBase>& c
 		}
 		break;
 	}
-#endif // HAS_SDL
+#endif
 	case InputAPI::XInput:
 	{
 		mapping =

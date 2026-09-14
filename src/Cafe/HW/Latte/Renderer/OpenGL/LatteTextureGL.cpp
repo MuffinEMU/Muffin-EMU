@@ -6,8 +6,8 @@
 #include "config/LaunchSettings.h"
 
 LatteTextureGL::LatteTextureGL(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle,
-	Latte::E_HWTILEMODE tileMode, bool isDepth)
-	: LatteTexture(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth)
+	Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget)
+	: LatteTexture(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth, isRenderTarget)
 {
 	GenerateEmptyTextureFromGX2Dim(dim, this->glId_texture, this->glTexTarget, true);
 	// set format info

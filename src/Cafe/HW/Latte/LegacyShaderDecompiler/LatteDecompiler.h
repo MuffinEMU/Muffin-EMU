@@ -48,6 +48,7 @@ struct LatteDecompilerShaderResourceMapping
 	LatteDecompilerShaderResourceMapping()
 	{
 		std::fill(textureUnitToBindingPoint, textureUnitToBindingPoint + LATTE_NUM_MAX_TEX_UNITS, -1);
+		std::fill(textureUnitToSamplerBindingPoint, textureUnitToSamplerBindingPoint + LATTE_NUM_MAX_TEX_UNITS, -1);
 		std::fill(uniformBuffersBindingPoint, uniformBuffersBindingPoint + LATTE_NUM_MAX_UNIFORM_BUFFERS, -1);
 		std::fill(attributeMapping, attributeMapping + LATTE_NUM_MAX_ATTRIBUTE_LOCATIONS, -1);
 	}
@@ -56,6 +57,8 @@ struct LatteDecompilerShaderResourceMapping
 	sint8 setIndex{};
 	// texture
 	sint8 textureUnitToBindingPoint[LATTE_NUM_MAX_TEX_UNITS];
+	// Metal uses a separate, compact sampler namespace. multiple textures may share one sampler.
+	sint8 textureUnitToSamplerBindingPoint[LATTE_NUM_MAX_TEX_UNITS];
 	// uniform buffer
 	sint8 uniformVarsBufferBindingPoint{-1}; // special block for uniform registers/remapped array/custom variables
 	sint8 uniformBuffersBindingPoint[LATTE_NUM_MAX_UNIFORM_BUFFERS];
@@ -64,6 +67,7 @@ struct LatteDecompilerShaderResourceMapping
 	// attributes (vertex shader only)
 	sint8 attributeMapping[LATTE_NUM_MAX_ATTRIBUTE_LOCATIONS];
 	// Metal exclusive
+	sint8 argumentBufferBindingPoint{-1};
 	sint8 verticesPerInstanceBinding{-1};
 	sint8 indexBufferBinding{-1};
 	sint8 indexTypeBinding{-1};
@@ -227,11 +231,14 @@ struct LatteDecompilerShader
 		sint32 loc_alphaTestRef; // uf_alphaTestRef
 		sint32 loc_pointSize; // uf_pointSize
 		sint32 loc_fragCoordScale;
+		sint32 loc_baseVertex;
+		sint32 loc_baseInstance;
 		std::vector<LatteUniformTextureScaleEntry_t> list_ufTexRescale; // list of mappings for uf_tex*Scale <-> uniform location
 		float ufCurrentValueAlphaTestRef;
 		float ufCurrentValueFragCoordScale[2];
 		sint32 loc_verticesPerInstance;
 		sint32 loc_streamoutBufferBase[LATTE_NUM_STREAMOUT_BUFFER];
+		sint32 loc_streamoutBufferSize[LATTE_NUM_STREAMOUT_BUFFER];
 		uint32 uniformRangeSize; // entire size of uniform variable block
 	}uniform{ 0 };
 	// fast access
@@ -256,8 +263,11 @@ struct LatteDecompilerOutputUniformOffsets
 	sint32 offset_fragCoordScale;
 	sint32 offset_windowSpaceToClipSpaceTransform;
 	sint32 offset_texScale[LATTE_NUM_MAX_TEX_UNITS];
+	sint32 offset_baseVertex{-1};
+	sint32 offset_baseInstance{-1};
 	sint32 offset_verticesPerInstance{-1};
 	sint32 offset_streamoutBufferBase[LATTE_NUM_STREAMOUT_BUFFER]{ -1, -1, -1, -1 };
+	sint32 offset_streamoutBufferSize[LATTE_NUM_STREAMOUT_BUFFER]{ -1, -1, -1, -1 };
 	sint32 offset_endOfBlock; // stores size of uniform variable block
 
 	LatteDecompilerOutputUniformOffsets()
