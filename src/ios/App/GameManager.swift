@@ -926,6 +926,46 @@ class GameManager: ObservableObject {
             cemu_bridge_set_downscale_filter(
                 Int32(UserDefaults.standard.object(forKey: "muffin.render.downscaleFilter") as? Int ?? 0))
 
+            // Screen flip, gamma and the performance overlay - same "push from UserDefaults
+            // before boot" reasoning as everything above: the engine reads all of these once
+            // at the points cited on their bridge declarations, not from UserDefaults itself.
+            cemu_bridge_set_render_upside_down(
+                UserDefaults.standard.object(forKey: "muffin.render.upsideDown") as? Bool ?? false)
+            cemu_bridge_set_display_gamma(Float(
+                UserDefaults.standard.object(forKey: DisplayGammaSetting.storageKey) as? Double
+                    ?? DisplayGammaSetting.defaultValue))
+            cemu_bridge_set_overlay_position(
+                Int32(UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
+                    ?? OverlaySettings.defaultPosition.rawValue))
+            cemu_bridge_set_overlay_fps(
+                UserDefaults.standard.object(forKey: OverlaySettings.fpsKey) as? Bool
+                    ?? OverlaySettings.defaultFps)
+            cemu_bridge_set_overlay_cpu_usage(
+                UserDefaults.standard.object(forKey: OverlaySettings.cpuUsageKey) as? Bool
+                    ?? OverlaySettings.defaultCpuUsage)
+            cemu_bridge_set_overlay_ram_usage(
+                UserDefaults.standard.object(forKey: OverlaySettings.ramUsageKey) as? Bool
+                    ?? OverlaySettings.defaultRamUsage)
+
+            // Audio. tv_audio_enabled/pad_audio_enabled and the volumes take effect the
+            // moment ax_out.cpp next looks at them (see CemuBridge.h's Audio section), but
+            // the channel layouts only apply when their device is (re)created, so - like
+            // everything else in this block - pushing them here before boot is what makes
+            // a change made in Settings during a previous session actually reach a fresh
+            // launch. Defaults match AudioSettingsSection.swift/CemuConfig.h: TV on,
+            // GamePad off, both stereo, both at 50.
+            cemu_bridge_set_tv_audio_enabled(
+                UserDefaults.standard.object(forKey: AudioSettings.tvEnabledKey) as? Bool ?? AudioSettings.defaultTvEnabled)
+            cemu_bridge_set_tv_volume(
+                Int32(UserDefaults.standard.object(forKey: AudioSettings.tvVolumeKey) as? Int ?? AudioSettings.defaultTvVolume))
+            cemu_bridge_set_tv_channels(
+                Int32(UserDefaults.standard.object(forKey: AudioSettings.tvChannelsKey) as? Int ?? AudioSettings.defaultTvChannels))
+            cemu_bridge_set_pad_audio_enabled(
+                UserDefaults.standard.object(forKey: AudioSettings.padEnabledKey) as? Bool ?? AudioSettings.defaultPadEnabled)
+            cemu_bridge_set_pad_volume(
+                Int32(UserDefaults.standard.object(forKey: AudioSettings.padVolumeKey) as? Int ?? AudioSettings.defaultPadVolume))
+            cemu_bridge_set_pad_channels(
+                Int32(UserDefaults.standard.object(forKey: AudioSettings.padChannelsKey) as? Int ?? AudioSettings.defaultPadChannels))
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)

@@ -56,6 +56,24 @@ enum DownscaleFilterSetting {
     static let defaultValue = ScaleFilter.linear
 }
 
+/// Backs cemu_bridge_set_display_gamma(). The bridge itself also accepts exactly 0 to
+/// mean sRGB (see CemuBridge.h), but this settings page only ever offers a real gamma
+/// value in the 1.0-3.0 range the bridge clamps to - there is no on-screen way to send
+/// 0 from here, so this app's own effective floor is 1.0, not sRGB. minValue/maxValue
+/// mirror the bridge's own clamp so the slider can never show a position the push would
+/// silently correct out from under it.
+enum DisplayGammaSetting {
+    static let storageKey = "muffin.render.displayGamma"
+    // Double, not Float: @AppStorage has no Float overload (Bool/Int/Double/String/URL/
+    // Data and RawRepresentable-over-those only) - Float compiles as a plain property
+    // with no error until Xcode's real type-checker sees it, which nothing in this
+    // environment runs. cemu_bridge_set_display_gamma still takes the C `float` the
+    // engine expects; the one call site converts explicitly.
+    static let defaultValue: Double = 2.2
+    static let minValue: Double = 1.0
+    static let maxValue: Double = 3.0
+}
+
 /// Which MoltenVK build the Vulkan renderer loads: 1.4.3 by default, or 1.2.8,
 /// the build 64Touch uses. The bridge reads the key once when the engine starts, because a
 /// loaded MoltenVK cannot be swapped inside a running process.
@@ -90,6 +108,8 @@ struct GraphicsSettingsSection: View {
     @AppStorage("muffin.render.vsync") private var vsyncEnabled = true
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
+    @AppStorage("muffin.render.upsideDown") private var upsideDownEnabled = false
+    @AppStorage(DisplayGammaSetting.storageKey) private var displayGamma = DisplayGammaSetting.defaultValue
 
     private var renderScale: RenderScale {
         RenderScale(rawValue: renderScaleRaw) ?? .balanced
@@ -104,12 +124,14 @@ struct GraphicsSettingsSection: View {
             resolutionPicker
             stretchToggle
             vsyncToggle
+            upsideDownToggle
+            gammaSlider
             meshShaderNote
         } header: {
             Text("Graphics")
         } footer: {
             InfoButton.footer(
-                "Metal is the native, default renderer; Vulkan (MoltenVK) can be more compatible for some titles at some cost to speed, and takes effect on the next launch. Resolution, stretching and VSync change how the picture is presented, not how the game is emulated.",
+                "Metal is the native, default renderer; Vulkan (MoltenVK) can be more compatible for some titles at some cost to speed, and takes effect on the next launch. Resolution, stretching, VSync, screen flip and gamma change how the picture is presented, not how the game is emulated.",
                 title: "Graphics",
                 text: fullText)
         }
@@ -202,6 +224,36 @@ struct GraphicsSettingsSection: View {
         }
     }
 
+    private var upsideDownToggle: some View {
+        Toggle(isOn: $upsideDownEnabled) {
+            Text("Flip Screen Upside Down")
+        }
+        .tint(MuffinTheme.pixelBlue)
+        .onChange(of: upsideDownEnabled) { newValue in
+            cemu_bridge_set_render_upside_down(newValue)
+        }
+    }
+
+    private var gammaSlider: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Display Gamma")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                Spacer()
+                Text(String(format: "%.1f", displayGamma))
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+            Slider(
+                value: $displayGamma,
+                in: DisplayGammaSetting.minValue...DisplayGammaSetting.maxValue
+            )
+            .onChange(of: displayGamma) { newValue in
+                cemu_bridge_set_display_gamma(Float(newValue))
+            }
+        }
+    }
+
     // A real, current hardware limitation, not a hedge - see MetalRenderer.cpp's
     // mesh-shader gate. GraphicPacksView carries the full version of this note
     // where it actually matters (right next to the packs it affects); this is the
@@ -228,6 +280,10 @@ struct GraphicsSettingsSection: View {
         Frame stretching fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.
 
         VSync paces new frames to the screen's own refresh instead of showing them the instant they're ready, which avoids tearing at the cost of capping how fast the picture can update. On by default. Turn it off only if a game feels laggy behind your input and you'd rather see torn frames sooner than smooth ones later - most titles under this port's current performance won't notice a difference either way. Takes effect on the next launch of a game.
+
+        Flip screen upside down inverts both Wii U outputs vertically before they reach the screen. Off for everyone except a panel or capture rig that presents the image inverted. Takes effect on the next frame.
+
+        Display gamma adjusts how bright midtones look without changing pure black or pure white. 2.2 is the conventional display gamma and this port's default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.
 
         This device has no mesh shader support, so packs that rely on geometry shaders or post-processing (RECTS) draws won't render correctly yet. Everything else works normally.
         """

@@ -42,6 +42,8 @@ struct SettingsView: View {
         AppearanceSettingsSection(showingIconPicker: $showingIconPicker, showingThemePicker: $showingThemePicker)
         PremiumSettingsSection()
         PreviewPadSection()
+        OverlaySettingsSection()
+        AudioSettingsSection()
         AboutSettingsSection()
     }
 

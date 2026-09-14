@@ -989,6 +989,125 @@ void cemu_bridge_set_downscale_filter(int filter) {
         GetConfig().downscale_filter = (sint32)filter;
 }
 
+// ---------------------------------------------------------------------------
+// Screen orientation, gamma and the on-screen performance overlay. See the doc comments
+// on the declarations in CemuBridge.h for what each one does and why the gamma range is
+// 1.0-3.0. overlay.* are plain (non-ConfigValue) fields, same as the audio block below.
+
+void cemu_bridge_set_render_upside_down(bool enabled) {
+    GetConfig().render_upside_down = enabled;
+}
+
+bool cemu_bridge_render_upside_down(void) {
+    return GetConfig().render_upside_down.GetValue();
+}
+
+void cemu_bridge_set_display_gamma(float gamma) {
+    if (gamma <= 0.0f) {
+        GetConfig().userDisplayGamma = 0.0f; // sRGB
+        return;
+    }
+    if (gamma < 1.0f)
+        gamma = 1.0f;
+    else if (gamma > 3.0f)
+        gamma = 3.0f;
+    GetConfig().userDisplayGamma = gamma;
+}
+
+float cemu_bridge_display_gamma(void) {
+    return GetConfig().userDisplayGamma.GetValue();
+}
+
+void cemu_bridge_set_overlay_position(int position) {
+    if (position >= (int)ScreenPosition::kDisabled && position <= (int)ScreenPosition::kBottomRight)
+        GetConfig().overlay.position = (ScreenPosition)position;
+}
+
+int cemu_bridge_overlay_position(void) {
+    return (int)GetConfig().overlay.position;
+}
+
+void cemu_bridge_set_overlay_fps(bool enabled) {
+    GetConfig().overlay.fps = enabled;
+}
+
+bool cemu_bridge_overlay_fps(void) {
+    return GetConfig().overlay.fps;
+}
+
+void cemu_bridge_set_overlay_cpu_usage(bool enabled) {
+    GetConfig().overlay.cpu_usage = enabled;
+}
+
+bool cemu_bridge_overlay_cpu_usage(void) {
+    return GetConfig().overlay.cpu_usage;
+}
+
+void cemu_bridge_set_overlay_ram_usage(bool enabled) {
+    GetConfig().overlay.ram_usage = enabled;
+}
+
+bool cemu_bridge_overlay_ram_usage(void) {
+    return GetConfig().overlay.ram_usage;
+}
+
+// MARK: - Audio
+//
+// tv_audio_enabled/pad_audio_enabled/tv_channels/pad_channels/tv_volume/pad_volume are all
+// plain fields on CemuConfig, not ConfigValue-wrapped, so they're read and written directly
+// rather than through .GetValue(). See CemuBridge.h's Audio section for what's deliberately
+// left out (audio_delay, microphone_enabled, input_*, every *_device) and why.
+
+void cemu_bridge_set_tv_audio_enabled(bool enabled) {
+    GetConfig().tv_audio_enabled = enabled;
+}
+
+bool cemu_bridge_tv_audio_enabled(void) {
+    return GetConfig().tv_audio_enabled;
+}
+
+void cemu_bridge_set_tv_volume(int volume) {
+    GetConfig().tv_volume = std::clamp(volume, 0, 100);
+}
+
+int cemu_bridge_tv_volume(void) {
+    return GetConfig().tv_volume;
+}
+
+void cemu_bridge_set_tv_channels(int channels) {
+    if (channels >= kMono && channels <= kSurround)
+        GetConfig().tv_channels = (AudioChannels)channels;
+}
+
+int cemu_bridge_tv_channels(void) {
+    return (int)GetConfig().tv_channels;
+}
+
+void cemu_bridge_set_pad_audio_enabled(bool enabled) {
+    GetConfig().pad_audio_enabled = enabled;
+}
+
+bool cemu_bridge_pad_audio_enabled(void) {
+    return GetConfig().pad_audio_enabled;
+}
+
+void cemu_bridge_set_pad_volume(int volume) {
+    GetConfig().pad_volume = std::clamp(volume, 0, 100);
+}
+
+int cemu_bridge_pad_volume(void) {
+    return GetConfig().pad_volume;
+}
+
+void cemu_bridge_set_pad_channels(int channels) {
+    if (channels >= kMono && channels <= kSurround)
+        GetConfig().pad_channels = (AudioChannels)channels;
+}
+
+int cemu_bridge_pad_channels(void) {
+    return (int)GetConfig().pad_channels;
+}
+
 void cemu_bridge_set_vsync_enabled(bool enabled) {
     GetConfig().vsync = enabled ? 1 : 0;
 }

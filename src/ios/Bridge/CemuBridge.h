@@ -416,6 +416,110 @@ int cemu_bridge_graphics_api(void);
 void cemu_bridge_set_upscale_filter(int filter);
 void cemu_bridge_set_downscale_filter(int filter);
 
+// ---------------------------------------------------------------------------
+// Screen orientation, gamma and the on-screen performance overlay.
+//
+// All three are config values the desktop core has carried for years (render_upside_down,
+// userDisplayGamma, the `overlay` struct in CemuConfig.h) that nothing on this port had
+// ever wired to the UI - the engine already reads them correctly, they just always held
+// their compiled-in defaults. Grouped here because they are the graphics-adjacent options
+// that round out Settings without touching anything the accuracy profile already drives
+// (see cemu_bridge_set_favour_accuracy() and ios_apply_render_profile() in CemuBridge.mm
+// for what IS driven automatically: gx2drawdone_sync, vk_accurate_barriers, async_compile).
+
+/// Flips both Wii U outputs vertically before they reach the screen. Wraps
+/// CemuConfig's render_upside_down, which the renderer reads on the output blit path -
+/// same "next frame, not next launch" timing as cemu_bridge_set_stretch_to_fill(). Exists
+/// for panels or capture rigs that present the image inverted; almost nobody wants this on.
+void cemu_bridge_set_render_upside_down(bool enabled);
+bool cemu_bridge_render_upside_down(void);
+
+/// Display gamma applied to the final image. Mirrors CemuConfig's own comment on
+/// userDisplayGamma verbatim: 0 means sRGB (the display's own curve, untouched), any
+/// value above 0 is a gamma exponent applied on top of it. The UI range is clamped to
+/// 1.0-3.0 for any nonzero value - 1.0 is a no-op gamma (visually identical to sRGB but
+/// taking the "gamma" code path instead of the "sRGB" one), 2.2 is the conventional
+/// display gamma and the core's own compiled-in default, and 3.0 is already far enough
+/// past normal viewing conditions that nothing past it is a real user choice rather than
+/// a fat-fingered slider. A caller that wants sRGB back passes exactly 0; anything else
+/// at or below 0 also collapses to 0 rather than being rejected, since "negative gamma"
+/// has no meaning to reject it in favour of.
+void cemu_bridge_set_display_gamma(float gamma);
+float cemu_bridge_display_gamma(void);
+
+/// Where the performance overlay is drawn, as CemuConfig.h's own ScreenPosition enum
+/// value (0 = kDisabled, 1..6 walk the four corners plus top/bottom center - see
+/// CemuConfig.h for the exact ordering). Out-of-range values are ignored, same defensive
+/// shape as cemu_bridge_set_upscale_filter(). kDisabled turns the whole overlay off
+/// regardless of which of the fps/cpu/ram switches below are individually on.
+void cemu_bridge_set_overlay_position(int position);
+int cemu_bridge_overlay_position(void);
+
+/// The three overlay rows this app exposes, each a direct passthrough to the matching
+/// field in CemuConfig's `overlay` struct (overlay.fps / overlay.cpu_usage /
+/// overlay.ram_usage). text_color, text_scale, cpu_mode, drawcalls, cpu_per_core_usage,
+/// vram_usage and debug are real fields on the same struct but are deliberately not
+/// exposed here - out of scope for this pass, not forgotten.
+void cemu_bridge_set_overlay_fps(bool enabled);
+bool cemu_bridge_overlay_fps(void);
+void cemu_bridge_set_overlay_cpu_usage(bool enabled);
+bool cemu_bridge_overlay_cpu_usage(void);
+void cemu_bridge_set_overlay_ram_usage(bool enabled);
+bool cemu_bridge_overlay_ram_usage(void);
+
+// MARK: - Audio
+//
+// Six of CemuConfig's audio fields, plain (not ConfigValue-wrapped) sint32/bool/enum
+// members read directly by IAudioAPI and ax_out.cpp - see GetVolume()/GetChannels() in
+// IAudioAPI.cpp and the enable checks around g_tvAudio/g_padAudio in ax_out.cpp. audio_delay,
+// microphone_enabled, input_channels/input_volume and every *_device string are deliberately
+// not exposed here: audio_delay and microphone_enabled are out of scope for this settings
+// page, input_* belongs to the Wii Remote/mic input path rather than output, and device
+// selection has no meaning on iOS, where CoreAudio owns the single active output route.
+//
+// AudioChannels crosses this plain-C boundary as a bare int, the same pattern
+// cemu_bridge_set_graphics_api and cemu_bridge_set_upscale_filter already use for their own
+// C++ enums: 0 = kMono, 1 = kStereo, 2 = kSurround (CemuConfig.h's `enum AudioChannels`).
+// Out-of-range values are ignored, same as the upscale/downscale filters above.
+
+/// Whether the TV screen's audio track plays at all. ax_out.cpp tears down or (re)creates
+/// g_tvAudio's CoreAudio output the moment this flips, so - unlike most of the settings on
+/// this page - it takes effect immediately, not on the next title launch.
+void cemu_bridge_set_tv_audio_enabled(bool enabled);
+bool cemu_bridge_tv_audio_enabled(void);
+
+/// TV audio output level, 0-100. Clamped to that range in the setter, the same way
+/// cemu_bridge_set_upscale_filter clamps its filter argument. Read by
+/// IAudioAPI::GetVolume() and applied to g_tvAudio every audio callback, so a change is
+/// audible on the very next buffer, not just the next launch.
+void cemu_bridge_set_tv_volume(int volume);
+int cemu_bridge_tv_volume(void);
+
+/// TV channel layout: mono, stereo, or surround (see the encoding note above). Read by
+/// IAudioAPI::GetChannels() and by ax_out.cpp's mixer setup, so it only takes effect the
+/// next time the TV's audio device is (re)created - toggling TV audio off and back on, or
+/// the next title launch.
+void cemu_bridge_set_tv_channels(int channels);
+int cemu_bridge_tv_channels(void);
+
+/// Whether the GamePad screen's own audio track plays. Independent of the dual-screen
+/// video routing in DisplayRouter.swift - this is a separate audio device the engine
+/// mixes to (g_padAudio in ax_out.cpp) regardless of which physical display the GamePad's
+/// picture is currently sent to, so it stays meaningful even with no second screen
+/// attached. Same immediate-effect behaviour as TV audio enable, above.
+void cemu_bridge_set_pad_audio_enabled(bool enabled);
+bool cemu_bridge_pad_audio_enabled(void);
+
+/// GamePad audio output level, 0-100. Same clamping and same "audible on the next buffer"
+/// timing as TV volume above.
+void cemu_bridge_set_pad_volume(int volume);
+int cemu_bridge_pad_volume(void);
+
+/// GamePad channel layout. Same encoding and same "takes effect when the pad audio device
+/// is next (re)created" timing as TV channels above.
+void cemu_bridge_set_pad_channels(int channels);
+int cemu_bridge_pad_channels(void);
+
 /// Which MoltenVK build the Vulkan renderer uses this launch: "1.4.3" (the default)
 /// or "1.2.8". Chosen from the muffin.render.moltenVK setting when the engine
 /// initializes; a loaded MoltenVK cannot be swapped inside a running process, so a change
