@@ -244,7 +244,9 @@ jobs:
         if: steps.fw.outputs.cache-hit != 'true'
         run: |
           set -eo pipefail
-          cmake --build build-ios --target CemuBin 2>&1 | tee build.log
+          # -k 0: keep compiling after an error, so a failing engine reports every broken
+          # file in one run instead of one per run.
+          cmake --build build-ios --target CemuBin -- -k 0 2>&1 | tee build.log
           FW=$(find build-ios bin -type d -name "$NAME.framework" -not -path '*/CMakeFiles/*' 2>/dev/null | head -n1)
           if [ -z "$FW" ]; then echo "::error::no $NAME.framework was produced"; exit 1; fi
           mkdir -p build-bench/engines && rm -rf "build-bench/engines/$NAME.framework"
