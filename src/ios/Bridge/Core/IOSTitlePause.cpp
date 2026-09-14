@@ -7,6 +7,8 @@
 // untouched. It is the same mechanism cemu-ios-muffin's own core used.
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
+// __OSLockScheduler/__OSUnlockScheduler are declared at global scope here, not in coreinit.
+#include "Cafe/OS/libs/coreinit/coreinit_Scheduler.h"
 #include "Cemu/Logging/CemuLogging.h"
 
 #include <atomic>
@@ -17,13 +19,13 @@ bool IOSTitlePause_Pause()
 {
 	if (!CafeSystem::IsTitleRunning() || sTitlePaused.exchange(true))
 		return false;
-	coreinit::__OSLockScheduler();
+	__OSLockScheduler();
 	for (sint32 i = 0; i < activeThreadCount; i++)
 	{
 		auto thread = reinterpret_cast<OSThread_t*>(memory_getPointerFromVirtualOffset(activeThread[i]));
 		coreinit::__OSSuspendThreadNolock(thread);
 	}
-	coreinit::__OSUnlockScheduler();
+	__OSUnlockScheduler();
 	cemuLog_log(LogType::Force, "iOS: title paused ({} guest threads suspended)", activeThreadCount);
 	return true;
 }
@@ -34,13 +36,13 @@ bool IOSTitlePause_Resume()
 		return false;
 	if (!CafeSystem::IsTitleRunning())
 		return false;
-	coreinit::__OSLockScheduler();
+	__OSLockScheduler();
 	for (sint32 i = 0; i < activeThreadCount; i++)
 	{
 		auto thread = reinterpret_cast<OSThread_t*>(memory_getPointerFromVirtualOffset(activeThread[i]));
 		coreinit::__OSResumeThreadInternal(thread, 1);
 	}
-	coreinit::__OSUnlockScheduler();
+	__OSUnlockScheduler();
 	cemuLog_log(LogType::Force, "iOS: title resumed");
 	return true;
 }
