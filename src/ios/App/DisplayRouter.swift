@@ -1,6 +1,24 @@
 import Foundation
+import Combine
 #if os(iOS)
 import UIKit
+
+/// Wii U TV/GamePad screen assignment when a genuine second display is connected
+/// (`.dualScreen` in `DisplayRouter` below) - see `DisplaySettingsSection.swift` for the
+/// Settings UI these keys back. Read directly from `UserDefaults` rather than
+/// `@AppStorage`, because `DisplayRouter` is a plain class, not a View.
+enum DisplayLayoutSettings {
+    /// false (default): TV screen on the external display, GamePad screen on this
+    /// device - how dual-screen was written and documented before this setting existed.
+    /// true: swapped, GamePad on the external display, TV on this device.
+    static let swapKey = "muffin.display.swapTVPad"
+    static let defaultSwap = false
+
+    /// Whether a small on-screen button appears during `.dualScreen` play to flip the
+    /// setting above without leaving the game.
+    static let showSwapButtonKey = "muffin.display.showSwapButton"
+    static let defaultShowSwapButton = true
+}
 
 /// Decides which physical display each of the Wii U's two screens goes to, and keeps
 /// that decision current while the app runs.
@@ -48,7 +66,7 @@ final class MetalLayerView: UIView {
 }
 
 @MainActor
-final class DisplayRouter {
+final class DisplayRouter: ObservableObject {
     static let shared = DisplayRouter()
 
     enum Placement: Equatable {
@@ -57,7 +75,16 @@ final class DisplayRouter {
         case dualScreen
     }
 
-    private(set) var placement: Placement = .deviceOnly
+    // @Published so the on-screen swap button (EmulatorViewOptimized) can show and hide
+    // itself as placement changes, instead of polling or needing its own notification.
+    @Published private(set) var placement: Placement = .deviceOnly
+
+    /// Whether the GamePad screen is the one on the external display (swapped) rather
+    /// than the TV screen (the default, and the only arrangement dual-screen originally
+    /// shipped with). Only meaningful in `.dualScreen`; harmless to read otherwise.
+    private var swapScreens: Bool {
+        UserDefaults.standard.object(forKey: DisplayLayoutSettings.swapKey) as? Bool ?? DisplayLayoutSettings.defaultSwap
+    }
 
     /// The view the C++ renderer's TV `CAMetalLayer` is a sublayer of.
     ///
@@ -183,14 +210,12 @@ final class DisplayRouter {
 
         tvSurfaceRegistered = true
         // The view above may have just been created by the `tvRenderView` accessor, in
-        // which case it is not in any hierarchy yet.
+        // which case it is not in any hierarchy yet. This one call places it AND syncs
+        // the pad surface (a no-op outside .dualScreen, leaving the GamePad screen
+        // unrendered, which is intended) - both go through applyPlacement so surface
+        // creation and display routing can never disagree about which view is which.
         applyPlacement(reason: "the TV surface was registered")
-        log("routing the Wii U TV screen to \(placement == .dualScreen ? "the external display" : "this device") at \(Int(geometry.size.width))x\(Int(geometry.size.height)) points, \(geometry.scale)x scale (placement=\(placementName))")
-
-        // Only meaningful in .dualScreen; in the other two placements this is a no-op
-        // and the engine is left with no pad window at all, which is the intended
-        // "GamePad screen not rendered" state.
-        syncPadSurface()
+        log("routing the Wii U TV screen to \(placement == .dualScreen && !swapScreens ? "the external display" : "this device") at \(Int(geometry.size.width))x\(Int(geometry.size.height)) points, \(geometry.scale)x scale (placement=\(placementName))")
     }
 
     /// Called when a title stops. `CafeSystem::ShutdownTitle()` -> `LatteThread_Exit()`
@@ -239,21 +264,35 @@ final class DisplayRouter {
         let changed = desired != placement
         placement = desired
 
+        // Which Wii U screen goes to the external display. Only meaningful in
+        // .dualScreen - the other two placements have nowhere to put a second screen at
+        // all, so the GamePad screen stays unrendered exactly as it always did.
+        let tvGoesExternal = !(desired == .dualScreen && swapScreens)
+
         switch desired {
         case .dualScreen:
             if let external, let scene {
-                placeTVOnExternalDisplay(screen: external, scene: scene)
+                if tvGoesExternal {
+                    placeTVOnExternalDisplay(screen: external, scene: scene)
+                } else {
+                    // Swapped: TV stays on this device, and the external window (built
+                    // below for the GamePad screen) must not be torn down as an
+                    // unwanted side effect of "TV isn't going there this time".
+                    placeTVOnDevice(keepExternalWindow: true)
+                }
             }
         case .deviceMirrored, .deviceOnly:
-            placeTVOnDevice()
+            placeTVOnDevice(keepExternalWindow: false)
         }
 
-        syncPadSurface()
+        syncPadSurface(tvGoesExternal: tvGoesExternal, external: external, scene: scene)
 
         if changed || !tvSurfaceRegistered {
             switch desired {
-            case .dualScreen:
+            case .dualScreen where tvGoesExternal:
                 log("display change (\(reason)) -> placement=dualScreen: Wii U TV screen on the external display, GamePad screen on this device")
+            case .dualScreen:
+                log("display change (\(reason)) -> placement=dualScreen (swapped): Wii U GamePad screen on the external display, TV screen on this device")
             case .deviceMirrored:
                 log("display change (\(reason)) -> placement=deviceMirrored: an external display is connected but this app has no window scene for it, which is what AirPlay/screen mirroring looks like from inside the app. The Wii U TV screen stays on this device and reaches the external display through the mirror; the GamePad screen is not rendered.")
             case .deviceOnly:
@@ -262,7 +301,39 @@ final class DisplayRouter {
         }
     }
 
-    private func placeTVOnDevice() {
+    /// Called after `DisplaySettingsSection`'s own `@AppStorage` binding has already
+    /// written the new screen-layout value - this only re-routes a title that's
+    /// already running in `.dualScreen`; outside that placement the new value simply
+    /// takes effect the next time one starts, and there's nothing to move yet.
+    ///
+    /// The pad surface is released first rather than reparented in place: unlike
+    /// `tvRenderView`, which `placeTVOnDevice`/`placeTVOnExternalDisplay` already know
+    /// how to move between hosts while live, the pad surface has only ever been
+    /// created or torn down whole, never moved. Releasing it here and letting
+    /// `applyPlacement` -> `syncPadSurface` recreate it fresh on the new host reuses
+    /// that already-correct creation path instead of adding a third, parallel "move"
+    /// path for one setting.
+    func rerouteForScreenLayoutChange() {
+        guard placement == .dualScreen else { return }
+        if cemu_bridge_has_pad_render_surface() {
+            cemu_bridge_release_pad_render_surface()
+            padRenderView?.isHidden = true
+            padRenderView = nil
+        }
+        applyPlacement(reason: "screen layout changed")
+    }
+
+    /// The on-screen swap button's action (EmulatorViewOptimized, gated on
+    /// `DisplayLayoutSettings.showSwapButtonKey` and `placement == .dualScreen`). Unlike
+    /// the Settings toggle, there is no `@AppStorage` binding to write the flipped value
+    /// for it, so this writes it directly before re-routing - `@AppStorage` observes the
+    /// same `UserDefaults` key, so Settings shows the change if opened afterward.
+    func toggleScreenLayoutFromSwapButton() {
+        UserDefaults.standard.set(!swapScreens, forKey: DisplayLayoutSettings.swapKey)
+        rerouteForScreenLayoutChange()
+    }
+
+    private func placeTVOnDevice(keepExternalWindow: Bool) {
         guard let container = deviceContainer else { return }
         // Only place a view that already exists. Touching `tvRenderView` here would
         // create one between titles, which then gets adopted by the next launch's
@@ -276,13 +347,40 @@ final class DisplayRouter {
             isReparentingTV = false
             resizeTVSurfaceIfRegistered()
         }
-        if let externalWindow {
+        if !keepExternalWindow, let externalWindow {
             externalWindow.isHidden = true
             self.externalWindow = nil
         }
     }
 
     private func placeTVOnExternalDisplay(screen: UIScreen, scene: UIWindowScene) {
+        guard let host = externalDisplayHost(screen: screen, scene: scene) else { return }
+        guard let tvRenderView = tvRenderViewStorage else { return }
+        if tvRenderView.superview !== host {
+            isReparentingTV = true
+            tvRenderView.removeFromSuperview()
+            tvRenderView.frame = host.bounds
+            host.addSubview(tvRenderView)
+            isReparentingTV = false
+            resizeTVSurfaceIfRegistered()
+        }
+    }
+
+    /// Mirrors `placeTVOnExternalDisplay` for the GamePad screen - used only when the
+    /// screen layout is swapped. `externalWindow` is shared with the TV placement code:
+    /// only one of the two Wii U screens is ever on it at a time, so there is one window
+    /// to create or reuse regardless of which content ends up in it.
+    private func placePadOnExternalDisplay(view: UIView, screen: UIScreen, scene: UIWindowScene) {
+        guard let host = externalDisplayHost(screen: screen, scene: scene) else { return }
+        if view.superview !== host {
+            host.addSubview(view)
+        }
+    }
+
+    /// Creates or reuses `externalWindow` for the given screen/scene and returns the
+    /// plain `UIView` content should be added to. Shared by the TV and GamePad
+    /// placement functions so the window itself is never duplicated.
+    private func externalDisplayHost(screen: UIScreen, scene: UIWindowScene) -> UIView? {
         if externalWindow?.screen !== screen {
             externalWindow?.isHidden = true
             externalWindow = nil
@@ -297,16 +395,7 @@ final class DisplayRouter {
             window.isHidden = false
             externalWindow = window
         }
-        guard let host = externalWindow?.rootViewController?.view else { return }
-        guard let tvRenderView = tvRenderViewStorage else { return }
-        if tvRenderView.superview !== host {
-            isReparentingTV = true
-            tvRenderView.removeFromSuperview()
-            tvRenderView.frame = host.bounds
-            host.addSubview(tvRenderView)
-            isReparentingTV = false
-            resizeTVSurfaceIfRegistered()
-        }
+        return externalWindow?.rootViewController?.view
     }
 
     /// Called by `DeviceContainerView.layoutSubviews()` (see `MetalView.swift`) every
@@ -346,30 +435,55 @@ final class DisplayRouter {
     /// here), so it is sized from the same container as the TV surface and needs the
     /// same layout-triggered resize.
     private func resizePadSurfaceIfRegistered() {
-        guard cemu_bridge_has_pad_render_surface(), let container = deviceContainer else { return }
-        let size = container.bounds.size == .zero ? UIScreen.main.bounds.size : container.bounds.size
-        let scale = (container.window?.screen ?? UIScreen.main).effectiveRenderScale
+        guard cemu_bridge_has_pad_render_surface() else { return }
+        let geometry = padGeometry()
         cemu_bridge_resize_render_surface(
-            Int32(size.width),
-            Int32(size.height),
-            scale,
+            Int32(geometry.size.width),
+            Int32(geometry.size.height),
+            geometry.scale,
             false
         )
     }
 
+    /// The GamePad screen's equivalent of `tvGeometry()`. Only ever consulted while a
+    /// pad surface exists, i.e. only in `.dualScreen`, so `placement == .dualScreen` is
+    /// implied rather than checked again here.
+    private func padGeometry() -> (size: CGSize, scale: Double) {
+        if swapScreens, let window = externalWindow {
+            return (window.bounds.size, window.screen.effectiveRenderScale)
+        }
+        guard let container = deviceContainer else {
+            return (UIScreen.main.bounds.size, UIScreen.main.effectiveRenderScale)
+        }
+        let size = container.bounds.size == .zero ? UIScreen.main.bounds.size : container.bounds.size
+        let scale = (container.window?.screen ?? UIScreen.main).effectiveRenderScale
+        return (size, scale)
+    }
+
     /// Creates the GamePad surface when the placement calls for one and drops it when it
-    /// does not. Both directions go through the bridge, and the release is deferred to
-    /// the GPU thread — see `cemu_bridge_release_pad_render_surface`.
-    private func syncPadSurface() {
+    /// does not, on whichever host (this device, or the external display) the current
+    /// screen layout puts it on. Both directions go through the bridge, and the release
+    /// is deferred to the GPU thread — see `cemu_bridge_release_pad_render_surface`.
+    private func syncPadSurface(tvGoesExternal: Bool, external: UIScreen?, scene: UIWindowScene?) {
         guard tvSurfaceRegistered else { return }
         let wantPad = (placement == .dualScreen)
+        let padGoesExternal = wantPad && !tvGoesExternal
         let havePad = cemu_bridge_has_pad_render_surface()
 
-        if wantPad, !havePad, let container = deviceContainer {
-            let view = MetalLayerView(frame: container.bounds)
+        if wantPad, !havePad {
+            let view = MetalLayerView()
             view.backgroundColor = .black
-            view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            container.addSubview(view)
+
+            if padGoesExternal {
+                guard let external, let scene else { return }
+                placePadOnExternalDisplay(view: view, screen: external, scene: scene)
+                view.frame = externalWindow?.bounds ?? .zero
+            } else {
+                guard let container = deviceContainer else { return }
+                view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                view.frame = container.bounds
+                container.addSubview(view)
+            }
             padRenderView = view
 
             // Same reason `GameManager.registerRenderSurface` uses passRetained: the C++
@@ -377,11 +491,8 @@ final class DisplayRouter {
             // GPU thread. `padRenderView` above is a strong reference too, but it is
             // cleared on release, and the layer must outlive that.
             let surface = Unmanaged.passRetained(view).toOpaque()
-            let size = container.bounds.size == .zero ? UIScreen.main.bounds.size : container.bounds.size
-            // Same setting as the TV surface - a GamePad screen rendered at full native
-            // retina while the TV screen is not would cost more than the TV screen does.
-            let scale = (container.window?.screen ?? UIScreen.main).effectiveRenderScale
-            cemu_bridge_register_pad_render_surface(surface, Int32(size.width), Int32(size.height), scale)
+            let geometry = padGeometry()
+            cemu_bridge_register_pad_render_surface(surface, Int32(geometry.size.width), Int32(geometry.size.height), geometry.scale)
         } else if !wantPad, havePad {
             cemu_bridge_release_pad_render_surface()
             padRenderView?.isHidden = true
@@ -414,7 +525,10 @@ final class DisplayRouter {
     /// it here scales all of them consistently and nothing else has to know the setting
     /// exists. See RenderScale.swift for what it does and does not change.
     private func tvGeometry() -> (size: CGSize, scale: Double) {
-        if placement == .dualScreen, let window = externalWindow {
+        // Only when the TV screen is actually the one on the external display - under a
+        // swapped screen layout the TV stays on this device and falls through to the
+        // device-container path below, same as .deviceOnly/.deviceMirrored.
+        if placement == .dualScreen, !swapScreens, let window = externalWindow {
             return (window.bounds.size, window.screen.effectiveRenderScale)
         }
         // This used to return UIScreen.main.bounds unconditionally - the WHOLE

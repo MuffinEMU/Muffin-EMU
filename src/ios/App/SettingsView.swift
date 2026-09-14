@@ -30,6 +30,7 @@ struct SettingsView: View {
         ShaderCacheSection()
         EmulatedClockSection()
         OnScreenControlsSection()
+        DisplaySettingsSection()
         LibrarySettingsSection(gameManager: gameManager)
         KeysSettingsSection()
     }
