@@ -1,74 +1,56 @@
-# Muffin — Wii U emulation on iOS
+# MuffinEMU
 
-Muffin is an iOS port of [Cemu](https://github.com/cemu-project/Cemu), the Wii U emulator. It
-builds Cemu's real C/C++ engine for iOS arm64 and drives it from a SwiftUI shell — the actual
-emulation core, not a reimplementation.
+Wii U emulation on iOS and iPadOS: the **Muffin** app running **MeloCafe**'s Cemu core.
 
-## Status
+MuffinEMU pairs two projects that are each strongest at a different half of the job:
 
-A retail Wii U game runs end to end at playable speed, rendering correctly, on an iPad Pro
-A12Z (`iPad8,11`, iOS 26.6.1). The game is FAST Racing NEO — installed, launched, and played.
+- **The app is Muffin's** ([kiddreads/cemu-ios-muffin](https://github.com/kiddreads/cemu-ios-muffin)): the SwiftUI library, importer, keys.txt handling, decrypt-to-files and WUA, DLC and update install, graphic packs, the measured Wii U GamePad on-screen controls with skins and themes, external-display routing, the in-app launch log, and the crash and memory trail.
+- **The emulator is MeloCafe's** ([stossy11/MeloCafe](https://github.com/stossy11/MeloCafe)): the PowerPC interpreters, the AArch64 recompiler with iOS 26 dual-mapped JIT, the Metal and Vulkan (MoltenVK) renderers and shader emitters, ASTC texture decoding, and the iOS audio, input and window systems.
 
-It runs on the PowerPC interpreter. The recompiler exists in the codebase, but its capability
-probe has never succeeded on iOS, so it has never executed a single instruction. Measured
-guest throughput on the interpreter is 50–190 MIPS, using a predecoded instruction cache
-rather than re-decoding each instruction on every pass.
+Both are built on [Cemu](https://github.com/cemu-project/Cemu).
 
-The renderer is Metal. On GPUs without mesh shader support (the A12Z and similar), geometry
-shaders and RECTS primitives are emulated with compute passes. Those same GPUs don't decode BC
-textures in hardware either, so BC1–BC5 textures are decompressed on the CPU using NEON.
+## How the two fit together
 
-### Not yet confirmed
+```
+src/ios/App, Emulation, Rendering   Muffin's SwiftUI app
+src/ios/Bridge/CemuBridge.h         the only thing the app knows about the engine (plain C)
+src/ios/Bridge/CemuBridge.mm        that API, implemented on MeloCafe's core
+src/ios/Bridge/Core/                title launch, decrypt, DLC/update, graphic packs, pause
+src/  (everything else)             MeloCafe's Cemu core, unmodified
+```
 
-- **Audio** — the backend initialises, but no sound has been confirmed on a device.
-- **Controller input** — works at a basic level; not tested systematically beyond that.
-- **The recompiler** — untested, because it has never run.
-- **Compatibility** — unmeasured beyond the one confirmed game.
+The bridge and its glue are compiled into `Cemu.framework` together with the core, so they build against the core's own headers. The Xcode app compiles Swift only and embeds that framework. Nothing under `src/` outside `src/ios` differs from MeloCafe apart from the few lines in `src/CMakeLists.txt` that add the bridge to the framework.
 
-## Install
+## Installing
 
-Two IPAs are attached to every release, because the two install paths need different signing:
+Every push to `main` publishes a release with two IPAs:
 
-- **SideStore / AltStore / LiveContainer** — add
-  `https://kiddreads.github.io/cemu-ios-muffin/apps.json` as a source. These tools take the
-  standard unsigned IPA and re-sign it with your own Apple ID at install.
-- **TrollStore** — add `https://kiddreads.github.io/cemu-ios-muffin/trollstore.json` as a
-  source, or download the ad-hoc signed IPA directly from
-  [Releases](https://github.com/kiddreads/cemu-ios-muffin/releases).
+- `Cemu.ipa` for SideStore, AltStore or LiveContainer, which re-sign it with your Apple ID.
+- `Cemu-fakesigned.ipa` for TrollStore or a jailbroken device, with the JIT entitlements embedded.
 
-Requires iPhone or iPad, iOS 15 or later. Landscape orientation.
+MuffinEMU uses its own bundle identifier, so it installs next to Muffin rather than replacing it.
 
-Bring your own games — nothing copyrighted is distributed here: not titles, not system files,
-not keys.
+**Keys.** Encrypted games need the `keys.txt` dumped from your own Wii U. Drop it into the `keys` folder MuffinEMU creates in the Files app, or import it in Settings. Nothing is bundled.
+
+**JIT.** The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer) and the recompiler switch in Settings. Without both, MuffinEMU runs the multi-core interpreter, and Settings says which one this launch got and why.
 
 ## Building
 
-- The Xcode project is generated from `src/ios/project.yml` via
-  [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`, then
-  `cd src/ios && xcodegen generate`. CI does the same.
-- Device builds need a Mac with full Xcode (iOS SDK); Command Line Tools alone aren't enough.
-- `ci/syntax-check.sh` type-checks the Espresso CPU core in seconds against stub headers, so a
-  recompiler edit doesn't need a full CI run to catch a typo. It covers
-  `src/Cafe/HW/Espresso` only.
-- Versions go up by 0.1 per release. The current version is 3.9.
+CI is the build: `.github/workflows/build-ios-app.yml` runs the whole thing on a macOS runner. To do it by hand on a Mac with full Xcode:
 
-## Themes
+```sh
+git clone --recursive https://github.com/kiddreads/MuffinEMU.git
+cd MuffinEMU
+cmake -S . -B build-ios -G Ninja \
+  -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DVCPKG_TARGET_TRIPLET=arm64-ios \
+  -DBUILD_HEADLESS_DYLIB=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build-ios --target CemuBin
+mkdir -p build-ios/out && cp -R "$(find build-ios bin -type d -name Cemu.framework -not -path '*/CMakeFiles/*' | head -n1)" build-ios/out/
+cd src/ios && xcodegen generate
+xcodebuild -project Cemu-iOS.xcodeproj -scheme Cemu -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO build
+```
 
-31 app icons, each with a matching colour theme. Three are premium, unlocked by code.
+## License
 
-## Documentation
-
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — how the SwiftUI shell drives the Cemu core through a
-  thin C bridge
-- [`STATUS.md`](STATUS.md) — detailed subsystem status
-- [`ROADMAP.md`](ROADMAP.md) — planned work
-
-## Credits & License
-
-Muffin is built on [Cemu](https://github.com/cemu-project/Cemu), the excellent Wii U emulator
-this project ports to iOS. All credit for the emulation engine itself belongs to the Cemu
-team and contributors.
-
-Cemu is licensed under the [Mozilla Public License 2.0](/LICENSE.txt). Files under
-`dependencies/` and some individual `src/` files carry their original licenses as noted in
-their headers.
+MPL-2.0, like Cemu and MeloCafe. See `LICENSE.txt`.

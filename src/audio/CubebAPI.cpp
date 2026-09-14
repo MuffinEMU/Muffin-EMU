@@ -33,34 +33,18 @@ static void state_cb(cubeb_stream* stream, void* user, cubeb_state state)
 long CubebAPI::data_cb(cubeb_stream* stream, void* user, const void* inputbuffer, void* outputbuffer, long nframes)
 {
 	auto* thisptr = (CubebAPI*)user;
-	//const auto size = (size_t)thisptr->m_bytesPerBlock; // (size_t)nframes* thisptr->m_channels;
-
-	// m_bytesPerBlock = samples_per_block * channels * (bits_per_sample / 8);
-	const auto size = (size_t)nframes * thisptr->m_channels * (thisptr->m_bitsPerSample/8);
-
-	std::unique_lock lock(thisptr->m_mutex);
-	if (thisptr->m_buffer.empty())
-	{
-		// we got no data, just write silence
-		memset(outputbuffer, 0x00, size);
-	}
-	else
-	{
-		const auto copied = std::min(thisptr->m_buffer.size(), size);
-		memcpy(outputbuffer, thisptr->m_buffer.data(), copied);
-		thisptr->m_buffer.erase(thisptr->m_buffer.begin(), std::next(thisptr->m_buffer.begin(), copied));
-		lock.unlock();
-		// fill rest with silence
-		if (copied != size)
-			memset((uint8*)outputbuffer + copied, 0x00, size - copied);
-	}
+	const auto size = (size_t)nframes * thisptr->m_channels * (thisptr->m_bitsPerSample / 8);
+	const auto copied = thisptr->m_buffer.read(reinterpret_cast<std::uint8_t*>(outputbuffer), size);
+	if (copied != size)
+		memset(reinterpret_cast<std::uint8_t*>(outputbuffer) + copied, 0x00, size - copied);
 
 	return nframes;
 }
 
 CubebAPI::CubebAPI(cubeb_devid devid, uint32 samplerate, uint32 channels, uint32 samples_per_block,
                    uint32 bits_per_sample)
-	: IAudioAPI(samplerate, channels, samples_per_block, bits_per_sample)
+	: IAudioAPI(samplerate, channels, samples_per_block, bits_per_sample),
+	  m_buffer((size_t)samples_per_block * channels * (bits_per_sample / 8) * kBlockCount)
 {
 	cubeb_stream_params output_params;
 
@@ -91,8 +75,6 @@ CubebAPI::CubebAPI(cubeb_devid devid, uint32 samplerate, uint32 channels, uint32
 	uint32 latency = 1;
 	cubeb_get_min_latency(s_context, &output_params, &latency);
 
-	m_buffer.reserve((size_t)m_bytesPerBlock * kBlockCount);
-
 	if (cubeb_stream_init(s_context, &m_stream, "Cemu Cubeb output",
 	                      nullptr, nullptr,
 	                      devid, &output_params,
@@ -113,21 +95,12 @@ CubebAPI::~CubebAPI()
 
 bool CubebAPI::NeedAdditionalBlocks() const
 {
-	std::shared_lock lock(m_mutex);
-	return m_buffer.size() < GetAudioDelay() * m_bytesPerBlock;
+	return m_buffer.size() < (size_t)GetTargetQueuedBlocks() * m_bytesPerBlock;
 }
 
 bool CubebAPI::FeedBlock(sint16* data)
 {
-	std::unique_lock lock(m_mutex);
-	if (m_buffer.capacity() <= m_buffer.size() + m_bytesPerBlock)
-	{
-		cemuLog_logDebug(LogType::Force, "dropped direct sound block since too many buffers are queued");
-		return false;
-	}
-
-	m_buffer.insert(m_buffer.end(), (uint8*)data, (uint8*)data + m_bytesPerBlock);
-	return true;
+	return m_buffer.write(reinterpret_cast<const std::uint8_t*>(data), m_bytesPerBlock);
 }
 
 bool CubebAPI::Play()

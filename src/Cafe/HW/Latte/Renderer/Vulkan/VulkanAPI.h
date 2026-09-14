@@ -10,11 +10,6 @@
 bool InitializeGlobalVulkan();
 bool InitializeInstanceVulkan(VkInstance instance);
 bool InitializeDeviceVulkan(VkDevice device);
-
-#if BOOST_PLAT_ANDROID
-bool SupportsLoadingCustomDriver();
-#endif
-
 extern bool g_vulkan_available;
 
 #endif
@@ -37,11 +32,11 @@ extern bool g_vulkan_available;
 		#define VKFUNC_INSTANCE(__FUNC__)
 		#define VKFUNC_DEVICE(__FUNC__)
 	#elif defined(VKFUNC_INSTANCE_INIT)
-		#define VKFUNC(__FUNC__) 
+		#define VKFUNC(__FUNC__)
 		#define VKFUNC_INSTANCE(__FUNC__) __FUNC__ = (PFN_##__FUNC__)vkGetInstanceProcAddr(instance, #__FUNC__)
 		#define VKFUNC_DEVICE(__FUNC__)
 	#elif defined(VKFUNC_DEVICE_INIT)
-		#define VKFUNC(__FUNC__) 
+		#define VKFUNC(__FUNC__)
 		#define VKFUNC_INSTANCE(__FUNC__)
 		#define VKFUNC_DEVICE(__FUNC__) __FUNC__ = (PFN_##__FUNC__)vkGetDeviceProcAddr(device, #__FUNC__)
 	#else
@@ -135,27 +130,19 @@ VKFUNC_DEVICE(vkDestroyPipeline);
 VKFUNC_DEVICE(vkCmdBindPipeline);
 
 // swapchain
-#if BOOST_PLAT_ANDROID
-VKFUNC_INSTANCE(vkCreateAndroidSurfaceKHR);
-#elif BOOST_OS_LINUX || BOOST_OS_BSD
+#if BOOST_OS_LINUX || BOOST_OS_BSD
 VKFUNC_INSTANCE(vkCreateXlibSurfaceKHR);
 VKFUNC_INSTANCE(vkCreateXcbSurfaceKHR);
 #ifdef HAS_WAYLAND
 VKFUNC_INSTANCE(vkCreateWaylandSurfaceKHR);
-#endif // HAS_WAYLAND
-#endif // BOOST_OS_LINUX || BOOST_OS_BSD
+#endif
+#endif
 
 #if BOOST_OS_WINDOWS
 VKFUNC_INSTANCE(vkCreateWin32SurfaceKHR);
 #endif
 
-// Both Apple platforms present Vulkan through MoltenVK and reach it via the same
-// extension. BOOST_OS_MACOS alone does not cover them: Boost.Predef checks os/ios.h
-// before os/macos.h, and the first OS it detects suppresses every later one, so on iOS
-// BOOST_OS_IOS is set and BOOST_OS_MACOS is 0 despite the target being Darwin.
-// CEMU_PLATFORM_IOS is the spelling the rest of the tree uses for this (see
-// CafeSystem.cpp and precompiled.h); it comes from add_compile_definitions.
-#if BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
+#if BOOST_OS_MACOS || BOOST_OS_IOS
 VKFUNC_INSTANCE(vkCreateMetalSurfaceEXT);
 #endif
 
@@ -204,11 +191,6 @@ VKFUNC_DEVICE(vkCmdEndRenderingKHR);
 
 // khr_present_wait
 VKFUNC_DEVICE(vkWaitForPresentKHR);
-
-// transform feedback extension
-VKFUNC_DEVICE(vkCmdBindTransformFeedbackBuffersEXT);
-VKFUNC_DEVICE(vkCmdBeginTransformFeedbackEXT);
-VKFUNC_DEVICE(vkCmdEndTransformFeedbackEXT);
 
 // query
 VKFUNC_DEVICE(vkCreateQueryPool);

@@ -70,7 +70,16 @@ enum GraphicAPI
 	kOpenGL = 0,
 	kVulkan,
 	kMetal,
+	COUNT
 };
+
+#if defined(ENABLE_VULKAN) && !BOOST_OS_IOS
+constexpr GraphicAPI kDefaultGraphicsAPI = kVulkan;
+#elif defined(ENABLE_METAL)
+constexpr GraphicAPI kDefaultGraphicsAPI = kMetal;
+#elif defined(ENABLE_OPENGL)
+constexpr GraphicAPI kDefaultGraphicsAPI = kOpenGL;
+#endif
 
 enum AudioChannels
 {
@@ -143,8 +152,9 @@ enum class CPUMode
 	DualcoreRecompiler = 2, // deprecated and not used anymore
 	MulticoreRecompiler = 3,
 	Auto = 4,
+	MulticoreInterpreter = 5,
 };
-ENABLE_ENUM_ITERATORS(CPUMode, CPUMode::SinglecoreInterpreter, CPUMode::Auto);
+ENABLE_ENUM_ITERATORS(CPUMode, CPUMode::SinglecoreInterpreter, CPUMode::MulticoreInterpreter);
 
 
 enum class CPUModeLegacy
@@ -195,23 +205,13 @@ enum class CrashDump
 	Full
 };
 ENABLE_ENUM_ITERATORS(CrashDump, CrashDump::Disabled, CrashDump::Full);
-#else // all non-Windows platforms incl. iOS (BOOST_OS_UNIX is unreliable on Apple)
+#elif BOOST_OS_UNIX
 enum class CrashDump
 {
 	Disabled,
 	Enabled
 };
 ENABLE_ENUM_ITERATORS(CrashDump, CrashDump::Disabled, CrashDump::Enabled);
-#endif
-
-#if BOOST_PLAT_ANDROID
-enum class DriverSettingMode
-{
-	Global,
-	System,
-	Custom,
-};
-ENABLE_ENUM_ITERATORS(DriverSettingMode, DriverSettingMode::Global, DriverSettingMode::Custom);
 #endif
 
 template <>
@@ -286,6 +286,7 @@ struct fmt::formatter<CPUMode> : formatter<string_view> {
 		case CPUMode::DualcoreRecompiler: name = "Dual-core recompiler"; break;
 		case CPUMode::MulticoreRecompiler: name = "Multi-core recompiler"; break;
 		case CPUMode::Auto: name = "Auto"; break;
+		case CPUMode::MulticoreInterpreter: name = "Multi-core interpreter"; break;
 		default: name = "unknown"; break;
 		}
 		return formatter<string_view>::format(name, ctx);
@@ -371,7 +372,7 @@ struct fmt::formatter<CrashDump> : formatter<string_view> {
 		return formatter<string_view>::format(name, ctx);
 	}
 };
-#else // all non-Windows platforms incl. iOS
+#elif BOOST_OS_UNIX
 template <>
 struct fmt::formatter<CrashDump> : formatter<string_view> {
 	template <typename FormatContext>
@@ -411,18 +412,14 @@ struct CemuConfig
 	ConfigValue<std::string> proxy_server{};
 
 	// temporary workaround because feature crashes on macOS
-#if BOOST_OS_MACOS
+#if BOOST_OS_MACOS || BOOST_OS_IOS
 #define DISABLE_SCREENSAVER_DEFAULT false
 #else
 #define DISABLE_SCREENSAVER_DEFAULT true
 #endif
 	ConfigValue<bool> disable_screensaver{DISABLE_SCREENSAVER_DEFAULT};
 #undef DISABLE_SCREENSAVER_DEFAULT
-	ConfigValue<bool> play_boot_sound{false};
-
-#if BOOST_PLAT_ANDROID
-	ConfigValue<std::string> custom_driver_path{};
-#endif
+	ConfigValue<bool> play_boot_sound{true};
 
 	std::vector<std::string> game_paths;
 	std::mutex game_cache_entries_mutex;
@@ -443,15 +440,15 @@ struct CemuConfig
 	ConfigValueBounds<CafeConsoleLanguage> console_language{ CafeConsoleLanguage::EN };
 
 	// graphics
-	ConfigValue<GraphicAPI> graphic_api{ kVulkan };
+	ConfigValue<GraphicAPI> graphic_api{ kDefaultGraphicsAPI };
 	std::array<uint8, 16> legacy_graphic_device_uuid{}; // placeholder option for backwards compatibility with settings from 2.6 and before (renamed to "vkDevice")
 	std::array<uint8, 16> vk_graphic_device_uuid;
 	uint64 mtl_graphic_device_uuid{ 0 };
 	ConfigValue<int> vsync{ 0 }; // 0 = off, 1+ = depending on render backend
-	ConfigValue<bool> gx2drawdone_sync { true };
+	ConfigValue<bool> gx2drawdone_sync { false };
 	ConfigValue<bool> render_upside_down{ false };
 	ConfigValue<bool> async_compile{ true };
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 	ConfigValue<bool> force_mesh_shaders{ false };
 #endif
 
@@ -460,7 +457,7 @@ struct CemuConfig
 	ConfigValue<float> overrideGammaValue{ 2.2f };
 	ConfigValue<float> userDisplayGamma { 2.2f }; // 0 = sRGB, >0 gamma
 
-	ConfigValue<bool> vk_accurate_barriers{ true };
+	ConfigValue<bool> vk_accurate_barriers{ false };
 
 	struct
 	{
@@ -468,12 +465,13 @@ struct CemuConfig
 		uint32 text_color = 0xFFFFFFFF;
 		sint32 text_scale = 100;
 		bool fps = true;
+        bool cpu_mode = true;
 		bool drawcalls = false;
 		bool cpu_usage = false;
 		bool cpu_per_core_usage = false;
-		bool ram_usage = false;
+		bool ram_usage = true;
 		bool vram_usage = false;
-		bool debug = false;
+		bool debug = true;
 	} overlay{};
 
 	struct
@@ -487,16 +485,26 @@ struct CemuConfig
 		bool friends = true;
 	} notification{};
 
+	ConfigValueBounds<PrecompiledShaderOption> precompiled_shaders{ PrecompiledShaderOption::Auto };
+
 	ConfigValue<sint32> upscale_filter{kBicubicFilter};
 	ConfigValue<sint32> downscale_filter{kLinearFilter};
 	ConfigValue<sint32> fullscreen_scaling{kKeepAspectRatio};
+	ConfigValue<float> texture_resolution_scale{1.0f};
 
 	// audio
+#if BOOST_OS_IOS
+	sint32 audio_api = 4;
+#else
 	sint32 audio_api = 0;
+#endif
 	sint32 audio_delay = 2;
+	bool microphone_enabled = false;
+	bool tv_audio_enabled = true;
+	bool pad_audio_enabled = false;
 	AudioChannels tv_channels = kStereo, pad_channels = kStereo, input_channels = kMono;
-	sint32 tv_volume = 50, pad_volume = 0, input_volume = 50, portal_volume = 50;
-	std::wstring tv_device{ L"default" }, pad_device, input_device, portal_device;
+	sint32 tv_volume = 50, pad_volume = 50, input_volume = 50, portal_volume = 50;
+    std::wstring tv_device{ L"default" }, pad_device{ L"default" }, input_device{ L"default" }, portal_device;
 
 	// account
 	struct
@@ -508,6 +516,7 @@ struct CemuConfig
 	}account{};
 
 	// input
+	ConfigValue<bool> disable_motion{ false };
 	struct
 	{
 		ConfigValue<std::string> host{"127.0.0.1"};
@@ -517,7 +526,8 @@ struct CemuConfig
 	// debug
 	ConfigValueBounds<CrashDump> crash_dump{ CrashDump::Disabled };
 	ConfigValue<uint16> gdb_port{ 1337 };
-#if ENABLE_METAL
+	ConfigValue<bool> disable_streamout{ false };
+#ifdef ENABLE_METAL
 	ConfigValue<std::string> gpu_capture_dir{ "" };
 	ConfigValue<bool> framebuffer_fetch{ true };
 #endif

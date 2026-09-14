@@ -74,7 +74,7 @@ enum Buttons2 : uint64
 
 	kTriggerXN,
 	kTriggerYN,
-	
+
 	kButtonMAX,
 
 	kButtonNoneAxisMAX = kButtonRight,
@@ -89,7 +89,7 @@ public:
 
 	const std::string& uuid() const { return m_uuid; }
 	const std::string& display_name() const { return m_display_name; }
-	
+
 	virtual std::string_view api_name() const = 0;
 	virtual InputAPI::Type api() const = 0;
 
@@ -97,7 +97,7 @@ public:
 
 	virtual bool connect() { return is_connected(); }
 	virtual bool is_connected() = 0;
-		
+
 	virtual bool has_battery() { return false; }
 	virtual bool has_low_battery() { return false; }
 
@@ -112,7 +112,7 @@ public:
 	float get_axis_value(uint64 button) const;
 	virtual bool has_axis() const { return true; }
 
-	bool use_motion() { return has_motion() && m_settings.motion; }
+	bool use_motion();
 	virtual bool has_motion() { return false; }
 	virtual MotionSample get_motion_sample() { return {}; }
 
@@ -140,7 +140,7 @@ public:
 	{
 		AxisSetting axis{}, rotation{}, trigger{};
 		float rumble = 0;
-		bool motion = false; // only valid when has_motion is true
+		bool motion = true; // only valid when has_motion is true
 	};
 	Settings get_settings() const;
 	void set_settings(const Settings& settings);
@@ -198,4 +198,3 @@ protected:
 };
 
 using ControllerPtr = std::shared_ptr<ControllerBase>;
-

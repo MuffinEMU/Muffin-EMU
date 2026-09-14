@@ -58,3 +58,8 @@ bin/graphicPacks/*
 # generated / junk
 ._*
 src/ios/Cemu-iOS.xcodeproj/
+
+# MuffinEMU iOS build outputs
+build-ios/
+.vcpkg-archives/
+src/ios/Cemu-iOS.xcodeproj/

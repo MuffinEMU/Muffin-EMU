@@ -1,5 +1,4 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalBufferAllocator.h"
-#include "Cemu/Logging/CemuLogging.h"
 
 MetalBufferChunkedHeap::~MetalBufferChunkedHeap()
 {
@@ -21,9 +20,8 @@ uint32 MetalBufferChunkedHeap::allocateNewChunk(uint32 chunkIndex, uint32 minimu
 void MetalSynchronizedRingAllocator::addUploadBufferSyncPoint(AllocatorBuffer_t& buffer, uint32 offset)
 {
 	auto commandBuffer = m_mtlr->GetCurrentCommandBuffer();
-	if (commandBuffer == buffer.lastSyncpointCommandBuffer)
+	if (!buffer.queue_syncPoints.empty() && buffer.queue_syncPoints.back().commandBuffer == commandBuffer)
 		return;
-	buffer.lastSyncpointCommandBuffer = commandBuffer;
 	buffer.queue_syncPoints.emplace(commandBuffer, offset);
 }
 
@@ -124,36 +122,15 @@ void MetalSynchronizedRingAllocator::CleanupBuffer(MTL::CommandBuffer* latestFin
 			itr.cleanupCounter++;
 	}
 
-	// Release any buffer that has gone fully idle (no pending sync points) for long
-	// enough - scanning every buffer, not just m_buffers.back().
-	//
-	// The old code only ever inspected the last element of m_buffers and popped it
-	// with pop_back() once its cleanupCounter reached the threshold. AllocateBufferMemory()
-	// does a first-fit scan from the FRONT of m_buffers, so under sustained pressure
-	// (e.g. the texture-upload burst during boot, where many GX2 textures are decoded
-	// and staged faster than command buffers retire) new buffers get appended to the
-	// back to cover the overflow while the earlier ones keep getting reused. Once the
-	// burst subsides, an EARLIER buffer can go idle while whatever is currently last
-	// in the vector is still in rotation - and that earlier buffer's cleanupCounter
-	// climbs right alongside everyone else's (the loop above already tracks it), but
-	// the release check below never looked at index i < m_buffers.size()-1. Worse,
-	// even a buffer that legitimately becomes "the last one" and starts accumulating
-	// idle cycles stops being eligible the moment one more buffer is pushed after it,
-	// so a single peak in demand permanently pins every buffer it allocated beyond
-	// the first for the rest of the process's life - a monotonically growing amount
-	// of staging memory that this function was supposed to be able to shrink back
-	// down, but structurally never could except for whichever buffer happened to be
-	// last. Iterate back-to-front instead (erasing from the back first keeps earlier
-	// indices valid for the rest of the loop) so every idle buffer is eligible, while
-	// still always keeping at least one buffer around.
-	for (sint32 i = (sint32)m_buffers.size() - 1; i >= 0 && m_buffers.size() > 1; i--)
+	// check if last buffer is available for deletion
+	if (m_buffers.size() >= 2)
 	{
-		auto& buffer = m_buffers[i];
-		if (buffer.cleanupCounter >= 1000)
+		auto& lastBuffer = m_buffers.back();
+		if (lastBuffer.cleanupCounter >= 1000)
 		{
 			// release buffer
-			buffer.mtlBuffer->release();
-			m_buffers.erase(m_buffers.begin() + i);
+			lastBuffer.mtlBuffer->release();
+			m_buffers.pop_back();
 		}
 	}
 }
@@ -207,30 +184,7 @@ void MetalSynchronizedHeapAllocator::FreeReservation(AllocatorReservation* uploa
 	// put the allocation on a delayed release queue for the current command buffer
 	MTL::CommandBuffer* currentCommandBuffer = m_mtlr->GetCurrentCommandBuffer();
 	auto it = std::find_if(m_activeAllocations.begin(), m_activeAllocations.end(), [&uploadReservation](const TrackedAllocation& allocation) { return allocation.allocation.chunkIndex == uploadReservation->bufferIndex && allocation.allocation.offset == uploadReservation->bufferOffset; });
-	// This used to be cemu_assert_debug(it != end()) followed unconditionally by
-	// it->allocation - a no-op check in Release (CEMU_DEBUG_ASSERT is Debug-only, see
-	// CMakeLists.txt) guarding a dereference of end() on the exact path it exists to
-	// catch. Two independent real device crashes, both signal 11 inside this exact
-	// function at the same instruction offset, both traced back to here - a
-	// double-free or a reservation this allocator never tracked in the first place
-	// (the actual root cause in whichever caller does this is still unidentified;
-	// this only stops the crash, it does not explain why FreeReservation gets called
-	// twice on the same reservation). Bail out before the dereference instead of
-	// riding it into undefined behaviour - the caller already has no way to detect
-	// double-freeing a reservation, so there is nothing sound to do here except not
-	// crash. Still returns the pooled AllocatorReservation object itself so at least
-	// that part doesn't leak.
-	if (it == m_activeAllocations.end())
-	{
-		cemuLog_log(LogType::Force,
-			"MetalSynchronizedHeapAllocator::FreeReservation() called on an allocation "
-			"(buffer {}, offset {}) this allocator has no record of - likely a double "
-			"free. Skipping the release-queue/active-allocations bookkeeping for it "
-			"rather than crashing on an invalid iterator.",
-			uploadReservation->bufferIndex, uploadReservation->bufferOffset);
-		m_poolAllocatorReservation.freeObj(uploadReservation);
-		return;
-	}
+	cemu_assert_debug(it != m_activeAllocations.end());
 	m_releaseQueue[currentCommandBuffer].emplace_back(it->allocation);
 	m_activeAllocations.erase(it);
 	m_poolAllocatorReservation.freeObj(uploadReservation);

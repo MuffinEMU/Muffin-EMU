@@ -451,6 +451,39 @@ GraphicPack2::GraphicPack2(fs::path rulesPath, IniParser& rules)
 				}
 			}
 		}
+		else if (boost::iequals(currentSectionName, "Permissions")) 
+		{
+			std::array<std::pair<std::string_view, CosCapabilityGroup>, 15> permissionTable
+			{{
+				{"BSP",  CosCapabilityGroup::BSP},
+				{"DK",   CosCapabilityGroup::DK},
+				{"USB",  CosCapabilityGroup::USB},
+				{"UHS",  CosCapabilityGroup::UHS},
+				{"FS",   CosCapabilityGroup::FS},
+				{"MCP",  CosCapabilityGroup::MCP},
+				{"NIM",  CosCapabilityGroup::NIM},
+				{"ACT",  CosCapabilityGroup::ACT},
+				{"FPD",  CosCapabilityGroup::FPD},
+				{"BOSS", CosCapabilityGroup::BOSS},
+				{"ACP",  CosCapabilityGroup::ACP},
+				{"PDM",  CosCapabilityGroup::PDM},
+				{"AC",   CosCapabilityGroup::AC},
+				{"NDM",  CosCapabilityGroup::NDM},
+				{"NSEC", CosCapabilityGroup::NSEC}
+			}};
+
+			for (const auto& [name, group] : permissionTable)
+			{
+				const auto permissionOption = rules.FindOption(name);
+				if (permissionOption)
+				{
+					cemuLog_log(LogType::Force, "Graphic pack \"{}\": has permission mask {} for {}", GetNormalizedPathString(), *permissionOption, name);
+					uint64 permissionMask = ConvertString<uint64>(*permissionOption, 16);
+					m_permissions.push_back({group, permissionMask});
+				}
+
+			}
+		}
 	}
 
 	if (m_version >= 5)
@@ -732,7 +765,7 @@ void GraphicPack2::LoadShaders()
 			}
 			else if (filename == L"output.glsl")
 			{
-				std::ifstream file(p);
+				std::ifstream file(fs::resolvePathCI(p));
 				if (!file.is_open())
 					throw std::runtime_error(fmt::format("can't open graphic pack file: {}", _pathToUtf8(p.filename())));
 
@@ -745,7 +778,7 @@ void GraphicPack2::LoadShaders()
 			}
 			else if (filename == L"upscaling.glsl")
 			{
-				std::ifstream file(p);
+				std::ifstream file(fs::resolvePathCI(p));
 				if (!file.is_open())
 					throw std::runtime_error(fmt::format("can't open graphic pack file: {}", _pathToUtf8(p.filename())));
 
@@ -758,7 +791,7 @@ void GraphicPack2::LoadShaders()
 			}
 			else if (filename == L"downscaling.glsl")
 			{
-				std::ifstream file(p);
+				std::ifstream file(fs::resolvePathCI(p));
 				if (!file.is_open())
 					throw std::runtime_error(fmt::format("can't open graphic pack file: {}", _pathToUtf8(p.filename())));
 
@@ -1281,7 +1314,7 @@ GraphicPack2::CustomShader GraphicPack2::LoadShader(const fs::path& path, uint64
 {
 	CustomShader shader;
 
-	std::ifstream file(path);
+	std::ifstream file(fs::resolvePathCI(path));
 	if (!file.is_open())
 		throw std::runtime_error("can't open shader file");
 

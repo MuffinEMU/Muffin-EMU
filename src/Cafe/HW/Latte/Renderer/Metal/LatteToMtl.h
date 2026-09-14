@@ -33,7 +33,7 @@ struct MetalPixelFormatInfo {
 
 void CheckForPixelFormatSupport(const MetalPixelFormatSupport& support);
 
-const MetalPixelFormatInfo GetMtlPixelFormatInfo(Latte::E_GX2SURFFMT format, bool isDepth);
+const MetalPixelFormatInfo& GetMtlPixelFormatInfo(Latte::E_GX2SURFFMT format, bool isDepth);
 
 MTL::PixelFormat GetMtlPixelFormat(Latte::E_GX2SURFFMT format, bool isDepth);
 

@@ -3,12 +3,12 @@
 #include "util/helpers/helpers.h"
 #include "config/CemuConfig.h"
 
-#include "openssl/bn.h"
-#include "openssl/ec.h"
-#include "openssl/x509.h"
-#include "openssl/ssl.h"
-#include "openssl/sha.h"
-#include "openssl/ecdsa.h"
+#include <OpenSSL/bn.h>
+#include <OpenSSL/ec.h>
+#include <OpenSSL/x509.h>
+#include <OpenSSL/ssl.h>
+#include <OpenSSL/sha.h>
+#include <OpenSSL/ecdsa.h>
 
 #include "util/crypto/aes128.h"
 
@@ -120,7 +120,7 @@ namespace NCrypto
 
 		output.resize(out_len);
 
-		for (size_t i = 0, j = 0; i < in_len;) 
+		for (size_t i = 0, j = 0; i < in_len;)
 		{
 			uint32 a = inputStr[i] == '=' ? 0 & i++ : kDecodingTable[static_cast<int>(inputStr[i++])];
 			uint32 b = inputStr[i] == '=' ? 0 & i++ : kDecodingTable[static_cast<int>(inputStr[i++])];
@@ -173,7 +173,7 @@ namespace NCrypto
 				SHA1 hash
 			Ticket version 1:
 				SHA256 hash + has item rights
-		
+
 		*/
 
 		/* +0x000 */ uint32be signatureType;
@@ -202,7 +202,7 @@ namespace NCrypto
 
 		/* +0x21C */ uint32be accountId;
 
-		/* V1 extension header starts at +0x2A4 */ 
+		/* V1 extension header starts at +0x2A4 */
 	};
 
 	struct ETicketFileHeaderExtV1
@@ -422,7 +422,7 @@ namespace NCrypto
 		/* +0x1E4 */ uint8 uknHash[32]; // hash of array at 0x204
 
 		/* +0x204 */
-		struct 
+		struct
 		{
 			// pointer to cert data and cert hash?
 			uint16 ukn00; // index?
@@ -558,7 +558,7 @@ namespace NCrypto
 		ECCPubKey genPubKey;
 		BN_bn2binpad(bn_x, genPubKey.x, sizeof(genPubKey.x));
 		BN_bn2binpad(bn_y, genPubKey.y, sizeof(genPubKey.y));
-	
+
 		// clean up and return
 		EC_POINT_free(pubkey);
 		BN_free(bn_y);
@@ -700,7 +700,7 @@ namespace NCrypto
 		ECCPubKey pubKey;
 		ECCPrivKey signerPrivKey = ECCPrivKey::getDeviceCertPrivateKey();
 		certChainOut = CertECC::generateCertificate(signerTitleIdHigh, signerTitleIdLow, signerPrivKey, privKey, pubKey);
-		
+
 		// generate signature
 		cemu_assert_debug(hashLen == 32);
 		EC_KEY* ec_privKey = privKey.getPrivateKey();

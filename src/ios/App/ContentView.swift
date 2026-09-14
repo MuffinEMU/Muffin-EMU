@@ -773,6 +773,12 @@ struct EmulatorViewOptimized: View {
     /// under you, exactly like the two sliders next to it.
     @AppStorage(ControllerLayoutSettings.joystickKey)
     private var joystickMode = ControllerLayoutSettings.defaultJoystick
+    /// Same key ControllerPad.swift reads to decide whether L/ZL/minus and R/ZR/plus are
+    /// drawn on the sticks or on the d-pad/A-B-X-Y clusters. Declared here for the same
+    /// reason joystickMode is: this is the panel you have a game under you to judge it
+    /// from.
+    @AppStorage(ControllerLayoutSettings.comfortControlsKey)
+    private var comfortControls = ControllerLayoutSettings.defaultComfortControls
     /// Same key ControllerPad.swift reads to decide which gesture (if either) a
     /// button/cluster gets. Declared here too so the segmented control below writes to
     /// the thing actually being edited, same reasoning as the two sliders above it.
@@ -979,6 +985,7 @@ struct EmulatorViewOptimized: View {
                             isEditingLayout: $isEditingControlLayout
                         )
 
+                        #if DEBUG
                         // Debug HUD: proves whether SwiftUI ever calls onInput/onStick at
                         // all, which is exactly the question a "controls don't do anything"
                         // report can't answer from the outside. Temporary, and gone the
@@ -994,6 +1001,7 @@ struct EmulatorViewOptimized: View {
                             Spacer()
                         }
                         .allowsHitTesting(false)
+                        #endif
                     }
                 } else {
                     #if os(iOS)
@@ -1192,6 +1200,19 @@ struct EmulatorViewOptimized: View {
                         .tint(MuffinTheme.brownDarkest)
 
                         if joystickMode {
+                            Toggle(isOn: $comfortControls) {
+                                Text("Comfort controls")
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.85))
+                            }
+                            .tint(MuffinTheme.brownDarkest)
+
+                            Text(comfortControls
+                                 ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick."
+                                 : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.65))
+
                             Picker("Gate", selection: $stickGateRaw) {
                                 ForEach(ControllerGeometry.StickGate.allCases) { gate in
                                     Text(gate.title).tag(gate.rawValue)
@@ -1309,7 +1330,13 @@ struct EmulatorViewOptimized: View {
                 pausedByLifecycle = false
                 isPaused = false
                 cemu_bridge_resume()
-            } else if !isPaused {
+            } else {
+                // Released on every trip out of .active, paused or not. A touch in
+                // progress when the app resigns active is cancelled by UIKit, which does
+                // not reliably deliver the gesture's end, so without this a held button or
+                // deflected stick would still be held when the game comes back.
+                cemu_bridge_release_all_buttons()
+                guard !isPaused else { return }
                 isPaused = true
                 pausedByLifecycle = true
                 cemu_bridge_pause()

@@ -37,15 +37,12 @@ add_library(CemuUtil
   helpers/StringParser.h
   helpers/SystemException.h
   helpers/TempState.h
-  helpers/ZArchiveHelpers.h
   highresolutiontimer/HighResolutionTimer.cpp
   highresolutiontimer/HighResolutionTimer.h
   ImageWriter/bmp.h
   ImageWriter/tga.h
   IniParser/IniParser.cpp
   IniParser/IniParser.h
-  libusbWrapper/libusbWrapper.cpp
-  libusbWrapper/libusbWrapper.h
   math/glm.h
   math/quaternion.h
   math/vector2.h
@@ -76,18 +73,7 @@ if(WIN32)
 	target_sources(CemuUtil PRIVATE MemMapper/MemMapperWin.cpp)
 	target_sources(CemuUtil PRIVATE SystemInfo/SystemInfoWin.cpp)
 elseif(UNIX)
-  # Fiber backend. Android moved off ucontext to Boost.Context; iOS was never named in
-  # this condition, so it fell into the else() and silently inherited the ucontext path.
-  # Apple declares getcontext/makecontext/swapcontext for macOS only - the SDK header
-  # marks them __API_DEPRECATED("No longer supported", macos(10.5, 10.6)) with no iOS
-  # availability at all - so iOS was relying on routines Apple never promised there.
-  # jump_fcontext is hand-written arm64 assembly with no such dependency.
-  if(ANDROID OR PLATFORM_IOS)
-    target_sources(CemuUtil PRIVATE Fiber/FiberFContext.cpp)
-    target_link_libraries(CemuUtil PRIVATE Boost::context)
-  else()
-    target_sources(CemuUtil PRIVATE Fiber/FiberUContext.cpp)
-  endif()
+	target_sources(CemuUtil PRIVATE Fiber/FiberUnix.cpp)
 	target_sources(CemuUtil PRIVATE MemMapper/MemMapperUnix.cpp)
 	target_sources(CemuUtil PRIVATE SystemInfo/SystemInfoUnix.cpp)
 	if(NOT APPLE)
@@ -102,6 +88,13 @@ endif()
 set_property(TARGET CemuUtil PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 cemu_use_precompiled_header(CemuUtil)
+
+if (ENABLE_LIBUSB)
+  target_sources(CemuUtil PRIVATE
+    libusbWrapper/libusbWrapper.cpp
+    libusbWrapper/libusbWrapper.h
+  )
+endif()
 
 target_include_directories(CemuUtil PUBLIC "../")
 

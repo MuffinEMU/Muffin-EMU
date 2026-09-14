@@ -10,12 +10,12 @@ public:
     MetalDepthStencilCache(class MetalRenderer* metalRenderer) : m_mtlr{metalRenderer} {}
     ~MetalDepthStencilCache();
 
-    MTL::DepthStencilState* GetDepthStencilState(const LatteContextRegister& lcr);
+    MTL::DepthStencilState* GetDepthStencilState(const LatteContextRegister& lcr, bool hasDepthStencilAttachment);
 
 private:
     class MetalRenderer* m_mtlr;
 
     std::map<uint64, MTL::DepthStencilState*> m_depthStencilCache;
 
-    uint64 CalculateDepthStencilHash(const LatteContextRegister& lcr);
+    uint64 CalculateDepthStencilHash(const LatteContextRegister& lcr, bool hasDepthStencilAttachment);
 };

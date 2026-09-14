@@ -12,12 +12,11 @@
     },
     "rapidjson",
     {
-      "name": "sdl2",
-      "platform": "!android"
+      "name": "sdl3",
+      "default-features": false
     },
     "boost-tokenizer",
     "boost-container",
-    "boost-filesystem",
     "boost-program-options",
     "boost-nowide",
     "boost-algorithm",
@@ -25,26 +24,11 @@
     "boost-optional",
     "boost-signals2",
     "boost-asio",
+    "boost-context",
     "boost-ptr-container",
     "boost-property-tree",
     "boost-static-string",
-    {
-      "name": "boost-iostreams",
-      "platform": "android"
-    },
-    {
-      "name": "boost-stacktrace",
-      "platform": "android"
-    },
-    {
-      "name": "boost-context",
-      "platform": "android | ios"
-    },
     "boost-random",
-    {
-      "name": "hidapi",
-      "platform": "!android & !ios"
-    },
     {
       "name": "fmt",
       "version>=": "12.1.0"
@@ -56,10 +40,6 @@
       "default-features": false
     },
     "zstd",
-    {
-      "name": "wxwidgets",
-      "platform": "!android & !ios"
-    },
     "openssl",
     {
       "name": "curl",
@@ -80,24 +60,16 @@
         "jpeg",
         "zip"
       ]
-    },
-    {
-      "name": "libusb",
-      "platform": "!ios"
     }
   ],
   "overrides": [
-    {
-      "name": "fmt",
-      "version": "12.1.0"
-    },
     {
       "name": "glslang",
       "version": "15.1.0"
     },
     {
-      "name": "sdl2",
-      "version": "2.32.10"
+      "name": "sdl3",
+      "version": "3.4.10"
     },
     {
       "name": "wxwidgets",

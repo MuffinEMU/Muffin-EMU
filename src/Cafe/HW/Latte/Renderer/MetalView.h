@@ -1,7 +1,7 @@
 #pragma once
 
-#import <Cocoa/Cocoa.h>
+#import <UIKit/UIKit.h>
 #import <QuartzCore/CAMetalLayer.h>
 
-@interface MetalView : NSView
+@interface MetalView : UIView
 @end

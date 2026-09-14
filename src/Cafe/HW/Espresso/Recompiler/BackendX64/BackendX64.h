@@ -41,6 +41,7 @@ struct x64GenContext_t
 
 // reserved registers
 #define REG_RESV_TEMP		(X86_REG_R14)
+#define REG_RESV_TEMP2		(X86_REG_R12)
 #define REG_RESV_HCPU		(X86_REG_RSP)
 #define REG_RESV_MEMBASE	(X86_REG_R13)
 #define REG_RESV_RECDATA	(X86_REG_R15)

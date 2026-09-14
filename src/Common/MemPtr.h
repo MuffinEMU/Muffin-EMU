@@ -40,7 +40,7 @@ class MEMPTR : MEMPTRBase
 			m_value = 0;
 		else
 		{
-			cemu_assert_debug((uint8*)ptr >= memory_base && (uint8*)ptr <= memory_base + 0x100000000);
+			// cemu_assert_debug((uint8*)ptr >= memory_base && (uint8*)ptr <= memory_base + 0x100000000);
 			m_value = (uint32)((uintptr_t)ptr - (uintptr_t)memory_base);
 		}
 	}

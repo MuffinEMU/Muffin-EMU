@@ -189,7 +189,7 @@ std::error_code Account::Save()
 	{
 		std::ofstream file;
 		file.exceptions(std::ios::badbit);
-		file.open(path);
+		file.open(fs::resolvePathCI(path));
 	
 		file << "AccountInstance_20120705" << std::endl;
 		file << fmt::format("PersistentId={:08x}", m_persistent_id) << std::endl;
@@ -340,7 +340,7 @@ void Account::UpdatePersisidDat()
 {
 	const auto max_id = std::max(kMinPersistendId, GetNextPersistentId() - 1);
 	const auto file = ActiveSettings::GetMlcPath("usr/save/system/act/persisid.dat");
-	std::ofstream f(file);
+	std::ofstream f(fs::resolvePathCI(file));
 	if(f.is_open())
 	{
 		f << "PersistentIdManager_20120607" << std::endl << "PersistentIdHead=" << std::hex << max_id << std::endl << std::endl;
@@ -386,7 +386,7 @@ uint32 Account::GetNextPersistentId()
 	const auto file = ActiveSettings::GetMlcPath("usr/save/system/act/persisid.dat");
 	if(fs::exists(file))
 	{
-		std::ifstream f(file);
+		std::ifstream f(fs::resolvePathCI(file));
 		if(f.is_open())
 		{
 			std::string line;
@@ -459,7 +459,7 @@ OnlineValidator Account::ValidateOnlineFiles() const
 	return result;
 }
 
-void Account::ParseFile(FileStream* file)
+void Account::ParseFile(class FileStream* file)
 {
 	std::vector<uint8> buffer;
 	buffer.resize(file->GetSize());

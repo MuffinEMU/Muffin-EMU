@@ -10,7 +10,7 @@ class LatteTextureVk : public LatteTexture
 {
 public:
 	LatteTextureVk(class VulkanRenderer* vkRenderer, Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels,
-		uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth);
+		uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget);
 
 	~LatteTextureVk();
 

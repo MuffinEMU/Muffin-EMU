@@ -56,7 +56,7 @@ bool SaveScreenshotToFile(const fs::path& imagePath, const wxImage& image)
 
 	// suspend wxWidgets logging for the lifetime this object, to prevent a message box if wxImage::SaveFile fails
 	wxLogNull _logNo;
-	return image.SaveFile(imagePath.wstring());
+	return image.SaveFile(fs::resolvePathCI(imagePath).wstring());
 }
 
 bool SaveScreenshotToClipboard(const wxImage& image)

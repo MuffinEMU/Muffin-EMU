@@ -20,18 +20,6 @@ struct CemuApp: App {
         // installs its own log/signal handler even earlier than this).
         cemu_bridge_log_checkpoint("CemuApp.init() reached")
 
-        // Pushed HERE, not in launchGame, because MetalRenderer's constructor latches
-        // this into m_emulateGeometryShader and never reads it again - and the renderer
-        // is constructed before launchGame ever runs ("Renderer constructed: Metal"
-        // precedes "launchGame: ..." in every device crash log). Setting it there meant
-        // the renderer had already decided, so a user who turned this OFF still got it
-        // on, and before the C++ side's default was corrected everyone got it off no
-        // matter what this value said.
-        //
-        // App.init() is the earliest Swift-reachable point, which is the only place a
-        // latched-at-construction setting can be honoured from.
-        cemu_bridge_set_geometry_shader_emulation_enabled(
-            UserDefaults.standard.object(forKey: "muffin.geometryShaderEmulation") as? Bool ?? true)
 
         // Same class of bug, same cure. MetalRenderer's InitializeLayer() applies this to
         // the CAMetalLayer (MetalRenderer.cpp:382) on the path GameManager reaches at

@@ -79,7 +79,9 @@ static void SetupCallingConvention(const IMLInstruction* instruction, IMLFixedRe
 	auto AddParameterMapping = [&](IMLReg reg) {
 		if (!reg.IsValid())
 			return;
-		if (reg.GetBaseFormat() == IMLRegFormat::I64)
+		IMLRegFormat regFormat = reg.GetBaseFormat();
+		bool isIntegerFormat = regFormat == IMLRegFormat::I64 || regFormat == IMLRegFormat::I32 || regFormat == IMLRegFormat::I16 || regFormat == IMLRegFormat::I8;
+		if (isIntegerFormat)
 		{
 			IMLPhysRegisterSet ps;
 			ps.SetAvailable(intParamToPhysReg[numIntParams]);
@@ -196,7 +198,7 @@ static void GetInstructionFixedRegisters(IMLInstruction* instruction, IMLFixedRe
 
 uint32 IMLRA_GetNextIterationIndex()
 {
-	static uint32 recRACurrentIterationIndex = 0;
+	static thread_local uint32 recRACurrentIterationIndex = 0;
 	recRACurrentIterationIndex++;
 	return recRACurrentIterationIndex;
 }

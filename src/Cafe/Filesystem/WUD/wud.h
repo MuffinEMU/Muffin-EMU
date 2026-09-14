@@ -1,7 +1,5 @@
 #pragma once
 
-#include "Common/FileStream.h"
-
 struct wuxHeader_t
 {
 	unsigned int		magic0;
@@ -13,7 +11,7 @@ struct wuxHeader_t
 
 struct wud_t
 {
-	FileStream* fs;
+	class FileStream* fs;
 	long long		uncompressedSize;
 	bool			isCompressed;
 	// data used when compressed

@@ -196,15 +196,16 @@ void XAudio27API::VoiceDeleter::operator()(IXAudio2Voice* ptr) const
 
 bool XAudio27API::FeedBlock(sint16* data)
 {
-	// check if we queued too many blocks
-	if(m_blocks_queued >= kBlockCount)
+	const uint32 maxQueuedBlocks = kBlockCount;
+	if (m_blocks_queued + 1 > maxQueuedBlocks)
 	{
 		m_blocks_queued = GetQueuedBuffers();
 
-		if (m_blocks_queued >= kBlockCount)
+		if (m_blocks_queued + 1 > maxQueuedBlocks)
 		{
-			cemuLog_logDebug(LogType::Force, "dropped xaudio2 block since too many buffers are queued");
-			return false;
+			m_source_voice->FlushSourceBuffers();
+			m_blocks_queued = GetQueuedBuffers();
+			cemuLog_logDebug(LogType::SoundAPI, "XAudio 2.7: flushed stale audio buffers to avoid playback lag");
 		}
 	}
 
@@ -229,5 +230,5 @@ uint32 XAudio27API::GetQueuedBuffers() const
 
 bool XAudio27API::NeedAdditionalBlocks() const
 {
-	return GetQueuedBuffers() < GetAudioDelay();
+	return GetQueuedBuffers() < GetTargetQueuedBlocks();
 }

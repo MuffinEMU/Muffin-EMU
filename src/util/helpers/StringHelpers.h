@@ -1,6 +1,4 @@
 #pragma once
-// Real boost.nowide on all platforms including iOS (the StringHelpers_ios.h stub
-// redefined uint16be as uint16_t and duplicated declarations, conflicting with betype).
 #include "boost/nowide/convert.hpp"
 #include <charconv>
 

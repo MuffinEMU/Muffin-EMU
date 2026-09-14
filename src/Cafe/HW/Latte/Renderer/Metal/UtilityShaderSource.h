@@ -38,6 +38,16 @@ fragment float4 fragmentCopyDepthToColor(VertexOut in [[stage_in]], texture2d<fl
     return float4(src.read(uint2(in.position.xy)).r, 0.0, 0.0, 0.0);
 }
 
+struct DepthOut {
+    float depth [[depth(any)]];
+};
+
+fragment DepthOut fragmentCopyColorToDepth(VertexOut in [[stage_in]], texture2d<float, access::read> src [[texture(GET_TEXTURE_BINDING(0))]]) {
+    DepthOut out;
+    out.depth = src.read(uint2(in.position.xy)).r;
+    return out;
+}
+
 //struct RestrideParams {
 //    uint oldStride;
 //    uint newStride;

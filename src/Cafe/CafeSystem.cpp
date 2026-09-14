@@ -3,6 +3,7 @@
 #include "Cafe/OS/libs/gx2/GX2.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
+#include "Cafe/HW/Espresso/Const.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 #include "Cafe/HW/Espresso/Debugger/Debugger.h"
 #include "Cafe/OS/RPL/rpl_symbol_storage.h"
@@ -23,6 +24,7 @@
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/Filesystem/FST/FST.h"
+#include "Cafe/Filesystem/MlcTitleDirectoryCase.h"
 #include "Common/FileStream.h"
 #include "GamePatch.h"
 #include "HW/Espresso/Debugger/GDBStub.h"
@@ -67,21 +69,11 @@
 
 #include <time.h>
 
-// CEMU_PLATFORM_IOS has to be spelled out separately everywhere BOOST_OS_MACOS
-// appears in this file. Boost.Predef's os/ios.h is evaluated before os/macos.h and
-// sets BOOST_PREDEF_DETAIL_OS_DETECTED, so on an iOS target BOOST_OS_IOS is nonzero
-// and BOOST_OS_MACOS is *zero* - "Apple platform" does not imply BOOST_OS_MACOS here.
-// precompiled.h already carries the same `BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)`
-// spelling for exactly this reason.
 #if BOOST_OS_LINUX
 #include <sys/sysinfo.h>
-#elif BOOST_OS_MACOS || BOOST_OS_BSD || defined(CEMU_PLATFORM_IOS)
+#elif BOOST_OS_MACOS || BOOST_OS_IOS || BOOST_OS_BSD
 #include <sys/types.h>
 #include <sys/sysctl.h>
-#endif
-
-#if BOOST_PLAT_ANDROID
-#include <android/api-level.h>
 #endif
 
 std::string _pathToExecutable;
@@ -175,7 +167,7 @@ void LoadMainExecutable()
 	else
 	{
 		// RPX
-		RPLLoader_AddDependency(_pathToExecutable.c_str());
+		RPLLoader_AddDependency(_pathToExecutable.c_str(), true);
 		applicationRPX = RPLLoader_LoadFromMemory(rpxData, rpxSize, (char*)_pathToExecutable.c_str());
 		if (!applicationRPX)
 		{
@@ -250,29 +242,7 @@ void InfoLog_PrintActiveSettings()
 	cemuLog_log(LogType::Force, "------- Active settings -------");
 
 	// settings to log:
-	// ActiveSettings::GetCPUMode() reports what the CONFIG asks for. It knows nothing
-	// about --force-interpreter / --force-multicore-interpreter, both of which make
-	// PPCRecompiler_init() return before it ever sets ppcRecompilerEnabled, so the
-	// interpreter is what actually executes. Printing the config value alone produced
-	// a log that flatly contradicted itself: "Recompiler disabled. Command line
-	// --force-interpreter [...] was passed" from PPCRecompiler.cpp, followed seconds
-	// later by "CPU-Mode: Multi-core recompiler" from here - both in the first iOS
-	// device log that reached "------- Run title -------", where CemuBridge.mm calls
-	// LaunchSettings::SetForceInterpreter(true) unconditionally. Report the mode that
-	// actually runs, and keep the requested one alongside it so nothing is hidden. The
-	// core count matches _LaunchTitleThread()'s own test.
-	const bool forceInterpreter = LaunchSettings::ForceInterpreter();
-	const bool forceMulticoreInterpreter = LaunchSettings::ForceMultiCoreInterpreter();
-	const CPUMode requestedCPUMode = ActiveSettings::GetCPUMode();
-	if (forceInterpreter || forceMulticoreInterpreter)
-	{
-		const bool isMulticore = forceMulticoreInterpreter && !forceInterpreter;
-		cemuLog_log(LogType::Force, "CPU-Mode: {} (forced, overriding {})", isMulticore ? "Multi-core interpreter" : "Single-core interpreter", fmt::format("{}", requestedCPUMode));
-	}
-	else
-	{
-		cemuLog_log(LogType::Force, "CPU-Mode: {}{}", fmt::format("{}", requestedCPUMode).c_str(), g_current_game_profile->GetCPUMode().has_value() ? " (gameprofile)" : "");
-	}
+	cemuLog_log(LogType::Force, "CPU-Mode: {}{}", fmt::format("{}", ActiveSettings::GetCPUMode()).c_str(), g_current_game_profile->GetCPUMode().has_value() ? " (gameprofile)" : "");
 	cemuLog_log(LogType::Force, "Load shared libraries: {}{}", ActiveSettings::LoadSharedLibrariesEnabled() ? "true" : "false", g_current_game_profile->ShouldLoadSharedLibraries().has_value() ? " (gameprofile)" : "");
 	cemuLog_log(LogType::Force, "Use precompiled shaders: {}{}", fmt::format("{}", ActiveSettings::GetPrecompiledShadersOption()), g_current_game_profile->GetPrecompiledShadersState().has_value() ? " (gameprofile)" : "");
 	cemuLog_log(LogType::Force, "Full sync at GX2DrawDone: {}", ActiveSettings::WaitForGX2DrawDoneEnabled() ? "true" : "false");
@@ -283,7 +253,7 @@ void InfoLog_PrintActiveSettings()
 		if (!GetConfig().vk_accurate_barriers.GetValue())
 			cemuLog_log(LogType::Force, "Accurate barriers are disabled!");
 	}
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 	else if (ActiveSettings::GetGraphicsAPI() == GraphicAPI::kMetal)
 	{
 	    cemuLog_log(LogType::Force, "Async compile: {}", GetConfig().async_compile.GetValue() ? "true" : "false");
@@ -467,20 +437,6 @@ void cemu_initForGame()
 
 namespace CafeSystem
 {
-	CafeSystemCallbacks* sCafeSystemCallbacks = nullptr;
-	void registerCafeSystemCallbacks(CafeSystemCallbacks* cafeSystemCallbacks)
-	{
-		sCafeSystemCallbacks = cafeSystemCallbacks;
-	}
-	void unregisterCafeSystemCallbacks()
-	{
-		sCafeSystemCallbacks = nullptr;
-	}
-	CafeSystemCallbacks* getCafeSystemCallbacks()
-	{
-		return sCafeSystemCallbacks;
-	}
-
 	void InitVirtualMlcStorage();
 	void MlcStorageMountTitle(TitleInfo& titleInfo);
     void MlcStorageUnmountAllTitles();
@@ -492,8 +448,6 @@ namespace CafeSystem
 
 	bool sSystemRunning = false;
 	TitleId sForegroundTitleId = 0;
-
-	bool sTitlePaused = false;
 
 	GameInfo2 sGameInfo_ForegroundTitle;
 
@@ -528,10 +482,7 @@ namespace CafeSystem
 		struct sysinfo info {};
 		sysinfo(&info);
 		cemuLog_log(LogType::Force, "RAM: {}MB", ((static_cast<uint64_t>(info.totalram) * info.mem_unit) / 1024LL / 1024LL));
-		#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
-		// BOOST_OS_MACOS is 0 on iOS (see the include block at the top of this file),
-		// so without the explicit CEMU_PLATFORM_IOS here no branch matched at all and
-		// the iOS log simply had no RAM line. hw.memsize is public API on iOS.
+		#elif BOOST_OS_MACOS || BOOST_OS_IOS
 		int64_t totalRam;
 		size_t size = sizeof(totalRam);
 		int result = sysctlbyname("hw.memsize", &totalRam, &size, NULL, 0);
@@ -550,21 +501,43 @@ namespace CafeSystem
 	std::string GetWindowsNamedVersion(uint32& buildNumber)
 	{
 		char productName[256];
+		char buildNumberStr[32];
+		char featureVersion[32];
 		HKEY hKey;
 		DWORD dwType = REG_SZ;
 		DWORD dwSize = sizeof(productName);
+		buildNumber = 0;
+		featureVersion[0] = '\0';
 		if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", 0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS)
 		{
 			if (RegQueryValueExA(hKey, "ProductName", NULL, &dwType, (LPBYTE)productName, &dwSize) != ERROR_SUCCESS)
 				strcpy(productName, "Windows");
+			dwType = REG_SZ;
+			dwSize = sizeof(buildNumberStr);
+			if (RegQueryValueExA(hKey, "CurrentBuildNumber", NULL, &dwType, (LPBYTE)buildNumberStr, &dwSize) == ERROR_SUCCESS)
+				buildNumber = (uint32)atoi(buildNumberStr);
+			dwType = REG_SZ;
+			dwSize = sizeof(featureVersion);
+			if (RegQueryValueExA(hKey, "DisplayVersion", NULL, &dwType, (LPBYTE)featureVersion, &dwSize) != ERROR_SUCCESS)
+			{
+				dwType = REG_SZ;
+				dwSize = sizeof(featureVersion);
+				if (RegQueryValueExA(hKey, "ReleaseId", NULL, &dwType, (LPBYTE)featureVersion, &dwSize) != ERROR_SUCCESS)
+					featureVersion[0] = '\0';
+			}
 			RegCloseKey(hKey);
 		}
-		OSVERSIONINFO osvi;
-		ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
-		osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
-		GetVersionEx(&osvi);
-		buildNumber = osvi.dwBuildNumber;
-		return std::string(productName);
+		std::string result(productName);
+		// ProductName still reads as "Windows 10" on Windows 11. Find and replace with "Windows 11" based on build number.
+		if (buildNumber >= 22000)
+		{
+			size_t pos = result.find("Windows 10");
+			if (pos != std::string::npos)
+				result.replace(pos, 10, "Windows 11");
+		}
+		if (featureVersion[0] != '\0')
+			result += fmt::format(" {}", featureVersion);
+		return result;
 	}
 	#endif
 
@@ -572,36 +545,7 @@ namespace CafeSystem
 	{
 		std::string buffer;
 		const char* platform = NULL;
-		#if defined(CEMU_PLATFORM_IOS)
-		// This branch is why the app SIGABRTed at startup. BOOST_OS_MACOS is 0 on an
-		// iOS target (Boost.Predef detects iOS first and stops), so before this branch
-		// existed NOT ONE of the #if arms below compiled on iOS: `platform` stayed
-		// NULL and was handed straight to the "Platform: {}" call at the bottom of
-		// this function. That was harmless only while the iOS cemuLog_log stub threw
-		// formatted calls away; the moment the stub started really formatting, fmt hit
-		// a null string pointer, called report_error(), threw fmt::format_error out of
-		// a log call, and terminate()/abort() took the process down inside
-		// CafeSystem::Initialize().
-		char productVersion[256]{};
-		size_t productVersionSize = sizeof(productVersion);
-		const int productVersionResult = sysctlbyname("kern.osproductversion", productVersion, &productVersionSize, nullptr, 0);
-
-		char buildVersion[256]{};
-		size_t buildVersionSize = sizeof(buildVersion);
-		const int buildVersionResult = sysctlbyname("kern.osversion", buildVersion, &buildVersionSize, nullptr, 0);
-
-		if (productVersionResult == 0 && buildVersionResult == 0)
-			buffer = fmt::format("iOS {} ({})", productVersion, buildVersion);
-		else if (productVersionResult == 0)
-			buffer = fmt::format("iOS {}", productVersion);
-		else
-			buffer = "iOS";
-
-		platform = buffer.c_str();
-		#elif BOOST_PLAT_ANDROID
-        buffer = fmt::format("Android (API level {})", android_get_device_api_level());;
-		platform = buffer.c_str();
-		#elif BOOST_OS_WINDOWS
+		#if BOOST_OS_WINDOWS
 		uint32 buildNumber;
 		std::string windowsVersionName = GetWindowsNamedVersion(buildNumber);
 		buffer = fmt::format("{} (Build {})", windowsVersionName, buildNumber);
@@ -618,6 +562,8 @@ namespace CafeSystem
 		}
 		else
 			platform = "Linux";
+		#elif BOOST_OS_IOS
+			platform = "iOS";
 		#elif BOOST_OS_MACOS
 		char productVersion[256]{};
 		size_t productVersionSize = sizeof(productVersion);
@@ -635,7 +581,7 @@ namespace CafeSystem
 			buffer = "macOS";
 
 		platform = buffer.c_str();
-		
+
 		#elif BOOST_OS_BSD
 		#if defined(__FreeBSD__)
 		platform = "FreeBSD";
@@ -647,10 +593,7 @@ namespace CafeSystem
 		platform = "Unknown BSD";
 		#endif
 		#endif
-		// Belt and braces: `platform` is only ever set inside a platform #if arm, so
-		// any future target that matches none of them lands here holding NULL. Don't
-		// make the next port's first symptom an abort inside a log call.
-		cemuLog_log(LogType::Force, "Platform: {}", platform ? platform : "Unknown");
+		cemuLog_log(LogType::Force, "Platform: {}", platform);
 	}
 
 	static std::vector<IOSUModule*> s_iosuModules =
@@ -886,15 +829,15 @@ namespace CafeSystem
 		if (tip.GetType() == TitleIdParser::TITLE_TYPE::AOC || tip.GetType() == TitleIdParser::TITLE_TYPE::BASE_TITLE_UPDATE)
 			cemuLog_log(LogType::Force, "Launched titleId is not the base of a title");
         // mount mlc storage
-        MountBaseDirectories();
+		MountBaseDirectories();
         // mount title folders
 		PREPARE_STATUS_CODE r = LoadAndMountForegroundTitle(titleId);
 		if (r != PREPARE_STATUS_CODE::SUCCESS)
 			return r;
 		gameProfile_load();
 		// setup memory space and PPC recompiler
-        SetupMemorySpace();
-        PPCRecompiler_init();
+		SetupMemorySpace();
+		PPCRecompiler_init();
 		r = PrepareExecutable(); // load RPX
 		if (r != PREPARE_STATUS_CODE::SUCCESS)
 			return r;
@@ -906,12 +849,6 @@ namespace CafeSystem
 	{
 		sLaunchModeIsStandalone = true;
 		cemuLog_log(LogType::Force, "Launching executable in standalone mode due to incorrect layout or missing meta files");
-		// PrepareForegroundTitle (the other launch path) calls MountBaseDirectories()
-		// here, mounting /vol/storage_mlc01/ - without it, nn_save's hardcoded
-		// "/vol/storage_mlc01/usr/save/..." paths resolve against nothing, so every
-		// title launched via this standalone path (the ONLY path the iOS bridge
-		// uses) silently loses all save-game read/write access.
-		MountBaseDirectories();
 		fs::path executablePath = path;
 		std::string dirName = _pathToUtf8(executablePath.parent_path().filename());
 		if (boost::iequals(dirName, "code"))
@@ -919,10 +856,10 @@ namespace CafeSystem
 			// check for content folder
 			fs::path contentPath = executablePath.parent_path().parent_path().append("content");
 			std::error_code ec;
-			if (cemu::fs::is_directory(contentPath, ec))
+			if (fs::is_directory(contentPath, ec))
 			{
 				// mounting content folder
-				bool r = FSCDeviceHost_Mount(std::string("/vol/content").c_str(), _pathToUtf8(contentPath), FSC_PRIORITY_BASE);
+				bool r = FSCDeviceHostFS_Mount(std::string("/vol/content").c_str(), _pathToUtf8(contentPath), FSC_PRIORITY_BASE);
 				if (!r)
 				{
 					cemuLog_log(LogType::Force, "Failed to mount {}", _pathToUtf8(contentPath));
@@ -931,7 +868,7 @@ namespace CafeSystem
 			}
 		}
 		// mount code folder to a virtual temporary path
-		FSCDeviceHost_Mount(std::string("/internal/code/").c_str(), _pathToUtf8(executablePath.parent_path()), FSC_PRIORITY_BASE);
+		FSCDeviceHostFS_Mount(std::string("/internal/code/").c_str(), _pathToUtf8(executablePath.parent_path()), FSC_PRIORITY_BASE);
 		std::string internalExecutablePath = "/internal/code/";
 		internalExecutablePath.append(_pathToUtf8(executablePath.filename()));
 		_pathToExecutable = internalExecutablePath;
@@ -942,14 +879,6 @@ namespace CafeSystem
 		uint32 h = generateHashFromRawRPXData(execData->data(), execData->size());
 		sForegroundTitleId = 0xFFFFFFFF00000000ULL | (uint64)h;
 		cemuLog_log(LogType::Force, "Generated placeholder TitleId: {:016x}", sForegroundTitleId);
-		// PrepareForegroundTitle (the other launch path) calls gameProfile_load()
-		// once GetForegroundTitleId() is valid - without it, g_current_game_profile
-		// (which ActiveSettings::GetCPUMode() etc. all read from) keeps whatever a
-		// previously-launched title left behind instead of being reset for this one.
-		// A standalone RPX has no real gameProfiles/<id>.ini on disk, so Load() will
-		// just fail to find a file and fall through to defaults - the point here is
-		// ResetOptional() clearing stale state, not actually loading a profile.
-		gameProfile_load();
 		// setup memory space and ppc recompiler
         SetupMemorySpace();
         PPCRecompiler_init();
@@ -959,76 +888,31 @@ namespace CafeSystem
 		return PREPARE_STATUS_CODE::SUCCESS;
 	}
 
-	// Boot-stage trace. Every iOS stall log to date ends at "------- Run title -------"
-	// with the guest-CPU counters at zero, which says only "the scheduler never ran a
-	// single iteration" and not which of the six steps between here and there it died
-	// on. Each of these lines is one step, so a stalled log names the last one it
-	// survived instead of leaving it to be guessed at.
 	void _LaunchTitleThread()
 	{
-		cemuLog_log(LogType::Force, "Boot stage: launch thread entered");
 		for(auto& module : s_iosuModules)
 			module->TitleStart();
-		cemuLog_log(LogType::Force, "Boot stage: IOSU modules started");
 		cemu_initForGame();
-		cemuLog_log(LogType::Force, "Boot stage: cemu_initForGame() returned");
 		// enter scheduler
-		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
-		{
-			cemuLog_log(LogType::Force, "Boot stage: entering scheduler on 3 cores");
-			coreinit::OSSchedulerBegin(3);
-		}
+		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || ActiveSettings::GetCPUMode() == CPUMode::MulticoreInterpreter || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
+			coreinit::OSSchedulerBegin(Espresso::CORE_COUNT);
 		else
-		{
-			cemuLog_log(LogType::Force, "Boot stage: entering scheduler on 1 core");
 			coreinit::OSSchedulerBegin(1);
-		}
-		cemuLog_log(LogType::Force, "Boot stage: scheduler returned (title stopping)");
 	}
 
 	void LaunchForegroundTitle()
 	{
-		// PPCTimer_waitForInit() is a bare spin on a flag set by a detached calibration
-		// thread. It has hung this port before (see cemu_bridge_initialize()), so it is
-		// bracketed rather than trusted.
-		cemuLog_log(LogType::Force, "Boot stage: waiting for the guest timer to calibrate");
 		PPCTimer_waitForInit();
-		cemuLog_log(LogType::Force, "Boot stage: guest timer ready");
 		// start system
 		sSystemRunning = true;
 		WindowSystem::NotifyGameLoaded();
 		std::thread t(_LaunchTitleThread);
 		t.detach();
-		cemuLog_log(LogType::Force, "Boot stage: launch thread spawned");
 	}
 
 	bool IsTitleRunning()
 	{
 		return sSystemRunning;
-	}
-
-	void PauseTitle()
-	{
-		if (!sSystemRunning || sTitlePaused)
-		{
-			return;
-		}
-
-		sTitlePaused = true;
-
-		coreinit::SuspendActiveThreads();
-	}
-
-	void ResumeTitle()
-	{
-		if (!sSystemRunning || !sTitlePaused)
-		{
-			return;
-		}
-
-		sTitlePaused = false;
-
-		coreinit::ResumeActiveThreads();
 	}
 
 	TitleId GetForegroundTitleId()
@@ -1092,19 +976,30 @@ namespace CafeSystem
 	{
 		if (sLaunchModeIsStandalone)
 			return CosCapabilityBits::All;
+
+		CosCapabilityBits resultMask = static_cast<CosCapabilityBits>(0);
+		for (const auto& pack : GraphicPack2::GetActiveGraphicPacks())
+		{
+			for (const auto& permissionOverrides : pack->GetPermissionOverrides()) 
+			{
+				if (permissionOverrides.first == group)
+					resultMask |= static_cast<CosCapabilityBits>(permissionOverrides.second);
+			}
+		}
+
 		auto& update = sGameInfo_ForegroundTitle.GetUpdate();
 		if (update.IsValid())
 		{
 			ParsedCosXml* cosXml = update.GetCosInfo();
 			if (cosXml)
-				return cosXml->GetCapabilityBits(group);
+				return cosXml->GetCapabilityBits(group) | resultMask;
 		}
 		auto& base = sGameInfo_ForegroundTitle.GetBase();
 		if(base.IsValid())
 		{
 			ParsedCosXml* cosXml = base.GetCosInfo();
 			if (cosXml)
-				return cosXml->GetCapabilityBits(group);
+				return cosXml->GetCapabilityBits(group) | resultMask;
 		}
 		return CosCapabilityBits::All;
 	}

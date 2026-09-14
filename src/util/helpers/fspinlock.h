@@ -3,6 +3,22 @@
 // minimal but efficient non-recursive spinlock implementation
 
 #include <atomic>
+#include <thread>
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#endif
+
+static inline void cemuSpinlockPause()
+{
+#if defined(__x86_64__) || defined(_M_X64) || defined(_M_AMD64) || defined(__i386__) || defined(_M_IX86)
+	_mm_pause();
+#elif defined(__aarch64__) || defined(__arm64__)
+	asm volatile("yield");
+#else
+	std::this_thread::yield();
+#endif
+}
 
 class FSpinlock
 {
@@ -19,8 +35,8 @@ public:
 		{
 			if (!m_lockBool.exchange(true, std::memory_order_acquire))
 				break;
-			while (m_lockBool.load(std::memory_order_relaxed)) 
-                _mm_pause();
+			while (m_lockBool.load(std::memory_order_relaxed))
+				cemuSpinlockPause();
 		}
 	}
 

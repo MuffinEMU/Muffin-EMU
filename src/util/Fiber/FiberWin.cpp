@@ -1,26 +1,23 @@
-// Dispatch header first, deliberately. Fiber.h picks the backend *declaration* by
-// platform and must agree with the .cpp CMake compiles; if it ever disagrees, the
-// two class definitions collide here and the build stops, instead of linking a
-// silent size mismatch into the PPC scheduler. #pragma once makes this free when
-// the selection is correct.
 #include "Fiber.h"
-#include "FiberWin.h"
+#include <Windows.h>
 
 thread_local Fiber* sCurrentFiber{};
 
 Fiber::Fiber(void(*FiberEntryPoint)(void* userParam), void* userParam, void* privateData) : m_privateData(privateData)
 {
-	m_handle = CreateFiber(2 * 1024 * 1024, (LPFIBER_START_ROUTINE)FiberEntryPoint, userParam);
+	HANDLE fiberHandle = CreateFiber(2 * 1024 * 1024, (LPFIBER_START_ROUTINE)FiberEntryPoint, userParam);
+	this->m_implData = (void*)fiberHandle;
 }
 
 Fiber::Fiber(void* privateData) : m_privateData(privateData)
 {
-	m_handle = ConvertThreadToFiber(nullptr);
+	this->m_implData = (void*)ConvertThreadToFiber(nullptr);
+	this->m_stackPtr = nullptr;
 }
 
 Fiber::~Fiber()
 {
-	DeleteFiber(m_handle);
+	DeleteFiber((HANDLE)m_implData);
 }
 
 Fiber* Fiber::PrepareCurrentThread(void* privateData)
@@ -31,12 +28,10 @@ Fiber* Fiber::PrepareCurrentThread(void* privateData)
 	return currentFiber;
 }
 
-int Fiber::Switch(Fiber& targetFiber)
+void Fiber::Switch(Fiber& targetFiber)
 {
 	sCurrentFiber = &targetFiber;
-	SwitchToFiber(targetFiber.m_handle);
-	// SwitchToFiber has no failure mode to report, unlike the ucontext backend.
-	return 0;
+	SwitchToFiber((HANDLE)targetFiber.m_implData);
 }
 
 void* Fiber::GetFiberPrivateData()

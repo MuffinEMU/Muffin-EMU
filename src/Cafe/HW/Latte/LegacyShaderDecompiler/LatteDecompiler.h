@@ -48,6 +48,7 @@ struct LatteDecompilerShaderResourceMapping
 	LatteDecompilerShaderResourceMapping()
 	{
 		std::fill(textureUnitToBindingPoint, textureUnitToBindingPoint + LATTE_NUM_MAX_TEX_UNITS, -1);
+		std::fill(textureUnitToSamplerBindingPoint, textureUnitToSamplerBindingPoint + LATTE_NUM_MAX_TEX_UNITS, -1);
 		std::fill(uniformBuffersBindingPoint, uniformBuffersBindingPoint + LATTE_NUM_MAX_UNIFORM_BUFFERS, -1);
 		std::fill(attributeMapping, attributeMapping + LATTE_NUM_MAX_ATTRIBUTE_LOCATIONS, -1);
 	}
@@ -56,6 +57,8 @@ struct LatteDecompilerShaderResourceMapping
 	sint8 setIndex{};
 	// texture
 	sint8 textureUnitToBindingPoint[LATTE_NUM_MAX_TEX_UNITS];
+	// Metal uses a separate, compact sampler namespace. multiple textures may share one sampler.
+	sint8 textureUnitToSamplerBindingPoint[LATTE_NUM_MAX_TEX_UNITS];
 	// uniform buffer
 	sint8 uniformVarsBufferBindingPoint{-1}; // special block for uniform registers/remapped array/custom variables
 	sint8 uniformBuffersBindingPoint[LATTE_NUM_MAX_UNIFORM_BUFFERS];
@@ -64,16 +67,10 @@ struct LatteDecompilerShaderResourceMapping
 	// attributes (vertex shader only)
 	sint8 attributeMapping[LATTE_NUM_MAX_ATTRIBUTE_LOCATIONS];
 	// Metal exclusive
+	sint8 argumentBufferBindingPoint{-1};
 	sint8 verticesPerInstanceBinding{-1};
 	sint8 indexBufferBinding{-1};
 	sint8 indexTypeBinding{-1};
-	// Geometry-shader emulation (no mesh shaders). The object payload becomes a device
-	// buffer the vertex kernel writes and the geometry kernel reads; the geometry kernel
-	// writes its expanded vertices and a per-invocation primitive count for the
-	// passthrough vertex shader to read back.
-	sint8 gsPayloadBinding{-1};
-	sint8 gsOutBinding{-1};
-	sint8 gsPrimCountBinding{-1};
 
 	sint32 getTextureCount()
 	{
@@ -199,12 +196,6 @@ struct LatteDecompilerShader
 	// analyzer stage (geometry shader parameters/inputs)
 	uint32 ringParameterCount{ 0 };
 	uint32 ringParameterCountFromPrevStage{ 0 }; // used in geometry shader to hold VS ringParameterCount
-	// Geometry-shader emulation (Metal without mesh shaders): byte strides of the two
-	// device buffers the emulated stages hand to each other. The emitter records them
-	// because it is the only place that knows the layout of the structs it just generated
-	// -- the renderer would otherwise have to re-derive it and could silently disagree.
-	uint32 mtlGsPayloadStride{ 0 };
-	uint32 mtlGsVertexStride{ 0 };
 	// analyzer stage (misc)
 	std::bitset<LATTE_NUM_STREAMOUT_BUFFER> streamoutBufferWriteMask;
 	bool hasStreamoutBufferWrite{ false };
@@ -227,11 +218,14 @@ struct LatteDecompilerShader
 		sint32 loc_alphaTestRef; // uf_alphaTestRef
 		sint32 loc_pointSize; // uf_pointSize
 		sint32 loc_fragCoordScale;
+		sint32 loc_baseVertex;
+		sint32 loc_baseInstance;
 		std::vector<LatteUniformTextureScaleEntry_t> list_ufTexRescale; // list of mappings for uf_tex*Scale <-> uniform location
 		float ufCurrentValueAlphaTestRef;
 		float ufCurrentValueFragCoordScale[2];
 		sint32 loc_verticesPerInstance;
 		sint32 loc_streamoutBufferBase[LATTE_NUM_STREAMOUT_BUFFER];
+		sint32 loc_streamoutBufferSize[LATTE_NUM_STREAMOUT_BUFFER];
 		uint32 uniformRangeSize; // entire size of uniform variable block
 	}uniform{ 0 };
 	// fast access
@@ -256,8 +250,11 @@ struct LatteDecompilerOutputUniformOffsets
 	sint32 offset_fragCoordScale;
 	sint32 offset_windowSpaceToClipSpaceTransform;
 	sint32 offset_texScale[LATTE_NUM_MAX_TEX_UNITS];
+	sint32 offset_baseVertex{-1};
+	sint32 offset_baseInstance{-1};
 	sint32 offset_verticesPerInstance{-1};
 	sint32 offset_streamoutBufferBase[LATTE_NUM_STREAMOUT_BUFFER]{ -1, -1, -1, -1 };
+	sint32 offset_streamoutBufferSize[LATTE_NUM_STREAMOUT_BUFFER]{ -1, -1, -1, -1 };
 	sint32 offset_endOfBlock; // stores size of uniform variable block
 
 	LatteDecompilerOutputUniformOffsets()
@@ -278,10 +275,6 @@ struct LatteDecompilerOutputUniformOffsets
 struct LatteDecompilerOptions
 {
 	bool usesGeometryShader{ false };
-	// Metal only: usesGeometryShader is true but the GPU has no mesh shaders, so the
-	// vertex and geometry stages are emitted as compute kernels writing to buffers
-	// instead of as an object/mesh pipeline.
-	bool geometryShaderEmulation{ false };
 	// floating point math
 	bool strictMul{}; // if true, 0*anything=0 rule is emulated
 	// Vulkan-specific

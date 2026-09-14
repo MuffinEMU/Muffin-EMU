@@ -51,6 +51,18 @@ enum class CosCapabilityBits : uint64
 	All = 0xFFFFFFFFFFFFFFFFull
 };
 
+inline CosCapabilityBits operator|(CosCapabilityBits a, CosCapabilityBits b)
+{
+    return static_cast<CosCapabilityBits>(
+        static_cast<uint64>(a) | static_cast<uint64>(b));
+}
+
+inline CosCapabilityBits& operator|=(CosCapabilityBits& a, CosCapabilityBits b)
+{
+    a = a | b;
+    return a;
+}
+
 enum class CosCapabilityBitsFS : uint64
 {
 	ODD_READ         = (1llu << 0),
@@ -139,13 +151,7 @@ public:
 		UNKNOWN_FORMAT = 2,
 		NO_DISC_KEY = 3,
 		NO_TITLE_TIK = 4,
-		// was also 4, which made it indistinguishable from NO_TITLE_TIK. Every consumer
-		// of GetInvalidReason() (wx MainWindow, Android's prepareTitle, the iOS bridge)
-		// compares against NO_TITLE_TIK to decide whether to tell the user a ticket is
-		// missing, so a title that merely had unreadable meta/app/cos .xml files
-		// reported the wrong cause. Nothing serializes this enum, so renumbering it is
-		// contained entirely within one build.
-		MISSING_XML_FILES = 5,
+		MISSING_XML_FILES = 4,
 	};
 
 	struct CachedInfo

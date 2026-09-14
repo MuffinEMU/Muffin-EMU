@@ -95,7 +95,6 @@
 #endif
 #endif
 
-/*
 // GL includes
 #if defined(IMGUI_IMPL_OPENGL_ES2)
 #include <GLES2/gl2.h>
@@ -120,10 +119,10 @@
 //#include IMGUI_IMPL_OPENGL_LOADER_CUSTOM"glext.h""glext.h"
 #endif
 #endif
-*/
+
 // Desktop GL has glDrawElementsBaseVertex() which GL ES and WebGL don't have.
 #if defined(IMGUI_IMPL_OPENGL_ES2) || defined(IMGUI_IMPL_OPENGL_ES3)
-#define IMGUI_IMPL_OPENGL_HAS_DRAW_WITH_BASE_VERTEX     1 // 0
+#define IMGUI_IMPL_OPENGL_HAS_DRAW_WITH_BASE_VERTEX     0
 #else
 #define IMGUI_IMPL_OPENGL_HAS_DRAW_WITH_BASE_VERTEX     1
 #endif

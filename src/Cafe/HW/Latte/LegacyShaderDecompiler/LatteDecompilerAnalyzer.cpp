@@ -10,8 +10,10 @@
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Common/MemPtr.h"
 #include "HW/Latte/ISA/LatteReg.h"
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 #include "HW/Latte/Renderer/Metal/MetalCommon.h"
+#include "HW/Latte/Renderer/Metal/MetalRenderer.h"
+#include "HW/Latte/Renderer/Metal/LatteToMtl.h"
 #endif
 
 // Defined in LatteTextureLegacy.cpp
@@ -403,11 +405,9 @@ void LatteDecompiler_analyzeExport(LatteDecompilerShaderContext* shaderContext, 
 		}
 		else if (cfInstruction->exportType == 0 && cfInstruction->exportArrayBase == 61)
 		{
-#if ENABLE_METAL
 			// Only check for depth buffer mask on Metal, as its not in the PS hash on other backends
 			if (g_renderer->GetType() != RendererAPI::Metal || LatteMRT::GetActiveDepthBufferMask(*shaderContext->contextRegistersNew))
 				shader->depthMask = true;
-#endif
 		}
 		else
 			debugBreakpoint();
@@ -512,16 +512,62 @@ namespace LatteDecompiler
 		}
 	}
 
-#if ENABLE_METAL
-	void _initTextureBindingPointsMTL(LatteDecompilerShaderContext* decompilerContext)
+#ifdef ENABLE_METAL
+	static bool _useFramebufferFetchMTL(LatteDecompilerShaderContext* decompilerContext, sint32 textureUnit)
 	{
-		// for Vulkan we use consecutive indices
-		for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
+		if (!g_renderer ||
+			g_renderer->GetType() != RendererAPI::Metal ||
+			!static_cast<MetalRenderer*>(g_renderer.get())->SupportsFramebufferFetch())
+			return false;
+
+		uint8 renderTargetIndex = decompilerContext->shader->textureRenderTargetIndex[textureUnit];
+		if (renderTargetIndex == 255)
+			return false;
+
+		auto format = LatteMRT::GetColorBufferFormat(renderTargetIndex, *decompilerContext->contextRegistersNew);
+		return GetMtlPixelFormat(format, false) != MTL::PixelFormatInvalid;
+	}
+
+	void _initTextureBindingPointsMTL(LatteDecompilerShaderContext* decompilerContext)
 		{
-			if (!decompilerContext->output->textureUnitMask[i] || decompilerContext->shader->textureRenderTargetIndex[i] != 255)
+			sint8 currentSamplerBindingPoint = 0;
+			std::map<uint16, sint8> samplerBindings;
+
+			for (sint32 i = 0; i < LATTE_NUM_MAX_TEX_UNITS; i++)
+		{
+			if (!decompilerContext->output->textureUnitMask[i])
+				continue;
+			if (_useFramebufferFetchMTL(decompilerContext, i))
 				continue;
 			decompilerContext->output->resourceMappingMTL.textureUnitToBindingPoint[i] = decompilerContext->currentTextureBindingPointMTL;
 			decompilerContext->currentTextureBindingPointMTL++;
+
+            uint16 samplerUnit =
+                decompilerContext->shader->textureUnitSamplerAssignment[i];
+
+            if (samplerUnit == LATTE_DECOMPILER_SAMPLER_NONE)
+                continue;
+
+			auto existingSampler = samplerBindings.find(samplerUnit);
+			if (existingSampler != samplerBindings.end())
+			{
+				decompilerContext->output->resourceMappingMTL.textureUnitToSamplerBindingPoint[i] = existingSampler->second;
+					continue;
+				}
+
+            if (currentSamplerBindingPoint >= MAX_MTL_SAMPLERS)
+            {
+                cemuLog_logOnce(
+                    LogType::Force,
+                    "Metal shader 0x{:016x} exceeds the {}-sampler limit",
+                    decompilerContext->shaderBaseHash,
+                    MAX_MTL_SAMPLERS);
+                continue;
+            }
+
+			decompilerContext->output->resourceMappingMTL.textureUnitToSamplerBindingPoint[i] = currentSamplerBindingPoint;
+			samplerBindings.emplace(samplerUnit, currentSamplerBindingPoint);
+			currentSamplerBindingPoint++;
 		}
 	}
 #endif
@@ -558,12 +604,12 @@ namespace LatteDecompiler
 		if (decompilerContext->shaderType == LatteConst::ShaderType::Geometry && decompilerContext->analyzer.outputPointSize && decompilerContext->analyzer.writesPointSize == false)
 			decompilerContext->hasUniformVarBlock = true; // uf_pointSize
 		if (decompilerContext->analyzer.useSSBOForStreamout &&
-			(decompilerContext->shaderType == LatteConst::ShaderType::Vertex && !decompilerContext->options->usesGeometryShader) ||
-			(decompilerContext->shaderType == LatteConst::ShaderType::Geometry))
+			((decompilerContext->shaderType == LatteConst::ShaderType::Vertex && !decompilerContext->options->usesGeometryShader) ||
+			(decompilerContext->shaderType == LatteConst::ShaderType::Geometry)))
 		{
 			decompilerContext->hasUniformVarBlock = true; // uf_verticesPerInstance and uf_streamoutBufferBase*
 		}
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 		if (g_renderer->GetType() == RendererAPI::Metal)
 		{
             bool usesGeometryShader = UseGeometryShader(*decompilerContext->contextRegistersNew, decompilerContext->options->usesGeometryShader);
@@ -948,13 +994,8 @@ void LatteDecompiler_analyze(LatteDecompilerShaderContext* shaderContext, LatteD
 		for (auto& it : shaderContext->parsedGSCopyShader->list_streamWrites)
 		{
 			shaderContext->output->streamoutBufferWriteMask[it.bufferIndex] = true;
-			uint32 vectorWriteSize = 0;
-			for (sint32 f = 0; f < 4; f++)
-			{
-				if ((it.memWriteCompMask&(1 << f)) != 0)
-					vectorWriteSize = (f + 1) * 4;
-			}
-			shaderContext->output->streamoutBufferStride[it.bufferIndex] = std::max(shaderContext->output->streamoutBufferStride[it.bufferIndex], it.exportArrayBase * 4 + vectorWriteSize);
+			shaderContext->output->streamoutBufferStride[it.bufferIndex] =
+				shaderContext->contextRegisters[mmVGT_STRMOUT_VTX_STRIDE_0 + it.bufferIndex * 4] << 2;
 		}
 	}
 	// analyze input attributes again (if shader has relative GPR read)
@@ -1113,7 +1154,7 @@ void LatteDecompiler_analyze(LatteDecompilerShaderContext* shaderContext, LatteD
 		shaderContext->output->resourceMappingVK.setIndex = 2;
 	LatteDecompiler::_initTextureBindingPointsGL(shaderContext);
 	LatteDecompiler::_initTextureBindingPointsVK(shaderContext);
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 	LatteDecompiler::_initTextureBindingPointsMTL(shaderContext);
 #endif
 	LatteDecompiler::_initUniformBindingPoints(shaderContext);
@@ -1121,16 +1162,8 @@ void LatteDecompiler_analyze(LatteDecompilerShaderContext* shaderContext, LatteD
 	shaderContext->output->resourceMappingMTL.verticesPerInstanceBinding = shaderContext->currentBufferBindingPointMTL++;
 	shaderContext->output->resourceMappingMTL.indexBufferBinding = shaderContext->currentBufferBindingPointMTL++;
 	shaderContext->output->resourceMappingMTL.indexTypeBinding = shaderContext->currentBufferBindingPointMTL++;
-	// Allocated only in emulation mode. Doing it unconditionally would shift every
-	// later binding point on the mesh path too, for buffers that path never binds.
-	if (shaderContext->options->geometryShaderEmulation &&
-		(shaderContext->shaderType == LatteConst::ShaderType::Vertex || shaderContext->shaderType == LatteConst::ShaderType::Geometry))
-	{
-		shaderContext->output->resourceMappingMTL.gsPayloadBinding = shaderContext->currentBufferBindingPointMTL++;
-		if (shaderContext->shaderType == LatteConst::ShaderType::Geometry)
-		{
-			shaderContext->output->resourceMappingMTL.gsOutBinding = shaderContext->currentBufferBindingPointMTL++;
-			shaderContext->output->resourceMappingMTL.gsPrimCountBinding = shaderContext->currentBufferBindingPointMTL++;
-		}
-	}
+#ifdef ENABLE_METAL
+	if (g_renderer && g_renderer->GetType() == RendererAPI::Metal)
+		shaderContext->output->resourceMappingMTL.argumentBufferBindingPoint = MetalArgumentBuffer::BindingIndex;
+#endif
 }

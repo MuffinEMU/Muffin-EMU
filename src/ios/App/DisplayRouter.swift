@@ -39,6 +39,14 @@ import UIKit
 /// nil today and the router to land on `.deviceMirrored`. The log line says which
 /// branch was taken; do not assume dual-screen works until a device log shows
 /// `placement=dualScreen`.
+/// A view whose own backing layer is a `CAMetalLayer`. MeloCafe's window system renders
+/// into the registered view's layer itself (Metal draws into it, MoltenVK builds its Vulkan
+/// surface from it), so the TV and GamePad views must be this, not a plain `UIView` with a
+/// sublayer added later.
+final class MetalLayerView: UIView {
+    override class var layerClass: AnyClass { CAMetalLayer.self }
+}
+
 @MainActor
 final class DisplayRouter {
     static let shared = DisplayRouter()
@@ -69,7 +77,7 @@ final class DisplayRouter {
         if let existing = tvRenderViewStorage {
             return existing
         }
-        let view = UIView()
+        let view = MetalLayerView()
         view.backgroundColor = .black
         view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         tvRenderViewStorage = view
@@ -358,7 +366,7 @@ final class DisplayRouter {
         let havePad = cemu_bridge_has_pad_render_surface()
 
         if wantPad, !havePad, let container = deviceContainer {
-            let view = UIView(frame: container.bounds)
+            let view = MetalLayerView(frame: container.bounds)
             view.backgroundColor = .black
             view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
             container.addSubview(view)

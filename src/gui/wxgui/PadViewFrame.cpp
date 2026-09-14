@@ -6,9 +6,13 @@
 
 #include "config/ActiveSettings.h"
 #include "Cafe/OS/libs/swkbd/swkbd.h"
+#ifdef ENABLE_OPENGL
 #include "wxgui/canvas/OpenGLCanvas.h"
+#endif
+#ifdef ENABLE_VULKAN
 #include "wxgui/canvas/VulkanCanvas.h"
-#if ENABLE_METAL
+#endif
+#ifdef ENABLE_METAL
 #include "wxgui/canvas/MetalCanvas.h"
 #endif
 #include "config/CemuConfig.h"
@@ -29,7 +33,7 @@ extern WindowSystem::WindowInfo g_window_info;
 PadViewFrame::PadViewFrame(wxFrame* parent)
 	: wxFrame(nullptr, wxID_ANY, _("GamePad View"), wxDefaultPosition, wxDefaultSize, wxMINIMIZE_BOX | wxMAXIMIZE_BOX | wxSYSTEM_MENU | wxCAPTION | wxCLIP_CHILDREN | wxRESIZE_BORDER | wxCLOSE_BOX | wxWANTS_CHARS)
 {
-	initHandleContextFromWxWidgetsWindow(this, g_window_info.window_pad);
+	g_window_info.window_pad = initHandleContextFromWxWidgetsWindow(this);
 
 	SetIcon(wxICON(M_WND_ICON128));
 	wxWindow::EnableTouchEvents(wxTOUCH_PAN_GESTURES);
@@ -75,16 +79,21 @@ void PadViewFrame::InitializeRenderCanvas()
 {
 	auto sizer = new wxBoxSizer(wxVERTICAL);
 	{
+		#ifdef ENABLE_VULKAN
 		if (ActiveSettings::GetGraphicsAPI() == kVulkan)
 			m_render_canvas = new VulkanCanvas(this, wxSize(854, 480), false);
-		else if (ActiveSettings::GetGraphicsAPI() == kOpenGL)
+		#endif
+		#ifdef ENABLE_OPENGL
+		if (ActiveSettings::GetGraphicsAPI() == kOpenGL)
 			m_render_canvas = GLCanvas_Create(this, wxSize(854, 480), false);
-#if ENABLE_METAL
-		else
-		    m_render_canvas = new MetalCanvas(this, wxSize(854, 480), false);
-#endif
+		#endif
+		#ifdef ENABLE_METAL
+		if (ActiveSettings::GetGraphicsAPI() == kMetal)
+			m_render_canvas = new MetalCanvas(this, wxSize(854, 480), false);
+		#endif
 		sizer->Add(m_render_canvas, 1, wxEXPAND, 0, nullptr);
 	}
+	cemu_assert(m_render_canvas != nullptr);
 	SetSizer(sizer);
 	Layout();
 
@@ -154,7 +163,7 @@ void PadViewFrame::OnKeyUp(wxKeyEvent& event)
 {
 	event.Skip();
 
-	if (swkbd::hasKeyboardInputHook())
+	if (swkbd_hasKeyboardInputHook())
 		return;
 
 	const auto code = event.GetKeyCode();
@@ -178,9 +187,9 @@ void PadViewFrame::OnGesturePan(wxPanGestureEvent& event)
 
 void PadViewFrame::OnChar(wxKeyEvent& event)
 {
-	if (swkbd::hasKeyboardInputHook())
-		swkbd::keyInput(event.GetUnicodeKey());
-	
+	if (swkbd_hasKeyboardInputHook())
+		swkbd_keyInput(event.GetUnicodeKey());
+
 	event.Skip();
 }
 

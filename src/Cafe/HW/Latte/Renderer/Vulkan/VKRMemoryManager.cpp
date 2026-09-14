@@ -58,6 +58,7 @@ VKRSynchronizedRingAllocator::AllocatorReservation_t VKRSynchronizedRingAllocato
 	{
 		// align pointer
 		uint32 alignmentPadding = (alignment - (itr.writeIndex % alignment)) % alignment;
+		bool wrappedAround = false;
 		uint32 distanceToSyncPoint;
 		if (!itr.queue_syncPoints.empty())
 		{
@@ -86,7 +87,10 @@ VKRSynchronizedRingAllocator::AllocatorReservation_t VKRSynchronizedRingAllocato
 			else if (spaceNeeded > itr.size)
 				continue;
 			itr.writeIndex = 0;
+			wrappedAround = true;
 		}
+		if (wrappedAround)
+			itr.lastSyncpointCmdBufferId = 0xFFFFFFFFFFFFFFFFull;
 		addUploadBufferSyncPoint(itr, itr.writeIndex);
 		itr.writeIndex += alignmentPadding;
 		uint32 offset = itr.writeIndex;

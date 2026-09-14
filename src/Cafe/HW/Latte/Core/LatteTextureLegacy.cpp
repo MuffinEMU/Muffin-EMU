@@ -4,7 +4,7 @@
 
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 
-#if !defined(CEMU_PLATFORM_IOS)
+#ifdef ENABLE_OPENGL
 #include "Cafe/HW/Latte/Renderer/OpenGL/OpenGLRenderer.h"
 #include "Cafe/HW/Latte/Renderer/OpenGL/LatteTextureGL.h"
 #include "Cafe/HW/Latte/Renderer/OpenGL/LatteTextureViewGL.h"
@@ -72,9 +72,9 @@ void LatteTexture_ReloadData(LatteTexture* tex)
 	tex->lastUpdateEventCounter = LatteTexture_getNextUpdateEventCounter();
 }
 
-LatteTextureView* LatteTexture_CreateTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth)
+LatteTextureView* LatteTexture_CreateTexture(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget)
 {
-	const auto tex = g_renderer->texture_createTextureEx(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth);
+	const auto tex = g_renderer->texture_createTextureEx(dim, physAddress, physMipAddress, format, width, height, depth, pitch, mipLevels, swizzle, tileMode, isDepth, isRenderTarget);
 
 	// init slice/mip info array
 	LatteTexture_InitSliceAndMipInfo(tex);
@@ -194,16 +194,7 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
 			LatteGPUState.repeatTextureInitialization = true;
 		}
 
-#if !defined(CEMU_PLATFORM_IOS)
-		// g_renderer->GetType() can never be RendererAPI::OpenGL on iOS - the OpenGL
-		// backend (OpenGLRenderer/LatteTextureViewGL) is excluded from the iOS build
-		// entirely (see the iOS-only comment in src/Cafe/CMakeLists.txt), so this
-		// whole branch is dead code there, but the symbols it references still need
-		// to resolve at link time even though the runtime check would always be
-		// false. Compile it out entirely instead - behavior-identical on iOS, and
-		// fixes a real link failure ("undefined symbols" for
-		// OpenGLRenderer::renderstate_updateTextureSettingsGL and
-		// LatteTextureViewGL::GetAlternativeView).
+#ifdef ENABLE_OPENGL
 		if (g_renderer->GetType() == RendererAPI::OpenGL)
 		{
 			// on OpenGL, texture views and sampler parameters are tied together (we are avoiding sampler objects due to driver bugs)
@@ -227,6 +218,7 @@ void LatteTexture_updateTexturesForStage(LatteDecompilerShader* shaderContext, u
 			rendererGL->renderstate_updateTextureSettingsGL(shaderContext, textureView, textureIndex + glBackendBaseTexUnit, word4, textureIndex, isDepthSampler);
 		}
 #endif
+
 		g_renderer->texture_setLatteTexture(textureView, textureIndex + glBackendBaseTexUnit);
 		// update if data changed
 		bool swizzleChanged = false;

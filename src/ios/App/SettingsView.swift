@@ -47,11 +47,9 @@ struct SettingsView: View {
     @AppStorage(TimebaseScale.storageKey) private var timebaseRaw = TimebaseScale.current.rawValue
     // Must keep matching GameManager's defaults for the same keys: the engine reads them
     // at title start, and a disagreement here would show a switch in the wrong position.
-    @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = false
-    @AppStorage("muffin.cpu.legacyTimebase") private var legacyTimebase = false
+    @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = true
+    @AppStorage("muffin.cpu.favourAccuracy") private var favourAccuracy = false
     @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
-    @AppStorage("muffin.render.reduceEncoderSplitting") private var reduceEncoderSplitting = false
-    @AppStorage("muffin.shaders.persistentCache") private var shaderCachePersistenceEnabled = true
     @AppStorage("muffin.render.vsync") private var vsyncEnabled = true
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @State private var learnedCacheBytes: Int64 = 0
@@ -147,6 +145,8 @@ struct SettingsView: View {
     // which control scheme is on.
     @AppStorage(ControllerLayoutSettings.joystickKey)
     private var joystickMode = ControllerLayoutSettings.defaultJoystick
+    @AppStorage(ControllerLayoutSettings.comfortControlsKey)
+    private var comfortControls = ControllerLayoutSettings.defaultComfortControls
     @AppStorage(ControllerLayoutSettings.deadzoneKey)
     private var stickDeadzone = ControllerLayoutSettings.defaultDeadzone
     @AppStorage(ControllerLayoutSettings.stickCurveKey)
@@ -202,6 +202,20 @@ struct SettingsView: View {
         // Only while the mode they belong to is on. A deadzone slider
         // under a d-pad is a control with nothing behind it.
         if joystickMode {
+            // Only here, under the sticks: with no sticks on screen there is
+            // nothing for L/ZL/minus and R/ZR/plus to move onto.
+            Toggle(isOn: $comfortControls) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Comfort controls")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text(comfortControls
+                         ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick."
+                         : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+
             // Above the two sliders because it is a different kind of
             // question: the gate is the shape of the stick, and the
             // sliders are how that shape is read.
@@ -307,9 +321,9 @@ struct SettingsView: View {
     Section {
         CPUModeRow()
 
-        // Off by default because it is reported to crash. Two builds in a
-        // row were unusable and neither of us could tell which change did
-        // it without a rebuild per guess.
+        // On by default: MeloCafe's recompiler is the fast path this build
+        // exists for. Without a JIT enabler attached it cannot run at all, and
+        // the bridge falls back to the interpreter by itself.
         Toggle(isOn: $recompilerEnabled) {
             Text("Use the recompiler (JIT)")
         }
@@ -317,27 +331,28 @@ struct SettingsView: View {
         .onChange(of: recompilerEnabled) { newValue in
             cemu_bridge_set_recompiler_enabled(newValue)
         }
+
+        Toggle(isOn: $favourAccuracy) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Favour accuracy")
+                Text(favourAccuracy
+                     ? "One CPU core, shaders built before they are drawn, accurate barriers and draw-done sync."
+                     : "Multi-core CPU, shaders built in the background, accuracy-only work skipped.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .tint(MuffinTheme.pixelBlue)
+        .onChange(of: favourAccuracy) { newValue in
+            cemu_bridge_set_favour_accuracy(newValue)
+        }
     } header: {
         Text("CPU")
     } footer: {
-        Text("Faster when it works, but a crash in the emulated CPU makes every other problem impossible to judge. Start the game again after changing this.")
+        Text("MuffinEMU runs for speed first. The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer); without one the interpreter runs instead, and the line above says which you got. Turn on Favour accuracy for a game that glitches, desyncs or crashes - it is slower. Start the game again after changing either.")
     }
     .foregroundColor(MuffinTheme.brownDarkest)
 
-    Section {
-        Toggle(isOn: $legacyTimebase) {
-            Text("Use the original emulated clock")
-        }
-        .tint(MuffinTheme.pixelBlue)
-        .onChange(of: legacyTimebase) { newValue in
-            cemu_bridge_set_legacy_timebase(newValue)
-        }
-    } header: {
-        Text("Emulated Clock")
-    } footer: {
-        Text("The rewritten clock had an overflow that ran the emulated console 65 times too slow, which made games mistime everything they animate. That is fixed, and the log now prints the clock rate so you can check it. This falls back to the old one anyway if anything still looks wrong.")
-    }
-    .foregroundColor(MuffinTheme.brownDarkest)
 
     }
 
@@ -357,37 +372,8 @@ struct SettingsView: View {
     }
     .foregroundColor(MuffinTheme.brownDarkest)
 
-    // Experimental. Aimed at a specific, unconfirmed hypothesis - see
-    // MetalCommon.h's g_metal_reduceEncoderSplitting - not a proven fix,
-    // which is exactly why this exists as a toggle rather than being
-    // baked in unconditionally: it may help the games that show the
-    // intermittent rainbow/garbage geometry and do nothing for others.
-    // Same per-game override pattern as shader compilation, reachable
-    // from the same long-press "View Game Options" screen.
-    Section {
-        Toggle(isOn: $reduceEncoderSplitting) {
-            Text("Reduce Command-Buffer Splitting")
-        }
-        .tint(MuffinTheme.pixelBlue)
-        .onChange(of: reduceEncoderSplitting) { newValue in
-            cemu_bridge_set_reduce_encoder_splitting(newValue)
-        }
-    } header: {
-        Text("Rendering (Experimental)")
-    } footer: {
-        Text("Off by default. Aimed at intermittent, self-correcting rainbow or garbled geometry that some games show for a few seconds at a time - it restricts when the renderer is allowed to split work across command buffers, which on-device testing suggests may be involved, but this has not been confirmed as the actual cause. Turn it on for a game that shows the glitch; leave it off for games that don't, or that render worse with it on. Set per-game in \"View Game Options\" (long-press the game in your library) to override this default for just that one.")
-    }
-    .foregroundColor(MuffinTheme.brownDarkest)
 
     Section {
-        Toggle(isOn: $shaderCachePersistenceEnabled) {
-            Text("Persistent Shader Cache")
-        }
-        .tint(MuffinTheme.pixelBlue)
-        .onChange(of: shaderCachePersistenceEnabled) { newValue in
-            cemu_bridge_set_shader_cache_persistence(newValue)
-        }
-
         // Two buttons, not one. Pressing the first costs a slow launch;
         // pressing the second throws away something only playing can earn
         // back, and a single "clear cache" button would hide that.
@@ -447,7 +433,7 @@ struct SettingsView: View {
         // Says "next launch" because it is true: the scale is baked into
         // the surface at registration, and a running title's swapchain is
         // not rebuilt underneath it.
-        Text("Persistent Shader Cache keeps what a game teaches Muffin - every shader and pipeline it's revealed by drawing with it - saved to disk under \"Learned shaders\" below, so the next launch skips recompiling what it already learned instead of starting from zero. On by default; turn it off only to compare launch behaviour with a completely cold cache, or to stop it growing on a title you don't plan to keep. Takes effect on the next launch of a game, not the one already running.\n\n\(renderScale.summary)\n\nResolution changes the size of the picture Muffin draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.\n\nFrame stretching fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.\n\nVSync paces new frames to the screen's own refresh instead of showing them the instant they're ready, which avoids tearing at the cost of capping how fast the picture can update. On by default. Turn it off only if a game feels laggy behind your input and you'd rather see torn frames sooner than smooth ones later - most titles under this port's current performance won't notice a difference either way. Takes effect on the next launch of a game.")
+        Text("Learned shaders are what a game has revealed by drawing with them, saved so the next launch skips rebuilding them. Compiled shaders rebuild on their own.\n\n\(renderScale.summary)\n\nResolution changes the size of the picture Muffin draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.\n\nFrame stretching fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.\n\nVSync paces new frames to the screen's own refresh instead of showing them the instant they're ready, which avoids tearing at the cost of capping how fast the picture can update. On by default. Turn it off only if a game feels laggy behind your input and you'd rather see torn frames sooner than smooth ones later - most titles under this port's current performance won't notice a difference either way. Takes effect on the next launch of a game.")
     }
     .foregroundColor(MuffinTheme.brownDarkest)
 
@@ -855,7 +841,7 @@ private struct CPUModeRow: View {
     private var title: String {
         switch mode {
         case 2:  return "Recompiler (JIT)"
-        case 1:  return "Interpreter (3 cores)"
+        case 1:  return "Interpreter"
         default: return "Not decided yet"
         }
     }

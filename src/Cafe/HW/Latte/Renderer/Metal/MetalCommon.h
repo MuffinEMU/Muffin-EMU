@@ -1,91 +1,9 @@
 #pragma once
 
-#include <atomic>
-
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 
-#include <objc/message.h>
-#include <objc/runtime.h>
-
 #include "Cafe/HW/Latte/Core/LatteConst.h"
-
-/// Off by default; per-game/global setting exposed through
-/// cemu_bridge_set_reduce_encoder_splitting(). Set from a Settings toggle rather than
-/// baked in, because it targets a specific, unconfirmed hypothesis rather than a proven
-/// fix: intermittent rainbow/garbage geometry (screen recordings, 2026-08-31) that
-/// coincides with Metal's own runtime warning about heavy interleaving of blit encoders
-/// with other encoder types on this exact game. EndEncoding()'s auto-commit is checked
-/// after EVERY encoder-type switch, including the short blit encoders textures use for
-/// upload/readback - so a frame with a lot of that interleaving can end up auto-committing
-/// the command buffer in the middle of a blit rather than at a natural "finished this
-/// batch of draws" boundary. MetalSynchronizedRingAllocator's sync points are recorded
-/// against whichever command buffer is current AT ALLOCATION TIME; if the buffer that
-/// actually reads that memory ends up split into a later command buffer by one of these
-/// mid-sequence commits, the allocator can consider the memory free to reuse before the
-/// GPU work that reads it has actually run - which is exactly the class of bug that
-/// produces occasional, self-correcting garbage geometry rather than a hard crash.
-/// Atomic because it is set from the app's main thread (a Settings toggle, or a per-game
-/// launch-time read) and read from wherever EndEncoding() runs.
-extern std::atomic<bool> g_metal_reduceEncoderSplitting;
-
-/// Whether CAMetalLayer.displaySyncEnabled gets set on both Wii U screens' layers -
-/// applied in MetalRenderer::InitializeLayer(). Matches CAMetalLayer's own default
-/// (true/synced) so leaving it untouched changes nothing; the toggle is for a title that
-/// can render faster than the display's refresh and would rather have that uncapped
-/// than paced. Same "settable from a Settings toggle, read from the render path" reason
-/// for being atomic as g_metal_reduceEncoderSplitting above.
-extern std::atomic<bool> g_metal_vsyncEnabled;
-
-// Read a BOOL property off a MTLDevice by selector name. Capability selectors get
-// added to the MTLDevice protocol over time and are not implemented by every driver
-// class, and sending one that isn't there kills the process - see the depth24Stencil8
-// note below, which was found the hard way on device. Going through the runtime lets
-// us ask whether the selector exists first, and keeps the query independent of which
-// metal-cpp revision happens to be vendored.
-//
-// The device stays a void* the whole way through, and the two runtime entry points are
-// called through recast function pointers. This header reaches ARC Objective-C++ by way
-// of CemuBridge.mm, and there a cast from MTL::Device* to id is a hard error: ARC has no
-// way to know whether such a cast transfers ownership, so it demands a __bridge
-// annotation that a plain C++ translation unit cannot parse. Keeping ObjC pointer types
-// out of the signatures sidesteps the question in both kinds of TU. objc_msgSend is
-// already called this way below; on arm64 a void* and an id are the same register.
-inline bool MtlDeviceBoolProperty(MTL::Device* device, const char* selectorName, bool fallback)
-{
-	void* deviceObject = static_cast<void*>(device);
-	SEL selector = sel_registerName(selectorName);
-
-	using ClassGetter = Class (*)(void*);
-	Class deviceClass = reinterpret_cast<ClassGetter>(object_getClass)(deviceObject);
-	if (!deviceClass || !class_respondsToSelector(deviceClass, selector))
-		return fallback;
-
-	using BoolPropertyGetter = BOOL (*)(void*, SEL);
-	return reinterpret_cast<BoolPropertyGetter>(objc_msgSend)(deviceObject, selector) != NO;
-}
-
-// Same runtime-dispatch reasoning as MtlDeviceBoolProperty() above, for a setter instead
-// of a getter - needed because CA::MetalLayer::setDisplaySyncEnabled() does not exist in
-// this project's vendored metal-cpp, even though CAMetalLayer.displaySyncEnabled is a
-// real property (confirmed: "no member named 'setDisplaySyncEnabled' in 'CA::MetalLayer'"
-// on a real build) and every sibling setter this file already calls
-// (setFramebufferOnly, setDrawableSize, setDevice, setPixelFormat) IS present - metal-cpp
-// just doesn't cover every CAMetalLayer property, this one included. Silently does
-// nothing if the object does not respond, same fallback behaviour as the getter above,
-// rather than crashing on a selector some future SDK might have removed or renamed.
-inline void MtlLayerSetBoolProperty(void* layerObject, const char* selectorName, bool value)
-{
-	SEL selector = sel_registerName(selectorName);
-
-	using ClassGetter = Class (*)(void*);
-	Class layerClass = reinterpret_cast<ClassGetter>(object_getClass)(layerObject);
-	if (!layerClass || !class_respondsToSelector(layerClass, selector))
-		return;
-
-	using BoolPropertySetter = void (*)(void*, SEL, BOOL);
-	reinterpret_cast<BoolPropertySetter>(objc_msgSend)(layerObject, selector, value ? YES : NO);
-}
 
 struct MetalPixelFormatSupport
 {
@@ -93,7 +11,7 @@ struct MetalPixelFormatSupport
 	bool m_supportsRG8Unorm_sRGB;
 	bool m_supportsPacked16BitFormats;
 	bool m_supportsDepth24Unorm_Stencil8;
-	bool m_supportsBCTextureCompression;
+    bool m_supportsBCFormats;
 
 	MetalPixelFormatSupport() = default;
 	MetalPixelFormatSupport(MTL::Device* device)
@@ -101,30 +19,8 @@ struct MetalPixelFormatSupport
         m_supportsR8Unorm_sRGB = device->supportsFamily(MTL::GPUFamilyApple1);
         m_supportsRG8Unorm_sRGB = device->supportsFamily(MTL::GPUFamilyApple1);
         m_supportsPacked16BitFormats = device->supportsFamily(MTL::GPUFamilyApple1);
-        // -[MTLDevice depth24Stencil8PixelFormatSupported] is a macOS-only method -
-        // Apple deliberately excludes it from the MTLDevice protocol on iOS (the
-        // legacy packed D24S8 format isn't relevant to Apple Silicon GPUs, which use
-        // D32-based depth/stencil formats instead - see MTL_DEPTH_FORMAT_TABLE in
-        // LatteToMtl.cpp, which already maps GX2's D24_S8 formats to
-        // PixelFormatDepth32Float_Stencil8 regardless of this flag). Confirmed via a
-        // live device crash: -[AGXA12XDevice isDepth24Stencil8PixelFormatSupported]:
-        // unrecognized selector sent to instance - calling it unconditionally on iOS
-        // reliably throws, since the selector genuinely isn't implemented there.
-#if !defined(CEMU_PLATFORM_IOS)
-        m_supportsDepth24Unorm_Stencil8 = device->depth24Stencil8PixelFormatSupported();
-#else
-        m_supportsDepth24Unorm_Stencil8 = false;
-#endif
-        // BC (DXT/S3TC) is a desktop-GPU format family. Apple Silicon Macs have it,
-        // but the A12Z in this iPad does not, and Metal answers a BC texture descriptor
-        // by calling MTLReportFailure() -> abort() instead of returning nil - so the
-        // very first BC-compressed game texture takes the whole process down with
-        // signal 6 inside newTexture(). Ask the device, and let
-        // CheckForPixelFormatSupport() swap in CPU decompression when the answer is no.
-        // The selector only exists from iOS 16.4 / macOS 11 onwards; where it is
-        // missing, assume BC is present on everything except Apple GPUs, which is what
-        // the feature set tables say.
-        m_supportsBCTextureCompression = MtlDeviceBoolProperty(device, "supportsBCTextureCompression", !device->supportsFamily(MTL::GPUFamilyApple1));
+        m_supportsDepth24Unorm_Stencil8 = false; //device->depth24Stencil8PixelFormatSupported();
+        m_supportsBCFormats = device->supportsBCTextureCompression();
 	}
 };
 
@@ -147,6 +43,22 @@ struct MetalQueryRange
 #define GET_HELPER_BUFFER_BINDING(index) (28 + index)
 #define GET_HELPER_TEXTURE_BINDING(index) (29 + index)
 #define GET_HELPER_SAMPLER_BINDING(index) (14 + index)
+
+namespace MetalArgumentBuffer
+{
+	constexpr uint32 BindingIndex = 0;
+	constexpr uint32 Dummy = 0;
+	constexpr uint32 SupportBuffer = 1;
+	constexpr uint32 UniformBufferBase = 2;
+	constexpr uint32 StreamoutBuffer = UniformBufferBase + LATTE_NUM_MAX_UNIFORM_BUFFERS;
+	constexpr uint32 TextureBase = StreamoutBuffer + 1;
+	constexpr uint32 SamplerBase = TextureBase + LATTE_NUM_MAX_TEX_UNITS;
+	constexpr uint32 VertexBufferBase = SamplerBase + MAX_MTL_SAMPLERS;
+	constexpr uint32 VertexBufferSizeBase = VertexBufferBase + LATTE_MAX_VERTEX_BUFFERS;
+	constexpr uint32 IndexBuffer = VertexBufferSizeBase + LATTE_MAX_VERTEX_BUFFERS;
+	constexpr uint32 IndexBufferSize = IndexBuffer + 1;
+	constexpr uint32 IndexType = IndexBufferSize + 1;
+}
 
 constexpr uint32 INVALID_UINT32 = std::numeric_limits<uint32>::max();
 constexpr size_t INVALID_OFFSET = std::numeric_limits<size_t>::max();
@@ -212,17 +124,10 @@ inline bool FormatIsRenderable(Latte::E_GX2SURFFMT format)
 
 template <typename... T>
 inline bool executeCommand(fmt::format_string<T...> fmt, T&&... args) {
-#if defined(CEMU_PLATFORM_IOS)
-    // system() is unavailable on iOS (App Store sandboxing) and every caller of
-    // executeCommand() in RendererShaderMtl.cpp is currently disabled code (the
-    // AIR-cache-via-xcrun path); the live path is LibraryFromSource(), which
-    // compiles MSL in-process through the real Metal API instead of shelling out.
     std::string command = fmt::format(fmt, std::forward<T>(args)...);
-    cemuLog_log(LogType::Force, "executeCommand unavailable on iOS, skipped: {}", command);
-    return false;
-#else
-    std::string command = fmt::format(fmt, std::forward<T>(args)...);
-    int res = system(command.c_str());
+    // int res = system(command.c_str());
+
+    int res = 0;
     if (res != 0)
     {
         cemuLog_log(LogType::Force, "command \"{}\" failed with exit code {}", command, res);
@@ -230,7 +135,6 @@ inline bool executeCommand(fmt::format_string<T...> fmt, T&&... args) {
     }
 
     return true;
-#endif
 }
 
 /*
@@ -311,6 +215,8 @@ inline uint32 GetVerticesPerPrimitive(LattePrimitiveMode primitiveMode)
         return 2;
     case LattePrimitiveMode::TRIANGLES:
         return 3;
+    case LattePrimitiveMode::TRIANGLE_STRIP:
+        return 3;
     case LattePrimitiveMode::RECTS:
         return 3;
     default:
@@ -321,7 +227,8 @@ inline uint32 GetVerticesPerPrimitive(LattePrimitiveMode primitiveMode)
 
 inline bool PrimitiveRequiresConnection(LattePrimitiveMode primitiveMode)
 {
-    if (primitiveMode == LattePrimitiveMode::LINE_STRIP)
+    if (primitiveMode == LattePrimitiveMode::LINE_STRIP ||
+        primitiveMode == LattePrimitiveMode::TRIANGLE_STRIP)
         return true;
     else
         return false;

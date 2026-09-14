@@ -8,11 +8,13 @@
 #include "util/helpers/Semaphore.h"
 #include "Cafe/HW/Espresso/PPCCallback.h"
 #include "Cafe/IOSU/iosu_ipc_common.h"
+#include "Cafe/IOSU/fsa/iosu_fsa.h"
 #include "coreinit_IPC.h"
 #include "Cafe/Filesystem/fsc.h"
 #include "coreinit_IPCBuf.h"
 #include "Cafe/CafeSystem.h"
 #include "Cafe/TitleList/TitleInfo.h"
+#include "Cafe/HW/Espresso/PPCState.h"
 
 #define FS_CB_PLACEHOLDER_FINISHCMD (MPTR)(0xF122330E)
 

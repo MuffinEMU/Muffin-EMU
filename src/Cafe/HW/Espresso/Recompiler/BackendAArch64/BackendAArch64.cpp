@@ -7,14 +7,10 @@
 #include <xbyak_aarch64_util.h>
 
 #include <cstddef>
+#include <limits>
+#include <thread>
 #include <unordered_map>
-
-#if defined(__APPLE__)
-#include <sys/mman.h>
-#include <unistd.h>
-#include <libkern/OSCacheControl.h>
-#include <TargetConditionals.h>
-#endif
+#include <unordered_set>
 
 #include "../PPCRecompiler.h"
 #include "Common/precompiled.h"
@@ -40,12 +36,12 @@ struct FPReg
 	{
 	}
 	const size_t index;
-	const ::VReg VReg;
-	const ::QReg QReg;
-	const ::DReg DReg;
-	const ::SReg SReg;
-	const ::HReg HReg;
-	const ::BReg BReg;
+	const VReg VReg;
+	const QReg QReg;
+	const DReg DReg;
+	const SReg SReg;
+	const HReg HReg;
+	const BReg BReg;
 };
 
 struct GPReg
@@ -55,8 +51,8 @@ struct GPReg
 	{
 	}
 	const size_t index;
-	const ::XReg XReg;
-	const ::WReg WReg;
+	const XReg XReg;
+	const WReg WReg;
 };
 
 static const XReg HCPU_REG{HCPU_REG_ID}, PPC_REC_INSTANCE_REG{PPC_RECOMPILER_INSTANCE_DATA_REG_ID}, MEM_BASE_REG{MEMORY_BASE_REG_ID};
@@ -66,229 +62,124 @@ static const GPReg LR{TEMP_GPR_2_ID};
 
 static const FPReg TEMP_FPR{TEMP_FPR_ID};
 
-// Sibling of the eager-static-init bug already fixed further down in this file
-// (enterRecompilerCode_ctx etc.): Xbyak_aarch64::util::Cpu's constructor
-// (CpuInfoMac::setHwCap() on Apple platforms) does several sysctlbyname() feature
-// probes and throws if any of them fail - and on iOS, not every hw.optional.* node
-// probed there is guaranteed present on every OS/device combination. A namespace-scope
-// static here would run that constructor during static initialization, before main(),
-// with no possible try/catch - the exact failure mode already fixed for the JIT
-// allocator contexts. Deferring to a function-local static defers the throw risk to
-// first actual use instead.
-static const util::Cpu& GetCpu()
-{
-	static const util::Cpu s_cpu;
-	return s_cpu;
-}
-
-#if defined(__APPLE__)
-// Xbyak defines XBYAK_USE_MAP_JIT for all of __APPLE__, so its stock MmapAllocator
-// unconditionally passes MAP_JIT to mmap. On macOS that is the correct hardened-runtime
-// path. On iOS, MAP_JIT is only honoured for a process carrying the dynamic-codesigning
-// entitlement, which a sideloaded build never has - not even one that a JIT enabler has
-// already attached to and set CS_DEBUGGED on. The mapping fails, Xbyak throws
-// Error(ERR_CANT_ALLOC), and because that happens inside a CodeGenerator constructor in
-// PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions with nothing to catch it,
-// libc++abi calls std::terminate() -> abort(). That is a SIGABRT on the very first
-// JIT-enabled boot, before a single PPC instruction has been translated.
-//
-// What CS_DEBUGGED does buy on iOS is the right to map pages read-write, write code into
-// them, then mprotect them to read-execute. That RW -> RE transition is already exactly
-// what Xbyak performs via CodeArray::protect() / readyRE(), so dropping MAP_JIT costs
-// nothing and makes the whole path legal here. MAP_JIT is still attempted first, so macOS
-// and any build that genuinely carries the entitlement keep the better mapping.
-//
-// SECOND ROUND, and this is the bug the v1.37 log caught. Mapping the pages
-// read-write and letting Xbyak mprotect them executable afterwards does allocate -
-// v1.23's "can't alloc" is gone - but the code will not RUN. Void's log: the JIT
-// check passes (cs_flags 0x32003005, CS_DEBUGGED set), "Recompiler initialized",
-// and then signal 10 the first time anything enters generated code.
-//
-// Signal 10 is SIGBUS, not SIGSEGV, and that distinction is the whole diagnosis. A
-// permissions refusal is a segfault. SIGBUS on the first instruction fetch from a
-// page whose mprotect() returned 0 is what an Apple arm64 core does when the page was
-// never really made executable: adding PROT_EXEC to an already-dirtied anonymous
-// mapping is accepted by mprotect() and then not honoured by code-signing
-// enforcement. So Xbyak's RW -> RWE -> RE dance (see CodeArray's constructor, which
-// calls setProtectMode(PROTECT_RWE) the moment it allocates) cannot get us there no
-// matter how many times it succeeds.
-//
-// What CS_DEBUGGED actually grants is the right to map executable memory AT MAP TIME.
-// So ask for PROT_EXEC in the mmap itself and never mprotect the result. When that
-// works we report useProtect() == false, which makes Xbyak skip both the constructor's
-// PROTECT_RWE and readyRE()'s PROTECT_RE - the two calls that were quietly producing
-// pages the core refuses to execute.
-//
-// The MAP_JIT attempt stays FIRST on macOS and is deliberately NOT taken as the
-// skip-protect path: a MAP_JIT region on macOS is governed by the per-thread
-// pthread_jit_write_protect_np() switch rather than by mprotect, and writing to one
-// with write-protection on faults on the WRITE. Cemu generates code on one thread and
-// runs it on others, so opting into that toggle is a separate change with its own
-// failure mode. macOS keeps exactly the behaviour it has today; only iOS gains a new
-// first choice.
-class AppleJitAllocator : public Allocator
-{
-  private:
-	std::unordered_map<uintptr_t, size_t> m_sizeByAddress;
-	// Set by alloc() and read by useProtect(). Safe in that order because CodeArray
-	// allocates in its member-init list, before the constructor body asks.
-	bool m_mappedExecutable = false;
-	bool m_reportedMapping = false;
-
-  public:
-	uint32* alloc(size_t size) override
-	{
-		const size_t pageSize = (size_t)sysconf(_SC_PAGESIZE);
-		size = (size + pageSize - 1) & ~(pageSize - 1);
-
-		constexpr int baseMode = MAP_PRIVATE | MAP_ANON;
-		constexpr int rwx = PROT_READ | PROT_WRITE | PROT_EXEC;
-		void* p = MAP_FAILED;
-		const char* how = nullptr;
-
-		// MAP_JIT FIRST, and asking for PROT_EXEC. This is the mapping the CS_DEBUGGED
-		// exemption actually attaches to - it is the entire reason JIT enablers exist.
-		//
-		// It was not first before, and the device log is what corrected that. v2.0 took
-		// the plain-RWX branch below, reported "read-write-execute at map time" exactly
-		// as designed, and then still took SIGBUS on the first entry into generated
-		// code. So a plain anonymous mapping does not become runnable merely by being
-		// requested executable at creation: the kernel hands it over and code-signing
-		// still refuses to execute it. Same refusal as mprotect, one step earlier.
-		//
-		// MAP_JIT had been deprioritised on evidence that has since expired. In v1.23 it
-		// failed outright with ERR_CANT_ALLOC - but that was Xbyak's own attempt, asking
-		// for read-write only, on a process where CS_DEBUGGED was NOT set. It is set
-		// now, so the attempt that failed then is the one most likely to succeed.
-		p = mmap(nullptr, size, rwx, baseMode | MAP_JIT, -1, 0);
-		if (p != MAP_FAILED)
-		{
-			m_mappedExecutable = true;
-			how = "MAP_JIT, executable at map time - the CS_DEBUGGED path";
-		}
-#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
-		if (p == MAP_FAILED)
-		{
-			p = mmap(nullptr, size, rwx, baseMode, -1, 0);
-			if (p != MAP_FAILED)
-			{
-				m_mappedExecutable = true;
-				how = "read-write-execute at map time, no MAP_JIT - known to map but NOT to run on iOS";
-			}
-		}
-#endif
-		if (p == MAP_FAILED)
-		{
-			p = mmap(nullptr, size, PROT_READ | PROT_WRITE, baseMode | MAP_JIT, -1, 0);
-			if (p != MAP_FAILED)
-				how = "MAP_JIT read-write, promoted by mprotect";
-		}
-		if (p == MAP_FAILED)
-		{
-			p = mmap(nullptr, size, PROT_READ | PROT_WRITE, baseMode, -1, 0);
-			if (p != MAP_FAILED)
-				how = "read-write, promoted by mprotect - this path gave SIGBUS on iOS";
-		}
-		if (p == MAP_FAILED)
-			throw Error(ERR_CANT_ALLOC);
-
-		// Once, not per allocation. Which of the three won decides whether the JIT can
-		// work at all, and guessing it from a crash is exactly what cost us v1.37.
-		if (!m_reportedMapping)
-		{
-			m_reportedMapping = true;
-			cemuLog_log(LogType::Force, "Recompiler: JIT memory obtained as {}", how);
-		}
-
-		m_sizeByAddress[(uintptr_t)p] = size;
-		return (uint32*)p;
-	}
-
-	void free(uint32* p) override
-	{
-		if (!p)
-			return;
-		auto it = m_sizeByAddress.find((uintptr_t)p);
-		if (it == m_sizeByAddress.end())
-			return;
-		munmap((void*)it->first, it->second);
-		m_sizeByAddress.erase(it);
-	}
-
-	// False once we have executable pages already. Letting Xbyak mprotect them anyway
-	// is not merely redundant: PROTECT_RE would strip PROT_WRITE from a region the
-	// recompiler still patches, and PROTECT_RWE is the call whose success was a lie.
-	[[nodiscard]] bool useProtect() const override
-	{
-		return !m_mappedExecutable;
-	}
-};
-#endif
+static const util::Cpu s_cpu;
 
 class AArch64Allocator : public Allocator
 {
-  private:
-#if defined(__APPLE__)
-	inline static AppleJitAllocator s_allocator;
-#elif defined(XBYAK_USE_MMAP_ALLOCATOR)
-	inline static MmapAllocator s_allocator;
+    const bool m_dualMap = PPCRecompiler_isDualMapJITEnabled();
+    const bool m_useArena;
+    std::unordered_map<uint32_t*, DualMapRegion> m_allocations;
+    uint32_t* m_released = nullptr;
+
+    void releaseMapping(const DualMapRegion& region)
+    {
+        if (m_useArena)
+            PPCRecompiler_releaseJitArena(region);
+        else if (m_dualMap)
+            PPCRecompiler_freeDualMap(region);
+        else
+        {
+#if defined(_WIN32)
+            VirtualFree(region.rwAlias, 0, MEM_RELEASE);
 #else
-	inline static Allocator s_allocator;
+            munmap(region.rwAlias, region.size);
 #endif
-	inline static std::mutex s_allocatorMutex;
-	Allocator* m_allocatorImpl;
-	bool m_freeDisabled = false;
+        }
+    }
 
   public:
-	AArch64Allocator()
-		: m_allocatorImpl(reinterpret_cast<Allocator*>(&s_allocator)) {}
+    explicit AArch64Allocator(bool useArena = true) : m_useArena(m_dualMap && useArena) {}
 
-	uint32* alloc(size_t size) override
-	{
-		std::lock_guard lock{s_allocatorMutex};
-		return m_allocatorImpl->alloc(size);
-	}
-
-	void setFreeDisabled(bool disabled)
-	{
-		m_freeDisabled = disabled;
-	}
-
-	void free(uint32* p) override
-	{
-		if (m_freeDisabled)
-			return;
-
-		std::lock_guard lock{s_allocatorMutex};
-		m_allocatorImpl->free(p);
-	}
-
-	[[nodiscard]] bool useProtect() const override
-	{
-		return !m_freeDisabled && m_allocatorImpl->useProtect();
-	}
-};
-
-// After code is written through a read-write mapping and that mapping is flipped to
-// read-execute, the instruction cache may still hold stale lines for those addresses.
-// On AArch64 that is the caller's problem, not the kernel's, and stale lines mean the
-// core executes whatever used to be at that address - garbage, in practice.
-static void PPCRecompilerAArch64_flushICache(const void* code, size_t size)
-{
-	if (!code || size == 0)
-		return;
-	// __builtin___clear_cache() lowers to a call to compiler-rt's ___clear_cache, which
-	// Apple's arm64 runtime does not ship - the v1.24 build linked cleanly on every other
-	// target and failed here with "Undefined symbols for architecture arm64: ___clear_cache".
-	// Darwin's supported spelling for the same operation is sys_icache_invalidate(), which
-	// takes a base and a length rather than a begin/end pair.
-#if defined(__APPLE__)
-	sys_icache_invalidate((void*)code, size);
+    uint32_t* alloc(size_t size) override
+    {
+        const size_t alignment = m_useArena ? 16 : inner::getPageSize();
+        if (!size || size > std::numeric_limits<size_t>::max() - (alignment - 1))
+            throw Error(ERR_CANT_ALLOC);
+        size = (size + alignment - 1) & ~(alignment - 1);
+        DualMapRegion region;
+        if (m_useArena)
+            region = PPCRecompiler_allocateJitArena(size);
+        else if (m_dualMap)
+            region = PPCRecompiler_allocateDualMap(size);
+        else
+        {
+#if defined(_WIN32)
+            void* ptr = VirtualAlloc(nullptr, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 #else
-	char* begin = (char*)code;
-	__builtin___clear_cache(begin, begin + size);
+            void* ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+            if (ptr == MAP_FAILED)
+                ptr = nullptr;
 #endif
-}
+            region = {ptr, ptr, size};
+        }
+        if (!region.rwAlias || !region.rxAlias)
+            throw Error(ERR_CANT_ALLOC);
+        auto* ptr = static_cast<uint32_t*>(region.rwAlias);
+        try
+        {
+            m_allocations.emplace(ptr, region);
+        }
+        catch (...)
+        {
+            releaseMapping(region);
+            throw;
+        }
+        return ptr;
+    }
+
+    void free(uint32_t* ptr) override
+    {
+        if (!ptr || ptr == m_released)
+            return;
+        auto it = m_allocations.find(ptr);
+        if (it == m_allocations.end())
+            throw Error(ERR_BAD_PARAMETER);
+        releaseMapping(it->second);
+        m_allocations.erase(it);
+    }
+
+    bool useProtect() const override { return false; }
+
+    DualMapRegion finalize(uint32_t* ptr, size_t size)
+    {
+        auto& region = m_allocations.at(ptr);
+        if (!size || size > region.size)
+            throw Error(ERR_BAD_PARAMETER);
+        if (m_useArena)
+        {
+            const size_t used = (size + 15) & ~size_t(15);
+            if (used < region.size)
+            {
+                PPCRecompiler_releaseJitArena({(uint8_t*)region.rwAlias + used,
+                    (uint8_t*)region.rxAlias + used, region.size - used});
+                region.size = used;
+            }
+        }
+        if (!m_dualMap && !CodeArray::protect(ptr, region.size, CodeArray::PROTECT_RE))
+            throw Error(ERR_CANT_PROTECT);
+#if !defined(_WIN32)
+        if (!m_dualMap)
+        {
+            const size_t pageSize = inner::getPageSize();
+            const size_t used = (size + pageSize - 1) & ~(pageSize - 1);
+            if (used < region.size)
+            {
+                if (munmap((uint8_t*)ptr + used, region.size - used) != 0)
+                    throw Error(ERR_MUNMAP);
+                region.size = used;
+            }
+        }
+#endif
+        PPCRecompiler_flushInstructionCache(region.rxAlias, size);
+        return region;
+    }
+
+    void detach(uint32_t* ptr)
+    {
+        m_allocations.erase(ptr);
+        m_released = ptr;
+    }
+};
 
 struct UnconditionalJumpInfo
 {
@@ -315,7 +206,7 @@ using JumpInfo = std::variant<
 
 struct AArch64GenContext_t : CodeGenerator
 {
-	explicit AArch64GenContext_t(Allocator* allocator = nullptr);
+	explicit AArch64GenContext_t(Allocator* allocator);
 	void enterRecompilerCode();
 	void leaveRecompilerCode();
 
@@ -362,7 +253,8 @@ struct AArch64GenContext_t : CodeGenerator
 
 	bool processAllJumps()
 	{
-		for (auto jump : jumps)
+		const size_t finalSize = getSize();
+		for (const auto& jump : jumps)
 		{
 			auto jumpStart = jump.first;
 			auto jumpInfo = jump.second;
@@ -372,13 +264,21 @@ struct AArch64GenContext_t : CodeGenerator
 					sint64 targetAddress = segmentStarts.at(jump.target);
 					sint64 addressOffset = targetAddress - jumpStart;
 					return handleJump(addressOffset, jump);
-				},
-				jumpInfo);
+					},
+					jumpInfo);
 			if (!success)
 			{
+				setSize(finalSize);
+				return false;
+			}
+			if (getSize() > jumpStart + MAX_JUMP_INSTR_COUNT * sizeof(uint32))
+			{
+				cemu_assert_suspicious();
+				setSize(finalSize);
 				return false;
 			}
 		}
+		setSize(finalSize);
 		return true;
 	}
 
@@ -564,7 +464,7 @@ static_assert(isAdrImmRangeValidGPR(offsetof(PPCInterpreter_t, spr.UGQR), sizeof
 static_assert(isAdrImmRangeValidGPR(offsetof(PPCInterpreter_t, temporaryGPR_reg), sizeof(uint32) * 3));
 static_assert(isAdrImmValidGPR(offsetof(PPCInterpreter_t, xer_ca), 8));
 static_assert(isAdrImmValidGPR(offsetof(PPCInterpreter_t, xer_so), 8));
-static_assert(isAdrImmRangeValidGPR(offsetof(PPCInterpreter_t, cr), PPCREC_NAME_CR_LAST - PPCREC_NAME_CR, 8));
+static_assert(isAdrImmValidGPR(offsetof(PPCInterpreter_t, cr)));
 static_assert(isAdrImmValidGPR(offsetof(PPCInterpreter_t, reservedMemAddr)));
 static_assert(isAdrImmValidGPR(offsetof(PPCInterpreter_t, reservedMemValue)));
 static_assert(isAdrImmRangeValidFpr(offsetof(PPCInterpreter_t, fpr), sizeof(FPR_t) * 63, 64));
@@ -610,7 +510,9 @@ void AArch64GenContext_t::r_name(IMLInstruction* imlInstruction)
 		}
 		else if (name >= PPCREC_NAME_CR && name <= PPCREC_NAME_CR_LAST)
 		{
-			ldrb(regR, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, cr) + (name - PPCREC_NAME_CR)));
+			const uint32 bitIndex = name - PPCREC_NAME_CR;
+			ldr(regR, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, cr)));
+			ubfm(regR, regR, 31 - bitIndex, 31 - bitIndex);
 		}
 		else if (name == PPCREC_NAME_CPU_MEMRES_EA)
 		{
@@ -691,7 +593,10 @@ void AArch64GenContext_t::name_r(IMLInstruction* imlInstruction)
 		}
 		else if (name >= PPCREC_NAME_CR && name <= PPCREC_NAME_CR_LAST)
 		{
-			strb(regR, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, cr) + (name - PPCREC_NAME_CR)));
+			const uint32 bitIndex = name - PPCREC_NAME_CR;
+			ldr(TEMP_GPR1.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, cr)));
+			bfi(TEMP_GPR1.WReg, regR, 31 - bitIndex, 1);
+			str(TEMP_GPR1.WReg, AdrUimm(HCPU_REG, offsetof(PPCInterpreter_t, cr)));
 		}
 		else if (name == PPCREC_NAME_CPU_MEMRES_EA)
 		{
@@ -1306,7 +1211,7 @@ void AArch64GenContext_t::atomic_cmp_store(IMLInstruction* imlInstruction)
 	WReg valReg = gpReg<WReg>(imlInstruction->op_atomic_compare_store.regWriteValue);
 	WReg cmpValReg = gpReg<WReg>(imlInstruction->op_atomic_compare_store.regCompareValue);
 
-	if (GetCpu().isAtomicSupported())
+	if (s_cpu.isAtomicSupported())
 	{
 		mov(TEMP_GPR2.WReg, cmpValReg);
 		add(TEMP_GPR1.XReg, MEM_BASE_REG, eaReg, ExtMod::UXTW);
@@ -1628,167 +1533,91 @@ void AArch64GenContext_t::call_imm(IMLInstruction* imlInstruction)
 	ldr(x30, AdrPostImm(sp, 16));
 }
 
-bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext)
+bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, struct ppcImlGenContext_t* ppcImlGenContext) try
 {
 	AArch64Allocator allocator;
 	AArch64GenContext_t aarch64GenContext{&allocator};
 
 	// generate iml instruction code
-	bool codeGenerationFailed = false;
-	for (IMLSegment* segIt : ppcImlGenContext->segmentList2)
-	{
-		if (codeGenerationFailed)
-			break;
-		segIt->x64Offset = aarch64GenContext.getSize();
+    bool codeGenerationFailed = false;
+    for (IMLSegment* segIt : ppcImlGenContext->segmentList2)
+    {
+        if (codeGenerationFailed)
+            break;
+        segIt->x64Offset = aarch64GenContext.getSize();
+        aarch64GenContext.storeSegmentStart(segIt);
 
-		aarch64GenContext.storeSegmentStart(segIt);
-
-		for (size_t i = 0; i < segIt->imlList.size(); i++)
-		{
-			IMLInstruction* imlInstruction = segIt->imlList.data() + i;
-			if (imlInstruction->type == PPCREC_IML_TYPE_R_NAME)
-			{
-				aarch64GenContext.r_name(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_NAME_R)
-			{
-				aarch64GenContext.name_r(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R)
-			{
-				if (!aarch64GenContext.r_r(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_S32)
-			{
-				if (!aarch64GenContext.r_s32(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_S32)
-			{
-				if (!aarch64GenContext.r_r_s32(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_S32_CARRY)
-			{
-				if (!aarch64GenContext.r_r_s32_carry(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_R)
-			{
-				if (!aarch64GenContext.r_r_r(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_R_CARRY)
-			{
-				if (!aarch64GenContext.r_r_r_carry(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_COMPARE)
-			{
-				aarch64GenContext.compare(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_COMPARE_S32)
-			{
-				aarch64GenContext.compare_s32(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_CONDITIONAL_JUMP)
-			{
-				aarch64GenContext.cjump(imlInstruction, segIt);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_JUMP)
-			{
-				aarch64GenContext.jump(segIt);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_CJUMP_CYCLE_CHECK)
-			{
-				aarch64GenContext.conditionalJumpCycleCheck(segIt);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_MACRO)
-			{
-				if (!aarch64GenContext.macro(imlInstruction))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_LOAD)
-			{
-				if (!aarch64GenContext.load(imlInstruction, false))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_LOAD_INDEXED)
-			{
-				if (!aarch64GenContext.load(imlInstruction, true))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_STORE)
-			{
-				if (!aarch64GenContext.store(imlInstruction, false))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_STORE_INDEXED)
-			{
-				if (!aarch64GenContext.store(imlInstruction, true))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_ATOMIC_CMP_STORE)
-			{
-				aarch64GenContext.atomic_cmp_store(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_CALL_IMM)
-			{
-				aarch64GenContext.call_imm(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_NO_OP)
-			{
-				// no op
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_LOAD)
-			{
-				if (!aarch64GenContext.fpr_load(imlInstruction, false))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_LOAD_INDEXED)
-			{
-				if (!aarch64GenContext.fpr_load(imlInstruction, true))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_STORE)
-			{
-				if (!aarch64GenContext.fpr_store(imlInstruction, false))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_STORE_INDEXED)
-			{
-				if (!aarch64GenContext.fpr_store(imlInstruction, true))
-					codeGenerationFailed = true;
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R)
-			{
-				aarch64GenContext.fpr_r_r(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R_R)
-			{
-				aarch64GenContext.fpr_r_r_r(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R_R_R)
-			{
-				aarch64GenContext.fpr_r_r_r_r(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R)
-			{
-				aarch64GenContext.fpr_r(imlInstruction);
-			}
-			else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_COMPARE)
-			{
-				aarch64GenContext.fpr_compare(imlInstruction);
-			}
-			else
-			{
-				codeGenerationFailed = true;
-				cemu_assert_suspicious();
-				cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): Unsupported iml type {}", imlInstruction->type);
-			}
-		}
-	}
+        for (size_t i = 0; i < segIt->imlList.size(); i++)
+        {
+            IMLInstruction* imlInstruction = segIt->imlList.data() + i;
+            if (imlInstruction->type == PPCREC_IML_TYPE_R_NAME)
+                aarch64GenContext.r_name(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_NAME_R)
+                aarch64GenContext.name_r(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_R)
+            { if (!aarch64GenContext.r_r(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_S32)
+            { if (!aarch64GenContext.r_s32(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_S32)
+            { if (!aarch64GenContext.r_r_s32(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_S32_CARRY)
+            { if (!aarch64GenContext.r_r_s32_carry(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_R)
+            { if (!aarch64GenContext.r_r_r(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_R_R_R_CARRY)
+            { if (!aarch64GenContext.r_r_r_carry(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_COMPARE)
+                aarch64GenContext.compare(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_COMPARE_S32)
+                aarch64GenContext.compare_s32(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_CONDITIONAL_JUMP)
+                aarch64GenContext.cjump(imlInstruction, segIt);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_JUMP)
+                aarch64GenContext.jump(segIt);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_CJUMP_CYCLE_CHECK)
+                aarch64GenContext.conditionalJumpCycleCheck(segIt);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_MACRO)
+            { if (!aarch64GenContext.macro(imlInstruction)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_LOAD)
+            { if (!aarch64GenContext.load(imlInstruction, false)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_LOAD_INDEXED)
+            { if (!aarch64GenContext.load(imlInstruction, true)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_STORE)
+            { if (!aarch64GenContext.store(imlInstruction, false)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_STORE_INDEXED)
+            { if (!aarch64GenContext.store(imlInstruction, true)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_ATOMIC_CMP_STORE)
+                aarch64GenContext.atomic_cmp_store(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_CALL_IMM)
+                aarch64GenContext.call_imm(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_NO_OP)
+            { /* no op */ }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_LOAD)
+            { if (!aarch64GenContext.fpr_load(imlInstruction, false)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_LOAD_INDEXED)
+            { if (!aarch64GenContext.fpr_load(imlInstruction, true)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_STORE)
+            { if (!aarch64GenContext.fpr_store(imlInstruction, false)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_STORE_INDEXED)
+            { if (!aarch64GenContext.fpr_store(imlInstruction, true)) codeGenerationFailed = true; }
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R)
+                aarch64GenContext.fpr_r_r(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R_R)
+                aarch64GenContext.fpr_r_r_r(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R_R_R_R)
+                aarch64GenContext.fpr_r_r_r_r(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_R)
+                aarch64GenContext.fpr_r(imlInstruction);
+            else if (imlInstruction->type == PPCREC_IML_TYPE_FPR_COMPARE)
+                aarch64GenContext.fpr_compare(imlInstruction);
+            else
+            {
+                codeGenerationFailed = true;
+                cemu_assert_suspicious();
+                cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): Unsupported iml type {}", imlInstruction->type);
+            }
+        }
+    }
 
 	// handle failed code generation
 	if (codeGenerationFailed)
@@ -1802,34 +1631,32 @@ bool PPCRecompiler_generateAArch64Code(struct PPCRecFunction_t* PPCRecFunction, 
 		return false;
 	}
 
-	aarch64GenContext.readyRE();
-	PPCRecompilerAArch64_flushICache(aarch64GenContext.getCode<void*>(), aarch64GenContext.getSize());
-
-	// set code
-	// x86Size must be the number of bytes actually emitted (getSize()), not the AutoGrow
-	// buffer's allocated capacity (getMaxSize()). CodeArray is AUTO_GROW here, so
-	// getMaxSize() can be far larger than what was written - DEFAULT_MAX_CODE_SIZE or a
-	// prior doubling from growMemory(), most of it never initialized as code. The x64
-	// backend already gets this right (PPCRecFunction->x86Size = codeBuffer.size_bytes();
-	// in BackendX64.cpp) - this path did not match it. Nothing downstream currently uses
-	// x86Size to bound a memory access (the allocation itself is sized by getMaxSize()
-	// internally, so this was not an out-of-bounds read), but it is read for the
-	// dump-to-disk debug feature, the optional codeHash log, and PPCRecompiler_findFuncRanges()
-	// - three places that all want "how much of this is real code," not "how big is the
-	// backing allocation."
-	PPCRecFunction->x86Code = aarch64GenContext.getCode<void*>();
-	PPCRecFunction->x86Size = aarch64GenContext.getSize();
-	// set free disabled to skip freeing the code from the CodeGenerator destructor
-	allocator.setFreeDisabled(true);
-	return true;
+    if (!aarch64GenContext.getSize())
+        return false;
+    aarch64GenContext.ready(CodeArray::PROTECT_RW);
+    auto* writable = aarch64GenContext.getCode<uint32_t*>();
+    const auto region = allocator.finalize(writable, aarch64GenContext.getSize());
+    PPCRecFunction->x86Code = region.rxAlias;
+    PPCRecFunction->x86Size = aarch64GenContext.getSize();
+    const bool dualMap = PPCRecompiler_isDualMapJITEnabled();
+    PPCRecFunction->x86CodeWritable = dualMap ? region.rwAlias : nullptr;
+    PPCRecFunction->dualMapRegion = dualMap ? region : DualMapRegion{};
+    allocator.detach(writable);
+    return true;
+}
+catch (const std::exception& error)
+{
+    cemuLog_log(LogType::Recompiler, "PPCRecompiler_generateAArch64Code(): {}", error.what());
+    return false;
 }
 
 void PPCRecompiler_cleanupAArch64Code(void* code, size_t size)
 {
-	AArch64Allocator allocator;
-	if (allocator.useProtect())
-		CodeArray::protect(code, size, CodeArray::PROTECT_RW);
-	allocator.free(static_cast<uint32*>(code));
+#if defined(_WIN32)
+    VirtualFree(code, 0, MEM_RELEASE);
+#else
+    munmap(code, size);
+#endif
 }
 
 void AArch64GenContext_t::enterRecompilerCode()
@@ -1875,72 +1702,36 @@ void AArch64GenContext_t::leaveRecompilerCode()
 	ret();
 }
 
-bool initializedInterfaceFunctions = false;
-bool interfaceFunctionsAvailable = false;
-bool PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions()
+void PPCRecompilerAArch64Gen_generateRecompilerInterfaceFunctions()
 {
-	if (initializedInterfaceFunctions)
-		return interfaceFunctionsAvailable;
-	initializedInterfaceFunctions = true;
+    static bool initialized = false;
+    if (initialized)
+        return;
 
-	// These were previously namespace-scope globals, which C++ constructs during
-	// static initialization - i.e. at binary load time, before main(), completely
-	// bypassing the initializedInterfaceFunctions guard above (and PPCRecompiler_init's
-	// own interpreter-only bailout in PPCRecompiler.cpp). Each AArch64GenContext_t's
-	// CodeGenerator base class eagerly allocates executable JIT memory on
-	// construction (Xbyak_aarch64::MmapAllocator::alloc(), which calls
-	// mmap(PROT_EXEC)). On iOS that requires a JIT/dynamic-codesigning entitlement
-	// that a sideloaded app doesn't have at pure launch time - LiveContainer's JIT
-	// enabling is a separate, asynchronous, out-of-process step (attaching a
-	// debugserver) that hadn't necessarily even completed yet. The uncaught C++
-	// exception from the failed mmap unwound out of a global constructor with no
-	// surrounding try/catch, so libc++abi called std::terminate() -> abort()
-	// (SIGABRT) instantly on every launch, before Swift/SwiftUI ever ran.
-	// Making these function-local statics defers construction to first actual call
-	// of this function (still exactly once, still thread-safe, still same lifetime
-	// once constructed) - which only happens via PPCRecompiler_init() choosing to
-	// use the JIT path, itself only reachable from CafeSystem::Initialize() once a
-	// title is actually launched, long after process startup.
-	//
-	// Passing the allocator explicitly matters as much as deferring construction did. With
-	// no allocator argument, CodeArray falls back to its own internal MmapAllocator, which
-	// is the MAP_JIT one - so these three contexts would bypass AppleJitAllocator entirely
-	// and fail on iOS even though every other allocation in this file is routed correctly.
-	//
-	// The whole block is wrapped because an allocation failure here must not be fatal. It
-	// used to escape as an uncaught exception and abort the process; now it reports back
-	// and PPCRecompiler_init falls through to the interpreter, which is slow but alive.
-	try
-	{
-		static AArch64Allocator interfaceAllocator;
-		static AArch64GenContext_t enterRecompilerCode_ctx{&interfaceAllocator};
-		static AArch64GenContext_t leaveRecompilerCode_unvisited_ctx{&interfaceAllocator};
-		static AArch64GenContext_t leaveRecompilerCode_visited_ctx{&interfaceAllocator};
+    cemu_assert(ppcRecompilerInstanceData != nullptr);
+    cemu_assert(memory_base != nullptr);
 
-		enterRecompilerCode_ctx.enterRecompilerCode();
-		enterRecompilerCode_ctx.readyRE();
-		PPCRecompiler_enterRecompilerCode = enterRecompilerCode_ctx.getCode<decltype(PPCRecompiler_enterRecompilerCode)>();
-		PPCRecompilerAArch64_flushICache(enterRecompilerCode_ctx.getCode<void*>(), enterRecompilerCode_ctx.getSize());
+    AArch64Allocator enterAllocator(false), leaveAllocator(false);
+    AArch64GenContext_t enterContext(&enterAllocator), leaveContext(&leaveAllocator);
+    enterContext.enterRecompilerCode();
+    enterContext.ready(CodeArray::PROTECT_RW);
 
-		leaveRecompilerCode_unvisited_ctx.leaveRecompilerCode();
-		leaveRecompilerCode_unvisited_ctx.readyRE();
-		PPCRecompiler_leaveRecompilerCode_unvisited = leaveRecompilerCode_unvisited_ctx.getCode<decltype(PPCRecompiler_leaveRecompilerCode_unvisited)>();
-		PPCRecompilerAArch64_flushICache(leaveRecompilerCode_unvisited_ctx.getCode<void*>(), leaveRecompilerCode_unvisited_ctx.getSize());
+    leaveContext.leaveRecompilerCode();
+    while (leaveContext.getSize() % 16)
+        leaveContext.nop();
+    const size_t visitedOffset = leaveContext.getSize();
+    leaveContext.leaveRecompilerCode();
+    leaveContext.ready(CodeArray::PROTECT_RW);
 
-		leaveRecompilerCode_visited_ctx.leaveRecompilerCode();
-		leaveRecompilerCode_visited_ctx.readyRE();
-		PPCRecompiler_leaveRecompilerCode_visited = leaveRecompilerCode_visited_ctx.getCode<decltype(PPCRecompiler_leaveRecompilerCode_visited)>();
-		PPCRecompilerAArch64_flushICache(leaveRecompilerCode_visited_ctx.getCode<void*>(), leaveRecompilerCode_visited_ctx.getSize());
-	}
-	catch (const std::exception& ex)
-	{
-		cemuLog_log(LogType::Force, "Recompiler: could not set up executable memory for the interface functions ({}). Falling back to the interpreter.", ex.what());
-		PPCRecompiler_enterRecompilerCode = nullptr;
-		PPCRecompiler_leaveRecompilerCode_unvisited = nullptr;
-		PPCRecompiler_leaveRecompilerCode_visited = nullptr;
-		return false;
-	}
+    auto* enterWritable = enterContext.getCode<uint32_t*>();
+    auto* leaveWritable = leaveContext.getCode<uint32_t*>();
+    const auto enter = enterAllocator.finalize(enterWritable, enterContext.getSize());
+    const auto leave = leaveAllocator.finalize(leaveWritable, leaveContext.getSize());
 
-	interfaceFunctionsAvailable = true;
-	return true;
+    PPCRecompiler_enterRecompilerCode = reinterpret_cast<decltype(PPCRecompiler_enterRecompilerCode)>(enter.rxAlias);
+    PPCRecompiler_leaveRecompilerCode_unvisited = reinterpret_cast<decltype(PPCRecompiler_leaveRecompilerCode_unvisited)>(leave.rxAlias);
+    PPCRecompiler_leaveRecompilerCode_visited = reinterpret_cast<decltype(PPCRecompiler_leaveRecompilerCode_visited)>((uint8_t*)leave.rxAlias + visitedOffset);
+    enterAllocator.detach(enterWritable);
+    leaveAllocator.detach(leaveWritable);
+    initialized = true;
 }

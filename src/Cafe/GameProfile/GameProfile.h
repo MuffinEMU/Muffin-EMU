@@ -25,13 +25,11 @@ public:
 	[[nodiscard]] const std::optional<std::string>& GetGameName() const { return m_gameName; }
 
 	[[nodiscard]] const std::optional<bool>& ShouldLoadSharedLibraries() const { return m_loadSharedLibraries; }
-	void SetShouldLoadSharedLibraries(bool shouldLoadSharedLibraries) { m_loadSharedLibraries = shouldLoadSharedLibraries; }
 	[[nodiscard]] bool StartWithGamepadView() const { return m_startWithPadView; }
 
 	[[nodiscard]] const std::optional<GraphicAPI>& GetGraphicsAPI() const { return m_graphics_api; }
 	[[nodiscard]] const AccurateShaderMulOption& GetAccurateShaderMul() const { return m_accurateShaderMul; }
-	void SetAccurateShaderMul(AccurateShaderMulOption accurateShaderMulOption) { m_accurateShaderMul = accurateShaderMulOption; }
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 	[[nodiscard]] bool GetShaderFastMath() const { return m_shaderFastMath; }
 	[[nodiscard]] MetalBufferCacheMode GetBufferCacheMode() const { return m_metalBufferCacheMode; }
 	[[nodiscard]] PositionInvariance GetPositionInvariance() const { return m_positionInvariance; }
@@ -39,38 +37,13 @@ public:
 	[[nodiscard]] const std::optional<PrecompiledShaderOption>& GetPrecompiledShadersState() const { return m_precompiledShaders; }
 
 	[[nodiscard]] uint32 GetThreadQuantum() const { return m_threadQuantum; }
-	void SetThreadQuantum(uint32 threadQuantum){ m_threadQuantum = threadQuantum; }
 	[[nodiscard]] const std::optional<CPUMode>& GetCPUMode() const { return m_cpuMode; }
-	void SetCPUMode(CPUMode cpuMode) { m_cpuMode = cpuMode; }
 
 	[[nodiscard]] bool IsAudioDisabled() const { return m_disableAudio; }
 
 	[[nodiscard]] const std::array< std::optional<std::string>, 8>& GetControllerProfile() const { return m_controllerProfile; }
 
-#if BOOST_PLAT_ANDROID
-  public:
-	struct DriverSetting
-	{
-		DriverSettingMode mode = DriverSettingMode::Global;
-		std::optional<std::string> customPath;
-	};
-
-	[[nodiscard]] DriverSetting GetDriverSetting() const
-	{
-		return m_driverSetting;
-	}
-
-	void SetDriverSetting(DriverSetting driverSetting)
-	{
-		m_driverSetting = driverSetting;
-	}
-
-  private:
-	DriverSetting m_driverSetting;
-
-#endif
-
-  private:
+private:
 	uint64_t m_title_id = 0;
 	bool m_is_loaded = false;
 	bool m_is_default = true;
@@ -84,7 +57,7 @@ public:
 	// graphic settings
 	std::optional<GraphicAPI> m_graphics_api{};
 	AccurateShaderMulOption m_accurateShaderMul = AccurateShaderMulOption::True;
-#if ENABLE_METAL
+#ifdef ENABLE_METAL
 	bool m_shaderFastMath = true;
 	MetalBufferCacheMode m_metalBufferCacheMode = MetalBufferCacheMode::Auto;
 	PositionInvariance m_positionInvariance = PositionInvariance::Auto;

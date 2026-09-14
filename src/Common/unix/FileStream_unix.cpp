@@ -1,74 +1,49 @@
 #include "Common/unix/FileStream_unix.h"
 #include <cstdarg>
-#include <cctype>
-#include <algorithm>
 
-static bool iequals(const std::string& a, const std::string& b) {
-	return std::equal(a.begin(), a.end(), b.begin(), b.end(),
-		[](char ac, char bc) { return std::tolower(static_cast<unsigned char>(ac)) ==
-		                               std::tolower(static_cast<unsigned char>(bc)); });
-}
-
-fs::path findPathCI(const fs::path& path)
-{
-	if (fs::exists(path)) return path;
-
-	fs::path fName = path.filename();
-	fs::path parentPath = path.parent_path();
-	if (parentPath.empty())
-		parentPath = ".";
-	else if (!fs::exists(parentPath))
-		parentPath = findPathCI(parentPath);
-
-	std::error_code listErr;
-	for (auto&& dirEntry : fs::directory_iterator(parentPath, listErr))
-		if (iequals(dirEntry.path().filename().string(), fName.string()))
-			return dirEntry;
-
-	return parentPath / fName;
-}
-
-FileStreamUnix* FileStreamUnix::openFile(std::string_view path)
+FileStream* FileStream::openFile(std::string_view path)
 {
 	return openFile2(path, false);
 }
 
-FileStreamUnix* FileStreamUnix::openFile(const wchar_t* path, bool allowWrite)
+FileStream* FileStream::openFile(const wchar_t* path, bool allowWrite)
 {
 	return openFile2(path, allowWrite);
 }
 
-FileStreamUnix* FileStreamUnix::openFile2(const fs::path& path, bool allowWrite)
+FileStream* FileStream::openFile2(const fs::path& path, bool allowWrite)
 {
-	FileStreamUnix* fs = new FileStreamUnix(path, true, allowWrite);
+	FileStream* fs = new FileStream(path, true, allowWrite);
 	if (fs->m_isValid)
 		return fs;
 	delete fs;
 	return nullptr;
 }
 
-FileStreamUnix* FileStreamUnix::createFile(const wchar_t* path)
+FileStream* FileStream::createFile(const wchar_t* path)
 {
 	return createFile2(path);
 }
 
-FileStreamUnix* FileStreamUnix::createFile(std::string_view path)
+FileStream* FileStream::createFile(std::string_view path)
 {
 	return createFile2(path);
 }
 
-FileStreamUnix* FileStreamUnix::createFile2(const fs::path& path)
+FileStream* FileStream::createFile2(const fs::path& path)
 {
-	FileStreamUnix* fs = new FileStreamUnix(path, false, false);
-	if (fs->m_isValid)
-		return fs;
-	delete fs;
-	return nullptr;
+    std::error_code ec;
+    fs::create_directories(path.parent_path(), ec);
+    FileStream* fs = new FileStream(path, false, false);
+    if (fs->m_isValid)
+        return fs;
+    delete fs;
+    return nullptr;
 }
 
-std::optional<std::vector<uint8>> FileStreamUnix::LoadIntoMemory(const fs::path& path)
+std::optional<std::vector<uint8>> FileStream::LoadIntoMemory(const fs::path& path)
 {
-	FileStreamUnix* fs = openFile2(path);
+	FileStream* fs = openFile2(path);
 	if (!fs)
 		return std::nullopt;
 	uint64 fileSize = fs->GetSize();
@@ -87,7 +62,7 @@ std::optional<std::vector<uint8>> FileStreamUnix::LoadIntoMemory(const fs::path&
 	return v;
 }
 
-void FileStreamUnix::SetPosition(uint64 pos)
+void FileStream::SetPosition(uint64 pos)
 {
 	cemu_assert(m_isValid);
 	if (m_prevOperationWasWrite)
@@ -96,7 +71,7 @@ void FileStreamUnix::SetPosition(uint64 pos)
 		m_fileStream.seekg((std::streampos)pos);
 }
 
-uint64 FileStreamUnix::GetSize()
+uint64 FileStream::GetSize()
 {
 	cemu_assert(m_isValid);
 	auto currentPos = m_fileStream.tellg();
@@ -107,14 +82,14 @@ uint64 FileStreamUnix::GetSize()
 	return fs;
 }
 
-bool FileStreamUnix::SetEndOfFile()
+bool FileStream::SetEndOfFile()
 {
 	assert_dbg();
 	return true;
 	//return ::SetEndOfFile(m_hFile) != 0;
 }
 
-void FileStreamUnix::extract(std::vector<uint8>& data)
+void FileStream::extract(std::vector<uint8>& data)
 {
 	uint64 fileSize = GetSize();
 	SetPosition(0);
@@ -122,12 +97,12 @@ void FileStreamUnix::extract(std::vector<uint8>& data)
 	readData(data.data(), fileSize);
 }
 
-void FileStreamUnix::Flush()
+void FileStream::Flush()
 {
     m_fileStream.flush();
 }
 
-uint32 FileStreamUnix::readData(void* data, uint32 length)
+uint32 FileStream::readData(void* data, uint32 length)
 {
 	SyncReadWriteSeek(false);
 	m_fileStream.read((char*)data, length);
@@ -135,22 +110,22 @@ uint32 FileStreamUnix::readData(void* data, uint32 length)
 	return (uint32)bytesRead;
 }
 
-bool FileStreamUnix::readU64(uint64& v)
+bool FileStream::readU64(uint64& v)
 {
 	return readData(&v, sizeof(uint64)) == sizeof(uint64);
 }
 
-bool FileStreamUnix::readU32(uint32& v)
+bool FileStream::readU32(uint32& v)
 {
 	return readData(&v, sizeof(uint32)) == sizeof(uint32);
 }
 
-bool FileStreamUnix::readU8(uint8& v)
+bool FileStream::readU8(uint8& v)
 {
 	return readData(&v, sizeof(uint8)) == sizeof(uint8);
 }
 
-bool FileStreamUnix::readLine(std::string& line)
+bool FileStream::readLine(std::string& line)
 {
 	line.clear();
 	uint8 c;
@@ -167,29 +142,29 @@ bool FileStreamUnix::readLine(std::string& line)
 	return !isEOF;
 }
 
-sint32 FileStreamUnix::writeData(const void* data, sint32 length)
+sint32 FileStream::writeData(const void* data, sint32 length)
 {
 	SyncReadWriteSeek(true);
 	m_fileStream.write((const char*)data, length);
 	return length;
 }
 
-void FileStreamUnix::writeU64(uint64 v)
+void FileStream::writeU64(uint64 v)
 {
 	writeData(&v, sizeof(uint64));
 }
 
-void FileStreamUnix::writeU32(uint32 v)
+void FileStream::writeU32(uint32 v)
 {
 	writeData(&v, sizeof(uint32));
 }
 
-void FileStreamUnix::writeU8(uint8 v)
+void FileStream::writeU8(uint8 v)
 {
 	writeData(&v, sizeof(uint8));
 }
 
-void FileStreamUnix::writeStringFmt(const char* format, ...)
+void FileStream::writeStringFmt(const char* format, ...)
 {
 	char buffer[2048];
 	va_list args;
@@ -198,18 +173,18 @@ void FileStreamUnix::writeStringFmt(const char* format, ...)
 	writeData(buffer, (sint32)strlen(buffer));
 }
 
-void FileStreamUnix::writeString(const char* str)
+void FileStream::writeString(const char* str)
 {
 	writeData(str, (sint32)strlen(str));
 }
 
-void FileStreamUnix::writeLine(const char* str)
+void FileStream::writeLine(const char* str)
 {
 	writeData(str, (sint32)strlen(str));
 	writeData("\r\n", 2);
 }
 
-FileStreamUnix::~FileStreamUnix()
+FileStream::~FileStream()
 {
 	if (m_isValid)
 	{
@@ -218,9 +193,9 @@ FileStreamUnix::~FileStreamUnix()
 	//	CloseHandle(m_hFile);
 }
 
-FileStreamUnix::FileStreamUnix(const fs::path& path, bool isOpen, bool isWriteable)
+FileStream::FileStream(const fs::path& path, bool isOpen, bool isWriteable)
 {
-	fs::path CIPath = findPathCI(path);
+	fs::path CIPath = fs::resolvePathCI(path);
 	if (isOpen)
 	{
 		m_fileStream.open(CIPath, isWriteable ? (std::ios_base::in | std::ios_base::out | std::ios_base::binary) : (std::ios_base::in | std::ios_base::binary));
@@ -231,14 +206,14 @@ FileStreamUnix::FileStreamUnix(const fs::path& path, bool isOpen, bool isWriteab
 		m_fileStream.open(CIPath, std::ios_base::in | std::ios_base::out | std::ios_base::binary | std::ios_base::trunc);
 		m_isValid = m_fileStream.is_open();
 	}
-	if(m_isValid && fs::is_directory(path))
+	if(m_isValid && fs::is_directory(CIPath))
 	{
 		m_isValid = false;
 		m_fileStream.close();
 	}
 }
 
-void FileStreamUnix::SyncReadWriteSeek(bool nextOpIsWrite)
+void FileStream::SyncReadWriteSeek(bool nextOpIsWrite)
 {
 	// nextOpIsWrite == false -> read. Otherwise write
 	if (nextOpIsWrite == m_prevOperationWasWrite)

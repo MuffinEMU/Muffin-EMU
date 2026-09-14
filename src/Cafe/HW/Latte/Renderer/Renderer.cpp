@@ -3,6 +3,7 @@
 
 #include "config/CemuConfig.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
+#include "util/helpers/helpers.h"
 
 #include <imgui.h>
 #include "imgui/imgui_extension.h"
@@ -54,11 +55,123 @@ void Renderer::Initialize()
 
 void Renderer::Shutdown()
 {
+	StopRenderWorker();
+
 	// imgui
 	ImGui::DestroyContext(imguiTVContext);
 	ImGui::DestroyContext(imguiPadContext);
     ImGui_ClearFonts();
 	delete imguiFontAtlas;
+}
+
+void Renderer::StartRenderWorker(const char* threadName)
+{
+    std::unique_lock lock(m_renderWorkerMutex);
+    RethrowRenderWorkerException();
+    if (m_renderWorkerThread.joinable())
+        return;
+    
+    m_renderWorkerStopRequested = false;
+    m_renderWorkerJobActive = false;
+    m_renderWorkerThread = std::thread(&Renderer::RenderWorkerThread, this, std::string(threadName));
+}
+
+void Renderer::StopRenderWorker()
+{
+    {
+        std::unique_lock lock(m_renderWorkerMutex);
+        if (!m_renderWorkerThread.joinable())
+        {
+            RethrowRenderWorkerException();
+            return;
+        }
+        m_renderWorkerStopRequested = true;
+    }
+    m_renderWorkerCondition.notify_all();
+    m_renderWorkerThread.join();
+    
+    std::unique_lock lock(m_renderWorkerMutex);
+    RethrowRenderWorkerException();
+}
+
+void Renderer::QueueRenderWorkerJob(std::function<void()> job)
+{
+    std::unique_lock lock(m_renderWorkerMutex);
+    RethrowRenderWorkerException();
+    
+    if (!m_renderWorkerThread.joinable())
+    {
+        lock.unlock();
+        job();
+        return;
+    }
+    
+    m_renderWorkerQueue.emplace(std::move(job));
+    lock.unlock();
+    m_renderWorkerCondition.notify_one();
+}
+
+void Renderer::WaitRenderWorkerIdle()
+{
+    std::unique_lock lock(m_renderWorkerMutex);
+    if (m_renderWorkerThread.joinable())
+    {
+        m_renderWorkerCondition.wait(lock, [this] {
+            return m_renderWorkerQueue.empty() && !m_renderWorkerJobActive;
+        });
+    }
+    RethrowRenderWorkerException();
+}
+
+void Renderer::RenderWorkerThread(std::string threadName)
+{
+    SetThreadName(threadName.c_str());
+    
+    while (true)
+    {
+        std::function<void()> job;
+        {
+            std::unique_lock lock(m_renderWorkerMutex);
+            m_renderWorkerCondition.wait(lock, [this] {
+                return m_renderWorkerStopRequested || !m_renderWorkerQueue.empty();
+            });
+            
+            if (m_renderWorkerStopRequested && m_renderWorkerQueue.empty())
+                break;
+            
+            job = std::move(m_renderWorkerQueue.front());
+            m_renderWorkerQueue.pop();
+            m_renderWorkerJobActive = true;
+        }
+        
+        try
+        {
+            job();
+        }
+        catch (...)
+        {
+            std::unique_lock lock(m_renderWorkerMutex);
+            if (!m_renderWorkerException)
+                m_renderWorkerException = std::current_exception();
+            m_renderWorkerStopRequested = true;
+        }
+        
+        {
+            std::unique_lock lock(m_renderWorkerMutex);
+            m_renderWorkerJobActive = false;
+        }
+        m_renderWorkerCondition.notify_all();
+    }
+}
+
+void Renderer::RethrowRenderWorkerException()
+{
+    if (!m_renderWorkerException)
+        return;
+    
+    auto exception = m_renderWorkerException;
+    m_renderWorkerException = nullptr;
+    std::rethrow_exception(exception);
 }
 
 bool Renderer::ImguiBegin(bool mainWindow)

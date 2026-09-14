@@ -2,23 +2,6 @@
 
 #include "Cafe/HW/Espresso/PPCState.h"
 
-#include <type_traits>
-
-// Every interpreter instruction handler has this shape, and PPCInterpreterImpl.cpp now stores
-// pointers of this type in its predecoded instruction cache instead of re-walking the decode
-// switch on every execution. Declared here rather than locally because it is a contract about
-// the whole handler set, which is spread across PPCInterpreterOPC/FPU/PS.cpp and the .hpp files
-// included into the interpreter template: a handler that does not match this signature cannot be
-// dispatched, and the compile error should point at something that says so.
-using PPCInstructionHandler = void(*)(PPCInterpreter_t*, uint32);
-
-// A handful of handlers - the paired-single quantised load/stores - spell their operand as
-// `unsigned int` rather than uint32. Those are the same type on every target this project builds
-// for, and an implicit conversion papers over the difference at a CALL site, but function POINTER
-// types have to match exactly. Asserted so that a toolchain where they diverge fails the build
-// loudly here instead of failing to dispatch somewhere much less obvious.
-static_assert(std::is_same_v<uint32, unsigned int>, "interpreter handler pointers require uint32 and unsigned int to be the same type");
-
 // SPR constants
 #define SPR_XER		1	
 #define SPR_LR		8	
@@ -136,15 +119,22 @@ static_assert(std::is_same_v<uint32, unsigned int>, "interpreter handler pointer
 static inline void ppc_update_cr0(PPCInterpreter_t* hCPU, uint32 r)
 {
 	cemu_assert_debug(hCPU->xer_so <= 1);
-	hCPU->cr[CR_BIT_SO] = hCPU->xer_so;
-	hCPU->cr[CR_BIT_LT] = ((r != 0) ? 1 : 0) & ((r & 0x80000000) ? 1 : 0);
-	hCPU->cr[CR_BIT_EQ] = (r == 0);
-	hCPU->cr[CR_BIT_GT] = hCPU->cr[CR_BIT_EQ] ^ hCPU->cr[CR_BIT_LT] ^ 1;  // this works because EQ and LT can never be set at the same time. So the only case where GT becomes 1 is when LT=0 and EQ=0
+	uint32 cr0 = hCPU->xer_so;
+	const uint32 lt = ((r != 0) ? 1 : 0) & ((r & 0x80000000) ? 1 : 0);
+	const uint32 eq = (r == 0);
+	const uint32 gt = eq ^ lt ^ 1; // EQ and LT can never be set at the same time.
+	cr0 |= (lt << 3) | (gt << 2) | (eq << 1);
+	hCPU->cr = (hCPU->cr & 0x0fffffff) | (cr0 << 28);
 }
 
 static inline uint8 ppc_getCRBit(PPCInterpreter_t* hCPU, uint32 r)
 {
-	return hCPU->cr[r];
+	return (uint8)((hCPU->cr >> (31 - r)) & 1);
+}
+
+static inline uint32 ppc_getCRField(PPCInterpreter_t* hCPU, uint32 crIndex)
+{
+	return (hCPU->cr >> (28 - crIndex * 4)) & 0xf;
 }
 
 static inline bool ppc_MTCRFMaskHasCRFieldSet(const uint32 mtcrfMask, const uint32 crIndex)
@@ -154,7 +144,7 @@ static inline bool ppc_MTCRFMaskHasCRFieldSet(const uint32 mtcrfMask, const uint
 	return (mtcrfMask & (1 << (7 - crIndex))) != 0;
 }
 
-// returns CR mask with CR0.LT in LSB
+// returns CR mask with CR0.LT in LSB (logical bit-index order used by the recompiler)
 static inline uint32 ppc_MTCRFMaskToCRBitMask(const uint32 mtcrfMask)
 {
 	uint32 crMask = 0; 
@@ -166,32 +156,42 @@ static inline uint32 ppc_MTCRFMaskToCRBitMask(const uint32 mtcrfMask)
 	return crMask;
 }
 
+static inline uint32 ppc_MTCRFMaskToPackedMask(const uint32 mtcrfMask)
+{
+	uint32 crMask = 0;
+	for (uint32 crF = 0; crF < 8; crF++)
+	{
+		if (ppc_MTCRFMaskHasCRFieldSet(mtcrfMask, crF))
+			crMask |= (0xF << (28 - crF * 4));
+	}
+	return crMask;
+}
+
 static inline void ppc_setCRBit(PPCInterpreter_t* hCPU, uint32 r, uint8 v)
 {
-	hCPU->cr[r] = v;
+	const uint32 mask = 1u << (31 - r);
+	hCPU->cr = (hCPU->cr & ~mask) | (v ? mask : 0);
+}
+
+static inline void ppc_setCRField(PPCInterpreter_t* hCPU, uint32 crIndex, uint32 value)
+{
+	const uint32 shift = 28 - crIndex * 4;
+	const uint32 mask = 0xfu << shift;
+	hCPU->cr = (hCPU->cr & ~mask) | ((value & 0xf) << shift);
 }
 
 static inline void ppc_setCR(PPCInterpreter_t* hCPU, uint32 cr)
 {
-	uint32 tempCr = cr;
-	for (sint32 i = 31; i >= 0; i--)
-	{
-		ppc_setCRBit(hCPU, i, tempCr & 1);
-		tempCr >>= 1;
-	}
+	hCPU->cr = cr;
 }
 
 static inline uint32 ppc_getCR(PPCInterpreter_t* hCPU)
 {
-	uint32 cr = 0;
-	for (sint32 i = 0; i < 32; i++)
-	{
-		cr <<= 1;
-		if (ppc_getCRBit(hCPU, i))
-			cr |= 1;
-	}
-	return cr;
+	return hCPU->cr;
 }
+
+void PPCInterpreter_invalidateBlockCache();
+void PPCInterpreter_invalidateBlockCacheRange(uint32 addr, uint32 size);
 
 // FPU helper
 

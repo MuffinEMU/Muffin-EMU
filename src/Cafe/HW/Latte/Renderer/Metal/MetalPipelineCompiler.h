@@ -28,15 +28,11 @@ private:
     class RendererShaderMtl* m_geometryShaderMtl;
     class RendererShaderMtl* m_pixelShaderMtl;
     bool m_usesGeometryShader;
-    // usesGeometryShader is true but there is no mesh pipeline to run it through, so the
-    // two stages run as compute and this pipeline only rasterizes what they produced.
-    bool m_emulateGeometryShader = false;
     bool m_rasterizationEnabled;
 
     NS::Object* m_pipelineDescriptor = nullptr;
 
-    void InitFromStateRender(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const class MetalAttachmentsInfo& lastUsedAttachmentsInfo, const class MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr);
+    void InitFromStateRender(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* pixelShader, const class MetalAttachmentsInfo& lastUsedAttachmentsInfo, const class MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr);
 
-    void InitFromStateMesh(const LatteFetchShader* fetchShader, const class MetalAttachmentsInfo& lastUsedAttachmentsInfo, const class MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr);
-    void InitFromStateGeometryEmulation(const class MetalAttachmentsInfo& lastUsedAttachmentsInfo, const class MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr);
+	void InitFromStateMesh(const LatteFetchShader* fetchShader, const LatteDecompilerShader* pixelShader, const class MetalAttachmentsInfo& lastUsedAttachmentsInfo, const class MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr);
 };

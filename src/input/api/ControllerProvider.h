@@ -59,29 +59,28 @@ public:
 		return m_settings;
 	}
 
-	bool operator==(const ControllerProviderBase& p) const override
-	{
-		if (!base_type::operator==(p))
-			return false;
+    bool operator==(const ControllerProviderBase& p) const override
+    {
+        if (!base_type::operator==(p))
+            return false;
+        
+        if (!p.has_settings())
+            return false;
+        
+        if (p.api() != api())
+            return false;
+        
+        auto& ptr = static_cast<const ControllerProvider<TSettings>&>(p);
+        
+        return m_settings == ptr.m_settings;
+    }
 
-		if (!p.has_settings())
-			return false;
-
-		auto* ptr = dynamic_cast<const ControllerProvider<TSettings>*>(&p);
-		if (!ptr)
-			return false;
-
-		return base_type::operator==(p) && m_settings == ptr->m_settings;
-	}
-
-	bool operator==(const ControllerProviderSettings& p) const override
-	{
-		auto* ptr = dynamic_cast<const TSettings*>(&p);
-		if (!ptr)
-			return false;
-
-		return m_settings == *ptr;
-	}
+    bool operator==(const ControllerProviderSettings& p) const override
+    {
+        auto& ptr = static_cast<const TSettings&>(p);
+        
+        return m_settings == ptr;
+    }
 
 protected:
 	TSettings m_settings{};

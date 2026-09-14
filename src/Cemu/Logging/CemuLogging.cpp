@@ -11,51 +11,7 @@
 
 #include <fmt/printf.h>
 
-#if defined(CEMU_PLATFORM_IOS)
-#include <os/log.h>
-#include "Cemu/Logging/IOSLiveLog.h"
-#endif
-
 uint64 s_loggingFlagMask = cemuLog_getFlag(LogType::Force);
-
-#if defined(CEMU_PLATFORM_IOS)
-// ROADMAP.md M2, "route Cemu's logging to the iOS console". Until now the only sink
-// was log.txt, which has two problems on a sideloaded device. First, it does not
-// exist yet for most of the boot: LogContext.file_stream is only opened by
-// cemuLog_createLogFile(), whose earliest call on this platform is inside
-// cemu_initForGame() - so everything logged before that (all of
-// CafeSystem::Initialize(), PrepareForegroundTitleFromStandaloneRPX(), renderer
-// construction) sits in LogContext.text_cache in RAM, and any of the several fatal
-// paths that call exit() before then (memory_init()'s "Unable to reserve 4GB",
-// LoadMainExecutable()'s damaged-executable branch) discards the whole cache
-// unwritten. Second, reading it means backgrounding the app and going through the
-// Files app, which is useless while chasing a hang or a crash.
-//
-// os_log has neither problem: it is available from the first instruction, it is
-// written out of process by logd so it survives an abrupt exit, and it can be watched
-// live over the cable. The subsystem/category are what make it findable under
-// LiveContainer, which hosts the guest binary in its own process - filtering by
-// process name would show LiveContainer's own noise instead.
-//
-// %{public}s, not %s: os_log redacts dynamic strings as "<private>" by default, which
-// would make every line an empty placeholder. These are emulator diagnostics, not
-// user data.
-static void cemuLog_writeLineToSystemConsole(std::string_view text)
-{
-	// Function-local static, not a namespace-scope one: os_log_create() would
-	// otherwise run during static init, alongside ~90 linked libraries' own
-	// initializers, for no benefit. Initialization is thread-safe per the standard.
-	static os_log_t s_iosLogHandle = os_log_create("com.cemu.ios", "emu");
-	const std::string line(text); // os_log needs NUL-termination; string_view has none
-	os_log(s_iosLogHandle, "%{public}s", line.c_str());
-
-	// Third sink, same funnel, same NUL-terminated copy: the in-app launch log (see
-	// IOSLiveLog.h). Deliberately here and not in cemuLog_writeLineToLog() for the
-	// reason spelled out at the call site below - the file sink receives one line in up
-	// to three pieces, which would become three rows on screen.
-	ios_live_log_push(line.c_str());
-}
-#endif
 
 class LoggingDispatcher
 {
@@ -205,7 +161,7 @@ void cemuLog_createLogFile(bool triggeredByCrash)
 		return;
 
 	const auto path = cemuLog_GetLogFilePath();
-	LogContext.file_stream.open(path, std::ios::out);
+	LogContext.file_stream.open(fs::resolvePathCI(path), std::ios::out);
 	if (LogContext.file_stream.fail())
 	{
 		cemu_assert_debug(false);
@@ -215,17 +171,6 @@ void cemuLog_createLogFile(bool triggeredByCrash)
 	LogContext.threadRunning.store(true);
 	LogContext.log_writer = std::thread(cemuLog_thread);
 	lock.unlock();
-}
-
-// cemuLog_waitForFlush() spins until text_cache drains, and only the writer thread
-// drains it - a thread cemuLog_createLogFile() starts only if the file actually
-// opened. So "flush before we exit" is an unbounded spin whenever the log file could
-// not be created. Callers that want a flush on a fatal path need to be able to ask
-// first; this is the only way to find out.
-bool cemuLog_isLogFileOpen()
-{
-	std::unique_lock lock(LogContext.log_mutex);
-	return LogContext.file_stream.is_open();
 }
 
 void cemuLog_writeLineToLog(std::string_view text, bool date, bool new_line)
@@ -260,15 +205,6 @@ bool cemuLog_log(LogType type, std::string_view text)
 
 	if (LaunchSettings::Verbose())
 		std::cout << text << std::endl;
-
-#if defined(CEMU_PLATFORM_IOS)
-	// Deliberately here rather than in cemuLog_writeLineToLog(): that function is the
-	// file sink and receives a line in up to three separate pieces (timestamp, text,
-	// "\n"), which would become three console entries. This is the one call every
-	// engine log line passes through exactly once - both public cemuLog_log overloads
-	// and the iOS formatting template in CemuLogging.h funnel into it.
-	cemuLog_writeLineToSystemConsole(text);
-#endif
 
 	cemuLog_writeLineToLog(text);
 

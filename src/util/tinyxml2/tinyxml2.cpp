@@ -22,6 +22,7 @@ distribution.
 */
 
 #include "tinyxml2.h"
+#include "Common/precompiled.h"
 
 #include <new>		// yes, this one new style header, is in the Android SDK.
 #if defined(ANDROID_NDK) || defined(__BORLANDC__) || defined(__QNXNTO__)
@@ -2126,14 +2127,15 @@ namespace tinyxml2
 	{
 		TIXMLASSERT(filepath);
 		TIXMLASSERT(mode);
+		const auto resolvedPath = fs::resolvePathCI(fs::path(filepath));
 #if defined(_MSC_VER) && (_MSC_VER >= 1400 ) && (!defined WINCE)
 		FILE* fp = 0;
-		errno_t err = fopen_s(&fp, filepath, mode);
+		errno_t err = fopen_s(&fp, resolvedPath.string().c_str(), mode);
 		if (err) {
 			return 0;
 		}
 #else
-		FILE* fp = fopen(filepath, mode);
+		FILE* fp = fopen(resolvedPath.string().c_str(), mode);
 #endif
 		return fp;
 	}
@@ -2761,4 +2763,3 @@ namespace tinyxml2
 	}
 
 }   // namespace tinyxml2
-

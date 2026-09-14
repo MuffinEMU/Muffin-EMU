@@ -3,8 +3,144 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
+#if BOOST_OS_MACOS || BOOST_OS_IOS
+#include <mach/mach.h>
+#endif
+
 namespace MemMapper
 {
+
+#if BOOST_OS_MACOS || BOOST_OS_IOS
+
+static const size_t sPageSize = vm_page_size;
+
+size_t GetPageSize()
+{
+    return sPageSize;
+}
+
+vm_prot_t GetProt(PAGE_PERMISSION flags)
+{
+    vm_prot_t p = VM_PROT_NONE;
+
+    if (HAS_FLAG(flags, PAGE_PERMISSION::P_READ))
+        p |= VM_PROT_READ;
+
+    if (HAS_FLAG(flags, PAGE_PERMISSION::P_WRITE))
+        p |= VM_PROT_WRITE;
+
+    if (HAS_FLAG(flags, PAGE_PERMISSION::P_EXECUTE))
+        p |= VM_PROT_EXECUTE;
+
+    return p;
+}
+
+void* ReserveMemory(void* baseAddr, size_t size, PAGE_PERMISSION)
+{
+    vm_address_t addr = (vm_address_t)baseAddr;
+
+    kern_return_t kr = vm_allocate(
+        mach_task_self(),
+        &addr,
+        size,
+        baseAddr ? VM_FLAGS_FIXED : VM_FLAGS_ANYWHERE
+    );
+
+    if (kr != KERN_SUCCESS)
+        return nullptr;
+
+    kr = vm_protect(
+        mach_task_self(),
+        addr,
+        size,
+        FALSE,
+        VM_PROT_NONE
+    );
+    if (kr != KERN_SUCCESS)
+    {
+        vm_deallocate(mach_task_self(), addr, size);
+        return nullptr;
+    }
+
+    return (void*)addr;
+}
+
+void FreeReservation(void* baseAddr, size_t size)
+{
+    vm_deallocate(
+        mach_task_self(),
+        (vm_address_t)baseAddr,
+        size
+    );
+}
+
+void* AllocateMemory(void* baseAddr, size_t size, PAGE_PERMISSION flags, bool fromReservation)
+{
+    vm_address_t addr = (vm_address_t)baseAddr;
+
+    if (fromReservation)
+    {
+        kern_return_t kr = vm_protect(
+            mach_task_self(),
+            addr,
+            size,
+            FALSE,
+            GetProt(flags)
+        );
+
+        return kr == KERN_SUCCESS ? baseAddr : nullptr;
+    }
+
+    kern_return_t kr = vm_allocate(
+        mach_task_self(),
+        &addr,
+        size,
+        baseAddr ? VM_FLAGS_FIXED : VM_FLAGS_ANYWHERE
+    );
+
+    if (kr != KERN_SUCCESS)
+        return nullptr;
+
+    kr = vm_protect(
+        mach_task_self(),
+        addr,
+        size,
+        FALSE,
+        GetProt(flags)
+    );
+    if (kr != KERN_SUCCESS)
+    {
+        vm_deallocate(mach_task_self(), addr, size);
+        return nullptr;
+    }
+
+    return (void*)addr;
+}
+
+void FreeMemory(void* baseAddr, size_t size, bool fromReservation)
+{
+    if (fromReservation)
+    {
+        vm_protect(
+            mach_task_self(),
+            (vm_address_t)baseAddr,
+            size,
+            FALSE,
+            VM_PROT_NONE
+        );
+    }
+    else
+    {
+        vm_deallocate(
+            mach_task_self(),
+            (vm_address_t)baseAddr,
+            size
+        );
+    }
+}
+
+#else
+
 	const size_t sPageSize{ []()
 		{
 		return (size_t)getpagesize();
@@ -67,4 +203,6 @@ namespace MemMapper
 			munmap(baseAddr, size);
 	}
 
-};
+#endif
+
+}

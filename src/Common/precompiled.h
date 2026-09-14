@@ -1,29 +1,10 @@
 #pragma once
 
-#include <stdlib.h>
-#include <cstdint>
-
-// Standard type definitions
-using uint8 = std::uint8_t;
-using sint8 = std::int8_t;
-using uint16 = std::uint16_t;
-using sint16 = std::int16_t;
-using uint32 = std::uint32_t;
-using sint32 = std::int32_t;
-using uint64 = std::uint64_t;
-using sint64 = std::int64_t;
+#include <stdlib.h> // for size_t
 
 #include "version.h"
 #include "platform.h"
 
-// iOS Phase 0: Disable entire XMLConfig system
-#if !defined(CEMU_PLATFORM_IOS)
-#define ENABLE_XML_CONFIG 1
-#else
-#define ENABLE_XML_CONFIG 0
-#endif
-
-// Real fmt on all platforms including iOS (vcpkg arm64-ios). The iOS stub is gone.
 #define FMT_HEADER_ONLY
 #define FMT_USE_GRISU 1
 #include <fmt/core.h>
@@ -96,71 +77,278 @@ using sint64 = std::int64_t;
 #include <ranges>
 #include <variant>
 
-// Real boost + glm on all platforms including iOS (provided via vcpkg arm64-ios).
-// The former iOS glm/fmt stubs conflicted with real fmt (which is included above)
-// and redefined std::formatter, breaking betype's formatters.
 #include <boost/predef.h>
 #include <boost/nowide/convert.hpp>
 #include <boost/algorithm/string.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-namespace fs = std::filesystem;
-#if BOOST_PLAT_ANDROID
-#include "Common/android/FilesystemAndroid.h"
-#endif // BOOST_PLAT_ANDROID
+// iOS is case sensitive while macOS is not.
+namespace fs
+{
+using namespace std::filesystem;
 
-namespace cemu::fs
+inline std::filesystem::path resolvePathCI(const std::filesystem::path& path)
 {
-inline bool is_directory(const std::filesystem::path& p)
-{
-#if BOOST_PLAT_ANDROID
-    if (FilesystemAndroid::IsContentUri(p))
-        return FilesystemAndroid::IsDirectory(p);
+#if !BOOST_OS_IOS
+	return path;
+#else
+	if (std::filesystem::exists(path))
+		return path;
+
+	const auto fileName = path.filename();
+	auto parentPath = path.parent_path();
+	if (parentPath.empty())
+		parentPath = ".";
+	else if (!std::filesystem::exists(parentPath))
+		parentPath = resolvePathCI(parentPath);
+
+	std::error_code ec;
+	for (const auto& entry : std::filesystem::directory_iterator(parentPath, ec))
+	{
+		if (boost::iequals(entry.path().filename().string(), fileName.string()))
+			return entry.path();
+	}
+
+	return parentPath / fileName;
 #endif
-    return std::filesystem::is_directory(p);
 }
-inline bool is_directory(const std::filesystem::path& p, std::error_code& ec)
+
+inline bool exists(const std::filesystem::path& path)
 {
-#if BOOST_PLAT_ANDROID
-    if (FilesystemAndroid::IsContentUri(p))
-        return FilesystemAndroid::IsDirectory(p);
-#endif
-    return std::filesystem::is_directory(p, ec);
+	return std::filesystem::exists(resolvePathCI(path));
 }
-inline bool is_file(const std::filesystem::path& p)
+
+inline bool exists(const std::filesystem::path& path, std::error_code& ec)
 {
-#if BOOST_PLAT_ANDROID
-    if (FilesystemAndroid::IsContentUri(p))
-        return FilesystemAndroid::IsFile(p);
-#endif
-    return std::filesystem::is_regular_file(p);
+	return std::filesystem::exists(resolvePathCI(path), ec);
 }
-inline bool is_file(const std::filesystem::path& p, std::error_code& ec)
+
+inline bool exists(std::filesystem::file_status status)
 {
-#if BOOST_PLAT_ANDROID
-    if (FilesystemAndroid::IsContentUri(p))
-        return FilesystemAndroid::IsFile(p);
-#endif
-    return std::filesystem::is_regular_file(p, ec);
+	return std::filesystem::exists(status);
 }
-inline bool exists(const std::filesystem::path& p)
+
+inline bool is_directory(const std::filesystem::path& path)
 {
-#if BOOST_PLAT_ANDROID
-    if (FilesystemAndroid::IsContentUri(p))
-        return FilesystemAndroid::Exists(p);
-#endif
-    return std::filesystem::exists(p);
+	return std::filesystem::is_directory(resolvePathCI(path));
 }
-inline bool exists(const std::filesystem::path& p, std::error_code& ec)
+
+inline bool is_directory(const std::filesystem::path& path, std::error_code& ec)
 {
-#if BOOST_PLAT_ANDROID
-    if (FilesystemAndroid::IsContentUri(p))
-        return FilesystemAndroid::Exists(p);
-#endif
-    return std::filesystem::exists(p, ec);
+	return std::filesystem::is_directory(resolvePathCI(path), ec);
 }
-}  // namespace cemu::fs
+
+inline bool is_directory(std::filesystem::file_status status)
+{
+	return std::filesystem::is_directory(status);
+}
+
+inline bool is_regular_file(const std::filesystem::path& path)
+{
+	return std::filesystem::is_regular_file(resolvePathCI(path));
+}
+
+inline bool is_regular_file(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::is_regular_file(resolvePathCI(path), ec);
+}
+
+inline bool is_regular_file(std::filesystem::file_status status)
+{
+	return std::filesystem::is_regular_file(status);
+}
+
+inline bool is_empty(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::is_empty(resolvePathCI(path), ec);
+}
+
+inline bool is_empty(const std::filesystem::path& path)
+{
+	return std::filesystem::is_empty(resolvePathCI(path));
+}
+
+inline bool is_symlink(const std::filesystem::path& path)
+{
+	return std::filesystem::is_symlink(resolvePathCI(path));
+}
+
+inline bool is_symlink(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::is_symlink(resolvePathCI(path), ec);
+}
+
+inline bool is_symlink(std::filesystem::file_status status)
+{
+	return std::filesystem::is_symlink(status);
+}
+
+inline std::filesystem::file_status status(const std::filesystem::path& path)
+{
+	return std::filesystem::status(resolvePathCI(path));
+}
+
+inline std::filesystem::file_status status(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::status(resolvePathCI(path), ec);
+}
+
+inline std::filesystem::file_status symlink_status(const std::filesystem::path& path)
+{
+	return std::filesystem::symlink_status(resolvePathCI(path));
+}
+
+inline std::filesystem::file_status symlink_status(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::symlink_status(resolvePathCI(path), ec);
+}
+
+inline std::uintmax_t file_size(const std::filesystem::path& path)
+{
+	return std::filesystem::file_size(resolvePathCI(path));
+}
+
+inline std::uintmax_t file_size(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::file_size(resolvePathCI(path), ec);
+}
+
+inline bool create_directory(const std::filesystem::path& path)
+{
+	return std::filesystem::create_directory(resolvePathCI(path));
+}
+
+inline bool create_directory(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::create_directory(resolvePathCI(path), ec);
+}
+
+inline bool create_directories(const std::filesystem::path& path)
+{
+	return std::filesystem::create_directories(resolvePathCI(path));
+}
+
+inline bool create_directories(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::create_directories(resolvePathCI(path), ec);
+}
+
+inline bool remove(const std::filesystem::path& path)
+{
+	return std::filesystem::remove(resolvePathCI(path));
+}
+
+inline bool remove(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::remove(resolvePathCI(path), ec);
+}
+
+inline std::uintmax_t remove_all(const std::filesystem::path& path)
+{
+	return std::filesystem::remove_all(resolvePathCI(path));
+}
+
+inline std::uintmax_t remove_all(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::remove_all(resolvePathCI(path), ec);
+}
+
+inline void rename(const std::filesystem::path& from, const std::filesystem::path& to)
+{
+	std::filesystem::rename(resolvePathCI(from), resolvePathCI(to));
+}
+
+inline void rename(const std::filesystem::path& from, const std::filesystem::path& to, std::error_code& ec)
+{
+	std::filesystem::rename(resolvePathCI(from), resolvePathCI(to), ec);
+}
+
+inline std::filesystem::space_info space(const std::filesystem::path& path)
+{
+	return std::filesystem::space(resolvePathCI(path));
+}
+
+inline std::filesystem::space_info space(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::space(resolvePathCI(path), ec);
+}
+
+inline std::filesystem::path read_symlink(const std::filesystem::path& path)
+{
+	return std::filesystem::read_symlink(resolvePathCI(path));
+}
+
+inline std::filesystem::path read_symlink(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::read_symlink(resolvePathCI(path), ec);
+}
+
+inline bool equivalent(const std::filesystem::path& left, const std::filesystem::path& right, std::error_code& ec)
+{
+	return std::filesystem::equivalent(resolvePathCI(left), resolvePathCI(right), ec);
+}
+
+inline std::filesystem::path weakly_canonical(const std::filesystem::path& path, std::error_code& ec)
+{
+	return std::filesystem::weakly_canonical(resolvePathCI(path), ec);
+}
+
+inline std::filesystem::path relative(const std::filesystem::path& path, const std::filesystem::path& base)
+{
+	return std::filesystem::relative(resolvePathCI(path), resolvePathCI(base));
+}
+
+inline std::filesystem::path relative(const std::filesystem::path& path, const std::filesystem::path& base, std::error_code& ec)
+{
+	return std::filesystem::relative(resolvePathCI(path), resolvePathCI(base), ec);
+}
+
+inline void permissions(const std::filesystem::path& path, std::filesystem::perms permissions,
+	std::filesystem::perm_options options = std::filesystem::perm_options::replace)
+{
+	std::filesystem::permissions(resolvePathCI(path), permissions, options);
+}
+
+inline void permissions(const std::filesystem::path& path, std::filesystem::perms permissions,
+	std::filesystem::perm_options options, std::error_code& ec)
+{
+	std::filesystem::permissions(resolvePathCI(path), permissions, options, ec);
+}
+
+inline bool copy_file(const std::filesystem::path& from, const std::filesystem::path& to, std::error_code& ec)
+{
+	return std::filesystem::copy_file(resolvePathCI(from), resolvePathCI(to), ec);
+}
+
+inline bool copy_file(const std::filesystem::path& from, const std::filesystem::path& to,
+	std::filesystem::copy_options options, std::error_code& ec)
+{
+	return std::filesystem::copy_file(resolvePathCI(from), resolvePathCI(to), options, ec);
+}
+
+class directory_iterator : public std::filesystem::directory_iterator
+{
+using base = std::filesystem::directory_iterator;
+
+public:
+	using base::base;
+	directory_iterator() = default;
+	explicit directory_iterator(const std::filesystem::path& path) : base(resolvePathCI(path)) {}
+	directory_iterator(const std::filesystem::path& path, std::error_code& ec) : base(resolvePathCI(path), ec) {}
+};
+
+class recursive_directory_iterator : public std::filesystem::recursive_directory_iterator
+{
+using base = std::filesystem::recursive_directory_iterator;
+
+public:
+	using base::base;
+	recursive_directory_iterator() = default;
+	explicit recursive_directory_iterator(const std::filesystem::path& path) : base(resolvePathCI(path)) {}
+	recursive_directory_iterator(const std::filesystem::path& path, std::error_code& ec) : base(resolvePathCI(path), ec) {}
+};
+}
 
 #include "enumFlags.h"
 
@@ -217,7 +405,6 @@ inline std::string _tr(std::string_view text)
 	return std::string{text};
 }
 
-#if !defined(CEMU_PLATFORM_IOS)
 template<typename... TArgs>
 inline std::string _tr(fmt::format_string<TArgs...> text, TArgs... args)
 {
@@ -229,14 +416,6 @@ inline std::string _tr(fmt::format_string<TArgs...> text, TArgs... args)
 
 	return fmt::format(text, std::forward<TArgs>(args)...);
 }
-#else
-// iOS Phase 0: Stub translation
-template<typename... TArgs>
-inline std::string _tr(const char* text, TArgs... args)
-{
-	return std::string{text};
-}
-#endif
 
 // manual endian-swapping
 
@@ -268,11 +447,9 @@ inline sint16 _swapEndianS16(sint16 v)
 #else
 inline uint64 _swapEndianU64(uint64 v)
 {
-#if defined(CEMU_PLATFORM_IOS)
+#if BOOST_OS_MACOS || BOOST_OS_IOS
     return OSSwapInt64(v);
-#elif defined(BOOST_OS_MACOS)
-    return OSSwapInt64(v);
-#elif defined(BOOST_OS_BSD)
+#elif BOOST_OS_BSD
 #ifdef __OpenBSD__
     return swap64(v);
 #else // FreeBSD and NetBSD
@@ -285,11 +462,9 @@ inline uint64 _swapEndianU64(uint64 v)
 
 inline uint32 _swapEndianU32(uint32 v)
 {
-#if defined(CEMU_PLATFORM_IOS)
+#if BOOST_OS_MACOS || BOOST_OS_IOS
     return OSSwapInt32(v);
-#elif defined(BOOST_OS_MACOS)
-    return OSSwapInt32(v);
-#elif defined(BOOST_OS_BSD)
+#elif BOOST_OS_BSD
 #ifdef __OpenBSD__
     return swap32(v);
 #else // FreeBSD and NetBSD
@@ -302,11 +477,9 @@ inline uint32 _swapEndianU32(uint32 v)
 
 inline sint32 _swapEndianS32(sint32 v)
 {
-#if defined(CEMU_PLATFORM_IOS)
+#if BOOST_OS_MACOS || BOOST_OS_IOS
     return (sint32)OSSwapInt32((uint32)v);
-#elif defined(BOOST_OS_MACOS)
-    return (sint32)OSSwapInt32((uint32)v);
-#elif defined(BOOST_OS_BSD)
+#elif BOOST_OS_BSD
 #ifdef __OpenBSD__
     return (sint32)swap32((uint32)v);
 #else // FreeBSD and NetBSD
@@ -404,7 +577,7 @@ inline uint64 _udiv128(uint64 highDividend, uint64 lowDividend, uint64 divisor, 
     #define DEBUG_BREAK __debugbreak()
 #else
     #include <csignal>
-    #define DEBUG_BREAK raise(SIGTRAP) 
+    #define DEBUG_BREAK raise(SIGTRAP)
 #endif
 
 #if defined(_MSC_VER)
@@ -449,7 +622,7 @@ FORCE_INLINE int BSF(uint32 v) // returns index of first bit set, counting from 
 
 inline void _mm_pause()
 {
-    asm volatile("isb sy");
+    asm volatile("yield");
 }
 
 inline uint64 __rdtsc()
@@ -530,9 +703,7 @@ inline void cemu_assert_error()
 
 #define assert_dbg() DEBUG_BREAK // old style unconditional generic assert
 
-// MEMPTR — use the real, portable MemPtr on all platforms including iOS. The old
-// MemPtr_stub.h lacked MEMPTRBase and a matching MEMPTR<void> ctor, which broke
-// PPCCallback.h. The real MemPtr.h has no x86 assumptions (desktop macOS uses it).
+// MEMPTR
 #include "Common/MemPtr.h"
 
 template <typename T1, typename T2>
@@ -602,7 +773,7 @@ bool match_any_of(T1&& value, Types&&... others)
 	clock_gettime(CLOCK_MONOTONIC_RAW, &tp);
 	return std::chrono::steady_clock::time_point(
 		std::chrono::seconds(tp.tv_sec) + std::chrono::nanoseconds(tp.tv_nsec));
-#elif BOOST_OS_MACOS || defined(CEMU_PLATFORM_IOS)
+#elif BOOST_OS_MACOS || BOOST_OS_IOS
 	return std::chrono::steady_clock::time_point(
 		std::chrono::nanoseconds(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)));
 #elif BOOST_OS_BSD
@@ -718,9 +889,9 @@ inline uint32 GetTitleIdLow(uint64 titleId)
 #include "Cafe/HW/Espresso/PPCCallback.h"
 
 // PPC stack trace printer
-void DebugLogStackTrace(struct OSThread_t* thread, MPTR sp, bool printSymbols = false);
+void DebugLogStackTrace(struct OSThread_t* thread, MPTR sp);
 
-// generic formatter for enums (to underlying) — needed on iOS too (real fmt now available)
+// generic formatter for enums (to underlying)
 template <typename Enum>
 	requires std::is_enum_v<Enum>
 struct fmt::formatter<Enum> : fmt::formatter<underlying_t<Enum>>

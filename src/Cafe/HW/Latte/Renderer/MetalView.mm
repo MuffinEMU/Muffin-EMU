@@ -1,26 +1,31 @@
 #include "Cafe/HW/Latte/Renderer/MetalView.h"
+#include "Metal/Metal.h"
 
 @implementation MetalView
 
--(BOOL) wantsUpdateLayer { return YES; }
-
-+(Class) layerClass { return [CAMetalLayer class]; }
-
-// copied from https://github.com/KhronosGroup/MoltenVK/blob/master/Demos/Cube/macOS/DemoViewController.m
-
--(CALayer*) makeBackingLayer
-{
-	CALayer* layer = [self.class.layerClass layer];
-	CGSize viewScale = [self convertSizeToBacking: CGSizeMake(1.0, 1.0)];
-	layer.contentsScale = MIN(viewScale.width, viewScale.height);
-	return layer;
++ (Class)layerClass {
+    return [CAMetalLayer class];
 }
 
--(BOOL) layer: (CALayer *)layer shouldInheritContentsScale: (CGFloat)newScale fromWindow: (NSWindow *)window
-{
-	if (newScale == layer.contentsScale) { return NO; }
-
-	layer.contentsScale = newScale;
-	return YES;
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        [self setupMetalLayer];
+    }
+    return self;
 }
+
+- (void)awakeFromNib {
+    [super awakeFromNib];
+    [self setupMetalLayer];
+}
+
+- (void)setupMetalLayer {
+    CAMetalLayer *metalLayer = (CAMetalLayer *)self.layer;
+    metalLayer.contentsScale = [UIScreen mainScreen].scale;
+    metalLayer.device = MTLCreateSystemDefaultDevice();
+    metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    metalLayer.framebufferOnly = YES;
+}
+
 @end

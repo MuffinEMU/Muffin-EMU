@@ -1,7 +1,5 @@
 #pragma once
 
-#include <atomic>
-
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 
 #include "Cafe/HW/Latte/Renderer/Metal/MetalLayerHandle.h"
@@ -88,10 +86,21 @@ struct MetalStreamoutState
 {
 	struct
 	{
-		bool enabled;
-		uint32 ringBufferOffset;
-	} buffers[LATTE_NUM_STREAMOUT_BUFFER];
-	sint32 verticesPerInstance;
+		bool enabled{};
+		uint32 ringBufferOffset{};
+		uint32 rangeSize{};
+	} buffers[LATTE_NUM_STREAMOUT_BUFFER]{};
+	uint32 verticesPerInstance{};
+};
+
+struct MetalDrawResourceState
+{
+	MTL::Buffer* indexBuffer{};
+	size_t indexBufferOffset{};
+	size_t indexBufferSize{};
+	uint32 indexType{};
+	sint32 baseVertex{};
+	uint32 baseInstance{};
 };
 
 struct MetalActiveFBOState
@@ -114,14 +123,19 @@ struct MetalState
     MetalActiveFBOState m_lastUsedFBO;
     bool m_fboChanged = false;
 
+    MTL::Buffer* m_vertexBuffers[MAX_MTL_VERTEX_BUFFERS] = {};
     size_t m_vertexBufferOffsets[MAX_MTL_VERTEX_BUFFERS];
+	size_t m_vertexBufferSizes[MAX_MTL_VERTEX_BUFFERS]{};
     class LatteTextureViewMtl* m_textures[LATTE_NUM_MAX_TEX_UNITS * 3] = {nullptr};
+    MTL::Buffer* m_uniformBuffers[METAL_GENERAL_SHADER_TYPE_TOTAL][MAX_MTL_BUFFERS] = {};
     size_t m_uniformBufferOffsets[METAL_GENERAL_SHADER_TYPE_TOTAL][MAX_MTL_BUFFERS];
+    size_t m_uniformBufferSizes[METAL_GENERAL_SHADER_TYPE_TOTAL][MAX_MTL_BUFFERS];
 
     MTL::Viewport m_viewport;
     MTL::ScissorRect m_scissor;
 
     MetalStreamoutState m_streamoutState;
+	MetalDrawResourceState m_drawResources;
 };
 
 struct MetalCommandBuffer
@@ -142,6 +156,7 @@ class MetalRenderer : public Renderer
 {
 public:
     static constexpr uint32 OCCLUSION_QUERY_POOL_SIZE = 1024;
+    static constexpr uint32 OCCLUSION_QUERY_BUFFER_COUNT = 3;
     static constexpr uint32 TEXTURE_READBACK_SIZE = 32 * 1024 * 1024; // 32 MB
 
     struct DeviceInfo
@@ -173,28 +188,6 @@ public:
 	void ShutdownLayer(bool mainWindow);
 	void ResizeLayer(const Vector2i& size, bool mainWindow);
 
-	// Resize that also moves the CALayer's own frame and backing scale, not just the
-	// drawable. ResizeLayer() above updates setDrawableSize() only, which is all the
-	// desktop canvas needs (there the CAMetalLayer is a view's backing layer and
-	// AppKit owns its geometry). On iOS the layer is a manually added sublayer whose
-	// frame nothing else maintains, and the scale changes when the surface moves
-	// between an iPad's screen and an external display. Must be called on the main
-	// thread - it touches Core Animation geometry.
-	void ResizeLayerAndFrame(const Vector2i& sizeInPoints, float scale, bool mainWindow);
-
-	// Ask the GPU thread to drop the pad window's layer at its next frame boundary.
-	// Called from the main thread when an external display goes away, so the pad
-	// screen stops being rendered. Deliberately NOT a direct ShutdownLayer() call:
-	// m_padLayer belongs to the Latte thread while a title is running, and tearing it
-	// down underneath that thread is the exact shape of the MetalLayerHandle
-	// use-after-free already fixed once in this fork (see MetalLayerHandle.h). If the
-	// GPU thread is wedged and never reaches a frame boundary, the layer simply stays
-	// alive and keeps drawing into a hidden view - wasteful, not fatal.
-	void RequestPadLayerRelease()
-	{
-	    m_padLayerReleaseRequested.store(true, std::memory_order_relaxed);
-	}
-
 	void Initialize() override;
 	void Shutdown() override;
 	bool IsPadWindowActive() override;
@@ -224,13 +217,6 @@ public:
 	void DeleteFontTextures() override;
 
 	bool UseTFViaSSBO() const override { return true; }
-	bool UseGeometryShaderEmulation() const override { return m_emulateGeometryShader; }
-
-	// Set before a title starts. It is baked into every shader generated afterwards, so
-	// it is read once at renderer init and never re-read while a title is running --
-	// flipping it mid-session would leave two incompatible shader dialects in one pipeline.
-	static void SetGeometryShaderEmulationEnabled(bool enabled);
-	static bool GeometryShaderEmulationEnabled();
 	void AppendOverlayDebugInfo() override;
 
 	// rendertarget
@@ -252,10 +238,11 @@ public:
 	void texture_clearColorSlice(LatteTexture* hostTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a) override;
 	void texture_clearDepthSlice(LatteTexture* hostTexture, uint32 sliceIndex, sint32 mipIndex, bool clearDepth, bool clearStencil, float depthValue, uint32 stencilValue) override;
 
-	LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth) override;
+	LatteTexture* texture_createTextureEx(Latte::E_DIM dim, MPTR physAddress, MPTR physMipAddress, Latte::E_GX2SURFFMT format, uint32 width, uint32 height, uint32 depth, uint32 pitch, uint32 mipLevels, uint32 swizzle, Latte::E_HWTILEMODE tileMode, bool isDepth, bool isRenderTarget) override;
 
-	void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) override;
-	void texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth) override;
+		void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) override;
+		void texture_notifyDelete(LatteTextureView* textureView);
+		void texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth) override;
 
 	LatteTextureReadbackInfo* texture_createReadback(LatteTextureView* textureView) override;
 
@@ -284,8 +271,9 @@ public:
 	void draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, bool isFirst) override;
 	void draw_endSequence() override;
 
-	void draw_updateVertexBuffersDirectAccess();
+	void draw_updateVertexBuffersDirectAccess(uint32 maxIndex, uint32 baseInstance, uint32 instanceCount);
 	void draw_updateUniformBuffersDirectAccess(LatteDecompilerShader* shader, const uint32 uniformBufferRegOffset);
+    void PrepareUniformBufferSizes(LatteDecompilerShader* shader);
 
 	void draw_handleSpecialState5();
 
@@ -303,11 +291,15 @@ public:
 	// Helpers
 	MetalPerformanceMonitor& GetPerformanceMonitor() { return m_performanceMonitor; }
 
-	void SetShouldMaximizeConcurrentCompilation(bool shouldMaximizeConcurrentCompilation)
-	{
-	    if (m_supportsMetal3)
-	        m_device->setShouldMaximizeConcurrentCompilation(shouldMaximizeConcurrentCompilation);
-	}
+    void SetShouldMaximizeConcurrentCompilation(bool shouldMaximizeConcurrentCompilation)
+    {
+#if BOOST_OS_IOS
+        return;
+#else
+        if (m_supportsMetal3)
+            m_device->setShouldMaximizeConcurrentCompilation(shouldMaximizeConcurrentCompilation);
+#endif
+    }
 
 	bool IsCommandBufferActive() const
 	{
@@ -367,18 +359,7 @@ public:
         return m_state.m_encoderState;
     }
 
-    MTL::ComputePipelineState* GetGeometryEmulationComputePipeline(MTL::Function* function);
-    bool EnsureGeometryEmulationBuffers(size_t payloadBytes, size_t outBytes, size_t primCountBytes);
-    void ReleaseGeometryEmulationResources();
-
     void SetBuffer(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::Buffer* buffer, size_t offset, uint32 index);
-    // Compute counterparts, so BindStageResources can be one template instead of two
-    // copies. They bind unconditionally rather than consulting encoderState: the compute
-    // encoder is created fresh for each emulated draw, so a cache of what the *previous*
-    // encoder held would only ever be wrong.
-    void SetBuffer(MTL::ComputeCommandEncoder* computeCommandEncoder, MetalShaderType shaderType, MTL::Buffer* buffer, size_t offset, uint32 index);
-    void SetTexture(MTL::ComputeCommandEncoder* computeCommandEncoder, MetalShaderType shaderType, MTL::Texture* texture, uint32 index);
-    void SetSamplerState(MTL::ComputeCommandEncoder* computeCommandEncoder, MetalShaderType shaderType, MTL::SamplerState* samplerState, uint32 index);
     void SetTexture(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::Texture* texture, uint32 index);
     void SetSamplerState(MTL::RenderCommandEncoder* renderCommandEncoder, MetalShaderType shaderType, MTL::SamplerState* samplerState, uint32 index);
 
@@ -393,13 +374,8 @@ public:
 
     bool AcquireDrawable(bool mainWindow);
 
-    // Reads the game profile and the foreground title id, so it can only be called
-    // once a title has been prepared. Invoked from Initialize() (GPU thread).
-    void ResolvePositionInvariance();
-
-    //bool CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader);
-    template<typename EncoderT>
-    void BindStageResources(EncoderT* encoder, LatteDecompilerShader* shader, bool usesGeometryShader);
+	bool CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader);
+	bool BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader);
 
     void ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a);
 
@@ -431,10 +407,10 @@ public:
         return m_supportsMetal3;
     }
 
-    bool SupportsMeshShaders() const
-    {
-        return m_supportsMeshShaders;
-    }
+	bool SupportsMeshShaders() const
+	{
+		return m_supportsMeshShaders;
+	}
 
     //MTL::StorageMode GetOptimalTextureStorageMode() const
     //{
@@ -451,6 +427,8 @@ public:
         return m_nullTexture2D;
     }
 
+	MTL::Texture* GetNullSampledTexture(Latte::E_DIM dim, bool integerFormat, bool depthFormat);
+
     MTL::Buffer* GetTextureReadbackBuffer()
     {
         if (!m_readbackBuffer)
@@ -464,19 +442,7 @@ public:
         return m_readbackBuffer;
     }
 
-    MTL::Buffer* GetXfbRingBuffer()
-    {
-        if (!m_xfbRingBuffer)
-        {
-            // HACK: using just LatteStreamout_GetRingBufferSize will cause page faults
-            m_xfbRingBuffer = m_device->newBuffer(LatteStreamout_GetRingBufferSize() * 4, MTL::ResourceStorageModePrivate);
-#ifdef CEMU_DEBUG_ASSERT
-            m_xfbRingBuffer->setLabel(GetLabel("Transform feedback buffer", m_xfbRingBuffer));
-#endif
-        }
-
-        return m_xfbRingBuffer;
-    }
+	MTL::Buffer* GetXfbRingBuffer(size_t minimumSize = 0);
 
     MTL::Buffer* GetOcclusionQueryResultBuffer() const
     {
@@ -485,7 +451,12 @@ public:
 
     uint64* GetOcclusionQueryResultsPtr()
     {
-        return m_occlusionQuery.m_resultsPtr;
+        return GetOcclusionQueryResultsPtr(m_occlusionQuery.m_currentBuffer);
+    }
+
+    uint64* GetOcclusionQueryResultsPtr(uint32 bufferIndex)
+    {
+        return m_occlusionQuery.m_resultsPtr + bufferIndex * OCCLUSION_QUERY_POOL_SIZE;
     }
 
     uint32 GetOcclusionQueryIndex()
@@ -495,8 +466,11 @@ public:
 
     void BeginOcclusionQuery()
     {
+        GetCommandBuffer(); // empty queries still need a valid completion point.
         m_occlusionQuery.m_active = true;
     }
+
+    void PrepareOcclusionQueryDraw();
 
     void EndOcclusionQuery()
     {
@@ -519,16 +493,11 @@ public:
 private:
 	MetalLayerHandle m_mainLayer;
 	MetalLayerHandle m_padLayer;
-	std::atomic<bool> m_padLayerReleaseRequested{false};
 
 	MetalPerformanceMonitor m_performanceMonitor;
 
 	// Options
-	// Resolved by ResolvePositionInvariance() from Initialize(), NOT from the ctor -
-	// see the comment on that function. Defaulted explicitly so the window between
-	// construction and Initialize() reads as a defined `false` rather than whatever
-	// was on the stack.
-	bool m_positionInvariance = false;
+	bool m_positionInvariance;
 
 	// Metal objects
 	MTL::Device* m_device = nullptr;
@@ -540,27 +509,8 @@ private:
 	bool m_hasUnifiedMemory;
 	bool m_supportsMetal3;
 	bool m_supportsMeshShaders;
-	// Rebuild a geometry shader out of compute passes because there is no mesh pipeline
-	// to run it through. Read once at init: it is baked into every shader this session
-	// generates, so it cannot change while a title is running.
-	bool m_emulateGeometryShader = false;
-	MTL::Buffer* m_gsPayloadBuffer = nullptr;
-	MTL::Buffer* m_gsOutBuffer = nullptr;
-	MTL::Buffer* m_gsPrimCountBuffer = nullptr;
-	size_t m_gsPayloadBufferSize = 0;
-	size_t m_gsOutBufferSize = 0;
-	size_t m_gsPrimCountBufferSize = 0;
-	std::map<MTL::Function*, MTL::ComputePipelineState*> m_gsComputePipelines;
-	uint64 m_gsEmulatedDraws = 0;
-	uint64 m_gsOversizedDraws = 0;
-
-	// Draws this GPU cannot issue, split by cause. Kept alongside the emulation above
-	// rather than replaced by it: emulation handles real geometry shaders, so anything
-	// still landing here is a case emulation declined (RECTS, or a draw too large for
-	// the scratch buffers), and that needs to stay visible rather than silent.
-	uint64 m_droppedDrawsGeometryShader = 0;
-	uint64 m_droppedDrawsRects = 0;
-	uint64 m_droppedDrawsLastReported = 0;
+	MTL::ArgumentBuffersTier m_argumentBufferTier{MTL::ArgumentBuffersTier1};
+	uint32 m_maxArgumentBufferSamplerCount{};
 	uint32 m_recommendedMaxVRAMUsage;
 	MetalPixelFormatSupport m_pixelFormatSupport;
 
@@ -574,6 +524,9 @@ private:
 	// Pipelines
 	MTL::RenderPipelineDescriptor* m_copyDepthToColorDesc;
 	std::map<MTL::PixelFormat, MTL::RenderPipelineState*> m_copyDepthToColorPipelines;
+	MTL::RenderPipelineDescriptor* m_copyColorToDepthDesc;
+	std::map<MTL::PixelFormat, MTL::RenderPipelineState*> m_copyColorToDepthPipelines;
+	MTL::DepthStencilState* m_copyColorToDepthState;
 
 	// Void vertex pipelines
 	class MetalVoidVertexPipeline* m_copyBufferToBufferPipeline;
@@ -587,8 +540,10 @@ private:
 	MTL::SamplerState* m_linearSampler;
 
 	// Null resources
+	MTL::Buffer* m_nullBuffer;
 	MTL::Texture* m_nullTexture1D;
 	MTL::Texture* m_nullTexture2D;
+	std::map<uint32, MTL::Texture*> m_nullSampledTextures;
 
 	// Texture readback
 	MTL::Buffer* m_readbackBuffer = nullptr;
@@ -596,6 +551,7 @@ private:
 
 	// Transform feedback
 	MTL::Buffer* m_xfbRingBuffer = nullptr;
+	std::vector<MTL::Buffer*> m_retiredXfbRingBuffers;
 
 	// Occlusion queries
 	struct
@@ -603,8 +559,11 @@ private:
     	MTL::Buffer* m_resultBuffer;
     	uint64* m_resultsPtr;
     	uint32 m_currentIndex = 0;
+        uint32 m_currentBuffer = 0;
+        MTL::CommandBuffer* m_bufferCompletion[OCCLUSION_QUERY_BUFFER_COUNT]{};
         bool m_active = false;
         MTL::CommandBuffer* m_lastCommandBuffer = nullptr;
+		std::vector<class LatteQueryObjectMtl*> m_queries;
 	} m_occlusionQuery;
 
 	// Active objects
