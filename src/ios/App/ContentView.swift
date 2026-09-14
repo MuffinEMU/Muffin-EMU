@@ -310,303 +310,328 @@ struct GameBrowserView: View {
     }
 
     var body: some View {
+        withAlerts(withSheets(
+            libraryScreen
+            .onAppear {
+                // Answers "a game/dump named `name` already exists - replace it?" for
+                // GameManager.importROM. Set here rather than left nil so declining to
+                // wire this up was never an option - importROM treats a nil closure as an
+                // automatic "no," which is safe but would make every duplicate-name import
+                // silently do nothing instead of asking.
+                gameManager.confirmOverwrite = { name in
+                    await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                        pendingOverwriteConfirmation = (name: name, resume: { continuation.resume(returning: $0) })
+                    }
+                }
+            }
+        ))
+    }
+
+    // body is split into these pieces because as one expression - the screen, a drop
+    // target and overlay, five sheets and six alerts - it grew past what the Swift type
+    // checker will solve in reasonable time. Same views, same modifier order.
+    private var libraryScreen: some View {
         ZStack {
             MuffinTheme.backgroundGradient
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                HStack(alignment: .center, spacing: 16) {
-                    Button(action: { showingIconPicker = true }) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Muffin")
-                                .font(.system(size: 28, weight: .bold, design: .rounded))
-                                .foregroundColor(MuffinTheme.sparkleCream)
+                libraryHeader
 
-                            Text("EMU")
-                                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                                .foregroundColor(MuffinTheme.pixelBlue)
-                        }
-                    }
-                    .buttonStyle(.plain)
+                libraryPanel
+            }
+        }
+    }
 
-                    Spacer()
+    private var libraryHeader: some View {
+        HStack(alignment: .center, spacing: 16) {
+            Button(action: { showingIconPicker = true }) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Muffin")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundColor(MuffinTheme.sparkleCream)
 
-                    VStack(alignment: .trailing, spacing: 4) {
-                        HStack(spacing: 8) {
-                            Button(action: { showingSettings = true }) {
-                                Image(systemName: "gearshape.fill")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
-                            }
-                            .frame(width: 44, height: 44)
-                            .background(MuffinTheme.sparkleCream.opacity(0.15))
-                            .cornerRadius(14)
-                            .accessibilityLabel("Settings")
-
-                            Button(action: { showingFavorites.toggle() }) {
-                                Image(systemName: showingFavorites ? "heart.fill" : "heart")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(showingFavorites ? MuffinTheme.blushPink : MuffinTheme.sparkleCream.opacity(0.8))
-                            }
-                            .frame(width: 44, height: 44)
-                            .background(MuffinTheme.sparkleCream.opacity(0.15))
-                            .cornerRadius(14)
-                            .accessibilityLabel(showingFavorites ? "Show all games" : "Show favorites only")
-
-                            Menu {
-                                Button {
-                                    beginImport(contentTypes: Self.fileImportTypes)
-                                } label: {
-                                    Label("Game file (.wux, .wud, .wua, .iso, .rpx, .elf, .wuhb)", systemImage: "doc")
-                                }
-                                Button {
-                                    beginImport(contentTypes: Self.folderImportTypes)
-                                } label: {
-                                    // One folder picker, one entry - it was two identical buttons
-                                    // with different labels (both called beginImport with the same
-                                    // folderImportTypes; GameManager.importROM already tells the two
-                                    // layouts apart on its own regardless of which button was
-                                    // tapped), so there was nothing for a second entry to actually
-                                    // distinguish. This label just says what the one picker accepts.
-                                    Label("Game folder (code/content/meta, or title.tmd + .app files)", systemImage: "folder")
-                                }
-                                Divider()
-                                Button {
-                                    beginGeneralDlcUpdateImport(kind: .dlc)
-                                } label: {
-                                    Label("Import DLC\u{2026}", systemImage: "shippingbox")
-                                }
-                                Button {
-                                    beginGeneralDlcUpdateImport(kind: .update)
-                                } label: {
-                                    Label("Import Update\u{2026}", systemImage: "arrow.triangle.2.circlepath")
-                                }
-                            } label: {
-                                Image(systemName: "doc.badge.plus")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
-                                    .frame(width: 44, height: 44)
-                                    .background(MuffinTheme.sparkleCream.opacity(0.15))
-                                    .cornerRadius(14)
-                            }
-                            .accessibilityLabel("Import")
-
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text("\(filteredGames.count)")
-                                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                                    .foregroundColor(MuffinTheme.sparkleCream)
-                                Text("games")
-                                    .font(.system(size: 10, weight: .regular, design: .rounded))
-                                    .foregroundColor(MuffinTheme.sparkleCream.opacity(0.7))
-                            }
-                        }
-                    }
+                    Text("EMU")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundColor(MuffinTheme.pixelBlue)
                 }
-                .padding(20)
+            }
+            .buttonStyle(.plain)
 
-                VStack(spacing: 12) {
-                    HStack(spacing: 10) {
-                        SearchBarPolished(text: $searchText)
+            Spacer()
 
-                        Menu {
-                            ForEach(LibrarySortOrder.allCases, id: \.self) { order in
-                                Button {
-                                    sortOrder = order
-                                } label: {
-                                    if sortOrder == order {
-                                        Label(order.title, systemImage: "checkmark")
-                                    } else {
-                                        Label(order.title, systemImage: order.systemImage)
-                                    }
-                                }
-                            }
+            VStack(alignment: .trailing, spacing: 4) {
+                HStack(spacing: 8) {
+                    Button(action: { showingSettings = true }) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
+                    }
+                    .frame(width: 44, height: 44)
+                    .background(MuffinTheme.sparkleCream.opacity(0.15))
+                    .cornerRadius(14)
+                    .accessibilityLabel("Settings")
+
+                    Button(action: { showingFavorites.toggle() }) {
+                        Image(systemName: showingFavorites ? "heart.fill" : "heart")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(showingFavorites ? MuffinTheme.blushPink : MuffinTheme.sparkleCream.opacity(0.8))
+                    }
+                    .frame(width: 44, height: 44)
+                    .background(MuffinTheme.sparkleCream.opacity(0.15))
+                    .cornerRadius(14)
+                    .accessibilityLabel(showingFavorites ? "Show all games" : "Show favorites only")
+
+                    Menu {
+                        Button {
+                            beginImport(contentTypes: Self.fileImportTypes)
                         } label: {
-                            Image(systemName: "arrow.up.arrow.down.circle")
-                                .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(MuffinTheme.brownMid)
-                                .frame(width: 44, height: 44)
+                            Label("Game file (.wux, .wud, .wua, .iso, .rpx, .elf, .wuhb)", systemImage: "doc")
                         }
-                        .accessibilityLabel("Sort games")
+                        Button {
+                            beginImport(contentTypes: Self.folderImportTypes)
+                        } label: {
+                            // One folder picker, one entry - it was two identical buttons
+                            // with different labels (both called beginImport with the same
+                            // folderImportTypes; GameManager.importROM already tells the two
+                            // layouts apart on its own regardless of which button was
+                            // tapped), so there was nothing for a second entry to actually
+                            // distinguish. This label just says what the one picker accepts.
+                            Label("Game folder (code/content/meta, or title.tmd + .app files)", systemImage: "folder")
+                        }
+                        Divider()
+                        Button {
+                            beginGeneralDlcUpdateImport(kind: .dlc)
+                        } label: {
+                            Label("Import DLC\u{2026}", systemImage: "shippingbox")
+                        }
+                        Button {
+                            beginGeneralDlcUpdateImport(kind: .update)
+                        } label: {
+                            Label("Import Update\u{2026}", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                    } label: {
+                        Image(systemName: "doc.badge.plus")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
+                            .frame(width: 44, height: 44)
+                            .background(MuffinTheme.sparkleCream.opacity(0.15))
+                            .cornerRadius(14)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
+                    .accessibilityLabel("Import")
 
-                    if gameManager.isLoading {
-                        LoadingView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if filteredGames.isEmpty {
-                        EmptyGamesView(onImportTapped: { beginImport(contentTypes: Self.fileImportTypes) })
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else {
-                        ScrollView(showsIndicators: false) {
-                            LazyVGrid(
-                                columns: [GridItem(.adaptive(minimum: 140), spacing: 16)],
-                                spacing: 20
-                            ) {
-                                ForEach(filteredGames) { game in
-                                    GameCardOptimized(
-                                        game: game,
-                                        onTap: {
-                                            selectedGame = game
-                                            gameManager.launchGame(game)
-                                            showingGameBrowser = false
-                                        },
-                                        onFavoriteTap: {
-                                            gameManager.toggleFavorite(game)
-                                        }
-                                    )
-                                    // Same pattern as Manic: a long-press on the card
-                                    // offers a couple of fast toggles plus a way into the
-                                    // full screen, rather than making every per-game
-                                    // setting a trip through Settings for one game.
-                                    .contextMenu {
-                                        GameContextMenu(
-                                            game: game,
-                                            store: perGameSettings,
-                                            onViewOptions: { gameOptionsTarget = game },
-                                            onDecryptToFiles: { decryptTarget = game },
-                                            onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
-                                            onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
-                                            onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
-                                            onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) }
-                                        )
-                                    }
-                                }
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(filteredGames.count)")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(MuffinTheme.sparkleCream)
+                        Text("games")
+                            .font(.system(size: 10, weight: .regular, design: .rounded))
+                            .foregroundColor(MuffinTheme.sparkleCream.opacity(0.7))
+                    }
+                }
+            }
+        }
+        .padding(20)
+    }
+
+    private var libraryPanel: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                SearchBarPolished(text: $searchText)
+
+                Menu {
+                    ForEach(LibrarySortOrder.allCases, id: \.self) { order in
+                        Button {
+                            sortOrder = order
+                        } label: {
+                            if sortOrder == order {
+                                Label(order.title, systemImage: "checkmark")
+                            } else {
+                                Label(order.title, systemImage: order.systemImage)
                             }
-                            .padding(16)
                         }
                     }
+                } label: {
+                    Image(systemName: "arrow.up.arrow.down.circle")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(MuffinTheme.brownMid)
+                        .frame(width: 44, height: 44)
                 }
-                .frame(maxHeight: .infinity)
-                .background(
-                    MuffinTheme.cream
-                        .clipShape(RoundedCorner(radius: 28, corners: [.topLeft, .topRight]))
-                        .ignoresSafeArea(edges: .bottom)
-                )
-                // Lets the whole library area - loading, empty, or the grid itself -
-                // accept a drag from Files (or another app's share tray) as an import,
-                // not just the toolbar's own picker. Same import path either way: a
-                // dropped file is validated and staged exactly like a picked one.
-                .onDrop(of: [UTType.item], isTargeted: nil, perform: handleDrop)
-                .overlay(alignment: .top) {
-                    if case .copying(let name) = gameManager.importState {
-                        LibraryActivityBanner(text: "Importing \(name)…")
-                            .padding(.top, 8)
-                    } else if let removingContentMessage {
-                        LibraryActivityBanner(text: removingContentMessage)
-                            .padding(.top, 8)
+                .accessibilityLabel("Sort games")
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+
+            if gameManager.isLoading {
+                LoadingView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if filteredGames.isEmpty {
+                EmptyGamesView(onImportTapped: { beginImport(contentTypes: Self.fileImportTypes) })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView(showsIndicators: false) {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 140), spacing: 16)],
+                        spacing: 20
+                    ) {
+                        ForEach(filteredGames) { game in
+                            GameCardOptimized(
+                                game: game,
+                                onTap: {
+                                    selectedGame = game
+                                    gameManager.launchGame(game)
+                                    showingGameBrowser = false
+                                },
+                                onFavoriteTap: {
+                                    gameManager.toggleFavorite(game)
+                                }
+                            )
+                            // Same pattern as Manic: a long-press on the card
+                            // offers a couple of fast toggles plus a way into the
+                            // full screen, rather than making every per-game
+                            // setting a trip through Settings for one game.
+                            .contextMenu {
+                                GameContextMenu(
+                                    game: game,
+                                    store: perGameSettings,
+                                    onViewOptions: { gameOptionsTarget = game },
+                                    onDecryptToFiles: { decryptTarget = game },
+                                    onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
+                                    onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
+                                    onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
+                                    onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) }
+                                )
+                            }
+                        }
+                    }
+                    .padding(16)
+                }
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .background(
+            MuffinTheme.cream
+                .clipShape(RoundedCorner(radius: 28, corners: [.topLeft, .topRight]))
+                .ignoresSafeArea(edges: .bottom)
+        )
+        // Lets the whole library area - loading, empty, or the grid itself -
+        // accept a drag from Files (or another app's share tray) as an import,
+        // not just the toolbar's own picker. Same import path either way: a
+        // dropped file is validated and staged exactly like a picked one.
+        .onDrop(of: [UTType.item], isTargeted: nil, perform: handleDrop)
+        .overlay(alignment: .top) {
+            if case .copying(let name) = gameManager.importState {
+                LibraryActivityBanner(text: "Importing \(name)…")
+                    .padding(.top, 8)
+            } else if let removingContentMessage {
+                LibraryActivityBanner(text: removingContentMessage)
+                    .padding(.top, 8)
+            }
+        }
+    }
+
+    private func withSheets<Content: View>(_ content: Content) -> some View {
+        content
+            .sheet(isPresented: $showingIconPicker) {
+                IconPickerView()
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView(gameManager: gameManager)
+            }
+            .sheet(item: $gameOptionsTarget) { game in
+                GameOptionsView(game: game, store: perGameSettings)
+            }
+            .sheet(item: $decryptTarget) { game in
+                DecryptROMView(game: game)
+            }
+            .sheet(isPresented: Binding(
+                get: { gamePickerContext != nil },
+                set: { if !$0 { gamePickerContext = nil } }
+            )) {
+                if let context = gamePickerContext {
+                    DlcUpdateGamePickerSheet(games: gameManager.games, kind: context.kind) { game in
+                        runDlcUpdateImport(from: context.source, kind: context.kind, longPressedGame: nil, manualMatch: game)
                     }
                 }
             }
-        }
-        .onAppear {
-            // Answers "a game/dump named `name` already exists - replace it?" for
-            // GameManager.importROM. Set here rather than left nil so declining to
-            // wire this up was never an option - importROM treats a nil closure as an
-            // automatic "no," which is safe but would make every duplicate-name import
-            // silently do nothing instead of asking.
-            gameManager.confirmOverwrite = { name in
-                await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-                    pendingOverwriteConfirmation = (name: name, resume: { continuation.resume(returning: $0) })
+    }
+
+    private func withAlerts<Content: View>(_ content: Content) -> some View {
+        content
+            .alert("Added", isPresented: .constant(dlcUpdateSuccessMessage != nil), presenting: dlcUpdateSuccessMessage) { _ in
+                Button("OK") { dlcUpdateSuccessMessage = nil }
+            } message: { message in
+                Text(message)
+            }
+            .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
+                Button("OK") { romImportErrorMessage = nil }
+            } message: { message in
+                Text(message)
+            }
+            .alert("Couldn't import", isPresented: .constant(dlcImportErrorMessage != nil), presenting: dlcImportErrorMessage) { _ in
+                Button("OK") { dlcImportErrorMessage = nil }
+            } message: { message in
+                Text(message)
+            }
+            .alert(
+                "No automatic match",
+                isPresented: .constant(pendingManualMatchConfirmation != nil),
+                presenting: pendingManualMatchConfirmation
+            ) { pending in
+                Button("Add to \"\(pending.game.title)\"") {
+                    pendingManualMatchConfirmation = nil
+                    runDlcUpdateImport(from: pending.source, kind: pending.kind, longPressedGame: pending.game, manualMatch: pending.game)
                 }
+                Button("Cancel", role: .cancel) { pendingManualMatchConfirmation = nil }
+            } message: { pending in
+                Text("Couldn't automatically match this \(pending.kind.displayName) to a game already in your library. Add it to \"\(pending.game.title)\" - the game you long-pressed?")
             }
-        }
-        .sheet(isPresented: $showingIconPicker) {
-            IconPickerView()
-        }
-        .sheet(isPresented: $showingSettings) {
-            SettingsView(gameManager: gameManager)
-        }
-        .sheet(item: $gameOptionsTarget) { game in
-            GameOptionsView(game: game, store: perGameSettings)
-        }
-        .sheet(item: $decryptTarget) { game in
-            DecryptROMView(game: game)
-        }
-        .sheet(isPresented: Binding(
-            get: { gamePickerContext != nil },
-            set: { if !$0 { gamePickerContext = nil } }
-        )) {
-            if let context = gamePickerContext {
-                DlcUpdateGamePickerSheet(games: gameManager.games, kind: context.kind) { game in
-                    runDlcUpdateImport(from: context.source, kind: context.kind, longPressedGame: nil, manualMatch: game)
-                }
-            }
-        }
-        .alert("Added", isPresented: .constant(dlcUpdateSuccessMessage != nil), presenting: dlcUpdateSuccessMessage) { _ in
-            Button("OK") { dlcUpdateSuccessMessage = nil }
-        } message: { message in
-            Text(message)
-        }
-        .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
-            Button("OK") { romImportErrorMessage = nil }
-        } message: { message in
-            Text(message)
-        }
-        .alert("Couldn't import", isPresented: .constant(dlcImportErrorMessage != nil), presenting: dlcImportErrorMessage) { _ in
-            Button("OK") { dlcImportErrorMessage = nil }
-        } message: { message in
-            Text(message)
-        }
-        .alert(
-            "No automatic match",
-            isPresented: .constant(pendingManualMatchConfirmation != nil),
-            presenting: pendingManualMatchConfirmation
-        ) { pending in
-            Button("Add to \"\(pending.game.title)\"") {
-                pendingManualMatchConfirmation = nil
-                runDlcUpdateImport(from: pending.source, kind: pending.kind, longPressedGame: pending.game, manualMatch: pending.game)
-            }
-            Button("Cancel", role: .cancel) { pendingManualMatchConfirmation = nil }
-        } message: { pending in
-            Text("Couldn't automatically match this \(pending.kind.displayName) to a game already in your library. Add it to \"\(pending.game.title)\" - the game you long-pressed?")
-        }
-        .alert(
-            "Remove content?",
-            isPresented: .constant(pendingRemoval != nil),
-            presenting: pendingRemoval
-        ) { pending in
-            Button("Remove", role: .destructive) {
-                pendingRemoval = nil
-                removingContentMessage = "Removing \(pending.kind.displayName) for \"\(pending.game.title)\"…"
-                Task {
-                    // DlcUpdateImport.remove() is a recursive delete of whatever's
-                    // installed - on a real DLC pack that's real disk I/O, and running
-                    // it inline in this button's action closure blocked the main
-                    // thread (and the whole UI) for as long as it took. Task.detached
-                    // for the same reason as GameManager.importROM's own copy.
-                    do {
-                        try await Task.detached {
-                            try DlcUpdateImport.remove(kind: pending.kind, for: pending.game)
-                        }.value
-                    } catch {
-                        dlcImportErrorMessage = error.localizedDescription
+            .alert(
+                "Remove content?",
+                isPresented: .constant(pendingRemoval != nil),
+                presenting: pendingRemoval
+            ) { pending in
+                Button("Remove", role: .destructive) {
+                    pendingRemoval = nil
+                    removingContentMessage = "Removing \(pending.kind.displayName) for \"\(pending.game.title)\"…"
+                    Task {
+                        // DlcUpdateImport.remove() is a recursive delete of whatever's
+                        // installed - on a real DLC pack that's real disk I/O, and running
+                        // it inline in this button's action closure blocked the main
+                        // thread (and the whole UI) for as long as it took. Task.detached
+                        // for the same reason as GameManager.importROM's own copy.
+                        do {
+                            try await Task.detached {
+                                try DlcUpdateImport.remove(kind: pending.kind, for: pending.game)
+                            }.value
+                        } catch {
+                            dlcImportErrorMessage = error.localizedDescription
+                        }
+                        removingContentMessage = nil
                     }
-                    removingContentMessage = nil
                 }
+                Button("Cancel", role: .cancel) { pendingRemoval = nil }
+            } message: { pending in
+                Text("Remove the \(pending.kind.displayName) installed for \"\(pending.game.title)\"? This can't be undone - you'll need to import it again.")
             }
-            Button("Cancel", role: .cancel) { pendingRemoval = nil }
-        } message: { pending in
-            Text("Remove the \(pending.kind.displayName) installed for \"\(pending.game.title)\"? This can't be undone - you'll need to import it again.")
-        }
-        .alert(
-            "Replace existing file?",
-            isPresented: .constant(pendingOverwriteConfirmation != nil),
-            presenting: pendingOverwriteConfirmation
-        ) { pending in
-            Button("Replace", role: .destructive) {
-                let resume = pending.resume
-                pendingOverwriteConfirmation = nil
-                resume(true)
+            .alert(
+                "Replace existing file?",
+                isPresented: .constant(pendingOverwriteConfirmation != nil),
+                presenting: pendingOverwriteConfirmation
+            ) { pending in
+                Button("Replace", role: .destructive) {
+                    let resume = pending.resume
+                    pendingOverwriteConfirmation = nil
+                    resume(true)
+                }
+                Button("Cancel", role: .cancel) {
+                    let resume = pending.resume
+                    pendingOverwriteConfirmation = nil
+                    resume(false)
+                }
+            } message: { pending in
+                Text("\"\(pending.name)\" already exists in your library. Replacing it can't be undone.")
             }
-            Button("Cancel", role: .cancel) {
-                let resume = pending.resume
-                pendingOverwriteConfirmation = nil
-                resume(false)
-            }
-        } message: { pending in
-            Text("\"\(pending.name)\" already exists in your library. Replacing it can't be undone.")
-        }
     }
 
     private func beginImport(contentTypes: [UTType]) {
