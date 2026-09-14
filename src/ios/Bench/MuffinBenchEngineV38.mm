@@ -48,6 +48,9 @@ MBenchStatus mbench_initialize(const char* dataDir)
     // Real-time guest clock. The bridge defaults to an eighth under the interpreter, which
     // would throttle the GPU workload's frame pacing and make engines incomparable.
     cemu_bridge_set_timebase_shift(3);
+    // Guest OSReport output is LogType::OSCONSOLE, which no bridge enables, and the markers
+    // the host times are OSReport lines. Every engine logs exactly Force + OSCONSOLE.
+    cemuLog_setActiveLoggingFlags(cemuLog_getFlag(LogType::OSCONSOLE));
     s_logPath = _pathToUtf8(cemuLog_GetLogFilePath());
     s_initialized = true;
     return MBENCH_OK;
@@ -55,9 +58,9 @@ MBenchStatus mbench_initialize(const char* dataDir)
 
 bool mbench_jit_permitted(void)
 {
-    // This engine also runs its own JIT probe at initialize (mmap MAP_JIT and more); the
-    // recompiler is only usable when both agree, which cemu_bridge_cpu_mode() reports as 2.
-    return mbench_common_process_is_debugged() && (!s_initialized || cemu_bridge_cpu_mode() == 2);
+    // The same process-level answer every engine gives, so the host picks the same CPU
+    // modes for all of them. This engine's own extra JIT probe is applied in mbench_boot.
+    return mbench_common_process_is_debugged();
 }
 
 MBenchStatus mbench_attach_surface(void* uiView, int widthPoints, int heightPoints, double scale)
@@ -76,6 +79,10 @@ MBenchStatus mbench_boot(const char* rpxPath, MBenchCpuMode cpu)
         return MBENCH_ERR_BAD_ARG;
     const bool recompiler = (cpu == MBENCH_CPU_RECOMPILER);
     if (recompiler && !mbench_jit_permitted())
+        return MBENCH_ERR_NO_JIT;
+    // This engine also runs its own JIT probe at initialize (MAP_JIT and more) and only
+    // allows the recompiler when it passed, which cemu_bridge_cpu_mode() reports as 2.
+    if (recompiler && cemu_bridge_cpu_mode() != 2)
         return MBENCH_ERR_NO_JIT;
     // Multi-core in both modes, the same for every engine.
     LaunchSettings::SetForceInterpreter(false);
