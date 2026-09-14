@@ -19,6 +19,38 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "2.0",
+          "date": "2026-09-14T23:08:18Z",
+          "localizedDescription": "MuffinEMU, Wii U emulation for iPhone and iPad, built from commit 190ec94fcf9f723f78a26b218d4f73246287947f.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n## What's new since v1.6\n\n- **Save states (new)** - freeze and restore a running game, 4 numbered slots per\n  game, reachable from a bookmark button in the top bar while a title is running.\n  Persistent: stored under the app's own Documents folder, survives relaunching the\n  app. Real scope, stated plainly rather than oversold:\n  - This captures the game's memory, not a full snapshot. It does NOT save GPU/renderer\n    state (textures, shaders, in-flight command buffers) - those are caches the game\n    rebuilds from memory as it runs, so right after loading a texture or effect that\n    changed since the save might flash its old look for a moment. That's a visual\n    glitch, not lost data, and it clears itself on the next frame.\n  - A save only loads back into the SAME still-running game session it was taken\n    from - NOT \"t...",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v2.0/MuffinEMU.ipa",
+          "size": 67127004,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.9",
+          "date": "2026-09-14T22:49:33Z",
+          "localizedDescription": "MuffinEMU, Wii U emulation for iPhone and iPad, built from commit 8266f40edbdf3cd0d60d4b4ae54c76af940ee7b5.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n\n**Full Changelog**: https://github.com/kiddreads/MuffinEMU/compare/v1.8...v1.9",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v1.9/MuffinEMU.ipa",
+          "size": 67096995,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.8",
+          "date": "2026-09-14T22:35:07Z",
+          "localizedDescription": "MuffinEMU, Wii U emulation for iPhone and iPad, built from commit 65d120955bc836b25cf9c831b78ce42f26eb3f61.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n\n**Full Changelog**: https://github.com/kiddreads/MuffinEMU/compare/v1.7...v1.8",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v1.8/MuffinEMU.ipa",
+          "size": 67088071,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "1.7",
+          "date": "2026-09-14T22:23:36Z",
+          "localizedDescription": "MuffinEMU, Wii U emulation for iPhone and iPad, built from commit ebd671111bb5d245af8a33558853740a4aa8b9f3.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n\n**Full Changelog**: https://github.com/kiddreads/MuffinEMU/compare/v1.6...v1.7",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v1.7/MuffinEMU.ipa",
+          "size": 67090646,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "1.6",
           "date": "2026-09-14T21:44:55Z",
           "localizedDescription": "MuffinEMU, Wii U emulation for iPhone and iPad, built from commit 005fd9a675479afffd15c7bf14c7b077d5b4153d.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n## What's fixed in this build\n\n- **The whole app freezing when you hit pause** - pausing suspends every guest CPU\n  thread under the core's own scheduler lock, and that call was running synchronously\n  on the main thread (both from the pause button and from the auto-pause-on-background\n  handler). If a guest thread holding that lock was itself waiting on something that\n  only resolves once the main thread's run loop is free - a Metal command buffer\n  completion handler dispatched back to the main queue is exactly this shape - the main\n  thread and the guest thread wait on each other forever: not a slow pause, the whole\n  app stops responding to anything, pause button included. Both call sites now run on a\n  dedicated background queue instead, so the main thread never blocks on this.\n- **Single Screen not actually being full...",
