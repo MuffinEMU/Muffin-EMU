@@ -1072,6 +1072,10 @@ struct EmulatorViewOptimized: View {
     /// it swaps in and why the shipping path is otherwise untouched.
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
     @AppStorage(MeloControlsSetting.storageKey) private var useMeloControls = MeloControlsSetting.defaultValue
+    /// The slider in this view's own edit-layout panel writes here directly, the same
+    /// "declared where it's edited, read where it's drawn" pattern controlScale already
+    /// uses for MuffinEMU's own pad - MeloControlsOverlay reads the same key itself.
+    @AppStorage(MeloControlsSetting.scaleKey) private var meloControlsScale = MeloControlsSetting.defaultScale
     @ObservedObject private var previewPad = PreviewPadStore.shared
     /// Same key Settings > External Display reads. Declared here too, rather than read
     /// once at boot, so turning it off takes effect on the button already on screen
@@ -1079,6 +1083,19 @@ struct EmulatorViewOptimized: View {
     @AppStorage(DisplayLayoutSettings.showSwapButtonKey)
     private var showSwapButton = DisplayLayoutSettings.defaultShowSwapButton
     @ObservedObject private var displayRouter = DisplayRouter.shared
+
+    /// MeloCafe's Screen Layout feature - see DisplayRouter.ScreenLayout's own doc
+    /// comment for what each case does and why it's a separate concept from
+    /// DisplayLayoutSettings above (a genuine external display) despite living in the
+    /// same Settings section.
+    @AppStorage(LocalScreenLayoutSettings.layoutKey)
+    private var screenLayout = LocalScreenLayoutSettings.defaultLayout
+    @AppStorage(LocalScreenLayoutSettings.showSwapButtonKey)
+    private var showLocalSwapButton = LocalScreenLayoutSettings.defaultShowSwapButton
+    /// View-local, matching MeloCafe's own `@State` for this exact flag: which of the
+    /// two screens Single Screen mode currently shows resets to TV each fresh launch
+    /// rather than being remembered, the same way MeloCafe never persisted it either.
+    @State private var localSwapped = false
     // The two feel settings, offered here as well as in Settings for the same reason the
     // toggle is: a deadzone is not something you can judge from a settings screen with no
     // game under it. This is the panel you have open while steering.
@@ -1094,7 +1111,7 @@ struct EmulatorViewOptimized: View {
     // Defaults ON, and must keep matching SettingsView's declaration of the same key -
     // two @AppStorage defaults for one key that disagree means the toggle and the
     // emulator disagree about what is on. See SettingsView for why this flipped.
-    @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = true
+    @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
     @StateObject private var launchLog = LaunchLogStore()
     @State private var launchLogDismissed = false
 
@@ -1319,21 +1336,42 @@ struct EmulatorViewOptimized: View {
                     }
                 } else {
                     #if os(iOS)
-                    MetalViewIOS(gameManager: gameManager)
-                        .ignoresSafeArea()
-                        // Defense in depth: tvGeometry() now sizes the TV CAMetalLayer
-                        // from the real container instead of the whole screen, but
-                        // .clipped() means a future regression of that (or a Vulkan/
-                        // pad-surface path that inherits the same bug) shows a
-                        // squashed picture instead of one bleeding past this view's
-                        // edges into whatever SwiftUI content sits below it.
-                        .clipped()
+                    screenLayoutComposition
                     #else
                     MetalView(gameManager: gameManager)
                         .ignoresSafeArea()
                     #endif
                 }
             }
+
+            #if os(iOS)
+            // Settings > External Display > "Screen Layout" (ported from MeloCafe's own
+            // feature of the same name - see DisplayRouter.ScreenLayout). Top-leading,
+            // matching MeloCafe's own placement; the OTHER swap button this app already
+            // has (DisplayLayoutSettings, for a genuine external display) sits
+            // top-trailing, so the two can never overlap regardless of which are on.
+            if showLocalSwapButton, screenLayout == .singleScreen, displayRouter.placement != .dualScreen {
+                VStack {
+                    HStack {
+                        Button {
+                            localSwapped.toggle()
+                        } label: {
+                            Image(systemName: "rectangle.2.swap")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(10)
+                                .background(Color.black.opacity(0.55))
+                                .clipShape(Circle())
+                        }
+                        .accessibilityLabel("Swap TV and GamePad")
+                        .padding(.top, 8)
+                        .padding(.leading, 12)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+            }
+            #endif
 
             // Unconditional: no showControls state, no tap-to-toggle, no transition.
             // The pad is on screen for as long as the emulator view is, and floating
@@ -1500,7 +1538,53 @@ struct EmulatorViewOptimized: View {
             // slider you have to hunt for behind a button is not an adjustment anyone
             // makes twice. Everything here writes to the same AppStorage keys the pad
             // reads, so the change is under the finger as the slider moves.
-            if isEditingControlLayout {
+            if isEditingControlLayout, useMeloControls {
+                // Melo-Controller has its own layout editor (drag/pinch individual
+                // buttons - see MeloControlsOverlay's isEditing) but no control for
+                // scaling the pad as a whole, which is what this slider is for. None of
+                // the grouped/individual/joystick/comfort/stick-gate controls below
+                // apply to it - those are MuffinEMU's own pad's settings.
+                VStack {
+                    VStack(spacing: 10) {
+                        Text("Melo-Controller size")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.85))
+
+                        HStack(spacing: 10) {
+                            Image(systemName: "minus.magnifyingglass")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.7))
+                            Slider(
+                                value: $meloControlsScale,
+                                in: MeloControlsSetting.minScale...MeloControlsSetting.maxScale
+                            )
+                            Image(systemName: "plus.magnifyingglass")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+
+                        HStack(spacing: 12) {
+                            Button("Reset size") { meloControlsScale = MeloControlsSetting.defaultScale }
+                                .buttonStyle(MuffinSecondaryButtonStyle())
+
+                            Button("Done") {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isEditingControlLayout = false
+                                }
+                            }
+                            .buttonStyle(MuffinSecondaryButtonStyle())
+                        }
+                    }
+                    .padding(14)
+                    .frame(maxWidth: 420)
+                    .background(Color.black.opacity(0.82))
+                    .cornerRadius(14)
+                    .padding(.top, 12)
+
+                    Spacer()
+                }
+                .transition(.opacity)
+            } else if isEditingControlLayout {
                 VStack {
                     VStack(spacing: 10) {
                         Picker("Edit mode", selection: $individualEditMode) {
@@ -1694,6 +1778,87 @@ struct EmulatorViewOptimized: View {
         // with on-screen controls sitting right where it appears.
         .hidingSystemOverlaysDuringPlay()
     }
+
+    #if os(iOS)
+    /// Arranges the TV (`MetalViewIOS`) and GamePad (`PadMetalViewIOS`) screens per the
+    /// current `ScreenLayout`, ported from MeloCafe's own `EmulationView.body`. Both are
+    /// ALWAYS present here, in the same ZStack, for as long as `placement != .dualScreen`
+    /// - never conditionally inserted/removed - because each is a UIViewRepresentable
+    /// whose makeUIView() creates a fresh CAMetalLayer-backed container: removing one
+    /// from the tree and later re-adding it would call makeUIView() again while the
+    /// engine still believes its OLD (now off-screen, about-to-deallocate) container is
+    /// the registered surface - a silent black screen the next time Single Screen swaps
+    /// back to it. Repositioning and re-sizing the same two persistent views instead
+    /// keeps DisplayRouter's one-surface-per-screen bookkeeping honest regardless of
+    /// which layout or swap state is active. Frames come from `regionFrames(in:portrait:)`
+    /// below; only the frame math changes per layout, never which views exist.
+    private var screenLayoutComposition: some View {
+        GeometryReader { geometry in
+            let portrait = geometry.size.height >= geometry.size.width
+            let regions = regionFrames(in: geometry.size, portrait: portrait)
+            ZStack(alignment: .topLeading) {
+                MetalViewIOS(gameManager: gameManager)
+                    .frame(width: regions.tv.width, height: regions.tv.height)
+                    .position(x: regions.tv.midX, y: regions.tv.midY)
+                PadMetalViewIOS()
+                    .frame(width: regions.pad.width, height: regions.pad.height)
+                    .position(x: regions.pad.midX, y: regions.pad.midY)
+                    .opacity(regions.padHidden ? 0 : 1)
+                    .allowsHitTesting(false)
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear { applyLocalVisibleOutputs() }
+        .onChange(of: screenLayout) { _ in applyLocalVisibleOutputs() }
+        .onChange(of: localSwapped) { _ in applyLocalVisibleOutputs() }
+        .onDisappear {
+            DisplayRouter.shared.updateLocalVisibleOutputs(showTV: true, showPad: false)
+        }
+    }
+
+    /// Pure geometry, no side effects - `screenLayoutComposition` is the only caller.
+    /// Mirrors MeloCafe's own three-way layout exactly: Single Screen gives both regions
+    /// the full frame and hides whichever isn't currently swapped to; Adaptive stacks
+    /// them in portrait and sits them side by side in landscape; the inset layout gives
+    /// the GamePad a fixed 16:9 box, capped to a quarter of the width, in the top right.
+    private func regionFrames(in size: CGSize, portrait: Bool) -> (tv: CGRect, pad: CGRect, padHidden: Bool) {
+        let full = CGRect(origin: .zero, size: size)
+        switch screenLayout {
+        case .singleScreen:
+            return (full, full, !localSwapped)
+        case .bothScreens:
+            if portrait {
+                let half = CGRect(x: 0, y: 0, width: size.width, height: size.height / 2)
+                let bottom = CGRect(x: 0, y: size.height / 2, width: size.width, height: size.height / 2)
+                return (half, bottom, false)
+            } else {
+                let half = CGRect(x: 0, y: 0, width: size.width / 2, height: size.height)
+                let right = CGRect(x: size.width / 2, y: 0, width: size.width / 2, height: size.height)
+                return (half, right, false)
+            }
+        case .smallGamePadTopRight:
+            let padWidth = size.width * 0.25
+            let padHeight = min(padWidth * 9 / 16, size.height)
+            let tv = CGRect(x: 0, y: 0, width: size.width - padWidth, height: size.height)
+            let pad = CGRect(x: size.width - padWidth, y: 0, width: padWidth, height: padHeight)
+            return (tv, pad, false)
+        }
+    }
+
+    /// Which of the two screens should actually be visible right now, purely a function
+    /// of `screenLayout`/`localSwapped` - called on appear and whenever either changes.
+    /// A real external display still overrides all of this (DisplayRouter's own
+    /// `updateLocalVisibleOutputs` is a no-op outside `placement != .dualScreen`), so
+    /// calling this unconditionally here can never fight that path.
+    private func applyLocalVisibleOutputs() {
+        switch screenLayout {
+        case .singleScreen:
+            DisplayRouter.shared.updateLocalVisibleOutputs(showTV: !localSwapped, showPad: localSwapped)
+        case .bothScreens, .smallGamePadTopRight:
+            DisplayRouter.shared.updateLocalVisibleOutputs(showTV: true, showPad: true)
+        }
+    }
+    #endif
 }
 
 /// `.persistentSystemOverlays` is iOS 16+; this makes calling it from a 15-deployment-

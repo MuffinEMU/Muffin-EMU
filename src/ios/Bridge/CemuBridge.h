@@ -103,6 +103,17 @@ void cemu_bridge_release_pad_render_surface(void);
 /// completed a release requested above.
 bool cemu_bridge_has_pad_render_surface(void);
 
+/// Which of the two registered surfaces the renderer actually draws to this frame,
+/// without touching whether either is registered at all. This is what Settings >
+/// Screen Layout's swap button uses: both the TV and GamePad surfaces stay registered
+/// the whole time a title runs, and swapping which one is on screen is just this call,
+/// not a register/release cycle - the difference between an instant tap and rebuilding
+/// a CAMetalLayer on every tap. cemu_bridge_register_pad_render_surface() /
+/// cemu_bridge_release_pad_render_surface() already call this internally at the
+/// moments they need to (see CemuBridge.mm); call it directly only to change which
+/// already-registered surface(s) are visible without registering or releasing anything.
+void cemu_bridge_set_visible_outputs(bool tv, bool pad);
+
 /// Re-sizes an already-registered surface after its hosting view moved or its display
 /// changed - both the drawable and the CALayer's own frame/backing scale, which nothing
 /// else maintains for a manually added sublayer. `mainWindow` selects TV vs GamePad.

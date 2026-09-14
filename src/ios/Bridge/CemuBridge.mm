@@ -1327,6 +1327,10 @@ bool cemu_bridge_has_pad_render_surface(void) {
     return g_padRegistered.load();
 }
 
+void cemu_bridge_set_visible_outputs(bool tv, bool pad) {
+    CemuUIKit_SetVisibleOutputs(tv, pad);
+}
+
 void cemu_bridge_resize_render_surface(int width, int height, double dpiScale, bool mainWindow) {
     if (width <= 0 || height <= 0)
         return;
