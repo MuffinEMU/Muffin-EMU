@@ -19,6 +19,9 @@ struct AboutSettingsSection: View {
                 Label("View on GitHub", systemImage: "arrow.up.right.square")
             }
 
+            // Resets the completion flag, which ContentView watches, so the guide reopens.
+            SettingsOnboardingRow(onRequestReopen: {})
+
             Button(role: .destructive) {
                 showingResetConfirmation = true
             } label: {
