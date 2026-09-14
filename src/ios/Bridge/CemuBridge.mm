@@ -104,6 +104,9 @@ bool IOSTitlePause_Pause();
 bool IOSTitlePause_Resume();
 bool IOSTitlePause_IsPaused();
 void IOSTitlePause_Forget();
+void IOSSystemImplementation_Install();
+bool IOSSystemImplementation_TitleExited(int* statusOut);
+void IOSSystemImplementation_ResetExit();
 
 // ---------------------------------------------------------------------------
 // Crash trail
@@ -1080,6 +1083,8 @@ void cemu_bridge_initialize(const char* mlcPath) {
         return;
     }
     cemu_bridge_log_checkpoint("initialize: CemuInitialize() returned");
+    // Before any title can run: CafeSystem calls back through this without a null check.
+    IOSSystemImplementation_Install();
 
     // OSReport and the OS libs' parameter errors are what homebrew narrates its progress
     // through. Without these a ROM that is working looks exactly like one that never started.
@@ -1238,6 +1243,7 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
     ios_apply_cpu_mode();
     ios_apply_render_profile();
 
+    IOSSystemImplementation_ResetExit();
     cemu_bridge_log_checkpoint("boot_title: about to call MeloCafe CemuRun()");
     try
     {
@@ -1541,7 +1547,9 @@ static void ios_timebase_ladder_start() {
 }
 
 bool cemu_bridge_is_title_running(void) {
-    return g_titleRunning.load() && CafeSystem::IsTitleRunning();
+    // A title that called coreinit exit() has finished even though CafeSystem still holds it,
+    // and the UI should see that as the end of the game rather than a frozen one.
+    return g_titleRunning.load() && CafeSystem::IsTitleRunning() && !IOSSystemImplementation_TitleExited(nullptr);
 }
 
 void cemu_bridge_pause(void) {
@@ -1621,6 +1629,13 @@ void cemu_bridge_release_all_buttons(void) {
 }
 
 const char* cemu_bridge_status_text(void) {
+    int exitStatus = 0;
+    if (g_titleRunning.load() && IOSSystemImplementation_TitleExited(&exitStatus))
+    {
+        char line[96];
+        snprintf(line, sizeof(line), "The game closed itself (exit status %d).", exitStatus);
+        setStatus(line);
+    }
     // Only fall back to a computed default when nothing specific has been set, so a boot
     // failure's reason is not overwritten by a generic line on the next read.
     if (statusIsEmpty())
