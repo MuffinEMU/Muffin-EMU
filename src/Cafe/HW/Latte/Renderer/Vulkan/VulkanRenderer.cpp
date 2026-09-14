@@ -1255,6 +1255,19 @@ std::vector<VkDeviceQueueCreateInfo> VulkanRenderer::CreateQueueCreateInfos(cons
 VkDeviceCreateInfo VulkanRenderer::CreateDeviceCreateInfo(const std::vector<VkDeviceQueueCreateInfo>& queueCreateInfos, const VkPhysicalDeviceFeatures& deviceFeatures, const void* deviceExtensionStructs, std::vector<const char*>& used_extensions) const
 {
 	used_extensions = kRequiredDeviceExtensions;
+	// Matches the same core-promotion check in CheckDeviceExtensionSupport(): a device
+	// already at Vulkan 1.2+ may not list VK_KHR_sampler_mirror_clamp_to_edge by name
+	// even though its functionality is present as core, and some drivers reject
+	// vkCreateDevice() outright over a name they no longer recognise, whether or not
+	// they'd have honoured the underlying feature. Only ask for it by name pre-1.2.
+	VkPhysicalDeviceProperties physicalDeviceProperties{};
+	vkGetPhysicalDeviceProperties(m_physicalDevice, &physicalDeviceProperties);
+	if (physicalDeviceProperties.apiVersion >= VK_API_VERSION_1_2)
+	{
+		used_extensions.erase(std::remove_if(used_extensions.begin(), used_extensions.end(),
+			[](const char* name) { return strcmp(name, VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME) == 0; }),
+			used_extensions.end());
+	}
 	if (m_featureControl.deviceExtensions.tooling_info)
 		used_extensions.emplace_back(VK_EXT_TOOLING_INFO_EXTENSION_NAME);
 	if (m_featureControl.deviceExtensions.depth_range_unrestricted)
@@ -1370,6 +1383,20 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device, 
 		requiredExtensions.erase(extension.extensionName);
 	}
 
+	// VK_KHR_sampler_mirror_clamp_to_edge was promoted to Vulkan core in 1.2. A driver is
+	// not obliged to keep listing a promoted extension's name in
+	// vkEnumerateDeviceExtensionProperties once its functionality is already part of
+	// core at the device's own apiVersion - MoltenVK on iOS is exactly such a driver, so
+	// the plain string-matching loop above rejected every device it was ever handed,
+	// unconditionally, string-matching being the ONLY thing this function did before this
+	// device-version check existed. Deferred to here (after the string sweep, before
+	// requiredExtensions is inspected) rather than folded into kRequiredDeviceExtensions
+	// itself, which has no way to express "except when already core".
+	VkPhysicalDeviceProperties deviceProperties{};
+	vkGetPhysicalDeviceProperties(device, &deviceProperties);
+	if (deviceProperties.apiVersion >= VK_API_VERSION_1_2)
+		requiredExtensions.erase(VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME);
+
 	info.deviceExtensions.tooling_info = isExtensionAvailable(VK_EXT_TOOLING_INFO_EXTENSION_NAME);
 	info.deviceExtensions.depth_range_unrestricted = isExtensionAvailable(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME);
 	info.deviceExtensions.nv_fill_rectangle = isExtensionAvailable(VK_NV_FILL_RECTANGLE_EXTENSION_NAME);
@@ -1406,6 +1433,14 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device, 
 				}
 			}
 		}
+	}
+
+	if (!requiredExtensions.empty())
+	{
+		std::string missing;
+		for (const auto& ext : requiredExtensions)
+			missing += (missing.empty() ? "" : ", ") + ext;
+		cemuLog_log(LogType::Force, "Vulkan: device is missing required extension(s): {}", missing);
 	}
 
 	return requiredExtensions.empty();
@@ -1487,24 +1522,51 @@ std::vector<const char*> VulkanRenderer::CheckInstanceExtensionSupport(FeatureCo
 
 bool VulkanRenderer::IsDeviceSuitable(VkSurfaceKHR surface, const VkPhysicalDevice& device)
 {
-	if (!FindQueueFamilies(surface, device).IsComplete())
+	// Every early return here used to be a bare `return false`, so a device rejected for
+	// any of these four reasons all produced the exact same caller-side message ("No
+	// physical GPU could be found with the required extensions and swap chain support.")
+	// - on a platform with exactly one possible device (MoltenVK on iOS), that told
+	// nobody which of the four actually failed. Logged here instead, once, at the point
+	// that already has the answer, rather than guessed at afterward from a device with
+	// no Vulkan validation layer output attached.
+	VkPhysicalDeviceProperties deviceProperties{};
+	vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+	const auto queueFamilies = FindQueueFamilies(surface, device);
+	if (!queueFamilies.IsComplete())
+	{
+		cemuLog_log(LogType::Force, "Vulkan: device '{}' rejected - no queue family with {}",
+			deviceProperties.deviceName,
+			queueFamilies.graphicsFamily < 0 ? "graphics support" : "presentation support for this surface");
 		return false;
+	}
 
 	// check API version (using Vulkan 1.0 way of querying properties)
-	VkPhysicalDeviceProperties properties{};
-	vkGetPhysicalDeviceProperties(device, &properties);
-	uint32 vkVersionMajor = VK_API_VERSION_MAJOR(properties.apiVersion);
-	uint32 vkVersionMinor = VK_API_VERSION_MINOR(properties.apiVersion);
+	uint32 vkVersionMajor = VK_API_VERSION_MAJOR(deviceProperties.apiVersion);
+	uint32 vkVersionMinor = VK_API_VERSION_MINOR(deviceProperties.apiVersion);
 	if (vkVersionMajor < 1 || (vkVersionMajor == 1 && vkVersionMinor < 1))
+	{
+		cemuLog_log(LogType::Force, "Vulkan: device '{}' rejected - reports API version {}.{}, minimum required is 1.1",
+			deviceProperties.deviceName, vkVersionMajor, vkVersionMinor);
 		return false; // minimum required version is Vulkan 1.1
+	}
 
 	FeatureControl info;
 	if (!CheckDeviceExtensionSupport(device, info))
+	{
+		cemuLog_log(LogType::Force, "Vulkan: device '{}' rejected - missing a required device extension (see the CheckDeviceExtensionSupport log lines above this one)", deviceProperties.deviceName);
 		return false;
+	}
 
 	const auto swapchainSupport = SwapchainInfoVk::QuerySwapchainSupport(surface, device);
+	if (swapchainSupport.formats.empty() || swapchainSupport.presentModes.empty())
+	{
+		cemuLog_log(LogType::Force, "Vulkan: device '{}' rejected - surface reports {} formats and {} present modes (both must be nonzero)",
+			deviceProperties.deviceName, swapchainSupport.formats.size(), swapchainSupport.presentModes.size());
+		return false;
+	}
 
-	return !swapchainSupport.formats.empty() && !swapchainSupport.presentModes.empty();
+	return true;
 }
 
 #if BOOST_OS_WINDOWS
