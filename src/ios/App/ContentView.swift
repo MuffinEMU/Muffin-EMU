@@ -268,7 +268,10 @@ struct GameBrowserView: View {
     @AppStorage("muffin.library.sortOrder") private var sortOrderRaw = LibrarySortOrder.title.rawValue
     private var sortOrder: LibrarySortOrder {
         get { LibrarySortOrder(rawValue: sortOrderRaw) ?? .title }
-        set { sortOrderRaw = newValue.rawValue }
+        // nonmutating: the sort menu assigns this from a Button action, where the view is
+        // immutable. The write lands in @AppStorage, not in the struct, so it never needed
+        // to mutate self.
+        nonmutating set { sortOrderRaw = newValue.rawValue }
     }
 
     @State private var romImportErrorMessage: String?
