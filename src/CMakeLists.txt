@@ -305,3 +305,28 @@ endif()
 if (BSD)
 	target_link_libraries(CemuBin PRIVATE execinfo SPIRV-Tools SPIRV-Tools-opt)
 endif()
+
+# Benchmark build (MuffinEMU Bench). Off for every normal build. Turns Cemu.framework
+# into MuffinBenchMelo, adds the mbench_* contract (MuffinBenchEngine.h) and exports only
+# that: the export list keeps dyld from coalescing this engine's C++ symbols with another
+# engine loaded in the same process.
+option(MUFFIN_BENCH_ENGINE "Build this engine as a MuffinEMU Bench framework" OFF)
+set(MUFFIN_BENCH_NAME "MuffinBenchMelo" CACHE STRING "Benchmark framework name")
+set(MBENCH_COMMIT "unknown" CACHE STRING "Engine commit baked into the benchmark framework")
+if(IOS AND MUFFIN_BENCH_ENGINE)
+	target_sources(CemuBin PRIVATE
+		ios/Bench/MuffinBenchEngine.h
+		ios/Bench/MuffinBenchCommon.h
+		ios/Bench/MuffinBenchEngineMelo.mm
+	)
+	set_source_files_properties(ios/Bench/MuffinBenchEngineMelo.mm PROPERTIES
+		COMPILE_OPTIONS "-fobjc-arc;-include;${CMAKE_SOURCE_DIR}/src/Common/precompiled.h"
+		SKIP_PRECOMPILE_HEADERS ON)
+	target_include_directories(CemuBin PRIVATE ios/Bench)
+	target_compile_definitions(CemuBin PRIVATE MBENCH_COMMIT="${MBENCH_COMMIT}")
+	set_target_properties(CemuBin PROPERTIES
+		OUTPUT_NAME "${MUFFIN_BENCH_NAME}"
+		MACOSX_FRAMEWORK_IDENTIFIER "com.kiddreads.bench.${MUFFIN_BENCH_NAME}")
+	target_link_options(CemuBin PRIVATE
+		"-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/ios/Bench/MuffinBenchEngine.exports")
+endif()
