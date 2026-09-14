@@ -672,6 +672,17 @@ class GameManager: ObservableObject {
                 UserDefaults.standard.object(forKey: FrameStretch.storageKey) as? Bool
                     ?? FrameStretch.defaultValue)
 
+            // Renderer and scaling filters. CemuRun() constructs the renderer for whichever
+            // API is configured when the title starts, so these are pushed here, before
+            // boot, like everything above. Defaults match Settings: Metal, bicubic up,
+            // linear down.
+            cemu_bridge_set_graphics_api(
+                Int32(UserDefaults.standard.object(forKey: "muffin.render.graphicsAPI") as? Int ?? 2))
+            cemu_bridge_set_upscale_filter(
+                Int32(UserDefaults.standard.object(forKey: "muffin.render.upscaleFilter") as? Int ?? 1))
+            cemu_bridge_set_downscale_filter(
+                Int32(UserDefaults.standard.object(forKey: "muffin.render.downscaleFilter") as? Int ?? 0))
+
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)
