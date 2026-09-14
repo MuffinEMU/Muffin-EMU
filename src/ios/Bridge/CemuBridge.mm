@@ -89,6 +89,7 @@ int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destPath,
     std::atomic_bool& cancelRequested,
     const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
 std::string IOSCoverArt_DeriveGameTdbId(const char* romPath);
+std::string IOSCoverArt_GetTitleName(const char* romPath);
 bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64_t* titleIdOut);
 uint64_t IOSDlcUpdateImport_DeriveBaseTitleId(uint64_t titleId);
 int IOSDlcUpdateImport_GetTitleType(uint64_t titleId);
@@ -964,6 +965,24 @@ void cemu_bridge_set_stretch_to_fill(bool enabled) {
     GetConfig().fullscreen_scaling = enabled ? (sint32)kStretch : (sint32)kKeepAspectRatio;
 }
 
+void cemu_bridge_set_graphics_api(int api) {
+    GetConfig().graphic_api = (api == (int)kVulkan) ? kVulkan : kMetal;
+}
+
+int cemu_bridge_graphics_api(void) {
+    return (int)GetConfig().graphic_api.GetValue();
+}
+
+void cemu_bridge_set_upscale_filter(int filter) {
+    if (filter >= kLinearFilter && filter <= kNearestNeighborFilter)
+        GetConfig().upscale_filter = (sint32)filter;
+}
+
+void cemu_bridge_set_downscale_filter(int filter) {
+    if (filter >= kLinearFilter && filter <= kNearestNeighborFilter)
+        GetConfig().downscale_filter = (sint32)filter;
+}
+
 void cemu_bridge_set_vsync_enabled(bool enabled) {
     GetConfig().vsync = enabled ? 1 : 0;
 }
@@ -1334,6 +1353,21 @@ bool cemu_bridge_derive_gametdb_id(const char* romPath, char* outGameID, size_t 
     if (id.size() != 6)
         return false;
     memcpy(outGameID, id.c_str(), 7);
+    return true;
+}
+
+bool cemu_bridge_get_title_name(const char* romPath, char* outName, size_t outNameSize) {
+    if (!romPath || !outName || outNameSize == 0)
+        return false;
+    const std::string name = IOSCoverArt_GetTitleName(romPath);
+    if (name.empty())
+        return false;
+    // Truncate on a UTF-8 boundary, so a long Japanese title never ends in half a character.
+    size_t length = std::min(name.size(), outNameSize - 1);
+    while (length > 0 && length < name.size() && ((unsigned char)name[length] & 0xC0) == 0x80)
+        length--;
+    memcpy(outName, name.data(), length);
+    outName[length] = '\0';
     return true;
 }
 

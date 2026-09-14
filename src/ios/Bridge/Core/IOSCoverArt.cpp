@@ -61,3 +61,16 @@ std::string IOSCoverArt_DeriveGameTdbId(const char* romPath)
 
 	return gameCode + publisherSuffix;
 }
+
+// The title's own long name from meta.xml, for the library card. Same parse as the GameTDB
+// id above, so a dump that can supply one can supply the other. Empty when there is no
+// usable meta.xml (homebrew, a bare RPX), and the card keeps its file name.
+std::string IOSCoverArt_GetTitleName(const char* romPath)
+{
+	if (!romPath || romPath[0] == '\0')
+		return {};
+	TitleInfo titleInfo{fs::path(romPath)};
+	if (!titleInfo.IsValid() || !titleInfo.HasValidXmlInfo())
+		return {};
+	return titleInfo.GetMetaTitleName();
+}

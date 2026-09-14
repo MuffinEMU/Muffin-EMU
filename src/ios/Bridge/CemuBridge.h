@@ -206,6 +206,12 @@ void cemu_bridge_cancel_decrypt(void);
 /// art to fetch, and that is a normal outcome, not an error.
 bool cemu_bridge_derive_gametdb_id(const char* romPath, char* outGameID, size_t outGameIDSize);
 
+/// The title's long name from its own meta.xml ("Super Mario 3D World"), for the library.
+/// Writes a null-terminated UTF-8 string, truncated to fit, and returns true; returns false
+/// and leaves outName untouched when there is no usable meta.xml (homebrew, a bare RPX).
+/// Parses the dump, so call it off the main thread.
+bool cemu_bridge_get_title_name(const char* romPath, char* outName, size_t outNameSize);
+
 /// Derives the raw 64-bit title ID from romPath's own meta.xml/app.xml (via
 /// TitleInfo::GetAppTitleId() - see IOSDlcUpdateImport.cpp), for matching an imported
 /// DLC or update against the base game already in the library. Returns false and
@@ -397,6 +403,18 @@ bool cemu_bridge_vsync_enabled(void);
 /// it, so without it the app target does not compile. The comm(1) check described on the
 /// definition in CemuBridge.mm has to be run against this file as well as the .mm.
 void cemu_bridge_set_stretch_to_fill(bool enabled);
+
+/// Which renderer the next title uses: 2 = Metal (the native path and the default), 1 =
+/// Vulkan through MoltenVK. Anything else falls back to Metal. Read by CemuRun() when a
+/// title starts, so it cannot change the renderer of a running title.
+void cemu_bridge_set_graphics_api(int api);
+int cemu_bridge_graphics_api(void);
+
+/// Filters for scaling the 1280x720 (or GamePad 854x480) image to the screen: 0 linear,
+/// 1 bicubic, 2 bicubic hermite, 3 nearest neighbour. Upscale defaults to bicubic,
+/// downscale to linear - the core's own defaults. Out-of-range values are ignored.
+void cemu_bridge_set_upscale_filter(int filter);
+void cemu_bridge_set_downscale_filter(int filter);
 
 /// Shader cache maintenance. Two different things get called "the shader cache" and
 /// deleting them has very different consequences, so they are separate:
