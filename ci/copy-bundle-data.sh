@@ -4,7 +4,7 @@
 # already put src/ios/Resources in place.
 #
 # Why this exists: project.yml's `sources:` list only ever named directories under
-# src/ios, so nothing under bin/ reached Cemu.app even though both trees are in the
+# src/ios, so nothing under bin/ reached MuffinEMU.app even though both trees are in the
 # repo. Two things were missing on device, and both showed up in the first successful
 # boot log (see STATUS.md):
 #
@@ -27,7 +27,7 @@
 #
 # The nesting is not tidiness, it is the fix for the bug that broke v1.14 and v1.15.
 # Staging straight into the bundle put a directory literally named `resources` at the
-# top level of Cemu.app. iOS filesystems are case-insensitive, so CFBundle's probe for
+# top level of MuffinEMU.app. iOS filesystems are case-insensitive, so CFBundle's probe for
 # the reserved `Resources` directory matched it, reclassified the bundle from flat to
 # Resources-style, and then looked for Info.plist inside that directory instead of at
 # the top level where ours is. The result is a bundle with every file present and
@@ -50,7 +50,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC_FONTS="$REPO_ROOT/bin/resources/sharedFonts"
 SRC_PROFILES="$REPO_ROOT/bin/gameProfiles"
 
-# UNLOCALIZED_RESOURCES_FOLDER_PATH is "Cemu.app" on iOS (it is Contents/Resources
+# UNLOCALIZED_RESOURCES_FOLDER_PATH is "MuffinEMU.app" on iOS (it is Contents/Resources
 # only on macOS). Taking it from the environment rather than hardcoding the name
 # keeps this correct if PRODUCT_NAME ever changes.
 DEST="${BUILT_PRODUCTS_DIR:?not running inside an Xcode build}/${UNLOCALIZED_RESOURCES_FOLDER_PATH:?}"

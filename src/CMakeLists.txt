@@ -73,7 +73,7 @@ if(BUILD_HEADLESS_DYLIB)
     set_target_properties(CemuBin PROPERTIES
         CXX_VISIBILITY_PRESET default
         VISIBILITY_INLINES_HIDDEN OFF
-        MACOSX_FRAMEWORK_IDENTIFIER com.stossy11.Cemu
+        MACOSX_FRAMEWORK_IDENTIFIER com.kiddreads.MuffinEMU.Cemu
         FRAMEWORK TRUE
     )
     if(IOS)

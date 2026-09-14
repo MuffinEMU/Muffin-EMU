@@ -56,7 +56,7 @@ enum DownscaleFilterSetting {
     static let defaultValue = ScaleFilter.linear
 }
 
-/// Which MoltenVK build the Vulkan renderer loads: MeloCafe's 1.4.3 by default, or 1.2.8,
+/// Which MoltenVK build the Vulkan renderer loads: 1.4.3 by default, or 1.2.8,
 /// the build 64Touch uses. The bridge reads the key once when the engine starts, because a
 /// loaded MoltenVK cannot be swapped inside a running process.
 enum MoltenVKBuild: String, CaseIterable, Identifiable {
@@ -217,13 +217,13 @@ struct GraphicsSettingsSection: View {
         """
         Metal is the native rendering path this port is built on and the default. Vulkan (MoltenVK) runs through a translation layer instead and can be more compatible for some titles, at some cost to speed. Takes effect the next time you launch a game.
 
-        MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is MeloCafe's build and the default; 1.2.8 is the build 64Touch uses. Only one can be loaded per launch, so a change applies the next time MuffinEMU starts.
+        MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is the default; 1.2.8 is the build 64Touch uses. Only one can be loaded per launch, so a change applies the next time MuffinEMU starts.
 
-        Upscale filter is used when Muffin draws the game's picture larger than the game rendered it; downscale filter is used when drawing it smaller. Bicubic (the upscale default) is smoother than linear; Bicubic Hermite sharpens that further; Nearest Neighbor keeps hard pixel edges with no blending at all. Linear is the downscale default.
+        Upscale filter is used when MuffinEMU draws the game's picture larger than the game rendered it; downscale filter is used when drawing it smaller. Bicubic (the upscale default) is smoother than linear; Bicubic Hermite sharpens that further; Nearest Neighbor keeps hard pixel edges with no blending at all. Linear is the downscale default.
 
         \(renderScale.summary)
 
-        Resolution changes the size of the picture Muffin draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.
+        Resolution changes the size of the picture MuffinEMU draws, not the resolution the game runs at - nothing about the emulation changes with it. Takes effect the next time you launch a game.
 
         Frame stretching fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.
 

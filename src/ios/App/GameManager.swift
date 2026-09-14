@@ -888,7 +888,7 @@ class GameManager: ObservableObject {
             // of these once while a title starts and cannot see UserDefaults. A switch
             // that silently reverts on every relaunch is worse than no switch.
             //
-            // The recompiler defaults ON: MeloCafe's recompiler is the fast path, and the
+            // The recompiler defaults ON: the recompiler is the fast path, and the
             // bridge falls back to the interpreter by itself when no JIT enabler is attached.
             cemu_bridge_set_recompiler_enabled(
                 UserDefaults.standard.object(forKey: "muffin.cpu.recompiler") as? Bool ?? true)

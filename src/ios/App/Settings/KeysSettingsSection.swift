@@ -1,7 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Real Wii U games are encrypted and Muffin ships no keys. This is where the user
+/// Real Wii U games are encrypted and MuffinEMU ships no keys. This is where the user
 /// supplies their own, dumped from their own console. Optional by design: without
 /// it, everything that worked before - homebrew, .rpx, anything already decrypted -
 /// still works.
@@ -31,7 +31,7 @@ struct KeysSettingsSection: View {
             InfoButton.footer(
                 "Optional - encrypted games need keys.txt, with the AES keys dumped from your own Wii U inside. Homebrew and already-decrypted dumps need none of this.",
                 title: "Wii U Keys",
-                text: "Optional. Encrypted games (.wux, .wud, .iso, .wua) need the AES keys dumped from your own Wii U, in a plain text file called keys.txt - one key per line. Muffin ships no keys and can't obtain them. Homebrew and already-decrypted dumps need none of this.\n\nYou can also skip this button entirely: open Muffin in the Files app and drop keys.txt straight into the \"keys\" folder. It's picked up on the next launch, no restart needed.")
+                text: "Optional. Encrypted games (.wux, .wud, .iso, .wua) need the AES keys dumped from your own Wii U, in a plain text file called keys.txt - one key per line. MuffinEMU ships no keys and can't obtain them. Homebrew and already-decrypted dumps need none of this.\n\nYou can also skip this button entirely: open MuffinEMU in the Files app and drop keys.txt straight into the \"keys\" folder. It's picked up on the next launch, no restart needed.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         // .item for the same reason the ROM picker uses it: a keys.txt exported by

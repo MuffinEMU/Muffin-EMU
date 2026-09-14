@@ -15,9 +15,13 @@ struct AboutSettingsSection: View {
     var body: some View {
         Section("About") {
             SettingsRow(label: "Version", value: Bundle.main.appVersionString)
-            Link(destination: URL(string: "https://github.com/bward-dev1/cemu-ios-muffin")!) {
+            Link(destination: URL(string: "https://github.com/kiddreads/MuffinEMU")!) {
                 Label("View on GitHub", systemImage: "arrow.up.right.square")
             }
+
+            Text("MuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU, and the optional melo-controls pad is Melo-Controller by stossy11.")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
 
             // Resets the completion flag, which ContentView watches, so the guide reopens.
             SettingsOnboardingRow(onRequestReopen: {})
@@ -46,7 +50,7 @@ struct AboutSettingsSection: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This puts every emulation, graphics and control setting back to how Muffin ships. Your library, favorites, keys.txt, theme, app icon and premium unlock are untouched, unless you pick the per-game option too.")
+            Text("This puts every emulation, graphics and control setting back to how MuffinEMU ships. Your library, favorites, keys.txt, theme, app icon and premium unlock are untouched, unless you pick the per-game option too.")
         }
     }
 }

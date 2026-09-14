@@ -1,6 +1,6 @@
 // Pause and resume for a running title.
 //
-// MeloCafe's core has no pause of its own - its app only ever shuts a title down - but
+// The core has no pause of its own - MeloCafe's app only ever shut a title down - but
 // iOS needs one: the app goes to the background, a sheet covers the game, a call comes
 // in. This suspends every active guest thread under the scheduler lock and resumes them
 // again, using only coreinit functions the core already exports, so the core itself is

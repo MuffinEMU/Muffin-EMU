@@ -1,4 +1,4 @@
-name: Cemu-iOS
+name: MuffinEMU
 
 options:
   bundleIdPrefix: com.kiddreads
@@ -7,7 +7,7 @@ options:
   xcodeVersion: '15.0'
 
 settings:
-  PRODUCT_NAME: Cemu
+  PRODUCT_NAME: MuffinEMU
   # Its own identifier, so MuffinEMU installs next to Muffin instead of over it: a
   # different identifier is a different app container, and Muffin's library, keys and
   # saves stay exactly where they are.
@@ -19,7 +19,7 @@ settings:
   CODE_SIGN_ENTITLEMENTS: Cemu.entitlements
   SWIFT_OBJC_BRIDGING_HEADER: Bridge/Cemu-Bridging-Header.h
   CLANG_ENABLE_MODULES: 'YES'
-  # The whole engine - MeloCafe's Cemu core with CemuBridge.mm and its glue compiled into
+  # The whole engine - the Cemu core with CemuBridge.mm and its glue compiled into
   # it - arrives as one framework, built by CMake before this project is generated (see
   # .github/workflows/build-ios-app.yml). This target compiles Swift and nothing else, so
   # it needs no engine headers, no prefix header and no list of static libraries: the
@@ -43,7 +43,7 @@ settings:
   INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
   INFOPLIST_KEY_GCSupportsControllerUserInteraction: 'YES'
   INFOPLIST_KEY_UIStatusBarHidden: 'YES'
-  # MeloCafe's core opens the microphone when a title asks for GamePad microphone input.
+  # The core opens the microphone when a title asks for GamePad microphone input.
   # Without a usage string iOS terminates the app at that moment instead of asking.
   INFOPLIST_KEY_NSMicrophoneUsageDescription: 'MuffinEMU uses the microphone only when a Wii U game asks for GamePad microphone input.'
 
@@ -56,7 +56,7 @@ packages:
     revision: e39c6b7b87dc44dbbf548dc1e28fd6f0b0a5d609
 
 targets:
-  Cemu:
+  MuffinEMU:
     type: application
     platform: iOS
     deploymentTarget: '15.0'
@@ -95,7 +95,7 @@ targets:
         link: false
 
     # Cemu's own data files (bin/resources/sharedFonts, bin/gameProfiles), copied into
-    # Cemu.app/CemuData - the data path cemu_bridge_initialize() hands the core. A copy
+    # MuffinEMU.app/CemuData - the data path cemu_bridge_initialize() hands the core. A copy
     # step after the build, because the bundle does not exist before it.
     postBuildScripts:
       - name: Copy Cemu data files (shared fonts, game profiles) into the bundle

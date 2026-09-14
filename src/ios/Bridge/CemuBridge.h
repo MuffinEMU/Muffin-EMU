@@ -3,7 +3,7 @@
 //  MuffinEMU's Swift <-> engine bridge.
 //
 //  Pure-C interface so it can be imported from Swift via the bridging header. The
-//  implementation (CemuBridge.mm) runs on MeloCafe's Cemu core and is compiled into
+//  implementation (CemuBridge.mm) runs on the Cemu core and is compiled into
 //  Cemu.framework next to it; the app target never sees an engine header.
 //
 #ifndef CEMU_BRIDGE_H
@@ -148,7 +148,7 @@ typedef struct {
     bool gx2_init_reached;
     unsigned long long gx2_frame_count;
     double gx2_frames_per_second;
-    // Always 0 on MeloCafe's core, which does not count OSScreen scanouts separately.
+    // Always 0 on this core, which does not count OSScreen scanouts separately.
     unsigned long long os_screen_scanouts;
     unsigned int guest_flip_requests;
 } CemuBridgeProgress;
@@ -416,8 +416,8 @@ int cemu_bridge_graphics_api(void);
 void cemu_bridge_set_upscale_filter(int filter);
 void cemu_bridge_set_downscale_filter(int filter);
 
-/// Which MoltenVK build the Vulkan renderer uses this launch: "1.4.3" (the default,
-/// MeloCafe's) or "1.2.8". Chosen from the muffin.render.moltenVK setting when the engine
+/// Which MoltenVK build the Vulkan renderer uses this launch: "1.4.3" (the default)
+/// or "1.2.8". Chosen from the muffin.render.moltenVK setting when the engine
 /// initializes; a loaded MoltenVK cannot be swapped inside a running process, so a change
 /// applies on the next app launch. "" before initialize.
 const char* cemu_bridge_active_moltenvk(void);

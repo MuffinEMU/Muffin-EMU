@@ -15,7 +15,7 @@ struct CPUSettingsSection: View {
         Section {
             CPUModeRow()
 
-            // On by default: MeloCafe's recompiler is the fast path this build
+            // On by default: the recompiler is the fast path this build
             // exists for. Without a JIT enabler attached it cannot run at all, and
             // the bridge falls back to the interpreter by itself.
             Toggle(isOn: $recompilerEnabled) {

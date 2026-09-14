@@ -2,8 +2,8 @@ import SwiftUI
 import Melo_Controller
 
 /// Melo-Controller (github.com/stossy11/Melo-Controller) as an alternative on-screen pad,
-/// behind Settings > On-screen Controls > "Use melo-controls". It is MeloCafe's own touch
-/// controller: its own button art, layout editor and per-game layouts.
+/// behind Settings > On-screen Controls > "Use melo-controls". It is stossy11's touch
+/// controller, the one MeloCafe ships: its own button art, layout editor and per-game layouts.
 ///
 /// This is the only file that imports the package. It defines very generic names
 /// (ControllerView, ButtonView, Controller, Window, LayoutConfig), and keeping them out of

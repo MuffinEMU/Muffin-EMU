@@ -1,9 +1,9 @@
 //
 //  CemuBridge.mm
-//  MuffinEMU's Swift <-> engine bridge, running on MeloCafe's Cemu core.
+//  MuffinEMU's Swift <-> engine bridge, running on the Cemu core.
 //
 //  Swift talks to the engine only through the C functions in CemuBridge.h. This file
-//  implements them against MeloCafe's core and nothing else:
+//  implements them against the core and nothing else:
 //    * src/main.cpp            - CemuInitialize / CemuRun / CemuShutdown
 //    * src/gui/uikit/          - CemuUIKit_* (surfaces, window geometry, visible outputs)
 //    * src/input/api/iOS/      - GCControllerBridge_* (controllers)
@@ -59,7 +59,7 @@
 #include "input/api/iOS/GCControllerProvider.h"
 #include "input/emulated/EmulatedController.h"
 
-// MeloCafe's C entry points. Defined inside extern "C" blocks in src/main.cpp and
+// The core's C entry points. Defined inside extern "C" blocks in src/main.cpp and
 // src/gui/uikit/WindowSystem.mm, and only ever declared in MeloCafe's own app target, so
 // they are declared again here.
 extern "C" {
@@ -542,7 +542,7 @@ void ios_configure_jit_environment()
 
 // CS_DEBUGGED waives the signature check at instruction fetch. It is what every JIT
 // enabler (StikJIT, SideStore, LiveContainer, a debugger) produces, and it is the same
-// flag MeloCafe's recompiler checks before it generates code.
+// flag the core's recompiler checks before it generates code.
 bool ios_process_is_debugged(uint32_t& flagsOut)
 {
     flagsOut = 0;
@@ -551,11 +551,11 @@ bool ios_process_is_debugged(uint32_t& flagsOut)
 
 // Decides the CPU path for the next boot from the two Settings toggles and what the
 // process can actually do, and records both the answer and the reason. Written into the
-// engine's own config, which is what MeloCafe's CafeSystem reads when a title starts.
+// engine's own config, which is what the core's CafeSystem reads when a title starts.
 //
-// Always an explicit mode, never Auto. On iOS MeloCafe's GetCPUMode() returns the config
+// Always an explicit mode, never Auto. On iOS the core's GetCPUMode() returns the config
 // value unresolved, and _LaunchTitleThread() only starts the three emulated cores on their
-// own host threads for the two Multicore modes - so Auto, MeloCafe's default, ran every
+// own host threads for the two Multicore modes - so Auto, the core's default, ran every
 // title on one thread. Speed first means Multicore; Favour accuracy means Singlecore, the
 // mode Cemu is most compatible in.
 void ios_apply_cpu_mode()
@@ -571,7 +571,7 @@ void ios_apply_cpu_mode()
     {
         // Without CS_DEBUGGED the interpreter is the only option, not a preference: the
         // kernel kills the process the moment it runs generated code, and an explicit
-        // recompiler mode skips the debugger check MeloCafe applies to Auto.
+        // recompiler mode skips the debugger check the core applies to Auto.
         config.cpu_mode = accuracy ? CPUMode::SinglecoreInterpreter : CPUMode::MulticoreInterpreter;
         g_cpuMode.store(kCpuModeInterpreter);
         if (!g_recompilerRequested.load())
@@ -584,7 +584,7 @@ void ios_apply_cpu_mode()
     }
     config.cpu_mode = accuracy ? CPUMode::SinglecoreRecompiler : CPUMode::MulticoreRecompiler;
     g_cpuMode.store(kCpuModeRecompiler);
-    snprintf(detail, sizeof(detail), "A JIT enabler is attached, so MeloCafe's AArch64 recompiler runs this launch, %s%s.",
+    snprintf(detail, sizeof(detail), "A JIT enabler is attached, so the AArch64 recompiler runs this launch, %s%s.",
         cores, accuracy ? " because Favour accuracy is on" : "");
     setCpuModeDetail(detail);
 }
@@ -611,7 +611,7 @@ void ios_apply_render_profile()
 // ---------------------------------------------------------------------------
 // Live launch log
 //
-// MeloCafe's logger writes log.txt and nothing else, so the engine's own lines reach the
+// The core's logger writes log.txt and nothing else, so the engine's own lines reach the
 // on-screen launch log by tailing that file. Checkpoints and bridge lines are pushed into
 // the same ring directly, so the two interleave in the order they were written.
 namespace {
@@ -665,7 +665,7 @@ namespace {
 // ---------------------------------------------------------------------------
 // Frame statistics
 //
-// MeloCafe's window system discards the FPS the performance monitor reports, so the rate
+// The core's window system discards the FPS the performance monitor reports, so the rate
 // is measured here from the GPU state the core already keeps: LatteGPUState.frameCounter
 // is incremented once per frame the emulated GPU finishes. Fractional on purpose - a
 // title rendering at 0.4 frames per second is slow, not stopped.
@@ -711,12 +711,12 @@ namespace {
 //
 // One emulated GamePad fed from two sources at once: the on-screen pad (set from Swift)
 // and the first physical GameController. Both are merged inside one GCBridge controller
-// registered with MeloCafe's input manager, so the touch pad and an MFi controller work
+// registered with the core's input manager, so the touch pad and an MFi controller work
 // together and neither cancels the other. A button is down if either source holds it; a
 // stick follows the touch pad while it is deflected and hands back to the physical stick
 // at centre.
 //
-// Bit layout is MeloCafe's (src/input/api/iOS/GCController.mm), which its default VPAD
+// Bit layout is the core's (src/input/api/iOS/GCController.mm), which its default VPAD
 // mapping in InputManager.cpp binds to the GamePad buttons.
 namespace {
     constexpr int kBitA = 0, kBitB = 1, kBitX = 2, kBitY = 3;
@@ -850,7 +850,7 @@ namespace {
         g_inputHandle = GCControllerBridge_add(&desc);
         if (!g_inputHandle)
         {
-            cemu_bridge_log_checkpoint("iOS input: MeloCafe's GameController provider refused the GamePad - no input will reach titles");
+            cemu_bridge_log_checkpoint("iOS input: the core's GameController provider refused the GamePad - no input will reach titles");
             return;
         }
         GCControllerBridge_notifyChanged();
@@ -1097,7 +1097,7 @@ void cemu_bridge_initialize(const char* mlcPath) {
         }
     }
 
-    cemu_bridge_log_checkpoint("initialize: about to call MeloCafe CemuInitialize()");
+    cemu_bridge_log_checkpoint("initialize: about to call CemuInitialize()");
     try
     {
         CemuInitialize(executablePath.fileSystemRepresentation, userData.c_str(), userData.c_str(), cache.c_str(), data.c_str());
@@ -1151,11 +1151,11 @@ void cemu_bridge_register_render_surface(void* uiView, int width, int height, do
     UIView* view = (__bridge UIView*)uiView;
     if (![view.layer isKindOfClass:[CAMetalLayer class]])
     {
-        cemu_bridge_log_checkpoint("register_render_surface: the TV view is not CAMetalLayer-backed - MeloCafe renders into the view's own layer, so nothing can be drawn");
+        cemu_bridge_log_checkpoint("register_render_surface: the TV view is not CAMetalLayer-backed - the core renders into the view's own layer, so nothing can be drawn");
         setStatus("Render surface registration failed (see crash log).");
         return;
     }
-    // MeloCafe stores view.layer as the surface for both backends: Metal draws into it,
+    // The core stores view.layer as the surface for both backends: Metal draws into it,
     // MoltenVK builds its Vulkan surface from it.
     CemuUIKit_SetMainView(view);
     // After SetMainView, which resets contentsScale to the screen's native scale: the
@@ -1272,7 +1272,7 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
     ios_apply_render_profile();
 
     IOSSystemImplementation_ResetExit();
-    cemu_bridge_log_checkpoint("boot_title: about to call MeloCafe CemuRun()");
+    cemu_bridge_log_checkpoint("boot_title: about to call CemuRun()");
     try
     {
         // Constructs the renderer for the configured graphics API, initializes the TV
@@ -1625,7 +1625,7 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
         if (button == CEMU_BRIDGE_BUTTON_HOME && !g_homeWarned)
         {
             g_homeWarned = true;
-            cemuLog_log(LogType::Force, "iOS input: HOME has no binding in MeloCafe's GamePad mapping, so it is ignored");
+            cemuLog_log(LogType::Force, "iOS input: HOME has no binding in the core's GamePad mapping, so it is ignored");
         }
         return;
     }
