@@ -24,6 +24,8 @@ struct OnScreenControlsSection: View {
     private var stickCurve = ControllerLayoutSettings.defaultStickCurve
     @AppStorage(ControllerLayoutSettings.stickGateKey)
     private var stickGateRaw = ControllerLayoutSettings.defaultStickGateRaw
+    @AppStorage(ControllerLayoutSettings.hapticsKey)
+    private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     private var stickGate: ControllerGeometry.StickGate {
         ControllerGeometry.StickGate(rawValue: stickGateRaw) ?? ControllerLayoutSettings.defaultStickGate
@@ -69,6 +71,16 @@ struct OnScreenControlsSection: View {
                     Image(systemName: "circle.lefthalf.filled")
                     Slider(value: $controlOpacity, in: 0.2...1.0)
                     Image(systemName: "circle.fill")
+                }
+            }
+
+            Toggle(isOn: $hapticsEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Haptic feedback")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("A light tap on press. Turn off if it feels like buzzing rather than a button.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
                 }
             }
 
