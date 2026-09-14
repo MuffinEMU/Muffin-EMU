@@ -75,6 +75,19 @@ namespace coreinit
 
 	bool g_isMulticoreMode;
 
+	// see the declaration in coreinit_Thread.h for why this exists
+	std::atomic<bool> g_coreIsBusy[Espresso::CORE_COUNT]{};
+
+	bool __OSAllCoresIdle()
+	{
+		for (auto& busy : g_coreIsBusy)
+		{
+			if (busy.load(std::memory_order_acquire))
+				return false;
+		}
+		return true;
+	}
+
 	thread_local uint32 t_assignedCoreIndex;
 	thread_local Fiber* t_schedulerFiber;
 
@@ -1357,8 +1370,15 @@ namespace coreinit
 		while (true)
 		{
             if (hCPU->remainingCycles > 0)
+            {
+                // see __OSAllCoresIdle() in coreinit_Thread.h: this core is genuinely
+                // executing PPC instructions (and may be touching guest memory) only
+                // between these two stores, not merely "not suspended"
+                g_coreIsBusy[hostThread->selectedCore].store(true, std::memory_order_release);
                 attemptEnterThread(hCPU);
-            
+                g_coreIsBusy[hostThread->selectedCore].store(false, std::memory_order_release);
+            }
+
 			// reset reservation
 			hCPU->reservedMemAddr = 0;
 			hCPU->reservedMemValue = 0;

@@ -5,6 +5,18 @@
 // in. This suspends every active guest thread under the scheduler lock and resumes them
 // again, using only coreinit functions the core already exports, so the core itself is
 // untouched. It is the same mechanism cemu-ios-muffin's own core used.
+//
+// IMPORTANT for any caller that needs the title to actually be STOPPED, not just marked
+// to stop (save states are the reason this note exists): IOSTitlePause_Pause() returning
+// does NOT mean every core has stopped executing PPC instructions yet. It suspends each
+// guest thread's scheduling state, but a thread that is already mid-timeslice on a core
+// keeps running - and keeps touching guest memory - until that core reaches its own next
+// reschedule point (see __OSSuspendThreadInternal()'s own "todo - if thread is still
+// running find a way to cancel it's timeslice immediately" in coreinit_Thread.cpp). This
+// is fine for backgrounding (nothing reads memory from another thread while paused here),
+// but a caller that dumps or overwrites guest memory from a different thread - see
+// IOSSaveState.cpp - must additionally poll coreinit::__OSAllCoresIdle() (and, separately,
+// wait for the GPU command queue to drain) before it is actually safe to touch anything.
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 // __OSLockScheduler/__OSUnlockScheduler are declared at global scope here, not in coreinit.

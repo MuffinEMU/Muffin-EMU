@@ -1150,6 +1150,27 @@ struct EmulatorViewOptimized: View {
     /// "Back to games" already IS the confirmation - there's no session underneath it).
     @State private var showingBackConfirmation = false
 
+    // MARK: Save states
+    //
+    // cemu_bridge_save_state()/cemu_bridge_load_state() (CemuBridge.h) are synchronous
+    // and can take up to several seconds - they wait for every CPU core and the GPU
+    // command queue to actually go idle before touching guest memory (see
+    // IOSSaveState.cpp). Routed through their own serial queue rather than
+    // titlePauseQueue above: the two never need to interleave with a pause/resume, and
+    // keeping them separate means a save/load in flight can't get stuck behind an
+    // unrelated pause call queued just ahead of it.
+    private static let saveStateQueue = DispatchQueue(label: "muffin.savestate", qos: .userInitiated)
+    @State private var showSaveStates = false
+    @State private var saveStateSlots: [SaveStateSlot] = []
+    /// Non-nil while a save or load for that slot number is in flight. Nothing else
+    /// enqueues onto saveStateQueue while this is set - see the sheet's own busySlot
+    /// handling in SaveStateView.swift for why every row disables, not just this one.
+    @State private var saveStateBusySlot: Int?
+    /// The result of the most recent save/load/delete, shown inside the sheet. This is
+    /// the only place a refused load's real reason ("doesn't match this session") is
+    /// ever surfaced - without it, a refusal and a tap that did nothing look identical.
+    @State private var saveStateStatusMessage: String?
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -1284,6 +1305,25 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
+
+                        // Reachable without leaving the game, same reasoning as the
+                        // move-controls and pad-hide buttons around it - Void's own
+                        // asks this session have consistently wanted things reachable
+                        // in-game rather than buried in Settings. Hidden outright while
+                        // .loading/.error instead of merely disabled: there is no
+                        // running session yet for a slot to match against.
+                        if gameManager.emulationState == .running {
+                            Button(action: {
+                                saveStateSlots = SaveStateStore.slots(for: game.id)
+                                saveStateStatusMessage = nil
+                                showSaveStates = true
+                            }) {
+                                Image(systemName: "bookmark.fill")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .accessibilityLabel("Save States")
+                        }
 
                         #if os(iOS)
                         // Was a floating circle over the top-left corner of the game;
@@ -1834,6 +1874,67 @@ struct EmulatorViewOptimized: View {
         // popping up mid-game - a stray swipe near the bottom edge no longer competes
         // with on-screen controls sitting right where it appears.
         .hidingSystemOverlaysDuringPlay()
+        .sheet(isPresented: $showSaveStates) {
+            SaveStateSheet(
+                gameTitle: game.title,
+                slots: saveStateSlots,
+                busySlot: saveStateBusySlot,
+                statusMessage: saveStateStatusMessage,
+                onSave: performSaveState,
+                onLoad: performLoadState,
+                onDelete: deleteSaveState
+            )
+        }
+    }
+
+    /// Writes to `slot`, creating this game's SaveStates folder on first use. `path` is
+    /// captured as a plain String before hopping to saveStateQueue - URL itself is not
+    /// guaranteed Sendable-safe to touch off the main actor the way its `.path` string is.
+    private func performSaveState(slot: Int) {
+        guard saveStateBusySlot == nil, gameManager.emulationState == .running else { return }
+        let gameID = game.id
+        SaveStateStore.ensureDirectoryExists(for: gameID)
+        let path = SaveStateStore.fileURL(for: gameID, slot: slot).path
+        saveStateBusySlot = slot
+        Self.saveStateQueue.async {
+            let ok = path.withCString { cemu_bridge_save_state($0) }
+            DispatchQueue.main.async {
+                saveStateBusySlot = nil
+                saveStateSlots = SaveStateStore.slots(for: gameID)
+                saveStateStatusMessage = ok
+                    ? "Slot \(slot) saved."
+                    : "Couldn't save Slot \(slot). Make sure the game is actually running and try again."
+            }
+        }
+    }
+
+    /// Loads `slot` back into the CURRENTLY running instance only - see
+    /// cemu_bridge_load_state's doc comment in CemuBridge.h. A refusal here almost
+    /// always means the save is from a different session (the game was quit/relaunched,
+    /// or the app itself restarted, since the save was taken) rather than a real error,
+    /// which is exactly why the failure message below says so instead of just "failed".
+    private func performLoadState(slot: Int) {
+        guard saveStateBusySlot == nil, gameManager.emulationState == .running else { return }
+        let gameID = game.id
+        let path = SaveStateStore.fileURL(for: gameID, slot: slot).path
+        guard FileManager.default.fileExists(atPath: path) else { return }
+        saveStateBusySlot = slot
+        Self.saveStateQueue.async {
+            let ok = path.withCString { cemu_bridge_load_state($0) }
+            DispatchQueue.main.async {
+                saveStateBusySlot = nil
+                saveStateStatusMessage = ok
+                    ? "Slot \(slot) loaded. If a texture or effect looks briefly wrong, that clears itself on the next frame the game redraws it."
+                    : "Couldn't load Slot \(slot) - most likely it doesn't match this game's current run (quitting or relaunching the game breaks that match). That's expected, not a bug."
+            }
+        }
+    }
+
+    private func deleteSaveState(slot: Int) {
+        let gameID = game.id
+        SaveStateStore.delete(gameID: gameID, slot: slot)
+        saveStateSlots = SaveStateStore.slots(for: gameID)
+        saveStateStatusMessage = "Slot \(slot) deleted."
     }
 
     #if os(iOS)
