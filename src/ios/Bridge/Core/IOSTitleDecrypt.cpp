@@ -42,7 +42,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-namespace fs = std::filesystem;
+// fs is the core's own namespace, from precompiled.h.
 
 // Mirrored 1:1 by CemuBridgeStatus-style ints in the bridge, same convention as
 // IOSTitleLaunch.cpp's IOS_TITLE_LAUNCH_* enum.

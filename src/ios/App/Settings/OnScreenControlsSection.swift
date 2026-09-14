@@ -26,6 +26,8 @@ struct OnScreenControlsSection: View {
     private var stickGateRaw = ControllerLayoutSettings.defaultStickGateRaw
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
+    @AppStorage(MeloControlsSetting.storageKey)
+    private var useMeloControls = MeloControlsSetting.defaultValue
 
     private var stickGate: ControllerGeometry.StickGate {
         ControllerGeometry.StickGate(rawValue: stickGateRaw) ?? ControllerLayoutSettings.defaultStickGate
@@ -33,6 +35,18 @@ struct OnScreenControlsSection: View {
 
     var body: some View {
         Section {
+            Toggle(isOn: $useMeloControls) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Use melo-controls")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text(useMeloControls
+                         ? "MeloCafe's touch controller, with its own layout editor. The options below apply to MuffinEMU's pad."
+                         : "MuffinEMU's measured GamePad layout.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+
             Toggle(isOn: $joystickMode) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Add analog sticks")
