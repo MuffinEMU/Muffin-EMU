@@ -295,6 +295,31 @@ void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale
         g_windowInfo.phys_width  = width  * resolvedScale;
         g_windowInfo.phys_height = height * resolvedScale;
         g_windowInfo.dpi_scale   = resolvedScale;
+
+        // This is the ONLY thing on iOS that keeps the Metal CAMetalLayer's own
+        // drawableSize in step with the window it actually sits in. MetalRenderer::
+        // ResizeLayer() exists and does exactly this, but its only other caller is the
+        // desktop wxWidgets canvas (MetalCanvas.cpp) - nothing on iOS ever called it, so
+        // the drawable stayed exactly the size it was the one time InitializeLayer() ran
+        // (at boot, or whenever this window's surface was first registered) no matter
+        // how many times the container view was resized after that. A screen-layout
+        // switch to Single Screen updates g_windowInfo's width/height above (which is
+        // what the aspect-fit letterbox math in LatteRenderTarget_getScreenImageArea
+        // reads), but without this call the actual rendered image stayed pinned to
+        // whatever tiny size the drawable was first created at, centered inside the new,
+        // correctly-sized-but-otherwise-unrelated canvas - a small, correctly
+        // proportioned picture surrounded by black, not a crash or a hang, which is
+        // exactly what made it easy to mistake for a SwiftUI layout bug instead. Vulkan
+        // does not need the equivalent call: MoltenVK reads the CAMetalLayer's own
+        // drawableSize itself when it rebuilds the swapchain on the next present, rather
+        // than caching a copy of it the way MetalLayerHandle does.
+#ifdef ENABLE_METAL
+        if (metal)
+        {
+            if (auto* metalRenderer = MetalRenderer::GetInstance())
+                metalRenderer->ResizeLayer({(int)width, (int)height}, true);
+        }
+#endif
     };
 
     if ([NSThread isMainThread])
@@ -324,6 +349,21 @@ void CemuUIKit_UpdatePadWindowSize()
         CGSize size = g_padView.bounds.size;
         CAMetalLayer* layer = (CAMetalLayer*)g_padView.layer;
         CGFloat scale = layer.contentsScale;
+
+        // Same gap as CemuUIKit_UpdateMainWindowSize(), and it matters here too even
+        // though this reads layer.drawableSize back directly rather than caching a copy
+        // the way MetalLayerHandle does: drawableSize is a plain property, not something
+        // CAMetalLayer keeps in sync with bounds on its own, so without this call it
+        // just keeps reporting whatever it was set to at the one point something last
+        // called ResizeLayer()/InitializeLayer() for this window - which, on iOS,
+        // before this fix, was never after the very first registration.
+#ifdef ENABLE_METAL
+        if (metal)
+        {
+            if (auto* metalRenderer = MetalRenderer::GetInstance())
+                metalRenderer->ResizeLayer({(int)size.width, (int)size.height}, false);
+        }
+#endif
 
         g_windowInfo.pad_width = size.width;
         g_windowInfo.pad_height = size.height;
