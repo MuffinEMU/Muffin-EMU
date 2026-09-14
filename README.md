@@ -56,3 +56,5 @@ xcodebuild -project Cemu-iOS.xcodeproj -scheme Cemu -sdk iphoneos -configuration
 ## License
 
 MPL-2.0, like Cemu and MeloCafe. See `LICENSE.txt`.
+
+The app links [Melo-Controller](https://github.com/stossy11/Melo-Controller) (GPL-3.0) for the optional "Use melo-controls" pad, in every build whether or not the switch is on. MPL-2.0 code may be combined into a GPL work, so a MuffinEMU IPA as a whole is distributed under GPL-3.0, with this repository as its source.
