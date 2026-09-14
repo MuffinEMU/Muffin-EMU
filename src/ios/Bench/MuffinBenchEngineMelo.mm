@@ -38,9 +38,10 @@ MBenchStatus mbench_initialize(const char* dataDir)
     if (cemu_bridge_reload_and_count_keys() < 0)
         return MBENCH_ERR_INIT;
     cemu_bridge_set_timebase_shift(3);
-    // Guest OSReport output is LogType::OSCONSOLE, which no bridge enables, and the markers
-    // the host times are OSReport lines. Every engine logs exactly Force + OSCONSOLE.
-    cemuLog_setActiveLoggingFlags(cemuLog_getFlag(LogType::OSCONSOLE));
+    // The markers the host times are guest OSReport lines, which Cemu logs as
+    // LogType::CoreinitLogging. Each bridge enables its own mix of log types at initialize;
+    // every engine is set to exactly Force + CoreinitLogging so logging costs the same.
+    cemuLog_setActiveLoggingFlags(cemuLog_getFlag(LogType::CoreinitLogging));
     s_logPath = _pathToUtf8(ActiveSettings::GetUserDataPath("log.txt"));
     s_initialized = true;
     return MBENCH_OK;
