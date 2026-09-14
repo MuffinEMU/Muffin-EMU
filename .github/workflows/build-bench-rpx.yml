@@ -35,6 +35,9 @@ name: Build Bench RPX (Homebrew)
 on:
   workflow_dispatch: {}
   workflow_call: {}
+  # A quick standalone check of the workloads, without the hours-long engine builds.
+  push:
+    branches: [ bench-rpx-check ]
 
 jobs:
   # The devkitPPC container ships no bash, so Actions falls back to `sh -e {0}`
@@ -67,7 +70,7 @@ jobs:
       - name: Build cpubench.rpx
         run: |
           set -eu
-          make -C /tmp/cpubench TARGET=cpubench
+          make -C /tmp/cpubench TARGET=cpubench LIBS="-lwut -lm"
           test -f /tmp/cpubench/cpubench.rpx
 
       # A zero-byte or truncated RPX that still gets uploaded is exactly the
@@ -179,7 +182,7 @@ jobs:
       - name: Build gpubench.rpx
         run: |
           set -eu
-          make -C /tmp/gpubench TARGET=gpubench
+          make -C /tmp/gpubench TARGET=gpubench LIBS="-lwut -lm"
           test -f /tmp/gpubench/gpubench.rpx
 
       - name: Verify the built RPX
