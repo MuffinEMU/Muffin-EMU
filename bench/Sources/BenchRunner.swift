@@ -592,7 +592,7 @@ final class LogTailer {
         } catch {
             return []
         }
-        guard let data = try? handle.readToEnd(), let data, !data.isEmpty else { return [] }
+        guard let data = try? handle.readToEnd(), !data.isEmpty else { return [] }
         offset += UInt64(data.count)
 
         let text = pendingLine + (String(data: data, encoding: .utf8) ?? "")
