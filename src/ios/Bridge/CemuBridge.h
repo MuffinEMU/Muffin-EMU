@@ -416,6 +416,12 @@ int cemu_bridge_graphics_api(void);
 void cemu_bridge_set_upscale_filter(int filter);
 void cemu_bridge_set_downscale_filter(int filter);
 
+/// Which MoltenVK build the Vulkan renderer uses this launch: "1.4.3" (the default,
+/// MeloCafe's) or "1.2.8". Chosen from the muffin.render.moltenVK setting when the engine
+/// initializes; a loaded MoltenVK cannot be swapped inside a running process, so a change
+/// applies on the next app launch. "" before initialize.
+const char* cemu_bridge_active_moltenvk(void);
+
 /// Shader cache maintenance. Two different things get called "the shader cache" and
 /// deleting them has very different consequences, so they are separate:
 ///

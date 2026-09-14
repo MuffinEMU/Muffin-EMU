@@ -56,6 +56,26 @@ enum DownscaleFilterSetting {
     static let defaultValue = ScaleFilter.linear
 }
 
+/// Which MoltenVK build the Vulkan renderer loads: MeloCafe's 1.4.3 by default, or 1.2.8,
+/// the build 64Touch uses. The bridge reads the key once when the engine starts, because a
+/// loaded MoltenVK cannot be swapped inside a running process.
+enum MoltenVKBuild: String, CaseIterable, Identifiable {
+    case v143 = "1.4.3"
+    case v128 = "1.2.8"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .v143: return "1.4.3 (default)"
+        case .v128: return "1.2.8"
+        }
+    }
+
+    static let storageKey = "muffin.render.moltenVK"
+    static let defaultValue: MoltenVKBuild = .v143
+}
+
 /// Renderer, filters, resolution, stretching and VSync - everything that decides
 /// how the finished picture is drawn and presented, in one section. The bridge
 /// reads muffin.render.graphicsAPI/upscaleFilter/downscaleFilter itself before
@@ -69,6 +89,7 @@ struct GraphicsSettingsSection: View {
     @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.balanced.rawValue
     @AppStorage("muffin.render.vsync") private var vsyncEnabled = true
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
+    @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
 
     private var renderScale: RenderScale {
         RenderScale(rawValue: renderScaleRaw) ?? .balanced
@@ -77,6 +98,7 @@ struct GraphicsSettingsSection: View {
     var body: some View {
         Section {
             rendererPicker
+            moltenVKPicker
             upscalePicker
             downscalePicker
             resolutionPicker
@@ -105,6 +127,32 @@ struct GraphicsSettingsSection: View {
             }
             .pickerStyle(.segmented)
         }
+    }
+
+    private var moltenVKPicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("MoltenVK")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Picker("MoltenVK", selection: $moltenVKRaw) {
+                ForEach(MoltenVKBuild.allCases) { build in
+                    Text(build.title).tag(build.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            Text(moltenVKCaption)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    // Says what is running now as well as what is picked, because the two differ until the
+    // next launch and a switch that looks like it did nothing is worse than no switch.
+    private var moltenVKCaption: String {
+        let active = String(cString: cemu_bridge_active_moltenvk())
+        if !active.isEmpty && active != moltenVKRaw {
+            return "Running \(active) now. \(moltenVKRaw) is used from the next launch of MuffinEMU."
+        }
+        return "Used by the Vulkan renderer only. A change applies the next time MuffinEMU launches."
     }
 
     private var upscalePicker: some View {
@@ -168,6 +216,8 @@ struct GraphicsSettingsSection: View {
     private var fullText: String {
         """
         Metal is the native rendering path this port is built on and the default. Vulkan (MoltenVK) runs through a translation layer instead and can be more compatible for some titles, at some cost to speed. Takes effect the next time you launch a game.
+
+        MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is MeloCafe's build and the default; 1.2.8 is the build 64Touch uses. Only one can be loaded per launch, so a change applies the next time MuffinEMU starts.
 
         Upscale filter is used when Muffin draws the game's picture larger than the game rendered it; downscale filter is used when drawing it smaller. Bicubic (the upscale default) is smoother than linear; Bicubic Hermite sharpens that further; Nearest Neighbor keeps hard pixel edges with no blending at all. Linear is the downscale default.
 

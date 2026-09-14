@@ -98,7 +98,12 @@ if(IOS)
 		gui/uikit/EmulatedUSBDevices.h
 		gui/uikit/EmulatedUSBDevices.mm
 	)
-	set_source_files_properties(gui/uikit/EmulatedUSBDevices.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+	# Compiled with ARC, so kept off the target's precompiled header: that PCH is built
+	# without ARC and clang refuses to mix the two. precompiled.h is included textually
+	# instead, so the file still sees the same types.
+	set_source_files_properties(gui/uikit/EmulatedUSBDevices.mm ios/Bridge/CemuBridge.mm PROPERTIES
+		COMPILE_OPTIONS "-fobjc-arc;-include;${CMAKE_SOURCE_DIR}/src/Common/precompiled.h"
+		SKIP_PRECOMPILE_HEADERS ON)
 	target_link_libraries(CemuBin PRIVATE
 		"-framework Foundation"
 	)
@@ -118,7 +123,6 @@ if(IOS)
 		ios/Bridge/Core/IOSTitleLaunch.cpp
 		ios/Bridge/Core/IOSTitlePause.cpp
 	)
-	set_source_files_properties(ios/Bridge/CemuBridge.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 	target_include_directories(CemuBin PRIVATE ios/Bridge)
 	target_link_libraries(CemuBin PRIVATE
 		ZArchive::zarchive

@@ -19,7 +19,7 @@ src/ios/Bridge/Core/                title launch, decrypt, DLC/update, graphic p
 src/  (everything else)             MeloCafe's Cemu core, unmodified
 ```
 
-The bridge and its glue are compiled into `Cemu.framework` together with the core, so they build against the core's own headers. The Xcode app compiles Swift only and embeds that framework. Nothing under `src/` outside `src/ios` differs from MeloCafe apart from the few lines in `src/CMakeLists.txt` that add the bridge to the framework.
+The bridge and its glue are compiled into `Cemu.framework` together with the core, so they build against the core's own headers. The Xcode app compiles Swift only and embeds that framework. Nothing under `src/` outside `src/ios` differs from MeloCafe except build glue and one loader hook: `src/CMakeLists.txt` adds the bridge to the framework, the ARC Objective-C++ files skip the non-ARC precompiled header, and the Vulkan loader in `VulkanAPI.cpp` tries the MoltenVK build the bridge selected first.
 
 ## Installing
 
@@ -31,6 +31,8 @@ Every push to `main` publishes a release with two IPAs:
 MuffinEMU uses its own bundle identifier, so it installs next to Muffin rather than replacing it.
 
 **Keys.** Encrypted games need the `keys.txt` dumped from your own Wii U. Drop it into the `keys` folder MuffinEMU creates in the Files app, or import it in Settings. Nothing is bundled.
+
+**MoltenVK.** The Vulkan renderer can use MeloCafe's MoltenVK 1.4.3 (the default) or 1.2.8, the build 64Touch uses (Settings > Graphics). The choice applies on the next launch. Metal, the default renderer, does not use MoltenVK.
 
 **JIT.** The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer) and the recompiler switch in Settings. Without both, MuffinEMU runs the multi-core interpreter, and Settings says which one this launch got and why.
 

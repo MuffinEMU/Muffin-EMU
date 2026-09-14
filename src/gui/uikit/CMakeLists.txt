@@ -24,4 +24,9 @@ if(ENABLE_SDL)
   target_link_libraries(CemuUiKitGui PRIVATE SDL3::SDL3)
 endif()
 
-set_source_files_properties(NativeKeyboard.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+# Compiled with ARC, so kept off the target's precompiled header: that PCH is built
+# without ARC and clang refuses to mix the two. precompiled.h is included textually
+# instead, so the file still sees the same types.
+set_source_files_properties(NativeKeyboard.mm PROPERTIES
+  COMPILE_OPTIONS "-fobjc-arc;-include;${CMAKE_SOURCE_DIR}/src/Common/precompiled.h"
+  SKIP_PRECOMPILE_HEADERS ON)
