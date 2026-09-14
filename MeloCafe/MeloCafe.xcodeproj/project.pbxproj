@@ -441,7 +441,7 @@
 				OTHER_CFLAGS = "";
 				OTHER_CPLUSPLUSFLAGS = "$(OTHER_CFLAGS)";
 				OTHER_LDFLAGS = "-Wl,-lc++abi";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.-.MeloCafe";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.-yournamehere-.MeloCafe";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -501,7 +501,7 @@
 				OTHER_CFLAGS = "";
 				OTHER_CPLUSPLUSFLAGS = "$(OTHER_CFLAGS)";
 				OTHER_LDFLAGS = "-Wl,-lc++abi";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.-.MeloCafe";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.-yournamehere-.MeloCafe";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
