@@ -33,34 +33,35 @@ struct GamesListView: View {
     }
 
     var body: some View {
-        Group {
-            switch cardType {
-            case .list: list
-            default: grid
+        NavigationStack {
+            Group {
+                switch cardType {
+                case .list: list
+                default: grid
+                }
             }
-        }
-        .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .graphicPacks(game: let game):
-                GameGraphicPacksView(titleId: game.id, gameName: game.title)
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .graphicPacks(game: let game):
+                    GameGraphicPacksView(titleId: game.id, gameName: game.title)
+                }
             }
-        }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    FileImporterManager.shared.importFiles(types: [.item], allowMultiple: true) { result in
-                        switch result {
-                        case .success(let urls):
-                            for url in urls {
-                                try? FileManager.default.copyItem(at: url, to: <#T##URL#>)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        FileImporterManager.shared.importFiles(types: [.item], allowMultiple: true) { result in
+                            switch result {
+                            case .success(let urls):
+                                for url in urls {
+                                    try? FileManager.default.copyItem(at: url, to: .romsURL.appendingPathComponent(url.lastPathComponent))
+                                }
+                            case .failure(let err):
+                                AppAlerts.showSyncAlert(title: "ROM Import Failed.", message: err.localizedDescription)
                             }
-                            
-                        case .failure(let err):
-                            AppAlerts.showSyncAlert(title: "File Import Failed.", message: err.localizedDescription)
                         }
+                    } label: {
+                        Image(systemName: "plus")
                     }
-                } label: {
-                    Image(systemName: "plus")
                 }
             }
         }
