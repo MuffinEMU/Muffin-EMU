@@ -133,7 +133,7 @@ ok "not encrypted (cryptid=${CRYPTID:-absent})"
 # the name Cemu's own GetDataPath() callers use - is on this list.
 #
 # Only the top level matters: nested copies are invisible to this probe, which is why
-# the data files now live under Cemu.app/CemuData/resources/sharedFonts and this check
+# the data files now live under MuffinEMU.app/CemuData/resources/sharedFonts and this check
 # passes.
 # Frameworks/ and PlugIns/ are left off: an iOS app embeds its frameworks at exactly that
 # path (MuffinEMU ships Cemu.framework and MoltenVK.framework there), and CFBundle does not

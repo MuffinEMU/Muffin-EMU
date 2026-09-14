@@ -214,7 +214,7 @@ private struct OnboardingWelcomePage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Welcome to MuffinEMU",
-            subtitle: "MuffinEMU runs real Wii U software on your device, using MeloCafe's Cemu core. This guide covers keys, games, and speed in under a minute - skip anything you don't need."
+            subtitle: "MuffinEMU runs real Wii U software on your device. This guide covers keys, games, and speed in under a minute - skip anything you don't need."
         ) {
             EmptyView()
         }

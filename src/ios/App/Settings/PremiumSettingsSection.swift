@@ -41,7 +41,7 @@ struct PremiumSettingsSection: View {
         } header: {
             Text("Premium")
         } footer: {
-            Text("Unlocks the pro app icons. Everything else in Muffin is free.")
+            Text("Unlocks the pro app icons. Everything else in MuffinEMU is free.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

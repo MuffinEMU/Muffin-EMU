@@ -1,25 +1,19 @@
 name: Build MuffinEMU (iOS)
 
 # The whole build, in order:
-#   1. MeloCafe's Cemu core for arm64-ios as Cemu.framework (CMake + vcpkg), with Muffin's
-#      Swift bridge and its glue compiled into it (src/CMakeLists.txt, IOS block).
+#   1. The Cemu core for arm64-ios as Cemu.framework (CMake + vcpkg), with the Swift
+#      bridge and its glue compiled into it (src/CMakeLists.txt, IOS block).
 #   2. A gate that fails the build if any function Swift can call is missing from that
 #      binary - a declared-but-undefined bridge function otherwise only shows up as a
 #      linker error deep inside xcodebuild.
-#   3. Muffin's SwiftUI app around the framework (XcodeGen + xcodebuild).
+#   3. The SwiftUI app around the framework (XcodeGen + xcodebuild).
 #   4. An unsigned IPA (SideStore / AltStore / LiveContainer) and an ad-hoc signed one with
 #      the JIT entitlements embedded (TrollStore / jailbroken), both verified, then
-#      published.
+#      published. A build of main is the next numbered release (see Choose the version).
 
 on:
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: >-
-          Optional. Publish the IPA as a GitHub Release under this tag (e.g. v1.0).
-          Leave empty to publish an automatic pre-release named after the commit.
-        required: false
-        default: ''
+  # A manual run on main publishes the next numbered release, exactly like a push.
+  workflow_dispatch: {}
   push:
     branches: [ main ]
     # Documentation cannot change the binary.
@@ -69,7 +63,7 @@ jobs:
           restore-keys: |
             vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-
 
-      - name: Configure MeloCafe core for iOS
+      - name: Configure the core for iOS
         # CMAKE_MACOSX_BUNDLE=OFF: for an iOS target CMake makes every executable an app
         # bundle by default, and the ZArchive submodule's zarchiveTool install rule has no
         # bundle destination, which stops configure. Cemu.framework is a library and is
@@ -94,7 +88,7 @@ jobs:
           path: .vcpkg-archives
           key: vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
 
-      - name: Build Cemu.framework (MeloCafe core + Muffin bridge)
+      - name: Build Cemu.framework (core + bridge)
         run: |
           set -eo pipefail
           cmake --build build-ios --target CemuBin 2>&1 | tee build.log
@@ -142,39 +136,59 @@ jobs:
         run: |
           set -eo pipefail
           cd src/ios
-          xcodebuild -project Cemu-iOS.xcodeproj -scheme Cemu -sdk iphoneos \
+          xcodebuild -project MuffinEMU.xcodeproj -scheme MuffinEMU -sdk iphoneos \
             -configuration Release CODE_SIGNING_ALLOWED=NO build \
             2>&1 | tee ../../xcodebuild.log
 
-      - name: Stamp a distinguishable build name and version
-        # Every build otherwise installs under the same name and version, and LiveContainer
-        # and SideStore cannot tell two of them apart. CFBundleIdentifier is not touched:
-        # it keys the app's data container.
+      - name: Choose the version
+        # Every build of main is the next release: the highest vX.Y tag plus 0.1, with .9
+        # rolling over to the next whole number (1.9 -> 2.0). With no numbered tag yet the
+        # first release is ci/VERSION. Other branches build unnumbered test builds. A build
+        # that fails or is cancelled publishes nothing, so it never uses up a number.
         run: |
           set -eo pipefail
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "Cemu.app" -path "*Release-iphoneos*" | head -n1)
-          PL="$APP_PATH/Info.plist"
-          TAG="${{ inputs.release_tag }}"
-          if [ -z "$TAG" ]; then TAG="${GITHUB_REF_NAME}-$(echo "$GITHUB_SHA" | cut -c1-7)"; fi
-          VER=$(./ci/version.sh)
-          # A dotted tag must agree with VERSION, or the release advertises a number the
-          # binary inside it does not report.
-          TAGVER=$(echo "$TAG" | sed -nE 's/^v?([0-9]+\.[0-9]+).*/\1/p')
-          if [ -n "$TAGVER" ] && [ "$TAGVER" != "$VER" ]; then
-            echo "::error::Tag $TAG says version $TAGVER but ci/VERSION says $VER."
-            exit 1
-          fi
-          # Home-screen label: short, no slashes.
-          if echo "$TAG" | grep -qE '^v?[0-9]+'; then
-            LABEL="$VER"
+          git fetch --tags --force -q origin
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            LAST=$(git tag -l 'v*' | sed -nE 's/^v([0-9]+)\.([0-9])$/\1 \2/p' | sort -n -k1,1 -k2,2 | tail -n1)
+            if [ -z "$LAST" ]; then
+              VER=$(./ci/version.sh)
+            else
+              MAJ=${LAST% *}; MIN=${LAST#* }
+              MIN=$((MIN + 1))
+              if [ "$MIN" -ge 10 ]; then MAJ=$((MAJ + 1)); MIN=0; fi
+              VER="$MAJ.$MIN"
+            fi
+            TAG="v$VER"
+            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              echo "::error::$TAG already exists"
+              exit 1
+            fi
+            LABEL="$VER"; RELEASE=true
           else
-            LABEL="$(echo "$GITHUB_SHA" | cut -c1-7)"
+            VER=$(./ci/version.sh)
+            TAG="auto-${GITHUB_SHA}"
+            LABEL=$(echo "$GITHUB_SHA" | cut -c1-7); RELEASE=false
           fi
+          echo "version $VER, tag $TAG, numbered release: $RELEASE"
+          {
+            echo "MUFFIN_VERSION=$VER"
+            echo "MUFFIN_TAG=$TAG"
+            echo "MUFFIN_LABEL=$LABEL"
+            echo "MUFFIN_RELEASE=$RELEASE"
+          } >> "$GITHUB_ENV"
+
+      - name: Stamp the build name and version
+        # LiveContainer and SideStore tell builds apart by name and version.
+        # CFBundleIdentifier is not touched: it keys the app's data container.
+        run: |
+          set -eo pipefail
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinEMU.app" -path "*Release-iphoneos*" | head -n1)
+          PL="$APP_PATH/Info.plist"
           pb() { /usr/libexec/PlistBuddy "$@"; }
-          pb -c "Set :CFBundleDisplayName MuffinEMU $LABEL" "$PL" 2>/dev/null \
-            || pb -c "Add :CFBundleDisplayName string MuffinEMU $LABEL" "$PL"
-          pb -c "Set :CFBundleShortVersionString $VER" "$PL" 2>/dev/null \
-            || pb -c "Add :CFBundleShortVersionString string $VER" "$PL"
+          pb -c "Set :CFBundleDisplayName MuffinEMU $MUFFIN_LABEL" "$PL" 2>/dev/null \
+            || pb -c "Add :CFBundleDisplayName string MuffinEMU $MUFFIN_LABEL" "$PL"
+          pb -c "Set :CFBundleShortVersionString $MUFFIN_VERSION" "$PL" 2>/dev/null \
+            || pb -c "Add :CFBundleShortVersionString string $MUFFIN_VERSION" "$PL"
           pb -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$PL" 2>/dev/null \
             || pb -c "Add :CFBundleVersion string ${GITHUB_RUN_NUMBER}" "$PL"
           echo "stamped display name: $(pb -c 'Print :CFBundleDisplayName' "$PL")"
@@ -184,12 +198,12 @@ jobs:
       - name: Package unsigned IPA
         run: |
           set -eo pipefail
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "Cemu.app" -path "*Release-iphoneos*" | head -n1)
-          rm -rf Payload Cemu.ipa
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinEMU.app" -path "*Release-iphoneos*" | head -n1)
+          rm -rf Payload MuffinEMU.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          zip -qry Cemu.ipa Payload
-          echo "IPA size: $(du -h Cemu.ipa | cut -f1)"
+          zip -qry MuffinEMU.ipa Payload
+          echo "IPA size: $(du -h MuffinEMU.ipa | cut -f1)"
 
       - name: Package ad-hoc signed IPA (TrollStore / jailbroken)
         # The plain IPA carries no entitlements at all; entitlements only exist inside a
@@ -198,16 +212,16 @@ jobs:
         # not load on those install paths.
         run: |
           set -eo pipefail
-          rm -rf PayloadSigned Cemu-fakesigned.ipa iparoot
+          rm -rf PayloadSigned MuffinEMU-fakesigned.ipa iparoot
           cp -R Payload PayloadSigned
-          for fw in PayloadSigned/Cemu.app/Frameworks/*.framework; do
+          for fw in PayloadSigned/MuffinEMU.app/Frameworks/*.framework; do
             codesign -f -s - "$fw"
           done
           codesign -f -s - \
             --entitlements src/ios/Cemu.entitlements \
             --generate-entitlement-der \
-            PayloadSigned/Cemu.app
-          COUNT=$(codesign -d --entitlements - --xml PayloadSigned/Cemu.app 2>/dev/null \
+            PayloadSigned/MuffinEMU.app
+          COUNT=$(codesign -d --entitlements - --xml PayloadSigned/MuffinEMU.app 2>/dev/null \
             | python3 -c "import sys,plistlib; d=sys.stdin.buffer.read(); i=d.find(b'<?xml'); print(0 if i<0 else len(plistlib.loads(d[i:])))")
           echo "embedded entitlements: $COUNT"
           if [ "$COUNT" -lt 4 ]; then
@@ -215,67 +229,61 @@ jobs:
             exit 1
           fi
           mkdir -p iparoot/Payload
-          cp -R PayloadSigned/Cemu.app iparoot/Payload/
-          ( cd iparoot && zip -qry ../Cemu-fakesigned.ipa Payload )
-          echo "fake-signed IPA size: $(du -h Cemu-fakesigned.ipa | cut -f1)"
+          cp -R PayloadSigned/MuffinEMU.app iparoot/Payload/
+          ( cd iparoot && zip -qry ../MuffinEMU-fakesigned.ipa Payload )
+          echo "fake-signed IPA size: $(du -h MuffinEMU-fakesigned.ipa | cut -f1)"
 
       - name: Verify the IPA is structurally sound
-        run: ./ci/verify-ipa.sh Cemu.ipa
+        run: ./ci/verify-ipa.sh MuffinEMU.ipa
 
       - name: Upload IPAs
         uses: actions/upload-artifact@v4
         with:
           name: MuffinEMU-ipa
           path: |
-            Cemu.ipa
-            Cemu-fakesigned.ipa
+            MuffinEMU.ipa
+            MuffinEMU-fakesigned.ipa
           retention-days: 30
 
       - name: Upload dSYMs
         run: |
           set -eo pipefail
-          DSYM_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "Cemu.app.dSYM" -path "*Release-iphoneos*" | head -n1)
-          zip -qr Cemu.app.dSYM.zip "$DSYM_PATH"
+          DSYM_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinEMU.app.dSYM" -path "*Release-iphoneos*" | head -n1)
+          zip -qr MuffinEMU.app.dSYM.zip "$DSYM_PATH"
 
       - uses: actions/upload-artifact@v4
         with:
           name: MuffinEMU-dSYM
-          path: Cemu.app.dSYM.zip
+          path: MuffinEMU.app.dSYM.zip
           retention-days: 30
-
-      - name: Refuse to publish into a tag that names different code
-        if: inputs.release_tag != ''
-        run: |
-          set -eo pipefail
-          TAG="${{ inputs.release_tag }}"
-          EXISTING=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
-          if [ -z "$EXISTING" ] || [ "$EXISTING" = "$GITHUB_SHA" ]; then exit 0; fi
-          echo "::error::Tag $TAG already points at $EXISTING, but this binary was built from $GITHUB_SHA."
-          exit 1
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag != '' && inputs.release_tag || format('auto-{0}', github.sha) }}
-          name: ${{ inputs.release_tag != '' && format('MuffinEMU {0}', inputs.release_tag) || format('MuffinEMU build {0}', github.sha) }}
-          prerelease: ${{ inputs.release_tag == '' }}
+          tag_name: ${{ env.MUFFIN_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.MUFFIN_RELEASE == 'true' && format('MuffinEMU {0}', env.MUFFIN_VERSION) || format('MuffinEMU test build {0}', github.sha) }}
+          prerelease: ${{ env.MUFFIN_RELEASE != 'true' }}
+          make_latest: ${{ env.MUFFIN_RELEASE == 'true' }}
           generate_release_notes: true
           files: |
-            Cemu.ipa
-            Cemu-fakesigned.ipa
-            Cemu.app.dSYM.zip
+            MuffinEMU.ipa
+            MuffinEMU-fakesigned.ipa
+            MuffinEMU.app.dSYM.zip
           body: |
-            MuffinEMU from commit ${{ github.sha }}: the Muffin app running MeloCafe's Cemu core.
+            MuffinEMU, Wii U emulation for iPhone and iPad, built from commit ${{ github.sha }}.
 
-            **`Cemu.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign
+            **`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign
             with your own Apple ID at install.
 
-            **`Cemu-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT
+            **`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT
             entitlements embedded.
 
             The recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the
             "Use the recompiler (JIT)" switch in Settings; without both it runs the
-            interpreter. `Cemu.app.dSYM.zip` is only needed to symbolicate a crash report.
+            interpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.
+
+            MuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.
 
       - name: Upload build logs (always)
         if: always()

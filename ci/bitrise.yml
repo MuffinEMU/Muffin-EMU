@@ -175,7 +175,7 @@ workflows:
                         #!/bin/bash
                         set -eo pipefail
                         cd "$BITRISE_SOURCE_DIR/src/ios"
-                        xcodebuild -project Cemu-iOS.xcodeproj -scheme Cemu -sdk iphoneos \
+                        xcodebuild -project MuffinEMU.xcodeproj -scheme MuffinEMU -sdk iphoneos \
                           -configuration Release CODE_SIGNING_ALLOWED=NO build \
                           2>&1 | tee "$BITRISE_DEPLOY_DIR/xcodebuild.log"
                 title: Build the Cemu iOS app

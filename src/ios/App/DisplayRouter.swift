@@ -39,7 +39,7 @@ import UIKit
 /// nil today and the router to land on `.deviceMirrored`. The log line says which
 /// branch was taken; do not assume dual-screen works until a device log shows
 /// `placement=dualScreen`.
-/// A view whose own backing layer is a `CAMetalLayer`. MeloCafe's window system renders
+/// A view whose own backing layer is a `CAMetalLayer`. The core's window system renders
 /// into the registered view's layer itself (Metal draws into it, MoltenVK builds its Vulkan
 /// surface from it), so the TV and GamePad views must be this, not a plain `UIView` with a
 /// sublayer added later.

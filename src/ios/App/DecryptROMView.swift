@@ -153,8 +153,8 @@ struct DecryptROMView: View {
                             .font(.system(size: 13, design: .rounded))
                             .foregroundColor(.secondary)
                         Text(chosenFormat.toWua
-                            ? "Saved to Files \u{2192} On My iPad/iPhone \u{2192} Muffin \u{2192} Decrypted \u{2192} \(game.id).wua"
-                            : "Saved to Files \u{2192} On My iPad/iPhone \u{2192} Muffin \u{2192} Decrypted \u{2192} \(game.title)")
+                            ? "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} \(game.id).wua"
+                            : "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} \(game.title)")
                             .font(.system(size: 12, design: .rounded))
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)

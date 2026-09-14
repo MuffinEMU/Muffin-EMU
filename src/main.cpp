@@ -363,7 +363,7 @@ void CemuInitialize(const char* execPath, const char* user_data_path, const char
     SDL_SetMainReady();
     SDL_SetiOSEventPump(true);
     
-    SDL_SetHint(SDL_HINT_APP_NAME, "MeloCafe");
+    SDL_SetHint(SDL_HINT_APP_NAME, "MuffinEMU");
     SDL_SetHint(SDL_HINT_JOYSTICK_ENHANCED_REPORTS, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_SWITCH_HOME_LED, "0");

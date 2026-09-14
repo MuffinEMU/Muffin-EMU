@@ -58,14 +58,14 @@ void IOSTitleLaunch_InitializeTitleList()
 {
 	if (sTitleListInitialized.exchange(true))
 		return;
-	// MeloCafe's CemuInitialize() already runs CafeTitleList::Initialize(), SetMLCPath(),
+	// The core's CemuInitialize() already runs CafeTitleList::Initialize(), SetMLCPath(),
 	// Refresh() and GraphicPack2::LoadAll(), in that order, before any launch can reach
 	// this file. Initializing the title list a second time would reset it under the scan
 	// that call started, so this only records where the list is rooted.
 	cemuLog_log(LogType::Force, "iOS: title list already initialized by the core (mlc: {})", _pathToUtf8(ActiveSettings::GetMlcPath()));
 }
 
-// MeloCafe has no MLC-only rescan, so this is a full CafeTitleList::Refresh() with a
+// The core has no MLC-only rescan, so this is a full CafeTitleList::Refresh() with a
 // bounded wait. Refresh() is asynchronous; waiting for it here is what makes an update or
 // DLC that DlcUpdateImport.swift installed moments ago part of the GameInfo that
 // PrepareForegroundTitle() builds. The cap keeps a huge library from holding a launch
@@ -99,7 +99,7 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 
 	// Adopt a keys.txt dropped into Documents/keys/ before the key cache first reads it.
 	IOSTitleLaunch_AdoptDroppedKeys();
-	// MeloCafe's key cache is load-once (KeyCache_Prepare() latches after its first
+	// The core's key cache is load-once (KeyCache_Prepare() latches after its first
 	// read), so a keys.txt imported after the first launch attempt of a session is picked
 	// up on the next app launch rather than this one. IOSTitleLaunch_ReloadAndCountKeys()
 	// is what tells the user that, from the file itself.
@@ -266,7 +266,7 @@ int IOSTitleLaunch_ReloadAndCountKeys()
 	while (KeyCache_GetAES128(cached) != nullptr)
 		cached++;
 
-	// Counted from the file, not only from the cache. MeloCafe's cache is load-once, so
+	// Counted from the file, not only from the cache. The core's cache is load-once, so
 	// after an import mid-session the cache still holds the old set; the file is the
 	// answer to "did my import work". Same acceptance rule as KeyCache_Prepare(): 32 hex
 	// digits at the start of a line, anything after '#' ignored.

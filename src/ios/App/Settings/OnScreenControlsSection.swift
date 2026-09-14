@@ -40,7 +40,7 @@ struct OnScreenControlsSection: View {
                     Text("Use melo-controls")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(useMeloControls
-                         ? "MeloCafe's touch controller, with its own layout editor. The options below apply to MuffinEMU's pad."
+                         ? "Melo-Controller, stossy11's touch controller, with its own layout editor. The options below apply to MuffinEMU's pad."
                          : "MuffinEMU's measured GamePad layout.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
@@ -105,7 +105,7 @@ struct OnScreenControlsSection: View {
             Text("On-screen Controls")
         } footer: {
             InfoButton.footer(
-                "The joystick is analog like the real GamePad's sticks; comfort controls move the shoulder buttons onto it once it's on. Muffin already picks the right button size for your screen - the sliders adjust that choice, not replace it.",
+                "The joystick is analog like the real GamePad's sticks; comfort controls move the shoulder buttons onto it once it's on. MuffinEMU already picks the right button size for your screen - the sliders adjust that choice, not replace it.",
                 title: "On-screen Controls",
                 text: fullText)
         }
