@@ -512,6 +512,17 @@ final class DisplayRouter: ObservableObject {
 
     private func resizeTVSurfaceIfRegistered() {
         guard tvSurfaceRegistered else { return }
+        // tvRenderView's autoresizingMask (set once, at creation - see `tvRenderView`
+        // above) is meant to keep its frame tracking `deviceContainer`'s bounds on its
+        // own, the same way it does for the pad's equivalent view. Setting it here too,
+        // directly, removes any dependency on that actually firing for every path a
+        // SwiftUI-hosted container's bounds can change through - a Single Screen switch
+        // among them - rather than trusting it silently did. Cheap and idempotent when
+        // the frame was already correct.
+        if let container = deviceContainer, let tvRenderView = tvRenderViewStorage,
+           tvRenderView.superview === container {
+            tvRenderView.frame = container.bounds
+        }
         let geometry = tvGeometry()
         cemu_bridge_resize_render_surface(
             Int32(geometry.size.width),
