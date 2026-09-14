@@ -187,6 +187,7 @@ void LatteSHRC_RemoveFromCache(LatteDecompilerShader* shader)
 				removed = true;
 				break;
 			}
+			shaderChain = shaderChain->next;
 		}
 	}
 	cemu_assert(removed);
