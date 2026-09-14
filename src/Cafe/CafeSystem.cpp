@@ -942,7 +942,7 @@ namespace CafeSystem
 			// check for content folder
 			fs::path contentPath = executablePath.parent_path().parent_path().append("content");
 			std::error_code ec;
-			if (cemu::fs::is_directory(contentPath, ec))
+			if (fs::is_directory(contentPath, ec))
 			{
 				// mounting content folder
 				bool r = FSCDeviceHost_Mount(std::string("/vol/content").c_str(), _pathToUtf8(contentPath), FSC_PRIORITY_BASE);
