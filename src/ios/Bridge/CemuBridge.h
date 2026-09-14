@@ -576,6 +576,31 @@ void cemu_bridge_resume(void);
 void cemu_bridge_shutdown_title(void);
 void cemu_bridge_shutdown(void);
 
+/// Freezes the running title's guest RAM to `path` (any slot file the caller wants -
+/// naming/organizing save slots is entirely the UI's job). Pauses the title if it isn't
+/// already paused, waits for it to genuinely go idle (not just "asked to pause" - see the
+/// long comment in IOSSaveState.cpp for why that distinction matters), writes the file,
+/// then resumes if this call was the one that paused it. Returns false, and never leaves
+/// a partial file behind, if no title is running, the title never fully quiesces (a guest
+/// thread stuck in a long call, or the GPU command queue never drains) within a few
+/// seconds, or the file couldn't be written.
+///
+/// Deliberately narrow: this captures guest RAM only, not GPU/renderer state (textures,
+/// shaders, command buffers). A texture or shader that changed since the save may show
+/// briefly stale content right after a load, until the game's own next GX2 call refreshes
+/// it - a visual glitch, not a correctness problem. See IOSSaveState.cpp for the full
+/// reasoning.
+bool cemu_bridge_save_state(const char* path);
+
+/// Restores guest RAM from a file `cemu_bridge_save_state()` wrote, into the SAME
+/// still-running title instance the save was taken from - not "the same game relaunched".
+/// Refuses (returns false, touches no memory) unless the currently running title's ID,
+/// active guest thread list, and mapped memory layout all match the save exactly; a
+/// mismatch means the save doesn't line up with the live session and there is no safe way
+/// to reconcile that. On success, forces the recompiler to drop any JIT-compiled code that
+/// may now be stale (safe under the interpreter too - a no-op there).
+bool cemu_bridge_load_state(const char* path);
+
 /// Human-readable one-liner describing engine/bridge state, for display in the UI.
 /// Never NULL. Points to static/thread-local storage; copy if you need to keep it.
 const char* cemu_bridge_status_text(void);

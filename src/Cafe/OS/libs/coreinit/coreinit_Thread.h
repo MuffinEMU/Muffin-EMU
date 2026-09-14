@@ -619,6 +619,16 @@ namespace coreinit
 
     bool __OSIsThreadActive(OSThread_t* thread);
 	void __OSDeleteAllActivePPCThreads();
+
+	// True only when EVERY core is between PPC instruction timeslices (parked in its idle
+	// fiber) rather than inside attemptEnterThread(). Suspending every guest thread (see
+	// IOSTitlePause_Pause() in IOSTitlePause.cpp) stops each core from being handed a NEW
+	// thread, but does not interrupt one that is already mid-timeslice - that core keeps
+	// running, and keeps touching guest memory, until it reaches its own next reschedule
+	// point on its own. This lets a caller outside the scheduler (the save-state code)
+	// poll for the point where every core has actually reached that point, rather than
+	// assuming IOSTitlePause_Pause() returning means execution has stopped.
+	bool __OSAllCoresIdle();
 }
 
 #pragma pack()

@@ -106,6 +106,8 @@ bool IOSTitlePause_Pause();
 bool IOSTitlePause_Resume();
 bool IOSTitlePause_IsPaused();
 void IOSTitlePause_Forget();
+bool IOSSaveState_Save(const char* path);
+bool IOSSaveState_Load(const char* path);
 void IOSSystemImplementation_Install();
 bool IOSSystemImplementation_TitleExited(int* statusOut);
 void IOSSystemImplementation_ResetExit();
@@ -1723,6 +1725,18 @@ void cemu_bridge_pause(void) {
 
 void cemu_bridge_resume(void) {
     IOSTitlePause_Resume();
+}
+
+bool cemu_bridge_save_state(const char* path) {
+    if (!path || !*path)
+        return false;
+    return IOSSaveState_Save(path);
+}
+
+bool cemu_bridge_load_state(const char* path) {
+    if (!path || !*path)
+        return false;
+    return IOSSaveState_Load(path);
 }
 
 void cemu_bridge_shutdown_title(void) {
