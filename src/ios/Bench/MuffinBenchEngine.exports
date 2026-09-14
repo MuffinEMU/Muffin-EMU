@@ -1,0 +1,13 @@
+_mbench_api_version
+_mbench_engine_id
+_mbench_engine_name
+_mbench_engine_commit
+_mbench_initialize
+_mbench_jit_permitted
+_mbench_attach_surface
+_mbench_boot
+_mbench_log_path
+_mbench_frame_count
+_mbench_title_running
+_mbench_stop_title
+_mbench_shutdown

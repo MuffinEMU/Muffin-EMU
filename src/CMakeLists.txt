@@ -214,3 +214,49 @@ endif()
 if (BSD)
 	target_link_libraries(CemuBin PRIVATE execinfo SPIRV-Tools SPIRV-Tools-opt)
 endif()
+
+# Benchmark build (MuffinEMU Bench). Off for every normal build. Produces one framework
+# that exports only the mbench_* contract (MuffinBenchEngine.h): the export list keeps
+# dyld from coalescing this engine's C++ symbols with another engine loaded in the same
+# process.
+option(MUFFIN_BENCH_ENGINE "Build this engine as a MuffinEMU Bench framework" OFF)
+set(MUFFIN_BENCH_NAME "MuffinBenchV38" CACHE STRING "Benchmark framework name")
+set(MBENCH_COMMIT "unknown" CACHE STRING "Engine commit baked into the benchmark framework")
+if(PLATFORM_IOS AND MUFFIN_BENCH_ENGINE)
+	add_library(MuffinBenchEngine SHARED
+		ios/Bench/MuffinBenchEngine.h
+		ios/Bench/MuffinBenchCommon.h
+		ios/Bench/MuffinBenchEngineV38.mm
+		ios/Bridge/CemuBridge.mm
+	)
+	set_target_properties(MuffinBenchEngine PROPERTIES
+		FRAMEWORK TRUE
+		OUTPUT_NAME "${MUFFIN_BENCH_NAME}"
+		MACOSX_FRAMEWORK_IDENTIFIER "com.kiddreads.bench.${MUFFIN_BENCH_NAME}"
+		INSTALL_NAME_DIR "@rpath"
+		BUILD_WITH_INSTALL_RPATH TRUE
+	)
+	# Compiled with ARC, as Xcode compiled the bridge for the app, so kept off the non-ARC
+	# precompiled header and given precompiled.h textually.
+	set_source_files_properties(ios/Bench/MuffinBenchEngineV38.mm ios/Bridge/CemuBridge.mm PROPERTIES
+		COMPILE_OPTIONS "-fobjc-arc;-include;${CMAKE_SOURCE_DIR}/src/Common/precompiled.h"
+		SKIP_PRECOMPILE_HEADERS ON)
+	# The defines the Muffin app's Xcode target gave CemuBridge.mm.
+	target_compile_definitions(MuffinBenchEngine PRIVATE
+		CEMU_CORE_AVAILABLE=1 CEMU_PLATFORM_IOS=1 ENABLE_METAL=1 HAS_COREAUDIO=1
+		MBENCH_COMMIT="${MBENCH_COMMIT}")
+	target_include_directories(MuffinBenchEngine PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}
+		${CMAKE_CURRENT_SOURCE_DIR}/Cafe
+		${CMAKE_CURRENT_SOURCE_DIR}/ios/Bridge
+		${CMAKE_CURRENT_SOURCE_DIR}/ios/Bench
+		${CMAKE_SOURCE_DIR}/dependencies/metal-cpp)
+	# The libraries Muffin's app build linked.
+	target_link_libraries(MuffinBenchEngine PRIVATE
+		CemuCafe iosgui CemuAudio CemuComponents CemuCommon CemuConfig
+		imguiImpl CemuInput CemuResource CemuUtil
+		"-framework Foundation" "-framework UIKit" "-framework Metal" "-framework QuartzCore"
+		"-framework GameController" "-framework AudioToolbox" "-framework AVFoundation")
+	target_link_options(MuffinBenchEngine PRIVATE
+		"-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/ios/Bench/MuffinBenchEngine.exports")
+endif()
