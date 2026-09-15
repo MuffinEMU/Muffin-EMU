@@ -253,6 +253,8 @@ struct GameBrowserView: View {
     @State private var gameOptionsTarget: GameMetadata?
     /// Same pattern as gameOptionsTarget, for "Decrypt…" (DecryptROMView.swift).
     @State private var decryptTarget: GameMetadata?
+    /// Same pattern again, for "Change Cover Art…" (CoverArtPickerView.swift).
+    @State private var coverArtTarget: GameMetadata?
     @ObservedObject private var perGameSettings = PerGameSettingsStore.shared
     /// What the picker is being opened for.
     ///
@@ -506,12 +508,14 @@ struct GameBrowserView: View {
                                 GameContextMenu(
                                     game: game,
                                     store: perGameSettings,
+                                    gameManager: gameManager,
                                     onViewOptions: { gameOptionsTarget = game },
                                     onDecryptToFiles: { decryptTarget = game },
                                     onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
                                     onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
                                     onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
-                                    onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) }
+                                    onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) },
+                                    onChangeCoverArt: { coverArtTarget = game }
                                 )
                             }
                         }
@@ -555,6 +559,9 @@ struct GameBrowserView: View {
             }
             .sheet(item: $decryptTarget) { game in
                 DecryptROMView(game: game)
+            }
+            .sheet(item: $coverArtTarget) { game in
+                CoverArtPickerView(game: game, gameManager: gameManager)
             }
             .sheet(isPresented: Binding(
                 get: { gamePickerContext != nil },

@@ -75,29 +75,74 @@ enum CoverArtFetcher {
         return true
     }
 
+    /// Thrown by fetchArt(forGameTdbId:) for an actual transport failure (offline,
+    /// DNS, timeout) - kept distinct from that same function's plain `nil` return
+    /// (every region/extension combination came back 404/empty, i.e. GameTDB
+    /// genuinely has nothing under that ID), so a caller that has a person waiting on
+    /// the answer - CoverArtPickerView's manual "Try a specific GameTDB ID" - can
+    /// honestly say "you're offline" instead of "GameTDB doesn't have this," which
+    /// would be a real, checkable claim this couldn't back up.
+    enum LookupError: LocalizedError {
+        case network(Error)
+        var errorDescription: String? {
+            switch self {
+            case .network(let error):
+                return "Couldn't reach GameTDB: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// The region/extension probe against GameTDB for one explicit Game ID - the
+    /// same loop fetchAndCache() below has always run for an ID it derived itself,
+    /// extracted so CoverArtPickerView's manual "Try a specific GameTDB ID" path can
+    /// reuse it for an ID a person typed in, rather than duplicating it. Returns the
+    /// found bytes and which extension they came back as on success, `nil` when
+    /// every combination tried came back 404/empty (a normal, expected outcome - see
+    /// `fetch()` below), and throws only for a real transport failure. Does no
+    /// caching or disk I/O of any kind - callers decide what to do with the bytes.
+    static func fetchArt(forGameTdbId tdbId: String) async throws -> (data: Data, ext: String)? {
+        for region in regions {
+            for ext in extensions {
+                guard let url = URL(string: "https://art.gametdb.com/wiiu/cover/\(region)/\(tdbId).\(ext)") else { continue }
+                do {
+                    if let data = try await fetch(url), !data.isEmpty {
+                        return (data, ext)
+                    }
+                } catch {
+                    throw LookupError.network(error)
+                }
+            }
+        }
+        return nil
+    }
+
     /// Fetches and caches real box art for one game, trying region/extension
     /// combinations in order and stopping at the first one that actually resolves.
     /// Returns the cached file's path on success, nil on any failure (no network, no
     /// art listed anywhere tried) - writes the "nothing there" marker in the latter
     /// case so the next launch doesn't try again for nothing.
+    ///
+    /// Reuses fetchArt(forGameTdbId:) for the actual probing rather than running its
+    /// own copy of the loop. `try?` here restores this path's original behavior of
+    /// treating a network failure exactly like "nothing found anywhere" - a
+    /// background fetch has nobody to report "you're offline" to, and gets another
+    /// chance on a later launch regardless. One difference from the pre-extraction
+    /// version: that version kept trying further region/extension combinations if
+    /// the disk write of an already-found image failed; this one does not, since a
+    /// write failure right after a successful fetch (disk full, permissions) is not
+    /// something a different region's bytes would fix either. Immaterial in
+    /// practice - the write is a few KB to a directory this same call just created -
+    /// but noted because it is a real, if unreachable, behavior change.
     static func fetchAndCache(gameID: String, romPath: String, in libraryDirectory: URL) async -> String? {
         guard let tdbId = deriveGameTdbId(romPath: romPath) else { return nil }
 
         let cacheDirectory = libraryDirectory.appendingPathComponent(cacheDirectoryName)
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
 
-        for region in regions {
-            for ext in extensions {
-                guard let url = URL(string: "https://art.gametdb.com/wiiu/cover/\(region)/\(tdbId).\(ext)") else { continue }
-                guard let data = try? await fetch(url), !data.isEmpty else { continue }
-
-                let cached = cacheDirectory.appendingPathComponent("\(gameID).\(ext)")
-                do {
-                    try data.write(to: cached, options: .atomic)
-                    return cached.path
-                } catch {
-                    continue
-                }
+        if let found = (try? await fetchArt(forGameTdbId: tdbId)) ?? nil {
+            let cached = cacheDirectory.appendingPathComponent("\(gameID).\(found.ext)")
+            if (try? found.data.write(to: cached, options: .atomic)) != nil {
+                return cached.path
             }
         }
 
