@@ -605,9 +605,10 @@ struct GameBrowserView: View {
             } message: { pending in
                 Text("Couldn't automatically match this \(pending.kind.displayName) to a game already in your library. Add it to \"\(pending.game.title)\" - the game you long-pressed?")
             }
-            .alert(
+            .confirmationDialog(
                 "Remove content?",
                 isPresented: .constant(pendingRemoval != nil),
+                titleVisibility: .visible,
                 presenting: pendingRemoval
             ) { pending in
                 Button("Remove", role: .destructive) {
@@ -633,9 +634,10 @@ struct GameBrowserView: View {
             } message: { pending in
                 Text("Remove the \(pending.kind.displayName) installed for \"\(pending.game.title)\"? This can't be undone - you'll need to import it again.")
             }
-            .alert(
+            .confirmationDialog(
                 "Replace existing file?",
                 isPresented: .constant(pendingOverwriteConfirmation != nil),
+                titleVisibility: .visible,
                 presenting: pendingOverwriteConfirmation
             ) { pending in
                 Button("Replace", role: .destructive) {
