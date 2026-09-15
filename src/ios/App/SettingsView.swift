@@ -59,6 +59,41 @@ struct SettingsView: View {
         EmulatedDevicesSettingsSection()
     }
 
+    /// The ZStack behind this Form has painted MuffinTheme.backgroundGradient since the
+    /// screen was written, and on iOS 15 none of it was ever visible: a SwiftUI Form is
+    /// a grouped list whose own background is opaque systemGroupedBackground, so the
+    /// brand gradient sat behind a flat grey sheet the whole time. iOS 16's
+    /// scrollContentBackground(.hidden) is the supported way to drop that fill, and it
+    /// is what finally lets Settings read as part of MuffinEMU rather than as iOS's own
+    /// settings app with some coloured labels in it.
+    ///
+    /// Deliberately not fixed on iOS 15 via `UITableView.appearance().backgroundColor`:
+    /// that is process-wide UIKit appearance state, and it would strip the background
+    /// out of every other list in the app (the library, the skin pickers, Graphic Packs)
+    /// to style this one screen. iOS 15 keeps the grey Form it has always had.
+    @ViewBuilder private var settingsForm: some View {
+        if #available(iOS 16.0, *) {
+            Form {
+                formTop
+                formBottom
+                formExtra
+            }
+            .scrollContentBackground(.hidden)
+            // Once the grey sheet is gone the rows themselves are still iOS's
+            // secondarySystemGroupedBackground, which against a warm gradient reads as
+            // grey cards someone forgot to theme. cream is the same fill MuffinCard uses
+            // for every other surface in the app, so Settings becomes the same material
+            // as the library and the pickers instead of a third thing.
+            .listRowBackground(MuffinTheme.cream)
+        } else {
+            Form {
+                formTop
+                formBottom
+                formExtra
+            }
+        }
+    }
+
     var body: some View {
         // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
         NavigationView {
@@ -66,17 +101,15 @@ struct SettingsView: View {
                 MuffinTheme.backgroundGradient
                     .ignoresSafeArea()
 
-                Form {
-                    formTop
-                    formBottom
-                    formExtra
-                }
+                settingsForm
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                        .foregroundColor(MuffinTheme.pixelBlue)
                 }
             }
             .sheet(isPresented: $showingIconPicker) {
