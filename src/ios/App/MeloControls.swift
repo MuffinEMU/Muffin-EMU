@@ -43,13 +43,31 @@ struct MeloControlsOverlay: View {
         // ControllerView reads isEditing once, into its own @State, so a change has to
         // rebuild it rather than update it.
         .id(isEditing)
-        // Scales the whole pad evenly around its own center, on top of whatever
-        // Melo-Controller's own layout editor already positioned - a uniform view
-        // transform rather than a setting Melo-Controller itself exposes, so it works
-        // the same regardless of how any individual button was moved or resized.
-        // SwiftUI scales hit-testing along with the visuals, so touch targets grow and
-        // shrink with what's drawn rather than drifting out of registration with it.
-        .scaleEffect(scale)
+        // Scales the whole pad on top of whatever Melo-Controller's own layout editor
+        // already positioned - a uniform view transform rather than a setting
+        // Melo-Controller itself exposes, so it works the same regardless of how any
+        // individual button was moved or resized. SwiftUI scales hit-testing along with
+        // the visuals, so touch targets grow and shrink with what's drawn rather than
+        // drifting out of registration with it.
+        //
+        // Anchored bottom-center, not .center (the default): Wii U controls sit at the
+        // bottom of the screen, both left and right clusters, so growing from the
+        // bottom keeps that edge - the one that actually matters for reachability with
+        // your thumbs - locked in place instead of also pushing everything down and
+        // off the bottom as scale increases.
+        //
+        // .clipped() to the full screen frame is the real fix for "it goes off screen":
+        // this is a single transform with one anchor, so it cannot make the LEFT
+        // cluster grow from its own left edge and the RIGHT cluster grow from its own
+        // right edge at the same time - Melo-Controller renders both as one view this
+        // app has no access to split. Clipping to the screen bounds means an
+        // over-scaled pad's outer edges get cropped at the edge of the screen instead
+        // of drifting past it into genuinely unreachable space - the part that would
+        // have gone off-screen is gone rather than there-but-untouchable, which is the
+        // failure mode that was actually reported.
+        .scaleEffect(scale, anchor: .bottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
         .onDisappear {
             // A press in flight when the pad goes away would otherwise stay held.
             cemu_bridge_release_all_buttons()
