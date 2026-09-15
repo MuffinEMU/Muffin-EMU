@@ -35,8 +35,11 @@ struct CreateAccountView: View {
                 Form {
                     Section {
                         HStack {
-                            Text("PersistentId")
-                            TextField("PersistentId", text: $persistentIdText)
+                            // The app's row-label font, like every other labelled row in
+                            // Settings and the sheets. These were plain body text.
+                            Text("Persistent ID")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            TextField("Persistent ID", text: $persistentIdText)
                                 .multilineTextAlignment(.trailing)
                                 .font(.body.monospaced())
                                 .keyboardType(.asciiCapable)
@@ -45,10 +48,20 @@ struct CreateAccountView: View {
                         }
                         HStack {
                             Text("Mii name")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
                             TextField("Mii name", text: $miiName)
                                 .multilineTextAlignment(.trailing)
                                 .focused($nameFocused)
                                 .submitLabel(.done)
+                            // The field silently truncates at ten characters (the Wii U's
+                            // own Mii name limit, enforced below). Typing an eleventh and
+                            // watching nothing happen looks like a stuck keyboard; the
+                            // counter says what the rule is before it bites.
+                            Text("\(miiName.count)/10")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundColor(miiName.count >= 10 ? MuffinTheme.blushPink : MuffinTheme.brownMid)
+                                .monospacedDigit()
+                                .accessibilityLabel("\(miiName.count) of 10 characters used")
                         }
                         .onChange(of: miiName) { newValue in
                             let trimmedName = String(newValue.prefix(10))
@@ -57,20 +70,29 @@ struct CreateAccountView: View {
                             }
                         }
                     } footer: {
-                        Text("The persistent id is the internal folder name used for your saves. Only change this if you are importing saves from a Wii U with a specific id.")
+                        Text("The persistent ID is the internal folder name used for your saves. Only change this if you are importing saves from a Wii U with a specific ID.")
                     }
 
                     Section("Mii details") {
-                        DatePicker("Birthday", selection: $birthDate, in: ...Date(), displayedComponents: .date)
-                        Picker("Gender", selection: $gender) {
+                        DatePicker(selection: $birthDate, in: ...Date(), displayedComponents: .date) {
+                            Text("Birthday")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        }
+                        Picker(selection: $gender) {
                             Text("Male").tag(0)
                             Text("Female").tag(1)
+                        } label: {
+                            Text("Gender")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
                         }
                         .pickerStyle(.segmented)
-                        Picker("Country", selection: $country) {
+                        Picker(selection: $country) {
                             ForEach(countries) { entry in
                                 Text(entry.name).tag(entry.code)
                             }
+                        } label: {
+                            Text("Country")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
                         }
                         .pickerStyle(.menu)
                         .tint(MuffinTheme.pixelBlue)
@@ -96,7 +118,10 @@ struct CreateAccountView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("OK") {
+                    // "Create", not "OK" - the confirming action on a creation form should
+                    // name what it does, and "OK" next to "Cancel" says nothing about
+                    // which one makes an account.
+                    Button("Create") {
                         createAccount()
                     }
                 }
