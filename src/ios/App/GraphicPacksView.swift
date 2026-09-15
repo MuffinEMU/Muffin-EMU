@@ -36,7 +36,7 @@ struct GraphicPacksView: View {
                         )) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(pack.name)
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .font(.system(size: 15, weight: .semibold, design: .rounded))
                                 if !pack.description.isEmpty {
                                     Text(pack.description)
                                         .font(.system(size: 12))
