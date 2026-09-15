@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Themes &amp; Icons — MuffinEMU Docs</title>
+<meta name="description" content="All 31 real MuffinEMU themes with their actual hex values, the gradient math, and how the 3 Pro themes unlock.">
+<link rel="icon" href="../icon.png">
+<link rel="apple-touch-icon" href="../icon.png">
+<meta name="theme-color" content="#F4A551" id="themeColorMeta">
+<link rel="stylesheet" href="../site.css">
+<style>
+  .theme-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; }
+  .theme-swatch { border-radius: var(--radius-sm); overflow: hidden; box-shadow: 0 6px 16px var(--shadow); cursor: pointer; border: none; padding: 0; text-align: left; font: inherit; }
+  .theme-swatch .swatch-bg { height: 64px; }
+  .theme-swatch .swatch-label { background: var(--cream); padding: .5rem .6rem; font-size: .78rem; font-weight: 700; color: var(--brown-darkest); display: flex; align-items: center; justify-content: space-between; gap: .4rem; }
+  .theme-swatch .swatch-label .pro-badge { font-size: .62rem; background: var(--navy); color: var(--sparkle); padding: .12em .5em; border-radius: 999px; }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="../index.html"><img src="../icon.png" alt="" width="30" height="30"><span>MuffinEMU</span></a>
+    <nav class="site-nav">
+      <a href="../index.html">Home</a>
+      <a href="installation.html">Install</a>
+      <details class="nav-dropdown">
+        <summary>Docs ▾</summary>
+        <div class="dropdown-panel">
+          <a href="index.html">All documentation</a>
+          <a href="features.html">Features overview</a>
+          <a href="screen-layout.html">Screen Layout</a>
+          <a href="save-states.html">Save States</a>
+          <a href="controls.html">Controls &amp; GamePad</a>
+          <a href="themes.html" aria-current="page">Themes &amp; Icons</a>
+          <a href="troubleshooting.html">Troubleshooting</a>
+          <a href="faq.html">FAQ</a>
+        </div>
+      </details>
+      <a href="https://github.com/kiddreads/MuffinEMU">GitHub</a>
+    </nav>
+    <button class="theme-btn" data-theme-cycle type="button" aria-label="Switch theme">
+      <span aria-hidden="true">🎲</span>
+      <span data-theme-name>Bakery (Original)</span>
+      <span class="swatches" data-theme-swatches aria-hidden="true"></span>
+    </button>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-sidebar">
+    <p class="sidebar-title">Documentation</p>
+    <nav>
+      <a href="index.html">Overview</a>
+      <a href="installation.html">Installation</a>
+      <a href="features.html">Features overview</a>
+      <a href="screen-layout.html">Screen Layout</a>
+      <a href="save-states.html">Save States</a>
+      <a href="controls.html">Controls &amp; GamePad</a>
+      <a href="themes.html" aria-current="page">Themes &amp; Icons</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </aside>
+
+  <div class="docs-content">
+    <h1>Themes &amp; Icons</h1>
+    <p class="subtitle">31 app icons, each with a matching colour theme. The data below is the real thing, not a placeholder palette.</p>
+
+    <h2>How the themes are built</h2>
+    <p><strong>Bakery (Original)</strong> is the app's existing hand-tuned palette, kept as-is rather than re-derived. The other 30 are a systematic derivation from each icon's own real artwork: median-cut colour quantization picks a primary/secondary/accent triad from the icon, then fixed lighten/darken/desaturate formulas build the light and dark variant of each — the same relationships Bakery's own hand-tuned palette already used (lighten accents for dark mode, deepen and desaturate backgrounds, flip text from dark-on-cream to light-on-dark), just applied uniformly instead of judged one icon at a time. Every hex value traces back to a real pixel in that icon's actual art — none of it is invented.</p>
+
+    <h2>The 14 tokens</h2>
+    <p>Every theme defines the same 14 light/dark hex pairs. Bakery's own values, as an example:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Token</th><th>Light</th><th>Dark</th></tr></thead>
+        <tbody>
+          <tr><td>backgroundTop</td><td><code>#F4A551</code></td><td><code>#935009</code></td></tr>
+          <tr><td>backgroundBottom</td><td><code>#E6692D</code></td><td><code>#512009</code></td></tr>
+          <tr><td>muffinTopLight</td><td><code>#E3A254</code></td><td><code>#C98A46</code></td></tr>
+          <tr><td>muffinTopDark</td><td><code>#A8622A</code></td><td><code>#8A4E20</code></td></tr>
+          <tr><td>cream</td><td><code>#FDF6EC</code></td><td><code>#241813</code></td></tr>
+          <tr><td>wrapper</td><td><code>#F0DFC3</code></td><td><code>#3A2A1E</code></td></tr>
+          <tr><td>blueberryNavy</td><td><code>#453765</code></td><td><code>#8177AD</code></td></tr>
+          <tr><td>pixelBlue</td><td><code>#6C63FF</code></td><td><code>#8A82FF</code></td></tr>
+          <tr><td>blushPink</td><td><code>#F2A6A0</code></td><td><code>#E08880</code></td></tr>
+          <tr><td>brownDarkest</td><td><code>#2E1B10</code></td><td><code>#FBEBD8</code></td></tr>
+          <tr><td>brownDark</td><td><code>#5C2E10</code></td><td><code>#E8CBA8</code></td></tr>
+          <tr><td>brownMid</td><td><code>#7A4A22</code></td><td><code>#C9A47C</code></td></tr>
+          <tr><td>sparkleCream</td><td><code>#FFF3DD</code></td><td><code>#FFF3DD</code></td></tr>
+          <tr><td>shadow</td><td><code>#4A2410</code></td><td><code>#000000</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Every UI colour in the app reads through these 14, via a trait-collection-adaptive <code>Color(light:dark:)</code> — so switching themes, or toggling system Dark Mode, repaints every screen live with no relaunch.</p>
+
+    <h2>The background gradient</h2>
+    <p>Two shapes, matching <code>MuffinTheme.swift</code>'s <code>backgroundGradient</code> exactly:</p>
+    <ul>
+      <li><strong>Flat two-colour (every theme but one):</strong> <code>backgroundTop → backgroundBottom</code>, corner to corner — SwiftUI's <code>.topLeading</code> to <code>.bottomTrailing</code>, which is a 135° diagonal in CSS with the two colours spaced evenly.</li>
+      <li><strong>Multi-stop (Autism Muffin only):</strong> a rainbow band straight down the screen — SwiftUI's <code>.top</code> to <code>.bottom</code>, 180° in CSS — spent in the top ~13% and holding a calm colour for the rest, so the header reads as a rainbow without turning every screen underneath it into one.</li>
+    </ul>
+
+    <h2>All 31 themes</h2>
+    <p>Click any swatch to apply it — same shared theme picker as the button in the header, and the same 31 <code>MuffinThemePresets.swift</code> defines.</p>
+    <div class="grid theme-grid" id="themeGrid"></div>
+
+    <h2>Pro themes</h2>
+    <p>3 of the 31 — Diamond Ice, Gold VIP, and Holographic — are "Pro," unlocked by a code rather than gated behind an in-app purchase. There is no StoreKit product involved; the unlock code is the entire purchase path, and app icons are the <em>only</em> thing it gates — nothing else in MuffinEMU is paywalled. Codes are checked against a salted PBKDF2-HMAC-SHA256 hash embedded in the app, so no plaintext code appears anywhere in the source or the compiled binary; a successful unlock is then bound to a per-install random key so it survives reinstalls through the same signing identity without being copyable to a different install by just editing a preferences file.</p>
+
+    <h2>Icons</h2>
+    <p>31 app icons total — the original plus 30 alternates — each carrying the theme derived from its own artwork. Icon and theme pickers are deliberately independent: picking an icon never changes your theme, and picking a theme never changes your icon. A theme's association with "its" icon only ever shows up as a "matches your icon" label in the picker UI — nothing enforces pairing them.</p>
+
+    <div class="doc-next">
+      <a href="controls.html"><span class="dir">Previous</span>← Controls &amp; GamePad</a>
+      <a href="troubleshooting.html"><span class="dir">Next</span>Troubleshooting →</a>
+    </div>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <p><a href="https://github.com/kiddreads/MuffinEMU">github.com/kiddreads/MuffinEMU</a></p>
+</footer>
+
+<script src="../theme.js"></script>
+<script>
+(function () {
+  function isDark() {
+    return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  }
+  function pick(pair) { return isDark() ? pair[1] : pair[0]; }
+
+  function render() {
+    var grid = document.getElementById("themeGrid");
+    if (!grid || !window.MuffinThemes) return;
+    grid.innerHTML = "";
+    window.MuffinThemes.THEMES.forEach(function (theme, index) {
+      var btn = document.createElement("button");
+      btn.className = "theme-swatch";
+      btn.type = "button";
+      btn.title = "Apply " + theme.name;
+
+      var bg = document.createElement("div");
+      bg.className = "swatch-bg";
+      if (theme.stops) {
+        var stops = isDark() ? theme.stops.dark : theme.stops.light;
+        var locs = theme.stops.locations;
+        var stopStr = stops.map(function (c, i) { return c + " " + (locs[i] * 100).toFixed(1) + "%"; }).join(", ");
+        bg.style.background = "linear-gradient(180deg, " + stopStr + ")";
+      } else {
+        bg.style.background = "linear-gradient(135deg, " + pick(theme.top) + ", " + pick(theme.bottom) + ")";
+      }
+
+      var label = document.createElement("div");
+      label.className = "swatch-label";
+      var nameSpan = document.createElement("span");
+      nameSpan.textContent = theme.name;
+      label.appendChild(nameSpan);
+      if (theme.pro) {
+        var badge = document.createElement("span");
+        badge.className = "pro-badge";
+        badge.textContent = "Pro";
+        label.appendChild(badge);
+      }
+
+      btn.appendChild(bg);
+      btn.appendChild(label);
+      btn.addEventListener("click", function () {
+        window.MuffinThemes.setById(theme.id, true);
+      });
+      grid.appendChild(btn);
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", render);
+  } else {
+    render();
+  }
+})();
+</script>
+</body>
+</html>
