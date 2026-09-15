@@ -30,6 +30,7 @@ struct SettingsView: View {
         ShaderCacheSection()
         EmulatedClockSection()
         OnScreenControlsSection()
+        InputServicesSettingsSection()
         DisplaySettingsSection()
         LibrarySettingsSection(gameManager: gameManager)
         KeysSettingsSection()
@@ -43,8 +44,19 @@ struct SettingsView: View {
         PremiumSettingsSection()
         PreviewPadSection()
         OverlaySettingsSection()
+        NotificationSettingsSection()
         AudioSettingsSection()
         AboutSettingsSection()
+    }
+
+    // formTop/formBottom are already at ViewBuilder's 10-child ceiling (see the doc
+    // comment above) - accounts, network service and the emulated-devices toggles landed
+    // after both were already full, so they get a third block rather than pushing either
+    // one past 10.
+    @ViewBuilder private var formExtra: some View {
+        AccountSettingsSection()
+        NetworkServiceSettingsSection()
+        EmulatedDevicesSettingsSection()
     }
 
     var body: some View {
@@ -57,6 +69,7 @@ struct SettingsView: View {
                 Form {
                     formTop
                     formBottom
+                    formExtra
                 }
             }
             .navigationTitle("Settings")
