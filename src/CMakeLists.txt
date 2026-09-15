@@ -119,6 +119,7 @@ if(IOS)
 		ios/Bridge/Core/IOSAccounts.cpp
 		ios/Bridge/Core/IOSCoverArt.cpp
 		ios/Bridge/Core/IOSDlcUpdateImport.cpp
+		ios/Bridge/Core/IOSEmulatedDevices.cpp
 		ios/Bridge/Core/IOSGraphicPacks.cpp
 		ios/Bridge/Core/IOSSaveState.cpp
 		ios/Bridge/Core/IOSSystemImplementation.cpp
