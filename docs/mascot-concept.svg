@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hand-drawn MuffinEMU mascot concept, originally built inline in docs/index.html's
+  header during a website redesign. Replaced there with the real app icon
+  (docs/icon.png, identical to the actual AppIcon.appiconset artwork) since Void
+  pointed out the site's header should show the REAL icon, not an approximation of
+  it - but kept here on his own request, since he thought the sketch was cool even
+  though it wasn't literally accurate. Colors are theme-variable (CSS custom
+  properties) in the original inline context; hardcoded to the real Bakery
+  (Original) theme's hex values here so this file renders standalone.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="MuffinEMU mascot concept sketch">
+  <ellipse cx="60" cy="108" rx="40" ry="6" fill="#4A2410"/>
+  <!-- wrapper -->
+  <path d="M22 70 L98 70 L86 112 L34 112 Z" fill="#F0DFC3"/>
+  <g stroke="#7A4A22" stroke-width="1.5">
+    <line x1="34" y1="72" x2="30" y2="110"/>
+    <line x1="47" y1="72" x2="44.5" y2="111"/>
+    <line x1="60" y1="72" x2="60" y2="112"/>
+    <line x1="73" y1="72" x2="75.5" y2="111"/>
+    <line x1="86" y1="72" x2="90" y2="110"/>
+  </g>
+  <!-- dome -->
+  <path d="M6 72 C10 34 30 12 60 12 C90 12 110 34 114 72 C114 82 96 78 60 78 C24 78 6 82 6 72 Z"
+    fill="#E3A254"/>
+  <path d="M6 72 C10 34 30 12 60 12" fill="none" stroke="#A8622A" stroke-width="2" opacity=".4" stroke-linecap="round"/>
+  <!-- blueberries: navy, plus the one signature pixel-blue square -->
+  <circle cx="38" cy="42" r="6" fill="#453765"/>
+  <circle cx="60" cy="30" r="6.5" fill="#453765"/>
+  <circle cx="83" cy="44" r="5.5" fill="#453765"/>
+  <circle cx="70" cy="58" r="5" fill="#453765"/>
+  <rect x="43" y="55" width="9" height="9" fill="#6C63FF"/>
+  <!-- face -->
+  <circle cx="49" cy="88" r="3.1" fill="#2E1B10"/>
+  <circle cx="71" cy="88" r="3.1" fill="#2E1B10"/>
+  <path d="M50 97 Q60 104 70 97" fill="none" stroke="#2E1B10" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="40" cy="96" r="4.5" fill="#F2A6A0" opacity=".8"/>
+  <circle cx="80" cy="96" r="4.5" fill="#F2A6A0" opacity=".8"/>
+</svg>

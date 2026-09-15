@@ -32,7 +32,7 @@
   --brown-darkest:#2E1B10; --brown-dark:#5C2E10; --brown-mid:#7A4A22;
   --sparkle:#FFF3DD; --shadow:rgba(74,36,16,.18);
   --good:#2E7D46; --pend:#A8622A;
-  --bg-image: linear-gradient(165deg,var(--bg-top),var(--bg-bottom) 70%);
+  --bg-image: linear-gradient(135deg,var(--bg-top),var(--bg-bottom));
 }
 *{box-sizing:border-box}
 html{background:var(--bg-bottom)}
@@ -46,8 +46,8 @@ main{max-width:46rem;margin:0 auto;padding-block:clamp(1.5rem,6vw,3rem) 4rem}
 
 /* ---------- header / mascot ---------- */
 header{text-align:center;color:var(--sparkle);margin-bottom:1.5rem}
-.mascot{width:132px;height:132px;margin:0 auto;filter:drop-shadow(0 10px 22px var(--shadow))}
-.mascot .flute{fill:none;stroke:var(--brown-mid);stroke-width:2;opacity:.35}
+.mascot{width:132px;height:132px;margin:0 auto;display:block;border-radius:22%;
+  filter:drop-shadow(0 10px 22px var(--shadow))}
 h1{font-size:clamp(2rem,7vw,2.7rem);margin:.7rem 0 .15rem;letter-spacing:-.02em;
   text-shadow:0 2px 10px var(--shadow)}
 .tag{font-size:1.05rem;opacity:.95;margin:0 0 1.1rem}
@@ -120,34 +120,12 @@ footer p{margin:0 0 .3rem}
 <body><main>
 
 <header>
-  <svg class="mascot" viewBox="0 0 120 120" role="img" aria-label="MuffinEMU mascot">
-    <ellipse cx="60" cy="108" rx="40" ry="6" fill="var(--shadow)"/>
-    <!-- wrapper -->
-    <path d="M22 70 L98 70 L86 112 L34 112 Z" fill="var(--wrapper)"/>
-    <g class="flute" stroke="var(--brown-mid)">
-      <line x1="34" y1="72" x2="30" y2="110"/>
-      <line x1="47" y1="72" x2="44.5" y2="111"/>
-      <line x1="60" y1="72" x2="60" y2="112"/>
-      <line x1="73" y1="72" x2="75.5" y2="111"/>
-      <line x1="86" y1="72" x2="90" y2="110"/>
-    </g>
-    <!-- dome -->
-    <path d="M6 72 C10 34 30 12 60 12 C90 12 110 34 114 72 C114 82 96 78 60 78 C24 78 6 82 6 72 Z"
-      fill="var(--muffin-top-light)"/>
-    <path d="M6 72 C10 34 30 12 60 12" fill="none" stroke="var(--muffin-top-dark)" stroke-width="2" opacity=".4" stroke-linecap="round"/>
-    <!-- blueberries: navy, plus the one signature pixel-blue square -->
-    <circle cx="38" cy="42" r="6" fill="var(--navy)"/>
-    <circle cx="60" cy="30" r="6.5" fill="var(--navy)"/>
-    <circle cx="83" cy="44" r="5.5" fill="var(--navy)"/>
-    <circle cx="70" cy="58" r="5" fill="var(--navy)"/>
-    <rect x="43" y="55" width="9" height="9" fill="var(--pixel-blue)"/>
-    <!-- face -->
-    <circle cx="49" cy="88" r="3.1" fill="var(--brown-darkest)"/>
-    <circle cx="71" cy="88" r="3.1" fill="var(--brown-darkest)"/>
-    <path d="M50 97 Q60 104 70 97" fill="none" stroke="var(--brown-darkest)" stroke-width="2.6" stroke-linecap="round"/>
-    <circle cx="40" cy="96" r="4.5" fill="var(--blush)" opacity=".8"/>
-    <circle cx="80" cy="96" r="4.5" fill="var(--blush)" opacity=".8"/>
-  </svg>
+  <!-- The real app icon (docs/icon.png is byte-identical to
+       src/ios/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png) - a
+       hand-drawn SVG approximation lived here first, which read as "close but not
+       actually the icon". Kept as docs/mascot-concept.svg, since it was worth keeping
+       even though it wasn't the real thing. -->
+  <img class="mascot" src="icon.png" alt="MuffinEMU app icon" width="132" height="132">
   <h1>MuffinEMU</h1>
   <p class="tag">Wii U emulation for iPhone and iPad — built in the open.</p>
 
@@ -477,7 +455,13 @@ function applyTheme(theme, animate){
     const stopStr = stops.map((c,i)=>`${c} ${(locs[i]*100).toFixed(1)}%`).join(", ");
     set("--bg-image", `linear-gradient(180deg, ${stopStr})`);
   } else {
-    set("--bg-image", "linear-gradient(165deg,var(--bg-top),var(--bg-bottom) 70%)");
+    // 135deg + even stops, not an invented angle: SwiftUI's MuffinTheme.backgroundGradient
+    // for every flat two-color theme is LinearGradient(colors: [top, bottom],
+    // startPoint: .topLeading, endPoint: .bottomTrailing) - a corner-to-corner diagonal
+    // with its two colors spaced evenly (0%/100%), which 135deg is the standard CSS
+    // equivalent of. (Multi-stop themes use .top/.bottom - see the 180deg branch above,
+    // which was already right.)
+    set("--bg-image", "linear-gradient(135deg,var(--bg-top),var(--bg-bottom))");
   }
 
   const meta = document.getElementById("themeColorMeta");
