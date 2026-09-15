@@ -633,8 +633,12 @@ private struct ControlButton: View {
     private static let neutralLabel = Color(white: 0.22)
 
     var body: some View {
+        // L3/R3 alone get a hit region that matches the dot actually drawn - see
+        // HeldControl's own doc comment on circularHitTarget for why every other
+        // control keeps the generous square.
         HeldControl(onPressChange: { onInput(control.id, $0) }, isInteractive: isInteractive,
-                    externallyPressed: externallyPressed) { isPressed in
+                    externallyPressed: externallyPressed,
+                    circularHitTarget: control.style == .stick) { isPressed in
             ZStack {
                 shape(isPressed: isPressed)
                 Text(control.glyph)
@@ -739,7 +743,6 @@ struct HeldControl<Content: View>: View {
     /// mid-press - and a button that is still drawn highlighted but can no longer be
     /// touched to release it is stuck exactly the way a jammed physical button would be.
     let isInteractive: Bool
-    let content: (Bool) -> Content
     /// Non-nil when something other than this view's own gesture below decides the
     /// pressed state - DpadTouchSurface, for the d-pad's four directions. Drawing still
     /// goes through here, so every control on the pad keeps one pressed-state code path,
@@ -748,17 +751,27 @@ struct HeldControl<Content: View>: View {
     /// control, is this type entirely unchanged from before.
     var externallyPressed: Bool? = nil
 
+    /// True only for L3/R3. Every other round button on the pad wants the generous
+    /// square below - a bigger, more forgiving target with nothing else contending
+    /// for the corners it adds. L3 is different: DpadTouchSurface sits directly
+    /// underneath it and hit-tests continuously, by angle, right up to (and past)
+    /// L3's own radius, so a diagonal - or even a near-centre cardinal - press that
+    /// lands in the square's corners (real distance up to ~0.50 units from centre,
+    /// verified against dpadDirections' own 0.18 deadzone, which clears at ~0.30) was
+    /// being claimed by L3 instead of ever reaching the surface: the dot fired a
+    /// stick click nobody asked for, and the direction it should have registered
+    /// never did. Circle here is not a smaller target for its own sake, it is the
+    /// square giving back exactly the area it was never visually part of.
+    var circularHitTarget: Bool = false
+    let content: (Bool) -> Content
+
     @State private var isPressed = false
 
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     var body: some View {
-        content(externallyPressed ?? isPressed)
-            // Without this the hit area is whatever the label happens to paint, so a
-            // finger landing on the transparent corner of a circular button hits the
-            // view behind it instead.
-            .contentShape(Rectangle())
+        hitTestable(content(externallyPressed ?? isPressed))
             .accessibilityAddTraits(.isButton)
             .gesture(externallyPressed == nil ? ownGesture : nil)
             // A gesture the system cancels (backgrounding, an incoming call) or a view
@@ -779,6 +792,19 @@ struct HeldControl<Content: View>: View {
         DragGesture(minimumDistance: 0)
             .onChanged { _ in setPressed(true) }
             .onEnded { _ in setPressed(false) }
+    }
+
+    /// Without a content shape at all, the hit area is whatever the label happens to
+    /// paint, so a finger landing on the transparent corner of a circular button hits
+    /// the view behind it instead. Rectangle is the right default for that - a bigger,
+    /// forgiving target - everywhere except L3/R3; see circularHitTarget above.
+    @ViewBuilder
+    private func hitTestable<V: View>(_ view: V) -> some View {
+        if circularHitTarget {
+            view.contentShape(Circle())
+        } else {
+            view.contentShape(Rectangle())
+        }
     }
 
     // onChanged repeats for every touch-move, so guard - both to keep the highlight from
