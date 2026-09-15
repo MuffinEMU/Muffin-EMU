@@ -147,8 +147,13 @@ struct EmulatedDevicesView: View {
                                 Text(device.name).tag(device)
                             }
                         }
-                        Toggle("Emulate Device", isOn: deviceEnabled)
-                            .tint(MuffinTheme.pixelBlue)
+                        .pickerStyle(.menu)
+                        .tint(MuffinTheme.pixelBlue)
+                        Toggle(isOn: deviceEnabled) {
+                            Text("Emulate Device")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        }
+                        .tint(MuffinTheme.pixelBlue)
                     }
 
                     EmulatedDeviceSlotsSection(device: device)
