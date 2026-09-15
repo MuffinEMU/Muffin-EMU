@@ -28,6 +28,7 @@ struct OnScreenControlsSection: View {
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
     @AppStorage(MeloControlsSetting.storageKey)
     private var useMeloControls = MeloControlsSetting.defaultValue
+    @State private var showingResetLayoutConfirmation = false
 
     private var stickGate: ControllerGeometry.StickGate {
         ControllerGeometry.StickGate(rawValue: stickGateRaw) ?? ControllerLayoutSettings.defaultStickGate
@@ -101,7 +102,7 @@ struct OnScreenControlsSection: View {
             }
             .tint(MuffinTheme.pixelBlue)
 
-            Button(role: .destructive, action: { ControllerLayoutSettings.reset() }) {
+            Button(role: .destructive, action: { showingResetLayoutConfirmation = true }) {
                 Label("Reset layout", systemImage: "arrow.uturn.backward")
             }
         } header: {
@@ -113,6 +114,14 @@ struct OnScreenControlsSection: View {
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
+        .confirmationDialog("Reset layout?", isPresented: $showingResetLayoutConfirmation, titleVisibility: .visible) {
+            Button("Reset layout", role: .destructive) {
+                ControllerLayoutSettings.reset()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Button size, opacity and any clusters you've dragged go back to how MuffinEMU ships.")
+        }
     }
 
     // Only here, under the sticks: with no sticks on screen there is nothing for
