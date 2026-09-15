@@ -50,7 +50,7 @@ struct KeysSettingsSection: View {
         } message: { message in
             Text(message)
         }
-        .alert("Remove keys.txt?", isPresented: $showingKeysRemovalConfirmation) {
+        .confirmationDialog("Remove keys.txt?", isPresented: $showingKeysRemovalConfirmation, titleVisibility: .visible) {
             Button("Remove", role: .destructive) {
                 do {
                     try WiiUKeys.removeKeys()

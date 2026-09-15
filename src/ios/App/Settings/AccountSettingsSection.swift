@@ -59,10 +59,14 @@ struct AccountSettingsSection: View {
         .sheet(isPresented: $showingCreateAccount, onDismiss: reload) {
             CreateAccountView()
         }
-        .alert("Delete account?", isPresented: Binding(
-            get: { accountToDelete != nil },
-            set: { if !$0 { accountToDelete = nil } }
-        )) {
+        .confirmationDialog(
+            "Delete account?",
+            isPresented: Binding(
+                get: { accountToDelete != nil },
+                set: { if !$0 { accountToDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
             Button("Delete", role: .destructive) {
                 if let account = accountToDelete, !cemu_bridge_account_delete(account.persistentId) {
                     errorMessage = "Couldn't delete that account."

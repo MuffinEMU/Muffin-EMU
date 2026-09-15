@@ -21,6 +21,7 @@ struct PreviewPadSection: View {
     @State private var showingColourExporter = false
     @State private var showingColourImporter = false
     @State private var previewFileErrorMessage: String?
+    @State private var showingResetAdjustmentsConfirmation = false
 
     private var previewLayoutPresetBinding: Binding<String> {
         Binding(get: { previewPad.layoutPreset.rawValue },
@@ -78,6 +79,14 @@ struct PreviewPadSection: View {
         } message: { message in
             Text(message)
         }
+        .confirmationDialog("Reset dragged/resized groups?", isPresented: $showingResetAdjustmentsConfirmation, titleVisibility: .visible) {
+            Button("Reset dragged/resized groups", role: .destructive) {
+                PreviewPadStore.shared.resetAdjustments()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Every group goes back to the preset's own positions and sizes. The preset, colours and picture mode you picked are untouched.")
+        }
     }
 
     @ViewBuilder private var previewControls: some View {
@@ -107,7 +116,7 @@ struct PreviewPadSection: View {
         .pickerStyle(.segmented)
 
         Button(role: .destructive) {
-            PreviewPadStore.shared.resetAdjustments()
+            showingResetAdjustmentsConfirmation = true
         } label: {
             Label("Reset dragged/resized groups", systemImage: "arrow.counterclockwise")
         }
