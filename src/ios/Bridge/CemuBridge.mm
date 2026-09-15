@@ -99,6 +99,13 @@ void IOSDlcUpdateImport_GetMlcTitlePathComponents(uint64_t titleId, char* outUpp
 bool IOSDlcUpdateImport_Inspect(const char* romPath, uint64_t* outTitleId, uint16_t* outVersion,
     int* outRegion, int* outInvalidReason);
 uint64_t IOSDlcUpdateImport_DeriveContentTitleId(uint64_t baseTitleId, bool isUpdate);
+int IOSEmulatedDevices_SlotCount(int device);
+std::string IOSEmulatedDevices_SlotNames(int device);
+std::string IOSEmulatedDevices_FigureList(int device, int slot);
+std::string IOSEmulatedDevices_Load(int device, int slot, const char* path);
+std::string IOSEmulatedDevices_Clear(int device, int slot);
+std::string IOSEmulatedDevices_Create(int device, uint32_t figureId, uint16_t variant, const char* path);
+std::string IOSEmulatedDevices_MoveDimensions(int fromSlot, int toSlot);
 std::string IOSGraphicPacks_List();
 void IOSGraphicPacks_Refresh();
 void IOSGraphicPacks_SetEnabled(int index, bool enabled);
@@ -1585,6 +1592,80 @@ const char* cemu_bridge_graphic_packs_list(void) {
 
 void cemu_bridge_graphic_pack_set_enabled(int index, bool enabled) {
     IOSGraphicPacks_SetEnabled(index, enabled);
+}
+
+// ---------------------------------------------------------------------------
+// Emulated toy-to-life devices. Enable flags are plain ConfigValue<bool>s nsyshid's own
+// AttachDefaultBackends() reads when a title's nsyshid module loads (see
+// Cafe/OS/libs/nsyshid/BackendEmulated.cpp) - same "takes effect next launch" timing as
+// the other settings on this page. Figure management forwards to IOSEmulatedDevices.cpp,
+// which owns the slot bookkeeping and talks to nsyshid::g_skyportal/g_infinitybase/
+// g_dimensionstoypad directly. `device` crosses this boundary as CemuBridgeUSBDevice's
+// own int values (0/1/2) - IOSEmulatedDevices.cpp mirrors them 1:1 as plain ints, the
+// same convention IOSTitleLaunch.cpp uses for CemuBridgeStatus.
+
+void cemu_bridge_set_emulate_skylander_portal(bool enabled) {
+    GetConfig().emulated_usb_devices.emulate_skylander_portal = enabled;
+}
+
+bool cemu_bridge_emulate_skylander_portal(void) {
+    return GetConfig().emulated_usb_devices.emulate_skylander_portal.GetValue();
+}
+
+void cemu_bridge_set_emulate_infinity_base(bool enabled) {
+    GetConfig().emulated_usb_devices.emulate_infinity_base = enabled;
+}
+
+bool cemu_bridge_emulate_infinity_base(void) {
+    return GetConfig().emulated_usb_devices.emulate_infinity_base.GetValue();
+}
+
+void cemu_bridge_set_emulate_dimensions_toypad(bool enabled) {
+    GetConfig().emulated_usb_devices.emulate_dimensions_toypad = enabled;
+}
+
+bool cemu_bridge_emulate_dimensions_toypad(void) {
+    return GetConfig().emulated_usb_devices.emulate_dimensions_toypad.GetValue();
+}
+
+int cemu_bridge_usb_device_slot_count(CemuBridgeUSBDevice device) {
+    return IOSEmulatedDevices_SlotCount((int)device);
+}
+
+const char* cemu_bridge_usb_device_slot_names(CemuBridgeUSBDevice device) {
+    static std::string g_usbDeviceSlotNames;
+    g_usbDeviceSlotNames = IOSEmulatedDevices_SlotNames((int)device);
+    return g_usbDeviceSlotNames.c_str();
+}
+
+const char* cemu_bridge_usb_device_figure_list(CemuBridgeUSBDevice device, int slot) {
+    static std::string g_usbDeviceFigureList;
+    g_usbDeviceFigureList = IOSEmulatedDevices_FigureList((int)device, slot);
+    return g_usbDeviceFigureList.c_str();
+}
+
+const char* cemu_bridge_usb_device_load(CemuBridgeUSBDevice device, int slot, const char* path) {
+    static std::string g_usbDeviceLoadError;
+    g_usbDeviceLoadError = IOSEmulatedDevices_Load((int)device, slot, path);
+    return g_usbDeviceLoadError.empty() ? nullptr : g_usbDeviceLoadError.c_str();
+}
+
+const char* cemu_bridge_usb_device_clear(CemuBridgeUSBDevice device, int slot) {
+    static std::string g_usbDeviceClearError;
+    g_usbDeviceClearError = IOSEmulatedDevices_Clear((int)device, slot);
+    return g_usbDeviceClearError.empty() ? nullptr : g_usbDeviceClearError.c_str();
+}
+
+const char* cemu_bridge_usb_device_create(CemuBridgeUSBDevice device, uint32_t figureId, uint16_t variant, const char* path) {
+    static std::string g_usbDeviceCreateError;
+    g_usbDeviceCreateError = IOSEmulatedDevices_Create((int)device, figureId, variant, path);
+    return g_usbDeviceCreateError.empty() ? nullptr : g_usbDeviceCreateError.c_str();
+}
+
+const char* cemu_bridge_usb_device_move_dimensions(int fromSlot, int toSlot) {
+    static std::string g_usbDeviceMoveError;
+    g_usbDeviceMoveError = IOSEmulatedDevices_MoveDimensions(fromSlot, toSlot);
+    return g_usbDeviceMoveError.empty() ? nullptr : g_usbDeviceMoveError.c_str();
 }
 
 // ---------------------------------------------------------------------------

@@ -947,6 +947,21 @@ class GameManager: ObservableObject {
                 UserDefaults.standard.object(forKey: OverlaySettings.ramUsageKey) as? Bool
                     ?? OverlaySettings.defaultRamUsage)
 
+            // Emulated toy-to-life devices. Same "push from UserDefaults before boot"
+            // reasoning as everything above: nsyshid's AttachDefaultBackends() reads
+            // these three config flags once, when this title's nsyshid module loads, so
+            // a toggle flipped in Settings during a previous session needs pushing here
+            // to reach a fresh launch at all.
+            cemu_bridge_set_emulate_skylander_portal(
+                UserDefaults.standard.object(forKey: EmulatedDevicesSettings.skylanderPortalKey) as? Bool
+                    ?? EmulatedDevicesSettings.defaultEnabled)
+            cemu_bridge_set_emulate_infinity_base(
+                UserDefaults.standard.object(forKey: EmulatedDevicesSettings.infinityBaseKey) as? Bool
+                    ?? EmulatedDevicesSettings.defaultEnabled)
+            cemu_bridge_set_emulate_dimensions_toypad(
+                UserDefaults.standard.object(forKey: EmulatedDevicesSettings.dimensionsToypadKey) as? Bool
+                    ?? EmulatedDevicesSettings.defaultEnabled)
+
             // Audio. tv_audio_enabled/pad_audio_enabled and the volumes take effect the
             // moment ax_out.cpp next looks at them (see CemuBridge.h's Audio section), but
             // the channel layouts only apply when their device is (re)created, so - like
