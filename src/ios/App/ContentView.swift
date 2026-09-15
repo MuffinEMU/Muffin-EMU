@@ -2143,22 +2143,40 @@ struct EmulatorViewOptimized: View {
     /// approach with no size-propagation step left to fail silently.
     private func screensStacked(in size: CGSize, horizontal: Bool) -> some View {
         let count = visibleScreens.count
-        return ZStack(alignment: .topLeading) {
-            ForEach(Array(visibleScreens.enumerated()), id: \.offset) { index, main in
-                if horizontal {
-                    let cellWidth = size.width / CGFloat(count)
-                    screenView(main: main)
-                        .frame(width: cellWidth, height: size.height)
-                        .position(x: cellWidth * (CGFloat(index) + 0.5), y: size.height / 2)
-                } else {
-                    let cellHeight = size.height / CGFloat(count)
-                    screenView(main: main)
-                        .frame(width: size.width, height: cellHeight)
-                        .position(x: size.width / 2, y: cellHeight * (CGFloat(index) + 0.5))
+
+        // Single Screen mode - by far the common case - has exactly one element here,
+        // and needs none of the split math below: the original Muffin app's own
+        // shipped, single-screen-only TV view was never wrapped in a GeometryReader or
+        // given an explicit frame at all - `MetalViewIOS(gameManager:).ignoresSafeArea()`
+        // alone, sized as the sole content of its container, which is proof this
+        // actually works for a lone screen. Splitting only becomes a real problem once
+        // there's a second screen competing for the same space, which single-screen
+        // Muffin never had to solve - so that's the one case still worth computing.
+        if count == 1, let main = visibleScreens.first {
+            return AnyView(
+                screenView(main: main)
+                    .frame(width: size.width, height: size.height)
+            )
+        }
+
+        return AnyView(
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(visibleScreens.enumerated()), id: \.offset) { index, main in
+                    if horizontal {
+                        let cellWidth = size.width / CGFloat(count)
+                        screenView(main: main)
+                            .frame(width: cellWidth, height: size.height)
+                            .position(x: cellWidth * (CGFloat(index) + 0.5), y: size.height / 2)
+                    } else {
+                        let cellHeight = size.height / CGFloat(count)
+                        screenView(main: main)
+                            .frame(width: size.width, height: cellHeight)
+                            .position(x: size.width / 2, y: cellHeight * (CGFloat(index) + 0.5))
+                    }
                 }
             }
-        }
-        .frame(width: size.width, height: size.height)
+            .frame(width: size.width, height: size.height)
+        )
     }
 
     /// `main ? MetalViewIOS : PadMetalViewIOS`, matching MeloCafe's own
