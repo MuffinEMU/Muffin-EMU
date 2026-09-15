@@ -186,7 +186,10 @@ public:
 
 	void InitializeLayer(const Vector2i& size, bool mainWindow);
 	void ShutdownLayer(bool mainWindow);
-	void ResizeLayer(const Vector2i& size, bool mainWindow);
+	// scale < 0 keeps the layer's currently cached scale factor unchanged - see
+	// MetalLayerHandle::Resize()'s own comment for why this is a parameter here rather
+	// than something re-derived internally.
+	void ResizeLayer(const Vector2i& size, bool mainWindow, double scale = -1.0);
 
 	void Initialize() override;
 	void Shutdown() override;
