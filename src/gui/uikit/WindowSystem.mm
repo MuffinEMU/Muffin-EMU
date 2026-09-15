@@ -296,26 +296,6 @@ void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale
         g_windowInfo.phys_height = height * resolvedScale;
         g_windowInfo.dpi_scale   = resolvedScale;
 
-        // CemuUIKit_SetMainView() sets this once, to the SCREEN's native scale, when the
-        // view is first created - correct only when resolvedScale (Settings > Graphics >
-        // Render Scale, applied through RenderScale.swift's effectiveRenderScale) equals
-        // that native scale, i.e. only at the "Native" setting. "Balanced" (the DEFAULT -
-        // see RenderScale.current's own doc comment) deliberately renders at HALF native
-        // resolution to save GPU/battery, which is correct and intentional on its own -
-        // the drawable below is resized to match that reduced scale every time, but
-        // nothing kept contentsScale in step with it, so a Retina device's layer was left
-        // believing every drawable pixel covers less screen than it actually does at a
-        // reduced render scale. CoreAnimation then displays the (correctly smaller)
-        // drawable at its own native pixel size rather than stretching it to fill the
-        // layer's bounds, which is exactly a smaller, correctly-proportioned picture
-        // confined to one corner with the rest of the screen black - indistinguishable at
-        // a glance from the container-sizing bug this same function's ResizeLayer() call
-        // was written to fix, but a different bug, only visible once that one no longer
-        // masks it. Setting contentsScale here, every time, keeps the two in step
-        // regardless of which Render Scale is active.
-        CAMetalLayer* mainMetalLayer = (CAMetalLayer*)g_mainView.layer;
-        mainMetalLayer.contentsScale = resolvedScale;
-
         // This is the ONLY thing on iOS that keeps the Metal CAMetalLayer's own
         // drawableSize in step with the window it actually sits in. MetalRenderer::
         // ResizeLayer() exists and does exactly this, but its only other caller is the
