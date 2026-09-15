@@ -26,7 +26,9 @@ struct CreateAccountView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        // NavigationStack needs iOS 16+; this project's deployment target is 15.0 - same
+        // reasoning as SettingsView.swift's own NavigationView.
+        NavigationView {
             Form {
                 Section {
                     HStack {
