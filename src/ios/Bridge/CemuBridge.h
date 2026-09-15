@@ -500,21 +500,63 @@ float cemu_bridge_override_gamma_value(void);
 /// value (0 = kDisabled, 1..6 walk the four corners plus top/bottom center - see
 /// CemuConfig.h for the exact ordering). Out-of-range values are ignored, same defensive
 /// shape as cemu_bridge_set_upscale_filter(). kDisabled turns the whole overlay off
-/// regardless of which of the fps/cpu/ram switches below are individually on.
+/// regardless of which of the toggles below are individually on.
 void cemu_bridge_set_overlay_position(int position);
 int cemu_bridge_overlay_position(void);
 
-/// The three overlay rows this app exposes, each a direct passthrough to the matching
-/// field in CemuConfig's `overlay` struct (overlay.fps / overlay.cpu_usage /
-/// overlay.ram_usage). text_color, text_scale, cpu_mode, drawcalls, cpu_per_core_usage,
-/// vram_usage and debug are real fields on the same struct but are deliberately not
-/// exposed here - out of scope for this pass, not forgotten.
+/// Every field on CemuConfig's `overlay` struct, each a direct passthrough (this is the
+/// full set - nothing on that struct is left unexposed after this pass). fps / cpu_usage /
+/// cpu_per_core_usage / ram_usage / vram_usage / drawcalls / debug are read by
+/// LatteOverlay_renderOverlay() to decide which lines it draws; cpu_mode round-trips to
+/// the config file like the rest but the renderer does not currently act on it (same as
+/// upstream) - exposed anyway because a real, persisted field deserves a real control
+/// rather than a silent gap in the settings page.
+///
+/// text_color is packed 0xAARRGGBB (ImGui::ColorConvertU32ToFloat4 reads it that way);
+/// text_scale is a percentage of the base 14pt overlay font, clamped in the setter to the
+/// 50-200 range this app's own slider offers - see cemu_bridge_set_display_gamma()'s doc
+/// comment for why a bridge clamp mirrors a settings page's own range.
 void cemu_bridge_set_overlay_fps(bool enabled);
 bool cemu_bridge_overlay_fps(void);
 void cemu_bridge_set_overlay_cpu_usage(bool enabled);
 bool cemu_bridge_overlay_cpu_usage(void);
 void cemu_bridge_set_overlay_ram_usage(bool enabled);
 bool cemu_bridge_overlay_ram_usage(void);
+void cemu_bridge_set_overlay_text_color(uint32_t color);
+uint32_t cemu_bridge_overlay_text_color(void);
+void cemu_bridge_set_overlay_text_scale(int scale);
+int cemu_bridge_overlay_text_scale(void);
+void cemu_bridge_set_overlay_cpu_mode(bool enabled);
+bool cemu_bridge_overlay_cpu_mode(void);
+void cemu_bridge_set_overlay_drawcalls(bool enabled);
+bool cemu_bridge_overlay_drawcalls(void);
+void cemu_bridge_set_overlay_cpu_per_core_usage(bool enabled);
+bool cemu_bridge_overlay_cpu_per_core_usage(void);
+void cemu_bridge_set_overlay_vram_usage(bool enabled);
+bool cemu_bridge_overlay_vram_usage(void);
+void cemu_bridge_set_overlay_debug(bool enabled);
+bool cemu_bridge_overlay_debug(void);
+
+/// CemuConfig's `notification` struct - a second, independent on-screen draw
+/// (LatteOverlay_RenderNotifications()) covering controller/friends/shader-compile
+/// toasts rather than the performance readout above. Same ScreenPosition encoding as
+/// the overlay, same 0xAARRGGBB text_color packing, same 50-200 text_scale range and
+/// clamp - it is a sibling of the overlay struct, not a UI-only concept, so it gets the
+/// same bridge shape rather than something bespoke.
+void cemu_bridge_set_notification_position(int position);
+int cemu_bridge_notification_position(void);
+void cemu_bridge_set_notification_text_color(uint32_t color);
+uint32_t cemu_bridge_notification_text_color(void);
+void cemu_bridge_set_notification_text_scale(int scale);
+int cemu_bridge_notification_text_scale(void);
+void cemu_bridge_set_notification_controller_profiles(bool enabled);
+bool cemu_bridge_notification_controller_profiles(void);
+void cemu_bridge_set_notification_controller_battery(bool enabled);
+bool cemu_bridge_notification_controller_battery(void);
+void cemu_bridge_set_notification_shader_compiling(bool enabled);
+bool cemu_bridge_notification_shader_compiling(void);
+void cemu_bridge_set_notification_friends(bool enabled);
+bool cemu_bridge_notification_friends(void);
 
 // MARK: - Audio
 //

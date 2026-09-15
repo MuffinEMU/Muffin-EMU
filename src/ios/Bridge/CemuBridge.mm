@@ -1084,6 +1084,119 @@ bool cemu_bridge_overlay_ram_usage(void) {
     return GetConfig().overlay.ram_usage;
 }
 
+void cemu_bridge_set_overlay_text_color(uint32_t color) {
+    GetConfig().overlay.text_color = color;
+}
+
+uint32_t cemu_bridge_overlay_text_color(void) {
+    return GetConfig().overlay.text_color;
+}
+
+void cemu_bridge_set_overlay_text_scale(int scale) {
+    GetConfig().overlay.text_scale = (sint32)std::clamp(scale, 50, 200);
+}
+
+int cemu_bridge_overlay_text_scale(void) {
+    return GetConfig().overlay.text_scale;
+}
+
+void cemu_bridge_set_overlay_cpu_mode(bool enabled) {
+    GetConfig().overlay.cpu_mode = enabled;
+}
+
+bool cemu_bridge_overlay_cpu_mode(void) {
+    return GetConfig().overlay.cpu_mode;
+}
+
+void cemu_bridge_set_overlay_drawcalls(bool enabled) {
+    GetConfig().overlay.drawcalls = enabled;
+}
+
+bool cemu_bridge_overlay_drawcalls(void) {
+    return GetConfig().overlay.drawcalls;
+}
+
+void cemu_bridge_set_overlay_cpu_per_core_usage(bool enabled) {
+    GetConfig().overlay.cpu_per_core_usage = enabled;
+}
+
+bool cemu_bridge_overlay_cpu_per_core_usage(void) {
+    return GetConfig().overlay.cpu_per_core_usage;
+}
+
+void cemu_bridge_set_overlay_vram_usage(bool enabled) {
+    GetConfig().overlay.vram_usage = enabled;
+}
+
+bool cemu_bridge_overlay_vram_usage(void) {
+    return GetConfig().overlay.vram_usage;
+}
+
+void cemu_bridge_set_overlay_debug(bool enabled) {
+    GetConfig().overlay.debug = enabled;
+}
+
+bool cemu_bridge_overlay_debug(void) {
+    return GetConfig().overlay.debug;
+}
+
+void cemu_bridge_set_notification_position(int position) {
+    if (position >= (int)ScreenPosition::kDisabled && position <= (int)ScreenPosition::kBottomRight)
+        GetConfig().notification.position = (ScreenPosition)position;
+}
+
+int cemu_bridge_notification_position(void) {
+    return (int)GetConfig().notification.position;
+}
+
+void cemu_bridge_set_notification_text_color(uint32_t color) {
+    GetConfig().notification.text_color = color;
+}
+
+uint32_t cemu_bridge_notification_text_color(void) {
+    return GetConfig().notification.text_color;
+}
+
+void cemu_bridge_set_notification_text_scale(int scale) {
+    GetConfig().notification.text_scale = (sint32)std::clamp(scale, 50, 200);
+}
+
+int cemu_bridge_notification_text_scale(void) {
+    return GetConfig().notification.text_scale;
+}
+
+void cemu_bridge_set_notification_controller_profiles(bool enabled) {
+    GetConfig().notification.controller_profiles = enabled;
+}
+
+bool cemu_bridge_notification_controller_profiles(void) {
+    return GetConfig().notification.controller_profiles;
+}
+
+void cemu_bridge_set_notification_controller_battery(bool enabled) {
+    GetConfig().notification.controller_battery = enabled;
+}
+
+bool cemu_bridge_notification_controller_battery(void) {
+    return GetConfig().notification.controller_battery;
+}
+
+void cemu_bridge_set_notification_shader_compiling(bool enabled) {
+    GetConfig().notification.shader_compiling = enabled;
+}
+
+bool cemu_bridge_notification_shader_compiling(void) {
+    return GetConfig().notification.shader_compiling;
+}
+
+void cemu_bridge_set_notification_friends(bool enabled) {
+    GetConfig().notification.friends = enabled;
+}
+
+bool cemu_bridge_notification_friends(void) {
+    return GetConfig().notification.friends;
+}
+
 // MARK: - Audio
 //
 // tv_audio_enabled/pad_audio_enabled/tv_channels/pad_channels/tv_volume/pad_volume/
