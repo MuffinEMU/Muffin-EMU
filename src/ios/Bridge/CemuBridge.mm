@@ -739,6 +739,12 @@ namespace {
     GCController* g_boundController = nil;
     bool g_homeWarned = false;
 
+    // Set by cemu_bridge_set_physical_controller_bridge_active() once Swift's
+    // per-controller manager (PhysicalControllerManager) takes over. While true,
+    // ios_bind_first_controller() below stands down so a controller assigned a Wii U
+    // role there isn't ALSO merged into this file's single implicit GamePad.
+    std::atomic<bool> g_physicalControllerBridgeActive{false};
+
     int ios_button_bit(CemuBridgeButton button)
     {
         switch (button)
@@ -820,6 +826,8 @@ namespace {
     // Main thread only - GameController objects are not thread-safe.
     void ios_bind_first_controller()
     {
+        if (g_physicalControllerBridgeActive.load())
+            return;
         if (g_boundController)
             return;
         for (GCController* controller in [GCController controllers])
@@ -1766,6 +1774,25 @@ void cemu_bridge_shutdown(void) {
 void cemu_bridge_refresh_input_devices(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         ios_bind_first_controller();
+    });
+}
+
+void cemu_bridge_set_physical_controller_bridge_active(bool active) {
+    g_physicalControllerBridgeActive.store(active);
+    if (!active)
+        return;
+    // Hand back whatever this file's own merge was holding, on the main thread where
+    // GCController objects are safe to touch - mirrors ios_bind_first_controller()'s
+    // own thread rule. Nothing re-binds it afterwards: the guard added to
+    // ios_bind_first_controller() above keeps it stood down from here on, and
+    // PhysicalControllerManager owns registering the same physical controller (with a
+    // role) through GCControllerBridge_add() instead.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (g_boundController) {
+            g_boundController.extendedGamepad.valueChangedHandler = nil;
+            g_boundController = nil;
+            ios_clear_physical();
+        }
     });
 }
 

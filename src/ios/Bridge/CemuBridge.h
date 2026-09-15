@@ -751,6 +751,109 @@ typedef enum {
 /// cemu_bridge_initialize() has brought input up. Repeated identical values cost nothing.
 void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y);
 
+// Physical (MFi/Bluetooth) controllers, each with its own Wii U role - the GamePad,
+// a Pro Controller, a Classic Controller, or a Wiimote - as opposed to
+// cemu_bridge_set_button_state()/cemu_bridge_set_stick_axis() above, which are the
+// on-screen pad's single implicit GamePad override and know nothing about more than
+// one controller. These mirror the core's own src/input/api/iOS/GCControllerProvider.h
+// byte-for-byte (see the comment there): that header stays C++-only so the app target
+// never has to see it, and this copy is what Swift actually links against.
+#ifndef GC_BRIDGE_CONTROLLER_TYPES_DEFINED
+#define GC_BRIDGE_CONTROLLER_TYPES_DEFINED
+
+typedef struct {
+    float x, y;
+} GCBridgeVec2;
+
+typedef struct {
+    float x, y, z;
+} GCBridgeVec3;
+
+typedef struct {
+    float w, x, y, z;
+} GCBridgeQuat;
+
+typedef struct {
+    uint32_t buttons;
+    GCBridgeVec2 leftStick;
+    GCBridgeVec2 rightStick;
+    float leftTrigger;
+    float rightTrigger;
+} GCBridgeControllerState;
+
+typedef struct {
+    GCBridgeVec3 accelerometer;
+    GCBridgeVec3 gyroscope;
+    GCBridgeVec3 orientation;
+    GCBridgeQuat quaternion;
+    // Monotonic sample time in seconds; zero means no sample received yet.
+    double timestamp;
+} GCBridgeMotionState;
+
+typedef GCBridgeControllerState (*GCBridgePollStateFn)(void* context);
+typedef GCBridgeMotionState     (*GCBridgePollMotionFn)(void* context);
+typedef void (*GCBridgeRumbleFn)(void* context, bool start);
+typedef void (*GCBridgeReleaseFn)(void* context);
+
+typedef struct {
+    void* context;
+    const char* display_name;
+    uint8_t controllerType; // an EmulatedController::Type raw value - see ControllerType.swift
+    GCBridgePollStateFn  poll_state;
+    GCBridgePollMotionFn poll_motion;
+    GCBridgeRumbleFn     rumble;
+    GCBridgeReleaseFn    release;
+} GCBridgeControllerDesc;
+
+#endif // GC_BRIDGE_CONTROLLER_TYPES_DEFINED
+
+/// Registers one physical controller as its own independent emulated controller,
+/// polled through `desc->poll_state` (and `poll_motion`/`rumble` when supplied) rather
+/// than pushed a value at a time. Returns an opaque handle, or NULL if
+/// `desc->controllerType` is not a real EmulatedController::Type or the core isn't up
+/// yet. The core takes ownership of `desc->context` and calls `desc->release` on it
+/// exactly once, when the controller is removed - see GCControllerProvider.mm.
+void* GCControllerBridge_add(const GCBridgeControllerDesc* desc);
+
+/// Unregisters a controller added above and releases its handle. Safe to call once
+/// per successful GCControllerBridge_add(); a second call, or a NULL/unknown handle,
+/// is a no-op.
+void GCControllerBridge_remove(void* handle);
+
+/// Reassigns an already-registered controller's Wii U role without a remove/add
+/// round-trip, so switching "Pro Controller" to "Classic Controller" mid-session
+/// doesn't drop and re-poll the input source. `type` out of EmulatedController::Type's
+/// range is ignored.
+void GCControllerBridge_configure(void* handle, uint8_t type);
+
+/// Sets player order across every handle currently registered through this bridge, by
+/// passing every live handle in the desired order in one call - a partial list, or one
+/// naming a handle that no longer exists, is rejected wholesale rather than applied
+/// partially. Drives Wii U player-slot assignment the same way GCControllerBridge_add's
+/// registration order did before any reordering happened.
+void GCControllerBridge_setOrder(void* const* handles, size_t count);
+
+/// Tells the core's InputManager that the registered-controller set changed (an add,
+/// remove, configure, or reorder above) so it re-scans rather than waiting on its own
+/// polling cadence. Cheap to call after every batch of the calls above; call it once
+/// per batch, not once per call within it.
+void GCControllerBridge_notifyChanged(void);
+
+/// Hands ownership of physical-controller input to the per-controller bridge above
+/// (`active = true`), or back to the legacy single-implicit-controller merge that
+/// cemu_bridge_initialize() brings up on its own (`active = false`, the default).
+///
+/// Exists because that legacy merge auto-binds the first MFi/Bluetooth controller it
+/// sees the moment it connects, with no notion of a Wii U role - so it must step aside
+/// once something is managing controllers by role, or a controller assigned to, say,
+/// the Pro Controller slot would ALSO keep driving the on-screen GamePad's physical
+/// override and press both at once. The on-screen touch pad itself
+/// (cemu_bridge_set_button_state/cemu_bridge_set_stick_axis) is untouched either way -
+/// it was never part of that merge's physical half. Call with `true` once, before
+/// registering any controller through GCControllerBridge_add(); safe to call more than
+/// once or before cemu_bridge_initialize() has run.
+void cemu_bridge_set_physical_controller_bridge_active(bool active);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

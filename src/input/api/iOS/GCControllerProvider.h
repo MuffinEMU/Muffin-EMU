@@ -12,6 +12,14 @@
 #include <algorithm>
 
 
+// Guarded (rather than relying on this file's own #pragma once) because CemuBridge.h -
+// the plain-C header Swift actually imports - carries a byte-for-byte copy of this same
+// block so the Swift side never has to see this file's C++ includes. CemuBridge.mm
+// includes both headers in one translation unit; whichever is included first wins and
+// this guard makes the second inclusion a no-op instead of a duplicate-definition error.
+#ifndef GC_BRIDGE_CONTROLLER_TYPES_DEFINED
+#define GC_BRIDGE_CONTROLLER_TYPES_DEFINED
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -66,6 +74,8 @@ typedef struct {
 #ifdef __cplusplus
 } // extern "C"
 #endif
+
+#endif // GC_BRIDGE_CONTROLLER_TYPES_DEFINED
 
 class GCControllerDevice;
 
