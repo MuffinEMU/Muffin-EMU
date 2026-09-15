@@ -116,6 +116,7 @@ if(IOS)
 		ios/Bridge/CemuBridge.mm
 		ios/Bridge/IOSLiveLog.h
 		ios/Bridge/IOSLiveLog.cpp
+		ios/Bridge/Core/IOSAccounts.cpp
 		ios/Bridge/Core/IOSCoverArt.cpp
 		ios/Bridge/Core/IOSDlcUpdateImport.cpp
 		ios/Bridge/Core/IOSGraphicPacks.cpp
