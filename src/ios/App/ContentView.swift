@@ -382,9 +382,7 @@ struct GameBrowserView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
                     }
-                    .frame(width: 44, height: 44)
-                    .background(MuffinTheme.sparkleCream.opacity(0.15))
-                    .cornerRadius(14)
+                    .buttonStyle(MuffinSecondaryButtonStyle())
                     .accessibilityLabel("Settings")
 
                     Button(action: { showingFavorites.toggle() }) {
@@ -392,9 +390,7 @@ struct GameBrowserView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(showingFavorites ? MuffinTheme.blushPink : MuffinTheme.sparkleCream.opacity(0.8))
                     }
-                    .frame(width: 44, height: 44)
-                    .background(MuffinTheme.sparkleCream.opacity(0.15))
-                    .cornerRadius(14)
+                    .buttonStyle(MuffinSecondaryButtonStyle())
                     .accessibilityLabel(showingFavorites ? "Show all games" : "Show favorites only")
 
                     Menu {
@@ -429,10 +425,8 @@ struct GameBrowserView: View {
                         Image(systemName: "doc.badge.plus")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
-                            .frame(width: 44, height: 44)
-                            .background(MuffinTheme.sparkleCream.opacity(0.15))
-                            .cornerRadius(14)
                     }
+                    .buttonStyle(MuffinSecondaryButtonStyle())
                     .accessibilityLabel("Import")
 
                     VStack(alignment: .trailing, spacing: 2) {
@@ -774,13 +768,16 @@ struct DlcUpdateGamePickerSheet: View {
 
     var body: some View {
         NavigationView {
-            List(games) { game in
-                Button {
-                    onPick(game)
-                    dismiss()
-                } label: {
-                    Text(game.title)
-                        .foregroundColor(MuffinTheme.brownDarkest)
+            ZStack {
+                MuffinTheme.backgroundGradient.ignoresSafeArea()
+                List(games) { game in
+                    Button {
+                        onPick(game)
+                        dismiss()
+                    } label: {
+                        Text(game.title)
+                            .foregroundColor(MuffinTheme.brownDarkest)
+                    }
                 }
             }
             .navigationTitle("Add \(kind.displayName) to which game?")
@@ -791,6 +788,7 @@ struct DlcUpdateGamePickerSheet: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
     }
 }
 
@@ -1328,6 +1326,7 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
+                        .accessibilityLabel("Choose Controller Skin")
 
                         // Settings > On-Screen Controls already has this toggle;
                         // repeated here for the same reason as the save-state and
@@ -1443,6 +1442,7 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
+                        .accessibilityLabel(isPaused ? "Resume" : "Pause")
 
                         // Reachable without leaving the game, because the only way to
                         // tell whether the pad is in the right place is to have the
@@ -1462,6 +1462,7 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
+                        .accessibilityLabel(isEditingControlLayout ? "Done moving controls" : "Move controls")
 
                         // Reads the @Published frameRate directly rather than calling
                         // getFrameRate(): a plain method call cannot invalidate this
@@ -1579,11 +1580,8 @@ struct EmulatorViewOptimized: View {
                         } label: {
                             Image(systemName: "rectangle.2.swap")
                                 .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color.black.opacity(0.55))
-                                .clipShape(Circle())
                         }
+                        .buttonStyle(MuffinSecondaryButtonStyle())
                         .accessibilityLabel("Swap TV and GamePad screens")
                         .padding(.top, 8)
                         .padding(.trailing, 12)
@@ -1769,7 +1767,7 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                                 .foregroundColor(.white.opacity(0.85))
                         }
-                        .tint(MuffinTheme.brownDarkest)
+                        .tint(MuffinTheme.pixelBlue)
 
                         if joystickMode {
                             Toggle(isOn: $comfortControls) {
@@ -1777,7 +1775,7 @@ struct EmulatorViewOptimized: View {
                                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                                     .foregroundColor(.white.opacity(0.85))
                             }
-                            .tint(MuffinTheme.brownDarkest)
+                            .tint(MuffinTheme.pixelBlue)
 
                             Text(comfortControls
                                  ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick."

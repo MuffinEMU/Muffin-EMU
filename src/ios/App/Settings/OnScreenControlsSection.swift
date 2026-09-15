@@ -46,6 +46,7 @@ struct OnScreenControlsSection: View {
                         .foregroundColor(.secondary)
                 }
             }
+            .tint(MuffinTheme.pixelBlue)
 
             Toggle(isOn: $joystickMode) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -58,6 +59,7 @@ struct OnScreenControlsSection: View {
                         .foregroundColor(.secondary)
                 }
             }
+            .tint(MuffinTheme.pixelBlue)
 
             // Only while the mode they belong to is on. A deadzone slider
             // under a d-pad is a control with nothing behind it.
@@ -97,6 +99,7 @@ struct OnScreenControlsSection: View {
                         .foregroundColor(.secondary)
                 }
             }
+            .tint(MuffinTheme.pixelBlue)
 
             Button(role: .destructive, action: { ControllerLayoutSettings.reset() }) {
                 Label("Reset layout", systemImage: "arrow.uturn.backward")
@@ -127,6 +130,7 @@ struct OnScreenControlsSection: View {
                     .foregroundColor(.secondary)
             }
         }
+        .tint(MuffinTheme.pixelBlue)
 
         // Above the two sliders because it is a different kind of question: the
         // gate is the shape of the stick, and the sliders are how that shape is

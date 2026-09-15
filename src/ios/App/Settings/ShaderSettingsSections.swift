@@ -14,6 +14,7 @@ struct ShaderCompilationSection: View {
         Section {
             Toggle(isOn: $asyncShaderCompile) {
                 Text("Compile shaders in the background")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             .tint(MuffinTheme.pixelBlue)
             .onChange(of: asyncShaderCompile) { newValue in
@@ -44,16 +45,8 @@ struct ShaderCacheSection: View {
 
     var body: some View {
         Section {
-            HStack {
-                Text("Compiled shaders")
-                Spacer()
-                Text(Self.formatBytes(compiledCacheBytes)).foregroundColor(.secondary)
-            }
-            HStack {
-                Text("Learned shaders")
-                Spacer()
-                Text(Self.formatBytes(learnedCacheBytes)).foregroundColor(.secondary)
-            }
+            SettingsRow(label: "Compiled shaders", value: Self.formatBytes(compiledCacheBytes))
+            SettingsRow(label: "Learned shaders", value: Self.formatBytes(learnedCacheBytes))
             Button {
                 let freed = cemu_bridge_clear_shader_cache(0, false)
                 cacheStatusMessage = freed < 0

@@ -105,6 +105,8 @@ struct OverlaySettingsSection: View {
                     Text(position.title).tag(position.rawValue)
                 }
             }
+            .pickerStyle(.menu)
+            .tint(MuffinTheme.pixelBlue)
         }
         .onChange(of: positionRaw) { newValue in
             cemu_bridge_set_overlay_position(Int32(newValue))
@@ -168,6 +170,7 @@ struct OverlaySettingsSection: View {
     private var fpsToggle: some View {
         Toggle(isOn: $fpsEnabled) {
             Text("Show FPS")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)
@@ -179,6 +182,7 @@ struct OverlaySettingsSection: View {
     private var cpuModeToggle: some View {
         Toggle(isOn: $cpuModeEnabled) {
             Text("CPU Mode")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)
@@ -190,6 +194,7 @@ struct OverlaySettingsSection: View {
     private var drawcallsToggle: some View {
         Toggle(isOn: $drawcallsEnabled) {
             Text("Draw Calls")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)
@@ -201,6 +206,7 @@ struct OverlaySettingsSection: View {
     private var cpuUsageToggle: some View {
         Toggle(isOn: $cpuUsageEnabled) {
             Text("Show CPU Usage")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)
@@ -212,6 +218,7 @@ struct OverlaySettingsSection: View {
     private var cpuPerCoreUsageToggle: some View {
         Toggle(isOn: $cpuPerCoreUsageEnabled) {
             Text("CPU Per Core Usage")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)
@@ -223,6 +230,7 @@ struct OverlaySettingsSection: View {
     private var ramUsageToggle: some View {
         Toggle(isOn: $ramUsageEnabled) {
             Text("Show RAM Usage")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)
@@ -234,6 +242,7 @@ struct OverlaySettingsSection: View {
     private var vramUsageToggle: some View {
         Toggle(isOn: $vramUsageEnabled) {
             Text("VRAM Usage")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)
@@ -245,6 +254,7 @@ struct OverlaySettingsSection: View {
     private var debugToggle: some View {
         Toggle(isOn: $debugEnabled) {
             Text("Debug")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)

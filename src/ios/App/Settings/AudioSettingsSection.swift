@@ -110,6 +110,7 @@ struct AudioSettingsSection: View {
     @ViewBuilder private var tvGroup: some View {
         Toggle(isOn: $tvEnabled) {
             Text("TV Audio")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .onChange(of: tvEnabled) { newValue in
@@ -125,6 +126,7 @@ struct AudioSettingsSection: View {
                     Text(channels.title).tag(channels.rawValue)
                 }
             }
+            .pickerStyle(.menu)
             .foregroundColor(MuffinTheme.brownDarkest)
             .onChange(of: tvChannelsRaw) { newValue in
                 cemu_bridge_set_tv_channels(Int32(newValue))
@@ -135,6 +137,7 @@ struct AudioSettingsSection: View {
     @ViewBuilder private var padGroup: some View {
         Toggle(isOn: $padEnabled) {
             Text("GamePad Audio")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .onChange(of: padEnabled) { newValue in
@@ -150,6 +153,7 @@ struct AudioSettingsSection: View {
                     Text(channels.title).tag(channels.rawValue)
                 }
             }
+            .pickerStyle(.menu)
             .foregroundColor(MuffinTheme.brownDarkest)
             .onChange(of: padChannelsRaw) { newValue in
                 cemu_bridge_set_pad_channels(Int32(newValue))
@@ -164,6 +168,7 @@ struct AudioSettingsSection: View {
     @ViewBuilder private var microphoneGroup: some View {
         Toggle(isOn: $microphoneEnabled) {
             Text("Microphone")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .onChange(of: microphoneEnabled) { newValue in

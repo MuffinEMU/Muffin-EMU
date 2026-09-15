@@ -137,19 +137,23 @@ struct EmulatedDevicesView: View {
 
     var body: some View {
         NavigationView {
-            List {
-                Section {
-                    Picker("Device", selection: $device) {
-                        ForEach(EmulatedDevice.allCases) { device in
-                            Text(device.name).tag(device)
-                        }
-                    }
-                    Toggle("Emulate Device", isOn: deviceEnabled)
-                        .tint(MuffinTheme.pixelBlue)
-                }
+            ZStack {
+                MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-                EmulatedDeviceSlotsSection(device: device)
-                    .id(device)
+                List {
+                    Section {
+                        Picker("Device", selection: $device) {
+                            ForEach(EmulatedDevice.allCases) { device in
+                                Text(device.name).tag(device)
+                            }
+                        }
+                        Toggle("Emulate Device", isOn: deviceEnabled)
+                            .tint(MuffinTheme.pixelBlue)
+                    }
+
+                    EmulatedDeviceSlotsSection(device: device)
+                        .id(device)
+                }
             }
             .navigationTitle("Emulated Devices")
             #if os(iOS)
@@ -188,9 +192,9 @@ private struct EmulatedDeviceSlotsSection: View {
             ForEach(device.slotLabels.indices, id: \.self) { slot in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(device.slotLabels[slot])
-                        .font(.subheadline.weight(.semibold))
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(name(at: slot).isEmpty ? "None" : name(at: slot))
-                        .font(.footnote)
+                        .font(.system(size: 12))
                         .foregroundColor(.secondary)
 
                     HStack(spacing: 20) {
@@ -221,7 +225,7 @@ private struct EmulatedDeviceSlotsSection: View {
                         .disabled(name(at: slot).isEmpty)
                     }
                     .buttonStyle(.borderless)
-                    .font(.subheadline)
+                    .font(.system(size: 12))
                 }
                 .padding(.vertical, 4)
             }
@@ -286,59 +290,63 @@ private struct CreateEmulatedFigureView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        Form {
-            Section("Figure") {
-                NavigationLink(selectedName) {
-                    EmulatedFigurePicker(figures: figures) { figure in
-                        selectedName = figure.name
-                        figureID = String(figure.figureID)
-                        variant = String(figure.variant)
-                        fileName = figure.name
-                    }
-                }
+        ZStack {
+            MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-                TextField("Figure ID", text: $figureID)
-                    #if os(iOS)
-                    .keyboardType(.numberPad)
-                    #endif
-                if device == .skylanders {
-                    TextField("Variant", text: $variant)
+            Form {
+                Section("Figure") {
+                    NavigationLink(selectedName) {
+                        EmulatedFigurePicker(figures: figures) { figure in
+                            selectedName = figure.name
+                            figureID = String(figure.figureID)
+                            variant = String(figure.variant)
+                            fileName = figure.name
+                        }
+                    }
+
+                    TextField("Figure ID", text: $figureID)
                         #if os(iOS)
                         .keyboardType(.numberPad)
                         #endif
+                    if device == .skylanders {
+                        TextField("Variant", text: $variant)
+                            #if os(iOS)
+                            .keyboardType(.numberPad)
+                            #endif
+                    }
                 }
-            }
-            Section {
-                TextField("File Name", text: $fileName)
-                    .autocorrectionDisabled()
-            } footer: {
-                Text("A new .\(device.fileExtension) file will be saved in Documents/Emulated Devices and loaded into \(device.slotLabels[slot]).")
-            }
-            if device == .dimensions {
                 Section {
-                    Text("Use figure ID 0 to create a blank vehicle or gadget tag for the game to write.")
-                        .foregroundColor(.secondary)
+                    TextField("File Name", text: $fileName)
+                        .autocorrectionDisabled()
+                } footer: {
+                    Text("A new .\(device.fileExtension) file will be saved in Documents/Emulated Devices and loaded into \(device.slotLabels[slot]).")
+                }
+                if device == .dimensions {
+                    Section {
+                        Text("Use figure ID 0 to create a blank vehicle or gadget tag for the game to write.")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage).foregroundColor(MuffinTheme.blushPink)
+                    }
                 }
             }
-            if let errorMessage {
-                Section {
-                    Text(errorMessage).foregroundColor(.red)
+            .navigationTitle("Create Figure")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") { create() }
+                        .disabled(figureID.isEmpty)
                 }
             }
-        }
-        .navigationTitle("Create Figure")
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Create") { create() }
-                    .disabled(figureID.isEmpty)
-            }
-        }
-        .onAppear {
-            if figures.isEmpty {
-                figures = parseFigures(String(cString: cemu_bridge_usb_device_figure_list(device.bridgeDevice, Int32(slot))))
+            .onAppear {
+                if figures.isEmpty {
+                    figures = parseFigures(String(cString: cemu_bridge_usb_device_figure_list(device.bridgeDevice, Int32(slot))))
+                }
             }
         }
     }
@@ -396,16 +404,20 @@ private struct EmulatedFigurePicker: View {
     }
 
     var body: some View {
-        List(filteredFigures) { figure in
-            Button {
-                onSelect(figure)
-                dismiss()
-            } label: {
-                VStack(alignment: .leading) {
-                    Text(figure.name)
-                    Text("ID: \(figure.figureID)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+        ZStack {
+            MuffinTheme.backgroundGradient.ignoresSafeArea()
+
+            List(filteredFigures) { figure in
+                Button {
+                    onSelect(figure)
+                    dismiss()
+                } label: {
+                    VStack(alignment: .leading) {
+                        Text(figure.name)
+                        Text("ID: \(figure.figureID)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }

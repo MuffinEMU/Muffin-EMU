@@ -41,6 +41,7 @@ struct PreviewPadSection: View {
         Section {
             Toggle(isOn: $previewPadEnabled) {
                 Text("Use the new pad system")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             .tint(MuffinTheme.pixelBlue)
 
@@ -85,6 +86,7 @@ struct PreviewPadSection: View {
                 Text(preset.title).tag(preset.rawValue)
             }
         }
+        .pickerStyle(.menu)
         Text(previewLayoutPreset.summary)
             .font(.system(size: 12))
             .foregroundColor(.secondary)
@@ -94,6 +96,7 @@ struct PreviewPadSection: View {
                 Text(preset.file.name).tag(preset.rawValue)
             }
         }
+        .pickerStyle(.menu)
 
         Picker("Picture", selection: previewDisplayModeBinding) {
             Text("Fit").tag(PadLayout.DisplayMode.fit.rawValue)

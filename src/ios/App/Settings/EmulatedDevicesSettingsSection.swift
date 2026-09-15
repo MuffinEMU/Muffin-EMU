@@ -24,21 +24,30 @@ struct EmulatedDevicesSettingsSection: View {
 
     var body: some View {
         Section {
-            Toggle("Skylanders Portal", isOn: $skylanderPortalEnabled)
-                .tint(MuffinTheme.pixelBlue)
-                .onChange(of: skylanderPortalEnabled) { newValue in
-                    cemu_bridge_set_emulate_skylander_portal(newValue)
-                }
-            Toggle("Disney Infinity Base", isOn: $infinityBaseEnabled)
-                .tint(MuffinTheme.pixelBlue)
-                .onChange(of: infinityBaseEnabled) { newValue in
-                    cemu_bridge_set_emulate_infinity_base(newValue)
-                }
-            Toggle("LEGO Dimensions Toypad", isOn: $dimensionsToypadEnabled)
-                .tint(MuffinTheme.pixelBlue)
-                .onChange(of: dimensionsToypadEnabled) { newValue in
-                    cemu_bridge_set_emulate_dimensions_toypad(newValue)
-                }
+            Toggle(isOn: $skylanderPortalEnabled) {
+                Text("Skylanders Portal")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .tint(MuffinTheme.pixelBlue)
+            .onChange(of: skylanderPortalEnabled) { newValue in
+                cemu_bridge_set_emulate_skylander_portal(newValue)
+            }
+            Toggle(isOn: $infinityBaseEnabled) {
+                Text("Disney Infinity Base")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .tint(MuffinTheme.pixelBlue)
+            .onChange(of: infinityBaseEnabled) { newValue in
+                cemu_bridge_set_emulate_infinity_base(newValue)
+            }
+            Toggle(isOn: $dimensionsToypadEnabled) {
+                Text("LEGO Dimensions Toypad")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .tint(MuffinTheme.pixelBlue)
+            .onChange(of: dimensionsToypadEnabled) { newValue in
+                cemu_bridge_set_emulate_dimensions_toypad(newValue)
+            }
             NavigationLink("Manage Figures") {
                 EmulatedDevicesView()
             }

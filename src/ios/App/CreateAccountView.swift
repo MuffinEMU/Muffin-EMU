@@ -29,54 +29,60 @@ struct CreateAccountView: View {
         // NavigationStack needs iOS 16+; this project's deployment target is 15.0 - same
         // reasoning as SettingsView.swift's own NavigationView.
         NavigationView {
-            Form {
-                Section {
-                    HStack {
-                        Text("PersistentId")
-                        TextField("PersistentId", text: $persistentIdText)
-                            .multilineTextAlignment(.trailing)
-                            .font(.body.monospaced())
-                            .keyboardType(.asciiCapable)
+            ZStack {
+                MuffinTheme.backgroundGradient.ignoresSafeArea()
+
+                Form {
+                    Section {
+                        HStack {
+                            Text("PersistentId")
+                            TextField("PersistentId", text: $persistentIdText)
+                                .multilineTextAlignment(.trailing)
+                                .font(.body.monospaced())
+                                .keyboardType(.asciiCapable)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+                        HStack {
+                            Text("Mii name")
+                            TextField("Mii name", text: $miiName)
+                                .multilineTextAlignment(.trailing)
+                                .focused($nameFocused)
+                                .submitLabel(.done)
+                        }
+                        .onChange(of: miiName) { newValue in
+                            let trimmedName = String(newValue.prefix(10))
+                            if trimmedName != newValue {
+                                miiName = trimmedName
+                            }
+                        }
+                    } footer: {
+                        Text("The persistent id is the internal folder name used for your saves. Only change this if you are importing saves from a Wii U with a specific id.")
+                    }
+
+                    Section("Mii details") {
+                        DatePicker("Birthday", selection: $birthDate, in: ...Date(), displayedComponents: .date)
+                        Picker("Gender", selection: $gender) {
+                            Text("Male").tag(0)
+                            Text("Female").tag(1)
+                        }
+                        .pickerStyle(.menu)
+                        Picker("Country", selection: $country) {
+                            ForEach(countries) { entry in
+                                Text(entry.name).tag(entry.code)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
+
+                    Section {
+                        TextField("Email (optional)", text: $email)
+                            .keyboardType(.emailAddress)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
+                    } footer: {
+                        Text("Only used if you later link this account to a real NNID/PNID for online play.")
                     }
-                    HStack {
-                        Text("Mii name")
-                        TextField("Mii name", text: $miiName)
-                            .multilineTextAlignment(.trailing)
-                            .focused($nameFocused)
-                            .submitLabel(.done)
-                    }
-                    .onChange(of: miiName) { newValue in
-                        let trimmedName = String(newValue.prefix(10))
-                        if trimmedName != newValue {
-                            miiName = trimmedName
-                        }
-                    }
-                } footer: {
-                    Text("The persistent id is the internal folder name used for your saves. Only change this if you are importing saves from a Wii U with a specific id.")
-                }
-
-                Section("Mii details") {
-                    DatePicker("Birthday", selection: $birthDate, in: ...Date(), displayedComponents: .date)
-                    Picker("Gender", selection: $gender) {
-                        Text("Male").tag(0)
-                        Text("Female").tag(1)
-                    }
-                    Picker("Country", selection: $country) {
-                        ForEach(countries) { entry in
-                            Text(entry.name).tag(entry.code)
-                        }
-                    }
-                }
-
-                Section {
-                    TextField("Email (optional)", text: $email)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                } footer: {
-                    Text("Only used if you later link this account to a real NNID/PNID for online play.")
                 }
             }
             .navigationTitle("Create new account")
@@ -95,6 +101,7 @@ struct CreateAccountView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
         .onAppear {
             nameFocused = true
             countries = AccountCountry.loadAll()
