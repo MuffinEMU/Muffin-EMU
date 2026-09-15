@@ -87,6 +87,7 @@ struct PreviewPadSection: View {
             }
         }
         .pickerStyle(.menu)
+        .tint(MuffinTheme.pixelBlue)
         Text(previewLayoutPreset.summary)
             .font(.system(size: 12))
             .foregroundColor(.secondary)
@@ -97,6 +98,7 @@ struct PreviewPadSection: View {
             }
         }
         .pickerStyle(.menu)
+        .tint(MuffinTheme.pixelBlue)
 
         Picker("Picture", selection: previewDisplayModeBinding) {
             Text("Fit").tag(PadLayout.DisplayMode.fit.rawValue)
