@@ -410,6 +410,17 @@ final class DisplayRouter: ObservableObject {
         externalWindow?.isHidden = true
         externalWindow = nil
         tvSurfaceRegistered = false
+        // Both layout-size caches have to go with the views they describe. They exist to
+        // skip redundant resizes while ONE set of surfaces is alive; they are not
+        // statements about the container, which is process-lifetime-cached
+        // (sharedDeviceContainer()) and keeps whatever size it already had across a title
+        // stop. Leaving them set means the next launch's brand-new render views can be
+        // met by `lastSize == size` on the very first layout pass and never get their
+        // one resize - so launch #2 in a session behaves differently from launch #1 for
+        // no reason visible at the call site. Separate from the MetalLayerHandle scale
+        // bug; found while diagnosing it.
+        lastDeviceContainerLayoutSize = nil
+        lastLocalPadContainerLayoutSize = nil
         log("title stopped; render surfaces will be rebuilt on the next launch")
     }
 
