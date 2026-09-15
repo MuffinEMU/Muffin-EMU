@@ -122,7 +122,7 @@ struct DisplaySettingsSection: View {
                 .tint(MuffinTheme.pixelBlue)
             }
         } header: {
-            Text("Display")
+            SettingsSectionHeader("Display", icon: "rectangle.on.rectangle", accent: .io)
         } footer: {
             InfoButton.footer(
                 "Screen Layout arranges the TV and GamePad on this device. External display routing is off until you turn it on above, and even then only takes effect with a second screen actually connected and this app given a window on it - plain AirPlay/screen mirroring doesn't count.",

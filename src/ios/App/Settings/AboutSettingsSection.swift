@@ -13,10 +13,11 @@ struct AboutSettingsSection: View {
     @State private var resetMessage: String?
 
     var body: some View {
-        Section("About") {
-            SettingsRow(label: "Version", value: Bundle.main.appVersionString)
+        Section {
+            SettingsRow(label: "Version", value: Bundle.main.appVersionString, icon: "number")
             Link(destination: URL(string: "https://github.com/kiddreads/MuffinEMU")!) {
                 Label("View on GitHub", systemImage: "arrow.up.right.square")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
 
             Text("MuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU, and the optional melo-controls pad is Melo-Controller by stossy11.")
@@ -31,7 +32,7 @@ struct AboutSettingsSection: View {
             Button(role: .destructive) {
                 showingResetConfirmation = true
             } label: {
-                Label("Reset settings to defaults", systemImage: "arrow.counterclockwise")
+                DestructiveSettingsLabel(title: "Reset settings to defaults", systemImage: "arrow.counterclockwise")
             }
 
             if let resetMessage {
@@ -39,6 +40,8 @@ struct AboutSettingsSection: View {
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
+        } header: {
+            SettingsSectionHeader("About", icon: "info.circle", accent: .system)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .confirmationDialog("Reset settings to defaults?", isPresented: $showingResetConfirmation, titleVisibility: .visible) {

@@ -43,7 +43,7 @@ struct CPUSettingsSection: View {
                 cemu_bridge_set_favour_accuracy(newValue)
             }
         } header: {
-            Text("CPU")
+            SettingsSectionHeader("CPU", icon: "cpu", accent: .core)
         } footer: {
             InfoButton.footer(
                 "MuffinEMU runs for speed first - turn on Favour accuracy only for a game that glitches, desyncs or crashes, and restart it after changing either toggle.",

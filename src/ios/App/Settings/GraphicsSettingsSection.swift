@@ -153,7 +153,7 @@ struct GraphicsSettingsSection: View {
             }
             meshShaderNote
         } header: {
-            Text("Graphics")
+            SettingsSectionHeader("Graphics", icon: "cube.transparent", accent: .core)
         } footer: {
             InfoButton.footer(
                 "Metal is the native, default renderer; Vulkan (MoltenVK) can be more compatible for some titles at some cost to speed, and takes effect on the next launch. Resolution, stretching, VSync, screen flip and gamma change how the picture is presented, not how the game is emulated.",

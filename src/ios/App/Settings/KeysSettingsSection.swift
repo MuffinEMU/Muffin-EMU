@@ -22,11 +22,11 @@ struct KeysSettingsSection: View {
             if WiiUKeys.keysFileExists() {
                 SettingsRow(label: "Keys loaded", value: "\(keyCount)")
                 Button(role: .destructive, action: { showingKeysRemovalConfirmation = true }) {
-                    Label("Remove keys.txt", systemImage: "trash")
+                    DestructiveSettingsLabel(title: "Remove keys.txt", systemImage: "trash")
                 }
             }
         } header: {
-            Text("Wii U Keys")
+            SettingsSectionHeader("Wii U Keys", icon: "key", accent: .content)
         } footer: {
             InfoButton.footer(
                 "Optional - encrypted games need keys.txt, with the AES keys dumped from your own Wii U inside. Homebrew and already-decrypted dumps need none of this.",
