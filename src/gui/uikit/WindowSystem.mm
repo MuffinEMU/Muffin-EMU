@@ -317,7 +317,7 @@ void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale
         if (metal)
         {
             if (auto* metalRenderer = MetalRenderer::GetInstance())
-                metalRenderer->ResizeLayer({(int)width, (int)height}, true);
+                metalRenderer->ResizeLayer({(int)width, (int)height}, true, resolvedScale);
         }
 #endif
     };
@@ -361,7 +361,7 @@ void CemuUIKit_UpdatePadWindowSize()
         if (metal)
         {
             if (auto* metalRenderer = MetalRenderer::GetInstance())
-                metalRenderer->ResizeLayer({(int)size.width, (int)size.height}, false);
+                metalRenderer->ResizeLayer({(int)size.width, (int)size.height}, false, (double)scale);
         }
 #endif
 

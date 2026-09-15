@@ -28,7 +28,10 @@ public:
     MetalLayerHandle(MetalLayerHandle&& other) noexcept;
     MetalLayerHandle& operator=(MetalLayerHandle&& other) noexcept;
 
-    void Resize(const Vector2i& size);
+    // scale < 0 means "keep the currently cached scale factor unchanged" - see the .cpp
+    // for why this takes the value as a parameter rather than reading it back off the
+    // layer itself.
+    void Resize(const Vector2i& size, double scale = -1.0);
 
     bool AcquireDrawable();
 

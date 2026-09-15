@@ -368,9 +368,9 @@ void MetalRenderer::ShutdownLayer(bool mainWindow)
     GetLayer(mainWindow) = MetalLayerHandle();
 }
 
-void MetalRenderer::ResizeLayer(const Vector2i& size, bool mainWindow)
+void MetalRenderer::ResizeLayer(const Vector2i& size, bool mainWindow, double scale)
 {
-    GetLayer(mainWindow).Resize(size);
+    GetLayer(mainWindow).Resize(size, scale);
 }
 
 void MetalRenderer::Initialize()
