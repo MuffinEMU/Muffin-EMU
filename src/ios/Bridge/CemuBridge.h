@@ -720,6 +720,127 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed);
 /// with nothing on screen touching it.
 void cemu_bridge_release_all_buttons(void);
 
+// ---------------------------------------------------------------------------
+// Wii U console accounts and each one's Network Service.
+//
+// An "account" here is a real emulated Wii U console account - the account.dat files
+// under mlc/usr/save/system/act/, the same ones desktop Cemu creates, lists and boots
+// under (Cafe/Account/Account.h). Network Service is which online backend an account's
+// traffic goes to: Nintendo's own (long since shut down for the Wii U), Pretendo
+// (Pretendo Network, a community-run reimplementation - see pretendo.network), a
+// hand-configured Custom service, or Offline. Neither concept is MuffinEMU- or
+// MeloCafe-specific; this is desktop Cemu's own account/online system, which had no iOS
+// surface at all before this.
+
+/// One account per record, most-recently-refreshed order (Account::GetAccounts()).
+/// Records separated by 0x1E, fields by 0x1F: persistentId (8 lowercase hex chars),
+/// miiName, birthYear, birthMonth, birthDay, gender ("0" male, "1" female - Account's own
+/// encoding), email, country (an NCrypto country index, see cemu_bridge_countries_list),
+/// "1"/"0" for isValidOnline. miiName/email are free text an account owner could type on
+/// a real Wii U or into this app's own create form, so IOSAccounts.cpp strips the two
+/// separator characters out of them before they cross this boundary - the same shape
+/// cemu_bridge_graphic_packs_list() uses for its own records/fields. Call
+/// cemu_bridge_accounts_refresh() first if accounts may have changed on disk.
+const char* cemu_bridge_accounts_list(void);
+
+/// Rescans mlc/usr/save/system/act/ for account.dat files (Account::RefreshAccounts()).
+/// Always leaves at least one account - the core creates and saves a "default" one the
+/// moment the list would otherwise be empty, same as desktop Cemu.
+void cemu_bridge_accounts_refresh(void);
+
+/// True while a 12th account slot would still fit (Account::HasFreeAccountSlots()) - the
+/// Wii U's own limit on how many accounts fit in usr/save/system/act/.
+bool cemu_bridge_accounts_has_free_slot(void);
+
+/// The persistent id a new account would get if the caller doesn't have one already
+/// picked (Account::GetNextPersistentId()) - purely a suggestion; any id at or above
+/// cemu_bridge_accounts_min_persistent_id() that isn't already in use is valid to pass to
+/// cemu_bridge_account_create().
+uint32_t cemu_bridge_accounts_next_persistent_id(void);
+
+/// The lowest valid persistent id (Account::kMinPersistendId, 0x80000001). Account's own
+/// CheckValid() rejects anything below it.
+uint32_t cemu_bridge_accounts_min_persistent_id(void);
+
+/// True while account controls should be disabled in the UI (CafeSystem::IsTitleRunning())
+/// - changing the active account or its Network Service mid-title wouldn't take effect
+/// until the next boot but would look like it did, so MeloCafe's own AccountSettingsView
+/// locks the picker instead while a title runs, and this mirrors that.
+bool cemu_bridge_accounts_locked(void);
+
+/// Creates a real Account (Cafe/Account/Account.h) with every field the on-disk format
+/// carries and saves it immediately: miiName (truncated to 10 UTF-16 units, Account's own
+/// on-disk limit), birth date, gender, email and country. Returns true and leaves the
+/// account list refreshed on success. Returns false without creating anything if
+/// persistentId is already in use, below cemu_bridge_accounts_min_persistent_id(), no
+/// slots remain, miiName is empty, or the underlying Account::Save() fails - the caller is
+/// expected to have already checked the first three against cemu_bridge_accounts_list(),
+/// cemu_bridge_accounts_min_persistent_id() and cemu_bridge_accounts_has_free_slot(), the
+/// same order MeloCafe's own CreateAccountView validates in, so it can show a specific
+/// reason instead of one generic failure.
+bool cemu_bridge_account_create(uint32_t persistentId, const char* miiName, uint16_t birthYear,
+    uint8_t birthMonth, uint8_t birthDay, int gender, const char* email, int country);
+
+/// Deletes persistentId's account.dat and refreshes the account list. Refuses (returns
+/// false, deletes nothing) if it's the only account: RefreshAccounts() always recreates a
+/// "default" one the moment the list would be empty, so a delete that got past this check
+/// would silently resurrect an account rather than actually removing the last one.
+bool cemu_bridge_account_delete(uint32_t persistentId);
+
+/// Field-by-field edits to an already-created account: each loads persistentId's
+/// account.dat, changes the one field, saves, and refreshes the account list. Return false
+/// if the account doesn't exist or the save fails.
+bool cemu_bridge_account_set_mii_name(uint32_t persistentId, const char* miiName);
+bool cemu_bridge_account_set_gender(uint32_t persistentId, int gender);
+bool cemu_bridge_account_set_email(uint32_t persistentId, const char* email);
+bool cemu_bridge_account_set_country(uint32_t persistentId, int country);
+bool cemu_bridge_account_set_birthdate(uint32_t persistentId, uint16_t year, uint8_t month, uint8_t day);
+
+/// The active account - CemuConfig's account.m_persistent_id, the same value
+/// Account::GetCurrentAccount() boots a title under. Persisted immediately; unlike most
+/// settings on this bridge there is no separate "next launch" delay because nothing reads
+/// it until a title actually boots.
+uint32_t cemu_bridge_active_account_persistent_id(void);
+void cemu_bridge_set_active_account_persistent_id(uint32_t persistentId);
+
+/// account.dat's own online-readiness check (Account::IsValidOnlineAccount(): does it have
+/// a cached NNID/PNID login at all) - distinct from which Network Service is selected
+/// below, which only decides WHERE an online-capable account connects.
+bool cemu_bridge_account_is_online_valid(uint32_t persistentId);
+
+/// Real Wii U country codes, for the same picker desktop Cemu's account editor uses
+/// (NCrypto::GetCountryCount()/GetCountryAsString()). Records separated by 0x1E, fields
+/// by 0x1F: code (decimal), name. Index 0's placeholder entry is included; NCrypto's
+/// internal "NN" (unused) slots are skipped, same filter CemuConfigWrapper.mm's own
+/// `countries` applies.
+const char* cemu_bridge_countries_list(void);
+
+typedef enum {
+    CEMU_BRIDGE_NETWORK_OFFLINE  = 0,
+    CEMU_BRIDGE_NETWORK_NINTENDO = 1,
+    CEMU_BRIDGE_NETWORK_PRETENDO = 2,
+    CEMU_BRIDGE_NETWORK_CUSTOM   = 3,
+} CemuBridgeNetworkService;
+
+/// Which Network Service persistentId connects through (CemuConfig::GetAccountNetworkService/
+/// SetAccountSelectedService, keyed per-account exactly like the desktop config). Nintendo's
+/// and Pretendo's server hostnames are already baked into the engine (NintendoURLs/
+/// PretendoURLs in config/NetworkSettings.h) - selecting either needs no address from the
+/// user. Custom is the one exception: the engine replays whatever account/ECS/NUS/etc URLs
+/// are already in Documents/mlc/network_services.xml, which this bridge does not create or
+/// edit - see cemu_bridge_custom_network_service_available(). Setting Custom while that file
+/// doesn't exist is accepted here but the engine itself falls back to Offline at the point it
+/// would actually connect (CemuConfig::GetAccountNetworkService() enforces this), so the UI
+/// should disable Custom rather than let it look chosen and silently do nothing.
+CemuBridgeNetworkService cemu_bridge_network_service(uint32_t persistentId);
+void cemu_bridge_set_network_service(uint32_t persistentId, CemuBridgeNetworkService service);
+
+/// Whether NetworkService::Custom is actually usable right now (NetworkConfig::XMLExists()).
+/// Custom has no in-app configuration UI on any Cemu port, including this one: it only
+/// works once the user has placed a hand-written network_services.xml in the mlc folder
+/// themselves, so there is no server URL to prompt for here - see the type comment above.
+bool cemu_bridge_custom_network_service_available(void);
+
 /// Which analog stick an axis call is about.
 typedef enum {
     CEMU_BRIDGE_STICK_LEFT  = 0,

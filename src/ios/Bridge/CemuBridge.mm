@@ -102,6 +102,27 @@ uint64_t IOSDlcUpdateImport_DeriveContentTitleId(uint64_t baseTitleId, bool isUp
 std::string IOSGraphicPacks_List();
 void IOSGraphicPacks_Refresh();
 void IOSGraphicPacks_SetEnabled(int index, bool enabled);
+void IOSAccounts_Refresh();
+std::string IOSAccounts_List();
+bool IOSAccounts_HasFreeSlot();
+uint32_t IOSAccounts_NextPersistentId();
+uint32_t IOSAccounts_MinPersistentId();
+bool IOSAccounts_Locked();
+bool IOSAccounts_Create(uint32_t persistentId, const char* miiName, uint16_t birthYear,
+    uint8_t birthMonth, uint8_t birthDay, int gender, const char* email, int country);
+bool IOSAccounts_Delete(uint32_t persistentId);
+bool IOSAccounts_SetMiiName(uint32_t persistentId, const char* miiName);
+bool IOSAccounts_SetGender(uint32_t persistentId, int gender);
+bool IOSAccounts_SetEmail(uint32_t persistentId, const char* email);
+bool IOSAccounts_SetCountry(uint32_t persistentId, int country);
+bool IOSAccounts_SetBirthdate(uint32_t persistentId, uint16_t year, uint8_t month, uint8_t day);
+uint32_t IOSAccounts_ActivePersistentId();
+void IOSAccounts_SetActivePersistentId(uint32_t persistentId);
+bool IOSAccounts_IsOnlineValid(uint32_t persistentId);
+std::string IOSAccounts_CountriesList();
+int IOSAccounts_NetworkService(uint32_t persistentId);
+void IOSAccounts_SetNetworkService(uint32_t persistentId, int service);
+bool IOSAccounts_CustomNetworkServiceAvailable();
 bool IOSTitlePause_Pause();
 bool IOSTitlePause_Resume();
 bool IOSTitlePause_IsPaused();
@@ -1585,6 +1606,97 @@ const char* cemu_bridge_graphic_packs_list(void) {
 
 void cemu_bridge_graphic_pack_set_enabled(int index, bool enabled) {
     IOSGraphicPacks_SetEnabled(index, enabled);
+}
+
+// ---------------------------------------------------------------------------
+// Wii U console accounts and each one's Network Service. See the doc comments in
+// CemuBridge.h for the record/field shapes and what Custom does and doesn't need; the
+// actual Account/NetworkService C++ calls live in IOSAccounts.cpp, same split as the
+// graphic pack functions above.
+
+const char* cemu_bridge_accounts_list(void) {
+    static std::string g_accountsList;
+    g_accountsList = IOSAccounts_List();
+    return g_accountsList.c_str();
+}
+
+void cemu_bridge_accounts_refresh(void) {
+    IOSAccounts_Refresh();
+}
+
+bool cemu_bridge_accounts_has_free_slot(void) {
+    return IOSAccounts_HasFreeSlot();
+}
+
+uint32_t cemu_bridge_accounts_next_persistent_id(void) {
+    return IOSAccounts_NextPersistentId();
+}
+
+uint32_t cemu_bridge_accounts_min_persistent_id(void) {
+    return IOSAccounts_MinPersistentId();
+}
+
+bool cemu_bridge_accounts_locked(void) {
+    return IOSAccounts_Locked();
+}
+
+bool cemu_bridge_account_create(uint32_t persistentId, const char* miiName, uint16_t birthYear,
+    uint8_t birthMonth, uint8_t birthDay, int gender, const char* email, int country) {
+    return IOSAccounts_Create(persistentId, miiName, birthYear, birthMonth, birthDay, gender, email, country);
+}
+
+bool cemu_bridge_account_delete(uint32_t persistentId) {
+    return IOSAccounts_Delete(persistentId);
+}
+
+bool cemu_bridge_account_set_mii_name(uint32_t persistentId, const char* miiName) {
+    return IOSAccounts_SetMiiName(persistentId, miiName);
+}
+
+bool cemu_bridge_account_set_gender(uint32_t persistentId, int gender) {
+    return IOSAccounts_SetGender(persistentId, gender);
+}
+
+bool cemu_bridge_account_set_email(uint32_t persistentId, const char* email) {
+    return IOSAccounts_SetEmail(persistentId, email);
+}
+
+bool cemu_bridge_account_set_country(uint32_t persistentId, int country) {
+    return IOSAccounts_SetCountry(persistentId, country);
+}
+
+bool cemu_bridge_account_set_birthdate(uint32_t persistentId, uint16_t year, uint8_t month, uint8_t day) {
+    return IOSAccounts_SetBirthdate(persistentId, year, month, day);
+}
+
+uint32_t cemu_bridge_active_account_persistent_id(void) {
+    return IOSAccounts_ActivePersistentId();
+}
+
+void cemu_bridge_set_active_account_persistent_id(uint32_t persistentId) {
+    IOSAccounts_SetActivePersistentId(persistentId);
+}
+
+bool cemu_bridge_account_is_online_valid(uint32_t persistentId) {
+    return IOSAccounts_IsOnlineValid(persistentId);
+}
+
+const char* cemu_bridge_countries_list(void) {
+    static std::string g_countriesList;
+    g_countriesList = IOSAccounts_CountriesList();
+    return g_countriesList.c_str();
+}
+
+CemuBridgeNetworkService cemu_bridge_network_service(uint32_t persistentId) {
+    return (CemuBridgeNetworkService)IOSAccounts_NetworkService(persistentId);
+}
+
+void cemu_bridge_set_network_service(uint32_t persistentId, CemuBridgeNetworkService service) {
+    IOSAccounts_SetNetworkService(persistentId, (int)service);
+}
+
+bool cemu_bridge_custom_network_service_available(void) {
+    return IOSAccounts_CustomNetworkServiceAvailable();
 }
 
 // ---------------------------------------------------------------------------
