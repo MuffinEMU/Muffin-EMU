@@ -437,6 +437,18 @@ int cemu_bridge_graphics_api(void);
 void cemu_bridge_set_upscale_filter(int filter);
 void cemu_bridge_set_downscale_filter(int filter);
 
+/// Metal-only: lets eligible textures read the pixel already sitting in the framebuffer
+/// from within the same fragment shader instead of a separate blend pass -
+/// MetalRenderer::Initialize() gates m_supportsFramebufferFetch on this AND the GPU
+/// reporting Apple GPU family 2, a floor every device this app targets clears, so unlike
+/// force_mesh_shaders in CemuConfig.h (gated on an Intel-only code path with no Intel GPU
+/// on iOS, and deliberately not exposed here for that reason) this one is a real, live
+/// switch on this platform. On by default, matching the core's own compiled-in default.
+/// Read when the Metal layer initializes, so - like the renderer picker itself - it takes
+/// effect on the next launch. Vulkan (MoltenVK) never reads this field.
+void cemu_bridge_set_framebuffer_fetch(bool enabled);
+bool cemu_bridge_framebuffer_fetch(void);
+
 // ---------------------------------------------------------------------------
 // Screen orientation, gamma and the on-screen performance overlay.
 //
@@ -467,6 +479,22 @@ bool cemu_bridge_render_upside_down(void);
 /// has no meaning to reject it in favour of.
 void cemu_bridge_set_display_gamma(float gamma);
 float cemu_bridge_display_gamma(void);
+
+/// A gamma stage upstream of Display Gamma, not a duplicate of it. RendererOuputShader.cpp
+/// reads both as separate shader inputs (targetGamma and displayGamma): targetGamma comes
+/// from here plus whatever gamma the game itself requested via GX2SetTVGamma/GX2SetDRCGamma
+/// (LatteGPUState.tvGamma/drcGamma, 0 if the game never asked), while displayGamma is
+/// cemu_bridge_set_display_gamma()'s value applied on top of that result. With this off, the
+/// game's own request still passes through added to overrideGammaValue; on, ActiveSettings::
+/// GetTVGamma()/GetDRCGamma() drop the game's request entirely and use only overrideGammaValue.
+/// Mirrors CemuConfig's own graphic.xml load-time clamp: a negative overrideGammaValue is
+/// rejected back to 2.2 rather than clamped, since a caller sending negative meant "reset",
+/// not "as low as possible" - unlike display gamma's 0-means-sRGB special case, negative has
+/// no meaning at all here to preserve.
+void cemu_bridge_set_override_app_gamma(bool enabled);
+bool cemu_bridge_override_app_gamma(void);
+void cemu_bridge_set_override_gamma_value(float gamma);
+float cemu_bridge_override_gamma_value(void);
 
 /// Where the performance overlay is drawn, as CemuConfig.h's own ScreenPosition enum
 /// value (0 = kDisabled, 1..6 walk the four corners plus top/bottom center - see

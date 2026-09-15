@@ -992,6 +992,14 @@ void cemu_bridge_set_downscale_filter(int filter) {
         GetConfig().downscale_filter = (sint32)filter;
 }
 
+void cemu_bridge_set_framebuffer_fetch(bool enabled) {
+    GetConfig().framebuffer_fetch = enabled;
+}
+
+bool cemu_bridge_framebuffer_fetch(void) {
+    return GetConfig().framebuffer_fetch.GetValue();
+}
+
 // ---------------------------------------------------------------------------
 // Screen orientation, gamma and the on-screen performance overlay. See the doc comments
 // on the declarations in CemuBridge.h for what each one does and why the gamma range is
@@ -1019,6 +1027,28 @@ void cemu_bridge_set_display_gamma(float gamma) {
 
 float cemu_bridge_display_gamma(void) {
     return GetConfig().userDisplayGamma.GetValue();
+}
+
+void cemu_bridge_set_override_app_gamma(bool enabled) {
+    GetConfig().overrideAppGammaPreference = enabled;
+}
+
+bool cemu_bridge_override_app_gamma(void) {
+    return GetConfig().overrideAppGammaPreference.GetValue();
+}
+
+void cemu_bridge_set_override_gamma_value(float gamma) {
+    // Mirrors CemuConfig::Load()'s own graphic.xml clamp for this field (a negative value
+    // means the XML predates it or was hand-edited wrong, not "as low as possible") rather
+    // than cemu_bridge_set_display_gamma()'s 1.0-3.0 clamp - this field has no 0-means-sRGB
+    // special case to preserve, so out-of-range here only ever means "reset to default".
+    if (gamma < 0.0f)
+        gamma = 2.2f;
+    GetConfig().overrideGammaValue = gamma;
+}
+
+float cemu_bridge_override_gamma_value(void) {
+    return GetConfig().overrideGammaValue.GetValue();
 }
 
 void cemu_bridge_set_overlay_position(int position) {
