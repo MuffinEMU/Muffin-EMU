@@ -966,6 +966,14 @@ class GameManager: ObservableObject {
                 Int32(UserDefaults.standard.object(forKey: AudioSettings.padVolumeKey) as? Int ?? AudioSettings.defaultPadVolume))
             cemu_bridge_set_pad_channels(
                 Int32(UserDefaults.standard.object(forKey: AudioSettings.padChannelsKey) as? Int ?? AudioSettings.defaultPadChannels))
+            // Mic input, same "sync from UserDefaults before boot" reason - mic.cpp only
+            // reads microphone_enabled/input_volume the moment a title calls MICInit, which
+            // can happen any time after boot, not just here, so this is what makes a change
+            // from a previous session reach the first MICInit call of a fresh one.
+            cemu_bridge_set_microphone_enabled(
+                UserDefaults.standard.object(forKey: AudioSettings.microphoneEnabledKey) as? Bool ?? AudioSettings.defaultMicrophoneEnabled)
+            cemu_bridge_set_input_volume(
+                Int32(UserDefaults.standard.object(forKey: AudioSettings.inputVolumeKey) as? Int ?? AudioSettings.defaultInputVolume))
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)
