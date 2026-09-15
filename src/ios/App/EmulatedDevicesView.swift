@@ -240,7 +240,7 @@ private struct EmulatedDeviceSlotsSection: View {
             Text("Load a .\(device.fileExtension) figure dump or create a figure. Files and game progress are saved in Documents/Emulated Devices. Clear removes a figure from the device and keeps its file.")
         }
         .onAppear(perform: refresh)
-        .alert("Emulated Devices", isPresented: Binding(
+        .alert("Error", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {

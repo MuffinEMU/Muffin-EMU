@@ -16,6 +16,7 @@ struct InputServicesSettingsSection: View {
         Section {
             if controllerManager.controllers.isEmpty {
                 Text("No physical controllers connected")
+                    .font(.system(size: 13, design: .rounded))
                     .foregroundColor(MuffinTheme.brownMid)
             }
 

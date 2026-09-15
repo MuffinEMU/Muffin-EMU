@@ -72,9 +72,9 @@ struct PreviewPadSection: View {
         .fileImporter(isPresented: $showingColourImporter, allowedContentTypes: [.muffinColour]) { result in
             importColour(result)
         }
-        .alert("Preview pad files", isPresented: .constant(previewFileErrorMessage != nil),
+        .alert("Error", isPresented: .constant(previewFileErrorMessage != nil),
               presenting: previewFileErrorMessage) { _ in
-            Button("OK") { previewFileErrorMessage = nil }
+            Button("OK", role: .cancel) { previewFileErrorMessage = nil }
         } message: { message in
             Text(message)
         }

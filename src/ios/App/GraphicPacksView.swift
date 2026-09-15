@@ -21,8 +21,8 @@ struct GraphicPacksView: View {
             if packs.isEmpty {
                 Section {
                     Text("No graphic packs found. Add them to Documents/mlc/graphicPacks - each pack is a folder with its own rules.txt inside, the same layout desktop Cemu uses.")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownMid)
                 }
             } else {
                 Section {
