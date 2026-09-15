@@ -158,65 +158,57 @@ struct MuffinCard<Content: View>: View {
     }
 }
 
-/// Rounded, friendly primary button (muffin-top gradient fill, cream text) on iOS 25
-/// and under. On iOS 26+, where Liquid Glass exists, the fill becomes real glass
-/// (System's own translucent, refractive material) tinted with the same muffin-top
-/// color instead of an opaque gradient - every one of this style's ~20 call sites
-/// across the app (ContentView, DecryptROMView, IconPickerView, ThemePickerView,
-/// SaveStateView) gets the upgrade automatically from this one place, with no other
-/// file needing to know or care which OS it's running on.
+/// Rounded, friendly primary button (muffin-top gradient fill, cream text).
+///
+/// This deliberately does NOT use Liquid Glass on iOS 26+, and that is a revert, not
+/// an oversight. `.glassEffect(.regular.tint(...).interactive(), ...)` was added here
+/// at 2:16 PM on 2026-09-15 and is the only change in the 1:00-2:30 PM window that
+/// can reach the controls: MuffinSecondaryButtonStyle below is what every in-game
+/// top-bar button uses, so that change put live, interactive, refractive glass
+/// directly over the emulator's own CAMetalLayer. Interactive glass re-samples and
+/// re-composites whatever is behind it continuously, and what is behind it here is a
+/// drawable being replaced every frame - a far better match for "buttons don't
+/// register unless held ~1.5 seconds" (a render/main-thread stall, which delays every
+/// touch equally) than anything in HeldControl's gesture code, which was read in full
+/// and contains no timer, no minimumDuration, and no delay of any kind.
+///
+/// Not proven on device. It is the best-supported suspect in the window, reverted so
+/// the symptom can be re-tested against a build that does not have it.
 struct MuffinPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        let label = configuration.label
+        configuration.label
             .font(.system(size: 14, weight: .bold, design: .rounded))
             .foregroundColor(MuffinTheme.sparkleCream)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-
-        if #available(iOS 26.0, *) {
-            label
-                .glassEffect(.regular.tint(MuffinTheme.muffinTopLight).interactive(), in: .rect(cornerRadius: 14))
-                .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-                .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-        } else {
-            label
-                .background(MuffinTheme.muffinTopGradient)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .shadow(color: MuffinTheme.shadow.opacity(0.25), radius: configuration.isPressed ? 2 : 6, x: 0, y: configuration.isPressed ? 1 : 3)
-                .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-                .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-        }
+            .background(MuffinTheme.muffinTopGradient)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .shadow(color: MuffinTheme.shadow.opacity(0.25), radius: configuration.isPressed ? 2 : 6, x: 0, y: configuration.isPressed ? 1 : 3)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
-/// Rounded pill button for secondary/chrome actions (cream fill, brown text) on iOS 25
-/// and under; real Liquid Glass, tinted cream, on iOS 26+ - same reasoning and same
-/// automatic reach across every existing call site as MuffinPrimaryButtonStyle above.
+/// Rounded pill button for secondary/chrome actions (cream fill, brown text).
+///
 /// This is the style every in-game top-bar button (pause, save states, controller
-/// switcher, hide-controls, swap, emulated devices) already uses, which is exactly
-/// where floating glass controls over game content are Liquid Glass's own showcase
-/// use case.
+/// switcher, hide-controls, swap, emulated devices) uses - i.e. the buttons that
+/// float directly over the running emulator. That is exactly why the Liquid Glass
+/// version of this style was reverted; see MuffinPrimaryButtonStyle above for the
+/// full reasoning. Anything added here renders on top of a live Metal drawable, so
+/// it is never "just cosmetic".
 struct MuffinSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        let label = configuration.label
+        configuration.label
             .font(.system(size: 13, weight: .semibold, design: .rounded))
             .foregroundColor(MuffinTheme.brownDark)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-
-        if #available(iOS 26.0, *) {
-            label
-                .glassEffect(.regular.tint(MuffinTheme.cream).interactive(), in: .capsule)
-                .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-                .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-        } else {
-            label
-                .background(MuffinTheme.cream.opacity(configuration.isPressed ? 0.7 : 1.0))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(MuffinTheme.wrapper, lineWidth: 1)
-                )
-        }
+            .background(MuffinTheme.cream.opacity(configuration.isPressed ? 0.7 : 1.0))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(MuffinTheme.wrapper, lineWidth: 1)
+            )
     }
 }
