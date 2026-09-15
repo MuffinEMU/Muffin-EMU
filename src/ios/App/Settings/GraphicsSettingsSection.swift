@@ -208,6 +208,7 @@ struct GraphicsSettingsSection: View {
                 Text(filter.title).tag(filter.rawValue)
             }
         }
+        .pickerStyle(.menu)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
@@ -217,6 +218,7 @@ struct GraphicsSettingsSection: View {
                 Text(filter.title).tag(filter.rawValue)
             }
         }
+        .pickerStyle(.menu)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
@@ -226,12 +228,14 @@ struct GraphicsSettingsSection: View {
                 Text(scale.title).tag(scale.rawValue)
             }
         }
+        .pickerStyle(.menu)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
     private var stretchToggle: some View {
         Toggle(isOn: $frameStretchEnabled) {
             Text("Enable Frame Stretching")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .onChange(of: frameStretchEnabled) { newValue in
@@ -242,6 +246,7 @@ struct GraphicsSettingsSection: View {
     private var vsyncToggle: some View {
         Toggle(isOn: $vsyncEnabled) {
             Text("VSync")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .onChange(of: vsyncEnabled) { newValue in
@@ -252,6 +257,7 @@ struct GraphicsSettingsSection: View {
     private var upsideDownToggle: some View {
         Toggle(isOn: $upsideDownEnabled) {
             Text("Flip Screen Upside Down")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .onChange(of: upsideDownEnabled) { newValue in
@@ -286,6 +292,7 @@ struct GraphicsSettingsSection: View {
     private var framebufferFetchToggle: some View {
         Toggle(isOn: $framebufferFetchEnabled) {
             Text("Framebuffer Fetch")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .onChange(of: framebufferFetchEnabled) { newValue in
@@ -296,6 +303,7 @@ struct GraphicsSettingsSection: View {
     private var overrideGammaToggle: some View {
         Toggle(isOn: $overrideAppGammaEnabled) {
             Text("Override App Gamma")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .onChange(of: overrideAppGammaEnabled) { newValue in

@@ -20,6 +20,7 @@ struct CPUSettingsSection: View {
             // the bridge falls back to the interpreter by itself.
             Toggle(isOn: $recompilerEnabled) {
                 Text("Use the recompiler (JIT)")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             .tint(MuffinTheme.pixelBlue)
             .onChange(of: recompilerEnabled) { newValue in
@@ -29,6 +30,7 @@ struct CPUSettingsSection: View {
             Toggle(isOn: $favourAccuracy) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Favour accuracy")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(favourAccuracy
                          ? "One CPU core, shaders built before they are drawn, accurate barriers and draw-done sync."
                          : "Multi-core CPU, shaders built in the background, accuracy-only work skipped.")

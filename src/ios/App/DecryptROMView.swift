@@ -77,59 +77,65 @@ struct DecryptROMView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
         .onDisappear { stopPolling() }
     }
 
     /// Shown first, before anything starts: "decrypt to raw source" (the existing
     /// folder-tree export) vs. "decrypt to wua" (a single portable archive file).
     private var formatChoiceBody: some View {
-        VStack(spacing: 20) {
-            Spacer()
+        ZStack {
+            MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-            Image(systemName: "lock.open.fill")
-                .font(.system(size: 40))
-                .foregroundColor(MuffinTheme.pixelBlue)
-            Text("Decrypt \(game.title)")
-                .font(.system(size: 18, weight: .semibold, design: .rounded))
-            Text("The encrypted original is never touched either way.")
-                .font(.system(size: 12, design: .rounded))
-                .foregroundColor(.secondary)
+            VStack(spacing: 20) {
+                Spacer()
 
-            VStack(spacing: 12) {
-                Button {
-                    format = .rawSource
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Decrypt to Raw Source")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("A code/, content/, meta/ folder - importable and bootable as-is.")
-                            .font(.system(size: 12, design: .rounded))
-                            .foregroundColor(.secondary)
+                Image(systemName: "lock.open.fill")
+                    .font(.system(size: 40))
+                    .foregroundColor(MuffinTheme.pixelBlue)
+                Text("Decrypt \(game.title)")
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                Text("The encrypted original is never touched either way.")
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundColor(MuffinTheme.brownMid)
+
+                VStack(spacing: 12) {
+                    Button {
+                        format = .rawSource
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Decrypt to Raw Source")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("A code/, content/, meta/ folder - importable and bootable as-is.")
+                                .font(.system(size: 12, design: .rounded))
+                                .foregroundColor(MuffinTheme.brownMid)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(MuffinSecondaryButtonStyle())
+                    .buttonStyle(MuffinSecondaryButtonStyle())
 
-                Button {
-                    format = .wua
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Decrypt to WUA")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("A single portable .wua archive file.")
-                            .font(.system(size: 12, design: .rounded))
-                            .foregroundColor(.secondary)
+                    Button {
+                        format = .wua
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Decrypt to WUA")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("A single portable .wua archive file.")
+                                .font(.system(size: 12, design: .rounded))
+                                .foregroundColor(MuffinTheme.brownMid)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(MuffinSecondaryButtonStyle())
                 }
-                .buttonStyle(MuffinSecondaryButtonStyle())
+                .padding(.horizontal, 24)
+
+                Spacer()
+
+                Button("Cancel", role: .cancel) { dismiss() }
+                    .buttonStyle(MuffinSecondaryButtonStyle())
+                    .padding(.bottom, 8)
             }
-            .padding(.horizontal, 24)
-
-            Spacer()
-
-            Button("Cancel", role: .cancel) { dismiss() }
-                .padding(.bottom, 8)
         }
         .padding()
         .navigationTitle("Decrypt")
@@ -139,7 +145,10 @@ struct DecryptROMView: View {
     }
 
     private func decryptingBody(_ chosenFormat: DecryptFormat) -> some View {
-        VStack(spacing: 20) {
+        ZStack {
+            MuffinTheme.backgroundGradient.ignoresSafeArea()
+
+            VStack(spacing: 20) {
                 Spacer()
 
                 if progress.completed {
@@ -151,18 +160,18 @@ struct DecryptROMView: View {
                     if progress.isSuccess {
                         Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten))")
                             .font(.system(size: 13, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.brownMid)
                         Text(chosenFormat.toWua
                             ? "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} \(game.id).wua"
                             : "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} \(game.title)")
                             .font(.system(size: 12, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.brownMid)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 24)
                     } else {
                         Text(failureReason(for: progress.resultStatus))
                             .font(.system(size: 13, design: .rounded))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.brownMid)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 24)
                     }
@@ -173,11 +182,11 @@ struct DecryptROMView: View {
                         .font(.system(size: 16, weight: .medium, design: .rounded))
                     Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten)) written")
                         .font(.system(size: 13, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.brownMid)
                         .monospacedDigit()
                     Text("The encrypted original is untouched the whole time.")
                         .font(.system(size: 12, design: .rounded))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.brownMid)
                 }
 
                 Spacer()
@@ -188,9 +197,11 @@ struct DecryptROMView: View {
                     } label: {
                         Text("Cancel")
                     }
+                    .buttonStyle(MuffinSecondaryButtonStyle())
                     .padding(.bottom, 8)
                 }
             }
+        }
         .padding()
         .navigationTitle(chosenFormat.navigationTitle)
         #if os(iOS)

@@ -76,7 +76,7 @@ private struct ThemeOptionCard: View {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(swatchAccent)
-                                .background(Color.white, in: Circle())
+                                .background(MuffinTheme.sparkleCream, in: Circle())
                                 .offset(x: 6, y: -6)
                         }
                     }

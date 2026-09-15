@@ -62,18 +62,31 @@ struct DiagnosticsSection: View {
         // the log on hides the intro. Putting them apart would make that look like a bug.
         Section {
             Toggle(isOn: $launchIntroEnabled) {
-                Label("Play the launch intro", systemImage: "sparkles")
+                Label {
+                    Text("Play the launch intro")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                } icon: {
+                    Image(systemName: "sparkles")
+                }
             }
             .tint(MuffinTheme.pixelBlue)
 
             Toggle(isOn: $showLaunchLog) {
-                Label("Show launch log", systemImage: "text.alignleft")
+                Label {
+                    Text("Show launch log")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                } icon: {
+                    Image(systemName: "text.alignleft")
+                }
             }
             .tint(MuffinTheme.pixelBlue)
         } header: {
             Text("Diagnostics")
         } footer: {
-            Text("The intro plays over the boot rather than before it, so it costs no extra waiting. The launch log takes priority when both are on: shows what the emulator is doing, with timestamps, while a game boots, which is what you want when a game starts but the screen stays black.")
+            InfoButton.footer(
+                "The launch log takes priority over the intro and shows what the emulator is doing during boot.",
+                title: "Diagnostics",
+                text: "The intro plays over the boot rather than before it, so it costs no extra waiting. The launch log takes priority when both are on: shows what the emulator is doing, with timestamps, while a game boots, which is what you want when a game starts but the screen stays black.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

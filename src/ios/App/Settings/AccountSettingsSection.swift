@@ -46,7 +46,10 @@ struct AccountSettingsSection: View {
             Text("Account")
         } footer: {
             if let activeAccount, !activeAccount.isValidOnline {
-                Text("This account has no cached NNID/PNID login, so it can't play online yet regardless of which Network Service is selected below - that requires signing in on a real console and dumping its account.dat here, which is outside what this app does.")
+                InfoButton.footer(
+                    "This account has no cached NNID/PNID login, so it can't play online yet.",
+                    title: "Account",
+                    text: "This account has no cached NNID/PNID login, so it can't play online yet regardless of which Network Service is selected below - that requires signing in on a real console and dumping its account.dat here, which is outside what this app does.")
             }
         }
         .foregroundColor(MuffinTheme.brownDarkest)

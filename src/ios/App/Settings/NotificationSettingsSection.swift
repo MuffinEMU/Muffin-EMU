@@ -83,6 +83,8 @@ struct NotificationSettingsSection: View {
                     Text(position.title).tag(position.rawValue)
                 }
             }
+            .pickerStyle(.menu)
+            .tint(MuffinTheme.pixelBlue)
         }
         .onChange(of: positionRaw) { newValue in
             cemu_bridge_set_notification_position(Int32(newValue))
@@ -144,6 +146,7 @@ struct NotificationSettingsSection: View {
     private var controllerProfilesToggle: some View {
         Toggle(isOn: $controllerProfilesEnabled) {
             Text("Controller Profiles")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)
@@ -155,6 +158,7 @@ struct NotificationSettingsSection: View {
     private var controllerBatteryToggle: some View {
         Toggle(isOn: $controllerBatteryEnabled) {
             Text("Low Battery")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)
@@ -166,6 +170,7 @@ struct NotificationSettingsSection: View {
     private var shaderCompilingToggle: some View {
         Toggle(isOn: $shaderCompilingEnabled) {
             Text("Shader Compiling")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)
@@ -177,6 +182,7 @@ struct NotificationSettingsSection: View {
     private var friendsToggle: some View {
         Toggle(isOn: $friendsEnabled) {
             Text("Friends")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .disabled(isOff)

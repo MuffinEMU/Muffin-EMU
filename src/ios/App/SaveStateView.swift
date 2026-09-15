@@ -110,27 +110,31 @@ struct SaveStateSheet: View {
 
     var body: some View {
         NavigationView {
-            List {
-                if let statusMessage {
-                    Section {
-                        Text(statusMessage)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundColor(MuffinTheme.brownDarkest)
-                    }
-                }
+            ZStack {
+                MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-                Section {
-                    ForEach(slots) { slot in
-                        row(for: slot)
+                List {
+                    if let statusMessage {
+                        Section {
+                            Text(statusMessage)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundColor(MuffinTheme.brownDarkest)
+                        }
                     }
-                } footer: {
-                    // The one place the whole feature's real scope limits are spelled
-                    // out honestly, rather than only living in code comments nobody
-                    // playing the game will ever read. See cemu_bridge_save_state/
-                    // cemu_bridge_load_state's doc comments in CemuBridge.h and the
-                    // file-level comment at the top of IOSSaveState.cpp for the full
-                    // reasoning behind both sentences below.
-                    Text("A save only loads back into this same running game - quitting or relaunching the game (or restarting the app) breaks the match, and a save from before that always fails to load. That's expected, not a bug.\n\nRight after loading, a texture or shader that changed since the save may flash its old contents for a moment. That's a brief visual glitch, not lost data.")
+
+                    Section {
+                        ForEach(slots) { slot in
+                            row(for: slot)
+                        }
+                    } footer: {
+                        // The one place the whole feature's real scope limits are spelled
+                        // out honestly, rather than only living in code comments nobody
+                        // playing the game will ever read. See cemu_bridge_save_state/
+                        // cemu_bridge_load_state's doc comments in CemuBridge.h and the
+                        // file-level comment at the top of IOSSaveState.cpp for the full
+                        // reasoning behind both sentences below.
+                        Text("A save only loads back into this same running game - quitting or relaunching the game (or restarting the app) breaks the match, and a save from before that always fails to load. That's expected, not a bug.\n\nRight after loading, a texture or shader that changed since the save may flash its old contents for a moment. That's a brief visual glitch, not lost data.")
+                    }
                 }
             }
             .listStyle(.insetGrouped)
@@ -160,6 +164,7 @@ struct SaveStateSheet: View {
                 Text("Slot \(deleteTarget?.number ?? 0) will be gone for good.")
             }
         }
+        .navigationViewStyle(.stack)
     }
 
     @ViewBuilder
@@ -188,7 +193,7 @@ struct SaveStateSheet: View {
                     Button(action: { onLoad(slot.number) }) {
                         Text("Load")
                     }
-                    .buttonStyle(MuffinSecondaryButtonStyle())
+                    .buttonStyle(.borderless)
                     .disabled(disabled)
 
                     Button(role: .destructive, action: { deleteTarget = slot }) {
@@ -201,7 +206,7 @@ struct SaveStateSheet: View {
                 Button(action: { onSave(slot.number) }) {
                     Text(slot.isOccupied ? "Overwrite" : "Save")
                 }
-                .buttonStyle(MuffinSecondaryButtonStyle())
+                .buttonStyle(.borderless)
                 .disabled(disabled)
             }
         }

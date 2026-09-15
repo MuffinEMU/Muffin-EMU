@@ -254,7 +254,7 @@ private struct OnboardingKeysPage: View {
                     if let errorMessage {
                         Text(errorMessage)
                             .font(.system(.footnote, design: .rounded))
-                            .foregroundColor(.red)
+                            .foregroundColor(MuffinTheme.blushPink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -341,7 +341,7 @@ private struct OnboardingGamesPage: View {
                     if let errorMessage {
                         Text(errorMessage)
                             .font(.system(.footnote, design: .rounded))
-                            .foregroundColor(.red)
+                            .foregroundColor(MuffinTheme.blushPink)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
