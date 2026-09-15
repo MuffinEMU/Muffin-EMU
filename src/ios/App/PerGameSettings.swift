@@ -151,7 +151,7 @@ struct GameContextMenu: View {
             Button(role: .destructive) {
                 gameManager.removeManualCover(forGameID: game.id)
             } label: {
-                Label("Remove Custom Cover", systemImage: "photo.badge.minus")
+                DestructiveSettingsLabel(title: "Remove Custom Cover", systemImage: "photo.badge.minus")
             }
         }
         // Disc images only - see gameSupportsDecryptToFiles() in DecryptROMView.swift for
@@ -180,12 +180,12 @@ struct GameContextMenu: View {
         let installed = DlcUpdateImport.installedContent(for: game)
         if installed.hasDLC {
             Button(role: .destructive, action: onRemoveDLC) {
-                Label("Remove DLC", systemImage: "trash")
+                DestructiveSettingsLabel(title: "Remove DLC", systemImage: "trash")
             }
         }
         if installed.hasUpdate {
             Button(role: .destructive, action: onRemoveUpdate) {
-                Label("Remove Update", systemImage: "trash")
+                DestructiveSettingsLabel(title: "Remove Update", systemImage: "trash")
             }
         }
     }
@@ -281,7 +281,7 @@ struct GameOptionsView: View {
                             .tint(MuffinTheme.pixelBlue)
                         }
                     } header: {
-                        Text("Overrides")
+                        SettingsSectionHeader("Overrides", icon: "slider.horizontal.3", accent: .core)
                     } footer: {
                         // Same "one short sentence inline, the rest one tap away" shape
                         // every other settings section's footer in this app already

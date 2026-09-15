@@ -9,9 +9,10 @@ struct AppearanceSettingsSection: View {
     @Binding var showingThemePicker: Bool
 
     var body: some View {
-        Section("Appearance") {
+        Section {
             Button(action: { showingIconPicker = true }) {
                 Label("App Icon", systemImage: "app.badge")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             .foregroundColor(MuffinTheme.brownDarkest)
 
@@ -20,8 +21,11 @@ struct AppearanceSettingsSection: View {
             // can love the Strawberry icon and the Galaxy Space theme together.
             Button(action: { showingThemePicker = true }) {
                 Label("Theme", systemImage: "paintpalette")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             .foregroundColor(MuffinTheme.brownDarkest)
+        } header: {
+            SettingsSectionHeader("Appearance", icon: "paintpalette", accent: .identity)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

@@ -8,7 +8,7 @@ struct FilesSettingsSection: View {
                 .foregroundColor(.secondary)
                 .textSelection(.enabled)
         } header: {
-            Text("Your Files")
+            SettingsSectionHeader("Your Files", icon: "folder", accent: .system)
         } footer: {
             InfoButton.footer(
                 "ROMs, saves, shader caches and keys.txt all live in this folder - under Files normally, or inside LiveContainer's own Documents if you sideloaded that way.",

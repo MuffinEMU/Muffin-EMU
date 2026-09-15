@@ -64,7 +64,7 @@ struct NotificationSettingsSection: View {
             shaderCompilingToggle
             friendsToggle
         } header: {
-            Text("Notifications")
+            SettingsSectionHeader("Notifications", icon: "bell", accent: .io)
         } footer: {
             InfoButton.footer(
                 "On-screen toasts for controller pairing, low battery, shader compiling and friend activity. The rows below only draw once a corner is picked.",

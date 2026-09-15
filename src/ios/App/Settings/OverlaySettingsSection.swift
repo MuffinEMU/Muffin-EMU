@@ -86,7 +86,7 @@ struct OverlaySettingsSection: View {
             vramUsageToggle
             debugToggle
         } header: {
-            Text("Performance Overlay")
+            SettingsSectionHeader("Performance Overlay", icon: "speedometer", accent: .io)
         } footer: {
             InfoButton.footer(
                 "A small on-screen readout of FPS, CPU and RAM use. Off by default; the rows below only draw once a corner is picked.",

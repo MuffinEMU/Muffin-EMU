@@ -97,7 +97,7 @@ struct AudioSettingsSection: View {
             padGroup
             microphoneGroup
         } header: {
-            Text("Audio")
+            SettingsSectionHeader("Audio", icon: "speaker.wave.2", accent: .io)
         } footer: {
             InfoButton.footer(
                 "TV and GamePad have their own volume and channel layout. Turning GamePad audio on plays its track on this device's own speaker or headphones, whether or not a second screen is connected. Microphone lets a game read GamePad mic input through this device's own microphone.",

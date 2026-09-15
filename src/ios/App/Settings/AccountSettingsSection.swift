@@ -44,7 +44,7 @@ struct AccountSettingsSection: View {
             }
             .buttonStyle(.borderless)
         } header: {
-            Text("Account")
+            SettingsSectionHeader("Account", icon: "person.crop.circle", accent: .content)
         } footer: {
             if let activeAccount, !activeAccount.isValidOnline {
                 InfoButton.footer(
@@ -127,7 +127,8 @@ struct NetworkServiceSettingsSection: View {
                 .disabled(locked || activeAccountName == nil || (service == .custom && !customAvailable))
             }
         } header: {
-            Text("Network Service\(activeAccountName.map { " (\($0))" } ?? "")")
+            SettingsSectionHeader("Network Service\(activeAccountName.map { " (\($0))" } ?? "")",
+                                  icon: "network", accent: .content)
         } footer: {
             InfoButton.footer(
                 selectedService.accountHelp,
