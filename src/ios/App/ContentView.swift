@@ -2054,9 +2054,9 @@ struct EmulatorViewOptimized: View {
                         .frame(width: padWidth, height: padHeight)
                 }
             } else if portrait {
-                VStack(spacing: 0) { screens }
+                screensStacked(in: geometry.size, horizontal: false)
             } else {
-                HStack(spacing: 0) { screens }
+                screensStacked(in: geometry.size, horizontal: true)
             }
         }
         .ignoresSafeArea(.all, edges: verticalSizeClass == .regular ? .horizontal : .all)
@@ -2126,19 +2126,44 @@ struct EmulatorViewOptimized: View {
     /// wrapper here (rather than the flexible frame this file used right after the
     /// port) is what actually made Single Screen and Adaptive - the two modes that
     /// reach this property - fullscreen again instead of rendering tiny at the origin.
-    private var screens: some View {
-        ForEach(visibleScreens, id: \.self) { main in
-            GeometryReader { proxy in
-                screenView(main: main)
-                    .frame(width: proxy.size.width, height: proxy.size.height)
+    /// Single Screen (one element) and Adaptive (two) both go through here: `horizontal`
+    /// picks side-by-side vs. stacked for Adaptive, and is irrelevant with one element
+    /// since there's nothing to split. Explicit, computed `.frame(width:height:)` plus
+    /// `.position(x:y:)` for every cell - not a VStack/HStack of flexibly-framed
+    /// children - for the same reason `smallGamePadTopRight` right above already does
+    /// its own math this way instead of trusting a stack to size a raw
+    /// UIViewRepresentable's cell for it: `.frame(maxWidth: .infinity)` doesn't reliably
+    /// make UIKit content fill a stack cell, and (this is the part the first attempt at
+    /// fixing that missed) wrapping it in a plain `GeometryReader` doesn't reliably fix
+    /// that either - a GeometryReader has no size of its own to report until its parent
+    /// already has one, and a bare VStack/HStack sizes itself to its content's IDEAL
+    /// size, which a GeometryReader answers with something close to zero. Two flavors of
+    /// the same underlying problem; computing real numbers from `size` (already
+    /// known, from this view's own GeometryReader) and applying them directly is the one
+    /// approach with no size-propagation step left to fail silently.
+    private func screensStacked(in size: CGSize, horizontal: Bool) -> some View {
+        let count = visibleScreens.count
+        return ZStack(alignment: .topLeading) {
+            ForEach(Array(visibleScreens.enumerated()), id: \.offset) { index, main in
+                if horizontal {
+                    let cellWidth = size.width / CGFloat(count)
+                    screenView(main: main)
+                        .frame(width: cellWidth, height: size.height)
+                        .position(x: cellWidth * (CGFloat(index) + 0.5), y: size.height / 2)
+                } else {
+                    let cellHeight = size.height / CGFloat(count)
+                    screenView(main: main)
+                        .frame(width: size.width, height: cellHeight)
+                        .position(x: size.width / 2, y: cellHeight * (CGFloat(index) + 0.5))
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(width: size.width, height: size.height)
     }
 
     /// `main ? MetalViewIOS : PadMetalViewIOS`, matching MeloCafe's own
     /// `main ? cemuView : cemuPadView` - the GamePad's touchscreen gesture lives here
-    /// rather than as a modifier applied after the fact in `screens`/`screensSizeLayout`,
+    /// rather than as a modifier applied after the fact in `screensStacked`/`screensSizeLayout`,
     /// since this is the one place both call sites actually construct the pad view.
     @ViewBuilder
     private func screenView(main: Bool) -> some View {
