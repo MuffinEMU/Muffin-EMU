@@ -301,6 +301,12 @@ class GameManager: ObservableObject {
         return cemu_bridge_derive_base_title_id(titleId)
     }
 
+    /// The three extensions a hand-placed `<gameID>_cover.*` override can use -
+    /// shared with CoverArtPickerView (via setManualCover/removeManualCover/
+    /// hasManualCoverOverride below) so the picker writes into exactly the set
+    /// findCover() checks, rather than a second, possibly-drifting copy of the list.
+    static let manualCoverExtensions = ["jpg", "jpeg", "png"]
+
     /// Art for a game's card, in the order a person would expect it: whatever they put
     /// there themselves first, then real box art already fetched. The dump's own icon
     /// (meta/iconTex.tga) is a THIRD tier below both, applied later by the background
@@ -314,7 +320,7 @@ class GameManager: ObservableObject {
 
         // A hand-placed cover wins. Someone who dropped a file in specifically to
         // override the icon should not be overruled by the icon.
-        for ext in ["jpg", "jpeg", "png"] {
+        for ext in Self.manualCoverExtensions {
             let coverPath = directory.appendingPathComponent("\(gameID)_cover.\(ext)")
             if fileManager.fileExists(atPath: coverPath.path) {
                 return coverPath.path
@@ -434,6 +440,81 @@ class GameManager: ObservableObject {
         }
     }
 
+    /// Documents/Roms - the same directory findCover()/loadGames() already scan and
+    /// that CoverArtFetcher caches box art alongside, exposed read-only so
+    /// CoverArtPickerView writes/deletes a manual `<gameID>_cover.*` override into
+    /// exactly the place findCover() already checks, rather than guessing or
+    /// inventing a second location.
+    var romsDirectoryURL: URL? {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent(romsDirectory)
+    }
+
+    /// True if `gameID` currently has a hand-placed `<gameID>_cover.*` override on
+    /// disk, under any of the three extensions findCover() checks. Lets
+    /// CoverArtPickerView/GameContextMenu decide whether "Remove Custom Cover" has
+    /// anything to do, without duplicating findCover()'s own extension list.
+    func hasManualCoverOverride(forGameID gameID: String) -> Bool {
+        guard let romsPath = romsDirectoryURL else { return false }
+        return Self.manualCoverExtensions.contains {
+            FileManager.default.fileExists(atPath: romsPath.appendingPathComponent("\(gameID)_cover.\($0)").path)
+        }
+    }
+
+    /// Re-runs findCover()'s priority order for one game and applies whatever it
+    /// returns - including `nil`, unlike applyCoverPath() above, which only ever
+    /// applies a newly-found path - to `games`/`favorites`. Called after
+    /// setManualCover()/removeManualCover() write or delete a `<gameID>_cover.*`
+    /// override, so the library card picks up the change immediately: `games` and
+    /// `favorites` are both @Published, and GameCardOptimized reads `game.coverPath`
+    /// straight from the struct it was handed, so mutating the array in place is the
+    /// same refresh mechanism loadGames()'s own background enrichment already uses -
+    /// no reload, no relaunch, no separate cache to invalidate.
+    private func refreshCoverPath(forGameID gameID: String) {
+        guard let index = games.firstIndex(where: { $0.id == gameID }), let romsPath = romsDirectoryURL else { return }
+        let newCoverPath = findCover(for: gameID, romPath: games[index].romPath, in: romsPath)
+        games[index].coverPath = newCoverPath
+        if let favIndex = favorites.firstIndex(where: { $0.id == gameID }) {
+            favorites[favIndex].coverPath = newCoverPath
+        }
+    }
+
+    /// Writes `imageData` as `gameID`'s manual cover override, replacing any
+    /// existing override under a DIFFERENT extension first - findCover() checks
+    /// jpg, then jpeg, then png and returns the first match, so switching a .png
+    /// override to a .jpg one without removing the stale .png would leave the old
+    /// image winning forever. `ext` must be one of `manualCoverExtensions`; the
+    /// caller (CoverArtPickerView) is responsible for converting whatever format the
+    /// source image actually is (HEIC from Photos, say) to one of those three before
+    /// calling this - this function only ever writes the bytes it's handed.
+    func setManualCover(imageData: Data, ext: String, forGameID gameID: String) throws {
+        guard Self.manualCoverExtensions.contains(ext) else {
+            throw CoverOverrideError.unsupportedExtension
+        }
+        guard let romsPath = romsDirectoryURL else {
+            throw CoverOverrideError.noLibraryDirectory
+        }
+        for staleExt in Self.manualCoverExtensions where staleExt != ext {
+            try? FileManager.default.removeItem(at: romsPath.appendingPathComponent("\(gameID)_cover.\(staleExt)"))
+        }
+        let destination = romsPath.appendingPathComponent("\(gameID)_cover.\(ext)")
+        try imageData.write(to: destination, options: .atomic)
+        refreshCoverPath(forGameID: gameID)
+    }
+
+    /// Deletes `gameID`'s manual cover override, if any exists (under any of the
+    /// three extensions), then refreshes so the card falls back to whatever
+    /// findCover()'s next tier finds - real box art already fetched, then the
+    /// console's own icon, then the placeholder - exactly as if the override file
+    /// had never been placed.
+    func removeManualCover(forGameID gameID: String) {
+        guard let romsPath = romsDirectoryURL else { return }
+        for ext in Self.manualCoverExtensions {
+            try? FileManager.default.removeItem(at: romsPath.appendingPathComponent("\(gameID)_cover.\(ext)"))
+        }
+        refreshCoverPath(forGameID: gameID)
+    }
+
     /// Derives `game`'s real region and title name (both from meta.xml, via the
     /// bridge) off the main actor, caches whatever was found - including a definite
     /// "nothing there," so a title with no name or no region isn't re-inspected on
@@ -519,6 +600,25 @@ class GameManager: ObservableObject {
                 return "Couldn't access that file."
             case .copyFailed(let error):
                 return "Couldn't copy the ROM: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// setManualCover()'s two honest failure modes - a real one (couldn't find
+    /// Documents/Roms at all, which would mean something is very wrong with the
+    /// sandbox) and a programmer error (a caller passing an extension that isn't
+    /// jpg/jpeg/png), kept as separate cases rather than folded into ROMImportError
+    /// above since neither is actually about importing a ROM.
+    enum CoverOverrideError: LocalizedError {
+        case unsupportedExtension
+        case noLibraryDirectory
+
+        var errorDescription: String? {
+            switch self {
+            case .unsupportedExtension:
+                return "That image couldn't be saved in a supported format."
+            case .noLibraryDirectory:
+                return "Couldn't find the game library folder."
             }
         }
     }
