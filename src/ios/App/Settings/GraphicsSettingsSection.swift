@@ -209,6 +209,7 @@ struct GraphicsSettingsSection: View {
             }
         }
         .pickerStyle(.menu)
+        .tint(MuffinTheme.pixelBlue)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
@@ -219,6 +220,7 @@ struct GraphicsSettingsSection: View {
             }
         }
         .pickerStyle(.menu)
+        .tint(MuffinTheme.pixelBlue)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
@@ -229,6 +231,7 @@ struct GraphicsSettingsSection: View {
             }
         }
         .pickerStyle(.menu)
+        .tint(MuffinTheme.pixelBlue)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
