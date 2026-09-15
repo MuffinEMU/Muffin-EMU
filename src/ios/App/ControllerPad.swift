@@ -633,12 +633,8 @@ private struct ControlButton: View {
     private static let neutralLabel = Color(white: 0.22)
 
     var body: some View {
-        // L3/R3 alone get a hit region that matches the dot actually drawn - see
-        // HeldControl's own doc comment on circularHitTarget for why every other
-        // control keeps the generous square.
         HeldControl(onPressChange: { onInput(control.id, $0) }, isInteractive: isInteractive,
-                    externallyPressed: externallyPressed,
-                    circularHitTarget: control.style == .stick) { isPressed in
+                    externallyPressed: externallyPressed) { isPressed in
             ZStack {
                 shape(isPressed: isPressed)
                 Text(control.glyph)
@@ -750,19 +746,6 @@ struct HeldControl<Content: View>: View {
     /// that case: the surface calls `onInput` directly instead. `nil`, every other
     /// control, is this type entirely unchanged from before.
     var externallyPressed: Bool? = nil
-
-    /// True only for L3/R3. Every other round button on the pad wants the generous
-    /// square below - a bigger, more forgiving target with nothing else contending
-    /// for the corners it adds. L3 is different: DpadTouchSurface sits directly
-    /// underneath it and hit-tests continuously, by angle, right up to (and past)
-    /// L3's own radius, so a diagonal - or even a near-centre cardinal - press that
-    /// lands in the square's corners (real distance up to ~0.50 units from centre,
-    /// verified against dpadDirections' own 0.18 deadzone, which clears at ~0.30) was
-    /// being claimed by L3 instead of ever reaching the surface: the dot fired a
-    /// stick click nobody asked for, and the direction it should have registered
-    /// never did. Circle here is not a smaller target for its own sake, it is the
-    /// square giving back exactly the area it was never visually part of.
-    var circularHitTarget: Bool = false
     let content: (Bool) -> Content
 
     @State private var isPressed = false
@@ -771,7 +754,11 @@ struct HeldControl<Content: View>: View {
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     var body: some View {
-        hitTestable(content(externallyPressed ?? isPressed))
+        content(externallyPressed ?? isPressed)
+            // Without this the hit area is whatever the label happens to paint, so a
+            // finger landing on the transparent corner of a circular button hits the
+            // view behind it instead.
+            .contentShape(Rectangle())
             .accessibilityAddTraits(.isButton)
             .gesture(externallyPressed == nil ? ownGesture : nil)
             // A gesture the system cancels (backgrounding, an incoming call) or a view
@@ -792,19 +779,6 @@ struct HeldControl<Content: View>: View {
         DragGesture(minimumDistance: 0)
             .onChanged { _ in setPressed(true) }
             .onEnded { _ in setPressed(false) }
-    }
-
-    /// Without a content shape at all, the hit area is whatever the label happens to
-    /// paint, so a finger landing on the transparent corner of a circular button hits
-    /// the view behind it instead. Rectangle is the right default for that - a bigger,
-    /// forgiving target - everywhere except L3/R3; see circularHitTarget above.
-    @ViewBuilder
-    private func hitTestable<V: View>(_ view: V) -> some View {
-        if circularHitTarget {
-            view.contentShape(Circle())
-        } else {
-            view.contentShape(Rectangle())
-        }
     }
 
     // onChanged repeats for every touch-move, so guard - both to keep the highlight from
