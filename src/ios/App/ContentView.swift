@@ -2115,10 +2115,24 @@ struct EmulatorViewOptimized: View {
         .frame(width: size.width, height: size.height, alignment: .top)
     }
 
+    /// `.frame(maxWidth: .infinity, maxHeight: .infinity)` directly on a
+    /// `UIViewRepresentable` does not reliably make UIKit actually size the view it
+    /// returns - that flexible-frame propagation is a SwiftUI-view concept, and a raw
+    /// UIViewRepresentable has no intrinsic size of its own to grow from. This is
+    /// exactly why MeloCafe's own `MetalViewContainer` (`UI/Emulation/
+    /// MetalViewContainer.swift`) is not just `MetalKitView(mtkView:)` - it wraps that
+    /// in an inner GeometryReader and applies an explicit, numeric
+    /// `.frame(width:height:)` computed from ITS OWN measured size. Reproducing that
+    /// wrapper here (rather than the flexible frame this file used right after the
+    /// port) is what actually made Single Screen and Adaptive - the two modes that
+    /// reach this property - fullscreen again instead of rendering tiny at the origin.
     private var screens: some View {
         ForEach(visibleScreens, id: \.self) { main in
-            screenView(main: main)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            GeometryReader { proxy in
+                screenView(main: main)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
