@@ -37,7 +37,7 @@ struct EmulatedClockSection: View {
                 TimebaseScale.apply(scale)
             }
         } header: {
-            Text("Emulated Clock")
+            SettingsSectionHeader("Emulated Clock", icon: "clock", accent: .core)
         } footer: {
             InfoButton.footer(
                 "\(timebase.summary) Changes how fast the game believes time passes, not how fast MuffinEMU runs, and takes effect immediately.",

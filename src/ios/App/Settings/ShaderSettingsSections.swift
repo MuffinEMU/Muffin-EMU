@@ -21,7 +21,7 @@ struct ShaderCompilationSection: View {
                 cemu_bridge_set_async_shader_compile(newValue)
             }
         } header: {
-            Text("Shader Compilation")
+            SettingsSectionHeader("Shader Compilation", icon: "hammer", accent: .core)
         } footer: {
             InfoButton.footer(
                 "On, the game keeps running while a new shader builds, which can flicker or appear late the first time it's drawn. Nano Assault Neo needs its own per-game override (long-press it in your library) instead of this off for everyone.",
@@ -57,7 +57,7 @@ struct ShaderCacheSection: View {
                 Label("Clear compiled shaders", systemImage: "arrow.counterclockwise")
             }
             Button(role: .destructive) { confirmClearLearned = true } label: {
-                Label("Clear everything, including learned", systemImage: "trash")
+                DestructiveSettingsLabel(title: "Clear everything, including learned", systemImage: "trash")
             }
             if let cacheStatusMessage {
                 Text(cacheStatusMessage)
@@ -65,10 +65,10 @@ struct ShaderCacheSection: View {
                     .foregroundColor(.secondary)
             }
         } header: {
-            Text("Shader Cache")
+            SettingsSectionHeader("Shader Cache", icon: "externaldrive", accent: .core)
         } footer: {
             // Already one short sentence pair - nothing to cut behind an info button.
-            Text("Learned shaders are what a game has revealed by drawing with them, saved so the next launch skips rebuilding them. Compiled shaders rebuild on their own.")
+            InfoButton.footer("Learned shaders are what a game has revealed by drawing with them, saved so the next launch skips rebuilding them. Compiled shaders rebuild on their own.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: refreshCacheStats)

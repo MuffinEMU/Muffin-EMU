@@ -50,7 +50,7 @@ struct InputServicesSettingsSection: View {
             }
             .foregroundColor(MuffinTheme.brownDarkest)
         } header: {
-            Text("Input Services")
+            SettingsSectionHeader("Input Services", icon: "antenna.radiowaves.left.and.right", accent: .io)
         } footer: {
             InfoButton.footer(
                 "MFi/Bluetooth controllers pair like any other Bluetooth accessory - press A on it, or use Settings > Bluetooth, then assign its Wii U role here. Long-press a row to change its role; swipe to remove it; drag to reorder player slots.",

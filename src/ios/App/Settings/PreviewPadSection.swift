@@ -4,9 +4,10 @@ import UniformTypeIdentifiers
 /// Off by default. Everything else in Settings and the shipping app is unaffected
 /// by whatever is chosen here - see EmulatorViewOptimized's branch on
 /// PreviewPadStore.enabledKey for exactly what turning this on changes and what
-/// stays untouched. The header carries an icon and a distinct colour, not just the
-/// word "Preview" in plain text, because every other section header in this Form
-/// looks the same and this is the one section that is not shipping-quality yet.
+/// stays untouched. Every section header in this Form carries an icon and a family
+/// colour now (see SettingsSectionAccent), so this one keeps its distinctness by
+/// being the only header outside that palette - orange, the `.preview` case, which
+/// exists solely to mark the one section that is not shipping-quality yet.
 struct PreviewPadSection: View {
     // A real ObservedObject on the shared store, not a second set of @AppStorage vars
     // pointed at the same keys - PreviewPadStore only reads UserDefaults once, at
@@ -50,8 +51,8 @@ struct PreviewPadSection: View {
                 previewControls
             }
         } header: {
-            Label("Preview: New Pad System", systemImage: "wrench.and.screwdriver")
-                .foregroundColor(.orange)
+            SettingsSectionHeader("Preview: New Pad System",
+                                  icon: "wrench.and.screwdriver", accent: .preview)
         } footer: {
             InfoButton.footer(
                 "Every control group can be dragged and pinch-resized once this is on, the same way the shipping pad's edit mode works. This hasn't run on a real device yet - turn it back off if something looks wrong; nothing else in the app depends on it.",
@@ -118,7 +119,7 @@ struct PreviewPadSection: View {
         Button(role: .destructive) {
             showingResetAdjustmentsConfirmation = true
         } label: {
-            Label("Reset dragged/resized groups", systemImage: "arrow.counterclockwise")
+            DestructiveSettingsLabel(title: "Reset dragged/resized groups", systemImage: "arrow.counterclockwise")
         }
 
         Button {
