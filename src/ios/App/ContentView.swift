@@ -1306,6 +1306,25 @@ struct EmulatorViewOptimized: View {
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
 
+                        // Settings > On-Screen Controls already has this toggle;
+                        // repeated here for the same reason as the save-state and
+                        // hide-controls buttons around it - Void's own asks this
+                        // session have consistently wanted things reachable without
+                        // leaving the game, not buried one menu away. Releases every
+                        // held button on the way in: a press in flight when the
+                        // overlay it was held on disappears cannot report its own
+                        // release any more, and the other pad's own buttons don't
+                        // know a press exists that they never started.
+                        Button(action: {
+                            useMeloControls.toggle()
+                            cemu_bridge_release_all_buttons()
+                        }) {
+                            Image(systemName: useMeloControls ? "checkmark.rectangle.stack.fill" : "rectangle.stack")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .buttonStyle(MuffinSecondaryButtonStyle())
+                        .accessibilityLabel(useMeloControls ? "Switch to MuffinEMU's controls" : "Switch to Melo-Controller")
+
                         // Reachable without leaving the game, same reasoning as the
                         // move-controls and pad-hide buttons around it - Void's own
                         // asks this session have consistently wanted things reachable
