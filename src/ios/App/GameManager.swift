@@ -946,15 +946,61 @@ class GameManager: ObservableObject {
             cemu_bridge_set_overlay_position(
                 Int32(UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
                     ?? OverlaySettings.defaultPosition.rawValue))
+            cemu_bridge_set_overlay_text_color(
+                UInt32(UserDefaults.standard.object(forKey: OverlaySettings.textColorKey) as? Int
+                    ?? OverlaySettings.defaultTextColor))
+            cemu_bridge_set_overlay_text_scale(
+                Int32(UserDefaults.standard.object(forKey: OverlaySettings.textScaleKey) as? Int
+                    ?? OverlaySettings.defaultTextScale))
             cemu_bridge_set_overlay_fps(
                 UserDefaults.standard.object(forKey: OverlaySettings.fpsKey) as? Bool
                     ?? OverlaySettings.defaultFps)
+            cemu_bridge_set_overlay_cpu_mode(
+                UserDefaults.standard.object(forKey: OverlaySettings.cpuModeKey) as? Bool
+                    ?? OverlaySettings.defaultCpuMode)
+            cemu_bridge_set_overlay_drawcalls(
+                UserDefaults.standard.object(forKey: OverlaySettings.drawcallsKey) as? Bool
+                    ?? OverlaySettings.defaultDrawcalls)
             cemu_bridge_set_overlay_cpu_usage(
                 UserDefaults.standard.object(forKey: OverlaySettings.cpuUsageKey) as? Bool
                     ?? OverlaySettings.defaultCpuUsage)
+            cemu_bridge_set_overlay_cpu_per_core_usage(
+                UserDefaults.standard.object(forKey: OverlaySettings.cpuPerCoreUsageKey) as? Bool
+                    ?? OverlaySettings.defaultCpuPerCoreUsage)
             cemu_bridge_set_overlay_ram_usage(
                 UserDefaults.standard.object(forKey: OverlaySettings.ramUsageKey) as? Bool
                     ?? OverlaySettings.defaultRamUsage)
+            cemu_bridge_set_overlay_vram_usage(
+                UserDefaults.standard.object(forKey: OverlaySettings.vramUsageKey) as? Bool
+                    ?? OverlaySettings.defaultVramUsage)
+            cemu_bridge_set_overlay_debug(
+                UserDefaults.standard.object(forKey: OverlaySettings.debugKey) as? Bool
+                    ?? OverlaySettings.defaultDebug)
+
+            // Notifications - a second, independent overlay draw (see
+            // NotificationSettingsSection.swift's header comment); same push-before-boot
+            // reasoning as the performance overlay above.
+            cemu_bridge_set_notification_position(
+                Int32(UserDefaults.standard.object(forKey: NotificationSettings.positionKey) as? Int
+                    ?? NotificationSettings.defaultPosition.rawValue))
+            cemu_bridge_set_notification_text_color(
+                UInt32(UserDefaults.standard.object(forKey: NotificationSettings.textColorKey) as? Int
+                    ?? NotificationSettings.defaultTextColor))
+            cemu_bridge_set_notification_text_scale(
+                Int32(UserDefaults.standard.object(forKey: NotificationSettings.textScaleKey) as? Int
+                    ?? NotificationSettings.defaultTextScale))
+            cemu_bridge_set_notification_controller_profiles(
+                UserDefaults.standard.object(forKey: NotificationSettings.controllerProfilesKey) as? Bool
+                    ?? NotificationSettings.defaultControllerProfiles)
+            cemu_bridge_set_notification_controller_battery(
+                UserDefaults.standard.object(forKey: NotificationSettings.controllerBatteryKey) as? Bool
+                    ?? NotificationSettings.defaultControllerBattery)
+            cemu_bridge_set_notification_shader_compiling(
+                UserDefaults.standard.object(forKey: NotificationSettings.shaderCompilingKey) as? Bool
+                    ?? NotificationSettings.defaultShaderCompiling)
+            cemu_bridge_set_notification_friends(
+                UserDefaults.standard.object(forKey: NotificationSettings.friendsKey) as? Bool
+                    ?? NotificationSettings.defaultFriends)
 
             // Audio. tv_audio_enabled/pad_audio_enabled and the volumes take effect the
             // moment ax_out.cpp next looks at them (see CemuBridge.h's Audio section), but
