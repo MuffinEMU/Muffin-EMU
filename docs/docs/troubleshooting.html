@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Troubleshooting — MuffinEMU Docs</title>
+<meta name="description" content="Common MuffinEMU snags: keys.txt, JIT not engaging, save states refusing to load, external display routing, and how to collect logs.">
+<link rel="icon" href="../icon.png">
+<link rel="apple-touch-icon" href="../icon.png">
+<meta name="theme-color" content="#F4A551" id="themeColorMeta">
+<link rel="stylesheet" href="../site.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="../index.html"><img src="../icon.png" alt="" width="30" height="30"><span>MuffinEMU</span></a>
+    <nav class="site-nav">
+      <a href="../index.html">Home</a>
+      <a href="installation.html">Install</a>
+      <details class="nav-dropdown">
+        <summary>Docs ▾</summary>
+        <div class="dropdown-panel">
+          <a href="index.html">All documentation</a>
+          <a href="features.html">Features overview</a>
+          <a href="screen-layout.html">Screen Layout</a>
+          <a href="save-states.html">Save States</a>
+          <a href="controls.html">Controls &amp; GamePad</a>
+          <a href="themes.html">Themes &amp; Icons</a>
+          <a href="troubleshooting.html" aria-current="page">Troubleshooting</a>
+          <a href="faq.html">FAQ</a>
+        </div>
+      </details>
+      <a href="https://github.com/kiddreads/MuffinEMU">GitHub</a>
+    </nav>
+    <button class="theme-btn" data-theme-cycle type="button" aria-label="Switch theme">
+      <span aria-hidden="true">🎲</span>
+      <span data-theme-name>Bakery (Original)</span>
+      <span class="swatches" data-theme-swatches aria-hidden="true"></span>
+    </button>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-sidebar">
+    <p class="sidebar-title">Documentation</p>
+    <nav>
+      <a href="index.html">Overview</a>
+      <a href="installation.html">Installation</a>
+      <a href="features.html">Features overview</a>
+      <a href="screen-layout.html">Screen Layout</a>
+      <a href="save-states.html">Save States</a>
+      <a href="controls.html">Controls &amp; GamePad</a>
+      <a href="themes.html">Themes &amp; Icons</a>
+      <a href="troubleshooting.html" aria-current="page">Troubleshooting</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </aside>
+
+  <div class="docs-content">
+    <h1>Troubleshooting</h1>
+    <p class="subtitle">Common snags, and what's actually going on under each one.</p>
+
+    <h3>An encrypted game does nothing when I try to launch it</h3>
+    <p>You need <code>keys.txt</code>, dumped from your own Wii U, in the <code>keys</code> folder MuffinEMU creates in the Files app (or imported via Settings). Without it, encrypted games simply won't run — homebrew and unencrypted content are unaffected either way. A file dropped in mid-session is picked up before the next key read, no relaunch needed.</p>
+
+    <h3>The game seems to be running on the interpreter, not the recompiler</h3>
+    <p>The recompiler needs <em>both</em> a JIT enabler attached (StikJIT, or SideStore/LiveContainer's own attach) <em>and</em> the recompiler switch on in Settings &gt; CPU. Missing either one, MuffinEMU falls back to the interpreter automatically — Settings always states which mode a given launch got and why, so check there first rather than guessing.</p>
+
+    <h3>A game glitches, desyncs, or crashes</h3>
+    <p>Try Settings &gt; CPU &gt; "Favour accuracy" — it's slower, but trades speed for correctness on titles that don't get along with the fast path. Restart the game after changing any CPU setting; it doesn't apply mid-session.</p>
+
+    <h3>A save state won't load</h3>
+    <p>This is refused on purpose, not a bug, if the currently running title's ID, thread list, or memory layout don't match the save exactly — which happens the moment you quit or relaunch the game, or restart the app. A save state only loads back into the exact same running instance it was taken from; see <a href="save-states.html">Save States</a> for the full reasoning. For anything that needs to survive between sessions, use the game's own normal saves.</p>
+
+    <h3>After loading a save state, something looks briefly wrong on screen</h3>
+    <p>Expected: a texture or shader that changed since the save may flash its old contents for a moment, until the game's own next draw call refreshes it. That's a visual glitch, not lost progress — see <a href="save-states.html">Save States</a> for why GPU state is deliberately not part of what's captured.</p>
+
+    <h3>TrollStore / an installer says the IPA is "not signed"</h3>
+    <p>Expected for <code>MuffinEMU-fakesigned.ipa</code> — it's ad-hoc signed, which has no certificate or team ID, so most tools describe it that way. Use it for TrollStore or a jailbroken device. <code>MuffinEMU.ipa</code> is the plain unsigned build meant for SideStore/AltStore/LiveContainer, which re-sign it themselves at install. See <a href="installation.html">Installation</a> for which one you actually need.</p>
+
+    <h3>Nothing shows up on my TV / second display</h3>
+    <p>Honestly: true dual-screen output to a genuine second display has never been exercised on a device in practice — the code path exists and is written against the real API, but is expected to fall back to screen-mirroring behaviour (TV screen only, mirrored) rather than routing the TV and GamePad to separate displays. See <a href="screen-layout.html#external-display">External display routing</a> for the honest breakdown of what is and isn't confirmed there.</p>
+
+    <h3>Collecting logs before filing a bug</h3>
+    <p>Two files matter: the running <code>log.txt</code>, and <code>Documents/CemuCrashLog.txt</code> — a checkpoint trail written with a raw synchronous write specifically so it survives even an abrupt process termination. If the app never got far enough to open a log at all, there may be no <code>CemuCrashLog.txt</code> to send; say so in your report rather than assuming one exists. Attach both when you can, and open an issue at <a href="https://github.com/kiddreads/MuffinEMU/issues">github.com/kiddreads/MuffinEMU/issues</a>.</p>
+
+    <div class="doc-next">
+      <a href="themes.html"><span class="dir">Previous</span>← Themes &amp; Icons</a>
+      <a href="faq.html"><span class="dir">Next</span>FAQ →</a>
+    </div>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <p><a href="https://github.com/kiddreads/MuffinEMU">github.com/kiddreads/MuffinEMU</a></p>
+</footer>
+
+<script src="../theme.js"></script>
+</body>
+</html>

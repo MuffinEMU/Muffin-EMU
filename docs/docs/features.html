@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Features overview — MuffinEMU Docs</title>
+<meta name="description" content="A scannable reference of everything MuffinEMU's app side does: library, importer, graphic packs, DLC/update import, logging, and more.">
+<link rel="icon" href="../icon.png">
+<link rel="apple-touch-icon" href="../icon.png">
+<meta name="theme-color" content="#F4A551" id="themeColorMeta">
+<link rel="stylesheet" href="../site.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="../index.html"><img src="../icon.png" alt="" width="30" height="30"><span>MuffinEMU</span></a>
+    <nav class="site-nav">
+      <a href="../index.html">Home</a>
+      <a href="installation.html">Install</a>
+      <details class="nav-dropdown">
+        <summary>Docs ▾</summary>
+        <div class="dropdown-panel">
+          <a href="index.html">All documentation</a>
+          <a href="features.html" aria-current="page">Features overview</a>
+          <a href="screen-layout.html">Screen Layout</a>
+          <a href="save-states.html">Save States</a>
+          <a href="controls.html">Controls &amp; GamePad</a>
+          <a href="themes.html">Themes &amp; Icons</a>
+          <a href="troubleshooting.html">Troubleshooting</a>
+          <a href="faq.html">FAQ</a>
+        </div>
+      </details>
+      <a href="https://github.com/kiddreads/MuffinEMU">GitHub</a>
+    </nav>
+    <button class="theme-btn" data-theme-cycle type="button" aria-label="Switch theme">
+      <span aria-hidden="true">🎲</span>
+      <span data-theme-name>Bakery (Original)</span>
+      <span class="swatches" data-theme-swatches aria-hidden="true"></span>
+    </button>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-sidebar">
+    <p class="sidebar-title">Documentation</p>
+    <nav>
+      <a href="index.html">Overview</a>
+      <a href="installation.html">Installation</a>
+      <a href="features.html" aria-current="page">Features overview</a>
+      <a href="screen-layout.html">Screen Layout</a>
+      <a href="save-states.html">Save States</a>
+      <a href="controls.html">Controls &amp; GamePad</a>
+      <a href="themes.html">Themes &amp; Icons</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </aside>
+
+  <div class="docs-content">
+    <h1>Features overview</h1>
+    <p class="subtitle">Everything the app side does, grouped by area. Deep dives on Screen Layout, Save States, Controls and Themes each get their own page — this one is the map.</p>
+
+    <h2 id="library">Library &amp; importing</h2>
+    <ul>
+      <li><strong>Library &amp; importer</strong> — brings in your own ROM dumps; homebrew is unaffected by keys either way.</li>
+      <li><strong><a href="installation.html#jit">keys.txt handling</a></strong> — drop a keys.txt from your own Wii U into the Files app or import it in Settings; nothing is bundled.</li>
+      <li><strong>Decrypt-to-Files and WUA</strong> — exports a decrypted copy of an encrypted disc image to <code>Documents/Decrypted/&lt;gameID&gt;/</code> as either a raw source or a single WUA file, leaving your original encrypted dump completely untouched.</li>
+      <li><strong>DLC and update install</strong> — imports a DLC or update dump into the same <code>Documents/mlc</code> tree the engine's own title scanner already reads, with title-ID matching so a freshly-imported title is picked up before the base game's next launch, and removal via long-press.</li>
+      <li><strong>Graphic packs</strong> — browse and toggle packs from <code>Documents/mlc/graphicPacks/</code>; drop in a folder with its own <code>rules.txt</code>, the same layout desktop Cemu uses.</li>
+    </ul>
+
+    <h2>On-screen play</h2>
+    <ul>
+      <li><strong><a href="controls.html">The measured Wii U GamePad</a></strong>, hide-controls, comfort controls, and 20 controller skins.</li>
+      <li><strong><a href="controls.html#melo-controller">Melo-Controller</a></strong> — an alternative touch pad with its own layout editor, as a toggle.</li>
+      <li><strong><a href="screen-layout.html">Screen Layout</a></strong> — Single Screen, Adaptive, or GamePad-inset, plus routing to a genuine second display.</li>
+      <li><strong><a href="save-states.html">Save States</a></strong> — 4 numbered slots per game, alongside your normal in-game saves.</li>
+    </ul>
+
+    <h2>Look &amp; feel</h2>
+    <ul>
+      <li><strong><a href="themes.html">31 app icons and matching themes</a></strong> — 3 unlocked by a free code, everything else free.</li>
+    </ul>
+
+    <h2>Diagnostics</h2>
+    <ul>
+      <li><strong>In-app launch log</strong> — drains the engine's own log ring live at 10&nbsp;Hz while a title boots, and says so plainly if the ring evicted lines before the viewer could read them, rather than silently showing a tidy but incomplete list.</li>
+      <li><strong>Crash and memory trail</strong> — checkpoints are appended to <code>Documents/CemuCrashLog.txt</code> via a raw synchronous write, so the trail survives even an abrupt, uncatchable process termination (a GPU driver panic, for instance) — the file to share when reporting a crash.</li>
+    </ul>
+
+    <h2>Under the hood</h2>
+    <p>The renderer is Metal, native to this port rather than a Vulkan translation layer, with an optional Vulkan (MoltenVK) path for titles that prefer it. GPUs without mesh shader support — the A12Z and similar — emulate geometry shaders and RECTS primitives with compute passes instead, and decode BC-compressed textures on the CPU rather than in hardware. The CPU side runs a multi-core PowerPC interpreter with a predecoded instruction cache; an AArch64 recompiler is present and can take over when a JIT enabler is attached (see <a href="installation.html#jit">JIT requirements</a>).</p>
+    <p>Every build carries a curated set of fixes ported from upstream Cemu on top of the core, plus MuffinEMU's own — real crashes and hangs get tracked and fixed as they're found rather than papered over.</p>
+
+    <div class="doc-next">
+      <a href="installation.html"><span class="dir">Previous</span>← Installation</a>
+      <a href="screen-layout.html"><span class="dir">Next</span>Screen Layout →</a>
+    </div>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <p><a href="https://github.com/kiddreads/MuffinEMU">github.com/kiddreads/MuffinEMU</a></p>
+</footer>
+
+<script src="../theme.js"></script>
+</body>
+</html>

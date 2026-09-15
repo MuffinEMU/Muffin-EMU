@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FAQ — MuffinEMU Docs</title>
+<meta name="description" content="Frequently asked questions about MuffinEMU: compatibility, licensing, keys.txt, Pro themes, and how it relates to Muffin and Cemu.">
+<link rel="icon" href="../icon.png">
+<link rel="apple-touch-icon" href="../icon.png">
+<meta name="theme-color" content="#F4A551" id="themeColorMeta">
+<link rel="stylesheet" href="../site.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="../index.html"><img src="../icon.png" alt="" width="30" height="30"><span>MuffinEMU</span></a>
+    <nav class="site-nav">
+      <a href="../index.html">Home</a>
+      <a href="installation.html">Install</a>
+      <details class="nav-dropdown">
+        <summary>Docs ▾</summary>
+        <div class="dropdown-panel">
+          <a href="index.html">All documentation</a>
+          <a href="features.html">Features overview</a>
+          <a href="screen-layout.html">Screen Layout</a>
+          <a href="save-states.html">Save States</a>
+          <a href="controls.html">Controls &amp; GamePad</a>
+          <a href="themes.html">Themes &amp; Icons</a>
+          <a href="troubleshooting.html">Troubleshooting</a>
+          <a href="faq.html" aria-current="page">FAQ</a>
+        </div>
+      </details>
+      <a href="https://github.com/kiddreads/MuffinEMU">GitHub</a>
+    </nav>
+    <button class="theme-btn" data-theme-cycle type="button" aria-label="Switch theme">
+      <span aria-hidden="true">🎲</span>
+      <span data-theme-name>Bakery (Original)</span>
+      <span class="swatches" data-theme-swatches aria-hidden="true"></span>
+    </button>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-sidebar">
+    <p class="sidebar-title">Documentation</p>
+    <nav>
+      <a href="index.html">Overview</a>
+      <a href="installation.html">Installation</a>
+      <a href="features.html">Features overview</a>
+      <a href="screen-layout.html">Screen Layout</a>
+      <a href="save-states.html">Save States</a>
+      <a href="controls.html">Controls &amp; GamePad</a>
+      <a href="themes.html">Themes &amp; Icons</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="faq.html" aria-current="page">FAQ</a>
+    </nav>
+  </aside>
+
+  <div class="docs-content">
+    <h1>FAQ</h1>
+    <p class="subtitle">Short answers to the questions that come up most.</p>
+
+    <h3>Is MuffinEMU the same thing as Muffin?</h3>
+    <p>No. MuffinEMU grew out of Muffin (<a href="https://github.com/kiddreads/cemu-ios-muffin">kiddreads/cemu-ios-muffin</a>) but is now its own emulator with its own bundle identifier (<code>com.kiddreads.MuffinEMU</code>), its own Cemu core, and its own releases. It installs next to Muffin rather than replacing it.</p>
+
+    <h3>Do I need to own a Wii U?</h3>
+    <p>To play encrypted retail games, yes — you need <code>keys.txt</code> dumped from your own console. Homebrew doesn't need it. MuffinEMU ships no keys, derives no keys, and has no way to obtain a key it wasn't given.</p>
+
+    <h3>Which install method should I use?</h3>
+    <p>SideStore, AltStore, or LiveContainer if you want the app to re-sign itself with your own Apple ID. TrollStore or a jailbroken device if you want the JIT entitlements embedded directly in the IPA. See <a href="installation.html">Installation</a> for the full breakdown.</p>
+
+    <h3>Does it support every Wii U game?</h3>
+    <p>Not confirmed — broad compatibility hasn't been systematically tested. MuffinEMU boots real titles from an imported library on real hardware; a full, confirmed playthrough of a retail title on this exact build is still pending, and this documentation will say so plainly the day one lands.</p>
+
+    <h3>Can I use a physical controller?</h3>
+    <p>Basic controller input works, but it hasn't been tested systematically across MFi and Bluetooth controllers the way the on-screen pad has.</p>
+
+    <h3>Is there a paid version?</h3>
+    <p>No StoreKit purchase exists in the app. A free code unlocks 3 "Pro" app icon themes; every other feature — save states, graphic packs, DLC/update import, all 28 non-Pro themes, Melo-Controller, all 20 controller skins — is free with no gate at all. See <a href="themes.html">Themes &amp; Icons</a>.</p>
+
+    <h3>What license is MuffinEMU under?</h3>
+    <p>MuffinEMU's own source is MPL-2.0, like Cemu and MeloCafe. Because Melo-Controller (GPL-3.0) is linked into every build — whether or not its toggle is on — a MuffinEMU IPA as a whole is distributed under GPL-3.0, with the <a href="https://github.com/kiddreads/MuffinEMU">MuffinEMU repository</a> as its source.</p>
+
+    <h3>Does dual-screen TV output work?</h3>
+    <p>Not confirmed yet. The code path is written against the real display API but has never been exercised with a second display actually attached — see <a href="screen-layout.html#external-display">External display routing</a> for the honest breakdown.</p>
+
+    <h3>Where do I report a bug?</h3>
+    <p><a href="https://github.com/kiddreads/MuffinEMU/issues">github.com/kiddreads/MuffinEMU/issues</a> — see <a href="troubleshooting.html">Troubleshooting</a> for what to attach.</p>
+
+    <div class="doc-next">
+      <a href="troubleshooting.html"><span class="dir">Previous</span>← Troubleshooting</a>
+      <a href="index.html"><span class="dir">Back to</span>All documentation</a>
+    </div>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <p><a href="https://github.com/kiddreads/MuffinEMU">github.com/kiddreads/MuffinEMU</a></p>
+</footer>
+
+<script src="../theme.js"></script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Installation — MuffinEMU Docs</title>
+<meta name="description" content="How to install MuffinEMU via SideStore, AltStore, LiveContainer or TrollStore, JIT requirements, keys.txt, and building from source.">
+<link rel="icon" href="../icon.png">
+<link rel="apple-touch-icon" href="../icon.png">
+<meta name="theme-color" content="#F4A551" id="themeColorMeta">
+<link rel="stylesheet" href="../site.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="../index.html"><img src="../icon.png" alt="" width="30" height="30"><span>MuffinEMU</span></a>
+    <nav class="site-nav">
+      <a href="../index.html">Home</a>
+      <a href="installation.html" aria-current="page">Install</a>
+      <details class="nav-dropdown">
+        <summary>Docs ▾</summary>
+        <div class="dropdown-panel">
+          <a href="index.html">All documentation</a>
+          <a href="features.html">Features overview</a>
+          <a href="screen-layout.html">Screen Layout</a>
+          <a href="save-states.html">Save States</a>
+          <a href="controls.html">Controls &amp; GamePad</a>
+          <a href="themes.html">Themes &amp; Icons</a>
+          <a href="troubleshooting.html">Troubleshooting</a>
+          <a href="faq.html">FAQ</a>
+        </div>
+      </details>
+      <a href="https://github.com/kiddreads/MuffinEMU">GitHub</a>
+    </nav>
+    <button class="theme-btn" data-theme-cycle type="button" aria-label="Switch theme">
+      <span aria-hidden="true">🎲</span>
+      <span data-theme-name>Bakery (Original)</span>
+      <span class="swatches" data-theme-swatches aria-hidden="true"></span>
+    </button>
+  </div>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-sidebar">
+    <p class="sidebar-title">Documentation</p>
+    <nav>
+      <a href="index.html">Overview</a>
+      <a href="installation.html" aria-current="page">Installation</a>
+      <a href="features.html">Features overview</a>
+      <a href="screen-layout.html">Screen Layout</a>
+      <a href="save-states.html">Save States</a>
+      <a href="controls.html">Controls &amp; GamePad</a>
+      <a href="themes.html">Themes &amp; Icons</a>
+      <a href="troubleshooting.html">Troubleshooting</a>
+      <a href="faq.html">FAQ</a>
+    </nav>
+  </aside>
+
+  <div class="docs-content">
+    <h1>Installation</h1>
+    <p class="subtitle">Two sources, because the two install paths need different builds. iPhone and iPad, iOS 15 or later.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Method</th><th>File</th><th>Signing</th><th>JIT entitlements</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>SideStore / AltStore / LiveContainer</td>
+            <td><code>MuffinEMU.ipa</code></td>
+            <td>Re-signed with your own Apple ID at install</td>
+            <td>Stripped by the re-sign — use StikJIT or SideStore/LiveContainer's own JIT attach instead</td>
+          </tr>
+          <tr>
+            <td>TrollStore / jailbroken</td>
+            <td><code>MuffinEMU-fakesigned.ipa</code></td>
+            <td>Ad-hoc signed, no certificate or team ID</td>
+            <td>Embedded in the IPA itself</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>SideStore / AltStore / LiveContainer</h2>
+    <p>These re-sign the app with your own Apple ID at install, so they take the plain unsigned build.</p>
+    <div class="install-row" style="display:flex;flex-wrap:wrap;gap:.7rem;margin-bottom:.8rem">
+      <a class="btn btn-primary btn-sm" href="sidestore://source?url=https://kiddreads.github.io/MuffinEMU/apps.json">Add to SideStore</a>
+      <a class="btn btn-secondary btn-sm" href="altstore://source?url=https://kiddreads.github.io/MuffinEMU/apps.json">Add to AltStore</a>
+    </div>
+    <span class="url">https://kiddreads.github.io/MuffinEMU/apps.json</span>
+
+    <h2>TrollStore / jailbroken</h2>
+    <p>Takes the ad-hoc signed build, with the JIT entitlements actually embedded — which is what a JIT enabler needs to give the recompiler executable memory. A SideStore re-sign would strip them, which is why this is a separate source.</p>
+    <span class="url">https://kiddreads.github.io/MuffinEMU/trollstore.json</span>
+    <p>Or grab <code>MuffinEMU-fakesigned.ipa</code> directly from <a href="https://github.com/kiddreads/MuffinEMU/releases/latest">the latest release</a>.</p>
+
+    <div class="note">
+      <p><strong>Which file is which?</strong> <code>MuffinEMU.ipa</code> is unsigned on purpose — the installers above re-sign it themselves. <code>MuffinEMU-fakesigned.ipa</code> is ad-hoc signed, which most tools will still describe as "not signed" since ad-hoc signing has no certificate or team ID. That's expected, not a fault.</p>
+    </div>
+
+    <p>MuffinEMU uses its own bundle identifier (<code>com.kiddreads.MuffinEMU</code>), so it installs next to Muffin rather than replacing it. Every build of <code>main</code> is published as a numbered release, going up by 0.1 — after .9 comes the next whole number: 1.0, 1.1 … 1.9, 2.0.</p>
+
+    <h2 id="jit">JIT requirements</h2>
+    <p>The AArch64 recompiler needs two things at once: a <strong>JIT enabler</strong> attached (StikJIT, or the JIT attach that SideStore or LiveContainer itself provides) and the <strong>recompiler switch on</strong> in Settings &gt; CPU. Without both, MuffinEMU automatically falls back to the multi-core PowerPC interpreter instead — and Settings always says which one a given launch actually got, and why, rather than failing silently.</p>
+    <div class="note">
+      <p>If a game glitches, desyncs or crashes, Settings &gt; CPU has a "Favour accuracy" option — slower, but worth trying before assuming something else is wrong. Restart the game after changing either CPU setting.</p>
+    </div>
+
+    <h2>Keys.txt</h2>
+    <p>Real Wii U games ship encrypted. Encrypted games need the <code>keys.txt</code> dumped from your own Wii U — MuffinEMU ships no keys, derives no keys, and has no way to obtain a key it wasn't given. Homebrew is unaffected either way.</p>
+    <p>Drop it into the <code>keys</code> folder MuffinEMU creates in the Files app (under the app's own name, since file sharing is enabled), or import it from Settings. A file dropped in mid-session is picked up before the next key read — no relaunch needed.</p>
+
+    <h2>MoltenVK</h2>
+    <p>The Vulkan renderer can use MoltenVK 1.4.3 (the default) or 1.2.8, the build 64Touch uses (Settings &gt; Graphics). The choice applies on the next launch. Metal, the default renderer, does not use MoltenVK at all.</p>
+
+    <h2>Building from source</h2>
+    <p>CI is the build — <code>.github/workflows/build-ios-app.yml</code> runs the whole thing on a macOS runner. By hand, on a Mac with full Xcode:</p>
+    <pre><code>git clone --recursive https://github.com/kiddreads/MuffinEMU.git
+cd MuffinEMU
+cmake -S . -B build-ios -G Ninja \
+  -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DVCPKG_TARGET_TRIPLET=arm64-ios \
+  -DBUILD_HEADLESS_DYLIB=ON -DCMAKE_MACOSX_BUNDLE=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build-ios --target CemuBin
+mkdir -p build-ios/out &amp;&amp; cp -R "$(find build-ios bin -type d -name Cemu.framework -not -path '*/CMakeFiles/*' | head -n1)" build-ios/out/
+cd src/ios &amp;&amp; xcodegen generate
+xcodebuild -project MuffinEMU.xcodeproj -scheme MuffinEMU -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO build</code></pre>
+    <p>The bridge and its glue compile into <code>Cemu.framework</code> together with the core, against the core's own headers. The Xcode app compiles Swift only and embeds that framework.</p>
+
+    <div class="doc-next">
+      <span></span>
+      <a href="features.html"><span class="dir">Next</span>Features overview →</a>
+    </div>
+  </div>
+</div>
+
+<footer class="site-footer">
+  <p><a href="https://github.com/kiddreads/MuffinEMU">github.com/kiddreads/MuffinEMU</a></p>
+</footer>
+
+<script src="../theme.js"></script>
+</body>
+</html>
