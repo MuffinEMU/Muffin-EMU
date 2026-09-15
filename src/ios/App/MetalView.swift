@@ -44,8 +44,11 @@ struct MetalViewIOS: UIViewRepresentable {
     // ordinary CALayer with no competing rendering machinery of its own, so the C++
     // sublayer has the view's layer tree to itself.
     func makeUIView(context: Context) -> UIView {
-        let container = DeviceContainerView()
-        container.backgroundColor = .black
+        // DisplayRouter.shared.sharedDeviceContainer() hands back the SAME container
+        // every time this is called, not a fresh one - see its doc comment in
+        // DisplayRouter.swift for why that matters once this view can be conditionally
+        // mounted/unmounted (Screen Layout's `visibleScreens`-driven composition).
+        let container = DisplayRouter.shared.sharedDeviceContainer()
 
         // Arm display detection before anything is registered, so a TV that is already
         // connected at launch and one plugged in later take the same code path. The
@@ -70,18 +73,20 @@ struct MetalViewIOS: UIViewRepresentable {
 }
 
 /// `MetalViewIOS`'s pad-screen equivalent - see `DisplayRouter.attachLocalPadContainer`/
-/// `localPadContainerDidLayout`. Mounted by `EmulatorViewOptimized` whenever
-/// `ScreenLayout` calls for the GamePad screen to be visible on this device
-/// (`.bothScreens`, `.smallGamePadTopRight`, or `.singleScreen` with the pad currently
-/// the one swapped to) and `DisplayRouter.placement` is not `.dualScreen` - a real
-/// external display still takes the pad exactly as it did before this feature existed.
+/// `localPadContainerDidLayout`. Mounted by `EmulatorViewOptimized`'s `visibleScreens`
+/// composition (a true port of MeloCafe's `EmulationView.body`) whenever `ScreenLayout`
+/// calls for the GamePad screen to be visible on this device (`.bothScreens`,
+/// `.smallGamePadTopRight`, or `.singleScreen` with the pad currently the one swapped
+/// to) and `DisplayRouter.placement` is not `.dualScreen` - a real external display
+/// still takes the pad exactly as it did before this feature existed.
 ///
-/// Deliberately always mounted, never conditionally recreated, whenever ScreenLayout is
-/// showing both screens or Single Screen mode is active - visibility of the region it
-/// occupies is a SwiftUI `.frame`/composition concern (see EmulatorViewOptimized), not a
-/// reason to tear this view down, for the same reason `MetalViewIOS`'s own container is
-/// never rebuilt mid-session: destroying it would take the registered CAMetalLayer with
-/// it, and `DisplayRouter` treats "the container changed" as "go register a fresh one".
+/// Safe to conditionally mount and unmount exactly like MeloCafe's own GamePad view,
+/// which is what `EmulatorViewOptimized` now does: `makeUIView()` below hands back a
+/// container `DisplayRouter` created once and caches (`sharedLocalPadContainer()`), not
+/// a fresh `PadContainerView()` per call, so a remount can never hand
+/// `attachLocalPadContainer` a container it hasn't already seen. See
+/// `DisplayRouter.sharedLocalPadContainer()`'s doc comment for the black-screen bug this
+/// fixes and why it was this view, not `DeviceContainerView`, that actually needed it.
 final class PadContainerView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -91,8 +96,7 @@ final class PadContainerView: UIView {
 
 struct PadMetalViewIOS: UIViewRepresentable {
     func makeUIView(context: Context) -> UIView {
-        let container = PadContainerView()
-        container.backgroundColor = .black
+        let container = DisplayRouter.shared.sharedLocalPadContainer()
         DisplayRouter.shared.attachLocalPadContainer(container)
         return container
     }

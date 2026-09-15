@@ -1026,6 +1026,10 @@ struct EmulatorViewOptimized: View {
     // backgrounded, so this is not a nicety; see cemu_bridge_pause() in CemuBridge.mm
     // for the other half of what actually stops that.
     @Environment(\.scenePhase) private var scenePhase
+    // MeloCafe's EmulationView reads this to pick its phone-portrait-only stacked
+    // layout (screensSizeLayout) apart from the ordinary tablet/landscape composition -
+    // see screenLayoutComposition below, which is the direct port of that view's body.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var showSkinSelector = false
     /// Turns the pad into something you position rather than something you press. Local
     /// state, not AppStorage: nobody wants to come back to a game and find the controls
@@ -1110,8 +1114,11 @@ struct EmulatorViewOptimized: View {
     /// comment for what each case does and why it's a separate concept from
     /// DisplayLayoutSettings above (a genuine external display) despite living in the
     /// same Settings section.
+    // `= ScreenLayout.initialValue`, matching MeloCafe's own EmulationView exactly -
+    // see DisplaySettingsSection.swift's identical declaration and ScreenLayout.initialValue's
+    // doc comment in DisplayRouter.swift.
     @AppStorage(LocalScreenLayoutSettings.layoutKey)
-    private var screenLayout = LocalScreenLayoutSettings.defaultLayout
+    private var screenLayout = ScreenLayout.initialValue
     @AppStorage(LocalScreenLayoutSettings.showSwapButtonKey)
     private var showLocalSwapButton = LocalScreenLayoutSettings.defaultShowSwapButton
     /// View-local, matching MeloCafe's own `@State` for this exact flag: which of the
@@ -1957,123 +1964,187 @@ struct EmulatorViewOptimized: View {
     }
 
     #if os(iOS)
-    /// Arranges the TV (`MetalViewIOS`) and GamePad (`PadMetalViewIOS`) screens per the
-    /// current `ScreenLayout`, ported from MeloCafe's own `EmulationView.body`. Both are
-    /// ALWAYS present here, in the same ZStack, for as long as `placement != .dualScreen`
-    /// - never conditionally inserted/removed - because each is a UIViewRepresentable
-    /// whose makeUIView() creates a fresh CAMetalLayer-backed container: removing one
-    /// from the tree and later re-adding it would call makeUIView() again while the
-    /// engine still believes its OLD (now off-screen, about-to-deallocate) container is
-    /// the registered surface - a silent black screen the next time Single Screen swaps
-    /// back to it. Repositioning and re-sizing the same two persistent views instead
-    /// keeps DisplayRouter's one-surface-per-screen bookkeeping honest regardless of
-    /// which layout or swap state is active. Frames come from `regionFrames(in:portrait:)`
-    /// below; only the frame math changes per layout, never which views exist.
+    /// A true port of MeloCafe's `EmulationView.body` (`UI/Emulation/EmulationView.swift`)
+    /// - same `visibleScreens` truth table, same phone-portrait special case
+    /// (`screensSizeLayout`), same `smallGamePadTopRight` inset branch, same
+    /// portrait/landscape VStack/HStack split. This can conditionally mount and unmount
+    /// `MetalViewIOS`/`PadMetalViewIOS` via `ForEach(visibleScreens)`, exactly like
+    /// MeloCafe's own `ForEach` mounts/unmounts its two `MetalViewContainer`s, because
+    /// `DisplayRouter.sharedDeviceContainer()`/`sharedLocalPadContainer()` now hand back
+    /// the same cached container on every `makeUIView()` call instead of a fresh one -
+    /// see those two functions' doc comments in DisplayRouter.swift for the black-screen
+    /// bug that made an earlier, literal attempt at this unsafe, and why it was fixed at
+    /// the container-identity level rather than by keeping both views permanently
+    /// mounted and toggling opacity (this file's previous approach).
+    ///
+    /// Two adaptations from MeloCafe's source, both real incompatibilities, not style
+    /// choices:
+    /// - MeloCafe's own virtual-controller overlay branch (`ControllerManager`/
+    ///   `ControllerView` from Melo_Controller) is dropped entirely. MuffinEMU already
+    ///   has its own separate on-screen control system (`OptimizedControlPanel`,
+    ///   `MeloControlsOverlay`) layered outside this view in EmulatorViewOptimized's own
+    ///   ZStack; duplicating controller rendering in here would fight it.
+    /// - MeloCafe's `air.connected` (AirPlay mirroring) becomes
+    ///   `displayRouter.placement == .dualScreen`, but NOT as a literal 1:1 substitution
+    ///   into `visibleScreens`' `[false]` (pad-only) branch. MeloCafe's `cemuView`/
+    ///   `cemuPadView` are two independently addressable Metal views, so showing the pad
+    ///   one on-device while `Air.play()` separately mirrors the TV one is coherent.
+    ///   MuffinEMU's `.dualScreen` instead reroutes whichever Wii U screen isn't going to
+    ///   the external display directly into the EXISTING `deviceContainer` behind
+    ///   `MetalViewIOS` (`DisplayRouter.syncPadSurface`, which adds the pad's
+    ///   `MetalLayerView` straight into `deviceContainer` when the TV has left for the
+    ///   external display) - `syncLocalPadSurface()` is unconditionally gated off by
+    ///   `placement != .dualScreen`, so `PadMetalViewIOS`'s own container never gets a
+    ///   registered surface in this placement at all. Mapping the pad-only branch onto
+    ///   `PadMetalViewIOS` here would therefore mount a container guaranteed to render
+    ///   nothing; showing `MetalViewIOS` alone instead displays whatever DisplayRouter
+    ///   actually routed into `deviceContainer` for this placement, which is the correct
+    ///   real content. (`.dualScreen` itself is unverified on real hardware per
+    ///   DisplayRouter's own doc comment, so this path is exercised even less than the
+    ///   rest of this feature - flagged, not fixed further, since reconciling on-device
+    ///   Screen Layout with dual-screen routing is a separate problem from this port.)
     private var screenLayoutComposition: some View {
         GeometryReader { geometry in
             let portrait = geometry.size.height >= geometry.size.width
-            let regions = regionFrames(in: geometry.size, portrait: portrait)
-            ZStack(alignment: .topLeading) {
-                MetalViewIOS(gameManager: gameManager)
-                    .frame(width: regions.tv.width, height: regions.tv.height)
-                    .position(x: regions.tv.midX, y: regions.tv.midY)
-                PadMetalViewIOS()
-                    .frame(width: regions.pad.width, height: regions.pad.height)
-                    .position(x: regions.pad.midX, y: regions.pad.midY)
-                    .opacity(regions.padHidden ? 0 : 1)
-                    // The GamePad's own touchscreen - a real Wii U input distinct from
-                    // every button on the pad, and previously dead on iOS: nothing ever
-                    // called the one bridge entry point for it. Hit-testable only while
-                    // this is the screen actually on top (never in Single Screen while
-                    // the TV is showing - a touch meant for the TV must still reach the
-                    // TV underneath, unchanged from before). Coordinates are local to
-                    // this view's own frame, in points; the bridge wants the same
-                    // physical-pixel space cemu_bridge_resize_render_surface() already
-                    // sizes this surface in, so they're scaled here the same way that
-                    // sizing is - see RenderScale.swift's effectiveRenderScale.
-                    .allowsHitTesting(!regions.padHidden)
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in sendPadTouch(value.location, down: true) }
-                            .onEnded { value in sendPadTouch(value.location, down: false) }
-                    )
+            let phonePortrait = UIDevice.current.userInterfaceIdiom == .phone && portrait
+
+            if phonePortrait {
+                screensSizeLayout(in: geometry.size)
+            } else if screenLayout == .smallGamePadTopRight && displayRouter.placement != .dualScreen {
+                let padWidth = geometry.size.width * 0.25
+                let padHeight = min(padWidth * 9 / 16, geometry.size.height)
+
+                HStack(alignment: .top, spacing: 0) {
+                    MetalViewIOS(gameManager: gameManager)
+                        .frame(width: geometry.size.width - padWidth, height: geometry.size.height)
+
+                    padScreen
+                        .frame(width: padWidth, height: padHeight)
+                }
+            } else if portrait {
+                VStack(spacing: 0) { screens }
+            } else {
+                HStack(spacing: 0) { screens }
             }
         }
-        .ignoresSafeArea()
-        .onAppear { applyLocalVisibleOutputs() }
-        .onChange(of: screenLayout) { _ in applyLocalVisibleOutputs() }
-        .onChange(of: localSwapped) { _ in applyLocalVisibleOutputs() }
+        .ignoresSafeArea(.all, edges: verticalSizeClass == .regular ? .horizontal : .all)
+        .onAppear { updateVisibleOutputs() }
+        .onChange(of: screenLayout) { _ in updateVisibleOutputs() }
+        .onChange(of: localSwapped) { _ in updateVisibleOutputs() }
+        .onChange(of: displayRouter.placement) { _ in updateVisibleOutputs() }
         .onDisappear {
+            // MeloCafe's own onDisappear sets both outputs false outright - not ported
+            // literally, because this specific view can disappear for a reason MeloCafe's
+            // never could: the previewPad-enabled branch above (`if previewPadEnabled &&
+            // !useMeloControls`) is a SIBLING composition over the same still-running
+            // title, and visible-outputs is a global engine setting, not scoped to
+            // whichever SwiftUI view happens to be on screen. Forcing both false here
+            // would black out that other branch's own MetalViewIOS if it's the one still
+            // showing. Resetting to TV-only instead - matching this file's own prior
+            // behavior - is the safe default for "this composition went away, but the
+            // title itself may still be very much running."
             DisplayRouter.shared.updateLocalVisibleOutputs(showTV: true, showPad: false)
-            // Same reasoning as cemu_bridge_release_all_buttons() elsewhere in this
-            // view: a touch in progress when this view goes away must not leave the
-            // GamePad's touchscreen stuck "down" for a title that is still running
-            // (Both Screens/inset layouts keep the pad mounted through most
-            // navigation, but a full teardown - quitting the game - still needs this).
+            // Mirrors MeloCafe's own `cemuPadView.cancelActiveTouches()` call here -
+            // MuffinEMU has no such method, but this is the same cleanup MetalView.swift's
+            // touch-cancel path already performs elsewhere (see sendPadTouch below and the
+            // pad's own DragGesture): a touch in progress when this view disappears must
+            // not leave the GamePad's touchscreen stuck "down" for a title that keeps running.
             cemu_bridge_set_pad_touch(0, 0, false)
         }
     }
 
-    /// `value.location` is already local to `PadMetalViewIOS`'s own frame (SwiftUI
-    /// gesture coordinates are relative to the view the gesture is attached to, not
-    /// global) - scaled to the physical-pixel space the bridge expects, same as every
-    /// other size this surface is described in.
+    /// Which of the two Wii U screens should be in the tree right now - `true` for the
+    /// TV (`MetalViewIOS`), `false` for the GamePad (`PadMetalViewIOS`) - a direct port
+    /// of MeloCafe's `EmulationView.visibleScreens`. `ForEach(visibleScreens, id: \.self)`
+    /// is safe on a raw `[Bool]` the same way it is in MeloCafe's source: the two
+    /// possible elements are always distinct, so there's never a duplicate identity for
+    /// SwiftUI to complain about.
+    private var visibleScreens: [Bool] {
+        if displayRouter.placement == .dualScreen { return [true] }
+        if screenLayout.showsBothScreens { return localSwapped ? [false, true] : [true, false] }
+        return [!localSwapped]
+    }
+
+    /// MeloCafe's own phone-portrait special case: both screens stacked at a fixed 16:9
+    /// height each, with whatever space is left over beneath them - MeloCafe fills that
+    /// with its virtual controller overlay when one exists and a plain `Spacer`
+    /// otherwise; MuffinEMU never mounts a controller overlay in here (see
+    /// screenLayoutComposition's doc comment), so it's always the `Spacer`.
+    private func screensSizeLayout(in size: CGSize) -> some View {
+        let screenHeight = size.width * 9.0 / 16.0
+
+        return VStack(spacing: 0) {
+            ForEach(visibleScreens, id: \.self) { main in
+                screenView(main: main)
+                    .frame(width: size.width, height: screenHeight)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(width: size.width, height: size.height, alignment: .top)
+    }
+
+    private var screens: some View {
+        ForEach(visibleScreens, id: \.self) { main in
+            screenView(main: main)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// `main ? MetalViewIOS : PadMetalViewIOS`, matching MeloCafe's own
+    /// `main ? cemuView : cemuPadView` - the GamePad's touchscreen gesture lives here
+    /// rather than as a modifier applied after the fact in `screens`/`screensSizeLayout`,
+    /// since this is the one place both call sites actually construct the pad view.
+    @ViewBuilder
+    private func screenView(main: Bool) -> some View {
+        if main {
+            MetalViewIOS(gameManager: gameManager)
+        } else {
+            padScreen
+        }
+    }
+
+    /// The GamePad's own touchscreen - a real Wii U input distinct from every button on
+    /// the pad. Only ever mounted (via `screenView`/the `smallGamePadTopRight` branch)
+    /// while it's actually the screen on top, so unlike this file's previous version
+    /// there's no `padHidden`/opacity gate to apply here: being in the tree at all now
+    /// means being visible and hit-testable. Coordinates are local to this view's own
+    /// frame, in points; the bridge wants the same physical-pixel space
+    /// `cemu_bridge_resize_render_surface()` already sizes this surface in, so they're
+    /// scaled the same way that sizing is - see RenderScale.swift's effectiveRenderScale.
+    private var padScreen: some View {
+        PadMetalViewIOS()
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in sendPadTouch(value.location, down: true) }
+                    .onEnded { value in sendPadTouch(value.location, down: false) }
+            )
+    }
+
     private func sendPadTouch(_ location: CGPoint, down: Bool) {
         let scale = UIScreen.main.effectiveRenderScale
         cemu_bridge_set_pad_touch(Double(location.x) * scale, Double(location.y) * scale, down)
     }
 
-    /// Whether PadMetalViewIOS is currently the screen actually on top - mirrors
-    /// regionFrames()'s own padHidden logic without needing this view's size, since the
-    /// top bar (where this drives a button's visibility) has no GeometryReader of its
-    /// own to compute a real CGSize from.
+    /// Whether the GamePad screen is currently one of the mounted `visibleScreens` -
+    /// drives the "hide controls to touch the GamePad screen" button in the top bar,
+    /// which has no `GeometryReader` of its own to derive this from directly.
     private var isPadViewVisible: Bool {
-        switch screenLayout {
-        case .singleScreen: return localSwapped
-        case .bothScreens, .smallGamePadTopRight: return true
-        }
+        visibleScreens.contains(false)
     }
 
-    /// Pure geometry, no side effects - `screenLayoutComposition` is the only caller.
-    /// Mirrors MeloCafe's own three-way layout exactly: Single Screen gives both regions
-    /// the full frame and hides whichever isn't currently swapped to; Adaptive stacks
-    /// them in portrait and sits them side by side in landscape; the inset layout gives
-    /// the GamePad a fixed 16:9 box, capped to a quarter of the width, in the top right.
-    private func regionFrames(in size: CGSize, portrait: Bool) -> (tv: CGRect, pad: CGRect, padHidden: Bool) {
-        let full = CGRect(origin: .zero, size: size)
-        switch screenLayout {
-        case .singleScreen:
-            return (full, full, !localSwapped)
-        case .bothScreens:
-            if portrait {
-                let half = CGRect(x: 0, y: 0, width: size.width, height: size.height / 2)
-                let bottom = CGRect(x: 0, y: size.height / 2, width: size.width, height: size.height / 2)
-                return (half, bottom, false)
-            } else {
-                let half = CGRect(x: 0, y: 0, width: size.width / 2, height: size.height)
-                let right = CGRect(x: size.width / 2, y: 0, width: size.width / 2, height: size.height)
-                return (half, right, false)
-            }
-        case .smallGamePadTopRight:
-            let padWidth = size.width * 0.25
-            let padHeight = min(padWidth * 9 / 16, size.height)
-            let tv = CGRect(x: 0, y: 0, width: size.width - padWidth, height: size.height)
-            let pad = CGRect(x: size.width - padWidth, y: 0, width: padWidth, height: padHeight)
-            return (tv, pad, false)
-        }
-    }
-
-    /// Which of the two screens should actually be visible right now, purely a function
-    /// of `screenLayout`/`localSwapped` - called on appear and whenever either changes.
-    /// A real external display still overrides all of this (DisplayRouter's own
-    /// `updateLocalVisibleOutputs` is a no-op outside `placement != .dualScreen`), so
-    /// calling this unconditionally here can never fight that path.
-    private func applyLocalVisibleOutputs() {
-        switch screenLayout {
-        case .singleScreen:
-            DisplayRouter.shared.updateLocalVisibleOutputs(showTV: !localSwapped, showPad: localSwapped)
-        case .bothScreens, .smallGamePadTopRight:
-            DisplayRouter.shared.updateLocalVisibleOutputs(showTV: true, showPad: true)
+    /// A direct port of MeloCafe's `EmulationView.updateVisibleOutputs()`, using
+    /// `DisplayRouter`'s existing `updateLocalVisibleOutputs` wrapper in place of calling
+    /// MeloCafe's `CemuUIKit_SetVisibleOutputs` (MuffinEMU's own bridge equivalent is
+    /// `cemu_bridge_set_visible_outputs`) directly, so this stays
+    /// consistent with `DisplayRouter`'s own bookkeeping (it already no-ops during
+    /// `.dualScreen`, matching MeloCafe's reasoning for forcing both outputs on while
+    /// `air.connected` - see screenLayoutComposition's doc comment for why that branch of
+    /// `visibleScreens` itself still had to change).
+    private func updateVisibleOutputs() {
+        let both = displayRouter.placement == .dualScreen || screenLayout.showsBothScreens
+        DisplayRouter.shared.updateLocalVisibleOutputs(showTV: both || !localSwapped, showPad: both || localSwapped)
+        if !both && !localSwapped {
+            cemu_bridge_set_pad_touch(0, 0, false)
         }
     }
     #endif

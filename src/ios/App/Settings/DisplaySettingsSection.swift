@@ -15,8 +15,12 @@ import SwiftUI
 /// of the same screen at the same moment, which is why each gets its own swap button
 /// with its own name, rather than trying to share one.
 struct DisplaySettingsSection: View {
+    // Matches MeloCafe's own SettingsView exactly: `= ScreenLayout.initialValue`, not a
+    // plain constant, so a value migrated from a pre-ScreenLayout install (see
+    // `ScreenLayout.initialValue`'s doc comment) is picked up the first time this row
+    // ever reads the key, not just the first time EmulatorViewOptimized does.
     @AppStorage(LocalScreenLayoutSettings.layoutKey)
-    private var screenLayout = LocalScreenLayoutSettings.defaultLayout
+    private var screenLayout = ScreenLayout.initialValue
     @AppStorage(LocalScreenLayoutSettings.showSwapButtonKey)
     private var showLocalSwapButton = LocalScreenLayoutSettings.defaultShowSwapButton
 
