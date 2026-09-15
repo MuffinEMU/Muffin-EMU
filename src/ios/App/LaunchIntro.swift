@@ -131,6 +131,98 @@ private let kBerries: [Berry] = [
     Berry(id: 4, x: 0.60, y: 0.24, r: 0.046, square: true)
 ]
 
+// MARK: - The static mark
+
+/// The finished muffin, drawn once and not animated - the same geometry, the same
+/// MuffinTheme colours and the same face the intro ends on, at whatever size the caller
+/// asks for.
+///
+/// Lives here rather than in its own file because it is literally LaunchIntroView's final
+/// frame: the Dome/Wrapper/WrapperFlutes/Berry definitions above are file-scoped, and a
+/// second copy of them elsewhere would be two drawings of the same logo free to drift
+/// apart. Used on the onboarding welcome page, which is the first thing a new install
+/// shows and had nothing on it but two paragraphs of text.
+struct MuffinMark: View {
+    /// Overall width. Height comes out at 0.96x this, matching the intro's proportions.
+    var side: CGFloat = 120
+
+    var body: some View {
+        let domeH = side * 0.56
+        let wrapH = side * 0.40
+        let wrapW = side * 0.62
+
+        ZStack {
+            VStack(spacing: -side * 0.015) {
+                Dome().fill(MuffinTheme.muffinTopGradient)
+                    .frame(width: side, height: domeH)
+                Wrapper().fill(MuffinTheme.cream)
+                    .frame(width: wrapW, height: wrapH)
+            }
+
+            VStack(spacing: -side * 0.015) {
+                Spacer().frame(width: side, height: domeH)
+                WrapperFlutes().stroke(MuffinTheme.wrapper, lineWidth: side * 0.055)
+                    .frame(width: wrapW, height: wrapH)
+                    .clipShape(Wrapper())
+            }
+
+            berries(side: side, domeH: domeH, wrapH: wrapH)
+            face(side: side, domeH: domeH, wrapH: wrapH)
+        }
+        .frame(width: side, height: domeH + wrapH)
+        .accessibilityHidden(true)
+    }
+
+    private func berries(side: CGFloat, domeH: CGFloat, wrapH: CGFloat) -> some View {
+        ZStack {
+            ForEach(kBerries) { b in
+                Group {
+                    if b.square {
+                        Rectangle().fill(MuffinTheme.pixelBlue)
+                    } else {
+                        Circle().fill(MuffinTheme.blueberryNavy)
+                    }
+                }
+                .frame(width: side * b.r * 2, height: side * b.r * 2)
+                .position(x: side * b.x, y: domeH * b.y)
+            }
+        }
+        .frame(width: side, height: domeH)
+        .offset(y: -wrapH / 2)
+    }
+
+    private func face(side: CGFloat, domeH: CGFloat, wrapH: CGFloat) -> some View {
+        let eyeY = domeH * 0.62
+        let eyeDX = side * 0.085
+        return ZStack {
+            ForEach([-1.0, 1.0], id: \.self) { s in
+                Ellipse().fill(MuffinTheme.blushPink.opacity(0.85))
+                    .frame(width: side * 0.10, height: side * 0.055)
+                    .position(x: side * 0.5 + CGFloat(s) * side * 0.155, y: eyeY + domeH * 0.12)
+            }
+            ForEach([-1.0, 1.0], id: \.self) { s in
+                ZStack {
+                    Capsule().fill(Color.black)
+                        .frame(width: side * 0.036, height: side * 0.052)
+                    Circle().fill(Color.white)
+                        .frame(width: side * 0.013, height: side * 0.013)
+                        .offset(x: -side * 0.008, y: -side * 0.012)
+                }
+                .position(x: side * 0.5 + CGFloat(s) * eyeDX, y: eyeY)
+            }
+            // Full grin - the expression the intro lands on, not the gentle one it starts
+            // from.
+            Smile(openness: 1)
+                .stroke(MuffinTheme.brownDark,
+                        style: StrokeStyle(lineWidth: side * 0.016, lineCap: .round))
+                .frame(width: side * 0.13, height: side * 0.07)
+                .position(x: side * 0.5, y: eyeY + domeH * 0.19)
+        }
+        .frame(width: side, height: domeH)
+        .offset(y: -wrapH / 2)
+    }
+}
+
 // MARK: - The intro
 
 struct LaunchIntroView: View {

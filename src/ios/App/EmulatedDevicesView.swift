@@ -195,20 +195,45 @@ private struct EmulatedDeviceSlotsSection: View {
     var body: some View {
         Section {
             ForEach(device.slotLabels.indices, id: \.self) { slot in
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(device.slotLabels[slot])
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(name(at: slot).isEmpty ? "None" : name(at: slot))
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                let occupied = !name(at: slot).isEmpty
 
-                    HStack(spacing: 20) {
-                        Button("Load") { load(slot: slot) }
-                        NavigationLink("Create") {
-                            CreateEmulatedFigureView(device: device, slot: slot, onCreated: refresh)
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        // Sixteen Skylander slots is a long list to read a word at a time
+                        // to find the two that hold anything.
+                        ScreenSlotBadge(label: "\(slot + 1)", isFilled: occupied)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(device.slotLabels[slot])
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            // "Empty", matching SaveStateSheet's word for the same state.
+                            // This said "None", which is the same fact in a different
+                            // vocabulary for no reason.
+                            Text(occupied ? name(at: slot) : "Empty")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
                         }
+
+                        Spacer(minLength: 0)
+                    }
+
+                    // Real targets. These were 12pt borderless words 20pt apart, which put
+                    // a destructive "Clear" within a thumb's width of "Load" and gave each
+                    // one a tap target the height of its own text.
+                    HStack(spacing: 8) {
+                        Button("Load") { load(slot: slot) }
+                            .buttonStyle(ScreenRowActionStyle())
+
+                        NavigationLink {
+                            CreateEmulatedFigureView(device: device, slot: slot, onCreated: refresh)
+                        } label: {
+                            Text("Create").screenRowActionChrome()
+                        }
+                        .buttonStyle(.plain)
+
                         if device == .dimensions {
-                            Menu("Move") {
+                            let canMove = occupied && slotNames.contains("")
+                            Menu {
                                 ForEach(device.slotLabels.indices, id: \.self) { destination in
                                     if destination != slot && name(at: destination).isEmpty {
                                         Button(device.slotLabels[destination]) {
@@ -218,21 +243,26 @@ private struct EmulatedDeviceSlotsSection: View {
                                         }
                                     }
                                 }
+                            } label: {
+                                Text("Move").screenRowActionChrome()
                             }
-                            .disabled(name(at: slot).isEmpty || !slotNames.contains(""))
+                            .disabled(!canMove)
+                            .opacity(canMove ? 1 : 0.4)
                         }
+
                         Spacer(minLength: 0)
+
                         Button("Clear", role: .destructive) {
                             let error = cemu_bridge_usb_device_clear(device.bridgeDevice, Int32(slot))
                             errorMessage = error.map { String(cString: $0) }
                             refresh()
                         }
-                        .disabled(name(at: slot).isEmpty)
+                        .buttonStyle(ScreenRowActionStyle(isDestructive: true))
+                        .disabled(!occupied)
+                        .opacity(occupied ? 1 : 0.4)
                     }
-                    .buttonStyle(.borderless)
-                    .font(.system(size: 12))
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 6)
             }
         } header: {
             Text("Figures")
@@ -328,13 +358,16 @@ private struct CreateEmulatedFigureView: View {
                 }
                 if device == .dimensions {
                     Section {
+                        // The established sub-caption styling, rather than default body
+                        // text that happened to be grey.
                         Text("Use figure ID 0 to create a blank vehicle or gadget tag for the game to write.")
+                            .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
                 }
                 if let errorMessage {
                     Section {
-                        Text(errorMessage).foregroundColor(MuffinTheme.blushPink)
+                        ScreenStatusCallout(tone: .warning, message: errorMessage)
                     }
                 }
             }
@@ -412,21 +445,57 @@ private struct EmulatedFigurePicker: View {
         ZStack {
             MuffinTheme.backgroundGradient.ignoresSafeArea()
 
-            List(filteredFigures) { figure in
-                Button {
-                    onSelect(figure)
-                    dismiss()
-                } label: {
-                    VStack(alignment: .leading) {
-                        Text(figure.name)
-                        Text("ID: \(figure.figureID)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+            List {
+                if figures.isEmpty {
+                    // The core's built-in table has no entries for this device/slot.
+                    // Previously an empty List, indistinguishable from one still loading.
+                    ScreenEmptyState(
+                        systemImage: "tray",
+                        headline: "No known figures",
+                        message: "MuffinEMU has no built-in list for this slot. Type the figure ID by hand on the previous screen instead."
+                    )
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                } else if filteredFigures.isEmpty {
+                    ScreenEmptyState(
+                        systemImage: "magnifyingglass",
+                        headline: "No matches",
+                        message: "Nothing here matches \u{201C}\(search)\u{201D}. Try part of the name, or the numeric figure ID."
+                    )
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                } else {
+                    ForEach(filteredFigures) { figure in
+                        Button {
+                            onSelect(figure)
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 10) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(figure.name)
+                                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                                        .foregroundColor(MuffinTheme.brownDarkest)
+                                    Text("ID \(figure.figureID)")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+                                        .monospacedDigit()
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(MuffinTheme.brownMid)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
         }
         .navigationTitle("Choose a Figure")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .searchable(text: $search, prompt: "Search names or IDs")
     }
 }
