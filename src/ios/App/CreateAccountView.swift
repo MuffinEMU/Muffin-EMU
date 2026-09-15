@@ -73,6 +73,7 @@ struct CreateAccountView: View {
                             }
                         }
                         .pickerStyle(.menu)
+                        .tint(MuffinTheme.pixelBlue)
                     }
 
                     Section {
