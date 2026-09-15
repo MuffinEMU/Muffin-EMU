@@ -10,11 +10,61 @@ MetalLayerHandle::MetalLayerHandle(MTL::Device* device, const Vector2i& size, bo
     m_layer = (CA::MetalLayer*)CreateMetalLayer(windowInfo.surface, m_layerScaleX, m_layerScaleY);
     m_layer->setDevice(device);
 
-    const CGSize drawableSize = m_layer->drawableSize();
-    if (size.x > 0 && drawableSize.width > 0.0)
-        m_layerScaleX = (float)drawableSize.width / (float)size.x;
-    if (size.y > 0 && drawableSize.height > 0.0)
-        m_layerScaleY = (float)drawableSize.height / (float)size.y;
+    // Take the scale from the window system, NOT by measuring the layer.
+    //
+    // This constructor used to re-derive it: `m_layerScaleX = drawableSize.width /
+    // size.x`, reading CoreAnimation's own current drawableSize back off the layer. That
+    // is what made Single Screen render a small, correctly-proportioned picture in the
+    // TOP-LEFT corner with black around it, and it did so from the original port onward -
+    // it is in v1.0 verbatim.
+    //
+    // The sequence: the bridge sets the layer's contentsScale to dpiScale (the user's
+    // Render Scale; the DEFAULT "Balanced" is HALF native, so 1.0 on this 2x iPad Pro),
+    // and sets phys_width/phys_height = points * that same 1.0. Then `tvRenderView` is
+    // added to its container and enters a window for the first time. contentsScale on a
+    // UIView's own backing layer belongs to UIKit, which re-asserts the trait
+    // collection's display scale - 2.0 - and CoreAnimation recomputes drawableSize to
+    // bounds * 2.0. Boot reaches InitializeLayer() seconds later, on the emulation
+    // thread, and this constructor measured that 2.0 and made it authoritative.
+    //
+    // The result is that the drawable is twice the linear size the rest of the engine
+    // believes the window is. LatteRenderTarget_getScreenImageArea() sizes the output
+    // rect from phys_width/phys_height, and MetalRenderer.cpp's setViewport/
+    // setScissorRect apply that rect to the drawable with Metal's top-left origin - so
+    // the image is drawn into the top-left quarter of a drawable twice as wide and tall,
+    // and LoadActionClear blacks out the rest. Nothing rescales it afterwards, because
+    // drawableSize here exactly equals bounds * contentsScale, so CoreAnimation has no
+    // mismatch to correct and presents precisely what was drawn. contentsGravity is
+    // irrelevant to this and setting it would not have helped.
+    //
+    // Why only Single Screen: in the two-screen layouts the container's size genuinely
+    // changes when the layout resolves, so DisplayRouter.deviceContainerDidLayout() gets
+    // a cache miss and calls ResizeLayer(), whose `scale` parameter overwrites
+    // m_layerScaleX/Y with the correct dpi_scale - repairing this as a side effect.
+    // Single Screen's container never changes size, the size-equality early-return in
+    // deviceContainerDidLayout() suppresses every later call, and nothing ever repairs
+    // it. That is also why four attempts at rewriting the SwiftUI layout could not fix
+    // this: the SwiftUI shape was never wrong (it is character-for-character MeloCafe's
+    // own EmulationView.screens), and a fifth attempt that set contentsScale inside
+    // CemuUIKit_UpdateMainWindowSize failed because that function is exactly the one
+    // that stops being called after boot in this layout.
+    //
+    // Resize() below already takes the scale as a parameter rather than reading it back
+    // off the layer, for the reason its own comment gives: one source of truth instead
+    // of two that could disagree. This constructor was the second source it failed to
+    // eliminate. Both now read the same value the bridge already wrote.
+    const auto& windowSystemInfo = WindowSystem::GetWindowInfo();
+    const double authoritativeScale = mainWindow ? windowSystemInfo.dpi_scale.load()
+                                                 : windowSystemInfo.pad_dpi_scale.load();
+    // Falls back to whatever CreateMetalLayer() seeded (the screen's scale) if the window
+    // system has not been told a scale yet - a pad surface can in principle initialize
+    // before its first CemuUIKit_UpdatePadWindowSize(), and a zero here would mean a
+    // zero-sized drawable, which is strictly worse than the behaviour this replaces.
+    if (authoritativeScale > 0.0)
+    {
+        m_layerScaleX = (float)authoritativeScale;
+        m_layerScaleY = (float)authoritativeScale;
+    }
 
     m_layer->setDrawableSize(CGSize{(float)size.x * m_layerScaleX, (float)size.y * m_layerScaleY});
     m_layer->setFramebufferOnly(true);
