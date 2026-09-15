@@ -74,6 +74,18 @@ enum DisplayGammaSetting {
     static let maxValue: Double = 3.0
 }
 
+/// Backs cemu_bridge_set_override_gamma_value() - a separate gamma stage from Display
+/// Gamma above, not a second control for the same value. See that function's doc comment
+/// in CemuBridge.h for what actually differs: this one replaces or adds to a game's own
+/// gamma request, Display Gamma is applied on top of the result. Same Double-not-Float and
+/// 1.0-3.0 reasoning as DisplayGammaSetting.
+enum OverrideGammaSetting {
+    static let storageKey = "muffin.render.overrideGammaValue"
+    static let defaultValue: Double = 2.2 // matches CemuConfig's overrideGammaValue default
+    static let minValue: Double = 1.0
+    static let maxValue: Double = 3.0
+}
+
 /// Which MoltenVK build the Vulkan renderer loads: 1.4.3 by default, or 1.2.8,
 /// the build 64Touch uses. The bridge reads the key once when the engine starts, because a
 /// loaded MoltenVK cannot be swapped inside a running process.
@@ -110,6 +122,12 @@ struct GraphicsSettingsSection: View {
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
     @AppStorage("muffin.render.upsideDown") private var upsideDownEnabled = false
     @AppStorage(DisplayGammaSetting.storageKey) private var displayGamma = DisplayGammaSetting.defaultValue
+    // Default true: matches CemuConfig's framebuffer_fetch{true} compiled-in default, same
+    // "don't show a switch in a position the engine isn't actually in" reasoning as every
+    // other @AppStorage default on this page.
+    @AppStorage("muffin.render.framebufferFetch") private var framebufferFetchEnabled = true
+    @AppStorage("muffin.render.overrideAppGamma") private var overrideAppGammaEnabled = false
+    @AppStorage(OverrideGammaSetting.storageKey) private var overrideGammaValue = OverrideGammaSetting.defaultValue
 
     private var renderScale: RenderScale {
         RenderScale(rawValue: renderScaleRaw) ?? .balanced
@@ -125,7 +143,14 @@ struct GraphicsSettingsSection: View {
             stretchToggle
             vsyncToggle
             upsideDownToggle
+            if rendererRaw == RendererAPI.metal.rawValue {
+                framebufferFetchToggle
+            }
             gammaSlider
+            overrideGammaToggle
+            if overrideAppGammaEnabled {
+                overrideGammaSlider
+            }
             meshShaderNote
         } header: {
             Text("Graphics")
@@ -254,6 +279,50 @@ struct GraphicsSettingsSection: View {
         }
     }
 
+    // Metal only: MetalRenderer.cpp is the only backend that reads framebuffer_fetch, so a
+    // toggle shown under Vulkan would be a switch that moves and changes nothing - the same
+    // reason precompiled_shaders (a real CemuConfig field, but inert on this core's Metal/
+    // Vulkan backends) is not exposed anywhere on this page either.
+    private var framebufferFetchToggle: some View {
+        Toggle(isOn: $framebufferFetchEnabled) {
+            Text("Framebuffer Fetch")
+        }
+        .tint(MuffinTheme.pixelBlue)
+        .onChange(of: framebufferFetchEnabled) { newValue in
+            cemu_bridge_set_framebuffer_fetch(newValue)
+        }
+    }
+
+    private var overrideGammaToggle: some View {
+        Toggle(isOn: $overrideAppGammaEnabled) {
+            Text("Override App Gamma")
+        }
+        .tint(MuffinTheme.pixelBlue)
+        .onChange(of: overrideAppGammaEnabled) { newValue in
+            cemu_bridge_set_override_app_gamma(newValue)
+        }
+    }
+
+    private var overrideGammaSlider: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Override Gamma")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                Spacer()
+                Text(String(format: "%.1f", overrideGammaValue))
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+            Slider(
+                value: $overrideGammaValue,
+                in: OverrideGammaSetting.minValue...OverrideGammaSetting.maxValue
+            )
+            .onChange(of: overrideGammaValue) { newValue in
+                cemu_bridge_set_override_gamma_value(Float(newValue))
+            }
+        }
+    }
+
     // A real, current hardware limitation, not a hedge - see MetalRenderer.cpp's
     // mesh-shader gate. GraphicPacksView carries the full version of this note
     // where it actually matters (right next to the packs it affects); this is the
@@ -283,7 +352,11 @@ struct GraphicsSettingsSection: View {
 
         Flip screen upside down inverts both Wii U outputs vertically before they reach the screen. Off for everyone except a panel or capture rig that presents the image inverted. Takes effect on the next frame.
 
+        Framebuffer fetch lets eligible Metal shaders read a pixel already sitting in the framebuffer instead of a separate blend pass - on by default, Metal only, and takes effect the next time you launch a game.
+
         Display gamma adjusts how bright midtones look without changing pure black or pure white. 2.2 is the conventional display gamma and this port's default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.
+
+        Override App Gamma and Override Gamma are a separate stage from Display Gamma above, not a second copy of it: some games ask for their own gamma value, and this either adds Override Gamma on top of that request (off) or replaces the game's request with Override Gamma entirely (on) - before Display Gamma is applied to the result. Off by default; most games never ask for a specific gamma at all, so this has nothing to override until one does.
 
         This device has no mesh shader support, so packs that rely on geometry shaders or post-processing (RECTS) draws won't render correctly yet. Everything else works normally.
         """
