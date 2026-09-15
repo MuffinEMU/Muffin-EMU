@@ -490,13 +490,17 @@ bool cemu_bridge_overlay_ram_usage(void);
 
 // MARK: - Audio
 //
-// Six of CemuConfig's audio fields, plain (not ConfigValue-wrapped) sint32/bool/enum
-// members read directly by IAudioAPI and ax_out.cpp - see GetVolume()/GetChannels() in
-// IAudioAPI.cpp and the enable checks around g_tvAudio/g_padAudio in ax_out.cpp. audio_delay,
-// microphone_enabled, input_channels/input_volume and every *_device string are deliberately
-// not exposed here: audio_delay and microphone_enabled are out of scope for this settings
-// page, input_* belongs to the Wii Remote/mic input path rather than output, and device
-// selection has no meaning on iOS, where CoreAudio owns the single active output route.
+// Eight of CemuConfig's audio fields, plain (not ConfigValue-wrapped) sint32/bool/enum
+// members read directly by IAudioAPI, ax_out.cpp and mic.cpp - see GetVolume()/GetChannels()
+// in IAudioAPI.cpp, the enable checks around g_tvAudio/g_padAudio in ax_out.cpp, and
+// mic_isConnected()/MICInit() in mic.cpp. audio_delay, input_channels and every *_device
+// string are deliberately not exposed here: audio_delay is out of scope for this settings
+// page, input_channels has no effect even in desktop Cemu (GeneralSettings2.cpp forces it to
+// kMono regardless of UI selection - see the commented-out assignment there), and device
+// selection has no meaning on iOS, where CoreAudio owns the single active output route -
+// including for input: mic.cpp's `#if BOOST_OS_IOS` path always uses IOSAudioInputAPI's one
+// device, a real AVAudioSession/AudioUnit-backed mic capture path (iOSAudioInputAPI.mm), not
+// a stub, so microphone_enabled and input_volume below are genuinely functional on this fork.
 //
 // AudioChannels crosses this plain-C boundary as a bare int, the same pattern
 // cemu_bridge_set_graphics_api and cemu_bridge_set_upscale_filter already use for their own
@@ -540,6 +544,23 @@ int cemu_bridge_pad_volume(void);
 /// is next (re)created" timing as TV channels above.
 void cemu_bridge_set_pad_channels(int channels);
 int cemu_bridge_pad_channels(void);
+
+/// Whether a title's request to open the GamePad microphone (MICInit, mic.cpp) is honoured.
+/// Gates mic_isConnected() before anything else about the mic - off means a title's MICInit
+/// call fails with NOT_CONNECTED and IOSAudioInputAPI is never even constructed, the same way
+/// a real console with no microphone attached would behave; on, the first title that calls
+/// MICInit opens the real device and holds it for the rest of the session (mic.cpp caches
+/// g_inputAudio once created). Defaults to false, matching CemuConfig.h - the mic usage
+/// string in project.yml exists for the moment a title actually asks, not for this switch.
+void cemu_bridge_set_microphone_enabled(bool enabled);
+bool cemu_bridge_microphone_enabled(void);
+
+/// Microphone input level, 0-100, clamped the same way the output volumes above are. Applied
+/// once via IOSAudioInputAPI's SetVolume() when the mic device is first created (MICInit),
+/// so - unlike the TV/GamePad volumes, which apply on the next audio buffer - a change here
+/// only takes effect the next time a title opens the mic (next title launch, in practice).
+void cemu_bridge_set_input_volume(int volume);
+int cemu_bridge_input_volume(void);
 
 /// Which MoltenVK build the Vulkan renderer uses this launch: "1.4.3" (the default)
 /// or "1.2.8". Chosen from the muffin.render.moltenVK setting when the engine
