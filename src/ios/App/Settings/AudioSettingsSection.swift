@@ -127,6 +127,7 @@ struct AudioSettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
+            .tint(MuffinTheme.pixelBlue)
             .foregroundColor(MuffinTheme.brownDarkest)
             .onChange(of: tvChannelsRaw) { newValue in
                 cemu_bridge_set_tv_channels(Int32(newValue))
@@ -154,6 +155,7 @@ struct AudioSettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
+            .tint(MuffinTheme.pixelBlue)
             .foregroundColor(MuffinTheme.brownDarkest)
             .onChange(of: padChannelsRaw) { newValue in
                 cemu_bridge_set_pad_channels(Int32(newValue))

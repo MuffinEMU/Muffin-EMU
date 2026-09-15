@@ -53,6 +53,7 @@ struct DisplaySettingsSection: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .tint(MuffinTheme.pixelBlue)
             }
             .alert("Screen Layout", isPresented: $screenLayoutInfoShown) {
                 Button("OK", role: .cancel) { }
