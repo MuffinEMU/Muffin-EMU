@@ -113,12 +113,18 @@ final class PerGameSettingsStore: ObservableObject {
 struct GameContextMenu: View {
     let game: GameMetadata
     @ObservedObject var store: PerGameSettingsStore
+    /// Only used here to check/clear a manual cover override (hasManualCoverOverride/
+    /// removeManualCover) - the actual picker screen this menu opens into
+    /// (CoverArtPickerView) takes its own reference, passed down from ContentView the
+    /// same way `store` is.
+    @ObservedObject var gameManager: GameManager
     let onViewOptions: () -> Void
     let onDecryptToFiles: () -> Void
     let onImportDLC: () -> Void
     let onImportUpdate: () -> Void
     let onRemoveDLC: () -> Void
     let onRemoveUpdate: () -> Void
+    let onChangeCoverArt: () -> Void
 
     var body: some View {
         Toggle(isOn: Binding(
@@ -129,6 +135,24 @@ struct GameContextMenu: View {
         }
         Button(action: onViewOptions) {
             Label("View Game Options", systemImage: "slider.horizontal.3")
+        }
+        // The escape hatch for a card still showing the plain gamepad placeholder
+        // (or the wrong art) because GameTDB's automatic fetch (CoverArtFetcher)
+        // never found anything for it - homebrew, or an obscure title GameTDB
+        // simply doesn't list. Opens CoverArtPickerView; the automatic fetch itself
+        // is untouched and still runs first, same as always.
+        Button(action: onChangeCoverArt) {
+            Label("Change Cover Art\u{2026}", systemImage: "photo")
+        }
+        // Only offered once there's actually an override to clear - checked fresh
+        // against disk each time the menu opens, same as the DLC/update removal
+        // actions below, rather than a separately-kept record that could drift.
+        if gameManager.hasManualCoverOverride(forGameID: game.id) {
+            Button(role: .destructive) {
+                gameManager.removeManualCover(forGameID: game.id)
+            } label: {
+                Label("Remove Custom Cover", systemImage: "photo.badge.minus")
+            }
         }
         // Disc images only - see gameSupportsDecryptToFiles() in DecryptROMView.swift for
         // why a folder dump, homebrew .rpx/.elf, and .wuhb don't get this action.
