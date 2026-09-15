@@ -49,6 +49,7 @@ struct GraphicPacksView: View {
                                 }
                             }
                         }
+                        .tint(MuffinTheme.pixelBlue)
                     }
                 } footer: {
                     // A real, current hardware limitation, not a hedge - see
