@@ -116,9 +116,17 @@ struct SaveStateSheet: View {
                 List {
                     if let statusMessage {
                         Section {
-                            Text(statusMessage)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundColor(MuffinTheme.brownDarkest)
+                            // The refusal reason ("doesn't match this session") arrives
+                            // here alongside plain confirmations, and the two used to look
+                            // identical - same weight, same colour, no marker. A refusal
+                            // is the one message on this screen someone needs to act on.
+                            ScreenStatusCallout(
+                                tone: statusMessage.localizedCaseInsensitiveContains("couldn't")
+                                    || statusMessage.localizedCaseInsensitiveContains("doesn't match")
+                                    || statusMessage.localizedCaseInsensitiveContains("failed")
+                                    ? .warning : .info,
+                                message: statusMessage
+                            )
                         }
                     }
 
@@ -126,6 +134,15 @@ struct SaveStateSheet: View {
                         ForEach(slots) { slot in
                             row(for: slot)
                         }
+                    } header: {
+                        // The game's name lives here rather than in the navigation title.
+                        // "Save States - <title>" in an inline bar truncates to
+                        // "Save States - The Legend of Z..." on a phone, which loses the
+                        // one word that identifies which game's slots these are.
+                        Text(gameTitle)
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .foregroundColor(MuffinTheme.brownMid)
+                            .textCase(nil)
                     } footer: {
                         // The one place the whole feature's real scope limits are spelled
                         // out honestly, rather than only living in code comments nobody
@@ -133,12 +150,14 @@ struct SaveStateSheet: View {
                         // cemu_bridge_load_state's doc comments in CemuBridge.h and the
                         // file-level comment at the top of IOSSaveState.cpp for the full
                         // reasoning behind both sentences below.
-                        Text("A save only loads back into this same running game - quitting or relaunching the game (or restarting the app) breaks the match, and a save from before that always fails to load. That's expected, not a bug.\n\nRight after loading, a texture or shader that changed since the save may flash its old contents for a moment. That's a brief visual glitch, not lost data.")
+                        // Delete is a swipe and a long-press now rather than a trash glyph
+                        // wedged between Load and Overwrite, so it has to be said once.
+                        Text("Swipe a slot left, or press and hold it, to delete that save.\n\nA save only loads back into this same running game - quitting or relaunching the game (or restarting the app) breaks the match, and a save from before that always fails to load. That's expected, not a bug.\n\nRight after loading, a texture or shader that changed since the save may flash its old contents for a moment. That's a brief visual glitch, not lost data.")
                     }
                 }
             }
             .listStyle(.insetGrouped)
-            .navigationTitle("Save States - \(gameTitle)")
+            .navigationTitle("Save States")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -169,10 +188,32 @@ struct SaveStateSheet: View {
 
     @ViewBuilder
     private func row(for slot: SaveStateSlot) -> some View {
+        let canDelete = slot.isOccupied && busySlot == nil
+
+        // The context menu is attached only when there is something to delete: an empty
+        // slot with an empty menu long-presses into a blank popover, which looks broken.
+        if canDelete {
+            rowContent(for: slot)
+                .contextMenu {
+                    Button(role: .destructive) { deleteTarget = slot } label: {
+                        Label("Delete Slot \(slot.number)", systemImage: "trash")
+                    }
+                }
+        } else {
+            rowContent(for: slot)
+        }
+    }
+
+    @ViewBuilder
+    private func rowContent(for slot: SaveStateSlot) -> some View {
         let isBusy = busySlot == slot.number
         let disabled = busySlot != nil
 
         HStack(spacing: 12) {
+            // Occupancy, readable straight down the left edge without reading "Empty" on
+            // each row in turn.
+            ScreenSlotBadge(label: "\(slot.number)", isFilled: slot.isOccupied)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text("Slot \(slot.number)")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -183,34 +224,39 @@ struct SaveStateSheet: View {
                     .foregroundColor(.secondary)
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             if isBusy {
                 ProgressView()
                     .padding(.trailing, 4)
             } else {
+                // Two actions at most, both with a real target. Delete moved to a swipe
+                // and a long-press menu: three buttons 20pt apart in one row put a
+                // destructive control inside a thumb's width of "Load", and the trash
+                // glyph's own tap target was the size of the glyph.
                 if slot.isOccupied {
                     Button(action: { onLoad(slot.number) }) {
                         Text("Load")
                     }
-                    .buttonStyle(.borderless)
-                    .disabled(disabled)
-
-                    Button(role: .destructive, action: { deleteTarget = slot }) {
-                        Image(systemName: "trash")
-                    }
-                    .buttonStyle(.borderless)
+                    .buttonStyle(ScreenRowActionStyle(isProminent: true))
                     .disabled(disabled)
                 }
 
                 Button(action: { onSave(slot.number) }) {
                     Text(slot.isOccupied ? "Overwrite" : "Save")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(ScreenRowActionStyle())
                 .disabled(disabled)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 6)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            if slot.isOccupied && !disabled {
+                Button(role: .destructive) { deleteTarget = slot } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+        }
     }
 
     private func subtitle(for slot: SaveStateSlot) -> String {

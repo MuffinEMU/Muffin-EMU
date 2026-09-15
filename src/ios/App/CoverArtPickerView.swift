@@ -22,6 +22,10 @@ struct CoverArtPickerView: View {
     @State private var showingLegacyPhotoPicker = false
     @State private var showingFileImporter = false
     @State private var errorMessage: String?
+    /// Removing the override throws away the image file and immediately dismisses, with
+    /// no undo - the same shape as every other destructive action in the app, which all
+    /// ask first through a confirmationDialog. This one didn't.
+    @State private var showingRemoveConfirmation = false
 
     // "Try a specific GameTDB ID" state. The fetched image sits here as a preview
     // only - nothing is written to disk until "Use This Cover" is tapped.
@@ -85,6 +89,15 @@ struct CoverArtPickerView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .confirmationDialog("Remove custom cover?", isPresented: $showingRemoveConfirmation, titleVisibility: .visible) {
+            Button("Remove Custom Cover", role: .destructive) {
+                gameManager.removeManualCover(forGameID: game.id)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("The cover you set is deleted. MuffinEMU goes back to the automatically-found art, or the placeholder if it never found any.")
+        }
     }
 
     // MARK: - Sections
@@ -105,8 +118,7 @@ struct CoverArtPickerView: View {
             }
             if hasOverride {
                 Button(role: .destructive) {
-                    gameManager.removeManualCover(forGameID: game.id)
-                    dismiss()
+                    showingRemoveConfirmation = true
                 } label: {
                     Label("Remove Custom Cover", systemImage: "photo.badge.minus")
                 }

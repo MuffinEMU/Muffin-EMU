@@ -4,6 +4,10 @@ struct IconPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var currentIconName: String? = UIApplication.shared.alternateIconName
     @State private var errorMessage: String?
+    /// Why a tap did nothing. A locked Pro icon used to `return` out of `select()` in
+    /// silence, which is indistinguishable from a button that doesn't work - the lock
+    /// badge says the icon IS locked, but nothing said that's why the tap was ignored.
+    @State private var lockedMessage: String?
 
     var body: some View {
         // NavigationStack needs iOS 16+; this project's deployment target is 15.0.
@@ -12,15 +16,14 @@ struct IconPickerView: View {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
 
                 ScrollView {
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(MuffinTheme.brownDarkest)
-                            .padding(10)
-                            .background(MuffinTheme.blushPink)
-                            .cornerRadius(10)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
+                    if let banner = errorMessage ?? lockedMessage {
+                        MuffinCard {
+                            ScreenStatusCallout(tone: .warning, message: banner)
+                                .padding(12)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                        .transition(.opacity)
                     }
 
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 16)], spacing: 16) {
@@ -40,8 +43,12 @@ struct IconPickerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
+                    // Plain, like every other sheet's Done in this app (SaveStateSheet,
+                    // EmulatedDevicesView, CoverArtPickerView's Cancel). A cream pill
+                    // inside the navigation bar was the odd one out here and in
+                    // ThemePickerView, and a filled capsule fights the bar's own material
+                    // rather than sitting in it.
                     Button("Done") { dismiss() }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
                 }
             }
         }
@@ -53,9 +60,17 @@ struct IconPickerView: View {
     }
 
     private func select(_ icon: AppIconOption) {
-        guard !(icon.isPro && !Entitlements.hasProPlan) else { return }
+        guard !(icon.isPro && !Entitlements.hasProPlan) else {
+            ScreenHaptics.rejected()
+            withAnimation(.easeOut(duration: 0.18)) {
+                lockedMessage = "\(icon.name) is a Pro icon. Unlock Pro in Settings to use it."
+            }
+            return
+        }
         let name = icon.id == "original" ? nil : icon.alternateIconName
         guard name != currentIconName else { return }
+        withAnimation(.easeOut(duration: 0.18)) { lockedMessage = nil }
+        ScreenHaptics.selectionChanged()
         UIApplication.shared.setAlternateIconName(name) { error in
             if let error {
                 errorMessage = "Couldn't switch icon: \(error.localizedDescription)"
@@ -118,8 +133,15 @@ private struct IconOptionCard: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // Same selected-card lift as ThemePickerView's grid, for the same reason:
+            // thirty tiles is too many to find a 16pt checkmark in.
+            .scaleEffect(isSelected ? 1.02 : 1.0)
+            .shadow(color: MuffinTheme.pixelBlue.opacity(isSelected ? 0.28 : 0), radius: 10, x: 0, y: 4)
+            .animation(.easeOut(duration: 0.16), value: isSelected)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ScreenCardButtonStyle())
+        .accessibilityLabel(isLocked ? "\(icon.name), locked, Pro only" : icon.name)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     @ViewBuilder

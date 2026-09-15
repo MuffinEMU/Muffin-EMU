@@ -148,6 +148,37 @@ struct OnboardingView: View {
 
 // MARK: - Shared page chrome
 
+/// The illustration at the top of an onboarding page. The welcome page gets the app's own
+/// muffin - the same mark the launch intro draws, so the thing that just animated itself
+/// together is the thing greeting you - and the working pages get a symbol in the brand
+/// accent, which says what the page is about before a word of it is read.
+private enum OnboardingHero {
+    case none
+    case mark
+    case symbol(String)
+
+    @ViewBuilder var view: some View {
+        switch self {
+        case .none:
+            EmptyView()
+        case .mark:
+            MuffinMark(side: 132)
+                .shadow(color: MuffinTheme.shadow.opacity(0.25), radius: 16, x: 0, y: 8)
+                .padding(.bottom, 4)
+        case .symbol(let name):
+            ZStack {
+                Circle().fill(MuffinTheme.cream)
+                Image(systemName: name)
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundColor(MuffinTheme.pixelBlue)
+            }
+            .frame(width: 72, height: 72)
+            .shadow(color: MuffinTheme.shadow.opacity(0.18), radius: 10, x: 0, y: 4)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
 /// One page's worth of chrome: a heading, one or two sentences under it, then
 /// whatever the page needs. Wrapped in a ScrollView and width-capped rather than left
 /// to stretch full width on an iPad, so a long piece of body text (Dynamic Type
@@ -156,11 +187,17 @@ struct OnboardingView: View {
 private struct OnboardingPageScaffold<Content: View>: View {
     let title: String
     let subtitle: String
+    /// What sits above the heading. Four pages of nothing but left-aligned text is
+    /// accurate and completely forgettable; this is the first thing a new install shows.
+    var hero: OnboardingHero = .none
     @ViewBuilder var content: Content
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                hero.view
+                    .frame(maxWidth: .infinity, alignment: .center)
+
                 Text(title)
                     .font(.system(.title, design: .rounded).weight(.bold))
                     .foregroundColor(MuffinTheme.brownDarkest)
@@ -214,7 +251,8 @@ private struct OnboardingWelcomePage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Welcome to MuffinEMU",
-            subtitle: "MuffinEMU runs real Wii U software on your device. This guide covers keys, games, and speed in under a minute - skip anything you don't need."
+            subtitle: "MuffinEMU runs real Wii U software on your device. This guide covers keys, games, and speed in under a minute - skip anything you don't need.",
+            hero: .mark
         ) {
             EmptyView()
         }
@@ -235,7 +273,8 @@ private struct OnboardingKeysPage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Your keys",
-            subtitle: "Real Wii U games are encrypted, and MuffinEMU ships no keys - only a keys.txt dumped from your own Wii U can unlock them. Homebrew needs none of this."
+            subtitle: "Real Wii U games are encrypted, and MuffinEMU ships no keys - only a keys.txt dumped from your own Wii U can unlock them. Homebrew needs none of this.",
+            hero: .symbol("key.fill")
         ) {
             MuffinCard {
                 VStack(alignment: .leading, spacing: 16) {
@@ -319,7 +358,8 @@ private struct OnboardingGamesPage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Add your games",
-            subtitle: "Games come from Files - .wud, .wux, .wua, .iso, a dumped game folder, or a homebrew .rpx - through the same Import picker your library's toolbar uses. Drop files straight into Documents/Roms from the Files app instead, if you'd rather."
+            subtitle: "Games come from Files - .wud, .wux, .wua, .iso, a dumped game folder, or a homebrew .rpx - through the same Import picker your library's toolbar uses. Drop files straight into Documents/Roms from the Files app instead, if you'd rather.",
+            hero: .symbol("square.and.arrow.down.fill")
         ) {
             MuffinCard {
                 VStack(alignment: .leading, spacing: 16) {
@@ -377,7 +417,8 @@ private struct OnboardingSpeedControlsPage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Speed and controls",
-            subtitle: "MuffinEMU is fastest with the recompiler running. Three things decide how that actually goes for you:"
+            subtitle: "MuffinEMU is fastest with the recompiler running. Three things decide how that actually goes for you:",
+            hero: .symbol("bolt.fill")
         ) {
             MuffinCard {
                 VStack(alignment: .leading, spacing: 18) {
