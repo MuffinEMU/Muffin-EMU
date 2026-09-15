@@ -1178,6 +1178,22 @@ struct EmulatorViewOptimized: View {
     /// ever surfaced - without it, a refusal and a tap that did nothing look identical.
     @State private var saveStateStatusMessage: String?
 
+    // MARK: Emulated devices
+    //
+    // Skylanders Portal / Disney Infinity Base / LEGO Dimensions Toypad. Read-only here -
+    // the switches themselves live in Settings (EmulatedDevicesSettingsSection.swift) -
+    // just to decide whether the button below is worth showing at all. Figure management
+    // doesn't need a running title (it acts on the core's always-live emulated-device
+    // state directly), so unlike Save States this button isn't gated on
+    // gameManager.emulationState.
+    @AppStorage(EmulatedDevicesSettings.skylanderPortalKey) private var skylanderPortalEnabled = EmulatedDevicesSettings.defaultEnabled
+    @AppStorage(EmulatedDevicesSettings.infinityBaseKey) private var infinityBaseEnabled = EmulatedDevicesSettings.defaultEnabled
+    @AppStorage(EmulatedDevicesSettings.dimensionsToypadKey) private var dimensionsToypadEnabled = EmulatedDevicesSettings.defaultEnabled
+    @State private var showEmulatedDevices = false
+    private var anyEmulatedDeviceEnabled: Bool {
+        skylanderPortalEnabled || infinityBaseEnabled || dimensionsToypadEnabled
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -1349,6 +1365,19 @@ struct EmulatorViewOptimized: View {
                             }
                             .buttonStyle(MuffinSecondaryButtonStyle())
                             .accessibilityLabel("Save States")
+                        }
+
+                        // Same "reachable without leaving the game" reasoning as Save
+                        // States above. Only shown once a peripheral is actually turned
+                        // on in Settings - ported from MeloCafe's own EmulationView.swift
+                        // overlay, which gates its equivalent button the same way.
+                        if anyEmulatedDeviceEnabled {
+                            Button(action: { showEmulatedDevices = true }) {
+                                Image(systemName: "externaldrive.connected.to.line.below")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .accessibilityLabel("Emulated Devices")
                         }
 
                         #if os(iOS)
@@ -1910,6 +1939,9 @@ struct EmulatorViewOptimized: View {
                 onLoad: performLoadState,
                 onDelete: deleteSaveState
             )
+        }
+        .sheet(isPresented: $showEmulatedDevices) {
+            EmulatedDevicesView()
         }
     }
 

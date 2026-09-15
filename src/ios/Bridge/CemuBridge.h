@@ -308,6 +308,83 @@ const char* cemu_bridge_graphic_packs_list(void);
 /// still be enabled/disabled the same way after the next refresh or app relaunch.
 void cemu_bridge_graphic_pack_set_enabled(int index, bool enabled);
 
+// ---------------------------------------------------------------------------
+// Emulated toy-to-life devices: Skylanders Portal, Disney Infinity Base, LEGO
+// Dimensions Toypad - USB peripherals some Wii U titles read via nsyshid
+// (Cafe/OS/libs/nsyshid/Skylander.cpp, Infinity.cpp, Dimensions.cpp). The core already
+// implements all three in full; nothing on this port had ever surfaced them. Each is
+// attached to the emulated USB bus by nsyshid's own AttachDefaultBackends(), which runs
+// when a title's nsyshid module loads and reads the matching enable flag below AT THAT
+// MOMENT - so, like the other settings on this page, enabling/disabling one here takes
+// effect on the next title launch, not one already running. Figure load/create/clear/
+// move below act on the core's own always-live g_skyportal/g_infinitybase/
+// g_dimensionstoypad state directly and work regardless of whether a title is running.
+//
+// No figure/NFC dump data ships with this: the figure list below is the core's own
+// built-in (ID, variant, name) table for the real toys each game recognizes, and create
+// writes fresh, empty save data for one of those - the same blank state a physical
+// figure has before a game ever plays on it.
+
+/// Which of the three peripherals a call below is about.
+typedef enum {
+    CEMU_BRIDGE_USB_DEVICE_SKYLANDERS = 0,
+    CEMU_BRIDGE_USB_DEVICE_INFINITY   = 1,
+    CEMU_BRIDGE_USB_DEVICE_DIMENSIONS = 2,
+} CemuBridgeUSBDevice;
+
+void cemu_bridge_set_emulate_skylander_portal(bool enabled);
+bool cemu_bridge_emulate_skylander_portal(void);
+void cemu_bridge_set_emulate_infinity_base(bool enabled);
+bool cemu_bridge_emulate_infinity_base(void);
+void cemu_bridge_set_emulate_dimensions_toypad(bool enabled);
+bool cemu_bridge_emulate_dimensions_toypad(void);
+
+/// Fixed slot count for `device`: 16 Skylanders, 9 Infinity (the play set plus two power
+/// discs, then each of two players' own figure and two ability pieces), 7 Dimensions
+/// toypad positions - nsyshid's own MAX_SKYLANDERS/MAX_FIGURES, and the fixed 7-position
+/// toypad layout Dimensions.cpp implements.
+int cemu_bridge_usb_device_slot_count(CemuBridgeUSBDevice device);
+
+/// One record per slot, in slot order, separated by 0x1E - same convention as
+/// cemu_bridge_graphic_packs_list(). An empty slot is an empty record (never omitted),
+/// so record index always equals slot index. Static storage owned by this call, valid
+/// until the next call to ANY cemu_bridge_usb_device_* function; copy before that.
+const char* cemu_bridge_usb_device_slot_names(CemuBridgeUSBDevice device);
+
+/// The core's own built-in figure table for `device`, restricted to the entries valid in
+/// `slot` (Infinity's 9 positions each only accept certain figure ID ranges - see
+/// InfinityUSB's own CreateFigure restriction, mirrored in IOSEmulatedDevices.cpp). One
+/// record per figure, separated by 0x1E; each record is figureId\x1Fvariant\x1Fname
+/// (fields separated by 0x1F). Metadata only - an ID/variant/name triple, never
+/// copyrighted figure/save data. Same static-storage lifetime as
+/// cemu_bridge_usb_device_slot_names() above.
+const char* cemu_bridge_usb_device_figure_list(CemuBridgeUSBDevice device, int slot);
+
+/// Loads the figure file at `path` (already written by create, below, or imported by the
+/// user) into `slot`. Returns NULL on success; on failure, a static, human-readable
+/// reason (file too small for this device, already loaded in another slot, portal has no
+/// free slots) valid until the next cemu_bridge_usb_device_* call - copy it before that.
+const char* cemu_bridge_usb_device_load(CemuBridgeUSBDevice device, int slot, const char* path);
+
+/// Tells the emulated device the figure in `slot` was lifted off - the game sees a real
+/// removal - without touching its file on disk. NULL on success, a reason string (same
+/// lifetime as above) on failure.
+const char* cemu_bridge_usb_device_clear(CemuBridgeUSBDevice device, int slot);
+
+/// Writes a brand-new figure save-data file at `path` (must not already exist) for
+/// (figureId, variant); the caller then loads it into a slot with the call above. A
+/// Dimensions figureId of 0 makes a blank vehicle/gadget tag for the game to write its
+/// own data into, same as the desktop figure creator. NULL on success, a reason string
+/// on failure (ID out of range for this device, or path already exists).
+const char* cemu_bridge_usb_device_create(CemuBridgeUSBDevice device, uint32_t figureId, uint16_t variant, const char* path);
+
+/// Dimensions-only: relocates the figure in toypad slot `fromSlot` to `toSlot` without a
+/// file round-trip, preserving in-game state the way unload+reload through a file would
+/// not (physical toypad position is meaningful to several Dimensions puzzles). NULL on
+/// success, a reason string otherwise - always fails when either slot doesn't hold/admit
+/// a Dimensions figure, since only the toypad has a physical position to move between.
+const char* cemu_bridge_usb_device_move_dimensions(int fromSlot, int toSlot);
+
 /// How fast the emulated console believes time is passing, as a right-shift factor:
 /// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
 /// Cemu's own `ActiveSettings::SetTimerShiftFactor()`, which desktop Cemu exposes as its
