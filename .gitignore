@@ -65,3 +65,6 @@ build-ios/
 src/ios/Cemu-iOS.xcodeproj/
 
 __pycache__/
+
+# Claude Code agent worktree scaffolding (local tooling, not project source)
+.claude/

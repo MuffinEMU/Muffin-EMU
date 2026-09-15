@@ -20,6 +20,21 @@ enum DisplayLayoutSettings {
     static let defaultShowSwapButton = true
 }
 
+/// Master switch for the whole external-display system above, off by default. With it
+/// off, `DisplayRouter.applyPlacement` never looks for a real external screen at all -
+/// `placement` can only ever be `.deviceOnly`, exactly as if this feature did not exist,
+/// regardless of what's actually plugged in. This is deliberately a separate, coarser
+/// gate from `DisplayLayoutSettings` above: those two settings decide HOW a genuine
+/// external display is used once the system is on; this decides whether the system runs
+/// at all. Off by default because most players never connect a second display, dual-
+/// screen output has not been exercised on real hardware yet (see DisplaySettingsSection's
+/// footer), and a feature that is silently probing for hardware nobody has is more
+/// surface area than a Wii U emulator needs turned on for everyone by default.
+enum ExternalDisplaySystemSettings {
+    static let enabledKey = "muffin.display.externalDisplaySystemEnabled"
+    static let defaultEnabled = false
+}
+
 /// How the TV and GamePad screens share THIS device's own screen - a true port of
 /// MeloCafe's `ScreenLayout` (Common/Models/ScreenLayout.swift): same cases, same
 /// wording, same `initialValue` migration shape, because this is literally that
@@ -413,7 +428,16 @@ final class DisplayRouter: ObservableObject {
     }
 
     private func applyPlacement(reason: String) {
-        let external = externalScreen()
+        // The master switch: with the external-display system off, treat every call as
+        // if no external screen exists, no matter what `externalScreen()` would actually
+        // find. Everything below this line - `desired`, the placeTVOn*/sync* calls - is
+        // the exact same logic that already handles "no external display" correctly
+        // (including tearing an existing dualScreen session back down to deviceOnly if
+        // the switch is flipped off mid-session), so gating the two lookups here is
+        // enough to make the whole system inert; nothing downstream needs to know why
+        // `external` came back nil.
+        let systemEnabled = UserDefaults.standard.bool(forKey: ExternalDisplaySystemSettings.enabledKey)
+        let external = systemEnabled ? externalScreen() : nil
         let scene = external.flatMap { externalWindowScene(for: $0) }
 
         let desired: Placement
@@ -508,6 +532,18 @@ final class DisplayRouter: ObservableObject {
             padRenderView = nil
         }
         applyPlacement(reason: "screen layout changed")
+    }
+
+    /// `DisplaySettingsSection`'s "Enable External Display System" toggle calls this on
+    /// every flip, in both directions - unlike the settings above, there's no existing
+    /// `placement == .dualScreen` session to matter only if it's currently active:
+    /// turning the switch ON needs to notice a display that was already connected while
+    /// it was off (nothing else will, since `applyPlacement`'s own guard skipped looking
+    /// the whole time), and turning it OFF needs to tear an active dualScreen session
+    /// back down to deviceOnly right away rather than waiting for the next screen-change
+    /// notification that may never come.
+    func reapplyForExternalDisplaySystemToggle() {
+        applyPlacement(reason: "external display system toggled")
     }
 
     /// The on-screen swap button's action (EmulatorViewOptimized, gated on
