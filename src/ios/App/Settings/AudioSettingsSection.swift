@@ -21,16 +21,17 @@ enum AudioChannelSetting: Int, CaseIterable, Identifiable {
     }
 }
 
-/// Storage keys and defaults for the six in-scope audio settings, one enum per screen
+/// Storage keys and defaults for the eight in-scope audio settings, one enum per screen
 /// the way `DisplayLayoutSettings` in DisplayRouter.swift keys the display-routing
 /// settings. Defaults mirror CemuConfig.h's own field initializers (tv_audio_enabled =
-/// true, pad_audio_enabled = false, both channels = kStereo, both volumes = 50) rather
-/// than the different numbers CemuConfig.cpp's XML loader falls back to (20 for TV
-/// volume, 0 for GamePad) when a config.xml predates these fields - that fallback never
-/// actually surfaces here, because GameManager pushes every one of these keys into the
-/// engine before every boot (see the boot-time push block), so the engine's config
-/// always ends up matching whatever this file's defaults or the user's own choice say,
-/// not whatever a stale XML fallback would have produced.
+/// true, pad_audio_enabled = false, both channels = kStereo, both volumes = 50,
+/// microphone_enabled = false, input_volume = 50) rather than the different numbers
+/// CemuConfig.cpp's XML loader falls back to (20 for TV volume, 0 for GamePad) when a
+/// config.xml predates these fields - that fallback never actually surfaces here, because
+/// GameManager pushes every one of these keys into the engine before every boot (see the
+/// boot-time push block), so the engine's config always ends up matching whatever this
+/// file's defaults or the user's own choice say, not whatever a stale XML fallback would
+/// have produced.
 enum AudioSettings {
     static let tvEnabledKey = "muffin.audio.tvEnabled"
     static let defaultTvEnabled = true
@@ -49,15 +50,25 @@ enum AudioSettings {
 
     static let padChannelsKey = "muffin.audio.padChannels"
     static let defaultPadChannels = AudioChannelSetting.stereo.rawValue
+
+    static let microphoneEnabledKey = "muffin.audio.microphoneEnabled"
+    static let defaultMicrophoneEnabled = false
+
+    static let inputVolumeKey = "muffin.audio.inputVolume"
+    static let defaultInputVolume = 50
 }
 
 /// TV and GamePad output audio - on/off, level, and channel layout for each, backed by
 /// CemuConfig.h's tv_audio_enabled/tv_volume/tv_channels and pad_audio_enabled/
-/// pad_volume/pad_channels. audio_delay and microphone_enabled are deliberately not
-/// here (out of scope for this page - the former is an AV-sync knob, the latter a mic
-/// permission concern, not audio output), and neither is device selection
-/// (tv_device/pad_device): those name a host audio device, which has no equivalent on
-/// iOS, where CoreAudio owns the one active output route for the whole app.
+/// pad_volume/pad_channels - plus the GamePad microphone input a title can request via
+/// MICInit (mic.cpp), backed by microphone_enabled/input_volume. audio_delay and
+/// input_channels are deliberately not here: the former is an AV-sync knob, out of scope
+/// for this page; the latter has no effect even in desktop Cemu (GeneralSettings2.cpp
+/// hardcodes it to mono regardless of what its own picker shows). Device selection
+/// (tv_device/pad_device/input_device) is also left out - those name a host audio
+/// device, which has no equivalent on iOS, where CoreAudio owns the one active output
+/// route for the whole app, and mic.cpp's `#if BOOST_OS_IOS` path likewise always uses
+/// IOSAudioInputAPI's single device rather than offering a choice.
 ///
 /// TV and GamePad audio are two independent output devices in the engine
 /// (g_tvAudio/g_padAudio in ax_out.cpp), each enabled, muted and mixed on its own - the
@@ -77,15 +88,19 @@ struct AudioSettingsSection: View {
     @AppStorage(AudioSettings.padVolumeKey) private var padVolume = AudioSettings.defaultPadVolume
     @AppStorage(AudioSettings.padChannelsKey) private var padChannelsRaw = AudioSettings.defaultPadChannels
 
+    @AppStorage(AudioSettings.microphoneEnabledKey) private var microphoneEnabled = AudioSettings.defaultMicrophoneEnabled
+    @AppStorage(AudioSettings.inputVolumeKey) private var inputVolume = AudioSettings.defaultInputVolume
+
     var body: some View {
         Section {
             tvGroup
             padGroup
+            microphoneGroup
         } header: {
             Text("Audio")
         } footer: {
             InfoButton.footer(
-                "TV and GamePad have their own volume and channel layout. Turning GamePad audio on plays its track on this device's own speaker or headphones, whether or not a second screen is connected.",
+                "TV and GamePad have their own volume and channel layout. Turning GamePad audio on plays its track on this device's own speaker or headphones, whether or not a second screen is connected. Microphone lets a game read GamePad mic input through this device's own microphone.",
                 title: "Audio",
                 text: fullText)
         }
@@ -142,7 +157,27 @@ struct AudioSettingsSection: View {
         }
     }
 
-    // Shared row for both volumes: an Int @AppStorage backs the bridge call (it wants
+    // No channel picker here, unlike tvGroup/padGroup above: input_channels has no effect
+    // even in desktop Cemu (see CemuBridge.h's Audio section), so a picker for it would be
+    // a control that changes a stored value without changing anything audible - the thing
+    // this page otherwise avoids.
+    @ViewBuilder private var microphoneGroup: some View {
+        Toggle(isOn: $microphoneEnabled) {
+            Text("Microphone")
+        }
+        .tint(MuffinTheme.pixelBlue)
+        .onChange(of: microphoneEnabled) { newValue in
+            cemu_bridge_set_microphone_enabled(newValue)
+        }
+
+        if microphoneEnabled {
+            volumeRow(label: "Microphone Volume", volume: $inputVolume) { newValue in
+                cemu_bridge_set_input_volume(Int32(newValue))
+            }
+        }
+    }
+
+    // Shared row for all three volumes: an Int @AppStorage backs the bridge call (it wants
     // 0-100), and this wraps it in a Double Binding for Slider the same way
     // PreviewPadSection.swift wraps its own enum @AppStorage in a Binding rather than
     // storing the Slider's native type directly - the stored type and the control's
@@ -171,6 +206,6 @@ struct AudioSettingsSection: View {
     }
 
     private var fullText: String {
-        "TV Audio and GamePad Audio are separate output tracks, each with its own on/off switch, volume and channel layout - the same three controls desktop Cemu's Audio settings page exposes for TV/GamePad/input, minus device selection (there's only one audio route on iOS, so there's nothing to pick) and minus the input tab (that's a microphone/Wii Remote input path, not output).\n\nChannel layout controls how many speakers the mix expects: Mono collapses everything to one channel, Stereo (the default for both) splits left/right, and Surround asks the game's own mixer for more channels where a title supports it - most don't, and Stereo is the safe default either way.\n\nGamePad Audio is a genuinely separate track from the engine's point of view, not something gated on having a second screen connected - turning it on plays whatever the game sends to the GamePad speaker on this device's own output. Whether a given title actually sends it anything different from the TV mix depends on that title, not on this switch."
+        "TV Audio and GamePad Audio are separate output tracks, each with its own on/off switch, volume and channel layout - the same controls desktop Cemu's Audio settings page exposes for TV/GamePad/input, minus device selection (there's only one audio route on iOS, so there's nothing to pick).\n\nChannel layout controls how many speakers the mix expects: Mono collapses everything to one channel, Stereo (the default for both) splits left/right, and Surround asks the game's own mixer for more channels where a title supports it - most don't, and Stereo is the safe default either way.\n\nGamePad Audio is a genuinely separate track from the engine's point of view, not something gated on having a second screen connected - turning it on plays whatever the game sends to the GamePad speaker on this device's own output. Whether a given title actually sends it anything different from the TV mix depends on that title, not on this switch.\n\nMicrophone is the input side: on, it lets a title that calls for GamePad mic input (MICInit) actually open this device's real microphone through iOS; off, that same call fails the way it would on a real console with no microphone attached, and no mic permission prompt or capture ever happens. Microphone Volume sets the input gain for whatever title opens it next - it takes effect the next time a title opens the mic, not instantly."
     }
 }

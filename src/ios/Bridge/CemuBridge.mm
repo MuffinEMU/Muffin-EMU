@@ -1056,10 +1056,11 @@ bool cemu_bridge_overlay_ram_usage(void) {
 
 // MARK: - Audio
 //
-// tv_audio_enabled/pad_audio_enabled/tv_channels/pad_channels/tv_volume/pad_volume are all
-// plain fields on CemuConfig, not ConfigValue-wrapped, so they're read and written directly
-// rather than through .GetValue(). See CemuBridge.h's Audio section for what's deliberately
-// left out (audio_delay, microphone_enabled, input_*, every *_device) and why.
+// tv_audio_enabled/pad_audio_enabled/tv_channels/pad_channels/tv_volume/pad_volume/
+// microphone_enabled/input_volume are all plain fields on CemuConfig, not ConfigValue-wrapped,
+// so they're read and written directly rather than through .GetValue(). See CemuBridge.h's
+// Audio section for what's deliberately left out (audio_delay, input_channels, every
+// *_device) and why.
 
 void cemu_bridge_set_tv_audio_enabled(bool enabled) {
     GetConfig().tv_audio_enabled = enabled;
@@ -1109,6 +1110,22 @@ void cemu_bridge_set_pad_channels(int channels) {
 
 int cemu_bridge_pad_channels(void) {
     return (int)GetConfig().pad_channels;
+}
+
+void cemu_bridge_set_microphone_enabled(bool enabled) {
+    GetConfig().microphone_enabled = enabled;
+}
+
+bool cemu_bridge_microphone_enabled(void) {
+    return GetConfig().microphone_enabled;
+}
+
+void cemu_bridge_set_input_volume(int volume) {
+    GetConfig().input_volume = std::clamp(volume, 0, 100);
+}
+
+int cemu_bridge_input_volume(void) {
+    return GetConfig().input_volume;
 }
 
 void cemu_bridge_set_vsync_enabled(bool enabled) {
