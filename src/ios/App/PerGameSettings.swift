@@ -216,29 +216,60 @@ struct GameOptionsView: View {
     }
 
     var body: some View {
+        // NavigationStack needs iOS 16+; this project's deployment target is 15.0 -
+        // same reasoning as SettingsView.swift's own NavigationView, whose overall
+        // shape (a background gradient behind a Form, rather than the plain white
+        // Form this screen had before) this now matches exactly - this was the one
+        // real settings screen in the app that hadn't picked it up.
         NavigationView {
-            Form {
-                Section {
-                    Picker("Pre-Compile Shaders", selection: shaderChoice) {
-                        ForEach(TriState.allCases) { choice in
-                            Text(choice.title).tag(choice)
-                        }
-                    }
-                    // Next to Pre-Compile Shaders rather than its own section: both
-                    // are the same shape of override on the same screen, and Favour
-                    // accuracy is exactly the setting Nano Assault Neo's own
-                    // shader-compile override sits next to in Settings itself.
-                    Picker("Favour Accuracy", selection: favourAccuracyChoice) {
-                        ForEach(TriState.allCases) { choice in
-                            Text(choice.title).tag(choice)
-                        }
-                    }
-                } header: {
-                    Text("Overrides")
-                } footer: {
-                    Text("Pre-Compile Shaders renders and compiles every shader ahead of time so the game runs faster even without the recompiler. Most games want this on; Nano Assault Neo specifically breaks with it on, which is why this is a per-game choice rather than only a global one.\n\nFavour Accuracy trades speed for stability on a game that glitches, desyncs or crashes - see Settings > CPU for what it changes.\n\n\"Use Global Default\" tracks whatever Settings currently says for that setting, even if you change it later. On/Off pins this game regardless of what the global setting does.")
-                }
+            ZStack {
+                MuffinTheme.backgroundGradient
+                    .ignoresSafeArea()
 
+                Form {
+                    Section {
+                        HStack {
+                            Text("Pre-Compile Shaders")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Spacer()
+                            Picker("Pre-Compile Shaders", selection: shaderChoice) {
+                                ForEach(TriState.allCases) { choice in
+                                    Text(choice.title).tag(choice)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(MuffinTheme.pixelBlue)
+                        }
+                        // Next to Pre-Compile Shaders rather than its own section: both
+                        // are the same shape of override on the same screen, and Favour
+                        // accuracy is exactly the setting Nano Assault Neo's own
+                        // shader-compile override sits next to in Settings itself.
+                        HStack {
+                            Text("Favour Accuracy")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Spacer()
+                            Picker("Favour Accuracy", selection: favourAccuracyChoice) {
+                                ForEach(TriState.allCases) { choice in
+                                    Text(choice.title).tag(choice)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(MuffinTheme.pixelBlue)
+                        }
+                    } header: {
+                        Text("Overrides")
+                    } footer: {
+                        // Same "one short sentence inline, the rest one tap away" shape
+                        // every other settings section's footer in this app already
+                        // uses - see InfoButton.swift - instead of a single paragraph
+                        // dump nobody who already knows what these do has to read past.
+                        InfoButton.footer(
+                            "\"Use Global Default\" tracks Settings; On/Off pins this game regardless of it.",
+                            title: "Overrides",
+                            text: "Pre-Compile Shaders renders and compiles every shader ahead of time so the game runs faster even without the recompiler. Most games want this on; Nano Assault Neo specifically breaks with it on, which is why this is a per-game choice rather than only a global one.\n\nFavour Accuracy trades speed for stability on a game that glitches, desyncs or crashes - see Settings > CPU for what it changes.\n\n\"Use Global Default\" tracks whatever Settings currently says for that setting, even if you change it later. On/Off pins this game regardless of what the global setting does."
+                        )
+                    }
+                }
             }
             .navigationTitle(game.title)
             #if os(iOS)
@@ -250,5 +281,7 @@ struct GameOptionsView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
+        .foregroundColor(MuffinTheme.brownDarkest)
     }
 }
