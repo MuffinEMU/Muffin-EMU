@@ -931,9 +931,18 @@ class GameManager: ObservableObject {
             // at the points cited on their bridge declarations, not from UserDefaults itself.
             cemu_bridge_set_render_upside_down(
                 UserDefaults.standard.object(forKey: "muffin.render.upsideDown") as? Bool ?? false)
+            // Metal only, but harmless to push unconditionally - MetalRenderer.cpp is the
+            // only reader, and Vulkan (VulkanRenderer.cpp) never looks at this field.
+            cemu_bridge_set_framebuffer_fetch(
+                UserDefaults.standard.object(forKey: "muffin.render.framebufferFetch") as? Bool ?? true)
             cemu_bridge_set_display_gamma(Float(
                 UserDefaults.standard.object(forKey: DisplayGammaSetting.storageKey) as? Double
                     ?? DisplayGammaSetting.defaultValue))
+            cemu_bridge_set_override_app_gamma(
+                UserDefaults.standard.object(forKey: "muffin.render.overrideAppGamma") as? Bool ?? false)
+            cemu_bridge_set_override_gamma_value(Float(
+                UserDefaults.standard.object(forKey: OverrideGammaSetting.storageKey) as? Double
+                    ?? OverrideGammaSetting.defaultValue))
             cemu_bridge_set_overlay_position(
                 Int32(UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
                     ?? OverlaySettings.defaultPosition.rawValue))
