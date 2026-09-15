@@ -2213,8 +2213,27 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 			// not signaled
 			break;
 		}
+		// A real device loss (GPU fault/timeout, or a lost connection to the driver) is
+		// PERMANENT - every future fence query on this device returns the same error
+		// forever, since no command buffer this device owns can ever actually finish
+		// again. Before this, that meant an unthrottled infinite spin right here: this
+		// loop's own condition never changes (m_commandBufferSyncIndex can only ever
+		// advance in the VK_SUCCESS branch above), cemu_assert_debug() is a no-op in
+		// Release, and there was nothing else to stop it - the exact repeated-every-
+		// millisecond "vkGetFenceStatus returned unexpected error -4" flood confirmed on
+		// device is what that spin looks like from the log. WaitCommandBufferFinished()'s
+		// own while loop calls straight back into this, so whatever thread hit this
+		// (the GPU/Latte thread, holding whatever locks/state it held) never yielded
+		// again - which is what actually made the whole app look frozen, not anything in
+		// the input path. UnrecoverableError() throws, which at least turns a silent,
+		// permanent, undiagnosable hang into a real crash with a log line explaining why.
+		// A full live-recreate of the swapchain/device is real future work, not something
+		// to improvise here.
+		if (fenceStatus == VK_ERROR_DEVICE_LOST)
+			UnrecoverableError("Vulkan device lost - a command buffer's fence can never signal again");
 		cemuLog_log(LogType::Force, "vkGetFenceStatus returned unexpected error {}", (sint32)fenceStatus);
 		cemu_assert_debug(false);
+		break;
 	}
 	if (finishedCmdBuffers)
 	{
@@ -2230,6 +2249,13 @@ void VulkanRenderer::WaitForNextFinishedCommandBuffer()
 	if (result == VK_TIMEOUT)
 	{
 		cemuLog_log(LogType::Force, "vkWaitForFences: Returned VK_TIMEOUT on infinite fence");
+	}
+	else if (result == VK_ERROR_DEVICE_LOST)
+	{
+		// Same permanent condition ProcessFinishedCommandBuffers() below also guards
+		// against - caught here too, one call earlier, so this fails as soon as it is
+		// known rather than after one more redundant vkGetFenceStatus() call.
+		UnrecoverableError("Vulkan device lost - a command buffer's fence can never signal again");
 	}
 	else if (result != VK_SUCCESS)
 	{
