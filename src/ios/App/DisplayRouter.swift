@@ -20,14 +20,20 @@ enum DisplayLayoutSettings {
     static let defaultShowSwapButton = true
 }
 
-/// How the TV and GamePad screens share THIS device's own screen - ported from
-/// MeloCafe's `ScreenLayout` (Common/Models/ScreenLayout.swift), same three cases, same
-/// wording, because this is literally that feature: MuffinEMU had never had it, and
-/// nothing here is invented. Independent of `DisplayRouter.Placement` above, which is
-/// about routing to a genuine SECOND physical display - this instead decides how the
-/// two Wii U screens are arranged on the ONE screen most people are actually using, and
-/// only applies while `Placement` is not `.dualScreen` (a real external display still
-/// takes the TV, exactly as before this feature existed).
+/// How the TV and GamePad screens share THIS device's own screen - a true port of
+/// MeloCafe's `ScreenLayout` (Common/Models/ScreenLayout.swift): same cases, same
+/// wording, same `initialValue` migration shape, because this is literally that
+/// feature and nothing here is invented. Independent of `DisplayRouter.Placement`
+/// above, which is about routing to a genuine SECOND physical display - this instead
+/// decides how the two Wii U screens are arranged on the ONE screen most people are
+/// actually using, and only applies while `Placement` is not `.dualScreen` (a real
+/// external display still takes the TV, exactly as before this feature existed).
+///
+/// One deliberate departure from MeloCafe's literal source: `initialValue` reads/writes
+/// `LocalScreenLayoutSettings.layoutKey` ("muffin.display.screenLayout"), not MeloCafe's
+/// bare "screenLayout" - every other MuffinEMU setting is namespaced `muffin.*`, and
+/// this is the one place that convention actually matters (a bare "screenLayout" key
+/// could collide with something else reading/writing UserDefaults directly).
 enum ScreenLayout: String, CaseIterable, Identifiable {
     case singleScreen
     case bothScreens
@@ -55,6 +61,27 @@ enum ScreenLayout: String, CaseIterable, Identifiable {
     }
 
     var showsBothScreens: Bool { self != .singleScreen }
+
+    /// MeloCafe's own migration path from its pre-`ScreenLayout` era, when this was two
+    /// separate booleans (`showBothScreens`/`smallGamePadTopRight`). MuffinEMU never had
+    /// those keys - this feature is new here, not migrated from an older one - so in
+    /// practice the `defaults.bool(forKey:)` reads below always come back `false` and
+    /// this always lands on `.singleScreen` the first time. Ported anyway rather than
+    /// simplified away: it costs nothing, it's the actual shape MeloCafe's own
+    /// `EmulationView`/`SettingsView` initialize `screenLayout` from
+    /// (`@AppStorage("screenLayout") private var screenLayout = ScreenLayout.initialValue`),
+    /// and simplifying it here would be exactly the kind of "equivalent but hand-rewritten"
+    /// substitution this port is deliberately avoiding.
+    static var initialValue: ScreenLayout {
+        let defaults = UserDefaults.standard
+        if let stored = defaults.string(forKey: LocalScreenLayoutSettings.layoutKey),
+           let layout = ScreenLayout(rawValue: stored) {
+            return layout
+        }
+        let layout: ScreenLayout = defaults.bool(forKey: "showBothScreens") ? (defaults.bool(forKey: "smallGamePadTopRight") ? .smallGamePadTopRight : .bothScreens) : .singleScreen
+        defaults.set(layout.rawValue, forKey: LocalScreenLayoutSettings.layoutKey)
+        return layout
+    }
 }
 
 /// Settings keys for `ScreenLayout` above. Deliberately its own small enum, distinct
@@ -171,6 +198,73 @@ final class DisplayRouter: ObservableObject {
     /// small view per connect/disconnect cycle, which is the same bounded trade
     /// `CreateMetalLayer()` already documents.
     private var padRenderView: UIView?
+
+    /// The plain SwiftUI-facing container `MetalViewIOS.makeUIView()` hands back, cached
+    /// here instead of created fresh every call - see `sharedDeviceContainer()` below.
+    private var sharedDeviceContainerStorage: UIView?
+
+    /// The plain SwiftUI-facing container `PadMetalViewIOS.makeUIView()` hands back,
+    /// cached for the same reason - see `sharedLocalPadContainer()` below, which is
+    /// where the reasoning actually matters.
+    private var sharedLocalPadContainerStorage: UIView?
+
+    /// Returns the same `DeviceContainerView` on every call, creating it once on first
+    /// use. `attach(deviceContainer:)`/`placeTVOnDevice()` already reparent the real,
+    /// persistent `tvRenderView` into whatever container they're handed, regardless of
+    /// whether it's a container they've seen before - so this container's own identity
+    /// changing was never what put the TV screen at risk from a conditionally-mounted
+    /// `MetalViewIOS`. It's cached anyway, for the same reason `tvRenderView` itself is:
+    /// a SwiftUI-owned wrapper view that never changes identity is one less thing for a
+    /// remount to have to recover from, and it keeps `MetalViewIOS` and `PadMetalViewIOS`
+    /// symmetric - see `sharedLocalPadContainer()`, where an equivalent cache is not a
+    /// nicety but the actual fix.
+    func sharedDeviceContainer() -> UIView {
+        if let existing = sharedDeviceContainerStorage { return existing }
+        let container = DeviceContainerView()
+        container.backgroundColor = .black
+        sharedDeviceContainerStorage = container
+        return container
+    }
+
+    /// Returns the same `PadContainerView` on every call, creating it once on first use.
+    /// This is the actual fix that makes it safe to mount `PadMetalViewIOS` the way
+    /// MeloCafe's real `EmulationView` mounts its GamePad view: conditionally, via
+    /// `ForEach(visibleScreens)`, added and removed from the tree as Screen Layout and
+    /// the swap state change.
+    ///
+    /// Before this cache existed, `PadMetalViewIOS.makeUIView()` returned a brand new
+    /// `PadContainerView()` on every call. `attachLocalPadContainer(_:)` only updates
+    /// `localPadContainer` and re-runs `syncLocalPadSurface()` when the container it's
+    /// handed is a genuinely different object; `syncLocalPadSurface()` in turn only ever
+    /// CREATES a pad surface when none is registered yet, or RELEASES one when none
+    /// should exist any more - it has no third branch that reparents an
+    /// already-registered surface onto a newly-handed container (unlike
+    /// `placeTVOnDevice()`, which explicitly checks `tvRenderView.superview !== container`
+    /// and moves it every time). So the moment SwiftUI dropped `PadMetalViewIOS` from the
+    /// tree - Screen Layout swapping away from showing the pad - and later re-added it,
+    /// `attachLocalPadContainer` saw a container that was not `localPadContainer`, set it
+    /// as the new one, `syncLocalPadSurface()` saw `havePad == true` already (the surface
+    /// was still registered, just hosted in the OLD, now-detached container) and did
+    /// nothing, and the live pad `CAMetalLayer` was left a subview of a container with no
+    /// superview of its own - a silent black screen the next time the layout swapped back
+    /// to showing the pad. That was the real, sole cause of the black-screen regression a
+    /// literal port of MeloCafe's conditionally-mounted `ForEach` hit before.
+    ///
+    /// Caching the container here closes the gap at its actual source rather than
+    /// teaching `syncLocalPadSurface()` a third branch: `makeUIView()` now hands back the
+    /// same object every time, so `attachLocalPadContainer` never sees a "different"
+    /// container to begin with, and the reparent-on-remount case above is simply never
+    /// reached. `attach(deviceContainer:)`, `attachLocalPadContainer(_:)`,
+    /// `syncPadSurface()` and `syncLocalPadSurface()` are unchanged - their own
+    /// idempotent, ignore-if-already-attached logic is exactly what lets a stable,
+    /// cached container flow through them unchanged.
+    func sharedLocalPadContainer() -> UIView {
+        if let existing = sharedLocalPadContainerStorage { return existing }
+        let container = PadContainerView()
+        container.backgroundColor = .black
+        sharedLocalPadContainerStorage = container
+        return container
+    }
 
     /// The on-device area SwiftUI gives us (see `MetalViewIOS`). Weak: SwiftUI owns it.
     private weak var deviceContainer: UIView?
