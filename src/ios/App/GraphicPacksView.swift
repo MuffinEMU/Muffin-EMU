@@ -20,10 +20,16 @@ struct GraphicPacksView: View {
         List {
             if packs.isEmpty {
                 Section {
-                    Text("No graphic packs found. Add them to Documents/mlc/graphicPacks - each pack is a folder with its own rules.txt inside, the same layout desktop Cemu uses.")
-                        .font(.system(size: 13, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownMid)
+                    ScreenEmptyState(
+                        systemImage: "square.stack.3d.up",
+                        headline: "No graphic packs yet",
+                        message: "Add them to Documents/mlc/graphicPacks - each pack is a folder with its own rules.txt inside, the same layout desktop Cemu uses."
+                    )
                 }
+                // The empty state is the whole screen when it shows, so it gets the
+                // background rather than sitting on a lone inset card the width of a row.
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             } else {
                 Section {
                     ForEach($packs) { $pack in
@@ -34,7 +40,7 @@ struct GraphicPacksView: View {
                                 cemu_bridge_graphic_pack_set_enabled(Int32(pack.index), newValue)
                             }
                         )) {
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: 4) {
                                 Text(pack.name)
                                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                                 if !pack.description.isEmpty {
@@ -42,10 +48,15 @@ struct GraphicPacksView: View {
                                         .font(.system(size: 12))
                                         .foregroundColor(.secondary)
                                 }
+                                // A chip rather than a third line of grey text. Three
+                                // stacked greys at 15/12/11 read as one paragraph fading
+                                // out; the count is a different KIND of fact from the
+                                // description - metadata about the pack, not prose - and
+                                // giving it its own shape says so without needing a size
+                                // difference to carry the whole distinction.
                                 if pack.titleIdCount > 0 {
-                                    Text(pack.titleIdCount == 1 ? "1 game" : "\(pack.titleIdCount) games")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.secondary)
+                                    ScreenChip(text: pack.titleIdCount == 1 ? "1 game" : "\(pack.titleIdCount) games")
+                                        .padding(.top, 1)
                                 }
                             }
                         }

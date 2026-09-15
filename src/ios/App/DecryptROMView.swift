@@ -95,38 +95,28 @@ struct DecryptROMView: View {
                     .foregroundColor(MuffinTheme.pixelBlue)
                 Text("Decrypt \(game.title)")
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .foregroundColor(MuffinTheme.brownDarkest)
+                    .multilineTextAlignment(.center)
                 Text("The encrypted original is never touched either way.")
                     .font(.system(size: 12, design: .rounded))
                     .foregroundColor(MuffinTheme.brownMid)
 
+                // Cards, not pills. These are two-line choices with a title and an
+                // explanation, and MuffinSecondaryButtonStyle is a capsule built for a
+                // single short word - on iOS 26 it wraps a paragraph in Liquid Glass and
+                // reads as a lozenge somebody overfilled.
                 VStack(spacing: 12) {
-                    Button {
-                        format = .rawSource
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Decrypt to Raw Source")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            Text("A code/, content/, meta/ folder - importable and bootable as-is.")
-                                .font(.system(size: 12, design: .rounded))
-                                .foregroundColor(MuffinTheme.brownMid)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(MuffinSecondaryButtonStyle())
+                    formatChoice(
+                        title: "Decrypt to Raw Source",
+                        detail: "A code/, content/, meta/ folder - importable and bootable as-is.",
+                        systemImage: "folder.fill"
+                    ) { format = .rawSource }
 
-                    Button {
-                        format = .wua
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Decrypt to WUA")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            Text("A single portable .wua archive file.")
-                                .font(.system(size: 12, design: .rounded))
-                                .foregroundColor(MuffinTheme.brownMid)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(MuffinSecondaryButtonStyle())
+                    formatChoice(
+                        title: "Decrypt to WUA",
+                        detail: "A single portable .wua archive file.",
+                        systemImage: "doc.zipper"
+                    ) { format = .wua }
                 }
                 .padding(.horizontal, 24)
 
@@ -144,6 +134,42 @@ struct DecryptROMView: View {
         #endif
     }
 
+    private func formatChoice(title: String,
+                             detail: String,
+                             systemImage: String,
+                             action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            MuffinCard {
+                HStack(spacing: 12) {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(MuffinTheme.pixelBlue)
+                        .frame(width: 26)
+                        .accessibilityHidden(true)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            .foregroundColor(MuffinTheme.brownDarkest)
+                        Text(detail)
+                            .font(.system(size: 12, design: .rounded))
+                            .foregroundColor(MuffinTheme.brownMid)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(MuffinTheme.brownMid)
+                        .accessibilityHidden(true)
+                }
+                .padding(14)
+            }
+        }
+        .buttonStyle(ScreenCardButtonStyle())
+        .accessibilityLabel("\(title). \(detail)")
+    }
+
     private func decryptingBody(_ chosenFormat: DecryptFormat) -> some View {
         ZStack {
             MuffinTheme.backgroundGradient.ignoresSafeArea()
@@ -157,6 +183,7 @@ struct DecryptROMView: View {
                         .foregroundColor(progress.isSuccess ? .green : MuffinTheme.blushPink)
                     Text(progress.isSuccess ? "Decrypted" : "Couldn't Finish")
                         .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownDarkest)
                     if progress.isSuccess {
                         Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten))")
                             .font(.system(size: 13, design: .rounded))
@@ -180,6 +207,8 @@ struct DecryptROMView: View {
                         .scaleEffect(1.3)
                     Text("Decrypting \(game.title)\u{2026}")
                         .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownDarkest)
+                        .multilineTextAlignment(.center)
                     Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten)) written")
                         .font(.system(size: 13, design: .rounded))
                         .foregroundColor(MuffinTheme.brownMid)
@@ -197,8 +226,10 @@ struct DecryptROMView: View {
                     } label: {
                         Text("Cancel")
                     }
+                    // No .foregroundColor override here: MuffinSecondaryButtonStyle sets
+                    // the label's colour itself, so one applied out here never reached
+                    // the text.
                     .buttonStyle(MuffinSecondaryButtonStyle())
-                    .foregroundColor(MuffinTheme.blushPink)
                     .padding(.bottom, 8)
                 }
             }

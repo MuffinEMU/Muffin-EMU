@@ -33,7 +33,11 @@ struct ThemePickerView: View {
                                 theme: theme,
                                 isSelected: theme.id == store.current.id,
                                 matchesCurrentIcon: theme.iconId == currentIconId,
-                                onSelect: { store.select(theme) }
+                                onSelect: {
+                                    guard theme.id != store.current.id else { return }
+                                    ScreenHaptics.selectionChanged()
+                                    store.select(theme)
+                                }
                             )
                         }
                     }
@@ -44,8 +48,8 @@ struct ThemePickerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
+                    // Plain, matching every other sheet's Done - see IconPickerView.
                     Button("Done") { dismiss() }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
                 }
             }
         }
@@ -95,8 +99,16 @@ private struct ThemeOptionCard: View {
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            // The selected card sits slightly forward of the rest of the grid. The
+            // checkmark alone had to be found; this is visible in peripheral vision while
+            // scrolling, which is how a grid of twenty-odd swatches is actually read.
+            .scaleEffect(isSelected ? 1.02 : 1.0)
+            .shadow(color: swatchAccent.opacity(isSelected ? 0.28 : 0), radius: 10, x: 0, y: 4)
+            .animation(.easeOut(duration: 0.16), value: isSelected)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ScreenCardButtonStyle())
+        .accessibilityLabel(theme.name)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     /// A small live preview swatch built straight from this theme's own hex pairs -
