@@ -103,10 +103,10 @@ struct OnScreenControlsSection: View {
             .tint(MuffinTheme.pixelBlue)
 
             Button(role: .destructive, action: { showingResetLayoutConfirmation = true }) {
-                Label("Reset layout", systemImage: "arrow.uturn.backward")
+                DestructiveSettingsLabel(title: "Reset layout", systemImage: "arrow.uturn.backward")
             }
         } header: {
-            Text("On-screen Controls")
+            SettingsSectionHeader("On-screen Controls", icon: "gamecontroller", accent: .io)
         } footer: {
             InfoButton.footer(
                 "The joystick is analog like the real GamePad's sticks; comfort controls move the shoulder buttons onto it once it's on. MuffinEMU already picks the right button size for your screen - the sliders adjust that choice, not replace it.",

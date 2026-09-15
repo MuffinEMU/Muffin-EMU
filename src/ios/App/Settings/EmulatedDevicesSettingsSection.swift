@@ -52,7 +52,7 @@ struct EmulatedDevicesSettingsSection: View {
                 EmulatedDevicesView()
             }
         } header: {
-            Text("Emulated Devices")
+            SettingsSectionHeader("Emulated Devices", icon: "square.stack.3d.up", accent: .content)
         } footer: {
             InfoButton.footer(
                 "Emulates a Skylanders Portal, Disney Infinity Base, or LEGO Dimensions Toypad for games that read one over USB. A toggle here takes effect on the next launch.",

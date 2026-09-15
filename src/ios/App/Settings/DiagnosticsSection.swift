@@ -29,10 +29,10 @@ struct DeviceReportSection: View {
                       systemImage: deviceReportCopied ? "checkmark" : "doc.on.doc")
             }
         } header: {
-            Text("This Device")
+            SettingsSectionHeader("This Device", icon: "iphone", accent: .system)
         } footer: {
             // Already one short pair of sentences - nothing to move behind an info button.
-            Text("Send this with any bug report. It says which chip, how much memory, and which build - which is what makes everything else in a log mean something.")
+            InfoButton.footer("Send this with any bug report. It says which chip, how much memory, and which build - which is what makes everything else in a log mean something.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -81,7 +81,7 @@ struct DiagnosticsSection: View {
             }
             .tint(MuffinTheme.pixelBlue)
         } header: {
-            Text("Diagnostics")
+            SettingsSectionHeader("Diagnostics", icon: "stethoscope", accent: .system)
         } footer: {
             InfoButton.footer(
                 "The launch log takes priority over the intro and shows what the emulator is doing during boot.",
