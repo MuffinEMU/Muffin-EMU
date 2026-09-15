@@ -383,6 +383,7 @@ struct GameBrowserView: View {
                             .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
+                    .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel("Settings")
 
                     Button(action: { showingFavorites.toggle() }) {
@@ -391,6 +392,7 @@ struct GameBrowserView: View {
                             .foregroundColor(showingFavorites ? MuffinTheme.blushPink : MuffinTheme.sparkleCream.opacity(0.8))
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
+                    .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel(showingFavorites ? "Show all games" : "Show favorites only")
 
                     Menu {
@@ -427,6 +429,7 @@ struct GameBrowserView: View {
                             .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
+                    .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel("Import")
 
                     VStack(alignment: .trailing, spacing: 2) {

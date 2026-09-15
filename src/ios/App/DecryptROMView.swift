@@ -198,6 +198,7 @@ struct DecryptROMView: View {
                         Text("Cancel")
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
+                    .foregroundColor(MuffinTheme.blushPink)
                     .padding(.bottom, 8)
                 }
             }

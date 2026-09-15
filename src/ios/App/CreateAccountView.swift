@@ -66,7 +66,7 @@ struct CreateAccountView: View {
                             Text("Male").tag(0)
                             Text("Female").tag(1)
                         }
-                        .pickerStyle(.menu)
+                        .pickerStyle(.segmented)
                         Picker("Country", selection: $country) {
                             ForEach(countries) { entry in
                                 Text(entry.name).tag(entry.code)
