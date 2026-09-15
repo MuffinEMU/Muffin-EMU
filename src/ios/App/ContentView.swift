@@ -2153,10 +2153,14 @@ struct EmulatorViewOptimized: View {
         // there's a second screen competing for the same space, which single-screen
         // Muffin never had to solve - so that's the one case still worth computing.
         if count == 1, let main = visibleScreens.first {
-            return AnyView(
-                screenView(main: main)
-                    .frame(width: size.width, height: size.height)
-            )
+            // No frame, no position - literally the original (pre-MeloCafe-port) Muffin
+            // app's own shipped single-screen line: `MetalViewIOS(gameManager:)
+            // .ignoresSafeArea()`. Explicit full-size math was tried here twice already
+            // and both times the result was reported worse, not better, on real
+            // hardware - not something to keep re-deriving a third way. This exact
+            // absence of logic is the one form of this that is actually proven to have
+            // shipped and worked.
+            return AnyView(screenView(main: main))
         }
 
         return AnyView(
