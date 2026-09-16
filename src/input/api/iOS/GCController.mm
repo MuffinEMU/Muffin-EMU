@@ -29,6 +29,41 @@ GCControllerDevice::GCControllerDevice(size_t player_index,
     , m_player_index(player_index)
     , m_desc(desc)
 {
+    // Already calibrated, with an empty default state, and deliberately so.
+    //
+    // ControllerBase::update_state() calibrates on its first call and then masks the
+    // result forever:
+    //
+    //     if (!m_is_calibrated) calibrate();          // m_default_state = raw_state()
+    //     result.buttons.UnsetButtons(m_default_state.buttons);
+    //
+    // That is right for a physical pad, where a switch stuck closed or a stick resting
+    // off-centre at connect time should be subtracted out for the rest of the session.
+    // It is wrong for this device, which is not a pad at all: it is the on-screen
+    // controls and any MFi pad merged into one synthetic controller. It has no stuck
+    // switches and no stick drift, so there is nothing to calibrate away - and the one
+    // thing calibration CAN do here is harm.
+    //
+    // That first update_state() is driven by the guest title's own first VPADRead, so it
+    // lands at a moment nothing in this app chooses or can see - during boot, a logo, an
+    // EULA. Any bit asserted in the touch or physical mask at that instant is taken for
+    // the controller's resting state and stripped from every reading afterwards, for the
+    // life of the session. One finger resting on the d-pad while a title starts and that
+    // direction is dead until the app is relaunched, with nothing anywhere saying why.
+    //
+    // Muffin Classic could not hit this: its on-screen pad wrote straight into
+    // EmulatedController::m_overriddenButtonMappings, which is_mapping_down() checks
+    // before m_mappings, so touch never passed through ControllerBase and never met
+    // calibrate() at all. Routing touch through a synthetic ControllerBase is what
+    // exposed it, so the fix belongs here rather than in the shared calibration code
+    // that a real controller still needs.
+    //
+    // Both members are protected, so claiming calibration in the constructor is enough -
+    // calibrate() is then never called, m_default_state stays zeroed, UnsetButtons()
+    // removes nothing, and the axis settings centre on a true zero, which is exactly
+    // where a virtual stick already sits.
+    m_is_calibrated = true;
+    m_default_state = ControllerState{};
 }
 
 GCControllerDevice::~GCControllerDevice()
