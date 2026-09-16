@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+// For UTType.folder, which the import picker is restricted to.
+import UniformTypeIdentifiers
 
 /// Per-game overrides on top of the global defaults in Settings.
 ///
@@ -197,6 +199,13 @@ struct GameOptionsView: View {
     @ObservedObject var store: PerGameSettingsStore
     @Environment(\.dismiss) private var dismiss
 
+    /// One line of feedback under the buttons rather than an alert. An alert for a
+    /// success is a second tap for something the person already knows they did; the
+    /// failures here are all short enough to read in place.
+    @State private var saveTransferMessage: String?
+    @State private var saveTransferFailed = false
+    @State private var showingImportConfirmation = false
+
     /// Three real states, not two - "use whichever the global setting is right now" has
     /// to be a choice you can return to, not just wherever the toggle happens to land.
     /// Shared by every per-game override on this screen, not just shaders.
@@ -293,7 +302,76 @@ struct GameOptionsView: View {
                             text: "Pre-Compile Shaders renders and compiles every shader ahead of time so the game runs faster even without the recompiler. Most games want this on; Nano Assault Neo specifically breaks with it on, which is why this is a per-game choice rather than only a global one.\n\nFavour Accuracy trades speed for stability on a game that glitches, desyncs or crashes - see Settings > CPU for what it changes.\n\n\"Use Global Default\" tracks whatever Settings currently says for that setting, even if you change it later. On/Off pins this game regardless of what the global setting does."
                         )
                     }
+
+
+                    Section {
+                        Button {
+                            GameSaveTransfer.export(game) { result in
+                                switch result {
+                                case .success(let note):
+                                    saveTransferMessage = note
+                                    saveTransferFailed = false
+                                case .failure(let error):
+                                    saveTransferMessage = error.localizedDescription
+                                    saveTransferFailed = true
+                                }
+                            }
+                        } label: {
+                            Label("Export game saves", systemImage: "square.and.arrow.up")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        }
+                        .disabled(!GameSaveTransfer.hasSave(for: game))
+
+                        // Confirmed, unlike export: this one replaces what is already
+                        // there. It is backed up either way, but someone should know
+                        // they are about to swap their progress out before the picker
+                        // opens, not after.
+                        Button(role: .destructive) {
+                            showingImportConfirmation = true
+                        } label: {
+                            Label("Import game save folder", systemImage: "square.and.arrow.down")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        }
+
+                        if let saveTransferMessage {
+                            Text(saveTransferMessage)
+                                .font(.system(size: 12))
+                                .foregroundColor(saveTransferFailed ? .red : .secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } header: {
+                        SettingsSectionHeader("Game saves", icon: "externaldrive", accent: .io)
+                    } footer: {
+                        InfoButton.footer(
+                            "Your in-game progress, in the Wii U\'s own format - not a save state.",
+                            title: "Game saves",
+                            text: "This is the save the GAME writes: your progress and file slots. It is stored the way a real Wii U stores it, so it can be moved between MuffinEMU, desktop Cemu, another emulator, or a real console.\n\nA save state is a different thing - a snapshot of the whole emulated machine, which only MuffinEMU can read.\n\nExport writes a folder named after the game and its title ID. Import accepts that folder, or the folder named after the title ID from another Cemu install, or the \'user\' folder inside it.\n\nImporting replaces this game\'s current save. The old one is copied to save-backups in MuffinEMU\'s Documents folder first, every time. Close the game before importing."
+                        )
+                    }
                 }
+            }
+            .confirmationDialog("Import a save folder?", isPresented: $showingImportConfirmation, titleVisibility: .visible) {
+                Button("Choose folder", role: .destructive) {
+                    DocumentImport.present(contentTypes: [.folder]) { result in
+                        switch result {
+                        case .success(let urls):
+                            guard let picked = urls.first else { return }
+                            do {
+                                saveTransferMessage = try GameSaveTransfer.importSave(game, from: picked)
+                                saveTransferFailed = false
+                            } catch {
+                                saveTransferMessage = error.localizedDescription
+                                saveTransferFailed = true
+                            }
+                        case .failure(let error):
+                            saveTransferMessage = error.localizedDescription
+                            saveTransferFailed = true
+                        }
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This replaces \(game.title)\'s current save. The one you have now is backed up first, and the game should be closed before you do this.")
             }
             .navigationTitle(game.title)
             #if os(iOS)
