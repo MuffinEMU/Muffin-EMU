@@ -19,6 +19,22 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "4.3",
+          "date": "2026-09-16T23:34:18Z",
+          "localizedDescription": "## What changed\n\n- SideStore now always offers the newest release instead of sometimes lagging a version behind, and there is a new nightly source for anyone who wants the very latest build.\n- Fixes the on-screen buttons flickering out of their pressed state, and stops the launch log slowing the emulator down while a game is running.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 030d842929e09ea79798d2283d7c3d3e4ea472c6.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v4.2...v4.3",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v4.3/MuffinEMU.ipa",
+          "size": 67675570,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "4.2",
+          "date": "2026-09-16T22:05:43Z",
+          "localizedDescription": "## What changed\n\n- Games run much faster, especially once the device warms up. MuffinEMU now uses one CPU core by default, the way MeloCafe does, and no longer slows the emulated CPU down when iOS reports the device is hot.\n- Release notes now say what actually changed in each version, instead of repeating the install instructions.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 91670c83834132a9f2141b48b0a3e8cc5d393ffd.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v4.1...v4.2",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v4.2/MuffinEMU.ipa",
+          "size": 67673357,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "4.1",
           "date": "2026-09-16T21:14:57Z",
           "localizedDescription": "Three fixes to the on-screen controls, none of them confirmed on a device yet. If\nthe d-pad still does nothing after this, the two new things below are what to\ncheck, and they will say which half of the chain is at fault.\n\n### Buttons that were dead stay dead, even across updates\n\nMuffinEMU saves a controller profile on your device. If that file lost the\nbindings for some buttons, those buttons do nothing - and because the damage is\nin a file rather than in the app, reinstalling and updating never fixed it. The\nsticks kept working throughout, which made it look like the pad was half broken.\n\nThere was already a repair for this, but it only asked whether A or B still had a\nbinding and took that as proof the whole profile was fine. A profile can lose the\nd-pad and keep A and B, and that is exactly what it did: the check passed, the\nrepair never ran. It now checks every GamePad button, and fills in only the ones\nthat have nothing bound, so anything you remapped yourself is left alone.\n\n**Settings > On-screen Controls > Reset controller bindings** is new. It wipes the\nsaved profile and rebuilds the defaults, and tells you how many bindings you\nended up with rather than just claiming success. Use it if some buttons do\nnothing while the sticks still work.\n\n### A finger resting on a button while a game started could kill it for the session\n\nThe emulator takes a reading of the controller the first time a game asks for\ninput and treats whatever it sees as the controller's resting posi...",
