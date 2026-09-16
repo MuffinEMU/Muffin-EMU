@@ -739,6 +739,7 @@ struct HeldControl<Content: View>: View {
     /// mid-press - and a button that is still drawn highlighted but can no longer be
     /// touched to release it is stuck exactly the way a jammed physical button would be.
     let isInteractive: Bool
+    let content: (Bool) -> Content
     /// Non-nil when something other than this view's own gesture below decides the
     /// pressed state - DpadTouchSurface, for the d-pad's four directions. Drawing still
     /// goes through here, so every control on the pad keeps one pressed-state code path,
@@ -746,7 +747,6 @@ struct HeldControl<Content: View>: View {
     /// that case: the surface calls `onInput` directly instead. `nil`, every other
     /// control, is this type entirely unchanged from before.
     var externallyPressed: Bool? = nil
-    let content: (Bool) -> Content
 
     @State private var isPressed = false
 

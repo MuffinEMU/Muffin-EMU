@@ -155,10 +155,12 @@ enum PlatformCapabilities {
     //    against real hardware rather than blind.
     //
     // Also true but requiring nothing of us: the PlayStation Access controller is now
-    // supported on iOS/iPadOS (168071382), which PhysicalControllerManager gets for free
-    // through GCController; and two Metal sampler clamp-to-edge fixes landed (172520325,
-    // 177318505), the second of which is specific to the Apple 10 GPU family and so does
-    // not describe the A12Z this port targets.
+    // supported on iOS/iPadOS (168071382) - that reaches the app through the core's own
+    // GCControllerProvider, since the Swift-side physical-controller manager was reverted
+    // on 2026-09-15 along with the rest of the day's controller changes; and two Metal
+    // sampler clamp-to-edge fixes landed (172520325, 177318505), the second of which is
+    // specific to the Apple 10 GPU family and so does not describe the A12Z this port
+    // targets.
 
     /// True when the OS will drive live, continuous container resizes on iPad - see
     /// note 5 above. Exposed as a named capability so the render-sizing path can be
