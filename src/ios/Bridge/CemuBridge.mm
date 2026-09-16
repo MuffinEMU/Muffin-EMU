@@ -1359,6 +1359,92 @@ bool cemu_bridge_favour_accuracy(void) {
     return g_favourAccuracy.load();
 }
 
+// Best-effort real device temperature, in degrees Celsius. NaN when unavailable.
+//
+// iOS does NOT publish a device temperature to apps. There is no public API for it at
+// all - ProcessInfo.thermalState is a four-level signal and that is the whole of the
+// supported surface. So this reaches for the battery's own sensor through IOKit, which
+// is a PRIVATE framework on iOS, and it is written to fail cleanly rather than to
+// succeed:
+//
+//   - Everything is resolved with dlopen/dlsym rather than linked. IOKit is not in the
+//     iOS SDK, so linking it would not build; and a symbol that moves or disappears in a
+//     future iOS turns into a nil pointer here instead of a launch-time crash.
+//   - The sandbox blocks IOKit user-client access to power services for a normally
+//     sideloaded app. This is expected to return NaN on a SideStore/AltStore install and
+//     has a real chance of working on TrollStore or jailbroken, where the process is not
+//     confined the same way.
+//   - On failure it returns NaN. It never estimates, never derives a number from
+//     thermalState, and never returns a plausible-looking value it did not read. A made-up
+//     temperature presented in degrees is worse than no temperature at all, because it
+//     looks authoritative.
+//
+// It is also the BATTERY's temperature, not the SoC's. The battery is what has a sensor
+// anything outside the kernel can reach; it lags the chip and reads lower under a short
+// burst. Useful as a trend, not as a CPU die temperature, and the UI says so.
+double cemu_bridge_device_temperature_celsius(void) {
+    static dispatch_once_t once;
+    static void* ioKitHandle = nullptr;
+    static uint32_t (*fnServiceGetMatchingService)(uint32_t, CFDictionaryRef) = nullptr;
+    static CFMutableDictionaryRef (*fnServiceMatching)(const char*) = nullptr;
+    static CFTypeRef (*fnRegistryEntryCreateCFProperty)(uint32_t, CFStringRef, CFAllocatorRef, uint32_t) = nullptr;
+    static int (*fnObjectRelease)(uint32_t) = nullptr;
+
+    dispatch_once(&once, ^{
+        ioKitHandle = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_LAZY);
+        if (!ioKitHandle)
+            return;
+        fnServiceGetMatchingService = (uint32_t (*)(uint32_t, CFDictionaryRef))dlsym(ioKitHandle, "IOServiceGetMatchingService");
+        fnServiceMatching = (CFMutableDictionaryRef (*)(const char*))dlsym(ioKitHandle, "IOServiceMatching");
+        fnRegistryEntryCreateCFProperty = (CFTypeRef (*)(uint32_t, CFStringRef, CFAllocatorRef, uint32_t))dlsym(ioKitHandle, "IORegistryEntryCreateCFProperty");
+        fnObjectRelease = (int (*)(uint32_t))dlsym(ioKitHandle, "IOObjectRelease");
+    });
+
+    if (!fnServiceGetMatchingService || !fnServiceMatching || !fnRegistryEntryCreateCFProperty)
+        return NAN;
+
+    // Two service names, because which one carries the sensor differs by device and OS.
+    static const char* kServices[] = { "AppleSmartBattery", "IOPMPowerSource" };
+    for (const char* service : kServices)
+    {
+        CFMutableDictionaryRef match = fnServiceMatching(service);
+        if (!match)
+            continue;
+        // IOServiceGetMatchingService CONSUMES the matching dictionary, so it must not be
+        // released here on either path.
+        uint32_t entry = fnServiceGetMatchingService(0 /* kIOMainPortDefault */, match);
+        if (!entry)
+            continue;
+        CFTypeRef value = fnRegistryEntryCreateCFProperty(entry, CFSTR("Temperature"), kCFAllocatorDefault, 0);
+        if (fnObjectRelease)
+            fnObjectRelease(entry);
+        if (!value)
+            continue;
+        double celsius = NAN;
+        if (CFGetTypeID(value) == CFNumberGetTypeID())
+        {
+            int32_t raw = 0;
+            if (CFNumberGetValue((CFNumberRef)value, kCFNumberSInt32Type, &raw))
+            {
+                // Reported in hundredths of a degree on some devices and tenths on
+                // others. Pick by magnitude rather than by device table: a battery is
+                // never at 300 C, and never at 3 C inside a running iPad either, so the
+                // scale is unambiguous from the value itself.
+                if (raw > 1000)      celsius = raw / 100.0;
+                else if (raw > 100)  celsius = raw / 10.0;
+                else                 celsius = (double)raw;
+            }
+        }
+        CFRelease(value);
+        // Sanity-gate the result. A sensor that reports something physically impossible
+        // is a misread, and passing it through as a temperature would be exactly the
+        // fabrication this function exists to avoid.
+        if (!std::isnan(celsius) && celsius > -20.0 && celsius < 120.0)
+            return celsius;
+    }
+    return NAN;
+}
+
 void cemu_bridge_set_thermal_throttle_micros(uint32_t micros) {
     // Straight through to the core. No g_initialized guard and no stored copy: the atomic
     // lives in coreinit and defaults to 0, so setting it before a title exists is
