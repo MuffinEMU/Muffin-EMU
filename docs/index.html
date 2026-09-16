@@ -10,36 +10,74 @@
 <meta property="og:title" content="MuffinEMU — Wii U emulation on iOS">
 <meta property="og:description" content="A Wii U emulator for iPhone and iPad, built on Cemu, with cores and fixes from MeloCafe.">
 <meta property="og:image" content="https://kiddreads.github.io/MuffinEMU/social-preview.png">
+<meta property="og:image:alt" content="The MuffinEMU app icon — a muffin with a pixel-blue accent.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://kiddreads.github.io/MuffinEMU/">
+<meta property="og:site_name" content="MuffinEMU">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://kiddreads.github.io/MuffinEMU/social-preview.png">
 <meta name="theme-color" content="#F4A551" id="themeColorMeta">
 <link rel="stylesheet" href="site.css">
-<style>
-  .pillars { margin-top: 2.5rem; }
-  .pillars .card { text-align: left; }
-  .pillars .card h3 { display: flex; align-items: center; gap: .5rem; }
-  .install-row { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1.1rem; }
-  .status-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-  .status-grid .card { border-top-color: var(--muffin-top-light); }
-  .status-list { list-style: none; margin: 0; padding: 0; }
-  .status-list li { padding-left: 1.6rem; position: relative; margin-bottom: .55rem; }
-  .status-list .yes::before { content: "✅"; position: absolute; left: 0; }
-  .status-list .partial::before { content: "🚧"; position: absolute; left: 0; }
-  .credit-row { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: baseline; }
-</style>
+
+<!-- One sprite, referenced by <use> below. Inline SVG instead of emoji: emoji
+     rendered differently on every platform and was the loudest thing in each
+     card, where these inherit currentColor and hold one weight. -->
+<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"
+     style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="i-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="6" y="6" width="12" height="12" rx="2.5"/>
+      <path d="M9.5 3v3M14.5 3v3M9.5 18v3M14.5 18v3M3 9.5h3M3 14.5h3M18 9.5h3M18 14.5h3"/>
+    </symbol>
+    <symbol id="i-display" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2.5" y="4" width="19" height="13" rx="2"/>
+      <path d="M8.5 21h7M12 17v4"/>
+    </symbol>
+    <symbol id="i-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 6.5S10 4.5 4 4.5v13c6 0 8 2 8 2s2-2 8-2v-13c-6 0-8 2-8 2z"/>
+      <path d="M12 6.5v15"/>
+    </symbol>
+    <symbol id="i-layout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="2.5" y="4.5" width="19" height="15" rx="2"/>
+      <path d="M14 4.5v15M14 12h7.5"/>
+    </symbol>
+    <symbol id="i-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4.5 4.5h11l4 4v11a1 1 0 0 1-1 1h-14a1 1 0 0 1-1-1v-14a1 1 0 0 1 1-1z"/>
+      <path d="M8 4.5v5h6v-5M7.5 20v-5h9v5"/>
+    </symbol>
+    <symbol id="i-gamepad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7.5 7.5h9a5 5 0 0 1 5 5v1.5a3.5 3.5 0 0 1-6.3 2.1L14 14.5h-4l-1.2 1.6A3.5 3.5 0 0 1 2.5 14v-1.5a5 5 0 0 1 5-5z"/>
+      <path d="M6.5 11.5v2M5.5 12.5h2M16.5 11.5h.01M18.5 13.5h.01"/>
+    </symbol>
+    <symbol id="i-touch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 10.5V5a1.8 1.8 0 1 1 3.6 0v7"/>
+      <path d="M13.6 12v-1a1.7 1.7 0 0 1 3.4 0v1M17 12.5v-.5a1.7 1.7 0 0 1 3.4 0V16a5.5 5.5 0 0 1-5.5 5.5h-1.8a5.5 5.5 0 0 1-4.6-2.5l-2.4-3.7a1.7 1.7 0 0 1 2.7-2l1.2 1.4"/>
+    </symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.8 2-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4.5 4.5 0 0 0 4.5-4.5C21.5 6.3 17.2 3 12 3z"/>
+      <path d="M7.5 12h.01M9.5 8.2h.01M14 7.5h.01M17 10h.01"/>
+    </symbol>
+    <symbol id="i-puzzle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M10 3.5a2 2 0 0 1 4 0c0 .6-.3 1-.3 1.5h3.8a1 1 0 0 1 1 1V10c-.5 0-1-.3-1.6-.3a2 2 0 0 0 0 4c.6 0 1.1-.3 1.6-.3v4a1 1 0 0 1-1 1h-4c0-.5.3-1 .3-1.6a2 2 0 0 0-4 0c0 .6.3 1.1.3 1.6h-4a1 1 0 0 1-1-1v-3.8c-.5 0-.9.3-1.5.3a2 2 0 0 1 0-4c.6 0 1 .3 1.5.3V6a1 1 0 0 1 1-1h3.8C10.3 4.5 10 4.1 10 3.5z"/>
+    </symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3.5v12M7.5 11l4.5 4.5 4.5-4.5M4 19.5h16"/>
+    </symbol>
+  </defs>
+</svg>
 </head>
 <body>
+
+<a class="skip-link" href="#main">Skip to content</a>
 
 <header class="site-header">
   <div class="header-inner">
     <a class="brand" href="index.html"><img src="icon.png" alt="" width="30" height="30"><span>MuffinEMU</span></a>
-    <nav class="site-nav">
+    <nav class="site-nav" aria-label="Main">
       <a href="index.html" aria-current="page">Home</a>
       <a href="docs/installation.html">Install</a>
       <details class="nav-dropdown">
-        <summary>Docs ▾</summary>
+        <summary>Docs <span class="chev" aria-hidden="true">▾</span></summary>
         <div class="dropdown-panel">
           <a href="docs/index.html">All documentation</a>
           <a href="docs/features.html">Features overview</a>
@@ -53,104 +91,122 @@
       </details>
       <a href="https://github.com/kiddreads/MuffinEMU">GitHub</a>
     </nav>
-    <button class="theme-btn" data-theme-cycle type="button" aria-label="Switch theme">
-      <span aria-hidden="true">🎲</span>
-      <span data-theme-name>Bakery (Original)</span>
-      <span class="swatches" data-theme-swatches aria-hidden="true"></span>
-    </button>
+    <div class="theme-wrap">
+      <button class="theme-btn" data-theme-cycle type="button">
+        <span class="visually-hidden">Shuffle theme. Current theme: </span>
+        <span data-theme-name>Bakery (Original)</span>
+        <span class="swatches" data-theme-swatches aria-hidden="true"></span>
+      </button>
+      <!-- theme.js fills and wires this; it stays empty and hidden without JS. -->
+      <button class="theme-btn" data-theme-menu type="button" aria-expanded="false" aria-label="Choose a theme" hidden>
+        <span aria-hidden="true">▾</span>
+      </button>
+      <div class="theme-panel" data-theme-panel hidden></div>
+    </div>
   </div>
 </header>
 
-<main>
+<main id="main">
 
 <div class="hero">
-  <img class="icon" src="icon.png" width="108" height="108" alt="MuffinEMU app icon">
+  <img class="icon" src="icon.png" width="104" height="104" alt="">
   <div class="eyebrow">Wii U emulation for iOS</div>
   <h1>MuffinEMU</h1>
   <p class="lede">A Wii U emulator for iPhone and iPad, built on Cemu. Some MeloCafe cores and bug fixes have been brought over on top — the PowerPC interpreters, the AArch64 recompiler, the Metal and Vulkan renderers, and the iOS audio, input and window systems.</p>
   <div class="hero-ctas">
-    <a class="btn btn-primary" href="docs/installation.html">Get MuffinEMU</a>
+    <a class="btn btn-primary" href="docs/installation.html"><svg width="18" height="18" aria-hidden="true"><use href="#i-download"/></svg>Get MuffinEMU</a>
     <a class="btn btn-outline" href="https://github.com/kiddreads/MuffinEMU">View source on GitHub</a>
   </div>
+  <p class="hero-note">Confirmed on an iPad Pro A12Z. Free and open source — bring your own games and keys. <a href="#status">See exactly what's confirmed →</a></p>
 </div>
 
 <section class="wrap">
-  <div class="grid grid-2 pillars">
+  <div class="grid grid-2">
     <div class="card">
-      <h3>🧁 Its own emulator</h3>
+      <span class="card-icon"><svg aria-hidden="true"><use href="#i-chip"/></svg></span>
+      <h3>Its own emulator</h3>
       <p>MuffinEMU grew out of Muffin, but the Cemu core underneath is maintained in this repo, with its own fixes and a curated set of upstream Cemu fixes on top. Own bundle identifier, own releases — it installs next to Muffin rather than replacing it.</p>
     </div>
     <div class="card">
-      <h3>🖥️ Metal-native renderer</h3>
-      <p>The renderer is Metal, native to this port, with an optional Vulkan (MoltenVK) path. GPUs without mesh shader support emulate geometry shaders and RECTS primitives with compute passes, and decode BC-compressed textures on the CPU.</p>
+      <span class="card-icon"><svg aria-hidden="true"><use href="#i-display"/></svg></span>
+      <h3>Metal-native renderer</h3>
+      <p>The renderer is Metal, native to this port, with an optional Vulkan (MoltenVK) path. On GPUs without mesh shader support — the A12Z included — BC-compressed textures are decoded on the CPU, and draws that need geometry shaders or RECTS primitives are skipped for now, so a few graphic packs won't render fully.</p>
     </div>
     <div class="card">
-      <h3>📖 Built in the open</h3>
+      <span class="card-icon"><svg aria-hidden="true"><use href="#i-open"/></svg></span>
+      <h3>Built in the open</h3>
       <p>Every crash and hang gets tracked and fixed as it's found, not papered over. This site says plainly what's confirmed on real hardware and what isn't — see <a href="#status">Status</a> below.</p>
     </div>
   </div>
 </section>
 
 <section class="wrap">
-  <h2 style="text-align:center;margin-top:0">What's inside</h2>
-  <p style="text-align:center;max-width:38rem;margin:0 auto 2rem;color:var(--sparkle);opacity:.95">The app side: library, importer, on-screen controls, themes, saves and more. Each card links to the real reference documentation.</p>
+  <div class="section-head">
+    <h2>What's inside</h2>
+    <p>The app side: library, importer, on-screen controls, themes, saves and more. Each card links to the real reference documentation.</p>
+  </div>
   <div class="grid">
-    <div class="card feature-card">
-      <div class="emoji">🖼️</div>
+    <div class="card card-lift card-link">
+      <span class="card-icon"><svg aria-hidden="true"><use href="#i-layout"/></svg></span>
       <h3>Screen Layout</h3>
       <p>Single Screen, Adaptive (both screens), or GamePad-inset — how the TV and GamePad share one screen, plus routing to a genuine second display.</p>
-      <a class="more" href="docs/screen-layout.html">Read more →</a>
+      <a class="more" href="docs/screen-layout.html">Read more <span aria-hidden="true">→</span></a>
     </div>
-    <div class="card feature-card">
-      <div class="emoji">💾</div>
+    <div class="card card-lift card-link">
+      <span class="card-icon"><svg aria-hidden="true"><use href="#i-save"/></svg></span>
       <h3>Save States</h3>
       <p>4 numbered slots per game, alongside normal in-game saves. Real scope and real limits, explained honestly.</p>
-      <a class="more" href="docs/save-states.html">Read more →</a>
+      <a class="more" href="docs/save-states.html">Read more <span aria-hidden="true">→</span></a>
     </div>
-    <div class="card feature-card">
-      <div class="emoji">🎮</div>
+    <div class="card card-lift card-link">
+      <span class="card-icon"><svg aria-hidden="true"><use href="#i-gamepad"/></svg></span>
       <h3>GamePad &amp; controls</h3>
       <p>A measured on-screen Wii U GamePad taken off real hardware, a hide-controls button, comfort controls, and 20 controller skins.</p>
-      <a class="more" href="docs/controls.html">Read more →</a>
+      <a class="more" href="docs/controls.html">Read more <span aria-hidden="true">→</span></a>
     </div>
-    <div class="card feature-card">
-      <div class="emoji">🕹️</div>
+    <div class="card card-lift card-link">
+      <span class="card-icon"><svg aria-hidden="true"><use href="#i-touch"/></svg></span>
       <h3>Melo-Controller</h3>
       <p>An alternative touch pad from MeloCafe, with its own layout editor, as a toggle alongside MuffinEMU's own pad.</p>
-      <a class="more" href="docs/controls.html#melo-controller">Read more →</a>
+      <a class="more" href="docs/controls.html#melo-controller">Read more <span aria-hidden="true">→</span></a>
     </div>
-    <div class="card feature-card">
-      <div class="emoji">🎨</div>
+    <div class="card card-lift card-link">
+      <span class="card-icon"><svg aria-hidden="true"><use href="#i-palette"/></svg></span>
       <h3>Themes &amp; icons</h3>
-      <p>31 app icons, each with a matching colour theme built from that icon's own art — 3 unlocked by a free code.</p>
-      <a class="more" href="docs/themes.html">Read more →</a>
+      <p>31 app icons, each with a matching colour theme built from that icon's own art — 3 unlocked by a free code. The switcher in this page's header cycles the real ones.</p>
+      <a class="more" href="docs/themes.html">Read more <span aria-hidden="true">→</span></a>
     </div>
-    <div class="card feature-card">
-      <div class="emoji">🧩</div>
+    <div class="card card-lift card-link">
+      <span class="card-icon"><svg aria-hidden="true"><use href="#i-puzzle"/></svg></span>
       <h3>Graphic packs, DLC &amp; updates</h3>
       <p>Toggle graphic packs from Documents/mlc/graphicPacks, and import DLC or update dumps with automatic title-ID matching.</p>
-      <a class="more" href="docs/features.html#library">Read more →</a>
+      <a class="more" href="docs/features.html#library">Read more <span aria-hidden="true">→</span></a>
     </div>
   </div>
 </section>
 
-<section class="wrap">
-  <div class="card" style="text-align:center">
-    <h2 style="margin-top:0">Install MuffinEMU</h2>
-    <p>Two sources, because the two install paths need different builds. iPhone and iPad, iOS 15 or later.</p>
-    <div class="install-row" style="justify-content:center">
+<section class="wrap" id="install">
+  <div class="card install-card">
+    <div class="section-head" style="margin-bottom:1.25rem">
+      <h2>Install MuffinEMU</h2>
+      <p>Two sources, because the two install paths need different builds. iPhone and iPad, iOS 15 or later.</p>
+    </div>
+    <div class="install-row">
       <a class="btn btn-primary" href="sidestore://source?url=https://kiddreads.github.io/MuffinEMU/apps.json">Add to SideStore</a>
       <a class="btn btn-secondary" href="altstore://source?url=https://kiddreads.github.io/MuffinEMU/apps.json">Add to AltStore</a>
       <a class="btn btn-secondary" href="docs/installation.html">TrollStore / full instructions</a>
     </div>
+    <p class="install-foot">The recompiler (JIT) needs an external enabler — StikJIT, SideStore, TrollStore or LiveContainer. Without one, MuffinEMU falls back to the interpreter on its own and still runs, more slowly.</p>
   </div>
 </section>
 
 <section class="wrap" id="status">
-  <h2 style="text-align:center;margin-top:0">Status</h2>
-  <p style="text-align:center;max-width:38rem;margin:0 auto 2rem;color:var(--sparkle);opacity:.95">Confirmed on an iPad Pro A12Z (<code>iPad8,11</code>). Said plainly, not oversold.</p>
-  <div class="grid status-grid">
-    <div class="card">
+  <div class="section-head">
+    <h2>Status</h2>
+    <p>Confirmed on an iPad Pro A12Z (<code>iPad8,11</code>). Said plainly, not oversold.</p>
+  </div>
+  <div class="grid grid-2 status-grid">
+    <div class="card status-card-yes">
       <h3>Confirmed</h3>
       <ul class="status-list">
         <li class="yes">Boots real Wii U titles from an imported ROM library on real hardware</li>
@@ -158,7 +214,7 @@
         <li class="yes">Multi-core PowerPC interpreter runs titles at a basic level</li>
       </ul>
     </div>
-    <div class="card">
+    <div class="card status-card-open">
       <h3>Still open</h3>
       <ul class="status-list">
         <li class="partial">A full, confirmed playthrough of a retail title on this exact build — this page will say so plainly the day one lands, not before</li>
