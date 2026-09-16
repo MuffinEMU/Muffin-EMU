@@ -16,12 +16,29 @@ enum MeloControlsSetting {
     static let storageKey = "muffin.pad.useMeloControls"
     static let defaultValue = false
 
-    /// Melo-Controller's own layout editor moves and resizes individual buttons; it has
-    /// no control for scaling the WHOLE pad evenly, which is what this key backs -
-    /// applied as one `.scaleEffect` around the pad as a whole in MeloControlsOverlay
-    /// below, the same "one AppStorage key, one slider in the in-game panel" shape
-    /// ControllerLayoutSettings.scaleKey already uses for MuffinEMU's own pad.
-    static let scaleKey = "muffin.pad.meloControlsScale"
+    /// Melo-Controller's OWN size key, driven directly rather than wrapped.
+    ///
+    /// This used to be a MuffinEMU key backing a `.scaleEffect` around the whole pad, and
+    /// that is the wrong tool for the job: scaleEffect multiplies the coordinate system,
+    /// so every button's POSITION scales along with its size. Turning the slider up did
+    /// not just make the buttons bigger, it pushed the left cluster further left and the
+    /// right cluster further right until the outer ones ran off the screen - which is
+    /// exactly what was reported. Clipping to the screen was papering over it: the parts
+    /// that left the screen were cropped away rather than brought back.
+    ///
+    /// Melo-Controller already has the right knob. Every ButtonView and JoystickView in
+    /// the package reads `@AppStorage("On-ScreenControllerScale")` and multiplies it into
+    /// its own frame only (ButtonView.swift: `baseWidth * deviceMultiplier *
+    /// scaleMultiplier`), while the gaps between them are literal stack spacings the
+    /// scale never touches. So the buttons grow and shrink in place, the spacing stays
+    /// put, and the clusters - pinned to the screen edges by Spacers - grow inward
+    /// instead of off the edge.
+    ///
+    /// Pointing our own slider straight at that key rather than syncing two keys means
+    /// there is one number, it is the one the package actually reads, and it also moves
+    /// when Melo-Controller's own layout editor changes it. Hit-testing follows for free:
+    /// these are real frames, not a transform, so touch targets are the buttons.
+    static let scaleKey = "On-ScreenControllerScale"
     static let defaultScale: Double = 1.0
     static let minScale: Double = 0.5
     static let maxScale: Double = 1.75
@@ -32,8 +49,6 @@ struct MeloControlsOverlay: View {
     let gameID: String?
     let isEditing: Bool
 
-    @AppStorage(MeloControlsSetting.scaleKey) private var scale = MeloControlsSetting.defaultScale
-
     var body: some View {
         Melo_Controller.ControllerView(
             controller: MeloControllerBridge.shared,
@@ -43,31 +58,13 @@ struct MeloControlsOverlay: View {
         // ControllerView reads isEditing once, into its own @State, so a change has to
         // rebuild it rather than update it.
         .id(isEditing)
-        // Scales the whole pad on top of whatever Melo-Controller's own layout editor
-        // already positioned - a uniform view transform rather than a setting
-        // Melo-Controller itself exposes, so it works the same regardless of how any
-        // individual button was moved or resized. SwiftUI scales hit-testing along with
-        // the visuals, so touch targets grow and shrink with what's drawn rather than
-        // drifting out of registration with it.
-        //
-        // Anchored bottom-center, not .center (the default): Wii U controls sit at the
-        // bottom of the screen, both left and right clusters, so growing from the
-        // bottom keeps that edge - the one that actually matters for reachability with
-        // your thumbs - locked in place instead of also pushing everything down and
-        // off the bottom as scale increases.
-        //
-        // .clipped() to the full screen frame is the real fix for "it goes off screen":
-        // this is a single transform with one anchor, so it cannot make the LEFT
-        // cluster grow from its own left edge and the RIGHT cluster grow from its own
-        // right edge at the same time - Melo-Controller renders both as one view this
-        // app has no access to split. Clipping to the screen bounds means an
-        // over-scaled pad's outer edges get cropped at the edge of the screen instead
-        // of drifting past it into genuinely unreachable space - the part that would
-        // have gone off-screen is gone rather than there-but-untouchable, which is the
-        // failure mode that was actually reported.
-        .scaleEffect(scale, anchor: .bottom)
+        // No .scaleEffect here any more, and no .clipped() to contain one. The size
+        // slider writes Melo-Controller's own "On-ScreenControllerScale" instead, which
+        // every ButtonView and JoystickView in the package multiplies into its own frame
+        // - so the pad resizes itself from the inside and nothing has to be cropped to
+        // keep it on screen. See MeloControlsSetting.scaleKey for why the transform was
+        // the wrong tool.
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
         .onDisappear {
             // A press in flight when the pad goes away would otherwise stay held.
             cemu_bridge_release_all_buttons()
