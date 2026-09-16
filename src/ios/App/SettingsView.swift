@@ -58,38 +58,36 @@ struct SettingsView: View {
         EmulatedDevicesSettingsSection()
     }
 
-    /// The ZStack behind this Form has painted MuffinTheme.backgroundGradient since the
-    /// screen was written, and on iOS 15 none of it was ever visible: a SwiftUI Form is
-    /// a grouped list whose own background is opaque systemGroupedBackground, so the
-    /// brand gradient sat behind a flat grey sheet the whole time. iOS 16's
-    /// scrollContentBackground(.hidden) is the supported way to drop that fill, and it
-    /// is what finally lets Settings read as part of MuffinEMU rather than as iOS's own
-    /// settings app with some coloured labels in it.
+    /// A plain Form, with iOS's own opaque grouped-list background.
     ///
-    /// Deliberately not fixed on iOS 15 via `UITableView.appearance().backgroundColor`:
-    /// that is process-wide UIKit appearance state, and it would strip the background
-    /// out of every other list in the app (the library, the skin pickers, Graphic Packs)
-    /// to style this one screen. iOS 15 keeps the grey Form it has always had.
-    @ViewBuilder private var settingsForm: some View {
-        if #available(iOS 16.0, *) {
-            Form {
-                formTop
-                formBottom
-                formExtra
-            }
-            .scrollContentBackground(.hidden)
-            // Once the grey sheet is gone the rows themselves are still iOS's
-            // secondarySystemGroupedBackground, which against a warm gradient reads as
-            // grey cards someone forgot to theme. cream is the same fill MuffinCard uses
-            // for every other surface in the app, so Settings becomes the same material
-            // as the library and the pickers instead of a third thing.
-            .listRowBackground(MuffinTheme.cream)
-        } else {
-            Form {
-                formTop
-                formBottom
-                formExtra
-            }
+    /// The ZStack behind it paints MuffinTheme.backgroundGradient and that gradient has
+    /// never been visible, because a SwiftUI Form is a grouped list whose background is
+    /// an opaque systemGroupedBackground sitting on top of it. That looks like a bug and
+    /// it was treated as one: on 2026-09-15 this gained
+    /// `.scrollContentBackground(.hidden)` to drop the grey sheet plus
+    /// `.listRowBackground(MuffinTheme.cream)` so the rows would not read as untinted
+    /// grey cards on a warm gradient.
+    ///
+    /// It was reverted the same day, on device, in Void's words: "it looks really
+    /// weird and you can't even read any text."
+    ///
+    /// DO NOT RE-APPLY THIS WITHOUT SOLVING THE TEXT PROBLEM FIRST. The reason it fails
+    /// is not the background - it is that this Form sets
+    /// `.foregroundColor(MuffinTheme.brownDarkest)` on its sections, and every section
+    /// header and row label is coloured for a light grouped-list ground. Put those same
+    /// colours on cream over a saturated gradient and contrast collapses; in dark mode
+    /// brownDarkest is a LIGHT cream tone, so light-on-cream leaves the text all but
+    /// invisible. Making this work means re-deriving the text colours from whatever fill
+    /// the rows actually end up with, in both appearances - a real piece of work, not a
+    /// two-line modifier.
+    ///
+    /// The grey Form is not a placeholder anyone forgot to theme. It is legible, and
+    /// legible beat on-brand here.
+    private var settingsForm: some View {
+        Form {
+            formTop
+            formBottom
+            formExtra
         }
     }
 
