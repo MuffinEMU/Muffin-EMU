@@ -29,6 +29,11 @@ struct OnScreenControlsSection: View {
     @AppStorage(MeloControlsSetting.storageKey)
     private var useMeloControls = MeloControlsSetting.defaultValue
     @State private var showingResetLayoutConfirmation = false
+    @State private var showingResetBindingsConfirmation = false
+    /// What the reset actually did, shown inline rather than as an alert: the useful
+    /// answer is a number of bindings, and "it worked" with no number is exactly the kind
+    /// of unverifiable reassurance that cost a day here.
+    @State private var bindingsResetResult: String?
 
     private var stickGate: ControllerGeometry.StickGate {
         ControllerGeometry.StickGate(rawValue: stickGateRaw) ?? ControllerLayoutSettings.defaultStickGate
@@ -105,6 +110,26 @@ struct OnScreenControlsSection: View {
             Button(role: .destructive, action: { showingResetLayoutConfirmation = true }) {
                 DestructiveSettingsLabel(title: "Reset layout", systemImage: "arrow.uturn.backward")
             }
+
+            // Separate from "Reset layout" on purpose: that one moves buttons around on
+            // screen, this one repairs what a press is wired to underneath. They look
+            // alike and fix completely different things.
+            //
+            // Worth a button of its own because the state it cures lives in
+            // controllerProfiles/ on the device, not in the app binary - so it survives
+            // reinstalling, updating, and every code change, and nothing else in the UI
+            // can touch it. A profile missing only SOME bindings is the nasty case: the
+            // buttons that are bound keep working, so the pad looks half-alive rather
+            // than broken, and the ones that are not look like a bug in the pad.
+            Button(role: .destructive, action: { showingResetBindingsConfirmation = true }) {
+                DestructiveSettingsLabel(title: "Reset controller bindings", systemImage: "gamecontroller.fill")
+            }
+
+            if let bindingsResetResult {
+                Text(bindingsResetResult)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
         } header: {
             SettingsSectionHeader("On-screen Controls", icon: "gamecontroller", accent: .io)
         } footer: {
@@ -121,6 +146,23 @@ struct OnScreenControlsSection: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Button size, opacity and any clusters you've dragged go back to how MuffinEMU ships.")
+        }
+        .confirmationDialog("Reset controller bindings?", isPresented: $showingResetBindingsConfirmation, titleVisibility: .visible) {
+            Button("Reset bindings", role: .destructive) {
+                // Reports the binding count rather than a bare success: the whole point is
+                // to be able to tell "it was reset and there are 16 of them" apart from
+                // "it was reset and there are still none", which a checkmark cannot.
+                let ok = cemu_bridge_reset_controller_bindings()
+                let count = Int(cemu_bridge_input_button_mapping_count())
+                bindingsResetResult = ok
+                    ? "Reset. The GamePad now has \(count) button bindings."
+                    : (count < 0
+                        ? "No GamePad is wired yet - start a game, then try again."
+                        : "Reset, but the GamePad still has no button bindings.")
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Wipes the saved controller profile and rebuilds MuffinEMU's defaults. Use this if some buttons do nothing while the sticks still work - that means the saved profile lost their bindings, and no update can fix it because it's stored on this device. Any buttons you remapped yourself go back to default.")
         }
     }
 

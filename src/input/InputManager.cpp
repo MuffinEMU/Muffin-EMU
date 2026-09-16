@@ -92,20 +92,42 @@ static constexpr int kGCBitDDown   = kButtonDown;
 static constexpr int kGCBitDLeft   = kButtonLeft;
 static constexpr int kGCBitDRight  = kButtonRight;
 
-// True when the emulated controller has at least one real FACE-button binding.
+// True when EVERY GamePad button has a binding - not "at least one".
 //
 // Deliberately checks buttons rather than "any mapping at all": a profile with only stick
 // bindings is exactly the broken state this exists to catch, and it would pass an
 // is-the-table-empty test while leaving every button dead.
-static bool has_button_mappings(const EmulatedControllerPtr& emulated,
-                                EmulatedController::Type type)
+//
+// And deliberately ALL of them rather than a sample, which is the stricter half and the
+// one that was missing. See the loop below for what sampling two ids cost.
+static bool has_complete_button_mappings(const EmulatedControllerPtr& emulated,
+                                         EmulatedController::Type type)
 {
     if (!emulated)
         return false;
     if (type == EmulatedController::Type::VPAD)
     {
-        return emulated->get_mapping_controller(VPADController::kButtonId_A) != nullptr
-            || emulated->get_mapping_controller(VPADController::kButtonId_B) != nullptr;
+        // Every GamePad button apply_default_gc_mappings binds, checked as a whole.
+        //
+        // This used to sample A and B and take their presence as proof the profile was
+        // fine. It is not: a profile can carry SOME bindings and not others, and the
+        // sampled check waved that state straight through. That is exactly how the d-pad
+        // stayed completely dead while the face buttons answered - four unbound ids in a
+        // profile whose A and B happened to be bound, so the heal below never ran, on
+        // every launch and every rebuild, because the bad state is data on the device
+        // rather than anything in the binary.
+        //
+        // The range is the same one cemu_bridge_input_button_mapping_count() reports:
+        // A through StickR inclusive. StickL_Up and everything after it are AXIS
+        // mappings, which never consult this table at all - counting them here would
+        // report a healthy controller for precisely the broken case, sticks bound and
+        // buttons not.
+        for (uint64 id = VPADController::kButtonId_A; id < VPADController::kButtonId_StickL_Up; ++id)
+        {
+            if (!emulated->get_mapping_controller(id))
+                return false;
+        }
+        return true;
     }
     // Non-VPAD types are left alone: their defaults are applied by the same path above
     // when they are created, and this heal is targeted at the GamePad case that was
@@ -113,47 +135,62 @@ static bool has_button_mappings(const EmulatedControllerPtr& emulated,
     return true;
 }
 
+/// Whether a heal is allowed to overwrite bindings that are already there.
+///
+/// A newly created controller has none, so All is right for it. A heal, by contrast, is
+/// repairing a profile the user may also have customised, and re-applying every default
+/// would silently throw away a deliberate remap to fix an unrelated missing one. Gaps
+/// only, so the repair touches exactly the buttons that have nothing bound.
+enum class MappingFill { All, GapsOnly };
+
 static void apply_default_gc_mappings(EmulatedControllerPtr& emulated,
-                                      const std::shared_ptr<ControllerBase>& controller)
+                                      const std::shared_ptr<ControllerBase>& controller,
+                                      MappingFill fill = MappingFill::All)
 {
     using Type = EmulatedController::Type;
     const Type t = emulated->type();
-    
+
+    auto map_button = [&](uint64 id, int bit) {
+        if (fill == MappingFill::GapsOnly && emulated->get_mapping_controller(id))
+            return;
+        emulated->set_mapping(id, controller, bit);
+    };
+
     // Left stick
     auto mapLeftStick = [&](uint64 up, uint64 down, uint64 left, uint64 right) {
-        emulated->set_mapping(up,    controller, kAxisYN);
-        emulated->set_mapping(down,  controller, kAxisYP);
-        emulated->set_mapping(left,  controller, kAxisXN);
-        emulated->set_mapping(right, controller, kAxisXP);
+        map_button(up,    kAxisYN);
+        map_button(down,  kAxisYP);
+        map_button(left,  kAxisXN);
+        map_button(right, kAxisXP);
     };
     
     // Right stick
     auto mapRightStick = [&](uint64 up, uint64 down, uint64 left, uint64 right) {
-        emulated->set_mapping(up,    controller, kRotationYN);
-        emulated->set_mapping(down,  controller, kRotationYP);
-        emulated->set_mapping(left,  controller, kRotationXN);
-        emulated->set_mapping(right, controller, kRotationXP);
+        map_button(up,    kRotationYN);
+        map_button(down,  kRotationYP);
+        map_button(left,  kRotationXN);
+        map_button(right, kRotationXP);
     };
     
     if (t == Type::VPAD)
     {
         // GamePad
-        emulated->set_mapping(VPADController::kButtonId_A,      controller, kGCBitA);
-        emulated->set_mapping(VPADController::kButtonId_B,      controller, kGCBitB);
-        emulated->set_mapping(VPADController::kButtonId_X,      controller, kGCBitX);
-        emulated->set_mapping(VPADController::kButtonId_Y,      controller, kGCBitY);
-        emulated->set_mapping(VPADController::kButtonId_L,      controller, kGCBitLB);
-        emulated->set_mapping(VPADController::kButtonId_R,      controller, kGCBitRB);
-        emulated->set_mapping(VPADController::kButtonId_ZL,     controller, kGCBitLTDig);
-        emulated->set_mapping(VPADController::kButtonId_ZR,     controller, kGCBitRTDig);
-        emulated->set_mapping(VPADController::kButtonId_Minus,  controller, kGCBitOptions);
-        emulated->set_mapping(VPADController::kButtonId_Plus,   controller, kGCBitMenu);
-        emulated->set_mapping(VPADController::kButtonId_StickL, controller, kGCBitLS);
-        emulated->set_mapping(VPADController::kButtonId_StickR, controller, kGCBitRS);
-        emulated->set_mapping(VPADController::kButtonId_Up,     controller, kGCBitDUp);
-        emulated->set_mapping(VPADController::kButtonId_Down,   controller, kGCBitDDown);
-        emulated->set_mapping(VPADController::kButtonId_Left,   controller, kGCBitDLeft);
-        emulated->set_mapping(VPADController::kButtonId_Right,  controller, kGCBitDRight);
+        map_button(VPADController::kButtonId_A,      kGCBitA);
+        map_button(VPADController::kButtonId_B,      kGCBitB);
+        map_button(VPADController::kButtonId_X,      kGCBitX);
+        map_button(VPADController::kButtonId_Y,      kGCBitY);
+        map_button(VPADController::kButtonId_L,      kGCBitLB);
+        map_button(VPADController::kButtonId_R,      kGCBitRB);
+        map_button(VPADController::kButtonId_ZL,     kGCBitLTDig);
+        map_button(VPADController::kButtonId_ZR,     kGCBitRTDig);
+        map_button(VPADController::kButtonId_Minus,  kGCBitOptions);
+        map_button(VPADController::kButtonId_Plus,   kGCBitMenu);
+        map_button(VPADController::kButtonId_StickL, kGCBitLS);
+        map_button(VPADController::kButtonId_StickR, kGCBitRS);
+        map_button(VPADController::kButtonId_Up,     kGCBitDUp);
+        map_button(VPADController::kButtonId_Down,   kGCBitDDown);
+        map_button(VPADController::kButtonId_Left,   kGCBitDLeft);
+        map_button(VPADController::kButtonId_Right,  kGCBitDRight);
         
         mapLeftStick(VPADController::kButtonId_StickL_Up,   VPADController::kButtonId_StickL_Down, VPADController::kButtonId_StickL_Left, VPADController::kButtonId_StickL_Right);
         mapRightStick(VPADController::kButtonId_StickR_Up,   VPADController::kButtonId_StickR_Down, VPADController::kButtonId_StickR_Left, VPADController::kButtonId_StickR_Right);
@@ -161,22 +198,22 @@ static void apply_default_gc_mappings(EmulatedControllerPtr& emulated,
     else if (t == Type::Pro)
     {
         // Pro Controller
-        emulated->set_mapping(ProController::kButtonId_A,      controller, kGCBitA);
-        emulated->set_mapping(ProController::kButtonId_B,      controller, kGCBitB);
-        emulated->set_mapping(ProController::kButtonId_X,      controller, kGCBitX);
-        emulated->set_mapping(ProController::kButtonId_Y,      controller, kGCBitY);
-        emulated->set_mapping(ProController::kButtonId_L,      controller, kGCBitLB);
-        emulated->set_mapping(ProController::kButtonId_R,      controller, kGCBitRB);
-        emulated->set_mapping(ProController::kButtonId_ZL,     controller, kGCBitLTDig);
-        emulated->set_mapping(ProController::kButtonId_ZR,     controller, kGCBitRTDig);
-        emulated->set_mapping(ProController::kButtonId_Minus,  controller, kGCBitOptions);
-        emulated->set_mapping(ProController::kButtonId_Plus,   controller, kGCBitMenu);
-        emulated->set_mapping(ProController::kButtonId_StickL, controller, kGCBitLS);
-        emulated->set_mapping(ProController::kButtonId_StickR, controller, kGCBitRS);
-        emulated->set_mapping(ProController::kButtonId_Up,     controller, kGCBitDUp);
-        emulated->set_mapping(ProController::kButtonId_Down,   controller, kGCBitDDown);
-        emulated->set_mapping(ProController::kButtonId_Left,   controller, kGCBitDLeft);
-        emulated->set_mapping(ProController::kButtonId_Right,  controller, kGCBitDRight);
+        map_button(ProController::kButtonId_A,      kGCBitA);
+        map_button(ProController::kButtonId_B,      kGCBitB);
+        map_button(ProController::kButtonId_X,      kGCBitX);
+        map_button(ProController::kButtonId_Y,      kGCBitY);
+        map_button(ProController::kButtonId_L,      kGCBitLB);
+        map_button(ProController::kButtonId_R,      kGCBitRB);
+        map_button(ProController::kButtonId_ZL,     kGCBitLTDig);
+        map_button(ProController::kButtonId_ZR,     kGCBitRTDig);
+        map_button(ProController::kButtonId_Minus,  kGCBitOptions);
+        map_button(ProController::kButtonId_Plus,   kGCBitMenu);
+        map_button(ProController::kButtonId_StickL, kGCBitLS);
+        map_button(ProController::kButtonId_StickR, kGCBitRS);
+        map_button(ProController::kButtonId_Up,     kGCBitDUp);
+        map_button(ProController::kButtonId_Down,   kGCBitDDown);
+        map_button(ProController::kButtonId_Left,   kGCBitDLeft);
+        map_button(ProController::kButtonId_Right,  kGCBitDRight);
         
         mapLeftStick(ProController::kButtonId_StickL_Up,   ProController::kButtonId_StickL_Down,
                      ProController::kButtonId_StickL_Left, ProController::kButtonId_StickL_Right);
@@ -186,20 +223,20 @@ static void apply_default_gc_mappings(EmulatedControllerPtr& emulated,
     else if (t == Type::Classic)
     {
         // Wii Classic Controller
-        emulated->set_mapping(ClassicController::kButtonId_A,      controller, kGCBitA);
-        emulated->set_mapping(ClassicController::kButtonId_B,      controller, kGCBitB);
-        emulated->set_mapping(ClassicController::kButtonId_X,      controller, kGCBitX);
-        emulated->set_mapping(ClassicController::kButtonId_Y,      controller, kGCBitY);
-        emulated->set_mapping(ClassicController::kButtonId_L,      controller, kGCBitLB);
-        emulated->set_mapping(ClassicController::kButtonId_R,      controller, kGCBitRB);
-        emulated->set_mapping(ClassicController::kButtonId_ZL,     controller, kGCBitLTDig);
-        emulated->set_mapping(ClassicController::kButtonId_ZR,     controller, kGCBitRTDig);
-        emulated->set_mapping(ClassicController::kButtonId_Minus,  controller, kGCBitOptions);
-        emulated->set_mapping(ClassicController::kButtonId_Plus,   controller, kGCBitMenu);
-        emulated->set_mapping(ClassicController::kButtonId_Up,     controller, kGCBitDUp);
-        emulated->set_mapping(ClassicController::kButtonId_Down,   controller, kGCBitDDown);
-        emulated->set_mapping(ClassicController::kButtonId_Left,   controller, kGCBitDLeft);
-        emulated->set_mapping(ClassicController::kButtonId_Right,  controller, kGCBitDRight);
+        map_button(ClassicController::kButtonId_A,      kGCBitA);
+        map_button(ClassicController::kButtonId_B,      kGCBitB);
+        map_button(ClassicController::kButtonId_X,      kGCBitX);
+        map_button(ClassicController::kButtonId_Y,      kGCBitY);
+        map_button(ClassicController::kButtonId_L,      kGCBitLB);
+        map_button(ClassicController::kButtonId_R,      kGCBitRB);
+        map_button(ClassicController::kButtonId_ZL,     kGCBitLTDig);
+        map_button(ClassicController::kButtonId_ZR,     kGCBitRTDig);
+        map_button(ClassicController::kButtonId_Minus,  kGCBitOptions);
+        map_button(ClassicController::kButtonId_Plus,   kGCBitMenu);
+        map_button(ClassicController::kButtonId_Up,     kGCBitDUp);
+        map_button(ClassicController::kButtonId_Down,   kGCBitDDown);
+        map_button(ClassicController::kButtonId_Left,   kGCBitDLeft);
+        map_button(ClassicController::kButtonId_Right,  kGCBitDRight);
         
         mapLeftStick(ClassicController::kButtonId_StickL_Up,   ClassicController::kButtonId_StickL_Down, ClassicController::kButtonId_StickL_Left, ClassicController::kButtonId_StickL_Right);
         mapRightStick(ClassicController::kButtonId_StickR_Up,   ClassicController::kButtonId_StickR_Down, ClassicController::kButtonId_StickR_Left, ClassicController::kButtonId_StickR_Right);
@@ -207,16 +244,16 @@ static void apply_default_gc_mappings(EmulatedControllerPtr& emulated,
     else if (t == Type::Wiimote)
     {
         // WiiMote
-        emulated->set_mapping(WiimoteController::kButtonId_A,     controller, kGCBitA);
-        emulated->set_mapping(WiimoteController::kButtonId_B,     controller, kGCBitB);
-        emulated->set_mapping(WiimoteController::kButtonId_1,   controller, kGCBitX);
-        emulated->set_mapping(WiimoteController::kButtonId_2,   controller, kGCBitY);
-        emulated->set_mapping(WiimoteController::kButtonId_Minus, controller, kGCBitOptions);
-        emulated->set_mapping(WiimoteController::kButtonId_Plus,  controller, kGCBitMenu);
-        emulated->set_mapping(WiimoteController::kButtonId_Up,    controller, kGCBitDUp);
-        emulated->set_mapping(WiimoteController::kButtonId_Down,  controller, kGCBitDDown);
-        emulated->set_mapping(WiimoteController::kButtonId_Left,  controller, kGCBitDLeft);
-        emulated->set_mapping(WiimoteController::kButtonId_Right, controller, kGCBitDRight);
+        map_button(WiimoteController::kButtonId_A,     kGCBitA);
+        map_button(WiimoteController::kButtonId_B,     kGCBitB);
+        map_button(WiimoteController::kButtonId_1,   kGCBitX);
+        map_button(WiimoteController::kButtonId_2,   kGCBitY);
+        map_button(WiimoteController::kButtonId_Minus, kGCBitOptions);
+        map_button(WiimoteController::kButtonId_Plus,  kGCBitMenu);
+        map_button(WiimoteController::kButtonId_Up,    kGCBitDUp);
+        map_button(WiimoteController::kButtonId_Down,  kGCBitDDown);
+        map_button(WiimoteController::kButtonId_Left,  kGCBitDLeft);
+        map_button(WiimoteController::kButtonId_Right, kGCBitDRight);
     }
     else
     {
@@ -263,9 +300,10 @@ void InputManager::load_gc_controllers()
                 emulated->add_controller(device);
                 apply_default_gc_mappings(emulated, device);
             }
-            else if (!has_button_mappings(emulated, type))
+            else if (!has_complete_button_mappings(emulated, type))
             {
-                // Self-heal a controller that exists but has no BUTTON bindings.
+                // Self-heal a controller that exists but is MISSING button bindings -
+                // any of them, not only all of them.
                 //
                 // Defaults used to be applied only when a controller was newly created.
                 // That leaves one reachable state permanently broken: a persisted profile
@@ -284,9 +322,14 @@ void InputManager::load_gc_controllers()
                 // Reverting code cannot fix this, because the bad state is DATA on the
                 // device rather than anything in the binary - which is why several rounds
                 // of restoring the input path byte-for-byte changed nothing.
-                apply_default_gc_mappings(emulated, device);
+                //
+                // GapsOnly: this repairs a profile the user may also have customised, so
+                // it binds the ids that have nothing bound and leaves every deliberate
+                // remap exactly where they put it. A wholesale re-apply would fix the
+                // d-pad by silently throwing away their A-and-B.
+                apply_default_gc_mappings(emulated, device, MappingFill::GapsOnly);
                 cemuLog_log(LogType::Force,
-                    "input: controller {} had no button mappings (stale or partial profile); default GamePad mappings re-applied", i);
+                    "input: controller {} was missing button mappings (stale or partial profile); defaults filled in for the unbound ones", i);
             }
             if (type == EmulatedController::Type::VPAD)
                 next_vpad[vpad_count++] = std::static_pointer_cast<VPADController>(emulated);
