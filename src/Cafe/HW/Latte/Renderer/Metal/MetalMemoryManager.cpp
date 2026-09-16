@@ -10,8 +10,22 @@
 
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
 
+#include <cstring>
+
 MetalMemoryManager::~MetalMemoryManager()
 {
+    // The argument snapshots hold a retain on every resource they recorded and on the
+    // encoder itself (see GetCachedArgumentBuffer below), so they have to be given back
+    // here - this object outlives individual draws, which is what makes the caching work
+    // and also what makes it the owner of those retains.
+    for (auto& snapshot : m_argumentSnapshots)
+    {
+        for (const auto& binding : snapshot.bindings)
+            if (binding.resource)
+                static_cast<NS::Object*>(binding.resource)->release();
+        if (snapshot.encoder)
+            snapshot.encoder->release();
+    }
     if (m_bufferCache)
     {
         m_bufferCache->release();
@@ -20,6 +34,103 @@ MetalMemoryManager::~MetalMemoryManager()
     {
         m_importedMemoryBuffer->release();
     }
+}
+
+MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCachedSnapshot(uint32 slot, const void* data, uint32 size, uint32 firstByte)
+{
+    cemu_assert_debug(slot < SnapshotCount && firstByte <= size);
+    // Make sure a command buffer exists before the allocation is made, so the reservation
+    // is attributed to one and CleanupBuffers() can retire it in order.
+    m_mtlr->GetCommandBuffer();
+    auto& snapshot = m_snapshots[slot];
+    const auto* source = static_cast<const uint8*>(data);
+    const uint32 copySize = size - firstByte;
+    // A content comparison, not a dirty flag: the guest can write the same bytes back, and
+    // an emulator has no reliable notification for "this range did not really change".
+    // memcmp over a range already in a mapped device buffer is far cheaper than the
+    // re-upload it avoids.
+    if (snapshot.allocation && snapshot.firstByte <= firstByte && snapshot.endByte >= size &&
+        std::memcmp(snapshot.allocation->memPtr + firstByte, source + firstByte, copySize) == 0)
+    {
+        m_mtlr->GetPerformanceMonitor().m_snapshotReuses++;
+        return snapshot.allocation;
+    }
+
+    if (snapshot.allocation)
+        m_snapshotAllocator.FreeReservation(snapshot.allocation);
+    snapshot.allocation = m_snapshotAllocator.AllocateBufferMemory(std::max(size, 1u), 256);
+    snapshot.firstByte = firstByte;
+    snapshot.endByte = size;
+    std::memcpy(snapshot.allocation->memPtr + firstByte, source + firstByte, copySize);
+    m_snapshotAllocator.FlushReservation(snapshot.allocation);
+    m_mtlr->GetPerformanceMonitor().m_snapshotBytes += copySize;
+    return snapshot.allocation;
+}
+
+MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCachedArgumentBuffer(uint32 stage, MTL::ArgumentEncoder* encoder, const MetalArgumentBindings& bindings)
+{
+    cemu_assert_debug(stage < METAL_SHADER_TYPE_TOTAL);
+    m_mtlr->GetCommandBuffer();
+    auto& snapshot = m_argumentSnapshots[stage];
+    // Same encoder (so the same layout) and the same complete set of bindings means the
+    // encoded buffer would come out byte-identical - skip the encode entirely. Note the
+    // CALLER still has to re-declare residency (useResource) for every encoder even on
+    // this path; only the encoding is cached, not the residency.
+    if (snapshot.encoder == encoder && snapshot.bindings == bindings)
+    {
+        m_mtlr->GetPerformanceMonitor().m_argumentBufferReuses++;
+        return snapshot.allocation;
+    }
+
+    if (snapshot.allocation)
+        m_snapshotAllocator.FreeReservation(snapshot.allocation);
+    if (snapshot.encoder != encoder)
+    {
+        if (snapshot.encoder)
+            snapshot.encoder->release();
+        snapshot.encoder = encoder->retain();
+    }
+
+    // Retain the new set BEFORE releasing the old one: a resource present in both would
+    // otherwise hit refcount zero in between and be deallocated while still bound.
+    for (const auto& binding : bindings)
+        if (binding.resource)
+            static_cast<NS::Object*>(binding.resource)->retain();
+    for (const auto& binding : snapshot.bindings)
+        if (binding.resource)
+            static_cast<NS::Object*>(binding.resource)->release();
+    snapshot.bindings = bindings;
+    const uint32 alignment = std::max<uint32>(256, static_cast<uint32>(encoder->alignment()));
+    snapshot.allocation = m_snapshotAllocator.AllocateBufferMemory(static_cast<uint32>(encoder->encodedLength()), alignment);
+    auto* allocation = snapshot.allocation;
+    std::memset(allocation->memPtr, 0, allocation->size);
+    encoder->setArgumentBuffer(allocation->mtlBuffer, allocation->bufferOffset);
+    for (uint32 index = 0; index < bindings.size(); ++index)
+    {
+        const auto& binding = bindings[index];
+        switch (binding.type)
+        {
+            case MetalArgumentBinding::Type::Unused:
+                break;
+            case MetalArgumentBinding::Type::Buffer:
+                encoder->setBuffer(static_cast<MTL::Buffer*>(binding.resource), binding.value, index);
+                break;
+            case MetalArgumentBinding::Type::Texture:
+                encoder->setTexture(static_cast<MTL::Texture*>(binding.resource), index);
+                break;
+            case MetalArgumentBinding::Type::Sampler:
+                encoder->setSamplerState(static_cast<MTL::SamplerState*>(binding.resource), index);
+                break;
+            case MetalArgumentBinding::Type::Constant:
+                if (void* constant = encoder->constantData(index))
+                    *static_cast<uint32*>(constant) = static_cast<uint32>(binding.value);
+                break;
+        }
+    }
+
+    m_snapshotAllocator.FlushReservation(allocation);
+    m_mtlr->GetPerformanceMonitor().m_argumentBufferEncodes++;
+    return allocation;
 }
 
 void* MetalMemoryManager::AcquireTextureUploadBuffer(size_t size)
