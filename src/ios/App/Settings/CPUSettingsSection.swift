@@ -10,6 +10,7 @@ struct CPUSettingsSection: View {
     // position.
     @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = true
     @AppStorage("muffin.cpu.favourAccuracy") private var favourAccuracy = false
+    @AppStorage(LowPowerMode.storageKey) private var lowPowerMode = LowPowerMode.defaultValue
 
     var body: some View {
         Section {
@@ -42,11 +43,31 @@ struct CPUSettingsSection: View {
             .onChange(of: favourAccuracy) { newValue in
                 cemu_bridge_set_favour_accuracy(newValue)
             }
+
+            // Sits with the CPU settings rather than under Graphics because the core
+            // count is what it actually changes, and that is a CPU decision. See
+            // LowPowerMode in RenderScale.swift for why one emulated core is the lever
+            // that matters for heat and what it costs.
+            Toggle(isOn: $lowPowerMode) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Low Power Mode")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text(lowPowerMode
+                         ? "One CPU core. Cooler and longer-running, and slower."
+                         : "Three CPU cores. Fastest, and by far the hottest.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .tint(MuffinTheme.pixelBlue)
+            .onChange(of: lowPowerMode) { newValue in
+                cemu_bridge_set_low_power_mode(newValue)
+            }
         } header: {
             SettingsSectionHeader("CPU", icon: "cpu", accent: .core)
         } footer: {
             InfoButton.footer(
-                "MuffinEMU runs for speed first - turn on Favour accuracy only for a game that glitches, desyncs or crashes, and restart it after changing either toggle.",
+                "MuffinEMU runs for speed first - turn on Favour accuracy only for a game that glitches, desyncs or crashes, and Low Power Mode if the device gets too hot. Restart the game after changing any of these.",
                 title: "CPU",
                 text: "MuffinEMU runs for speed first. The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer); without one the interpreter runs instead, and the line above says which you got. Turn on Favour accuracy for a game that glitches, desyncs or crashes - it is slower. Start the game again after changing either.")
         }
