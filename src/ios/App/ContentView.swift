@@ -380,18 +380,40 @@ struct GameBrowserView: View {
             VStack(alignment: .trailing, spacing: 4) {
                 HStack(spacing: 8) {
                     Button(action: { showingSettings = true }) {
+                        // No foregroundColor here on purpose. MuffinSecondaryButtonStyle
+                        // already paints its label MuffinTheme.brownDark, which is the ink
+                        // colour that token pairs with - the style's fill is
+                        // MuffinTheme.cream. This icon used to override that with
+                        // sparkleCream, and sparkleCream's own doc comment says what it is
+                        // for: "button text painted onto the muffin-top gradient fill",
+                        // i.e. the ORANGE primary button. Painted onto the cream secondary
+                        // button instead, it was light cream on cream and the glyph
+                        // vanished until pressed.
+                        //
+                        // Deleting the override rather than substituting another colour is
+                        // the fix, because it hands the decision back to the one place that
+                        // knows the fill. It also follows every theme: all 31 palettes
+                        // define their own brownDark/cream pair, so this stays legible in
+                        // each of them and in dark mode, which a hardcoded replacement
+                        // colour would not.
                         Image(systemName: "gearshape.fill")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel("Settings")
 
                     Button(action: { showingFavorites.toggle() }) {
+                        // Same fix as the gear above, with one difference: the ACTIVE
+                        // state keeps its explicit blushPink. That is a real state colour
+                        // carrying information ("favourites only is on"), it reads clearly
+                        // against cream, and it is the one case here where overriding the
+                        // style's ink is deliberate rather than accidental. Only the
+                        // inactive branch - the invisible one - gives its colour back to
+                        // the button style.
                         Image(systemName: showingFavorites ? "heart.fill" : "heart")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(showingFavorites ? MuffinTheme.blushPink : MuffinTheme.sparkleCream.opacity(0.8))
+                            .foregroundColor(showingFavorites ? MuffinTheme.blushPink : MuffinTheme.brownDark)
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
@@ -426,9 +448,17 @@ struct GameBrowserView: View {
                             Label("Import Update\u{2026}", systemImage: "arrow.triangle.2.circlepath")
                         }
                     } label: {
+                        // Same bug and same colour as the two buttons above, but stated
+                        // explicitly rather than inherited. This is a Menu, not a Button,
+                        // and a ButtonStyle's foregroundColor does not propagate into a
+                        // Menu's label as dependably as it does into a Button's across the
+                        // iOS versions this app supports (15 through 27). Naming
+                        // brownDark here is the same value MuffinSecondaryButtonStyle
+                        // would have applied, so it still tracks every theme and dark
+                        // mode - it just does not depend on that propagation happening.
                         Image(systemName: "doc.badge.plus")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(MuffinTheme.sparkleCream.opacity(0.8))
+                            .foregroundColor(MuffinTheme.brownDark)
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
