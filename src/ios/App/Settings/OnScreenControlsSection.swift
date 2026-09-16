@@ -26,10 +26,6 @@ struct OnScreenControlsSection: View {
     private var stickGateRaw = ControllerLayoutSettings.defaultStickGateRaw
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
-    @AppStorage(ControllerLayoutSettings.touchSlopKey)
-    private var touchSlop = ControllerLayoutSettings.defaultTouchSlop
-    @AppStorage(ControllerLayoutSettings.pressAnimationKey)
-    private var pressAnimationEnabled = ControllerLayoutSettings.defaultPressAnimation
     @AppStorage(MeloControlsSetting.storageKey)
     private var useMeloControls = MeloControlsSetting.defaultValue
     @State private var showingResetLayoutConfirmation = false
@@ -106,40 +102,6 @@ struct OnScreenControlsSection: View {
             }
             .tint(MuffinTheme.pixelBlue)
 
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("Button responsiveness")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    Spacer()
-                    // The actual number, not a vague label. This setting has one honest
-                    // unit and hiding it behind "Low/High" would make it impossible to
-                    // tell whether nudging the slider did anything.
-                    Text(touchSlop <= 0 ? "exact" : "+\(Int(touchSlop))pt")
-                        .font(.system(size: 13, design: .monospaced))
-                        .foregroundColor(.secondary)
-                }
-                HStack(spacing: 10) {
-                    Image(systemName: "scope")
-                    Slider(
-                        value: $touchSlop,
-                        in: ControllerLayoutSettings.minTouchSlop...ControllerLayoutSettings.maxTouchSlop,
-                        step: 1
-                    )
-                    Image(systemName: "hand.tap")
-                }
-            }
-
-            Toggle(isOn: $pressAnimationEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Animate presses")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("Buttons dip under your finger and spring back. Off means they snap, exactly as before.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .tint(MuffinTheme.pixelBlue)
-
             Button(role: .destructive, action: { showingResetLayoutConfirmation = true }) {
                 DestructiveSettingsLabel(title: "Reset layout", systemImage: "arrow.uturn.backward")
             }
@@ -147,7 +109,7 @@ struct OnScreenControlsSection: View {
             SettingsSectionHeader("On-screen Controls", icon: "gamecontroller", accent: .io)
         } footer: {
             InfoButton.footer(
-                "The joystick is analog like the real GamePad's sticks; comfort controls move the shoulder buttons onto it once it's on. Button responsiveness widens each button's invisible touch area without changing how it looks.",
+                "The joystick is analog like the real GamePad's sticks; comfort controls move the shoulder buttons onto it once it's on. MuffinEMU already picks the right button size for your screen - the sliders adjust that choice, not replace it.",
                 title: "On-screen Controls",
                 text: fullText)
         }
