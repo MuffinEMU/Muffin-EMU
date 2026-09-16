@@ -23,6 +23,8 @@ struct DeviceReportSection: View {
         String(cString: cemu_bridge_device_report())
             + "\n" + PlatformCapabilities.summary
             + "\nthermal: " + ThermalMonitor.shared.description
+            + " · heat " + HeatStatus.band.word
+            + (HeatStatus.temperatureCelsius.map { String(format: " (battery %.0f C)", $0) } ?? " (no sensor reading)")
     }
 
     var body: some View {

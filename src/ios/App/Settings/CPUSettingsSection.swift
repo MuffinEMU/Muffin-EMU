@@ -13,6 +13,7 @@ struct CPUSettingsSection: View {
     @AppStorage(LowPowerMode.storageKey) private var lowPowerMode = LowPowerMode.defaultValue
     @AppStorage(ThermalMonitor.autoThrottleKey) private var autoReduceWhenHot = ThermalMonitor.autoThrottleDefault
     @ObservedObject private var thermal = ThermalMonitor.shared
+    @AppStorage(HeatDisplayMode.storageKey) private var heatDisplayMode = HeatDisplayMode.word.rawValue
 
     var body: some View {
         Section {
@@ -84,7 +85,33 @@ struct CPUSettingsSection: View {
 
             // What iOS itself reports, shown because until now nothing in the app could
             // see it - the only way to know was a third-party thermal app.
-            SettingsRow(label: "Device temperature", value: thermal.description, icon: "thermometer.medium")
+            HStack(spacing: 10) {
+                Image(systemName: "thermometer.medium")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(MuffinTheme.brownMid)
+                    .frame(width: 20)
+                Text("Device heat")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Spacer(minLength: 12)
+                HeatStatusBadge()
+            }
+            .frame(minHeight: 30)
+
+            Picker("Show as", selection: $heatDisplayMode) {
+                ForEach(HeatDisplayMode.allCases) { mode in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            // Only shown when it is actually true, so it reads as an explanation rather
+            // than a disclaimer nobody needs. iOS publishes no device temperature to
+            // apps, and on most installs the numeric modes genuinely cannot work.
+            if !HeatStatus.hasRealTemperature && heatDisplayMode != HeatDisplayMode.word.rawValue {
+                Text("iOS doesn't give apps a temperature reading, and this build can't reach the battery sensor - so this keeps showing the word instead of inventing a number.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
         } header: {
             SettingsSectionHeader("CPU", icon: "cpu", accent: .core)
         } footer: {

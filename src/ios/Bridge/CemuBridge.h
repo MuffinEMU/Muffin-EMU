@@ -491,6 +491,19 @@ void cemu_bridge_set_favour_accuracy(bool enabled);
 /// Costs emulation speed in proportion to the sleep. Applied only while iOS reports
 /// serious or critical thermal pressure, at which point iOS is already throttling the
 /// hardware, and set back to 0 the moment it cools. See ThermalMonitor.swift.
+/// Best-effort real device temperature in Celsius, or NaN when it cannot be read.
+///
+/// iOS publishes NO device temperature to apps - ProcessInfo.thermalState's four levels
+/// are the entire supported surface - so this reaches the battery sensor through IOKit,
+/// a private framework, resolved by dlsym and written to fail cleanly. Expect NaN on a
+/// normally sideloaded install, where the sandbox blocks it; it has a real chance of
+/// working under TrollStore or a jailbreak.
+///
+/// It is the BATTERY's temperature, not the SoC's, so it lags the chip and reads low
+/// under a short burst. Never estimated and never derived from thermalState: callers get
+/// a number that was actually read, or NaN.
+double cemu_bridge_device_temperature_celsius(void);
+
 void cemu_bridge_set_thermal_throttle_micros(uint32_t micros);
 
 void cemu_bridge_set_low_power_mode(bool enabled);
