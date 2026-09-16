@@ -2,6 +2,10 @@ import Foundation
 import Combine
 #if os(iOS)
 import UIKit
+// CACurrentMediaTime() for the continuous-resize throttle. UIKit re-exports QuartzCore on
+// iOS, so this is belt and braces - but the throttle breaks in a way that looks like a
+// layout bug if it ever silently stops resolving, which is worth one explicit import.
+import QuartzCore
 
 /// Wii U TV/GamePad screen assignment when a genuine second display is connected
 /// (`.dualScreen` in `DisplayRouter` below) - see `DisplaySettingsSection.swift` for the
@@ -318,6 +322,11 @@ final class DisplayRouter: ObservableObject {
     // the GPU thread every time.
     private var lastDeviceContainerLayoutSize: CGSize?
 
+    /// State for the continuous-resize throttle - see `deviceContainerDidLayout(_:)`.
+    /// Only ever touched on the main actor, which this whole type is isolated to.
+    private var pendingContainerResize: DispatchWorkItem?
+    private var lastAppliedContainerResize: TimeInterval = 0
+
     /// Same dedup as `lastDeviceContainerLayoutSize`, for `localPadContainer`.
     private var lastLocalPadContainerLayoutSize: CGSize?
 
@@ -330,6 +339,20 @@ final class DisplayRouter: ObservableObject {
     func startObserving() {
         guard !observing else { return }
         observing = true
+
+        // iOS 27 no longer offers windowExternalDisplayNonInteractive scenes on its own
+        // (release notes 177015874), so without this the `externalWindowScene(for:)`
+        // search below can never find one and `.dualScreen` is unreachable by
+        // construction. Registering an accessory does not require a display to be
+        // attached and changes nothing when none is; it only tells the system this app
+        // will drive a non-interactive external scene if one shows up. Compiled out
+        // entirely on a pre-27 SDK - see ExternalDisplayScene.swift for why an
+        // @available check is not sufficient there.
+        #if compiler(>=6.4)
+        if #available(iOS 27.0, *) {
+            ExternalDisplaySceneAccessory.registerIfNeeded()
+        }
+        #endif
 
         // A window scene for an external display can arrive after the screen itself
         // does, so UIScene.didActivateNotification is in the list too: a screen-connect
@@ -421,6 +444,12 @@ final class DisplayRouter: ObservableObject {
         // bug; found while diagnosing it.
         lastDeviceContainerLayoutSize = nil
         lastLocalPadContainerLayoutSize = nil
+        // A trailing resize scheduled during a drag must not fire into a torn-down
+        // surface - and its work item captures self, so leaving it pending would also
+        // keep this alive past the point the views it resizes have gone.
+        pendingContainerResize?.cancel()
+        pendingContainerResize = nil
+        lastAppliedContainerResize = 0
         log("title stopped; render surfaces will be rebuilt on the next launch")
     }
 
@@ -647,6 +676,72 @@ final class DisplayRouter: ObservableObject {
         let size = container.bounds.size
         if let lastSize = lastDeviceContainerLayoutSize, lastSize == size { return }
         lastDeviceContainerLayoutSize = size
+
+        // On iOS 27 an iPad app is continuously resizable regardless of its
+        // UISupportedInterfaceOrientations (release notes: Apple fixed orientations being
+        // a condition for it, so the OLD behaviour was the bug). This app lists only
+        // LandscapeLeft/Right, so it was previously NOT continuously resizable and this
+        // function saw a handful of discrete sizes; from iOS 27 it is called on every
+        // frame of a Split View divider drag.
+        //
+        // The size-equality check above stops being a filter in that regime - during a
+        // live drag every frame genuinely IS a new size - so the work below would run per
+        // frame: a frame assignment plus a bridge call that reaches
+        // CemuUIKit_UpdateMainWindowSize and reallocates the Metal drawable. Reallocating
+        // a drawable every frame while the emulator is also rendering into it is exactly
+        // the kind of thrash that turns a smooth drag into a stutter.
+        //
+        // Leading-plus-trailing throttle rather than a plain debounce, deliberately. A
+        // trailing-only debounce leaves the picture visibly stale for the whole drag; a
+        // leading-only one leaves it stale FOREVER if the last event lands inside the
+        // window, which is the same class of bug as the poisoned cache fixed in
+        // titleStopped(). Leading gives immediate feedback, trailing guarantees the final
+        // size is always applied.
+        //
+        // Gated on the capability, so every other OS and every iPhone keeps byte-identical
+        // behaviour and this cannot regress anything that works today.
+        guard PlatformCapabilities.expectsContinuousIPadResize else {
+            applyContainerResize()
+            return
+        }
+        throttleContainerResize()
+    }
+
+    /// Minimum gap between applied resizes while a continuous drag is in progress. 1/8s
+    /// is slow enough to stop per-frame drawable churn and fast enough that the picture
+    /// still tracks the divider rather than snapping at the end.
+    private static let continuousResizeInterval: TimeInterval = 0.125
+
+    private func throttleContainerResize() {
+        let now = CACurrentMediaTime()
+        pendingContainerResize?.cancel()
+        pendingContainerResize = nil
+
+        if now - lastAppliedContainerResize >= Self.continuousResizeInterval {
+            lastAppliedContainerResize = now
+            applyContainerResize()
+            return
+        }
+
+        // Always schedule the trailing call, even though a leading one may have just run:
+        // the leading call used the size as it was THEN, and the drag has moved since.
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.pendingContainerResize = nil
+            self.lastAppliedContainerResize = CACurrentMediaTime()
+            // Re-read the container rather than trusting the size captured when this was
+            // scheduled - by the time it fires the drag has almost certainly moved again,
+            // and the whole point of the trailing call is to land on the CURRENT size.
+            if let container = self.deviceContainer {
+                self.lastDeviceContainerLayoutSize = container.bounds.size
+            }
+            self.applyContainerResize()
+        }
+        pendingContainerResize = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.continuousResizeInterval, execute: work)
+    }
+
+    private func applyContainerResize() {
         resizeTVSurfaceIfRegistered()
         resizePadSurfaceIfRegistered()
     }
@@ -842,6 +937,18 @@ final class DisplayRouter: ObservableObject {
     /// documented API anyway.
     private func externalScreen() -> UIScreen? {
         UIScreen.screens.first { $0 !== UIScreen.main }
+    }
+
+    /// Called by `ExternalDisplaySceneDelegate` when the system connects or disconnects
+    /// the non-interactive external scene the accessory asked for (iOS 27+).
+    ///
+    /// Routed through the same `applyPlacement(reason:)` every other trigger uses rather
+    /// than doing placement work here. A scene arriving is exactly the condition
+    /// `startObserving()`'s existing comment already anticipated - "a window scene for an
+    /// external display can arrive after the screen itself does" - so this is one more
+    /// notification into a path built for it, not a new mechanism.
+    func externalSceneDidChange(reason: String) {
+        applyPlacement(reason: reason)
     }
 
     private func externalWindowScene(for screen: UIScreen) -> UIWindowScene? {
