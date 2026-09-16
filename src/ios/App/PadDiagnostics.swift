@@ -68,6 +68,11 @@ final class PadDiagnostics: ObservableObject {
     @Published private(set) var lastInput = "-"
     @Published private(set) var stickCount = 0
     @Published private(set) var lastStick = "-"
+    /// Ticks on the raw DragGesture callback inside HeldControl, before the pressed-state
+    /// guard. The input counter above only moves when the state actually changes, so a
+    /// frozen input count cannot tell "the gesture never fired" apart from "it fired and
+    /// the state did not move". This separates them.
+    @Published private(set) var rawTouchCount = 0
 
     private init() {}
 
@@ -86,6 +91,10 @@ final class PadDiagnostics: ObservableObject {
     func recordInput(_ label: String, _ pressed: Bool) {
         inputCount += 1
         lastInput = "\(label) \(pressed ? "down" : "up")"
+    }
+
+    func recordRawTouch() {
+        rawTouchCount += 1
     }
 
     func recordStick(_ stick: Int, _ position: CGPoint) {
@@ -133,6 +142,8 @@ struct PadDiagnosticsOverlay: View {
             row("inputs", "\(diag.inputCount)  last \(diag.lastInput)",
                 warn: diag.inputCount == 0)
             row("stick", "\(diag.stickCount)  last \(diag.lastStick)", warn: false)
+            // The decisive row: touches arriving at a button's gesture at all.
+            row("touches", "\(diag.rawTouchCount)", warn: diag.rawTouchCount == 0)
 
             // The line that would have ended a day of debugging in one glance. Buttons
             // only - axes bypass the mapping table entirely, so counting them would show a
