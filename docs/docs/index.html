@@ -3,25 +3,29 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Documentation — MuffinEMU</title>
-<meta name="description" content="MuffinEMU documentation: installation, Screen Layout, Save States, controls, themes, troubleshooting and FAQ.">
+<title>Documentation — MuffinEMU Docs</title>
+<meta name="description" content="MuffinEMU documentation: installation, features, screen layout, save states, controls, themes, troubleshooting and FAQ.">
 <link rel="icon" href="../icon.png">
 <link rel="apple-touch-icon" href="../icon.png">
 <meta name="theme-color" content="#F4A551" id="themeColorMeta">
 <link rel="stylesheet" href="../site.css">
+<link rel="stylesheet" href="../docs.css">
 </head>
 <body>
+
+<a class="skip-link" href="#main">Skip to content</a>
 
 <header class="site-header">
   <div class="header-inner">
     <a class="brand" href="../index.html"><img src="../icon.png" alt="" width="30" height="30"><span>MuffinEMU</span></a>
-    <nav class="site-nav">
+    <nav class="site-nav" aria-label="Main">
       <a href="../index.html">Home</a>
       <a href="installation.html">Install</a>
-      <details class="nav-dropdown" open>
+      <details class="nav-dropdown">
         <summary>Docs ▾</summary>
         <div class="dropdown-panel">
-          <a href="index.html" aria-current="page">All documentation</a>
+          <a href="index.html">Overview</a>
+          <a href="installation.html">Installation</a>
           <a href="features.html">Features overview</a>
           <a href="screen-layout.html">Screen Layout</a>
           <a href="save-states.html">Save States</a>
@@ -41,53 +45,64 @@
   </div>
 </header>
 
-<main class="wrap" style="padding-block:2.5rem 4rem">
+<main class="wrap docs-hub" id="main">
+    <nav class="docs-breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="../index.html">Home</a></li>
+        <li aria-current="page">Documentation</li>
+      </ol>
+    </nav>
   <div class="eyebrow">Documentation</div>
   <h1>MuffinEMU docs</h1>
-  <p style="max-width:38rem;color:var(--sparkle);opacity:.95;font-size:1.05rem">Reference material, not marketing copy — every claim here traces back to the source in <a href="https://github.com/kiddreads/MuffinEMU" style="color:var(--sparkle);text-decoration-thickness:.12em">kiddreads/MuffinEMU</a>.</p>
+    <p class="subtitle">Reference material, not marketing copy — every claim here traces back to the source in <a href="https://github.com/kiddreads/MuffinEMU">kiddreads/MuffinEMU</a>.</p>
 
-  <div class="grid" style="margin-top:2rem">
-    <div class="card feature-card">
-      <div class="emoji">📦</div>
-      <h3><a href="installation.html" style="text-decoration:none">Installation</a></h3>
-      <p>SideStore, AltStore, LiveContainer or TrollStore — which build to grab, JIT requirements, and building from source.</p>
-    </div>
-    <div class="card feature-card">
-      <div class="emoji">🗺️</div>
-      <h3><a href="features.html" style="text-decoration:none">Features overview</a></h3>
-      <p>A scannable reference of everything the app side does — library, importer, graphic packs, DLC/update import, and more.</p>
-    </div>
-    <div class="card feature-card">
-      <div class="emoji">🖼️</div>
-      <h3><a href="screen-layout.html" style="text-decoration:none">Screen Layout</a></h3>
-      <p>How the TV and GamePad screens share one device screen, and routing to a genuine second display.</p>
-    </div>
-    <div class="card feature-card">
-      <div class="emoji">💾</div>
-      <h3><a href="save-states.html" style="text-decoration:none">Save States</a></h3>
-      <p>4 slots per game, how loading actually works, and the real limits — read before you rely on it.</p>
-    </div>
-    <div class="card feature-card">
-      <div class="emoji">🎮</div>
-      <h3><a href="controls.html" style="text-decoration:none">Controls &amp; GamePad</a></h3>
+  <h2 class="visually-hidden-heading">All documentation pages</h2>
+  <div class="grid doc-card-grid">
+    <article class="card feature-card doc-card">
+      <div class="emoji" aria-hidden="true">📦</div>
+      <h3><a href="installation.html">Installation</a></h3>
+      <p>Which build to grab for SideStore, AltStore, LiveContainer or TrollStore — plus JIT requirements, keys.txt, and building from source.</p>
+    </article>
+    <article class="card feature-card doc-card">
+      <div class="emoji" aria-hidden="true">🗺️</div>
+      <h3><a href="features.html">Features overview</a></h3>
+      <p>A scannable map of everything the app side does — library, importer, graphic packs, DLC/update import, and more.</p>
+    </article>
+    <article class="card feature-card doc-card">
+      <div class="emoji" aria-hidden="true">🖼️</div>
+      <h3><a href="screen-layout.html">Screen Layout</a></h3>
+      <p>How the TV and GamePad screens share one device screen, and what routing to a genuine second display does and doesn't do.</p>
+    </article>
+    <article class="card feature-card doc-card">
+      <div class="emoji" aria-hidden="true">💾</div>
+      <h3><a href="save-states.html">Save States</a></h3>
+      <p>4 slots per game, what is actually captured, and the one real limit — read this before you rely on it.</p>
+    </article>
+    <article class="card feature-card doc-card">
+      <div class="emoji" aria-hidden="true">🎮</div>
+      <h3><a href="controls.html">Controls &amp; GamePad</a></h3>
       <p>The measured on-screen GamePad, hide-controls, comfort controls, Melo-Controller, and 20 controller skins.</p>
-    </div>
-    <div class="card feature-card">
-      <div class="emoji">🎨</div>
-      <h3><a href="themes.html" style="text-decoration:none">Themes &amp; Icons</a></h3>
+    </article>
+    <article class="card feature-card doc-card">
+      <div class="emoji" aria-hidden="true">🎨</div>
+      <h3><a href="themes.html">Themes &amp; Icons</a></h3>
       <p>All 31 real in-app themes with their actual hex values, and how the 3 Pro themes unlock.</p>
-    </div>
-    <div class="card feature-card">
-      <div class="emoji">🛠️</div>
-      <h3><a href="troubleshooting.html" style="text-decoration:none">Troubleshooting</a></h3>
-      <p>JIT not attaching, encrypted games not loading, save states refusing to load, and other common snags.</p>
-    </div>
-    <div class="card feature-card">
-      <div class="emoji">❓</div>
-      <h3><a href="faq.html" style="text-decoration:none">FAQ</a></h3>
+    </article>
+    <article class="card feature-card doc-card">
+      <div class="emoji" aria-hidden="true">🛠️</div>
+      <h3><a href="troubleshooting.html">Troubleshooting</a></h3>
+      <p>A game won't launch, JIT didn't attach, a save state won't load — the failures that actually happen, and why.</p>
+    </article>
+    <article class="card feature-card doc-card">
+      <div class="emoji" aria-hidden="true">❓</div>
+      <h3><a href="faq.html">FAQ</a></h3>
       <p>Short answers to the questions that come up most.</p>
-    </div>
+    </article>
   </div>
+
+  <h2>Start here</h2>
+  <p>If you have an iPad and a game dump and nothing else, <a href="installation.html">Installation</a> is the whole path to a running game. If something is already wrong, go straight to <a href="troubleshooting.html">Troubleshooting</a> — it leads with the failures that come up most.</p>
+
 </main>
 
 <footer class="site-footer">

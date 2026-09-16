@@ -4,27 +4,31 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Save States — MuffinEMU Docs</title>
-<meta name="description" content="How MuffinEMU's Save States work: 4 slots per game, what's actually captured, and the real limits.">
+<meta name="description" content="MuffinEMU save states: 4 slots per game, what is captured, why GPU state is left alone, and the same-session-only limit.">
 <link rel="icon" href="../icon.png">
 <link rel="apple-touch-icon" href="../icon.png">
 <meta name="theme-color" content="#F4A551" id="themeColorMeta">
 <link rel="stylesheet" href="../site.css">
+<link rel="stylesheet" href="../docs.css">
 </head>
 <body>
+
+<a class="skip-link" href="#main">Skip to content</a>
 
 <header class="site-header">
   <div class="header-inner">
     <a class="brand" href="../index.html"><img src="../icon.png" alt="" width="30" height="30"><span>MuffinEMU</span></a>
-    <nav class="site-nav">
+    <nav class="site-nav" aria-label="Main">
       <a href="../index.html">Home</a>
       <a href="installation.html">Install</a>
       <details class="nav-dropdown">
         <summary>Docs ▾</summary>
         <div class="dropdown-panel">
-          <a href="index.html">All documentation</a>
+          <a href="index.html">Overview</a>
+          <a href="installation.html">Installation</a>
           <a href="features.html">Features overview</a>
           <a href="screen-layout.html">Screen Layout</a>
-          <a href="save-states.html" aria-current="page">Save States</a>
+          <a href="save-states.html">Save States</a>
           <a href="controls.html">Controls &amp; GamePad</a>
           <a href="themes.html">Themes &amp; Icons</a>
           <a href="troubleshooting.html">Troubleshooting</a>
@@ -44,7 +48,7 @@
 <div class="docs-shell">
   <aside class="docs-sidebar">
     <p class="sidebar-title">Documentation</p>
-    <nav>
+    <nav aria-label="Documentation">
       <a href="index.html">Overview</a>
       <a href="installation.html">Installation</a>
       <a href="features.html">Features overview</a>
@@ -57,39 +61,59 @@
     </nav>
   </aside>
 
-  <div class="docs-content">
+  <main class="docs-content" id="main">
+    <nav class="docs-breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="../index.html">Home</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li aria-current="page">Save States</li>
+      </ol>
+    </nav>
     <h1>Save States</h1>
-    <p class="subtitle">4 numbered slots per game, alongside your normal in-game saves. Read this before you rely on it — the scope is deliberately narrow.</p>
+    <p class="subtitle">4 numbered slots per game, alongside your normal in-game saves. The scope is deliberately narrow — read this before you rely on it.</p>
+    <nav class="docs-toc" aria-labelledby="toc-heading">
+      <p id="toc-heading">On this page</p>
+      <ul>
+        <li><a href="#limit">The real limit</a></li>
+        <li><a href="#where">Where they live</a></li>
+        <li><a href="#captured">What's captured</a></li>
+        <li><a href="#around">Around the save/load call</a></li>
+      </ul>
+    </nav>
 
-    <h2>Where they live</h2>
-    <p>Each game gets its own folder: <code>Documents/SaveStates/&lt;game.id&gt;/</code>, with up to 4 files named <code>slot1.sav</code> through <code>slot4.sav</code>. That's namespaced by the game's own <code>id</code> (its ROM/dump filename) rather than its Wii U title ID, because a homebrew build or an unrecognized dump can lack a title ID entirely — using the always-present <code>id</code> means those never collide with each other's slots.</p>
+    <h2 id="limit">The real limit: same running instance only</h2>
+    <div class="callout callout-warn">
+      <span class="callout-label">Read this first</span>
+      <p><strong>A save only loads back into the exact same running game instance it was taken from.</strong> Quitting or relaunching the game — or restarting the app — breaks the match, and a save from before that point will always fail to load.</p>
+      <p>Loading is refused outright, with no memory touched, unless the currently running title's ID, active thread list, and mapped memory layout all match the save exactly. That is expected behaviour, not a bug: there is no safe way to reconcile a save against a session it does not line up with.</p>
+    </div>
+    <p>In practice, save states are a same-session "checkpoint before a hard section", not a way to resume a game across app launches. Your normal in-game saves are still what carries progress between sessions.</p>
+
+    <h2 id="where">Where they live</h2>
+    <p>Each game gets its own folder: <code>Documents/SaveStates/&lt;game.id&gt;/</code>, with up to 4 files named <code>slot1.sav</code> through <code>slot4.sav</code>. That is namespaced by the game's own <code>id</code> — its ROM/dump filename — rather than its Wii U title ID, because a homebrew build or an unrecognised dump can lack a title ID entirely. Using the always-present <code>id</code> means those never collide with each other's slots.</p>
     <p>Open the sheet from the in-game top bar. Each slot shows empty, or "Saved &lt;relative time&gt;", with Save/Overwrite, Load, and Delete actions.</p>
 
-    <h2>What's actually captured</h2>
-    <p>A save state freezes the running title's <strong>guest RAM</strong> — every currently-mapped memory region, raw bytes — to the slot file. That's it. Deliberately, it does <strong>not</strong> capture:</p>
+    <h2 id="captured">What's actually captured</h2>
+    <p>A save state freezes the running title's <strong>guest RAM</strong> — every currently-mapped memory region, raw bytes — to the slot file. That is it. Deliberately, it does <strong>not</strong> capture:</p>
     <ul>
       <li>GPU/renderer state — no textures, shaders, vertex or uniform buffer caches</li>
       <li>CPU registers as a separate blob</li>
     </ul>
-    <p>CPU state isn't missing, though: Cafe OS already keeps every thread's register context inside guest memory itself (<code>OSThread_t.context</code>) whenever that thread isn't the one actively mid-timeslice on a core. Once every core has reached its idle fiber — confirmed before the save runs — a plain RAM dump already contains complete, correct register state for every thread, restored for free through the same code path a normal thread switch already uses.</p>
+    <p>CPU state is not missing, though. Cafe OS already keeps every thread's register context inside guest memory itself (<code>OSThread_t.context</code>) whenever that thread is not the one actively mid-timeslice on a core. Once every core has reached its idle fiber — confirmed before the save runs — a plain RAM dump already contains complete, correct register state for every thread, restored for free through the same code path a normal thread switch already uses.</p>
 
     <h3>Why GPU state is left alone</h3>
-    <p>Cemu's GX2/Latte layer already treats VRAM-side objects as caches derived from guest memory, invalidated by explicit signals from the game itself. A RAM-only load bypasses those signals, so a texture or shader load could briefly show its pre-save contents until the game's own next GX2 call refreshes it. That's the one accepted tradeoff of this design: a brief visual glitch, not lost data or a correctness problem. The alternative — force-invalidating every GPU cache from outside the GPU thread while it's still running — was judged an untested, unsafe cross-thread path and deliberately not attempted.</p>
+    <p>Cemu's GX2/Latte layer already treats VRAM-side objects as caches derived from guest memory, invalidated by explicit signals from the game itself. A RAM-only load bypasses those signals, so a texture or shader could briefly show its pre-save contents until the game's own next GX2 call refreshes it.</p>
+    <p>That is the one accepted trade-off of this design: a brief visual glitch, not lost data or a correctness problem. The alternative — force-invalidating every GPU cache from outside the GPU thread while it is still running — was judged an untested, unsafe cross-thread path and deliberately not attempted.</p>
 
-    <h2>The real limit: same running instance only</h2>
-    <div class="warn">
-      <p><strong>A save only loads back into the exact same running game instance it was taken from.</strong> Quitting or relaunching the game — or restarting the app — breaks the match, and a save from before that point will always fail to load. Loading is refused outright (no memory touched) unless the currently running title's ID, active thread list, and mapped memory layout all match the save exactly. That's expected behavior, not a bug: there's no safe way to reconcile a save against a session it doesn't line up with.</p>
-    </div>
-    <p>In practice, save states are a same-session "checkpoint before a hard section," not a way to resume a game across app launches — your normal in-game saves are still what carries progress between sessions.</p>
+    <h2 id="around">Around the save/load call</h2>
+    <p>Saving pauses the title if it is not already paused, waits for every CPU core to genuinely reach idle — not just "asked to pause", since a core mid-timeslice can keep writing to guest memory for a full quantum otherwise — writes the file, then resumes if this call was the one that paused it.</p>
+    <p>It fails cleanly, with no partial file, if no title is running, a core never quiesces within a few seconds, or the write itself fails. A successful load also forces the recompiler to drop any JIT-compiled code that may now be stale, which is a safe no-op under the interpreter.</p>
 
-    <h2>Around the save/load call</h2>
-    <p>Saving pauses the title if it isn't already paused, waits for every CPU core to genuinely reach idle (not just "asked to pause" — a core mid-timeslice can keep writing to guest memory for a full quantum otherwise), writes the file, then resumes if this call was the one that paused it. It fails cleanly — no partial file — if no title is running, a core never quiesces within a few seconds, or the write itself fails. A successful load also forces the recompiler to drop any JIT-compiled code that may now be stale (a safe no-op under the interpreter).</p>
-
-    <div class="doc-next">
-      <a href="screen-layout.html"><span class="dir">Previous</span>← Screen Layout</a>
-      <a href="controls.html"><span class="dir">Next</span>Controls &amp; GamePad →</a>
-    </div>
-  </div>
+    <nav class="doc-next" aria-label="Previous and next page">
+      <a href="screen-layout.html"><span class="dir">Previous</span>&larr; Screen Layout</a>
+      <a href="controls.html"><span class="dir">Next</span>Controls &amp; GamePad &rarr;</a>
+    </nav>
+  </main>
 </div>
 
 <footer class="site-footer">

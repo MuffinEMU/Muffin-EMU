@@ -3,29 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Controls &amp; GamePad — MuffinEMU Docs</title>
-<meta name="description" content="MuffinEMU's on-screen Wii U GamePad, hide-controls, comfort controls, Melo-Controller, and the 20 controller skins.">
+<title>Controls & GamePad — MuffinEMU Docs</title>
+<meta name="description" content="MuffinEMU's measured on-screen Wii U GamePad, hide-controls, comfort controls, Melo-Controller, and the 20 controller skins.">
 <link rel="icon" href="../icon.png">
 <link rel="apple-touch-icon" href="../icon.png">
 <meta name="theme-color" content="#F4A551" id="themeColorMeta">
 <link rel="stylesheet" href="../site.css">
+<link rel="stylesheet" href="../docs.css">
 </head>
 <body>
+
+<a class="skip-link" href="#main">Skip to content</a>
 
 <header class="site-header">
   <div class="header-inner">
     <a class="brand" href="../index.html"><img src="../icon.png" alt="" width="30" height="30"><span>MuffinEMU</span></a>
-    <nav class="site-nav">
+    <nav class="site-nav" aria-label="Main">
       <a href="../index.html">Home</a>
       <a href="installation.html">Install</a>
       <details class="nav-dropdown">
         <summary>Docs ▾</summary>
         <div class="dropdown-panel">
-          <a href="index.html">All documentation</a>
+          <a href="index.html">Overview</a>
+          <a href="installation.html">Installation</a>
           <a href="features.html">Features overview</a>
           <a href="screen-layout.html">Screen Layout</a>
           <a href="save-states.html">Save States</a>
-          <a href="controls.html" aria-current="page">Controls &amp; GamePad</a>
+          <a href="controls.html">Controls &amp; GamePad</a>
           <a href="themes.html">Themes &amp; Icons</a>
           <a href="troubleshooting.html">Troubleshooting</a>
           <a href="faq.html">FAQ</a>
@@ -44,7 +48,7 @@
 <div class="docs-shell">
   <aside class="docs-sidebar">
     <p class="sidebar-title">Documentation</p>
-    <nav>
+    <nav aria-label="Documentation">
       <a href="index.html">Overview</a>
       <a href="installation.html">Installation</a>
       <a href="features.html">Features overview</a>
@@ -57,42 +61,59 @@
     </nav>
   </aside>
 
-  <div class="docs-content">
+  <main class="docs-content" id="main">
+    <nav class="docs-breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="../index.html">Home</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li aria-current="page">Controls &amp; GamePad</li>
+      </ol>
+    </nav>
     <h1>Controls &amp; GamePad</h1>
-    <p class="subtitle">A measured on-screen Wii U GamePad, a hide-controls button, comfort controls, and an alternative pad if you'd rather use it.</p>
+    <p class="subtitle">A measured on-screen Wii U GamePad, a hide-controls button, comfort controls, and an alternative pad if you would rather use it.</p>
+    <nav class="docs-toc" aria-labelledby="toc-heading">
+      <p id="toc-heading">On this page</p>
+      <ul>
+        <li><a href="#gamepad">The on-screen GamePad</a></li>
+        <li><a href="#melo-controller">Melo-Controller</a></li>
+        <li><a href="#skins">Controller skins</a></li>
+      </ul>
+    </nav>
 
     <h2 id="gamepad">The on-screen GamePad</h2>
-    <p>The pad's proportions are measured, not designed: taken from the official Wii U GamePad's own front illustration at 0.425&nbsp;mm per pixel, a scale checked twice against Nintendo's published dimensions and confirmed both times (body 255.0&nbsp;mm measured vs. 255&nbsp;mm official; screen 158&nbsp;mm diagonal measured vs. 157.5&nbsp;mm official). Every dimension is expressed as a multiple of one face-button diameter, and the body works out to exactly 24 of them wide — so "life-size" on a large-enough screen is a literal claim, not a figure of speech. See the full measurement breakdown in the <a href="../gamepad-layout/">GamePad layout reference</a>.</p>
+    <p>The pad's proportions are measured, not designed: taken from the official Wii U GamePad's own front illustration at 0.425&nbsp;mm per pixel, a scale checked twice against Nintendo's published dimensions and confirmed both times — body 255.0&nbsp;mm measured against 255&nbsp;mm official, screen 158&nbsp;mm diagonal measured against 157.5&nbsp;mm official.</p>
+    <p>Every dimension is expressed as a multiple of one face-button diameter, and the body works out to exactly 24 of them wide — so "life-size" on a large-enough screen is a literal claim, not a figure of speech. See the full measurement breakdown in the <a href="../gamepad-layout/">GamePad layout reference</a>.</p>
 
     <h3>Hide controls</h3>
     <p>A button in the in-game top bar toggles the on-screen pad's visibility without pausing — useful the moment you need to touch the actual GamePad screen underneath it (a keyboard, a map, anything the game draws there) instead of the buttons layered over it. Hiding it also releases every currently-held button, so nothing stays "stuck" pressed once the overlay is gone.</p>
 
     <h3>Comfort controls</h3>
-    <p>An optional layout for the analog sticks: with comfort controls on, L/ZL/minus sit on the left stick and R/ZR/plus sit on the right stick, instead of staying on the d-pad and A/B/X/Y. Only available once the analog sticks toggle is on — moving shoulder buttons onto a stick that isn't there does nothing.</p>
+    <p>An optional layout for the analog sticks: with comfort controls on, L/ZL/minus sit on the left stick and R/ZR/plus sit on the right stick, instead of staying on the d-pad and A/B/X/Y. Only available once the analog sticks toggle is on — moving shoulder buttons onto a stick that is not there does nothing.</p>
 
     <h3>Sizing, feel, and layout</h3>
     <ul>
       <li><strong>Button size</strong> and <strong>opacity</strong> sliders — MuffinEMU already picks a sensible default for your screen; the sliders adjust that choice rather than replace it.</li>
       <li><strong>Add analog sticks</strong> — shown alongside the d-pad and face buttons, not instead of them.</li>
       <li><strong>Stick gate</strong> (the shape the stick is allowed to move within), plus separate <strong>deadzone</strong> and <strong>response curve</strong> controls for how that shape is read.</li>
-      <li><strong>Haptic feedback</strong> — a light tap on press; off by default preference if it reads as buzzing rather than a button.</li>
+      <li><strong>Haptic feedback</strong> — a light tap on press; turn it off if it reads as buzzing rather than a button.</li>
       <li><strong>Reset layout</strong> — puts every on-screen control setting back to its shipped default.</li>
     </ul>
 
     <h2 id="melo-controller">Melo-Controller</h2>
     <p><a href="https://github.com/stossy11/Melo-Controller">Melo-Controller</a>, stossy11's own touch controller from MeloCafe, is available as a full alternative to MuffinEMU's measured pad — toggle "Use melo-controls" in Settings &gt; On-screen Controls. It brings its own button art, its own layout editor for repositioning and resizing individual buttons, and its own per-game layouts. A separate scale slider resizes the whole pad as one unit on top of whatever the layout editor has already done to individual buttons.</p>
-    <div class="note">
+    <div class="callout callout-note">
+      <span class="callout-label">Licensing</span>
       <p>Melo-Controller is GPL-3.0 and is linked into every MuffinEMU build whether or not the toggle is on. Because GPL-3.0 code is present in the binary, a MuffinEMU IPA as a whole is distributed under GPL-3.0 — see <a href="../index.html#status">Credits &amp; license</a>.</p>
     </div>
 
     <h2 id="skins">Controller skins</h2>
     <p>20 visual skins for the on-screen pad, independent of layout: Standard, Wii U Original, GameCube, Nintendo 64, Super Nintendo, NES, Switch Pro, PlayStation, Xbox, Steam Deck, Arcade Cabinet, Sega Genesis, Minimal, Glass, Neon, Dark Mode, Light Mode, Custom, Mario Theme, and Zelda Theme.</p>
 
-    <div class="doc-next">
-      <a href="save-states.html"><span class="dir">Previous</span>← Save States</a>
-      <a href="themes.html"><span class="dir">Next</span>Themes &amp; Icons →</a>
-    </div>
-  </div>
+    <nav class="doc-next" aria-label="Previous and next page">
+      <a href="save-states.html"><span class="dir">Previous</span>&larr; Save States</a>
+      <a href="themes.html"><span class="dir">Next</span>Themes &amp; Icons &rarr;</a>
+    </nav>
+  </main>
 </div>
 
 <footer class="site-footer">

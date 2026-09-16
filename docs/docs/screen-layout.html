@@ -4,26 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Screen Layout — MuffinEMU Docs</title>
-<meta name="description" content="How MuffinEMU's Screen Layout system arranges the Wii U's TV and GamePad screens, and how routing to a genuine second display works.">
+<meta name="description" content="How MuffinEMU shares one device screen between the Wii U's TV and GamePad screens, and the honest status of routing to a genuine second display.">
 <link rel="icon" href="../icon.png">
 <link rel="apple-touch-icon" href="../icon.png">
 <meta name="theme-color" content="#F4A551" id="themeColorMeta">
 <link rel="stylesheet" href="../site.css">
+<link rel="stylesheet" href="../docs.css">
 </head>
 <body>
+
+<a class="skip-link" href="#main">Skip to content</a>
 
 <header class="site-header">
   <div class="header-inner">
     <a class="brand" href="../index.html"><img src="../icon.png" alt="" width="30" height="30"><span>MuffinEMU</span></a>
-    <nav class="site-nav">
+    <nav class="site-nav" aria-label="Main">
       <a href="../index.html">Home</a>
       <a href="installation.html">Install</a>
       <details class="nav-dropdown">
         <summary>Docs ▾</summary>
         <div class="dropdown-panel">
-          <a href="index.html">All documentation</a>
+          <a href="index.html">Overview</a>
+          <a href="installation.html">Installation</a>
           <a href="features.html">Features overview</a>
-          <a href="screen-layout.html" aria-current="page">Screen Layout</a>
+          <a href="screen-layout.html">Screen Layout</a>
           <a href="save-states.html">Save States</a>
           <a href="controls.html">Controls &amp; GamePad</a>
           <a href="themes.html">Themes &amp; Icons</a>
@@ -44,7 +48,7 @@
 <div class="docs-shell">
   <aside class="docs-sidebar">
     <p class="sidebar-title">Documentation</p>
-    <nav>
+    <nav aria-label="Documentation">
       <a href="index.html">Overview</a>
       <a href="installation.html">Installation</a>
       <a href="features.html">Features overview</a>
@@ -57,56 +61,70 @@
     </nav>
   </aside>
 
-  <div class="docs-content">
+  <main class="docs-content" id="main">
+    <nav class="docs-breadcrumb" aria-label="Breadcrumb">
+      <ol>
+        <li><a href="../index.html">Home</a></li>
+        <li><a href="index.html">Documentation</a></li>
+        <li aria-current="page">Screen Layout</li>
+      </ol>
+    </nav>
     <h1>Screen Layout</h1>
     <p class="subtitle">The Wii U has two screens — the TV and the GamePad (DRC). Two related but genuinely different systems decide where each one goes.</p>
+    <nav class="docs-toc" aria-labelledby="toc-heading">
+      <p id="toc-heading">On this page</p>
+      <ul>
+        <li><a href="#screen-layout-modes">On this device's screen</a></li>
+        <li><a href="#external-display">External display routing</a></li>
+      </ul>
+    </nav>
 
-    <p>Cemu models the TV and GamePad as two separate windows, each with its own Metal layer. Desktop Cemu can open a second OS window for the GamePad; on iOS the two systems below cover the two situations that replaces: sharing one physical screen, and routing to a real second one when it exists.</p>
+    <p>Cemu models the TV and GamePad as two separate windows, each with its own Metal layer. Desktop Cemu can open a second OS window for the GamePad; on iOS the two systems below cover the two situations that replaces — sharing one physical screen, and routing to a real second one when it exists.</p>
 
     <h2 id="screen-layout-modes">Screen Layout (this device's own screen)</h2>
-    <p>Settings &gt; Display &gt; Screen Layout, ported from MeloCafe — it already had exactly this, and MuffinEMU didn't until it was brought over.</p>
+    <p>Settings &gt; Display &gt; Screen Layout, ported from MeloCafe — it already had exactly this, and MuffinEMU did not until it was brought over.</p>
 
-    <div class="table-wrap">
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Screen layout modes">
       <table>
-        <thead><tr><th>Mode</th><th>What it does</th></tr></thead>
+        <thead><tr><th scope="col">Mode</th><th scope="col">What it does</th></tr></thead>
         <tbody>
           <tr>
-            <td>Single Screen</td>
+            <th scope="row">Single Screen</th>
             <td>Only the selected screen renders. A swap button switches between TV and GamePad.</td>
           </tr>
           <tr>
-            <td>Adaptive (Both Screens)</td>
+            <th scope="row">Adaptive (Both Screens)</th>
             <td>TV and GamePad automatically adjust: stacked in portrait, side by side in landscape.</td>
           </tr>
           <tr>
-            <td>Both Screens (GamePad Top Right)</td>
+            <th scope="row">Both Screens (GamePad Top Right)</th>
             <td>A small GamePad appears at the top right in its own column beside the TV view.</td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <p>Single Screen is the default. While it's active, a "Show Swap Button (TV ⇄ Pad)" toggle controls whether the in-game swap button appears — it's the only mode where exactly one screen is visible at a time, so it's the only one where swapping means anything.</p>
+    <p>Single Screen is the default. While it is active, a "Show Swap Button (TV ⇄ Pad)" toggle controls whether the in-game swap button appears — it is the only mode where exactly one screen is visible at a time, so it is the only one where swapping means anything.</p>
 
     <h2 id="external-display">External display routing</h2>
-    <p>Separate from the above: which of the two screens goes to a <em>genuine second physical display</em>, when one is actually connected. Inert without one. Three placements, and MuffinEMU's log always records which was chosen and why:</p>
+    <p>Separate from the above: which of the two screens goes to a <em>genuine second physical display</em>, when one is actually connected. Inert without one. Three placements, and MuffinEMU's log always records which was chosen and why.</p>
 
-    <div class="table-wrap">
+    <div class="table-wrap" tabindex="0" role="region" aria-label="External display placements">
       <table>
-        <thead><tr><th>Placement</th><th>When it applies</th><th>Result</th></tr></thead>
+        <thead><tr><th scope="col">Placement</th><th scope="col">When it applies</th><th scope="col">Result</th></tr></thead>
         <tbody>
           <tr>
-            <td><code>dualScreen</code></td>
+            <th scope="row"><code>dualScreen</code></th>
             <td>An external display is connected <em>and</em> the app has its own window scene for it</td>
             <td>TV goes to the external display, GamePad stays on the device — both get a real layer</td>
           </tr>
           <tr>
-            <td><code>deviceMirrored</code></td>
+            <th scope="row"><code>deviceMirrored</code></th>
             <td>An external display is connected, but the app has no scene of its own for it (plain AirPlay/screen mirroring)</td>
-            <td>TV stays on the device (and reaches the external display only through the mirror). GamePad screen is not rendered.</td>
+            <td>TV stays on the device, and reaches the external display only through the mirror. GamePad screen is not rendered.</td>
           </tr>
           <tr>
-            <td><code>deviceOnly</code></td>
+            <th scope="row"><code>deviceOnly</code></th>
             <td>No external display</td>
             <td>TV on the device, GamePad screen not rendered</td>
           </tr>
@@ -114,17 +132,18 @@
       </table>
     </div>
 
-    <div class="warn">
-      <p><strong>Honest status:</strong> only <code>deviceOnly</code> is exercised every launch on a plain iPad. <code>dualScreen</code> is written against the real UIKit API, but nobody has run it with a display actually attached, and the app ships no external-display scene configuration — so in practice, connecting a display today is expected to land on <code>deviceMirrored</code>, not <code>dualScreen</code>. Don't assume true dual-screen output works until a device log shows <code>placement=dualScreen</code>.</p>
+    <div class="callout callout-unverified">
+      <span class="callout-label">Not confirmed on hardware</span>
+      <p>Only <code>deviceOnly</code> is exercised every launch on a plain iPad. <code>dualScreen</code> is written against the real UIKit API, but <strong>nobody has run it with a display actually attached</strong>, and the app ships no external-display scene configuration — so in practice, connecting a display today is expected to land on <code>deviceMirrored</code>, not <code>dualScreen</code>. Do not assume true dual-screen output works until a device log shows <code>placement=dualScreen</code>.</p>
     </div>
 
     <p>When a real external display is in charge of the TV screen, on-device Screen Layout steps back for that screen — the two systems are never both "in charge" of the same screen at the same moment, which is why each gets its own swap setting (TV ⇄ Pad for the external-display case, a separate one for on-device Single Screen) rather than sharing one.</p>
 
-    <div class="doc-next">
-      <a href="features.html"><span class="dir">Previous</span>← Features overview</a>
-      <a href="save-states.html"><span class="dir">Next</span>Save States →</a>
-    </div>
-  </div>
+    <nav class="doc-next" aria-label="Previous and next page">
+      <a href="features.html"><span class="dir">Previous</span>&larr; Features overview</a>
+      <a href="save-states.html"><span class="dir">Next</span>Save States &rarr;</a>
+    </nav>
+  </main>
 </div>
 
 <footer class="site-footer">
