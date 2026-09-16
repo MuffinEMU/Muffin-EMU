@@ -64,6 +64,38 @@ enum DocumentImport {
         }
     }
 
+    /// The other direction: hand a file or folder we already have to wherever the user
+    /// wants to put it.
+    ///
+    /// Same presenter-stability dance as present() above, for the same reason - this is
+    /// also reached from a dismissing sheet, and presenting onto a controller that is
+    /// going away swallows the picker without a word.
+    ///
+    /// `asCopy: true` because the thing being exported lives inside the app's own
+    /// storage and must stay there. Without it the picker MOVES the directory out, which
+    /// for a save folder means exporting it deletes it.
+    static func presentExport(
+        _ urls: [URL],
+        completion: @escaping (Result<[URL], Error>) -> Void
+    ) {
+        waitForStablePresenter(attemptsLeft: 20) { presenter in
+            guard let presenter else {
+                completion(.failure(PresentationError.noPresenter))
+                return
+            }
+
+            let picker = UIDocumentPickerViewController(forExporting: urls, asCopy: true)
+            picker.shouldShowFileExtensions = true
+            picker.modalPresentationStyle = .formSheet
+
+            let delegate = Delegate(completion: completion)
+            picker.delegate = delegate
+            delegate.retainSelf()
+
+            presenter.present(picker, animated: true)
+        }
+    }
+
     enum PresentationError: LocalizedError {
         case noPresenter
 
