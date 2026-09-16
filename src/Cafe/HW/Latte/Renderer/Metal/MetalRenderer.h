@@ -274,7 +274,9 @@ public:
 	void draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 instanceCount, uint32 count, MPTR indexDataMPTR, Latte::LATTE_VGT_DMA_INDEX_TYPE::E_INDEX_TYPE indexType, bool isFirst) override;
 	void draw_endSequence() override;
 
-	void draw_updateVertexBuffersDirectAccess(uint32 maxIndex, uint32 baseInstance, uint32 instanceCount);
+	// minIndex/fetchVertexManually let the snapshot cache upload only the range a draw
+	// actually reads - see the firstByte computation in the implementation.
+	void draw_updateVertexBuffersDirectAccess(uint32 minIndex, uint32 maxIndex, uint32 baseInstance, uint32 instanceCount, bool fetchVertexManually);
 	void draw_updateUniformBuffersDirectAccess(LatteDecompilerShader* shader, const uint32 uniformBufferRegOffset);
     void PrepareUniformBufferSizes(LatteDecompilerShader* shader);
 
