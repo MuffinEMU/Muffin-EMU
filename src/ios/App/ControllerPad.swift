@@ -166,6 +166,20 @@ struct OptimizedControlPanel: View {
             // setting rather than making someone turn the pad back up to reposition it.
             .opacity(isEditingLayout ? 1.0 : max(padOpacity, 0.15))
         }
+        // The stuck-button net, moved up here from the individual controls.
+        //
+        // The whole pad disappearing is a real event - the title stopped, the pad was
+        // hidden, the app went away - and anything held when it happens must be
+        // released or the title keeps walking into a wall. One control disappearing is
+        // not a real event; it is SwiftUI re-rendering, and treating it as one is what
+        // released every press a frame after it began.
+        .onDisappear { cemu_bridge_release_all_buttons() }
+        // Both of these move controls between clusters, so a button held across the
+        // change is removed and rebuilt somewhere else and can never report its own
+        // release. Releasing everything is the honest response to the layout changing
+        // under a finger.
+        .onChange(of: joystickMode) { _ in cemu_bridge_release_all_buttons() }
+        .onChange(of: comfortControls) { _ in cemu_bridge_release_all_buttons() }
     }
 }
 
@@ -545,10 +559,28 @@ struct HeldControl<Content: View>: View {
                     }
                     .onEnded { _ in setPressed(false, because: .fingerLifted) }
             )
-            // A gesture the system cancels (backgrounding, an incoming call) or a view
-            // removed mid-press never delivers onEnded, and a button stuck down is a
-            // title stuck walking into a wall.
-            .onDisappear { setPressed(false, because: .viewRemoved) }
+            // NO .onDisappear release here, and that absence is the fix for a bug that
+            // took a day to corner.
+            //
+            // It used to release the press when this control left the view tree, on the
+            // reasoning that a view removed mid-press never delivers onEnded and a stuck
+            // button is a title stuck walking into a wall. The reasoning is sound; the
+            // level is wrong. SwiftUI removes and re-adds a control for its own reasons
+            // during ordinary re-rendering, and onDisappear cannot tell that apart from
+            // the pad actually going away - so every press was being released a frame or
+            // two after it started, by nothing the player did.
+            //
+            // Void found it from the outside: hold a button still and the readout
+            // goes "X down" then straight to "X up" without a finger lifting, but drag
+            // the finger off the button while still holding and it stays "X down" and
+            // reaches the game. onChanged fires once for a still finger and continuously
+            // for a moving one, so a moving finger simply re-asserts the press after
+            // each spurious release. That also proves the GESTURE never ended - SwiftUI
+            // does not restart a DragGesture mid-touch after onEnded - so the release
+            // could only have come from here.
+            //
+            // The safety net it provided lives at the panel instead, where "the pad went
+            // away" is a real event rather than a rendering detail.
             // Same safety net, for the case a view stays mounted but stops accepting
             // touches - edit mode switching on under a finger, or the app resigning
             // active. Without it the control keeps drawing pressed with no way to release.
