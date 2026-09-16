@@ -198,6 +198,8 @@ jobs:
               VER=$(./ci/version.sh)
             else
               MAJ=${LAST% *}; MIN=${LAST#* }
+              # The release we are building on top of - the range the notes describe.
+              PREV="v$MAJ.$MIN"
               MIN=$((MIN + 1))
               if [ "$MIN" -ge 10 ]; then MAJ=$((MAJ + 1)); MIN=0; fi
               VER="$MAJ.$MIN"
@@ -219,6 +221,7 @@ jobs:
             echo "MUFFIN_TAG=$TAG"
             echo "MUFFIN_LABEL=$LABEL"
             echo "MUFFIN_RELEASE=$RELEASE"
+            echo "MUFFIN_PREV_TAG=${PREV:-}"
           } >> "$GITHUB_ENV"
 
       - name: Stamp the build name and version
@@ -304,6 +307,59 @@ jobs:
           path: MuffinEMU.app.dSYM.zip
           retention-days: 30
 
+      - name: Write the release notes
+        # Notes are built from the commits in the range, so a release describes what is
+        # actually in it rather than repeating the same boilerplate every time.
+        #
+        # A commit says its own user-facing line with a `Release-note:` trailer:
+        #
+        #     Run one CPU core by default
+        #
+        #     ...why, at length, for whoever reads the history...
+        #
+        #     Release-note: Games run much faster on hot devices. MuffinEMU now uses one
+        #     Release-note: CPU core by default, the way MeloCafe does.
+        #
+        # That is the right moment to write it - the change is fresh and the person who
+        # made it knows what it means for someone playing a game. Commits without the
+        # trailer fall back to their subject line, which is honest if terse. Repeating
+        # the trailer wraps one long note across lines; it does not make two bullets.
+        run: |
+          set -eo pipefail
+          {
+            if [ "$MUFFIN_RELEASE" = "true" ] && [ -n "$MUFFIN_PREV_TAG" ] \
+               && git rev-parse -q --verify "refs/tags/$MUFFIN_PREV_TAG" >/dev/null; then
+              BODY=$(git log --no-merges --reverse --format='%H' "$MUFFIN_PREV_TAG..HEAD" | while read -r sha; do
+                subj=$(git show -s --format='%s' "$sha")
+                # Housekeeping the installer writes back to the repo. It is not a change
+                # anybody installed the build for. Written as a prefix strip rather than
+                # a case statement: bash 3.2, which is what macOS runners still ship,
+                # mis-parses a case pattern's ')' inside $( ).
+                if [ "${subj#Update install sources}" != "$subj" ]; then continue; fi
+                # Repeated trailers are ONE note that was wrapped across lines, so they
+                # join back into a single bullet. Prefixing each line instead turned a
+                # wrapped sentence into two bullets, the second starting mid-sentence.
+                note=$(git show -s --format='%(trailers:key=Release-note,valueonly)' "$sha" \
+                       | sed '/^[[:space:]]*$/d' | paste -sd' ' -)
+                if [ -n "$note" ]; then
+                  printf -- '- %s\n' "$note"
+                else
+                  printf -- '- %s\n' "$subj"
+                fi
+              done)
+              if [ -n "$BODY" ]; then
+                printf '## What changed\n\n%s\n\n' "$BODY"
+              fi
+            fi
+            sed "s|@COMMIT@|$GITHUB_SHA|" ci/release-body.md
+            if [ -n "$MUFFIN_PREV_TAG" ]; then
+              printf '\n**Full changelog**: https://github.com/%s/compare/%s...%s\n' \
+                "$GITHUB_REPOSITORY" "$MUFFIN_PREV_TAG" "$MUFFIN_TAG"
+            fi
+          } > RELEASE_NOTES.md
+          echo "----- release notes -----"
+          cat RELEASE_NOTES.md
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -312,25 +368,15 @@ jobs:
           name: ${{ env.MUFFIN_RELEASE == 'true' && format('MuffinEMU {0}', env.MUFFIN_VERSION) || format('MuffinEMU test build {0}', github.sha) }}
           prerelease: ${{ env.MUFFIN_RELEASE != 'true' }}
           make_latest: ${{ env.MUFFIN_RELEASE == 'true' }}
-          generate_release_notes: true
+          # Off: the notes are written by the step above, from the commits in the
+          # range. Leaving this on appended GitHub's own list of commit subjects
+          # underneath, saying the same thing again in less useful words.
+          generate_release_notes: false
           files: |
             MuffinEMU.ipa
             MuffinEMU-fakesigned.ipa
             MuffinEMU.app.dSYM.zip
-          body: |
-            MuffinEMU, Wii U emulation for iPhone and iPad, built from commit ${{ github.sha }}.
-
-            **`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign
-            with your own Apple ID at install.
-
-            **`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT
-            entitlements embedded.
-
-            The recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the
-            "Use the recompiler (JIT)" switch in Settings; without both it runs the
-            interpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.
-
-            MuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.
+          body_path: RELEASE_NOTES.md
 
       - name: Upload build logs (always)
         if: always()
