@@ -67,6 +67,7 @@ enum SettingsDefaults {
         cemu_bridge_set_recompiler_enabled(true)
         cemu_bridge_set_favour_accuracy(false)
         cemu_bridge_set_low_power_mode(LowPowerMode.defaultValue)
+        cemu_bridge_set_multicore_enabled(MulticoreMode.defaultValue)
         // No bridge call - the thermal response lives entirely on the Swift side. The
         // reset loop already removed the key, so this just makes sure a throttle that was
         // active at the moment of the reset is unwound rather than left holding the user's

@@ -123,6 +123,32 @@ enum LowPowerMode {
     }
 }
 
+/// Whether the three emulated Espresso cores get three host threads or share one.
+///
+/// # Why one is the default
+///
+/// This was three, on the reasoning that MuffinEMU leads with speed. Measured on the
+/// same device and title - Wind Waker HD on an A12Z iPad Pro - that reasoning was
+/// backwards: MeloCafe, which runs one core, holds 40-60fps; MuffinEMU on three managed
+/// 4-20.
+///
+/// Three host threads on a fanless part do not buy three times the work. They buy three
+/// times the sustained power draw, the SoC heats up within a minute, and iOS takes the
+/// clocks back - so the extra threads end up sharing a slower machine than one thread
+/// would have had to itself. The multi-core win is real where there is a fan and thermal
+/// headroom to spend; this device has neither.
+///
+/// Kept as a switch rather than removed, because a newer and better-cooled device may
+/// genuinely come out ahead and that is worth being able to find out.
+enum MulticoreMode {
+    static let storageKey = "muffin.cpu.multicore"
+    static let defaultValue = false
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+    }
+}
+
 /// Whether the picture fills the view's own aspect ratio instead of keeping the Wii U's
 /// 1280x720, letterboxed. A viewer choice, not a correctness fix: it exists for someone
 /// who would rather fill every pixel of an odd-shaped screen than see bars on two sides.

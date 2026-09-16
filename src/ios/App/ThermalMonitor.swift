@@ -112,14 +112,31 @@ final class ThermalMonitor: ObservableObject {
     /// `.serious` would cost speed nobody asked for; applying only the lighter one at
     /// `.critical` would not buy enough headroom to get back out.
     ///
-    /// These are small on purpose. 250us per reschedule is a meaningful duty-cycle cut
-    /// across three host threads without the emulated OS noticing anything other than
-    /// running slower - the sleep lands at a reschedule point the guest already expects
-    /// to yield at.
+    /// These were 250us and 1000us, and calling them "small" was the mistake. The sleep
+    /// is per RESCHEDULE, not per frame, and a reschedule is over in tens of
+    /// microseconds - so the number is not a small addition to a long timeslice, it is a
+    /// multiplier on a short one. 1000us per reschedule does not shave a few percent off
+    /// the duty cycle, it can cost an order of magnitude.
+    ///
+    /// Worse, sleep_for under a millisecond does not sleep for what it is asked on
+    /// Darwin. Timer granularity and scheduler wakeup latency put a floor of roughly
+    /// 50-100us under any sleep, and coalescing can stretch a sub-millisecond request
+    /// toward a full millisecond - so the 250us step was likely costing several times
+    /// what it read as.
+    ///
+    /// So `.serious` no longer sleeps at all. It still drops the render scale, which is
+    /// real thermal relief with a predictable cost, and it lets iOS's own throttling do
+    /// the CPU-side work rather than stacking ours on top of it - at `.serious` iOS has
+    /// already taken the clocks down, and sleeping the cores as well was paying twice.
+    /// `.critical` keeps a much smaller sleep, because "may start killing the process"
+    /// is worth real speed to escape.
+    ///
+    /// The other half of this is that single-core is now the default (see
+    /// ios_apply_cpu_mode), so the device reaches these states far less often.
     private func throttleMicros(for state: ProcessInfo.ThermalState) -> UInt32 {
         switch state {
-        case .serious:  return 250
-        case .critical: return 1000
+        case .serious:  return 0
+        case .critical: return 125
         default:        return 0
         }
     }
@@ -135,7 +152,11 @@ final class ThermalMonitor: ObservableObject {
 
         // The CPU governor is re-applied on EVERY change while hot, not only on the
         // transition into it, because .serious -> .critical has to escalate.
-        cemu_bridge_set_thermal_throttle_micros(shouldThrottle ? throttleMicros(for: state) : 0)
+        // throttleMicros() already returns 0 for every state below .serious, so this is
+        // the same value either way - written out rather than relying on the ternary to
+        // infer UInt32 for the literal.
+        let micros: UInt32 = shouldThrottle ? throttleMicros(for: state) : 0
+        cemu_bridge_set_thermal_throttle_micros(micros)
 
         if shouldThrottle && !isThrottling {
             // Remember what the user picked BEFORE overwriting it, so cooling restores

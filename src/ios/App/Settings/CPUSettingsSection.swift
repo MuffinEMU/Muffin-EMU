@@ -11,6 +11,7 @@ struct CPUSettingsSection: View {
     @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = true
     @AppStorage("muffin.cpu.favourAccuracy") private var favourAccuracy = false
     @AppStorage(LowPowerMode.storageKey) private var lowPowerMode = LowPowerMode.defaultValue
+    @AppStorage(MulticoreMode.storageKey) private var multicoreEnabled = MulticoreMode.defaultValue
     @AppStorage(ThermalMonitor.autoThrottleKey) private var autoReduceWhenHot = ThermalMonitor.autoThrottleDefault
     @ObservedObject private var thermal = ThermalMonitor.shared
     @AppStorage(HeatDisplayMode.storageKey) private var heatDisplayMode = HeatDisplayMode.word.rawValue
@@ -37,7 +38,7 @@ struct CPUSettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(favourAccuracy
                          ? "One CPU core, shaders built before they are drawn, accurate barriers and draw-done sync."
-                         : "Multi-core CPU, shaders built in the background, accuracy-only work skipped.")
+                         : "Shaders built in the background, accuracy-only work skipped.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -56,8 +57,8 @@ struct CPUSettingsSection: View {
                     Text("Low Power Mode")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(lowPowerMode
-                         ? "One CPU core. Cooler and longer-running, and slower."
-                         : "Three CPU cores. Fastest, and by far the hottest.")
+                         ? "One CPU core, and holds it there even if the switch below is on."
+                         : "Follows the core setting below.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -65,6 +66,31 @@ struct CPUSettingsSection: View {
             .tint(MuffinTheme.pixelBlue)
             .onChange(of: lowPowerMode) { newValue in
                 cemu_bridge_set_low_power_mode(newValue)
+            }
+
+            // Off by default, and that default is measured rather than assumed. On an
+            // A12Z iPad Pro running Wind Waker HD, MeloCafe on one core holds 40-60fps
+            // and MuffinEMU on three managed 4-20. Three host threads on a fanless part
+            // do not buy three times the work - they buy three times the power draw, and
+            // the SoC takes the clocks back within a minute. The multi-core win is real
+            // on a desktop with a fan; this is not that.
+            //
+            // Kept as a switch rather than deleted because a newer, better-cooled device
+            // may well come out ahead, and that is worth being able to find out.
+            Toggle(isOn: $multicoreEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Use all three CPU cores")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text(multicoreEnabled
+                         ? "Three CPU cores. Faster in theory, but it heats this device up fast and usually ends up slower."
+                         : "One CPU core, the way MeloCafe runs. Cooler, and on this hardware normally faster.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .tint(MuffinTheme.pixelBlue)
+            .onChange(of: multicoreEnabled) { newValue in
+                cemu_bridge_set_multicore_enabled(newValue)
             }
 
             // Defaults ON, unlike Low Power Mode. Not a contradiction: at .serious iOS is
