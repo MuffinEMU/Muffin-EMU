@@ -738,10 +738,17 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
         // it cannot hold environment values itself. Routing makeBody through a private
         // nested View is the standard way to get them - and it is what lets this style
         // honour Reduce Motion at all.
-        Body(configuration: configuration)
+        StyleBody(configuration: configuration)
     }
 
-    private struct Body: View {
+    /// Named StyleBody, NOT Body. A nested type literally called `Body` is picked up by
+    /// Swift's name-based associated-type inference as the witness for ButtonStyle's own
+    /// `Body` associatedtype - and because this one is `private` while the style is
+    /// internal, that fails with "struct 'Body' must be as accessible as its enclosing
+    /// type", which reads as an access-control problem when it is really a name
+    /// collision. makeBody already returns `some View`, so the witness should come from
+    /// the opaque return type; any other name lets it.
+    private struct StyleBody: View {
         let configuration: ButtonStyleConfiguration
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @Environment(\.isEnabled) private var isEnabled
@@ -810,10 +817,17 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
 /// style does now: a real pressed fill, a small scale, and the elevation dropping away.
 struct MuffinSecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        Body(configuration: configuration)
+        StyleBody(configuration: configuration)
     }
 
-    private struct Body: View {
+    /// Named StyleBody, NOT Body. A nested type literally called `Body` is picked up by
+    /// Swift's name-based associated-type inference as the witness for ButtonStyle's own
+    /// `Body` associatedtype - and because this one is `private` while the style is
+    /// internal, that fails with "struct 'Body' must be as accessible as its enclosing
+    /// type", which reads as an access-control problem when it is really a name
+    /// collision. makeBody already returns `some View`, so the witness should come from
+    /// the opaque return type; any other name lets it.
+    private struct StyleBody: View {
         let configuration: ButtonStyleConfiguration
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @Environment(\.isEnabled) private var isEnabled
