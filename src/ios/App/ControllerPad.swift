@@ -442,6 +442,9 @@ private struct DpadTouchSurface: View {
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
+    @AppStorage(ControllerLayoutSettings.touchSlopKey)
+    private var touchSlop = ControllerLayoutSettings.defaultTouchSlop
+
     private var width: CGFloat { box.width * unit }
     private var height: CGFloat { box.height * unit }
 
@@ -451,7 +454,18 @@ private struct DpadTouchSurface: View {
         // as a shape with nothing to draw.
         Color.clear
             .frame(width: width, height: height)
+            // Same slop the face buttons get, applied the same way - grow, claim, restore
+            // - so the d-pad's outer edge is exactly as forgiving as every other control
+            // and the setting means one thing across the whole pad.
+            //
+            // It only widens the OUTER catchment. Which direction a touch resolves to is
+            // decided by PadLayout.dpadDirections() from the angle around the centre, and
+            // that maths reads the unpadded width/height passed below, so the boundaries
+            // BETWEEN up/down/left/right do not move. A more generous d-pad here means
+            // "a touch slightly off the pad still counts", never "the diagonals shifted".
+            .padding(touchSlop)
             .contentShape(Rectangle())
+            .padding(-touchSlop)
             .position(x: centre.x + box.midX * unit, y: centre.y + box.midY * unit)
             .allowsHitTesting(isInteractive)
             .gesture(
@@ -753,12 +767,57 @@ struct HeldControl<Content: View>: View {
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
+    @AppStorage(ControllerLayoutSettings.touchSlopKey)
+    private var touchSlop = ControllerLayoutSettings.defaultTouchSlop
+
+    @AppStorage(ControllerLayoutSettings.pressAnimationKey)
+    private var pressAnimationEnabled = ControllerLayoutSettings.defaultPressAnimation
+
+    /// A press animation that plays while someone is aiming at a moving target is worse
+    /// than none, and this is a gamepad - the whole point is that the finger is already
+    /// somewhere else by the next frame. Honoured rather than assumed harmless.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var shown: Bool { externallyPressed ?? isPressed }
+
+    /// How far the control shrinks under a finger. Deliberately small: at 0.94 the
+    /// movement is legible at a glance without the button appearing to slide out from
+    /// under the thumb, which is what larger values read as on a control you are holding
+    /// rather than tapping.
+    private var pressScale: CGFloat {
+        guard pressAnimationEnabled, !reduceMotion else { return 1 }
+        return shown ? 0.94 : 1
+    }
+
+    /// Asymmetric on purpose. The press has to look instantaneous, because the input
+    /// already was - a spring on the way DOWN would make a button that registered at
+    /// touch-down appear to register late, which is precisely the complaint this is meant
+    /// to answer. The release can afford to settle.
+    private var pressAnimation: Animation? {
+        guard pressAnimationEnabled, !reduceMotion else { return nil }
+        return shown
+            ? .easeOut(duration: 0.045)
+            : .spring(response: 0.22, dampingFraction: 0.62)
+    }
+
     var body: some View {
-        content(externallyPressed ?? isPressed)
-            // Without this the hit area is whatever the label happens to paint, so a
-            // finger landing on the transparent corner of a circular button hits the
-            // view behind it instead.
+        content(shown)
+            // The animation wraps the CONTENT, not the hit area below it. Scaling the
+            // touch target with the button would shrink the catchment at the exact moment
+            // a finger is on it, so a press that drifts slightly would release early -
+            // the opposite of responsive.
+            .scaleEffect(pressScale)
+            .animation(pressAnimation, value: shown)
+            // Grow the touch area without moving anything. padding() enlarges the frame,
+            // contentShape() claims that enlarged frame for hit-testing, and the negative
+            // padding puts the layout back exactly where it was - so every control keeps
+            // its painted size and position at every slop value, and only the invisible
+            // catchment changes. Applied before .contentShape(Rectangle()) below, which
+            // is what previously limited the hit area to whatever the label painted (a
+            // finger on the transparent corner of a circular button hit the view behind).
+            .padding(touchSlop)
             .contentShape(Rectangle())
+            .padding(-touchSlop)
             .accessibilityAddTraits(.isButton)
             .gesture(externallyPressed == nil ? ownGesture : nil)
             // A gesture the system cancels (backgrounding, an incoming call) or a view
