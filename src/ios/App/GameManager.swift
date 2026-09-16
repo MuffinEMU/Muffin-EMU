@@ -1001,6 +1001,11 @@ class GameManager: ObservableObject {
             // this background task started fresh on a relaunch.
             cemu_bridge_set_async_shader_compile(
                 PerGameSettingsStore.shared.effectivePreCompileShaders(for: game.id))
+            // Global, and read here for the same reason as the calls above: the core
+            // count is fixed the moment _LaunchTitleThread() starts its host threads, so
+            // a Settings change only takes effect on the next launch and has to be pushed
+            // before boot rather than when the toggle moved.
+            cemu_bridge_set_low_power_mode(LowPowerMode.isEnabled)
             // Global, not per-game - see CemuBridge.h's cemu_bridge_set_vsync_enabled().
             // Applied once per layer (re)init, so reading it here before boot is what
             // makes a mid-session Settings change take effect on the next launch.

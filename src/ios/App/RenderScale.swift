@@ -75,6 +75,54 @@ enum RenderScale: String, CaseIterable, Identifiable {
     }
 }
 
+/// One emulated CPU core instead of three, for heat and battery.
+///
+/// # Why this is the lever, measured rather than guessed
+///
+/// Reported 2026-09-15: the same title runs cool on MeloCafe and gets hot fast on
+/// MuffinEMU. MeloCafe is not doing anything clever - it is doing a third of the work.
+///
+/// On iOS the core's `GetCPUMode()` returns the config value unresolved, and
+/// `_LaunchTitleThread()` only starts the three emulated CPU cores on their own host
+/// threads for the two explicit Multicore modes. MeloCafe's default is `Auto`, which
+/// therefore runs every title on ONE host thread. MuffinEMU's bridge always writes an
+/// explicit mode (it has to - see `ios_apply_cpu_mode`) and picks Multicore, because
+/// speed first is this port's whole point. So MuffinEMU runs THREE.
+///
+/// Those host threads live in the `while (true)` loop at the bottom of
+/// `coreinit_Thread.cpp`, which reschedules without ever sleeping. Three of them resident
+/// on a fanless A12Z is about three times the sustained CPU power draw of one. There is
+/// no frame limiter in the engine to cap it and no thermal governor of our own.
+///
+/// # What this does NOT do, deliberately
+///
+/// It does not touch shader compilation, Vulkan barriers or GX2DrawDone sync. That is
+/// what `Favour accuracy` does, and all three of those make the machine do MORE work -
+/// the opposite of what something called Low Power should do. The two settings both end
+/// up asking for one core, for unrelated reasons, and are kept separate for that reason.
+///
+/// It also does not change Render Scale. That is a real GPU-side lever and it is already
+/// a four-way setting the user controls directly (`RenderScale` above, defaulting to
+/// `.balanced`); quietly overriding someone's explicit choice from a different switch is
+/// worse than leaving it to them. Anyone chasing heat should turn this on AND drop Render
+/// Scale - the footer says so.
+///
+/// # Honesty
+///
+/// This costs frame rate, roughly in proportion to what it saves. It is a trade, not a
+/// free win, and the toggle's own subtitle says so rather than selling it.
+enum LowPowerMode {
+    static let storageKey = "muffin.cpu.lowPowerMode"
+    /// Off. MuffinEMU's stated direction is speed and raw power first, and silently
+    /// shipping everyone the slow path to fix a thermal complaint would be choosing for
+    /// people who did not ask.
+    static let defaultValue = false
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+    }
+}
+
 /// Whether the picture fills the view's own aspect ratio instead of keeping the Wii U's
 /// 1280x720, letterboxed. A viewer choice, not a correctness fix: it exists for someone
 /// who would rather fill every pixel of an odd-shaped screen than see bars on two sides.

@@ -454,6 +454,13 @@ namespace {
     std::atomic<int> g_cpuMode{kCpuModeUndecided};
     std::atomic<bool> g_recompilerRequested{false};
     std::atomic<bool> g_favourAccuracy{false};
+    // Low Power Mode. Separate from Favour accuracy on purpose: both end up asking for
+    // one emulated CPU core, but for opposite reasons and with different side effects.
+    // Favour accuracy also forces synchronous shader compilation, accurate Vulkan
+    // barriers and GX2DrawDone sync - all of which cost MORE work, not less, and are the
+    // last thing a device that is already too hot needs. Low power wants the core count
+    // down and nothing else changed.
+    std::atomic<bool> g_lowPowerMode{false};
     std::mutex g_cpuModeDetailMutex;
     std::string g_cpuModeDetail;
 
@@ -595,7 +602,24 @@ void ios_apply_cpu_mode()
     uint32_t csFlags = 0;
     const bool debugged = ios_process_is_debugged(csFlags);
     const bool accuracy = g_favourAccuracy.load();
-    const char* cores = accuracy ? "single-core" : "multi-core";
+    const bool lowPower = g_lowPowerMode.load();
+    // THE dominant thermal difference between this port and MeloCafe, and it is by
+    // design rather than a bug. On iOS the core's GetCPUMode() returns the config value
+    // unresolved and _LaunchTitleThread() only starts the three emulated cores on their
+    // own host threads for the two explicit Multicore modes - so MeloCafe's default
+    // (Auto) runs every title on ONE host thread. This bridge always writes an explicit
+    // mode, and Speed first means Multicore, so MuffinEMU runs THREE.
+    //
+    // Those host threads sit in PPCCore_boostBaseTime's `while (true)` loop
+    // (coreinit_Thread.cpp), which reschedules without sleeping. Three of them resident
+    // on a fanless A12Z is roughly three times the sustained CPU power draw of one, which
+    // is exactly the "hot fast, while MeloCafe stays cool" report - MeloCafe is not doing
+    // something clever, it is doing a third of the work.
+    //
+    // So single-core is the single biggest lever available, and Low Power Mode pulls it
+    // without dragging in Favour accuracy's extra GPU work.
+    const bool singleCore = accuracy || lowPower;
+    const char* cores = singleCore ? "single-core" : "multi-core";
     auto& config = GetConfig();
     char detail[320];
 
@@ -604,7 +628,7 @@ void ios_apply_cpu_mode()
         // Without CS_DEBUGGED the interpreter is the only option, not a preference: the
         // kernel kills the process the moment it runs generated code, and an explicit
         // recompiler mode skips the debugger check the core applies to Auto.
-        config.cpu_mode = accuracy ? CPUMode::SinglecoreInterpreter : CPUMode::MulticoreInterpreter;
+        config.cpu_mode = singleCore ? CPUMode::SinglecoreInterpreter : CPUMode::MulticoreInterpreter;
         g_cpuMode.store(kCpuModeInterpreter);
         if (!g_recompilerRequested.load())
             snprintf(detail, sizeof(detail), "The recompiler is off in Settings, so the %s interpreter is running.", cores);
@@ -614,10 +638,10 @@ void ios_apply_cpu_mode()
         setCpuModeDetail(detail);
         return;
     }
-    config.cpu_mode = accuracy ? CPUMode::SinglecoreRecompiler : CPUMode::MulticoreRecompiler;
+    config.cpu_mode = singleCore ? CPUMode::SinglecoreRecompiler : CPUMode::MulticoreRecompiler;
     g_cpuMode.store(kCpuModeRecompiler);
     snprintf(detail, sizeof(detail), "A JIT enabler is attached, so the AArch64 recompiler runs this launch, %s%s.",
-        cores, accuracy ? " because Favour accuracy is on" : "");
+        cores, lowPower ? " because Low Power Mode is on" : (accuracy ? " because Favour accuracy is on" : ""));
     setCpuModeDetail(detail);
 }
 
@@ -1326,6 +1350,19 @@ void cemu_bridge_set_favour_accuracy(bool enabled) {
 
 bool cemu_bridge_favour_accuracy(void) {
     return g_favourAccuracy.load();
+}
+
+void cemu_bridge_set_low_power_mode(bool enabled) {
+    g_lowPowerMode.store(enabled);
+    // Same shape as Favour accuracy above: recompute the mode now so Settings reports
+    // the truth immediately, but the core count itself only changes on the next launch -
+    // _LaunchTitleThread() has already started however many host threads it started.
+    if (g_initialized.load())
+        ios_apply_cpu_mode();
+}
+
+bool cemu_bridge_low_power_mode(void) {
+    return g_lowPowerMode.load();
 }
 
 int cemu_bridge_cpu_mode(void) {

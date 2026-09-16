@@ -461,6 +461,28 @@ bool cemu_bridge_recompiler_enabled(void);
 /// accurate barriers and draw-done sync. For the titles that glitch, desync or crash on
 /// the fast path. Read when a title starts.
 void cemu_bridge_set_favour_accuracy(bool enabled);
+
+/// Low Power Mode: run ONE emulated CPU core instead of three, and nothing else.
+///
+/// Deliberately not folded into cemu_bridge_set_favour_accuracy() even though both end
+/// up choosing a Singlecore mode. Favour accuracy ALSO forces synchronous shader
+/// compilation, accurate Vulkan barriers and GX2DrawDone sync - all of which add work.
+/// A device that is already too hot needs less work, not more, so these stay separate
+/// switches with separate reasons.
+///
+/// Why this is the lever that matters: on iOS the core's GetCPUMode() returns the config
+/// value unresolved, and _LaunchTitleThread() only starts the three emulated cores on
+/// their own host threads for the two explicit Multicore modes. MeloCafe's default (Auto)
+/// therefore runs every title on one host thread; this bridge always writes an explicit
+/// mode and defaults to Multicore, so MuffinEMU runs three. Those threads sit in a
+/// reschedule loop that never sleeps, so three of them on a fanless A12Z is about three
+/// times the sustained CPU power of one. That difference, not any cleverness on
+/// MeloCafe's side, is why the same title can run cool there and hot here.
+///
+/// Costs frame rate. That is the trade, stated plainly rather than hidden.
+/// Read when a title starts - the core count cannot change under a running title.
+void cemu_bridge_set_low_power_mode(bool enabled);
+bool cemu_bridge_low_power_mode(void);
 bool cemu_bridge_favour_accuracy(void);
 
 /// Whether shaders and pipelines are compiled in the background instead of the game
