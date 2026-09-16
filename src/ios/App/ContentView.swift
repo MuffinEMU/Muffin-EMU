@@ -1187,7 +1187,16 @@ struct EmulatorViewOptimized: View {
     // two @AppStorage defaults for one key that disagree means the toggle and the
     // emulator disagree about what is on. See SettingsView for why this flipped.
     @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
-    @StateObject private var launchLog = LaunchLogStore()
+    // @State, not @StateObject, and the distinction is the whole point. @StateObject
+    // subscribes this view to the store's objectWillChange - and the store publishes on
+    // a 0.1s timer for as long as a title is running, so the ENTIRE emulator view, the
+    // Metal view and the on-screen pad included, was re-rendering ten times a second
+    // just to keep a log nobody may even have open up to date.
+    //
+    // LaunchLogView already declares `@ObservedObject var store`, so it re-renders on
+    // its own and loses nothing. This view only needs to own the object's lifetime and
+    // start and stop it, which @State does without subscribing.
+    @State private var launchLog = LaunchLogStore()
     @State private var launchLogDismissed = false
 
     /// Armed on every entry into this view, which is once per game launch. Cleared by
@@ -1771,6 +1780,10 @@ struct EmulatorViewOptimized: View {
                 VStack {
                     Spacer()
                     LaunchLogView(store: launchLog) {
+                        // Stop draining as well as hiding. A dismissed log still polled
+                        // the engine every 0.1s and appended to an array nothing was
+                        // showing, for the rest of the session.
+                        launchLog.stop()
                         withAnimation(.easeInOut(duration: 0.2)) { launchLogDismissed = true }
                     }
                     .frame(maxWidth: 720, maxHeight: 240)
