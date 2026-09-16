@@ -102,6 +102,13 @@ enum HeatBand: Int, Comparable {
 }
 
 /// The reading itself, and the honest answer about what is available.
+///
+/// @MainActor because `band` reads `ThermalMonitor.shared.state`, and ThermalMonitor is
+/// main-actor isolated - it owns @Published state that drives views and mutates the
+/// governor. Isolating this type is the honest fix rather than making ThermalMonitor
+/// nonisolated or reaching for `assumeIsolated`: every caller here is already a SwiftUI
+/// view (the badge, the CPU section, the device report), so there is nothing to force.
+@MainActor
 enum HeatStatus {
     /// A real temperature, or nil. Never estimated - see
     /// `cemu_bridge_device_temperature_celsius()` for why this is usually nil on a

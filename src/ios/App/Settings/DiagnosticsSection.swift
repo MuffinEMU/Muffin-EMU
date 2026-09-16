@@ -19,6 +19,11 @@ struct DeviceReportSection: View {
     /// against, and "iOS 27 device, pre-27 SDK" is the single most likely reason for a
     /// report that a new-OS feature did nothing. Putting it in the copied text means it
     /// travels with every bug report instead of having to be asked for.
+    /// @MainActor because it reads ThermalMonitor and HeatStatus, both of which are
+    /// main-actor isolated. A SwiftUI View's `body` is isolated for you; an ordinary
+    /// computed property on the same struct is NOT, which is exactly the gap that let the
+    /// sibling call in SettingsDefaults compile locally and fail on CI.
+    @MainActor
     private var deviceReport: String {
         String(cString: cemu_bridge_device_report())
             + "\n" + PlatformCapabilities.summary
