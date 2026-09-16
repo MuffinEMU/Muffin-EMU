@@ -113,6 +113,18 @@ struct PadDiagnosticsOverlay: View {
         previewPadEnabled && !useMeloControls
     }
 
+    /// Read once per render rather than cached: it is a couple of map lookups, it has to
+    /// reflect a reset taking effect immediately, and a stale "0 bindings" would send
+    /// someone chasing a bug that had already been fixed.
+    private var buttonBindings: Int { Int(cemu_bridge_input_button_mapping_count()) }
+
+    private var bindingsText: String {
+        let n = buttonBindings
+        if n < 0 { return "no GamePad wired" }
+        if n == 0 { return "0 - THIS is why buttons are dead" }
+        return "\(n) buttons"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             row("pad", diag.activePad.rawValue,
@@ -121,6 +133,12 @@ struct PadDiagnosticsOverlay: View {
             row("inputs", "\(diag.inputCount)  last \(diag.lastInput)",
                 warn: diag.inputCount == 0)
             row("stick", "\(diag.stickCount)  last \(diag.lastStick)", warn: false)
+
+            // The line that would have ended a day of debugging in one glance. Buttons
+            // only - axes bypass the mapping table entirely, so counting them would show a
+            // healthy number for exactly the broken case (sticks bound, buttons not).
+            row("bindings", bindingsText, warn: buttonBindings <= 0)
+            row("profile", String(cString: cemu_bridge_input_profile_name()), warn: false)
 
             Divider().background(Color.white.opacity(0.3))
 
@@ -132,6 +150,12 @@ struct PadDiagnosticsOverlay: View {
 
             if padSilentlyUnmounted {
                 Text("Preview pad is ON and Melo is OFF, so MuffinEMU's own pad is not mounted. Turn off Settings > Preview: New Pad System.")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(.yellow)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 240, alignment: .leading)
+            } else if buttonBindings == 0 {
+                Text("The GamePad has no button bindings, so presses go nowhere while sticks still work. Settings > On-screen Controls > Reset controller bindings.")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundColor(.yellow)
                     .fixedSize(horizontal: false, vertical: true)

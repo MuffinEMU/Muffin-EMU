@@ -59,6 +59,8 @@
 #include "gui/interface/WindowSystem.h"
 #include "input/api/iOS/GCControllerProvider.h"
 #include "input/emulated/EmulatedController.h"
+#include "input/emulated/VPADController.h"
+#include "input/InputManager.h"
 
 // Forward-declared rather than reached through coreinit_Thread.h: that header pulls the
 // whole coreinit thread/scheduler surface into an ARC-compiled ObjC++ translation unit
@@ -2282,6 +2284,64 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
         g_touchButtons |= (1u << bit);
     else
         g_touchButtons &= ~(1u << bit);
+}
+
+// ---------------------------------------------------------------------------
+// Input introspection
+//
+// The GamePad's button mappings live in C++ (InputManager / EmulatedController) and are
+// persisted to controllerProfiles/controller{N} on the device. Swift could not see any of
+// it, and that blind spot cost an entire day: every on-screen button was dead while the
+// sticks still worked, and nothing in the app could say why.
+//
+// The reason that pairing happens is worth stating once, because it is the whole shape of
+// the bug: axes reach the emulated controller directly (GCController.mm assigns
+// result.axis from the stick values) and never consult the mapping table, while EVERY
+// button goes through it. So "sticks respond, no button does" means, precisely, an
+// emulated controller with no button mappings - a state a stale or partial profile can
+// produce and keep producing on every launch, on every future build, because it is data
+// on the device rather than anything in the binary.
+//
+// These three functions exist so that is visible and fixable from the UI instead of
+// requiring a source-level diagnosis. They are deliberately the smallest surface that
+// answers "how many bindings are there", "which profile am I on", and "put it back" -
+// porting InputManager itself to Swift would fork ~3,200 lines of shared core that the
+// desktop build also uses, and would not have prevented this bug in the first place.
+
+int cemu_bridge_input_button_mapping_count(void) {
+    auto vpad = InputManager::instance().get_vpad_controller(0);
+    if (!vpad)
+        return -1;   // no GamePad wired at all - distinct from "wired, zero bindings"
+    int count = 0;
+    // Buttons only: the ids from A up to StickR. Everything at StickL_Up and beyond is an
+    // AXIS mapping (VPADController::is_axis_mapping), and counting those would report a
+    // healthy number for exactly the broken case this is meant to detect - sticks bound,
+    // buttons not.
+    for (uint64 id = VPADController::kButtonId_A; id < VPADController::kButtonId_StickL_Up; ++id)
+    {
+        if (vpad->get_mapping_controller(id))
+            count++;
+    }
+    return count;
+}
+
+const char* cemu_bridge_input_profile_name(void) {
+    static std::string name;
+    auto vpad = InputManager::instance().get_vpad_controller(0);
+    name = vpad ? vpad->get_profile_name() : std::string("<no controller>");
+    return name.c_str();
+}
+
+bool cemu_bridge_reset_controller_bindings(void) {
+    // Deletes the persisted profile as well as the in-memory controller, then re-runs the
+    // provider wiring - which is the one path that calls apply_default_gc_mappings(). A
+    // reset that only cleared memory would be undone by the same bad profile on the next
+    // launch, which is the failure it exists to cure.
+    InputManager::instance().delete_controller(0, /*delete_profile*/ true);
+    InputManager::instance().load_gc_controllers();
+    const int bindings = cemu_bridge_input_button_mapping_count();
+    cemuLog_log(LogType::Force, "iOS input: controller bindings reset; GamePad now has {} button mappings", bindings);
+    return bindings > 0;
 }
 
 void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y) {

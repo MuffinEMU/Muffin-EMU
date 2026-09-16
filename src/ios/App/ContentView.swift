@@ -1240,6 +1240,38 @@ struct EmulatorViewOptimized: View {
         skylanderPortalEnabled || infinityBaseEnabled || dimensionsToypadEnabled
     }
 
+    /// Which control system is live. One decision, made once.
+    ///
+    /// This replaces two independent conditions - `previewPadEnabled && !useMeloControls`
+    /// for the video/pad composition, and `!previewPadEnabled` for the shipping pad - that
+    /// had to agree for exactly one pad to be on screen. They could disagree, and the way
+    /// they disagreed was silent: with the preview flag on, the shipping pad's branch was
+    /// unreachable, so MuffinEMU's own controls were not mounted at all while
+    /// Melo-Controller's branch (which never consulted the preview flag) carried on
+    /// working. Controls appear, nothing happens, nothing says why.
+    ///
+    /// As one enum that state cannot be constructed: there is a single answer, every call
+    /// site switches on it, and "preview is off" means the preview system is absent from
+    /// the view tree entirely rather than merely not selected.
+    private enum PadSystem {
+        case melo
+        case preview
+        case muffin
+    }
+
+    private var padSystem: PadSystem {
+        // Melo-Controller wins outright when chosen - it replaces both of MuffinEMU's own
+        // pads, exactly as it did before this enum existed.
+        if useMeloControls { return .melo }
+        // Off is the default and the only state this has been used in. The preview pad has
+        // never worked: it emits its own control ids, and cemuBridgeButton(forLabel:)
+        // answers CEMU_BRIDGE_BUTTON_NONE for anything outside its sixteen known labels,
+        // which ios_button_bit turns into -1 and drops silently. Its sticks appear to work
+        // only because axes never go through that lookup.
+        if previewPadEnabled { return .preview }
+        return .muffin
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -1252,7 +1284,7 @@ struct EmulatorViewOptimized: View {
             // views implied it should have; the top bar is what belongs in a VStack (it
             // has a natural height to lay out), the video does not (it wants the whole
             // screen, with the bar floating over it, not carving into it).
-            if previewPadEnabled && !useMeloControls {
+            if padSystem == .preview {
                 // Video and pad have to agree on the exact same rect for Native mode
                 // to mean anything - a mismatch between two independent resolves
                 // would put the picture in one place and the "never overlaps it"
@@ -1593,7 +1625,7 @@ struct EmulatorViewOptimized: View {
                         isEditing: isEditingControlLayout
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .melo) }
-                } else if !previewPadEnabled {
+                } else if padSystem == .muffin {
                     OptimizedControlPanel(
                         skin: controllerSkin,
                         onInput: { label, pressed in
