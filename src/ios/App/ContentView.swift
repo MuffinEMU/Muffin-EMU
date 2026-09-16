@@ -1788,11 +1788,15 @@ struct EmulatorViewOptimized: View {
             // makes twice. Everything here writes to the same AppStorage keys the pad
             // reads, so the change is under the finger as the slider moves.
             if isEditingControlLayout, useMeloControls {
-                // Melo-Controller has its own layout editor (drag/pinch individual
-                // buttons - see MeloControlsOverlay's isEditing) but no control for
-                // scaling the pad as a whole, which is what this slider is for. None of
-                // the grouped/individual/joystick/comfort/stick-gate controls below
-                // apply to it - those are MuffinEMU's own pad's settings.
+                // Melo-Controller's own layout editor (drag/pinch individual buttons -
+                // see MeloControlsOverlay's isEditing) resizes one button at a time;
+                // this slider resizes all of them at once, by writing the package's own
+                // "On-ScreenControllerScale". That key scales each button's FRAME, not
+                // the coordinate system, so the buttons grow in place: the gaps between
+                // them are fixed stack spacings and do not open up, and the clusters
+                // grow inward from the screen edges they are pinned to rather than off
+                // them. None of the grouped/individual/joystick/comfort/stick-gate
+                // controls below apply to it - those are MuffinEMU's own pad's settings.
                 VStack {
                     VStack(spacing: 10) {
                         Text("Melo-Controller size")
