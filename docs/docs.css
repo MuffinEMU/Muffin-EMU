@@ -340,3 +340,69 @@
   white-space: nowrap;
   border: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Theme gallery (docs/themes.html)
+
+   These five rules were lost, not deliberately dropped. They lived in a <style>
+   block inside themes.html, and that block was removed by the pass that took
+   every page's inline styling out - correct in principle, except this was the one
+   block whose rules had nowhere else to go.
+
+   They were invisible to the usual check, too: the markup they style is BUILT IN
+   JS (btn.className = "theme-swatch"), so a scan of class="..." attributes in the
+   HTML finds nothing and reports the page clean. Without them the gallery still
+   lays out, because the container also carries .grid - it just loses the swatch
+   sizing, the label bar and the Pro badge entirely, which looks like a broken
+   page rather than a missing rule.
+
+   Carried over from the original definitions, with two changes: --radius-sm and
+   --shadow are given fallbacks in case the shared sheet renames them, and the
+   grid's own column width is kept tighter than .grid's 240px because a swatch is
+   a colour chip, not a card.
+   --------------------------------------------------------------------------- */
+.theme-grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1rem;
+}
+
+.theme-swatch {
+  border-radius: var(--radius-sm, 10px);
+  overflow: hidden;
+  box-shadow: 0 6px 16px var(--shadow, rgba(0, 0, 0, .18));
+  cursor: pointer;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+}
+
+.theme-swatch .swatch-bg { height: 64px; }
+
+.theme-swatch .swatch-label {
+  background: var(--cream);
+  padding: .5rem .6rem;
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--brown-darkest);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .4rem;
+}
+
+.theme-swatch .swatch-label .pro-badge {
+  font-size: .62rem;
+  background: var(--navy);
+  color: var(--sparkle);
+  padding: .12em .5em;
+  border-radius: 999px;
+}
+
+/* The swatch is a real button, so it needs a real focus ring - the original
+   block set `border: none` without one, which is only survivable when the rule
+   sits next to the markup it styles. */
+.theme-swatch:focus-visible {
+  outline: 3px solid var(--pixel-blue);
+  outline-offset: 2px;
+}
