@@ -398,6 +398,39 @@ jobs:
             MuffinEMU.app.dSYM.zip
           body_path: RELEASE_NOTES.md
 
+      - name: Update the rolling nightly
+        # A second, always-moving release that points at whatever was built last -
+        # including branch work, which never gets a numbered version. The tag is reused
+        # rather than created per build, so the nightly source has ONE download URL that
+        # is always the newest IPA instead of a new URL every time.
+        #
+        # Separate from the numbered release above rather than replacing it: the
+        # numbered ones are the history people roll back to, and a rolling tag cannot be
+        # rolled back to because it does not stay still.
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          target_commitish: ${{ github.sha }}
+          name: Nightly
+          prerelease: true
+          # Never Latest. That belongs to the newest numbered release, and pointing it at
+          # a rolling prerelease would make every install page offer the bleeding edge.
+          make_latest: false
+          generate_release_notes: false
+          files: |
+            MuffinEMU.ipa
+            MuffinEMU-fakesigned.ipa
+          body: |
+            The newest build of MuffinEMU, from commit ${{ github.sha }} on `${{ github.ref_name }}`.
+
+            This tag moves. It is replaced by every successful build, so the download
+            here is always the newest code and never a version you can come back to -
+            for that, use a numbered release.
+
+            Untested by anyone. A numbered release has at least been installed and run;
+            this has only been compiled. If you want the version that works, not the
+            version that is newest, install the latest numbered release instead.
+
       - name: Upload build logs (always)
         if: always()
         uses: actions/upload-artifact@v4

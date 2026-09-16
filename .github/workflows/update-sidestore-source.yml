@@ -6,6 +6,22 @@ name: Update SideStore source
 # a source that advertises a build nobody can install is worse than no source.
 
 on:
+  # The load-bearing trigger. A release published by CI's GITHUB_TOKEN does NOT raise
+  # the `release` event - GitHub suppresses it so a workflow cannot trigger itself in a
+  # loop - so `release` alone never fires for our own builds.
+  #
+  # That was hidden for a while by accident: hand-editing a release's notes under a
+  # personal token DOES raise `release: edited`, so every release whose notes were
+  # rewritten by hand happened to refresh the source. The moment the notes became
+  # automatic, nothing edited them, nothing fired, and v4.2 shipped with the source
+  # still advertising v4.1 - a feed pointing at a build that is no longer the newest.
+  #
+  # workflow_run is not suppressed the same way: it keys off a workflow FINISHING, not
+  # off who holds the token.
+  workflow_run:
+    workflows: ["Build MuffinEMU (iOS)"]
+    types: [completed]
+  # Kept for a release edited or deleted by a human, which this should also follow.
   release:
     types: [published, edited, deleted]
   workflow_dispatch: {}
@@ -20,6 +36,11 @@ concurrency:
 jobs:
   regenerate:
     runs-on: ubuntu-latest
+    # A failed or cancelled build published nothing, so there is nothing new to point at
+    # and regenerating would only rewrite the file with what it already says.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     steps:
       - uses: actions/checkout@v4
         with:

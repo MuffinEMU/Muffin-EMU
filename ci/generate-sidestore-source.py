@@ -17,6 +17,8 @@ import json, os, re, sys, urllib.request, argparse
 PAGES = "https://kiddreads.github.io/MuffinEMU"
 BUNDLE_ID = "com.kiddreads.MuffinEMU"
 VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)$")
+NIGHTLY_NOTE = (
+    'This source serves the NIGHTLY build - the newest code, rebuilt on every change and tested by nobody. It shares its bundle identifier with the standard build, so installing it replaces a standard install and keeps your games, saves and settings; the two do not sit side by side. Add this source only if you want the newest build rather than the one known to work.')
 
 
 def releases(repo, token):
@@ -35,6 +37,38 @@ def notes_for(rel):
     body = re.sub(r"\r\n", "\n", body)
     return body[:1500] + ("..." if len(body) > 1500 else "")
 
+
+
+def nightly_version(rel):
+    """A version string for the rolling nightly.
+
+    Date-based, so it always sorts above any vX.Y and SideStore always sees the newest
+    nightly as an update. A nightly has no number of its own - the tag it lives on is
+    reused by every build - so there is nothing else honest to put here.
+    """
+    date = (rel.get("published_at") or rel.get("created_at") or "")[:10]
+    y, m, d = (date.split("-") + ["0", "0", "0"])[:3]
+    return f"{int(y or 0)}.{int(m or 0)}.{int(d or 0)}"
+
+
+def build_nightly(rels, asset_name, ident, name, subtitle, app_subtitle, extra_note):
+    rel = next((r for r in rels if r.get("tag_name") == "nightly"), None)
+    if not rel:
+        return None
+    ipa = next((x for x in rel.get("assets", []) if x["name"] == asset_name), None)
+    if not ipa:
+        return None
+    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note)
+    src["apps"][0]["name"] = "MuffinEMU Nightly"
+    src["apps"][0]["versions"] = [{
+        "version": nightly_version(rel),
+        "date": rel.get("published_at") or rel.get("created_at"),
+        "localizedDescription": notes_for(rel),
+        "downloadURL": ipa["browser_download_url"],
+        "size": ipa["size"],
+        "minOSVersion": "15.0",
+    }]
+    return src
 
 def build_source(rels, asset_name, ident, name, subtitle, app_subtitle, extra_note):
     versions = []
@@ -61,6 +95,18 @@ def build_source(rels, asset_name, ident, name, subtitle, app_subtitle, extra_no
     versions.sort(key=lambda v: v["key"], reverse=True)
     for v in versions:
         del v["key"]
+    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note)
+    src["apps"][0]["versions"] = versions
+    return src
+
+
+def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
+    """Everything about a feed except which versions are in it.
+
+    Shared so the stable and nightly feeds cannot drift apart in their description,
+    icon or tint - the only thing that should differ between them is the build they
+    point at and the warning attached to it.
+    """
     return {
         "name": name,
         "identifier": ident,
@@ -88,7 +134,7 @@ def build_source(rels, asset_name, ident, name, subtitle, app_subtitle, extra_no
             "tintColor": "E5652E",
             "category": "games",
             "screenshotURLs": [],
-            "versions": versions,
+            "versions": [],
             "appPermissions": {"entitlements": [], "privacy": {}},
         }],
         "news": [],
@@ -118,6 +164,21 @@ def main():
          "those re-sign at install and would strip these entitlements."),
     ]
 
+    nightlies = [
+        ("nightly.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.nightly",
+         "MuffinEMU Nightly",
+         "The newest MuffinEMU build, rebuilt on every change.",
+         "Wii U emulator - nightly build",
+         NIGHTLY_NOTE),
+        ("nightly-trollstore.json", "MuffinEMU-fakesigned.ipa",
+         "com.kiddreads.MuffinEMU.nightly.trollstore",
+         "MuffinEMU Nightly (TrollStore)",
+         "The newest MuffinEMU build - TrollStore.",
+         "Wii U emulator - nightly TrollStore build",
+         NIGHTLY_NOTE + " This one is the ad-hoc signed build, with the JIT entitlements "
+         "embedded, for TrollStore and jailbroken devices."),
+    ]
+
     wrote = 0
     for fname, asset, ident, name, subtitle, app_subtitle, note in feeds:
         src = build_source(rels, asset, ident, name, subtitle, app_subtitle, note)
@@ -132,8 +193,24 @@ def main():
         v = src["apps"][0]["versions"]
         print(f"wrote {out}: {len(v)} versions, newest v{v[0]['version']} ({asset})")
         wrote += 1
+    # The nightly feeds are allowed to be absent - the rolling tag only exists once a
+    # build has published it - so a missing one is reported and skipped rather than
+    # failing the run and blocking the stable feeds from updating.
+    for fname, asset, ident, name, subtitle, app_subtitle, note in nightlies:
+        src = build_nightly(rels, asset, ident, name, subtitle, app_subtitle, note)
+        if src is None:
+            print(f"skipped {fname}: the nightly release does not carry {asset} yet")
+            continue
+        out = os.path.join(a.out_dir, fname)
+        os.makedirs(a.out_dir, exist_ok=True)
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(src, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        v = src["apps"][0]["versions"]
+        print(f"wrote {out}: nightly {v[0]['version']} ({asset})")
+
     if not wrote:
-        sys.exit("no feeds written")
+        sys.exit("no numbered feeds written")
 
 
 if __name__ == "__main__":
