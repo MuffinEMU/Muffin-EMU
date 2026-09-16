@@ -720,6 +720,8 @@ void MetalRenderer::AppendOverlayDebugInfo()
     ImGui::Text("Clears                     %u", m_performanceMonitor.m_clears);
     ImGui::Text("Manual vertex fetch draws  %u (mesh draws: %u)", m_performanceMonitor.m_manualVertexFetchDraws, m_performanceMonitor.m_meshDraws);
     ImGui::Text("Triangle fans              %u", m_performanceMonitor.m_triangleFans);
+    ImGui::Text("Snapshot uploads           %llu KB (reuses: %u)", static_cast<unsigned long long>(m_performanceMonitor.m_snapshotBytes / 1024), m_performanceMonitor.m_snapshotReuses);
+    ImGui::Text("Argument buffer encodes    %u (reuses: %u)", m_performanceMonitor.m_argumentBufferEncodes, m_performanceMonitor.m_argumentBufferReuses);
 
     ImGui::Text("--- Cache debug info ---");
 
@@ -745,6 +747,11 @@ void MetalRenderer::AppendOverlayDebugInfo()
     ImGui::Text("Index");
     ImGui::SameLine(60.0f);
     ImGui::Text("%06uKB / %06uKB Buffers: %u", ((uint32)(totalSize - freeSize) + 1023) / 1024, ((uint32)totalSize + 1023) / 1024, (uint32)numBuffers);
+
+    m_memoryManager->GetSnapshotStats(numBuffers, totalSize, freeSize);
+    ImGui::Text("Snapshots");
+    ImGui::SameLine(60.0f);
+    ImGui::Text("%06uKB / %06uKB Buffers: %u", ((uint32)(totalSize - freeSize) + 1023) / 1024, ((uint32)totalSize + 1023) / 1024, numBuffers);
 }
 
 void MetalRenderer::renderTarget_setViewport(float x, float y, float width, float height, float nearZ, float farZ, bool halfZ)
@@ -1526,7 +1533,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         // direct memory access (Wii U memory space imported as a buffer), update buffer bindings
         LatteBufferCache_processDCFlushQueue();
         LatteBufferCache_processDeallocations();
-        draw_updateVertexBuffersDirectAccess(maxVertexIndex, baseInstance, instanceCount);
+        draw_updateVertexBuffersDirectAccess(minVertexIndex, maxVertexIndex, baseInstance, instanceCount, fetchVertexManually);
         if (vertexShader)
             draw_updateUniformBuffersDirectAccess(vertexShader, mmSQ_VTX_UNIFORM_BLOCK_START);
         if (geometryShader)
@@ -1867,7 +1874,7 @@ void MetalRenderer::draw_endSequence()
     }
 }
 
-void MetalRenderer::draw_updateVertexBuffersDirectAccess(uint32 maxIndex, uint32 baseInstance, uint32 instanceCount)
+void MetalRenderer::draw_updateVertexBuffersDirectAccess(uint32 minIndex, uint32 maxIndex, uint32 baseInstance, uint32 instanceCount, bool fetchVertexManually)
 {
     LatteFetchShader* parsedFetchShader = LatteSHRC_GetActiveFetchShader();
     if (!parsedFetchShader)
@@ -1896,15 +1903,20 @@ void MetalRenderer::draw_updateVertexBuffersDirectAccess(uint32 maxIndex, uint32
 
         if (m_memoryManager->IsRangeImported(bufferAddress, bufferSize))
         {
-            if (LatteBufferCache_hostIsRangeVolatile(bufferAddress, bufferSize))
+            // When the hardware fetches vertices itself and the draw only indexes by
+            // vertex (not instance), everything below minIndex * stride is unreachable
+            // for this draw - so neither compare nor copy it. With manual vertex fetch
+            // the shader can address the buffer freely, so the whole range stays live.
+            uint32 firstByte = 0;
+            if (!fetchVertexManually && bufferGroup.hasVtxIndexAccess && !bufferGroup.hasInstanceIndexAccess)
+                firstByte = static_cast<uint32>(std::min<uint64>((uint64)bufferStride * minIndex, bufferSize));
+            if (LatteBufferCache_hostIsRangeVolatile(bufferAddress + firstByte, bufferSize - firstByte))
             {
-                auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
-                auto allocation = bufferAllocator.AllocateBufferMemory(bufferSize, 1);
-                memcpy(allocation.memPtr, memory_getPointerFromVirtualOffset(bufferAddress), bufferSize);
-                bufferAllocator.FlushReservation(allocation);
-                
-                m_state.m_vertexBuffers[bufferIndex] = allocation.mtlBuffer;
-                m_state.m_vertexBufferOffsets[bufferIndex] = allocation.bufferOffset;
+                auto* allocation = m_memoryManager->GetCachedSnapshot(MetalMemoryManager::VertexSnapshotBase + bufferIndex,
+                    memory_getPointerFromVirtualOffset(bufferAddress), bufferSize, firstByte);
+
+                m_state.m_vertexBuffers[bufferIndex] = allocation->mtlBuffer;
+                m_state.m_vertexBufferOffsets[bufferIndex] = allocation->bufferOffset;
                 m_state.m_vertexBufferSizes[bufferIndex] = bufferSize;
             }
             else
@@ -1955,13 +1967,11 @@ void MetalRenderer::draw_updateUniformBuffersDirectAccess(LatteDecompilerShader*
             MetalGeneralShaderType shaderType = GetMtlGeneralShaderType(shader->shaderType);
             if (m_memoryManager->IsRangeImported(physicalAddr, uniformSize))
             {
-                auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
-                auto allocation = bufferAllocator.AllocateBufferMemory(uniformSize, 1);
-                memcpy(allocation.memPtr, memory_getPointerFromVirtualOffset(physicalAddr), uniformSize);
-                bufferAllocator.FlushReservation(allocation);
+                auto* allocation = m_memoryManager->GetCachedSnapshot(MetalMemoryManager::UniformSnapshotBase + shaderType * MAX_MTL_BUFFERS + bufferIndex,
+                    memory_getPointerFromVirtualOffset(physicalAddr), uniformSize);
 
-                m_state.m_uniformBuffers[shaderType][bufferIndex] = allocation.mtlBuffer;
-                m_state.m_uniformBufferOffsets[shaderType][bufferIndex] = allocation.bufferOffset;
+                m_state.m_uniformBuffers[shaderType][bufferIndex] = allocation->mtlBuffer;
+                m_state.m_uniformBufferOffsets[shaderType][bufferIndex] = allocation->bufferOffset;
                 m_state.m_uniformBufferSizes[shaderType][bufferIndex] = uniformSize;
             }
             else
@@ -2540,7 +2550,11 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
     auto mtlShaderType = GetMtlShaderType(shader->shaderType, usesGeometryShader);
     auto* rendererShader = static_cast<RendererShaderMtl*>(shader->shader);
     MTL::ArgumentEncoder* argumentEncoder = nullptr;
-    MetalSynchronizedRingAllocator::AllocatorReservation_t argumentAllocation{};
+    // Bindings are RECORDED here and encoded once at the end, through
+    // MetalMemoryManager::GetCachedArgumentBuffer(), instead of being encoded into a
+    // fresh staging allocation slot-by-slot on every draw. Consecutive draws of the same
+    // object bind the same things, so most draws now reuse the previous encode outright.
+    MetalArgumentBindings argumentBindings{};
     const bool shaderUsesArgumentBuffer = shader->resourceMapping.argumentBufferBindingPoint >= 0;
     if (shaderUsesArgumentBuffer)
     {
@@ -2558,13 +2572,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             return false;
         }
         
-        auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
-        const uint32 alignment = std::max<uint32>(256, static_cast<uint32>(argumentEncoder->alignment()));
-        argumentAllocation = bufferAllocator.AllocateBufferMemory(encodedLength, alignment);
-        std::memset(argumentAllocation.memPtr, 0, argumentAllocation.size);
-        argumentEncoder->setArgumentBuffer(argumentAllocation.mtlBuffer, argumentAllocation.bufferOffset);
-        if (void* dummy = argumentEncoder->constantData(MetalArgumentBuffer::Dummy))
-            *static_cast<uint32*>(dummy) = 0;
+        argumentBindings[MetalArgumentBuffer::Dummy] = {MetalArgumentBinding::Type::Constant, nullptr, 0};
     }
     
     MTL::RenderStages renderStage = MTL::RenderStageVertex;
@@ -2648,7 +2656,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
                 return false;
             }
             if (argumentEncoder)
-                argumentEncoder->setSamplerState(sampler, MetalArgumentBuffer::SamplerBase + samplerBinding);
+                argumentBindings[MetalArgumentBuffer::SamplerBase + samplerBinding] = {MetalArgumentBinding::Type::Sampler, sampler, 0};
             else
                 SetSamplerState(renderCommandEncoder, mtlShaderType, sampler, samplerBinding);
         }
@@ -2684,7 +2692,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         
         if (argumentEncoder)
         {
-            argumentEncoder->setTexture(mtlTexture, MetalArgumentBuffer::TextureBase + relative_textureUnit);
+            argumentBindings[MetalArgumentBuffer::TextureBase + relative_textureUnit] = {MetalArgumentBinding::Type::Texture, mtlTexture, 0};
             renderCommandEncoder->useResource(mtlTexture, MTL::ResourceUsageRead | MTL::ResourceUsageSample, renderStage);
         }
         else
@@ -2784,18 +2792,14 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         }
         
         size_t size = shader->uniform.uniformRangeSize;
-        auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
-        auto allocation = bufferAllocator.AllocateBufferMemory(size, 256);
-        std::memset(allocation.memPtr, 0, allocation.size);
-        std::memcpy(allocation.memPtr, supportBufferData, size);
-        bufferAllocator.FlushReservation(allocation);
+        auto* allocation = m_memoryManager->GetCachedSnapshot(MetalMemoryManager::SupportSnapshotBase + mtlShaderType, supportBufferData, size);
         if (argumentEncoder)
         {
-            argumentEncoder->setBuffer(allocation.mtlBuffer, allocation.bufferOffset, MetalArgumentBuffer::SupportBuffer);
-            renderCommandEncoder->useResource(allocation.mtlBuffer, MTL::ResourceUsageRead, renderStage);
+            argumentBindings[MetalArgumentBuffer::SupportBuffer] = {MetalArgumentBinding::Type::Buffer, allocation->mtlBuffer, allocation->bufferOffset};
+            renderCommandEncoder->useResource(allocation->mtlBuffer, MTL::ResourceUsageRead, renderStage);
         }
         else
-            SetBuffer(renderCommandEncoder, mtlShaderType, allocation.mtlBuffer, allocation.bufferOffset, shader->resourceMapping.uniformVarsBufferBindingPoint);
+            SetBuffer(renderCommandEncoder, mtlShaderType, allocation->mtlBuffer, allocation->bufferOffset, shader->resourceMapping.uniformVarsBufferBindingPoint);
     }
     
     // Uniform buffers
@@ -2828,7 +2832,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
 
             if (argumentEncoder)
             {
-                argumentEncoder->setBuffer(buffer, offset, MetalArgumentBuffer::UniformBufferBase + i);
+                argumentBindings[MetalArgumentBuffer::UniformBufferBase + i] = {MetalArgumentBinding::Type::Buffer, buffer, offset};
                 renderCommandEncoder->useResource(buffer, MTL::ResourceUsageRead, renderStage);
             }
             else
@@ -2842,7 +2846,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         MTL::Buffer* xfbRingBuffer = GetXfbRingBuffer() ? GetXfbRingBuffer() : m_nullBuffer;
         if (argumentEncoder)
         {
-            argumentEncoder->setBuffer(xfbRingBuffer, 0, MetalArgumentBuffer::StreamoutBuffer);
+            argumentBindings[MetalArgumentBuffer::StreamoutBuffer] = {MetalArgumentBinding::Type::Buffer, xfbRingBuffer, 0};
             renderCommandEncoder->useResource(xfbRingBuffer, MTL::ResourceUsageWrite, renderStage);
         }
         else
@@ -2874,11 +2878,11 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
                     vertexBufferOffset = 0;
                     vertexBufferSize = 0;
                 }
-                argumentEncoder->setBuffer(vertexBuffer, vertexBufferOffset, MetalArgumentBuffer::VertexBufferBase + bufferIndex);
+                argumentBindings[MetalArgumentBuffer::VertexBufferBase + bufferIndex] = {MetalArgumentBinding::Type::Buffer, vertexBuffer, vertexBufferOffset};
                 renderCommandEncoder->useResource(vertexBuffer, MTL::ResourceUsageRead, renderStage);
                 vertexBufferSize = std::min<size_t>(vertexBufferSize, vertexBuffer->length() - vertexBufferOffset);
-                if (void* encodedSize = argumentEncoder->constantData(MetalArgumentBuffer::VertexBufferSizeBase + bufferIndex))
-                    *static_cast<uint32*>(encodedSize) = static_cast<uint32>(std::min<size_t>(vertexBufferSize, std::numeric_limits<uint32>::max()));
+                argumentBindings[MetalArgumentBuffer::VertexBufferSizeBase + bufferIndex] = {MetalArgumentBinding::Type::Constant, nullptr,
+                    static_cast<uint32>(std::min<size_t>(vertexBufferSize, std::numeric_limits<uint32>::max()))};
                 encodedVertexBuffers[bufferIndex] = true;
             }
         }
@@ -2895,21 +2899,23 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
                 indexBufferOffset = 0;
                 indexBufferSize = 0;
             }
-            argumentEncoder->setBuffer(indexBuffer, indexBufferOffset, MetalArgumentBuffer::IndexBuffer);
+            argumentBindings[MetalArgumentBuffer::IndexBuffer] = {MetalArgumentBinding::Type::Buffer, indexBuffer, indexBufferOffset};
             renderCommandEncoder->useResource(indexBuffer, MTL::ResourceUsageRead, renderStage);
             indexBufferSize = std::min<size_t>(indexBufferSize, indexBuffer->length() - indexBufferOffset);
-            if (void* encodedIndexBufferSize = argumentEncoder->constantData(MetalArgumentBuffer::IndexBufferSize))
-                *static_cast<uint32*>(encodedIndexBufferSize) = static_cast<uint32>(std::min<size_t>(indexBufferSize, std::numeric_limits<uint32>::max()));
-            if (void* indexType = argumentEncoder->constantData(MetalArgumentBuffer::IndexType))
-                *static_cast<uint32*>(indexType) = m_state.m_drawResources.indexType;
+            argumentBindings[MetalArgumentBuffer::IndexBufferSize] = {MetalArgumentBinding::Type::Constant, nullptr,
+                static_cast<uint32>(std::min<size_t>(indexBufferSize, std::numeric_limits<uint32>::max()))};
+            argumentBindings[MetalArgumentBuffer::IndexType] = {MetalArgumentBinding::Type::Constant, nullptr, m_state.m_drawResources.indexType};
         }
     }
     
     if (argumentEncoder)
     {
-        auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
-        bufferAllocator.FlushReservation(argumentAllocation);
-        SetBuffer(renderCommandEncoder, mtlShaderType, argumentAllocation.mtlBuffer, argumentAllocation.bufferOffset, shader->resourceMapping.argumentBufferBindingPoint);
+        // The useResource() residency declarations above are made unconditionally, for
+        // every encoder, precisely because the argument-buffer CONTENTS below may be
+        // reused from a previous draw - residency is per-encoder state and is never
+        // covered by the cache.
+        auto* allocation = m_memoryManager->GetCachedArgumentBuffer(mtlShaderType, argumentEncoder, argumentBindings);
+        SetBuffer(renderCommandEncoder, mtlShaderType, allocation->mtlBuffer, allocation->bufferOffset, shader->resourceMapping.argumentBufferBindingPoint);
     }
     return true;
 }
