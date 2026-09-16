@@ -324,8 +324,12 @@ jobs:
         # made it knows what it means for someone playing a game. Commits without the
         # trailer fall back to their subject line, which is honest if terse. Repeating
         # the trailer wraps one long note across lines; it does not make two bullets.
+        # `Release-note: skip` leaves the commit out of the notes altogether.
         run: |
           set -eo pipefail
+          # actions/checkout does not fetch notes, and a missing notes ref must not fail
+          # the build - it only means nobody has written one.
+          git fetch -q --force origin 'refs/notes/release-notes:refs/notes/release-notes' 2>/dev/null || true
           {
             if [ "$MUFFIN_RELEASE" = "true" ] && [ -n "$MUFFIN_PREV_TAG" ] \
                && git rev-parse -q --verify "refs/tags/$MUFFIN_PREV_TAG" >/dev/null; then
@@ -341,6 +345,22 @@ jobs:
                 # wrapped sentence into two bullets, the second starting mid-sentence.
                 note=$(git show -s --format='%(trailers:key=Release-note,valueonly)' "$sha" \
                        | sed '/^[[:space:]]*$/d' | paste -sd' ' -)
+                # Second chance for a commit that is already pushed. Its message cannot
+                # be edited without rewriting main, so the note lives beside it instead:
+                #
+                #     git notes --ref=release-notes add -m "what this means" <sha>
+                #     git push origin refs/notes/release-notes
+                #
+                # The trailer still wins where both exist, so adding one never silently
+                # overrides what the commit itself said.
+                if [ -z "$note" ]; then
+                  note=$(git notes --ref=release-notes show "$sha" 2>/dev/null \
+                         | sed '/^[[:space:]]*$/d' | paste -sd' ' -)
+                fi
+                # `Release-note: skip` leaves a commit out entirely - for work that is
+                # real but has no user-facing half, like build tooling. Better than
+                # padding the notes with lines nobody installed the build for.
+                if [ "$note" = "skip" ]; then continue; fi
                 if [ -n "$note" ]; then
                   printf -- '- %s\n' "$note"
                 else
