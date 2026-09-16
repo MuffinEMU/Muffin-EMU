@@ -73,9 +73,9 @@ struct CPUSettingsSection: View {
             // speed rather than trading it away.
             Toggle(isOn: $autoReduceWhenHot) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Reduce quality when hot")
+                    Text("Cool down automatically")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("Drops to Battery saver resolution while iOS reports the device is overheating, and puts your setting back when it cools.")
+                    Text("While iOS reports the device is overheating, eases off the CPU and drops to Battery saver resolution. Everything goes back on its own once it cools.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -89,7 +89,7 @@ struct CPUSettingsSection: View {
             SettingsSectionHeader("CPU", icon: "cpu", accent: .core)
         } footer: {
             InfoButton.footer(
-                "MuffinEMU runs for speed first - turn on Favour accuracy only for a game that glitches, desyncs or crashes, and Low Power Mode if the device gets too hot. Restart the game after changing any of these.",
+                "MuffinEMU runs for speed first. Cool down automatically handles overheating on its own; Low Power Mode is the permanent version of it. Restart the game after changing the top three.",
                 title: "CPU",
                 text: "MuffinEMU runs for speed first. The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer); without one the interpreter runs instead, and the line above says which you got. Turn on Favour accuracy for a game that glitches, desyncs or crashes - it is slower. Start the game again after changing either.")
         }

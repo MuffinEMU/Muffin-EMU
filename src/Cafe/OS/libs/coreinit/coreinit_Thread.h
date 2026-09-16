@@ -629,6 +629,24 @@ namespace coreinit
 	// poll for the point where every core has actually reached that point, rather than
 	// assuming IOSTitlePause_Pause() returning means execution has stopped.
 	bool __OSAllCoresIdle();
+
+	/// Thermal governor: how long each emulated core sleeps at its own reschedule point.
+	///
+	/// Zero - the default - means no sleep at all and the host thread loop is exactly what
+	/// it has always been, costing one relaxed atomic load per reschedule.
+	///
+	/// Exists because that loop is the reason MuffinEMU runs hot: it reschedules without
+	/// ever sleeping, and this port runs three of these host threads where MeloCafe's
+	/// default (Auto, which never resolves to an explicit Multicore mode on iOS) runs one.
+	/// Core count cannot change under a running title - _LaunchTitleThread() has already
+	/// started however many threads it started - so this is the only CPU-side lever that
+	/// can respond to a device that is overheating RIGHT NOW.
+	///
+	/// Costs emulation speed in proportion to the sleep, which is the point: it is applied
+	/// only while iOS reports .serious or .critical thermal pressure, at which point iOS is
+	/// already throttling the hardware anyway, and it is set back to zero the moment the
+	/// device cools. See ThermalMonitor.swift for the policy that drives it.
+	void OSSetThermalThrottleMicros(uint32 micros);
 }
 
 #pragma pack()

@@ -9,6 +9,13 @@
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 
+// std::this_thread::sleep_for / std::chrono::microseconds for the thermal governor in
+// the host thread loop. std::thread is already used in this file so <thread> arrives
+// transitively, but naming both explicitly means the governor cannot break on a future
+// precompiled-header change.
+#include <thread>
+#include <chrono>
+
 #include "util/helpers/Semaphore.h"
 #include "util/helpers/ConcurrentQueue.h"
 #include "util/Fiber/Fiber.h"
@@ -78,6 +85,11 @@ namespace coreinit
 	// see the declaration in coreinit_Thread.h for why this exists
 	std::atomic<bool> g_coreIsBusy[Espresso::CORE_COUNT]{};
 
+	// Thermal governor. See OSSetThermalThrottleMicros() in coreinit_Thread.h.
+	// Zero - the default, and the value whenever the device is not hot - means the loop
+	// below is byte-for-byte what it always was.
+	std::atomic<uint32> g_thermalThrottleMicros{0};
+
 	bool __OSAllCoresIdle()
 	{
 		for (auto& busy : g_coreIsBusy)
@@ -86,6 +98,11 @@ namespace coreinit
 				return false;
 		}
 		return true;
+	}
+
+	void OSSetThermalThrottleMicros(uint32 micros)
+	{
+		g_thermalThrottleMicros.store(micros, std::memory_order_relaxed);
 	}
 
 	thread_local uint32 t_assignedCoreIndex;
@@ -1387,6 +1404,25 @@ namespace coreinit
 			__OSLockScheduler();
 			__OSThreadSwitchToNext();
 			__OSUnlockScheduler();
+
+			// Thermal governor, applied at the one point in this loop where no guest
+			// thread is mid-timeslice and no scheduler lock is held.
+			//
+			// This loop is what makes MuffinEMU hot: it reschedules without ever
+			// sleeping, and MuffinEMU runs three of these host threads where MeloCafe's
+			// default runs one. A brief sleep here drops each core's duty cycle, which is
+			// the only CPU-side lever that works on a title that is ALREADY running -
+			// core count is fixed once these threads exist.
+			//
+			// Placed after __OSUnlockScheduler() deliberately. Sleeping while holding the
+			// scheduler lock would stall the other two cores as well as this one, turning
+			// a throttle into a stall; and sleeping mid-timeslice would suspend a guest
+			// thread at an arbitrary instruction rather than at a reschedule point the
+			// emulated OS already expects to yield at.
+			//
+			// Zero is the normal state and costs one relaxed atomic load per reschedule.
+			if (const uint32 throttleMicros = g_thermalThrottleMicros.load(std::memory_order_relaxed))
+				std::this_thread::sleep_for(std::chrono::microseconds(throttleMicros));
 		}
 	}
 

@@ -104,10 +104,38 @@ final class ThermalMonitor: ObservableObject {
         applyAutoThrottleIfNeeded()
     }
 
+    /// How hard each emulated core is slowed, in microseconds of sleep per reschedule.
+    ///
+    /// Two steps rather than one switch, because the two thermal states mean different
+    /// things. `.serious` is "iOS has started throttling"; `.critical` is "iOS is
+    /// throttling hard and may start killing things". Applying the heavier value at
+    /// `.serious` would cost speed nobody asked for; applying only the lighter one at
+    /// `.critical` would not buy enough headroom to get back out.
+    ///
+    /// These are small on purpose. 250us per reschedule is a meaningful duty-cycle cut
+    /// across three host threads without the emulated OS noticing anything other than
+    /// running slower - the sleep lands at a reschedule point the guest already expects
+    /// to yield at.
+    private func throttleMicros(for state: ProcessInfo.ThermalState) -> UInt32 {
+        switch state {
+        case .serious:  return 250
+        case .critical: return 1000
+        default:        return 0
+        }
+    }
+
     private func applyAutoThrottleIfNeeded() {
-        guard autoThrottleEnabled else { return }
+        guard autoThrottleEnabled else {
+            // Turning the setting off mid-throttle has to unwind, not freeze in place.
+            if isThrottling { unwind(reason: "auto-reduce turned off") }
+            return
+        }
 
         let shouldThrottle = (state == .serious || state == .critical)
+
+        // The CPU governor is re-applied on EVERY change while hot, not only on the
+        // transition into it, because .serious -> .critical has to escalate.
+        cemu_bridge_set_thermal_throttle_micros(shouldThrottle ? throttleMicros(for: state) : 0)
 
         if shouldThrottle && !isThrottling {
             // Remember what the user picked BEFORE overwriting it, so cooling restores
@@ -121,26 +149,40 @@ final class ThermalMonitor: ObservableObject {
             DisplayRouter.shared.reapplyRenderScale(reason: "thermal state \(description)")
             cemu_bridge_log_line("iOS thermal: reduced render scale to battery saver while hot")
         } else if !shouldThrottle && isThrottling {
-            if let restored = userChosenScale {
-                UserDefaults.standard.set(restored.rawValue, forKey: RenderScale.storageKey)
-            }
-            userChosenScale = nil
-            isThrottling = false
-            DisplayRouter.shared.reapplyRenderScale(reason: "thermal state recovered to \(description)")
-            cemu_bridge_log_line("iOS thermal: restored the chosen render scale")
+            unwind(reason: "cooled to \(description)")
         }
+    }
+
+    /// Puts everything back, in one place, so every exit path unwinds identically -
+    /// cooling down, the setting being switched off, the title stopping, and a settings
+    /// reset. Four callers with four slightly different unwinds is how one of them ends
+    /// up leaving the user's Render Scale pinned at battery saver forever.
+    private func unwind(reason: String) {
+        cemu_bridge_set_thermal_throttle_micros(0)
+        if let restored = userChosenScale {
+            UserDefaults.standard.set(restored.rawValue, forKey: RenderScale.storageKey)
+        }
+        userChosenScale = nil
+        isThrottling = false
+        DisplayRouter.shared.reapplyRenderScale(reason: "thermal: \(reason)")
+        cemu_bridge_log_line("iOS thermal: released the governor and restored the chosen render scale (\(reason))")
     }
 
     /// Called when a title stops. A throttle left armed across launches would leave the
     /// user's Render Scale permanently overwritten with battery saver, which is exactly
     /// the "silently overwrote a deliberate choice" failure this class is built to avoid.
     func titleStopped() {
+        // The core governor is cleared unconditionally, even when this monitor does not
+        // think it is throttling: it lives in a C++ atomic that outlives any one title,
+        // and a stale non-zero value would silently slow the NEXT launch with no UI
+        // anywhere admitting it.
+        cemu_bridge_set_thermal_throttle_micros(0)
         guard isThrottling else { return }
         if let restored = userChosenScale {
             UserDefaults.standard.set(restored.rawValue, forKey: RenderScale.storageKey)
         }
         userChosenScale = nil
         isThrottling = false
-        cemu_bridge_log_line("iOS thermal: title stopped while throttled; chosen render scale restored")
+        cemu_bridge_log_line("iOS thermal: title stopped while throttled; governor released and render scale restored")
     }
 }

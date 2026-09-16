@@ -481,6 +481,18 @@ void cemu_bridge_set_favour_accuracy(bool enabled);
 ///
 /// Costs frame rate. That is the trade, stated plainly rather than hidden.
 /// Read when a title starts - the core count cannot change under a running title.
+/// Thermal governor: microseconds each emulated core sleeps at its reschedule point.
+///
+/// 0 (the default, and the value whenever the device is not hot) means no sleep and the
+/// core loop is unchanged. Unlike cemu_bridge_set_low_power_mode() above, this takes
+/// effect on a RUNNING title - it is the CPU-side lever for a device overheating right
+/// now, where core count cannot move until the next launch.
+///
+/// Costs emulation speed in proportion to the sleep. Applied only while iOS reports
+/// serious or critical thermal pressure, at which point iOS is already throttling the
+/// hardware, and set back to 0 the moment it cools. See ThermalMonitor.swift.
+void cemu_bridge_set_thermal_throttle_micros(uint32_t micros);
+
 void cemu_bridge_set_low_power_mode(bool enabled);
 bool cemu_bridge_low_power_mode(void);
 bool cemu_bridge_favour_accuracy(void);

@@ -72,6 +72,13 @@ void CemuUIKit_SetMainView(UIView* view);
 void CemuUIKit_SetPadView(UIView* view);
 void CemuUIKit_InitializeLayer(bool main);
 void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale);
+
+// Forward-declared rather than reached through coreinit_Thread.h, following the same
+// pattern as the CemuUIKit_* declarations above. That header pulls the whole coreinit
+// thread/scheduler surface into an ARC-compiled ObjC++ translation unit that currently
+// includes no Cafe/OS headers at all, and this needs exactly one function from it. See
+// coreinit_Thread.h for what it does and why it exists.
+namespace coreinit { void OSSetThermalThrottleMicros(uint32 micros); }
 void CemuUIKit_UpdatePadWindowSize(void);
 void CemuUIKit_SetVisibleOutputs(bool tv, bool pad);
 void CemuUIKit_SetPadTouch(CGFloat x, CGFloat y, bool down);
@@ -1350,6 +1357,13 @@ void cemu_bridge_set_favour_accuracy(bool enabled) {
 
 bool cemu_bridge_favour_accuracy(void) {
     return g_favourAccuracy.load();
+}
+
+void cemu_bridge_set_thermal_throttle_micros(uint32_t micros) {
+    // Straight through to the core. No g_initialized guard and no stored copy: the atomic
+    // lives in coreinit and defaults to 0, so setting it before a title exists is
+    // harmless, and the host thread loop picks it up on its very next reschedule.
+    coreinit::OSSetThermalThrottleMicros(micros);
 }
 
 void cemu_bridge_set_low_power_mode(bool enabled) {
