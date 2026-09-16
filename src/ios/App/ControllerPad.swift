@@ -521,6 +521,11 @@ struct HeldControl<Content: View>: View {
     let content: (Bool) -> Content
 
     @State private var isPressed = false
+    /// When the current press started, for the diagnostics readout. Measuring how long a
+    /// press survived, and what ended it, is the one thing that separates "the finger
+    /// lifted" from "the view was torn down underneath it" - and guessing between those
+    /// from a remembered fraction of a second is how several theories went wrong.
+    @State private var pressBegan = Date()
 
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
@@ -538,17 +543,17 @@ struct HeldControl<Content: View>: View {
                         PadDiagnostics.shared.recordRawTouch()
                         setPressed(true)
                     }
-                    .onEnded { _ in setPressed(false) }
+                    .onEnded { _ in setPressed(false, because: .fingerLifted) }
             )
             // A gesture the system cancels (backgrounding, an incoming call) or a view
             // removed mid-press never delivers onEnded, and a button stuck down is a
             // title stuck walking into a wall.
-            .onDisappear { setPressed(false) }
+            .onDisappear { setPressed(false, because: .viewRemoved) }
             // Same safety net, for the case a view stays mounted but stops accepting
             // touches - edit mode switching on under a finger, or the app resigning
             // active. Without it the control keeps drawing pressed with no way to release.
             .onChange(of: isInteractive) { active in
-                if !active { setPressed(false) }
+                if !active { setPressed(false, because: .stoppedAcceptingTouches) }
             }
     }
 
@@ -568,10 +573,21 @@ struct HeldControl<Content: View>: View {
     // Anything that trapped or stalled there left the state true and the report unsent,
     // and the guard then swallowed every press after it, forever. Haptics now fire AFTER
     // the report instead, so nothing can come between those two lines again.
-    private func setPressed(_ value: Bool) {
+    private func setPressed(_ value: Bool, because reason: PadDiagnostics.ReleaseReason = .fingerLifted) {
         guard isPressed != value else { return }
+        // Read before the state changes, so the duration below measures the press rather
+        // than the time since this function was entered.
+        let began = pressBegan
         isPressed = value
+        if value { pressBegan = Date() }
         onPressChange(value)
+        // After the report, not before it - the same rule the haptics call had to learn.
+        // Nothing may sit between the state assignment and onPressChange again.
+        if value {
+            PadDiagnostics.shared.recordPressBegan()
+        } else {
+            PadDiagnostics.shared.recordRelease(reason, heldSince: began)
+        }
         if value, hapticsEnabled { PadHaptics.shared.fire() }
     }
 }

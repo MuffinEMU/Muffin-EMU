@@ -74,7 +74,38 @@ final class PadDiagnostics: ObservableObject {
     /// the state did not move". This separates them.
     @Published private(set) var rawTouchCount = 0
 
+    /// How the last press ended, and how long it lasted.
+    ///
+    /// This is the line that settles the argument. A press that reverts on its own looks
+    /// identical on screen whether the gesture ended, the view was removed underneath it,
+    /// or the control stopped accepting touches - and those are three completely
+    /// different bugs. Reading the reason off the screen beats estimating a duration by
+    /// eye and reasoning backwards from the number, which is how several wrong theories
+    /// got their confidence.
+    enum ReleaseReason: String {
+        /// DragGesture.onEnded - the ordinary path. The finger lifted, or the system
+        /// cancelled the gesture.
+        case fingerLifted = "finger lifted"
+        /// onDisappear - the control left the view tree mid-press. Nobody touched
+        /// anything; SwiftUI rebuilt the pad.
+        case viewRemoved = "VIEW REMOVED under the finger"
+        /// isInteractive went false - edit mode, or the app resigning active.
+        case stoppedAcceptingTouches = "control stopped accepting touches"
+    }
+
+    @Published private(set) var lastRelease = "-"
+
     private init() {}
+
+    func recordPressBegan() {
+        // Nothing to publish yet; the interesting half is how it ends. Kept as its own
+        // call so the press path reads symmetrically and a future counter has a home.
+    }
+
+    func recordRelease(_ reason: ReleaseReason, heldSince began: Date) {
+        let ms = Int(Date().timeIntervalSince(began) * 1000)
+        lastRelease = "\(ms)ms, \(reason.rawValue)"
+    }
 
     var isEnabled: Bool {
         UserDefaults.standard.object(forKey: Self.enabledKey) as? Bool ?? Self.defaultEnabled
@@ -144,6 +175,11 @@ struct PadDiagnosticsOverlay: View {
             row("stick", "\(diag.stickCount)  last \(diag.lastStick)", warn: false)
             // The decisive row: touches arriving at a button's gesture at all.
             row("touches", "\(diag.rawTouchCount)", warn: diag.rawTouchCount == 0)
+            // Yellow whenever a press ended for any reason other than a finger coming
+            // off, because that is always a bug and never a normal press.
+            row("released", diag.lastRelease,
+                warn: diag.lastRelease.contains("VIEW REMOVED")
+                   || diag.lastRelease.contains("stopped accepting"))
 
             // The line that would have ended a day of debugging in one glance. Buttons
             // only - axes bypass the mapping table entirely, so counting them would show a
