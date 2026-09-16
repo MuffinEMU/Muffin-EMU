@@ -20,7 +20,9 @@ struct DeviceReportSection: View {
     /// report that a new-OS feature did nothing. Putting it in the copied text means it
     /// travels with every bug report instead of having to be asked for.
     private var deviceReport: String {
-        String(cString: cemu_bridge_device_report()) + "\n" + PlatformCapabilities.summary
+        String(cString: cemu_bridge_device_report())
+            + "\n" + PlatformCapabilities.summary
+            + "\nthermal: " + ThermalMonitor.shared.description
     }
 
     var body: some View {
