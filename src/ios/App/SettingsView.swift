@@ -15,6 +15,12 @@ import SwiftUI
 /// there are more than 10 sections - hence formTop/formBottom below rather than one
 /// flat list.
 struct SettingsView: View {
+    // Observed so flipping Classic UI or Disable Liquid Glass repaints this subtree
+    // immediately. MuffinTheme and the shared row/header components read the same store
+    // through UIStyle's static accessors, but static reads cannot invalidate a view on
+    // their own - something in the tree has to be watching, and this is it.
+    @ObservedObject private var uiStyle = UIStyleStore.shared
+
     @ObservedObject var gameManager: GameManager
     @Environment(\.dismiss) private var dismiss
     @State private var showingIconPicker = false

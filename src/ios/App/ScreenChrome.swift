@@ -40,6 +40,28 @@ struct ScreenEmptyState: View {
     var action: (() -> Void)?
 
     var body: some View {
+        // Classic UI: v2.0 had no designed empty state at all - every one of these was a
+        // single line of caption text, 13pt rounded in brownMid. This component did not
+        // exist then, so "classic" means rendering its content the way that sentence
+        // looked, NOT hiding it: the headline and body are still both shown, and any
+        // action still works, they just stop being a symbol-and-headline composition.
+        if UIStyle.isClassic {
+            return AnyView(
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(headline)
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownMid)
+                    Text(message)
+                        .font(.system(size: 13, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownMid)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            )
+        }
+        return AnyView(modernBody)
+    }
+
+    private var modernBody: some View {
         VStack(spacing: 14) {
             ZStack {
                 Circle()
@@ -167,6 +189,19 @@ struct ScreenChip: View {
     var isMuted = true
 
     var body: some View {
+        // Classic UI: v2.0 rendered these counts as a plain 11pt secondary caption line,
+        // not a capsule. Same text, same information, old presentation.
+        if UIStyle.isClassic {
+            return AnyView(
+                Text(text)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            )
+        }
+        return AnyView(modernBody)
+    }
+
+    private var modernBody: some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold, design: .rounded))
             .foregroundColor(isMuted ? MuffinTheme.brownMid : MuffinTheme.sparkleCream)

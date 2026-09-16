@@ -1025,6 +1025,12 @@ enum LaunchLogSettings {
 }
 
 struct EmulatorViewOptimized: View {
+    // Observed so flipping Classic UI or Disable Liquid Glass repaints this subtree
+    // immediately. MuffinTheme and the shared row/header components read the same store
+    // through UIStyle's static accessors, but static reads cannot invalidate a view on
+    // their own - something in the tree has to be watching, and this is it.
+    @ObservedObject private var uiStyle = UIStyleStore.shared
+
     let game: GameMetadata
     @ObservedObject var gameManager: GameManager
     @Binding var isRunning: Bool

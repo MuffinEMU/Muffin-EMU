@@ -57,6 +57,20 @@ struct SettingsSectionHeader: View {
     }
 
     var body: some View {
+        // Classic UI: the plain `Text` header every section used at v2.0, before the icon
+        // chips existed. `.textCase(nil)` is kept even here - it is not part of the new
+        // styling, it is what stops SwiftUI's grouped-list style uppercasing the title,
+        // and v2.0's explicit `header:` closures had the same problem.
+        if UIStyle.isClassic {
+            Text(title)
+                .textCase(nil)
+                .accessibilityAddTraits(.isHeader)
+        } else {
+            modernHeader
+        }
+    }
+
+    private var modernHeader: some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .bold))
