@@ -650,6 +650,28 @@ private struct ControlButton: View {
         // the same way it always has and play mode routes the touch to the surface
         // instead of back to this button.
         .allowsHitTesting(externallyPressed == nil && isInteractive)
+        // Diagnostic only, and off unless the controls overlay is on. Draws the exact
+        // rect this control claims for hit testing.
+        //
+        // It exists because static reading ran out of answers: every gate on this button
+        // reads correct (editing off, isInteractive true, externallyPressed nil, no
+        // competing gesture attached), the file is byte-identical to a state where the
+        // buttons worked, and they still do not fire - while the sticks, which are a
+        // different view type, do. The one hypothesis left that fits all of that is that
+        // the area accepting touches is not where the button is painted. An outline that
+        // does not sit on its button proves it in one glance; an outline that fits
+        // perfectly rules the whole idea out, which is just as useful.
+        .overlay(
+            Group {
+                if PadDiagnostics.shared.isEnabled {
+                    Rectangle()
+                        .strokeBorder(externallyPressed == nil ? Color.red : Color.orange,
+                                      lineWidth: 1)
+                        .frame(width: size.width, height: size.height)
+                        .allowsHitTesting(false)
+                }
+            }
+        )
     }
 
     private var size: CGSize {
@@ -777,7 +799,14 @@ struct HeldControl<Content: View>: View {
 
     private var ownGesture: some Gesture {
         DragGesture(minimumDistance: 0)
-            .onChanged { _ in setPressed(true) }
+            .onChanged { _ in
+                // Recorded BEFORE setPressed, which guards on a state change. That guard
+                // is why the existing input counter cannot distinguish "no touch ever
+                // reached this gesture" from "touches arrive but the state never flips" -
+                // both look like a frozen counter. This one ticks on the raw touch.
+                PadDiagnostics.shared.recordRawTouch()
+                setPressed(true)
+            }
             .onEnded { _ in setPressed(false) }
     }
 
