@@ -28,6 +28,12 @@ enum SettingsDefaults {
         "muffin.theme.selectedId",
     ]
 
+    /// @MainActor because it touches two main-actor-isolated stores on the way out:
+    /// UIStyleStore (to repaint after the style keys are deleted) and ThermalMonitor
+    /// (to unwind a throttle that was active when the reset happened). Both callers are
+    /// in AboutSettingsSection's view body, which is already on the main actor, so this
+    /// costs them nothing.
+    @MainActor
     static func reset(includingPerGameOverrides: Bool) {
         let defaults = UserDefaults.standard
         var excluded = alwaysExcludedKeys
@@ -53,6 +59,10 @@ enum SettingsDefaults {
     /// makes its @AppStorage revert to the declared default on its own, but nothing
     /// re-runs an onChange for a change SwiftUI didn't originate here, so the
     /// running engine needs telling directly rather than left to notice.
+    /// @MainActor for the ThermalMonitor call below. Its only caller, reset(), is already
+    /// isolated, but a private static func is nonisolated by default in Swift 6 - it does
+    /// not inherit isolation from whoever calls it.
+    @MainActor
     private static func pushDefaultsToBridge() {
         cemu_bridge_set_recompiler_enabled(true)
         cemu_bridge_set_favour_accuracy(false)
