@@ -477,6 +477,9 @@ namespace {
     // last thing a device that is already too hot needs. Low power wants the core count
     // down and nothing else changed.
     std::atomic<bool> g_lowPowerMode{false};
+    // Off by default: see ios_apply_cpu_mode() for the measurement that made one core
+    // the default rather than three.
+    std::atomic<bool> g_multicoreRequested{false};
     std::mutex g_cpuModeDetailMutex;
     std::string g_cpuModeDetail;
 
@@ -632,9 +635,21 @@ void ios_apply_cpu_mode()
     // is exactly the "hot fast, while MeloCafe stays cool" report - MeloCafe is not doing
     // something clever, it is doing a third of the work.
     //
-    // So single-core is the single biggest lever available, and Low Power Mode pulls it
-    // without dragging in Favour accuracy's extra GPU work.
-    const bool singleCore = accuracy || lowPower;
+    // So single-core is the single biggest lever available - and as of the measurements
+    // below it is also the DEFAULT, which is the opposite of what this comment used to
+    // say.
+    //
+    // The original reasoning was "Speed first means Multicore". Measured on the same
+    // device and the same title (Wind Waker HD, A12Z iPad Pro), that is simply false:
+    // MeloCafe on one core holds 40-60fps, MuffinEMU on three managed 4-20. Three host
+    // threads on a fanless part do not buy three times the work, they buy three times
+    // the power draw, and the SoC gives the clocks back as soon as it heats up - which
+    // it does within a minute. The multi-core win is real on a desktop with a fan and
+    // headroom; this device has neither.
+    //
+    // Multi-core is still reachable for anyone who wants to try it per-device, but it
+    // has to be asked for now rather than being what everyone gets by default.
+    const bool singleCore = accuracy || lowPower || !g_multicoreRequested.load();
     const char* cores = singleCore ? "single-core" : "multi-core";
     auto& config = GetConfig();
     char detail[320];
@@ -1459,6 +1474,10 @@ void cemu_bridge_set_thermal_throttle_micros(uint32_t micros) {
     // lives in coreinit and defaults to 0, so setting it before a title exists is
     // harmless, and the host thread loop picks it up on its very next reschedule.
     coreinit::OSSetThermalThrottleMicros(micros);
+}
+
+void cemu_bridge_set_multicore_enabled(bool enabled) {
+    g_multicoreRequested.store(enabled);
 }
 
 void cemu_bridge_set_low_power_mode(bool enabled) {

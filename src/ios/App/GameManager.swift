@@ -1006,6 +1006,9 @@ class GameManager: ObservableObject {
             // a Settings change only takes effect on the next launch and has to be pushed
             // before boot rather than when the toggle moved.
             cemu_bridge_set_low_power_mode(LowPowerMode.isEnabled)
+            // Read at title start like the rest: the core count is fixed once the
+            // scheduler threads exist, so this has to be right before the title runs.
+            cemu_bridge_set_multicore_enabled(MulticoreMode.isEnabled)
             // Global, not per-game - see CemuBridge.h's cemu_bridge_set_vsync_enabled().
             // Applied once per layer (re)init, so reading it here before boot is what
             // makes a mid-session Settings change take effect on the next launch.

@@ -506,6 +506,15 @@ double cemu_bridge_device_temperature_celsius(void);
 
 void cemu_bridge_set_thermal_throttle_micros(uint32_t micros);
 
+/// Run the three emulated Espresso cores on three host threads instead of one.
+///
+/// Off by default, and that default is measured rather than assumed: on an A12Z iPad Pro
+/// running Wind Waker HD, one core holds 40-60fps and three managed 4-20. A fanless part
+/// does not get three times the work out of three times the power draw - it heats up
+/// within a minute and the SoC takes the clocks back. Worth trying on a device with more
+/// thermal headroom; not worth being the default on this one.
+void cemu_bridge_set_multicore_enabled(bool enabled);
+
 void cemu_bridge_set_low_power_mode(bool enabled);
 bool cemu_bridge_low_power_mode(void);
 bool cemu_bridge_favour_accuracy(void);
