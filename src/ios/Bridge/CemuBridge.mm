@@ -60,6 +60,19 @@
 #include "input/api/iOS/GCControllerProvider.h"
 #include "input/emulated/EmulatedController.h"
 
+// Forward-declared rather than reached through coreinit_Thread.h: that header pulls the
+// whole coreinit thread/scheduler surface into an ARC-compiled ObjC++ translation unit
+// that includes no other Cafe/OS header, and this needs exactly one function from it.
+//
+// MUST stay OUTSIDE the extern "C" block below, and that is not a style preference - it
+// is what makes this link. A `namespace` nested inside `extern "C"` does NOT restore C++
+// linkage: the declaration keeps C language linkage, so the reference is emitted as the
+// unmangled `_OSSetThermalThrottleMicros` while the definition in coreinit_Thread.cpp is
+// an ordinary mangled C++ symbol. The two never meet, and the only symptom is a linker
+// error at the very end of a full framework build - which on the arm64 runner is an hour
+// of cold vcpkg rebuild before it tells you.
+namespace coreinit { void OSSetThermalThrottleMicros(uint32 micros); }
+
 // The core's C entry points. Defined inside extern "C" blocks in src/main.cpp and
 // src/gui/uikit/WindowSystem.mm, and only ever declared in MeloCafe's own app target, so
 // they are declared again here.
@@ -73,12 +86,6 @@ void CemuUIKit_SetPadView(UIView* view);
 void CemuUIKit_InitializeLayer(bool main);
 void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale);
 
-// Forward-declared rather than reached through coreinit_Thread.h, following the same
-// pattern as the CemuUIKit_* declarations above. That header pulls the whole coreinit
-// thread/scheduler surface into an ARC-compiled ObjC++ translation unit that currently
-// includes no Cafe/OS headers at all, and this needs exactly one function from it. See
-// coreinit_Thread.h for what it does and why it exists.
-namespace coreinit { void OSSetThermalThrottleMicros(uint32 micros); }
 void CemuUIKit_UpdatePadWindowSize(void);
 void CemuUIKit_SetVisibleOutputs(bool tv, bool pad);
 void CemuUIKit_SetPadTouch(CGFloat x, CGFloat y, bool down);
