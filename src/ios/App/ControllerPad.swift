@@ -453,19 +453,19 @@ private struct DpadTouchSurface: View {
         // ControlCluster's own background relies on - which is what makes it usable here
         // as a shape with nothing to draw.
         Color.clear
-            .frame(width: width, height: height)
-            // Same slop the face buttons get, applied the same way - grow, claim, restore
-            // - so the d-pad's outer edge is exactly as forgiving as every other control
-            // and the setting means one thing across the whole pad.
+            // Grown by the slop, not padded-then-unpadded. `.position()` below centres
+            // whatever frame it is given, so growing symmetrically leaves the d-pad
+            // exactly where it was drawn while widening what it catches.
             //
-            // It only widens the OUTER catchment. Which direction a touch resolves to is
-            // decided by PadLayout.dpadDirections() from the angle around the centre, and
-            // that maths reads the unpadded width/height passed below, so the boundaries
-            // BETWEEN up/down/left/right do not move. A more generous d-pad here means
-            // "a touch slightly off the pad still counts", never "the diagonals shifted".
-            .padding(touchSlop)
+            // Only the OUTER edge moves. Which direction a touch resolves to is decided
+            // by PadLayout.dpadDirections() from the angle around the centre, using the
+            // unpadded width/height passed below - so up/down/left/right boundaries are
+            // unchanged at every slop value.
+            .frame(width: width + touchSlop * 2, height: height + touchSlop * 2)
+            // Slop is applied by growing the frame above, not by negative padding -
+            // this surface is also placed with `.position()`, where negative padding
+            // shrinks the reported frame and takes the catchment with it.
             .contentShape(Rectangle())
-            .padding(-touchSlop)
             .position(x: centre.x + box.midX * unit, y: centre.y + box.midY * unit)
             .allowsHitTesting(isInteractive)
             .gesture(
@@ -656,8 +656,27 @@ private struct ControlButton: View {
                     .foregroundColor(labelColor)
             }
             .frame(width: size.width, height: size.height)
-            .scaleEffect(isPressed ? 0.94 : 1.0)
-            .animation(.easeInOut(duration: 0.05), value: isPressed)
+            // The press animation. Already here long before touch slop existed - the
+            // only change is the timing, which is now asymmetric: the dip is immediate
+            // and the return settles. A spring on the way DOWN would make a button that
+            // registered at touch-down LOOK like it registered late, which is the exact
+            // complaint this is meant to answer.
+            .scaleEffect(pressAnimationEnabled && !reduceMotion ? (isPressed ? 0.94 : 1.0) : 1.0)
+            .animation(pressAnimationEnabled && !reduceMotion
+                       ? (isPressed ? .easeOut(duration: 0.045)
+                                    : .spring(response: 0.22, dampingFraction: 0.62))
+                       : nil,
+                       value: isPressed)
+            // Touch slop, applied by GROWING the frame rather than padding and
+            // un-padding. ControlCluster places this with `.position(x:y:)`, which
+            // centres whatever frame it is handed - so a symmetric grow widens what the
+            // button catches without moving a single pixel of what it paints.
+            //
+            // The negative-padding idiom was tried here first and broke every button on
+            // the pad: it reports a frame SMALLER than the content, hit testing clips to
+            // that frame, and the result is a catchment smaller than the button - zero
+            // for anything under ~16pt. Correct in a stack, wrong under `.position()`.
+            .frame(width: size.width + touchSlop * 2, height: size.height + touchSlop * 2)
         }
         // Externally driven means DpadTouchSurface, not this button, answers for the
         // touch - false here regardless of isInteractive, so edit mode still disables it
@@ -665,6 +684,14 @@ private struct ControlButton: View {
         // instead of back to this button.
         .allowsHitTesting(externallyPressed == nil && isInteractive)
     }
+
+    @AppStorage(ControllerLayoutSettings.touchSlopKey)
+    private var touchSlop = ControllerLayoutSettings.defaultTouchSlop
+
+    @AppStorage(ControllerLayoutSettings.pressAnimationKey)
+    private var pressAnimationEnabled = ControllerLayoutSettings.defaultPressAnimation
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var size: CGSize {
         switch control.shape {
@@ -767,57 +794,31 @@ struct HeldControl<Content: View>: View {
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
-    @AppStorage(ControllerLayoutSettings.touchSlopKey)
-    private var touchSlop = ControllerLayoutSettings.defaultTouchSlop
-
-    @AppStorage(ControllerLayoutSettings.pressAnimationKey)
-    private var pressAnimationEnabled = ControllerLayoutSettings.defaultPressAnimation
-
-    /// A press animation that plays while someone is aiming at a moving target is worse
-    /// than none, and this is a gamepad - the whole point is that the finger is already
-    /// somewhere else by the next frame. Honoured rather than assumed harmless.
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
+    /// Drawn state. The press ANIMATION lives in ControlButton's own content closure,
+    /// which has scaled and eased on `isPressed` since long before touch slop existed -
+    /// adding a second scaleEffect here stacked on top of it and squashed every control
+    /// to 0.88 instead of 0.94.
     private var shown: Bool { externallyPressed ?? isPressed }
-
-    /// How far the control shrinks under a finger. Deliberately small: at 0.94 the
-    /// movement is legible at a glance without the button appearing to slide out from
-    /// under the thumb, which is what larger values read as on a control you are holding
-    /// rather than tapping.
-    private var pressScale: CGFloat {
-        guard pressAnimationEnabled, !reduceMotion else { return 1 }
-        return shown ? 0.94 : 1
-    }
-
-    /// Asymmetric on purpose. The press has to look instantaneous, because the input
-    /// already was - a spring on the way DOWN would make a button that registered at
-    /// touch-down appear to register late, which is precisely the complaint this is meant
-    /// to answer. The release can afford to settle.
-    private var pressAnimation: Animation? {
-        guard pressAnimationEnabled, !reduceMotion else { return nil }
-        return shown
-            ? .easeOut(duration: 0.045)
-            : .spring(response: 0.22, dampingFraction: 0.62)
-    }
 
     var body: some View {
         content(shown)
-            // The animation wraps the CONTENT, not the hit area below it. Scaling the
-            // touch target with the button would shrink the catchment at the exact moment
-            // a finger is on it, so a press that drifts slightly would release early -
-            // the opposite of responsive.
-            .scaleEffect(pressScale)
-            .animation(pressAnimation, value: shown)
-            // Grow the touch area without moving anything. padding() enlarges the frame,
-            // contentShape() claims that enlarged frame for hit-testing, and the negative
-            // padding puts the layout back exactly where it was - so every control keeps
-            // its painted size and position at every slop value, and only the invisible
-            // catchment changes. Applied before .contentShape(Rectangle()) below, which
-            // is what previously limited the hit area to whatever the label painted (a
-            // finger on the transparent corner of a circular button hit the view behind).
-            .padding(touchSlop)
+            // Without this the hit area is whatever the label happens to paint, so a
+            // finger landing on the transparent corner of a circular button hits the
+            // view behind it instead.
+            //
+            // Touch slop is NOT applied here, and that is deliberate. It was, briefly,
+            // as padding -> contentShape -> negative padding, which is the usual SwiftUI
+            // idiom for widening a tap target. It broke every button on the pad.
+            //
+            // The reason is the parent: ControlCluster places each control with
+            // `.position(x:y:)`. Negative padding reports a layout frame SMALLER than the
+            // content, and hit testing is clipped to that reported frame - so the
+            // enlarged contentShape and the shrunken frame intersect to give a catchment
+            // smaller than the button itself, and any control under ~16pt in a dimension
+            // collapses to no catchment at all. The idiom is fine in a stack; it is wrong
+            // under `.position()`. Slop now lives in ControlButton, which grows its frame
+            // instead - see there.
             .contentShape(Rectangle())
-            .padding(-touchSlop)
             .accessibilityAddTraits(.isButton)
             .gesture(externallyPressed == nil ? ownGesture : nil)
             // A gesture the system cancels (backgrounding, an incoming call) or a view
