@@ -12,7 +12,16 @@ struct DeviceReportSection: View {
     @State private var deviceReportCopied = false
     /// Computed on demand. The bridge owns the string and it is stable for the
     /// process's lifetime, so there is nothing to refresh and nothing to invalidate.
-    private var deviceReport: String { String(cString: cemu_bridge_device_report()) }
+    ///
+    /// PlatformCapabilities.summary is appended rather than added to the bridge's own
+    /// report because it answers a question the bridge cannot: the bridge knows the
+    /// running OS, but only the Swift side knows which SDK this binary was compiled
+    /// against, and "iOS 27 device, pre-27 SDK" is the single most likely reason for a
+    /// report that a new-OS feature did nothing. Putting it in the copied text means it
+    /// travels with every bug report instead of having to be asked for.
+    private var deviceReport: String {
+        String(cString: cemu_bridge_device_report()) + "\n" + PlatformCapabilities.summary
+    }
 
     var body: some View {
         Section {
