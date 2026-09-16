@@ -64,39 +64,6 @@ enum ControllerLayoutSettings {
     static let hapticsKey = "muffin.pad.haptics"
     static let defaultHaptics = true
 
-    /// How far OUTSIDE a button's painted edge a touch still counts as hitting it, in
-    /// points. 0 means the hit area is exactly what you can see.
-    ///
-    /// This is what "responsiveness" means for an on-screen pad, and it is worth being
-    /// precise rather than shipping a mystery dial. Nothing here delays or debounces a
-    /// press - `HeldControl` already reports on `DragGesture(minimumDistance: 0)`'s
-    /// `onChanged`, which is the first possible moment a touch exists, and there is no
-    /// timer anywhere in the input path to shorten. A button that "did not respond" was
-    /// almost never late; the finger landed just off it, or slid off it mid-press.
-    ///
-    /// So this widens the target instead of speeding up a clock that is already
-    /// instant. The visual is untouched at every value - only the invisible catchment
-    /// grows, via a padding/contentShape/negative-padding sandwich that leaves layout
-    /// byte-identical.
-    ///
-    /// Defaults to 8pt rather than 0. Apple's own minimum tap target is 44pt and several
-    /// pad buttons are drawn smaller than that at the default control scale, so a small
-    /// amount of slop is closer to correct than none - but it stays modest, because slop
-    /// large enough to overlap a neighbouring button turns one miss into a wrong press,
-    /// which is worse.
-    static let touchSlopKey = "muffin.pad.touchSlop"
-    static let defaultTouchSlop: Double = 8
-    static let minTouchSlop: Double = 0
-    /// Capped at 20pt. Beyond roughly this the catchments of adjacent face buttons start
-    /// to meet at the default layout, and the failure mode changes from "missed the
-    /// button" to "pressed the wrong one".
-    static let maxTouchSlop: Double = 20
-
-    /// Whether the pad animates a press at all. Off means the control snaps between its
-    /// two painted states exactly as it always has.
-    static let pressAnimationKey = "muffin.pad.pressAnimation"
-    static let defaultPressAnimation = true
-
     static let defaultJoystick = false
 
     /// Fraction of full travel that reads as centred.
