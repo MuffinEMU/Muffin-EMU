@@ -457,6 +457,12 @@ private struct DpadTouchSurface: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
+                        // Same raw-touch tick HeldControl.ownGesture does, and for the
+                        // same reason: the d-pad reaches the bridge through this surface
+                        // rather than through HeldControl, so without it the "touches"
+                        // row answers only for face buttons and says nothing at all about
+                        // the d-pad - which is half of what is reported broken.
+                        PadDiagnostics.shared.recordRawTouch()
                         // In this view's own local space - (0, 0) at its top-left corner,
                         // (width, height) at its bottom-right - which is unaffected by
                         // .position() above and needs no translation back to the
