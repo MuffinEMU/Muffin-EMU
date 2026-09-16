@@ -15,7 +15,7 @@ on:
   # A manual run on main publishes the next numbered release, exactly like a push.
   workflow_dispatch: {}
   push:
-    branches: [ main ]
+    branches: [ main, ios27-sdk ]
     # Documentation cannot change the binary.
     paths-ignore:
       - '**/*.md'
@@ -31,7 +31,22 @@ env:
 
 jobs:
   build-app:
-    runs-on: macos-15
+    # xcode-27 is the only GitHub-hosted image carrying the iOS 27.0 SDK, which is what
+    # makes UISceneAccessory and registerSceneAccessory(_:) exist at compile time rather
+    # than merely at runtime. Three things about it are load-bearing and were checked
+    # against the image manifest before switching, not assumed:
+    #   - It is arm64 only. The vcpkg binary cache below is therefore cold on the first
+    #     run of this branch; that is a slow build, not a broken one.
+    #   - It ships EXACTLY ONE Xcode (27.0 beta, 27A5252f) symlinked at
+    #     /Applications/Xcode.app. Neither Xcode 16.4 nor Xcode_26.3.app exists on it, so
+    #     the hardcoded path the app step used would have failed outright. Both steps
+    #     below now pick whatever is actually installed.
+    #   - It runs macOS 27.0 with CMake 4.4.3. CMake 4 drops compatibility with
+    #     cmake_minimum_required below 3.5; this tree's minimums are 3.21.1 (root) and
+    #     3.8 (dependencies/ih264d), both clear of that floor.
+    # Note the toolchain is a BETA. That is fine for proving the SDK migration; it is a
+    # separate decision whether a numbered release should ship from it.
+    runs-on: xcode-27
     timeout-minutes: 330
     permissions:
       contents: write
@@ -46,6 +61,8 @@ jobs:
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-path
+          # ninja and cmake are preinstalled on this image; xcodegen is not. Asking for
+          # all of them is idempotent and keeps one command working on either image.
           brew install xcodegen ninja
 
       - name: Identify the pinned vcpkg
@@ -121,16 +138,29 @@ jobs:
           cd src/ios
           xcodegen generate
 
-      - name: Switch to Xcode 26 for the app
-        # The Swift side needs Swift 6.2: Melo-Controller uses the optional default in
-        # string interpolation ("\(gameId, default: "global")"), which Xcode 16.4 rejects
-        # as an extra argument. Only the app build switches. Cemu.framework above is
-        # already built with Xcode 16.4, and the app reaches it only through the plain C
-        # bridge, so the two toolchains never share a C++ ABI boundary.
+      - name: Select the newest Xcode for the app
+        # The Swift side needs at least Swift 6.2: Melo-Controller uses the optional
+        # default in string interpolation ("\(gameId, default: "global")"), which Xcode
+        # 16.4 rejects as an extra argument. Cemu.framework above reaches the app only
+        # through the plain C bridge, so the two toolchains never share a C++ ABI
+        # boundary and switching here is safe.
+        #
+        # Picks the newest installed Xcode instead of naming one. The old version pinned
+        # /Applications/Xcode_26.3.app, which does not exist on the xcode-27 image - the
+        # step would have failed before compiling a line. Sorting the installed set keeps
+        # this correct on any runner image, which is the property that was missing.
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          set -eo pipefail
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -n1)
+          echo "Installed Xcodes:"; ls -d /Applications/Xcode*.app
+          echo "Selecting $NEWEST"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-path
+          # Prove which SDK the app is actually built against - this is the whole point
+          # of the migration, and it is the first thing to check if the iOS 27 code paths
+          # do not appear in the binary.
+          xcrun --sdk iphoneos --show-sdk-version
 
       - name: Build the MuffinEMU app
         run: |
