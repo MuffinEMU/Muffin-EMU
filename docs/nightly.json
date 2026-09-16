@@ -1,0 +1,37 @@
+{
+  "name": "MuffinEMU Nightly",
+  "identifier": "com.kiddreads.MuffinEMU.nightly",
+  "subtitle": "The newest MuffinEMU build, rebuilt on every change.",
+  "description": "The install source for MuffinEMU, a Wii U emulator for iPhone and iPad built on Cemu. This source serves the NIGHTLY build - the newest code, rebuilt on every change and tested by nobody. It shares its bundle identifier with the standard build, so installing it replaces a standard install and keeps your games, saves and settings; the two do not sit side by side. Add this source only if you want the newest build rather than the one known to work.",
+  "iconURL": "https://kiddreads.github.io/MuffinEMU/icon.png",
+  "website": "https://kiddreads.github.io/MuffinEMU/",
+  "tintColor": "E5652E",
+  "apps": [
+    {
+      "name": "MuffinEMU Nightly",
+      "bundleIdentifier": "com.kiddreads.MuffinEMU",
+      "developerName": "kiddreads",
+      "subtitle": "Wii U emulator - nightly build",
+      "localizedDescription": "MuffinEMU is a Wii U emulator for iPhone and iPad, iOS 15 and later, built on Cemu: PowerPC interpreters, an AArch64 recompiler, Cafe OS HLE and a native Metal renderer under a SwiftUI app with a measured Wii U GamePad layout. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\nThis source serves the NIGHTLY build - the newest code, rebuilt on every change and tested by nobody. It shares its bundle identifier with the standard build, so installing it replaces a standard install and keeps your games, saves and settings; the two do not sit side by side. Add this source only if you want the newest build rather than the one known to work.\n\nBring your own games and keys. No copyrighted content is distributed here.",
+      "iconURL": "https://kiddreads.github.io/MuffinEMU/icon.png",
+      "tintColor": "E5652E",
+      "category": "games",
+      "screenshotURLs": [],
+      "versions": [
+        {
+          "version": "2026.9.16",
+          "date": "2026-09-16T23:34:20Z",
+          "localizedDescription": "The newest build of MuffinEMU, from commit 030d842929e09ea79798d2283d7c3d3e4ea472c6 on `main`.\n\nThis tag moves. It is replaced by every successful build, so the download\nhere is always the newest code and never a version you can come back to -\nfor that, use a numbered release.\n\nUntested by anyone. A numbered release has at least been installed and run;\nthis has only been compiled. If you want the version that works, not the\nversion that is newest, install the latest numbered release instead.",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/nightly/MuffinEMU.ipa",
+          "size": 67675570,
+          "minOSVersion": "15.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}
