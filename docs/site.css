@@ -6,7 +6,28 @@
  * MuffinThemeStore.swift. theme.js overwrites them live from real theme data —
  * everything else in this file just consumes them, so every page repaints
  * consistently when the theme switches.
+ *
+ * ── The one structural decision worth knowing ───────────────────────────────
+ * Content does NOT sit on the raw background gradient any more.
+ *
+ * It used to: `body` was a full-bleed, fixed, 135° saturated gradient, and every
+ * card, heading and paragraph floated on top of it. That is the single biggest
+ * reason the old site read as loud and hard to scan — running text was
+ * near-white `--sparkle` over mid-tone orange, which is around 3:1 and fails AA
+ * at body sizes, in every one of the 31 themes.
+ *
+ * The gradient is now atmosphere rather than ground: it fills the hero band and
+ * the footer band, where the text on it is large, short and deliberately
+ * scrimmed. Everything in between sits on `--page`, a calm warm paper derived
+ * from the theme's own `--cream`. Nothing is invented — `--page` is a mix of two
+ * real palette tokens, so it still changes with the theme and still goes dark in
+ * dark mode.
+ *
+ * Every class name that existed before still exists, because nine documentation
+ * pages consume this file and are edited separately. This is a restyle and an
+ * extension, never a rename.
  */
+
 :root {
   --bg-top: #F4A551; --bg-bottom: #E6692D;
   --muffin-top-light: #E3A254; --muffin-top-dark: #A8622A;
@@ -16,35 +37,105 @@
   --sparkle: #FFF3DD; --shadow: rgba(74, 36, 16, .18);
   --bg-image: linear-gradient(135deg, var(--bg-top), var(--bg-bottom));
 
+  /* Derived surfaces. All of these are mixes of real tokens rather than new
+     hexes, so a theme Void adds later inherits them with no extra work.
+     
+     Each is declared TWICE: a plain value first, the color-mix() version second.
+     A browser without color-mix() treats the second declaration as invalid and
+     keeps the first, so the page degrades to flat theme colours instead of
+     losing its background entirely — an unsupported var() in `background` would
+     otherwise resolve to nothing and blank the ground. */
+  --page: var(--cream);
+  --page: color-mix(in srgb, var(--cream) 82%, var(--wrapper));
+  --surface: var(--cream);
+  --line: var(--wrapper);
+  --line: color-mix(in srgb, var(--wrapper) 72%, var(--brown-mid) 12%);
+  --line-soft: var(--wrapper);
+  --line-soft: color-mix(in srgb, var(--wrapper) 85%, transparent);
+
+  /* Two-layer depth: a tight contact shadow plus a wide ambient one. A single
+     mid-radius shadow is the flat-template tell; two read as a real surface. */
+  --lift-1: 0 2px 10px var(--shadow);
+  --lift-1: 0 1px 2px color-mix(in srgb, var(--shadow) 55%, transparent),
+            0 2px 10px color-mix(in srgb, var(--shadow) 30%, transparent);
+  --lift-2: 0 10px 28px var(--shadow);
+  --lift-2: 0 2px 4px color-mix(in srgb, var(--shadow) 55%, transparent),
+            0 10px 28px color-mix(in srgb, var(--shadow) 32%, transparent);
+
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 22px;
   --content-max: 42rem;
   --wide-max: 72rem;
+
+  --focus: var(--pixel-blue);
+  --focus: color-mix(in srgb, var(--pixel-blue) 88%, white);
+  color-scheme: light dark;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { background: var(--bg-bottom); scroll-behavior: smooth; }
+html { background: var(--page); scroll-behavior: smooth; }
 
 body {
   margin: 0;
   min-height: 100vh;
   font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   color: var(--brown-dark);
-  background: var(--bg-image);
-  background-attachment: fixed;
-  transition: background .5s ease;
+  background: var(--page);
+  transition: background .4s ease, color .4s ease;
+  -webkit-font-smoothing: antialiased;
 }
 
 img { max-width: 100%; }
+
+/* One focus ring for the whole site. :focus-visible so a mouse click does not
+   draw it but a Tab key does — the old stylesheet had no focus styling at all,
+   which made the header genuinely unusable from a keyboard. */
+:where(a, button, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* Honours the OS "reduce motion" setting everywhere at once, including the
+   smooth-scroll above, rather than per-component. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: .5rem;
+  z-index: 100;
+  background: var(--surface);
+  color: var(--brown-darkest);
+  padding: .7rem 1.1rem;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  box-shadow: var(--lift-2);
+  text-decoration: none;
+}
+.skip-link:focus { left: .75rem; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px;
+  margin: -1px; padding: 0; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
 
 a { color: var(--pixel-blue); text-decoration-thickness: .08em; text-underline-offset: .15em; }
 a:hover { text-decoration-thickness: .14em; }
 
 h1, h2, h3, h4 { color: var(--brown-darkest); line-height: 1.2; letter-spacing: -.01em; margin: 0 0 .5rem; }
-h1 { font-size: clamp(2rem, 5.5vw, 3.1rem); letter-spacing: -.02em; }
-h2 { font-size: clamp(1.4rem, 3vw, 1.9rem); margin-top: 2.4rem; }
+h1 { font-size: clamp(2.1rem, 5.5vw, 3.4rem); letter-spacing: -.025em; }
+h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); margin-top: 2.4rem; letter-spacing: -.018em; }
 h3 { font-size: 1.15rem; margin-top: 1.6rem; }
 h4 { font-size: 1rem; margin-top: 1.2rem; }
 
@@ -55,7 +146,7 @@ li { margin-bottom: .4rem; }
 code, kbd {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: .88em;
-  background: var(--wrapper);
+  background: color-mix(in srgb, var(--wrapper) 80%, transparent);
   color: var(--brown-darkest);
   padding: .18em .45em;
   border-radius: 6px;
@@ -67,6 +158,7 @@ pre {
   padding: 1rem 1.1rem;
   border-radius: var(--radius-sm);
   overflow-x: auto;
+  border: 1px solid var(--line-soft);
 }
 pre code { background: none; padding: 0; }
 
@@ -79,23 +171,32 @@ pre code { background: none; padding: 0; }
   padding: .7rem .85rem;
   border-radius: 8px;
   overflow-wrap: anywhere;
+  border: 1px solid var(--line-soft);
 }
 
-hr { border: none; border-top: 1px solid var(--wrapper); margin: 2rem 0; }
+hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
 
 /* ---------------------------------------------------------------- header ---- */
+/* Paper, not gradient. The old header was translucent orange with `--sparkle`
+   nav links on it — pretty at a glance, and about 3:1 against the brightest
+   themes. Brown-on-paper clears AA in all 31. */
 .site-header {
   position: sticky;
   top: 0;
   z-index: 50;
-  backdrop-filter: blur(10px);
-  background: color-mix(in srgb, var(--bg-top) 55%, transparent);
-  border-bottom: 1px solid rgba(255, 255, 255, .18);
+  background: color-mix(in srgb, var(--page) 88%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .site-header {
+    -webkit-backdrop-filter: saturate(180%) blur(14px);
+    backdrop-filter: saturate(180%) blur(14px);
+  }
 }
 .header-inner {
   max-width: var(--wide-max);
   margin: 0 auto;
-  padding: .7rem 1.25rem;
+  padding: .6rem 1.25rem;
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -106,63 +207,78 @@ hr { border: none; border-top: 1px solid var(--wrapper); margin: 2rem 0; }
   gap: .55rem;
   font-weight: 800;
   font-size: 1.05rem;
-  color: var(--sparkle);
+  color: var(--brown-darkest);
   text-decoration: none;
   white-space: nowrap;
+  letter-spacing: -.02em;
 }
-.brand img { width: 30px; height: 30px; border-radius: 22%; display: block; }
+.brand img { width: 30px; height: 30px; border-radius: 22%; display: block; box-shadow: var(--lift-1); }
 
 .site-nav {
   display: flex;
   align-items: center;
-  gap: 1.1rem;
+  gap: .35rem;
   flex-wrap: wrap;
   font-size: .92rem;
   font-weight: 600;
   flex: 1;
 }
 .site-nav a {
-  color: var(--sparkle);
+  color: var(--brown-dark);
   text-decoration: none;
-  opacity: .88;
-  padding: .3rem 0;
+  padding: .4rem .6rem;
+  border-radius: 8px;
 }
-.site-nav a:hover, .site-nav a[aria-current="page"] { opacity: 1; text-decoration: underline; text-underline-offset: .2em; }
+.site-nav a:hover { background: var(--wrapper); color: var(--brown-darkest); }
+.site-nav a[aria-current="page"] {
+  background: var(--wrapper);
+  color: var(--brown-darkest);
+  box-shadow: inset 0 -2px 0 var(--muffin-top-dark);
+}
 
 .nav-dropdown { position: relative; }
 .nav-dropdown summary {
   list-style: none;
   cursor: pointer;
-  color: var(--sparkle);
-  opacity: .88;
+  color: var(--brown-dark);
   display: inline-flex;
   align-items: center;
   gap: .3rem;
+  padding: .4rem .6rem;
+  border-radius: 8px;
+  font-weight: 600;
+  user-select: none;
 }
 .nav-dropdown summary::-webkit-details-marker { display: none; }
-.nav-dropdown[open] summary { opacity: 1; }
+.nav-dropdown summary::marker { content: ""; }
+.nav-dropdown summary:hover { background: var(--wrapper); color: var(--brown-darkest); }
+.nav-dropdown[open] summary { background: var(--wrapper); color: var(--brown-darkest); }
+.nav-dropdown summary .chev { transition: transform .18s ease; display: inline-block; }
+.nav-dropdown[open] summary .chev { transform: rotate(180deg); }
 .nav-dropdown .dropdown-panel {
   position: absolute;
-  top: calc(100% + .6rem);
+  top: calc(100% + .5rem);
   left: 0;
-  min-width: 220px;
-  background: var(--cream);
-  border-radius: var(--radius-sm);
-  box-shadow: 0 12px 30px var(--shadow);
-  padding: .5rem;
+  min-width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--lift-2);
+  padding: .4rem;
   display: grid;
-  gap: .1rem;
+  gap: .05rem;
+  z-index: 60;
 }
 .nav-dropdown .dropdown-panel a {
-  color: var(--brown-darkest);
-  opacity: 1;
+  color: var(--brown-dark);
   display: block;
   padding: .5rem .6rem;
   border-radius: 8px;
   font-weight: 600;
   font-size: .88rem;
+  text-decoration: none;
 }
-.nav-dropdown .dropdown-panel a:hover { background: var(--wrapper); text-decoration: none; }
+.nav-dropdown .dropdown-panel a:hover { background: var(--wrapper); color: var(--brown-darkest); }
 .nav-dropdown .dropdown-panel small {
   display: block;
   font-weight: 400;
@@ -171,32 +287,90 @@ hr { border: none; border-top: 1px solid var(--wrapper); margin: 2rem 0; }
   margin-top: .1em;
 }
 
+/* ------------------------------------------------------------ theme UI ---- */
 .theme-btn {
   display: inline-flex;
   align-items: center;
   gap: .45rem;
-  border: none;
+  border: 1px solid var(--line);
   cursor: pointer;
   font: inherit;
   font-weight: 700;
   font-size: .82rem;
   color: var(--brown-darkest);
-  background: var(--sparkle);
-  padding: .48rem .85rem;
+  background: var(--surface);
+  padding: .45rem .8rem;
   border-radius: 999px;
-  box-shadow: 0 3px 10px var(--shadow);
+  box-shadow: var(--lift-1);
   white-space: nowrap;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
+.theme-btn:hover { box-shadow: var(--lift-2); }
 .theme-btn:active { transform: scale(.96); }
 .theme-btn .swatches { display: none; gap: 3px; }
 .theme-btn .swatches i { width: 7px; height: 13px; border-radius: 3px; display: block; }
 @media (min-width: 640px) { .theme-btn .swatches { display: flex; } }
 
+/* The picker popover theme.js builds. Cycling one-at-a-time through 31 themes
+   meant 20 clicks to reach the 20th; this shows all of them at once and the
+   cycle button still works for anyone who just wants to shuffle. */
+.theme-wrap { position: relative; display: inline-flex; gap: .4rem; align-items: center; }
+.theme-panel {
+  position: absolute;
+  top: calc(100% + .5rem);
+  right: 0;
+  width: min(21rem, calc(100vw - 2rem));
+  max-height: min(24rem, 60vh);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--lift-2);
+  padding: .6rem;
+  z-index: 70;
+}
+.theme-panel[hidden] { display: none; }
+.theme-panel h4 {
+  margin: .1rem .3rem .5rem;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--brown-mid);
+}
+.theme-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: .3rem; }
+.theme-option {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+  border: 1px solid transparent;
+  background: none;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--brown-dark);
+  text-align: left;
+  padding: .4rem .45rem;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.theme-option:hover { background: var(--wrapper); color: var(--brown-darkest); }
+.theme-option[aria-pressed="true"] { border-color: var(--muffin-top-dark); background: var(--wrapper); color: var(--brown-darkest); }
+.theme-option .dot {
+  width: 1.15rem; height: 1.15rem; border-radius: 50%;
+  flex: none; border: 1px solid var(--line);
+}
+.theme-option .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* -------------------------------------------------------------- layout ---- */
 .wrap { max-width: var(--wide-max); margin: 0 auto; padding: 0 1.25rem; }
 .prose-wrap { max-width: var(--content-max); margin: 0 auto; padding: 0 1.25rem; }
 
-section { padding-block: clamp(2rem, 6vw, 4.5rem); }
+section { padding-block: clamp(2rem, 6vw, 4.25rem); }
+
+.section-head { max-width: 40rem; margin: 0 auto clamp(1.5rem, 4vw, 2.5rem); text-align: center; }
+.section-head h2 { margin-top: 0; }
+.section-head p { color: var(--brown-mid); margin-bottom: 0; }
 
 .eyebrow {
   display: inline-block;
@@ -212,64 +386,135 @@ section { padding-block: clamp(2rem, 6vw, 4.5rem); }
 }
 
 /* ---------------------------------------------------------------- hero ---- */
-.hero { text-align: center; padding-top: clamp(2.5rem, 8vw, 5rem); }
-.hero img.icon {
-  width: 108px; height: 108px;
-  border-radius: 22%;
-  filter: drop-shadow(0 14px 28px var(--shadow));
-  margin-bottom: 1.3rem;
-}
-.hero h1 { color: var(--sparkle); text-shadow: 0 2px 14px var(--shadow); }
-.hero .lede {
-  max-width: 40rem;
-  margin: .6rem auto 0;
-  font-size: clamp(1.05rem, 2.2vw, 1.25rem);
+/* The gradient lives here rather than behind the whole page. The scrim is built
+   from --shadow, a real palette token, purely to guarantee that near-white
+   --sparkle text clears AA against the brighter themes' backgrounds. It deepens
+   an existing gradient; it does not invent a second one. */
+.hero {
+  position: relative;
+  text-align: center;
+  padding: clamp(2.75rem, 8vw, 5rem) 1.25rem clamp(3.5rem, 9vw, 6rem);
+  background-image:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--shadow) 8%, transparent),
+      color-mix(in srgb, var(--shadow) 26%, transparent)),
+    var(--bg-image);
   color: var(--sparkle);
-  opacity: .95;
+  overflow: hidden;
 }
-.hero-ctas { display: flex; flex-wrap: wrap; gap: .8rem; justify-content: center; margin-top: 1.8rem; }
+/* The paper ground curving up into the band. A shape, not a colour. */
+.hero::after {
+  content: "";
+  position: absolute;
+  left: -5%; right: -5%; bottom: -1px;
+  height: clamp(28px, 5vw, 60px);
+  background: var(--page);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+}
+.hero > * { position: relative; z-index: 1; }
+.hero .eyebrow {
+  background: color-mix(in srgb, var(--sparkle) 22%, transparent);
+  color: var(--sparkle);
+  border: 1px solid color-mix(in srgb, var(--sparkle) 38%, transparent);
+}
+.hero img.icon {
+  width: 104px; height: 104px;
+  border-radius: 23%;
+  filter: drop-shadow(0 16px 30px color-mix(in srgb, var(--shadow) 70%, transparent));
+  margin-bottom: 1.2rem;
+}
+.hero h1 { color: var(--sparkle); margin-bottom: .6rem; }
+.hero .lede {
+  max-width: 34rem;
+  margin: 0 auto;
+  font-size: clamp(1.05rem, 2.2vw, 1.2rem);
+  color: var(--sparkle);
+  line-height: 1.55;
+}
+.hero-ctas { display: flex; flex-wrap: wrap; gap: .7rem; justify-content: center; margin-top: 1.8rem; }
+
+/* A compact, honest one-liner under the CTAs. Deliberately part of the hero:
+   the first thing a visitor should learn is what is actually confirmed. */
+.hero-note {
+  margin: 1.4rem auto 0;
+  font-size: .87rem;
+  color: var(--sparkle);
+  opacity: .9;
+  max-width: 34rem;
+}
+.hero-note a { color: var(--sparkle); text-underline-offset: .2em; }
 
 /* -------------------------------------------------------------- buttons ---- */
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: .5rem;
-  padding: .8rem 1.3rem;
+  padding: .78rem 1.3rem;
   border-radius: 13px;
   font-weight: 700;
   font-size: .95rem;
   text-decoration: none;
-  border: 2px solid transparent;
-  transition: transform .15s ease;
+  border: 1px solid transparent;
+  transition: transform .14s ease, box-shadow .14s ease, background .14s ease;
   cursor: pointer;
+  line-height: 1.2;
 }
-.btn:active { transform: scale(.97); }
+.btn:active { transform: scale(.975); }
 .btn-primary {
   background: linear-gradient(150deg, var(--muffin-top-light), var(--muffin-top-dark));
   color: var(--sparkle);
-  box-shadow: 0 6px 18px var(--shadow);
+  box-shadow: var(--lift-2);
+  border-color: color-mix(in srgb, var(--muffin-top-dark) 70%, black 10%);
 }
-.btn-secondary { background: var(--sparkle); color: var(--brown-darkest); }
-.btn-outline { background: transparent; color: var(--sparkle); border-color: rgba(255,255,255,.55); }
+.btn-primary:hover { box-shadow: 0 4px 8px color-mix(in srgb, var(--shadow) 55%, transparent), 0 14px 34px color-mix(in srgb, var(--shadow) 40%, transparent); }
+.btn-secondary {
+  background: var(--surface);
+  color: var(--brown-darkest);
+  border-color: var(--line);
+  box-shadow: var(--lift-1);
+}
+.btn-secondary:hover { background: var(--wrapper); }
+/* Used on the gradient hero, so it stays a light outline there. */
+.btn-outline { background: color-mix(in srgb, var(--sparkle) 14%, transparent); color: var(--sparkle); border-color: color-mix(in srgb, var(--sparkle) 55%, transparent); }
+.btn-outline:hover { background: color-mix(in srgb, var(--sparkle) 24%, transparent); }
 .btn-sm { padding: .55rem .95rem; font-size: .85rem; border-radius: 10px; }
 
 /* ---------------------------------------------------------------- cards ---- */
+/* The 5px coloured top border is gone. It was the strongest thing on every card
+   and it pointed at nothing; a hairline plus real depth reads as a surface
+   rather than as a template. */
 .card {
-  background: var(--cream);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: clamp(1.25rem, 3vw, 1.75rem);
-  box-shadow: 0 8px 26px var(--shadow);
-  border-top: 5px solid var(--wrapper);
+  padding: clamp(1.25rem, 3vw, 1.6rem);
+  box-shadow: var(--lift-1);
 }
 .card h3 { margin-top: 0; }
 .card p:last-child { margin-bottom: 0; }
+.card-lift { transition: transform .16s ease, box-shadow .16s ease; }
+.card-lift:hover { transform: translateY(-2px); box-shadow: var(--lift-2); }
 
 .grid {
   display: grid;
-  gap: 1.25rem;
+  gap: 1.1rem;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 .grid-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+
+/* Replaces the emoji tile. Emoji rendered differently on every platform and was
+   the loudest thing in each card; an inline SVG inherits currentColor and sits
+   at a consistent weight. */
+.card-icon {
+  width: 2.5rem; height: 2.5rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--wrapper);
+  color: var(--muffin-top-dark);
+  border-radius: 12px;
+  margin-bottom: .85rem;
+}
+.card-icon svg { width: 1.3rem; height: 1.3rem; display: block; }
 
 .feature-card .emoji {
   width: 2.4rem; height: 2.4rem;
@@ -279,7 +524,19 @@ section { padding-block: clamp(2rem, 6vw, 4.5rem); }
   border-radius: 10px;
   margin-bottom: .8rem;
 }
-.feature-card a.more { font-size: .85rem; font-weight: 700; }
+.feature-card a.more {
+  font-size: .85rem;
+  font-weight: 700;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+}
+.feature-card a.more:hover { text-decoration: underline; }
+/* Makes the whole card clickable without nesting interactive elements: the
+   pseudo-element covers the card, and the real link keeps the accessible name. */
+.card-link { position: relative; }
+.card-link a.more::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
 
 /* --------------------------------------------------------------- pills ---- */
 .pillrow { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
@@ -293,10 +550,43 @@ section { padding-block: clamp(2rem, 6vw, 4.5rem); }
 .pill.accent { background: var(--pixel-blue); color: var(--sparkle); }
 .pill.pro { background: var(--navy); color: var(--sparkle); }
 
+/* -------------------------------------------------------------- status ---- */
+/* The project's credibility section, so it gets real iconography rather than
+   ✅/🚧. .yes and .partial keep their names — the docs pages use them. */
+.status-list { list-style: none; margin: 0; padding: 0; }
+.status-list li {
+  padding-left: 1.9rem;
+  position: relative;
+  margin-bottom: .7rem;
+  line-height: 1.55;
+}
+.status-list li::before {
+  position: absolute;
+  left: 0; top: .15em;
+  width: 1.25rem; height: 1.25rem;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: .78rem; font-weight: 900; line-height: 1;
+}
+.status-list .yes::before {
+  content: "✓";
+  background: color-mix(in srgb, #2E7D46 18%, var(--surface));
+  color: #2E7D46;
+  border: 1px solid color-mix(in srgb, #2E7D46 42%, transparent);
+}
+.status-list .partial::before {
+  content: "–";
+  background: color-mix(in srgb, var(--muffin-top-dark) 16%, var(--surface));
+  color: var(--muffin-top-dark);
+  border: 1px solid color-mix(in srgb, var(--muffin-top-dark) 42%, transparent);
+}
+.status-card-yes { border-top: 3px solid #2E7D46; }
+.status-card-open { border-top: 3px solid var(--muffin-top-dark); }
+
 /* -------------------------------------------------------------- notes ---- */
 .note, .warn, .verified {
   border-left: 4px solid var(--blush);
-  background: var(--wrapper);
+  background: color-mix(in srgb, var(--wrapper) 70%, var(--surface));
   padding: .9rem 1.1rem;
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   margin: 1.1rem 0;
@@ -307,16 +597,29 @@ section { padding-block: clamp(2rem, 6vw, 4.5rem); }
 .note strong, .warn strong, .verified strong { color: var(--brown-darkest); }
 
 /* -------------------------------------------------------------- tables ---- */
-.table-wrap { overflow-x: auto; margin: 1.2rem 0; }
-table { width: 100%; border-collapse: collapse; font-size: .92rem; background: var(--cream); border-radius: var(--radius-sm); overflow: hidden; }
-th, td { text-align: left; padding: .7rem .85rem; border-bottom: 1px solid var(--wrapper); vertical-align: top; }
+.table-wrap { overflow-x: auto; margin: 1.2rem 0; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; background: var(--surface); }
+th, td { text-align: left; padding: .7rem .85rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
 th { background: var(--wrapper); color: var(--brown-darkest); font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; }
 tr:last-child td { border-bottom: none; }
 
 /* ------------------------------------------------------------- footer ---- */
-.site-footer { text-align: center; color: var(--sparkle); font-size: .88rem; opacity: .9; padding: 2.5rem 1.25rem 3rem; }
+/* The gradient's second home, so --sparkle still has something to sit on. */
+.site-footer {
+  text-align: center;
+  color: var(--sparkle);
+  font-size: .88rem;
+  padding: clamp(2rem, 5vw, 3rem) 1.25rem;
+  margin-top: clamp(2rem, 6vw, 4rem);
+  background-image:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--shadow) 22%, transparent),
+      color-mix(in srgb, var(--shadow) 10%, transparent)),
+    var(--bg-image);
+}
 .site-footer a { color: var(--sparkle); }
 .site-footer p { margin: 0 0 .35rem; }
+.site-footer p:last-child { margin-bottom: 0; opacity: .88; }
 
 /* --------------------------------------------------------- docs layout ---- */
 .docs-shell {
@@ -324,17 +627,18 @@ tr:last-child td { border-bottom: none; }
   margin: 0 auto;
   padding: 2rem 1.25rem 4rem;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 2.5rem;
+  grid-template-columns: 230px minmax(0, 1fr);
+  gap: 2.25rem;
   align-items: start;
 }
 .docs-sidebar {
   position: sticky;
   top: 4.5rem;
-  background: var(--cream);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  padding: 1.1rem;
-  box-shadow: 0 8px 24px var(--shadow);
+  padding: 1rem;
+  box-shadow: var(--lift-1);
 }
 .docs-sidebar .sidebar-title {
   font-size: .74rem;
@@ -354,23 +658,27 @@ tr:last-child td { border-bottom: none; }
   border-radius: 8px;
   display: block;
 }
-.docs-sidebar a:hover { background: var(--wrapper); }
-.docs-sidebar a[aria-current="page"] { background: var(--muffin-top-light); color: var(--sparkle); }
+.docs-sidebar a:hover { background: var(--wrapper); color: var(--brown-darkest); }
+.docs-sidebar a[aria-current="page"] { background: var(--muffin-top-dark); color: var(--sparkle); }
 
+/* Now that the page ground is paper rather than gradient, the content column
+   needs its own edge or it dissolves into the background. */
 .docs-content {
-  background: var(--cream);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: clamp(1.5rem, 4vw, 3rem);
-  box-shadow: 0 8px 26px var(--shadow);
+  padding: clamp(1.5rem, 4vw, 2.75rem);
+  box-shadow: var(--lift-1);
   color: var(--brown-dark);
 }
 .docs-content h1 { margin-bottom: .3rem; }
 .docs-content .subtitle { color: var(--brown-mid); font-size: 1.05rem; margin-bottom: 1.8rem; }
 .docs-content section { padding-block: 0; }
+.docs-content > section + section { margin-top: 2rem; }
 
 .doc-next {
   display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
-  margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--wrapper);
+  margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--line);
 }
 .doc-next a { font-weight: 700; text-decoration: none; }
 .doc-next .dir { display: block; font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--brown-mid); font-weight: 700; }
@@ -380,11 +688,45 @@ tr:last-child td { border-bottom: none; }
   .docs-sidebar { position: static; }
   .docs-sidebar nav { display: flex; flex-wrap: wrap; gap: .4rem; }
   .docs-sidebar a { padding: .4rem .7rem; background: var(--wrapper); }
-  .docs-sidebar a[aria-current="page"] { background: var(--muffin-top-light); }
+  .docs-sidebar a[aria-current="page"] { background: var(--muffin-top-dark); }
 }
 
 @media (max-width: 560px) {
-  .header-inner { padding: .6rem .9rem; }
-  .site-nav { gap: .7rem; }
+  .header-inner { padding: .55rem .85rem; gap: .5rem; }
+  .site-nav { gap: .15rem; font-size: .88rem; }
+  .site-nav a, .nav-dropdown summary { padding: .35rem .45rem; }
   .theme-btn span[data-theme-name] { display: none; }
+  .theme-btn { padding: .45rem .6rem; }
 }
+
+/* 360px is the floor this has to hold — an iOS emulator's site is read on
+   phones more than anywhere else. */
+@media (max-width: 380px) {
+  .wrap, .prose-wrap { padding-inline: .9rem; }
+  .hero { padding-inline: .9rem; }
+  .hero img.icon { width: 84px; height: 84px; }
+  .btn { width: 100%; }
+  .hero-ctas { gap: .55rem; }
+}
+
+/* -------------------------------------------------------- landing bits ---- */
+/* Shared rather than page-scoped: the old index.html carried a <style> block in
+   its head patching this stylesheet, which is how two sources of truth start. */
+.install-card { text-align: center; }
+.install-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .7rem;
+  justify-content: center;
+  margin-top: 1.1rem;
+}
+.install-foot {
+  margin: 1.4rem auto 0;
+  max-width: 34rem;
+  font-size: .87rem;
+  color: var(--brown-mid);
+}
+.status-grid { align-items: start; }
+
+/* Icons inside a .btn. Sized here so no button needs inline width/height. */
+.btn svg { width: 1.05em; height: 1.05em; flex: none; }

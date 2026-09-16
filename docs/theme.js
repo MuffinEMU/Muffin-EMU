@@ -306,6 +306,12 @@
       el.textContent = theme.name + (theme.pro ? " (Pro)" : "");
     });
 
+    document.querySelectorAll("[data-theme-option]").forEach(function (el) {
+      var on = el.getAttribute("data-theme-option") === theme.id;
+      el.setAttribute("aria-pressed", on ? "true" : "false");
+      if (on && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+    });
+
     document.querySelectorAll("[data-theme-swatches]").forEach(function (el) {
       el.innerHTML = "";
       [theme.top, theme.navy, theme.pixel, theme.blush].forEach(function (pair) {
@@ -328,6 +334,88 @@
     return theme;
   }
 
+  // A single polite live region, created once. Cycling themes changes the button's
+  // own label, and a label that mutates under the cursor is announced
+  // inconsistently across screen readers; an explicit live region is not.
+  var liveRegion = null;
+  function announce(text) {
+    if (!liveRegion) {
+      liveRegion = document.createElement("div");
+      liveRegion.setAttribute("aria-live", "polite");
+      liveRegion.className = "visually-hidden";
+      document.body.appendChild(liveRegion);
+    }
+    liveRegion.textContent = text;
+  }
+
+  // The picker. Built in JS rather than written into every page's HTML so the 31
+  // names live in exactly one place - this file, next to the data they come from.
+  // Every page that has the markup gets it; pages that do not are unaffected, and
+  // with JS off the cycle button is simply the only control, as before.
+  function buildPicker() {
+    var panel = document.querySelector("[data-theme-panel]");
+    var toggle = document.querySelector("[data-theme-menu]");
+    if (!panel || !toggle) return;
+
+    var heading = document.createElement("h4");
+    heading.textContent = THEMES.length + " themes, from the app itself";
+    panel.appendChild(heading);
+
+    var list = document.createElement("div");
+    list.className = "theme-list";
+    THEMES.forEach(function (theme, i) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "theme-option";
+      b.setAttribute("data-theme-option", theme.id);
+      b.setAttribute("aria-pressed", "false");
+
+      var dot = document.createElement("span");
+      dot.className = "dot";
+      // The real two-colour background, at the real 135deg, so the swatch is the
+      // theme rather than an approximation of it.
+      dot.style.background = "linear-gradient(135deg, " + pick(theme.top) + ", " + pick(theme.bottom) + ")";
+      b.appendChild(dot);
+
+      var nm = document.createElement("span");
+      nm.className = "nm";
+      nm.textContent = theme.name + (theme.pro ? " (Pro)" : "");
+      b.appendChild(nm);
+
+      b.addEventListener("click", function () {
+        setThemeByIndex(i, true);
+        announce(theme.name + " theme applied");
+        close();
+      });
+      list.appendChild(b);
+    });
+    panel.appendChild(list);
+
+    function open() {
+      panel.hidden = false;
+      toggle.setAttribute("aria-expanded", "true");
+      var sel = panel.querySelector('[aria-pressed="true"]') || panel.querySelector(".theme-option");
+      if (sel) sel.focus();
+    }
+    function close() {
+      panel.hidden = true;
+      toggle.setAttribute("aria-expanded", "false");
+    }
+
+    toggle.hidden = false;
+    toggle.addEventListener("click", function () {
+      if (panel.hidden) { open(); } else { close(); }
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !panel.hidden) { close(); toggle.focus(); }
+    });
+    document.addEventListener("click", function (e) {
+      if (panel.hidden) return;
+      if (!panel.contains(e.target) && e.target !== toggle && !toggle.contains(e.target)) close();
+    });
+  }
+
   function init() {
     var startIndex = 0;
     try {
@@ -339,9 +427,12 @@
     } catch (e) { /* private mode, etc. */ }
     setThemeByIndex(startIndex, false);
 
+    buildPicker();
+
     document.querySelectorAll("[data-theme-cycle]").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        setThemeByIndex(currentIndex + 1, true);
+        var t = setThemeByIndex(currentIndex + 1, true);
+        announce(t.name + " theme applied");
       });
     });
 
