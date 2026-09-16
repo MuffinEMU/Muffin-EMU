@@ -11,6 +11,8 @@ struct CPUSettingsSection: View {
     @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = true
     @AppStorage("muffin.cpu.favourAccuracy") private var favourAccuracy = false
     @AppStorage(LowPowerMode.storageKey) private var lowPowerMode = LowPowerMode.defaultValue
+    @AppStorage(ThermalMonitor.autoThrottleKey) private var autoReduceWhenHot = ThermalMonitor.autoThrottleDefault
+    @ObservedObject private var thermal = ThermalMonitor.shared
 
     var body: some View {
         Section {
@@ -63,6 +65,26 @@ struct CPUSettingsSection: View {
             .onChange(of: lowPowerMode) { newValue in
                 cemu_bridge_set_low_power_mode(newValue)
             }
+
+            // Defaults ON, unlike Low Power Mode. Not a contradiction: at .serious iOS is
+            // ALREADY throttling the CPU and GPU, so the frame rate has already dropped.
+            // Cutting the pixel count is how those frames come back, and how the device
+            // gets to a temperature where the OS stops throttling at all. This protects
+            // speed rather than trading it away.
+            Toggle(isOn: $autoReduceWhenHot) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Reduce quality when hot")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("Drops to Battery saver resolution while iOS reports the device is overheating, and puts your setting back when it cools.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .tint(MuffinTheme.pixelBlue)
+
+            // What iOS itself reports, shown because until now nothing in the app could
+            // see it - the only way to know was a third-party thermal app.
+            SettingsRow(label: "Device temperature", value: thermal.description, icon: "thermometer.medium")
         } header: {
             SettingsSectionHeader("CPU", icon: "cpu", accent: .core)
         } footer: {

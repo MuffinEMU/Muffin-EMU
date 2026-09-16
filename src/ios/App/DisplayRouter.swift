@@ -354,6 +354,11 @@ final class DisplayRouter: ObservableObject {
         }
         #endif
 
+        // Same entry point on purpose: this is called from MetalViewIOS.makeUIView(), so
+        // thermal monitoring starts exactly when a render surface first exists and never
+        // needs its own lifecycle. Idempotent, like everything else here.
+        ThermalMonitor.shared.startObserving()
+
         // A window scene for an external display can arrive after the screen itself
         // does, so UIScene.didActivateNotification is in the list too: a screen-connect
         // notification alone is not enough to conclude that dual-screen is impossible.
@@ -450,6 +455,9 @@ final class DisplayRouter: ObservableObject {
         pendingContainerResize?.cancel()
         pendingContainerResize = nil
         lastAppliedContainerResize = 0
+        // A thermal throttle left armed across a title stop would leave the user's Render
+        // Scale permanently overwritten with battery saver.
+        ThermalMonitor.shared.titleStopped()
         log("title stopped; render surfaces will be rebuilt on the next launch")
     }
 
@@ -564,6 +572,27 @@ final class DisplayRouter: ObservableObject {
     /// `applyPlacement` -> `syncPadSurface` recreate it fresh on the new host reuses
     /// that already-correct creation path instead of adding a third, parallel "move"
     /// path for one setting.
+    /// Re-applies the render scale to the live surfaces, without waiting for a layout
+    /// change to happen to notice.
+    ///
+    /// `tvGeometry()` reads `UIScreen.effectiveRenderScale` fresh on every call, and
+    /// `cemu_bridge_resize_render_surface` pushes that straight through
+    /// `CemuUIKit_UpdateMainWindowSize` into `phys_width/phys_height` and the layer's
+    /// drawable size - so changing `RenderScale.current` and calling this is enough to
+    /// change resolution mid-title. That is the whole reason the thermal response uses
+    /// render scale rather than core count: `_LaunchTitleThread()` has already started
+    /// however many host threads it started, so core count cannot move until the next
+    /// launch, whereas this takes effect on the next frame.
+    ///
+    /// Deliberately does NOT go through `deviceContainerDidLayout(_:)`. That function
+    /// early-returns when the container's size has not changed, which is exactly the case
+    /// here - the view is the same size, it is the SCALE that moved.
+    func reapplyRenderScale(reason: String) {
+        resizeTVSurfaceIfRegistered()
+        resizePadSurfaceIfRegistered()
+        log("render scale re-applied: \(reason)")
+    }
+
     func rerouteForScreenLayoutChange() {
         guard placement == .dualScreen else { return }
         if cemu_bridge_has_pad_render_surface() {
