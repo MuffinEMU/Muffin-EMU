@@ -1,8 +1,5 @@
 import SwiftUI
 import Dispatch
-#if canImport(UIKit)
-import UIKit
-#endif
 
 /// The on-screen pad.
 ///
@@ -40,18 +37,11 @@ struct OptimizedControlPanel: View {
     /// responding - otherwise the first touch of a drag would also press whatever it
     /// landed on, and moving the pad would mean firing a button into the running title.
     @Binding var isEditingLayout: Bool
-    /// True whenever the app is not in .active scenePhase - see EmulatorViewOptimized's
-    /// .onChange(of: scenePhase). Threaded down to DpadTouchSurface's own isInteractive,
-    /// which is the one thing that reliably clears its held-direction state: a touch in
-    /// progress when the app resigns active is cancelled by UIKit without a guaranteed
-    /// .onEnded (the same fact cemu_bridge_release_all_buttons()'s call site documents),
-    /// so without this, a direction held at the moment of an interruption - a phone call,
-    /// a notification banner, Control Center, a screen lock - stays stuck in the SwiftUI
-    /// pressed-state (and keeps being reported to the game) even though the bridge's own
-    /// button bits were correctly zeroed. Every other button on the pad has its own
-    /// per-control HeldControl safety net for the same case; the d-pad's shared touch
-    /// surface needed this one explicitly since it owns all four directions' state itself.
-    let isPaused: Bool
+    /// True whenever the app is not in .active scenePhase. Threaded down so a touch in
+    /// progress when the app resigns active cannot leave a control stuck down: UIKit
+    /// cancels the gesture without a guaranteed .onEnded, and HeldControl's
+    /// onChange(of: isInteractive) is what catches that.
+    var isPaused: Bool = false
 
     @AppStorage(ControllerLayoutSettings.scaleKey)
     private var userScale = ControllerLayoutSettings.defaultScale
@@ -68,10 +58,10 @@ struct OptimizedControlPanel: View {
     // Must keep matching SettingsView's declaration of the same key: two @AppStorage
     // defaults for one key that disagree means the toggle and the pad disagree about
     // which control scheme is on.
-    @AppStorage(ControllerLayoutSettings.joystickKey)
-    private var joystickMode = ControllerLayoutSettings.defaultJoystick
     @AppStorage(ControllerLayoutSettings.comfortControlsKey)
     private var comfortControls = ControllerLayoutSettings.defaultComfortControls
+    @AppStorage(ControllerLayoutSettings.joystickKey)
+    private var joystickMode = ControllerLayoutSettings.defaultJoystick
     @AppStorage(ControllerLayoutSettings.individualEditModeKey)
     private var individualEditMode = ControllerLayoutSettings.defaultIndividualEditMode
 
@@ -84,39 +74,21 @@ struct OptimizedControlPanel: View {
         GeometryReader { proxy in
             let unit = ControllerGeometry.automaticDiameter(in: proxy.size) * CGFloat(userScale)
 
-            // Anchors and clamps below used to be built from proxy.size alone, which is the
-            // full bounds of the view including the unsafe strip - so in landscape a cluster
-            // anchored "in from the near edge" of that raw rect sat partly under the Dynamic
-            // Island, and on a notched iPhone the bottom anchor crowded the home indicator.
-            // GamePadGeometry's PadLayout.resolve hits the same problem and solves it the
-            // same way: inset the rect the layout is measured against, once, before anything
-            // downstream reads it. CGRect has no .inset(by:) that takes SwiftUI's own
-            // EdgeInsets (only UIKit's UIEdgeInsets, a different type), so it is built by
-            // hand rather than reached for an extension that does not apply here.
-            let insets = proxy.safeAreaInsets
-            let safeArea = CGRect(x: insets.leading, y: insets.top,
-                                  width: proxy.size.width - insets.leading - insets.trailing,
-                                  height: proxy.size.height - insets.top - insets.bottom)
-
             // Comfort controls only has somewhere to send L/ZL/minus and R/ZR/plus while
-            // the sticks they are moving to are actually on screen - with joystick mode
-            // off there is no stick cluster here for them to join, so this only takes
-            // effect with both settings on rather than making the toggle silently do
-            // nothing (or worse, dropping three buttons) whenever joystick mode is off.
+            // the sticks they move onto are actually on screen, so it only takes effect
+            // with joystick mode on rather than silently dropping three buttons.
             let comfortActive = comfortControls && joystickMode
 
             ZStack(alignment: .topLeading) {
                 ControlCluster(
                     // Always the d-pad now, in both modes - see leftStickCluster's
-                    // comment for why this changed from swapping to adding. Comfort
-                    // controls trims L/ZL/minus back out of it; see leftClusterComfort.
+                    // comment for why this changed from swapping to adding.
                     controls: comfortActive ? ControllerGeometry.leftClusterComfort : ControllerGeometry.leftCluster,
                     edge: .leading,
                     skin: skin,
                     unit: unit,
-                    container: safeArea,
+                    container: proxy.size,
                     isEditingLayout: isEditingLayout,
-                    isPaused: isPaused,
                     individualEditMode: individualEditMode,
                     offsetX: $leftOffsetX,
                     offsetY: $leftOffsetY,
@@ -134,18 +106,13 @@ struct OptimizedControlPanel: View {
                 // a control rather than rearranging the ones already there.
                 if joystickMode {
                     ControlCluster(
-                        // Comfort controls adds L/ZL/minus onto this cluster - see
-                        // leftStickClusterComfort - so dragging or resizing the stick
-                        // moves them with it, the same way L/ZL/minus already travel
-                        // with the d-pad above.
                         controls: comfortActive ? ControllerGeometry.leftStickClusterComfort : ControllerGeometry.leftStickCluster,
                         edge: .leading,
                         anchorOffset: ControllerGeometry.leftStickAnchorOffset,
                         skin: skin,
                         unit: unit,
-                        container: safeArea,
+                        container: proxy.size,
                         isEditingLayout: isEditingLayout,
-                        isPaused: isPaused,
                         individualEditMode: individualEditMode,
                         offsetX: $leftStickOffsetX,
                         offsetY: $leftStickOffsetY,
@@ -155,15 +122,12 @@ struct OptimizedControlPanel: View {
                 }
 
                 ControlCluster(
-                    // Comfort controls trims R/ZR/plus back out of it; see
-                    // rightClusterComfort.
                     controls: comfortActive ? ControllerGeometry.rightClusterComfort : ControllerGeometry.rightCluster,
                     edge: .trailing,
                     skin: skin,
                     unit: unit,
-                    container: safeArea,
+                    container: proxy.size,
                     isEditingLayout: isEditingLayout,
-                    isPaused: isPaused,
                     individualEditMode: individualEditMode,
                     offsetX: $rightOffsetX,
                     offsetY: $rightOffsetY,
@@ -183,17 +147,13 @@ struct OptimizedControlPanel: View {
                 // control rather than rearranging the ones already there.
                 if joystickMode {
                     ControlCluster(
-                        // Comfort controls adds R/ZR/plus onto this cluster - see
-                        // rightStickClusterComfort - for the same reason the left stick
-                        // picks up L/ZL/minus above.
                         controls: comfortActive ? ControllerGeometry.rightStickClusterComfort : ControllerGeometry.rightStickCluster,
                         edge: .trailing,
                         anchorOffset: ControllerGeometry.rightStickAnchorOffset,
                         skin: skin,
                         unit: unit,
-                        container: safeArea,
+                        container: proxy.size,
                         isEditingLayout: isEditingLayout,
-                        isPaused: isPaused,
                         individualEditMode: individualEditMode,
                         offsetX: $rightStickOffsetX,
                         offsetY: $rightStickOffsetY,
@@ -220,15 +180,8 @@ private struct ControlCluster: View {
     var anchorOffset: CGPoint = .zero
     let skin: WiiUControllerSkin
     let unit: CGFloat
-    /// The safe area, not the raw GeometryReader size - see OptimizedControlPanel.body.
-    /// Everything below measures from this rect's edges rather than from (0, 0) and
-    /// proxy.size, so a cluster's near-edge anchor and its drag clamp both stay inside the
-    /// safe area instead of reaching under a notch or behind the home indicator.
-    let container: CGRect
+    let container: CGSize
     let isEditingLayout: Bool
-    /// See OptimizedControlPanel's own doc comment on this property - passed straight
-    /// through to DpadTouchSurface below, which is the only thing here that needs it.
-    let isPaused: Bool
     /// See ControllerLayoutSettings.individualEditModeKey. When true, this cluster's
     /// own drag handle below is not attached at all - every touch inside the cluster
     /// can then only ever be a single button's own drag/pinch, with no whole-cluster
@@ -247,32 +200,15 @@ private struct ControlCluster: View {
     /// screen on the first slow drag.
     @State private var dragOrigin: CGSize?
 
-    /// Which of this cluster's own four directions DpadTouchSurface currently has down -
-    /// lifted up to here, rather than kept inside the surface itself, because the four
-    /// direction ControlButtons below also need it, to draw the pressed state a touch on
-    /// the surface now stands for instead of one on the button itself.
-    @State private var dpadHeld: Set<String> = []
-
-    /// The ids DpadTouchSurface owns. A cluster with a d-pad in it (leftCluster,
-    /// leftClusterComfort) has all four; a stick cluster or the face-button half has none.
-    private static let directionIDs: Set<String> = ["up", "down", "left", "right"]
-
     private var box: CGRect { ControllerGeometry.bounds(of: controls) }
-
-    /// This cluster's own four direction Controls, if it has any - what DpadTouchSurface
-    /// hit-tests against. Filtered from `controls` rather than assumed, so a cluster with
-    /// no d-pad in it (either stick cluster, the face-button half) simply gets no surface.
-    private var dpadControls: [ControllerGeometry.Control] {
-        controls.filter { Self.directionIDs.contains($0.id) }
-    }
 
     /// The unmoved position from the measured layout: a fixed number of button-widths in
     /// from the near edge and up from the bottom.
     private var anchor: CGPoint {
         let inset = ControllerGeometry.centreFromNearEdge * unit
         return CGPoint(
-            x: (edge == .leading ? container.minX + inset : container.maxX - inset) + anchorOffset.x * unit,
-            y: container.maxY - ControllerGeometry.centreFromBottom * unit + anchorOffset.y * unit
+            x: (edge == .leading ? inset : container.width - inset) + anchorOffset.x * unit,
+            y: container.height - ControllerGeometry.centreFromBottom * unit + anchorOffset.y * unit
         )
     }
 
@@ -284,10 +220,10 @@ private struct ControlCluster: View {
     }
 
     private func clamped(_ point: CGPoint) -> CGPoint {
-        let minX = container.minX - box.minX * unit
-        let maxX = container.maxX - box.maxX * unit
-        let minY = container.minY - box.minY * unit
-        let maxY = container.maxY - box.maxY * unit
+        let minX = -box.minX * unit
+        let maxX = container.width - box.maxX * unit
+        let minY = -box.minY * unit
+        let maxY = container.height - box.maxY * unit
         // A cluster wider or taller than the container has no valid range at all; centre
         // it rather than letting min > max produce a nonsense clamp.
         return CGPoint(
@@ -310,26 +246,6 @@ private struct ControlCluster: View {
             Color.clear
                 .allowsHitTesting(false)
 
-            // The d-pad's four directions, hit-tested as one shape instead of as four
-            // separate buttons - see DpadTouchSurface for why. Sits behind everything
-            // else here, L3 included: L3 keeps its own small hit square exactly as it
-            // was and claims a touch there before this surface ever sees it, the same
-            // way Color.clear's allowsHitTesting(false) above lets the game view claim
-            // whatever is not on the pad at all.
-            if !dpadControls.isEmpty {
-                DpadTouchSurface(
-                    box: ControllerGeometry.bounds(of: dpadControls),
-                    centre: centre,
-                    unit: unit,
-                    // isPaused, not just isEditingLayout: see OptimizedControlPanel's
-                    // doc comment on isPaused for why the app resigning active needs to
-                    // reach this the same way editing does.
-                    isInteractive: !isEditingLayout && !isPaused,
-                    onInput: onInput,
-                    held: $dpadHeld
-                )
-            }
-
             // Individual mode drops the drag handle entirely rather than leaving it
             // underneath and relying on touch position to sort out which gesture
             // should win - that was the old design (see the ForEach comment this one
@@ -351,11 +267,7 @@ private struct ControlCluster: View {
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
                     onStick: onStick,
-                    onInput: onInput,
-                    // Only the four directions are driven by DpadTouchSurface above -
-                    // every other control, L3 included, still answers for its own touch
-                    // exactly as before, so this is nil for all of them.
-                    externallyPressed: Self.directionIDs.contains(control.id) ? dpadHeld.contains(control.id) : nil
+                    onInput: onInput
                 )
             }
         }
@@ -400,121 +312,6 @@ private struct ControlCluster: View {
     }
 }
 
-/// One shared touch surface for the d-pad's four directions, replacing four separate
-/// per-button gestures.
-///
-/// Real d-pad play rolls a thumb across the cross - up sliding into right, or straight
-/// through a diagonal - but a SwiftUI touch belongs to whichever view it began in for the
-/// whole gesture and never hands off. Four separate `HeldControl`s, each claiming its own
-/// touch the moment it lands, means a roll leaves the first direction stuck down and the
-/// second never presses. `GamePadGeometry.PadLayout.dpadDirections` already solves exactly
-/// this for the preview pad, by hit-testing the cross as one shape, by angle, instead of
-/// as four rects that happen to meet at a point - this calls that same function rather
-/// than reimplementing it, so the two pads can never disagree about what a given touch
-/// means. What is new here is only the geometry it is called with: the preview pad's d-pad
-/// is one solid cross, and this one is a diamond of four separate circles, so `box` is the
-/// union of their frames rather than a shape GamePadGeometry already had a size for.
-///
-/// Sits behind everything else in ControlCluster's stack, including L3. Only the four
-/// direction ControlButtons are made non-hit-testable (see EditableControl and
-/// ControlButton's `externallyPressed`) so this surface is what actually receives their
-/// touches; L3 is untouched and keeps its own small hit square, which is why it still
-/// claims a tap there before a touch ever reaches this surface underneath it - the same
-/// front-wins-if-hit-testable rule that already lets ControlCluster's own `Color.clear`
-/// hand off everything outside the pad to the game view.
-private struct DpadTouchSurface: View {
-    /// The union of the four direction buttons' own frames, in layout units relative to
-    /// the cluster's centre - `ControllerGeometry.bounds(of:)` applied to just those four
-    /// Controls, not the whole cluster, so the touchable area cannot grow into a
-    /// neighbour (minus, L, ZL) the way hit-testing the whole cluster's box would.
-    let box: CGRect
-    /// The cluster's own centre point, in the same absolute space every other control in
-    /// it is positioned from.
-    let centre: CGPoint
-    let unit: CGFloat
-    let isInteractive: Bool
-    let onInput: (String, Bool) -> Void
-    /// Which directions are currently down - lifted up into ControlCluster (see its own
-    /// `dpadHeld`) rather than kept private here, since the four ControlButtons need it
-    /// too, to draw the pressed state a touch on this surface now stands for.
-    @Binding var held: Set<String>
-
-    @AppStorage(ControllerLayoutSettings.hapticsKey)
-    private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
-
-    /// The four ids this surface owns. Declared here rather than reached for on
-    /// ControlCluster - that one is `private static` on a different type, so referring to
-    /// it from here does not compile, and Swift's `Self.` would have resolved to this
-    /// struct regardless.
-    private static let directionIDs: Set<String> = ["up", "down", "left", "right"]
-
-    private var width: CGFloat { box.width * unit }
-    private var height: CGFloat { box.height * unit }
-
-    var body: some View {
-        // A SwiftUI Color is hit-testable even when it is clear - the same fact
-        // ControlCluster's own background relies on - which is what makes it usable here
-        // as a shape with nothing to draw.
-        Color.clear
-            .frame(width: width, height: height)
-            .contentShape(Rectangle())
-            .position(x: centre.x + box.midX * unit, y: centre.y + box.midY * unit)
-            .allowsHitTesting(isInteractive)
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        // Same raw-touch tick HeldControl.ownGesture does, and for the
-                        // same reason: the d-pad reaches the bridge through this surface
-                        // rather than through HeldControl, so without it the "touches"
-                        // row answers only for face buttons and says nothing at all about
-                        // the d-pad - which is half of what is reported broken.
-                        PadDiagnostics.shared.recordRawTouch()
-                        // In this view's own local space - (0, 0) at its top-left corner,
-                        // (width, height) at its bottom-right - which is unaffected by
-                        // .position() above and needs no translation back to the
-                        // cluster's coordinate space at all.
-                        let local = CGPoint(x: width / 2, y: height / 2)
-                        let next = PadLayout.dpadDirections(at: value.location, centre: local,
-                                                            size: CGSize(width: width, height: height))
-                        // HAPTICS still fire only on a transition - a buzz per frame
-                        // while a direction is held would be unusable.
-                        for _ in next.subtracting(held) {
-                            if hapticsEnabled { PadHaptics.shared.fire() }
-                        }
-                        // The REPORT is the full current state, every tick, rather than
-                        // the diff against `held`. Same desync `HeldControl` had: `held`
-                        // is @State owned by this view, the bridge is C++ and outlives
-                        // every rebuild, so a rebuild mid-press drops `held` to empty and
-                        // the release diff for whatever was down is never computed - the
-                        // direction stays pressed in the game with nothing touching it.
-                        // Reporting all four states cannot desync, and costs at most four
-                        // idempotent bit writes per touch-move.
-                        for id in Self.directionIDs {
-                            onInput(id, next.contains(id))
-                        }
-                        held = next
-                    }
-                    .onEnded { _ in release() }
-            )
-            // The same safety net HeldControl keeps for every other control: a gesture
-            // the system cancels, or this view disappearing mid-touch, must not leave a
-            // direction stuck down forever.
-            .onDisappear { release() }
-            .onChange(of: isInteractive) { active in
-                if !active { release() }
-            }
-            // A giant unlabelled rectangle would otherwise sit in the accessibility tree
-            // on top of the four direction buttons it draws nothing over; hiding it
-            // leaves VoiceOver exactly the four ControlButtons below, unchanged.
-            .accessibilityHidden(true)
-    }
-
-    private func release() {
-        for id in held { onInput(id, false) }
-        held = []
-    }
-}
-
 /// One control, placed where the user put it.
 ///
 /// Its own view rather than a modifier chain inside the ForEach because each element needs
@@ -535,10 +332,6 @@ private struct EditableControl: View {
     let individualEditMode: Bool
     let onStick: (CGPoint) -> Void
     let onInput: (String, Bool) -> Void
-    /// Set only for one of the d-pad's four directions, by DpadTouchSurface's own held
-    /// set - see ControlButton and HeldControl's own doc comments for what this changes.
-    /// nil for every other control, which is unaffected.
-    var externallyPressed: Bool? = nil
 
     @ObservedObject private var custom = ControllerCustomLayout.shared
     @State private var dragOrigin: ControlOverride?
@@ -563,8 +356,7 @@ private struct EditableControl: View {
                     skin: skin,
                     unit: unit * CGFloat(settings.scale),
                     isInteractive: !isEditingLayout,
-                    onInput: onInput,
-                    externallyPressed: externallyPressed
+                    onInput: onInput
                 )
             }
         }
@@ -584,17 +376,6 @@ private struct EditableControl: View {
             }
         )
         .gesture(isEditingLayout && individualEditMode ? editGesture : nil)
-        // If this view goes away mid-gesture - individual edit mode toggled off, the
-        // cluster it belongs to changing under comfort mode - the gesture's own onEnded
-        // never runs, and whatever custom.move/setScale wrote this drag is only in memory
-        // (see ControllerCustomLayout.write). Committing here as well is the same safety
-        // net HeldControl's onDisappear already is for a stuck button, applied to a drag
-        // that would otherwise be silently lost the next time the app quits.
-        .onDisappear {
-            if dragOrigin != nil || scaleOrigin != nil { custom.commit() }
-            dragOrigin = nil
-            scaleOrigin = nil
-        }
     }
 
     private var editGesture: some Gesture {
@@ -604,13 +385,7 @@ private struct EditableControl: View {
                 if dragOrigin == nil { dragOrigin = origin }
                 custom.move(control.id, to: value.translation, from: origin)
             }
-            .onEnded { _ in
-                dragOrigin = nil
-                // custom.move only kept this drag in memory - see
-                // ControllerCustomLayout.write - so the finger lifting is what writes it
-                // to disk, once, instead of on every touch-move.
-                custom.commit()
-            }
+            .onEnded { _ in dragOrigin = nil }
 
         let pinch = MagnificationGesture()
             .onChanged { value in
@@ -618,10 +393,7 @@ private struct EditableControl: View {
                 if scaleOrigin == nil { scaleOrigin = origin }
                 custom.setScale(origin * Double(value), for: control.id)
             }
-            .onEnded { _ in
-                scaleOrigin = nil
-                custom.commit()
-            }
+            .onEnded { _ in scaleOrigin = nil }
 
         // Simultaneous rather than exclusive: a pinch is two fingers moving, and an
         // exclusive pair would let the first finger's travel be read as a drag and shove
@@ -637,11 +409,6 @@ private struct ControlButton: View {
     let unit: CGFloat
     let isInteractive: Bool
     let onInput: (String, Bool) -> Void
-    /// Non-nil for one of the d-pad's four directions once DpadTouchSurface owns their
-    /// input: the pressed state this button draws, decided by that surface's own angle
-    /// hit test rather than by a gesture attached here. nil - every other control on the
-    /// pad - is unchanged: HeldControl still owns its own touch and its own pressed state.
-    var externallyPressed: Bool? = nil
 
     /// The screenshot draws every button light grey with a dark outline. The coloured
     /// skins are an existing feature with a whole selector behind them, so the skin still
@@ -652,8 +419,7 @@ private struct ControlButton: View {
     private static let neutralLabel = Color(white: 0.22)
 
     var body: some View {
-        HeldControl(onPressChange: { onInput(control.id, $0) }, isInteractive: isInteractive,
-                    externallyPressed: externallyPressed) { isPressed in
+        HeldControl(onPressChange: { onInput(control.id, $0) }) { isPressed in
             ZStack {
                 shape(isPressed: isPressed)
                 Text(control.glyph)
@@ -664,33 +430,7 @@ private struct ControlButton: View {
             .scaleEffect(isPressed ? 0.94 : 1.0)
             .animation(.easeInOut(duration: 0.05), value: isPressed)
         }
-        // Externally driven means DpadTouchSurface, not this button, answers for the
-        // touch - false here regardless of isInteractive, so edit mode still disables it
-        // the same way it always has and play mode routes the touch to the surface
-        // instead of back to this button.
-        .allowsHitTesting(externallyPressed == nil && isInteractive)
-        // Diagnostic only, and off unless the controls overlay is on. Draws the exact
-        // rect this control claims for hit testing.
-        //
-        // It exists because static reading ran out of answers: every gate on this button
-        // reads correct (editing off, isInteractive true, externallyPressed nil, no
-        // competing gesture attached), the file is byte-identical to a state where the
-        // buttons worked, and they still do not fire - while the sticks, which are a
-        // different view type, do. The one hypothesis left that fits all of that is that
-        // the area accepting touches is not where the button is painted. An outline that
-        // does not sit on its button proves it in one glance; an outline that fits
-        // perfectly rules the whole idea out, which is just as useful.
-        .overlay(
-            Group {
-                if PadDiagnostics.shared.isEnabled {
-                    Rectangle()
-                        .strokeBorder(externallyPressed == nil ? Color.red : Color.orange,
-                                      lineWidth: 1)
-                        .frame(width: size.width, height: size.height)
-                        .allowsHitTesting(false)
-                }
-            }
-        )
+        .allowsHitTesting(isInteractive)
     }
 
     private var size: CGSize {
@@ -773,21 +513,12 @@ private struct ControlButton: View {
 /// different controls both register.
 struct HeldControl<Content: View>: View {
     let onPressChange: (Bool) -> Void
-    /// Whether this control can be pressed right now - the same flag the call site already
-    /// hands to its own `.allowsHitTesting`. Watched here too, and not left to that modifier
-    /// alone: turning hit-testing off does not retroactively end a drag already in
-    /// progress, so nothing else resets `isPressed` when, say, edit mode switches on
-    /// mid-press - and a button that is still drawn highlighted but can no longer be
-    /// touched to release it is stuck exactly the way a jammed physical button would be.
-    let isInteractive: Bool
+    /// Whether this control can be pressed right now. Re-added on top of Muffin Classic's
+    /// version because PreviewControllerPad passes it, and because a control that is drawn
+    /// highlighted but can no longer be touched to release it is stuck exactly the way a
+    /// jammed physical button would be.
+    var isInteractive: Bool = true
     let content: (Bool) -> Content
-    /// Non-nil when something other than this view's own gesture below decides the
-    /// pressed state - DpadTouchSurface, for the d-pad's four directions. Drawing still
-    /// goes through here, so every control on the pad keeps one pressed-state code path,
-    /// but this view attaches no gesture of its own and never calls `onPressChange` in
-    /// that case: the surface calls `onInput` directly instead. `nil`, every other
-    /// control, is this type entirely unchanged from before.
-    var externallyPressed: Bool? = nil
 
     @State private var isPressed = false
 
@@ -795,90 +526,65 @@ struct HeldControl<Content: View>: View {
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     var body: some View {
-        content(externallyPressed ?? isPressed)
+        content(isPressed)
             // Without this the hit area is whatever the label happens to paint, so a
             // finger landing on the transparent corner of a circular button hits the
             // view behind it instead.
             .contentShape(Rectangle())
             .accessibilityAddTraits(.isButton)
-            .gesture(externallyPressed == nil ? ownGesture : nil)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        PadDiagnostics.shared.recordRawTouch()
+                        setPressed(true)
+                    }
+                    .onEnded { _ in setPressed(false) }
+            )
             // A gesture the system cancels (backgrounding, an incoming call) or a view
             // removed mid-press never delivers onEnded, and a button stuck down is a
-            // title stuck walking into a wall. Skipped when externally driven: isPressed
-            // never left false in that case (the gesture that would have set it true was
-            // never attached above), so there is nothing here for it to undo, and
-            // DpadTouchSurface has its own version of this same safety net.
-            .onDisappear {
-                if externallyPressed == nil { setPressed(false) }
-            }
+            // title stuck walking into a wall.
+            .onDisappear { setPressed(false) }
+            // Same safety net, for the case a view stays mounted but stops accepting
+            // touches - edit mode switching on under a finger, or the app resigning
+            // active. Without it the control keeps drawing pressed with no way to release.
             .onChange(of: isInteractive) { active in
-                if externallyPressed == nil, !active { setPressed(false) }
-            }
-    }
-
-    private var ownGesture: some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { _ in
-                PadDiagnostics.shared.recordRawTouch()
-                // The visual state is still guarded - re-setting it every touch-move
-                // would restart the animation sixty times a second.
-                if !isPressed {
-                    isPressed = true
-                    if hapticsEnabled { PadHaptics.shared.fire() }
-                }
-                // The REPORT to the engine is not guarded, and that is the fix.
-                //
-                // setPressed() used to gate both on `isPressed != value`. isPressed is
-                // @State, so it is owned by the view and reset to false whenever SwiftUI
-                // rebuilds this control's identity - while the bridge, which is C++ and
-                // outlives every rebuild, keeps whatever bit it was last told. The two
-                // desync in both directions:
-                //
-                //   - rebuild mid-press: @State goes false, the bridge stays DOWN, and the
-                //     matching onEnded is then swallowed by the guard - so the release is
-                //     never sent and the button is stuck down in the game.
-                //   - @State left true with no release: every later press is swallowed by
-                //     the same guard, so nothing is ever sent again. No state change means
-                //     no animation either, which is exactly the reported symptom: the raw
-                //     touch counter ticks, the input counter does not, and the button
-                //     never visibly depresses.
-                //
-                // Once desynced a control is dead for the rest of the session, which is
-                // why this looked like "buttons stopped working" rather than a glitch.
-                //
-                // Reporting every edge unconditionally cannot desync, because the engine
-                // side is idempotent: cemu_bridge_set_button_state ORs or clears one bit
-                // under a mutex, so saying "down" twice is exactly the same as saying it
-                // once. The guard was never protecting correctness, only chatter.
-                onPressChange(true)
-            }
-            .onEnded { _ in
-                isPressed = false
-                // Unconditional for the same reason, and this direction matters more: a
-                // swallowed release leaves the game holding a button nobody is touching.
-                onPressChange(false)
+                if !active { setPressed(false) }
             }
     }
 
     // onChanged repeats for every touch-move, so guard - both to keep the highlight from
     // re-animating and to keep the bridge call one per actual state change.
-    /// Cleanup path only - the gesture reports its own edges directly now.
-    ///
-    /// Unconditional on purpose, like the gesture. This is what runs when the view goes
-    /// away mid-press or edit mode switches on under a finger, and those are precisely
-    /// the moments the old guard could swallow the release and leave the game holding a
-    /// button nobody was touching.
+    //
+    // This is Muffin Classic's version, unchanged, and that is the point: it is the press
+    // path that has always worked. MuffinEMU's copy had grown an extra statement between
+    // the state assignment and the report -
+    //
+    //     isPressed = value
+    //     if value, hapticsEnabled { PadHaptics.shared.fire() }   <- inserted here
+    //     onPressChange(value)
+    //
+    // - which put a main-thread-only UIKit call (UIImpactFeedbackGenerator) inside the
+    // one window where isPressed has already been set but the engine has not been told.
+    // Anything that trapped or stalled there left the state true and the report unsent,
+    // and the guard then swallowed every press after it, forever. Haptics now fire AFTER
+    // the report instead, so nothing can come between those two lines again.
     private func setPressed(_ value: Bool) {
+        guard isPressed != value else { return }
         isPressed = value
         onPressChange(value)
+        if value, hapticsEnabled { PadHaptics.shared.fire() }
     }
 }
 
-/// One shared impact generator for the whole pad, prepared once rather than allocated fresh
-/// on every press. `UIImpactFeedbackGenerator` is meant to be created ahead of the impact
-/// and `prepare()`d so the Taptic Engine is already spun up when `impactOccurred()` is
-/// called - a generator built fresh per tap would pay that latency on every single input,
-/// which on a d-pad held during normal play is dozens of times a second.
+/// One shared impact generator for the whole pad, prepared once rather than allocated
+/// fresh on every press. UIImpactFeedbackGenerator is meant to be created ahead of the
+/// impact and prepare()d so the Taptic Engine is already spun up when impactOccurred() is
+/// called.
+///
+/// @MainActor because UIImpactFeedbackGenerator is a UIKit class and main-thread-only.
+/// It was not isolated before, and it was being called from a gesture callback in the
+/// middle of the press path - see setPressed's comment for what that cost.
+@MainActor
 final class PadHaptics {
     static let shared = PadHaptics()
 
@@ -889,10 +595,9 @@ final class PadHaptics {
 
     func fire() {
         generator.impactOccurred()
-        // Re-prime immediately rather than waiting for the next press to ask for it: the
-        // Taptic Engine is allowed to spin back down after it has been idle, and a pad
-        // fires presses far more often than it sits still, so priming eagerly is the
-        // common case, not the wasted one.
+        // Re-prime immediately rather than waiting for the next press: the Taptic Engine
+        // is allowed to spin back down after it has been idle, and a pad fires presses far
+        // more often than it sits still.
         generator.prepare()
     }
     #else
@@ -982,8 +687,6 @@ private struct JoystickControl: View {
     private var curveSetting = ControllerLayoutSettings.defaultStickCurve
     @AppStorage(ControllerLayoutSettings.stickGateKey)
     private var gateSetting = ControllerLayoutSettings.defaultStickGateRaw
-    @AppStorage(ControllerLayoutSettings.hapticsKey)
-    private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     /// Where the knob is drawn, in points from the ring's centre. Already clamped to the
     /// travel radius, so this is also what the axis is derived from - one number, not a
@@ -1075,11 +778,7 @@ private struct JoystickControl: View {
         // clamp above already turns that into full deflection at the vertex. Hit-testing
         // the octagon would drop it on the floor instead.
         .contentShape(Circle())
-        // clickButton is nil for both sticks now (see its own doc comment above), so it
-        // cannot tell VoiceOver which stick this is - that always read "Camera stick",
-        // left and right alike. control.id can: it is "stickL" or "stickR" for every
-        // instance ControllerGeometry actually creates.
-        .accessibilityLabel(control.id == "stickL" ? "Left stick" : "Right stick")
+        .accessibilityLabel(clickButton == nil ? "Camera stick" : "Left stick")
         .allowsHitTesting(isInteractive)
         .gesture(
             DragGesture(minimumDistance: 0)
@@ -1172,7 +871,6 @@ private struct JoystickControl: View {
     private func click() {
         guard let clickButton else { return }
         clickRelease?.cancel()
-        if hapticsEnabled { PadHaptics.shared.fire() }
         onInput(clickButton, true)
         let release = DispatchWorkItem { onInput(clickButton, false) }
         clickRelease = release
