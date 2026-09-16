@@ -95,6 +95,83 @@ enum PlatformCapabilities {
         #endif
     }
 
+    // MARK: - What iOS 27 actually changes for THIS app
+    //
+    // Taken from Apple's iOS & iPadOS 27 release notes, not from guesswork. Radar
+    // numbers are quoted so every claim below can be checked against the source:
+    // https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-27-release-notes
+    //
+    // Audited 2026-09-15 against this tree. Four of the six are already satisfied; the
+    // other two are recorded because they are real and will matter.
+    //
+    // 1. LAUNCH SCREEN - SATISFIED, and it is a hard requirement, not advice. Apps built
+    //    with the 27.0 SDK must have one of UILaunchStoryboardName / UILaunchStoryboards
+    //    / UILaunchScreen / UILaunchScreens in Info.plist, and are REJECTED by the App
+    //    Store without one (168247372). project.yml sets
+    //    INFOPLIST_KEY_UILaunchScreen_Generation: 'YES', which emits UILaunchScreen. Do
+    //    not remove that key thinking it is cosmetic.
+    //
+    // 2. DEPRECATED STATUS BAR ACCESSORS - SATISFIED. Built with the 27.0 SDK,
+    //    UIApplication.statusBarFrame / statusBarOrientation / statusBarStyle /
+    //    isStatusBarHidden may return NaN or null (162044221). This app touches none of
+    //    them; it hides the status bar declaratively via INFOPLIST_KEY_UIStatusBarHidden.
+    //
+    // 3. UIRequiresFullScreen - SATISFIED by not setting it. On the 27.0 SDK an iPad app
+    //    that sets it gets a UIScreen.main whose bounds change on resize, and continuous
+    //    resize updates where it should get discrete new-UIScreen changes
+    //    (both listed as resolved issues). We have never set it.
+    //
+    // 4. @State BECOMES A MACRO in Xcode 27 (105893279) - SATISFIED, but this is the one
+    //    to watch when CI moves toolchains. It breaks two patterns: an initial value at
+    //    the declaration that is then reassigned in init, and the compiler-synthesized
+    //    private init. CreateAccountView is the only view here with a custom init, and it
+    //    already uses the correct form - a bare `@State private var x: T` declaration
+    //    plus `_x = State(initialValue:)` in init - so it is safe as written.
+    //
+    // 5. iPad CONTINUOUS RESIZABILITY - A REAL BEHAVIOUR CHANGE FOR US. Apple fixed
+    //    UISupportedInterfaceOrientations being a condition for continuous resizability
+    //    (the "Fixed:" framing matters - the OLD behaviour was the bug). project.yml
+    //    lists only UIInterfaceOrientationLandscapeLeft/Right, so under the old rule this
+    //    app was NOT continuously resizable; from iOS 27 it is, regardless of that list.
+    //    Consequence: `DisplayRouter.deviceContainerDidLayout(_:)` will fire far more
+    //    often, continuously, while a user drags an iPad Split View divider - a path that
+    //    previously saw a handful of discrete sizes. That function's size-equality
+    //    early-return is what keeps this cheap, and `resizeTVSurfaceIfRegistered()` does
+    //    real work (a frame assignment plus a bridge call into
+    //    CemuUIKit_UpdateMainWindowSize) on every genuine change. It is correct under
+    //    continuous resize, but it is now on a hot path it was not written for.
+    //    See `expectsContinuousIPadResize` below.
+    //
+    // 6. EXTERNAL DISPLAY SCENES - a real, documented reason the dual-screen path will
+    //    not start working on iOS 27. Built with the 27.0 SDK,
+    //    `windowExternalDisplayNonInteractive` scenes are NO LONGER OFFERED AUTOMATICALLY
+    //    by the system; an app must call `UIViewController.registerSceneAccessory(_:)`
+    //    with a `UISceneAccessory.externalNonInteractive` instance (177015874).
+    //    DisplayRouter's `.dualScreen` placement is already documented as never having
+    //    been exercised - `externalWindowScene(for:)` is expected to return nil today
+    //    because the app ships no external-display scene configuration. This is now the
+    //    named API that path would have to adopt, rather than an open question.
+    //    Not implemented here: it needs the 27.0 SDK to compile, and it should be written
+    //    against real hardware rather than blind.
+    //
+    // Also true but requiring nothing of us: the PlayStation Access controller is now
+    // supported on iOS/iPadOS (168071382), which PhysicalControllerManager gets for free
+    // through GCController; and two Metal sampler clamp-to-edge fixes landed (172520325,
+    // 177318505), the second of which is specific to the Apple 10 GPU family and so does
+    // not describe the A12Z this port targets.
+
+    /// True when the OS will drive live, continuous container resizes on iPad - see
+    /// note 5 above. Exposed as a named capability so the render-sizing path can be
+    /// reasoned about and, if it ever needs coalescing, has one flag to key off rather
+    /// than a version number buried in DisplayRouter.
+    static var expectsContinuousIPadResize: Bool {
+        #if os(iOS)
+        return Running.isIOS27OrLater && UIDevice.current.userInterfaceIdiom == .pad
+        #else
+        return false
+        #endif
+    }
+
     // MARK: - Adoption
 
     enum Adopt {
@@ -139,6 +216,9 @@ enum PlatformCapabilities {
             parts.append("new APIs unavailable to this build")
         }
         parts.append("new appearance " + (Adopt.usesNewSystemAppearance ? "on" : "off"))
+        if expectsContinuousIPadResize {
+            parts.append("continuous iPad resize")
+        }
         return parts.joined(separator: " · ")
     }
 }
