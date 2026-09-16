@@ -25,9 +25,11 @@ struct OnScreenControlsSection: View {
     @AppStorage(ControllerLayoutSettings.stickGateKey)
     private var stickGateRaw = ControllerLayoutSettings.defaultStickGateRaw
     @AppStorage(ControllerLayoutSettings.hapticsKey)
-    @AppStorage(ControllerLayoutSettings.touchSlopKey) private var touchSlop = ControllerLayoutSettings.defaultTouchSlop
-    @AppStorage(ControllerLayoutSettings.pressAnimationKey) private var pressAnimationEnabled = ControllerLayoutSettings.defaultPressAnimation
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
+    @AppStorage(ControllerLayoutSettings.touchSlopKey)
+    private var touchSlop = ControllerLayoutSettings.defaultTouchSlop
+    @AppStorage(ControllerLayoutSettings.pressAnimationKey)
+    private var pressAnimationEnabled = ControllerLayoutSettings.defaultPressAnimation
     @AppStorage(MeloControlsSetting.storageKey)
     private var useMeloControls = MeloControlsSetting.defaultValue
     @State private var showingResetLayoutConfirmation = false
