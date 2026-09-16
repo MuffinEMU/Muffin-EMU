@@ -1087,6 +1087,28 @@ typedef enum {
 /// cemu_bridge_initialize() has brought input up. Repeated identical values cost nothing.
 void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y);
 
+/// How many GamePad BUTTONS currently have a binding. -1 when no GamePad is wired at all,
+/// which is a different problem from one that is wired with zero bindings.
+///
+/// Buttons only, deliberately. Axes reach the emulated controller without consulting the
+/// mapping table, so a controller with sticks bound and buttons unbound - the exact state
+/// that makes every on-screen button dead while the joysticks still respond - would report
+/// a healthy number if axis mappings were counted too.
+int cemu_bridge_input_button_mapping_count(void);
+
+/// Which controller profile the GamePad is on ("default" when none was loaded). Owned by
+/// the bridge and valid until the next call.
+const char* cemu_bridge_input_profile_name(void);
+
+/// Delete the GamePad's persisted profile and re-apply the default mappings. Returns true
+/// when the GamePad ends up with at least one button binding.
+///
+/// Deletes the FILE, not just the in-memory controller: a reset that only cleared memory
+/// would be undone by the same bad profile at the next launch, which is precisely the
+/// failure this exists to cure.
+bool cemu_bridge_reset_controller_bindings(void);
+
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
