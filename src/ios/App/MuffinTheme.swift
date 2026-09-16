@@ -235,7 +235,13 @@ enum MuffinTheme {
     /// `.stroke` at every call site below so the hairline sits fully inside the
     /// clipped bounds instead of spilling half its width past the corner radius.
     static var edgeStroke: LinearGradient {
-        LinearGradient(
+        // Classic UI: the flat 1pt wrapper outline v2.0's MuffinCard drew
+        // (`.stroke(MuffinTheme.wrapper, lineWidth: 1)`), expressed as a gradient so the
+        // call sites keep the same type and do not need a branch of their own.
+        if UIStyle.isClassic {
+            return LinearGradient(colors: [wrapper, wrapper], startPoint: .top, endPoint: .bottom)
+        }
+        return LinearGradient(
             gradient: Gradient(stops: [
                 Gradient.Stop(color: surfaceHighlight, location: 0.0),
                 Gradient.Stop(color: wrapper, location: 0.55),
@@ -249,7 +255,12 @@ enum MuffinTheme {
     /// edge stays in its own colour family - a cream-derived rim on an orange button
     /// reads as a mismatched outline, not as light falling on orange.
     static var controlEdgeStroke: LinearGradient {
-        LinearGradient(
+        // Classic UI: v2.0's secondary button drew a flat wrapper outline and its
+        // primary drew none at all. Flat here covers both without the styles branching.
+        if UIStyle.isClassic {
+            return LinearGradient(colors: [wrapper, wrapper], startPoint: .top, endPoint: .bottom)
+        }
+        return LinearGradient(
             colors: [
                 Color(light: muffinLift(t.muffinTopLightLight, 0.42), dark: muffinLift(t.muffinTopLightDark, 0.34)),
                 Color(light: muffinDeepen(t.muffinTopDarkLight, 0.20), dark: muffinDeepen(t.muffinTopDarkDark, 0.26))
@@ -356,7 +367,15 @@ enum MuffinTheme {
     /// middle completely untouched - a sheen that runs edge to edge reads as a
     /// gradient fill, which is exactly the look this is meant to avoid.
     static var surfaceSheen: LinearGradient {
-        LinearGradient(
+        // The lighting pass IS the glassy part. It is a white/black alpha wash over the
+        // real fill - not Apple's Liquid Glass material (there is no `.glassEffect` left
+        // in this tree), but it is what still reads as "glassy" on a card, and so it is
+        // what "Disable Liquid Glass" has to turn off to mean anything. A fully clear
+        // gradient leaves the fill untouched and costs nothing to composite.
+        if UIStyle.glassDisabled {
+            return LinearGradient(colors: [.clear, .clear], startPoint: .top, endPoint: .bottom)
+        }
+        return LinearGradient(
             gradient: Gradient(stops: [
                 Gradient.Stop(color: sheenHighlight, location: 0.0),
                 Gradient.Stop(color: .clear, location: 0.40),
@@ -370,7 +389,11 @@ enum MuffinTheme {
     /// version: on a 36pt-tall button a 40% highlight band is most of the control, so
     /// it is pulled in to the top third to stay a glint rather than a wash.
     static var controlSheen: LinearGradient {
-        LinearGradient(
+        // Same reasoning as surfaceSheen: this glint is the glassy part of a button.
+        if UIStyle.glassDisabled {
+            return LinearGradient(colors: [.clear, .clear], startPoint: .top, endPoint: .bottom)
+        }
+        return LinearGradient(
             gradient: Gradient(stops: [
                 Gradient.Stop(color: sheenHighlight, location: 0.0),
                 Gradient.Stop(color: .clear, location: 0.30),
@@ -621,9 +644,16 @@ private struct MuffinElevationModifier: ViewModifier {
         // cast by the silhouette plus its contact shadow, which is what happens
         // physically. Reversed, the tight shadow gets drawn over the soft one and the
         // edge stops reading as anchored.
-        return content
+        // Classic UI: exactly the one shadow v2.0's MuffinCard had -
+        // `.shadow(color: MuffinTheme.shadow.opacity(0.18), radius: 10, x: 0, y: 4)` -
+        // at every level. v2.0 had no elevation scale, so flattening all five levels to
+        // its single value is the faithful answer rather than an approximation.
+        if UIStyle.isClassic {
+            return AnyView(content.shadow(color: MuffinTheme.shadow.opacity(0.18), radius: 10, x: 0, y: 4))
+        }
+        return AnyView(content
             .shadow(color: MuffinTheme.shadow.opacity(contact.opacity), radius: contact.radius, x: 0, y: contact.y)
-            .shadow(color: MuffinTheme.shadow.opacity(ambient.opacity), radius: ambient.radius, x: 0, y: ambient.y)
+            .shadow(color: MuffinTheme.shadow.opacity(ambient.opacity), radius: ambient.radius, x: 0, y: ambient.y))
     }
 }
 
@@ -759,6 +789,21 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
 
         var body: some View {
             let pressed = configuration.isPressed
+            // Classic UI: v2.0's primary button, exactly - opaque muffin-top gradient,
+            // 14pt corner, one shadow that tightens on press, 0.97 scale, 0.12s easeOut.
+            // No sheen, no rim, no two-layer elevation, because v2.0 had none of them.
+            if UIStyle.isClassic {
+                return AnyView(configuration.label
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(MuffinTheme.sparkleCream)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(MuffinTheme.muffinTopGradient)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .shadow(color: MuffinTheme.shadow.opacity(0.25), radius: pressed ? 2 : 6, x: 0, y: pressed ? 1 : 3)
+                    .scaleEffect(pressed ? 0.97 : 1.0)
+                    .animation(.easeOut(duration: 0.12), value: pressed))
+            }
             // Hoisted out of the modifier chain rather than written inline. SwiftUI's
             // type checker solves a view chain as one expression, and a chain this
             // long with four ternaries in it is exactly the shape that tips over into
@@ -767,7 +812,7 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
             // risk entirely.
             let fill = (pressed ? MuffinTheme.muffinTopGradientPressed : MuffinTheme.muffinTopGradient)
                 .overlay(MuffinTheme.controlSheen)
-            return configuration.label
+            return AnyView(configuration.label
                 .font(MuffinTheme.Font.primaryButton)
                 .foregroundColor(MuffinTheme.sparkleCream)
                 .padding(.horizontal, 14)
@@ -785,7 +830,7 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
                 .animation(MuffinTheme.Motion.press(isPressed: pressed, reduceMotion: reduceMotion), value: pressed)
                 .onChange(of: pressed) { nowPressed in
                     if nowPressed { MuffinHaptics.tap() }
-                }
+                })
         }
     }
 }
@@ -838,10 +883,26 @@ struct MuffinSecondaryButtonStyle: ButtonStyle {
 
         var body: some View {
             let pressed = configuration.isPressed
+            // Classic UI: v2.0's secondary button, exactly - cream fill that dims to 0.7
+            // on press, 12pt corner, flat 1pt wrapper outline, no shadow and no scale.
+            // The dim-on-press is restored here even though the modern style deliberately
+            // moved away from it (dimming reads as "disabled" over game content); this
+            // switch exists to reproduce the old look, and that WAS the old look.
+            if UIStyle.isClassic {
+                return AnyView(configuration.label
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(MuffinTheme.brownDark)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(MuffinTheme.cream.opacity(pressed ? 0.7 : 1.0))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(MuffinTheme.wrapper, lineWidth: 1)))
+            }
             // Hoisted for the same reason as in MuffinPrimaryButtonStyle above.
             let fill = (pressed ? MuffinTheme.creamPressed : MuffinTheme.cream)
                 .overlay(MuffinTheme.controlSheen)
-            return configuration.label
+            return AnyView(configuration.label
                 .font(MuffinTheme.Font.secondaryButton)
                 .foregroundColor(MuffinTheme.brownDark)
                 .padding(.horizontal, 12)
@@ -855,7 +916,7 @@ struct MuffinSecondaryButtonStyle: ButtonStyle {
                 .animation(MuffinTheme.Motion.press(isPressed: pressed, reduceMotion: reduceMotion), value: pressed)
                 .onChange(of: pressed) { nowPressed in
                     if nowPressed { MuffinHaptics.tap() }
-                }
+                })
         }
     }
 }

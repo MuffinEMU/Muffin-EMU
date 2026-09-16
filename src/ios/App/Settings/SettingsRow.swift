@@ -17,6 +17,23 @@ struct SettingsRow: View {
     var icon: String? = nil
 
     var body: some View {
+        // Classic UI: the v2.0 row - system font, no leading glyph, no height floor.
+        // This row type was the one still falling through to the system default before
+        // the 2026-09-15 pass, so "classic" here really is just the system default.
+        if UIStyle.isClassic {
+            HStack {
+                Text(label)
+                Spacer(minLength: 12)
+                Text(value)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.trailing)
+            }
+        } else {
+            modernRow
+        }
+    }
+
+    private var modernRow: some View {
         HStack(spacing: 10) {
             if let icon {
                 Image(systemName: icon)
@@ -56,8 +73,18 @@ struct DestructiveSettingsLabel: View {
     let systemImage: String
 
     var body: some View {
-        Label(title, systemImage: systemImage)
-            .font(.system(size: 15, weight: .semibold, design: .rounded))
-            .foregroundColor(.red)
+        // The explicit red survives Classic UI deliberately. It is not styling - it is
+        // the one thing on screen telling someone this row deletes something, and it
+        // only exists because the Section's own foregroundColor was swallowing the
+        // destructive role's tint. v2.0 had that bug; reproducing a bug is not what
+        // "classic look" means.
+        if UIStyle.isClassic {
+            Label(title, systemImage: systemImage)
+                .foregroundColor(.red)
+        } else {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundColor(.red)
+        }
     }
 }

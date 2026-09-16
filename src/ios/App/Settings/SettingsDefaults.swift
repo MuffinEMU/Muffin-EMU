@@ -41,6 +41,10 @@ enum SettingsDefaults {
         if includingPerGameOverrides {
             PerGameSettingsStore.shared.removeAllOverrides()
         }
+        // The style store caches both UI keys in @Published properties, and the loop
+        // above removed them from UserDefaults without going through it - so without
+        // this the app would keep rendering the pre-reset styling until relaunch.
+        UIStyleStore.shared.reloadFromDefaults()
         pushDefaultsToBridge()
     }
 
