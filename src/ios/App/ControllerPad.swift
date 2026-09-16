@@ -442,6 +442,12 @@ private struct DpadTouchSurface: View {
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
+    /// The four ids this surface owns. Declared here rather than reached for on
+    /// ControlCluster - that one is `private static` on a different type, so referring to
+    /// it from here does not compile, and Swift's `Self.` would have resolved to this
+    /// struct regardless.
+    private static let directionIDs: Set<String> = ["up", "down", "left", "right"]
+
     private var width: CGFloat { box.width * unit }
     private var height: CGFloat { box.height * unit }
 
@@ -470,14 +476,21 @@ private struct DpadTouchSurface: View {
                         let local = CGPoint(x: width / 2, y: height / 2)
                         let next = PadLayout.dpadDirections(at: value.location, centre: local,
                                                             size: CGSize(width: width, height: height))
-                        for id in held.subtracting(next) { onInput(id, false) }
-                        for id in next.subtracting(held) {
-                            // Once per newly pressed direction, not on every tick this
-                            // onChanged fires while a direction is already held - the
-                            // same "only on the transition" rule HeldControl's own
-                            // setPressed applies for every other control on the pad.
+                        // HAPTICS still fire only on a transition - a buzz per frame
+                        // while a direction is held would be unusable.
+                        for _ in next.subtracting(held) {
                             if hapticsEnabled { PadHaptics.shared.fire() }
-                            onInput(id, true)
+                        }
+                        // The REPORT is the full current state, every tick, rather than
+                        // the diff against `held`. Same desync `HeldControl` had: `held`
+                        // is @State owned by this view, the bridge is C++ and outlives
+                        // every rebuild, so a rebuild mid-press drops `held` to empty and
+                        // the release diff for whatever was down is never computed - the
+                        // direction stays pressed in the game with nothing touching it.
+                        // Reporting all four states cannot desync, and costs at most four
+                        // idempotent bit writes per touch-move.
+                        for id in Self.directionIDs {
+                            onInput(id, next.contains(id))
                         }
                         held = next
                     }
@@ -806,22 +819,57 @@ struct HeldControl<Content: View>: View {
     private var ownGesture: some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { _ in
-                // Recorded BEFORE setPressed, which guards on a state change. That guard
-                // is why the existing input counter cannot distinguish "no touch ever
-                // reached this gesture" from "touches arrive but the state never flips" -
-                // both look like a frozen counter. This one ticks on the raw touch.
                 PadDiagnostics.shared.recordRawTouch()
-                setPressed(true)
+                // The visual state is still guarded - re-setting it every touch-move
+                // would restart the animation sixty times a second.
+                if !isPressed {
+                    isPressed = true
+                    if hapticsEnabled { PadHaptics.shared.fire() }
+                }
+                // The REPORT to the engine is not guarded, and that is the fix.
+                //
+                // setPressed() used to gate both on `isPressed != value`. isPressed is
+                // @State, so it is owned by the view and reset to false whenever SwiftUI
+                // rebuilds this control's identity - while the bridge, which is C++ and
+                // outlives every rebuild, keeps whatever bit it was last told. The two
+                // desync in both directions:
+                //
+                //   - rebuild mid-press: @State goes false, the bridge stays DOWN, and the
+                //     matching onEnded is then swallowed by the guard - so the release is
+                //     never sent and the button is stuck down in the game.
+                //   - @State left true with no release: every later press is swallowed by
+                //     the same guard, so nothing is ever sent again. No state change means
+                //     no animation either, which is exactly the reported symptom: the raw
+                //     touch counter ticks, the input counter does not, and the button
+                //     never visibly depresses.
+                //
+                // Once desynced a control is dead for the rest of the session, which is
+                // why this looked like "buttons stopped working" rather than a glitch.
+                //
+                // Reporting every edge unconditionally cannot desync, because the engine
+                // side is idempotent: cemu_bridge_set_button_state ORs or clears one bit
+                // under a mutex, so saying "down" twice is exactly the same as saying it
+                // once. The guard was never protecting correctness, only chatter.
+                onPressChange(true)
             }
-            .onEnded { _ in setPressed(false) }
+            .onEnded { _ in
+                isPressed = false
+                // Unconditional for the same reason, and this direction matters more: a
+                // swallowed release leaves the game holding a button nobody is touching.
+                onPressChange(false)
+            }
     }
 
     // onChanged repeats for every touch-move, so guard - both to keep the highlight from
     // re-animating and to keep the bridge call one per actual state change.
+    /// Cleanup path only - the gesture reports its own edges directly now.
+    ///
+    /// Unconditional on purpose, like the gesture. This is what runs when the view goes
+    /// away mid-press or edit mode switches on under a finger, and those are precisely
+    /// the moments the old guard could swallow the release and leave the game holding a
+    /// button nobody was touching.
     private func setPressed(_ value: Bool) {
-        guard isPressed != value else { return }
         isPressed = value
-        if value, hapticsEnabled { PadHaptics.shared.fire() }
         onPressChange(value)
     }
 }
