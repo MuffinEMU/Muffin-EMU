@@ -70,6 +70,7 @@ struct DiagnosticsSection: View {
     /// the sheet anyway.
     @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
     @AppStorage("muffin.showLaunchIntro") private var launchIntroEnabled = true
+    @AppStorage(PadDiagnostics.enabledKey) private var padOverlayEnabled = PadDiagnostics.defaultEnabled
 
     var body: some View {
         // Collection is always on regardless (see IOSLiveLog.h) - gating that too would
@@ -95,6 +96,21 @@ struct DiagnosticsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                 } icon: {
                     Image(systemName: "text.alignleft")
+                }
+            }
+            .tint(MuffinTheme.pixelBlue)
+
+            Toggle(isOn: $padOverlayEnabled) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show controls diagnostic")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("A small readout over the game: which pad is mounted, whether your presses are reaching it, and which setting is responsible if they are not.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "gamecontroller.badge.exclamationmark")
                 }
             }
             .tint(MuffinTheme.pixelBlue)

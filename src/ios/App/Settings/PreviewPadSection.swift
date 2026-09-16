@@ -42,8 +42,23 @@ struct PreviewPadSection: View {
     var body: some View {
         Section {
             Toggle(isOn: $previewPadEnabled) {
-                Text("Use the new pad system")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Use the new pad system")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    // Said here, on the switch itself, rather than only in the footer.
+                    // Turning this on REPLACES MuffinEMU's normal pad - the shipping
+                    // OptimizedControlPanel is not mounted at all while it is on (see
+                    // EmulatorViewOptimized's `else if !previewPadEnabled` branch). That
+                    // is easy to forget weeks later, and the symptom it produces -
+                    // controls that appear but do nothing, while Melo-Controller keeps
+                    // working because its branch has no such condition - reads exactly
+                    // like the app being broken rather than like a setting being on.
+                    Text(previewPadEnabled
+                         ? "ON - this REPLACES the normal pad. If controls don't respond, turn this off first."
+                         : "Replaces MuffinEMU's normal pad while on. Hasn't been verified on a real device.")
+                        .font(.system(size: 12))
+                        .foregroundColor(previewPadEnabled ? .orange : .secondary)
+                }
             }
             .tint(MuffinTheme.pixelBlue)
 

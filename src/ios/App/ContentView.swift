@@ -1296,6 +1296,7 @@ struct EmulatorViewOptimized: View {
                         },
                         isEditingLayout: $isEditingControlLayout
                     )
+                    .onAppear { PadDiagnostics.shared.report(activePad: .preview) }
 
                     #if DEBUG
                     // Debug HUD: proves whether SwiftUI ever calls onInput/onStick at
@@ -1591,10 +1592,16 @@ struct EmulatorViewOptimized: View {
                         gameID: gameManager.currentGame?.id,
                         isEditing: isEditingControlLayout
                     )
+                    .onAppear { PadDiagnostics.shared.report(activePad: .melo) }
                 } else if !previewPadEnabled {
                     OptimizedControlPanel(
                         skin: controllerSkin,
                         onInput: { label, pressed in
+                            // Recorded on the path that already runs for every press, so
+                            // the overlay can tell "no touch reached the pad" apart from
+                            // "the pad fired and the bridge did nothing" - two completely
+                            // different bugs that were indistinguishable all day.
+                            PadDiagnostics.shared.recordInput(label, pressed)
                             cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
                         },
                         // The axis path. Deliberately not routed through the button call above:
@@ -1602,6 +1609,7 @@ struct EmulatorViewOptimized: View {
                         // a stick sent as a press reaches VPADRead's button loop, which skips
                         // the stick mappings outright.
                         onStick: { stick, position in
+                            PadDiagnostics.shared.recordStick(stick, position)
                             cemu_bridge_set_stick_axis(
                                 stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
                                 Float(position.x),
@@ -1611,7 +1619,29 @@ struct EmulatorViewOptimized: View {
                         isEditingLayout: $isEditingControlLayout,
                         isPaused: isPaused
                     )
+                    .onAppear { PadDiagnostics.shared.report(activePad: .muffin) }
                 }
+            }
+
+            // Last thing added to this ZStack, so it draws over every control and over the
+            // video - a diagnostic that can be covered by the thing it is diagnosing is
+            // useless. It cannot swallow a touch: the whole overlay is
+            // .allowsHitTesting(false).
+            if PadDiagnostics.shared.isEnabled {
+                VStack {
+                    HStack {
+                        PadDiagnosticsOverlay(
+                            padControlsHidden: padControlsHidden,
+                            useMeloControls: useMeloControls,
+                            previewPadEnabled: previewPadEnabled,
+                            isEditingLayout: isEditingControlLayout,
+                            isPaused: isPaused
+                        )
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .allowsHitTesting(false)
             }
 
             // Settings > External Display > "Show swap button (TV <-> Pad)". Only ever
