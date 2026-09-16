@@ -162,6 +162,20 @@ jobs:
           # do not appear in the binary.
           xcrun --sdk iphoneos --show-sdk-version
 
+      - name: Download the Metal Toolchain
+        # Xcode 26 and later ship the Metal compiler as a downloadable component rather
+        # than in the base install, and the xcode-27 runner image does not include it.
+        # Without this the app build reaches the Metal shader step and dies with
+        # "cannot execute tool 'metal' due to missing Metal Toolchain".
+        #
+        # Worth noting what this failure proved: it happened at the APP's shader step,
+        # which means Cemu.framework had already compiled clean on arm64, under CMake
+        # 4.4.3, with an Xcode 27 beta toolchain. The risky half of this migration works.
+        run: |
+          set -eo pipefail
+          xcodebuild -downloadComponent MetalToolchain
+          xcodebuild -showComponent MetalToolchain || true
+
       - name: Build the MuffinEMU app
         run: |
           set -eo pipefail
