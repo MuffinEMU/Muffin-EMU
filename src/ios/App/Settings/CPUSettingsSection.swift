@@ -97,20 +97,18 @@ struct CPUSettingsSection: View {
             }
             .frame(minHeight: 30)
 
-            Picker("Show as", selection: $heatDisplayMode) {
-                ForEach(HeatDisplayMode.allCases) { mode in
-                    Text(mode.title).tag(mode.rawValue)
+            // The picker only appears when the numeric modes can actually do something.
+            // iOS publishes no device temperature to apps, and on most installs the
+            // battery sensor is unreachable too - so on those builds there is exactly one
+            // honest way to show this, and offering a choice between one real option and
+            // two that silently fall back to it is worse than offering no choice at all.
+            if HeatStatus.hasRealTemperature {
+                Picker("Show as", selection: $heatDisplayMode) {
+                    ForEach(HeatDisplayMode.allCases) { mode in
+                        Text(mode.title).tag(mode.rawValue)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
-
-            // Only shown when it is actually true, so it reads as an explanation rather
-            // than a disclaimer nobody needs. iOS publishes no device temperature to
-            // apps, and on most installs the numeric modes genuinely cannot work.
-            if !HeatStatus.hasRealTemperature && heatDisplayMode != HeatDisplayMode.word.rawValue {
-                Text("iOS doesn't give apps a temperature reading, and this build can't reach the battery sensor - so this keeps showing the word instead of inventing a number.")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                .pickerStyle(.segmented)
             }
         } header: {
             SettingsSectionHeader("CPU", icon: "cpu", accent: .core)
