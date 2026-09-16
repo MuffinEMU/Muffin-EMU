@@ -92,6 +92,27 @@ static constexpr int kGCBitDDown   = kButtonDown;
 static constexpr int kGCBitDLeft   = kButtonLeft;
 static constexpr int kGCBitDRight  = kButtonRight;
 
+// True when the emulated controller has at least one real FACE-button binding.
+//
+// Deliberately checks buttons rather than "any mapping at all": a profile with only stick
+// bindings is exactly the broken state this exists to catch, and it would pass an
+// is-the-table-empty test while leaving every button dead.
+static bool has_button_mappings(const EmulatedControllerPtr& emulated,
+                                EmulatedController::Type type)
+{
+    if (!emulated)
+        return false;
+    if (type == EmulatedController::Type::VPAD)
+    {
+        return emulated->get_mapping_controller(VPADController::kButtonId_A) != nullptr
+            || emulated->get_mapping_controller(VPADController::kButtonId_B) != nullptr;
+    }
+    // Non-VPAD types are left alone: their defaults are applied by the same path above
+    // when they are created, and this heal is targeted at the GamePad case that was
+    // actually observed failing rather than speculatively widened.
+    return true;
+}
+
 static void apply_default_gc_mappings(EmulatedControllerPtr& emulated,
                                       const std::shared_ptr<ControllerBase>& controller)
 {
@@ -232,13 +253,40 @@ void InputManager::load_gc_controllers()
         try
         {
             auto emulated = get_controller(i);
-            if (!emulated || emulated->type() != type ||
+            const bool needsNewController =
+                !emulated || emulated->type() != type ||
                 emulated->get_controllers().size() != 1 ||
-                emulated->get_controllers().front() != device)
+                emulated->get_controllers().front() != device;
+            if (needsNewController)
             {
                 emulated = ControllerFactory::CreateEmulatedController(i, type);
                 emulated->add_controller(device);
                 apply_default_gc_mappings(emulated, device);
+            }
+            else if (!has_button_mappings(emulated, type))
+            {
+                // Self-heal a controller that exists but has no BUTTON bindings.
+                //
+                // Defaults used to be applied only when a controller was newly created.
+                // That leaves one reachable state permanently broken: a persisted profile
+                // in controllerProfiles/controller{N} is loaded at startup, so the branch
+                // above is skipped - and if that profile carries no usable button
+                // mappings, every button is dead for the rest of the app's life, on every
+                // launch, on every future build.
+                //
+                // Sticks keep working throughout, which is what makes it so confusing to
+                // diagnose: axes reach ControllerState directly
+                // (GCController.mm's `result.axis.x = s.leftStick.x`) and never consult
+                // the mapping table at all, while every button goes through
+                // set_mapping/m_mappings. "Sticks respond, no button does" is the exact
+                // signature of an empty button mapping, and nothing in the UI said so.
+                //
+                // Reverting code cannot fix this, because the bad state is DATA on the
+                // device rather than anything in the binary - which is why several rounds
+                // of restoring the input path byte-for-byte changed nothing.
+                apply_default_gc_mappings(emulated, device);
+                cemuLog_log(LogType::Force,
+                    "input: controller {} had no button mappings (stale or partial profile); default GamePad mappings re-applied", i);
             }
             if (type == EmulatedController::Type::VPAD)
                 next_vpad[vpad_count++] = std::static_pointer_cast<VPADController>(emulated);
