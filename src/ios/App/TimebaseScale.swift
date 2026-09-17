@@ -99,11 +99,54 @@ enum TimebaseScale: Int, CaseIterable, Identifiable {
         cemu_bridge_set_timebase_shift(Int32(scale.rawValue))
     }
 
+    /// Forgets the stored choice and hands the decision back to the engine.
+    ///
+    /// Needed because storing a value is otherwise permanent and one-way: it disables the
+    /// automatic ladder for good, and until now nothing in the app could undo that. It
+    /// mattered most for values nobody chose deliberately - see EmulatedClockSection for
+    /// how the ladder's own searching used to end up written here.
+    static func clearChoice() {
+        UserDefaults.standard.removeObject(forKey: storageKey)
+        cemu_bridge_set_timebase_shift(Int32(TimebaseScale.realTime.rawValue))
+        cemu_bridge_set_timebase_auto_enabled(true)
+    }
+
     /// Re-applies a stored choice after the engine has initialized, and otherwise arms the
     /// automatic ladder. These are the same decision seen from two sides: either the user
     /// has told us what the clock should be, in which case it is set and nothing searches,
     /// or nobody has, in which case the engine is free to find out for itself.
+    /// One-time repair for a value the app wrote to itself.
+    ///
+    /// EmulatedClockSection used to persist whatever the automatic ladder had stepped the
+    /// clock to, as though it were a deliberate choice - so an install that once booted a
+    /// title slowly was pinned at a fraction of real speed on every launch afterwards,
+    /// through every update. Measured: 4.6fps against MeloCafe's 45 on the same device,
+    /// ROM and CPU mode, which is the factor of eight almost exactly.
+    ///
+    /// The bug is fixed, but fixing it does nothing for the installs already carrying the
+    /// bad value - it is data on the device, the same shape as the controller-profile and
+    /// render-scale bugs before it. So the value is cleared once, guarded by its own flag
+    /// so a deliberate choice made afterwards is never touched again.
+    ///
+    /// Only clears a SLOWED clock. Someone who picked real time explicitly keeps it, and
+    /// clearing would be a no-op for them anyway.
+    private static let repairedKey = "muffin.timebase.clearedAccidentalChoice"
+
+    static func repairAccidentalChoiceOnce() {
+        guard !UserDefaults.standard.bool(forKey: repairedKey) else { return }
+        UserDefaults.standard.set(true, forKey: repairedKey)
+        guard hasExplicitChoice,
+              let stored = TimebaseScale(rawValue: UserDefaults.standard.integer(forKey: storageKey)),
+              stored != .realTime
+        else { return }
+        UserDefaults.standard.removeObject(forKey: storageKey)
+        cemu_bridge_log_line("timebase: cleared a stored \(stored.title) clock that the app had written to itself; back to automatic")
+    }
+
     static func applyStoredChoiceIfAny() {
+        // Before reading the stored value, not after - the point is to not re-apply one
+        // that was never chosen.
+        repairAccidentalChoiceOnce()
         guard hasExplicitChoice,
               let value = TimebaseScale(rawValue: UserDefaults.standard.integer(forKey: storageKey))
         else {
