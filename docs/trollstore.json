@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "4.5",
+          "date": "2026-09-17T01:38:06Z",
+          "localizedDescription": "## What changed\n\n- Games run at full speed again. MuffinEMU was quietly running the emulated console at a fraction of real time - as little as an eighth - and leaving it there.\n- The recompiler no longer switches itself off on devices that cannot spare a full gigabyte in one piece - it uses a smaller arena instead of falling back to the much slower interpreter. Settings > CPU now shows the memory it got.\n- The recompiler can now reserve far more room for translated code, so busy games retranslate less, and it returns that memory when a game stops instead of holding it for the rest of the session.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 3dd15c642c86b68a99b81c9278ce51fe5f1cfdb9.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v4.4...v4.5",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v4.5/MuffinEMU-fakesigned.ipa",
+          "size": 68073899,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "4.4",
           "date": "2026-09-17T00:52:29Z",
           "localizedDescription": "## What changed\n\n- Fixes on-screen buttons releasing themselves a moment after being pressed. Presses now reach the game instead of flickering out, and the d-pad works again.\n- You can now import and export a game's in-game save from its per-game settings, to move progress to or from desktop Cemu, another emulator, or a real Wii U.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 23ddebd2d51ecc29a7465b225aa1df0b740199a3.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v4.3...v4.4",
