@@ -1116,8 +1116,6 @@ struct EmulatorViewOptimized: View {
     /// the break is in the SwiftUI gesture layer (PreviewControllerPad/HeldControl); if
     /// it does move but the game still doesn't react, the break is further down, in the
     /// bridge or the engine's input override path.
-    @State private var previewInputDebugText = "no input yet"
-    @State private var previewInputDebugCount = 0
     /// The same two keys the pad itself reads. Declared here as well so the in-game
     /// sliders write to the thing being dragged, with no plumbing between them.
     @AppStorage(ControllerLayoutSettings.scaleKey)
@@ -1272,11 +1270,20 @@ struct EmulatorViewOptimized: View {
         // Melo-Controller wins outright when chosen - it replaces both of MuffinEMU's own
         // pads, exactly as it did before this enum existed.
         if useMeloControls { return .melo }
-        // Off is the default and the only state this has been used in. The preview pad has
-        // never worked: it emits its own control ids, and cemuBridgeButton(forLabel:)
-        // answers CEMU_BRIDGE_BUTTON_NONE for anything outside its sixteen known labels,
-        // which ios_button_bit turns into -1 and drops silently. Its sticks appear to work
-        // only because axes never go through that lookup.
+        // Off by default, but it works now, and the reason it did not is worth recording
+        // because this comment used to give the wrong one.
+        //
+        // It said the preview pad emitted control ids cemuBridgeButton(forLabel:) did not
+        // know, which were dropped as NONE. That is not what was happening: its d-pad
+        // emits "up"/"down"/"left"/"right" through PreviewDpadView and its face buttons
+        // emit "A"/"B"/"X"/"Y" - all sixteen of the labels the bridge accepts. Only HOME,
+        // POWER and TV fell through, and none of those are why a d-pad does nothing.
+        //
+        // The actual cause was at its mount site: the onInput closure bumped two @State
+        // properties of the emulator view on every input, and the preview pad renders
+        // INSIDE that view - so every press rebuilt the pad being pressed and released it
+        // before it could mean anything. The counters existed to prove whether SwiftUI
+        // ever called onInput, and were themselves the reason it looked like it did not.
         if previewPadEnabled { return .preview }
         return .muffin
     }
@@ -1322,14 +1329,28 @@ struct EmulatorViewOptimized: View {
 
                     PreviewControllerPad(
                         store: previewPad,
+                        // Recorded through PadDiagnostics, NOT into @State here, and that
+                        // is the whole reason this pad never worked.
+                        //
+                        // These closures used to bump two @State properties of this view
+                        // on every single input. The preview pad is rendered INSIDE this
+                        // view, so every press rebuilt the pad being pressed - which tore
+                        // the control out from under the finger and released it again
+                        // before the press could mean anything. The same shape as the bug
+                        // in MuffinEMU's own pad, except guaranteed on every event rather
+                        // than occasional, which is why this one never worked at all
+                        // while the other worked intermittently.
+                        //
+                        // PadDiagnostics is an ObservableObject that only its own overlay
+                        // observes, so recording an input invalidates that overlay and
+                        // nothing else. It is also where the real pad already reports, so
+                        // both pads now show up in the same readout.
                         onInput: { label, pressed in
-                            previewInputDebugCount += 1
-                            previewInputDebugText = "\(label) \(pressed ? "down" : "up") (#\(previewInputDebugCount))"
+                            PadDiagnostics.shared.recordInput(label, pressed)
                             cemu_bridge_set_button_state(cemuBridgeButton(forLabel: label), pressed)
                         },
                         onStick: { stick, position in
-                            previewInputDebugCount += 1
-                            previewInputDebugText = "stick\(stick) (\(String(format: "%.2f", position.x)), \(String(format: "%.2f", position.y))) (#\(previewInputDebugCount))"
+                            PadDiagnostics.shared.recordStick(stick, position)
                             cemu_bridge_set_stick_axis(
                                 stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
                                 Float(position.x), Float(position.y)
@@ -1338,6 +1359,11 @@ struct EmulatorViewOptimized: View {
                         isEditingLayout: $isEditingControlLayout
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .preview) }
+                    // The stuck-button net, at the level where disappearing is a real
+                    // event. HeldControl no longer releases per control - see its own
+                    // comment for why that had to go - so the pad as a whole owns it,
+                    // exactly as OptimizedControlPanel does.
+                    .onDisappear { cemu_bridge_release_all_buttons() }
 
                     #if DEBUG
                     // Debug HUD: proves whether SwiftUI ever calls onInput/onStick at
@@ -1345,7 +1371,7 @@ struct EmulatorViewOptimized: View {
                     // report can't answer from the outside. Temporary, and gone the
                     // moment the real bug is found - not something to leave shipping.
                     VStack {
-                        Text("PAD DEBUG: \(previewInputDebugText)")
+                        Text("PAD DEBUG: \(PadDiagnostics.shared.lastInput) / \(PadDiagnostics.shared.lastStick)")
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundColor(.yellow)
                             .padding(6)
@@ -2364,6 +2390,15 @@ private func cemuBridgeButton(forLabel label: String) -> CemuBridgeButton {
     case "L3": return CEMU_BRIDGE_BUTTON_STICK_L
     case "R3": return CEMU_BRIDGE_BUTTON_STICK_R
 
+    // The preview pad draws the GamePad's own HOME button, and the bridge has had a
+    // constant for it all along - Melo-Controller's "guide" already maps here. Without
+    // this case it fell through to NONE and was dropped silently.
+    case "HOME": return CEMU_BRIDGE_BUTTON_HOME
+
+    // "POWER" and "TV" reach here from the preview pad's hardware-accurate face, and
+    // they stay unmapped deliberately rather than being pointed at something close.
+    // They are console functions, not GamePad buttons: there is no VPAD bit for either,
+    // so binding them to anything would be inventing input the Wii U never had.
     default: return CEMU_BRIDGE_BUTTON_NONE
     }
 }
