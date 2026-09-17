@@ -109,6 +109,29 @@ struct CPUSettingsSection: View {
             }
             .tint(MuffinTheme.pixelBlue)
 
+            // Memory headroom and what the recompiler got out of it.
+            //
+            // The JIT reserves its arena in one piece, and if that reservation fails the
+            // recompiler is switched off and the title runs on the interpreter instead -
+            // about an order of magnitude slower. So the arena size is the number worth
+            // showing: it says whether the increased-memory-limit and
+            // extended-virtual-addressing entitlements were actually honoured on this
+            // device, which no amount of asking for them can tell you.
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Image(systemName: "memorychip")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(MuffinTheme.brownMid)
+                    .frame(width: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Memory")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text(String(cString: cemu_bridge_memory_headroom_summary()))
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             // What iOS itself reports, shown because until now nothing in the app could
             // see it - the only way to know was a third-party thermal app.
             HStack(spacing: 10) {

@@ -362,6 +362,35 @@ extern "C" const char* cemu_bridge_device_report(void)
     return g_deviceReport.c_str();
 }
 
+// Declared here rather than in a header: PPCRecompiler.h is a core header the bridge does
+// not otherwise pull in, and this is one symbol.
+size_t PPCRecompiler_getJitArenaSize();
+
+const char* cemu_bridge_memory_headroom_summary(void) {
+    static std::string summary;
+    const uint64_t avail = (uint64_t)os_proc_available_memory();
+    const uint64_t arena = (uint64_t)PPCRecompiler_getJitArenaSize();
+
+    // Deliberately reports what was OBTAINED, not what was requested. The entitlement is
+    // a request; whether iOS honoured it is only visible in the numbers, and an app that
+    // says "increased memory limit: on" while running a 64MB arena would be telling a
+    // reassuring lie. The arena size is the one number that says whether the recompiler
+    // got room to work.
+    char buf[256];
+    if (arena == 0) {
+        snprintf(buf, sizeof(buf),
+            "%llu MB headroom - no JIT arena, so this launch is running the interpreter",
+            (unsigned long long)(avail / (1024ull * 1024ull)));
+    } else {
+        snprintf(buf, sizeof(buf), "%llu MB headroom, %llu MB JIT arena%s",
+            (unsigned long long)(avail / (1024ull * 1024ull)),
+            (unsigned long long)(arena / (1024ull * 1024ull)),
+            arena >= (1024ull << 20) ? " (full size)" : " (reduced - less headroom than the JIT wanted)");
+    }
+    summary = buf;
+    return summary.c_str();
+}
+
 bool cemu_bridge_memory_status(unsigned long long* availableBytes, unsigned long long* footprintBytes) {
     const uint64_t avail = (uint64_t)os_proc_available_memory();
     const uint64_t foot = cemu_mem_footprint_bytes();

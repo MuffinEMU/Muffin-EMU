@@ -1103,6 +1103,15 @@ void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y);
 /// mapping table, so a controller with sticks bound and buttons unbound - the exact state
 /// that makes every on-screen button dead while the joysticks still respond - would report
 /// a healthy number if axis mappings were counted too.
+/// One line describing how much memory iOS is letting this process have, and how much of
+/// it the recompiler actually got.
+///
+/// Reports what was obtained rather than which entitlements were requested. An entitlement
+/// is a request - whether the system honoured it shows up only in the numbers, and a
+/// readout saying "increased memory limit: on" beside a 64 MB JIT arena would be a
+/// reassuring lie. The arena size is the number that says whether the recompiler got room.
+const char* cemu_bridge_memory_headroom_summary(void);
+
 int cemu_bridge_input_button_mapping_count(void);
 
 /// Which controller profile the GamePad is on ("default" when none was loaded). Owned by
