@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "4.4",
+          "date": "2026-09-17T00:52:29Z",
+          "localizedDescription": "## What changed\n\n- Fixes on-screen buttons releasing themselves a moment after being pressed. Presses now reach the game instead of flickering out, and the d-pad works again.\n- You can now import and export a game's in-game save from its per-game settings, to move progress to or from desktop Cemu, another emulator, or a real Wii U.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 23ddebd2d51ecc29a7465b225aa1df0b740199a3.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v4.3...v4.4",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v4.4/MuffinEMU-fakesigned.ipa",
+          "size": 68070515,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "4.3",
           "date": "2026-09-16T23:34:18Z",
           "localizedDescription": "## What changed\n\n- SideStore now always offers the newest release instead of sometimes lagging a version behind, and there is a new nightly source for anyone who wants the very latest build.\n- Fixes the on-screen buttons flickering out of their pressed state, and stops the launch log slowing the emulator down while a game is running.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 030d842929e09ea79798d2283d7c3d3e4ea472c6.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v4.2...v4.3",
