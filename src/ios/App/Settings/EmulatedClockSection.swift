@@ -6,12 +6,22 @@ import SwiftUI
 /// running slowly can advance at all, which is a different question and the one
 /// that has actually been blocking this port.
 struct EmulatedClockSection: View {
-    /// Defaulted from `TimebaseScale.current` rather than a fixed case, because the
-    /// engine picks this one itself at launch from the CPU mode it actually got (real
-    /// time under the recompiler, an eighth under the interpreter). A hardcoded default
-    /// here would show a value that is not the one in effect, on the single screen whose
-    /// job is to say what is in effect.
-    @AppStorage(TimebaseScale.storageKey) private var timebaseRaw = TimebaseScale.current.rawValue
+    /// @State, seeded once - NOT @AppStorage defaulted from the engine's live value.
+    ///
+    /// It used to be the latter, and that turned the automatic ladder's searching into a
+    /// permanent user choice. @AppStorage returns its default while the key is unset, and
+    /// that default was `TimebaseScale.current`, which reads the engine's CURRENT shift.
+    /// So when the ladder stepped the clock down, this view's value changed underneath
+    /// it, `.onChange` fired, and `apply()` wrote the ladder's guess to disk as though
+    /// somebody had picked it - which also switched the ladder off for good. From then on
+    /// every launch re-applied it. A device that once booted a title slowly ran every
+    /// title at a fraction of speed afterwards, through every update, with nothing saying
+    /// why.
+    ///
+    /// @State is evaluated once for this view's lifetime, so the picker cannot move on
+    /// its own any more. It shows what was in effect when the screen opened, and only a
+    /// tap writes anything.
+    @State private var timebaseRaw = TimebaseScale.current.rawValue
 
     private var timebase: TimebaseScale {
         TimebaseScale(rawValue: timebaseRaw) ?? .realTime
@@ -35,6 +45,17 @@ struct EmulatedClockSection: View {
             .onChange(of: timebaseRaw) { raw in
                 guard let scale = TimebaseScale(rawValue: raw) else { return }
                 TimebaseScale.apply(scale)
+            }
+
+            // A way back to automatic. Without it, one tap on this picker - or, before
+            // the fix above, no tap at all - was a one-way door: any stored value
+            // disables the ladder for good, and nothing else in the app could clear it.
+            if TimebaseScale.hasExplicitChoice {
+                Button("Let MuffinEMU choose again") {
+                    TimebaseScale.clearChoice()
+                    timebaseRaw = TimebaseScale.realTime.rawValue
+                }
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
         } header: {
             SettingsSectionHeader("Emulated Clock", icon: "clock", accent: .core)
