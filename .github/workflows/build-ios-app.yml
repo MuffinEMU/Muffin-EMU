@@ -198,16 +198,28 @@ jobs:
         # code either time; the network simply refused.
         run: |
           set -eo pipefail
-          # Already present is the cheapest outcome - a warm runner image may ship it,
-          # and downloading it again would just be another chance to fail.
-          if xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -qi 'installed'; then
-            echo "Metal Toolchain already installed"
+          # Probe by RUNNING the tool, not by reading xcodebuild's prose.
+          #
+          # This check first asked `xcodebuild -showComponent MetalToolchain` and grepped
+          # its output for "installed" - which matches "not installed" just as happily.
+          # So the step announced "Metal Toolchain already installed", skipped the
+          # download, exited 0, and the app build died ten minutes later on
+          # "cannot execute tool 'metal'". A check that reports success when the thing is
+          # absent is worse than no check at all.
+          #
+          # `xcrun metal --version` asks the only question that matters: can this build
+          # execute the Metal compiler. There is no wording for that to get wrong.
+          have_metal() { xcrun metal --version >/dev/null 2>&1; }
+
+          if have_metal; then
+            echo "Metal Toolchain already present"
             exit 0
           fi
           for attempt in 1 2 3 4 5; do
-            if xcodebuild -downloadComponent MetalToolchain; then
-              echo "Metal Toolchain downloaded on attempt $attempt"
-              xcodebuild -showComponent MetalToolchain || true
+            # Both halves matter: the download can report success and still leave nothing
+            # runnable, which is exactly the failure above.
+            if xcodebuild -downloadComponent MetalToolchain && have_metal; then
+              echo "Metal Toolchain installed on attempt $attempt"
               exit 0
             fi
             if [ "$attempt" = 5 ]; then
