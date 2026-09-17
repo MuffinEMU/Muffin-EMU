@@ -36,13 +36,20 @@
 	     signature carries it (the ad-hoc signed IPA always does). -->
 	<key>com.apple.developer.kernel.increased-memory-limit</key>
 	<true/>
-	<!-- The entitlement that actually governs a reservation the size of the JIT arena.
-	     increased-memory-limit raises how much the process may USE before jetsam;
-	     this one raises how much address space it may RESERVE. The recompiler asks for
-	     1 GiB in one piece (PPCRecompiler_Init26), and when that fails the recompiler
-	     is disabled outright and the title falls back to the interpreter - roughly an
-	     order of magnitude slower. They are two different limits and the JIT needs both. -->
-	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
-	<true/>
+	<!-- NOT requesting com.apple.developer.kernel.extended-virtual-addressing, and this
+	     is a deliberate absence rather than an oversight.
+
+	     It was added in v4.5 to help the recompiler reserve its arena in one piece, and
+	     it broke JIT entirely: StikDebug stopped listing MuffinEMU at all. It is a
+	     RESTRICTED entitlement - it only takes effect through a provisioning profile that
+	     grants it - and when a re-signer meets an entitlement its profile does not
+	     authorise, the entitlements get dropped. Including get-task-allow, which is the
+	     one every JIT enabler looks for. An app that asks for too much is indistinguishable
+	     from an app that asked for nothing.
+
+	     It bought nothing either: with it present the arena still only reached ~1 GB, so
+	     the larger reservations were failing regardless. Trading the recompiler for a
+	     reservation that never succeeded is a straight loss. The arena ladder handles a
+	     failed reservation properly now, which is the part that actually mattered. -->
 </dict>
 </plist>
