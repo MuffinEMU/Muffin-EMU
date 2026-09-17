@@ -85,9 +85,18 @@ jobs:
         # bundle by default, and the ZArchive submodule's zarchiveTool install rule has no
         # bundle destination, which stops configure. Cemu.framework is a library and is
         # unaffected.
+        #
+        # Retried for the same reason the Metal Toolchain step is: vcpkg downloads its
+        # ports from third-party hosts during configure, and a build died here on
+        # "curl operation failed with error code 6 (Couldn't resolve host name)" for
+        # libtiff. vcpkg classifies a DNS failure as NON-transient and refuses to retry
+        # it itself, which is exactly backwards - name resolution is the most transient
+        # failure there is. Re-running is safe: everything vcpkg already built stays in
+        # the binary cache, so a retry resumes rather than starting over.
         run: |
           set -eo pipefail
           mkdir -p .vcpkg-archives
+          configure() {
           cmake -S . -B build-ios -G Ninja \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphoneos \
@@ -97,6 +106,16 @@ jobs:
             -DBUILD_HEADLESS_DYLIB=ON \
             -DCMAKE_MACOSX_BUNDLE=OFF \
             -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure.log
+          }
+          for attempt in 1 2 3; do
+            if configure; then exit 0; fi
+            if [ "$attempt" = 3 ]; then
+              echo "::error::configure failed three times - see configure.log"
+              exit 1
+            fi
+            echo "configure attempt $attempt failed; waiting $((attempt * 30))s"
+            sleep $((attempt * 30))
+          done
 
       - name: Save vcpkg binary cache
         if: always()
@@ -171,10 +190,34 @@ jobs:
         # Worth noting what this failure proved: it happened at the APP's shader step,
         # which means Cemu.framework had already compiled clean on arm64, under CMake
         # 4.4.3, with an Xcode 27 beta toolchain. The risky half of this migration works.
+        #
+        # Retried, because this fetches from Apple's asset server and that server fails
+        # often enough that one attempt is a coin flip - a build died here with "Failed
+        # fetching catalog for assetType (com.apple.MobileAsset.MetalToolchain)" having
+        # already spent twenty minutes compiling the core. Nothing was wrong with the
+        # code either time; the network simply refused.
         run: |
           set -eo pipefail
-          xcodebuild -downloadComponent MetalToolchain
-          xcodebuild -showComponent MetalToolchain || true
+          # Already present is the cheapest outcome - a warm runner image may ship it,
+          # and downloading it again would just be another chance to fail.
+          if xcodebuild -showComponent MetalToolchain 2>/dev/null | grep -qi 'installed'; then
+            echo "Metal Toolchain already installed"
+            exit 0
+          fi
+          for attempt in 1 2 3 4 5; do
+            if xcodebuild -downloadComponent MetalToolchain; then
+              echo "Metal Toolchain downloaded on attempt $attempt"
+              xcodebuild -showComponent MetalToolchain || true
+              exit 0
+            fi
+            if [ "$attempt" = 5 ]; then
+              echo "::error::Metal Toolchain download failed five times - Apple's asset server, not this repository."
+              exit 1
+            fi
+            # Backs off rather than hammering: these outages last minutes, not seconds.
+            echo "attempt $attempt failed; waiting $((attempt * 20))s"
+            sleep $((attempt * 20))
+          done
 
       - name: Build the MuffinEMU app
         run: |
