@@ -365,6 +365,7 @@ extern "C" const char* cemu_bridge_device_report(void)
 // Declared here rather than in a header: PPCRecompiler.h is a core header the bridge does
 // not otherwise pull in, and this is one symbol.
 size_t PPCRecompiler_getJitArenaSize();
+size_t PPCRecompiler_getJitArenaUsed();
 
 const char* cemu_bridge_memory_headroom_summary(void) {
     static std::string summary;
@@ -382,10 +383,17 @@ const char* cemu_bridge_memory_headroom_summary(void) {
             "%llu MB headroom - no JIT arena, so this launch is running the interpreter",
             (unsigned long long)(avail / (1024ull * 1024ull)));
     } else {
-        snprintf(buf, sizeof(buf), "%llu MB headroom, %llu MB JIT arena%s",
+        // Reservation and water level, separately, because they are different things and
+        // conflating them is what makes a big arena look alarming. The reservation is
+        // address space and costs almost nothing; the used figure is what the process is
+        // actually holding, and it rises as code is translated and drops to nothing on a
+        // flush.
+        const uint64_t used = (uint64_t)PPCRecompiler_getJitArenaUsed();
+        snprintf(buf, sizeof(buf), "%llu MB headroom - JIT arena %llu MB reserved, %llu MB in use%s",
             (unsigned long long)(avail / (1024ull * 1024ull)),
             (unsigned long long)(arena / (1024ull * 1024ull)),
-            arena >= (1024ull << 20) ? " (full size)" : " (reduced - less headroom than the JIT wanted)");
+            (unsigned long long)(used / (1024ull * 1024ull)),
+            arena < (1024ull << 20) ? " (reduced - less room than the JIT asked for)" : "");
     }
     summary = buf;
     return summary.c_str();
