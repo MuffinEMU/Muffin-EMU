@@ -54,7 +54,30 @@ final class ThermalMonitor: ObservableObject {
     /// the device cools. Without this, "restore" would have to guess, and a guess here
     /// silently overwrites a deliberate choice - the same mistake Low Power Mode
     /// deliberately avoids by not touching Render Scale at all.
-    private var userChosenScale: RenderScale?
+    private var userChosenScale: RenderScale? {
+        get { RenderScale(rawValue: UserDefaults.standard.string(forKey: Self.scaleBeforeThrottleKey) ?? "") }
+        set {
+            if let newValue {
+                UserDefaults.standard.set(newValue.rawValue, forKey: Self.scaleBeforeThrottleKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.scaleBeforeThrottleKey)
+            }
+        }
+    }
+
+    /// Persisted, not held in memory, and that is the whole point.
+    ///
+    /// This was a plain instance property. Throttling overwrites the user's Render Scale
+    /// in UserDefaults, which survives anything; the memory of what it used to be did
+    /// not. So an app killed while hot - a crash, or iOS reclaiming it in the background,
+    /// neither of which is rare on a device warm enough to be throttling - came back with
+    /// Render Scale pinned at battery saver, 0.375x, and nothing anywhere that knew what
+    /// it had been. The user is left permanently on a quarter of the pixels with no way
+    /// to know why.
+    ///
+    /// Exactly the failure the timebase ladder had: a temporary change with a restore
+    /// path that does not survive the thing most likely to interrupt it.
+    private static let scaleBeforeThrottleKey = "muffin.thermal.scaleBeforeThrottle"
     private var isThrottling = false
     private var observing = false
 
@@ -77,11 +100,26 @@ final class ThermalMonitor: ObservableObject {
         }
     }
 
+    /// Undo a throttle the app never got to release, at launch.
+    ///
+    /// If the key is set on a cold start, the last run was killed mid-throttle, so the
+    /// render scale in UserDefaults is ours rather than the user's. Safe when the app
+    /// exited cleanly, because unwind() clears the key and there is nothing to find.
+    private func restoreScaleIfKilledWhileThrottled() {
+        guard let chosen = userChosenScale else { return }
+        UserDefaults.standard.set(chosen.rawValue, forKey: RenderScale.storageKey)
+        userChosenScale = nil
+        cemu_bridge_log_line("iOS thermal: last run ended while throttled; restored render scale to \(chosen.rawValue)")
+    }
+
     /// Idempotent. Called from the same place DisplayRouter's observation starts, so there
     /// is no new lifecycle to get wrong.
     func startObserving() {
         guard !observing else { return }
         observing = true
+        // Before anything reads Render Scale. If the last run was killed while throttled,
+        // the value sitting in UserDefaults is ours, not the user's.
+        restoreScaleIfKilledWhileThrottled()
         state = ProcessInfo.processInfo.thermalState
         NotificationCenter.default.addObserver(
             forName: ProcessInfo.thermalStateDidChangeNotification,
