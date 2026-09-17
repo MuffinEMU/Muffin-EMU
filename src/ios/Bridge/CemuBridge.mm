@@ -1611,10 +1611,26 @@ void cemu_bridge_initialize(const char* mlcPath) {
     }
 
     ios_apply_cpu_mode();
-    // Real time under the recompiler; an eighth under the interpreter, where the guest's
-    // own deadlines are otherwise overdue before they are serviced. Swift overrides this
-    // straight after when the user has picked a value.
-    cemu_bridge_set_timebase_shift(g_cpuMode.load() == kCpuModeRecompiler ? 3 : 6);
+    // Real time, always. This used to drop to shift 6 whenever the recompiler was not
+    // available, and shift 6 is not a tuning constant - ActiveSettings.h spells it out:
+    //
+    //     s_timer_shift = 3;  // right shift factor, 0 -> 8x, 3 -> 1x, 4 -> 0.5x
+    //
+    // so 6 is ONE EIGHTH SPEED. The reasoning was that the guest's own deadlines go
+    // overdue before they are serviced when the interpreter cannot keep up, and slowing
+    // the guest clock keeps its internal timing self-consistent. What it actually did
+    // was cap the frame rate at an eighth of whatever the machine could manage, by
+    // choice, on every install without a JIT enabler attached - which is the default.
+    //
+    // Measured by Void on one device, one ROM: Wind Waker HD at a steady 4.6fps here
+    // against a steady 45 in MeloCafe. Wind Waker targets 30, and 30/8 is 3.75. MeloCafe
+    // never calls SetTimerShiftFactor from its iOS layer at all, so it runs at the
+    // engine default of 3 - and that single difference is most of the gap.
+    //
+    // Slowing the clock stays available as Settings > CPU > Timebase for a title that
+    // genuinely needs it, where it is a choice somebody made rather than a tax nobody
+    // was told about. TimebaseScale.applyStoredChoiceIfAny() applies it at title start.
+    cemu_bridge_set_timebase_shift(3);
 
     ios_input_start();
     ios_stats_start();
@@ -2150,6 +2166,14 @@ bool cemu_bridge_timebase_auto_enabled(void) {
 
 static void ios_timebase_ladder_entry() {
     const auto start = std::chrono::steady_clock::now();
+    // The clock this ladder inherited, so it can be put back.
+    //
+    // Everything below is a SEARCH, and a search that does not restore what it changed
+    // is just damage. Without this the ladder would step the guest's clock down while a
+    // title was slow to boot, watch the title boot anyway, conclude the slow clock was
+    // "the value that worked", and leave it there for the rest of the session - so a
+    // title that took 36 seconds to reach GX2Init then ran at an eighth speed forever.
+    const int startShift = cemu_bridge_get_timebase_shift();
     auto lastStep = start;
     // Baselines from the first poll, not zero: a title that drew one frame and stopped
     // must not read as advancing.
@@ -2179,11 +2203,32 @@ static void ios_timebase_ladder_entry() {
                                progress.guest_flip_requests > baseGuestFlipRequests;
         if (advancing) {
             const int shift = cemu_bridge_get_timebase_shift();
-            cemuLog_log(LogType::Force,
-                "Emulated timebase: the title is advancing ({}) after {:.1f}s with the clock at shift {} "
-                "({:.4g}x real time). Ladder stopped - that is the value that worked.",
-                progress.gx2_init_reached ? "GX2Init reached" : "guest output moving",
-                elapsed, shift, 8.0 / (double)(1u << shift));
+            // Put the clock back. The old code stopped here and called wherever it had
+            // stepped to "the value that worked", which is post-hoc reasoning wired into
+            // a control loop: the title reached GX2Init because it finished booting, not
+            // because the console had been made slower. Keeping the slow clock after the
+            // stall is over costs exactly the factor it was stepped down by - measured at
+            // 4.6fps against MeloCafe's 45 on the same device, ROM and game.
+            //
+            // The ladder still earns its keep for the boot stall itself; it just no
+            // longer charges for it afterwards. A title that genuinely needs a slower
+            // clock has Settings > CPU > Timebase, where it is somebody's decision.
+            if (shift != startShift) {
+                cemuLog_log(LogType::Force,
+                    "Emulated timebase: the title is advancing ({}) after {:.1f}s. Restoring the clock from "
+                    "shift {} ({:.4g}x real time) to shift {} ({:.4g}x) - the ladder was searching for a way "
+                    "past the stall, not choosing a speed to run at.",
+                    progress.gx2_init_reached ? "GX2Init reached" : "guest output moving", elapsed,
+                    shift, 8.0 / (double)(1u << shift),
+                    startShift, 8.0 / (double)(1u << startShift));
+                cemu_bridge_set_timebase_shift(startShift);
+            } else {
+                cemuLog_log(LogType::Force,
+                    "Emulated timebase: the title is advancing ({}) after {:.1f}s with the clock untouched at "
+                    "shift {} ({:.4g}x real time). Ladder stopped without having had to step.",
+                    progress.gx2_init_reached ? "GX2Init reached" : "guest output moving",
+                    elapsed, shift, 8.0 / (double)(1u << shift));
+            }
             return;
         }
 
@@ -2193,11 +2238,18 @@ static void ios_timebase_ladder_entry() {
 
         const int shift = cemu_bridge_get_timebase_shift();
         if (shift >= kLadderFloorShift) {
+            // And put it back on the way out. This branch has already concluded that the
+            // guest's clock is not what is holding the title - so every step the ladder
+            // took was wrong, and leaving the console at 1/64 speed on the strength of a
+            // theory it just disproved is the worst of both.
             cemuLog_log(LogType::Force,
-                "Emulated timebase: the ladder is at its floor - shift {} (1/64 real time) - and after "
+                "Emulated timebase: the ladder is at its floor - shift {} ({:.4g}x real time) - and after "
                 "{:.1f}s the title still has not reached GX2Init. The guest's clock is not what is holding "
-                "this title, so the ladder stops rather than making the console slower to no purpose.",
-                shift, elapsed);
+                "this title, so every step taken was wrong; restoring shift {} ({:.4g}x) and stopping.",
+                shift, 8.0 / (double)(1u << shift), elapsed,
+                startShift, 8.0 / (double)(1u << startShift));
+            if (shift != startShift)
+                cemu_bridge_set_timebase_shift(startShift);
             return;
         }
 
