@@ -361,6 +361,39 @@ struct DualMapArena
         freeRanges.clear();
         if (region.size)
             freeRanges.emplace(0, region.size);
+
+#if BOOST_OS_IOS
+        // Hand the physical pages back, not just the offsets.
+        //
+        // The arena is one anonymous mmap, so its SIZE is address space and its cost is
+        // only the pages actually written - which is why a large arena is close to free
+        // until it is used. But once written, those pages stay resident, and clearing
+        // freeRanges alone only forgets about them: the process keeps every page of
+        // translated code it ever emitted, for the rest of its life, against a jetsam
+        // limit that does not care that the code is dead.
+        //
+        // MADV_FREE tells the kernel the contents no longer matter. It reclaims the
+        // pages under memory pressure and the footprint drops, while the mapping itself
+        // stays exactly where it is - which it must, because generated code branches
+        // within this region by address.
+        //
+        // Only ever called with no live code: from init() on a fresh mapping, and from
+        // the shutdown path, which disables the recompiler in the same breath.
+        if (region.rwAlias && region.size)
+            madvise(region.rwAlias, region.size, MADV_FREE);
+#endif
+    }
+
+    /// Bytes handed out and not yet returned. The arena's reservation is a ceiling; this
+    /// is what is actually being used against it, and the number that moves while a game
+    /// runs.
+    size_t usedBytes()
+    {
+        std::lock_guard lock(mutex);
+        size_t free = 0;
+        for (const auto& r : freeRanges)
+            free += r.second;
+        return region.size > free ? region.size - free : 0;
     }
 };
 
@@ -1226,6 +1259,13 @@ size_t PPCRecompiler_getJitArenaSize()
     return s_jitArena.region.rxAlias ? s_jitArena.region.size : 0;
 }
 
+// How much of the arena is currently handed out. Moves while a title runs, and drops back
+// to zero on a flush - the reservation is the ceiling, this is the water level.
+size_t PPCRecompiler_getJitArenaUsed()
+{
+    return s_jitArena.region.rxAlias ? s_jitArena.usedBytes() : 0;
+}
+
 bool PPCRecompiler_Init26() {
     if (!checkDebugged() && ActiveSettings::GetCPUMode() == CPUMode::Auto) {
         cemuLog_log(LogType::Force, "Debugger not attached, JIT cannot continue.");
@@ -1263,7 +1303,24 @@ bool PPCRecompiler_Init26() {
         // Retrying is safe - init() re-calls PPCRecompiler_allocateDualMap(), which
         // reports failure as null aliases rather than leaving a half-built region.
         constexpr size_t kMB = 1024ull * 1024ull;
-        constexpr size_t kArenaSizes[] = { 1024 * kMB, 512 * kMB, 256 * kMB, 128 * kMB, 64 * kMB };
+        // Reaches well past 1 GiB now, and that is close to free.
+        //
+        // The arena is an anonymous mmap: its size is a RESERVATION of address space, and
+        // physical pages are only backed when something writes to them. So asking for
+        // 3 GiB does not take 3 GiB - it takes as much as the translated code actually
+        // occupies, exactly as 1 GiB did, and simply stops being a ceiling so soon.
+        // extended-virtual-addressing is what makes reservations this size plausible on
+        // a 64-bit iOS process.
+        //
+        // What a bigger arena buys is fewer flushes: when it fills, every block of
+        // translated code is thrown away and retranslated from scratch. What it does NOT
+        // buy is speed beyond that - once the arena comfortably holds a title's working
+        // set of translated code, more room does nothing at all, so this is a ceiling
+        // being raised rather than a dial being turned up.
+        constexpr size_t kArenaSizes[] = {
+            3072 * kMB, 2560 * kMB, 2048 * kMB, 1536 * kMB,
+            1024 * kMB, 512 * kMB, 256 * kMB, 128 * kMB, 64 * kMB
+        };
         size_t chosenArena = 0;
         for (size_t candidate : kArenaSizes)
         {
@@ -1284,12 +1341,21 @@ bool PPCRecompiler_Init26() {
         }
         else
         {
-            if (chosenArena != kArenaSizes[0])
+            // Compared against 1 GiB, not against the top of the ladder. Anything at or
+            // above a gigabyte is a normal, healthy arena - it is what shipped before -
+            // and calling it "reduced" because 3 GiB was unavailable would turn a fine
+            // result into a warning.
+            if (chosenArena < 1024 * kMB)
             {
                 cemuLog_log(LogType::Force,
-                    "JIT arena: running the recompiler with {}MB instead of {}MB. Blocks are recycled more "
-                    "often, which is slower than a full arena and very much faster than the interpreter.",
-                    chosenArena / kMB, kArenaSizes[0] / kMB);
+                    "JIT arena: running the recompiler with {}MB. Blocks are recycled more often than with a "
+                    "full arena, which is slower than that and very much faster than the interpreter.",
+                    chosenArena / kMB);
+            }
+            else
+            {
+                cemuLog_log(LogType::Force, "JIT arena: reserved {}MB of address space; pages are backed as "
+                    "translated code is written and returned on flush.", chosenArena / kMB);
             }
             g_jitArenaRxBase = s_jitArena.region.rxAlias;
             g_jitArenaRxEnd  = (uint8*)s_jitArena.region.rxAlias + s_jitArena.region.size;
