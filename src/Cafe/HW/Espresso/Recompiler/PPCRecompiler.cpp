@@ -1219,6 +1219,13 @@ bool PPCRecompilerInitialized()
     return ppcRecompilerInited;
 }
 
+// How much arena the recompiler actually got, for the readout in Settings. Zero means it
+// never allocated one - which, after PPCRecompiler_Init26 has run, means the interpreter.
+size_t PPCRecompiler_getJitArenaSize()
+{
+    return s_jitArena.region.rxAlias ? s_jitArena.region.size : 0;
+}
+
 bool PPCRecompiler_Init26() {
     if (!checkDebugged() && ActiveSettings::GetCPUMode() == CPUMode::Auto) {
         cemuLog_log(LogType::Force, "Debugger not attached, JIT cannot continue.");
@@ -1237,14 +1244,53 @@ bool PPCRecompiler_Init26() {
     
     try
     {
-        if (!s_jitArena.init(1024 * 1024 * 1024))
+        // Step down rather than give up.
+        //
+        // This asked for exactly 1 GiB and, if that one reservation failed, switched the
+        // recompiler off entirely - so a device that could not spare a gigabyte of
+        // address space fell all the way back to the interpreter, which is roughly an
+        // order of magnitude slower. That is a cliff, and nothing about it was
+        // necessary: a 256 MiB arena still runs JIT-compiled code at JIT speed. It just
+        // recycles blocks more often.
+        //
+        // 1 GiB is still tried first, so a device where it already worked is completely
+        // unaffected. The smaller sizes only ever come into play where the alternative
+        // was no recompiler at all.
+        //
+        // This is also where com.apple.developer.kernel.increased-memory-limit and
+        // extended-virtual-addressing earn their keep: both make the largest reservation
+        // more likely to succeed, and the largest arena is the one that recycles least.
+        // Retrying is safe - init() re-calls PPCRecompiler_allocateDualMap(), which
+        // reports failure as null aliases rather than leaving a half-built region.
+        constexpr size_t kMB = 1024ull * 1024ull;
+        constexpr size_t kArenaSizes[] = { 1024 * kMB, 512 * kMB, 256 * kMB, 128 * kMB, 64 * kMB };
+        size_t chosenArena = 0;
+        for (size_t candidate : kArenaSizes)
         {
-            cemuLog_log(LogType::Force, "JIT arena allocation failed, disabling JIT");
+            if (s_jitArena.init(candidate))
+            {
+                chosenArena = candidate;
+                break;
+            }
+            cemuLog_log(LogType::Force,
+                "JIT arena: {}MB unavailable, trying smaller before falling back to the interpreter",
+                candidate / kMB);
+        }
+        if (!chosenArena)
+        {
+            cemuLog_log(LogType::Force, "JIT arena allocation failed at every size, disabling JIT");
             ppcRecompilerEnabled = false;
             ppcRecompilerInited = false;
         }
         else
         {
+            if (chosenArena != kArenaSizes[0])
+            {
+                cemuLog_log(LogType::Force,
+                    "JIT arena: running the recompiler with {}MB instead of {}MB. Blocks are recycled more "
+                    "often, which is slower than a full arena and very much faster than the interpreter.",
+                    chosenArena / kMB, kArenaSizes[0] / kMB);
+            }
             g_jitArenaRxBase = s_jitArena.region.rxAlias;
             g_jitArenaRxEnd  = (uint8*)s_jitArena.region.rxAlias + s_jitArena.region.size;
             g_jitArenaRwBase = s_jitArena.region.rwAlias;

@@ -36,5 +36,13 @@
 	     signature carries it (the ad-hoc signed IPA always does). -->
 	<key>com.apple.developer.kernel.increased-memory-limit</key>
 	<true/>
+	<!-- The entitlement that actually governs a reservation the size of the JIT arena.
+	     increased-memory-limit raises how much the process may USE before jetsam;
+	     this one raises how much address space it may RESERVE. The recompiler asks for
+	     1 GiB in one piece (PPCRecompiler_Init26), and when that fails the recompiler
+	     is disabled outright and the title falls back to the interpreter - roughly an
+	     order of magnitude slower. They are two different limits and the JIT needs both. -->
+	<key>com.apple.developer.kernel.extended-virtual-addressing</key>
+	<true/>
 </dict>
 </plist>
