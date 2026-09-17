@@ -9,7 +9,6 @@
 
 #define CACHE_PAGE_SIZE        0x400
 #define CACHE_PAGE_SIZE_M1    (CACHE_PAGE_SIZE-1)
-#define DC_FLUSH_SEQUENTIAL_PAGE_BATCH 16
 
 uint32 g_currentCacheChronon = 0;
 
@@ -1737,16 +1736,24 @@ void LatteBufferCache_notifyDCFlush(MPTR address, uint32 size)
         return;
     }
     
-    bool batchSequentialPages = false;
-    if (isSinglePage && s_lastDCFlushQueueEpoch == queueEpoch)
-        batchSequentialPages = s_lastDCFlushQueuePage != std::numeric_limits<uint32>::max() && firstPage == (s_lastDCFlushQueuePage + 1);
-    
+    // Publishes exactly the range the guest asked for.
+    //
+    // This used to widen a single-page flush that followed a sequential one to sixteen
+    // pages, to save repeated lock/SetRange calls when a title walks a large buffer page
+    // by page. The saving is real but tiny; the cost is not. This queue marks GPU-side
+    // copies STALE, so publishing fifteen pages the guest never flushed invalidates
+    // vertex and index data that had not changed and has it re-read from guest memory,
+    // every frame, forever.
+    //
+    // That cost lands entirely on the GPU and upload path and not at all on instruction
+    // throughput - which is exactly the shape of what Void measured: MuffinEMU at
+    // 4fps against MeloCafe's 45 on the same device and ROM, and the RECOMPILER MAKING
+    // NO DIFFERENCE. A CPU-side problem cannot survive turning the JIT on; a per-frame
+    // GPU-side one does not care.
+    //
+    // MeloCafe does not have this batching, and MeloCafe is the fast one. Restoring
+    // upstream's behaviour here is deliberately a test of that, not a claimed fix.
     uint32 publishLastPage = lastPage;
-    if (batchSequentialPages)
-    {
-        const uint32 maxPage = std::numeric_limits<uint32>::max();
-        publishLastPage = std::min<uint32>(firstPage + std::min<uint32>(DC_FLUSH_SEQUENTIAL_PAGE_BATCH - 1, maxPage - firstPage), maxPage);
-    }
     
     g_spinlockDCFlushQueue.lock();
     s_DCFlushQueue->SetRange(firstPage, publishLastPage);
