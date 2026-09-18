@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "4.7",
+          "date": "2026-09-18T23:09:49Z",
+          "localizedDescription": "## What changed\n\n- Fixes MuffinEMU not appearing in StikDebug and other JIT enablers, which stopped the recompiler working at all in 4.5 and 4.6.\n- Settings > Preview: New Pad System now actually works - its buttons reach the game instead of releasing themselves the instant they are pressed.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 3d29a25858588d56ff36c18696f08094c641ea3b.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v4.6...v4.7",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v4.7/MuffinEMU.ipa",
+          "size": 67700694,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "4.6",
           "date": "2026-09-17T02:38:47Z",
           "localizedDescription": "## What changed\n\n- Fixes MuffinEMU sometimes saving a slowed-down emulated clock as though you had chosen it, and being stuck there on every later launch. Settings > Emulated Clock can now hand the decision back.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 14caf93986ed716262c626878f9d36cc50100477.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v4.5...v4.6",
