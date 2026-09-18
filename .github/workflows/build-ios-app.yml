@@ -436,7 +436,19 @@ jobs:
           cat RELEASE_NOTES.md
 
       - name: Publish GitHub Release
+        # Retried, like the two network steps earlier in this file, and for the reason
+        # they taught: the failure that ends a twenty-minute build is usually somebody
+        # else's server having a bad second.
+        #
+        # This one failed with "Error saving asset" - the release itself was created and
+        # then an IPA upload died partway. That leaves the worst possible state: a DRAFT
+        # release carrying some of its assets, invisible to the install source (which
+        # only reads published releases) and looking from the outside like the build
+        # simply produced nothing. A retry re-attaches the missing files to the same
+        # draft and publishes it.
         uses: softprops/action-gh-release@v2
+        id: publish
+        continue-on-error: true
         with:
           tag_name: ${{ env.MUFFIN_TAG }}
           target_commitish: ${{ github.sha }}
@@ -485,6 +497,31 @@ jobs:
             Untested by anyone. A numbered release has at least been installed and run;
             this has only been compiled. If you want the version that works, not the
             version that is newest, install the latest numbered release instead.
+
+      - name: Re-try publishing the release
+        # Only when the first attempt failed. Same inputs, so a partial upload is
+        # completed rather than duplicated - the action updates the existing draft for
+        # this tag instead of creating a second release.
+        #
+        # No continue-on-error here, deliberately: this step failing fails the job, which
+        # is what should happen when two attempts cannot publish. A draft with missing
+        # assets is not installable and must not read as a green build. That also means
+        # no separate guard step is needed - and a guard checking failure() would never
+        # have fired anyway, because continue-on-error above keeps the job green.
+        if: steps.publish.outcome == 'failure'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.MUFFIN_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.MUFFIN_RELEASE == 'true' && format('MuffinEMU {0}', env.MUFFIN_VERSION) || format('MuffinEMU test build {0}', github.sha) }}
+          prerelease: ${{ env.MUFFIN_RELEASE != 'true' }}
+          make_latest: ${{ env.MUFFIN_RELEASE == 'true' }}
+          generate_release_notes: false
+          files: |
+            MuffinEMU.ipa
+            MuffinEMU-fakesigned.ipa
+            MuffinEMU.app.dSYM.zip
+          body_path: RELEASE_NOTES.md
 
       - name: Upload build logs (always)
         if: always()
