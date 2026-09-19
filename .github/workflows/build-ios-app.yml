@@ -170,10 +170,26 @@ jobs:
         # this correct on any runner image, which is the property that was missing.
         run: |
           set -eo pipefail
-          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -n1)
           echo "Installed Xcodes:"; ls -d /Applications/Xcode*.app
-          echo "Selecting $NEWEST"
-          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          # Prefer a STABLE Xcode over a beta or release candidate of the same version.
+          #
+          # "Newest" alone will happily pick Xcode_27_beta_6 over a shipping Xcode 27, and
+          # a build shipped from a beta toolchain is a variable nobody wants in the mix
+          # when something behaves oddly on device. Betas and RCs are still used when they
+          # are all that is installed - which is the case on this image today, and is how
+          # the iOS 27 SDK is available at all - but the moment a stable of the same or a
+          # higher version appears, it wins without anyone editing this file.
+          STABLE=$(ls -d /Applications/Xcode*.app 2>/dev/null \
+                   | grep -viE "beta|release_candidate|_rc" | sort -V | tail -n1)
+          NEWEST=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -n1)
+          if [ -n "$STABLE" ]; then
+            CHOSEN="$STABLE"
+            echo "Selecting $CHOSEN (stable)"
+          else
+            CHOSEN="$NEWEST"
+            echo "Selecting $CHOSEN - no stable Xcode on this image, so this is the only way to the iOS 27 SDK"
+          fi
+          sudo xcode-select -s "$CHOSEN/Contents/Developer"
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-path
           # Prove which SDK the app is actually built against - this is the whole point
