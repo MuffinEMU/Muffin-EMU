@@ -343,12 +343,17 @@ jobs:
             PayloadSideload/MuffinEMU.app
           # Verified, not assumed. Shipping this without get-task-allow would reproduce
           # exactly the bug it exists to fix, and it would look identical from outside.
+          # Prints what was embedded, then requires get-task-allow specifically.
+          # increased-memory-limit is carried deliberately but is allowed to be dropped by
+          # a re-signer, so it is reported rather than required - only get-task-allow
+          # decides whether a JIT enabler can see the app.
+          codesign -d --entitlements - --xml PayloadSideload/MuffinEMU.app 2>/dev/null \
+            | python3 -c "import sys,plistlib; d=sys.stdin.buffer.read(); i=d.find(b'<?xml'); print('embedded entitlements:', ', '.join(sorted(plistlib.loads(d[i:]))) if i>=0 else '(none)')"
           if ! codesign -d --entitlements - --xml PayloadSideload/MuffinEMU.app 2>/dev/null \
                | python3 -c "import sys,plistlib; d=sys.stdin.buffer.read(); i=d.find(b'<?xml'); sys.exit(0 if i>=0 and plistlib.loads(d[i:]).get('get-task-allow') is True else 1)"; then
             echo "::error::MuffinEMU.ipa was signed without get-task-allow - JIT enablers would not see it"
             exit 1
           fi
-          echo "get-task-allow present"
           # Assembled through iparoot/Payload/, the same shape the TrollStore step below
           # uses. An IPA is a zip whose top-level entry is Payload/ - zipping the app
           # directly produces an archive every installer rejects.
