@@ -292,7 +292,10 @@ class GameManager: ObservableObject {
     /// Already reduced to the BASE title ID - a library entry is always a base game
     /// (see the loadGames() switch above), so there is nothing here that could itself
     /// be a DLC/update needing the reduction skipped.
-    private static func deriveBaseTitleId(romPath: String) -> UInt64? {
+    /// Not private: GameSaveTransfer needs the same answer for a library entry whose
+    /// stored titleId is nil, and deriving it there rather than giving up is the
+    /// difference between the save import working and refusing to run.
+    static func deriveBaseTitleId(romPath: String) -> UInt64? {
         var titleId: UInt64 = 0
         let ok = romPath.withCString { cPath in
             cemu_bridge_derive_title_id(cPath, &titleId)

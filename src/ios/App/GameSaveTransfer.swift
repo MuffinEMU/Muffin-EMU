@@ -39,7 +39,15 @@ enum GameSaveTransfer {
     /// dump could not be read - there is no save path to speak of in that case, and
     /// inventing one would create a folder no emulator would ever look in.
     static func saveDirectory(for game: GameMetadata) -> URL? {
-        guard let titleId = game.titleId, let root = saveRoot else { return nil }
+        // Derived from the ROM when the stored value is missing, rather than giving up.
+        //
+        // GameMetadata.titleId is an optional that is only filled in when a game is
+        // scanned, so every library entry added before that field existed decodes as nil
+        // - and those are exactly the games somebody has been playing long enough to have
+        // a save worth moving. Refusing to compute a path for them made this whole
+        // feature report "couldn't read this game's title ID" and stop, with Export
+        // greyed out beside it.
+        guard let titleId = resolvedTitleId(for: game), let root = saveRoot else { return nil }
         let high = String(format: "%08X", UInt32(truncatingIfNeeded: titleId >> 32))
         let low = String(format: "%08X", UInt32(truncatingIfNeeded: titleId))
         // Resolve what is actually on disk rather than asserting our own spelling, so a
@@ -47,6 +55,17 @@ enum GameSaveTransfer {
         // shadowed by a second, empty, uppercase one.
         let highDir = existingChild(of: root, named: high) ?? root.appendingPathComponent(high, isDirectory: true)
         return existingChild(of: highDir, named: low) ?? highDir.appendingPathComponent(low, isDirectory: true)
+    }
+
+    /// The stored title ID, or one derived from the ROM when it is missing.
+    ///
+    /// GameMetadata.titleId is an optional only filled in when a game is scanned, so every
+    /// library entry added before that field existed decodes as nil - and those are
+    /// exactly the games somebody has played long enough to have a save worth moving.
+    /// Giving up on them made this feature report "couldn't read this game's title ID"
+    /// and stop, with Export greyed out beside it.
+    private static func resolvedTitleId(for game: GameMetadata) -> UInt64? {
+        game.titleId ?? GameManager.deriveBaseTitleId(romPath: game.romPath)
     }
 
     private static func existingChild(of parent: URL, named name: String) -> URL? {
@@ -111,7 +130,9 @@ enum GameSaveTransfer {
         let unsafe = CharacterSet(charactersIn: "/\\:*?\"<>|")
         let title = game.title.components(separatedBy: unsafe).joined(separator: "-")
         let trimmed = String(title.prefix(60)).trimmingCharacters(in: .whitespacesAndNewlines)
-        let id = game.titleId.map { String(format: "%016llX", $0) } ?? "unknown"
+        // The resolved id, not the stored one - otherwise a game whose save this can now
+        // find would still export under a filename saying "unknown".
+        let id = resolvedTitleId(for: game).map { String(format: "%016llX", $0) } ?? "unknown"
         return "\(trimmed.isEmpty ? "Wii U game" : trimmed) [\(id)] save"
     }
 
