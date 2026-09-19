@@ -1,6 +1,4 @@
 import SwiftUI
-// UIDevice, for the running iOS version shown beside the JIT verdict.
-import UIKit
 
 /// First section in the Form on purpose: this is the single decision worth more to
 /// speed than everything below it combined, and it is not really "a setting" - it
@@ -216,20 +214,6 @@ private struct CPUModeRow: View {
                 .foregroundColor(MuffinTheme.brownMid)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Shown right under the JIT verdict because it is the other half of the
-            // question and nothing else in the app says it.
-            //
-            // The recompiler needs a debugger attached (CS_DEBUGGED), which a JIT enabler
-            // provides by mounting a developer disk image for THIS iOS version. When a
-            // device is newer than the enabler supports, the enabler cannot attach and
-            // often will not even list the app - which looks exactly like the app being
-            // broken, and is not. "MuffinEMU is missing from StikDebug" and "this iPad is
-            // on an iOS the tools have not caught up with yet" produce the same symptom,
-            // and the only way to tell them apart is to know the version.
-            Text("iOS \(UIDevice.current.systemVersion) · a JIT enabler must support this version to attach")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
