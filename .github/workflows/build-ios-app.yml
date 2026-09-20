@@ -10,6 +10,8 @@ name: Build MuffinEMU (iOS)
 #   4. An unsigned IPA (SideStore / AltStore / LiveContainer) and an ad-hoc signed one with
 #      the JIT entitlements embedded (TrollStore / jailbroken), both verified, then
 #      published. A build of main is the next numbered release (see Choose the version).
+#      A pull request stops after the verify: it publishes nothing, and the IPAs are
+#      available as run artifacts instead.
 
 on:
   # A manual run on main publishes the next numbered release, exactly like a push.
@@ -17,6 +19,17 @@ on:
   push:
     branches: [ main, ios27-sdk ]
     # Documentation cannot change the binary.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  # A pull request compiles the whole thing and publishes NOTHING - the three
+  # release steps at the end are skipped for this event. Until this existed there
+  # was no way to compile-check a change without a push to main taking the next
+  # release number, or a branch build overwriting the rolling `nightly` tag that
+  # the install sources point at. The IPAs still upload as run artifacts, so a
+  # reviewer can install the exact build under discussion.
+  pull_request:
+    branches: [ main ]
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -502,6 +515,7 @@ jobs:
         # only reads published releases) and looking from the outside like the build
         # simply produced nothing. A retry re-attaches the missing files to the same
         # draft and publishes it.
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         id: publish
         continue-on-error: true
@@ -530,6 +544,7 @@ jobs:
         # Separate from the numbered release above rather than replacing it: the
         # numbered ones are the history people roll back to, and a rolling tag cannot be
         # rolled back to because it does not stay still.
+        if: github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
@@ -564,7 +579,7 @@ jobs:
         # assets is not installable and must not read as a green build. That also means
         # no separate guard step is needed - and a guard checking failure() would never
         # have fired anyway, because continue-on-error above keeps the job green.
-        if: steps.publish.outcome == 'failure'
+        if: github.event_name != 'pull_request' && steps.publish.outcome == 'failure'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.MUFFIN_TAG }}
