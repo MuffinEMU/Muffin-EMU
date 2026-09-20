@@ -39,14 +39,36 @@ def notes_for(rel):
 
 
 
-def nightly_version(rel):
+def nightly_asset_date(rel, ipa):
+    """When the nightly actually last changed.
+
+    Deliberately the ASSET's updated_at, not the release's published_at. The nightly
+    tag is reused by every build, and GitHub keeps published_at at the moment the
+    release was first created - so it froze on the day the rolling tag was made and
+    never moved again, while the IPA underneath it was replaced on every build. Reading
+    it meant the feed advertised one version forever: SideStore compares versions to
+    decide whether an update exists, saw the same string every time, and offered no
+    nightly update at all no matter how much newer the download was.
+
+    The asset is the thing that is actually replaced, so its timestamp is the one that
+    tells the truth about what the download URL now serves.
+    """
+    return ipa.get("updated_at") or ipa.get("created_at") or rel.get("published_at") or rel.get("created_at") or ""
+
+
+def nightly_version(rel, ipa):
     """A version string for the rolling nightly.
 
-    Date-based, so it always sorts above any vX.Y and SideStore always sees the newest
-    nightly as an update. A nightly has no number of its own - the tag it lives on is
-    reused by every build - so there is nothing else honest to put here.
+    Date-based, so it always sorts above any vX.Y and SideStore sees a newer nightly as
+    an update. A nightly has no number of its own - the tag it lives on is reused by
+    every build - so there is nothing else honest to put here.
+
+    Day granularity, which means two nightlies built on the same day share a version and
+    the second is not offered as an update. That is a known limit of the scheme rather
+    than a bug in it; the alternative is inventing a build counter this script has no
+    honest source for.
     """
-    date = (rel.get("published_at") or rel.get("created_at") or "")[:10]
+    date = nightly_asset_date(rel, ipa)[:10]
     y, m, d = (date.split("-") + ["0", "0", "0"])[:3]
     return f"{int(y or 0)}.{int(m or 0)}.{int(d or 0)}"
 
@@ -61,8 +83,8 @@ def build_nightly(rels, asset_name, ident, name, subtitle, app_subtitle, extra_n
     src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note)
     src["apps"][0]["name"] = "MuffinEMU Nightly"
     src["apps"][0]["versions"] = [{
-        "version": nightly_version(rel),
-        "date": rel.get("published_at") or rel.get("created_at"),
+        "version": nightly_version(rel, ipa),
+        "date": nightly_asset_date(rel, ipa),
         "localizedDescription": notes_for(rel),
         "downloadURL": ipa["browser_download_url"],
         "size": ipa["size"],
