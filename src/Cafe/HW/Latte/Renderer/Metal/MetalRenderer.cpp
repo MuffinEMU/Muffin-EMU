@@ -476,6 +476,8 @@ void MetalRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool padV
 
     auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
     auto buffer = bufferAllocator.AllocateBufferMemory(size, 1);
+    if (!buffer.mtlBuffer)
+        return; // out of staging memory - drop the screenshot rather than read from null
 
     blitCommandEncoder->copyFromTexture(texMtl->GetTexture(), 0, 0, MTL::Origin(0, 0, 0), MTL::Size(width, height, 1), buffer.mtlBuffer, buffer.bufferOffset, bytesPerRow, 0);
 
@@ -894,6 +896,8 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
         auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
         auto depthAllocation = bufferAllocator.AllocateBufferMemory(depthDataSize, depthBytesPerTexel);
         auto stencilAllocation = bufferAllocator.AllocateBufferMemory(stencilDataSize, stencilBytesPerTexel);
+        if (!depthAllocation.mtlBuffer || !stencilAllocation.mtlBuffer)
+            return; // out of staging memory - skip the upload rather than write through null
         
         const uint8* sourceData = static_cast<const uint8*>(pixelData);
         uint8* depthData = depthAllocation.memPtr;
@@ -922,6 +926,8 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
     // Allocate a temporary buffer
     auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
     auto allocation = bufferAllocator.AllocateBufferMemory(compressedImageSize, 1);
+    if (!allocation.mtlBuffer)
+        return; // out of staging memory - skip the upload rather than write through null
     memcpy(allocation.memPtr, pixelData, compressedImageSize);
     bufferAllocator.FlushReservation(allocation);
 
@@ -2558,6 +2564,8 @@ void MetalRenderer::PrepareUniformBufferSizes(LatteDecompilerShader* shader)
             GetCommandBuffer();
         auto& allocator = m_memoryManager->GetStagingAllocator();
         auto allocation = allocator.AllocateBufferMemory(required.size, 16);
+        if (!allocation.mtlBuffer)
+            continue; // out of staging memory - leave the binding as it was
         std::memset(allocation.memPtr, 0, allocation.size);
         if (!gpuCopy)
             std::memcpy(allocation.memPtr, static_cast<uint8*>(buffer->contents()) + offset, size);

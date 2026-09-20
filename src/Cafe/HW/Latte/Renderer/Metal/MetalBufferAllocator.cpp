@@ -47,10 +47,22 @@ void MetalSynchronizedRingAllocator::allocateAdditionalUploadBuffer(uint32 sizeR
 	while (bufferAllocSize < sizeRequiredForAlloc)
 		bufferAllocSize += m_minimumBufferAllocSize;
 
+	MTL::Buffer* mtlBuffer = m_mtlr->GetDevice()->newBuffer(bufferAllocSize, m_options);
+	if (!mtlBuffer)
+	{
+		// Out of memory. This used to push the buffer anyway and take contents() of
+		// nil as its base pointer, so every reservation handed out afterwards had a
+		// memPtr offset from null - which the texture upload and readback paths
+		// memcpy straight into. Leave the list alone; AllocateBufferMemory() sees
+		// that it did not grow and reports the failure.
+		cemuLog_log(LogType::Force, "Metal: staging buffer allocation failed, wanted {} bytes", bufferAllocSize);
+		return;
+	}
+
 	AllocatorBuffer_t newBuffer{};
 	newBuffer.writeIndex = 0;
 	newBuffer.basePtr = nullptr;
-	newBuffer.mtlBuffer = m_mtlr->GetDevice()->newBuffer(bufferAllocSize, m_options);
+	newBuffer.mtlBuffer = mtlBuffer;
 	newBuffer.basePtr = (uint8*)newBuffer.mtlBuffer->contents();
 	newBuffer.size = bufferAllocSize;
 	newBuffer.index = (uint32)m_buffers.size();
@@ -112,7 +124,16 @@ MetalSynchronizedRingAllocator::AllocatorReservation_t MetalSynchronizedRingAllo
 	}
 
 	// allocate new buffer
+	const size_t bufferCountBefore = m_buffers.size();
 	allocateAdditionalUploadBuffer(size);
+	if (m_buffers.size() == bufferCountBefore)
+	{
+		// The heap could not grow, so retrying would ask the same question of the same
+		// state and recurse until the stack ran out. Hand back an empty reservation
+		// instead; a null mtlBuffer is what callers check.
+		cemuLog_logOnce(LogType::Force, "Metal: could not reserve {} bytes of staging memory (alignment {})", size, alignment);
+		return AllocatorReservation_t{};
+	}
 
 	return AllocateBufferMemory(size, alignment);
 }
