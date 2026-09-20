@@ -295,7 +295,12 @@ class GameManager: ObservableObject {
     /// Not private: GameSaveTransfer needs the same answer for a library entry whose
     /// stored titleId is nil, and deriving it there rather than giving up is the
     /// difference between the save import working and refusing to run.
-    static func deriveBaseTitleId(romPath: String) -> UInt64? {
+    ///
+    /// nonisolated because it is a pure function of its argument - a path in, two C
+    /// bridge calls, a number out, touching nothing this class owns. Without it the
+    /// only reason it was main-actor bound was the @MainActor on the class, which made
+    /// GameSaveTransfer's own nonisolated lookup fail to compile.
+    nonisolated static func deriveBaseTitleId(romPath: String) -> UInt64? {
         var titleId: UInt64 = 0
         let ok = romPath.withCString { cPath in
             cemu_bridge_derive_title_id(cPath, &titleId)
