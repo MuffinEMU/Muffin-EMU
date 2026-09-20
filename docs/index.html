@@ -122,17 +122,17 @@
 
 <section class="wrap">
   <div class="grid grid-2">
-    <div class="card">
+    <div class="card card-plain">
       <span class="card-icon"><svg aria-hidden="true"><use href="#i-chip"/></svg></span>
       <h3>Its own emulator</h3>
       <p>MuffinEMU grew out of Muffin, but the Cemu core underneath is maintained in this repo, with its own fixes and a curated set of upstream Cemu fixes on top. Own bundle identifier, own releases — it installs next to Muffin rather than replacing it.</p>
     </div>
-    <div class="card">
+    <div class="card card-plain">
       <span class="card-icon"><svg aria-hidden="true"><use href="#i-display"/></svg></span>
       <h3>Metal-native renderer</h3>
       <p>The renderer is Metal, native to this port, with an optional Vulkan (MoltenVK) path. On GPUs without mesh shader support — the A12Z included — BC-compressed textures are decoded on the CPU, and draws that need geometry shaders or RECTS primitives are skipped for now, so a few graphic packs won't render fully.</p>
     </div>
-    <div class="card">
+    <div class="card card-plain">
       <span class="card-icon"><svg aria-hidden="true"><use href="#i-open"/></svg></span>
       <h3>Built in the open</h3>
       <p>Every crash and hang gets tracked and fixed as it's found, not papered over. This site says plainly what's confirmed on real hardware and what isn't — see <a href="#status">Status</a> below.</p>
@@ -226,7 +226,7 @@
 </section>
 
 <section class="wrap">
-  <div class="card">
+  <div class="card card-plain card-narrow">
     <h2 style="margin-top:0">Credits &amp; license</h2>
     <p>Bring your own games and keys. No copyrighted content is distributed here — not games, not system files, not keys.</p>
     <p>MuffinEMU is built on <a href="https://github.com/cemu-project/Cemu">Cemu</a>. Some MeloCafe cores and bug fixes have been brought over, from <a href="https://github.com/stossy11/MeloCafe">stossy11/MeloCafe</a>. The optional melo-controls pad is <a href="https://github.com/stossy11/Melo-Controller">Melo-Controller</a>, also by stossy11 (GPL-3.0). The Vulkan path uses <a href="https://github.com/KhronosGroup/MoltenVK">MoltenVK</a>.</p>

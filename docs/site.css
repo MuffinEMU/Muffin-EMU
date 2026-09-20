@@ -16,12 +16,22 @@
  * near-white `--sparkle` over mid-tone orange, which is around 3:1 and fails AA
  * at body sizes, in every one of the 31 themes.
  *
- * The gradient is now atmosphere rather than ground: it fills the hero band and
- * the footer band, where the text on it is large, short and deliberately
- * scrimmed. Everything in between sits on `--page`, a calm warm paper derived
- * from the theme's own `--cream`. Nothing is invented — `--page` is a mix of two
- * real palette tokens, so it still changes with the theme and still goes dark in
- * dark mode.
+ * The gradient is now atmosphere rather than ground: it fills the hero band
+ * only, where the text on it is large, short and deliberately scrimmed.
+ * Everything else sits on `--page`, a calm warm paper derived from the theme's
+ * own `--cream`. Nothing is invented — `--page` is a mix of two real palette
+ * tokens, so it still changes with the theme and still goes dark in dark mode.
+ *
+ * ── Second pass: fewer boxes, one weight of line ────────────────────────────
+ * The first restyle still read as a pile of shadowed, filled, differently
+ * rounded cards — 17 box-shadow declarations and 10 radii competing for
+ * attention. This pass removes almost all of that: two radii total
+ * (`--radius-sm`, `--radius-lg`), one shadow (`--lift`, reserved for things
+ * that actually float above the page — menus and the skip link), and hairline
+ * `--line` borders standing in for shadow everywhere else. Most grid items
+ * that were filled, shadowed cards are now plain columns separated by space;
+ * the few that stay boxed (the doc-linking grid, the install block) keep only
+ * a 1px border. Icons lost their filled chip backgrounds and shrank.
  *
  * Every class name that existed before still exists, because nine documentation
  * pages consume this file and are edited separately. This is a restyle and an
@@ -53,18 +63,18 @@
   --line-soft: var(--wrapper);
   --line-soft: color-mix(in srgb, var(--wrapper) 85%, transparent);
 
-  /* Two-layer depth: a tight contact shadow plus a wide ambient one. A single
-     mid-radius shadow is the flat-template tell; two read as a real surface. */
-  --lift-1: 0 2px 10px var(--shadow);
-  --lift-1: 0 1px 2px color-mix(in srgb, var(--shadow) 55%, transparent),
-            0 2px 10px color-mix(in srgb, var(--shadow) 30%, transparent);
-  --lift-2: 0 10px 28px var(--shadow);
-  --lift-2: 0 2px 4px color-mix(in srgb, var(--shadow) 55%, transparent),
-            0 10px 28px color-mix(in srgb, var(--shadow) 32%, transparent);
+  /* One quiet shadow, used only for things that actually float above the page
+     (the two popover menus and the focused skip link). Everything that used to
+     carry a shadow to read as "a surface" — cards, buttons, the header —
+     now uses a hairline `--line` border instead. */
+  --lift: 0 6px 20px var(--shadow);
+  --lift: 0 1px 2px color-mix(in srgb, var(--shadow) 40%, transparent),
+          0 6px 20px color-mix(in srgb, var(--shadow) 22%, transparent);
 
-  --radius-sm: 10px;
-  --radius-md: 16px;
-  --radius-lg: 22px;
+  /* Two radii, full stop. Small for controls and inline chrome, large for the
+     handful of things still drawn as a bordered block. */
+  --radius-sm: 8px;
+  --radius-lg: 18px;
   --content-max: 42rem;
   --wide-max: 72rem;
 
@@ -95,7 +105,7 @@ img { max-width: 100%; }
 :where(a, button, summary, [tabindex]):focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 3px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 /* Honours the OS "reduce motion" setting everywhere at once, including the
@@ -119,7 +129,7 @@ img { max-width: 100%; }
   padding: .7rem 1.1rem;
   border-radius: var(--radius-sm);
   font-weight: 700;
-  box-shadow: var(--lift-2);
+  box-shadow: var(--lift);
   text-decoration: none;
 }
 .skip-link:focus { left: .75rem; }
@@ -133,9 +143,13 @@ img { max-width: 100%; }
 a { color: var(--pixel-blue); text-decoration-thickness: .08em; text-underline-offset: .15em; }
 a:hover { text-decoration-thickness: .14em; }
 
-h1, h2, h3, h4 { color: var(--brown-darkest); line-height: 1.2; letter-spacing: -.01em; margin: 0 0 .5rem; }
-h1 { font-size: clamp(2.1rem, 5.5vw, 3.4rem); letter-spacing: -.025em; }
-h2 { font-size: clamp(1.5rem, 3vw, 2.1rem); margin-top: 2.4rem; letter-spacing: -.018em; }
+/* One confident display size for the hero (h1), a clear step down for section
+   titles (h2) and card/subsection titles (h3); h4 is a quiet label size. Four
+   steps, one letter-spacing curve — not the half-dozen near-duplicate sizes
+   the first pass still had. */
+h1, h2, h3, h4 { color: var(--brown-darkest); line-height: 1.2; letter-spacing: -.02em; margin: 0 0 .5rem; }
+h1 { font-size: clamp(2.5rem, 6.5vw, 4rem); letter-spacing: -.03em; }
+h2 { font-size: clamp(1.6rem, 3vw, 2.15rem); margin-top: 2.4rem; }
 h3 { font-size: 1.15rem; margin-top: 1.6rem; }
 h4 { font-size: 1rem; margin-top: 1.2rem; }
 
@@ -149,7 +163,7 @@ code, kbd {
   background: color-mix(in srgb, var(--wrapper) 80%, transparent);
   color: var(--brown-darkest);
   padding: .18em .45em;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow-wrap: anywhere;
 }
 pre {
@@ -169,7 +183,7 @@ pre code { background: none; padding: 0; }
   background: var(--wrapper);
   color: var(--brown-darkest);
   padding: .7rem .85rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   overflow-wrap: anywhere;
   border: 1px solid var(--line-soft);
 }
@@ -212,14 +226,14 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
   white-space: nowrap;
   letter-spacing: -.02em;
 }
-.brand img { width: 30px; height: 30px; border-radius: 22%; display: block; box-shadow: var(--lift-1); }
+.brand img { width: 30px; height: 30px; border-radius: 22%; display: block; }
 
 .site-nav {
   display: flex;
   align-items: center;
   gap: .35rem;
   flex-wrap: wrap;
-  font-size: .92rem;
+  font-size: .9375rem;
   font-weight: 600;
   flex: 1;
 }
@@ -227,13 +241,13 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
   color: var(--brown-dark);
   text-decoration: none;
   padding: .4rem .6rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
+  border-bottom: 2px solid transparent;
 }
-.site-nav a:hover { background: var(--wrapper); color: var(--brown-darkest); }
+.site-nav a:hover { color: var(--brown-darkest); }
 .site-nav a[aria-current="page"] {
-  background: var(--wrapper);
   color: var(--brown-darkest);
-  box-shadow: inset 0 -2px 0 var(--muffin-top-dark);
+  border-bottom-color: var(--muffin-top-dark);
 }
 
 .nav-dropdown { position: relative; }
@@ -245,7 +259,7 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
   align-items: center;
   gap: .3rem;
   padding: .4rem .6rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-weight: 600;
   user-select: none;
 }
@@ -262,8 +276,8 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
   min-width: 240px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  box-shadow: var(--lift-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--lift);
   padding: .4rem;
   display: grid;
   gap: .05rem;
@@ -273,9 +287,9 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
   color: var(--brown-dark);
   display: block;
   padding: .5rem .6rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-weight: 600;
-  font-size: .88rem;
+  font-size: .875rem;
   text-decoration: none;
 }
 .nav-dropdown .dropdown-panel a:hover { background: var(--wrapper); color: var(--brown-darkest); }
@@ -296,16 +310,15 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
   cursor: pointer;
   font: inherit;
   font-weight: 700;
-  font-size: .82rem;
+  font-size: .8125rem;
   color: var(--brown-darkest);
   background: var(--surface);
   padding: .45rem .8rem;
   border-radius: 999px;
-  box-shadow: var(--lift-1);
   white-space: nowrap;
-  transition: transform .12s ease, box-shadow .12s ease;
+  transition: border-color .12s ease, transform .12s ease;
 }
-.theme-btn:hover { box-shadow: var(--lift-2); }
+.theme-btn:hover { border-color: var(--muffin-top-dark); }
 .theme-btn:active { transform: scale(.96); }
 .theme-btn .swatches { display: none; gap: 3px; }
 .theme-btn .swatches i { width: 7px; height: 13px; border-radius: 3px; display: block; }
@@ -324,15 +337,15 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
   overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  box-shadow: var(--lift-2);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--lift);
   padding: .6rem;
   z-index: 70;
 }
 .theme-panel[hidden] { display: none; }
 .theme-panel h4 {
   margin: .1rem .3rem .5rem;
-  font-size: .72rem;
+  font-size: .75rem;
   text-transform: uppercase;
   letter-spacing: .07em;
   color: var(--brown-mid);
@@ -346,12 +359,12 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
   border: 1px solid transparent;
   background: none;
   font: inherit;
-  font-size: .8rem;
+  font-size: .8125rem;
   font-weight: 600;
   color: var(--brown-dark);
   text-align: left;
   padding: .4rem .45rem;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
 }
 .theme-option:hover { background: var(--wrapper); color: var(--brown-darkest); }
@@ -366,22 +379,21 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
 .wrap { max-width: var(--wide-max); margin: 0 auto; padding: 0 1.25rem; }
 .prose-wrap { max-width: var(--content-max); margin: 0 auto; padding: 0 1.25rem; }
 
-section { padding-block: clamp(2rem, 6vw, 4.25rem); }
+section { padding-block: clamp(2.75rem, 7vw, 5.5rem); }
 
-.section-head { max-width: 40rem; margin: 0 auto clamp(1.5rem, 4vw, 2.5rem); text-align: center; }
+.section-head { max-width: 40rem; margin: 0 auto clamp(1.75rem, 4vw, 3rem); text-align: center; }
 .section-head h2 { margin-top: 0; }
 .section-head p { color: var(--brown-mid); margin-bottom: 0; }
 
+/* A quiet kicker, not a pill. Flat text reads calmer above an h1 than a filled
+   chip, and it is the only label on the page that needs no background to work. */
 .eyebrow {
   display: inline-block;
-  font-size: .78rem;
+  font-size: .8125rem;
   font-weight: 800;
-  letter-spacing: .08em;
+  letter-spacing: .09em;
   text-transform: uppercase;
   color: var(--brown-mid);
-  background: var(--wrapper);
-  padding: .3em .8em;
-  border-radius: 999px;
   margin-bottom: 1rem;
 }
 
@@ -413,15 +425,14 @@ section { padding-block: clamp(2rem, 6vw, 4.25rem); }
 }
 .hero > * { position: relative; z-index: 1; }
 .hero .eyebrow {
-  background: color-mix(in srgb, var(--sparkle) 22%, transparent);
   color: var(--sparkle);
-  border: 1px solid color-mix(in srgb, var(--sparkle) 38%, transparent);
+  opacity: .85;
 }
 .hero img.icon {
   width: 104px; height: 104px;
-  border-radius: 23%;
-  filter: drop-shadow(0 16px 30px color-mix(in srgb, var(--shadow) 70%, transparent));
-  margin-bottom: 1.2rem;
+  border-radius: 22%;
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--shadow) 55%, transparent));
+  margin-bottom: 1.4rem;
 }
 .hero h1 { color: var(--sparkle); margin-bottom: .6rem; }
 .hero .lede {
@@ -431,13 +442,13 @@ section { padding-block: clamp(2rem, 6vw, 4.25rem); }
   color: var(--sparkle);
   line-height: 1.55;
 }
-.hero-ctas { display: flex; flex-wrap: wrap; gap: .7rem; justify-content: center; margin-top: 1.8rem; }
+.hero-ctas { display: flex; flex-wrap: wrap; gap: .7rem; justify-content: center; margin-top: 2.2rem; }
 
 /* A compact, honest one-liner under the CTAs. Deliberately part of the hero:
    the first thing a visitor should learn is what is actually confirmed. */
 .hero-note {
-  margin: 1.4rem auto 0;
-  font-size: .87rem;
+  margin: 1.6rem auto 0;
+  font-size: .875rem;
   color: var(--sparkle);
   opacity: .9;
   max-width: 34rem;
@@ -451,81 +462,88 @@ section { padding-block: clamp(2rem, 6vw, 4.25rem); }
   justify-content: center;
   gap: .5rem;
   padding: .78rem 1.3rem;
-  border-radius: 13px;
+  border-radius: var(--radius-sm);
   font-weight: 700;
-  font-size: .95rem;
+  font-size: .9375rem;
   text-decoration: none;
   border: 1px solid transparent;
-  transition: transform .14s ease, box-shadow .14s ease, background .14s ease;
+  transition: transform .14s ease, background .14s ease, border-color .14s ease;
   cursor: pointer;
   line-height: 1.2;
 }
 .btn:active { transform: scale(.975); }
+/* Flat, not gradient — the brand color alone carries it, and one gradient
+   (the hero band) is plenty for one page. */
 .btn-primary {
-  background: linear-gradient(150deg, var(--muffin-top-light), var(--muffin-top-dark));
+  background: var(--muffin-top-dark);
   color: var(--sparkle);
-  box-shadow: var(--lift-2);
   border-color: color-mix(in srgb, var(--muffin-top-dark) 70%, black 10%);
 }
-.btn-primary:hover { box-shadow: 0 4px 8px color-mix(in srgb, var(--shadow) 55%, transparent), 0 14px 34px color-mix(in srgb, var(--shadow) 40%, transparent); }
+.btn-primary:hover { background: color-mix(in srgb, var(--muffin-top-dark) 88%, black 6%); }
 .btn-secondary {
-  background: var(--surface);
+  background: transparent;
   color: var(--brown-darkest);
   border-color: var(--line);
-  box-shadow: var(--lift-1);
 }
 .btn-secondary:hover { background: var(--wrapper); }
 /* Used on the gradient hero, so it stays a light outline there. */
-.btn-outline { background: color-mix(in srgb, var(--sparkle) 14%, transparent); color: var(--sparkle); border-color: color-mix(in srgb, var(--sparkle) 55%, transparent); }
-.btn-outline:hover { background: color-mix(in srgb, var(--sparkle) 24%, transparent); }
-.btn-sm { padding: .55rem .95rem; font-size: .85rem; border-radius: 10px; }
+.btn-outline { background: color-mix(in srgb, var(--sparkle) 12%, transparent); color: var(--sparkle); border-color: color-mix(in srgb, var(--sparkle) 45%, transparent); }
+.btn-outline:hover { background: color-mix(in srgb, var(--sparkle) 20%, transparent); }
+.btn-sm { padding: .55rem .95rem; font-size: .8125rem; }
 
 /* ---------------------------------------------------------------- cards ---- */
-/* The 5px coloured top border is gone. It was the strongest thing on every card
-   and it pointed at nothing; a hairline plus real depth reads as a surface
-   rather than as a template. */
+/* No fill, no shadow — a hairline border is the entire "card" now. Add
+   `.card-plain` (below) for groups that read better as plain typography with
+   no box at all; that is most of them. */
 .card {
-  background: var(--surface);
+  background: transparent;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  padding: clamp(1.25rem, 3vw, 1.6rem);
-  box-shadow: var(--lift-1);
+  padding: clamp(1.5rem, 3vw, 1.85rem);
 }
 .card h3 { margin-top: 0; }
 .card p:last-child { margin-bottom: 0; }
-.card-lift { transition: transform .16s ease, box-shadow .16s ease; }
-.card-lift:hover { transform: translateY(-2px); box-shadow: var(--lift-2); }
+/* No lift, no shadow on hover — just a quieter/louder border, so a click
+   target still announces itself without adding weight back in. */
+.card-lift { transition: border-color .16s ease; }
+.card-lift:hover { border-color: var(--muffin-top-dark); }
+
+/* A "card" with nothing to border: same rhythm and padding, but it reads as a
+   plain block of content rather than a box. Used for one-off groups (three
+   across in the intro, the credits block) where a grid of hairlines would just
+   be more boxes-in-boxes for no reason. */
+.card-plain { border: none; padding: 0; }
+/* Caps a block at the comfortable reading measure without re-adding the side
+   padding `.prose-wrap` would (it's already inside a `.wrap`). */
+.card-narrow { max-width: var(--content-max); margin-inline: auto; }
 
 .grid {
   display: grid;
-  gap: 1.1rem;
+  gap: 1.5rem;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 .grid-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
 
-/* Replaces the emoji tile. Emoji rendered differently on every platform and was
-   the loudest thing in each card; an inline SVG inherits currentColor and sits
-   at a consistent weight. */
+/* Replaces the emoji tile, and now the filled chip too. Small, low-contrast,
+   inline with the heading — a mark, not a badge. */
 .card-icon {
-  width: 2.5rem; height: 2.5rem;
   display: inline-flex; align-items: center; justify-content: center;
-  background: var(--wrapper);
-  color: var(--muffin-top-dark);
-  border-radius: 12px;
-  margin-bottom: .85rem;
+  color: var(--brown-mid);
+  margin-bottom: .6rem;
 }
-.card-icon svg { width: 1.3rem; height: 1.3rem; display: block; }
+.card-icon svg { width: 1.4rem; height: 1.4rem; display: block; }
+.card-lift:hover .card-icon { color: var(--muffin-top-dark); }
 
 .feature-card .emoji {
   width: 2.4rem; height: 2.4rem;
   display: inline-flex; align-items: center; justify-content: center;
   font-size: 1.3rem;
   background: var(--wrapper);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   margin-bottom: .8rem;
 }
 .feature-card a.more {
-  font-size: .85rem;
+  font-size: .8125rem;
   font-weight: 700;
   text-decoration: none;
   display: inline-flex;
@@ -541,18 +559,19 @@ section { padding-block: clamp(2rem, 6vw, 4.25rem); }
 /* --------------------------------------------------------------- pills ---- */
 .pillrow { display: flex; flex-wrap: wrap; gap: .5rem; margin: .8rem 0; }
 .pill {
-  font-size: .8rem; font-weight: 700;
-  padding: .35em .85em;
+  font-size: .8125rem; font-weight: 700;
+  padding: .3em .8em;
   border-radius: 999px;
-  background: var(--wrapper);
+  border: 1px solid var(--line);
   color: var(--brown-mid);
 }
-.pill.accent { background: var(--pixel-blue); color: var(--sparkle); }
-.pill.pro { background: var(--navy); color: var(--sparkle); }
+.pill.accent { border-color: var(--pixel-blue); color: var(--pixel-blue); }
+.pill.pro { border-color: var(--navy); color: var(--navy); }
 
 /* -------------------------------------------------------------- status ---- */
 /* The project's credibility section, so it gets real iconography rather than
-   ✅/🚧. .yes and .partial keep their names — the docs pages use them. */
+   ✅/🚧. .yes and .partial keep their names — the docs pages use them. A ring,
+   not a filled disc: quieter, still legible as two distinct states. */
 .status-list { list-style: none; margin: 0; padding: 0; }
 .status-list li {
   padding-left: 1.9rem;
@@ -563,32 +582,22 @@ section { padding-block: clamp(2rem, 6vw, 4.25rem); }
 .status-list li::before {
   position: absolute;
   left: 0; top: .15em;
-  width: 1.25rem; height: 1.25rem;
+  width: 1.2rem; height: 1.2rem;
   border-radius: 50%;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: .78rem; font-weight: 900; line-height: 1;
+  font-size: .72rem; font-weight: 900; line-height: 1;
+  border: 1.5px solid currentColor;
 }
-.status-list .yes::before {
-  content: "✓";
-  background: color-mix(in srgb, #2E7D46 18%, var(--surface));
-  color: #2E7D46;
-  border: 1px solid color-mix(in srgb, #2E7D46 42%, transparent);
-}
-.status-list .partial::before {
-  content: "–";
-  background: color-mix(in srgb, var(--muffin-top-dark) 16%, var(--surface));
-  color: var(--muffin-top-dark);
-  border: 1px solid color-mix(in srgb, var(--muffin-top-dark) 42%, transparent);
-}
-.status-card-yes { border-top: 3px solid #2E7D46; }
-.status-card-open { border-top: 3px solid var(--muffin-top-dark); }
+.status-list .yes::before { content: "✓"; color: #2E7D46; }
+.status-list .partial::before { content: "–"; color: var(--muffin-top-dark); }
+.status-card-yes { border-color: color-mix(in srgb, #2E7D46 35%, var(--line)); }
+.status-card-open { border-color: color-mix(in srgb, var(--muffin-top-dark) 35%, var(--line)); }
 
 /* -------------------------------------------------------------- notes ---- */
 .note, .warn, .verified {
-  border-left: 4px solid var(--blush);
-  background: color-mix(in srgb, var(--wrapper) 70%, var(--surface));
-  padding: .9rem 1.1rem;
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-left: 3px solid var(--blush);
+  background: none;
+  padding: .2rem 0 .2rem 1.1rem;
   margin: 1.1rem 0;
 }
 .note p:last-child, .warn p:last-child, .verified p:last-child { margin-bottom: 0; }
@@ -598,28 +607,25 @@ section { padding-block: clamp(2rem, 6vw, 4.25rem); }
 
 /* -------------------------------------------------------------- tables ---- */
 .table-wrap { overflow-x: auto; margin: 1.2rem 0; border: 1px solid var(--line); border-radius: var(--radius-sm); }
-table { width: 100%; border-collapse: collapse; font-size: .92rem; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: .9375rem; background: var(--surface); }
 th, td { text-align: left; padding: .7rem .85rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
-th { background: var(--wrapper); color: var(--brown-darkest); font-size: .82rem; text-transform: uppercase; letter-spacing: .04em; }
+th { background: var(--wrapper); color: var(--brown-darkest); font-size: .8125rem; text-transform: uppercase; letter-spacing: .04em; }
 tr:last-child td { border-bottom: none; }
 
 /* ------------------------------------------------------------- footer ---- */
-/* The gradient's second home, so --sparkle still has something to sit on. */
+/* Plain, not a second gradient band — one atmospheric moment (the hero) is
+   enough for a calm page. Just a hairline and quiet type. */
 .site-footer {
   text-align: center;
-  color: var(--sparkle);
-  font-size: .88rem;
-  padding: clamp(2rem, 5vw, 3rem) 1.25rem;
-  margin-top: clamp(2rem, 6vw, 4rem);
-  background-image:
-    linear-gradient(180deg,
-      color-mix(in srgb, var(--shadow) 22%, transparent),
-      color-mix(in srgb, var(--shadow) 10%, transparent)),
-    var(--bg-image);
+  color: var(--brown-mid);
+  font-size: .875rem;
+  padding: clamp(2.5rem, 5vw, 3.5rem) 1.25rem;
+  margin-top: clamp(2.75rem, 6vw, 4.5rem);
+  border-top: 1px solid var(--line);
 }
-.site-footer a { color: var(--sparkle); }
+.site-footer a { color: var(--brown-dark); }
 .site-footer p { margin: 0 0 .35rem; }
-.site-footer p:last-child { margin-bottom: 0; opacity: .88; }
+.site-footer p:last-child { margin-bottom: 0; opacity: .85; }
 
 /* --------------------------------------------------------- docs layout ---- */
 .docs-shell {
@@ -634,14 +640,13 @@ tr:last-child td { border-bottom: none; }
 .docs-sidebar {
   position: sticky;
   top: 4.5rem;
-  background: var(--surface);
+  background: transparent;
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: 1rem;
-  box-shadow: var(--lift-1);
 }
 .docs-sidebar .sidebar-title {
-  font-size: .74rem;
+  font-size: .75rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .07em;
@@ -652,10 +657,10 @@ tr:last-child td { border-bottom: none; }
 .docs-sidebar a {
   color: var(--brown-dark);
   text-decoration: none;
-  font-size: .89rem;
+  font-size: .875rem;
   font-weight: 600;
   padding: .5rem .6rem;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   display: block;
 }
 .docs-sidebar a:hover { background: var(--wrapper); color: var(--brown-darkest); }
@@ -664,11 +669,10 @@ tr:last-child td { border-bottom: none; }
 /* Now that the page ground is paper rather than gradient, the content column
    needs its own edge or it dissolves into the background. */
 .docs-content {
-  background: var(--surface);
+  background: transparent;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: clamp(1.5rem, 4vw, 2.75rem);
-  box-shadow: var(--lift-1);
   color: var(--brown-dark);
 }
 .docs-content h1 { margin-bottom: .3rem; }
@@ -693,7 +697,7 @@ tr:last-child td { border-bottom: none; }
 
 @media (max-width: 560px) {
   .header-inner { padding: .55rem .85rem; gap: .5rem; }
-  .site-nav { gap: .15rem; font-size: .88rem; }
+  .site-nav { gap: .15rem; font-size: .875rem; }
   .site-nav a, .nav-dropdown summary { padding: .35rem .45rem; }
   .theme-btn span[data-theme-name] { display: none; }
   .theme-btn { padding: .45rem .6rem; }
@@ -723,7 +727,7 @@ tr:last-child td { border-bottom: none; }
 .install-foot {
   margin: 1.4rem auto 0;
   max-width: 34rem;
-  font-size: .87rem;
+  font-size: .875rem;
   color: var(--brown-mid);
 }
 .status-grid { align-items: start; }

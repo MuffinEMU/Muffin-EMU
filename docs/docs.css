@@ -10,40 +10,27 @@
    landing page never pays for CSS only the docs use, and the two can be
    worked on independently without fighting over one file.
 
+   WHAT THIS PASS DID
+   site.css already carries most of the weight now: hairline borders, two
+   shadow tiers (--lift-1/--lift-2), a handful of radius tokens, real
+   surfaces. Anything docs.css used to re-declare that site.css already
+   provides — the skip link, .url, .table-wrap's scroll behaviour, focus
+   rings on links/buttons, .visually-hidden — was deleted rather than kept
+   "just in case". What is left is only the shapes long-form reference
+   material needs and the marketing chrome doesn't: a quiet on-page index,
+   one restrained callout/step/table-of-contents system built from hairline
+   rules instead of boxes, and a capped reading measure.
+
    THE COLOUR CONTRACT
-   Every colour below comes from the fifteen custom properties theme.js sets
-   on document.documentElement at runtime:
-     --bg-top --bg-bottom --bg-image --blush --brown-dark --brown-darkest
-     --brown-mid --cream --muffin-top-dark --muffin-top-light --navy
-     --pixel-blue --shadow --sparkle --wrapper
-   Those are guaranteed present on every page that loads theme.js, whatever
-   site.css happens to look like, which is what makes this file safe to write
-   while site.css is being rewritten. Anything NOT in that list (--radius-*,
-   --content-max) is a site.css variable and always carries a fallback.
-
-   All 31 themes flow through those tokens, so nothing here hardcodes a hex
-   except where a colour has to mean a fixed thing regardless of theme — see
-   .callout-unverified.
+   Every colour below comes from the fourteen custom properties theme.js
+   sets on document.documentElement at runtime (--bg-top, --bg-bottom,
+   --bg-image, --blush, --brown-dark, --brown-darkest, --brown-mid, --cream,
+   --muffin-top-dark, --muffin-top-light, --navy, --pixel-blue, --shadow,
+   --sparkle) or from site.css's own derived tokens (--line, --line-soft,
+   --radius-sm/md/lg, --lift-1/--lift-2, --content-max), which always carry
+   a fallback. Nothing here hardcodes a hex except .callout-unverified's
+   amber, which has to mean the same thing in every theme — see below.
    =========================================================================== */
-
-/* --- Skip link -----------------------------------------------------------
-   First focusable thing on every page. Visually hidden until focused, which
-   is the only way a keyboard user can skip a nav that has a dropdown in it. */
-.skip-link {
-  position: absolute;
-  left: -9999px;
-  top: 0;
-  z-index: 100;
-  padding: .7rem 1.1rem;
-  background: var(--pixel-blue);
-  color: #fff;
-  border-radius: 0 0 var(--radius-md, 12px) 0;
-  font-weight: 700;
-  text-decoration: none;
-}
-.skip-link:focus {
-  left: 0;
-}
 
 /* --- Breadcrumbs ---------------------------------------------------------
    Tells you where you are without spending a whole line on it. The separator
@@ -51,7 +38,7 @@
 .docs-breadcrumb {
   font-size: .82rem;
   margin-bottom: .9rem;
-  opacity: .8;
+  opacity: .75;
 }
 .docs-breadcrumb ol {
   list-style: none;
@@ -70,38 +57,42 @@
 .docs-breadcrumb [aria-current="page"] { font-weight: 600; opacity: .95; }
 
 /* --- On this page --------------------------------------------------------
-   Only on pages long enough to need it. Deliberately a plain list rather than
-   a sticky rail: a sticky TOC on a phone eats the screen the content needs,
-   and these pages are short enough that jumping once is sufficient. */
+   Only on pages long enough to need it. A quiet inline list under a hairline
+   rule, not a panel — the content is one click away either way, so the only
+   job here is to be scannable without competing with the page it indexes. */
 .docs-toc {
-  border: 1px solid var(--wrapper);
-  border-left: 3px solid var(--pixel-blue);
-  border-radius: var(--radius-md, 12px);
-  padding: .9rem 1.1rem;
-  margin: 1.4rem 0 2rem;
-  background: color-mix(in srgb, var(--cream) 55%, transparent);
+  margin: 1.5rem 0 2.2rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--line);
 }
 .docs-toc p {
-  margin: 0 0 .5rem;
+  margin: 0 0 .6rem;
   font-size: .76rem;
   font-weight: 800;
   letter-spacing: .06em;
   text-transform: uppercase;
-  opacity: .7;
+  opacity: .65;
 }
-.docs-toc ul { list-style: none; margin: 0; padding: 0; }
-.docs-toc li { margin: .3rem 0; }
+.docs-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1.4rem;
+}
+.docs-toc li { margin: 0; }
 .docs-toc a { text-decoration-thickness: .08em; text-underline-offset: .15em; }
 
 /* --- Callouts ------------------------------------------------------------
-   Three kinds, because they carry three different weights of meaning and
-   flattening them into one grey box is how a real warning gets skimmed past. */
+   One shape — a hairline-weight rule in an accent colour plus the same
+   inline padding as the surrounding prose — carrying three different
+   weights of meaning, so a real warning still reads as heavier than an
+   aside without either one turning into a filled box. */
 .callout {
-  border-radius: var(--radius-md, 12px);
-  padding: .95rem 1.15rem;
-  margin: 1.3rem 0;
-  border: 1px solid var(--wrapper);
-  border-left-width: 4px;
+  border-left: 3px solid var(--pixel-blue);
+  padding: .05rem 0 .05rem 1.1rem;
+  margin: 1.5rem 0;
 }
 .callout > :first-child { margin-top: 0; }
 .callout > :last-child { margin-bottom: 0; }
@@ -125,21 +116,24 @@
    This project keeps a docs/_archive_original_claims/ directory precisely
    because claims were once overstated and had to be walked back. This callout
    exists so an honest "we have not confirmed this" is visually louder than the
-   surrounding prose rather than a parenthetical someone skims past.
+   surrounding prose rather than a parenthetical someone skims past — the one
+   place a wash of colour is earned rather than decorative.
    The amber is deliberately NOT a theme token: an honesty marker that changes
    colour with the palette stops reading as a marker. */
 .callout-unverified {
   border-left-color: #C77700;
-  background: color-mix(in srgb, #C77700 8%, transparent);
+  background: color-mix(in srgb, #C77700 6%, transparent);
+  padding-block: .85rem;
 }
 
 /* --- Numbered steps ------------------------------------------------------
    A real <ol>, so the numbers are content rather than decoration and survive
-   with CSS off. The counter is only the circle. */
+   with CSS off. The counter is only the circle, and the circle is the one
+   piece of colour in the list — everything else is plain text on paper. */
 .step-list {
   list-style: none;
   counter-reset: step;
-  margin: 1.2rem 0;
+  margin: 1.3rem 0;
   padding: 0;
 }
 .step-list > li {
@@ -153,38 +147,36 @@
   position: absolute;
   left: 0;
   top: -.1rem;
-  width: 1.8rem;
-  height: 1.8rem;
+  width: 1.75rem;
+  height: 1.75rem;
   display: grid;
   place-items: center;
   border-radius: 50%;
   background: var(--pixel-blue);
   color: #fff;
-  font-weight: 800;
+  font-weight: 700;
   font-size: .85rem;
 }
 .step-list > li > :first-child { margin-top: 0; }
 
 /* --- Choice cards --------------------------------------------------------
-   For "pick one of these paths". Used by installation.html, where the single
-   most common failure is installing the wrong IPA for your install method. */
+   For "pick one of these paths". Same hairline-rule system as .symptom below
+   rather than a boxed card — a top rule and whitespace are enough to read
+   two options as siblings. */
 .choice-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
-  gap: 1rem;
-  margin: 1.3rem 0;
+  gap: 1.8rem 2.2rem;
+  margin: 1.5rem 0;
 }
 .choice-card {
-  border: 1px solid var(--wrapper);
-  border-top: 3px solid var(--muffin-top-light);
-  border-radius: var(--radius-md, 12px);
-  padding: 1.1rem 1.2rem;
-  background: color-mix(in srgb, var(--cream) 45%, transparent);
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
 }
 .choice-card h3 { margin-top: 0; }
 .choice-card .choice-file {
   font-size: .85rem;
-  opacity: .85;
+  opacity: .8;
   margin: .2rem 0 .8rem;
 }
 .choice-card ul { margin: .6rem 0 0; padding-left: 1.1rem; }
@@ -194,68 +186,68 @@
    The heading IS the symptom, in the words someone would actually use, so
    Ctrl-F finds it. The first paragraph after it answers; everything else
    explains. That ordering is enforced by writing, not by CSS — this just makes
-   the answer visually distinct from the explanation. */
+   the answer visually distinct from the explanation. The reset below targets
+   h2, which is what every symptom section actually uses; a stale h3 selector
+   here never matched anything. */
 .symptom {
-  border-top: 1px solid var(--wrapper);
+  border-top: 1px solid var(--line);
   padding-top: 1.3rem;
-  margin-top: 1.6rem;
+  margin-top: 1.8rem;
 }
-.symptom > h3 { margin-top: 0; }
-.symptom-answer {
-  font-weight: 600;
+.symptom > h2:first-child,
+.symptom > h3:first-child { margin-top: 0; }
+.symptom-answer { font-weight: 600; }
+
+/* --- Reading measure ------------------------------------------------------
+   .docs-content has no width cap of its own — it fills whatever the sidebar
+   grid leaves it, which is comfortable for a table but too wide for a line
+   of prose on a large screen. Tables, code and callouts stay full width,
+   since those are the parts meant to be scanned densely. */
+.docs-content p,
+.docs-content li,
+.docs-content .subtitle {
+  max-width: var(--content-max, 42rem);
 }
 
-/* --- Tables --------------------------------------------------------------
-   .table-wrap already exists in site.css; this only makes sure a wide table
-   can always be reached on a narrow screen and announces itself as scrollable
-   to assistive tech. */
-.table-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.table-wrap:focus-visible { outline: 2px solid var(--pixel-blue); outline-offset: 2px; }
-.docs-content th { text-align: left; }
+/* A restrained scale for long-form reading — site.css's clamp() values are
+   tuned for the marketing hero, which reads as loud at the top of a
+   reference page read start to finish. */
+.docs-content h1 { font-size: clamp(1.9rem, 4vw, 2.5rem); }
+.docs-content h2 { font-size: 1.45rem; }
 
-/* --- Code ----------------------------------------------------------------
-   Long shell commands and file paths are the main cause of horizontal page
-   scroll on a phone. A <pre> gets its own scroll container; inline <code>
-   wraps instead, because a path in the middle of a sentence should not create
-   a scrollbar. */
-.docs-content pre {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  max-width: 100%;
-}
-.docs-content :not(pre) > code {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-.url {
-  display: inline-block;
-  overflow-wrap: anywhere;
-  word-break: break-all;
-  max-width: 100%;
-}
+/* --- Tables ---------------------------------------------------------------
+   .table-wrap's box, border and horizontal scroll already come from
+   site.css; this only adds the momentum-scroll behaviour iOS needs on a
+   scrollable region. */
+.table-wrap { -webkit-overflow-scrolling: touch; }
 
-/* --- Install buttons -----------------------------------------------------
-   Was an inline style attribute on installation.html. Moved here so the page
-   carries no presentation of its own. */
+/* --- Code & URLs -----------------------------------------------------------
+   Long shell commands are the main cause of horizontal page scroll on a
+   phone; site.css already wraps inline code and scrolls <pre> — this only
+   adds iOS momentum scrolling and lets a bare URL sit inline in a sentence
+   instead of forcing site.css's block layout. */
+.docs-content pre { -webkit-overflow-scrolling: touch; }
+.url { display: inline-block; max-width: 100%; }
+
+/* --- Install buttons -------------------------------------------------------
+   site.css's .install-row centers its buttons for the landing page's install
+   card; here they sit left-aligned under a left-aligned heading in the
+   normal flow of prose. */
 .install-row {
   display: flex;
   flex-wrap: wrap;
   gap: .7rem;
+  justify-content: flex-start;
   margin: 1rem 0 .8rem;
 }
 
-/* --- Docs hub cards ------------------------------------------------------
-   The hub page was a grid of cards whose entire surface should be clickable,
-   not just the four words in the heading. The ::after trick keeps one real
-   link in the markup (so the accessible name is the heading text) while making
-   the whole card the hit target. */
-.doc-card {
-  position: relative;
-  transition: transform .18s ease, box-shadow .18s ease;
-}
+/* --- Docs hub cards --------------------------------------------------------
+   The hub page is a grid of site.css's own .card, with .card-lift supplying
+   the hover/focus lift — nothing docs-specific to add there. What's left is
+   making the whole card clickable: the ::after trick keeps one real link in
+   the markup (so the accessible name is the heading text) while making the
+   full surface the hit target. */
+.doc-card { position: relative; }
 .doc-card h3 { margin: .5rem 0 .4rem; }
 .doc-card h3 a { text-decoration: none; }
 .doc-card h3 a::after {
@@ -264,39 +256,17 @@
   inset: 0;
   border-radius: inherit;
 }
-.doc-card:hover { transform: translateY(-2px); }
 .doc-card:focus-within {
   outline: 2px solid var(--pixel-blue);
   outline-offset: 3px;
-}
-.doc-card .emoji { font-size: 1.6rem; line-height: 1; }
-
-/* --- Focus ---------------------------------------------------------------
-   One visible focus ring everywhere in the docs. Uses :focus-visible so it
-   appears for keyboards and not for mouse clicks. */
-.docs-content a:focus-visible,
-.docs-sidebar a:focus-visible,
-.docs-toc a:focus-visible,
-.docs-breadcrumb a:focus-visible {
-  outline: 2px solid var(--pixel-blue);
-  outline-offset: 2px;
-  border-radius: 3px;
-}
-
-/* --- Reduced motion ------------------------------------------------------
-   Everything above that moves is decorative, so honouring the preference
-   costs nothing. */
-@media (prefers-reduced-motion: reduce) {
-  .doc-card { transition: none; }
-  .doc-card:hover { transform: none; }
-  html { scroll-behavior: auto; }
+  border-radius: inherit;
 }
 
 /* --- Narrow screens ------------------------------------------------------
    Target is 360px. The sidebar stops being a rail and becomes a plain block
-   above the content, which is what it already is semantically. */
+   above the content, which is what it already is semantically (site.css
+   handles that breakpoint); this only tightens step spacing to match. */
 @media (max-width: 860px) {
-  .docs-toc { margin: 1.1rem 0 1.5rem; }
   .step-list > li { padding-left: 2.3rem; }
 }
 
@@ -314,71 +284,36 @@
    sidebar listing the page you are already on is furniture. It keeps the same
    header, nav and footer as the other eight, which is what the shell
    consistency rule actually asks for. */
-.docs-hub {
-  padding-block: 2.5rem 4rem;
-}
-.docs-hub > p.subtitle {
-  max-width: 42rem;
-}
-.doc-card-grid {
-  margin-top: 2rem;
-}
-
-/* An <h2> that exists for the document outline but would be noise on screen -
-   the eight cards under it are self-evidently the list of pages. Clipped rather
-   than display:none, because display:none removes it from the accessibility
-   tree too, which defeats the point of having it there at all. */
-.visually-hidden-heading {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
+.docs-hub { padding-block: 2.5rem 4rem; }
+.docs-hub > p.subtitle { max-width: 42rem; }
+.doc-card-grid { margin-top: 2rem; }
 
 /* ---------------------------------------------------------------------------
    Theme gallery (docs/themes.html)
 
-   These five rules were lost, not deliberately dropped. They lived in a <style>
-   block inside themes.html, and that block was removed by the pass that took
-   every page's inline styling out - correct in principle, except this was the one
-   block whose rules had nowhere else to go.
-
-   They were invisible to the usual check, too: the markup they style is BUILT IN
-   JS (btn.className = "theme-swatch"), so a scan of class="..." attributes in the
-   HTML finds nothing and reports the page clean. Without them the gallery still
-   lays out, because the container also carries .grid - it just loses the swatch
-   sizing, the label bar and the Pro badge entirely, which looks like a broken
-   page rather than a missing rule.
-
-   Carried over from the original definitions, with two changes: --radius-sm and
-   --shadow are given fallbacks in case the shared sheet renames them, and the
-   grid's own column width is kept tighter than .grid's 240px because a swatch is
-   a colour chip, not a card.
+   The swatch grid is built in JS (btn.className = "theme-swatch"), so it's
+   invisible to a scan of class="..." in the HTML. --radius-sm gets a fallback
+   because site.css is what defines it and is being rewritten concurrently;
+   the shadow is one tier of site.css's own --shadow token rather than a
+   hand-rolled value, kept deliberately light since a swatch only needs to
+   read as a raised chip, not a card. A swatch is a colour chip, so its own
+   grid column is tighter than .grid's 240px default.
    --------------------------------------------------------------------------- */
 .theme-grid {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 1rem;
 }
-
 .theme-swatch {
   border-radius: var(--radius-sm, 10px);
   overflow: hidden;
-  box-shadow: 0 6px 16px var(--shadow, rgba(0, 0, 0, .18));
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--shadow) 45%, transparent);
   cursor: pointer;
   border: none;
   padding: 0;
   text-align: left;
   font: inherit;
 }
-
 .theme-swatch .swatch-bg { height: 64px; }
-
 .theme-swatch .swatch-label {
   background: var(--cream);
   padding: .5rem .6rem;
@@ -390,19 +325,10 @@
   justify-content: space-between;
   gap: .4rem;
 }
-
 .theme-swatch .swatch-label .pro-badge {
   font-size: .62rem;
   background: var(--navy);
   color: var(--sparkle);
   padding: .12em .5em;
   border-radius: 999px;
-}
-
-/* The swatch is a real button, so it needs a real focus ring - the original
-   block set `border: none` without one, which is only survivable when the rule
-   sits next to the markup it styles. */
-.theme-swatch:focus-visible {
-  outline: 3px solid var(--pixel-blue);
-  outline-offset: 2px;
 }
