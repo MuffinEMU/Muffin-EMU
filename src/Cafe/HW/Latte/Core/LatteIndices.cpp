@@ -768,6 +768,19 @@ void LatteIndices_decode(const void* indexData, LatteIndexType indexType, uint32
 	// query index buffer from renderer
 	indexAllocation = g_renderer->indexData_reserveIndexMemory(indexOutputSize);
 	void* indexOutputPtr = indexAllocation.mem;
+	if (!indexOutputPtr)
+	{
+		// The renderer could not reserve index memory. Report an empty index buffer and
+		// return before anything is decoded or cached - decoding into a null pointer is
+		// a guaranteed crash, and leaving the result uncached lets a later draw retry.
+		// renderIndexType is left as the real index type on purpose, so the renderer
+		// takes its indexed path, finds no allocation and skips the draw instead of
+		// drawing the vertices unindexed.
+		outputCount = 0;
+		indexMin = 0;
+		indexMax = 0;
+		return;
+	}
 
 	// decode indices
 	indexMin = std::numeric_limits<uint32>::max();

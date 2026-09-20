@@ -61,6 +61,12 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     snapshot.allocation = m_snapshotAllocator.AllocateBufferMemory(std::max(size, 1u), 256);
     snapshot.firstByte = firstByte;
     snapshot.endByte = size;
+    if (!snapshot.allocation)
+    {
+        // Out of buffer memory. The reuse check above starts with a null test, so leaving
+        // the slot empty simply means the next call re-tries the upload.
+        return nullptr;
+    }
     std::memcpy(snapshot.allocation->memPtr + firstByte, source + firstByte, copySize);
     m_snapshotAllocator.FlushReservation(snapshot.allocation);
     m_mtlr->GetPerformanceMonitor().m_snapshotBytes += copySize;
@@ -103,6 +109,13 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     const uint32 alignment = std::max<uint32>(256, static_cast<uint32>(encoder->alignment()));
     snapshot.allocation = m_snapshotAllocator.AllocateBufferMemory(static_cast<uint32>(encoder->encodedLength()), alignment);
     auto* allocation = snapshot.allocation;
+    if (!allocation)
+    {
+        // Out of buffer memory. The bindings and encoder recorded above still describe
+        // what this slot holds (nothing), so the cache stays consistent and the caller
+        // skips the draw.
+        return nullptr;
+    }
     std::memset(allocation->memPtr, 0, allocation->size);
     encoder->setArgumentBuffer(allocation->mtlBuffer, allocation->bufferOffset);
     for (uint32 index = 0; index < bindings.size(); ++index)

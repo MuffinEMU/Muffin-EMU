@@ -1825,14 +1825,19 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     else
     {
         if (hostIndexType != INDEX_TYPE::NONE)
-           {
-               auto mtlIndexType = GetMtlIndexType(hostIndexType);
-            renderCommandEncoder->drawIndexedPrimitives(mtlPrimitiveType, hostIndexCount, mtlIndexType, indexAllocationMtl->mtlBuffer, indexAllocationMtl->bufferOffset, instanceCount, static_cast<NS::Integer>(signedBaseVertex), baseInstance);
-           }
-           else
-           {
-              renderCommandEncoder->drawPrimitives(mtlPrimitiveType, baseVertex, count, instanceCount, baseInstance);
-           }
+        {
+            // indexAllocationMtl is null when index memory could not be reserved. The
+            // draw has no indices to read, so issue nothing rather than dereference it.
+            if (indexAllocationMtl)
+            {
+                auto mtlIndexType = GetMtlIndexType(hostIndexType);
+                renderCommandEncoder->drawIndexedPrimitives(mtlPrimitiveType, hostIndexCount, mtlIndexType, indexAllocationMtl->mtlBuffer, indexAllocationMtl->bufferOffset, instanceCount, static_cast<NS::Integer>(signedBaseVertex), baseInstance);
+            }
+        }
+        else
+        {
+            renderCommandEncoder->drawPrimitives(mtlPrimitiveType, baseVertex, count, instanceCount, baseInstance);
+        }
     }
 
     m_state.m_isFirstDrawInRenderPass = false;
@@ -1915,6 +1920,17 @@ void MetalRenderer::draw_updateVertexBuffersDirectAccess(uint32 minIndex, uint32
                 auto* allocation = m_memoryManager->GetCachedSnapshot(MetalMemoryManager::VertexSnapshotBase + bufferIndex,
                     memory_getPointerFromVirtualOffset(bufferAddress), bufferSize, firstByte);
 
+                if (!allocation)
+                {
+                    // The snapshot could not be allocated. Unbind the slot rather than
+                    // leave a stale buffer in it; both bind paths already treat a null
+                    // vertex buffer as "not bound".
+                    m_state.m_vertexBuffers[bufferIndex] = nullptr;
+                    m_state.m_vertexBufferOffsets[bufferIndex] = INVALID_OFFSET;
+                    m_state.m_vertexBufferSizes[bufferIndex] = 0;
+                    continue;
+                }
+
                 m_state.m_vertexBuffers[bufferIndex] = allocation->mtlBuffer;
                 m_state.m_vertexBufferOffsets[bufferIndex] = allocation->bufferOffset;
                 m_state.m_vertexBufferSizes[bufferIndex] = bufferSize;
@@ -1970,6 +1986,16 @@ void MetalRenderer::draw_updateUniformBuffersDirectAccess(LatteDecompilerShader*
                 auto* allocation = m_memoryManager->GetCachedSnapshot(MetalMemoryManager::UniformSnapshotBase + shaderType * MAX_MTL_BUFFERS + bufferIndex,
                     memory_getPointerFromVirtualOffset(physicalAddr), uniformSize);
 
+                if (!allocation)
+                {
+                    // See draw_updateVertexBuffersDirectAccess(): unbind instead of
+                    // dereferencing a failed reservation.
+                    m_state.m_uniformBuffers[shaderType][bufferIndex] = nullptr;
+                    m_state.m_uniformBufferOffsets[shaderType][bufferIndex] = INVALID_OFFSET;
+                    m_state.m_uniformBufferSizes[shaderType][bufferIndex] = 0;
+                    continue;
+                }
+
                 m_state.m_uniformBuffers[shaderType][bufferIndex] = allocation->mtlBuffer;
                 m_state.m_uniformBufferOffsets[shaderType][bufferIndex] = allocation->bufferOffset;
                 m_state.m_uniformBufferSizes[shaderType][bufferIndex] = uniformSize;
@@ -2004,6 +2030,8 @@ void MetalRenderer::draw_handleSpecialState5()
 Renderer::IndexAllocation MetalRenderer::indexData_reserveIndexMemory(uint32 size)
 {
     auto allocation = m_memoryManager->GetIndexAllocator().AllocateBufferMemory(size, 128);
+    if (!allocation)
+        return {nullptr, nullptr}; // out of memory - LatteIndices_decode() drops the draw
 
     return {allocation->memPtr, allocation};
 }
@@ -2793,6 +2821,8 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         
         size_t size = shader->uniform.uniformRangeSize;
         auto* allocation = m_memoryManager->GetCachedSnapshot(MetalMemoryManager::SupportSnapshotBase + mtlShaderType, supportBufferData, size);
+        if (!allocation)
+            return false; // out of memory - the caller skips the draw
         if (argumentEncoder)
         {
             argumentBindings[MetalArgumentBuffer::SupportBuffer] = {MetalArgumentBinding::Type::Buffer, allocation->mtlBuffer, allocation->bufferOffset};
@@ -2915,6 +2945,8 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         // reused from a previous draw - residency is per-encoder state and is never
         // covered by the cache.
         auto* allocation = m_memoryManager->GetCachedArgumentBuffer(mtlShaderType, argumentEncoder, argumentBindings);
+        if (!allocation)
+            return false; // out of memory - the caller skips the draw
         SetBuffer(renderCommandEncoder, mtlShaderType, allocation->mtlBuffer, allocation->bufferOffset, shader->resourceMapping.argumentBufferBindingPoint);
     }
     return true;

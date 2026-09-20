@@ -11,7 +11,21 @@ uint32 MetalBufferChunkedHeap::allocateNewChunk(uint32 chunkIndex, uint32 minimu
 {
 	size_t allocationSize = std::max<size_t>(m_minimumBufferAllocationSize, minimumAllocationSize);
 	MTL::Buffer* buffer = m_mtlr->GetDevice()->newBuffer(allocationSize, m_options);
-	cemu_assert_debug(buffer);
+	if (!buffer)
+	{
+		// newBuffer() returns nil when the device is out of memory. The nil used to be
+		// stored as a chunk anyway, and every later GetChunkPtr() on it handed out
+		// contents() of nil as if it were a live mapping. Report the failure instead:
+		// ChunkedHeap::allocateChunk() treats a zero chunk size as "could not grow" and
+		// latches m_allocationLimitReached, so this is never retried.
+		uint32 numChunks = 0;
+		size_t totalSize = 0, freeSize = 0;
+		GetStats(numChunks, totalSize, freeSize);
+		cemuLog_log(LogType::Force,
+			"Metal: buffer allocation failed, wanted {} bytes (minimum {}); {} chunks, {} MB total, {} MB free",
+			allocationSize, minimumAllocationSize, numChunks, totalSize / (1024 * 1024), freeSize / (1024 * 1024));
+		return 0;
+	}
 	cemu_assert_debug(m_chunkBuffers.size() == chunkIndex);
 	m_chunkBuffers.emplace_back(buffer);
 
@@ -171,6 +185,15 @@ void MetalSynchronizedRingAllocator::GetStats(uint32& numBuffers, size_t& totalB
 MetalSynchronizedHeapAllocator::AllocatorReservation* MetalSynchronizedHeapAllocator::AllocateBufferMemory(uint32 size, uint32 alignment)
 {
 	CHAddr addr = m_chunkedHeap.alloc(size, alignment);
+	if (!addr.isValid() || !m_chunkedHeap.GetChunkPtr(addr.chunkIndex))
+	{
+		// Out of memory. GetBufferByIndex() below would index m_chunkBuffers with
+		// 0xFFFFFFFF and memPtr would be an offset from nullptr, so hand back nothing
+		// and let the caller skip the work. Callers of this function all treat a null
+		// reservation as "not bound".
+		cemuLog_logOnce(LogType::Force, "Metal: could not reserve {} bytes of buffer memory (alignment {})", size, alignment);
+		return nullptr;
+	}
 	m_activeAllocations.emplace_back(addr);
 	AllocatorReservation* res = m_poolAllocatorReservation.allocObj();
 	res->bufferIndex = addr.chunkIndex;
