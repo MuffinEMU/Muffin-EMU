@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The entitlements for the IPA that a re-signing installer takes over: SideStore,
+	     AltStore, LiveContainer. Deliberately NOT src/ios/Cemu.entitlements, which is
+	     what the ad-hoc signed TrollStore IPA gets instead.
+
+	     Cemu.entitlements asks for com.apple.security.cs.allow-jit,
+	     dynamic-codesigning and com.apple.security.cs.disable-executable-page-protection.
+	     Those are restricted: they only take effect through a provisioning profile that
+	     grants them, and a re-signer whose profile does not authorise an entitlement
+	     drops the entitlements rather than failing. Including get-task-allow, which is
+	     the one every JIT enabler reads off the installed app to decide whether to list
+	     it at all. So asking for the full set here would cost the app the single
+	     entitlement that actually matters to it - an app that asks for too much ends up
+	     indistinguishable from an app that asked for nothing.
+
+	     That is not a guess. It is exactly what v4.5 did with
+	     com.apple.developer.kernel.extended-virtual-addressing, and StikDebug stopped
+	     listing MuffinEMU entirely; the reasoning is written out at the bottom of
+	     Cemu.entitlements. This file is the same lesson applied to the sideload path:
+	     ask for the minimum that survives re-signing.
+
+	     On the TrollStore side none of this applies - nothing re-signs that IPA, so it
+	     carries the full set and keeps it. -->
+
+	<!-- The one that has to survive. A JIT enabler lists apps by reading get-task-allow
+	     off the installed app, and this IPA used to ship unsigned, so it had no
+	     entitlements dict at all and a re-signer merging the app's existing entitlements
+	     had nothing to merge. The app installed, ran, and was simply never offered for
+	     debugging. The build step verifies this key specifically rather than trusting
+	     that signing worked. -->
+	<key>get-task-allow</key>
+	<true/>
+
+	<!-- Raises the memory iOS allows before terminating the app, which matters most on
+	     6 GB devices like the A12Z iPad Pro where the default sits close to what a retail
+	     title needs. Unrestricted, so it costs nothing if a re-signer's profile does not
+	     carry it: it is dropped on its own, quietly, without taking get-task-allow with
+	     it. That is why the build step reports what was embedded but only REQUIRES
+	     get-task-allow. -->
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+</dict>
+</plist>

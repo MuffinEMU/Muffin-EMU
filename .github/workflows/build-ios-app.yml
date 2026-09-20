@@ -327,8 +327,9 @@ jobs:
           ls "$APP_PATH/Frameworks"
 
       - name: Package IPA for re-signing installers
-        # Ad-hoc signed with ONE entitlement, get-task-allow, and that is the fix for a
-        # real bug: this IPA used to ship with no signature at all, so no entitlements
+        # Ad-hoc signed with a deliberately minimal entitlements file, and get-task-allow
+        # in it is the fix for a real bug: this IPA used to ship with no signature at all,
+        # so no entitlements
         # dict at all, and MuffinEMU was invisible to every JIT enabler. Those tools list
         # apps by reading get-task-allow off the INSTALLED app, and a re-signer that
         # merges the app's existing entitlements has nothing to merge when the app arrives
