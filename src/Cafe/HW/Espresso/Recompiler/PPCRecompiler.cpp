@@ -163,7 +163,13 @@ bool PPCRecompiler_readTXMEnvVar()
 
 static void PPCRecompiler_finishJitMappingSession()
 {
-    if (PPCRecompiler_readTXMEnvVar())
+    // Both PPCRecompiler_init() and the arena setup end a mapping session, so on a TXM
+    // device this ran twice per launch and the second JIT26Detach() trapped into a
+    // debugger that had already let go. Detaching is a once-per-process operation, so
+    // latch it: exchange() also makes the two call sites safe if they ever stop being
+    // on the same thread.
+    static std::atomic<bool> s_txmDetached{false};
+    if (PPCRecompiler_readTXMEnvVar() && !s_txmDetached.exchange(true))
     {
         cemuLog_log(LogType::Force, "Recompiler: detaching TXM debugger after JIT mapping");
         JIT26Detach();
