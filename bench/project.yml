@@ -1,0 +1,92 @@
+name: MuffinEMU Bench
+
+# XcodeGen resolves every relative path in this file against the directory project.yml
+# itself lives in (bench/), not the repo root. So "../build-bench/..." reaches the
+# sibling build-bench/ directory a CI pipeline populates BEFORE `xcodegen generate` runs
+# (the same ordering the real MuffinEMU app.yml relies on for its own Cemu.framework),
+# and a bare "MuffinBench.entitlements" means the file sitting right next to this one.
+options:
+  bundleIdPrefix: com.kiddreads
+  deploymentTarget:
+    iOS: '15.0'
+  xcodeVersion: '15.0'
+
+settings:
+  PRODUCT_NAME: MuffinBench
+  PRODUCT_BUNDLE_IDENTIFIER: com.kiddreads.MuffinEMUBench
+  SDKROOT: iphoneos
+  IPHONEOS_DEPLOYMENT_TARGET: '15.0'
+  SWIFT_VERSION: '5.0'
+  CODE_SIGN_IDENTITY: iPhone Developer
+  CODE_SIGN_ENTITLEMENTS: MuffinBench.entitlements
+  CLANG_ENABLE_MODULES: 'YES'
+  FRAMEWORK_SEARCH_PATHS:
+    - '$(SRCROOT)/../build-bench/engines'
+    - '$(SRCROOT)/../dependencies'
+  LD_RUNPATH_SEARCH_PATHS: '$(inherited) @executable_path/Frameworks'
+  GENERATE_INFOPLIST_FILE: 'YES'
+  MARKETING_VERSION: '1.0'
+  CURRENT_PROJECT_VERSION: '1'
+  INFOPLIST_KEY_CFBundleDisplayName: MuffinEMU Bench
+  INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
+  INFOPLIST_KEY_UIApplicationSceneManifest_Generation: 'YES'
+  # Both orientations, unlike MuffinEMU itself: the render surface only has to exist on
+  # screen while a test is running, it never has to line up with a specific Wii U TV
+  # aspect ratio, so there's no reason to force landscape on a bench-only screen.
+  INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+  INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad: 'UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+  # So MuffinBenchResults.json (and the report it produces) is reachable from the Files
+  # app / a cable without a debugger - the whole point of this app is a report you copy
+  # out of it, not one you have to extract with device tools.
+  INFOPLIST_KEY_UIFileSharingEnabled: 'YES'
+  INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: 'YES'
+
+targets:
+  MuffinBench:
+    type: application
+    platform: iOS
+    deploymentTarget: '15.0'
+
+    sources:
+      - path: Sources
+        type: group
+      # Individual files, not a folder reference ("type: folder"). A folder reference
+      # would copy build-bench/rpx into the bundle AS a subdirectory named rpx/, so the
+      # runtime would need Bundle.main.url(forResource:withExtension:subdirectory:) and
+      # that subdirectory name would become one more string BenchRunner.swift and this
+      # file have to agree on. Listing the two files explicitly with buildPhase:
+      # resources puts them at the bundle's top level, so
+      # Bundle.main.url(forResource: "cpubench", withExtension: "rpx") - no subdirectory
+      # argument - is the only thing that has to stay in sync, and it already is: this
+      # is the literal string BenchRunner.swift looks up.
+      - path: ../build-bench/rpx/cpubench.rpx
+        buildPhase: resources
+      - path: ../build-bench/rpx/gpubench.rpx
+        buildPhase: resources
+
+    dependencies:
+      # All three engines are embedded so their frameworks travel inside the IPA, but
+      # deliberately NOT linked. Linking would make dyld load and bind every engine's
+      # symbols at process launch, all three at once, sharing one symbol space - exactly
+      # what MuffinBenchEngine.h's -exported_symbols_list requirement exists to prevent.
+      # BenchEngine.swift dlopens each one itself, one at a time, RTLD_LOCAL, only when
+      # it is that engine's turn - link: false is what makes that the only way any of
+      # their code ever gets loaded.
+      - framework: ../build-bench/engines/MuffinBenchV38.framework
+        embed: true
+        link: false
+      - framework: ../build-bench/engines/MuffinBenchMelo.framework
+        embed: true
+        link: false
+      - framework: ../build-bench/engines/MuffinBenchV38Melo.framework
+        embed: true
+        link: false
+      # Whichever engine still carries a Vulkan/MoltenVK fallback compiled in needs the
+      # library present in the bundle to dlopen against once it's that engine's turn -
+      # same embed-not-link reasoning as the three engines themselves.
+      - framework: ../dependencies/MoltenVK.xcframework
+        embed: true
+        link: false
+
+    scheme:
+      gatherCoverageData: false
