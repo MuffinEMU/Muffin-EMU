@@ -1241,6 +1241,9 @@ void MetalRenderer::bufferCache_copyStreamoutToMainBuffer(uint32 srcOffset, uint
         }
     }
     
+    if (!dstBuffer)
+        return; // no buffer cache (or no imported buffer) to stream out into
+
     CopyBufferToBuffer(GetXfbRingBuffer(), srcOffset, dstBuffer, dstBufferOffset, size, MTL::RenderStageVertex | MTL::RenderStageMesh, ALL_MTL_RENDER_STAGES);
     m_memoryManager->TrackSharedCache(dstBuffer, dstBufferOffset, size, true);
 }
