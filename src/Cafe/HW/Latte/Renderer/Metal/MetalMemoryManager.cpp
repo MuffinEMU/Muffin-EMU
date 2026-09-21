@@ -218,6 +218,21 @@ void MetalMemoryManager::InitBufferCache(size_t size)
 
     if (!m_bufferCache)
         m_bufferCache = m_mtlr->GetDevice()->newBuffer(size, (m_metalBufferCacheMode == MetalBufferCacheMode::DevicePrivate ? MTL::ResourceStorageModePrivate : MTL::ResourceStorageModeShared));
+    if (!m_bufferCache)
+    {
+        // 164 MB in a single allocation, made when a title starts, and on iOS it competes
+        // with the recompiler's arena - this is the likeliest allocation in the renderer to
+        // actually fail. The imported-memory buffer above is checked and falls back; this
+        // one was not, and cemu_assert_debug() compiles to nothing in a release build, so a
+        // failure here did not surface here at all. The binding paths already substitute a
+        // placeholder for a null cache, but UploadToBufferCache() and CopyBufferCache()
+        // wrote straight through contents(), so the first guest buffer upload dereferenced
+        // null and the crash looked like a fault in the upload rather than an allocation
+        // that never succeeded. Keep it null, say so once, and let those paths skip.
+        cemuLog_log(LogType::Force,
+            "Metal: failed to allocate the {} MB GPU buffer cache. Nothing will render; this is an out-of-memory condition, not a shader or pipeline fault",
+            size / (1024 * 1024));
+    }
 
     if (m_metalBufferCacheMode == MetalBufferCacheMode::DeviceShared)
         m_sharedTracker.Initialize(size);
@@ -225,7 +240,8 @@ void MetalMemoryManager::InitBufferCache(size_t size)
     LatteBufferCache_hostSetVolatilityTracking(m_metalBufferCacheMode == MetalBufferCacheMode::Host);
 
 #ifdef CEMU_DEBUG_ASSERT
-    m_bufferCache->setLabel(GetLabel("Buffer cache", m_bufferCache));
+    if (m_bufferCache)
+        m_bufferCache->setLabel(GetLabel("Buffer cache", m_bufferCache));
     if (m_importedMemoryBuffer)
         m_importedMemoryBuffer->setLabel(GetLabel("Imported memory buffer", m_importedMemoryBuffer));
 #endif
@@ -235,7 +251,8 @@ void MetalMemoryManager::UploadToBufferCache(const void* data, size_t offset, si
 {
     if (size == 0)
         return;
-    cemu_assert_debug(m_bufferCache);
+    if (!m_bufferCache)
+        return; // buffer cache allocation failed at init - see InitBufferCache()
     cemu_assert_debug((offset + size) <= m_bufferCache->length());
 
     if (m_metalBufferCacheMode == MetalBufferCacheMode::DevicePrivate || SharedCacheBusy(offset, size))
@@ -265,7 +282,8 @@ void MetalMemoryManager::CopyBufferCache(size_t srcOffset, size_t dstOffset, siz
 {
     if (size == 0 || srcOffset == dstOffset)
         return;
-    cemu_assert_debug(m_bufferCache);
+    if (!m_bufferCache)
+        return; // buffer cache allocation failed at init - see InitBufferCache()
     if (m_metalBufferCacheMode == MetalBufferCacheMode::DevicePrivate ||
         SharedCacheBusy(srcOffset, size, true) || SharedCacheBusy(dstOffset, size))
     {
