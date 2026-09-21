@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "4.9",
+          "date": "2026-09-21T00:19:19Z",
+          "localizedDescription": "MuffinEMU, Wii U emulation for iPhone and iPad, built from commit 523adc6a04dd2c06cdf5907d06cbcc85162f1ab2.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v4.8...v4.9",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v4.9/MuffinEMU.ipa",
+          "size": 68074452,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "4.8",
           "date": "2026-09-20T02:11:40Z",
           "localizedDescription": "## What changed\n\n- Fixes importing and exporting a game's save doing nothing for games added to the library before MuffinEMU started recording their title ID.\n- Settings > CPU now shows which iOS version the device is running, next to whether the recompiler could start.\n- Fixes MuffinEMU not appearing in StikDebug, SideStore's JIT list or other JIT enablers, which stopped the recompiler from being usable at all.\n- Fixes a crash in games that hand the system a 64-bit counter on a 4-byte-aligned address, which every ARM device faults on. Angry Birds Star Wars is a confirmed case; any title using the same coreinit calls was affected.\n- Fixes the JIT debugger being detached a second time on TXM devices, after the recompiler had already finished mapping.\n- Running out of graphics memory no longer corrupts memory or crashes outright. Both graphics allocators used to hand back a pointer built from a failed allocation and write through it; now the affected upload, draw or screenshot is skipped and logged.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 25e30999cee3bdad31813cefbc8d1e35a9002cbf.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterp...",
