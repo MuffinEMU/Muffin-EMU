@@ -4,8 +4,6 @@ Wii U emulation for iPhone and iPad, built on [Cemu](https://github.com/cemu-pro
 
 MuffinEMU is its own emulator. The SwiftUI app grew out of Muffin ([kiddreads/cemu-ios-muffin](https://github.com/kiddreads/cemu-ios-muffin)), and the Cemu core underneath it is maintained here, with MuffinEMU's own fixes and a curated set of upstream Cemu fixes on top.
 
-Some MeloCafe cores and bug fixes have been brought over to MuffinEMU: the PowerPC interpreters, the AArch64 recompiler with iOS 26 dual-mapped JIT, the Metal and Vulkan (MoltenVK) renderers and shader emitters, ASTC texture decoding, and the iOS audio, input and window systems came from [stossy11/MeloCafe](https://github.com/stossy11/MeloCafe).
-
 ## What's in it
 
 - **The app:** the library, importer, keys.txt handling, decrypt-to-files and WUA, DLC and update install, graphic packs, the measured Wii U GamePad on-screen controls with skins, themes and comfort controls, external-display routing, the in-app launch log, and the crash and memory trail.
@@ -58,7 +56,10 @@ xcodebuild -project MuffinEMU.xcodeproj -scheme MuffinEMU -sdk iphoneos -configu
 ## Credits and license
 
 - [Cemu](https://github.com/cemu-project/Cemu) (MPL-2.0), the emulator MuffinEMU is built on.
-- [MeloCafe](https://github.com/stossy11/MeloCafe) by stossy11 (MPL-2.0). Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.
+- [MeloCafe](https://github.com/stossy11/MeloCafe) by stossy11 (MPL-2.0). The PowerPC
+  interpreters, the AArch64 recompiler with iOS 26 dual-mapped JIT, the Metal and Vulkan
+  (MoltenVK) renderers and shader emitters, ASTC texture decoding, and the iOS audio,
+  input and window systems were brought over from MeloCafe.
 - [Melo-Controller](https://github.com/stossy11/Melo-Controller) by stossy11 (GPL-3.0), the optional "Use melo-controls" pad.
 - [MoltenVK](https://github.com/KhronosGroup/MoltenVK) (Apache-2.0).
 
