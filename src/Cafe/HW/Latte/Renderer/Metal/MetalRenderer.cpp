@@ -1099,6 +1099,21 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
 
 LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView* textureView)
 {
+    // Force the readback buffer into existence here. It is allocated lazily, on the first
+    // readback of a session - so a 32 MB request lands mid-gameplay, which on iOS is the
+    // worst moment to ask for one. LatteTextureReadbackInfoMtl uses it in two places that
+    // cannot refuse: StartTransfer() hands it to copyFromTexture() as the blit destination,
+    // and GetData() returns contents() + offset straight to the caller, which memcpys from
+    // it without a null check. Both callers of this function already treat a null return as
+    // "skip this readback", so that is the seam to fail at.
+    if (!GetTextureReadbackBuffer())
+    {
+        cemuLog_logOnce(LogType::Force,
+            "Metal: could not allocate the {} MB texture readback buffer; skipping texture readbacks",
+            TEXTURE_READBACK_SIZE / (1024 * 1024));
+        return nullptr;
+    }
+
     size_t uploadSize = static_cast<LatteTextureMtl*>(textureView->baseTexture)->GetTexture()->allocatedSize();
 
     if ((m_readbackBufferWriteOffset + uploadSize) > TEXTURE_READBACK_SIZE)

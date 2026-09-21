@@ -440,7 +440,8 @@ public:
         {
             m_readbackBuffer = m_device->newBuffer(TEXTURE_READBACK_SIZE, MTL::ResourceStorageModeShared);
 #ifdef CEMU_DEBUG_ASSERT
-            m_readbackBuffer->setLabel(GetLabel("Texture readback buffer", m_readbackBuffer));
+            if (m_readbackBuffer)
+                m_readbackBuffer->setLabel(GetLabel("Texture readback buffer", m_readbackBuffer));
 #endif
         }
 
