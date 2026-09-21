@@ -169,6 +169,14 @@ void MetalSynchronizedRingAllocator::CleanupBuffer(MTL::CommandBuffer* latestFin
 		{
 			buffer.mtlBuffer->release();
 			m_buffers.erase(m_buffers.begin() + i);
+			// AllocatorReservation_t::bufferIndex and GetBufferByIndex() both read .index as
+			// a position in m_buffers, so the buffers after the erased one have to be
+			// renumbered. Without this, .index and the real position drift apart the first
+			// time a buffer in the middle is released, and GetBufferByIndex() then returns
+			// the wrong buffer or reads past the end. Nothing calls it today, which is
+			// exactly why the invariant could quietly stop holding.
+			for (size_t j = (size_t)i; j < m_buffers.size(); j++)
+				m_buffers[j].index = (uint32)j;
 		}
 	}
 }
