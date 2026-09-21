@@ -13,6 +13,7 @@
 import Foundation
 import UIKit
 import Darwin
+import MachO  // _dyld_image_count, _dyld_get_image_name
 import ObjectiveC
 
 /// Mirrors MBenchCpuMode from MuffinBenchEngine.h.
@@ -257,9 +258,7 @@ final class LoadedEngine {
             var names: [String] = []
             names.reserveCapacity(Int(classCount))
             for j in 0..<Int(classCount) {
-                if let cName = classList[j] {
-                    names.append(String(cString: cName))
-                }
+                names.append(String(cString: classList[j]))
             }
             return names.sorted()
         }
