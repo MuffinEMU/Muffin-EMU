@@ -379,7 +379,13 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
 .wrap { max-width: var(--wide-max); margin: 0 auto; padding: 0 1.25rem; }
 .prose-wrap { max-width: var(--content-max); margin: 0 auto; padding: 0 1.25rem; }
 
-section { padding-block: clamp(2.75rem, 7vw, 5.5rem); }
+section { padding-block: clamp(3.75rem, 9vw, 7rem); }
+
+/* The three cards under the hero finish the hero's thought, so the seam before
+   "What's inside" - where the page turns from what MuffinEMU is to what is in it -
+   carries more weight than the seams between the bands that follow, and gets extra
+   room on top of the section rhythm above. */
+.section-intro { padding-bottom: clamp(5rem, 11vw, 9rem); }
 
 .section-head { max-width: 40rem; margin: 0 auto clamp(1.75rem, 4vw, 3rem); text-align: center; }
 .section-head h2 { margin-top: 0; }
@@ -434,6 +440,22 @@ section { padding-block: clamp(2.75rem, 7vw, 5.5rem); }
   filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--shadow) 55%, transparent));
   margin-bottom: 1.4rem;
 }
+/* The icon and the kicker are one unit, so they share a centred row and sit
+   centred against each other instead of stacking. Both carry their own bottom
+   margin for the stacked case; inside the row that margin would drag each off
+   the shared centre line, so the row owns the spacing below and clears theirs.
+   Wrapping is allowed so a narrow screen stacks them rather than squeezing. */
+.hero-kicker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: clamp(.85rem, 2.5vw, 1.25rem);
+  margin-bottom: 1.4rem;
+}
+.hero-kicker img.icon,
+.hero-kicker .eyebrow { margin-bottom: 0; }
+
 .hero h1 { color: var(--sparkle); margin-bottom: .6rem; }
 .hero .lede {
   max-width: 34rem;
@@ -519,7 +541,10 @@ section { padding-block: clamp(2.75rem, 7vw, 5.5rem); }
 
 .grid {
   display: grid;
-  gap: 1.5rem;
+  /* Row gap runs a little ahead of the column gap: these cards are hairline-bordered
+     rather than filled, so stacked rows need more air than side-by-side columns to
+     read as separate cards instead of one continuous block. */
+  gap: clamp(1.75rem, 3vw, 2.25rem) clamp(1.5rem, 2.5vw, 2rem);
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 .grid-2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
