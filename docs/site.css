@@ -430,10 +430,6 @@ section { padding-block: clamp(3.75rem, 9vw, 7rem); }
   border-radius: 50% 50% 0 0 / 100% 100% 0 0;
 }
 .hero > * { position: relative; z-index: 1; }
-.hero .eyebrow {
-  color: var(--sparkle);
-  opacity: .85;
-}
 .hero img.icon {
   width: 104px; height: 104px;
   border-radius: 22%;
@@ -454,7 +450,7 @@ section { padding-block: clamp(3.75rem, 9vw, 7rem); }
   justify-content: center;
   flex-wrap: wrap;
   gap: clamp(.9rem, 2.5vw, 1.5rem);
-  margin-bottom: 1.1rem;
+  margin-bottom: 1.9rem;
 }
 .hero-lockup img.icon { margin-bottom: 0; }
 .hero-lockup h1 { margin-bottom: 0; line-height: 1; }
