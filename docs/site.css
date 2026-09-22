@@ -457,13 +457,20 @@ section { padding-block: clamp(3.75rem, 9vw, 7rem); }
    dragged off the shared centre. line-height:1 makes the h1 box hug its letters,
    so "centred" means centred on the glyphs and not on an empty line box.
    Wrapping is allowed so a narrow screen stacks them rather than squeezing. */
+/* Hero rhythm. The three gaps below the lockup are 2.5 / 2.15 / 1.85rem, which is not
+   an even sequence on purpose: the lede and the note are text, so each carries about 4px
+   of half-leading inside its line box that the lockup's icon and the buttons do not. Net
+   of that the gaps land near 44 / 38 / 33px apart on screen, a steady step down the hero.
+   Note also that the icon is 104px against a 64px wordmark, so it hangs ~20px lower and
+   the lockup has no single bottom edge - the first gap is measured from the icon, the
+   lowest thing in the row. */
 .hero-lockup {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
   gap: clamp(.9rem, 2.5vw, 1.5rem);
-  margin-bottom: 1.9rem;
+  margin-bottom: 2.5rem;
 }
 .hero-lockup img.icon { margin-bottom: 0; }
 .hero-lockup h1 { margin-bottom: 0; line-height: 1; }
@@ -474,12 +481,12 @@ section { padding-block: clamp(3.75rem, 9vw, 7rem); }
   color: var(--sparkle);
   line-height: 1.55;
 }
-.hero-ctas { display: flex; flex-wrap: wrap; gap: .7rem; justify-content: center; margin-top: 2.2rem; }
+.hero-ctas { display: flex; flex-wrap: wrap; gap: .7rem; justify-content: center; margin-top: 2.15rem; }
 
 /* A compact, honest one-liner under the CTAs. Deliberately part of the hero:
    the first thing a visitor should learn is what is actually confirmed. */
 .hero-note {
-  margin: 1.6rem auto 0;
+  margin: 1.85rem auto 0;
   font-size: .875rem;
   color: var(--sparkle);
   opacity: .9;
