@@ -238,16 +238,29 @@ hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
   flex: 1;
 }
 .site-nav a {
+  position: relative;
   color: var(--brown-dark);
   text-decoration: none;
   padding: .4rem .6rem;
   border-radius: var(--radius-sm);
-  border-bottom: 2px solid transparent;
 }
 .site-nav a:hover { color: var(--brown-darkest); }
-.site-nav a[aria-current="page"] {
-  color: var(--brown-darkest);
-  border-bottom-color: var(--muffin-top-dark);
+/* The current-page marker is drawn as its own bar rather than as a border-bottom.
+   The border sat on a box with an 8px radius, so the radius bent both ends of the
+   2px line upward and the marker read as a shallow bowl under the label instead of
+   an underline. A bar spans the label's own width, stays straight, and does not add
+   2px of height to every item in the nav - including the dropdown panel's links,
+   which `.site-nav a` also matches. Scoped to direct children for that reason. */
+.site-nav > a[aria-current="page"] { color: var(--brown-darkest); }
+.site-nav > a[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: .6rem;
+  right: .6rem;
+  bottom: .15rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--muffin-top-dark);
 }
 
 .nav-dropdown { position: relative; }
