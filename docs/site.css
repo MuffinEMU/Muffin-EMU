@@ -400,6 +400,14 @@ section { padding-block: clamp(3.75rem, 9vw, 7rem); }
    room on top of the section rhythm above. */
 .section-intro { padding-bottom: clamp(4.75rem, 10.5vw, 8.5rem); }
 
+/* The "What's inside" cards ended flush against the install card - 0px between them.
+   Note that `section { padding-block }` above does NOT reach these sections: they also
+   carry `.wrap`, whose `padding: 0 1.25rem` shorthand zeroes the vertical padding, and a
+   class beats an element selector whatever the order. So the seam has to be set here, on
+   a selector that outranks `.wrap`. Roughly 1.25x the card grid's row gap, enough to read
+   as a new band without opening the page up. */
+#install { padding-top: clamp(2rem, 4vw, 3.25rem); }
+
 .section-head { max-width: 40rem; margin: 0 auto clamp(1.75rem, 4vw, 3rem); text-align: center; }
 .section-head h2 { margin-top: 0; }
 .section-head p { color: var(--brown-mid); margin-bottom: 0; }
