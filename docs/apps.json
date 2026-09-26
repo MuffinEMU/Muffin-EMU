@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "5.2",
+          "date": "2026-09-26T21:51:22Z",
+          "localizedDescription": "## What changed\n\n- The landing page hero drops the small-caps line that repeated what the sentence under it already said.\n- The site nav's underline for the current page is a straight line again, not a curved one.\n- The landing page hero is spaced more evenly from the title down to the buttons.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit d346ca6eac7dc5f18df3677a4fd906baa03d1f15.\n\n**Known issue:** MuffinEMU's own on-screen controls are currently broken. We're\nactively working on a fix - this notice comes off once it lands.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v5.1...v5.2",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v5.2/MuffinEMU.ipa",
+          "size": 68076200,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "5.1",
           "date": "2026-09-21T17:19:33Z",
           "localizedDescription": "## What changed\n\n- Texture readbacks are now skipped rather than crashing when a device cannot spare memory for the readback buffer.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 226d72786a4a5757d7645d008363d54ef04432ee.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v5.0...v5.1",
