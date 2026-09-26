@@ -562,6 +562,9 @@ jobs:
           body: |
             The newest build of MuffinEMU, from commit ${{ github.sha }} on `${{ github.ref_name }}`.
 
+            **Known issue:** MuffinEMU's own on-screen controls are currently broken. We're
+            actively working on a fix - this notice comes off once it lands.
+
             This tag moves. It is replaced by every successful build, so the download
             here is always the newest code and never a version you can come back to -
             for that, use a numbered release.
