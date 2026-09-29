@@ -1315,11 +1315,7 @@ struct EmulatorViewOptimized: View {
                     let resolved = previewPad.resolve(container: proxy.size, safeArea: safeArea,
                                                       pointsPerInch: DeviceMetrics.current().pointsPerInch)
                     ZStack(alignment: .topLeading) {
-                        #if os(iOS)
                         MetalViewIOS(gameManager: gameManager)
-                        #else
-                        MetalView(gameManager: gameManager)
-                        #endif
                     }
                     .frame(width: previewPad.displayMode == .native ? resolved.video.width : proxy.size.width,
                           height: previewPad.displayMode == .native ? resolved.video.height : proxy.size.height)
@@ -1384,12 +1380,7 @@ struct EmulatorViewOptimized: View {
                     #endif
                 }
             } else {
-                #if os(iOS)
                 screenLayoutComposition
-                #else
-                MetalView(gameManager: gameManager)
-                    .ignoresSafeArea()
-                #endif
             }
 
             VStack(spacing: 0) {
