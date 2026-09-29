@@ -1,7 +1,7 @@
 //
 //  MuffinBenchEngineMelo.mm
-//  The benchmark contract (MuffinBenchEngine.h) on MeloCafe's engine, through
-//  MuffinEMU's Swift bridge (CemuBridge.h) exactly as the MuffinEMU app drives it.
+//  The benchmark contract (MuffinBenchEngine.h) on the engine in this repository, through
+//  the Swift bridge (CemuBridge.h) exactly as the MuffinEMU app drives it.
 //
 #include "MuffinBenchEngine.h"
 #include "MuffinBenchCommon.h"
@@ -69,7 +69,9 @@ MBenchStatus mbench_boot(const char* rpxPath, MBenchCpuMode cpu)
     const bool recompiler = (cpu == MBENCH_CPU_RECOMPILER);
     if (recompiler && !mbench_jit_permitted())
         return MBENCH_ERR_NO_JIT;
-    // Favour accuracy stays off, so the bridge writes the multi-core mode for either path.
+    // The contract is multi-core for every engine, but the bridge defaults to single-core,
+    // so ask for multi-core explicitly (favour accuracy and low power stay off).
+    cemu_bridge_set_multicore_enabled(true);
     cemu_bridge_set_recompiler_enabled(recompiler);
     cemu_bridge_set_graphics_api(2); // Metal
     cemu_bridge_set_timebase_shift(3);
