@@ -10,6 +10,9 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Real colour, sampled off the hardware
 
@@ -201,8 +204,11 @@ struct PadColourPickerView: View {
                 return Color(red: c.r, green: c.g, blue: c.b, opacity: c.a)
             },
             set: { newColor in
-                guard let comps = newColor.cgColor?.components, comps.count >= 3 else { return }
-                let rgba = MuffinRGBA(r: comps[0], g: comps[1], b: comps[2], a: comps.count > 3 ? comps[3] : 1)
+                // getRed converts greyscale colours to RGB; cgColor.components would give
+                // only (white, alpha) for a grey.
+                var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                guard UIColor(newColor).getRed(&r, green: &g, blue: &b, alpha: &a) else { return }
+                let rgba = MuffinRGBA(r: Double(r), g: Double(g), b: Double(b), a: Double(a))
                 if isOutline { scheme.outline = rgba }
                 else if isGlyph { scheme.glyphs[key ?? "default"] = rgba }
                 else { scheme.fills[key ?? "default"] = rgba }
