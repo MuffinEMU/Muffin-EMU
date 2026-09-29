@@ -5,24 +5,9 @@
 #
 # Usage: ci/verify-ipa.sh <path-to-ipa>
 #
-# Why this exists: on 2026-08-23 a v1.15 install failed on device with
-# "App's executable path not found. Please try force re-signing or reinstalling this
-# app." That string is LiveContainer's, from LCBootstrap.m, and it fires when NSBundle
-# returns nil for -executablePath. The cause turned out to be ours: the bundle carried
-# a directory named `resources` at its top level, iOS filesystems are case-insensitive,
-# and CFBundle's probe for the reserved `Resources` directory matched it. CFBundle then
-# looked for Info.plist inside that directory instead of at the top level, found none,
-# and handed back a bundle with a nil identifier, a nil CFBundleExecutable and a nil
-# executable path - every file present, none of them reachable.
-#
-# The lesson for this script is check 12. Checks 1-11 are structural, cheap, and were
-# all performed by hand that day - and every single one of them PASSES on the broken
-# v1.15 IPA. otool cannot see this bug. Only asking CFBundle can, so the gate ends by
-# asking CFBundle.
-#
-# None of these can tell you the emulator works; together they tell you the package is
-# a well-formed, installable, unsigned arm64 iOS app that CFBundle can actually read,
-# which is precisely the class of doubt that cost a day.
+# Check 12 asks CFBundle to read the bundle: a top-level directory named like a reserved
+# CFBundle name (e.g. "resources") makes CFBundle look for Info.plist in the wrong place,
+# and every other check still passes.
 set -euo pipefail
 
 IPA="${1:?usage: verify-ipa.sh <path-to-ipa>}"
