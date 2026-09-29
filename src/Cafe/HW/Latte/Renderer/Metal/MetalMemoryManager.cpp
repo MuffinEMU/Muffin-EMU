@@ -14,10 +14,7 @@
 
 MetalMemoryManager::~MetalMemoryManager()
 {
-    // The argument snapshots hold a retain on every resource they recorded and on the
-    // encoder itself (see GetCachedArgumentBuffer below), so they have to be given back
-    // here - this object outlives individual draws, which is what makes the caching work
-    // and also what makes it the owner of those retains.
+    // Argument snapshots retain their recorded resources and encoder; release them here.
     for (auto& snapshot : m_argumentSnapshots)
     {
         for (const auto& binding : snapshot.bindings)
@@ -63,8 +60,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     snapshot.endByte = size;
     if (!snapshot.allocation)
     {
-        // Out of buffer memory. The reuse check above starts with a null test, so leaving
-        // the slot empty simply means the next call re-tries the upload.
+        // Out of buffer memory; the next call retries the upload.
         return nullptr;
     }
     std::memcpy(snapshot.allocation->memPtr + firstByte, source + firstByte, copySize);
@@ -78,10 +74,8 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     cemu_assert_debug(stage < METAL_SHADER_TYPE_TOTAL);
     m_mtlr->GetCommandBuffer();
     auto& snapshot = m_argumentSnapshots[stage];
-    // Same encoder (so the same layout) and the same complete set of bindings means the
-    // encoded buffer would come out byte-identical - skip the encode entirely. Note the
-    // CALLER still has to re-declare residency (useResource) for every encoder even on
-    // this path; only the encoding is cached, not the residency.
+    // Same encoder and same bindings produce an identical buffer, so reuse it. Callers still
+    // have to declare residency (useResource) themselves; only the encoding is cached.
     if (snapshot.encoder == encoder && snapshot.bindings == bindings)
     {
         m_mtlr->GetPerformanceMonitor().m_argumentBufferReuses++;
@@ -97,8 +91,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
         snapshot.encoder = encoder->retain();
     }
 
-    // Retain the new set BEFORE releasing the old one: a resource present in both would
-    // otherwise hit refcount zero in between and be deallocated while still bound.
+    // Retain the new set before releasing the old one so shared resources are never freed in between.
     for (const auto& binding : bindings)
         if (binding.resource)
             static_cast<NS::Object*>(binding.resource)->retain();
@@ -111,9 +104,10 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     auto* allocation = snapshot.allocation;
     if (!allocation)
     {
-        // Out of buffer memory. The bindings and encoder recorded above still describe
-        // what this slot holds (nothing), so the cache stays consistent and the caller
-        // skips the draw.
+        // Out of buffer memory. Drop the cached encoder so the reuse check above cannot
+        // match these bindings again; the next call retries the allocation.
+        snapshot.encoder->release();
+        snapshot.encoder = nullptr;
         return nullptr;
     }
     std::memset(allocation->memPtr, 0, allocation->size);
@@ -220,15 +214,7 @@ void MetalMemoryManager::InitBufferCache(size_t size)
         m_bufferCache = m_mtlr->GetDevice()->newBuffer(size, (m_metalBufferCacheMode == MetalBufferCacheMode::DevicePrivate ? MTL::ResourceStorageModePrivate : MTL::ResourceStorageModeShared));
     if (!m_bufferCache)
     {
-        // 164 MB in a single allocation, made when a title starts, and on iOS it competes
-        // with the recompiler's arena - this is the likeliest allocation in the renderer to
-        // actually fail. The imported-memory buffer above is checked and falls back; this
-        // one was not, and cemu_assert_debug() compiles to nothing in a release build, so a
-        // failure here did not surface here at all. The binding paths already substitute a
-        // placeholder for a null cache, but UploadToBufferCache() and CopyBufferCache()
-        // wrote straight through contents(), so the first guest buffer upload dereferenced
-        // null and the crash looked like a fault in the upload rather than an allocation
-        // that never succeeded. Keep it null, say so once, and let those paths skip.
+        // Left null so the upload and copy paths can skip instead of writing through contents().
         cemuLog_log(LogType::Force,
             "Metal: failed to allocate the {} MB GPU buffer cache. Nothing will render; this is an out-of-memory condition, not a shader or pipeline fault",
             size / (1024 * 1024));
