@@ -1,75 +1,21 @@
-// Save states: freeze a running title's guest RAM + CPU register state to a slot file,
-// and restore it later.
+// Save states: freeze a running title's guest RAM to a slot file, and restore it later.
 //
-// SCOPE - read this before touching this file. This is deliberately NOT a full,
-// arbitrary-point save state. It captures:
-//   - every currently-mapped guest RAM region (MMU.h's MMURange table), raw bytes
-//   - nothing else, explicitly - no GPU/Latte renderer state, no texture/shader/buffer
-//     caches, no PPCInterpreter_t register blobs
+// Captures every currently-mapped guest RAM region (MMU.h's MMURange table) and nothing
+// else. CPU registers are not serialised separately: each thread's OSThread_t.context
+// lives in guest memory and is flushed there whenever the thread leaves a core, so once
+// every core is idle a RAM dump already contains complete register state.
 //
-// It does NOT separately serialize CPU registers, and that is not an oversight. Cafe OS's
-// own OSThread_t.context (coreinit_Thread.h) already lives in guest memory and is kept
-// authoritative for every thread that is not the one actually mid-timeslice on a core
-// right now - see __OSThreadStoreContext()/__OSStoreThread() in coreinit_Thread.cpp,
-// which unconditionally flushes a thread's full register file into its OSThread_t.context
-// every single time it is switched off a core, independent of suspension. So once every
-// core is confirmed to have reached its idle fiber (nothing "mid-timeslice" anywhere), a
-// plain guest-RAM dump already contains complete, correct register state for every guest
-// thread, running or not. Restoring RAM restores registers along with it, for free,
-// through the exact same (unmodified) __OSLoadThread()/__OSThreadLoadContext() path a
-// normal thread dispatch already uses.
+// GPU state (textures, shaders, buffers) is not captured or flushed. A load can therefore
+// show stale textures or shaders for a few frames until the game's next GX2 call refreshes
+// them; this is a visual glitch, not a memory-safety problem.
 //
-// WHY GPU STATE IS DELIBERATELY LEFT ALONE: Latte/GX2 already treats VRAM-side objects
-// (textures, shaders, vertex/uniform buffers) as caches derived from guest memory + GX2
-// calls, invalidated by explicit signals (GX2Invalidate, ICBI-style range invalidation),
-// not by continuous re-derivation every frame - see LatteCommandProcessor.cpp's
-// IT_SURFACE_SYNC handling and GX2_Misc.cpp's GX2Invalidate(). A RAM-only load bypasses
-// those signals, so any texture/shader Cemu already has cached host-side could go stale
-// relative to the just-restored memory. The only "invalidate everything" primitives that
-// exist (LatteBufferCache_UnloadAll/LatteTC_UnloadAllTextures/LatteSHRC_UnloadAll) are
-// exercised exactly once in this codebase, from LatteThread_Exit(), as the last thing the
-// GPU thread does before the renderer is destroyed - never as a standalone "flush caches,
-// keep rendering" operation, and never from a different thread than the GPU thread itself.
-// Calling them here, live, from the bridge thread, while the GPU thread stays up, is an
-// untested cross-thread path this investigation could not certify as safe, so it is not
-// done. The accepted consequence: for a handful of frames after a load, a texture or
-// shader that changed between save and load MAY still show old contents on screen until
-// the game's own next GX2 call naturally refreshes it. This is a visual glitch, not a
-// memory-safety problem, and it is the one deliberate compromise in this design - see
-// notes at the top of IOSSaveState_Load() below for the exact tradeoff.
+// Pause() suspends guest threads but does not stop one that is mid-timeslice, and the GPU
+// command processor also writes guest memory. WaitForCoresIdle() and WaitForGPUDrain()
+// below wait for both before anything is read or written.
 //
-// WHY THIS NEEDED MORE THAN "CALL IOSTitlePause_Pause()": that function suspends every
-// guest thread (coreinit's own suspend-count mechanism) but does not interrupt one that
-// is already mid-timeslice on a core - see its own "todo - if thread is still running
-// find a way to cancel it's timeslice immediately" comment in
-// __OSSuspendThreadInternal() (coreinit_Thread.cpp). In multicore mode that is up to 3
-// real host OS threads that can keep executing PPC instructions - and keep writing to
-// guest memory - for up to a full quantum (default ~45000 cycles, longer if blocked in an
-// HLE call) after Pause() returns. A save/load taken right after Pause() returns would
-// race with that. coreinit_Thread.h's __OSAllCoresIdle() (backed by a small per-core busy
-// flag added for this feature) answers "has every core actually reached its idle fiber",
-// and WaitForCoresIdle() below polls it before touching anything.
-//
-// A second, separate host thread also writes into guest memory independently of the CPU
-// scheduler entirely: the Latte/GX2 command processor (LatteCommandProcessor.cpp writes
-// PM4 event/timestamp results with memory_writeU32/memory_writeU64; LatteQuery.cpp writes
-// occlusion query results the same way). Suspending CPU threads does not pause it - it
-// keeps draining whatever was already queued. WaitForGPUDrain() below closes this the same
-// way GX2DrawDone() itself does on the guest side: compare GX2's last-submitted command
-// timestamp against the GPU's last-retired one (both are supported by plain atomics -
-// GX2GetLastSubmittedTimeStamp()/GX2GetRetiredTimeStamp() - with no dependency on a live
-// guest thread context, unlike GX2WaitTimeStamp()'s guest-blocking OSWaitEvent() path,
-// which is why this polls the atomics directly instead of calling that).
-//
-// LOADING ACROSS A FRESH BOOT: a save is only valid to load into the SAME still-running
-// title instance it was taken from - not "the same game relaunched". OSThread_t
-// structures, thread MPTRs and the set of mapped MMU ranges are compared against the live
-// session's coreinit::activeThread[] list and memory_getMMURanges() before a single byte
-// of memory is touched; any mismatch refuses the load outright rather than guessing. This
-// is deliberately conservative: a real cross-boot "load this save on a freshly launched
-// copy of the same game" feature would need to prove Cafe OS's own allocators are
-// deterministic enough for thread/heap layout to line up, which this investigation did not
-// attempt to establish.
+// A save can only be loaded into the same still-running title instance it was taken from.
+// Thread and memory-range layout are checked against the live session before any memory is
+// touched, and a mismatch refuses the load.
 #include "Cafe/CafeSystem.h"
 #include "Cafe/HW/MMU/MMU.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
@@ -81,8 +27,11 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <thread>
 #include <vector>
+
+#include <unistd.h>
 
 bool IOSTitlePause_Pause();
 bool IOSTitlePause_Resume();
@@ -187,12 +136,16 @@ namespace
 		return true;
 	}
 
+	// Writes to "<path>.tmp" and renames it over the slot only after every byte was
+	// written, flushed and closed successfully, so a failed save (for example a full
+	// disk) leaves the slot's previous save untouched.
 	bool WriteSaveFile(const char* path)
 	{
-		FILE* f = fopen(path, "wb");
+		const std::string tmpPath = std::string(path) + ".tmp";
+		FILE* f = fopen(tmpPath.c_str(), "wb");
 		if (!f)
 		{
-			cemuLog_log(LogType::Force, "IOSSaveState: could not open '{}' for writing", path);
+			cemuLog_log(LogType::Force, "IOSSaveState: could not open '{}' for writing", tmpPath);
 			return false;
 		}
 
@@ -239,11 +192,18 @@ namespace
 			}
 		}
 
-		fclose(f);
+		if (ok && fflush(f) != 0)
+			ok = false;
+		if (ok && fsync(fileno(f)) != 0)
+			ok = false;
+		if (fclose(f) != 0)
+			ok = false;
+		if (ok && std::rename(tmpPath.c_str(), path) != 0)
+			ok = false;
 		if (!ok)
 		{
-			cemuLog_log(LogType::Force, "IOSSaveState: write failed, removing partial file '{}'", path);
-			std::remove(path);
+			cemuLog_log(LogType::Force, "IOSSaveState: write failed, removing partial file '{}' (previous save kept)", tmpPath);
+			std::remove(tmpPath.c_str());
 		}
 		return ok;
 	}
@@ -343,11 +303,26 @@ namespace
 			targets.push_back(match);
 		}
 
-		// Past this point every check has passed. A short read from here on means the
-		// file itself was truncated/corrupt in a way none of the header checks could
-		// catch, and guest memory may already be partially overwritten with no way back
-		// to a consistent pre-load state - the title must be treated as no longer
-		// trustworthy if that happens (see the comment on IOSSaveState_Load() below).
+		// The file must be exactly as long as the header says. Checking now, before any
+		// memory is touched, means a truncated or damaged slot is refused cleanly.
+		{
+			const off_t dataStart = ftello(f);
+			uint64 expectedData = 0;
+			for (const auto& sr : savedRanges)
+				expectedData += sr.size;
+			if (dataStart < 0 || fseeko(f, 0, SEEK_END) != 0)
+				return refuse("could not determine file size");
+			const off_t fileEnd = ftello(f);
+			if (fileEnd < 0 || (uint64)fileEnd != (uint64)dataStart + expectedData)
+				return refuse("file size does not match its header (truncated or damaged)");
+			if (fseeko(f, dataStart, SEEK_SET) != 0)
+				return refuse("could not seek within file");
+		}
+
+		// Past this point every header check has passed. A short read from here on means
+		// the file changed under us or an I/O error occurred, and guest memory may already
+		// be partially overwritten with no way back to a consistent pre-load state - the
+		// title must be treated as no longer trustworthy if that happens.
 		for (size_t i = 0; i < targets.size(); i++)
 		{
 			if (!ReadMemoryRange(f, targets[i]->getPtr(), savedRanges[i].size))
