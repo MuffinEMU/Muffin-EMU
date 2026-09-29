@@ -393,19 +393,19 @@ private struct OnboardingGamesPage: View {
 
     private func importGame() {
         DocumentImport.present(contentTypes: [.item]) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                Task {
+            Task { @MainActor in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
                     do {
                         try await gameManager.importROM(from: url)
                         errorMessage = nil
                     } catch {
                         errorMessage = error.localizedDescription
                     }
+                case .failure(let error):
+                    errorMessage = error.localizedDescription
                 }
-            case .failure(let error):
-                errorMessage = error.localizedDescription
             }
         }
     }
