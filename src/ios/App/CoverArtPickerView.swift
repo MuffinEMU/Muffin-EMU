@@ -2,18 +2,9 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 
-/// The manual escape hatch for a card CoverArtFetcher's automatic fetch never found
-/// anything for - homebrew, or an obscure title GameTDB simply doesn't list - opened
-/// from a deliberate long-press ("Change Cover Art…" in GameContextMenu). This is
-/// NOT a reversal of CoverArtFetcher.swift's "no picker, automatic only" decision:
-/// the automatic fetch still runs first, unchanged, for every game; this only ever
-/// fires when someone specifically asks for it, for one specific game.
-///
-/// Whichever of the three paths below produces an image, the result always lands in
-/// the exact same place: a `<gameID>_cover.*` file in Documents/Roms, via
-/// GameManager.setManualCover() - the file GameManager.findCover() already checks
-/// first, above both auto-fetched box art and the console's own icon. No new
-/// override mechanism, no new priority list.
+/// Manual cover picker, opened from "Change Cover Art" in the game context menu. Every
+/// path saves a `<gameID>_cover.*` file in Documents/Roms via GameManager.setManualCover(),
+/// which GameManager.findCover() checks before automatic art.
 struct CoverArtPickerView: View {
     let game: GameMetadata
     @ObservedObject var gameManager: GameManager
@@ -22,9 +13,7 @@ struct CoverArtPickerView: View {
     @State private var showingLegacyPhotoPicker = false
     @State private var showingFileImporter = false
     @State private var errorMessage: String?
-    /// Removing the override throws away the image file and immediately dismisses, with
-    /// no undo - the same shape as every other destructive action in the app, which all
-    /// ask first through a confirmationDialog. This one didn't.
+    /// Confirms before removing the custom cover, which cannot be undone.
     @State private var showingRemoveConfirmation = false
 
     // "Try a specific GameTDB ID" state. The fetched image sits here as a preview
@@ -41,8 +30,7 @@ struct CoverArtPickerView: View {
     }
 
     var body: some View {
-        // NavigationStack needs iOS 16+; this project's deployment target is 15.0 -
-        // same reasoning as SettingsView.swift's own NavigationView.
+        // NavigationView: NavigationStack needs iOS 16 and the deployment target is 15.
         NavigationView {
             ZStack {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
@@ -96,7 +84,7 @@ struct CoverArtPickerView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("The cover you set is deleted. MuffinEMU goes back to the automatically-found art, or the placeholder if it never found any.")
+            Text("Your custom cover will be deleted. The game goes back to its automatic cover, or the placeholder.")
         }
     }
 
@@ -110,7 +98,7 @@ struct CoverArtPickerView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(game.displayTitle ?? game.title)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    Text(hasOverride ? "Using a custom cover you set." : "Using an automatically-found cover, or the placeholder if none was found.")
+                    Text(hasOverride ? "Using your custom cover." : "Using the automatic cover.")
                         .font(.system(size: 12, design: .rounded))
                         .foregroundColor(MuffinTheme.brownMid)
                 }
@@ -148,15 +136,7 @@ struct CoverArtPickerView: View {
     @ViewBuilder
     private var photosSection: some View {
         Section {
-            // PhotosPickerItem/PhotosPicker are iOS 16+ types - not just APIs that need
-            // an `if #available` around their call, but types that can't appear as a
-            // stored property's TYPE anywhere in a file built against this project's
-            // 15.0 deployment target. So the modern path is a whole separate view
-            // (ModernPhotoPickerButton below, itself marked @available(iOS 16.0, *))
-            // that owns that state internally, rather than a property living here -
-            // same shape as NavigationStack vs. NavigationView elsewhere in this
-            // codebase, just pushed down one level because this one needs state, not
-            // only a call.
+            // PhotosPicker is iOS 16+, so the modern path lives in its own gated view.
             if #available(iOS 16.0, *) {
                 ModernPhotoPickerButton(
                     onPicked: { data in handlePickedImageData(data) },
@@ -187,7 +167,7 @@ struct CoverArtPickerView: View {
         } header: {
             Text("From Files")
         } footer: {
-            Text("Pick an image (JPG, PNG, or another common format) from Files, iCloud Drive, or another app.")
+            Text("Pick an image from Files, iCloud Drive, or another app.")
         }
     }
 
@@ -243,21 +223,17 @@ struct CoverArtPickerView: View {
             Text("Try a Specific GameTDB ID")
         } footer: {
             InfoButton.footer(
-                "Find a Game ID on GameTDB's own cover-art pages.",
+                "Look up your game's ID on gametdb.com.",
                 title: "GameTDB Game ID",
-                text: "This isn't a search - GameTDB doesn't offer one as an API. Instead, browse GameTDB's own Wii U cover-art library at https://www.gametdb.com/WiiU/CoverArt to find your game, then read its Game ID off the page (a 6-character code, e.g. AGBE01) and type it above. \"Fetch\" tries that exact ID against GameTDB's real cover-art service and shows you what it finds before anything is saved."
+                text: "GameTDB has no search feature we can use. Find your game at https://www.gametdb.com/WiiU/CoverArt, copy its 6-character Game ID (for example AGBE01) and enter it above. Fetch shows a preview before anything is saved."
             )
         }
     }
 
     // MARK: - Photos / Files (both funnel here)
 
-    /// Shared by ModernPhotoPickerButton's PhotosPicker selection, LegacyPhotoPicker's
-    /// UIImagePickerController result, and the .fileImporter result below - whatever
-    /// format the source actually is (HEIC from Photos, PNG, whatever Files hands
-    /// back), decoding through UIImage and re-encoding as JPEG guarantees the bytes
-    /// that reach setManualCover() are always one of the three extensions
-    /// findCover() checks, without needing per-source format detection.
+    /// Shared by the Photos and Files pickers. Re-encodes as JPEG so the saved file always has
+    /// an extension findCover() checks.
     private func handlePickedImageData(_ data: Data) {
         guard let uiImage = UIImage(data: data), let jpegData = uiImage.jpegData(compressionQuality: 0.92) else {
             errorMessage = "That doesn't look like a valid image."
@@ -336,13 +312,8 @@ struct CoverArtPickerView: View {
     }
 }
 
-/// The iOS 16+ "Choose from Photos" button. Its own `@State` holds the
-/// PhotosPickerItem selection - PhotosPickerItem is itself an iOS 16+ type, so it
-/// cannot be a stored property anywhere in CoverArtPickerView (built against this
-/// project's 15.0 deployment target) even behind an `if #available` at the call
-/// site; the whole view carrying that state has to be gated instead, which is what
-/// CoverArtPickerView.photosSection does by only ever constructing this type inside
-/// its own `if #available(iOS 16.0, *)` branch.
+/// The iOS 16+ "Choose from Photos" button. It holds the PhotosPickerItem state, so it
+/// is only constructed behind `#available(iOS 16.0, *)`.
 @available(iOS 16.0, *)
 private struct ModernPhotoPickerButton: View {
     var onPicked: (Data) -> Void
@@ -368,16 +339,8 @@ private struct ModernPhotoPickerButton: View {
 }
 
 #if os(iOS)
-/// UIImagePickerController-backed fallback for iOS 15, where PhotosPicker (PhotosUI,
-/// iOS 16+) doesn't exist yet - same `if #available(iOS 16.0, *)` gating this
-/// codebase already uses for NavigationStack vs. NavigationView (see
-/// SettingsView.swift) and .persistentSystemOverlays (see ContentView.swift's
-/// HideSystemOverlaysIfAvailable). Neither this nor PhotosPicker needs
-/// NSPhotoLibraryUsageDescription or triggers a permission prompt - both run
-/// out-of-process, handing the app only the one image picked, a behavior Apple
-/// changed UIImagePickerController(sourceType: .photoLibrary) to back in iOS 11 -
-/// so there is no separate "access denied" branch to handle here; picking and
-/// cancelling are the only two outcomes.
+/// UIImagePickerController fallback for iOS 15, where PhotosPicker does not exist.
+/// The picker runs out-of-process, so no photo-library permission is needed.
 private struct LegacyPhotoPicker: UIViewControllerRepresentable {
     var onPick: (UIImage?) -> Void
 

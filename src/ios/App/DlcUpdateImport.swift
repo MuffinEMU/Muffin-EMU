@@ -1,17 +1,8 @@
 import Foundation
 
-/// Imports a DLC or update dump into Documents/mlc, where the engine's own MLC scanner
-/// (CafeTitleList::ScanMLCPath) already finds and mounts it alongside its base game -
-/// see IOSTitleLaunch.cpp's PrepareForegroundTitle for the discovery-gap fix that makes
-/// a freshly-imported title actually get picked up before the base game's next launch.
-///
-/// Follows the exact staged-copy-then-promote shape GameManager.importROM already
-/// proved out: copy inside the security scope first, then validate and derive
-/// everything else from the COPY, not the source - a cut-short copy or a source the
-/// picker only half-handed over must never reach the point of being judged valid.
-/// The one real difference from importROM is that the destination path isn't known
-/// until after inspection (it's derived from the title ID inside the file itself), so
-/// staging happens under a scratch name and only gets its real mlc path once inspected.
+/// Imports a DLC or update dump into Documents/mlc, where the engine's MLC scanner finds it.
+/// Copies to a staging folder first and validates the copy, since the destination path
+/// comes from the title ID inside the file.
 enum DlcUpdateImport {
     enum ContentKind {
         case dlc
@@ -36,10 +27,7 @@ enum DlcUpdateImport {
     enum ImportError: LocalizedError {
         case accessDenied
         case copyFailed(Error)
-        // Raw CemuTitleInvalidReason value from CemuBridge.h - kept as the plain Int32
-        // the bridge function actually hands back (its outInvalidReason parameter is
-        // typed `int*`, not the enum, specifically so this side never has to guess how
-        // the Clang importer would bridge that C typedef's case names into Swift).
+        // Raw CemuTitleInvalidReason value from CemuBridge.h.
         case invalidTitle(Int32)
         case wrongType(expected: ContentKind, actual: String)
         case noBaseGameMatch
@@ -58,24 +46,24 @@ enum DlcUpdateImport {
                 case 1: // CemuTitleBadPathOrInaccessible
                     return "That file couldn't be read."
                 case 2: // CemuTitleUnknownFormat
-                    return "That doesn't look like a Wii U DLC or update - the engine didn't recognize its format."
+                    return "This isn't a Wii U DLC or update file."
                 case 3: // CemuTitleNoDiscKey
-                    return "This file is encrypted and there's no matching decryption key installed. Add keys.txt in Settings first."
+                    return "This file is encrypted and no matching key is installed. Add your keys.txt in Settings first."
                 case 4: // CemuTitleNoTicket
-                    return "This dump is missing its ticket (title.tik) - it's an incomplete copy."
+                    return "This dump is incomplete: title.tik is missing."
                 case 5: // CemuTitleMissingXmlFiles
-                    return "This dump is missing or has corrupted meta files (app.xml/meta.xml/cos.xml)."
+                    return "Meta files (app.xml, meta.xml, cos.xml) are missing or damaged."
                 default:
                     return "That file is corrupted or incomplete."
                 }
             case .wrongType(let expected, let actual):
-                return "That's \(actual), not \(expected.displayName) - pick the matching import option instead."
+                return "This is \(actual), not \(expected == .dlc ? "DLC" : "an update"). Use the other import option."
             case .noBaseGameMatch:
-                return "Couldn't find a matching game already in your library for this content."
+                return "No game in your library matches this content."
             case .alreadyInstalledSameOrNewer(let installed, let imported):
                 return "Version \(imported) isn't newer than what's already installed (version \(installed))."
             case .wuaNotYetSupported:
-                return "Single-file .wua DLC/update archives aren't supported yet - import the dumped folder (code/content/meta) instead."
+                return "DLC and updates in a single .wua file aren't supported yet. Import the dumped folder instead."
             }
         }
     }
@@ -118,9 +106,7 @@ enum DlcUpdateImport {
         guard source.startAccessingSecurityScopedResource() else {
             throw ImportError.accessDenied
         }
-        // The claim stays live for as long as `import` hasn't returned, which includes
-        // the whole `await` on the detached task below - `defer` runs at function
-        // exit, not when execution merely suspends.
+        // Held until `import` returns, including across the await below.
         defer { source.stopAccessingSecurityScopedResource() }
 
         guard let mlcRoot = mlcRoot() else { throw ImportError.accessDenied }
@@ -130,20 +116,12 @@ enum DlcUpdateImport {
         guard fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory) else {
             throw ImportError.accessDenied
         }
-        // CafeTitleList::ScanMLCPath only ever looks for a code/content/meta directory
-        // under usr/title/<type>/<id>/ - it has no notion of a loose .wua file sitting
-        // there, so placing one would silently never be found at the next boot. A .wua
-        // would need extracting into that layout first, which this doesn't do yet.
+        // The engine only finds code/content/meta folders under usr/title, not a loose .wua.
         guard isDirectory.boolValue else {
             throw ImportError.wuaNotYetSupported
         }
 
-        // Everything past this point is real I/O against a directory that can be
-        // several GB - copyItem, cemu_bridge_inspect_title opening and parsing the
-        // title, the final move. This used to run inline on whatever called `import`,
-        // which in practice was a plain `Task { }` in ContentView - Task.detached is
-        // what actually guarantees a background thread here, rather than trusting that
-        // caller's task to not have inherited the main actor.
+        // Copying and inspecting can take a while on a large dump, so run it off the main actor.
         return try await Task.detached {
             try copyInspectAndInstall(
                 source: source, kind: kind, library: library, manualMatch: manualMatch, mlcRoot: mlcRoot
@@ -151,10 +129,7 @@ enum DlcUpdateImport {
         }.value
     }
 
-    /// The actual work of `import(from:kind:library:manualMatch:)` above, split out so
-    /// it can run inside that function's Task.detached. DlcUpdateImport has no `self` -
-    /// it's an enum namespace, not a type with instance state - so nothing here needed
-    /// to change to become safe to run off the main thread; only the call site did.
+    /// The copy, inspect and install work for `import(from:kind:library:manualMatch:)`.
     private static func copyInspectAndInstall(
         source: URL,
         kind: ContentKind,
@@ -177,9 +152,7 @@ enum DlcUpdateImport {
             throw ImportError.copyFailed(error)
         }
 
-        // Everything from here judges the staged copy, never source - source's security
-        // scope is about to end, and a copy that was cut short must be caught here, not
-        // silently accepted because the original file happened to be fine.
+        // Everything from here judges the staged copy, not the source.
         func cleanupStaged() { try? fileManager.removeItem(at: staged) }
 
         var titleId: UInt64 = 0
@@ -227,9 +200,7 @@ enum DlcUpdateImport {
             .appendingPathComponent(upperHex)
             .appendingPathComponent(lowerHex)
 
-        // Already installed? Judge the EXISTING install's own version, not any record we
-        // might separately be keeping - the folder on disk is the only source of truth
-        // the engine itself will read from at boot.
+        // Judge the existing install by the folder on disk.
         if fileManager.fileExists(atPath: destination.path) {
             var existingVersion: UInt16 = 0
             let existingValid = destination.path.withCString { cPath in
@@ -270,9 +241,7 @@ enum DlcUpdateImport {
         return ImportedContent(titleId: titleId, baseTitleId: baseTitleId, matchedGame: matchedGame)
     }
 
-    /// Whether `game` has an installed update and/or DLC, checked directly against
-    /// what's on disk under Documents/mlc - not any record kept separately, since the
-    /// mlc folder is the only thing the engine itself will actually read from at boot.
+    /// Whether `game` has an installed update and/or DLC, read from Documents/mlc.
     static func installedContent(for game: GameMetadata) -> (hasUpdate: Bool, hasDLC: Bool) {
         guard let baseTitleId = game.titleId else { return (false, false) }
         return (
@@ -281,9 +250,7 @@ enum DlcUpdateImport {
         )
     }
 
-    /// Deletes `kind`'s installed content for `game`, if any is actually there. Returns
-    /// false (not an error) when there was nothing to remove - a menu action offered
-    /// for content that turned out already gone should read as a no-op, not a failure.
+    /// Deletes `kind`'s installed content for `game`. Returns false when there was nothing to remove.
     @discardableResult
     static func remove(kind: ContentKind, for game: GameMetadata) throws -> Bool {
         guard let baseTitleId = game.titleId else { return false }
@@ -293,9 +260,7 @@ enum DlcUpdateImport {
         return true
     }
 
-    /// nil for titleId 0 (cemu_bridge_derive_content_title_id's "not applicable"
-    /// sentinel) or a path that isn't actually there - the two cases a caller only ever
-    /// needs to tell apart from "yes, something is installed."
+    /// nil for titleId 0 (not applicable) or a path that is not there.
     private static func mlcDestination(forContentTitleId titleId: UInt64) -> URL? {
         guard titleId != 0, let mlcRoot = mlcRoot() else { return nil }
 
