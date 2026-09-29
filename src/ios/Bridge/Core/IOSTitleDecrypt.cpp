@@ -53,6 +53,10 @@ enum
 	IOS_DECRYPT_NO_DISC_KEY = 2,
 	IOS_DECRYPT_DEST_NOT_WRITABLE = 3,
 	IOS_DECRYPT_CANCELLED = 4,
+	// The walk finished but part of the output is missing or damaged (unreadable source
+	// entry, unwritable output, short read, unsafe entry name). The partial output must
+	// not be treated as a complete copy.
+	IOS_DECRYPT_INCOMPLETE = 5,
 };
 
 // One 4MB buffer reused for every file rather than one allocation per file - a real
@@ -61,6 +65,7 @@ enum
 constexpr uint32 kDecryptChunkSize = 4 * 1024 * 1024;
 
 static bool DecryptWalkDirectory(FSTVolume* volume, const std::string& fstPath, const fs::path& destPath,
+	const fs::path& destRoot, uint32& failures,
 	uint64& bytesWritten, uint32& filesWritten, std::atomic_bool& cancelRequested,
 	const std::function<void(uint64 bytesWritten, uint32 filesWritten)>& progressCallback,
 	std::vector<uint8>& scratchBuffer)
@@ -68,11 +73,11 @@ static bool DecryptWalkDirectory(FSTVolume* volume, const std::string& fstPath, 
 	FSTDirectoryIterator dirIterator;
 	if (!volume->OpenDirectoryIterator(fstPath, dirIterator))
 	{
-		// Not every directory in the FST necessarily resolves (link entries, tik-gated
-		// partitions without a key) - skip it rather than abort the whole extraction
-		// over one subtree. The caller only fails the overall operation on the
-		// top-level mount itself failing.
-		cemuLog_log(LogType::Force, "Decrypt: could not open directory '{}', skipping it", fstPath);
+		// A directory that can't be opened means part of the tree is missing from the
+		// output. Keep walking so the log lists everything, but the overall result
+		// is INCOMPLETE.
+		cemuLog_log(LogType::Force, "Decrypt: could not open directory '{}'", fstPath);
+		failures++;
 		return true;
 	}
 
@@ -95,9 +100,10 @@ static bool DecryptWalkDirectory(FSTVolume* volume, const std::string& fstPath, 
 			if (ec)
 			{
 				cemuLog_log(LogType::Force, "Decrypt: could not create directory '{}' ({})", childDestPath.string(), ec.message());
+				failures++;
 				continue;
 			}
-			if (!DecryptWalkDirectory(volume, childFstPath, childDestPath, bytesWritten, filesWritten, cancelRequested, progressCallback, scratchBuffer))
+			if (!DecryptWalkDirectory(volume, childFstPath, childDestPath, destRoot, failures, bytesWritten, filesWritten, cancelRequested, progressCallback, scratchBuffer))
 				return false;
 			continue;
 		}
@@ -108,7 +114,8 @@ static bool DecryptWalkDirectory(FSTVolume* volume, const std::string& fstPath, 
 		FSTFileHandle fileHandle;
 		if (!volume->OpenFile(childFstPath, fileHandle, true))
 		{
-			cemuLog_log(LogType::Force, "Decrypt: could not open '{}' for reading, skipping it", childFstPath);
+			cemuLog_log(LogType::Force, "Decrypt: could not open '{}' for reading", childFstPath);
+			failures++;
 			continue;
 		}
 		uint32 fileSize = volume->GetFileSize(fileHandle);
@@ -117,8 +124,10 @@ static bool DecryptWalkDirectory(FSTVolume* volume, const std::string& fstPath, 
 		if (!out.is_open())
 		{
 			cemuLog_log(LogType::Force, "Decrypt: could not create output file '{}'", childDestPath.string());
+			failures++;
 			continue;
 		}
+		bool fileOk = true;
 
 		if (scratchBuffer.size() < std::min(fileSize, kDecryptChunkSize))
 			scratchBuffer.resize(std::min(fileSize, kDecryptChunkSize));
@@ -131,12 +140,30 @@ static bool DecryptWalkDirectory(FSTVolume* volume, const std::string& fstPath, 
 			uint32 toRead = std::min((uint32)scratchBuffer.size(), fileSize - offset);
 			uint32 got = volume->ReadFile(fileHandle, offset, toRead, scratchBuffer.data());
 			if (got == 0)
-				break; // real disc read failure (bad key, corrupt data) - stop this file, move on to the next
+			{
+				// Disc read failure (bad key, corrupt data): the output file is short.
+				cemuLog_log(LogType::Force, "Decrypt: read failed at offset {} of '{}'", offset, childFstPath);
+				fileOk = false;
+				break;
+			}
 			out.write((const char*)scratchBuffer.data(), got);
+			if (!out)
+			{
+				cemuLog_log(LogType::Force, "Decrypt: write failed for '{}' (disk full?)", childDestPath.string());
+				fileOk = false;
+				break;
+			}
 			offset += got;
 			bytesWritten += got;
 		}
 		out.close();
+		if (out.fail())
+			fileOk = false;
+		if (!fileOk)
+		{
+			failures++;
+			continue;
+		}
 		filesWritten++;
 		if (progressCallback)
 			progressCallback(bytesWritten, filesWritten);
@@ -179,14 +206,17 @@ int IOSTitleDecrypt_ExtractToFolder(const char* srcPath, const char* destFolderP
 
 	uint64 bytesWritten = 0;
 	uint32 filesWritten = 0;
+	uint32 failures = 0;
 	std::vector<uint8> scratchBuffer;
-	bool completed = DecryptWalkDirectory(volume, "", dest, bytesWritten, filesWritten, cancelRequested, progressCallback, scratchBuffer);
+	bool completed = DecryptWalkDirectory(volume, "", dest, dest, failures, bytesWritten, filesWritten, cancelRequested, progressCallback, scratchBuffer);
 	delete volume;
 
-	cemuLog_log(LogType::Force, "Decrypt: {} - {} files, {} bytes written to '{}'",
-		completed ? "finished" : "cancelled", filesWritten, bytesWritten, dest.string());
+	cemuLog_log(LogType::Force, "Decrypt: {} - {} files, {} bytes written to '{}', {} failures",
+		completed ? "finished" : "cancelled", filesWritten, bytesWritten, dest.string(), failures);
 
-	return completed ? IOS_DECRYPT_OK : IOS_DECRYPT_CANCELLED;
+	if (!completed)
+		return IOS_DECRYPT_CANCELLED;
+	return failures == 0 ? IOS_DECRYPT_OK : IOS_DECRYPT_INCOMPLETE;
 }
 
 // Decrypt-to-WUA. Same source, same underlying decrypt (nothing here does crypto
@@ -214,6 +244,7 @@ namespace
 struct WuaWriterContext
 {
 	int fd;
+	bool writeFailed = false;
 
 	static void NewOutputFile(const int32_t /*partIndex*/, void* /*ctx*/)
 	{
@@ -230,9 +261,12 @@ struct WuaWriterContext
 		{
 			ssize_t n = write(self->fd, p + written, length - written);
 			if (n <= 0)
-				break; // disk full or similar - AppendData/Finalize have no return value
-			           // to propagate this through, so the truncated .wua is caught by
-			           // the ZArchiveReader verification pass after Finalize() instead.
+			{
+				// Disk full or similar. ZArchive's callback can't return an error, so
+				// latch it and check after Finalize().
+				self->writeFailed = true;
+				break;
+			}
 			written += (size_t)n;
 		}
 	}
@@ -242,7 +276,7 @@ struct WuaWriterContext
 // tree TitleInfo::Mount() exposes and copies every file straight into the archive
 // writer, one file at a time, never materializing anything on real disk in between.
 bool WuaWalkDirectory(ZArchiveWriter& writer, const std::string& archivePath, const std::string& fscPath,
-	std::atomic_bool& cancelRequested, uint64& bytesWritten, uint32& filesWritten,
+	uint32& failures, std::atomic_bool& cancelRequested, uint64& bytesWritten, uint32& filesWritten,
 	const std::function<void(uint64 bytesWritten, uint32 filesWritten)>& progressCallback,
 	std::vector<uint8>& scratchBuffer)
 {
@@ -251,8 +285,9 @@ bool WuaWalkDirectory(ZArchiveWriter& writer, const std::string& archivePath, co
 		fsc_openDirIterator(fscPath.c_str(), &fscStatus), fsc_close);
 	if (!dirIterator)
 	{
-		cemuLog_log(LogType::Force, "Decrypt-to-WUA: could not open directory '{}', skipping it", fscPath);
-		return true; // same skip-not-abort policy as DecryptWalkDirectory above
+		cemuLog_log(LogType::Force, "Decrypt-to-WUA: could not open directory '{}'", fscPath);
+		failures++;
+		return true; // keep walking to log everything; the result is INCOMPLETE
 	}
 
 	writer.MakeDir(archivePath.c_str(), false);
@@ -270,7 +305,7 @@ bool WuaWalkDirectory(ZArchiveWriter& writer, const std::string& archivePath, co
 		if (dirEntry.isDirectory)
 		{
 			if (!WuaWalkDirectory(writer, archivePath + name + "/", fscPath + name + "/",
-					cancelRequested, bytesWritten, filesWritten, progressCallback, scratchBuffer))
+					failures, cancelRequested, bytesWritten, filesWritten, progressCallback, scratchBuffer))
 				return false;
 			continue;
 		}
@@ -284,7 +319,8 @@ bool WuaWalkDirectory(ZArchiveWriter& writer, const std::string& archivePath, co
 			fsc_close);
 		if (!file)
 		{
-			cemuLog_log(LogType::Force, "Decrypt-to-WUA: could not open '{}', skipping it", fscPath + name);
+			cemuLog_log(LogType::Force, "Decrypt-to-WUA: could not open '{}'", fscPath + name);
+			failures++;
 			continue;
 		}
 
@@ -319,6 +355,15 @@ int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destWuaPath,
 	std::error_code ec;
 	fs::create_directories(dest.parent_path(), ec);
 
+	// Never truncate the source: a .wua source picked as its own destination would be
+	// emptied by O_TRUNC before it is read.
+	std::error_code eqEc;
+	if (fs::exists(dest, eqEc) && fs::equivalent(fs::path(srcPath), dest, eqEc))
+	{
+		cemuLog_log(LogType::Force, "Decrypt-to-WUA: destination is the source file '{}'", srcPath);
+		return IOS_DECRYPT_DEST_NOT_WRITABLE;
+	}
+
 	TitleInfo titleInfo{fs::path(srcPath)};
 	if (!titleInfo.IsValid())
 	{
@@ -351,7 +396,8 @@ int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destWuaPath,
 	uint64 bytesWritten = 0;
 	uint32 filesWritten = 0;
 	std::vector<uint8> scratchBuffer;
-	bool completed = WuaWalkDirectory(archiveWriter, archiveRoot, mountPath, cancelRequested,
+	uint32 failures = 0;
+	bool completed = WuaWalkDirectory(archiveWriter, archiveRoot, mountPath, failures, cancelRequested,
 		bytesWritten, filesWritten, progressCallback, scratchBuffer);
 
 	titleInfo.Unmount(mountPath);
@@ -366,7 +412,15 @@ int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destWuaPath,
 	}
 
 	archiveWriter.Finalize();
-	close(fd);
+	const bool closeFailed = close(fd) != 0;
+
+	if (writerCtx.writeFailed || closeFailed)
+	{
+		cemuLog_log(LogType::Force, "Decrypt-to-WUA: writing '{}' failed (disk full?) - removed", dest.string());
+		std::error_code rmEc;
+		fs::remove(dest, rmEc);
+		return IOS_DECRYPT_DEST_NOT_WRITABLE;
+	}
 
 	// Same verification WuaConverter.cpp does on Android: open what was just written
 	// back up as a reader before calling it done, so a truncated or corrupt .wua is
@@ -376,9 +430,20 @@ int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destWuaPath,
 	if (!verify)
 	{
 		cemuLog_log(LogType::Force, "Decrypt-to-WUA: '{}' failed verification after writing", dest.string());
+		std::error_code rmEc;
+		fs::remove(dest, rmEc);
 		return IOS_DECRYPT_DEST_NOT_WRITABLE;
 	}
 	delete verify;
+
+	if (failures != 0)
+	{
+		// Some entries could not be read, so the archive is missing content.
+		cemuLog_log(LogType::Force, "Decrypt-to-WUA: {} entries failed - '{}' removed as incomplete", failures, dest.string());
+		std::error_code rmEc;
+		fs::remove(dest, rmEc);
+		return IOS_DECRYPT_INCOMPLETE;
+	}
 
 	cemuLog_log(LogType::Force, "Decrypt-to-WUA: finished - {} files, {} bytes written to '{}'",
 		filesWritten, bytesWritten, dest.string());
