@@ -907,7 +907,12 @@ class GameManager: ObservableObject {
         UserDefaults.standard.set(Array(ids), forKey: favoriteIDsKey)
     }
 
+    /// Identifies the current launch. Changed by launchGame and stopEmulation so a boot that
+    /// finishes after the user has gone back can tell it is stale.
+    private var launchToken = UUID()
+
     func launchGame(_ game: GameMetadata) {
+        launchToken = UUID()
         currentGame = game
         emulationState = .loading
         surfaceRegistered = false
@@ -976,6 +981,7 @@ class GameManager: ObservableObject {
         cemu_bridge_register_render_surface(surfacePtr, width, height, dpiScale)
 
         let romPath = game.romPath
+        let token = launchToken
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
             let mlcPath = documentsPath.appendingPathComponent("mlc").path
@@ -1167,6 +1173,14 @@ class GameManager: ObservableObject {
 
             await MainActor.run {
                 guard let self else { return }
+                guard self.launchToken == token, self.emulationState == .loading else {
+                    // Back was pressed (or another launch started) while this boot ran.
+                    // Don't flip the UI to .running; shut down a title that did boot.
+                    if status == CEMU_BRIDGE_OK, self.currentGame == nil {
+                        self.stopEmulation()
+                    }
+                    return
+                }
                 engine.refreshStatus()
                 self.lastStatusMessage = engine.statusText
                 self.emulationState = (status == CEMU_BRIDGE_OK) ? .running : .error
@@ -1181,6 +1195,7 @@ class GameManager: ObservableObject {
     #endif
 
     func stopEmulation() {
+        launchToken = UUID()
         stopFrameRateMonitor()
         #if os(iOS)
         // Resume before stopping, unconditionally, even though nothing here knows or
