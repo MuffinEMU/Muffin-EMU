@@ -166,13 +166,15 @@ class AdvancedMetalRenderer: NSObject, MTKViewDelegate {
     }
 
     private func renderBlackScreen(encoder: MTLRenderCommandEncoder) {
+        // The vertex shader reads float2 position + float2 texCoord per vertex (16 bytes),
+        // so each vertex needs four floats even though a black screen ignores the texcoords.
         let quad: [Float] = [
-            -1.0, 1.0,
-            -1.0, -1.0,
-            1.0, -1.0,
-            -1.0, 1.0,
-            1.0, -1.0,
-            1.0, 1.0
+            -1.0, 1.0, 0.0, 0.0,
+            -1.0, -1.0, 0.0, 1.0,
+            1.0, -1.0, 1.0, 1.0,
+            -1.0, 1.0, 0.0, 0.0,
+            1.0, -1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 0.0
         ]
 
         guard let vertexBuffer = device.makeBuffer(bytes: quad, length: MemoryLayout<Float>.size * quad.count, options: []) else { return }

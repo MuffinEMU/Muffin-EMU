@@ -29,7 +29,7 @@ typedef enum {
     CEMU_BRIDGE_NO_TITLE_TIK    = 4,   // installed title with no usable title.tik
     CEMU_BRIDGE_UNSUPPORTED     = 5,   // not a title and not a loadable executable
     CEMU_BRIDGE_BASE_NOT_FOUND  = 6,   // an update/DLC was launched without its base game
-    CEMU_BRIDGE_CORE_NOT_BUILT  = 100, // real engine not linked into this build yet (pre-M1)
+    CEMU_BRIDGE_CORE_NOT_BUILT  = 100, // real engine not linked into this build yet (never returned by current builds)
     CEMU_BRIDGE_BAD_ARG         = 101, // null/empty path etc.
 } CemuBridgeStatus;
 
@@ -48,8 +48,8 @@ void cemu_bridge_initialize(const char* mlcPath);
 /// Real games are decrypted with the user's OWN console keys, read from keys.txt in the
 /// app's Documents/mlc directory. Nothing is bundled, derived or worked around: with no
 /// keys.txt the disc paths report CEMU_BRIDGE_NO_DISC_KEY and homebrew keeps working
-/// exactly as before. keys.txt is re-read on every call, so importing one mid-session
-/// takes effect on the next launch attempt rather than after an app restart.
+/// exactly as before. The engine's key cache reads keys.txt once per app launch, so a
+/// keys.txt imported mid-session is only used after the app is relaunched.
 CemuBridgeStatus cemu_bridge_boot_title(const char* path);
 
 /// Boot a standalone .rpx and nothing else. Kept as the narrow homebrew entry point;
@@ -58,8 +58,10 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path);
 /// Wraps CafeSystem::PrepareForegroundTitleFromStandaloneRPX + LaunchForegroundTitle.
 CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath);
 
-/// Re-reads keys.txt and returns how many 128-bit keys the engine's own parser accepted.
-/// 0 means the file is absent, empty, or contains nothing usable. Cheap; safe to call
+/// Re-reads the keys.txt FILE and returns how many 128-bit keys it holds (same acceptance
+/// rule as the engine's parser). This does not reload the engine's key cache, which is
+/// read once per app launch, so a newly imported file is counted immediately but only
+/// used to decrypt after a relaunch. 0 means the file is absent, empty, or contains nothing usable. Cheap; safe to call
 /// from the UI.
 ///
 /// Returns -1, meaning "cannot answer", when the engine has not been initialized yet
@@ -68,7 +70,7 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath);
 /// real answer about a real file.
 int cemu_bridge_reload_and_count_keys(void);
 
-/// M3 (ROADMAP.md): wires the real native Metal renderer to an actual on-screen
+/// Wires the real native Metal renderer to an actual on-screen
 /// surface. `uiView` must be a UIView* (bridged as void*); `width`/`height` are its
 /// client size in LOGICAL POINTS (not physical pixels - the points -> pixels
 /// conversion is applied downstream, exactly once per consumer, using `dpiScale`;
@@ -149,22 +151,16 @@ void cemu_bridge_log_line(const char* message);
 double cemu_bridge_get_fps(void);
 
 /// The four counters the engine's own progress heartbeat prints, readable on demand.
+/// cemu_bridge_get_fps() rounds to whole frames per second, so a title running below one
+/// frame per second reads 0, the same as one that stopped. These separate the two:
 ///
-/// This exists because `cemu_bridge_get_fps()` cannot answer the question that actually
-/// matters on this port. It reports whole frames per second, so a title genuinely
-/// rendering at a fraction of a frame per second - the normal case under the forced
-/// interpreter - rounds to 0 and the HUD reads "-- FPS", identical to a title that
-/// stopped dead. These counters separate the two, on screen, without anyone having to
-/// export log.txt:
-///
-///   gx2FrameCount climbing, however slowly  -> running past the first frame, just slow
+///   gx2FrameCount climbing, however slowly  -> running, just slow
 ///   gx2FrameCount pinned, gx2InitReached    -> stalled after handing over to GX2
 ///   gx2InitReached false, others climbing   -> still in OSScreen boot
 ///   nothing moving at all                   -> a real deadlock, not slowness
 ///
-/// `gx2FramesPerSecond` is fractional on purpose and is the heartbeat's own measurement,
-/// not a second one taken here, so the number on screen and the number in the log are
-/// the same number rather than two samples that disagree.
+/// `gx2FramesPerSecond` is fractional and is the heartbeat's own measurement, so the
+/// number on screen matches the log.
 typedef struct {
     bool gx2_init_reached;
     unsigned long long gx2_frame_count;
@@ -299,8 +295,8 @@ void cemu_bridge_graphic_packs_refresh(void);
 /// pass it straight back to cemu_bridge_graphic_pack_set_enabled.
 ///
 /// Same ownership as cemu_bridge_device_report and friends: the returned pointer is
-/// into a static buffer this function owns, valid until the next call to this same
-/// function - copy it (e.g. String(cString:)) before calling again, never free it.
+/// into a thread-local buffer this function owns, valid until the next call to this same
+/// function on the same thread - copy it (e.g. String(cString:)) before calling again, never free it.
 const char* cemu_bridge_graphic_packs_list(void);
 
 /// Enables or disables the pack at `index` (from the most recent
@@ -347,8 +343,8 @@ int cemu_bridge_usb_device_slot_count(CemuBridgeUSBDevice device);
 
 /// One record per slot, in slot order, separated by 0x1E - same convention as
 /// cemu_bridge_graphic_packs_list(). An empty slot is an empty record (never omitted),
-/// so record index always equals slot index. Static storage owned by this call, valid
-/// until the next call to ANY cemu_bridge_usb_device_* function; copy before that.
+/// so record index always equals slot index. Thread-local storage owned by this call,
+/// valid until the next call to this function on the same thread; copy before that.
 const char* cemu_bridge_usb_device_slot_names(CemuBridgeUSBDevice device);
 
 /// The core's own built-in figure table for `device`, restricted to the entries valid in
@@ -363,7 +359,7 @@ const char* cemu_bridge_usb_device_figure_list(CemuBridgeUSBDevice device, int s
 /// Loads the figure file at `path` (already written by create, below, or imported by the
 /// user) into `slot`. Returns NULL on success; on failure, a static, human-readable
 /// reason (file too small for this device, already loaded in another slot, portal has no
-/// free slots) valid until the next cemu_bridge_usb_device_* call - copy it before that.
+/// free slots) valid until the next call to the same function on the same thread - copy it before that.
 const char* cemu_bridge_usb_device_load(CemuBridgeUSBDevice device, int slot, const char* path);
 
 /// Tells the emulated device the figure in `slot` was lifted off - the game sees a real
@@ -386,26 +382,15 @@ const char* cemu_bridge_usb_device_create(CemuBridgeUSBDevice device, uint32_t f
 const char* cemu_bridge_usb_device_move_dimensions(int fromSlot, int toSlot);
 
 /// How fast the emulated console believes time is passing, as a right-shift factor:
-/// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
-/// Cemu's own `ActiveSettings::SetTimerShiftFactor()`, which desktop Cemu exposes as its
-/// Timer Speed menu; nothing on iOS was setting it, so it sat at 3 on every launch.
+/// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on
+/// (ActiveSettings::SetTimerShiftFactor(), desktop Cemu's Timer Speed).
 ///
-/// It matters here far more than it does on desktop. Under the forced interpreter the
-/// emulated CPU retires instructions on the order of a hundred times slower than the
-/// hardware it is pretending to be, while `PPCTimer_getFromRDTSC()` keeps deriving the
-/// guest's clock from the host's wall clock. The guest therefore experiences a console
-/// whose CPU has effectively stopped: every periodic deadline it sets - coreinit alarms,
-/// the AX audio callback, thread quanta - is already long overdue by the time it is
-/// serviced, so the scheduler can spend all of its time on overdue timer work and never
-/// return to the title's own thread. The visible result is a title that presents one
-/// frame and then appears to hang, which is not a hang.
-///
-/// Raising the shift makes the guest's clock advance more slowly, so its deadlines stay
-/// reachable and it runs in honest slow motion instead of drowning. It changes no
-/// emulated result: it is the rate a monotonic counter accumulates, applied per call, so
-/// it can be changed while a title runs and time still only ever moves forward.
-///
-/// This is a compensation for an emulator that is too slow. It does not make it faster.
+/// Under the interpreter the emulated CPU is far slower than the real console while the
+/// guest clock follows the host's wall clock, so periodic deadlines (alarms, audio
+/// callbacks, thread quanta) can be overdue faster than they are serviced and the title
+/// appears to hang. Raising the shift slows the guest clock so it runs in slow motion
+/// instead. It can be changed while a title runs; time still only moves forward. It
+/// compensates for a slow emulator and does not make it faster.
 void cemu_bridge_set_timebase_shift(int shift);
 
 /// The shift currently in effect. See above for the scale.
@@ -413,21 +398,10 @@ int cemu_bridge_get_timebase_shift(void);
 
 /// Turns the automatic clock ladder on or off.
 ///
-/// The Emulated clock setting above is only useful if somebody knows which value to pick,
-/// and nothing knows that in advance - it depends on how tight a particular title's own
-/// deadlines are. Left to a person it means launch, wait, decide it is still stuck, open
-/// Settings, step down one, wait again. On a port with one test device that loop is the
-/// bottleneck, not the code.
-///
-/// So the engine walks it itself. While a title is booting on the interpreter and has not
-/// reached GX2Init, the ladder steps the guest's clock down one notch every twelve seconds
-/// to a floor of 1/64, and stops the moment GX2 is reached - logging which value got there,
-/// which is a measurement this port has never had.
-///
-/// Enabled unless the user has chosen a value by hand; choosing one turns it off for good,
-/// because a search that overrides a deliberate choice is a bug rather than a convenience.
-/// It never runs under the recompiler, where the premise does not hold. Stepping is always
-/// downward, so a step that was not needed costs slow motion, never a hang.
+/// While a title boots on the interpreter and has not reached GX2Init, the ladder steps
+/// the guest clock down one notch every twelve seconds (floor 1/64). Once the title is
+/// advancing, the clock is restored to its starting value. Enabled unless the user has
+/// chosen a value by hand, which turns it off; never runs under the recompiler.
 void cemu_bridge_set_timebase_auto_enabled(bool enabled);
 
 /// Whether the ladder is allowed to run. See above.
@@ -447,50 +421,20 @@ int cemu_bridge_cpu_mode(void);
 
 /// Diagnostic switches, all read when a title starts rather than while one runs.
 ///
-/// These exist because two builds in a row were unusable and neither of us could tell
-/// which change was responsible without a twenty-minute rebuild per guess. Each one
-/// isolates a subsystem that has been wrong before.
+/// Each one isolates a subsystem so a problem can be narrowed down without a rebuild.
 void cemu_bridge_set_recompiler_enabled(bool enabled);
 bool cemu_bridge_recompiler_enabled(void);
 
-/// Speed first, or accuracy first. MuffinEMU is tuned for speed by default: the multi-core
-/// recompiler (the multi-core interpreter when no JIT enabler is attached), shaders built
-/// in the background, and the work that only buys accuracy - accurate Vulkan barriers and
-/// GX2DrawDone synchronisation - skipped. On, this takes Cemu's most compatible choice for
-/// each instead: one emulated CPU core, every shader built before the frame that needs it,
-/// accurate barriers and draw-done sync. For the titles that glitch, desync or crash on
+/// Speed first, or accuracy first. By default MuffinEMU runs one emulated CPU core (the
+/// recompiler when a JIT enabler is attached, otherwise the interpreter; multi-core is
+/// opt-in through cemu_bridge_set_multicore_enabled), builds shaders in the background,
+/// and skips the work that only buys accuracy - accurate Vulkan barriers and GX2DrawDone
+/// synchronisation. On, this takes Cemu's most compatible choice for each instead: one
+/// emulated CPU core, every shader built before the frame that needs it, accurate
+/// barriers and draw-done sync. For the titles that glitch, desync or crash on
 /// the fast path. Read when a title starts.
 void cemu_bridge_set_favour_accuracy(bool enabled);
 
-/// Low Power Mode: run ONE emulated CPU core instead of three, and nothing else.
-///
-/// Deliberately not folded into cemu_bridge_set_favour_accuracy() even though both end
-/// up choosing a Singlecore mode. Favour accuracy ALSO forces synchronous shader
-/// compilation, accurate Vulkan barriers and GX2DrawDone sync - all of which add work.
-/// A device that is already too hot needs less work, not more, so these stay separate
-/// switches with separate reasons.
-///
-/// Why this is the lever that matters: on iOS the core's GetCPUMode() returns the config
-/// value unresolved, and _LaunchTitleThread() only starts the three emulated cores on
-/// their own host threads for the two explicit Multicore modes. MeloCafe's default (Auto)
-/// therefore runs every title on one host thread; this bridge always writes an explicit
-/// mode and defaults to Multicore, so MuffinEMU runs three. Those threads sit in a
-/// reschedule loop that never sleeps, so three of them on a fanless A12Z is about three
-/// times the sustained CPU power of one. That difference, not any cleverness on
-/// MeloCafe's side, is why the same title can run cool there and hot here.
-///
-/// Costs frame rate. That is the trade, stated plainly rather than hidden.
-/// Read when a title starts - the core count cannot change under a running title.
-/// Thermal governor: microseconds each emulated core sleeps at its reschedule point.
-///
-/// 0 (the default, and the value whenever the device is not hot) means no sleep and the
-/// core loop is unchanged. Unlike cemu_bridge_set_low_power_mode() above, this takes
-/// effect on a RUNNING title - it is the CPU-side lever for a device overheating right
-/// now, where core count cannot move until the next launch.
-///
-/// Costs emulation speed in proportion to the sleep. Applied only while iOS reports
-/// serious or critical thermal pressure, at which point iOS is already throttling the
-/// hardware, and set back to 0 the moment it cools. See ThermalMonitor.swift.
 /// Best-effort real device temperature in Celsius, or NaN when it cannot be read.
 ///
 /// iOS publishes NO device temperature to apps - ProcessInfo.thermalState's four levels
@@ -504,6 +448,17 @@ void cemu_bridge_set_favour_accuracy(bool enabled);
 /// a number that was actually read, or NaN.
 double cemu_bridge_device_temperature_celsius(void);
 
+
+/// Thermal governor: microseconds each emulated core sleeps at its reschedule point.
+///
+/// 0 (the default, and the value whenever the device is not hot) means no sleep and the
+/// core loop is unchanged. Unlike cemu_bridge_set_low_power_mode(), this takes
+/// effect on a RUNNING title - it is the CPU-side lever for a device overheating right
+/// now, where core count cannot move until the next launch.
+///
+/// Costs emulation speed in proportion to the sleep. Applied only while iOS reports
+/// serious or critical thermal pressure, at which point iOS is already throttling the
+/// hardware, and set back to 0 the moment it cools. See ThermalMonitor.swift.
 void cemu_bridge_set_thermal_throttle_micros(uint32_t micros);
 
 /// Run the three emulated Espresso cores on three host threads instead of one.
@@ -515,6 +470,10 @@ void cemu_bridge_set_thermal_throttle_micros(uint32_t micros);
 /// thermal headroom; not worth being the default on this one.
 void cemu_bridge_set_multicore_enabled(bool enabled);
 
+/// Low Power Mode: run one emulated CPU core and nothing else changes. Separate from
+/// cemu_bridge_set_favour_accuracy(), which also forces synchronous shader compilation
+/// and accurate barriers (more work, the wrong lever for a device that is already hot).
+/// Read when a title starts - the core count cannot change under a running title.
 void cemu_bridge_set_low_power_mode(bool enabled);
 bool cemu_bridge_low_power_mode(void);
 bool cemu_bridge_favour_accuracy(void);
@@ -551,11 +510,8 @@ bool cemu_bridge_vsync_enabled(void);
 /// kKeepAspectRatio letterboxes 1280x720 inside it. Re-read every time the output blit
 /// is sized, so unlike vsync above it takes effect on the next frame, not the next launch.
 ///
-/// This declaration is the half of the pair that the ea2d6e05 engine restore dropped:
-/// f57b840c put the definition back into CemuBridge.mm but not this line, and Swift only
-/// sees what this header declares - SettingsView.swift and GameManager.swift both call
-/// it, so without it the app target does not compile. The comm(1) check described on the
-/// definition in CemuBridge.mm has to be run against this file as well as the .mm.
+/// Swift only sees what this header declares, and the CI symbol check compares it against
+/// the exported functions, so a definition in CemuBridge.mm needs a declaration here.
 void cemu_bridge_set_stretch_to_fill(bool enabled);
 
 /// Which renderer the next title uses: 2 = Metal (the native path and the default), 1 =
@@ -952,8 +908,7 @@ void cemu_bridge_release_all_buttons(void);
 // under (Cafe/Account/Account.h). Network Service is which online backend an account's
 // traffic goes to: Nintendo's own (long since shut down for the Wii U), Pretendo
 // (Pretendo Network, a community-run reimplementation - see pretendo.network), a
-// hand-configured Custom service, or Offline. Neither concept is MuffinEMU- or
-// MeloCafe-specific; this is desktop Cemu's own account/online system, which had no iOS
+// hand-configured Custom service, or Offline. Neither concept is MuffinEMU-specific; this is desktop Cemu's own account/online system, which had no iOS
 // surface at all before this.
 
 /// One account per record, most-recently-refreshed order (Account::GetAccounts()).
@@ -988,8 +943,8 @@ uint32_t cemu_bridge_accounts_min_persistent_id(void);
 
 /// True while account controls should be disabled in the UI (CafeSystem::IsTitleRunning())
 /// - changing the active account or its Network Service mid-title wouldn't take effect
-/// until the next boot but would look like it did, so MeloCafe's own AccountSettingsView
-/// locks the picker instead while a title runs, and this mirrors that.
+/// until the next boot but would look like it did, so the account screen
+/// locks the picker while a title runs.
 bool cemu_bridge_accounts_locked(void);
 
 /// Creates a real Account (Cafe/Account/Account.h) with every field the on-disk format
@@ -1000,7 +955,7 @@ bool cemu_bridge_accounts_locked(void);
 /// slots remain, miiName is empty, or the underlying Account::Save() fails - the caller is
 /// expected to have already checked the first three against cemu_bridge_accounts_list(),
 /// cemu_bridge_accounts_min_persistent_id() and cemu_bridge_accounts_has_free_slot(), the
-/// same order MeloCafe's own CreateAccountView validates in, so it can show a specific
+/// same order a UI would validate in, so it can show a specific
 /// reason instead of one generic failure.
 bool cemu_bridge_account_create(uint32_t persistentId, const char* miiName, uint16_t birthYear,
     uint8_t birthMonth, uint8_t birthDay, int gender, const char* email, int country);
@@ -1110,12 +1065,14 @@ void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y);
 /// is a request - whether the system honoured it shows up only in the numbers, and a
 /// readout saying "increased memory limit: on" beside a 64 MB JIT arena would be a
 /// reassuring lie. The arena size is the number that says whether the recompiler got room.
+/// The returned pointer is into a thread-local buffer, valid until the next call to this
+/// function on the same thread; copy it before calling again.
 const char* cemu_bridge_memory_headroom_summary(void);
 
 int cemu_bridge_input_button_mapping_count(void);
 
 /// Which controller profile the GamePad is on ("default" when none was loaded). Owned by
-/// the bridge and valid until the next call.
+/// the bridge and valid until the next call on the same thread.
 const char* cemu_bridge_input_profile_name(void);
 
 /// Delete the GamePad's persisted profile and re-apply the default mappings. Returns true

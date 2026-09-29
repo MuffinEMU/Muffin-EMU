@@ -1,13 +1,7 @@
 import Foundation
 
-/// Thin, honest wrapper over the real Cemu C++ engine via `CemuBridge`.
-///
-/// This intentionally does NOT contain an emulator. All emulation is delegated to
-/// the genuine Cemu core through the C bridge. Until the core is compiled for iOS
-/// (see ROADMAP.md M1), `coreAvailable` is false and boots report the truthful
-/// "engine not built yet" state instead of faking execution.
-///
-/// The previous `WiiUCPU`/`MemoryManager` Swift toy is retired and no longer used.
+/// Thin wrapper over the Cemu C++ engine via `CemuBridge`. All emulation happens in the
+/// core; this class only forwards calls and publishes state.
 @MainActor
 final class EmulationEngine: ObservableObject {
     @Published private(set) var isRunning: Bool = false
@@ -40,8 +34,7 @@ final class EmulationEngine: ObservableObject {
     }
 
     /// Raw, non-actor-isolated entry points for the two bridge calls that do real
-    /// (potentially slow, and historically hang-prone on iOS - see the M2 boot-freeze
-    /// investigation) engine work. `initialize`/`boot` above call these directly on
+    /// (potentially slow) engine work. `initialize`/`boot` above call these directly on
     /// whatever actor they're invoked from (@MainActor by default, since this class
     /// is @MainActor) - fine for callers that are OK blocking the main thread, but
     /// GameManager's real launch path calls these `nonisolated` versions from a
