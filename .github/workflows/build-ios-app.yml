@@ -524,7 +524,7 @@ jobs:
         # simply produced nothing. A retry re-attaches the missing files to the same
         # draft and publishes it.
         if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         id: publish
         continue-on-error: true
         with:
@@ -553,7 +553,7 @@ jobs:
         # numbered ones are the history people roll back to, and a rolling tag cannot be
         # rolled back to because it does not stay still.
         if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: nightly
           target_commitish: ${{ github.sha }}
@@ -589,7 +589,7 @@ jobs:
         # no separate guard step is needed - and a guard checking failure() would never
         # have fired anyway, because continue-on-error above keeps the job green.
         if: github.event_name != 'pull_request' && steps.publish.outcome == 'failure'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.MUFFIN_TAG }}
           target_commitish: ${{ github.sha }}
