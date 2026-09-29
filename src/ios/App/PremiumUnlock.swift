@@ -113,6 +113,14 @@ enum PremiumUnlock {
         return true
     }
 
+    /// Same check as `attemptUnlock`, run off the main thread: the derivation is 200,000
+    /// HMAC rounds and would freeze the UI if called from a button action.
+    static func attemptUnlockOffMain(code: String) async -> Bool {
+        await Task.detached(priority: .userInitiated) {
+            attemptUnlock(code: code)
+        }.value
+    }
+
     // MARK: - derivation
 
     /// PBKDF2-HMAC-SHA256, implemented on CryptoKit rather than CommonCrypto.
