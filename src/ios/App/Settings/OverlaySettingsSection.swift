@@ -17,9 +17,6 @@ enum OverlaySettings {
     static let fpsKey = "muffin.overlay.fps"
     static let defaultFps = true // matches CemuConfig's overlay.fps default
 
-    static let cpuModeKey = "muffin.overlay.cpuMode"
-    static let defaultCpuMode = true // matches CemuConfig's overlay.cpu_mode default
-
     static let drawcallsKey = "muffin.overlay.drawcalls"
     static let defaultDrawcalls = false // matches CemuConfig's overlay.drawcalls default
 
