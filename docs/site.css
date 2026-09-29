@@ -48,7 +48,7 @@
   --bg-image: linear-gradient(135deg, var(--bg-top), var(--bg-bottom));
 
   /* Derived surfaces. All of these are mixes of real tokens rather than new
-     hexes, so a theme Void adds later inherits them with no extra work.
+     hexes, so a theme added later inherits them with no extra work.
      
      Each is declared TWICE: a plain value first, the color-mix() version second.
      A browser without color-mix() treats the second declaration as invalid and

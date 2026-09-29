@@ -1,7 +1,6 @@
 import Foundation
 
-/// Mirrors icon-manifest.json (bundled as a resource from
-/// /Users/staceylynward/muffin-emu-icon/icon-manifest.json) - the single source of
+/// Mirrors icon-manifest.json (bundled as a resource) - the single source of
 /// truth for id/name/tier/tagline. Decoded at runtime rather than hand-copied into
 /// Swift so a manifest update doesn't require touching this file.
 struct AppIconOption: Codable, Identifiable {

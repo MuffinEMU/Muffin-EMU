@@ -125,8 +125,8 @@ enum ControllerLayoutSettings {
     }
 }
 
-/// The on-screen pad's arrangement, taken by measurement from the layout Void sent
-/// (bward-dev1/Wiiuios, IMG_3278.jpeg) rather than re-invented, because the last version
+/// The on-screen pad's arrangement, taken by measurement from a reference image of the
+/// real GamePad rather than re-invented, because the last version
 /// of this file re-invented it and the result was unusable.
 ///
 /// Measured button centres in that screenshot (1080x498 px, face-button diameter 59.5 px):
@@ -244,8 +244,8 @@ enum ControllerGeometry {
     /// This used to replace the d-pad's own four circles + centre dot outright
     /// (leftClusterJoystick, now gone) - a different, inconsistent behaviour from the
     /// right side, where joystick mode has only ever ADDED a separate camera stick
-    /// without ever removing A/B/X/Y. Void's ask ("no longer one or the other, make
-    /// them both be there") is exactly that inconsistency: the d-pad now never leaves,
+    /// without ever removing A/B/X/Y. Having both present fixes exactly that
+    /// inconsistency: the d-pad now never leaves,
     /// on either side, in either mode - only whether a stick is ALSO present changes.
     ///
     /// L3 is unaffected, same reasoning as R3: it stays the dot in the d-pad's own

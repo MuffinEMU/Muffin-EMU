@@ -70,8 +70,8 @@ enum PreviewLayoutPreset: String, CaseIterable, Identifiable {
 
 // MARK: - The three colour presets
 
-/// Exactly three, as asked: the measured white, the derived black, and the coloured
-/// option Void named directly (Super Famicom) - deliberately not all ten
+/// Exactly three: the measured white, the derived black, and one coloured option
+/// (Super Famicom) - not all ten
 /// MuffinColourPresets ships, because this preview is meant to show the idea working,
 /// not stand in for the full picker.
 enum PreviewColourPreset: String, CaseIterable, Identifiable {

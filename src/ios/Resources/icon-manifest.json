@@ -1,6 +1,6 @@
 {
   "app": "Muffin EMU",
-  "repo": "bward-dev1/cemu-ios-a-chip",
+  "repo": "kiddreads/MuffinEMU",
   "note": "Icon set for an alternate-app-icon picker. Free icons ship with the app; Pro icons gate behind the paid plan.",
   "icons": [
     { "id": "original",         "name": "Original",          "tier": "free", "file": "muffin-emu-icon.svg", "tagline": "The OG muffin — warm, golden, and ready to boot up your library." },
@@ -23,7 +23,7 @@
     { "id": "transgender-pride",  "name": "Transgender Pride",    "tier": "free", "file": "specials/muffin-emu-icon-transgender-pride.svg", "tagline": "Trans flag stripes with blue-and-pink sprinkles on one happy muffin." },
     { "id": "equality",           "name": "Equality",             "tier": "free", "file": "specials/muffin-emu-icon-equality.svg", "tagline": "A simple blue background and a gold equals sign. Says it all." },
     { "id": "fix-the-world",      "name": "Fix the World",        "tier": "free", "file": "specials/muffin-emu-icon-fix-the-world.svg", "tagline": "Muffin-as-Earth with a healing heart on top. Small gesture, big message." },
-    { "id": "autism-awareness",   "name": "Autism Muffin",        "tier": "free", "file": "specials/muffin-emu-icon-autism-awareness.svg", "tagline": "The official rainbow infinity symbol arcs behind the muffin like a badge.", "note": "embeds specials/assets/autism-infinity-official.png (Void's official asset) via <image href> — that file must ship alongside the SVG, it is not self-contained. y-position was tuned so the loop's crossing clears the muffin's head instead of hiding behind it." },
+    { "id": "autism-awareness",   "name": "Autism Muffin",        "tier": "free", "file": "specials/muffin-emu-icon-autism-awareness.svg", "tagline": "The official rainbow infinity symbol arcs behind the muffin like a badge.", "note": "embeds specials/assets/autism-infinity-official.png via <image href> — that file must ship alongside the SVG, it is not self-contained. y-position was tuned so the loop's crossing clears the muffin's head instead of hiding behind it." },
     { "id": "adhd-awareness",     "name": "ADHD Awareness",       "tier": "free", "file": "specials/muffin-emu-icon-adhd-awareness.svg", "tagline": "A little lightning bolt for a very fast brain." },
     { "id": "audhd-awareness",    "name": "AuDHD Awareness",      "tier": "free", "file": "specials/muffin-emu-icon-audhd-awareness.svg", "tagline": "Infinity loop plus lightning bolt. Both, at once, all the time." },
     { "id": "disability-pride",   "name": "Disability Pride",     "tier": "free", "file": "specials/muffin-emu-icon-disability-pride.svg", "tagline": "Diagonal flag stripes on charcoal, muffin front and center." },

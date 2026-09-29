@@ -1659,10 +1659,9 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // was cap the frame rate at an eighth of whatever the machine could manage, by
     // choice, on every install without a JIT enabler attached - which is the default.
     //
-    // Measured by Void on one device, one ROM: Wind Waker HD at a steady 4.6fps here
-    // against a steady 45 in MeloCafe. Wind Waker targets 30, and 30/8 is 3.75. MeloCafe
-    // never calls SetTimerShiftFactor from its iOS layer at all, so it runs at the
-    // engine default of 3 - and that single difference is most of the gap.
+    // Measured on one device, one ROM: Wind Waker HD at a steady 4.6fps with shift 6
+    // against a steady 45 at the engine default of 3. Wind Waker targets 30, and 30/8 is
+    // 3.75 - that single difference is most of the gap.
     //
     // Slowing the clock stays available as Settings > CPU > Timebase for a title that
     // genuinely needs it, where it is a choice somebody made rather than a tax nobody

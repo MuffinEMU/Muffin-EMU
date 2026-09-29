@@ -1746,9 +1746,8 @@ void LatteBufferCache_notifyDCFlush(MPTR address, uint32 size)
     // every frame, forever.
     //
     // That cost lands entirely on the GPU and upload path and not at all on instruction
-    // throughput - which is exactly the shape of what Void measured: MuffinEMU at
-    // 4fps against MeloCafe's 45 on the same device and ROM, and the RECOMPILER MAKING
-    // NO DIFFERENCE. A CPU-side problem cannot survive turning the JIT on; a per-frame
+    // throughput - which is exactly the shape of what was measured: 4fps on a device and
+    // ROM capable of 45, and the RECOMPILER MAKING NO DIFFERENCE. A CPU-side problem cannot survive turning the JIT on; a per-frame
     // GPU-side one does not care.
     //
     // MeloCafe does not have this batching, and MeloCafe is the fast one. Restoring

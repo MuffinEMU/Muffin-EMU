@@ -14,7 +14,7 @@ import UniformTypeIdentifiers
 // MARK: - Real colour, sampled off the hardware
 
 /// Hex values pulled directly from the official Wii U GamePad illustration
-/// (bward-dev1/Wiiuios) at the same pixel positions the geometry was measured from -
+/// at the same pixel positions the geometry was measured from -
 /// small patches averaged, not eyeballed. Where a value is a considered match rather than
 /// a sample, it says so at its use site: there is no black-GamePad photograph in this
 /// repository to sample from, so `wiiUBlack` is a companion built to the same relationships
