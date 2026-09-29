@@ -1,23 +1,14 @@
 import Foundation
 import UIKit
 
-/// Pulls the game's own icon out of a dumped Wii U title so the library cards show the
-/// game rather than a generic controller glyph.
+/// Extracts the game's icon from a dumped Wii U title for the library cards. A dump keeps it
+/// at `meta/iconTex.tga` (128x128 TGA), which UIImage can't read, so it is decoded here and
+/// cached as a PNG.
 ///
-/// A dump keeps its icon at `meta/iconTex.tga` - a 128x128 TGA. UIImage cannot read
-/// TGA at all (there is no ImageIO decoder for it on iOS), which is why simply pointing
-/// coverPath at that file would have produced nothing. So it is decoded here and cached
-/// as a PNG, and everything downstream keeps loading an ordinary image file.
-///
-/// Single-file dumps (.wux/.wud/.wua) are archives: their meta/ lives inside the
-/// container and only the emulator core can read it. Those keep the placeholder, and
-/// that is a limit of where the bytes are, not an oversight.
+/// Single-file dumps (.wux/.wud/.wua) keep their meta/ inside the container, which only the
+/// emulator core can read, so those keep the placeholder.
 enum WiiUIcon {
-    /// Hidden so it does not appear as clutter next to the user's games in the Files
-    /// app. The leading dot also keeps loadGames() from ever considering it a title -
-    /// it is a directory with no code/ or meta/ inside, so the dump check rejects it
-    /// either way, but two reasons are better than one for something that sits in the
-    /// same folder as the library.
+    /// Hidden folder (leading dot) so it doesn't clutter the Files app or get picked up as a title.
     private static let cacheDirectoryName = ".covers"
 
     /// Path to a PNG of the dump's icon, extracting and caching it on first use.
@@ -95,10 +86,8 @@ enum WiiUIcon {
         // TGA stores channels as BGR(A); the buffer handed to CoreGraphics is RGBA.
         var rgba = [UInt8](repeating: 0, count: pixelCount * 4)
 
-        // Takes the buffer as a parameter rather than capturing it. A local function
-        // that captures `rgba` keeps an access to it alive, and passing `&rgba` to the
-        // flip below would then be overlapping exclusive access - a compile error, not
-        // a subtlety worth risking on a build we cannot type-check locally.
+        // Takes the buffer as a parameter (rather than capturing it) to avoid overlapping
+        // exclusive access with the flip below.
         func writePixel(_ buffer: inout [UInt8], _ index: Int, _ b: UInt8, _ g: UInt8, _ r: UInt8, _ a: UInt8) {
             let destination = index * 4
             buffer[destination] = r

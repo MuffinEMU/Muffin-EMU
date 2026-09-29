@@ -1,26 +1,16 @@
 import Foundation
 
-/// Wii U decryption keys - the user's own, dumped from their own console.
+/// Wii U decryption keys: the user's own keys.txt, dumped from their own console. Cemu
+/// decrypts disc images with AES-128 keys read from keys.txt (one per line), trying each
+/// until one decrypts the header. MuffinEMU includes no keys; without keys.txt, encrypted
+/// games don't run and homebrew is unaffected.
 ///
-/// Real Wii U games are shipped encrypted. Cemu decrypts them with AES-128 keys read
-/// from a plain text file called keys.txt, one key per line; when it opens a disc image
-/// it simply tries every key it has until one decrypts the header to zeroes. Muffin
-/// ships no keys, derives no keys and has no way to obtain a key it was not given - if
-/// keys.txt is absent, encrypted games do not run and homebrew is completely unaffected.
-/// Getting the file is the user's side of the deal: it is dumped from a Wii U they own.
-///
-/// The file lives in Documents/keys. UIFileSharingEnabled is on, so that folder shows up
-/// in the Files app under the app's name and a keys.txt can simply be dragged into it -
-/// importing through Settings is the convenient route, not the only one.
-///
-/// The engine itself reads `ActiveSettings::GetUserDataPath("keys.txt")`, which on iOS is
-/// Documents/mlc/keys.txt (see CemuBridge.mm's SetPaths call). Documents/mlc is correct
-/// for the engine and a poor place to ask a person to put a file: it is the emulated
-/// console's storage, full of engine state. So the two are kept in sync rather than
-/// merged - `IOSTitleLaunch_AdoptDroppedKeys()` in src/gui/iosgui/IOSTitleLaunch.cpp
-/// copies Documents/keys/keys.txt into the engine's location immediately before every
-/// key read, which is what lets a file dropped mid-session work with no relaunch. That
-/// function and this type have to agree on both paths; if either moves, both move.
+/// The user-facing file is Documents/keys (visible in the Files app, so a keys.txt can be
+/// dragged in). The engine reads Documents/mlc/keys.txt, so `IOSTitleLaunch_AdoptDroppedKeys()`
+/// (src/ios/Bridge/Core/IOSTitleLaunch.cpp) copies the first into the second before each
+/// launch. The engine reads keys once per app session, so keys added after a game has
+/// already been started need an app restart. That function and this type must agree on both
+/// paths.
 enum WiiUKeys {
     /// Where the user puts keys, and the only path this type writes to.
     static var directoryURL: URL? {
@@ -33,11 +23,8 @@ enum WiiUKeys {
         directoryURL?.appendingPathComponent("keys.txt")
     }
 
-    /// Where the engine reads from - Documents/mlc, mirroring GameManager's own
-    /// `documentsPath/mlc` construction, which is what gets handed to
-    /// `cemu_bridge_initialize()`. Not written to on import (the adopt step in the
-    /// engine does that), but removal has to reach it, or deleting the keys here would
-    /// leave a copy behind that the next adopt would seed straight back.
+    /// Where the engine reads from (Documents/mlc/keys.txt). Removal has to reach it too, or the
+    /// next adopt would copy the keys back.
     private static var engineFileURL: URL? {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
             .first?
@@ -45,12 +32,7 @@ enum WiiUKeys {
             .appendingPathComponent("keys.txt")
     }
 
-    /// Creates the drop folder so it is visible in the Files app from first launch.
-    ///
-    /// The engine creates it too, but not until something asks it to read keys - and a
-    /// folder you cannot see until after you have already installed keys is no use as
-    /// the place to install them. Called at startup from GameManager.loadGames(),
-    /// alongside the same treatment the Roms folder gets.
+    /// Creates the drop folder at startup so it is visible in the Files app.
     static func ensureDirectoryExists() {
         guard let directoryURL else { return }
         try? FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
@@ -79,20 +61,13 @@ enum WiiUKeys {
         }
     }
 
-    /// A keys.txt is a few hundred bytes in practice. The cap exists so that picking a
-    /// 4 GB disc image by mistake fails immediately instead of being read into memory
-    /// first and rejected afterwards.
+    /// A keys.txt is a few hundred bytes; the cap makes picking a disc image by mistake fail fast.
     private static let maximumFileSize = 1 << 20 // 1 MiB
 
-    /// Counts the usable 128-bit keys in a keys.txt, applying exactly the rules
-    /// `KeyCache_Prepare()` applies in src/Cafe/Filesystem/FST/KeyCache.cpp: truncate
-    /// each line at the first # or ;, strip spaces, tabs, dashes and underscores, and
-    /// accept what is left if it is 32 hex characters. Anything else - including the
-    /// commented-out example key the engine writes into a fresh file - does not count.
-    ///
-    /// Duplicated here rather than asked of the engine because the engine cannot answer
-    /// until it has been initialized, and the answer is needed at import time, which is
-    /// usually before any game has ever been launched.
+    /// Counts the usable 128-bit keys in a keys.txt using the same rules as `KeyCache_Prepare()`
+    /// (src/Cafe/Filesystem/FST/KeyCache.cpp): truncate at the first # or ;, strip spaces,
+    /// tabs, dashes and underscores, and accept 32 hex characters. Done here because the
+    /// engine can't answer before it is initialized.
     static func usableKeyCount(in text: String) -> Int {
         var count = 0
         for rawLine in text.split(whereSeparator: \.isNewline) {
@@ -119,13 +94,9 @@ enum WiiUKeys {
         return FileManager.default.fileExists(atPath: fileURL.path)
     }
 
-    /// Copies a user-picked keys.txt into place and returns how many keys it contains.
-    ///
-    /// Same ordering discipline as the ROM importer: the security scope granted by the
-    /// picker is the only window in which the source is readable at all, so the read
-    /// happens inside it. Unlike the ROM importer nothing is staged - the file is small
-    /// enough to validate entirely in memory, so an unusable one never touches disk and
-    /// cannot clobber a working keys.txt.
+    /// Copies a user-picked keys.txt into place and returns how many keys it contains. The
+    /// file is read inside the picker's security scope and validated in memory, so an
+    /// unusable file never overwrites a working keys.txt.
     @discardableResult
     static func importKeys(from source: URL) throws -> Int {
         guard source.startAccessingSecurityScopedResource() else {
@@ -141,9 +112,7 @@ enum WiiUKeys {
         guard let data = try? Data(contentsOf: source) else {
             throw ImportError.accessDenied
         }
-        // Not necessarily UTF-8: a file exported from a Windows tool is just as likely to
-        // be Latin-1. Every character that matters here is ASCII, so fall back rather
-        // than reject a file whose keys are perfectly readable.
+        // Fall back to Latin-1: files from Windows tools may not be UTF-8, and only ASCII matters.
         guard let text = String(data: data, encoding: .utf8)
                 ?? String(data: data, encoding: .isoLatin1) else {
             throw ImportError.unreadable
@@ -162,16 +131,8 @@ enum WiiUKeys {
         return count
     }
 
-    /// Deletes the installed keys.txt - both the copy the user can see and the engine's.
-    ///
-    /// Worth having as a deliberate action rather than something only the Files app can
-    /// do: these are the user's console keys sitting in their own sandbox, and they
-    /// should be able to take them back out from the same screen that put them there.
-    ///
-    /// Both copies, because "remove" has to mean removed. Deleting only Documents/keys
-    /// would leave Documents/mlc/keys.txt in place, and the adopt step - which seeds the
-    /// drop folder from the engine's copy when only the engine's copy exists - would put
-    /// the keys straight back on the next launch attempt.
+    /// Deletes the installed keys.txt: both the visible copy and the engine's, otherwise the
+    /// next adopt would restore it.
     static func removeKeys() throws {
         let manager = FileManager.default
         var firstError: Error?
@@ -180,8 +141,7 @@ enum WiiUKeys {
             do {
                 try manager.removeItem(at: url)
             } catch {
-                // Keep going: leaving the engine's copy behind because the visible one
-                // failed to delete is the exact half-removal this exists to prevent.
+                // Keep going so a failure on one copy doesn't leave the other behind.
                 if firstError == nil { firstError = error }
             }
         }

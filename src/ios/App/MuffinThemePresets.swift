@@ -1,21 +1,10 @@
 import Foundation
 
-// GENERATED derivation, not hand-tuned art direction - see the comment on
-// MuffinThemeDefinition in MuffinThemeStore.swift for exactly how. Each theme's 14
-// tokens are computed from that icon's own real icon.png (median-cut quantized top
-// swatches, picked by saturation/lightness for a primary+secondary+accent triad, then
-// lightened/darkened/desaturated by fixed formulas - the same lighten-for-dark-accents,
-// deepen-and-desaturate-for-dark-backgrounds, flip-text-light-dark relationships
-// MuffinTheme's own hand-tuned Bakery theme already documents by hand, just applied
-// uniformly across all thirty icons instead of judged one at a time. That means some
-// of these will read better than others - a from-scratch art pass per icon was out of
-// scope here - but every value traces back to a real pixel in that icon's actual art,
-// never an invented hex code.
+// Palettes derived from each icon's artwork; Autism Muffin is hand-tuned. Bakery is the
+// app's original palette. Themes are free for everyone; only the pro app icons are gated.
 enum MuffinThemePresets {
 
-    /// The app's original, hand-tuned palette (see MuffinTheme.swift's own header
-    /// comment) - kept as literal constants rather than re-derived, so switching this
-    /// theme system in changes nothing for anyone who never opens the theme picker.
+    /// The app's original palette, kept as literal constants.
     static let bakery = MuffinThemeDefinition(
         id: "bakery", name: "Bakery (Original)", iconId: "original",
         backgroundTopLight: "#F4A551", backgroundTopDark: "#935009",
@@ -70,32 +59,18 @@ enum MuffinThemePresets {
         shadowLight: "#382408", shadowDark: "#000000"
     )
 
-    /// Hand-adjusted, unlike its thirty siblings. The neurodiversity symbol this icon
-    /// is drawn from is a rainbow infinity, and the generated two-stop derivation
-    /// flattened that into a beige gradient - losing the one thing the icon is actually
-    /// about. The header is a soft six-stop rainbow instead, and the cream/wrapper
-    /// surfaces underneath it take the warm yellow the header used to be (#F3E7AB), so
-    /// the palette the theme had is kept rather than discarded.
-    ///
-    /// Soft on purpose: pastel stops rather than saturated ones. A full-screen rainbow
-    /// at full chroma behind an emulator is exhausting to sit in front of, and the
-    /// middle stop is deliberately the old header colour so the theme still reads as
-    /// itself.
+    /// Hand-tuned: the icon is drawn from the rainbow infinity symbol, so the header is a soft
+    /// six-stop rainbow (pastel, to be easy to sit in front of) over cream/wrapper surfaces.
     static let autismAwareness = MuffinThemeDefinition(
         id: "autism-awareness", name: "Autism Muffin", iconId: "autism-awareness",
         backgroundTopLight: "#F5B5B5", backgroundTopDark: "#6B4444",
         backgroundBottomLight: "#C9BCE6", backgroundBottomDark: "#514768",
         muffinTopLightLight: "#FFFEFF", muffinTopLightDark: "#FFFEFF",
         muffinTopDarkLight: "#B2B2B2", muffinTopDarkDark: "#DBDADB",
-        // Plain white, like the frosting on this icon. cream is the big secondary
-        // surface - the card under the library, Settings, the sheets.
+        // Plain white, like the frosting on this icon.
         creamLight: "#FFFFFF", creamDark: "#2B2920",
-        // wrapper is NOT white, deliberately, and cannot be. It is the 1pt stroke
-        // around cards (ContentView.swift:638, :673) and the selected-row fill in
-        // ControllerSkinsLibrary.swift:440, where the whole job is
-        // `isSelected ? wrapper : cream`. Pure white there would erase every card
-        // border and make selection invisible against a white cream. A faint
-        // neutral reads as white next to the frosting while still drawing.
+        // Not pure white: wrapper is the card border stroke and the selected-row fill, which
+        // would vanish against a white cream.
         wrapperLight: "#E9E9EC", wrapperDark: "#434031",
         blueberryNavyLight: "#C62E2E", blueberryNavyDark: "#DD7D7D",
         pixelBlueLight: "#B22A82", pixelBlueDark: "#D666AE",
@@ -105,13 +80,7 @@ enum MuffinThemePresets {
         brownMidLight: "#837D5C", brownMidDark: "#FBF7E4",
         sparkleCreamLight: "#FFFFFF", sparkleCreamDark: "#FFFFFF",
         shadowLight: "#3A3729", shadowDark: "#000000",
-        // The rainbow is spent in the top ~7.5% and then holds the cream for the rest.
-        // The header is a thin band - the games card covers everything below it - so a
-        // rainbow spread evenly over the full height would put nothing but red in the
-        // only part of it anyone sees. 7.5% rather than a rounder number because the
-        // strip is a fixed ~108-131pt against a screen height that varies by device:
-        // too low and an iPhone shows cream in half its header, too high and an iPad
-        // Pro loses violet off the bottom of the band.
+        // The rainbow occupies the top ~7.5% (the header band) and then holds the cream.
         backgroundStopsLight: [
             "#F5B5B5",  // soft red
             "#F8D3A8",  // soft orange
