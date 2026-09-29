@@ -156,11 +156,8 @@ void CheckForPixelFormatSupport(const MetalPixelFormatSupport& support)
     }
     else if (support.m_supportsETC2Formats)
     {
-        // No Apple GPU this app targets supports the desktop BC formats natively, but every one of
-        // them supports ETC2/EAC as a baseline feature. BC1-3 blocks are decoded and re-encoded to
-        // EAC RGBA8 (ETC2 colour + EAC alpha), which the GPU samples directly and which needs a
-        // fraction of the memory of decompressing to RGBA8. BC4/BC5 have no ETC2/EAC equivalent that
-        // preserves their precision, so they still decode to R8/RG8 on the CPU.
+        // BC is not natively supported here, but ETC2/EAC is a baseline feature. BC1-3 are re-encoded
+        // to EAC RGBA8; BC4/BC5 have no equivalent that keeps their precision and decode to R8/RG8 on the CPU.
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_UNORM] = {MTL::PixelFormatEAC_RGBA8, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC1_to_ETC2::getInstance()};
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC1_SRGB] = {MTL::PixelFormatEAC_RGBA8_sRGB, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC1_to_ETC2::getInstance()};
         MTL_COLOR_FORMAT_TABLE[Latte::E_GX2SURFFMT::BC2_UNORM] = {MTL::PixelFormatEAC_RGBA8, MetalDataType::FLOAT, 16, {4, 4}, false, TextureDecoder_BC2_to_ETC2::getInstance()};
