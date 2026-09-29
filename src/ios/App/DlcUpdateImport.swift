@@ -241,21 +241,31 @@ enum DlcUpdateImport {
             }
         }
 
+        // Keep any existing install aside until the new one is in place, so a failed
+        // move cannot leave the player with neither.
+        let backup = stagingRoot.appendingPathComponent(lowerHex + ".previous")
+        var movedAside = false
         do {
             try fileManager.createDirectory(
                 at: destination.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
             if fileManager.fileExists(atPath: destination.path) {
-                try fileManager.removeItem(at: destination)
+                try? fileManager.removeItem(at: backup)
+                try fileManager.moveItem(at: destination, to: backup)
+                movedAside = true
             }
 
             // Same volume as staging, so this is a rename, not a second copy.
             try fileManager.moveItem(at: staged, to: destination)
         } catch {
+            if movedAside && !fileManager.fileExists(atPath: destination.path) {
+                try? fileManager.moveItem(at: backup, to: destination)
+            }
             cleanupStaged()
             throw ImportError.copyFailed(error)
         }
+        if movedAside { try? fileManager.removeItem(at: backup) }
 
         return ImportedContent(titleId: titleId, baseTitleId: baseTitleId, matchedGame: matchedGame)
     }

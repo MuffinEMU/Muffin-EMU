@@ -112,17 +112,27 @@ enum EmulatedFigureStore {
             .appendingPathExtension(device.fileExtension)
     }
 
-    /// Copies a user-picked (possibly security-scoped) file into our own folder. Always
-    /// copies rather than loading in place - DocumentImport hands back a URL outside our
-    /// sandboxed storage, and cemu_bridge_usb_device_load()/Clear() below assume the path
-    /// they were given keeps working for as long as the figure stays loaded.
+    /// Returns a file inside our own folder for a user-picked (possibly security-scoped)
+    /// file. A file already in the folder is used in place, and a figure with the same file
+    /// name is reused, so its saved progress is not forked into a second copy.
     static func importFile(_ source: URL, device: EmulatedDevice) -> URL? {
+        let root = directory(for: device).resolvingSymlinksInPath().path + "/"
+        if source.resolvingSymlinksInPath().path.hasPrefix(root) { return source }
+
+        let fileManager = FileManager.default
+        let folders = (try? fileManager.contentsOfDirectory(
+            at: directory(for: device), includingPropertiesForKeys: nil)) ?? []
+        for folder in folders {
+            let existing = folder.appendingPathComponent(source.lastPathComponent)
+            if fileManager.fileExists(atPath: existing.path) { return existing }
+        }
+
         guard let destination = newFileURL(for: device, name: source.deletingPathExtension().lastPathComponent) else {
             return nil
         }
         let accessing = source.startAccessingSecurityScopedResource()
         defer { if accessing { source.stopAccessingSecurityScopedResource() } }
-        guard (try? FileManager.default.copyItem(at: source, to: destination)) != nil else { return nil }
+        guard (try? fileManager.copyItem(at: source, to: destination)) != nil else { return nil }
         return destination
     }
 }
