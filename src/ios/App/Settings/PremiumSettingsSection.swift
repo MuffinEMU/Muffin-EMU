@@ -1,20 +1,16 @@
 import SwiftUI
 
-/// The only paid tier in the app - see Entitlements.hasProPlan and
-/// IconManifest.isPro. There is no StoreKit product; PremiumUnlock is the entire
-/// purchase path, and what it unlocks is exactly the pro-tier app icons, nothing
-/// else in the app is gated.
+/// Unlock code entry. PremiumUnlock only gates the pro-tier app icons (see
+/// Entitlements.hasProPlan and IconManifest.isPro); nothing else in the app is gated.
 struct PremiumSettingsSection: View {
     @State private var premiumUnlocked = PremiumUnlock.isUnlocked
     @State private var premiumCodeInput = ""
     @State private var premiumCodeError: String?
+    @State private var isCheckingCode = false
 
     var body: some View {
         Section {
             if premiumUnlocked {
-                // The one moment in Settings that is a reward rather than a control, so
-                // it gets the muffin-top gradient treatment the app's primary buttons
-                // use - the same ink the brand spends on "yes, this worked".
                 HStack(spacing: 12) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 15, weight: .bold))
@@ -57,21 +53,29 @@ struct PremiumSettingsSection: View {
                                         lineWidth: 1)
                         )
 
-                    // MuffinPrimaryButtonStyle rather than a plain Form button: this is
-                    // the only purchase action in the app, and on iOS 26 that style is
-                    // real Liquid Glass tinted muffin-top, which is exactly the weight a
-                    // paid-tier call to action should carry.
-                    Button("Unlock") {
-                        if PremiumUnlock.attemptUnlock(code: premiumCodeInput) {
-                            premiumUnlocked = true
-                            premiumCodeInput = ""
-                            premiumCodeError = nil
+                    Button {
+                        let code = premiumCodeInput
+                        isCheckingCode = true
+                        Task { @MainActor in
+                            let ok = await PremiumUnlock.attemptUnlockOffMain(code: code)
+                            isCheckingCode = false
+                            if ok {
+                                premiumUnlocked = true
+                                premiumCodeInput = ""
+                                premiumCodeError = nil
+                            } else {
+                                premiumCodeError = "That code didn't work."
+                            }
+                        }
+                    } label: {
+                        if isCheckingCode {
+                            ProgressView()
                         } else {
-                            premiumCodeError = "That code didn't work."
+                            Text("Unlock")
                         }
                     }
                     .buttonStyle(MuffinPrimaryButtonStyle())
-                    .disabled(premiumCodeInput.isEmpty)
+                    .disabled(premiumCodeInput.isEmpty || isCheckingCode)
                     .opacity(premiumCodeInput.isEmpty ? 0.5 : 1.0)
 
                     if let premiumCodeError {

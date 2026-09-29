@@ -204,6 +204,8 @@ MetalRenderer::MetalRenderer()
 
     // Null resources
     m_nullBuffer = m_device->newBuffer(64 * 1024, MTL::ResourceStorageModeShared);
+    if (!m_nullBuffer)
+        throw std::runtime_error("Metal: could not allocate the null buffer");
     std::memset(m_nullBuffer->contents(), 0, m_nullBuffer->length());
 #ifdef CEMU_DEBUG_ASSERT
     m_nullBuffer->setLabel(GetLabel("Null buffer", m_nullBuffer));
@@ -222,6 +224,8 @@ MetalRenderer::MetalRenderer()
     textureDescriptor->setHeight(1);
     textureDescriptor->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageRenderTarget);
     m_nullTexture2D = m_device->newTexture(textureDescriptor);
+    if (!m_nullTexture2D)
+        throw std::runtime_error("Metal: could not allocate the null 2D texture");
 #ifdef CEMU_DEBUG_ASSERT
     m_nullTexture2D->setLabel(GetLabel("Null texture 2D", m_nullTexture2D));
 #endif
@@ -240,6 +244,8 @@ MetalRenderer::MetalRenderer()
 
     // Occlusion queries
     m_occlusionQuery.m_resultBuffer = m_device->newBuffer(OCCLUSION_QUERY_BUFFER_COUNT * OCCLUSION_QUERY_POOL_SIZE * sizeof(uint64), MTL::ResourceStorageModeShared);
+    if (!m_occlusionQuery.m_resultBuffer)
+        throw std::runtime_error("Metal: could not allocate the occlusion query result buffer");
 #ifdef CEMU_DEBUG_ASSERT
     m_occlusionQuery.m_resultBuffer->setLabel(GetLabel("Occlusion query result buffer", m_occlusionQuery.m_resultBuffer));
 #endif
@@ -677,6 +683,8 @@ ImTextureID MetalRenderer::GenerateTexture(const std::vector<uint8>& data, const
         desc->setUsage(MTL::TextureUsageShaderRead);
 
         MTL::Texture* texture = m_device->newTexture(desc);
+        if (!texture)
+            return nullptr;
 
         // TODO: do a GPU copy?
         texture->replaceRegion(MTL::Region(0, 0, size.x, size.y), 0, 0, tmp.data(), size.x * 4, 0);
@@ -724,6 +732,7 @@ void MetalRenderer::AppendOverlayDebugInfo()
     ImGui::Text("Triangle fans              %u", m_performanceMonitor.m_triangleFans);
     ImGui::Text("Snapshot uploads           %llu KB (reuses: %u)", static_cast<unsigned long long>(m_performanceMonitor.m_snapshotBytes / 1024), m_performanceMonitor.m_snapshotReuses);
     ImGui::Text("Argument buffer encodes    %u (reuses: %u)", m_performanceMonitor.m_argumentBufferEncodes, m_performanceMonitor.m_argumentBufferReuses);
+    ImGui::Text("Residency declarations     %u (skipped: %u)", m_performanceMonitor.m_residencyDeclarations, m_performanceMonitor.m_residencySkips);
 
     ImGui::Text("--- Cache debug info ---");
 
@@ -1012,6 +1021,9 @@ void MetalRenderer::texture_notifyDelete(LatteTextureView* textureView)
         for (uint32 i = 0; i < MAX_MTL_TEXTURES; i++)
             m_state.m_encoderState.m_textures[shaderType][i] = nullptr;
     }
+
+    
+    m_encoderResidency.clear();
 }
 
 void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth_)
@@ -1099,13 +1111,7 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
 
 LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView* textureView)
 {
-    // Force the readback buffer into existence here. It is allocated lazily, on the first
-    // readback of a session - so a 32 MB request lands mid-gameplay, which on iOS is the
-    // worst moment to ask for one. LatteTextureReadbackInfoMtl uses it in two places that
-    // cannot refuse: StartTransfer() hands it to copyFromTexture() as the blit destination,
-    // and GetData() returns contents() + offset straight to the caller, which memcpys from
-    // it without a null check. Both callers of this function already treat a null return as
-    // "skip this readback", so that is the seam to fail at.
+    // The readback buffer is allocated lazily; a null return here makes callers skip the readback.
     if (!GetTextureReadbackBuffer())
     {
         cemuLog_logOnce(LogType::Force,
@@ -1114,7 +1120,16 @@ LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView
         return nullptr;
     }
 
-    size_t uploadSize = static_cast<LatteTextureMtl*>(textureView->baseTexture)->GetTexture()->allocatedSize();
+    MTL::Texture* mtlTexture = static_cast<LatteTextureMtl*>(textureView->baseTexture)->GetTexture();
+    if (!mtlTexture)
+        return nullptr;
+
+    size_t uploadSize = mtlTexture->allocatedSize();
+    if (uploadSize > TEXTURE_READBACK_SIZE)
+    {
+        cemuLog_logOnce(LogType::Force, "Metal: texture is too large for the {} MB readback buffer; skipping readback", TEXTURE_READBACK_SIZE / (1024 * 1024));
+        return nullptr;
+    }
 
     if ((m_readbackBufferWriteOffset + uploadSize) > TEXTURE_READBACK_SIZE)
     {
@@ -1804,7 +1819,9 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     // Draw
     if (usesGeometryShader)
     {
-        if (hostIndexType != INDEX_TYPE::NONE && vertexShader->resourceMapping.argumentBufferBindingPoint < 0)
+        // indexAllocationMtl is null when index memory could not be reserved; skip the draw then.
+        const bool indexMemoryMissing = hostIndexType != INDEX_TYPE::NONE && !indexAllocationMtl;
+        if (hostIndexType != INDEX_TYPE::NONE && !indexMemoryMissing && vertexShader->resourceMapping.argumentBufferBindingPoint < 0)
             SetBuffer(renderCommandEncoder, METAL_SHADER_TYPE_OBJECT, indexAllocationMtl->mtlBuffer, indexAllocationMtl->bufferOffset, vertexShader->resourceMapping.indexBufferBinding);
 
         uint8 hostIndexTypeU8 = (uint8)hostIndexType;
@@ -1839,7 +1856,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         }
 
         uint64 threadgroupCount = primitivesPerInstance * instanceCount;
-        if (threadgroupCount > 0)
+        if (threadgroupCount > 0 && !indexMemoryMissing)
             renderCommandEncoder->drawMeshThreadgroups(MTL::Size(threadgroupCount, 1, 1), MTL::Size(verticesPerPrimitive, 1, 1), MTL::Size(1, 1, 1));
     }
     else if (usesVertexStreamout)
@@ -2239,6 +2256,33 @@ void MetalRenderer::SetSamplerState(MTL::RenderCommandEncoder* renderCommandEnco
     }
 }
 
+void MetalRenderer::DeclareResidency(MTL::RenderCommandEncoder* renderCommandEncoder, const MTL::Resource* resource, MTL::ResourceUsage usage, MTL::RenderStages stages)
+{
+    if (!resource)
+        return;
+    
+    
+    uint32 requested = 0;
+    for (uint32 stageIndex = 0; stageIndex < 5; stageIndex++)
+    {
+        if ((uint32)stages & (1u << stageIndex))
+            requested |= ((uint32)usage & 0xF) << (stageIndex * 4);
+    }
+    if (requested == 0)
+        return;
+
+    uint32& declared = m_encoderResidency[resource];
+    if ((declared & requested) == requested)
+    {
+        m_performanceMonitor.m_residencySkips++;
+        return;
+    }
+
+    declared |= requested;
+    renderCommandEncoder->useResource(resource, usage, stages);
+    m_performanceMonitor.m_residencyDeclarations++;
+}
+
 MTL::CommandBuffer* MetalRenderer::GetCommandBuffer()
 {
     bool needsNewCommandBuffer = (!m_currentCommandBuffer.m_commandBuffer || m_currentCommandBuffer.m_commited);
@@ -2284,6 +2328,8 @@ MTL::RenderCommandEncoder* MetalRenderer::GetTemporaryRenderCommandEncoder(MTL::
 #endif
     m_commandEncoder = renderCommandEncoder;
     m_encoderType = MetalEncoderType::Render;
+
+    ResetEncoderState();
 
     // Debug
     m_performanceMonitor.m_renderPasses++;
@@ -2747,7 +2793,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         if (argumentEncoder)
         {
             argumentBindings[MetalArgumentBuffer::TextureBase + relative_textureUnit] = {MetalArgumentBinding::Type::Texture, mtlTexture, 0};
-            renderCommandEncoder->useResource(mtlTexture, MTL::ResourceUsageRead | MTL::ResourceUsageSample, renderStage);
+            DeclareResidency(renderCommandEncoder, mtlTexture, MTL::ResourceUsageRead | MTL::ResourceUsageSample, renderStage);
         }
         else
             SetTexture(renderCommandEncoder, mtlShaderType, mtlTexture, binding);
@@ -2852,7 +2898,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         if (argumentEncoder)
         {
             argumentBindings[MetalArgumentBuffer::SupportBuffer] = {MetalArgumentBinding::Type::Buffer, allocation->mtlBuffer, allocation->bufferOffset};
-            renderCommandEncoder->useResource(allocation->mtlBuffer, MTL::ResourceUsageRead, renderStage);
+            DeclareResidency(renderCommandEncoder, allocation->mtlBuffer, MTL::ResourceUsageRead, renderStage);
         }
         else
             SetBuffer(renderCommandEncoder, mtlShaderType, allocation->mtlBuffer, allocation->bufferOffset, shader->resourceMapping.uniformVarsBufferBindingPoint);
@@ -2889,7 +2935,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             if (argumentEncoder)
             {
                 argumentBindings[MetalArgumentBuffer::UniformBufferBase + i] = {MetalArgumentBinding::Type::Buffer, buffer, offset};
-                renderCommandEncoder->useResource(buffer, MTL::ResourceUsageRead, renderStage);
+                DeclareResidency(renderCommandEncoder, buffer, MTL::ResourceUsageRead, renderStage);
             }
             else
                 SetBuffer(renderCommandEncoder, mtlShaderType, buffer, offset, binding);
@@ -2903,7 +2949,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         if (argumentEncoder)
         {
             argumentBindings[MetalArgumentBuffer::StreamoutBuffer] = {MetalArgumentBinding::Type::Buffer, xfbRingBuffer, 0};
-            renderCommandEncoder->useResource(xfbRingBuffer, MTL::ResourceUsageWrite, renderStage);
+            DeclareResidency(renderCommandEncoder, xfbRingBuffer, MTL::ResourceUsageWrite, renderStage);
         }
         else
             SetBuffer(renderCommandEncoder, mtlShaderType, xfbRingBuffer, 0, shader->resourceMapping.tfStorageBindingPoint);
@@ -2935,7 +2981,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
                     vertexBufferSize = 0;
                 }
                 argumentBindings[MetalArgumentBuffer::VertexBufferBase + bufferIndex] = {MetalArgumentBinding::Type::Buffer, vertexBuffer, vertexBufferOffset};
-                renderCommandEncoder->useResource(vertexBuffer, MTL::ResourceUsageRead, renderStage);
+                DeclareResidency(renderCommandEncoder, vertexBuffer, MTL::ResourceUsageRead, renderStage);
                 vertexBufferSize = std::min<size_t>(vertexBufferSize, vertexBuffer->length() - vertexBufferOffset);
                 argumentBindings[MetalArgumentBuffer::VertexBufferSizeBase + bufferIndex] = {MetalArgumentBinding::Type::Constant, nullptr,
                     static_cast<uint32>(std::min<size_t>(vertexBufferSize, std::numeric_limits<uint32>::max()))};
@@ -2956,7 +3002,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
                 indexBufferSize = 0;
             }
             argumentBindings[MetalArgumentBuffer::IndexBuffer] = {MetalArgumentBinding::Type::Buffer, indexBuffer, indexBufferOffset};
-            renderCommandEncoder->useResource(indexBuffer, MTL::ResourceUsageRead, renderStage);
+            DeclareResidency(renderCommandEncoder, indexBuffer, MTL::ResourceUsageRead, renderStage);
             indexBufferSize = std::min<size_t>(indexBufferSize, indexBuffer->length() - indexBufferOffset);
             argumentBindings[MetalArgumentBuffer::IndexBufferSize] = {MetalArgumentBinding::Type::Constant, nullptr,
                 static_cast<uint32>(std::min<size_t>(indexBufferSize, std::numeric_limits<uint32>::max()))};
@@ -2966,10 +3012,10 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
     
     if (argumentEncoder)
     {
-        // The useResource() residency declarations above are made unconditionally, for
-        // every encoder, precisely because the argument-buffer CONTENTS below may be
-        // reused from a previous draw - residency is per-encoder state and is never
-        // covered by the cache.
+        // The residency declarations above are made for every encoder (DeclareResidency()
+        // only skips a resource this same encoder already declared), precisely because
+        // the argument-buffer CONTENTS below may be reused from a previous draw -
+        // residency is per-encoder state and is never covered by the cache.
         auto* allocation = m_memoryManager->GetCachedArgumentBuffer(mtlShaderType, argumentEncoder, argumentBindings);
         if (!allocation)
             return false; // out of memory - the caller skips the draw

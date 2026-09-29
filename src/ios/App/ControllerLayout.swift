@@ -1,12 +1,10 @@
 import SwiftUI
 
-/// Where the on-screen pad's adjustable values live, so the settings sheet, the emulator
-/// view and the pad itself agree on the keys without any of them importing the others -
-/// the same arrangement `LaunchLogSettings` already uses for its one key.
+/// Keys and defaults for the on-screen pad's adjustable values, shared by the settings
+/// sheet, the emulator view and the pad.
 ///
-/// Offsets are stored in POINTS, not in layout units. A drag is something the user did
-/// with a finger at a particular size, and re-interpreting it against a different unit
-/// when the size slider moves would make the cluster wander every time it was resized.
+/// Offsets are stored in points, not layout units, so a cluster doesn't move when the
+/// size slider changes.
 enum ControllerLayoutSettings {
     static let scaleKey = "muffin.controls.scale"
     static let opacityKey = "muffin.controls.opacity"
@@ -14,53 +12,30 @@ enum ControllerLayoutSettings {
     static let leftOffsetYKey = "muffin.controls.left.dy"
     static let rightOffsetXKey = "muffin.controls.right.dx"
     static let rightOffsetYKey = "muffin.controls.right.dy"
-    /// Whether the left cluster's d-pad is replaced by an analog stick. Off by default:
-    /// the measured layout is a d-pad, and a control scheme is not something to change
-    /// under someone who did not ask for it.
+    /// Whether the analog sticks are shown alongside the d-pad and face buttons. Off by default.
     static let joystickKey = "muffin.controls.joystick"
-    /// Whether L/ZL/minus and R/ZR/plus are anchored to the analog sticks instead of the
-    /// d-pad/A-B-X-Y clusters. Only has anything to attach to while `joystickKey` is also
-    /// on - see the comfortControls read site in ControllerPad for what happens when it
-    /// isn't. Off by default, same reasoning as `joystickKey`: the measured layout puts
-    /// these six buttons at the d-pad/face clusters, and a control scheme is not
-    /// something to change under someone who did not ask for it.
+    /// Whether L/ZL/minus and R/ZR/plus are anchored to the analog sticks instead. Only
+    /// applies while `joystickKey` is on. Off by default.
     static let comfortControlsKey = "muffin.pad.comfortControls"
     static let defaultComfortControls = false
-    /// Where the camera stick has been dragged to. Its own pair rather than sharing the
-    /// right cluster's: it is a separate cluster, positioned separately, and the whole
-    /// point of it is that it sits where the right thumb reaches without leaving A/B/X/Y
-    /// - which is a different place on a phone than on an iPad.
+    /// Where the camera stick has been dragged to (its own cluster, stored separately).
     static let rightStickOffsetXKey = "muffin.controls.rstick.dx"
     static let rightStickOffsetYKey = "muffin.controls.rstick.dy"
-    /// Same reasoning as the pair above, mirrored for the left stick: its own position,
-    /// separate from the d-pad cluster it now sits alongside rather than replaces.
+    /// Same, for the left stick.
     static let leftStickOffsetXKey = "muffin.controls.lstick.dx"
     static let leftStickOffsetYKey = "muffin.controls.lstick.dy"
-    /// How much of the stick's travel reads as centred, how the rest of it is shaped, and
-    /// what shape it may reach. All three are feel rather than layout, which is why none
-    /// of them is in `reset()` below.
+    /// Stick feel settings: deadzone, response curve and gate. Not reset by `reset()`.
     static let deadzoneKey = "muffin.controls.stick.deadzone"
     static let stickCurveKey = "muffin.controls.stick.curve"
     static let stickGateKey = "muffin.controls.stick.gate"
 
-    /// Grouped (false): dragging anywhere on a cluster's dashed box moves the whole
-    /// cluster, and each button's own drag/pinch only fires where it visibly overlaps
-    /// that box - the two gestures were both always attached and left to sort out
-    /// priority between themselves by touch position, which did not resolve the way it
-    /// looked like it should on-device: a drag anywhere in a cluster moved the whole
-    /// cluster, individual buttons included. Individual (true) makes that unambiguous
-    /// instead of trying to fix the priority: the cluster's own drag handle is not
-    /// attached at all, so every touch can only ever be a single button's own drag or
-    /// pinch, with nothing left for it to compete against.
+    /// Grouped (false): dragging a cluster's dashed box moves the whole cluster.
+    /// Individual (true): each button has its own drag and pinch, and the cluster handle
+    /// is not attached.
     static let individualEditModeKey = "muffin.controls.individualEditMode"
     static let defaultIndividualEditMode = false
 
-    /// Whether a press fires a light haptic tap. On by default - a pad with no physical
-    /// switches under the glass loses the one confirmation a real button gives for free,
-    /// and the tap is the cheapest way to give some of it back. Left as a setting rather
-    /// than unconditional because it is still a buzz against the hand on every single
-    /// input, which is exactly the kind of thing that reads as delightful at first and
-    /// grating by the tenth hour of play for some people.
+    /// Whether a press fires a light haptic tap. On by default.
     static let hapticsKey = "muffin.pad.haptics"
     static let defaultHaptics = true
 
@@ -68,33 +43,19 @@ enum ControllerLayoutSettings {
 
     /// Fraction of full travel that reads as centred.
     ///
-    /// Small, because this stick is absolute: the knob goes where the finger is, so a
-    /// thumb at rest is a thumb that was deliberately put there, and the drift a deadzone
-    /// exists to swallow is only the tremor of a finger already on the glass. The large
-    /// deadzones physical sticks need are for worn potentiometers that no longer return
-    /// to zero, which is not a problem a piece of capacitive glass has.
+    /// Small, because the knob goes where the finger is and glass has no drift to filter.
     static let defaultDeadzone: Double = 0.06
     static let minDeadzone: Double = 0.0
     static let maxDeadzone: Double = 0.30
 
-    /// The exponent applied to the stick's magnitude after the deadzone is rescaled out.
-    ///
-    /// 1.0 is linear: the number the title receives is the fraction of travel the thumb
-    /// actually covered, and nothing in between reshapes it. Above 1.0 the early travel
-    /// produces smaller values, so the same thumb movement near the centre buys finer
-    /// control - which is what makes a light lean in Mario Kart a light lean instead of a
-    /// quarter turn. 0 and 1 map to themselves at every setting, so raising it never
-    /// costs the stick its top end nor gives it a false centre.
+    /// The exponent applied to the stick's magnitude after the deadzone. 1.0 is linear;
+    /// higher values make small movements gentler. 0 and 1 map to themselves.
     static let defaultStickCurve: Double = 1.0
     static let minStickCurve: Double = 1.0
     static let maxStickCurve: Double = 2.5
 
-    /// The gate the stick reaches by default.
-    ///
-    /// Octagonal, because that is what the hardware this is imitating does, and the
-    /// difference is not cosmetic - see `StickGate` for what it changes about the numbers
-    /// a title receives.
-    /// Stored as its raw string, so the key survives a case being added or reordered.
+    /// The gate the stick reaches by default (octagonal, like the hardware). Stored as its
+    /// raw string so the key survives a case being added or reordered.
     static let defaultStickGate = ControllerGeometry.StickGate.octagon
     static let defaultStickGateRaw = ControllerGeometry.StickGate.octagon.rawValue
     static let defaultScale: Double = 1.0
@@ -102,14 +63,9 @@ enum ControllerLayoutSettings {
     static let minScale: Double = 0.6
     static let maxScale: Double = 1.6
 
-    /// Puts every adjustment back where the measured layout says it goes. Removing the
-    /// keys rather than writing the defaults into them is deliberate: `@AppStorage` falls
-    /// back to its declared default for a missing key, so one list here cannot drift out
-    /// of step with the defaults declared at each use site.
-    /// `joystickKey` is deliberately not in this list. "Reset layout" is about where the
-    /// controls are and how big they are; which control scheme you play with is a
-    /// different question, and silently switching someone back to the d-pad because they
-    /// nudged a cluster too far would be a surprise, not a reset.
+    /// Puts every adjustment back to the measured layout by removing the keys, so each
+    /// `@AppStorage` falls back to its own declared default. `joystickKey` is not reset:
+    /// that is the control scheme, not the layout.
     static func reset() {
         let defaults = UserDefaults.standard
         for key in [scaleKey, opacityKey, rightStickOffsetXKey, rightStickOffsetYKey,
@@ -118,18 +74,14 @@ enum ControllerLayoutSettings {
                     rightOffsetXKey, rightOffsetYKey] {
             defaults.removeObject(forKey: key)
         }
-        // Per-element placement is layout too. Leaving it behind would make this button
-        // look broken: the clusters would snap back while every control inside them
-        // stayed where it had been dragged.
+        // Per-element placement is layout too.
         ControllerCustomLayout.shared.resetAll()
     }
 }
 
-/// The on-screen pad's arrangement, taken by measurement from a reference image of the
-/// real GamePad rather than re-invented, because the last version
-/// of this file re-invented it and the result was unusable.
+/// The on-screen pad's arrangement, measured from a reference photo of the real GamePad.
 ///
-/// Measured button centres in that screenshot (1080x498 px, face-button diameter 59.5 px):
+/// Measured button centres (face-button diameter 59.5 px):
 ///
 ///     ZL(126,175)   L(245.5,175)            R(833.5,175)   ZR(953.5,175)
 ///        up(186,273.5)   -(326,282)           +(753,282)     X(893.5,273.5)
@@ -137,16 +89,12 @@ enum ControllerLayoutSettings {
 ///                                          Y(819.5,342.5) o(894,343) A(967.5,342.5)
 ///        down(186,411.5)                                    B(893.5,411.5)
 ///
-/// The right-hand half is an exact mirror of the left about x = 540 (every measured pair
-/// agrees to within a pixel), so only one half is written out below and the other is that
-/// one with x negated. Note the two things the previous layout got wrong and this one
-/// does not: the face buttons are X-top / Y-left / A-right / B-bottom, and the d-pad is a
-/// diamond of circles, not a column of squares.
+/// The right-hand half is an exact mirror of the left about x = 540, so only one half is
+/// written out below and the other is that one with x negated. Face buttons are
+/// X-top / Y-left / A-right / B-bottom, and the d-pad is a diamond of circles.
 ///
-/// Every number is expressed in units of one face-button diameter, so the arrangement
-/// survives being drawn at any size: change the unit and the whole cluster scales without
-/// a single relationship between two buttons shifting. That is what makes the automatic
-/// sizing below safe - it only ever chooses the unit.
+/// Every number is in units of one face-button diameter, so changing the unit scales the
+/// whole arrangement.
 enum ControllerGeometry {
     /// Small grey centre circle, 42/59.5.
     static let stickDiameter: CGFloat = 0.706
@@ -237,19 +185,8 @@ enum ControllerGeometry {
         Control(id: "L3",    glyph: "",         offset: .zero,                     shape: stick,  style: .stick)
     ]
 
-    /// The left analog stick, for joystick mode: drawn as its own one-control cluster,
-    /// exactly mirroring rightStickCluster below - both are "joystick mode adds a stick
-    /// alongside the measured cluster," never "joystick mode replaces it."
-    ///
-    /// This used to replace the d-pad's own four circles + centre dot outright
-    /// (leftClusterJoystick, now gone) - a different, inconsistent behaviour from the
-    /// right side, where joystick mode has only ever ADDED a separate camera stick
-    /// without ever removing A/B/X/Y. Having both present fixes exactly that
-    /// inconsistency: the d-pad now never leaves,
-    /// on either side, in either mode - only whether a stick is ALSO present changes.
-    ///
-    /// L3 is unaffected, same reasoning as R3: it stays the dot in the d-pad's own
-    /// centre in both modes, since this cluster no longer touches it.
+    /// The left analog stick, for joystick mode: its own one-control cluster, added
+    /// alongside the d-pad (which stays, along with its L3 dot) rather than replacing it.
     static let leftStickCluster: [Control] = [
         Control(id: "stickL", glyph: "", offset: .zero,
                 shape: .circle(stickBaseDiameter), style: .joystick)
@@ -294,21 +231,9 @@ enum ControllerGeometry {
     /// cap does.
     static var stickTravel: CGFloat { (stickBaseDiameter - stickKnobDiameter) / 2 }
 
-    /// The shape the knob may reach, which is a fidelity question and not a cosmetic one.
-    ///
-    /// The GamePad's sticks sit in an octagonal gate, and that gate is why a Wii U stick
-    /// does not behave like a circle. On a circle the magnitude is 1 in every direction,
-    /// so a diagonal is as strong as a cardinal and there is nothing under the thumb to
-    /// say where the diagonals are. In the gate the eight vertices - the four cardinals
-    /// and the four diagonals - are the only directions that reach full travel, and the
-    /// flats between them stop about 8% short. That is what a title tuned on the console
-    /// was tuned against: Mario Kart's drift, and the eight-way feel of walking in Zelda
-    /// and 3D World, are both read off a stick whose corners were cut this way.
-    ///
-    /// Round is kept because it is what every other on-screen stick does and because the
-    /// gate is a real constraint - it takes about 8% off the top of every direction that
-    /// is not one of the eight, and someone who wants the maximum number in every
-    /// direction should be able to have it.
+    /// The shape the knob may reach. The real GamePad's sticks sit in an octagonal gate:
+    /// the eight cardinals and diagonals reach full travel, the flats between them stop
+    /// about 8% short. Round reaches full travel in every direction.
     enum StickGate: String, CaseIterable, Identifiable {
         case octagon
         case round
@@ -326,9 +251,9 @@ enum ControllerGeometry {
         var summary: String {
             switch self {
             case .octagon:
-                return "The GamePad's own gate. Full travel at the four cardinals and the four diagonals, a little short of it in between - the shape the games were tuned against."
+                return "Matches the real GamePad: full push in the eight main directions, slightly less in between."
             case .round:
-                return "Full travel in every direction. Stronger off the eight, and with nothing marking where the diagonals are."
+                return "Full push in every direction."
             }
         }
 

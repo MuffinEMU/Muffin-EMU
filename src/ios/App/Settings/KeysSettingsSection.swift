@@ -1,10 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Real Wii U games are encrypted and MuffinEMU ships no keys. This is where the user
-/// supplies their own, dumped from their own console. Optional by design: without
-/// it, everything that worked before - homebrew, .rpx, anything already decrypted -
-/// still works.
+/// Where the user supplies their own keys.txt, dumped from their own console. Optional:
+/// homebrew, .rpx and already-decrypted games work without it.
 struct KeysSettingsSection: View {
     @State private var showingKeysImporter = false
     @State private var showingKeysRemovalConfirmation = false
@@ -29,15 +27,12 @@ struct KeysSettingsSection: View {
             SettingsSectionHeader("Wii U Keys", icon: "key", accent: .content)
         } footer: {
             InfoButton.footer(
-                "Optional - encrypted games need keys.txt, with the AES keys dumped from your own Wii U inside. Homebrew and already-decrypted dumps need none of this.",
+                "Only needed for encrypted games. Homebrew and already-decrypted dumps don't need keys.",
                 title: "Wii U Keys",
-                text: "Optional. Encrypted games (.wux, .wud, .iso, .wua) need the AES keys dumped from your own Wii U, in a plain text file called keys.txt - one key per line. MuffinEMU ships no keys and can't obtain them. Homebrew and already-decrypted dumps need none of this.\n\nYou can also skip this button entirely: open MuffinEMU in the Files app and drop keys.txt straight into the \"keys\" folder. It's picked up on the next launch, no restart needed.")
+                text: "Encrypted games (.wux, .wud, .iso, .wua) need AES keys dumped from your own Wii U, in a text file called keys.txt with one key per line. MuffinEMU doesn't include keys.\n\nYou can also open MuffinEMU in the Files app and drop keys.txt into the \"keys\" folder.\n\nNew keys are used the next time you start a game. If you've already started a game since opening MuffinEMU, quit and reopen MuffinEMU first.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
-        // .item for the same reason the ROM picker uses it: a keys.txt exported by
-        // some other tool may carry no useful type at all, and a type filter would
-        // grey out the one file this button exists to select. WiiUKeys.importKeys
-        // decides what it actually is, by reading it.
+        // .item: a keys.txt may carry no useful type; WiiUKeys.importKeys checks the contents.
         .fileImporter(
             isPresented: $showingKeysImporter,
             allowedContentTypes: [.item],

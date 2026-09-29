@@ -1405,22 +1405,8 @@ namespace coreinit
 			__OSThreadSwitchToNext();
 			__OSUnlockScheduler();
 
-			// Thermal governor, applied at the one point in this loop where no guest
-			// thread is mid-timeslice and no scheduler lock is held.
-			//
-			// This loop is what makes MuffinEMU hot: it reschedules without ever
-			// sleeping, and MuffinEMU runs three of these host threads where MeloCafe's
-			// default runs one. A brief sleep here drops each core's duty cycle, which is
-			// the only CPU-side lever that works on a title that is ALREADY running -
-			// core count is fixed once these threads exist.
-			//
-			// Placed after __OSUnlockScheduler() deliberately. Sleeping while holding the
-			// scheduler lock would stall the other two cores as well as this one, turning
-			// a throttle into a stall; and sleeping mid-timeslice would suspend a guest
-			// thread at an arbitrary instruction rather than at a reschedule point the
-			// emulated OS already expects to yield at.
-			//
-			// Zero is the normal state and costs one relaxed atomic load per reschedule.
+			// Thermal governor: sleep here, after the scheduler lock is released and between guest
+			// timeslices, so a throttle never stalls other cores or interrupts a guest thread mid-slice.
 			if (const uint32 throttleMicros = g_thermalThrottleMicros.load(std::memory_order_relaxed))
 				std::this_thread::sleep_for(std::chrono::microseconds(throttleMicros));
 		}
