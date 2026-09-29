@@ -172,7 +172,7 @@ void memory_init()
 #if BOOST_OS_IOS
 	if (!memory_base)
 	{
-		// this kinda doesn't work, but it produces practically the same result as without it except giving me more info, so like i'll keep it -stossy11
+		// Diagnostic fallback: try sparse reservations and log the outcome. It rarely succeeds where the contiguous reservation failed.
 		cemuLog_log(LogType::Force, "Contiguous guest reservation failed; trying sparse reservations (host page size: {})", MemMapper::GetPageSize());
         
 		for (uintptr_t base = 0x10000000ULL; base < 0x1000000000ULL; base += 0x10000000ULL)
