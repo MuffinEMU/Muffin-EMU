@@ -16,13 +16,8 @@ struct GameOverrides: Codable, Equatable {
     /// Settings' "Compile shaders in the background", true/false pin this one game.
     var preCompileShaders: Bool?
 
-    /// Same escape hatch, for Settings' "Favour accuracy". A new Optional field on an
-    /// existing Codable struct decodes to nil for every override already saved on
-    /// disk before this existed - Swift's synthesized Decodable calls
-    /// decodeIfPresent for Optional properties, so old JSON with no
-    /// "favourAccuracy" key is not a decode failure, it's just nil, which is
-    /// exactly the "follow the global default" behaviour a game nobody has
-    /// overridden yet should have.
+    /// Same escape hatch, for Settings' "Favour accuracy". Decodes to nil for overrides saved
+    /// before this field existed (follow the global default).
     var favourAccuracy: Bool?
 
     static let identity = GameOverrides()
@@ -71,9 +66,8 @@ final class PerGameSettingsStore: ObservableObject {
         write(next, for: gameID)
     }
 
-    /// Same "per-game override first, global default underneath" read GameManager
-    /// already does for shader compilation, for the lead's Favour accuracy push
-    /// before boot - see cemu_bridge_set_favour_accuracy's call site.
+    /// Per-game override first, global default underneath. Read before boot (see
+    /// cemu_bridge_set_favour_accuracy's call site).
     func effectiveFavourAccuracy(for gameID: String) -> Bool {
         let globalDefault = defaults.object(forKey: "muffin.cpu.favourAccuracy") as? Bool ?? false
         return overrides(for: gameID).favourAccuracy ?? globalDefault
@@ -108,17 +102,12 @@ final class PerGameSettingsStore: ObservableObject {
     }
 }
 
-/// The quick actions offered from a long-press on a library title - same pattern as
-/// Manic's game grid: a couple of fast toggles right in the context menu, plus a way into
-/// the full screen for everything else. Applied at the call site as a `.contextMenu`
-/// modifier on the game's card, so it needs no changes to `GameCardOptimized` itself.
+/// Quick actions offered from a long-press on a library title: a couple of toggles, plus a
+/// way into the full options screen. Applied as a `.contextMenu` modifier on the game's card.
 struct GameContextMenu: View {
     let game: GameMetadata
     @ObservedObject var store: PerGameSettingsStore
-    /// Only used here to check/clear a manual cover override (hasManualCoverOverride/
-    /// removeManualCover) - the actual picker screen this menu opens into
-    /// (CoverArtPickerView) takes its own reference, passed down from ContentView the
-    /// same way `store` is.
+    /// Used to check/clear a manual cover override; the picker screen takes its own reference.
     @ObservedObject var gameManager: GameManager
     let onViewOptions: () -> Void
     let onDecryptToFiles: () -> Void
@@ -133,7 +122,7 @@ struct GameContextMenu: View {
             get: { store.effectivePreCompileShaders(for: game.id) },
             set: { store.setPreCompileShaders($0, for: game.id) }
         )) {
-            Label("Pre-Compile Shaders", systemImage: "bolt.fill")
+            Label("Compile Shaders in Background", systemImage: "bolt.fill")
         }
         Button(action: onViewOptions) {
             Label("View Game Options", systemImage: "slider.horizontal.3")
@@ -249,11 +238,7 @@ struct GameOptionsView: View {
     }
 
     var body: some View {
-        // NavigationStack needs iOS 16+; this project's deployment target is 15.0 -
-        // same reasoning as SettingsView.swift's own NavigationView, whose overall
-        // shape (a background gradient behind a Form, rather than the plain white
-        // Form this screen had before) this now matches exactly - this was the one
-        // real settings screen in the app that hadn't picked it up.
+        // NavigationStack needs iOS 16+; the deployment target is 15.0.
         NavigationView {
             ZStack {
                 MuffinTheme.backgroundGradient
@@ -262,10 +247,10 @@ struct GameOptionsView: View {
                 Form {
                     Section {
                         HStack {
-                            Text("Pre-Compile Shaders")
+                            Text("Compile Shaders in Background")
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                             Spacer()
-                            Picker("Pre-Compile Shaders", selection: shaderChoice) {
+                            Picker("Compile Shaders in Background", selection: shaderChoice) {
                                 ForEach(TriState.allCases) { choice in
                                     Text(choice.title).tag(choice)
                                 }
@@ -273,10 +258,6 @@ struct GameOptionsView: View {
                             .pickerStyle(.menu)
                             .tint(MuffinTheme.pixelBlue)
                         }
-                        // Next to Pre-Compile Shaders rather than its own section: both
-                        // are the same shape of override on the same screen, and Favour
-                        // accuracy is exactly the setting Nano Assault Neo's own
-                        // shader-compile override sits next to in Settings itself.
                         HStack {
                             Text("Favour Accuracy")
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -292,14 +273,10 @@ struct GameOptionsView: View {
                     } header: {
                         SettingsSectionHeader("Overrides", icon: "slider.horizontal.3", accent: .core)
                     } footer: {
-                        // Same "one short sentence inline, the rest one tap away" shape
-                        // every other settings section's footer in this app already
-                        // uses - see InfoButton.swift - instead of a single paragraph
-                        // dump nobody who already knows what these do has to read past.
                         InfoButton.footer(
                             "\"Use Global Default\" tracks Settings; On/Off pins this game regardless of it.",
                             title: "Overrides",
-                            text: "Pre-Compile Shaders renders and compiles every shader ahead of time so the game runs faster even without the recompiler. Most games want this on; Nano Assault Neo specifically breaks with it on, which is why this is a per-game choice rather than only a global one.\n\nFavour Accuracy trades speed for stability on a game that glitches, desyncs or crashes - see Settings > CPU for what it changes.\n\n\"Use Global Default\" tracks whatever Settings currently says for that setting, even if you change it later. On/Off pins this game regardless of what the global setting does."
+                            text: "Compile Shaders in Background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nFavour Accuracy is slower but more accurate, and can fix a game that glitches, desyncs or crashes. See Settings > CPU.\n\n\"Use Global Default\" follows the matching setting in Settings, even if you change it later. On or Off pins this game."
                         )
                     }
 
@@ -343,9 +320,9 @@ struct GameOptionsView: View {
                         SettingsSectionHeader("Game saves", icon: "externaldrive", accent: .io)
                     } footer: {
                         InfoButton.footer(
-                            "Your in-game progress, in the Wii U\'s own format - not a save state.",
+                            "The save the game itself writes. Not a save state.",
                             title: "Game saves",
-                            text: "This is the save the GAME writes: your progress and file slots. It is stored the way a real Wii U stores it, so it can be moved between MuffinEMU, desktop Cemu, another emulator, or a real console.\n\nA save state is a different thing - a snapshot of the whole emulated machine, which only MuffinEMU can read.\n\nExport writes a folder named after the game and its title ID. Import accepts that folder, or the folder named after the title ID from another Cemu install, or the \'user\' folder inside it.\n\nImporting replaces this game\'s current save. The old one is copied to save-backups in MuffinEMU\'s Documents folder first, every time. Close the game before importing."
+                            text: "This is the save the game itself writes. It uses the Wii U\'s own format, so it can move between MuffinEMU, desktop Cemu and a real console. A save state is a snapshot of the whole emulated console and only MuffinEMU can read it.\n\nExport writes a folder named after the game and title ID. Import accepts that folder, a folder named after the title ID from another Cemu install, or its \'user\' folder. Importing replaces the current save; the old one is first copied to save-backups in MuffinEMU\'s Documents folder. Close the game first."
                         )
                     }
                 }

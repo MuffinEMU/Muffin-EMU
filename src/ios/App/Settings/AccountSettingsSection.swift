@@ -1,11 +1,8 @@
 import SwiftUI
 
-/// Wii U console accounts (Cafe/Account/Account.h) - a real, already-working desktop Cemu
-/// feature (the same account.dat files desktop Cemu creates, lists and boots under) that
-/// had no iOS surface at all before this. Ported from MeloCafe's AccountSettingsView,
-/// split into two sections (this one and NetworkServiceSettingsSection below) to match
-/// this app's one-struct-per-Section settings layout - see ShaderSettingsSections.swift
-/// for the same split applied to a different feature.
+/// Wii U console accounts (Cafe/Account/Account.h): pick, create and delete accounts, the
+/// same account.dat files desktop Cemu uses. The Network Service picker is a separate
+/// section below.
 struct AccountSettingsSection: View {
     @State private var accounts: [Account] = []
     @State private var activePersistentId: UInt32 = 0
@@ -50,7 +47,7 @@ struct AccountSettingsSection: View {
                 InfoButton.footer(
                     "This account has no cached NNID/PNID login, so it can't play online yet.",
                     title: "Account",
-                    text: "This account has no cached NNID/PNID login, so it can't play online yet regardless of which Network Service is selected below - that requires signing in on a real console and dumping its account.dat here, which is outside what this app does.")
+                    text: "Online play needs an account with a saved NNID or PNID login. Sign in on a real console and copy its account.dat here; MuffinEMU can't create one.")
             }
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -98,10 +95,8 @@ struct AccountSettingsSection: View {
     }
 }
 
-/// The active account's Network Service - which online backend it connects through, kept
-/// separate from AccountSettingsSection above because it's a per-account setting rather
-/// than an account-management action, the same distinction MeloCafe draws between its own
-/// "Account" and "Network Service" sections.
+/// The active account's Network Service: which online backend it connects through. A
+/// per-account setting, so it sits apart from the account-management section above.
 struct NetworkServiceSettingsSection: View {
     @State private var activePersistentId: UInt32 = 0
     @State private var activeAccountName: String?
@@ -124,7 +119,10 @@ struct NetworkServiceSettingsSection: View {
                         }
                     }
                 }
-                .disabled(locked || activeAccountName == nil || (service == .custom && !customAvailable))
+                .disabled(locked || activeAccountName == nil
+                          || (service == .custom && !customAvailable)
+                          // Nintendo's servers are shut down; only keep it selectable if it's already chosen.
+                          || (service == .nintendo && selectedService != .nintendo))
             }
         } header: {
             SettingsSectionHeader("Network Service\(activeAccountName.map { " (\($0))" } ?? "")",
@@ -133,7 +131,7 @@ struct NetworkServiceSettingsSection: View {
             InfoButton.footer(
                 selectedService.accountHelp,
                 title: "Network Service",
-                text: "Nintendo and Pretendo both connect this account to real online multiplayer against other players. Pretendo is a community-run reimplementation of Nintendo's original Wii U servers, kept running now that Nintendo's own have been shut down - its server addresses are already built into MuffinEMU, so there's nothing else to configure.\n\nCustom has no configuration screen in this app: it only becomes available once you've placed a hand-written network_services.xml (the same file desktop Cemu reads) in the mlc folder yourself.")
+                text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there's nothing to configure.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom is only available if you've put a network_services.xml (the same file desktop Cemu reads) in the mlc folder.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: reload)

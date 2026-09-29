@@ -34,9 +34,9 @@ struct AppearanceSettingsSection: View {
 
             Toggle(isOn: $style.disableLiquidGlass) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Disable Liquid Glass")
+                    Text("Flat surfaces")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("Turns off the translucent, glassy material on cards and buttons. Layout and text stay as they are.")
+                    Text("Removes the highlights and shading on cards and buttons.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -51,7 +51,7 @@ struct AppearanceSettingsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Use Classic UI")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("The v2.0 look - flat cards, plain section headers, system-font rows. Every setting, button and feature stays exactly where it is.")
+                    Text("The v2.0 look: flat cards, plain headers, system-font rows.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -61,9 +61,9 @@ struct AppearanceSettingsSection: View {
             SettingsSectionHeader("Appearance", icon: "paintpalette", accent: .identity)
         } footer: {
             InfoButton.footer(
-                "Both change how MuffinEMU looks and nothing about what it does.",
+                "Both change how MuffinEMU looks, not what it does.",
                 title: "Appearance",
-                text: "Disable Liquid Glass removes the translucent, glassy material from cards and buttons - the lighting pass that sits over their fill - and leaves the layout, spacing and typography alone.\n\nUse Classic UI goes further and restores the styling MuffinEMU had at v2.0: flat cards with one soft shadow, plain text section headers instead of icon chips, and system-font rows. It implies Disable Liquid Glass, because v2.0 had no glassy material to turn off.\n\nNeither removes anything. Every setting, toggle, button and screen added since v2.0 is still there and still does the same thing - this is not a v2.0 build, it is the current app wearing the old styling. Some newer screens will still look newer, because they did not exist to have a classic form.")
+                text: "Flat surfaces removes the soft highlights on cards and buttons.\n\nClassic UI restores the flat v2.0 styling: plain cards, text headers, system-font rows. It turns on flat surfaces too. All settings and screens are still there; newer screens just have no classic form.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

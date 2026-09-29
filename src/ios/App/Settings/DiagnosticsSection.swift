@@ -1,28 +1,13 @@
 import SwiftUI
 import UIKit
 
-/// MuffinEMU installs on any arm64 iPhone or iPad running iOS 15 or later, and
-/// almost none of those have ever run it. Every finding on this port so far - no
-/// BC texture formats, no mesh shaders, the memory ceiling - depended on knowing
-/// exactly which chip was under it, and a report from hardware nobody here owns is
-/// unanswerable without that. One tap to copy is the difference between a bug
-/// report that can be acted on and one that cannot. Its own section, above
-/// Diagnostics, because it is the thing to send FIRST when something is wrong.
+/// One-tap copy of the chip, memory and build details a bug report needs. Its own section
+/// above Diagnostics because it is the first thing to send when something is wrong.
 struct DeviceReportSection: View {
     @State private var deviceReportCopied = false
-    /// Computed on demand. The bridge owns the string and it is stable for the
-    /// process's lifetime, so there is nothing to refresh and nothing to invalidate.
-    ///
-    /// PlatformCapabilities.summary is appended rather than added to the bridge's own
-    /// report because it answers a question the bridge cannot: the bridge knows the
-    /// running OS, but only the Swift side knows which SDK this binary was compiled
-    /// against, and "iOS 27 device, pre-27 SDK" is the single most likely reason for a
-    /// report that a new-OS feature did nothing. Putting it in the copied text means it
-    /// travels with every bug report instead of having to be asked for.
-    /// @MainActor because it reads ThermalMonitor and HeatStatus, both of which are
-    /// main-actor isolated. A SwiftUI View's `body` is isolated for you; an ordinary
-    /// computed property on the same struct is NOT, which is exactly the gap that let the
-    /// sibling call in SettingsDefaults compile locally and fail on CI.
+    /// Computed on demand. PlatformCapabilities.summary is appended because only the Swift side
+    /// knows which SDK this binary was built against. @MainActor because ThermalMonitor and
+    /// HeatStatus are main-actor isolated.
     @MainActor
     private var deviceReport: String {
         String(cString: cemu_bridge_device_report())
@@ -49,36 +34,23 @@ struct DeviceReportSection: View {
         } header: {
             SettingsSectionHeader("This Device", icon: "iphone", accent: .system)
         } footer: {
-            // Already one short pair of sentences - nothing to move behind an info button.
-            InfoButton.footer("Send this with any bug report. It says which chip, how much memory, and which build - which is what makes everything else in a log mean something.")
+            InfoButton.footer("Send this with any bug report. It lists your chip, memory and app build.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 }
 
-/// Was ON by default while no Wii U title had been shown to boot - the log was not a
-/// diagnostic sitting on top of the feature, it WAS the feature, and the only thing a
-/// failed launch produced that was worth anything. Titles boot now (FAST Racing NEO
-/// renders correctly, full speed, on real hardware), so that default started actively
-/// working against the normal experience: it also gates the launch intro (see
-/// ContentView.swift), so an ON-by-default log meant the intro silently never played on
-/// a stock install, every single launch, with nothing in the UI explaining why. OFF by
-/// default now; still one tap away for anyone chasing a black screen.
+/// Launch intro, launch log and controls diagnostic toggles. The launch log is off by default
+/// and, while on, replaces the launch intro (see ContentView.swift).
 struct DiagnosticsSection: View {
-    /// Shared with EmulatorViewOptimized by key, not by binding - the emulator view is
-    /// not in this sheet's hierarchy, and AppStorage is what makes the setting outlive
-    /// the sheet anyway.
+    /// Shared with EmulatorViewOptimized by key; that view isn't in this sheet's hierarchy.
     @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
     @AppStorage("muffin.showLaunchIntro") private var launchIntroEnabled = true
     @AppStorage(PadDiagnostics.enabledKey) private var padOverlayEnabled = PadDiagnostics.defaultEnabled
 
     var body: some View {
-        // Collection is always on regardless (see IOSLiveLog.h) - gating that too would
-        // mean the toggle could only ever show the boot AFTER the one that failed.
-        //
-        // The intro is deliberately in the same section as the launch log and directly
-        // above it, because they occupy the same screen at the same moment and turning
-        // the log on hides the intro. Putting them apart would make that look like a bug.
+        // Log collection is always on (see IOSLiveLog.h). The intro sits directly above the log
+        // toggle because turning the log on hides the intro.
         Section {
             Toggle(isOn: $launchIntroEnabled) {
                 Label {
@@ -105,7 +77,7 @@ struct DiagnosticsSection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Show controls diagnostic")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("A small readout over the game: which pad is mounted, whether your presses are reaching it, and which setting is responsible if they are not.")
+                        Text("A small readout over the game showing whether your button presses are reaching the game, and why not if they aren't.")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
@@ -118,9 +90,9 @@ struct DiagnosticsSection: View {
             SettingsSectionHeader("Diagnostics", icon: "stethoscope", accent: .system)
         } footer: {
             InfoButton.footer(
-                "The launch log takes priority over the intro and shows what the emulator is doing during boot.",
+                "The launch log shows boot progress and replaces the intro while it's on.",
                 title: "Diagnostics",
-                text: "The intro plays over the boot rather than before it, so it costs no extra waiting. The launch log takes priority when both are on: shows what the emulator is doing, with timestamps, while a game boots, which is what you want when a game starts but the screen stays black.")
+                text: "The intro plays during the boot. If you turn on the launch log it takes the screen instead, so you can see timestamped boot steps when a game starts but stays black.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
