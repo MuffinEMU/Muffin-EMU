@@ -44,6 +44,24 @@ enum OverlaySettings {
     static let defaultDebug = true // matches CemuConfig's overlay.debug default
 }
 
+/// Text binding for a packed 0xAARRGGBB colour. Accepts a 6-digit RGB hex (treated as
+/// fully opaque) or an 8-digit ARGB one; anything else is left uncommitted.
+func hexColourBinding(_ value: Binding<Int>) -> Binding<String> {
+    Binding {
+        String(format: "#%08X", UInt32(truncatingIfNeeded: value.wrappedValue))
+    } set: { newValue in
+        let cleaned = newValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "#", with: "")
+        guard let parsed = UInt32(cleaned, radix: 16) else { return }
+        switch cleaned.count {
+        case 6: value.wrappedValue = Int(0xFF000000 | parsed)
+        case 8: value.wrappedValue = Int(parsed)
+        default: return
+        }
+    }
+}
+
 /// The on-screen FPS/CPU/RAM readout the core already knows how to draw - this section
 /// only ever decides where it goes, how it looks, and which rows are on, the same "app
 /// owns the @AppStorage, GameManager pushes it before boot" split every other graphics
@@ -111,25 +129,7 @@ struct OverlaySettingsSection: View {
         }
     }
 
-    // 0xAARRGGBB packed the same way ImGui::ColorConvertU32ToFloat4 reads it - see
-    // CemuBridge.h's doc comment on cemu_bridge_set_overlay_text_color(). Accepts either
-    // a 6-digit RGB hex (treated as fully opaque) or an 8-digit ARGB one; anything else
-    // is left uncommitted rather than guessed at.
-    private var textColorHex: Binding<String> {
-        Binding {
-            String(format: "#%08X", UInt32(textColor))
-        } set: { newValue in
-            let cleaned = newValue
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "#", with: "")
-            guard let parsed = UInt32(cleaned, radix: 16) else { return }
-            switch cleaned.count {
-            case 6: textColor = Int(0xFF000000 | parsed)
-            case 8: textColor = Int(parsed)
-            default: return
-            }
-        }
-    }
+    private var textColorHex: Binding<String> { hexColourBinding($textColor) }
 
     private var textColorField: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -141,7 +141,7 @@ struct OverlaySettingsSection: View {
         }
         .disabled(isOff)
         .onChange(of: textColor) { newValue in
-            cemu_bridge_set_overlay_text_color(UInt32(newValue))
+            cemu_bridge_set_overlay_text_color(UInt32(truncatingIfNeeded: newValue))
         }
     }
 

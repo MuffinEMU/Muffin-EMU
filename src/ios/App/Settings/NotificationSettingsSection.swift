@@ -91,23 +91,7 @@ struct NotificationSettingsSection: View {
         }
     }
 
-    // Same 0xAARRGGBB packing and same 6/8-digit hex parsing as OverlaySettingsSection's
-    // textColorHex - see its doc comment for why.
-    private var textColorHex: Binding<String> {
-        Binding {
-            String(format: "#%08X", UInt32(textColor))
-        } set: { newValue in
-            let cleaned = newValue
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "#", with: "")
-            guard let parsed = UInt32(cleaned, radix: 16) else { return }
-            switch cleaned.count {
-            case 6: textColor = Int(0xFF000000 | parsed)
-            case 8: textColor = Int(parsed)
-            default: return
-            }
-        }
-    }
+    private var textColorHex: Binding<String> { hexColourBinding($textColor) }
 
     private var textColorField: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -119,7 +103,7 @@ struct NotificationSettingsSection: View {
         }
         .disabled(isOff)
         .onChange(of: textColor) { newValue in
-            cemu_bridge_set_notification_text_color(UInt32(newValue))
+            cemu_bridge_set_notification_text_color(UInt32(truncatingIfNeeded: newValue))
         }
     }
 
