@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Decrypt-to-Files: Void's ask was either replace the encrypted ROM in place, or
+/// Decrypt-to-Files: the options were either replace the encrypted ROM in place, or
 /// export a decrypted copy and keep using the encrypted original. Only the second is
 /// implemented - replacing a user's only copy of a legally-owned dump in place, where a
 /// crash or a full disk mid-write could destroy it with nothing left to recover, isn't

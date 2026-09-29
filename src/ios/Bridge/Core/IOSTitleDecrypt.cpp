@@ -1,4 +1,4 @@
-// Decrypt-to-Files for iOS. Void's ask: take a WUD/WUX the user already owns the
+// Decrypt-to-Files for iOS: take a WUD/WUX the user already owns the
 // keys for and produce a plain, decrypted copy - either to keep using instead of the
 // encrypted original, or to hand to another app via the Files share sheet.
 //

@@ -6,7 +6,7 @@ import Dispatch
 /// Previously this was an HStack of a d-pad column and an A/B/X/Y column, which put the
 /// face buttons in the wrong places, had no shoulders, no plus/minus and no stick clicks,
 /// and could not be moved or resized. It now draws the arrangement in
-/// `ControllerGeometry` - measured from the layout Void sent - by absolute position,
+/// `ControllerGeometry` - measured from the real GamePad - by absolute position,
 /// which is what lets one unit scale the whole thing and lets a cluster be dragged.
 ///
 /// Still no backing plate and no divider, for the reason the old version documented: an
@@ -570,7 +570,7 @@ struct HeldControl<Content: View>: View {
             // the pad actually going away - so every press was being released a frame or
             // two after it started, by nothing the player did.
             //
-            // Void found it from the outside: hold a button still and the readout
+            // Found from the outside: hold a button still and the readout
             // goes "X down" then straight to "X up" without a finger lifting, but drag
             // the finger off the button while still holding and it stays "X down" and
             // reaches the game. onChanged fires once for a still finger and continuously

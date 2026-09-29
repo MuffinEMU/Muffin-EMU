@@ -3,7 +3,7 @@
 #
 # Releases are numbered by CI, not by hand. Every build of main publishes the next
 # version: the highest vX.Y tag plus 0.1, with .9 rolling over to the next whole number
-# (1.9 -> 2.0). That is the rule the owner set. This file only supplies the number used
+# (1.9 -> 2.0). This file only supplies the number used
 # when no vX.Y tag exists yet, and the version stamped into builds of other branches.
 # See "Choose the version" in .github/workflows/build-ios-app.yml.
 #

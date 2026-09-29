@@ -74,8 +74,8 @@ enum HeatBand: Int, Comparable {
     }
 
     /// From iOS's four-level signal. `.fair` maps to `.warm` rather than `.fair` on
-    /// purpose: Void's own transcription of a third-party thermal app called MeloCafe
-    /// "warm, but a little bit hot" in exactly the conditions iOS reports `.fair`, so
+    /// purpose: on-device reports described the device as "warm, but a little bit hot"
+    /// in exactly the conditions iOS reports `.fair`, so
     /// "Warm" is the word that matches what a person actually sees there.
     static func from(thermalState: ProcessInfo.ThermalState) -> HeatBand {
         switch thermalState {
