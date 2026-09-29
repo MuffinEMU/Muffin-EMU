@@ -63,49 +63,35 @@ enum MuffinThemePresets {
     /// six-stop rainbow (pastel, to be easy to sit in front of) over cream/wrapper surfaces.
     static let autismAwareness = MuffinThemeDefinition(
         id: "autism-awareness", name: "Autism Muffin", iconId: "autism-awareness",
-        backgroundTopLight: "#F5B5B5", backgroundTopDark: "#6B4444",
-        backgroundBottomLight: "#C9BCE6", backgroundBottomDark: "#514768",
-        muffinTopLightLight: "#FFFEFF", muffinTopLightDark: "#FFFEFF",
-        muffinTopDarkLight: "#B2B2B2", muffinTopDarkDark: "#DBDADB",
-        // Plain white, like the frosting on this icon.
-        creamLight: "#FFFFFF", creamDark: "#2B2920",
-        // Not pure white: wrapper is the card border stroke and the selected-row fill, which
-        // would vanish against a white cream.
-        wrapperLight: "#E9E9EC", wrapperDark: "#434031",
-        blueberryNavyLight: "#C62E2E", blueberryNavyDark: "#DD7D7D",
-        pixelBlueLight: "#B22A82", pixelBlueDark: "#D666AE",
-        blushPinkLight: "#D65176", blushPinkDark: "#D66685",
-        brownDarkestLight: "#222018", brownDarkestDark: "#FEFDF9",
-        brownDarkLight: "#494533", brownDarkDark: "#FDFBF1",
-        brownMidLight: "#837D5C", brownMidDark: "#FBF7E4",
+        // Built from the icon's rainbow infinity: seven bands sampled from the icon,
+        // red on top, at the strongest tint where the title still reads at 4.5:1.
+        backgroundTopLight: "#F47372", backgroundTopDark: "#721B1B",
+        backgroundBottomLight: "#FBF4E8", backgroundBottomDark: "#211B1C",
+        // Buttons: the icon's indigo and violet bands, dark enough for white text.
+        muffinTopLightLight: "#4C58B4", muffinTopLightDark: "#4C58B4",
+        muffinTopDarkLight: "#861989", muffinTopDarkDark: "#861989",
+        // Cards: the muffin's vanilla frosting. wrapper is the card stroke and the
+        // selected-row fill, so it has to differ visibly from cream.
+        creamLight: "#FFFCF7", creamDark: "#262022",
+        wrapperLight: "#EFE2CD", wrapperDark: "#3D3336",
+        blueberryNavyLight: "#3F4FA3", blueberryNavyDark: "#9FAAE8",
+        pixelBlueLight: "#6C63FF", pixelBlueDark: "#A19BFF",
+        blushPinkLight: "#D93A55", blushPinkDark: "#F28A9B",
+        // Text: the colours of the muffin's eyes and smile.
+        brownDarkestLight: "#2E1B10", brownDarkestDark: "#FBF3E6",
+        brownDarkLight: "#5C2E10", brownDarkDark: "#EEDFC9",
+        brownMidLight: "#7E6147", brownMidDark: "#C9B39A",
         sparkleCreamLight: "#FFFFFF", sparkleCreamDark: "#FFFFFF",
-        shadowLight: "#3A3729", shadowDark: "#000000",
-        // The rainbow occupies the top ~7.5% (the header band) and then holds the cream.
-        backgroundStopsLight: [
-            "#F5B5B5",  // soft red
-            "#F8D3A8",  // soft orange
-            "#F3E7AB",  // soft yellow - the colour this header used to be
-            "#BFE3B8",  // soft green
-            "#AFD4EC",  // soft blue
-            "#C9BCE6",  // soft violet
-            "#FFFFFF",  // settles to the white the card underneath now uses
-            "#FFFFFF",
-        ],
-        backgroundStopsDark: [
-            "#6B4444",
-            "#6E5A3E",
-            "#6C674F",  // the colour this header used to be, in dark
-            "#47603F",
-            "#3F5568",
-            "#514768",
-            "#474435",  // the background bottom this theme already had, in dark
-            "#474435",
-        ],
-        backgroundStopLocations: [0.00, 0.015, 0.03, 0.045, 0.06, 0.075, 0.13, 1.00]
+        shadowLight: "#3A2A20", shadowDark: "#000000",
+        // The rainbow fills the header strip (0-9% of the screen), then fades into
+        // the vanilla page colour by 15% so there is no hard edge under violet.
+        backgroundStopsLight: ["#F47372", "#FBB874", "#F8F980", "#82C88F", "#A7D6EA", "#8D97CC", "#B36EB5", "#FBF4E8", "#FBF4E8"],
+        backgroundStopsDark: ["#721B1B", "#76481D", "#757225", "#27522F", "#405B69", "#2F3256", "#471847", "#211B1C", "#211B1C"],
+        backgroundStopLocations: [0.000, 0.015, 0.030, 0.045, 0.060, 0.075, 0.090, 0.150, 1.000]
     )
 
     static let bisexualPride = MuffinThemeDefinition(
-        id: "bisexual-pride", name: "Bisexual Pride", iconId: "bisexual-pride",
+        id: "bisexual-pride", name: "Magenta Dusk", iconId: "bisexual-pride",
         backgroundTopLight: "#D60270", backgroundTopDark: "#600132",
         backgroundBottomLight: "#00349B", backgroundBottomDark: "#001641",
         muffinTopLightLight: "#0038A8", muffinTopLightDark: "#0038A8",
@@ -303,7 +289,7 @@ enum MuffinThemePresets {
     )
 
     static let lesbianPride = MuffinThemeDefinition(
-        id: "lesbian-pride", name: "Lesbian Pride", iconId: "lesbian-pride",
+        id: "lesbian-pride", name: "Sunset Coral", iconId: "lesbian-pride",
         backgroundTopLight: "#962E0F", backgroundTopDark: "#441507",
         backgroundBottomLight: "#770047", backgroundBottomDark: "#32001E",
         muffinTopLightLight: "#F18B70", muffinTopLightDark: "#F18B70",
@@ -375,7 +361,7 @@ enum MuffinThemePresets {
     )
 
     static let nonbinaryPride = MuffinThemeDefinition(
-        id: "nonbinary-pride", name: "Nonbinary Pride", iconId: "nonbinary-pride",
+        id: "nonbinary-pride", name: "Lemon & Lilac", iconId: "nonbinary-pride",
         backgroundTopLight: "#FCF434", backgroundTopDark: "#878202",
         backgroundBottomLight: "#6E6E6E", backgroundBottomDark: "#2E2E2E",
         muffinTopLightLight: "#A56BCF", muffinTopLightDark: "#A56BCF",
@@ -573,7 +559,7 @@ enum MuffinThemePresets {
     )
 
     static let transgenderPride = MuffinThemeDefinition(
-        id: "transgender-pride", name: "Transgender Pride", iconId: "transgender-pride",
+        id: "transgender-pride", name: "Sky & Blush", iconId: "transgender-pride",
         backgroundTopLight: "#5BCEFA", backgroundTopDark: "#056D94",
         backgroundBottomLight: "#07AEEE", backgroundBottomDark: "#034964",
         muffinTopLightLight: "#F3A9B8", muffinTopLightDark: "#F3A9B8",
