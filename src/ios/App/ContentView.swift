@@ -304,8 +304,8 @@ struct GameBrowserView: View {
     @State private var dlcImportErrorMessage: String?
     /// Set only when an import failed with .noBaseGameMatch - auto-matching by title ID
     /// couldn't place the file, so this asks whether to fall back to the game that was
-    /// long-pressed to start the import, per Brandon's "automatic matching with manual
-    /// fallback" spec. Retrying is what actually calls DlcUpdateImport.import again
+    /// long-pressed to start the import (automatic matching with manual
+    /// fallback). Retrying is what actually calls DlcUpdateImport.import again
     /// with manualMatch set; dismissing without confirming leaves nothing on disk,
     /// same as any other rejected import.
     @State private var pendingManualMatchConfirmation: (source: URL, kind: DlcUpdateImport.ContentKind, game: GameMetadata)?
@@ -1446,9 +1446,9 @@ struct EmulatorViewOptimized: View {
 
                         // Settings > On-Screen Controls already has this toggle;
                         // repeated here for the same reason as the save-state and
-                        // hide-controls buttons around it - Brandon's own asks this
-                        // session have consistently wanted things reachable without
-                        // leaving the game, not buried one menu away. Releases every
+                        // hide-controls buttons around it: things you need mid-game
+                        // should be reachable without leaving the game, not buried
+                        // one menu away. Releases every
                         // held button on the way in: a press in flight when the
                         // overlay it was held on disappears cannot report its own
                         // release any more, and the other pad's own buttons don't
@@ -1464,8 +1464,7 @@ struct EmulatorViewOptimized: View {
                         .accessibilityLabel(useMeloControls ? "Switch to MuffinEMU's controls" : "Switch to Melo-Controller")
 
                         // Reachable without leaving the game, same reasoning as the
-                        // move-controls and pad-hide buttons around it - Brandon's own
-                        // asks this session have consistently wanted things reachable
+                        // move-controls and pad-hide buttons around it: reachable
                         // in-game rather than buried in Settings. Hidden outright while
                         // .loading/.error instead of merely disabled: there is no
                         // running session yet for a slot to match against.
@@ -1498,7 +1497,7 @@ struct EmulatorViewOptimized: View {
                         #if os(iOS)
                         // Was a floating circle over the top-left corner of the game;
                         // moved in here with the rest of the in-game buttons instead,
-                        // per Brandon's own instruction, rather than floating alone on
+                        // rather than floating alone on
                         // top of whatever the game is drawing underneath it. Same
                         // action, same gating as before: only means anything in Single
                         // Screen, and only while a real external display isn't already

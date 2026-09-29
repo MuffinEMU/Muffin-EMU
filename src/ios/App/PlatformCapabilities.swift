@@ -39,8 +39,8 @@ import UIKit
 /// - `Adopt.automatic...` - correctness, compatibility and performance. These change what
 ///   works or how fast it is, never how it looks, so a newer OS should get them silently.
 /// - `Adopt.visualOptIn...` - anything that changes appearance. These default to OFF.
-///   Brandon's verdict on the iOS 26 Liquid Glass adoption was "it just makes the ui feel
-///   clunky and weird, it doesn't feel nice anymore", and it was reverted the same day.
+///   The iOS 26 Liquid Glass adoption made the UI feel clunky, and it was reverted the
+///   same day.
 ///   iOS 27's SwiftUI changes are largely descendants of that same design language, so
 ///   adopting them automatically would repeat a mistake we have already paid for once.
 ///   The mechanism is here; turning any of it on is a choice someone makes on purpose.

@@ -35,8 +35,7 @@ import Combine
 /// they asked for. Classic UI implies glass-off; glass-off does not imply Classic UI.
 ///
 /// As of today there is no `.glassEffect` left in the tree - the iOS 26 Liquid Glass
-/// adoption was reverted on 2026-09-15 after Brandon reported it "makes the ui feel clunky
-/// and weird". So this switch has two jobs: it turns off the *glass-adjacent* material
+/// adoption was reverted on 2026-09-15 because it made the UI feel clunky. So this switch has two jobs: it turns off the *glass-adjacent* material
 /// that remains (the sheen and lighting passes in MuffinTheme's newer layer, which is what
 /// still reads as glassy), and it is the permanent gate any future `glassEffect` must sit
 /// behind, so real Liquid Glass can never come back ungated.

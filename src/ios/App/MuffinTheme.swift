@@ -68,7 +68,7 @@ private func muffinHexChannels(_ hex: String) -> (Double, Double, Double) {
 /// "edge highlight" hex would be correct for exactly one of them and wrong for the
 /// other thirty. Deriving it instead means a rim light is always this theme's own
 /// wrapper colour lifted, a pressed control is always this theme's own muffin-top
-/// deepened, and a theme Brandon adds next year inherits the whole depth system for
+/// deepened, and a theme added later inherits the whole depth system for
 /// free without touching this file.
 ///
 /// Mixing in sRGB rather than a perceptual space on purpose. These are all small

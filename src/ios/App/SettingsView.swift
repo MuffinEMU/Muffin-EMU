@@ -74,8 +74,7 @@ struct SettingsView: View {
     /// `.listRowBackground(MuffinTheme.cream)` so the rows would not read as untinted
     /// grey cards on a warm gradient.
     ///
-    /// It was reverted the same day, on device, in Brandon's words: "it looks really
-    /// weird and you can't even read any text."
+    /// It was reverted the same day after on-device testing: the text was unreadable.
     ///
     /// DO NOT RE-APPLY THIS WITHOUT SOLVING THE TEXT PROBLEM FIRST. The reason it fails
     /// is not the background - it is that this Form sets

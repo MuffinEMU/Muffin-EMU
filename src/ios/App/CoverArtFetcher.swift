@@ -3,8 +3,7 @@ import Foundation
 /// Automatic box art: on import, derive the game's real GameTDB Game ID from its own
 /// dump metadata (see IOSCoverArt.cpp for the derivation, verified against GameTDB's
 /// live site rather than guessed) and fetch real cover art for it - no picker, no
-/// manual step, matching what Brandon actually asked for after first floating a picker
-/// UI and then deciding against it.
+/// manual step. A picker UI was considered and rejected.
 ///
 /// This only ever adds a cover for games GameManager.findCover() couldn't already
 /// answer for (a hand-placed override always wins, and this never touches a game with
@@ -156,8 +155,7 @@ enum CoverArtFetcher {
     /// miss), not a network error - only actual transport failures should throw here,
     /// so a non-200 response is treated the same as "nothing at this URL" rather than
     /// surfaced as data (an HTML error page is never mistaken for image bytes: it is
-    /// simply discarded by the 200-only check below, the same "verify at the
-    /// user-facing layer" discipline applied everywhere else this session).
+    /// simply discarded by the 200-only check below).
     private static func fetch(_ url: URL) async throws -> Data? {
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }

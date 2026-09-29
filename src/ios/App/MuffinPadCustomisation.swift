@@ -8,7 +8,7 @@
 //
 //  1. `PadGroup` - the nine things a user can pick up and move. The shipping
 //     `ControllerCustomLayout` already stores {dx, dy, scale} per element and already
-//     groups L+ZL and R+ZR; this is the same idea at the grain Brandon asked for, so the
+//     groups L+ZL and R+ZR; this is the same idea at a coarser grain, so the
 //     storage does not change, only `groupID(for:)` gets coarser.
 //
 //  2. `.muffinlyt` and `.muffinclr` - a layout and a colour scheme as files, so either can
@@ -163,7 +163,7 @@ struct GroupPlacement: Codable, Equatable {
     var dx: Double
     /// Up from the anchor corner, in D.
     var dy: Double
-    /// Uniform. Wider than the shipping 0.5...2.0 because Brandon asked for a wider range,
+    /// Uniform. Wider than the shipping 0.5...2.0 for more freedom,
     /// and uniform because a d-pad stretched on one axis stops being the shape that was
     /// measured.
     var scale: Double = 1.0

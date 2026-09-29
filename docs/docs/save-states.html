@@ -70,7 +70,7 @@
       </ol>
     </nav>
     <h1>Save States</h1>
-    <p class="subtitle">4 numbered slots per game, alongside your normal in-game saves. The scope is deliberately narrow — read this before you rely on it.</p>
+    <p class="subtitle">4 numbered slots per game, alongside your normal in-game saves. Read the limits below before relying on them.</p>
     <nav class="docs-toc" aria-labelledby="toc-heading">
       <p id="toc-heading">On this page</p>
       <ul>
@@ -94,7 +94,7 @@
     <p>Open the sheet from the in-game top bar. Each slot shows empty, or "Saved &lt;relative time&gt;", with Save/Overwrite, Load, and Delete actions.</p>
 
     <h2 id="captured">What's actually captured</h2>
-    <p>A save state freezes the running title's <strong>guest RAM</strong> — every currently-mapped memory region, raw bytes — to the slot file. That is it. Deliberately, it does <strong>not</strong> capture:</p>
+    <p>A save state freezes the running title's <strong>guest RAM</strong> — every currently-mapped memory region, raw bytes — to the slot file. It does <strong>not</strong> capture:</p>
     <ul>
       <li>GPU/renderer state — no textures, shaders, vertex or uniform buffer caches</li>
       <li>CPU registers as a separate blob</li>
@@ -103,10 +103,10 @@
 
     <h3>Why GPU state is left alone</h3>
     <p>Cemu's GX2/Latte layer already treats VRAM-side objects as caches derived from guest memory, invalidated by explicit signals from the game itself. A RAM-only load bypasses those signals, so a texture or shader could briefly show its pre-save contents until the game's own next GX2 call refreshes it.</p>
-    <p>That is the one accepted trade-off of this design: a brief visual glitch, not lost data or a correctness problem. The alternative — force-invalidating every GPU cache from outside the GPU thread while it is still running — was judged an untested, unsafe cross-thread path and deliberately not attempted.</p>
+    <p>That is the one accepted trade-off of this design: a brief visual glitch, not lost data or a correctness problem. The alternative — force-invalidating every GPU cache from outside the GPU thread while it is still running — would be an unsafe cross-thread path, so it is not done.</p>
 
     <h2 id="around">Around the save/load call</h2>
-    <p>Saving pauses the title if it is not already paused, waits for every CPU core to genuinely reach idle — not just "asked to pause", since a core mid-timeslice can keep writing to guest memory for a full quantum otherwise — writes the file, then resumes if this call was the one that paused it.</p>
+    <p>Saving pauses the title if it is not already paused, waits for every CPU core to reach idle — not just "asked to pause", since a core mid-timeslice can keep writing to guest memory for a full quantum otherwise — writes the file, then resumes if this call was the one that paused it.</p>
     <p>It fails cleanly, with no partial file, if no title is running, a core never quiesces within a few seconds, or the write itself fails. A successful load also forces the recompiler to drop any JIT-compiled code that may now be stale, which is a safe no-op under the interpreter.</p>
 
     <nav class="doc-next" aria-label="Previous and next page">

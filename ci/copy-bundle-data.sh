@@ -34,7 +34,7 @@
 # intact for which -bundleIdentifier, -infoDictionary and -executablePath are all nil.
 # Under LiveContainer that installs fine (it reads Info.plist off disk directly) and
 # then fails at launch with "App's executable path not found. Please try force
-# re-signing or reinstalling this app." - which is what Brandon hit on device.
+# re-signing or reinstalling this app."
 #
 # So: nothing at the top level of the bundle may carry a name CFBundle reserves.
 # ci/verify-ipa.sh enforces that, and also asserts a real NSBundle can resolve the
