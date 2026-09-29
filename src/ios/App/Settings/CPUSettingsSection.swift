@@ -37,8 +37,8 @@ struct CPUSettingsSection: View {
                     Text("Favour accuracy")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(favourAccuracy
-                         ? "One CPU core, shaders built before they are drawn, accurate barriers and draw-done sync."
-                         : "Shaders built in the background, accuracy-only work skipped.")
+                         ? "Slower but more accurate: one CPU core and stricter GPU syncing."
+                         : "Faster, with some accuracy shortcuts.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -82,8 +82,8 @@ struct CPUSettingsSection: View {
                     Text("Use all three CPU cores")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(multicoreEnabled
-                         ? "Three CPU cores. Faster in theory, but it heats this device up fast and usually ends up slower."
-                         : "One CPU core. Cooler, and on this hardware normally faster.")
+                         ? "Three cores. Can be faster on cooler devices, but heats up quickly on most iPads."
+                         : "One core. Cooler and usually faster on this hardware.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -102,7 +102,7 @@ struct CPUSettingsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Cool down automatically")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("While iOS reports the device is overheating, eases off the CPU and drops to Battery saver resolution. Everything goes back on its own once it cools.")
+                    Text("When iOS reports the device is overheating, lowers resolution and CPU load until it cools.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -163,9 +163,9 @@ struct CPUSettingsSection: View {
             SettingsSectionHeader("CPU", icon: "cpu", accent: .core)
         } footer: {
             InfoButton.footer(
-                "MuffinEMU runs for speed first. Cool down automatically handles overheating on its own; Low Power Mode is the permanent version of it. Restart the game after changing the top three.",
+                "Changes to the CPU switches apply the next time you start a game. Cool down automatically handles overheating; Low Power Mode is the permanent version.",
                 title: "CPU",
-                text: "MuffinEMU runs for speed first. The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer); without one the interpreter runs instead, and the line above says which you got. Turn on Favour accuracy for a game that glitches, desyncs or crashes - it is slower. Start the game again after changing either.")
+                text: "The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer). Without one the interpreter runs instead, which is much slower; the CPU line above shows which you got.\n\nFavour accuracy is slower but can fix a game that glitches, desyncs or crashes.\n\nAll of these apply the next time you start a game.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

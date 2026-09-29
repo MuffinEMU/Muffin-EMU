@@ -67,7 +67,7 @@ struct NotificationSettingsSection: View {
             SettingsSectionHeader("Notifications", icon: "bell", accent: .io)
         } footer: {
             InfoButton.footer(
-                "On-screen toasts for controller pairing, low battery, shader compiling and friend activity. The rows below only draw once a corner is picked.",
+                "Pop-ups for controller pairing, low battery, shader compiling and friends. Pick a corner to turn them on.",
                 title: "Notifications",
                 text: fullText)
         }
@@ -177,9 +177,7 @@ struct NotificationSettingsSection: View {
 
     private var fullText: String {
         """
-        Notifications are a second on-screen readout from the same engine that draws the Performance Overlay - its own corner-anchored window, with its own position, color and scale, independent of whether the overlay is on. Position picks which corner (or top/bottom center) it appears in; Off leaves it out of the picture entirely, and the rows below have no effect until a position is chosen.
-
-        Controller Profiles fires when a controller's saved profile is applied. Low Battery warns when a paired controller's battery is running down. Shader Compiling shows while the engine is building a shader in the background. Friends surfaces friend-related activity from the account system.
+        Controller Profiles: a saved controller profile was applied. Low Battery: a paired controller is running down. Shader Compiling: shown while the engine builds a shader. Friends: friend activity from your account.
         """
     }
 }

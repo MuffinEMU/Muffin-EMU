@@ -133,7 +133,7 @@ struct GameContextMenu: View {
             get: { store.effectivePreCompileShaders(for: game.id) },
             set: { store.setPreCompileShaders($0, for: game.id) }
         )) {
-            Label("Pre-Compile Shaders", systemImage: "bolt.fill")
+            Label("Compile Shaders in Background", systemImage: "bolt.fill")
         }
         Button(action: onViewOptions) {
             Label("View Game Options", systemImage: "slider.horizontal.3")
@@ -262,10 +262,10 @@ struct GameOptionsView: View {
                 Form {
                     Section {
                         HStack {
-                            Text("Pre-Compile Shaders")
+                            Text("Compile Shaders in Background")
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                             Spacer()
-                            Picker("Pre-Compile Shaders", selection: shaderChoice) {
+                            Picker("Compile Shaders in Background", selection: shaderChoice) {
                                 ForEach(TriState.allCases) { choice in
                                     Text(choice.title).tag(choice)
                                 }
@@ -273,7 +273,7 @@ struct GameOptionsView: View {
                             .pickerStyle(.menu)
                             .tint(MuffinTheme.pixelBlue)
                         }
-                        // Next to Pre-Compile Shaders rather than its own section: both
+                        // Next to Compile Shaders in Background rather than its own section: both
                         // are the same shape of override on the same screen, and Favour
                         // accuracy is exactly the setting Nano Assault Neo's own
                         // shader-compile override sits next to in Settings itself.
@@ -299,7 +299,7 @@ struct GameOptionsView: View {
                         InfoButton.footer(
                             "\"Use Global Default\" tracks Settings; On/Off pins this game regardless of it.",
                             title: "Overrides",
-                            text: "Pre-Compile Shaders renders and compiles every shader ahead of time so the game runs faster even without the recompiler. Most games want this on; Nano Assault Neo specifically breaks with it on, which is why this is a per-game choice rather than only a global one.\n\nFavour Accuracy trades speed for stability on a game that glitches, desyncs or crashes - see Settings > CPU for what it changes.\n\n\"Use Global Default\" tracks whatever Settings currently says for that setting, even if you change it later. On/Off pins this game regardless of what the global setting does."
+                            text: "Compile Shaders in Background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nFavour Accuracy is slower but more accurate, and can fix a game that glitches, desyncs or crashes. See Settings > CPU.\n\n\"Use Global Default\" follows the matching setting in Settings, even if you change it later. On or Off pins this game."
                         )
                     }
 
@@ -343,9 +343,9 @@ struct GameOptionsView: View {
                         SettingsSectionHeader("Game saves", icon: "externaldrive", accent: .io)
                     } footer: {
                         InfoButton.footer(
-                            "Your in-game progress, in the Wii U\'s own format - not a save state.",
+                            "The save the game itself writes. Not a save state.",
                             title: "Game saves",
-                            text: "This is the save the GAME writes: your progress and file slots. It is stored the way a real Wii U stores it, so it can be moved between MuffinEMU, desktop Cemu, another emulator, or a real console.\n\nA save state is a different thing - a snapshot of the whole emulated machine, which only MuffinEMU can read.\n\nExport writes a folder named after the game and its title ID. Import accepts that folder, or the folder named after the title ID from another Cemu install, or the \'user\' folder inside it.\n\nImporting replaces this game\'s current save. The old one is copied to save-backups in MuffinEMU\'s Documents folder first, every time. Close the game before importing."
+                            text: "This is the save the game itself writes. It uses the Wii U\'s own format, so it can move between MuffinEMU, desktop Cemu and a real console. A save state is a snapshot of the whole emulated console and only MuffinEMU can read it.\n\nExport writes a folder named after the game and title ID. Import accepts that folder, a folder named after the title ID from another Cemu install, or its \'user\' folder. Importing replaces the current save; the old one is first copied to save-backups in MuffinEMU\'s Documents folder. Close the game first."
                         )
                     }
                 }

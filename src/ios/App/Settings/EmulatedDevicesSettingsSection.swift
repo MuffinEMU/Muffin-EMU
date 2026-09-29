@@ -55,7 +55,7 @@ struct EmulatedDevicesSettingsSection: View {
             SettingsSectionHeader("Emulated Devices", icon: "square.stack.3d.up", accent: .content)
         } footer: {
             InfoButton.footer(
-                "Emulates a Skylanders Portal, Disney Infinity Base, or LEGO Dimensions Toypad for games that read one over USB. A toggle here takes effect on the next launch.",
+                "Emulates a Skylanders Portal, Disney Infinity Base or LEGO Dimensions Toypad. Changes apply the next time you start a game.",
                 title: "Emulated Devices",
                 text: fullText)
         }
@@ -64,11 +64,9 @@ struct EmulatedDevicesSettingsSection: View {
 
     private var fullText: String {
         """
-        Some Wii U titles - the Skylanders, Disney Infinity, and LEGO Dimensions games - read toy-to-life figures placed on a USB portal, base, or toypad. The engine already emulates all three peripherals in full; these switches just turn one on for the next title you launch, the same "next launch, not this one" timing as the other engine settings on this screen.
+        Some games (Skylanders, Disney Infinity, LEGO Dimensions) read toy figures from a USB portal, base or toypad. Turn on the one your game uses; it applies the next time you start a game.
 
-        Manage Figures opens the figure library regardless of which switches are on above: load a figure dump you already own, create a fresh save file for one of the figures the game itself recognizes, or clear a slot. None of that needs a title running - it talks to the emulated device directly, the same way a real portal would with the game paused or not started yet.
-
-        No figure or NFC dump data ships with MuffinEMU. Bring your own.
+        Manage Figures lets you load a figure dump you own, create a new save for a figure, or clear a slot. No figure data is included with MuffinEMU.
         """
     }
 }

@@ -55,15 +55,15 @@ enum TimebaseScale: Int, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .realTime:
-            return "What every build before this one used. Correct with the recompiler; under the interpreter it is what makes a running game look frozen."
+            return "Normal game speed. Right when the recompiler is running."
         case .half, .quarter:
-            return "A mild correction. Worth trying first if a game advances but stutters badly."
+            return "Slows the game a little. Try this first if a game runs but stutters."
         case .eighth:
-            return "The starting point under the interpreter. Enough slack for most titles' own deadlines to stay reachable."
+            return "Slows the game a lot. Helps most games under the interpreter."
         case .sixteenth, .thirtySecond:
-            return "For a title that still will not advance at 1/8. The game plays in slow motion; it does not run slower than it already was."
+            return "For games that still won't advance at 1/8. Gameplay runs in slow motion."
         case .sixtyFourth:
-            return "As slow as this goes. If a game will not move here, the problem is not the clock."
+            return "The slowest setting. If a game still won't move, the clock isn't the problem."
         }
     }
 

@@ -100,7 +100,7 @@ struct AudioSettingsSection: View {
             SettingsSectionHeader("Audio", icon: "speaker.wave.2", accent: .io)
         } footer: {
             InfoButton.footer(
-                "TV and GamePad have their own volume and channel layout. Turning GamePad audio on plays its track on this device's own speaker or headphones, whether or not a second screen is connected. Microphone lets a game read GamePad mic input through this device's own microphone.",
+                "TV and GamePad audio have their own volume and channel layout. GamePad audio plays through this device's speaker or headphones. Microphone lets games use this device's mic as the GamePad mic.",
                 title: "Audio",
                 text: fullText)
         }
@@ -213,6 +213,6 @@ struct AudioSettingsSection: View {
     }
 
     private var fullText: String {
-        "TV Audio and GamePad Audio are separate output tracks, each with its own on/off switch, volume and channel layout - the same controls desktop Cemu's Audio settings page exposes for TV/GamePad/input, minus device selection (there's only one audio route on iOS, so there's nothing to pick).\n\nChannel layout controls how many speakers the mix expects: Mono collapses everything to one channel, Stereo (the default for both) splits left/right, and Surround asks the game's own mixer for more channels where a title supports it - most don't, and Stereo is the safe default either way.\n\nGamePad Audio is a genuinely separate track from the engine's point of view, not something gated on having a second screen connected - turning it on plays whatever the game sends to the GamePad speaker on this device's own output. Whether a given title actually sends it anything different from the TV mix depends on that title, not on this switch.\n\nMicrophone is the input side: on, it lets a title that calls for GamePad mic input (MICInit) actually open this device's real microphone through iOS; off, that same call fails the way it would on a real console with no microphone attached, and no mic permission prompt or capture ever happens. Microphone Volume sets the input gain for whatever title opens it next - it takes effect the next time a title opens the mic, not instantly."
+        "TV and GamePad audio are separate tracks with their own on/off, volume and channel layout.\n\nChannels: Mono mixes everything to one channel, Stereo splits left and right (default), Surround asks the game for more channels; most games only use stereo.\n\nGamePad audio plays whatever the game sends to the GamePad speaker. Many games send nothing different from the TV mix.\n\nMicrophone lets a game that asks for the GamePad mic use this device's microphone. When it's off, the game sees no mic and iOS never asks for permission. Microphone Volume applies the next time a game opens the mic."
     }
 }

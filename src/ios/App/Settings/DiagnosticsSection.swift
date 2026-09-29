@@ -50,7 +50,7 @@ struct DeviceReportSection: View {
             SettingsSectionHeader("This Device", icon: "iphone", accent: .system)
         } footer: {
             // Already one short pair of sentences - nothing to move behind an info button.
-            InfoButton.footer("Send this with any bug report. It says which chip, how much memory, and which build - which is what makes everything else in a log mean something.")
+            InfoButton.footer("Send this with any bug report. It lists your chip, memory and app build.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -105,7 +105,7 @@ struct DiagnosticsSection: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Show controls diagnostic")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("A small readout over the game: which pad is mounted, whether your presses are reaching it, and which setting is responsible if they are not.")
+                        Text("A small readout over the game showing whether your button presses are reaching the game, and why not if they aren't.")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
                     }
@@ -118,9 +118,9 @@ struct DiagnosticsSection: View {
             SettingsSectionHeader("Diagnostics", icon: "stethoscope", accent: .system)
         } footer: {
             InfoButton.footer(
-                "The launch log takes priority over the intro and shows what the emulator is doing during boot.",
+                "The launch log shows boot progress and replaces the intro while it's on.",
                 title: "Diagnostics",
-                text: "The intro plays over the boot rather than before it, so it costs no extra waiting. The launch log takes priority when both are on: shows what the emulator is doing, with timestamps, while a game boots, which is what you want when a game starts but the screen stays black.")
+                text: "The intro plays during the boot. If you turn on the launch log it takes the screen instead, so you can see timestamped boot steps when a game starts but stays black.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

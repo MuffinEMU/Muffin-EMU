@@ -11,9 +11,9 @@ struct FilesSettingsSection: View {
             SettingsSectionHeader("Your Files", icon: "folder", accent: .system)
         } footer: {
             InfoButton.footer(
-                "ROMs, saves, shader caches and keys.txt all live in this folder - under Files normally, or inside LiveContainer's own Documents if you sideloaded that way.",
+                "ROMs, saves, shader caches and keys.txt live in this folder.",
                 title: "Your Files",
-                text: "ROMs, saves, shader caches and keys.txt all live in this folder. Installed normally, it shows up as Files \u{2192} On My iPhone/iPad \u{2192} MuffinEMU. Sideloaded through LiveContainer, iOS attributes the folder to LiveContainer instead of to MuffinEMU by name, so look for it under LiveContainer's own Documents, or one level into Data/Application/<its folder>/Documents - the path above is the one to actually search for.")
+                text: "Normally this is Files \u{2192} On My iPhone/iPad \u{2192} MuffinEMU. If you installed through LiveContainer, iOS lists the folder under LiveContainer instead; use the path shown above to find it.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
