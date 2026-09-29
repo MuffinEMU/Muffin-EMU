@@ -83,9 +83,11 @@ final class PadDiagnostics: ObservableObject {
     /// eye and reasoning backwards from the number, which is how several wrong theories
     /// got their confidence.
     enum ReleaseReason: String {
-        /// DragGesture.onEnded - the ordinary path. The finger lifted, or the system
-        /// cancelled the gesture.
+        /// DragGesture.onEnded - the ordinary path. The finger lifted.
         case fingerLifted = "finger lifted"
+        /// The system cancelled the gesture (swipe, banner, app switch) and the press
+        /// was released without a lift.
+        case gestureCancelled = "gesture cancelled by system"
         /// onDisappear - the control left the view tree mid-press. Nobody touched
         /// anything; SwiftUI rebuilt the pad.
         case viewRemoved = "VIEW REMOVED under the finger"
