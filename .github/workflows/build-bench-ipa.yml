@@ -393,10 +393,9 @@ jobs:
             MuffinBench.ipa
             MuffinBench-fakesigned.ipa
           body: |
-            MuffinEMU Bench: Muffin v3.8, MeloCafe, and Muffin v3.8 with MeloCafe's changes,
-            each run through the same CPU (interpreter, recompiler) and Metal renderer
-            workloads by the same host code, one engine at a time, with a single report at
-            the end.
+            MuffinEMU Bench: three Wii U engines run through the same CPU (interpreter,
+            recompiler) and Metal renderer workloads by the same host code, one at a time,
+            with a single report at the end.
 
             `MuffinBench.ipa` for SideStore / AltStore / LiveContainer, `MuffinBench-fakesigned.ipa`
             for TrollStore. The recompiler tests need a JIT enabler; without one they are
