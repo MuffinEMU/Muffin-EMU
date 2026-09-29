@@ -13,11 +13,7 @@ uint32 MetalBufferChunkedHeap::allocateNewChunk(uint32 chunkIndex, uint32 minimu
 	MTL::Buffer* buffer = m_mtlr->GetDevice()->newBuffer(allocationSize, m_options);
 	if (!buffer)
 	{
-		// newBuffer() returns nil when the device is out of memory. The nil used to be
-		// stored as a chunk anyway, and every later GetChunkPtr() on it handed out
-		// contents() of nil as if it were a live mapping. Report the failure instead:
-		// ChunkedHeap::allocateChunk() treats a zero chunk size as "could not grow" and
-		// latches m_allocationLimitReached, so this is never retried.
+		// Report the failure; a zero chunk size tells ChunkedHeap it could not grow.
 		uint32 numChunks = 0;
 		size_t totalSize = 0, freeSize = 0;
 		GetStats(numChunks, totalSize, freeSize);
@@ -50,11 +46,7 @@ void MetalSynchronizedRingAllocator::allocateAdditionalUploadBuffer(uint32 sizeR
 	MTL::Buffer* mtlBuffer = m_mtlr->GetDevice()->newBuffer(bufferAllocSize, m_options);
 	if (!mtlBuffer)
 	{
-		// Out of memory. This used to push the buffer anyway and take contents() of
-		// nil as its base pointer, so every reservation handed out afterwards had a
-		// memPtr offset from null - which the texture upload and readback paths
-		// memcpy straight into. Leave the list alone; AllocateBufferMemory() sees
-		// that it did not grow and reports the failure.
+		// Out of memory: leave the list alone so AllocateBufferMemory() reports the failure.
 		cemuLog_log(LogType::Force, "Metal: staging buffer allocation failed, wanted {} bytes", bufferAllocSize);
 		return;
 	}
@@ -128,9 +120,7 @@ MetalSynchronizedRingAllocator::AllocatorReservation_t MetalSynchronizedRingAllo
 	allocateAdditionalUploadBuffer(size);
 	if (m_buffers.size() == bufferCountBefore)
 	{
-		// The heap could not grow, so retrying would ask the same question of the same
-		// state and recurse until the stack ran out. Hand back an empty reservation
-		// instead; a null mtlBuffer is what callers check.
+		// The heap could not grow; return an empty reservation (null mtlBuffer) rather than recurse.
 		cemuLog_logOnce(LogType::Force, "Metal: could not reserve {} bytes of staging memory (alignment {})", size, alignment);
 		return AllocatorReservation_t{};
 	}
@@ -158,10 +148,7 @@ void MetalSynchronizedRingAllocator::CleanupBuffer(MTL::CommandBuffer* latestFin
 			itr.cleanupCounter++;
 	}
 
-	// Only the LAST buffer used to be checked here, so a one-time upload burst that
-	// left every buffer but the last one idle (e.g. at GX2Init) pinned all of them for
-	// the rest of the process - only the newest one could ever be freed. Scan every
-	// buffer instead; erasing from the back forward keeps earlier indices valid.
+	// Check every buffer, from the back so erasing keeps earlier indices valid.
 	for (sint32 i = (sint32)m_buffers.size() - 1; i >= 0 && m_buffers.size() > 1; i--)
 	{
 		auto& buffer = m_buffers[i];
@@ -169,12 +156,7 @@ void MetalSynchronizedRingAllocator::CleanupBuffer(MTL::CommandBuffer* latestFin
 		{
 			buffer.mtlBuffer->release();
 			m_buffers.erase(m_buffers.begin() + i);
-			// AllocatorReservation_t::bufferIndex and GetBufferByIndex() both read .index as
-			// a position in m_buffers, so the buffers after the erased one have to be
-			// renumbered. Without this, .index and the real position drift apart the first
-			// time a buffer in the middle is released, and GetBufferByIndex() then returns
-			// the wrong buffer or reads past the end. Nothing calls it today, which is
-			// exactly why the invariant could quietly stop holding.
+			// .index must stay equal to the position in m_buffers, so renumber the following buffers.
 			for (size_t j = (size_t)i; j < m_buffers.size(); j++)
 				m_buffers[j].index = (uint32)j;
 		}

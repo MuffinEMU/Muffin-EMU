@@ -461,7 +461,10 @@ private:
 			bool present_wait = false; // VK_KHR_present_wait
 			bool depth_clip_enable = false; // VK_EXT_depth_clip_enable
 			bool pipeline_robustness = false; // VK_EXT_pipeline_robustness
+			bool sampler_mirror_clamp_to_edge = false; // VK_KHR_sampler_mirror_clamp_to_edge
 		}deviceExtensions;
+
+		bool samplerMirrorClampToEdgeCore = false; // Vulkan 1.2 samplerMirrorClampToEdge, used when the extension is not listed
 
 		struct
 		{

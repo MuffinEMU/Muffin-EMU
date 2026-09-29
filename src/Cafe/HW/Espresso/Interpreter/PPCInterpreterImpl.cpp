@@ -1550,7 +1550,7 @@ public:
             break;
         }
 
-        // anything we can't map (or explicitly routed to Generic without a handler) uses the old path -stossy11
+        // anything we can't map (or explicitly routed to Generic without a handler) uses the generic path
         if (term == PPCBlockTerm::None && fn == nullptr)
             term = PPCBlockTerm::Generic;
         if (term == PPCBlockTerm::Generic && fn == nullptr)
