@@ -83,7 +83,7 @@ struct CPUSettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(multicoreEnabled
                          ? "Three CPU cores. Faster in theory, but it heats this device up fast and usually ends up slower."
-                         : "One CPU core, the way MeloCafe runs. Cooler, and on this hardware normally faster.")
+                         : "One CPU core. Cooler, and on this hardware normally faster.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
