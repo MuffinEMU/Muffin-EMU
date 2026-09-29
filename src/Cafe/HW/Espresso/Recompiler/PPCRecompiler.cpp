@@ -6,6 +6,7 @@
 #include "Cafe/OS/RPL/rpl.h"
 #include "util/containers/RangeStore.h"
 #include "Cafe/OS/libs/coreinit/coreinit_CodeGen.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 #include "config/ActiveSettings.h"
 #include "config/LaunchSettings.h"
 #include "Common/ExceptionHandler/ExceptionHandler.h"
@@ -358,7 +359,7 @@ struct DualMapArena
         }
     }
 
-    void reset()
+    void reset(bool releasePages = true)
     {
         std::lock_guard lock(mutex);
         freeRanges.clear();
@@ -368,9 +369,12 @@ struct DualMapArena
 #if BOOST_OS_IOS
         // Return the physical pages to the kernel (MADV_FREE); the mapping stays in place because
         // generated code branches within it by address. Only called with no live code (init on a fresh
-        // mapping, and shutdown).
-        if (region.rwAlias && region.size)
+        // mapping, and shutdown after the PPC core threads have been joined). MADV_FREE lets the kernel zero
+        // pages at any time, so it must never run while a thread can still execute arena code.
+        if (releasePages && region.rwAlias && region.size)
             madvise(region.rwAlias, region.size, MADV_FREE);
+#else
+        (void)releasePages;
 #endif
     }
 
@@ -1495,7 +1499,13 @@ void PPCRecompiler_Shutdown()
         ppcRecompiler_reservedBlockMask[i] = false;
     }
 
-    s_jitArena.reset();
+    // ShutdownTitle() ends the scheduler (joining every PPC core host thread) and PPCRecompilerThreadPool::Stop()
+    // above joined the compile workers, so nothing can be running arena code here. If the scheduler is somehow
+    // still active, keep the pages mapped and resident rather than let the kernel zero code under a live thread.
+    const bool schedulerStopped = !coreinit::OSIsSchedulerActive();
+    if (!schedulerStopped)
+        cemuLog_log(LogType::Force, "JIT arena: PPC scheduler still active at shutdown, not releasing arena pages");
+    s_jitArena.reset(schedulerStopped);
     ppcRecompilerEnabled = false;
     ppcRecompilerInited = false;
     s_recompilerEnableCount = 0;
