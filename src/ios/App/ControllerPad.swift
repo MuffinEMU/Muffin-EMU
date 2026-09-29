@@ -1,41 +1,20 @@
 import SwiftUI
 import Dispatch
 
-/// The on-screen pad.
-///
-/// Previously this was an HStack of a d-pad column and an A/B/X/Y column, which put the
-/// face buttons in the wrong places, had no shoulders, no plus/minus and no stick clicks,
-/// and could not be moved or resized. It now draws the arrangement in
-/// `ControllerGeometry` - measured from the real GamePad - by absolute position,
-/// which is what lets one unit scale the whole thing and lets a cluster be dragged.
-///
-/// Still no backing plate and no divider, for the reason the old version documented: an
-/// opaque slab had to sit in the layout flow and stole a strip of height from the
-/// emulator view for the sole purpose of being grey. Every control here is positioned
-/// over the game, and the space between the two clusters is not hit-tested at all, so
-/// taps in the middle still reach the game view.
-///
-/// `skin.backgroundColor` and `skin.borderColor` are still read by SkinPreview, so the
-/// skin catalog is untouched; it is only the in-game pad that never painted them.
+/// The on-screen pad: every control is placed by absolute position from
+/// `ControllerGeometry` (measured from the real GamePad), which lets one unit scale the
+/// whole pad and lets clusters be dragged. There is no backing plate, and the space
+/// between the clusters is not hit-tested, so taps there reach the game view.
 struct OptimizedControlPanel: View {
     let skin: WiiUControllerSkin
-    // (label, pressed) - not (label). A tap has no way to express "still held", and
-    // holding a direction is most of playing anything, so the whole panel reports state
-    // changes rather than events. Every `true` is followed by exactly one `false`.
+    // (label, pressed): reports state changes, so a held button stays held.
     let onInput: (String, Bool) -> Void
-    /// Where the analog stick currently is, reported continuously while it is held and
-    /// once more as (0, 0) when it is let go.
-    ///
-    /// Separate from `onInput` because a stick is not a button and the engine does not
-    /// treat it as one: Cemu derives the sticks from get_axis(), skipping them in the
-    /// button loop entirely, so a direction sent as a press is discarded rather than
-    /// approximated. `stick` is 0 for the left stick; x is right-positive and y is
-    /// UP-positive - the console's convention, converted from the screen's here rather
-    /// than left for the call site to remember.
+    /// Analog stick position, reported while held and once as (0, 0) on release. `stick`
+    /// is 0 for left, 1 for right; x is right-positive and y is UP-positive (the
+    /// console's convention). Sticks are axes in the engine, not buttons.
     let onStick: (Int, CGPoint) -> Void
-    /// While this is on the clusters carry a drag handle and the buttons themselves stop
-    /// responding - otherwise the first touch of a drag would also press whatever it
-    /// landed on, and moving the pad would mean firing a button into the running title.
+    /// While on, clusters carry a drag handle and the buttons stop responding, so moving
+    /// the pad never presses a button.
     @Binding var isEditingLayout: Bool
     /// True while the title is paused or the app is inactive. The pad stops taking
     /// touches, which cancels and releases anything held.
@@ -53,9 +32,7 @@ struct OptimizedControlPanel: View {
     @AppStorage(ControllerLayoutSettings.rightStickOffsetYKey) private var rightStickOffsetY = 0.0
     @AppStorage(ControllerLayoutSettings.leftStickOffsetXKey) private var leftStickOffsetX = 0.0
     @AppStorage(ControllerLayoutSettings.leftStickOffsetYKey) private var leftStickOffsetY = 0.0
-    // Must keep matching SettingsView's declaration of the same key: two @AppStorage
-    // defaults for one key that disagree means the toggle and the pad disagree about
-    // which control scheme is on.
+    // The default must match SettingsView's declaration of the same key.
     @AppStorage(ControllerLayoutSettings.comfortControlsKey)
     private var comfortControls = ControllerLayoutSettings.defaultComfortControls
     @AppStorage(ControllerLayoutSettings.joystickKey)
@@ -64,23 +41,17 @@ struct OptimizedControlPanel: View {
     private var individualEditMode = ControllerLayoutSettings.defaultIndividualEditMode
 
     var body: some View {
-        // The automatic half of "adjustable + automatic sizing": GeometryReader re-runs
-        // on every size change the pad can experience - rotation, a resized scene, an
-        // external display being attached - so the unit, both anchors and the drag
-        // clamps are all recomputed from the size that is actually on screen rather
-        // than from anything cached at launch.
+        // Re-runs on every size change (rotation, resized scene, external display), so the
+        // unit, anchors and drag clamps always follow the size on screen.
         GeometryReader { proxy in
             let unit = ControllerGeometry.automaticDiameter(in: proxy.size) * CGFloat(userScale)
 
-            // Comfort controls only has somewhere to send L/ZL/minus and R/ZR/plus while
-            // the sticks they move onto are actually on screen, so it only takes effect
-            // with joystick mode on rather than silently dropping three buttons.
+            // Comfort controls move the shoulder buttons onto the sticks, so it only
+            // applies while joystick mode is on.
             let comfortActive = comfortControls && joystickMode
 
             ZStack(alignment: .topLeading) {
                 ControlCluster(
-                    // Always the d-pad now, in both modes - see leftStickCluster's
-                    // comment for why this changed from swapping to adding.
                     controls: comfortActive ? ControllerGeometry.leftClusterComfort : ControllerGeometry.leftCluster,
                     edge: .leading,
                     skin: skin,
@@ -91,17 +62,12 @@ struct OptimizedControlPanel: View {
                     offsetX: $leftOffsetX,
                     offsetY: $leftOffsetY,
                     onInput: onInput,
-                    // The left half itself has no stick: its centre dot is L3, as the
-                    // measured layout draws it, and the left stick below is its own
-                    // cluster - same reasoning as the right half's onStick below.
+                    // This cluster has no stick; the left stick is its own cluster below.
                     onStick: { onStick(0, $0) }
                 )
 
-                // The left stick, in joystick mode only - mirrors the camera stick
-                // below exactly. A separate cluster, so it has its own drag handle and
-                // its own stored position: the left half (d-pad, minus, L, ZL) stays
-                // exactly where the measurements put it, and turning the mode on adds
-                // a control rather than rearranging the ones already there.
+                // The left stick, in joystick mode only. Its own cluster, with its own
+                // drag handle and stored position.
                 if joystickMode {
                     ControlCluster(
                         controls: comfortActive ? ControllerGeometry.leftStickClusterComfort : ControllerGeometry.leftStickCluster,
@@ -130,19 +96,11 @@ struct OptimizedControlPanel: View {
                     offsetX: $rightOffsetX,
                     offsetY: $rightOffsetY,
                     onInput: onInput,
-                    // The right half itself has no stick: its centre dot is R3, as the
-                    // measured layout draws it, and the camera stick below is its own
-                    // cluster. Nothing in this one can report an axis, so this closure is
-                    // never called - wired rather than omitted because a cluster that
-                    // silently could not carry a stick is a trap for the next person to
-                    // put one in it.
+                    // This cluster has no stick; the camera stick is its own cluster below.
                     onStick: { onStick(1, $0) }
                 )
 
-                // The camera stick, in joystick mode only. A separate cluster, so it has
-                // its own drag handle and its own stored position: the right half stays
-                // exactly where the measurements put it, and turning the mode on adds a
-                // control rather than rearranging the ones already there.
+                // The camera stick, in joystick mode only. Its own cluster, like the left stick.
                 if joystickMode {
                     ControlCluster(
                         controls: comfortActive ? ControllerGeometry.rightStickClusterComfort : ControllerGeometry.rightStickCluster,
@@ -160,24 +118,16 @@ struct OptimizedControlPanel: View {
                     )
                 }
             }
-            // Editing is a mode you want to see clearly, so it ignores the opacity
-            // setting rather than making someone turn the pad back up to reposition it.
+            // Full opacity while editing, regardless of the opacity setting.
             .opacity(isEditingLayout ? 1.0 : max(padOpacity, 0.15))
         }
-        // The stuck-button net, moved up here from the individual controls.
-        //
-        // The whole pad disappearing is a real event - the title stopped, the pad was
-        // hidden, the app went away - and anything held when it happens must be
-        // released or the title keeps walking into a wall. One control disappearing is
-        // not a real event; it is SwiftUI re-rendering, and treating it as one is what
-        // released every press a frame after it began.
+        // Release is reported from the pad, not per control, so a re-render cannot drop
+        // a press: when the whole pad goes away, release everything.
         .onDisappear { cemu_bridge_release_all_buttons() }
         // Cancels any touch in progress while paused or inactive, which releases it.
         .allowsHitTesting(!isPaused)
-        // Both of these move controls between clusters, so a button held across the
-        // change is removed and rebuilt somewhere else and can never report its own
-        // release. Releasing everything is the honest response to the layout changing
-        // under a finger.
+        // These move controls between clusters, so a held button is rebuilt elsewhere and
+        // can't report its release. Release everything.
         .onChange(of: joystickMode) { _ in cemu_bridge_release_all_buttons() }
         .onChange(of: comfortControls) { _ in cemu_bridge_release_all_buttons() }
     }
@@ -248,24 +198,13 @@ private struct ControlCluster: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Gives the stack the full proposed size, which is what makes every
-            // .position() below an absolute coordinate rather than one relative to
-            // whatever the controls happened to add up to.
-            //
-            // allowsHitTesting(false) is not optional. A SwiftUI Color is hit-testable
-            // even when it is clear - unlike a clear UIView - so without this the pad
-            // would answer for every touch on the screen and the game underneath would
-            // stop receiving any, which is the one property the old stack-based pad had
-            // that was worth keeping.
+            // Fills the proposed size so each .position() is an absolute coordinate. Must
+            // not be hit-testable, or the pad would swallow every touch meant for the game.
             Color.clear
                 .allowsHitTesting(false)
 
-            // Individual mode drops the drag handle entirely rather than leaving it
-            // underneath and relying on touch position to sort out which gesture
-            // should win - that was the old design (see the ForEach comment this one
-            // replaces) and it did not resolve the way it looked like it should
-            // on-device: a drag anywhere in the cluster moved the whole cluster,
-            // individual buttons included, every time.
+            // Individual mode has no cluster drag handle, so it can't compete with the
+            // per-control gestures.
             if isEditingLayout && !individualEditMode {
                 dragHandle
             }
@@ -339,10 +278,8 @@ private struct EditableControl: View {
     /// Where this control sits with no customisation - the measured default.
     let base: CGPoint
     let isEditingLayout: Bool
-    /// See ControllerLayoutSettings.individualEditModeKey - gates editGesture below so
-    /// it is only ever attached when the cluster's own drag handle (ControlCluster)
-    /// is not, rather than both being attached together and left to sort out priority
-    /// by touch position.
+    /// See ControllerLayoutSettings.individualEditModeKey. editGesture is only attached
+    /// when the cluster's own drag handle is not.
     let individualEditMode: Bool
     let onStick: (CGPoint) -> Void
     let onInput: (String, Bool) -> Void
@@ -361,8 +298,7 @@ private struct EditableControl: View {
                     skin: skin,
                     unit: unit * CGFloat(settings.scale),
                     isInteractive: !isEditingLayout,
-                    onStick: onStick,
-                    onInput: onInput
+                    onStick: onStick
                 )
             } else {
                 ControlButton(
@@ -375,9 +311,7 @@ private struct EditableControl: View {
             }
         }
         .position(x: base.x + CGFloat(settings.dx), y: base.y + CGFloat(settings.dy))
-        // A dashed ring while editing individually, so it is obvious which things can
-        // be moved and that L/ZL and R/ZR answer as one - shown only in individual
-        // mode, since in grouped mode this control cannot be moved on its own.
+        // A dashed ring shows which controls can be moved individually.
         .overlay(
             Group {
                 if isEditingLayout && individualEditMode {
@@ -399,7 +333,10 @@ private struct EditableControl: View {
                 if dragOrigin == nil { dragOrigin = origin }
                 custom.move(control.id, to: value.translation, from: origin)
             }
-            .onEnded { _ in dragOrigin = nil }
+            .onEnded { _ in
+                dragOrigin = nil
+                custom.commit()
+            }
 
         let pinch = MagnificationGesture()
             .onChanged { value in
@@ -407,11 +344,12 @@ private struct EditableControl: View {
                 if scaleOrigin == nil { scaleOrigin = origin }
                 custom.setScale(origin * Double(value), for: control.id)
             }
-            .onEnded { _ in scaleOrigin = nil }
+            .onEnded { _ in
+                scaleOrigin = nil
+                custom.commit()
+            }
 
-        // Simultaneous rather than exclusive: a pinch is two fingers moving, and an
-        // exclusive pair would let the first finger's travel be read as a drag and shove
-        // the control across the screen while it was being resized.
+        // Simultaneous, so the first finger of a pinch isn't read as a drag.
         return SimultaneousGesture(drag, pinch)
     }
 }
@@ -424,11 +362,8 @@ private struct ControlButton: View {
     let isInteractive: Bool
     let onInput: (String, Bool) -> Void
 
-    /// The screenshot draws every button light grey with a dark outline. The coloured
-    /// skins are an existing feature with a whole selector behind them, so the skin still
-    /// colours the d-pad and the four face buttons; the controls the skins have never had
-    /// an opinion about - shoulders, plus/minus, stick clicks - take the screenshot's
-    /// neutral instead of an invented colour.
+    /// Skins colour the d-pad and face buttons; shoulders, plus/minus and stick clicks
+    /// use this neutral.
     private static let neutralFill = Color(white: 0.85)
     private static let neutralLabel = Color(white: 0.22)
 
@@ -651,19 +586,9 @@ private struct StickGateShape: InsettableShape {
 
 /// The analog stick, for joystick mode.
 ///
-/// Not a `ControlButton` with extra behaviour: a button reports one bit and a stick
-/// reports a position, and the engine keeps the two just as separate. Cemu's VPADRead
-/// skips the eight `kButtonId_Stick*_` mappings in its button loop and derives the sticks
-/// from `get_axis()` instead, so a direction delivered as a press is not a coarse stick -
-/// it is discarded. This is the only control on the pad that talks to
-/// `cemu_bridge_set_stick_axis()`.
-///
-/// Absolute, not relative. The knob goes where the finger is rather than tracking how far
-/// it has moved since it landed, so a thumb dropped on the top edge of the ring is full
-/// forward immediately - which is how the stick on the real GamePad behaves, and it is
-/// also the only version where what is drawn and what the title receives are the same
-/// thing. A floating stick that re-centres itself under the finger would show a knob at
-/// rest while reporting deflection.
+/// A stick reports a position, not a bit: Cemu derives the sticks from `get_axis()` and
+/// skips them in its button loop, so this is the only control that calls
+/// `cemu_bridge_set_stick_axis()`. It is absolute: the knob goes where the finger is.
 private struct JoystickControl: View {
     let control: ControllerGeometry.Control
     let skin: WiiUControllerSkin
@@ -671,13 +596,8 @@ private struct JoystickControl: View {
     let isInteractive: Bool
     /// Console convention: +x right, +y UP, magnitude at most 1.
     let onStick: (CGPoint) -> Void
-    /// L3, for the tap case below.
-    let onInput: (String, Bool) -> Void
 
-    // Same keys SettingsView and the move-controls panel write. Read here rather than
-    // passed down because they are settings, not layout: a value threaded through
-    // OptimizedControlPanel and ControlCluster would be two more places for the default
-    // to be restated and disagree.
+    // Same keys SettingsView writes; read here so the defaults live in one place.
     @AppStorage(ControllerLayoutSettings.deadzoneKey)
     private var deadzoneSetting = ControllerLayoutSettings.defaultDeadzone
     @AppStorage(ControllerLayoutSettings.stickCurveKey)
@@ -685,36 +605,15 @@ private struct JoystickControl: View {
     @AppStorage(ControllerLayoutSettings.stickGateKey)
     private var gateSetting = ControllerLayoutSettings.defaultStickGateRaw
 
-    /// Where the knob is drawn, in points from the ring's centre. Already clamped to the
-    /// travel radius, so this is also what the axis is derived from - one number, not a
-    /// visual one and a reported one that could disagree.
+    /// Where the knob is drawn, in points from the ring's centre, clamped to the gate.
     @State private var knobOffset: CGSize = .zero
     /// True while a finger is on the stick. Resets if the system cancels the gesture, so
     /// the stick always recentres.
     @GestureState private var touching = false
-    /// Whether this gesture ever pushed the stick, as opposed to resting on it. What
-    /// separates a click from a movement, and it is deflection that decides it rather than
-    /// distance travelled: a finger that lands directly on the edge of the ring has moved
-    /// nowhere and is nonetheless asking for full deflection, so it is not a tap.
+    /// Whether the stick has been pushed past the click threshold; lights the cap.
     @State private var pushed = false
-    /// The pending release of a tap-click, so the view going away cannot leave L3 held.
-    @State private var clickRelease: DispatchWorkItem?
 
-    /// Which button a tap on this stick presses, if any.
-    ///
-    /// Neither one has a click to give anymore. This used to be "stickL" -> "L3": when
-    /// joystick mode replaced the whole d-pad cluster (including its centre L3 dot)
-    /// with the stick, a tap-without-moving was the only gesture left to mean L3. Now
-    /// the d-pad cluster - L3's own dot included - is always present alongside the
-    /// stick, same as A/B/X/Y and R3 always were, so a tap on either stick has nothing
-    /// left to mean and is better off meaning nothing than firing a second control
-    /// that is already on screen.
-    private var clickButton: String? { nil }
-
-    /// The settings, held to their declared ranges. UserDefaults is writable by anything
-    /// on the device and survives a downgrade, so a value from outside the range the
-    /// sliders offer is not impossible - and a deadzone above 1 would be a stick that
-    /// never reports anything at all.
+    /// The settings, clamped to their declared ranges (a stored value can be out of range).
     private var deadzone: CGFloat {
         CGFloat(min(max(deadzoneSetting, ControllerLayoutSettings.minDeadzone),
                     ControllerLayoutSettings.maxDeadzone))
@@ -723,20 +622,10 @@ private struct JoystickControl: View {
         CGFloat(min(max(curveSetting, ControllerLayoutSettings.minStickCurve),
                     ControllerLayoutSettings.maxStickCurve))
     }
-    /// Same defensive read as the two above, for the same reason: a raw string from a
-    /// UserDefaults nobody here wrote may name a case that does not exist.
+    /// Falls back to the default if the stored string names no gate.
     private var gate: ControllerGeometry.StickGate {
         ControllerGeometry.StickGate(rawValue: gateSetting) ?? ControllerLayoutSettings.defaultStickGate
     }
-
-    /// How long a tap holds L3 before releasing it.
-    ///
-    /// A press and release in the same instant is not observable: the title polls VPADRead
-    /// from its own thread, on its own schedule, and under the forced interpreter that can
-    /// be a long way apart. Holding for a few display frames gives the poll somewhere to
-    /// land. It is not a guarantee - no transient press on this pad is - which is why the
-    /// stick's own axis is held for as long as the finger is down rather than pulsed.
-    private static let clickHoldSeconds = 0.12
 
     private var base: CGFloat { ControllerGeometry.stickBaseDiameter * unit }
     private var knob: CGFloat { ControllerGeometry.stickKnobDiameter * unit }
@@ -744,15 +633,7 @@ private struct JoystickControl: View {
 
     var body: some View {
         ZStack {
-            // The gate, drawn as the shape the knob can actually reach. Neutral, like the
-            // shoulders and plus/minus: it is not a control the skins have ever had an
-            // opinion about.
-            //
-            // Drawn rather than left as a circle because the flats are the only thing on
-            // screen that says where the eight directions are, which on the real GamePad
-            // is something the thumb is told by the gate itself. A round ring over an
-            // octagonal clamp would also be the one place in this file where what is
-            // drawn and what the title receives disagree.
+            // The gate, drawn as the shape the knob can reach.
             StickGateShape(gate: gate)
                 .fill(Color(white: 0.85).opacity(0.55))
                 .overlay(
@@ -760,7 +641,7 @@ private struct JoystickControl: View {
                         .strokeBorder(Color.black.opacity(0.45), lineWidth: max(1, unit * 0.05))
                 )
 
-            // The cap takes the skin's d-pad colour, because it is what the d-pad became.
+            // The cap uses the skin's d-pad colour.
             Circle()
                 .fill(skin.dpadColor.opacity(pushed ? 1.0 : 0.9))
                 .overlay(
@@ -770,15 +651,10 @@ private struct JoystickControl: View {
                 .offset(knobOffset)
         }
         .frame(width: base, height: base)
-        // Circle, not Rectangle, and deliberately the circle rather than the gate. The
-        // corners of the frame are outside anything drawn and the d-pad this replaces did
-        // not claim them either, so a touch that misses the stick still reaches the game
-        // underneath - but the sliver between an octagonal gate and its circumcircle is a
-        // thumb aiming at a diagonal and overshooting by a couple of points, and the
-        // clamp above already turns that into full deflection at the vertex. Hit-testing
-        // the octagon would drop it on the floor instead.
+        // The hit area is the circle, not the octagonal gate, so a thumb overshooting a
+        // diagonal still counts.
         .contentShape(Circle())
-        .accessibilityLabel(clickButton == nil ? "Camera stick" : "Left stick")
+        .accessibilityLabel(control.id == "stickL" ? "Left stick" : "Camera stick")
         .gesture(
             DragGesture(minimumDistance: 0)
                 .updating($touching) { _, state, _ in state = true }
@@ -813,12 +689,6 @@ private struct JoystickControl: View {
                     }
                     report(deflection: deflection, dx: dx, dy: dy, distance: distance)
                 }
-                .onEnded { _ in
-                    // A press that never deflected the stick is the click. It is the one
-                    // gesture a stick has spare, and L3 would otherwise be lost in this
-                    // mode - the centre dot it used to live on is where the knob is now.
-                    if !pushed { click() }
-                }
         )
         .allowsHitTesting(isInteractive)
         .onChange(of: touching) { down in
@@ -827,16 +697,8 @@ private struct JoystickControl: View {
         .onChange(of: isInteractive) { active in
             if !active { recentre() }
         }
-        // A gesture the system cancels - backgrounding, an incoming call, the mode being
-        // switched off mid-press - never delivers onEnded, and a stick left deflected is
-        // worse than a stuck button: the title keeps walking and nothing on screen is lit
-        // up to explain why.
-        .onDisappear {
-            clickRelease?.cancel()
-            clickRelease = nil
-            if let clickButton { onInput(clickButton, false) }
-            recentre()
-        }
+        // The stick's own view going away must not leave the axis deflected.
+        .onDisappear { recentre() }
     }
 
     private func report(deflection: CGFloat, dx: CGFloat, dy: CGFloat, distance: CGFloat) {
@@ -872,15 +734,6 @@ private struct JoystickControl: View {
         // y is negated exactly here, once. The screen counts downwards and the console
         // counts upwards, and the bridge's contract is the console's.
         onStick(CGPoint(x: dx / distance * magnitude, y: -dy / distance * magnitude))
-    }
-
-    private func click() {
-        guard let clickButton else { return }
-        clickRelease?.cancel()
-        onInput(clickButton, true)
-        let release = DispatchWorkItem { onInput(clickButton, false) }
-        clickRelease = release
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.clickHoldSeconds, execute: release)
     }
 
     private func recentre() {
