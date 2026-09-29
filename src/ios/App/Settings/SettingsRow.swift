@@ -1,14 +1,7 @@
 import SwiftUI
 
-/// LabeledContent needs iOS 16+; this project's deployment target is 15.0. Shared
-/// across several Settings sections now that the Form is split into per-section
-/// files, rather than re-declared privately in each one.
-///
-/// The label carries the app's row-label convention - 15pt semibold rounded, the same
-/// face 39 hand-built rows across 12 section files already use. This was the one row
-/// type still falling through to the system default, so read-only rows (Version,
-/// Games, Keys loaded, shader cache sizes) rendered in a visibly different, lighter
-/// typeface than the toggle and picker rows sitting directly above and below them.
+/// Read-only label/value row shared by the Settings sections (LabeledContent needs iOS 16+;
+/// the deployment target is 15.0). The label uses the app's 15pt semibold rounded style.
 struct SettingsRow: View {
     let label: String
     let value: String
@@ -18,8 +11,6 @@ struct SettingsRow: View {
 
     var body: some View {
         // Classic UI: the v2.0 row - system font, no leading glyph, no height floor.
-        // This row type was the one still falling through to the system default before
-        // the 2026-09-15 pass, so "classic" here really is just the system default.
         if UIStyle.isClassic {
             HStack {
                 Text(label)

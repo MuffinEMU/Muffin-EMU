@@ -1,19 +1,14 @@
 import SwiftUI
 
-/// Settings keys for every row this section exposes - the full set of fields on
-/// CemuConfig's `overlay` struct, one @AppStorage key each. See CemuBridge.h's comment
-/// on the overlay bridge functions for which rows the renderer actually acts on
-/// (cpu_mode round-trips but isn't currently read by LatteOverlay_renderOverlay()).
+/// Settings keys for the overlay rows, one @AppStorage key each, matching CemuConfig's
+/// `overlay` struct. `cpuMode` has a key and default (GameManager still pushes it) but no
+/// row: the overlay's draw pass doesn't read it.
 enum OverlaySettings {
     static let positionKey = "muffin.overlay.position"
     static let defaultPosition = ScreenPosition.disabled
 
     static let textColorKey = "muffin.overlay.textColor"
-    // Int, not UInt32: @AppStorage has no UInt32 overload (Bool/Int/Double/String/URL/Data
-    // and RawRepresentable-over-those only - see GraphicsSettingsSection.swift's identical
-    // note on DisplayGammaSetting/Float). The packed 0xAARRGGBB value fits Int on every
-    // platform this app runs on; cemu_bridge_set_overlay_text_color still takes the C
-    // `uint32_t` the engine expects, converted at the one call site.
+    // Int, not UInt32: @AppStorage has no UInt32 overload. Packed 0xAARRGGBB.
     static let defaultTextColor: Int = 0xFFFFFFFF // opaque white, matches CemuConfig's default
 
     static let textScaleKey = "muffin.overlay.textScale"
@@ -44,21 +39,32 @@ enum OverlaySettings {
     static let defaultDebug = true // matches CemuConfig's overlay.debug default
 }
 
-/// The on-screen FPS/CPU/RAM readout the core already knows how to draw - this section
-/// only ever decides where it goes, how it looks, and which rows are on, the same "app
-/// owns the @AppStorage, GameManager pushes it before boot" split every other graphics
-/// setting on this screen uses (see GraphicsSettingsSection.swift's header comment).
-///
-/// The rows below are visually disabled rather than hidden when position is Off: the
-/// overlay only reads them when it draws, so choosing what you want *before* turning it
-/// on somewhere is a normal way to use this, and disabling communicates "this has no
-/// effect right now" without discarding the choice the way hiding would.
+/// Text binding for a packed 0xAARRGGBB colour. Accepts a 6-digit RGB hex (treated as
+/// fully opaque) or an 8-digit ARGB one; anything else is left uncommitted.
+func hexColourBinding(_ value: Binding<Int>) -> Binding<String> {
+    Binding {
+        String(format: "#%08X", UInt32(truncatingIfNeeded: value.wrappedValue))
+    } set: { newValue in
+        let cleaned = newValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "#", with: "")
+        guard let parsed = UInt32(cleaned, radix: 16) else { return }
+        switch cleaned.count {
+        case 6: value.wrappedValue = Int(0xFF000000 | parsed)
+        case 8: value.wrappedValue = Int(parsed)
+        default: return
+        }
+    }
+}
+
+/// The on-screen FPS/CPU/RAM readout the core draws. This section sets where it goes, how it
+/// looks and which rows are on; GameManager pushes the stored values before boot. Rows are
+/// disabled (not hidden) while Position is Off so choices can be made before turning it on.
 struct OverlaySettingsSection: View {
     @AppStorage(OverlaySettings.positionKey) private var positionRaw = OverlaySettings.defaultPosition.rawValue
     @AppStorage(OverlaySettings.textColorKey) private var textColor = OverlaySettings.defaultTextColor
     @AppStorage(OverlaySettings.textScaleKey) private var textScale = OverlaySettings.defaultTextScale
     @AppStorage(OverlaySettings.fpsKey) private var fpsEnabled = OverlaySettings.defaultFps
-    @AppStorage(OverlaySettings.cpuModeKey) private var cpuModeEnabled = OverlaySettings.defaultCpuMode
     @AppStorage(OverlaySettings.drawcallsKey) private var drawcallsEnabled = OverlaySettings.defaultDrawcalls
     @AppStorage(OverlaySettings.cpuUsageKey) private var cpuUsageEnabled = OverlaySettings.defaultCpuUsage
     @AppStorage(OverlaySettings.cpuPerCoreUsageKey) private var cpuPerCoreUsageEnabled = OverlaySettings.defaultCpuPerCoreUsage
@@ -78,7 +84,6 @@ struct OverlaySettingsSection: View {
             textColorField
             textScaleSlider
             fpsToggle
-            cpuModeToggle
             drawcallsToggle
             cpuUsageToggle
             cpuPerCoreUsageToggle
@@ -89,7 +94,7 @@ struct OverlaySettingsSection: View {
             SettingsSectionHeader("Performance Overlay", icon: "speedometer", accent: .io)
         } footer: {
             InfoButton.footer(
-                "A small on-screen readout of FPS, CPU and RAM use. Off by default; the rows below only draw once a corner is picked.",
+                "Shows FPS, CPU and RAM use on screen. Pick a corner to turn it on.",
                 title: "Performance Overlay",
                 text: fullText)
         }
@@ -113,25 +118,7 @@ struct OverlaySettingsSection: View {
         }
     }
 
-    // 0xAARRGGBB packed the same way ImGui::ColorConvertU32ToFloat4 reads it - see
-    // CemuBridge.h's doc comment on cemu_bridge_set_overlay_text_color(). Accepts either
-    // a 6-digit RGB hex (treated as fully opaque) or an 8-digit ARGB one; anything else
-    // is left uncommitted rather than guessed at.
-    private var textColorHex: Binding<String> {
-        Binding {
-            String(format: "#%08X", UInt32(textColor))
-        } set: { newValue in
-            let cleaned = newValue
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "#", with: "")
-            guard let parsed = UInt32(cleaned, radix: 16) else { return }
-            switch cleaned.count {
-            case 6: textColor = Int(0xFF000000 | parsed)
-            case 8: textColor = Int(parsed)
-            default: return
-            }
-        }
-    }
+    private var textColorHex: Binding<String> { hexColourBinding($textColor) }
 
     private var textColorField: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -143,7 +130,7 @@ struct OverlaySettingsSection: View {
         }
         .disabled(isOff)
         .onChange(of: textColor) { newValue in
-            cemu_bridge_set_overlay_text_color(UInt32(newValue))
+            cemu_bridge_set_overlay_text_color(UInt32(truncatingIfNeeded: newValue))
         }
     }
 
@@ -176,18 +163,6 @@ struct OverlaySettingsSection: View {
         .disabled(isOff)
         .onChange(of: fpsEnabled) { newValue in
             cemu_bridge_set_overlay_fps(newValue)
-        }
-    }
-
-    private var cpuModeToggle: some View {
-        Toggle(isOn: $cpuModeEnabled) {
-            Text("CPU Mode")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-        }
-        .tint(MuffinTheme.pixelBlue)
-        .disabled(isOff)
-        .onChange(of: cpuModeEnabled) { newValue in
-            cemu_bridge_set_overlay_cpu_mode(newValue)
         }
     }
 
@@ -265,9 +240,9 @@ struct OverlaySettingsSection: View {
 
     private var fullText: String {
         """
-        The performance overlay is the engine's own on-screen readout, the same one desktop Cemu draws in a corner of the window. Position picks which corner (or top/bottom center) it appears in on the TV screen; Off leaves it out of the picture entirely, and the rows below have no effect until a position is chosen.
+        The overlay is the engine's own readout, like desktop Cemu's. Position picks a corner of the TV screen; Off hides it.
 
-        Text Color and Text Scale style the readout itself. FPS is the frame rate the engine is actually producing, the same number cemu_bridge_get_fps() reports elsewhere in this app. CPU Usage, CPU Per Core Usage, RAM Usage and VRAM Usage are the engine's own measurements of its own process, not the device's - they say what MuffinEMU itself is using, not what iOS is using overall. Draw Calls shows how many draw commands the current frame issued. Debug adds a short block of internal renderer state. CPU Mode is a real, saved setting on this same overlay, but the current build's overlay draw pass doesn't act on it yet - toggling it has no visible effect.
+        FPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw Calls counts draw commands in the current frame. Debug adds a few lines of renderer state.
         """
     }
 }
