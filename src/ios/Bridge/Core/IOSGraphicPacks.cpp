@@ -1,10 +1,9 @@
 // Graphic pack browsing and toggling for iOS - GraphicPack2 (Cafe/GraphicPack/) is a
 // complete, working feature with real consumers (LatteToMtl.cpp, the shader cache) and
 // had precisely zero iOS surface before this: nothing ever called LoadAll() here, so
-// Documents/mlc/graphicPacks/ was never even scanned. Mirrors the shape Android's own
-// NativeGraphicPacks.cpp already proved out (LoadAll -> list -> per-pack SetEnabled,
-// persisted into the same graphic_pack_entries config GraphicPack2::LoadGraphicPack
-// already reads back on the next LoadAll) rather than inventing a different one.
+// Documents/mlc/graphicPacks/ was never even scanned. The flow is LoadAll -> list ->
+// per-pack SetEnabled, persisted into the same graphic_pack_entries config
+// GraphicPack2::LoadGraphicPack reads back on the next LoadAll.
 //
 // Presets are out of scope here - a pack activates with whatever preset was already
 // selected/default, but there is no iOS UI yet to change which one. That is a real,
@@ -44,7 +43,7 @@ std::string IOSGraphicPacks_List()
 	return out.str();
 }
 
-// No-op (not an error) while a title is running, same guard Android's own refresh uses -
+// No-op (not an error) while a title is running, same guard as elsewhere -
 // GraphicPack2 isn't safe to reload out from under an active emulation session, and this
 // UI has no reason to be reachable mid-game anyway.
 void IOSGraphicPacks_Refresh()
@@ -66,8 +65,8 @@ void IOSGraphicPacks_SetEnabled(int index, bool enabled)
 	// Same persistence shape GraphicPack2::LoadGraphicPack already reads back: an
 	// "_disabled" marker for an off pack that defaults on, an empty entry (present at
 	// all = enabled) otherwise, nothing written for an off pack that defaults off -
-	// matching Android's SaveGraphicPackStateToConfig exactly, since LoadGraphicPack
-	// doesn't distinguish who wrote the entry.
+	// the same entries the desktop app writes, since LoadGraphicPack doesn't distinguish
+	// who wrote the entry.
 	auto& data = GetConfigHandle().data();
 	auto filename = _utf8ToPath(pack->GetNormalizedPathString());
 	data.graphic_pack_entries.erase(filename);

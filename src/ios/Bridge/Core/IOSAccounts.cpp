@@ -3,10 +3,8 @@
 // (CemuConfig::GetAccountNetworkService/SetAccountSelectedService, config/NetworkSettings.h)
 // are both complete, already-working desktop Cemu features - the same account.dat files
 // and the same network_services.xml override desktop reads - that had no iOS surface at
-// all before this. Ported from MeloCafe's Account.swift/NetworkService.swift/
-// CreateAccountView.swift, which drive the identical C++ API through an Obj-C class
-// wrapper (CemuConfigWrapper); this file gives MuffinEMU's own plain-C cemu_bridge_*
-// boundary the same data instead, in the delimited-record shape
+// all before this. This file exposes them across the plain-C cemu_bridge_* boundary,
+// in the delimited-record shape
 // IOSGraphicPacks_List() already established for "a list of structured things" here.
 #include "Cafe/Account/Account.h"
 #include "Cafe/CafeSystem.h"

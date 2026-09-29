@@ -76,8 +76,8 @@
 namespace coreinit { void OSSetThermalThrottleMicros(uint32 micros); }
 
 // The core's C entry points. Defined inside extern "C" blocks in src/main.cpp and
-// src/gui/uikit/WindowSystem.mm, and only ever declared in MeloCafe's own app target, so
-// they are declared again here.
+// src/gui/uikit/WindowSystem.mm, and not declared in any header this
+// bridge includes, so they are declared again here.
 extern "C" {
 void CemuInitialize(const char* execPath, const char* user_data_path, const char* config_path, const char* cache_path, const char* data_path);
 void CemuRun(void);
@@ -550,8 +550,8 @@ static void ios_timebase_ladder_stop();
 // ---------------------------------------------------------------------------
 // JIT environment
 //
-// A port of MeloCafe's own launch-time checks (MeloCafeApp.configureJITEnvironment and
-// ProcessInfo.hasTXM), because its recompiler reads the answers from the environment:
+// Launch-time checks for the JIT (dual-mapped memory and TXM detection), because the
+// recompiler reads the answers from the environment:
 // DUAL_MAPPED_JIT selects the dual-mapped arena that iOS 26 needs, and HAS_TXM tells it
 // whether the Trusted Execution Monitor is enforcing, which changes how that arena has
 // to be mapped. Set before CemuInitialize(), and never changed afterwards.
@@ -663,33 +663,11 @@ void ios_apply_cpu_mode()
     const bool debugged = ios_process_is_debugged(csFlags);
     const bool accuracy = g_favourAccuracy.load();
     const bool lowPower = g_lowPowerMode.load();
-    // THE dominant thermal difference between this port and MeloCafe, and it is by
-    // design rather than a bug. On iOS the core's GetCPUMode() returns the config value
-    // unresolved and _LaunchTitleThread() only starts the three emulated cores on their
-    // own host threads for the two explicit Multicore modes - so MeloCafe's default
-    // (Auto) runs every title on ONE host thread. This bridge always writes an explicit
-    // mode, and Speed first means Multicore, so MuffinEMU runs THREE.
-    //
-    // Those host threads sit in PPCCore_boostBaseTime's `while (true)` loop
-    // (coreinit_Thread.cpp), which reschedules without sleeping. Three of them resident
-    // on a fanless A12Z is roughly three times the sustained CPU power draw of one, which
-    // is exactly the "hot fast, while MeloCafe stays cool" report - MeloCafe is not doing
-    // something clever, it is doing a third of the work.
-    //
-    // So single-core is the single biggest lever available - and as of the measurements
-    // below it is also the DEFAULT, which is the opposite of what this comment used to
-    // say.
-    //
-    // The original reasoning was "Speed first means Multicore". Measured on the same
-    // device and the same title (Wind Waker HD, A12Z iPad Pro), that is simply false:
-    // MeloCafe on one core holds 40-60fps, MuffinEMU on three managed 4-20. Three host
-    // threads on a fanless part do not buy three times the work, they buy three times
-    // the power draw, and the SoC gives the clocks back as soon as it heats up - which
-    // it does within a minute. The multi-core win is real on a desktop with a fan and
-    // headroom; this device has neither.
-    //
-    // Multi-core is still reachable for anyone who wants to try it per-device, but it
-    // has to be asked for now rather than being what everyone gets by default.
+    // Single-core is the default; multi-core has to be requested (cemu_bridge_set_multicore_enabled).
+    // On iOS the core starts the three emulated cores on their own host threads only for the
+    // explicit Multicore modes, and those threads reschedule without sleeping. On a fanless
+    // A12Z iPad Pro running Wind Waker HD, one core held 40-60fps while three managed 4-20:
+    // the extra power draw heats the SoC within a minute and the clocks drop.
     const bool singleCore = accuracy || lowPower || !g_multicoreRequested.load();
     const char* cores = singleCore ? "single-core" : "multi-core";
     auto& config = GetConfig();
@@ -1568,8 +1546,7 @@ void cemu_bridge_initialize(const char* mlcPath) {
     cemu_bridge_start_memory_watchdog();
     ios_configure_jit_environment();
     // MoltenVK reads these once, when CemuInitialize() loads it for the Vulkan backend.
-    // Same values MeloCafe's app sets: asynchronous queue submits, and enough active
-    // command buffers per queue that Cemu's pipeline compiles do not stall the frame.
+    // Asynchronous queue submits, so Cemu's pipeline compiles do not stall the frame.
     setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "0", 1);
     setenv("MVK_CONFIG_DEBUG", "0", 1);
     setenv("MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE", "128", 1);
@@ -1797,7 +1774,7 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
             setStatus("Unable to mount title (bad/outdated path).");
             return CEMU_BRIDGE_UNABLE_TO_MOUNT;
         case 3:
-            setStatus("This game is encrypted and no key in keys.txt opens it. Put the keys.txt you dumped from your own Wii U in Muffin's \"keys\" folder in the Files app (or import it in Settings), then relaunch Muffin and try again.");
+            setStatus("This game is encrypted and no key in keys.txt opens it. Put the keys.txt you dumped from your own Wii U in MuffinEMU's \"keys\" folder in the Files app (or import it in Settings), then relaunch MuffinEMU and try again.");
             return CEMU_BRIDGE_NO_DISC_KEY;
         case 4:
             setStatus("This title has no usable title.tik, so its content cannot be decrypted.");
@@ -2243,16 +2220,10 @@ static void ios_timebase_ladder_entry() {
                                progress.guest_flip_requests > baseGuestFlipRequests;
         if (advancing) {
             const int shift = cemu_bridge_get_timebase_shift();
-            // Put the clock back. The old code stopped here and called wherever it had
-            // stepped to "the value that worked", which is post-hoc reasoning wired into
-            // a control loop: the title reached GX2Init because it finished booting, not
-            // because the console had been made slower. Keeping the slow clock after the
-            // stall is over costs exactly the factor it was stepped down by - measured at
-            // 4.6fps against MeloCafe's 45 on the same device, ROM and game.
-            //
-            // The ladder still earns its keep for the boot stall itself; it just no
-            // longer charges for it afterwards. A title that genuinely needs a slower
-            // clock has Settings > CPU > Timebase, where it is somebody's decision.
+            // Put the clock back once the title is advancing: it got past the stall because
+            // it finished booting, not because the console was slowed, and keeping the slow
+            // clock costs frame rate for the rest of the session. A title that needs a
+            // slower clock has Settings > CPU > Timebase.
             if (shift != startShift) {
                 cemuLog_log(LogType::Force,
                     "Emulated timebase: the title is advancing ({}) after {:.1f}s. Restoring the clock from "
@@ -2401,9 +2372,9 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
 // Input introspection
 //
 // The GamePad's button mappings live in C++ (InputManager / EmulatedController) and are
-// persisted to controllerProfiles/controller{N} on the device. Swift could not see any of
-// it, and that blind spot cost an entire day: every on-screen button was dead while the
-// sticks still worked, and nothing in the app could say why.
+// persisted to controllerProfiles/controller{N} on the device. These functions let Swift
+// see them, so a state where every on-screen button is dead but the sticks work can be
+// diagnosed from the app.
 //
 // The reason that pairing happens is worth stating once, because it is the whole shape of
 // the bug: axes reach the emulated controller directly (GCController.mm assigns

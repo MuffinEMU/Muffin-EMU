@@ -86,8 +86,7 @@ static void IOSTitleLaunch_RescanInstalledContent()
 }
 
 // Prepares whatever the user actually picked, mirroring the same decision tree the
-// Android port uses (NativeEmulation.cpp prepareTitle) and the desktop GUI uses
-// (MainWindow.cpp), rather than assuming everything is a standalone RPX.
+// desktop GUI uses (MainWindow.cpp), rather than assuming everything is a standalone RPX.
 //
 // Does NOT launch - the caller does that, so it can log around it and so a failure here
 // is reported before a title thread exists.
@@ -187,9 +186,9 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 // Adopted by copying rather than by repointing the engine, because KeyCache_Prepare()
 // builds its path from GetUserDataPath() in code shared with every other platform.
 // Copying keeps that untouched and is free in practice - a keys.txt is a few hundred
-// bytes. Doing it immediately before every key read (rather than once at startup) is
-// what makes a file dropped mid-session work without relaunching the app, which is the
-// same reason KeyCache_Reload() is called on every launch attempt.
+// bytes. Doing it immediately before every key read keeps the drop folder and the engine
+// copy in sync. The engine's key cache itself is read once per app launch, so keys added
+// mid-session are used after the app is relaunched.
 //
 // The drop folder wins when both files exist: it is the one the user can see and edit,
 // so it is the one their last action was performed on. When only the engine copy exists
@@ -281,7 +280,7 @@ int IOSTitleLaunch_ReloadAndCountKeys()
 			inFile++;
 	}
 	if (inFile != cached)
-		cemuLog_log(LogType::Force, "iOS: keys.txt has {} key(s), {} loaded this session - relaunch Muffin to use the new ones", inFile, cached);
+		cemuLog_log(LogType::Force, "iOS: keys.txt has {} key(s), {} loaded this session - relaunch MuffinEMU to use the new ones", inFile, cached);
 	else
 		cemuLog_log(LogType::Force, "iOS: keys.txt checked, {} key(s) available", inFile);
 	return (int)inFile;
