@@ -19,6 +19,10 @@ struct AboutSettingsSection: View {
                 Label("View on GitHub", systemImage: "arrow.up.right.square")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
+            Link(destination: URL(string: "https://kiddreads.github.io/MuffinEMU/docs/licenses.html")!) {
+                Label("Open-source licences", systemImage: "doc.text")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
 
             Text("MuffinEMU is built on Cemu. The optional melo-controls pad is Melo-Controller by stossy11.")
                 .font(.system(size: 12))
