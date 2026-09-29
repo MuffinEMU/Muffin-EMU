@@ -37,7 +37,7 @@ enum NetworkService: Int, CaseIterable, Identifiable {
     var string: String {
         switch self {
         case .offline: return "Offline"
-        case .nintendo: return "Nintendo Network"
+        case .nintendo: return "Nintendo Network (shut down)"
         case .pretendo: return "Pretendo Network"
         case .custom: return "Custom"
         }
@@ -50,7 +50,7 @@ enum NetworkService: Int, CaseIterable, Identifiable {
     var accountHelp: String {
         switch self {
         case .offline: return "Online functionality disabled for this account"
-        case .nintendo: return "Connect to the official Nintendo Network Service"
+        case .nintendo: return "Connect to Nintendo's original Wii U servers (no longer running)."
         case .pretendo: return "Connect to the Pretendo Network Service, a community-run reimplementation of Nintendo's original Wii U online services"
         case .custom: return "Connect to a custom Network Service (configured via network_services.xml)"
         }
