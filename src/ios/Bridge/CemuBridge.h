@@ -29,7 +29,7 @@ typedef enum {
     CEMU_BRIDGE_NO_TITLE_TIK    = 4,   // installed title with no usable title.tik
     CEMU_BRIDGE_UNSUPPORTED     = 5,   // not a title and not a loadable executable
     CEMU_BRIDGE_BASE_NOT_FOUND  = 6,   // an update/DLC was launched without its base game
-    CEMU_BRIDGE_CORE_NOT_BUILT  = 100, // real engine not linked into this build yet (pre-M1)
+    CEMU_BRIDGE_CORE_NOT_BUILT  = 100, // real engine not linked into this build yet (never returned by current builds)
     CEMU_BRIDGE_BAD_ARG         = 101, // null/empty path etc.
 } CemuBridgeStatus;
 
@@ -48,8 +48,8 @@ void cemu_bridge_initialize(const char* mlcPath);
 /// Real games are decrypted with the user's OWN console keys, read from keys.txt in the
 /// app's Documents/mlc directory. Nothing is bundled, derived or worked around: with no
 /// keys.txt the disc paths report CEMU_BRIDGE_NO_DISC_KEY and homebrew keeps working
-/// exactly as before. keys.txt is re-read on every call, so importing one mid-session
-/// takes effect on the next launch attempt rather than after an app restart.
+/// exactly as before. The engine's key cache reads keys.txt once per app launch, so a
+/// keys.txt imported mid-session is only used after the app is relaunched.
 CemuBridgeStatus cemu_bridge_boot_title(const char* path);
 
 /// Boot a standalone .rpx and nothing else. Kept as the narrow homebrew entry point;
@@ -58,8 +58,10 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path);
 /// Wraps CafeSystem::PrepareForegroundTitleFromStandaloneRPX + LaunchForegroundTitle.
 CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath);
 
-/// Re-reads keys.txt and returns how many 128-bit keys the engine's own parser accepted.
-/// 0 means the file is absent, empty, or contains nothing usable. Cheap; safe to call
+/// Re-reads the keys.txt FILE and returns how many 128-bit keys it holds (same acceptance
+/// rule as the engine's parser). This does not reload the engine's key cache, which is
+/// read once per app launch, so a newly imported file is counted immediately but only
+/// used to decrypt after a relaunch. 0 means the file is absent, empty, or contains nothing usable. Cheap; safe to call
 /// from the UI.
 ///
 /// Returns -1, meaning "cannot answer", when the engine has not been initialized yet
@@ -68,7 +70,7 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath);
 /// real answer about a real file.
 int cemu_bridge_reload_and_count_keys(void);
 
-/// M3 (ROADMAP.md): wires the real native Metal renderer to an actual on-screen
+/// Wires the real native Metal renderer to an actual on-screen
 /// surface. `uiView` must be a UIView* (bridged as void*); `width`/`height` are its
 /// client size in LOGICAL POINTS (not physical pixels - the points -> pixels
 /// conversion is applied downstream, exactly once per consumer, using `dpiScale`;
@@ -447,50 +449,20 @@ int cemu_bridge_cpu_mode(void);
 
 /// Diagnostic switches, all read when a title starts rather than while one runs.
 ///
-/// These exist because two builds in a row were unusable and neither of us could tell
-/// which change was responsible without a twenty-minute rebuild per guess. Each one
-/// isolates a subsystem that has been wrong before.
+/// Each one isolates a subsystem so a problem can be narrowed down without a rebuild.
 void cemu_bridge_set_recompiler_enabled(bool enabled);
 bool cemu_bridge_recompiler_enabled(void);
 
-/// Speed first, or accuracy first. MuffinEMU is tuned for speed by default: the multi-core
-/// recompiler (the multi-core interpreter when no JIT enabler is attached), shaders built
-/// in the background, and the work that only buys accuracy - accurate Vulkan barriers and
-/// GX2DrawDone synchronisation - skipped. On, this takes Cemu's most compatible choice for
-/// each instead: one emulated CPU core, every shader built before the frame that needs it,
-/// accurate barriers and draw-done sync. For the titles that glitch, desync or crash on
+/// Speed first, or accuracy first. By default MuffinEMU runs one emulated CPU core (the
+/// recompiler when a JIT enabler is attached, otherwise the interpreter; multi-core is
+/// opt-in through cemu_bridge_set_multicore_enabled), builds shaders in the background,
+/// and skips the work that only buys accuracy - accurate Vulkan barriers and GX2DrawDone
+/// synchronisation. On, this takes Cemu's most compatible choice for each instead: one
+/// emulated CPU core, every shader built before the frame that needs it, accurate
+/// barriers and draw-done sync. For the titles that glitch, desync or crash on
 /// the fast path. Read when a title starts.
 void cemu_bridge_set_favour_accuracy(bool enabled);
 
-/// Low Power Mode: run ONE emulated CPU core instead of three, and nothing else.
-///
-/// Deliberately not folded into cemu_bridge_set_favour_accuracy() even though both end
-/// up choosing a Singlecore mode. Favour accuracy ALSO forces synchronous shader
-/// compilation, accurate Vulkan barriers and GX2DrawDone sync - all of which add work.
-/// A device that is already too hot needs less work, not more, so these stay separate
-/// switches with separate reasons.
-///
-/// Why this is the lever that matters: on iOS the core's GetCPUMode() returns the config
-/// value unresolved, and _LaunchTitleThread() only starts the three emulated cores on
-/// their own host threads for the two explicit Multicore modes. MeloCafe's default (Auto)
-/// therefore runs every title on one host thread; this bridge always writes an explicit
-/// mode and defaults to Multicore, so MuffinEMU runs three. Those threads sit in a
-/// reschedule loop that never sleeps, so three of them on a fanless A12Z is about three
-/// times the sustained CPU power of one. That difference, not any cleverness on
-/// MeloCafe's side, is why the same title can run cool there and hot here.
-///
-/// Costs frame rate. That is the trade, stated plainly rather than hidden.
-/// Read when a title starts - the core count cannot change under a running title.
-/// Thermal governor: microseconds each emulated core sleeps at its reschedule point.
-///
-/// 0 (the default, and the value whenever the device is not hot) means no sleep and the
-/// core loop is unchanged. Unlike cemu_bridge_set_low_power_mode() above, this takes
-/// effect on a RUNNING title - it is the CPU-side lever for a device overheating right
-/// now, where core count cannot move until the next launch.
-///
-/// Costs emulation speed in proportion to the sleep. Applied only while iOS reports
-/// serious or critical thermal pressure, at which point iOS is already throttling the
-/// hardware, and set back to 0 the moment it cools. See ThermalMonitor.swift.
 /// Best-effort real device temperature in Celsius, or NaN when it cannot be read.
 ///
 /// iOS publishes NO device temperature to apps - ProcessInfo.thermalState's four levels
@@ -504,6 +476,17 @@ void cemu_bridge_set_favour_accuracy(bool enabled);
 /// a number that was actually read, or NaN.
 double cemu_bridge_device_temperature_celsius(void);
 
+
+/// Thermal governor: microseconds each emulated core sleeps at its reschedule point.
+///
+/// 0 (the default, and the value whenever the device is not hot) means no sleep and the
+/// core loop is unchanged. Unlike cemu_bridge_set_low_power_mode(), this takes
+/// effect on a RUNNING title - it is the CPU-side lever for a device overheating right
+/// now, where core count cannot move until the next launch.
+///
+/// Costs emulation speed in proportion to the sleep. Applied only while iOS reports
+/// serious or critical thermal pressure, at which point iOS is already throttling the
+/// hardware, and set back to 0 the moment it cools. See ThermalMonitor.swift.
 void cemu_bridge_set_thermal_throttle_micros(uint32_t micros);
 
 /// Run the three emulated Espresso cores on three host threads instead of one.
@@ -515,6 +498,10 @@ void cemu_bridge_set_thermal_throttle_micros(uint32_t micros);
 /// thermal headroom; not worth being the default on this one.
 void cemu_bridge_set_multicore_enabled(bool enabled);
 
+/// Low Power Mode: run one emulated CPU core and nothing else changes. Separate from
+/// cemu_bridge_set_favour_accuracy(), which also forces synchronous shader compilation
+/// and accurate barriers (more work, the wrong lever for a device that is already hot).
+/// Read when a title starts - the core count cannot change under a running title.
 void cemu_bridge_set_low_power_mode(bool enabled);
 bool cemu_bridge_low_power_mode(void);
 bool cemu_bridge_favour_accuracy(void);
@@ -551,11 +538,8 @@ bool cemu_bridge_vsync_enabled(void);
 /// kKeepAspectRatio letterboxes 1280x720 inside it. Re-read every time the output blit
 /// is sized, so unlike vsync above it takes effect on the next frame, not the next launch.
 ///
-/// This declaration is the half of the pair that the ea2d6e05 engine restore dropped:
-/// f57b840c put the definition back into CemuBridge.mm but not this line, and Swift only
-/// sees what this header declares - SettingsView.swift and GameManager.swift both call
-/// it, so without it the app target does not compile. The comm(1) check described on the
-/// definition in CemuBridge.mm has to be run against this file as well as the .mm.
+/// Swift only sees what this header declares, and the CI symbol check compares it against
+/// the exported functions, so a definition in CemuBridge.mm needs a declaration here.
 void cemu_bridge_set_stretch_to_fill(bool enabled);
 
 /// Which renderer the next title uses: 2 = Metal (the native path and the default), 1 =
@@ -952,8 +936,7 @@ void cemu_bridge_release_all_buttons(void);
 // under (Cafe/Account/Account.h). Network Service is which online backend an account's
 // traffic goes to: Nintendo's own (long since shut down for the Wii U), Pretendo
 // (Pretendo Network, a community-run reimplementation - see pretendo.network), a
-// hand-configured Custom service, or Offline. Neither concept is MuffinEMU- or
-// MeloCafe-specific; this is desktop Cemu's own account/online system, which had no iOS
+// hand-configured Custom service, or Offline. Neither concept is MuffinEMU-specific; this is desktop Cemu's own account/online system, which had no iOS
 // surface at all before this.
 
 /// One account per record, most-recently-refreshed order (Account::GetAccounts()).
@@ -988,8 +971,8 @@ uint32_t cemu_bridge_accounts_min_persistent_id(void);
 
 /// True while account controls should be disabled in the UI (CafeSystem::IsTitleRunning())
 /// - changing the active account or its Network Service mid-title wouldn't take effect
-/// until the next boot but would look like it did, so MeloCafe's own AccountSettingsView
-/// locks the picker instead while a title runs, and this mirrors that.
+/// until the next boot but would look like it did, so the account screen
+/// locks the picker while a title runs.
 bool cemu_bridge_accounts_locked(void);
 
 /// Creates a real Account (Cafe/Account/Account.h) with every field the on-disk format
@@ -1000,7 +983,7 @@ bool cemu_bridge_accounts_locked(void);
 /// slots remain, miiName is empty, or the underlying Account::Save() fails - the caller is
 /// expected to have already checked the first three against cemu_bridge_accounts_list(),
 /// cemu_bridge_accounts_min_persistent_id() and cemu_bridge_accounts_has_free_slot(), the
-/// same order MeloCafe's own CreateAccountView validates in, so it can show a specific
+/// same order a UI would validate in, so it can show a specific
 /// reason instead of one generic failure.
 bool cemu_bridge_account_create(uint32_t persistentId, const char* miiName, uint16_t birthYear,
     uint8_t birthMonth, uint8_t birthDay, int gender, const char* email, int country);

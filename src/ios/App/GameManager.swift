@@ -366,37 +366,8 @@ class GameManager: ObservableObject {
         // constructs a real TitleInfo, and TitleInfo's constructor auto-mounts through
         // fsc_mount() as a side effect of parsing meta.xml.
         //
-        // CORRECTION to what this comment said before: fsc.cpp is NOT unlocked. It
-        // declares `std::recursive_mutex s_fscMutex` (fsc.cpp:69) and takes it at 21
-        // sites, including wrapped directly around the tree mutation this comment used
-        // to blame:
-        //
-        //     fscEnter();
-        //     FSCMountPathNode* node = fsc_createMountPath(parsedMountPath, priority);
-        //     node->AssignDevice(fscDevice, ctx, targetPathWithSlash);
-        //     fscLeave();
-        //
-        // So concurrent TitleInfo constructions were already serialised by that mutex,
-        // and a data race there was not what produced the signal 11 in the crash log.
-        //
-        // The actual cause was a null root: s_fscRootNodePerPrio is `{}` at file scope
-        // and is only ever populated by fsc_reset() <- fsc_init() <-
-        // CafeSystem::Initialize(), which runs at TITLE BOOT. Cover art builds a
-        // TitleInfo during loadGames at app launch, before any title has booted, so
-        // fsc_createMountPath read a null root and dereferenced nodeParent->subnodes.
-        // Deterministic, single-threaded, on the first call - which is why it crashed
-        // every launch rather than intermittently. Fixed in fsc.cpp by
-        // fsc_ensureRootNodes(), which allocates any missing root under that same mutex.
-        //
-        // The sequential pass below is KEPT, on its own merits rather than as the crash
-        // fix: one TitleInfo mount at a time is less startup load than N concurrent
-        // ones, and doing the eligibility check off the main actor keeps it off the UI
-        // thread. It would not, by itself, have fixed a null dereference - the first
-        // call still hits it.
-        //
-        // The correction matters because "fsc.cpp has no locking anywhere" is the kind
-        // of premise that gets a second mutex added to a file that already has one, or
-        // gets the next crash in it misdiagnosed.
+        // Sequential on purpose: TitleInfo mounts through fsc, and fsc_ensureRootNodes()
+        // covers the pre-boot case where the mount roots don't exist yet.
         let candidates = games
         guard !candidates.isEmpty else { return }
 
@@ -601,9 +572,9 @@ class GameManager: ObservableObject {
                 // check runs against the copy we already made, and every way it can fail
                 // - unsupported extension, supported extension over the wrong bytes -
                 // means the same thing to the person holding the iPad.
-                return "This is not a valid Wii U ROM format."
+                return "This isn't a valid Wii U game file."
             case .notAWiiUDump(let name):
-                return "\"\(name)\" doesn't look like a Wii U dump - a dumped game folder has code/, content/ and meta/ inside it, or (for a decrypted NUS dump) a title.tmd alongside its .app files."
+                return "\"\(name)\" isn't a Wii U game dump. A dump folder needs code, content and meta folders inside it, or a title.tmd next to its .app files (a decrypted NUS dump)."
             case .accessDenied:
                 return "Couldn't access that file."
             case .copyFailed(let error):
@@ -922,8 +893,7 @@ class GameManager: ObservableObject {
             return
         }
 
-        // Delegate to the real Cemu core via the bridge. Pre-M1 (core not compiled
-        // for iOS yet) this honestly reports "engine not built" rather than faking a run.
+        // Delegate to the Cemu core via the bridge.
         guard engine.coreAvailable else {
             lastStatusMessage = engine.statusText
             emulationState = .error
@@ -933,10 +903,8 @@ class GameManager: ObservableObject {
         // Actual init/boot is deferred to registerRenderSurface(...) below, called by
         // MetalViewIOS once its view has mounted while emulationState == .loading (see
         // ContentView.swift). WindowSystem::GetWindowPhysSize() is read synchronously
-        // by the GPU thread the instant boot() spawns it (M3, CemuBridge.mm), so a real
-        // surface must be registered with the bridge before boot() runs, not after -
-        // this view previously only appeared once emulationState == .running, i.e.
-        // strictly after boot() had already returned.
+        // by the GPU thread the instant boot() spawns it (CemuBridge.mm), so a real
+        // surface must be registered with the bridge before boot() runs.
     }
 
     /// Called by DisplayRouter once it has decided which display the Wii U TV screen
@@ -1337,17 +1305,17 @@ struct EmulatorProgress: Equatable {
             // rate AND the count: the rate says how slow, the count is the thing whose
             // movement proves it is not stuck.
             if gx2FramesPerSecond > 0 {
-                return String(format: "%.2f fps · %llu frames", gx2FramesPerSecond, gx2FrameCount)
+                return String(format: "%.1f FPS", gx2FramesPerSecond)
             }
             return String(format: "%llu frames", gx2FrameCount)
         }
         if gx2InitReached {
             // Past handover with nothing drawn. This is the case that is a real bug
             // rather than a slow one, so it says so instead of showing a rate of zero.
-            return "GX2 · no frames yet"
+            return "Started, no picture yet"
         }
         if osScreenScanouts > 0 || guestFlipRequests > 0 {
-            return "Booting · \(osScreenScanouts) scanouts"
+            return "Booting..."
         }
         return "-- FPS"
     }

@@ -5,8 +5,7 @@
 // Deliberately NOT a from-scratch crypto implementation. FSTVolume already has to do
 // full AES-128/hash-tree decryption for every single read during ordinary emulation
 // (see FST.cpp's GetDecryptedRawBlock/GetDecryptedHashedBlock) - that code is already
-// exercised on every boot and is what tonight's AES128_init fix made work at all. This
-// file only walks the FST's own directory tree (OpenDirectoryIterator/Next, the same
+// exercised on every boot. This file only walks the FST's own directory tree (OpenDirectoryIterator/Next, the same
 // API fscDeviceWud.cpp already uses to serve the emulated OS live reads) and writes out
 // whatever ReadFile() hands back - it never touches a key or a cipher itself.
 //
@@ -265,15 +264,9 @@ int IOSTitleDecrypt_ExtractToFolder(const char* srcPath, const char* destFolderP
 // either), different output shape: a single-file .wua archive instead of a loose
 // code/, content/, meta/ tree.
 //
-// This is a from-scratch iOS port of the Android app's WuaConverter.cpp
-// (src/android/app/src/main/cpp/), not a fresh design - that file already does exactly
-// this (TitleInfo::Mount + the fsc_* virtual filesystem walk + ZArchiveWriter) and is
-// almost entirely platform-agnostic C++. The only Android-specific piece was
-// CompressTitleCallbacks, a thin wrapper around a JNI jobject/jmethodID pair used
-// purely to call back into Java - it carries no conversion logic of its own, so it is
-// simply not needed here: this function reports success/failure through the same
-// int return + progressCallback convention IOSTitleDecrypt_ExtractToFolder already
-// uses, with no callback-object indirection at all.
+// It mounts the title (TitleInfo::Mount), walks the fsc_* virtual filesystem and copies
+// every file into a ZArchiveWriter. Success/failure is reported through the same int
+// return + progressCallback convention IOSTitleDecrypt_ExtractToFolder uses.
 //
 // TitleInfo(path) is used here instead of FSTVolume::OpenFromDiscImage (as the
 // raw-source path above does) because it is what actually knows how to write the
@@ -468,7 +461,7 @@ int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destWuaPath,
 		return IOS_DECRYPT_DEST_NOT_WRITABLE;
 	}
 
-	// Same verification WuaConverter.cpp does on Android: open what was just written
+	// Verify the result: open what was just written
 	// back up as a reader before calling it done, so a truncated or corrupt .wua is
 	// caught here rather than surfacing later as an unbootable file the user has to
 	// debug on their own.
