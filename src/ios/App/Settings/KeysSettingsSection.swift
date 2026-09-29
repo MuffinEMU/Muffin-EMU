@@ -1,10 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Real Wii U games are encrypted and MuffinEMU ships no keys. This is where the user
-/// supplies their own, dumped from their own console. Optional by design: without
-/// it, everything that worked before - homebrew, .rpx, anything already decrypted -
-/// still works.
+/// Where the user supplies their own keys.txt, dumped from their own console. Optional:
+/// homebrew, .rpx and already-decrypted games work without it.
 struct KeysSettingsSection: View {
     @State private var showingKeysImporter = false
     @State private var showingKeysRemovalConfirmation = false
@@ -34,10 +32,7 @@ struct KeysSettingsSection: View {
                 text: "Encrypted games (.wux, .wud, .iso, .wua) need AES keys dumped from your own Wii U, in a text file called keys.txt with one key per line. MuffinEMU doesn't include keys.\n\nYou can also open MuffinEMU in the Files app and drop keys.txt into the \"keys\" folder.\n\nNew keys are used the next time you start a game. If you've already started a game since opening MuffinEMU, quit and reopen MuffinEMU first.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
-        // .item for the same reason the ROM picker uses it: a keys.txt exported by
-        // some other tool may carry no useful type at all, and a type filter would
-        // grey out the one file this button exists to select. WiiUKeys.importKeys
-        // decides what it actually is, by reading it.
+        // .item: a keys.txt may carry no useful type; WiiUKeys.importKeys checks the contents.
         .fileImporter(
             isPresented: $showingKeysImporter,
             allowedContentTypes: [.item],

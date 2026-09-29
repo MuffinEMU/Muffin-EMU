@@ -1,10 +1,7 @@
 import SwiftUI
 
-/// The three channel layouts CemuConfig.h's `enum AudioChannels` defines (kMono = 0,
-/// kStereo = 1, kSurround = 2). Declared here rather than shared with a hypothetical
-/// desktop-parity enum because nothing else in this port surfaces channel layout yet -
-/// see GraphicsSettingsSection.swift's `ScaleFilter` for the same "one small Int enum
-/// per picker" shape this follows.
+/// The channel layouts from CemuConfig.h's `enum AudioChannels` (kMono = 0, kStereo = 1,
+/// kSurround = 2).
 enum AudioChannelSetting: Int, CaseIterable, Identifiable {
     case mono = 0
     case stereo = 1
@@ -21,17 +18,8 @@ enum AudioChannelSetting: Int, CaseIterable, Identifiable {
     }
 }
 
-/// Storage keys and defaults for the eight in-scope audio settings, one enum per screen
-/// the way `DisplayLayoutSettings` in DisplayRouter.swift keys the display-routing
-/// settings. Defaults mirror CemuConfig.h's own field initializers (tv_audio_enabled =
-/// true, pad_audio_enabled = false, both channels = kStereo, both volumes = 50,
-/// microphone_enabled = false, input_volume = 50) rather than the different numbers
-/// CemuConfig.cpp's XML loader falls back to (20 for TV volume, 0 for GamePad) when a
-/// config.xml predates these fields - that fallback never actually surfaces here, because
-/// GameManager pushes every one of these keys into the engine before every boot (see the
-/// boot-time push block), so the engine's config always ends up matching whatever this
-/// file's defaults or the user's own choice say, not whatever a stale XML fallback would
-/// have produced.
+/// Storage keys and defaults for the audio settings. Defaults mirror CemuConfig.h's field
+/// initializers; GameManager pushes every key into the engine before each boot.
 enum AudioSettings {
     static let tvEnabledKey = "muffin.audio.tvEnabled"
     static let defaultTvEnabled = true
@@ -58,27 +46,9 @@ enum AudioSettings {
     static let defaultInputVolume = 50
 }
 
-/// TV and GamePad output audio - on/off, level, and channel layout for each, backed by
-/// CemuConfig.h's tv_audio_enabled/tv_volume/tv_channels and pad_audio_enabled/
-/// pad_volume/pad_channels - plus the GamePad microphone input a title can request via
-/// MICInit (mic.cpp), backed by microphone_enabled/input_volume. audio_delay and
-/// input_channels are deliberately not here: the former is an AV-sync knob, out of scope
-/// for this page; the latter has no effect even in desktop Cemu (GeneralSettings2.cpp
-/// hardcodes it to mono regardless of what its own picker shows). Device selection
-/// (tv_device/pad_device/input_device) is also left out - those name a host audio
-/// device, which has no equivalent on iOS, where CoreAudio owns the one active output
-/// route for the whole app, and mic.cpp's `#if BOOST_OS_IOS` path likewise always uses
-/// IOSAudioInputAPI's single device rather than offering a choice.
-///
-/// TV and GamePad audio are two independent output devices in the engine
-/// (g_tvAudio/g_padAudio in ax_out.cpp), each enabled, muted and mixed on its own - the
-/// GamePad's audio track is not gated on whether a second physical screen is attached.
-/// Whether turning it on is actually useful the way DisplayRouter.swift's dual-screen
-/// video routing is - i.e., whether most titles route anything distinct to the GamePad
-/// speaker versus just duplicating the TV mix - is a question about individual titles'
-/// own audio design, not about this engine, and this file does not claim an answer
-/// either way; it only exposes the switch honestly; the toggle works identically with
-/// or without a second display connected.
+/// TV and GamePad output audio (on/off, volume, channel layout for each) and the GamePad
+/// microphone input. Audio delay, input channels and device selection are left out: there
+/// is a single audio route on iOS.
 struct AudioSettingsSection: View {
     @AppStorage(AudioSettings.tvEnabledKey) private var tvEnabled = AudioSettings.defaultTvEnabled
     @AppStorage(AudioSettings.tvVolumeKey) private var tvVolume = AudioSettings.defaultTvVolume
@@ -163,10 +133,7 @@ struct AudioSettingsSection: View {
         }
     }
 
-    // No channel picker here, unlike tvGroup/padGroup above: input_channels has no effect
-    // even in desktop Cemu (see CemuBridge.h's Audio section), so a picker for it would be
-    // a control that changes a stored value without changing anything audible - the thing
-    // this page otherwise avoids.
+    // No channel picker for input: input_channels has no effect even in desktop Cemu.
     @ViewBuilder private var microphoneGroup: some View {
         Toggle(isOn: $microphoneEnabled) {
             Text("Microphone")
@@ -184,11 +151,8 @@ struct AudioSettingsSection: View {
         }
     }
 
-    // Shared row for all three volumes: an Int @AppStorage backs the bridge call (it wants
-    // 0-100), and this wraps it in a Double Binding for Slider the same way
-    // PreviewPadSection.swift wraps its own enum @AppStorage in a Binding rather than
-    // storing the Slider's native type directly - the stored type and the control's
-    // type just don't match here, so this rounds on the way back in.
+    // Shared row for all three volumes: Int storage (the bridge wants 0-100) wrapped in a
+    // Double Binding for the Slider.
     private func volumeRow(label: String, volume: Binding<Int>, onChange: @escaping (Int) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {

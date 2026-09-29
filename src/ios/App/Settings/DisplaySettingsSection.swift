@@ -1,24 +1,17 @@
 import SwiftUI
 
-/// Two related but genuinely different features share this section:
+/// Two features share this section:
 ///
-/// - Screen Layout (ScreenLayout in DisplayRouter.swift): how the TV and GamePad
-///   screens share THIS device's own screen. Ported from MeloCafe, which already had
-///   exactly this - Single Screen / Adaptive / GamePad-inset - and this app never did.
-/// - External display routing (DisplayLayoutSettings in DisplayRouter.swift): which of
-///   the two screens goes to a genuine SECOND physical display when one is connected.
-///   Inert without one; the footer says so rather than hiding the controls, since a
-///   control nobody can see failing silently reads as broken.
+/// - Screen Layout (ScreenLayout in DisplayRouter.swift): how the TV and GamePad screens
+///   share this device's own screen (Single Screen / Adaptive / GamePad top right).
+/// - External display routing (DisplayLayoutSettings in DisplayRouter.swift): which screen
+///   goes to a second physical display when one is connected. Inert without one.
 ///
-/// Screen Layout applies whenever there's no external display taking the TV; external
-/// display routing only matters once one is attached. They cannot both be "in charge"
-/// of the same screen at the same moment, which is why each gets its own swap button
-/// with its own name, rather than trying to share one.
+/// Screen Layout applies whenever no external display is taking the TV; each mode has its
+/// own swap button.
 struct DisplaySettingsSection: View {
-    // Matches MeloCafe's own SettingsView exactly: `= ScreenLayout.initialValue`, not a
-    // plain constant, so a value migrated from a pre-ScreenLayout install (see
-    // `ScreenLayout.initialValue`'s doc comment) is picked up the first time this row
-    // ever reads the key, not just the first time EmulatorViewOptimized does.
+    // Initialised from `ScreenLayout.initialValue` so a value migrated from an older install is
+    // picked up the first time this row reads the key.
     @AppStorage(LocalScreenLayoutSettings.layoutKey)
     private var screenLayout = ScreenLayout.initialValue
     @AppStorage(LocalScreenLayoutSettings.showSwapButtonKey)
@@ -36,8 +29,6 @@ struct DisplaySettingsSection: View {
             HStack {
                 Text("Screen Layout")
                 Button {
-                    // Same info-button-next-to-a-picker shape MeloCafe's own Settings
-                    // row uses for this exact control.
                     screenLayoutInfoShown = true
                 } label: {
                     Image(systemName: "info.circle")
@@ -81,9 +72,7 @@ struct DisplaySettingsSection: View {
                 }
             }
             .tint(MuffinTheme.pixelBlue)
-            // Same "re-route right now, not just next launch" reasoning as the two
-            // toggles below - see reapplyForExternalDisplaySystemToggle's own doc
-            // comment for why this direction needs it too, not just turning ON.
+            // Re-routes immediately, both when turned on and when turned off.
             .onChange(of: externalDisplaySystemEnabled) { _ in
                 DisplayRouter.shared.reapplyForExternalDisplaySystemToggle()
             }
@@ -101,11 +90,7 @@ struct DisplaySettingsSection: View {
                     }
                 }
                 .tint(MuffinTheme.pixelBlue)
-                // Live, not just for the next launch: rerouteForScreenLayoutChange()
-                // re-routes immediately if a title is already running in .dualScreen, the
-                // same effect the on-screen swap button below has. Skip the router's own
-                // UserDefaults write here - it would just be writing the value @AppStorage
-                // already wrote - and only ask it to re-route.
+                // Re-routes immediately if a title is already running in .dualScreen.
                 .onChange(of: swapScreens) { _ in
                     DisplayRouter.shared.rerouteForScreenLayoutChange()
                 }
