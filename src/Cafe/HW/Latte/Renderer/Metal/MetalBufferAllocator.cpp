@@ -223,13 +223,13 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalSynchronizedHeapAlloc
 		cemuLog_logOnce(LogType::Force, "Metal: could not reserve {} bytes of buffer memory (alignment {})", size, alignment);
 		return nullptr;
 	}
-	m_activeAllocations.emplace_back(addr);
 	AllocatorReservation* res = m_poolAllocatorReservation.allocObj();
 	res->bufferIndex = addr.chunkIndex;
 	res->bufferOffset = addr.offset;
 	res->size = size;
 	res->mtlBuffer = m_chunkedHeap.GetBufferByIndex(addr.chunkIndex);
 	res->memPtr = m_chunkedHeap.GetChunkPtr(addr.chunkIndex) + addr.offset;
+	res->heapAllocation = addr;
 
 	return res;
 }
@@ -238,22 +238,18 @@ void MetalSynchronizedHeapAllocator::FreeReservation(AllocatorReservation* uploa
 {
 	// put the allocation on a delayed release queue for the current command buffer
 	MTL::CommandBuffer* currentCommandBuffer = m_mtlr->GetCurrentCommandBuffer();
-	auto it = std::find_if(m_activeAllocations.begin(), m_activeAllocations.end(), [&uploadReservation](const TrackedAllocation& allocation) { return allocation.allocation.chunkIndex == uploadReservation->bufferIndex && allocation.allocation.offset == uploadReservation->bufferOffset; });
-	if (it == m_activeAllocations.end())
+	if (!uploadReservation->heapAllocation.isValid())
 	{
-		// cemu_assert_debug() alone is a no-op in Release, and the two lines below
-		// dereferenced end() unconditionally - a real double-free crash (confirmed on
-		// device, signal 11 in this exact function). Skip the bookkeeping instead.
+		// cemu_assert_debug() alone is a no-op in Release. An invalid heap address means
+		// the reservation was already released (or never came from this allocator), and
+		// queueing it would free the same heap range twice. Skip it instead.
 		cemuLog_log(LogType::Force,
 			"MetalSynchronizedHeapAllocator::FreeReservation() called on an allocation "
-			"(buffer {}, offset {}) this allocator has no record of - likely a double "
-			"free. Skipping it rather than dereferencing an invalid iterator.",
+			"(buffer {}, offset {}) with no valid heap address - likely a double free. Skipping it.",
 			uploadReservation->bufferIndex, uploadReservation->bufferOffset);
-		m_poolAllocatorReservation.freeObj(uploadReservation);
 		return;
 	}
-	m_releaseQueue[currentCommandBuffer].emplace_back(it->allocation);
-	m_activeAllocations.erase(it);
+	m_releaseQueue[currentCommandBuffer].emplace_back(uploadReservation->heapAllocation);
 	m_poolAllocatorReservation.freeObj(uploadReservation);
 }
 
