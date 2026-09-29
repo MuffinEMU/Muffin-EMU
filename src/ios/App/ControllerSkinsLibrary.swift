@@ -25,7 +25,9 @@ struct ControllerSkinLibrary {
     ]
 
     static func getSkin(by name: String) -> WiiUControllerSkin? {
-        return allSkins.first { $0.name == name }
+        // "Custom" was renamed "Violet"; keep resolving the old stored name.
+        let current = name == "Custom" ? "Violet" : name
+        return allSkins.first { $0.name == current }
     }
 }
 
