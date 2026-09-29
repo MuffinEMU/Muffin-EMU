@@ -1266,7 +1266,14 @@ void OpenGLRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, 
 
 LatteTextureReadbackInfo* OpenGLRenderer::texture_createReadback(LatteTextureView* textureView)
 {
-	return new LatteTextureReadbackInfoGL(textureView);
+	auto* info = new LatteTextureReadbackInfoGL(textureView);
+	if (info->m_rowPitch == 0)
+	{
+		// unsupported format: the backend never set up a pitch or buffer size, callers handle null
+		delete info;
+		return nullptr;
+	}
+	return info;
 }
 
 void LatteDraw_resetAttributePointerCache();
