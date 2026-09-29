@@ -4,7 +4,7 @@ import Foundation
 /// under the "muffin." prefix that is a setting, plus Resolution ("renderScale") and
 /// Emulated Clock ("timebaseShift"), which predate the prefix.
 ///
-/// Never touched: the premium unlock, the selected theme,
+/// Never touched: the premium unlock, the selected theme, the onboarding-completed flag,
 /// and per-game overrides (only removed if the person picks "Reset Settings and Per-Game
 /// Options"). The library, favorites and Wii U keys aren't "muffin." keys at all.
 enum SettingsDefaults {
@@ -14,6 +14,7 @@ enum SettingsDefaults {
         "muffin.premium.token",
         "muffin.premium.ik",
         "muffin.theme.selectedId",
+        OnboardingState.completedKey,
     ]
 
     /// @MainActor because it touches two main-actor-isolated stores on the way out:
