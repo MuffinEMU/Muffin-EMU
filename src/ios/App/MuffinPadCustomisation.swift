@@ -2,8 +2,6 @@
 //  MuffinPadCustomisation.swift
 //  Muffin - movable/resizable button groups, colour presets, and the two file formats.
 //
-//  Wired into the preview showcase build (branch preview/showcase-sneak-peek). Lives under docs/ next to GamePadGeometry.swift, which it needs.
-//
 //  Three things live here:
 //
 //  1. `PadGroup` - the nine things a user can pick up and move. The shipping
@@ -276,12 +274,9 @@ struct MuffinColourFile: Codable, Equatable {
 
 /// Fit a layout to a device it was not authored on, then fix only what is actually broken.
 ///
-/// The alternatives were considered and rejected in front of the numbers. Pure fit, on an
-/// iPad-Pro layout opened on an iPhone 15, scales D from 55.2 to 20.5 pt - 4.6 mm buttons,
-/// 46% of the touch floor, faithful and unplayable. A full re-solve produces exactly what
-/// the phone would have produced with no preset loaded at all, which makes choosing a
-/// preset meaningless for anything but colour. So: fit, then intervene only where a rule
-/// is broken, and say what was changed.
+/// Pure fit alone can scale buttons below the touch floor (an iPad Pro layout on an
+/// iPhone becomes unplayably small); a full re-solve ignores the preset. So: fit, then
+/// intervene only where a rule is broken, and report what was changed.
 enum PadPresetFitter {
 
     struct Intervention: Equatable {
@@ -381,25 +376,13 @@ enum PadPresetFitter {
         //    a layout that still collides at 90% of the touch floor gives up and takes
         //    this device's own position for the groups that are fighting.
         //
-        //    The clamp has to run again after every shrink, not just once before this
-        //    loop starts. `centres(at:)` rebuilds raw anchor-relative positions from
-        //    scratch - it has no memory of anything the clamp did - so a shrink without a
-        //    following clamp put every group the clamp had already fixed back off the
-        //    edge it was fixed from. That silently undid all of step 3 whenever an
-        //    overlap forced even one shrink, which was every transplant onto a much
-        //    smaller device.
+        //    The clamp runs again after every shrink, because `centres(at:)` rebuilds raw
+        //    positions with no memory of earlier clamping.
         var placed = centres(at: unit)
         clampToSafeArea(&placed, at: unit)
         var shrinkSteps = 0, fellBack: Set<PadGroup> = []
-        // Bounded, but not by attempt count alone ending the search early: every branch
-        // below either shrinks (which can only ever run out at the touch floor) or
-        // permanently resolves one pair by falling back to native, so the total number of
-        // passes is bounded by shrink-steps-to-the-floor plus at most nine fallbacks - one
-        // per group - which is what makes it safe to let this run until it is actually
-        // done rather than giving up at a fixed iteration count with an overlap still on
-        // screen. That was the previous bug: a 25-iteration cap that could be exhausted
-        // while two groups were still drawn through each other, with nothing after it to
-        // catch that.
+        // Terminates: each pass either shrinks (bounded by the touch floor) or permanently
+        // resolves one pair by falling back to native (at most one per group).
         while let clash = firstOverlap(placed, file: file, native: native, unit: unit) {
             let next = unit * 0.97
             if next < PadLayout.touchFloor * 0.9 || (fellBack.contains(clash.0) && fellBack.contains(clash.1)) {
@@ -516,16 +499,9 @@ enum PadPresetFitter {
         return CGSize(width: b.maxX - b.minX, height: b.maxY - b.minY)
     }
 
-    /// A control's shape as a small set of axis-aligned or circular primitives - a cross
-    /// is genuinely two rectangles (the arms), not the square that bounds it, which is
-    /// the whole reason this exists instead of comparing groups' bounding boxes. That
-    /// distinction is not pedantic here: +/- in elbow mode is deliberately placed in the
-    /// d-pad's empty corner (the diagonal a thumb already sweeps across), so a
-    /// bounding-box test reports a permanent false clash exactly where the design
-    /// intends the two to sit near each other without touching. This was the actual cause
-    /// of a same-device round trip failing on every elbow-mode phone: the bounding-box
-    /// test saw the d-pad's whole square, not its cross, and treated minus sitting in the
-    /// square's empty corner as an overlap that was never really there.
+    /// A control's shape as axis-aligned or circular primitives. A cross is two rectangles,
+    /// not its bounding square: +/- in elbow mode sits in the d-pad's empty corner, which
+    /// a bounding-box test would report as a false overlap.
     private enum Primitive { case circle(CGPoint, CGFloat); case rect(CGPoint, CGFloat, CGFloat) }
 
     private static func primitives(for p: PadLayout.Placement) -> [Primitive] {

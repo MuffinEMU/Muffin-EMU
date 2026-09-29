@@ -1,13 +1,6 @@
 import SwiftUI
 
-/// Named color constants for each controller skin preset (ControllerSkinsLibrary.swift,
-/// ControllerSkins.swift's .pro/.dark). These are deliberate, console-accurate colors -
-/// GameCube's green/red/blue/yellow, PlayStation's blue/red/orange/green, N64's red
-/// D-pad, etc. - not app chrome, so they intentionally do NOT reference MuffinTheme:
-/// collapsing every skin into the bakery brand palette would make every preset look
-/// identically orange and defeat the point of a skin picker with visually distinct
-/// options. Centralizing them here (instead of inline Color(red:...) literals) is
-/// purely about removing magic numbers, not rebranding them.
+/// Console-accurate skin colours; deliberately independent of MuffinTheme.
 enum ControllerSkinPalette {
     enum Standard {
         static let dpad = Color(red: 0.7, green: 0.7, blue: 0.7)
@@ -179,24 +172,5 @@ enum ControllerSkinPalette {
         static let x = Color(red: 0.2, green: 0.5, blue: 0.8)
         static let y = Color(red: 0.8, green: 0.2, blue: 0.2)
         static let background = Color(red: 0.1, green: 0.08, blue: 0.12)
-    }
-
-    // ControllerSkins.swift's .pro / .dark (defined separately from the main library)
-    enum Pro {
-        static let dpad = Color(red: 0.2, green: 0.2, blue: 0.2)
-        static let a = Color(red: 0.15, green: 0.7, blue: 0.25)
-        static let b = Color(red: 0.9, green: 0.2, blue: 0.15)
-        static let x = Color(red: 0.0, green: 0.4, blue: 0.95)
-        static let y = Color(red: 0.95, green: 0.7, blue: 0.0)
-        static let background = Color(red: 0.1, green: 0.1, blue: 0.12)
-    }
-
-    enum Dark {
-        static let dpad = Color(red: 0.4, green: 0.4, blue: 0.4)
-        static let a = Color(red: 0.1, green: 0.6, blue: 0.2)
-        static let b = Color(red: 0.8, green: 0.15, blue: 0.1)
-        static let x = Color(red: 0.0, green: 0.35, blue: 0.9)
-        static let y = Color(red: 0.9, green: 0.65, blue: 0.0)
-        static let background = Color(red: 0.08, green: 0.08, blue: 0.1)
     }
 }
