@@ -1,9 +1,8 @@
 /*!
  * MuffinEMU site theme engine — shared by every page.
  *
- * Real theme data, transcribed by hand from src/ios/App/MuffinThemePresets.swift
- * (light/dark hex pairs, 14 tokens per theme) and src/ios/App/MuffinTheme.swift
- * (the gradient math). Nothing here is invented:
+ * Theme data transcribed from src/ios/App/MuffinThemePresets.swift and
+ * MuffinTheme.swift (14 light/dark hex pairs per theme, plus the gradient math).
  *
  *   - All 31 in-app themes are included: the 28 free ones plus the 3 "Pro" icon
  *     themes (Diamond Ice, Gold VIP, Holographic), which are unlocked in-app by a

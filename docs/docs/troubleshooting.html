@@ -70,7 +70,7 @@
       </ol>
     </nav>
     <h1>Troubleshooting</h1>
-    <p class="subtitle">The failures that actually happen, each answered in the first line. If none of these match, the last section covers what to attach to a bug report.</p>
+    <p class="subtitle">Common problems and how to fix them. If none of these match, the last section covers what to attach to a bug report.</p>
     <nav class="docs-toc" aria-labelledby="toc-heading">
       <p id="toc-heading">On this page</p>
       <ul>
@@ -93,26 +93,26 @@
     <section class="symptom" id="interpreter">
       <h2>The game seems to be running on the interpreter, not the recompiler</h2>
       <p class="symptom-answer">Check Settings &gt; CPU first — it always states which mode this launch got, and why.</p>
-      <p>The recompiler needs <em>both</em> a JIT enabler attached (StikJIT, or SideStore's or LiveContainer's own attach) <em>and</em> the recompiler switch on in Settings &gt; CPU. Missing either one, MuffinEMU falls back to the interpreter automatically rather than failing. See <a href="installation.html#jit">JIT requirements</a>.</p>
+      <p>The recompiler needs <em>both</em> a JIT enabler attached (StikJIT, or SideStore's or LiveContainer's own attach) <em>and</em> the recompiler switch on in Settings &gt; CPU. Missing either one, MuffinEMU uses the interpreter. See <a href="installation.html#jit">JIT requirements</a>.</p>
     </section>
 
     <section class="symptom" id="glitches">
       <h2>A game glitches, desyncs, or crashes</h2>
       <p class="symptom-answer">Try Settings &gt; CPU &gt; "Favour accuracy", then restart the game.</p>
       <p>It is slower, but it trades speed for correctness on titles that do not get along with the fast path. CPU settings do not apply mid-session, so the restart is required, not optional.</p>
-      <p>If a game needs geometry shaders or RECTS draws, note that a GPU without mesh shader support — the A12Z among them — emulates those with compute passes, which is not always a perfect substitute.</p>
+      <p>If a game needs geometry shaders or RECTS draws, GPUs without mesh shader support (the A12Z among them) skip them, so some effects can be missing.</p>
     </section>
 
     <section class="symptom" id="save-state">
       <h2>A save state won't load</h2>
-      <p class="symptom-answer">This is refused on purpose if the game was quit, relaunched, or the app restarted since the save was taken.</p>
-      <p>A save state only loads back into the exact same running instance it came from. Loading is refused outright unless the running title's ID, thread list, and memory layout all match the save exactly — see <a href="save-states.html#limit">Save States</a> for the full reasoning. For anything that needs to survive between sessions, use the game's own normal saves.</p>
+      <p class="symptom-answer">A save state only loads into the same running game it was saved from. See Save States.</p>
+      <p>If you quit the game or the app since the save was taken, it won't load. See <a href="save-states.html">Save States</a>. To keep progress between sessions, use the game's own normal saves.</p>
     </section>
 
     <section class="symptom" id="save-state-glitch">
       <h2>After loading a save state, something looks briefly wrong on screen</h2>
-      <p class="symptom-answer">Expected, and not lost progress.</p>
-      <p>A texture or shader that changed since the save may flash its old contents for a moment, until the game's own next draw call refreshes it. See <a href="save-states.html#captured">Save States</a> for why GPU state is deliberately not part of what is captured.</p>
+      <p class="symptom-answer">Normal.</p>
+      <p>A texture may show its old picture for a moment after loading, until the game redraws it. Nothing is lost. See <a href="save-states.html#captured">Save States</a>.</p>
     </section>
 
     <section class="symptom" id="not-signed">
@@ -123,17 +123,17 @@
 
     <section class="symptom" id="tv">
       <h2>Nothing shows up on my TV or second display</h2>
-      <p class="symptom-answer">True dual-screen output has never been confirmed working on real hardware.</p>
+      <p class="symptom-answer">Second-display output hasn't been tested. Connecting a display is expected to mirror the TV screen only.</p>
       <div class="callout callout-unverified">
         <span class="callout-label">Not confirmed on hardware</span>
-        <p>The code path exists and is written against the real API, but is expected to fall back to screen-mirroring behaviour — TV screen only, mirrored — rather than routing the TV and GamePad to separate displays. See <a href="screen-layout.html#external-display">External display routing</a> for the full breakdown of what is and is not confirmed.</p>
+        <p>See <a href="screen-layout.html#external-display">Screen Layout</a> for what is and isn't confirmed.</p>
       </div>
     </section>
 
     <section class="symptom" id="logs">
       <h2>Collecting logs before filing a bug</h2>
       <p class="symptom-answer">Two files matter: the running <code>log.txt</code>, and <code>Documents/CemuCrashLog.txt</code>.</p>
-      <p><code>CemuCrashLog.txt</code> is a checkpoint trail written with a raw synchronous write, specifically so it survives even an abrupt process termination. If the app never got far enough to open a log at all, there may be no <code>CemuCrashLog.txt</code> to send — say so in your report rather than assuming one exists.</p>
+      <p>Attach <code>log.txt</code> and <code>Documents/CemuCrashLog.txt</code>. If the app crashed before a log existed, there may be no <code>CemuCrashLog.txt</code>; say so in your report.</p>
       <p>Attach both when you can, and open an issue at <a href="https://github.com/kiddreads/MuffinEMU/issues">github.com/kiddreads/MuffinEMU/issues</a>.</p>
     </section>
 

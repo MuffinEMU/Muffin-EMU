@@ -58,7 +58,7 @@ MuffinEMU is under active development and releases often. Compatibility is not y
 
 Known issues:
 
-- **On-screen controls** — MuffinEMU's own pad is currently not responding reliably. A fix is in progress.
+- **On-screen controls** — the on-screen controls don't respond reliably yet. A fix is on the way.
 - **Vulkan** — on A12Z-class iPads the Vulkan renderer fails to find a suitable GPU. Use Metal, the default.
 - **Older GPUs** — devices without mesh shader support (A12Z and earlier) skip geometry-shader and RECTS draws, which can leave some effects missing.
 

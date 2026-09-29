@@ -51,4 +51,4 @@ Button bindings are persisted in `controllerProfiles/` on the device. When the G
 
 ## Releases
 
-`.github/workflows/build-ios-app.yml` builds, verifies and publishes both IPAs. Each commit carries a `Release-note:` trailer written for players, and the release notes are assembled from those trailers. Documentation-only changes do not trigger a build.
+`.github/workflows/build-ios-app.yml` builds, verifies and publishes both IPAs. Each commit carries a `Release-note:` trailer written for players, and the release notes are assembled from those trailers. Changes to Markdown files and to `docs/` do not trigger a build.
