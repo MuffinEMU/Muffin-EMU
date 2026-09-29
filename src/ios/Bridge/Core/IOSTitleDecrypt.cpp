@@ -64,6 +64,38 @@ enum
 // there is no benefit to letting the allocator churn on every single one.
 constexpr uint32 kDecryptChunkSize = 4 * 1024 * 1024;
 
+// An FST entry name is untrusted (it comes from the disc image). It must be a single
+// plain path component, otherwise "..", separators or an absolute path would let the
+// output escape the destination folder.
+static bool IsSafeEntryName(const std::string& name)
+{
+	if (name.empty() || name == "." || name == "..")
+		return false;
+	for (char c : name)
+	{
+		if (c == '/' || c == '\\' || c == '\0')
+			return false;
+	}
+	return !fs::path(name).is_absolute();
+}
+
+// True when `child`, lexically normalised, is `root` itself or lies inside it.
+static bool IsInsideRoot(const fs::path& root, const fs::path& child)
+{
+	const fs::path r = root.lexically_normal();
+	const fs::path c = child.lexically_normal();
+	auto ri = r.begin();
+	auto ci = c.begin();
+	for (; ri != r.end(); ++ri, ++ci)
+	{
+		if (ri->empty())
+			continue; // trailing separator on the root
+		if (ci == c.end() || *ri != *ci)
+			return false;
+	}
+	return true;
+}
+
 static bool DecryptWalkDirectory(FSTVolume* volume, const std::string& fstPath, const fs::path& destPath,
 	const fs::path& destRoot, uint32& failures,
 	uint64& bytesWritten, uint32& filesWritten, std::atomic_bool& cancelRequested,
@@ -88,10 +120,20 @@ static bool DecryptWalkDirectory(FSTVolume* volume, const std::string& fstPath, 
 			return false;
 
 		std::string name(volume->GetName(entry));
-		if (name.empty())
+		if (!IsSafeEntryName(name))
+		{
+			cemuLog_log(LogType::Force, "Decrypt: refusing unsafe entry name in '{}'", fstPath);
+			failures++;
 			continue;
+		}
 		std::string childFstPath = fstPath.empty() ? name : (fstPath + "/" + name);
 		fs::path childDestPath = destPath / name;
+		if (!IsInsideRoot(destRoot, childDestPath))
+		{
+			cemuLog_log(LogType::Force, "Decrypt: refusing entry that would leave the destination: '{}'", childFstPath);
+			failures++;
+			continue;
+		}
 
 		if (volume->IsDirectory(entry))
 		{
@@ -299,8 +341,12 @@ bool WuaWalkDirectory(ZArchiveWriter& writer, const std::string& archivePath, co
 			return false;
 
 		std::string name(dirEntry.GetPath());
-		if (name.empty())
+		if (!IsSafeEntryName(name))
+		{
+			cemuLog_log(LogType::Force, "Decrypt-to-WUA: refusing unsafe entry name in '{}'", fscPath);
+			failures++;
 			continue;
+		}
 
 		if (dirEntry.isDirectory)
 		{
