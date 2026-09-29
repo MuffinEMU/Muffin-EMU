@@ -218,13 +218,19 @@ final class ThermalMonitor: ObservableObject {
     /// up leaving the user's Render Scale pinned at battery saver forever.
     private func unwind(reason: String) {
         cemu_bridge_set_thermal_throttle_micros(0)
-        if let restored = userChosenScale {
-            UserDefaults.standard.set(restored.rawValue, forKey: RenderScale.storageKey)
-        }
-        userChosenScale = nil
+        restoreChosenScale()
         isThrottling = false
         DisplayRouter.shared.reapplyRenderScale(reason: "thermal: \(reason)")
         cemu_bridge_log_line("iOS thermal: released the governor and restored the chosen render scale (\(reason))")
+    }
+
+    /// Puts the remembered Resolution back, unless the user picked a different one while
+    /// throttled (then their new choice stands).
+    private func restoreChosenScale() {
+        if let restored = userChosenScale, RenderScale.current == .battery {
+            UserDefaults.standard.set(restored.rawValue, forKey: RenderScale.storageKey)
+        }
+        userChosenScale = nil
     }
 
     /// Called when a title stops. A throttle left armed across launches would leave the
@@ -237,10 +243,7 @@ final class ThermalMonitor: ObservableObject {
         // anywhere admitting it.
         cemu_bridge_set_thermal_throttle_micros(0)
         guard isThrottling else { return }
-        if let restored = userChosenScale {
-            UserDefaults.standard.set(restored.rawValue, forKey: RenderScale.storageKey)
-        }
-        userChosenScale = nil
+        restoreChosenScale()
         isThrottling = false
         cemu_bridge_log_line("iOS thermal: title stopped while throttled; governor released and render scale restored")
     }

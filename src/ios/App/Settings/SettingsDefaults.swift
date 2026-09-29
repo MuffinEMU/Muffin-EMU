@@ -36,6 +36,9 @@ enum SettingsDefaults {
     @MainActor
     static func reset(includingPerGameOverrides: Bool) {
         let defaults = UserDefaults.standard
+        // Unwind an active thermal throttle first: it restores the Resolution the user
+        // chose from a muffin.* key that the loop below deletes.
+        ThermalMonitor.shared.titleStopped()
         var excluded = alwaysExcludedKeys
         if !includingPerGameOverrides {
             excluded.insert(PerGameSettingsStore.storageKey)
@@ -68,11 +71,6 @@ enum SettingsDefaults {
         cemu_bridge_set_favour_accuracy(false)
         cemu_bridge_set_low_power_mode(LowPowerMode.defaultValue)
         cemu_bridge_set_multicore_enabled(MulticoreMode.defaultValue)
-        // No bridge call - the thermal response lives entirely on the Swift side. The
-        // reset loop already removed the key, so this just makes sure a throttle that was
-        // active at the moment of the reset is unwound rather than left holding the user's
-        // Render Scale at battery saver.
-        ThermalMonitor.shared.titleStopped()
         cemu_bridge_set_async_shader_compile(true)
         cemu_bridge_set_vsync_enabled(true)
         cemu_bridge_set_stretch_to_fill(FrameStretch.defaultValue)
