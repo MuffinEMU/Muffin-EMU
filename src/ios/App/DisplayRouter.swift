@@ -39,20 +39,9 @@ enum ExternalDisplaySystemSettings {
     static let defaultEnabled = false
 }
 
-/// How the TV and GamePad screens share THIS device's own screen - a true port of
-/// MeloCafe's `ScreenLayout` (Common/Models/ScreenLayout.swift): same cases, same
-/// wording, same `initialValue` migration shape, because this is literally that
-/// feature and nothing here is invented. Independent of `DisplayRouter.Placement`
-/// above, which is about routing to a genuine SECOND physical display - this instead
-/// decides how the two Wii U screens are arranged on the ONE screen most people are
-/// actually using, and only applies while `Placement` is not `.dualScreen` (a real
-/// external display still takes the TV, exactly as before this feature existed).
-///
-/// One deliberate departure from MeloCafe's literal source: `initialValue` reads/writes
-/// `LocalScreenLayoutSettings.layoutKey` ("muffin.display.screenLayout"), not MeloCafe's
-/// bare "screenLayout" - every other MuffinEMU setting is namespaced `muffin.*`, and
-/// this is the one place that convention actually matters (a bare "screenLayout" key
-/// could collide with something else reading/writing UserDefaults directly).
+/// How the TV and GamePad screens share this device's own screen: single screen, both
+/// screens, or both with a small GamePad in the top-right corner. Applies while `Placement`
+/// is not `.dualScreen`. Stored under `muffin.display.screenLayout`.
 enum ScreenLayout: String, CaseIterable, Identifiable {
     case singleScreen
     case bothScreens
@@ -71,35 +60,20 @@ enum ScreenLayout: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .singleScreen:
-            return "Only the selected screen renders. Use the swap button to switch between TV and GamePad."
+            return "Shows one screen at a time. Tap the swap button to switch between TV and GamePad."
         case .bothScreens:
-            return "TV and GamePad automatically adjust: stacked in portrait and side by side in landscape."
+            return "Shows both screens side by side."
         case .smallGamePadTopRight:
-            return "A small GamePad appears at the top right in its own column beside the TV View."
+            return "Shows the TV screen with a small GamePad screen in the top-right corner."
         }
     }
 
     var showsBothScreens: Bool { self != .singleScreen }
 
-    /// MeloCafe's own migration path from its pre-`ScreenLayout` era, when this was two
-    /// separate booleans (`showBothScreens`/`smallGamePadTopRight`). MuffinEMU never had
-    /// those keys - this feature is new here, not migrated from an older one - so in
-    /// practice the `defaults.bool(forKey:)` reads below always come back `false` and
-    /// this always lands on `.singleScreen` the first time. Ported anyway rather than
-    /// simplified away: it costs nothing, it's the actual shape MeloCafe's own
-    /// `EmulationView`/`SettingsView` initialize `screenLayout` from
-    /// (`@AppStorage("screenLayout") private var screenLayout = ScreenLayout.initialValue`),
-    /// and simplifying it here would be exactly the kind of "equivalent but hand-rewritten"
-    /// substitution this port is deliberately avoiding.
+    /// The saved layout, or `.singleScreen` if none has been chosen.
     static var initialValue: ScreenLayout {
-        let defaults = UserDefaults.standard
-        if let stored = defaults.string(forKey: LocalScreenLayoutSettings.layoutKey),
-           let layout = ScreenLayout(rawValue: stored) {
-            return layout
-        }
-        let layout: ScreenLayout = defaults.bool(forKey: "showBothScreens") ? (defaults.bool(forKey: "smallGamePadTopRight") ? .smallGamePadTopRight : .bothScreens) : .singleScreen
-        defaults.set(layout.rawValue, forKey: LocalScreenLayoutSettings.layoutKey)
-        return layout
+        UserDefaults.standard.string(forKey: LocalScreenLayoutSettings.layoutKey)
+            .flatMap(ScreenLayout.init(rawValue:)) ?? .singleScreen
     }
 }
 
@@ -112,58 +86,30 @@ enum LocalScreenLayoutSettings {
     static let layoutKey = "muffin.display.screenLayout"
     static let defaultLayout = ScreenLayout.singleScreen
 
-    /// Shown only while `layoutKey` is `.singleScreen` - the only layout where exactly
-    /// one of the two screens is on screen at a time and swapping which one means
-    /// anything. On by default, matching MeloCafe.
+    /// Shown only while the layout is `.singleScreen`, the only layout where swapping means anything.
     static let showSwapButtonKey = "muffin.display.showLocalSwapButton"
     static let defaultShowSwapButton = true
 }
 
-/// Decides which physical display each of the Wii U's two screens goes to, and keeps
-/// that decision current while the app runs.
-///
-/// The Wii U has two outputs: the TV and the GamePad (DRC). Cemu models them as two
-/// windows, and the Metal renderer keeps a separate `CAMetalLayer` for each. Desktop
-/// Cemu lets the user open a second OS window for the GamePad; on iOS the only way to
-/// genuinely show two screens at once is a second physical display, so that is what
-/// this watches for.
-///
-/// Three placements, and the log always says which one is in force and why:
-///
-/// - `.dualScreen` — an external display is connected AND the app has a `UIWindowScene`
-///   for it, so we can own a window there. TV goes to the external display, GamePad
-///   stays on the device. Both Cemu windows get a real layer.
-/// - `.deviceMirrored` — an external display is connected but the app has no scene for
-///   it, which is what plain AirPlay/screen mirroring looks like from inside the app:
-///   the system is already copying the device's screen to the TV, and the app is not
-///   given a separate drawing surface. The TV screen stays on the device (and reaches
-///   the TV through the mirror). The GamePad screen is not rendered.
-/// - `.deviceOnly` — no external display. TV screen on the device, GamePad screen not
-///   rendered.
-///
-/// **"Not rendered" means no pad surface is registered at all**, not a surface that
-/// fails. `MetalRenderer::IsPadWindowActive()` is exactly "the pad layer exists", and
-/// every renderer entry point that touches the pad window now tests it first, so the
-/// engine skips that work instead of reaching `AcquireDrawable()` and finding nothing.
-/// That is the whole point of routing this from one place: there is no configuration
-/// in which a Cemu window exists without a layer behind it.
-///
-/// **What is verified and what is not.** Detection and the `.deviceOnly` path are what
-/// runs on a plain iPad and are exercised every launch. The `.dualScreen` path is
-/// written against the real UIKit API but has never been exercised — nobody has run
-/// this with a display attached, and the app ships no external-display scene
-/// configuration, so in practice `externalWindowScene(for:)` is expected to come back
-/// nil today and the router to land on `.deviceMirrored`. The log line says which
-/// branch was taken; do not assume dual-screen works until a device log shows
-/// `placement=dualScreen`.
-/// A view whose own backing layer is a `CAMetalLayer`. The core's window system renders
-/// into the registered view's layer itself (Metal draws into it, MoltenVK builds its Vulkan
-/// surface from it), so the TV and GamePad views must be this, not a plain `UIView` with a
-/// sublayer added later.
+/// A view whose own backing layer is a `CAMetalLayer`. The core renders into the
+/// registered view's layer directly, so the TV and GamePad views must be this type.
 final class MetalLayerView: UIView {
     override class var layerClass: AnyClass { CAMetalLayer.self }
 }
 
+/// Decides which physical display each of the Wii U's two screens goes to, and keeps
+/// that decision current while the app runs. Cemu keeps a separate `CAMetalLayer` for the TV
+/// and the GamePad.
+///
+/// - `.dualScreen`: an external display is connected and the app has a `UIWindowScene` for it.
+///   TV goes to the external display, GamePad stays on the device.
+/// - `.deviceMirrored`: an external display is connected without a scene (plain screen
+///   mirroring). The TV stays on the device and the GamePad screen is not rendered.
+/// - `.deviceOnly`: no external display. TV on the device, GamePad screen not rendered.
+///
+/// "Not rendered" means no pad surface is registered, so the engine skips pad work
+/// (`MetalRenderer::IsPadWindowActive()`). `.deviceOnly` is what runs on a plain iPad;
+/// `.dualScreen` has not been tested with a display attached. The log records the placement.
 @MainActor
 final class DisplayRouter: ObservableObject {
     static let shared = DisplayRouter()
@@ -246,37 +192,9 @@ final class DisplayRouter: ObservableObject {
     }
 
     /// Returns the same `PadContainerView` on every call, creating it once on first use.
-    /// This is the actual fix that makes it safe to mount `PadMetalViewIOS` the way
-    /// MeloCafe's real `EmulationView` mounts its GamePad view: conditionally, via
-    /// `ForEach(visibleScreens)`, added and removed from the tree as Screen Layout and
-    /// the swap state change.
-    ///
-    /// Before this cache existed, `PadMetalViewIOS.makeUIView()` returned a brand new
-    /// `PadContainerView()` on every call. `attachLocalPadContainer(_:)` only updates
-    /// `localPadContainer` and re-runs `syncLocalPadSurface()` when the container it's
-    /// handed is a genuinely different object; `syncLocalPadSurface()` in turn only ever
-    /// CREATES a pad surface when none is registered yet, or RELEASES one when none
-    /// should exist any more - it has no third branch that reparents an
-    /// already-registered surface onto a newly-handed container (unlike
-    /// `placeTVOnDevice()`, which explicitly checks `tvRenderView.superview !== container`
-    /// and moves it every time). So the moment SwiftUI dropped `PadMetalViewIOS` from the
-    /// tree - Screen Layout swapping away from showing the pad - and later re-added it,
-    /// `attachLocalPadContainer` saw a container that was not `localPadContainer`, set it
-    /// as the new one, `syncLocalPadSurface()` saw `havePad == true` already (the surface
-    /// was still registered, just hosted in the OLD, now-detached container) and did
-    /// nothing, and the live pad `CAMetalLayer` was left a subview of a container with no
-    /// superview of its own - a silent black screen the next time the layout swapped back
-    /// to showing the pad. That was the real, sole cause of the black-screen regression a
-    /// literal port of MeloCafe's conditionally-mounted `ForEach` hit before.
-    ///
-    /// Caching the container here closes the gap at its actual source rather than
-    /// teaching `syncLocalPadSurface()` a third branch: `makeUIView()` now hands back the
-    /// same object every time, so `attachLocalPadContainer` never sees a "different"
-    /// container to begin with, and the reparent-on-remount case above is simply never
-    /// reached. `attach(deviceContainer:)`, `attachLocalPadContainer(_:)`,
-    /// `syncPadSurface()` and `syncLocalPadSurface()` are unchanged - their own
-    /// idempotent, ignore-if-already-attached logic is exactly what lets a stable,
-    /// cached container flow through them unchanged.
+    /// The pad surface is only created or released by `syncLocalPadSurface()`, not reparented,
+    /// so a container that changed identity on remount left a live pad layer in a detached
+    /// view and a black screen. A stable container avoids that.
     func sharedLocalPadContainer() -> UIView {
         if let existing = sharedLocalPadContainerStorage { return existing }
         let container = PadContainerView()
@@ -340,14 +258,8 @@ final class DisplayRouter: ObservableObject {
         guard !observing else { return }
         observing = true
 
-        // iOS 27 no longer offers windowExternalDisplayNonInteractive scenes on its own
-        // (release notes 177015874), so without this the `externalWindowScene(for:)`
-        // search below can never find one and `.dualScreen` is unreachable by
-        // construction. Registering an accessory does not require a display to be
-        // attached and changes nothing when none is; it only tells the system this app
-        // will drive a non-interactive external scene if one shows up. Compiled out
-        // entirely on a pre-27 SDK - see ExternalDisplayScene.swift for why an
-        // @available check is not sufficient there.
+        // On iOS 27 external-display scenes must be registered explicitly. See
+        // ExternalDisplayScene.swift; compiled out on older SDKs.
         #if compiler(>=6.4)
         if #available(iOS 27.0, *) {
             ExternalDisplaySceneAccessory.registerIfNeeded()
@@ -438,15 +350,8 @@ final class DisplayRouter: ObservableObject {
         externalWindow?.isHidden = true
         externalWindow = nil
         tvSurfaceRegistered = false
-        // Both layout-size caches have to go with the views they describe. They exist to
-        // skip redundant resizes while ONE set of surfaces is alive; they are not
-        // statements about the container, which is process-lifetime-cached
-        // (sharedDeviceContainer()) and keeps whatever size it already had across a title
-        // stop. Leaving them set means the next launch's brand-new render views can be
-        // met by `lastSize == size` on the very first layout pass and never get their
-        // one resize - so launch #2 in a session behaves differently from launch #1 for
-        // no reason visible at the call site. Separate from the MetalLayerHandle scale
-        // bug; found while diagnosing it.
+        // Reset the layout-size caches with the views they describe, so the next launch's new
+        // render views get their first resize.
         lastDeviceContainerLayoutSize = nil
         lastLocalPadContainerLayoutSize = nil
         // A trailing resize scheduled during a drag must not fire into a torn-down
@@ -560,39 +465,17 @@ final class DisplayRouter: ObservableObject {
         }
     }
 
-    /// Called after `DisplaySettingsSection`'s own `@AppStorage` binding has already
-    /// written the new screen-layout value - this only re-routes a title that's
-    /// already running in `.dualScreen`; outside that placement the new value simply
-    /// takes effect the next time one starts, and there's nothing to move yet.
-    ///
-    /// The pad surface is released first rather than reparented in place: unlike
-    /// `tvRenderView`, which `placeTVOnDevice`/`placeTVOnExternalDisplay` already know
-    /// how to move between hosts while live, the pad surface has only ever been
-    /// created or torn down whole, never moved. Releasing it here and letting
-    /// `applyPlacement` -> `syncPadSurface` recreate it fresh on the new host reuses
-    /// that already-correct creation path instead of adding a third, parallel "move"
-    /// path for one setting.
-    /// Re-applies the render scale to the live surfaces, without waiting for a layout
-    /// change to happen to notice.
-    ///
-    /// `tvGeometry()` reads `UIScreen.effectiveRenderScale` fresh on every call, and
-    /// `cemu_bridge_resize_render_surface` pushes that straight through
-    /// `CemuUIKit_UpdateMainWindowSize` into `phys_width/phys_height` and the layer's
-    /// drawable size - so changing `RenderScale.current` and calling this is enough to
-    /// change resolution mid-title. That is the whole reason the thermal response uses
-    /// render scale rather than core count: `_LaunchTitleThread()` has already started
-    /// however many host threads it started, so core count cannot move until the next
-    /// launch, whereas this takes effect on the next frame.
-    ///
-    /// Deliberately does NOT go through `deviceContainerDidLayout(_:)`. That function
-    /// early-returns when the container's size has not changed, which is exactly the case
-    /// here - the view is the same size, it is the SCALE that moved.
+    /// Re-applies the render scale to the live surfaces without waiting for a layout change.
+    /// Does not go through `deviceContainerDidLayout(_:)`, which skips unchanged sizes.
     func reapplyRenderScale(reason: String) {
         resizeTVSurfaceIfRegistered()
         resizePadSurfaceIfRegistered()
         log("render scale re-applied: \(reason)")
     }
 
+    /// Called after the screen-layout setting changes. Only re-routes a title already running in
+    /// `.dualScreen`; otherwise the new value applies on the next launch. The pad surface is
+    /// released and recreated on the new host rather than moved.
     func rerouteForScreenLayoutChange() {
         guard placement == .dualScreen else { return }
         if cemu_bridge_has_pad_render_surface() {
@@ -706,29 +589,9 @@ final class DisplayRouter: ObservableObject {
         if let lastSize = lastDeviceContainerLayoutSize, lastSize == size { return }
         lastDeviceContainerLayoutSize = size
 
-        // On iOS 27 an iPad app is continuously resizable regardless of its
-        // UISupportedInterfaceOrientations (release notes: Apple fixed orientations being
-        // a condition for it, so the OLD behaviour was the bug). This app lists only
-        // LandscapeLeft/Right, so it was previously NOT continuously resizable and this
-        // function saw a handful of discrete sizes; from iOS 27 it is called on every
-        // frame of a Split View divider drag.
-        //
-        // The size-equality check above stops being a filter in that regime - during a
-        // live drag every frame genuinely IS a new size - so the work below would run per
-        // frame: a frame assignment plus a bridge call that reaches
-        // CemuUIKit_UpdateMainWindowSize and reallocates the Metal drawable. Reallocating
-        // a drawable every frame while the emulator is also rendering into it is exactly
-        // the kind of thrash that turns a smooth drag into a stutter.
-        //
-        // Leading-plus-trailing throttle rather than a plain debounce, deliberately. A
-        // trailing-only debounce leaves the picture visibly stale for the whole drag; a
-        // leading-only one leaves it stale FOREVER if the last event lands inside the
-        // window, which is the same class of bug as the poisoned cache fixed in
-        // titleStopped(). Leading gives immediate feedback, trailing guarantees the final
-        // size is always applied.
-        //
-        // Gated on the capability, so every other OS and every iPhone keeps byte-identical
-        // behaviour and this cannot regress anything that works today.
+        // On iOS 27 an iPad app is continuously resizable, so this runs on every frame of a
+        // Split View drag. Throttle the drawable reallocation: apply the first change at once and
+        // always apply the final size afterwards.
         guard PlatformCapabilities.expectsContinuousIPadResize else {
             applyContainerResize()
             return
@@ -797,21 +660,11 @@ final class DisplayRouter: ObservableObject {
         )
     }
 
-    /// Mirrors resizeTVSurfaceIfRegistered() for the GamePad surface. The only caller
-    /// today is deviceContainerDidLayout(): a registered pad surface is always
-    /// hosted on this device (syncPadSurface() below only ever creates one in
-    /// .dualScreen, where the TV moves to the external display and the pad stays
-    /// here), so it is sized from the same container as the TV surface and needs the
-    /// same layout-triggered resize.
+    /// Mirrors resizeTVSurfaceIfRegistered() for the GamePad surface. Called from
+    /// deviceContainerDidLayout() and localPadContainerDidLayout(), and when render scale changes.
     private func resizePadSurfaceIfRegistered() {
         guard cemu_bridge_has_pad_render_surface() else { return }
-        // Same defensive direct sync as resizeTVSurfaceIfRegistered() now does for
-        // tvRenderView, applied here too even though the report that started that fix
-        // was TV-only: padRenderView's frame is set once, at creation, exactly the same
-        // way tvRenderView's was, and nothing else here re-asserts it on an ordinary
-        // resize - it was relying on the same autoresizingMask-alone assumption that
-        // turned out not to be trustworthy for the TV. Costs nothing when the frame was
-        // already correct.
+        // Re-assert the frame; autoresizing alone is not reliable here.
         if let host = padRenderView?.superview {
             padRenderView?.frame = host.bounds
         }
@@ -942,15 +795,9 @@ final class DisplayRouter: ObservableObject {
         }
     }
 
-    /// `EmulatorViewOptimized`'s Single Screen swap button and its `.onChange(of:)`
-    /// handlers for `screenLayout`/local-swap state call this - it only ever changes
-    /// which of the two ALREADY-registered surfaces (see `syncLocalPadSurface()` above)
-    /// the renderer actually draws to, via `cemu_bridge_set_visible_outputs`, the same
-    /// register-once/toggle-visibility split MeloCafe's own `updateVisibleOutputs()`
-    /// uses. Releases every held button when the pad screen is the one being hidden -
-    /// same reasoning as the edit-layout toggle button already uses
-    /// (`cemu_bridge_release_all_buttons()`): a press in flight on a screen about to
-    /// disappear would otherwise never see its release.
+    /// Called by the Single Screen swap button and layout change handlers. Switches which of the
+    /// already-registered surfaces the renderer draws to. Releases held buttons when the pad
+    /// screen is hidden so an in-flight press still sees its release.
     func updateLocalVisibleOutputs(showTV: Bool, showPad: Bool) {
         guard placement != .dualScreen else { return }
         if !showPad { cemu_bridge_release_all_buttons() }
@@ -1000,24 +847,8 @@ final class DisplayRouter: ObservableObject {
         if placement == .dualScreen, !swapScreens, let window = externalWindow {
             return (window.bounds.size, window.screen.effectiveRenderScale)
         }
-        // This used to return UIScreen.main.bounds unconditionally - the WHOLE
-        // screen, including the header bar area that is not part of
-        // `deviceContainer` (the area MetalViewIOS actually carves out for the
-        // emulator view - see MetalView.swift). CreateMetalLayer() sizes the TV
-        // CAMetalLayer from this value and adds it as a sublayer of tvRenderView,
-        // which IS sized to deviceContainer (placeTVOnDevice() below sets
-        // `tvRenderView.frame = container.bounds`). CALayer does not clip an
-        // oversized sublayer, and the shipping SwiftUI path did not call .clipped()
-        // either, so a sublayer taller than the view hosting it simply rendered past
-        // that view's - and the screen's - bottom edge. The letterboxing inside that
-        // sublayer (LatteRenderTarget_getScreenImageArea) was never the problem; it
-        // was centering the image correctly inside a canvas that was the wrong size.
-        //
-        // Same `bounds == .zero ? screen : bounds` fallback syncPadSurface() already
-        // uses below, and for the same reason: this runs from registerSurfaces(),
-        // called from MetalViewIOS.makeUIView() before SwiftUI has necessarily laid
-        // deviceContainer out, and boot depends on registration happening at all
-        // rather than waiting for a nonzero size. Kept deliberately.
+        // Size the layer from the container the emulator view actually occupies, not the whole
+        // screen, and fall back to the screen size if SwiftUI has not laid it out yet.
         let containerSize = deviceContainer?.bounds.size ?? .zero
         let size = containerSize == .zero ? UIScreen.main.bounds.size : containerSize
         let scale = (deviceContainer?.window?.screen ?? UIScreen.main).effectiveRenderScale
