@@ -8,6 +8,7 @@ struct PremiumSettingsSection: View {
     @State private var premiumUnlocked = PremiumUnlock.isUnlocked
     @State private var premiumCodeInput = ""
     @State private var premiumCodeError: String?
+    @State private var isCheckingCode = false
 
     var body: some View {
         Section {
@@ -61,17 +62,29 @@ struct PremiumSettingsSection: View {
                     // the only purchase action in the app, and on iOS 26 that style is
                     // real Liquid Glass tinted muffin-top, which is exactly the weight a
                     // paid-tier call to action should carry.
-                    Button("Unlock") {
-                        if PremiumUnlock.attemptUnlock(code: premiumCodeInput) {
-                            premiumUnlocked = true
-                            premiumCodeInput = ""
-                            premiumCodeError = nil
+                    Button {
+                        let code = premiumCodeInput
+                        isCheckingCode = true
+                        Task { @MainActor in
+                            let ok = await PremiumUnlock.attemptUnlockOffMain(code: code)
+                            isCheckingCode = false
+                            if ok {
+                                premiumUnlocked = true
+                                premiumCodeInput = ""
+                                premiumCodeError = nil
+                            } else {
+                                premiumCodeError = "That code didn't work."
+                            }
+                        }
+                    } label: {
+                        if isCheckingCode {
+                            ProgressView()
                         } else {
-                            premiumCodeError = "That code didn't work."
+                            Text("Unlock")
                         }
                     }
                     .buttonStyle(MuffinPrimaryButtonStyle())
-                    .disabled(premiumCodeInput.isEmpty)
+                    .disabled(premiumCodeInput.isEmpty || isCheckingCode)
                     .opacity(premiumCodeInput.isEmpty ? 0.5 : 1.0)
 
                     if let premiumCodeError {
