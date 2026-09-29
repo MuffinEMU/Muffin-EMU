@@ -273,6 +273,7 @@ struct DecryptROMView: View {
         case 2: return "No matching key in keys.txt for this disc. Import the right key and try again."
         case 3: return "Couldn't write the decrypted output."
         case 4: return "Cancelled."
+        case 5: return "Some files couldn't be copied, so the decrypted copy is incomplete. Your original wasn't changed. Free up some space and try again."
         default: return "Decryption couldn't start."
         }
     }
