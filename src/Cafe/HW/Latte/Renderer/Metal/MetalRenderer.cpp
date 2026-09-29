@@ -1808,7 +1808,9 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     // Draw
     if (usesGeometryShader)
     {
-        if (hostIndexType != INDEX_TYPE::NONE && vertexShader->resourceMapping.argumentBufferBindingPoint < 0)
+        // indexAllocationMtl is null when index memory could not be reserved; skip the draw then.
+        const bool indexMemoryMissing = hostIndexType != INDEX_TYPE::NONE && !indexAllocationMtl;
+        if (hostIndexType != INDEX_TYPE::NONE && !indexMemoryMissing && vertexShader->resourceMapping.argumentBufferBindingPoint < 0)
             SetBuffer(renderCommandEncoder, METAL_SHADER_TYPE_OBJECT, indexAllocationMtl->mtlBuffer, indexAllocationMtl->bufferOffset, vertexShader->resourceMapping.indexBufferBinding);
 
         uint8 hostIndexTypeU8 = (uint8)hostIndexType;
@@ -1843,7 +1845,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         }
 
         uint64 threadgroupCount = primitivesPerInstance * instanceCount;
-        if (threadgroupCount > 0)
+        if (threadgroupCount > 0 && !indexMemoryMissing)
             renderCommandEncoder->drawMeshThreadgroups(MTL::Size(threadgroupCount, 1, 1), MTL::Size(verticesPerPrimitive, 1, 1), MTL::Size(1, 1, 1));
     }
     else if (usesVertexStreamout)
