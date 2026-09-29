@@ -84,10 +84,10 @@
 
     <h2 id="library">Library &amp; importing</h2>
     <ul>
-      <li><strong>Library &amp; importer</strong> — brings in your own ROM dumps; homebrew is unaffected by keys either way.</li>
+      <li><strong>Library &amp; importer</strong> — import your own game dumps.</li>
       <li><strong><a href="installation.html#keys">keys.txt handling</a></strong> — drop a keys.txt from your own Wii U into the Files app or import it in Settings; nothing is bundled.</li>
-      <li><strong>Decrypt-to-Files and WUA</strong> — exports a decrypted copy of an encrypted disc image to <code>Documents/Decrypted/&lt;gameID&gt;/</code> as either a raw source or a single WUA file, leaving your original encrypted dump completely untouched.</li>
-      <li><strong>DLC and update install</strong> — imports a DLC or update dump into the same <code>Documents/mlc</code> tree the engine's own title scanner already reads, with title-ID matching so a freshly-imported title is picked up before the base game's next launch, and removal via long-press.</li>
+      <li><strong>Decrypt-to-Files and WUA</strong> — save a decrypted copy to <code>Documents/Decrypted/&lt;gameID&gt;/</code> as files or one WUA. Your original is not changed.</li>
+      <li><strong>DLC and updates</strong> — import a DLC or update dump; it is matched to its game automatically. Remove it with a long-press.</li>
       <li><strong>Graphic packs</strong> — browse and toggle packs from <code>Documents/mlc/graphicPacks/</code>; drop in a folder with its own <code>rules.txt</code>, the same layout desktop Cemu uses.</li>
     </ul>
 
@@ -95,25 +95,25 @@
     <ul>
       <li><strong><a href="controls.html">The measured Wii U GamePad</a></strong>, hide-controls, comfort controls, and 20 controller skins.</li>
       <li><strong><a href="controls.html#melo-controller">Melo-Controller</a></strong> — an alternative touch pad with its own layout editor, as a toggle.</li>
-      <li><strong><a href="screen-layout.html">Screen Layout</a></strong> — Single Screen, Adaptive, or GamePad-inset, plus routing to a genuine second display.</li>
+      <li><strong><a href="screen-layout.html">Screen Layout</a></strong> — Single Screen, Adaptive (both screens) or Both Screens (GamePad Top Right), plus output to a second display.</li>
       <li><strong><a href="save-states.html">Save States</a></strong> — 4 numbered slots per game, alongside your normal in-game saves.</li>
     </ul>
 
     <h2 id="look">Look &amp; feel</h2>
     <ul>
-      <li><strong><a href="themes.html">31 app icons and matching themes</a></strong> — 3 unlocked by a free code, everything else free.</li>
+      <li><strong><a href="themes.html">31 app icons and matching themes</a></strong> — three are unlocked with a code, everything else is free.</li>
     </ul>
 
     <h2 id="diagnostics">Diagnostics</h2>
     <ul>
-      <li><strong>In-app launch log</strong> — drains the engine's own log ring live at 10&nbsp;Hz while a title boots, and says so plainly if the ring evicted lines before the viewer could read them, rather than silently showing a tidy but incomplete list.</li>
-      <li><strong>Crash and memory trail</strong> — checkpoints are appended to <code>Documents/CemuCrashLog.txt</code> via a raw synchronous write, so the trail survives even an abrupt, uncatchable process termination (a GPU driver panic, for instance). This is the file to share when reporting a crash.</li>
+      <li><strong>In-app launch log</strong> — shows the log live while a game starts, and tells you if lines were dropped.</li>
+      <li><strong>Crash log</strong> — progress is written to <code>Documents/CemuCrashLog.txt</code> as the app runs, so it survives a hard crash. Attach it to bug reports.</li>
     </ul>
 
     <h2 id="under-the-hood">Under the hood</h2>
-    <p>The renderer is Metal, native to this port rather than a Vulkan translation layer, with an optional Vulkan (MoltenVK) path for titles that prefer it. GPUs without mesh shader support — the A12Z and similar — emulate geometry shaders and RECTS primitives with compute passes instead, and decode BC-compressed textures on the CPU rather than in hardware.</p>
+    <p>The renderer is Metal, with an optional Vulkan (MoltenVK) path. On GPUs without mesh shader support, such as the A12Z, draws that need geometry shaders are skipped, and BC-compressed textures are decoded on the CPU.</p>
     <p>The CPU side runs a multi-core PowerPC interpreter with a predecoded instruction cache; an AArch64 recompiler is present and takes over when a JIT enabler is attached (see <a href="installation.html#jit">JIT requirements</a>).</p>
-    <p>Every build carries a curated set of fixes ported from upstream Cemu on top of the core, plus MuffinEMU's own — real crashes and hangs get tracked and fixed as they are found rather than papered over.</p>
+    <p>Builds include a selection of upstream Cemu fixes plus MuffinEMU's own.</p>
 
     <nav class="doc-next" aria-label="Previous and next page">
       <a href="installation.html"><span class="dir">Previous</span>&larr; Installation</a>

@@ -3,12 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%F0%9F%8E%AE%3C/text%3E%3C/svg%3E">
+<title>MuffinEMU GamePad layout</title>
+<link rel="icon" href="../icon.png">
 <style>body{margin:0}img{max-width:100%}</style>
-</head>
-<body>
-<title>GamePad Clone Layout</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <style>
 :root{
   --ground:#EEF0F5; --surface:#FFFFFF; --surface-2:#F7F8FB; --line:#D6DAE4; --line-soft:#E6E9F0;
@@ -114,6 +111,8 @@ code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.9em;backgroun
   padding:1px 5px;border-radius:4px;border:1px solid var(--line-soft)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
+</head>
+<body>
 
 <div class="wrap">
 <header style="display:flex;flex-direction:column;gap:16px">
@@ -169,7 +168,7 @@ code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.9em;backgroun
   <div class="scroll"><table id="table"><thead><tr>
     <th>Device</th><th>Mode</th><th>D</th><th>vs life-size</th><th>Button</th><th>+ / &minus;</th><th>Picture</th></tr></thead>
     <tbody id="tbody"></tbody></table></div>
-  <p style="font-size:14px"><strong>Every iPad is life-size</strong>, the mini included &mdash; a 1:1 physical replica of the GamePad's controls with + and &minus; in their real place. <strong>iPad Pro 13&Prime; framed gives a 175&nbsp;mm picture</strong> against the hardware's 137&nbsp;mm: a GamePad with a screen 28% bigger than the real one. iPhones land at 81&ndash;96%, all clear of the touch floor.</p>
+  <p style="font-size:14px"><strong>Every iPad is life-size</strong>, the mini included &mdash; a 1:1 physical replica of the GamePad's controls with + and &minus; in their real place. <strong>iPad Pro 13&Prime; framed gives a 175&nbsp;mm picture</strong> against the hardware's 137&nbsp;mm: a GamePad with a screen 26% bigger than the real one. iPhones land at 75&ndash;96%, all clear of the touch floor.</p>
 </section>
 
 <section>
@@ -188,18 +187,6 @@ code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.9em;backgroun
     <tr><td>Body</td><td class="num">24.000 &times; 12.560</td><td class="num">255.0 &times; 133.5</td><td>exactly 24 face buttons wide</td></tr>
     <tr><td>Screen</td><td class="num">12.922 &times; 7.266</td><td class="num">137.3 &times; 77.2</td><td>normalised to exactly 16:9</td></tr>
   </tbody></table></div>
-</section>
-
-<section>
-  <div class="sechead"><h2>Two things to decide</h2></div>
-  <div class="laws">
-    <div class="law"><div class="num">&mdash;</div><div>
-      <h3>The d-pad becomes a cross, and the iPad + / &minus; both move right</h3>
-      <p>Both are the hardware being right, and both are visible changes to a pad people have already learned. Worth a settings toggle if either turns out to be unpopular.</p></div></div>
-    <div class="law"><div class="num">&mdash;</div><div>
-      <h3>The shipping pad anchors to <code>proxy.size</code>, not the safe area</h3>
-      <p>So on every notched iPhone in landscape, the outer controls sit under the Dynamic Island. The resolver here takes a safe rect instead. That's a fix that stands on its own, whatever happens to the rest of this.</p></div></div>
-  </div>
 </section>
 
 <footer>

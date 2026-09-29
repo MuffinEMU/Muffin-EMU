@@ -92,7 +92,7 @@
         <p class="choice-file"><code>MuffinEMU.ipa</code></p>
         <ul>
           <li>Re-signed with your own Apple ID at install.</li>
-          <li>Unsigned on purpose — the installer signs it.</li>
+          <li>Unsigned; the installer signs it.</li>
           <li>JIT entitlements are <strong>stripped</strong> by that re-sign, so you attach JIT separately with StikJIT, or SideStore's or LiveContainer's own JIT attach.</li>
         </ul>
       </div>
@@ -102,14 +102,14 @@
         <ul>
           <li>Ad-hoc signed — no certificate, no team ID.</li>
           <li>JIT entitlements are <strong>embedded in the IPA itself</strong>.</li>
-          <li>Most tools will still call this "not signed". That is what ad-hoc signing looks like, not a fault.</li>
+          <li>Some tools call this "not signed". That is normal for an ad-hoc signature.</li>
         </ul>
       </div>
     </div>
 
     <div class="callout callout-note">
       <span class="callout-label">Why two files</span>
-      <p>A SideStore re-sign strips entitlements, so shipping only the fakesigned build would break SideStore users, and shipping only the unsigned build would cost TrollStore users their embedded JIT. Hence one source for each.</p>
+      <p>SideStore re-signs at install and removes JIT entitlements, so it needs the unsigned build. TrollStore keeps them, so it gets the ad-hoc signed build.</p>
     </div>
 
     <h2 id="install">2. Install it</h2>
@@ -125,15 +125,18 @@
     <p>Add the source: <span class="url">https://kiddreads.github.io/MuffinEMU/trollstore.json</span></p>
     <p>Or download <code>MuffinEMU-fakesigned.ipa</code> directly from <a href="https://github.com/kiddreads/MuffinEMU/releases/latest">the latest release</a>.</p>
 
-    <p>MuffinEMU uses its own bundle identifier (<code>com.kiddreads.MuffinEMU</code>), so it installs <em>next to</em> Muffin rather than replacing it. Every build of <code>main</code> is published as a numbered release going up by 0.1 — after .9 comes the next whole number: 1.0, 1.1 … 1.9, 2.0.</p>
+    <h3>Nightly builds</h3>
+    <p>Want the newest build instead? Nightly sources: <span class="url">https://kiddreads.github.io/MuffinEMU/nightly.json</span> (SideStore, AltStore, LiveContainer) and <span class="url">https://kiddreads.github.io/MuffinEMU/nightly-trollstore.json</span> (TrollStore). Nightly builds are untested and replace a standard install.</p>
+
+    <p>MuffinEMU uses its own bundle identifier (<code>com.kiddreads.MuffinEMU</code>), Every build of <code>main</code> is published as a numbered release going up by 0.1 — after .9 comes the next whole number: 1.0, 1.1 … 1.9, 2.0.</p>
 
     <h2 id="jit">3. Turn on JIT</h2>
-    <p class="symptom-answer">The AArch64 recompiler needs two things at once, and missing either one silently drops you to the interpreter.</p>
+    <p class="symptom-answer">The AArch64 recompiler needs two things at once. You need both, or MuffinEMU uses the interpreter.</p>
     <ol class="step-list">
       <li><strong>Attach a JIT enabler</strong> — StikJIT, or the JIT attach that SideStore or LiveContainer provides itself.</li>
       <li><strong>Turn the recompiler on</strong> in Settings &gt; CPU.</li>
     </ol>
-    <p>Without both, MuffinEMU falls back to the multi-core PowerPC interpreter automatically. That is much slower, but it is not a failure state — and Settings always states which mode a given launch actually got, and why, rather than failing silently. Check there before assuming something else is wrong.</p>
+    <p>Without both, MuffinEMU uses the interpreter, which is much slower. Settings &gt; CPU shows which one this launch is using and why.</p>
 
     <div class="callout callout-note">
       <p>If a game glitches, desyncs or crashes, Settings &gt; CPU has a <strong>Favour accuracy</strong> option — slower, but worth trying before assuming something else is broken. Restart the game after changing any CPU setting; they do not apply mid-session.</p>
@@ -141,11 +144,11 @@
 
     <h2 id="keys">4. Add keys.txt</h2>
     <p class="symptom-answer">Encrypted retail games need <code>keys.txt</code> dumped from your own Wii U. Homebrew does not.</p>
-    <p>MuffinEMU ships no keys, derives no keys, and has no way to obtain a key it was not given.</p>
+    <p>MuffinEMU does not include keys. Use the <code>keys.txt</code> from your own Wii U.</p>
     <p>Drop the file into the <code>keys</code> folder MuffinEMU creates in the Files app — under the app's own name, since file sharing is enabled — or import it from Settings. A file dropped in mid-session is picked up before the next key read, so no relaunch is needed.</p>
 
     <h2 id="moltenvk">MoltenVK</h2>
-    <p>The Vulkan renderer can use MoltenVK 1.4.3 (the default) or 1.2.8, the build 64Touch uses — Settings &gt; Graphics. The choice applies on the next launch. Metal, the default renderer, does not use MoltenVK at all.</p>
+    <p>The Vulkan renderer can use MoltenVK 1.4.3 (default) or 1.2.8 — Settings &gt; Graphics. The choice applies on the next launch. Metal, the default renderer, does not use MoltenVK.</p>
 
     <h2 id="source">Building from source</h2>
     <p>CI is the build: <code>.github/workflows/build-ios-app.yml</code> runs the whole thing on a macOS runner. By hand, on a Mac with full Xcode:</p>
