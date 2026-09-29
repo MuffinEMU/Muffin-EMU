@@ -14,13 +14,10 @@ struct MetalPixelFormatSupport
     bool m_supportsBCFormats;
     // Apple GPUs have never supported the desktop BC formats natively (supportsBCTextureCompression()
     // is false on every A-series/M-series chip below the recent Apple-Silicon-Mac tier this app doesn't
-    // target), so BC-compressed textures always needed a fallback here. ASTC LDR has been a baseline
-    // Metal feature since GPUFamilyApple2 (iPhone 6 / A8) - it is what the Vulkan backend already falls
-    // back to via MoltenVK on the exact same hardware, re-encoding BC blocks to ASTC 4x4 rather than
-    // decompressing all the way to plain RGBA8. Metal had no equivalent branch at all: every BC texture
-    // went straight to the CPU-decoded RGBA8 fallback below, which is the divergence that made colors on
-    // native Metal (FAST Racing NEO among them) look wrong while the same title was correct under Vulkan.
-    bool m_supportsASTCFormats;
+    // target), so BC-compressed textures always need a fallback here. ETC2/EAC has been a baseline
+    // Metal feature since GPUFamilyApple2 (iPhone 6 / A8), so BC1-3 blocks are re-encoded to it rather
+    // than decompressed all the way to plain RGBA8.
+    bool m_supportsETC2Formats;
 
 	MetalPixelFormatSupport() = default;
 	MetalPixelFormatSupport(MTL::Device* device)
@@ -30,7 +27,7 @@ struct MetalPixelFormatSupport
         m_supportsPacked16BitFormats = device->supportsFamily(MTL::GPUFamilyApple1);
         m_supportsDepth24Unorm_Stencil8 = false; //device->depth24Stencil8PixelFormatSupported();
         m_supportsBCFormats = device->supportsBCTextureCompression();
-        m_supportsASTCFormats = device->supportsFamily(MTL::GPUFamilyApple2);
+        m_supportsETC2Formats = device->supportsFamily(MTL::GPUFamilyApple2);
 	}
 };
 
