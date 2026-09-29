@@ -1,6 +1,6 @@
 //
 //  GraphicPackWrapper.h
-//  MeloCafe
+//  MuffinEMU
 //
 //  Created by Stossy11 on 11/4/2026.
 //

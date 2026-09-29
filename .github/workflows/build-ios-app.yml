@@ -492,7 +492,7 @@ jobs:
                 # `Release-note: skip` leaves a commit out entirely - for work that is
                 # real but has no user-facing half, like build tooling. Better than
                 # padding the notes with lines nobody installed the build for.
-                if [ "$note" = "skip" ]; then continue; fi
+                if [ "$(printf '%s' "$note" | tr '[:upper:]' '[:lower:]')" = "skip" ]; then continue; fi
                 if [ -n "$note" ]; then
                   printf -- '- %s\n' "$note"
                 else
