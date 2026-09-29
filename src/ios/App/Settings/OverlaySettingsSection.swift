@@ -58,7 +58,6 @@ struct OverlaySettingsSection: View {
     @AppStorage(OverlaySettings.textColorKey) private var textColor = OverlaySettings.defaultTextColor
     @AppStorage(OverlaySettings.textScaleKey) private var textScale = OverlaySettings.defaultTextScale
     @AppStorage(OverlaySettings.fpsKey) private var fpsEnabled = OverlaySettings.defaultFps
-    @AppStorage(OverlaySettings.cpuModeKey) private var cpuModeEnabled = OverlaySettings.defaultCpuMode
     @AppStorage(OverlaySettings.drawcallsKey) private var drawcallsEnabled = OverlaySettings.defaultDrawcalls
     @AppStorage(OverlaySettings.cpuUsageKey) private var cpuUsageEnabled = OverlaySettings.defaultCpuUsage
     @AppStorage(OverlaySettings.cpuPerCoreUsageKey) private var cpuPerCoreUsageEnabled = OverlaySettings.defaultCpuPerCoreUsage
@@ -78,7 +77,6 @@ struct OverlaySettingsSection: View {
             textColorField
             textScaleSlider
             fpsToggle
-            cpuModeToggle
             drawcallsToggle
             cpuUsageToggle
             cpuPerCoreUsageToggle
@@ -176,18 +174,6 @@ struct OverlaySettingsSection: View {
         .disabled(isOff)
         .onChange(of: fpsEnabled) { newValue in
             cemu_bridge_set_overlay_fps(newValue)
-        }
-    }
-
-    private var cpuModeToggle: some View {
-        Toggle(isOn: $cpuModeEnabled) {
-            Text("CPU Mode")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-        }
-        .tint(MuffinTheme.pixelBlue)
-        .disabled(isOff)
-        .onChange(of: cpuModeEnabled) { newValue in
-            cemu_bridge_set_overlay_cpu_mode(newValue)
         }
     }
 
