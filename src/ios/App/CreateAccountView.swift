@@ -1,12 +1,6 @@
 import SwiftUI
 
-/// Creates a new Wii U console account (Cafe/Account/Account.h). Ported from MeloCafe's
-/// CreateAccountView.swift, extended to collect every field cemu_bridge_account_create()
-/// takes (birth date, gender, email, country) up front rather than leaving them to be
-/// set one at a time afterward - MeloCafe's own form only asks for persistentId/miiName
-/// because its separate AccountInformationFields editor covers the rest post-creation;
-/// this app doesn't have that second editor yet, so the create form covers the whole
-/// on-disk shape instead.
+/// Creates a Wii U account with every field cemu_bridge_account_create takes.
 struct CreateAccountView: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -26,8 +20,7 @@ struct CreateAccountView: View {
     }
 
     var body: some View {
-        // NavigationStack needs iOS 16+; this project's deployment target is 15.0 - same
-        // reasoning as SettingsView.swift's own NavigationView.
+        // NavigationView: NavigationStack needs iOS 16 and the deployment target is 15.
         NavigationView {
             ZStack {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
@@ -35,8 +28,6 @@ struct CreateAccountView: View {
                 Form {
                     Section {
                         HStack {
-                            // The app's row-label font, like every other labelled row in
-                            // Settings and the sheets. These were plain body text.
                             Text("Persistent ID")
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                             TextField("Persistent ID", text: $persistentIdText)
@@ -53,10 +44,7 @@ struct CreateAccountView: View {
                                 .multilineTextAlignment(.trailing)
                                 .focused($nameFocused)
                                 .submitLabel(.done)
-                            // The field silently truncates at ten characters (the Wii U's
-                            // own Mii name limit, enforced below). Typing an eleventh and
-                            // watching nothing happen looks like a stuck keyboard; the
-                            // counter says what the rule is before it bites.
+                            // Names are limited to ten characters.
                             Text("\(miiName.count)/10")
                                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                                 .foregroundColor(miiName.count >= 10 ? MuffinTheme.blushPink : MuffinTheme.brownMid)
@@ -70,7 +58,7 @@ struct CreateAccountView: View {
                             }
                         }
                     } footer: {
-                        Text("The persistent ID is the internal folder name used for your saves. Only change this if you are importing saves from a Wii U with a specific ID.")
+                        Text("Names the folder your saves live in. Leave it alone unless you're importing saves from a real Wii U.")
                     }
 
                     Section("Mii details") {
@@ -104,11 +92,11 @@ struct CreateAccountView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                     } footer: {
-                        Text("Only used if you later link this account to a real NNID/PNID for online play.")
+                        Text("Only needed if you later link this account to an NNID/PNID for online play.")
                     }
                 }
             }
-            .navigationTitle("Create new account")
+            .navigationTitle("New Account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -118,9 +106,6 @@ struct CreateAccountView: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    // "Create", not "OK" - the confirming action on a creation form should
-                    // name what it does, and "OK" next to "Cancel" says nothing about
-                    // which one makes an account.
                     Button("Create") {
                         createAccount()
                     }
@@ -145,36 +130,36 @@ struct CreateAccountView: View {
     private func createAccount() {
         let idString = persistentIdText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !idString.isEmpty else {
-            errorMessage = "No persistent id entered!"
+            errorMessage = "Enter a persistent ID."
             return
         }
 
         guard !cemu_bridge_accounts_locked() else {
-            errorMessage = "Can't create an account while a game is running!"
+            errorMessage = "Close the running game before creating an account."
             return
         }
         guard cemu_bridge_accounts_has_free_slot() else {
-            errorMessage = "Maximum account limit reached."
+            errorMessage = "You've reached the maximum number of accounts."
             return
         }
         guard let persistentId = UInt32(idString, radix: 16) else {
-            errorMessage = "Enter a valid hexadecimal persistent id."
+            errorMessage = "The persistent ID must be hexadecimal (0-9, A-F)."
             return
         }
         let minimumPersistentId = cemu_bridge_accounts_min_persistent_id()
         guard persistentId >= minimumPersistentId else {
-            errorMessage = "The persistent id must be greater than \(String(minimumPersistentId, radix: 16))!"
+            errorMessage = "The persistent ID must be \(String(minimumPersistentId, radix: 16)) or higher."
             return
         }
 
         let existingAccounts = Account.loadAll()
         if let existing = existingAccounts.first(where: { $0.persistentId == persistentId }) {
-            errorMessage = "The persistent id \(String(persistentId, radix: 16)) is already in use by account \(existing.displayName)!"
+            errorMessage = "That ID is already used by account \(existing.displayName)."
             return
         }
 
         guard !miiName.isEmpty else {
-            errorMessage = "Account name may not be empty!"
+            errorMessage = "Enter a Mii name."
             return
         }
 
