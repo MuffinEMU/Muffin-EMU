@@ -57,6 +57,13 @@ enum SaveStateStore {
     }
 }
 
+/// The result line shown at the top of the save-state sheet. `isWarning` is set by whoever
+/// produced the result, so the tone never depends on the wording of the message.
+struct SaveStateStatus {
+    let message: String
+    let isWarning: Bool
+}
+
 /// The in-game save-state sheet, opened from EmulatorViewOptimized's top bar. It only renders
 /// the state it is given and reports taps through closures; bridge calls and file I/O happen in
 /// the parent (off `Self.saveStateQueue`, to avoid main-thread deadlocks).
@@ -68,7 +75,7 @@ struct SaveStateSheet: View {
     let busySlot: Int?
     /// Set after every completed save/load/delete; cleared when the sheet is reopened. This is
     /// where a refused load ("doesn't match this session") reaches the screen.
-    let statusMessage: String?
+    let status: SaveStateStatus?
     let onSave: (Int) -> Void
     let onLoad: (Int) -> Void
     let onDelete: (Int) -> Void
@@ -88,15 +95,12 @@ struct SaveStateSheet: View {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
 
                 List {
-                    if let statusMessage {
+                    if let status {
                         Section {
                             // Refusals get a warning tone so they stand out from confirmations.
                             ScreenStatusCallout(
-                                tone: statusMessage.localizedCaseInsensitiveContains("couldn't")
-                                    || statusMessage.localizedCaseInsensitiveContains("doesn't match")
-                                    || statusMessage.localizedCaseInsensitiveContains("failed")
-                                    ? .warning : .info,
-                                message: statusMessage
+                                tone: status.isWarning ? .warning : .info,
+                                message: status.message
                             )
                         }
                     }
