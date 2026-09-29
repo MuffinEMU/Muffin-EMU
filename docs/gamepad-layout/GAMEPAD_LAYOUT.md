@@ -1,7 +1,7 @@
 # The on-screen pad, taken from the GamePad itself
 
-BW-198. Branch `ios-gamepad-clone-layout`, cut from `ios-controls-on-extras` (`e1de779b`).
-Live: <https://kiddreads.github.io/cemu-ios-muffin/gamepad-layout/>
+The measurements behind MuffinEMU's on-screen GamePad. The implementation is `src/ios/App/GamePadGeometry.swift`.
+Browsable version: <https://kiddreads.github.io/MuffinEMU/gamepad-layout/>
 
 The shipping `ControllerGeometry` is measured from `IMG_3278.jpeg`, a screenshot of an
 on-screen pad. This is measured from the hardware: the official Wii U GamePad front
@@ -182,9 +182,8 @@ cluster-gap invariant meaningful.
 
 | file | what it is |
 |---|---|
-| `GamePadGeometry.swift` | the constants, the resolver and `DeviceMetrics`. Typechecks; **not in the build** - `src/ios/project.yml` pulls `src/ios/App` in as a group, so moving it there is the whole of wiring it in |
+| `GamePadGeometry.swift` | the constants, the resolver and `DeviceMetrics` - now at `src/ios/App/GamePadGeometry.swift` |
 | `index.html` | the same thing as a browsable page with a device picker - opens by double-clicking, no server needed |
-| `HANDOFF.md` | what the next person needs: how to verify it, how to wire it in, and the traps |
 | `resolve_reference.py` | the same laws in Python - the cross-check, and what drew the mockups |
 | `mock_*.png` | all 17 landscape and portrait configurations rendered |
 | `muffin_pad_layout.json` | resolved coordinates, all 18 configurations |
