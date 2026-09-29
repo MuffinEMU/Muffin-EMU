@@ -12,11 +12,8 @@ struct MetalPixelFormatSupport
 	bool m_supportsPacked16BitFormats;
 	bool m_supportsDepth24Unorm_Stencil8;
     bool m_supportsBCFormats;
-    // Apple GPUs have never supported the desktop BC formats natively (supportsBCTextureCompression()
-    // is false on every A-series/M-series chip below the recent Apple-Silicon-Mac tier this app doesn't
-    // target), so BC-compressed textures always need a fallback here. ETC2/EAC has been a baseline
-    // Metal feature since GPUFamilyApple2 (iPhone 6 / A8), so BC1-3 blocks are re-encoded to it rather
-    // than decompressed all the way to plain RGBA8.
+    // Apple GPUs lack native BC support, so BC textures need a fallback. ETC2/EAC is a baseline
+    // Metal feature (GPUFamilyApple2 and later); BC1-3 are re-encoded to it.
     bool m_supportsETC2Formats;
 
 	MetalPixelFormatSupport() = default;
