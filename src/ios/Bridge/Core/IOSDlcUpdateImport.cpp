@@ -40,8 +40,8 @@ bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64* titleIdOut)
 // import flow needs to either accept a candidate DLC/update or explain specifically
 // why not - TitleInfo::InvalidReason already distinguishes "not a real Wii U title
 // structure" from "the ticket is missing" from "the XML itself is unreadable", which
-// is exactly the specific-not-generic diagnosis Brandon asked for; nothing here
-// invents new categories on top of what the engine already determined while parsing.
+// gives a specific reason rather than a generic failure; nothing here invents new
+// categories on top of what the engine already determined while parsing.
 // Returns false (and only outInvalidReason) for an invalid title; true (and
 // everything else, outInvalidReason left at NONE) for a valid one.
 bool IOSDlcUpdateImport_Inspect(const char* romPath, uint64* outTitleId, uint16* outVersion,

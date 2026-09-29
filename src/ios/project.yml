@@ -48,8 +48,7 @@ settings:
   INFOPLIST_KEY_NSMicrophoneUsageDescription: 'MuffinEMU uses the microphone only when a Wii U game asks for GamePad microphone input.'
 
 # Melo-Controller, for the optional "Use melo-controls" pad (App/MeloControls.swift).
-# Pinned to the revision MeloCafe's own Package.resolved uses, so a push to its main
-# branch cannot change a MuffinEMU build. GPL-3.0; see README.md.
+# Pinned to a fixed revision, so a push to its main branch cannot change a MuffinEMU build. GPL-3.0; see README.md.
 packages:
   MeloController:
     url: https://github.com/stossy11/Melo-Controller
