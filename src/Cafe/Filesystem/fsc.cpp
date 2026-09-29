@@ -87,21 +87,9 @@ void fsc_reset()
 }
 
 /*
- * Makes sure the per-priority root nodes exist.
- *
- * s_fscRootNodePerPrio is zero-initialised and only ever populated by fsc_reset(), which
- * runs from fsc_init() inside CafeSystem::Initialize() - that is, when a title boots.
- * Anything that touches the filesystem BEFORE a title boots therefore walked a null root
- * and took SIGSEGV.
- *
- * That is not hypothetical: the iOS library screen derives cover art by constructing a
- * TitleInfo for each game at app launch, which mounts, which lands here long before any
- * title has started. The crash log showed exactly that path - loadGames ->
- * enrichMissingCoverArt -> TitleInfo::Mount -> fsc_mount -> signal 11.
- *
- * Fixing it at the three read sites rather than at that one caller, because the caller
- * was not doing anything unreasonable and the next one to mount early would hit the same
- * null. Costs one predictable branch on paths that already take a mutex.
+ * Makes sure the per-priority root nodes exist. They are normally created by fsc_reset() at title
+ * boot, but callers such as the iOS library screen mount titles before that, so the read sites
+ * create them on demand.
  */
 static void fsc_ensureRootNodes()
 {

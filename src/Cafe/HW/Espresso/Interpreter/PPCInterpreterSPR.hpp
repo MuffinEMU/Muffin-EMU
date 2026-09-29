@@ -72,10 +72,7 @@ static void setFPECR(PPCInterpreter_t* hCPU, uint32 newValue)
 
 static void setDEC(PPCInterpreter_t* hCPU, uint32 newValue)
 {
-	// This used to only debug_printf() the new value, so a write to the decrementer
-	// never actually restarted its countdown - any title that arms DEC for a timed
-	// interrupt would wait forever. PPCInterpreter_setDEC() is the real setter
-	// (PPCInterpreterMain.cpp) and was already exported; nothing here was calling it.
+	// Must call the real setter so a DEC write restarts the countdown.
 	PPCInterpreter_setDEC(hCPU, newValue);
 }
 

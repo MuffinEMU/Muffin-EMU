@@ -1714,7 +1714,6 @@ SparseBitset* s_DCFlushQueueAlternate = new SparseBitset();
 std::atomic<uint32> s_DCFlushQueueEpoch{0};
 
 thread_local uint32 s_lastDCFlushQueueEpoch = std::numeric_limits<uint32>::max();
-thread_local uint32 s_lastDCFlushQueuePage = std::numeric_limits<uint32>::max();
 thread_local uint32 s_lastDCFlushQueueRangeFirst = std::numeric_limits<uint32>::max();
 thread_local uint32 s_lastDCFlushQueueRangeLast = std::numeric_limits<uint32>::max();
 
@@ -1726,32 +1725,12 @@ void LatteBufferCache_notifyDCFlush(MPTR address, uint32 size)
     uint32 firstPage = address / CACHE_PAGE_SIZE;
     uint32 lastPage = (uint32)(((uint64)address + size - 1) / CACHE_PAGE_SIZE);
     uint32 queueEpoch = s_DCFlushQueueEpoch.load(std::memory_order_relaxed);
-    const bool isSinglePage = firstPage == lastPage;
     if (s_lastDCFlushQueueEpoch == queueEpoch &&
         firstPage >= s_lastDCFlushQueueRangeFirst &&
         lastPage <= s_lastDCFlushQueueRangeLast)
-    {
-        if (isSinglePage)
-            s_lastDCFlushQueuePage = firstPage;
         return;
-    }
     
-    // Publishes exactly the range the guest asked for.
-    //
-    // This used to widen a single-page flush that followed a sequential one to sixteen
-    // pages, to save repeated lock/SetRange calls when a title walks a large buffer page
-    // by page. The saving is real but tiny; the cost is not. This queue marks GPU-side
-    // copies STALE, so publishing fifteen pages the guest never flushed invalidates
-    // vertex and index data that had not changed and has it re-read from guest memory,
-    // every frame, forever.
-    //
-    // That cost lands entirely on the GPU and upload path and not at all on instruction
-    // throughput - which is exactly the shape of what was measured: 4fps on a device and
-    // ROM capable of 45, and the RECOMPILER MAKING NO DIFFERENCE. A CPU-side problem cannot survive turning the JIT on; a per-frame
-    // GPU-side one does not care.
-    //
-    // MeloCafe does not have this batching, and MeloCafe is the fast one. Restoring
-    // upstream's behaviour here is deliberately a test of that, not a claimed fix.
+    // Publish exactly the flushed range; widening it invalidates unchanged GPU copies every frame.
     uint32 publishLastPage = lastPage;
     
     g_spinlockDCFlushQueue.lock();
@@ -1761,7 +1740,6 @@ void LatteBufferCache_notifyDCFlush(MPTR address, uint32 size)
     s_lastDCFlushQueueEpoch = queueEpoch;
     s_lastDCFlushQueueRangeFirst = firstPage;
     s_lastDCFlushQueueRangeLast = publishLastPage;
-    s_lastDCFlushQueuePage = isSinglePage ? firstPage : publishLastPage;
 }
 
 namespace
