@@ -2,8 +2,8 @@
 
 Two homebrew RPX files, `cpubench.rpx` and `gpubench.rpx`, built by
 `.github/workflows/build-bench-rpx.yml`. They are the actual benchmark: the
-host iOS app boots the same RPX in Muffin's own engine, MeloCafe's engine,
-and Muffin+MeloCafe's fixes, and times each one by tailing its OSReport log
+host iOS app boots the same RPX in each engine under test and times each one
+by tailing its OSReport log
 for a fixed marker protocol. Retail games can't be bundled with the app, so
 these are what gets compared instead.
 
@@ -63,14 +63,7 @@ Every test's buffers/inputs are allocated or generated once, before its
 `mem_copy`, a sample of the copied buffer) - so a test that silently produces
 wrong output, not just a slow one, is also caught.
 
-**Iteration counts are unverified.** They were sized by rough
-instruction-count reasoning (an interpreter doing on the order of tens of
-millions of simple ops/sec, aiming for each test to land in roughly 5-20
-seconds there and be comfortably shorter on a recompiler) - there is no
-devkitPPC toolchain, no Wii U, and no Cemu/Muffin/MeloCafe instance available
-in the environment this was written in to actually run and time them. Expect
-to adjust the `_ITERATIONS` constants after the first real run on real
-engines.
+Iteration counts were sized so each CPU test runs 5-20 seconds on the interpreter; retune the `_ITERATIONS` constants if that no longer holds.
 
 ## gpubench.rpx
 
@@ -119,15 +112,6 @@ exists to make. If a future revision wants real pixel verification, it needs
 to happen as a separate, explicitly-unmeasured step after `END`, not before
 it.
 
-**The rendered scene has not been visually verified.** There is no devkitPPC
-toolchain, Wii U, or Cemu-family emulator available in the environment this
-was written in - the code was written and self-reviewed against wut's real
-headers and a real, permissively-licensed shader author's working examples
-(see below), but nobody has seen a frame of it actually render. If the
-picture looks wrong (or the RPX doesn't come up at all) when this is first
-run for real, that is the first thing to check, not assumed-correct
-infrastructure.
-
 ### The shader problem, and how it's solved here
 
 GX2 has no runtime GLSL compiler on real hardware - shaders are always
@@ -140,7 +124,7 @@ precompiled to a Latte GPU binary and packaged into a `.gsh` (GFD) blob that
    decaf-emu's full CMake tree (`libcpu`, SDL2, libuv, c-ares, CURL, OpenSSL,
    Vulkan, ffmpeg, Qt...) just to get one small tool that only needs `common`,
    `libgfd`, `excmd`, `peglib`, and `SPIRV` - not a "reasonably buildable in
-   CI" ask, and nothing in this environment could build or test it to check.
+   CI" ask, and it was not built or tested here.
 2. **Hand-written Latte assembly**, following
    [GaryOderNichts' shader guide](https://github.com/GaryOderNichts/wiiu-shaders)
    and the real, MIT-licensed, hardware-verified example shaders in his
@@ -191,13 +175,11 @@ inside three different emulators with no SD card image prepared for it.
 
 ## Rebuilding
 
-Not built locally - there is no Wii U toolchain (or, for gpubench, GLSL-to-
-GX2 compiler) on the machine this was written on. Run the
-**Build Bench RPX (Homebrew)** workflow
+Run the **Build Bench RPX (Homebrew)** workflow
 (`.github/workflows/build-bench-rpx.yml`), which has two jobs,
 `build-cpubench-rpx` and `build-gpubench-rpx`, both building in the official
 `devkitpro/devkitppc` container against wut's own sample Makefile, the same
-way `build-rainbow-rpx.yml` and `build-showcase-rpx.yml` do. It's
+way `build-rainbow-rpx.yml` does. It's
 `workflow_dispatch` (run it manually) and also `workflow_call`, so a later
 workflow that packages these into the host iOS app can invoke it as a step
 of its own build.

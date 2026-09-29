@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FAQ — MuffinEMU Docs</title>
-<meta name="description" content="Frequently asked questions about MuffinEMU — how it differs from Muffin, keys, install methods, compatibility, controllers, licensing and bug reports.">
+<meta name="description" content="Frequently asked questions about MuffinEMU — keys, install methods, compatibility, controllers, licensing and bug reports.">
 <link rel="icon" href="../icon.png">
 <link rel="apple-touch-icon" href="../icon.png">
 <meta name="theme-color" content="#F4A551" id="themeColorMeta">
@@ -73,15 +73,9 @@
     <p class="subtitle">Short answers to the questions that come up most.</p>
 
     <section class="symptom">
-      <h2>Is MuffinEMU the same thing as Muffin?</h2>
-      <p class="symptom-answer">No — it is its own emulator now.</p>
-      <p>MuffinEMU grew out of Muffin (<a href="https://github.com/kiddreads/cemu-ios-muffin">kiddreads/cemu-ios-muffin</a>) but has its own bundle identifier (<code>com.kiddreads.MuffinEMU</code>), its own Cemu core, and its own releases. It installs next to Muffin rather than replacing it.</p>
-    </section>
-
-    <section class="symptom">
       <h2>Do I need to own a Wii U?</h2>
       <p class="symptom-answer">For encrypted retail games, yes.</p>
-      <p>You need <code>keys.txt</code> dumped from your own console. Homebrew does not need it. MuffinEMU ships no keys, derives no keys, and has no way to obtain a key it was not given.</p>
+      <p>You need <code>keys.txt</code> dumped from your own console. Homebrew does not need it. MuffinEMU does not include keys.</p>
     </section>
 
     <section class="symptom">
@@ -92,23 +86,23 @@
 
     <section class="symptom">
       <h2>Does it support every Wii U game?</h2>
-      <p class="symptom-answer">Not confirmed — broad compatibility has not been systematically tested.</p>
+      <p class="symptom-answer">Some games boot and play, many haven't been tried.</p>
       <div class="callout callout-unverified">
         <span class="callout-label">Not confirmed on hardware</span>
-        <p>MuffinEMU boots real titles from an imported library on real hardware. A full, confirmed playthrough of a retail title on this exact build is still pending, and this documentation will say so plainly the day one lands.</p>
+        <p>Some games boot and play, many haven't been tried. Compatibility hasn't been catalogued yet.</p>
       </div>
     </section>
 
     <section class="symptom">
       <h2>Can I use a physical controller?</h2>
-      <p class="symptom-answer">Basic controller input works, but has not been systematically tested.</p>
-      <p>It has not been exercised across MFi and Bluetooth controllers the way the on-screen pad has.</p>
+      <p class="symptom-answer">Yes, MFi and Bluetooth controllers work.</p>
+      <p>They work, but haven't been tested across many models.</p>
     </section>
 
     <section class="symptom">
       <h2>Is there a paid version?</h2>
-      <p class="symptom-answer">No. There is no StoreKit purchase in the app at all.</p>
-      <p>A free code unlocks 3 "Pro" app icon themes. Every other feature — save states, graphic packs, DLC/update import, all 28 non-Pro themes, Melo-Controller, all 20 controller skins — is free with no gate. See <a href="themes.html#pro">Themes &amp; Icons</a>.</p>
+      <p class="symptom-answer">No. MuffinEMU is free.</p>
+      <p>Three of the 31 app icons (Diamond Ice, Gold VIP, Holographic) unlock with a code; everything else has no restrictions. See <a href="themes.html#pro">Themes &amp; Icons</a>.</p>
     </section>
 
     <section class="symptom">
@@ -120,7 +114,7 @@
     <section class="symptom">
       <h2>Does dual-screen TV output work?</h2>
       <p class="symptom-answer">Not confirmed yet.</p>
-      <p>The code path is written against the real display API but has never been exercised with a second display actually attached — see <a href="screen-layout.html#external-display">External display routing</a>.</p>
+      <p>It hasn't been tested with a second display attached — see <a href="screen-layout.html#external-display">External display routing</a>.</p>
     </section>
 
     <section class="symptom">

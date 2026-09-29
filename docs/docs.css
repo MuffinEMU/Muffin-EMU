@@ -112,14 +112,8 @@
 /* Something that will cost you if you ignore it. */
 .callout-warn { border-left-color: var(--muffin-top-dark); }
 
-/* NOT verified on real hardware.
-   This project keeps a docs/_archive_original_claims/ directory precisely
-   because claims were once overstated and had to be walked back. This callout
-   exists so an honest "we have not confirmed this" is visually louder than the
-   surrounding prose rather than a parenthetical someone skims past — the one
-   place a wash of colour is earned rather than decorative.
-   The amber is deliberately NOT a theme token: an honesty marker that changes
-   colour with the palette stops reading as a marker. */
+/* Marks something that has not been confirmed on real hardware.
+   The amber is not a theme token, so it stays the same in every palette. */
 .callout-unverified {
   border-left-color: #C77700;
   background: color-mix(in srgb, #C77700 6%, transparent);

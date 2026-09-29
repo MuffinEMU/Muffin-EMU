@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>MuffinEMU — Wii U emulation on iOS</title>
-<meta name="description" content="MuffinEMU is a Wii U emulator for iPhone and iPad, built on Cemu. Built in the open — honest about what is and isn't confirmed.">
+<meta name="description" content="MuffinEMU is a Wii U emulator for iPhone and iPad, built on Cemu.">
 <link rel="icon" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <meta property="og:title" content="MuffinEMU — Wii U emulation on iOS">
@@ -118,25 +118,25 @@
     <a class="btn btn-primary" href="docs/installation.html"><svg width="18" height="18" aria-hidden="true"><use href="#i-download"/></svg>Get MuffinEMU</a>
     <a class="btn btn-outline" href="https://github.com/kiddreads/MuffinEMU">View source on GitHub</a>
   </div>
-  <p class="hero-note">Confirmed on an iPad Pro A12Z. Free and open source — bring your own games and keys. <a href="#status">See exactly what's confirmed →</a></p>
+  <p class="hero-note">Tested on an iPad Pro (A12Z). Free and open source; bring your own games and keys. <a href="#status">Status →</a></p>
 </div>
 
 <section class="wrap section-intro">
   <div class="grid grid-2">
     <div class="card card-plain">
       <span class="card-icon"><svg aria-hidden="true"><use href="#i-chip"/></svg></span>
-      <h3>Its own emulator</h3>
-      <p>MuffinEMU grew out of Muffin, but the Cemu core underneath is maintained in this repo, with its own fixes and a curated set of upstream Cemu fixes on top. Own bundle identifier, own releases — it installs next to Muffin rather than replacing it.</p>
+      <h3>Built on Cemu</h3>
+      <p>MuffinEMU runs a Cemu-based core with its own fixes and a selection of upstream Cemu fixes.</p>
     </div>
     <div class="card card-plain">
       <span class="card-icon"><svg aria-hidden="true"><use href="#i-display"/></svg></span>
       <h3>Metal-native renderer</h3>
-      <p>The renderer is Metal, native to this port, with an optional Vulkan (MoltenVK) path. On GPUs without mesh shader support — the A12Z included — BC-compressed textures are decoded on the CPU, and draws that need geometry shaders or RECTS primitives are skipped for now, so a few graphic packs won't render fully.</p>
+      <p>Metal by default, with Vulkan (MoltenVK) as an option. On older GPUs such as the A12Z, draws that need geometry shaders are skipped, so some effects and a few graphic packs won't look right.</p>
     </div>
     <div class="card card-plain">
       <span class="card-icon"><svg aria-hidden="true"><use href="#i-open"/></svg></span>
-      <h3>Built in the open</h3>
-      <p>Every crash and hang gets tracked and fixed as it's found, not papered over. This site says plainly what's confirmed on real hardware and what isn't — see <a href="#status">Status</a> below.</p>
+      <h3>Open source</h3>
+      <p>The full source is on GitHub, and every release lists what changed. See <a href="#status">Status</a> for what works today.</p>
     </div>
   </div>
 </section>
@@ -144,13 +144,13 @@
 <section class="wrap">
   <div class="section-head">
     <h2>What's inside</h2>
-    <p>The app side: library, importer, on-screen controls, themes, saves and more. Each card links to the real reference documentation.</p>
+    <p>The app side: library, importer, on-screen controls, themes, saves and more.</p>
   </div>
   <div class="grid grid-roomy">
     <div class="card card-lift card-link">
       <span class="card-icon"><svg aria-hidden="true"><use href="#i-layout"/></svg></span>
       <h3>Screen Layout</h3>
-      <p>Single Screen, Adaptive (both screens), or GamePad-inset — how the TV and GamePad share one screen, plus routing to a genuine second display.</p>
+      <p>Single Screen, Adaptive (both screens) or Both Screens (GamePad Top Right), plus output to a second display.</p>
       <a class="more" href="docs/screen-layout.html">Read more <span aria-hidden="true">→</span></a>
     </div>
     <div class="card card-lift card-link">
@@ -174,7 +174,7 @@
     <div class="card card-lift card-link">
       <span class="card-icon"><svg aria-hidden="true"><use href="#i-palette"/></svg></span>
       <h3>Themes &amp; icons</h3>
-      <p>31 app icons, each with a matching colour theme built from that icon's own art — 3 unlocked by a free code. The switcher in this page's header cycles the real ones.</p>
+      <p>31 app icons, each with a matching colour theme. Three are unlocked with a code. The switcher in the header previews them.</p>
       <a class="more" href="docs/themes.html">Read more <span aria-hidden="true">→</span></a>
     </div>
     <div class="card card-lift card-link">
@@ -190,21 +190,21 @@
   <div class="card install-card">
     <div class="section-head" style="margin-bottom:1.25rem">
       <h2>Install MuffinEMU</h2>
-      <p>Two sources, because the two install paths need different builds. iPhone and iPad, iOS 15 or later.</p>
+      <p>Pick the source that matches how you install apps. iPhone and iPad, iOS 15 or later.</p>
     </div>
     <div class="install-row">
       <a class="btn btn-primary" href="sidestore://source?url=https://kiddreads.github.io/MuffinEMU/apps.json">Add to SideStore</a>
       <a class="btn btn-secondary" href="altstore://source?url=https://kiddreads.github.io/MuffinEMU/apps.json">Add to AltStore</a>
       <a class="btn btn-secondary" href="docs/installation.html">TrollStore / full instructions</a>
     </div>
-    <p class="install-foot">The recompiler (JIT) needs an external enabler — StikJIT, SideStore, TrollStore or LiveContainer. Without one, MuffinEMU falls back to the interpreter on its own and still runs, more slowly.</p>
+    <p class="install-foot">The recompiler (JIT) needs an external enabler — StikJIT, SideStore, TrollStore or LiveContainer. Without one, MuffinEMU uses the interpreter, which is slower.</p>
   </div>
 </section>
 
 <section class="wrap" id="status">
   <div class="section-head">
     <h2>Status</h2>
-    <p>Confirmed on an iPad Pro A12Z (<code>iPad8,11</code>). Said plainly, not oversold.</p>
+    <p>Tested on an iPad Pro (A12Z).</p>
   </div>
   <div class="grid grid-2 status-grid">
     <div class="card status-card-yes">
@@ -218,15 +218,18 @@
     <div class="card status-card-open">
       <h3>Still open</h3>
       <ul class="status-list">
-        <li class="partial">A full, confirmed playthrough of a retail title on this exact build — this page will say so plainly the day one lands, not before</li>
-        <li class="partial">Audio, controller input beyond the basics, and broad game compatibility — usable, not yet systematically verified</li>
-        <li class="partial">Dual-screen output to a genuine second display — written against the real API, never yet exercised with a display attached</li>
+        <li class="partial">No full playthrough of a retail game has been confirmed yet</li>
+        <li class="partial">Audio, physical controllers and game compatibility have not been tested widely</li>
+        <li class="partial">Output to a second display has not been tried with a display attached</li>
+        <li class="partial">On-screen controls don't respond reliably yet; a fix is on the way</li>
+        <li class="partial">Vulkan on A12Z-class iPads does not find a usable GPU; use Metal, the default</li>
+        <li class="partial">GPUs without mesh shader support skip geometry-shader and RECTS draws, so some effects can be missing</li>
       </ul>
     </div>
   </div>
 </section>
 
-<section class="wrap">
+<section class="wrap" id="credits">
   <div class="card card-plain card-narrow">
     <h2 style="margin-top:0">Credits &amp; license</h2>
     <p>Bring your own games and keys. No copyrighted content is distributed here — not games, not system files, not keys.</p>
@@ -239,7 +242,7 @@
 
 <footer class="site-footer">
   <p><a href="https://github.com/kiddreads/MuffinEMU">github.com/kiddreads/MuffinEMU</a></p>
-  <p>Wii U emulation for iPhone and iPad — built in the open.</p>
+  <p>Wii U emulation for iPhone and iPad.</p>
 </footer>
 
 <script src="theme.js"></script>

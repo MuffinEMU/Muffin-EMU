@@ -3,18 +3,15 @@
 The measurements behind MuffinEMU's on-screen GamePad. The implementation is `src/ios/App/GamePadGeometry.swift`.
 Browsable version: <https://kiddreads.github.io/MuffinEMU/gamepad-layout/>
 
-The shipping `ControllerGeometry` is measured from `IMG_3278.jpeg`, a screenshot of an
-on-screen pad. This is measured from the hardware: the official Wii U GamePad front
-illustration, at **0.425 mm per pixel**. That scale is not assumed - it is checked twice
-against Nintendo's published dimensions and agrees both times.
+This is the layout MuffinEMU's on-screen pad uses. It is measured from the Wii U GamePad's
+front illustration at **0.425 mm per pixel**, checked against Nintendo's published
+dimensions.
 
 | check | from the image | Nintendo |
 |---|---|---|
 | body width | 600 px x 0.425 = **255.0 mm** | 255 mm |
 | body height | 314 px x 0.425 = **133.5 mm** | 134 mm |
 | screen | 324 x 185 px = 137.7 x 78.6 mm, **158 mm diagonal** | 6.2 in = 157.5 mm |
-
-So "life-size" below is a literal claim, not a figure of speech.
 
 Everything is expressed in **D = one face-button diameter = 10.625 mm**, the unit
 `ControllerGeometry` already uses. The body turns out to be exactly 24 D wide.
@@ -38,9 +35,8 @@ Everything is expressed in **D = one face-button diameter = 10.625 mm**, the uni
 | screen | 12.922 | 137.3 | normalised to exactly 16:9 |
 
 The stick arm is the strongest number in the set: **29.65 mm at 69.87 deg**, up and
-outboard, and the two halves agree on it to within 0.1 mm. That is a designed
-relationship, not an accident of measurement, and it is what the laws below protect ahead
-of everything else - it is what a thumb actually learns.
+outboard, and the two halves agree on it to within 0.1 mm. It is what the laws below
+protect ahead of everything else.
 
 Two facts the shipping layout has differently, both of them the hardware being right:
 
@@ -49,7 +45,7 @@ Two facts the shipping layout has differently, both of them the hardware being r
   convention on-screen pads invented; the GamePad never did it.
 
 Not measured: **L / R / ZL / ZR**. They are on the top edge and do not appear in a front
-view. Their pill size is kept from the IMG_3278 measurement; their position is placed,
+view. Their pill size is kept from the earlier layout; their position is placed,
 centred above their own stick, which is where they sit on the hardware. They are the only
 placed geometry in the file and they are marked as such at their definition.
 
@@ -173,11 +169,6 @@ as its two real arms, not as the square that contains them:
 - both clusters stay level, as they are on the hardware
 - every picture is exactly 16:9
 
-That bounding-box distinction is not pedantry. A bbox test reported the d-pad overlapping
-the relocated minus on every iPhone; the cross has no material in its corners and the real
-separation is 1.07 D. It also *missed* nothing - but the exact test is what makes the
-cluster-gap invariant meaningful.
-
 ## Files
 
 | file | what it is |
@@ -188,12 +179,3 @@ cluster-gap invariant meaningful.
 | `mock_*.png` | all 17 landscape and portrait configurations rendered |
 | `muffin_pad_layout.json` | resolved coordinates, all 18 configurations |
 | `hardware_measurements.json` | the source measurements, in pixels and mm |
-
-## Two things to decide
-
-1. **The d-pad becomes a cross and the iPad +/- both move right.** Both are the hardware
-   being right, and both are visible changes to a pad people have already learned. Worth a
-   settings toggle if either turns out to be unpopular.
-2. **The shipping pad anchors to `proxy.size`, not the safe area**, so on every notched
-   iPhone in landscape the outer controls sit under the Dynamic Island. That is a bug fix
-   that stands on its own, independent of whether any of the rest of this lands.

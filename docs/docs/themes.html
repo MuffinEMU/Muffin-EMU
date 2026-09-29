@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Themes & Icons — MuffinEMU Docs</title>
-<meta name="description" content="All 31 MuffinEMU themes and app icons with their real hex values, how the palettes are derived, and how the 3 Pro themes unlock.">
+<meta name="description" content="All 31 MuffinEMU themes and app icons with their colour values, and the three that unlock with a code.">
 <link rel="icon" href="../icon.png">
 <link rel="apple-touch-icon" href="../icon.png">
 <meta name="theme-color" content="#F4A551" id="themeColorMeta">
@@ -74,17 +74,16 @@
     <nav class="docs-toc" aria-labelledby="toc-heading">
       <p id="toc-heading">On this page</p>
       <ul>
-        <li><a href="#how">How the themes are built</a></li>
+        <li><a href="#how">Themes and icons</a></li>
         <li><a href="#tokens">The 14 tokens</a></li>
-        <li><a href="#gradient">The background gradient</a></li>
         <li><a href="#all">All 31 themes</a></li>
         <li><a href="#pro">Pro themes</a></li>
         <li><a href="#icons">Icons</a></li>
       </ul>
     </nav>
 
-    <h2 id="how">How the themes are built</h2>
-    <p><strong>Bakery (Original)</strong> is the app's existing hand-tuned palette, kept as-is rather than re-derived. The other 30 are a systematic derivation from each icon's own real artwork: median-cut colour quantization picks a primary/secondary/accent triad from the icon, then fixed lighten/darken/desaturate formulas build the light and dark variant of each — the same relationships Bakery's own hand-tuned palette already used (lighten accents for dark mode, deepen and desaturate backgrounds, flip text from dark-on-cream to light-on-dark), just applied uniformly instead of judged one icon at a time. Every hex value traces back to a real pixel in that icon's actual art — none of it is invented.</p>
+    <h2 id="how">Themes and icons</h2>
+    <p>Each of the 31 app icons has a matching colour theme. Pick a theme and an icon separately in Settings; a theme shows a "matches your icon" label when it belongs to the icon you're using.</p>
 
     <h2 id="tokens">The 14 tokens</h2>
     <p>Every theme defines the same 14 light/dark hex pairs. Bakery's own values, as an example:</p>
@@ -109,25 +108,16 @@
         </tbody>
       </table>
     </div>
-    <p>Every UI colour in the app reads through these 14, via a trait-collection-adaptive <code>Color(light:dark:)</code> — so switching themes, or toggling system Dark Mode, repaints every screen live with no relaunch.</p>
-
-    <h2 id="gradient">The background gradient</h2>
-    <p>Two shapes, matching <code>MuffinTheme.swift</code>'s <code>backgroundGradient</code> exactly:</p>
-    <ul>
-      <li><strong>Flat two-colour (every theme but one):</strong> <code>backgroundTop → backgroundBottom</code>, corner to corner — SwiftUI's <code>.topLeading</code> to <code>.bottomTrailing</code>, which is a 135° diagonal in CSS with the two colours spaced evenly.</li>
-      <li><strong>Multi-stop (Autism Muffin only):</strong> a rainbow band straight down the screen — SwiftUI's <code>.top</code> to <code>.bottom</code>, 180° in CSS — spent in the top ~13% and holding a calm colour for the rest, so the header reads as a rainbow without turning every screen underneath it into one.</li>
-    </ul>
 
     <h2 id="all">All 31 themes</h2>
-    <p>Select any swatch to apply it — the same shared theme picker as the button in the header, and the same 31 <code>MuffinThemePresets.swift</code> defines.</p>
+    <p>Select any swatch to apply it, the same as the theme button in the header.</p>
     <div class="grid theme-grid" id="themeGrid"></div>
 
     <h2 id="pro">Pro themes</h2>
-    <p>3 of the 31 — Diamond Ice, Gold VIP, and Holographic — are "Pro", unlocked by a code rather than gated behind an in-app purchase. There is no StoreKit product involved; the unlock code is the entire purchase path, and app icons are the <em>only</em> thing it gates — nothing else in MuffinEMU is paywalled.</p>
-    <p>Codes are checked against a salted PBKDF2-HMAC-SHA256 hash embedded in the app, so no plaintext code appears anywhere in the source or the compiled binary. A successful unlock is then bound to a per-install random key, so it survives reinstalls through the same signing identity without being copyable to a different install by just editing a preferences file.</p>
+    <p>3 of the 31 — Diamond Ice, Gold VIP and Holographic — are unlocked with a code in Settings. Nothing else in MuffinEMU is locked.</p>
 
     <h2 id="icons">Icons</h2>
-    <p>31 app icons total — the original plus 30 alternates — each carrying the theme derived from its own artwork. Icon and theme pickers are independent: picking an icon never changes your theme, and picking a theme never changes your icon. A theme's association with "its" icon only ever shows up as a "matches your icon" label in the picker UI — nothing enforces pairing them.</p>
+    <p>31 app icons in total. Icon and theme are chosen separately: picking an icon doesn't change your theme, and picking a theme doesn't change your icon.</p>
 
     <nav class="doc-next" aria-label="Previous and next page">
       <a href="controls.html"><span class="dir">Previous</span>&larr; Controls &amp; GamePad</a>

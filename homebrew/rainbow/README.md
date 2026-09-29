@@ -8,7 +8,7 @@ screen.
 Graphics testing on this port kept producing an ambiguous result. `helloworld.rpx` is
 the designated test rom and there is nothing wrong with it, but a black screen while it
 runs means either "the emulator never drew" or "the rom drew nothing worth seeing", and
-the logs looked identical either way. v1.19's magenta empty frame settled half of that:
+the logs looked identical either way. A magenta empty frame settled half of that:
 magenta means the Metal path is alive. This rom settles the other half by putting a very
 large amount of very loud colour on the glass.
 
@@ -50,6 +50,6 @@ colour with no way to ask for another one, which rules it out for a rom about co
 
 ## Building
 
-Not built locally - there is no Wii U toolchain on the dev machine. Run the
+Run the
 **Build Rainbow Demo RPX (Homebrew)** workflow, which builds it in the official
 `devkitpro/devkitppc` container against wut's own sample Makefile.
