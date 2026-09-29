@@ -10,6 +10,8 @@ struct PreviewPadSection: View {
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
     @ObservedObject private var previewPad = PreviewPadStore.shared
     @State private var showingLayoutExporter = false
+    /// Filled by the Export button, so the layout is captured once on tap, not on every render.
+    @State private var layoutDocument = LazyLayoutDocument(file: nil)
     @State private var showingLayoutImporter = false
     @State private var showingColourExporter = false
     @State private var showingColourImporter = false
@@ -61,7 +63,7 @@ struct PreviewPadSection: View {
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .fileExporter(isPresented: $showingLayoutExporter,
-                     document: MuffinLayoutDocument(currentLayoutFile()),
+                     document: layoutDocument,
                      contentType: .muffinLayout,
                      defaultFilename: previewLayoutPreset.title) { _ in }
         .fileImporter(isPresented: $showingLayoutImporter, allowedContentTypes: [.muffinLayout]) { result in
@@ -125,6 +127,7 @@ struct PreviewPadSection: View {
         }
 
         Button {
+            layoutDocument = LazyLayoutDocument(file: currentLayoutFile())
             showingLayoutExporter = true
         } label: {
             Label("Export layout (.muffinlyt)", systemImage: "square.and.arrow.up")
@@ -192,5 +195,21 @@ struct PreviewPadSection: View {
             previewFileAlertTitle = "Error"
             previewFileErrorMessage = "Couldn't import that .muffinclr file: \(error.localizedDescription)"
         }
+    }
+}
+
+/// Layout document whose contents are set when export is requested. Empty until then.
+private struct LazyLayoutDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.muffinLayout] }
+    var file: MuffinLayoutFile?
+
+    init(file: MuffinLayoutFile?) { self.file = file }
+    init(configuration: ReadConfiguration) throws {
+        guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
+        file = try MuffinLayoutFile.decode(data)
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        guard let file else { throw CocoaError(.fileWriteUnknown) }
+        return FileWrapper(regularFileWithContents: try file.encoded())
     }
 }
