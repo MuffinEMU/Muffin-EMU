@@ -296,8 +296,6 @@ namespace {
     }
 }
 
-static std::string g_deviceReport;
-
 static std::string cemu_sysctl_string(const char* name)
 {
     size_t len = 0;
@@ -321,11 +319,11 @@ static uint64_t cemu_sysctl_u64(const char* name)
 
 // The raw model identifier rather than a marketing name: a lookup table is out of date
 // the day a device ships, and a wrong name is worse than an identifier.
-extern "C" const char* cemu_bridge_device_report(void)
+// Built once, under the thread-safe static initialiser, so concurrent first callers can't
+// observe a half-built string; the returned pointer stays valid for the process lifetime.
+static std::string cemu_build_device_report(void)
 {
-    if (!g_deviceReport.empty())
-        return g_deviceReport.c_str();
-
+    std::string report;
     const std::string model = cemu_sysctl_string("hw.machine");
     const uint64_t memBytes = cemu_sysctl_u64("hw.memsize");
     const uint64_t cores    = cemu_sysctl_u64("hw.ncpu");
@@ -342,24 +340,30 @@ extern "C" const char* cemu_bridge_device_report(void)
         [[[NSProcessInfo processInfo] operatingSystemVersionString] UTF8String],
         (unsigned long long)(memBytes / (1024ull * 1024ull)),
         (unsigned long long)cores);
-    g_deviceReport = buf;
+    report = buf;
 
     if (pcores && ecores)
     {
         snprintf(buf, sizeof(buf), " (%llu perf + %llu eff)",
                  (unsigned long long)pcores, (unsigned long long)ecores);
-        g_deviceReport += buf;
+        report += buf;
     }
     if (avail)
     {
         snprintf(buf, sizeof(buf), " | %llu MB available to this app before iOS kills it",
                  (unsigned long long)(avail / (1024ull * 1024ull)));
-        g_deviceReport += buf;
+        report += buf;
     }
     // BUILD_VERSION_STRING is a parenthesised expression, not a bare literal.
-    g_deviceReport += " | build ";
-    g_deviceReport += BUILD_VERSION_STRING;
-    return g_deviceReport.c_str();
+    report += " | build ";
+    report += BUILD_VERSION_STRING;
+    return report;
+}
+
+extern "C" const char* cemu_bridge_device_report(void)
+{
+    static const std::string report = cemu_build_device_report();
+    return report.c_str();
 }
 
 // Declared here rather than in a header: PPCRecompiler.h is a core header the bridge does
@@ -368,7 +372,7 @@ size_t PPCRecompiler_getJitArenaSize();
 size_t PPCRecompiler_getJitArenaUsed();
 
 const char* cemu_bridge_memory_headroom_summary(void) {
-    static std::string summary;
+    static thread_local std::string summary;
     const uint64_t avail = (uint64_t)os_proc_available_memory();
     const uint64_t arena = (uint64_t)PPCRecompiler_getJitArenaSize();
 
@@ -1983,7 +1987,7 @@ void cemu_bridge_graphic_packs_refresh(void) {
 }
 
 const char* cemu_bridge_graphic_packs_list(void) {
-    static std::string g_graphicPacksList;
+    static thread_local std::string g_graphicPacksList;
     g_graphicPacksList = IOSGraphicPacks_List();
     return g_graphicPacksList.c_str();
 }
@@ -1999,7 +2003,7 @@ void cemu_bridge_graphic_pack_set_enabled(int index, bool enabled) {
 // graphic pack functions above.
 
 const char* cemu_bridge_accounts_list(void) {
-    static std::string g_accountsList;
+    static thread_local std::string g_accountsList;
     g_accountsList = IOSAccounts_List();
     return g_accountsList.c_str();
 }
@@ -2066,7 +2070,7 @@ bool cemu_bridge_account_is_online_valid(uint32_t persistentId) {
 }
 
 const char* cemu_bridge_countries_list(void) {
-    static std::string g_countriesList;
+    static thread_local std::string g_countriesList;
     g_countriesList = IOSAccounts_CountriesList();
     return g_countriesList.c_str();
 }
@@ -2122,37 +2126,37 @@ int cemu_bridge_usb_device_slot_count(CemuBridgeUSBDevice device) {
 }
 
 const char* cemu_bridge_usb_device_slot_names(CemuBridgeUSBDevice device) {
-    static std::string g_usbDeviceSlotNames;
+    static thread_local std::string g_usbDeviceSlotNames;
     g_usbDeviceSlotNames = IOSEmulatedDevices_SlotNames((int)device);
     return g_usbDeviceSlotNames.c_str();
 }
 
 const char* cemu_bridge_usb_device_figure_list(CemuBridgeUSBDevice device, int slot) {
-    static std::string g_usbDeviceFigureList;
+    static thread_local std::string g_usbDeviceFigureList;
     g_usbDeviceFigureList = IOSEmulatedDevices_FigureList((int)device, slot);
     return g_usbDeviceFigureList.c_str();
 }
 
 const char* cemu_bridge_usb_device_load(CemuBridgeUSBDevice device, int slot, const char* path) {
-    static std::string g_usbDeviceLoadError;
+    static thread_local std::string g_usbDeviceLoadError;
     g_usbDeviceLoadError = IOSEmulatedDevices_Load((int)device, slot, path);
     return g_usbDeviceLoadError.empty() ? nullptr : g_usbDeviceLoadError.c_str();
 }
 
 const char* cemu_bridge_usb_device_clear(CemuBridgeUSBDevice device, int slot) {
-    static std::string g_usbDeviceClearError;
+    static thread_local std::string g_usbDeviceClearError;
     g_usbDeviceClearError = IOSEmulatedDevices_Clear((int)device, slot);
     return g_usbDeviceClearError.empty() ? nullptr : g_usbDeviceClearError.c_str();
 }
 
 const char* cemu_bridge_usb_device_create(CemuBridgeUSBDevice device, uint32_t figureId, uint16_t variant, const char* path) {
-    static std::string g_usbDeviceCreateError;
+    static thread_local std::string g_usbDeviceCreateError;
     g_usbDeviceCreateError = IOSEmulatedDevices_Create((int)device, figureId, variant, path);
     return g_usbDeviceCreateError.empty() ? nullptr : g_usbDeviceCreateError.c_str();
 }
 
 const char* cemu_bridge_usb_device_move_dimensions(int fromSlot, int toSlot) {
-    static std::string g_usbDeviceMoveError;
+    static thread_local std::string g_usbDeviceMoveError;
     g_usbDeviceMoveError = IOSEmulatedDevices_MoveDimensions(fromSlot, toSlot);
     return g_usbDeviceMoveError.empty() ? nullptr : g_usbDeviceMoveError.c_str();
 }
@@ -2433,7 +2437,7 @@ int cemu_bridge_input_button_mapping_count(void) {
 }
 
 const char* cemu_bridge_input_profile_name(void) {
-    static std::string name;
+    static thread_local std::string name;
     auto vpad = InputManager::instance().get_vpad_controller(0);
     name = vpad ? vpad->get_profile_name() : std::string("<no controller>");
     return name.c_str();
