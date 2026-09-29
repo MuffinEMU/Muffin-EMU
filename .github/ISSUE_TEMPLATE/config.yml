@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Cemu Discord
-    url: https://discord.com/invite/5psYsup
-    about: If you need technical support with Cemu or have other questions the best place to ask is on the official Cemu Discord linked here
+  - name: Installation and troubleshooting
+    url: https://kiddreads.github.io/MuffinEMU/docs/troubleshooting.html
+    about: Install problems, JIT, keys.txt and common crashes are covered here.
+  - name: FAQ
+    url: https://kiddreads.github.io/MuffinEMU/docs/faq.html
+    about: Answers to the most common questions about MuffinEMU.
