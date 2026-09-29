@@ -78,7 +78,10 @@ struct DecryptROMView: View {
             }
         }
         .navigationViewStyle(.stack)
-        .onDisappear { stopPolling() }
+        .onDisappear {
+            if format != nil && !progress.completed { cemu_bridge_cancel_decrypt() }
+            stopPolling()
+        }
     }
 
     /// Shown first, before anything starts: "decrypt to raw source" (the existing
