@@ -152,7 +152,7 @@ struct SaveStateSheet: View {
                         // reasoning behind both sentences below.
                         // Delete is a swipe and a long-press now rather than a trash glyph
                         // wedged between Load and Overwrite, so it has to be said once.
-                        Text("Swipe a slot left, or press and hold it, to delete that save.\n\nA save only loads back into this same running game - quitting or relaunching the game (or restarting the app) breaks the match, and a save from before that always fails to load. That's expected, not a bug.\n\nRight after loading, a texture or shader that changed since the save may flash its old contents for a moment. That's a brief visual glitch, not lost data.")
+                        Text("Swipe a slot left, or press and hold it, to delete.\n\nA save state only loads back while the same game is still running. Quitting or relaunching the game or the app invalidates it.\n\nAfter loading, some textures may briefly flash their old contents.")
                     }
                 }
             }

@@ -1,4 +1,5 @@
 import SwiftUI
+import Metal
 
 /// Which graphics API the engine draws through. Metal is this port's own native
 /// backend and the one every device here has been tested against; Vulkan runs
@@ -156,7 +157,7 @@ struct GraphicsSettingsSection: View {
             SettingsSectionHeader("Graphics", icon: "cube.transparent", accent: .core)
         } footer: {
             InfoButton.footer(
-                "Metal is the native, default renderer; Vulkan (MoltenVK) can be more compatible for some titles at some cost to speed, and takes effect on the next launch. Resolution, stretching, VSync, screen flip and gamma change how the picture is presented, not how the game is emulated.",
+                "Metal is the default renderer. Vulkan (MoltenVK) may work better for some games; it applies on the next launch.",
                 title: "Graphics",
                 text: fullText)
         }
@@ -339,17 +340,23 @@ struct GraphicsSettingsSection: View {
     // where it actually matters (right next to the packs it affects); this is the
     // same fact surfaced here too, because "three screens deep" is too deep for the
     // first place someone would look for why a pack isn't rendering.
-    private var meshShaderNote: some View {
-        Text("This device has no mesh shader support yet, so some graphic packs won't render fully correctly - see Graphic Packs under Library.")
-            .font(.system(size: 12))
-            .foregroundColor(.secondary)
+    private var meshShadersUnsupported: Bool {
+        !(MTLCreateSystemDefaultDevice()?.supportsFamily(.apple7) ?? false)
+    }
+
+    @ViewBuilder private var meshShaderNote: some View {
+        if meshShadersUnsupported {
+            Text("This device doesn't support mesh shaders, so some graphic packs may not render correctly. See Graphic Packs under Library.")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
     }
 
     private var fullText: String {
         """
-        Metal is the native rendering path this port is built on and the default. Vulkan (MoltenVK) runs through a translation layer instead and can be more compatible for some titles, at some cost to speed. Takes effect the next time you launch a game.
+        Metal is the default renderer. Vulkan (MoltenVK) goes through a translation layer and may work better for some games, at some cost to speed. Takes effect the next time you launch a game.
 
-        MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is the default; 1.2.8 is the build 64Touch uses. Only one can be loaded per launch, so a change applies the next time MuffinEMU starts.
+        MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is the default; 1.2.8 is an older build that some games run better on. A change applies the next time MuffinEMU starts.
 
         Upscale filter is used when MuffinEMU draws the game's picture larger than the game rendered it; downscale filter is used when drawing it smaller. Bicubic (the upscale default) is smoother than linear; Bicubic Hermite sharpens that further; Nearest Neighbor keeps hard pixel edges with no blending at all. Linear is the downscale default.
 
@@ -359,17 +366,16 @@ struct GraphicsSettingsSection: View {
 
         Frame stretching fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.
 
-        VSync paces new frames to the screen's own refresh instead of showing them the instant they're ready, which avoids tearing at the cost of capping how fast the picture can update. On by default. Turn it off only if a game feels laggy behind your input and you'd rather see torn frames sooner than smooth ones later - most titles under this port's current performance won't notice a difference either way. Takes effect on the next launch of a game.
+        VSync paces new frames to the screen's own refresh instead of showing them the instant they're ready, which avoids tearing at the cost of capping how fast the picture can update. On by default. Turn it off only if a game feels laggy behind your input and you don't mind tearing. Takes effect on the next launch of a game.
 
         Flip screen upside down inverts both Wii U outputs vertically before they reach the screen. Off for everyone except a panel or capture rig that presents the image inverted. Takes effect on the next frame.
 
         Framebuffer fetch lets eligible Metal shaders read a pixel already sitting in the framebuffer instead of a separate blend pass - on by default, Metal only, and takes effect the next time you launch a game.
 
-        Display gamma adjusts how bright midtones look without changing pure black or pure white. 2.2 is the conventional display gamma and this port's default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.
+        Display gamma adjusts how bright midtones look without changing pure black or pure white. 2.2 is the standard display gamma and the default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.
 
         Override App Gamma and Override Gamma are a separate stage from Display Gamma above, not a second copy of it: some games ask for their own gamma value, and this either adds Override Gamma on top of that request (off) or replaces the game's request with Override Gamma entirely (on) - before Display Gamma is applied to the result. Off by default; most games never ask for a specific gamma at all, so this has nothing to override until one does.
-
-        This device has no mesh shader support, so packs that rely on geometry shaders or post-processing (RECTS) draws won't render correctly yet. Everything else works normally.
         """
+        + (meshShadersUnsupported ? "\n\nThis device doesn't support mesh shaders, so graphic packs that rely on geometry shaders or post-processing (RECTS) draws may not render correctly. Everything else works normally." : "")
     }
 }

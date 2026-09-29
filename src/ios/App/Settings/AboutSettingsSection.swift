@@ -55,7 +55,7 @@ struct AboutSettingsSection: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This puts every emulation, graphics and control setting back to how MuffinEMU ships. Your library, favorites, keys.txt, theme, app icon and premium unlock are untouched, unless you pick the per-game option too.")
+            Text("Puts emulation, graphics, display, audio and control settings back to their defaults. Your library, favorites, keys.txt, theme, app icon and premium unlock are not affected.")
         }
     }
 }

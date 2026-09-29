@@ -75,7 +75,7 @@ struct DisplaySettingsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Enable External Display System")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("Off by default. While off, the two settings below don't exist - MuffinEMU never looks for a second display, connected or not.")
+                    Text("Off by default. Turn it on before connecting a second display.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -125,9 +125,9 @@ struct DisplaySettingsSection: View {
             SettingsSectionHeader("Display", icon: "rectangle.on.rectangle", accent: .io)
         } footer: {
             InfoButton.footer(
-                "Screen Layout arranges the TV and GamePad on this device. External display routing is off until you turn it on above, and even then only takes effect with a second screen actually connected and this app given a window on it - plain AirPlay/screen mirroring doesn't count.",
+                "Screen Layout arranges the TV and GamePad on this device. External display output is off until you enable it, and needs a second screen that MuffinEMU can open a window on; AirPlay mirroring doesn't count.",
                 title: "Display",
-                text: "The Wii U has two screens, the TV and the GamePad.\n\nScreen Layout decides how both share THIS device's screen: Single Screen shows one at a time with a swap button to switch; Adaptive shows both at once, stacked in portrait and side by side in landscape; the GamePad-top-right layout keeps the TV full size with a small GamePad inset.\n\n\"Enable External Display System\" is off by default - MuffinEMU never even checks for a second display until it's on, so plugging one in does nothing until you flip this. Once it's on, the two settings underneath only matter once a genuine second display is connected and this app has a window on it - the launch log says \"placement=dualScreen\" when that's active, and Screen Layout stands down in favour of it.\n\nDual-screen output to a real external display is new and has not been exercised on real hardware yet - if it doesn't behave as described, the launch log's placement line is the first thing to check.")
+                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nExternal display output is off by default; turn it on before connecting a display. It is experimental and hasn't been tested on much hardware.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

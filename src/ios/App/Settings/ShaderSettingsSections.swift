@@ -24,9 +24,9 @@ struct ShaderCompilationSection: View {
             SettingsSectionHeader("Shader Compilation", icon: "hammer", accent: .core)
         } footer: {
             InfoButton.footer(
-                "On, the game keeps running while a new shader builds, which can flicker or appear late the first time it's drawn. Nano Assault Neo needs its own per-game override (long-press it in your library) instead of this off for everyone.",
+                "On keeps the game running while a shader builds; things may flicker the first time they appear. Off waits for each shader and stutters instead.",
                 title: "Shader Compilation",
-                text: "On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead. Neither can build a shader before the game first uses it - the Wii U only reveals them as it draws.\n\nNano Assault Neo specifically breaks with this on - use its own per-game override (long-press the game in your library) rather than turning this off for everyone.")
+                text: "On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead.\n\nNano Assault Neo breaks with this on. Set it off for that game only: long-press it in your library.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -50,8 +50,8 @@ struct ShaderCacheSection: View {
             Button {
                 let freed = cemu_bridge_clear_shader_cache(0, false)
                 cacheStatusMessage = freed < 0
-                    ? "Cannot clear this while a game is running."
-                    : "Freed \(Self.formatBytes(freed)). The next launch of each game is slow once, then back to normal."
+                    ? "Close the game first, then clear the cache."
+                    : "Freed \(Self.formatBytes(freed)). The next launch of each game is slow once."
                 refreshCacheStats()
             } label: {
                 Label("Clear compiled shaders", systemImage: "arrow.counterclockwise")
@@ -76,13 +76,13 @@ struct ShaderCacheSection: View {
             Button("Clear everything", role: .destructive) {
                 let freed = cemu_bridge_clear_shader_cache(0, true)
                 cacheStatusMessage = freed < 0
-                    ? "Cannot clear this while a game is running."
+                    ? "Close the game first, then clear the cache."
                     : "Freed \(Self.formatBytes(freed)). Games will stutter while they relearn their shaders."
                 refreshCacheStats()
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This cannot be undone by pressing a button - each game only relearns its shaders by being played again.")
+            Text("Games will stutter while they rebuild their shaders.")
         }
     }
 

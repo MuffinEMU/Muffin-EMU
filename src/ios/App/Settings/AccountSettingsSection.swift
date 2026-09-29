@@ -50,7 +50,7 @@ struct AccountSettingsSection: View {
                 InfoButton.footer(
                     "This account has no cached NNID/PNID login, so it can't play online yet.",
                     title: "Account",
-                    text: "This account has no cached NNID/PNID login, so it can't play online yet regardless of which Network Service is selected below - that requires signing in on a real console and dumping its account.dat here, which is outside what this app does.")
+                    text: "Online play needs an account with a saved NNID or PNID login. Sign in on a real console and copy its account.dat here; MuffinEMU can't create one.")
             }
         }
         .foregroundColor(MuffinTheme.brownDarkest)
