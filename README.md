@@ -1,44 +1,70 @@
-# MuffinEMU
+<p align="center">
+  <img src="docs/icon.png" width="128" height="128" alt="MuffinEMU icon">
+</p>
 
-Wii U emulation for iPhone and iPad, built on [Cemu](https://github.com/cemu-project/Cemu).
+<h1 align="center">MuffinEMU</h1>
 
-MuffinEMU is its own emulator. The SwiftUI app grew out of Muffin ([kiddreads/cemu-ios-muffin](https://github.com/kiddreads/cemu-ios-muffin)), and the Cemu core underneath it is maintained here, with MuffinEMU's own fixes and a curated set of upstream Cemu fixes on top.
+<p align="center">
+  Wii U emulation for iPhone and iPad.
+</p>
 
-## What's in it
+<p align="center">
+  <a href="https://github.com/kiddreads/MuffinEMU/releases/latest"><img src="https://img.shields.io/github/v/release/kiddreads/MuffinEMU?label=release&color=c8894d" alt="Latest release"></a>
+  <img src="https://img.shields.io/badge/iOS-15%2B-555" alt="iOS 15+">
+  <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-MPL--2.0-555" alt="License: MPL-2.0"></a>
+  <a href="https://kiddreads.github.io/MuffinEMU/"><img src="https://img.shields.io/badge/docs-kiddreads.github.io-555" alt="Documentation"></a>
+</p>
 
-- **The app:** the library, importer, keys.txt handling, decrypt-to-files and WUA, DLC and update install, graphic packs, the measured Wii U GamePad on-screen controls with skins, themes and comfort controls, external-display routing, the in-app launch log, and the crash and memory trail.
-- **The core:** Cemu, with the iOS layers above, MuffinEMU's fixes, and selected upstream Cemu fixes.
+<p align="center">
+  <a href="https://kiddreads.github.io/MuffinEMU/docs/installation.html">Install</a> ·
+  <a href="https://kiddreads.github.io/MuffinEMU/docs/">Documentation</a> ·
+  <a href="https://github.com/kiddreads/MuffinEMU/releases">Releases</a> ·
+  <a href="https://github.com/kiddreads/MuffinEMU/issues/new/choose">Report a bug</a>
+</p>
 
-## Layout
+---
 
-```
-src/ios/App, Emulation, Rendering   the SwiftUI app
-src/ios/Bridge/CemuBridge.h         the only thing the app knows about the engine (plain C)
-src/ios/Bridge/CemuBridge.mm        that API, implemented on the core
-src/ios/Bridge/Core/                title launch, decrypt, DLC/update, graphic packs, pause
-src/  (everything else)             the Cemu core
-```
+MuffinEMU is a native iOS and iPadOS Wii U emulator: a SwiftUI app on its own Cemu-based core, with a Metal renderer, an on-screen GamePad measured from the real hardware, and JIT where iOS allows it.
 
-The bridge and its glue are compiled into `Cemu.framework` together with the core, so they build against the core's own headers. The Xcode app compiles Swift only and embeds that framework.
+## Features
 
-## Installing
+- **Library** — import games from Files, with cover art, sorting and per-game settings.
+- **Game formats** — WUA, decrypted games, and encrypted dumps with your own `keys.txt`. DLC and updates install from the app.
+- **Renderers** — Metal by default. Vulkan through MoltenVK, with a choice of MoltenVK 1.4.3 or 1.2.8.
+- **CPU** — a multi-core interpreter out of the box, and the AArch64 recompiler when a JIT enabler is attached.
+- **On-screen GamePad** — laid out from measurements of a real Wii U GamePad, with an optional analog stick, comfort controls, skins and a per-control layout editor. MFi and Bluetooth controllers work alongside it.
+- **Displays** — single screen, both screens, or the TV image on an external display.
+- **Graphic packs**, save transfer, a persistent shader cache, and an in-app launch log for troubleshooting.
+- **Themes** — 31 app icons, each with a matching theme.
 
-Every build of `main` is published as a numbered release. Each release goes up by 0.1, and after .9 comes the next whole number: 1.0, 1.1 ... 1.9, 2.0.
+## Install
 
-- `MuffinEMU.ipa` for SideStore, AltStore or LiveContainer, which re-sign it with your Apple ID.
-- `MuffinEMU-fakesigned.ipa` for TrollStore or a jailbroken device, with the JIT entitlements embedded.
+Add the MuffinEMU source to your installer:
 
-MuffinEMU uses its own bundle identifier (`com.kiddreads.MuffinEMU`), so it installs next to Muffin rather than replacing it.
+| Installer | Build | Source |
+|---|---|---|
+| SideStore, AltStore, LiveContainer | `MuffinEMU.ipa` | `https://kiddreads.github.io/MuffinEMU/apps.json` |
+| TrollStore, jailbroken | `MuffinEMU-fakesigned.ipa` | `https://kiddreads.github.io/MuffinEMU/trollstore.json` |
 
-**Keys.** Encrypted games need the `keys.txt` dumped from your own Wii U. Drop it into the `keys` folder MuffinEMU creates in the Files app, or import it in Settings. Nothing is bundled.
+Both IPAs are attached to every [release](https://github.com/kiddreads/MuffinEMU/releases). The [installation guide](https://kiddreads.github.io/MuffinEMU/docs/installation.html) explains which one to pick, how to turn on JIT, and where `keys.txt` goes.
 
-**MoltenVK.** The Vulkan renderer can use MoltenVK 1.4.3 (the default) or 1.2.8, the build 64Touch uses (Settings > Graphics). The choice applies on the next launch. Metal, the default renderer, does not use MoltenVK.
+**Games and keys are not included.** MuffinEMU plays games you have dumped from your own Wii U, and encrypted games need the `keys.txt` from that console.
 
-**JIT.** The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer) and the recompiler switch in Settings. Without both, MuffinEMU runs the multi-core interpreter, and Settings says which one this launch got and why.
+**JIT.** The recompiler needs a JIT enabler (StikDebug/StikJIT, SideStore or LiveContainer) and *Use the recompiler (JIT)* switched on in Settings. Without both, MuffinEMU runs the interpreter, and Settings shows which one the current launch is using and why.
+
+## Status
+
+MuffinEMU is under active development and releases often. Compatibility is not yet catalogued, so expect some games not to boot or to run slowly.
+
+Known issues:
+
+- **On-screen controls** — MuffinEMU's own pad is currently not responding reliably. A fix is in progress.
+- **Vulkan** — on A12Z-class iPads the Vulkan renderer fails to find a suitable GPU. Use Metal, the default.
+- **Older GPUs** — devices without mesh shader support (A12Z and earlier) skip geometry-shader and RECTS draws, which can leave some effects missing.
 
 ## Building
 
-CI is the build: `.github/workflows/build-ios-app.yml` runs the whole thing on a macOS runner. To do it by hand on a Mac with full Xcode:
+The CI workflow ([`build-ios-app.yml`](.github/workflows/build-ios-app.yml)) is the reference build and publishes every release. To build by hand on a Mac with Xcode, CMake, Ninja and XcodeGen:
 
 ```sh
 git clone --recursive https://github.com/kiddreads/MuffinEMU.git
@@ -53,16 +79,23 @@ cd src/ios && xcodegen generate
 xcodebuild -project MuffinEMU.xcodeproj -scheme MuffinEMU -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO build
 ```
 
-## Credits and license
+See [ARCHITECTURE.md](ARCHITECTURE.md) for how the app, the bridge and the core fit together.
 
-- [Cemu](https://github.com/cemu-project/Cemu) (MPL-2.0), the emulator MuffinEMU is built on.
-- [MeloCafe](https://github.com/stossy11/MeloCafe) by stossy11 (MPL-2.0). The PowerPC
-  interpreters, the AArch64 recompiler with iOS 26 dual-mapped JIT, the Metal and Vulkan
-  (MoltenVK) renderers and shader emitters, ASTC texture decoding, and the iOS audio,
-  input and window systems were brought over from MeloCafe.
-- [Melo-Controller](https://github.com/stossy11/Melo-Controller) by stossy11 (GPL-3.0), the optional "Use melo-controls" pad.
-- [MoltenVK](https://github.com/KhronosGroup/MoltenVK) (Apache-2.0).
+## Versioning
 
-MuffinEMU's source is MPL-2.0, like Cemu and MeloCafe; see `LICENSE.txt`. Source files keep their original copyright and authorship notices.
+Every build of `main` is a numbered release, 0.1 higher than the last; after `.9` comes the next whole number (1.9, then 2.0). Release notes are written per commit, for players.
 
-The app links Melo-Controller in every build, whether or not the switch is on. MPL-2.0 code may be combined into a GPL work, so a MuffinEMU IPA as a whole is distributed under GPL-3.0, with this repository as its source.
+## Credits
+
+- [Cemu](https://github.com/cemu-project/Cemu) — the Wii U emulator MuffinEMU's core is built on.
+- [MeloCafe](https://github.com/stossy11/MeloCafe) — some MeloCafe cores and bug fixes have been brought over to MuffinEMU.
+- [Melo-Controller](https://github.com/stossy11/Melo-Controller) — the optional alternative on-screen pad.
+- [MoltenVK](https://github.com/KhronosGroup/MoltenVK) — Vulkan on Metal.
+
+## License
+
+MuffinEMU's source is licensed under the [Mozilla Public License 2.0](LICENSE.txt). Source files keep their original copyright and authorship notices.
+
+Melo-Controller (GPL-3.0) is linked into every build, whether or not it is switched on, so a MuffinEMU IPA as a whole is distributed under GPL-3.0, with this repository as its corresponding source.
+
+MuffinEMU is not affiliated with Nintendo. Wii U is a trademark of Nintendo.
