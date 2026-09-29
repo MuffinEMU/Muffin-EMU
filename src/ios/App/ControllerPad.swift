@@ -37,10 +37,8 @@ struct OptimizedControlPanel: View {
     /// responding - otherwise the first touch of a drag would also press whatever it
     /// landed on, and moving the pad would mean firing a button into the running title.
     @Binding var isEditingLayout: Bool
-    /// True whenever the app is not in .active scenePhase. Threaded down so a touch in
-    /// progress when the app resigns active cannot leave a control stuck down: UIKit
-    /// cancels the gesture without a guaranteed .onEnded, and HeldControl's
-    /// onChange(of: isInteractive) is what catches that.
+    /// True while the title is paused or the app is inactive. The pad stops taking
+    /// touches, which cancels and releases anything held.
     var isPaused: Bool = false
 
     @AppStorage(ControllerLayoutSettings.scaleKey)
@@ -174,6 +172,8 @@ struct OptimizedControlPanel: View {
         // not a real event; it is SwiftUI re-rendering, and treating it as one is what
         // released every press a frame after it began.
         .onDisappear { cemu_bridge_release_all_buttons() }
+        // Cancels any touch in progress while paused or inactive, which releases it.
+        .allowsHitTesting(!isPaused)
         // Both of these move controls between clusters, so a button held across the
         // change is removed and rebuilt somewhere else and can never report its own
         // release. Releasing everything is the honest response to the layout changing
@@ -433,7 +433,7 @@ private struct ControlButton: View {
     private static let neutralLabel = Color(white: 0.22)
 
     var body: some View {
-        HeldControl(onPressChange: { onInput(control.id, $0) }) { isPressed in
+        HeldControl(onPressChange: { onInput(control.id, $0) }, isInteractive: isInteractive) { isPressed in
             ZStack {
                 shape(isPressed: isPressed)
                 Text(control.glyph)
@@ -444,7 +444,6 @@ private struct ControlButton: View {
             .scaleEffect(isPressed ? 0.94 : 1.0)
             .animation(.easeInOut(duration: 0.05), value: isPressed)
         }
-        .allowsHitTesting(isInteractive)
     }
 
     private var size: CGSize {
@@ -512,33 +511,27 @@ private struct ControlButton: View {
 
 /// A control that is held for as long as a finger is on it.
 ///
-/// The pad used to be built out of `Button` + `onLongPressGesture`, which is a tap: it
-/// fires once, on release, and there is no way to ask it whether the finger is still
-/// down. It also serialises - UIKit's button machinery claims the interaction, so a
-/// second finger arriving on a different button while the first is held was simply
-/// dropped, and "hold left while pressing A" was not expressible at all.
+/// A control that reports press and release.
 ///
-/// `DragGesture(minimumDistance: 0)` fixes both. onChanged arrives on touch-down and
-/// onEnded on lift, including a lift that happens outside the view's own bounds, so a
-/// press cannot get stuck by sliding a thumb off the edge of a button.
+/// Built on `DragGesture(minimumDistance: 0)` rather than `Button`, so a control can be
+/// held and several can be held at once with different fingers.
 ///
-/// Attached with `.gesture`, not `.simultaneousGesture`: sibling buttons are not
-/// ancestors of one another, so they arbitrate independently and two fingers on two
-/// different controls both register.
+/// The pressed state is a `@GestureState`, which SwiftUI resets whenever the gesture ends
+/// for any reason - a lift, or the system cancelling it (a swipe, a banner, hit testing
+/// being switched off). The release is reported from that reset, so it cannot be missed.
+///
+/// Release-all lives on the pad's `.onDisappear`, not on each control: a per-control
+/// release fired a frame after every press began.
 struct HeldControl<Content: View>: View {
     let onPressChange: (Bool) -> Void
-    /// Whether this control can be pressed right now. Re-added on top of Muffin Classic's
-    /// version because PreviewControllerPad passes it, and because a control that is drawn
-    /// highlighted but can no longer be touched to release it is stuck exactly the way a
-    /// jammed physical button would be.
+    /// Whether this control can be pressed right now. Turning it off cancels a press in
+    /// progress, which releases it.
     var isInteractive: Bool = true
     let content: (Bool) -> Content
 
-    @State private var isPressed = false
-    /// When the current press started, for the diagnostics readout. Measuring how long a
-    /// press survived, and what ended it, is the one thing that separates "the finger
-    /// lifted" from "the view was torn down underneath it" - and guessing between those
-    /// from a remembered fraction of a second is how several theories went wrong.
+    @GestureState private var isPressed = false
+    /// True once the gesture ended normally, to tell a lift from a cancel in diagnostics.
+    @State private var endedNormally = false
     @State private var pressBegan = Date()
 
     @AppStorage(ControllerLayoutSettings.hapticsKey)
@@ -546,81 +539,37 @@ struct HeldControl<Content: View>: View {
 
     var body: some View {
         content(isPressed)
-            // Without this the hit area is whatever the label happens to paint, so a
-            // finger landing on the transparent corner of a circular button hits the
-            // view behind it instead.
+            // Without this the hit area is only what the label paints, so a finger on the
+            // transparent corner of a round button would reach the view behind it.
             .contentShape(Rectangle())
             .accessibilityAddTraits(.isButton)
             .gesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        PadDiagnostics.shared.recordRawTouch()
-                        setPressed(true)
-                    }
-                    .onEnded { _ in setPressed(false, because: .fingerLifted) }
+                    .updating($isPressed) { _, state, _ in state = true }
+                    .onChanged { _ in PadDiagnostics.shared.recordRawTouch() }
+                    .onEnded { _ in endedNormally = true }
             )
-            // NO .onDisappear release here, and that absence is the fix for a bug that
-            // took a day to corner.
-            //
-            // It used to release the press when this control left the view tree, on the
-            // reasoning that a view removed mid-press never delivers onEnded and a stuck
-            // button is a title stuck walking into a wall. The reasoning is sound; the
-            // level is wrong. SwiftUI removes and re-adds a control for its own reasons
-            // during ordinary re-rendering, and onDisappear cannot tell that apart from
-            // the pad actually going away - so every press was being released a frame or
-            // two after it started, by nothing the player did.
-            //
-            // Found from the outside: hold a button still and the readout
-            // goes "X down" then straight to "X up" without a finger lifting, but drag
-            // the finger off the button while still holding and it stays "X down" and
-            // reaches the game. onChanged fires once for a still finger and continuously
-            // for a moving one, so a moving finger simply re-asserts the press after
-            // each spurious release. That also proves the GESTURE never ended - SwiftUI
-            // does not restart a DragGesture mid-touch after onEnded - so the release
-            // could only have come from here.
-            //
-            // The safety net it provided lives at the panel instead, where "the pad went
-            // away" is a real event rather than a rendering detail.
-            // Same safety net, for the case a view stays mounted but stops accepting
-            // touches - edit mode switching on under a finger, or the app resigning
-            // active. Without it the control keeps drawing pressed with no way to release.
-            .onChange(of: isInteractive) { active in
-                if !active { setPressed(false, because: .stoppedAcceptingTouches) }
+            .onChange(of: isPressed) { pressed in
+                report(pressed)
             }
+            .allowsHitTesting(isInteractive)
     }
 
-    // onChanged repeats for every touch-move, so guard - both to keep the highlight from
-    // re-animating and to keep the bridge call one per actual state change.
-    //
-    // This is Muffin Classic's version, unchanged, and that is the point: it is the press
-    // path that has always worked. MuffinEMU's copy had grown an extra statement between
-    // the state assignment and the report -
-    //
-    //     isPressed = value
-    //     if value, hapticsEnabled { PadHaptics.shared.fire() }   <- inserted here
-    //     onPressChange(value)
-    //
-    // - which put a main-thread-only UIKit call (UIImpactFeedbackGenerator) inside the
-    // one window where isPressed has already been set but the engine has not been told.
-    // Anything that trapped or stalled there left the state true and the report unsent,
-    // and the guard then swallowed every press after it, forever. Haptics now fire AFTER
-    // the report instead, so nothing can come between those two lines again.
-    private func setPressed(_ value: Bool, because reason: PadDiagnostics.ReleaseReason = .fingerLifted) {
-        guard isPressed != value else { return }
-        // Read before the state changes, so the duration below measures the press rather
-        // than the time since this function was entered.
+    // Report first, then diagnostics, then haptics: nothing may sit between the state
+    // change and the report.
+    private func report(_ pressed: Bool) {
         let began = pressBegan
-        isPressed = value
-        if value { pressBegan = Date() }
-        onPressChange(value)
-        // After the report, not before it - the same rule the haptics call had to learn.
-        // Nothing may sit between the state assignment and onPressChange again.
-        if value {
+        if pressed { pressBegan = Date(); endedNormally = false }
+        onPressChange(pressed)
+        if pressed {
             PadDiagnostics.shared.recordPressBegan()
         } else {
+            let reason: PadDiagnostics.ReleaseReason =
+                !isInteractive ? .stoppedAcceptingTouches
+                : (endedNormally ? .fingerLifted : .gestureCancelled)
             PadDiagnostics.shared.recordRelease(reason, heldSince: began)
         }
-        if value, hapticsEnabled { PadHaptics.shared.fire() }
+        if pressed, hapticsEnabled { PadHaptics.shared.fire() }
     }
 }
 
@@ -740,6 +689,9 @@ private struct JoystickControl: View {
     /// travel radius, so this is also what the axis is derived from - one number, not a
     /// visual one and a reported one that could disagree.
     @State private var knobOffset: CGSize = .zero
+    /// True while a finger is on the stick. Resets if the system cancels the gesture, so
+    /// the stick always recentres.
+    @GestureState private var touching = false
     /// Whether this gesture ever pushed the stick, as opposed to resting on it. What
     /// separates a click from a movement, and it is deflection that decides it rather than
     /// distance travelled: a finger that lands directly on the edge of the ring has moved
@@ -830,6 +782,7 @@ private struct JoystickControl: View {
         .allowsHitTesting(isInteractive)
         .gesture(
             DragGesture(minimumDistance: 0)
+                .updating($touching) { _, state, _ in state = true }
                 .onChanged { value in
                     // .local by default, so the ring's own centre is half its frame.
                     let dx = value.location.x - base / 2
@@ -866,9 +819,14 @@ private struct JoystickControl: View {
                     // gesture a stick has spare, and L3 would otherwise be lost in this
                     // mode - the centre dot it used to live on is where the knob is now.
                     if !pushed { click() }
-                    recentre()
                 }
         )
+        .onChange(of: touching) { down in
+            if !down { recentre() }
+        }
+        .onChange(of: isInteractive) { active in
+            if !active { recentre() }
+        }
         // A gesture the system cancels - backgrounding, an incoming call, the mode being
         // switched off mid-press - never delivers onEnded, and a stick left deflected is
         // worse than a stuck button: the title keeps walking and nothing on screen is lit
