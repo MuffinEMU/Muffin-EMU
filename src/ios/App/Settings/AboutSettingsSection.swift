@@ -20,7 +20,7 @@ struct AboutSettingsSection: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
 
-            Text("MuffinEMU is built on Cemu. Some MeloCafe cores and bug fixes have been brought over to MuffinEMU, and the optional melo-controls pad is Melo-Controller by stossy11.")
+            Text("MuffinEMU is built on Cemu. The optional melo-controls pad is Melo-Controller by stossy11.")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
 

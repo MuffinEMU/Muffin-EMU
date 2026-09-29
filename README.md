@@ -88,7 +88,6 @@ Every build of `main` is a numbered release, 0.1 higher than the last; after `.9
 ## Credits
 
 - [Cemu](https://github.com/cemu-project/Cemu) — the Wii U emulator MuffinEMU's core is built on.
-- [MeloCafe](https://github.com/stossy11/MeloCafe) — some MeloCafe cores and bug fixes have been brought over to MuffinEMU.
 - [Melo-Controller](https://github.com/stossy11/Melo-Controller) — the optional alternative on-screen pad.
 - [MoltenVK](https://github.com/KhronosGroup/MoltenVK) — Vulkan on Metal.
 

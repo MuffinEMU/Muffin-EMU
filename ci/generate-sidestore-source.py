@@ -148,8 +148,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
                 "MuffinEMU is a Wii U emulator for iPhone and iPad, iOS 15 and later, built "
                 "on Cemu: PowerPC interpreters, an AArch64 recompiler, Cafe OS HLE and a "
                 "native Metal renderer under a SwiftUI app with a measured Wii U GamePad "
-                "layout. Some MeloCafe cores and bug fixes have been brought over to "
-                "MuffinEMU.\n\n"
+                "layout.\n\n"
                 + extra_note + "\n\n"
                 "Bring your own games and keys. No copyrighted content is distributed here."),
             "iconURL": f"{PAGES}/icon.png",
