@@ -1,6 +1,6 @@
 //
 //  CemuConfigWrapper.h
-//  MeloCafe
+//  MuffinEMU
 //
 //  Created by Stossy11 on 5/4/2026.
 //
