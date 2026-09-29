@@ -299,8 +299,8 @@ void cemu_bridge_graphic_packs_refresh(void);
 /// pass it straight back to cemu_bridge_graphic_pack_set_enabled.
 ///
 /// Same ownership as cemu_bridge_device_report and friends: the returned pointer is
-/// into a static buffer this function owns, valid until the next call to this same
-/// function - copy it (e.g. String(cString:)) before calling again, never free it.
+/// into a thread-local buffer this function owns, valid until the next call to this same
+/// function on the same thread - copy it (e.g. String(cString:)) before calling again, never free it.
 const char* cemu_bridge_graphic_packs_list(void);
 
 /// Enables or disables the pack at `index` (from the most recent
@@ -347,8 +347,8 @@ int cemu_bridge_usb_device_slot_count(CemuBridgeUSBDevice device);
 
 /// One record per slot, in slot order, separated by 0x1E - same convention as
 /// cemu_bridge_graphic_packs_list(). An empty slot is an empty record (never omitted),
-/// so record index always equals slot index. Static storage owned by this call, valid
-/// until the next call to ANY cemu_bridge_usb_device_* function; copy before that.
+/// so record index always equals slot index. Thread-local storage owned by this call,
+/// valid until the next call to this function on the same thread; copy before that.
 const char* cemu_bridge_usb_device_slot_names(CemuBridgeUSBDevice device);
 
 /// The core's own built-in figure table for `device`, restricted to the entries valid in
@@ -363,7 +363,7 @@ const char* cemu_bridge_usb_device_figure_list(CemuBridgeUSBDevice device, int s
 /// Loads the figure file at `path` (already written by create, below, or imported by the
 /// user) into `slot`. Returns NULL on success; on failure, a static, human-readable
 /// reason (file too small for this device, already loaded in another slot, portal has no
-/// free slots) valid until the next cemu_bridge_usb_device_* call - copy it before that.
+/// free slots) valid until the next call to the same function on the same thread - copy it before that.
 const char* cemu_bridge_usb_device_load(CemuBridgeUSBDevice device, int slot, const char* path);
 
 /// Tells the emulated device the figure in `slot` was lifted off - the game sees a real
@@ -1110,12 +1110,14 @@ void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y);
 /// is a request - whether the system honoured it shows up only in the numbers, and a
 /// readout saying "increased memory limit: on" beside a 64 MB JIT arena would be a
 /// reassuring lie. The arena size is the number that says whether the recompiler got room.
+/// The returned pointer is into a thread-local buffer, valid until the next call to this
+/// function on the same thread; copy it before calling again.
 const char* cemu_bridge_memory_headroom_summary(void);
 
 int cemu_bridge_input_button_mapping_count(void);
 
 /// Which controller profile the GamePad is on ("default" when none was loaded). Owned by
-/// the bridge and valid until the next call.
+/// the bridge and valid until the next call on the same thread.
 const char* cemu_bridge_input_profile_name(void);
 
 /// Delete the GamePad's persisted profile and re-apply the default mappings. Returns true
