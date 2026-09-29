@@ -115,50 +115,46 @@ enum CoverArtFetcher {
         return nil
     }
 
-    /// Fetches and caches real box art for one game, trying region/extension
-    /// combinations in order and stopping at the first one that actually resolves.
-    /// Returns the cached file's path on success, nil on any failure (no network, no
-    /// art listed anywhere tried) - writes the "nothing there" marker in the latter
-    /// case so the next launch doesn't try again for nothing.
-    ///
-    /// Reuses fetchArt(forGameTdbId:) for the actual probing rather than running its
-    /// own copy of the loop. `try?` here restores this path's original behavior of
-    /// treating a network failure exactly like "nothing found anywhere" - a
-    /// background fetch has nobody to report "you're offline" to, and gets another
-    /// chance on a later launch regardless. One difference from the pre-extraction
-    /// version: that version kept trying further region/extension combinations if
-    /// the disk write of an already-found image failed; this one does not, since a
-    /// write failure right after a successful fetch (disk full, permissions) is not
-    /// something a different region's bytes would fix either. Immaterial in
-    /// practice - the write is a few KB to a directory this same call just created -
-    /// but noted because it is a real, if unreachable, behavior change.
+    /// Fetches and caches box art for one game. Returns the cached file's path on
+    /// success. Returns nil when nothing was cached; the "not listed" marker is written
+    /// only when GameTDB definitively has no art for the ID. A transport failure (offline,
+    /// timeout, server error) or a failed cache write writes no marker, so the game is
+    /// tried again on a later launch.
     static func fetchAndCache(gameID: String, romPath: String, in libraryDirectory: URL) async -> String? {
         guard let tdbId = deriveGameTdbId(romPath: romPath) else { return nil }
 
         let cacheDirectory = libraryDirectory.appendingPathComponent(cacheDirectoryName)
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
 
-        if let found = (try? await fetchArt(forGameTdbId: tdbId)) ?? nil {
-            let cached = cacheDirectory.appendingPathComponent("\(gameID).\(found.ext)")
-            if (try? found.data.write(to: cached, options: .atomic)) != nil {
-                return cached.path
-            }
+        let found: (data: Data, ext: String)?
+        do {
+            found = try await fetchArt(forGameTdbId: tdbId)
+        } catch {
+            return nil
         }
 
-        // Tried every region/extension combination and found nothing real - remember
-        // that rather than hitting the network again on every future launch.
-        FileManager.default.createFile(atPath: notFoundMarkerPath(for: gameID, in: libraryDirectory).path, contents: nil)
+        guard let found else {
+            FileManager.default.createFile(atPath: notFoundMarkerPath(for: gameID, in: libraryDirectory).path, contents: nil)
+            return nil
+        }
+
+        let cached = cacheDirectory.appendingPathComponent("\(gameID).\(found.ext)")
+        if (try? found.data.write(to: cached, options: .atomic)) != nil {
+            return cached.path
+        }
         return nil
     }
 
-    /// A 404 from GameTDB is a normal, expected outcome (most region/extension guesses
-    /// miss), not a network error - only actual transport failures should throw here,
-    /// so a non-200 response is treated the same as "nothing at this URL" rather than
-    /// surfaced as data (an HTML error page is never mistaken for image bytes: it is
-    /// simply discarded by the 200-only check below).
+    /// 200 returns the body, 404 returns nil (GameTDB has nothing at this URL, a normal
+    /// outcome for most region/extension guesses). Anything else (transport error, 5xx,
+    /// rate limiting) throws so it is not mistaken for "no art".
     private static func fetch(_ url: URL) async throws -> Data? {
         let (data, response) = try await URLSession.shared.data(from: url)
-        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
-        return data
+        guard let http = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        switch http.statusCode {
+        case 200: return data
+        case 404: return nil
+        default: throw URLError(.badServerResponse)
+        }
     }
 }
