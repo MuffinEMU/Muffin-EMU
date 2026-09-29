@@ -2,23 +2,18 @@
 //  MuffinColourPresets.swift
 //  Muffin - colour presets for the pad, plus the Custom picker and both file formats.
 //
-//  Wired into the preview showcase build (branch preview/showcase-sneak-peek). See the cull table in GAMEPAD_LAYOUT.md for exactly which of the
-//  shipping 20 skins this replaces, and why - it is not a style opinion, it is a
-//  measurement: several of them differ by less than 30/441 in their own A/B/X/Y colours,
-//  which is not visible to a player at arm's length from an iPad.
-//
 
 import SwiftUI
 import UniformTypeIdentifiers
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Real colour, sampled off the hardware
 
-/// Hex values pulled directly from the official Wii U GamePad illustration
-/// at the same pixel positions the geometry was measured from -
-/// small patches averaged, not eyeballed. Where a value is a considered match rather than
-/// a sample, it says so at its use site: there is no black-GamePad photograph in this
-/// repository to sample from, so `wiiUBlack` is a companion built to the same relationships
-/// the white one measures, not a second measurement.
+/// Hex values sampled from the official Wii U GamePad illustration at the positions the
+/// geometry was measured from. `wiiUBlack` is derived from the same relationships, not
+/// sampled.
 private enum Sampled {
     static let shellWhite   = MuffinRGBA("#F4F4F5")   // body plastic
     static let faceFill     = MuffinRGBA("#F1F1F1")   // A/B/X/Y plastic - visibly whiter than...
@@ -34,9 +29,7 @@ private enum Sampled {
 
 enum MuffinColourPresets {
 
-    /// **Measured.** The GamePad exactly as photographed: white-ish face buttons, a
-    /// visibly greyer d-pad and system row - that split is real, not a design choice, and
-    /// keeping it is what makes this the "official white" rather than a flat recolour.
+    /// Sampled: white-ish face buttons and a visibly greyer d-pad and system row.
     static let wiiUWhite = MuffinColourFile(
         name: "Wii U White",
         fills: ["face": Sampled.faceFill, "dpad": Sampled.dpadFill, "start": Sampled.systemFill,
@@ -46,21 +39,15 @@ enum MuffinColourPresets {
         glyphs: ["default": Sampled.glyphGrey, "home": Sampled.homeGlyph],
         outline: Sampled.outlineGrey)
 
-    /// **Measured, same source image.** Not a separate preset invented for variety - the
-    /// d-pad and system-button plastic the White preset already keeps distinct, promoted
-    /// to be the fill for every group. This is the one Wii U colour that needed no
-    /// invention at all: it was already sitting in the reference photograph.
+    /// Sampled: the d-pad and system-button plastic used as the fill for every group.
     static let wiiUGrey = MuffinColourFile(
         name: "Wii U Grey",
         fills: ["default": Sampled.dpadFill],
         glyphs: ["default": MuffinRGBA("#3A3A3C")],
         outline: MuffinRGBA("#8A8A8E"))
 
-    /// **Derived, not measured.** There is no black-GamePad photograph in this repository.
-    /// Built to the one relationship the white preset's measurement actually established -
-    /// buttons a shade lighter than the housing around them, dark glyphs on a light
-    /// button - inverted onto a dark housing rather than copied from a source that does
-    /// not exist here. Flagged so nobody mistakes it for a second sampling pass.
+    /// Derived: the white preset's relationships (buttons a shade lighter than the housing,
+    /// dark glyphs on light buttons) inverted onto a dark housing.
     static let wiiUBlack = MuffinColourFile(
         name: "Wii U Black",
         fills: ["default": MuffinRGBA("#3A3A3D")],
@@ -68,11 +55,7 @@ enum MuffinColourPresets {
         outline: MuffinRGBA("#1C1C1E"),
         shell: MuffinRGBA("#151516"))
 
-    /// **Approximate, not pixel-sampled** - there is no Super Famicom hardware in this
-    /// repository either, so these are the widely-cited console colours rather than a
-    /// measurement. Requested by name over a genuine "Wii U official coloured buttons"
-    /// preset, because the Wii U GamePad was never sold with coloured face buttons - the
-    /// closest real Nintendo colour scheme for a coloured A/B/X/Y is this one.
+    /// Approximate: the widely-cited Super Famicom face-button colours.
     static let superFamicom = MuffinColourFile(
         name: "Super Famicom",
         fills: ["A": .init("#5FB84E"), "B": .init("#E8C33B"), "X": .init("#4E7FD0"), "Y": .init("#D14B45"),
@@ -81,12 +64,8 @@ enum MuffinColourPresets {
                  "default": Sampled.glyphGrey],
         outline: Sampled.outlineGrey)
 
-    /// **Inspired by description, not sourced** - built from "see-through white, like
-    /// MelonX", which was given as a reference rather than a file this repository has
-    /// access to. Low fill alpha rather than zero, so a control is still findable by eye
-    /// before a thumb finds it by touch; the pressed-alpha boost carries more of the
-    /// affordance here than anywhere else in the catalog, since idle it is close to
-    /// invisible on purpose.
+    /// See-through white. Low fill alpha (not zero) keeps controls findable by eye; the
+    /// pressed-alpha boost carries most of the affordance.
     static let frostedGlass = MuffinColourFile(
         name: "Frosted Glass",
         fills: ["default": MuffinRGBA(r: 1, g: 1, b: 1, a: 0.14)],
@@ -94,8 +73,7 @@ enum MuffinColourPresets {
         outline: MuffinRGBA(r: 1, g: 1, b: 1, a: 0.35),
         pressedAlphaBoost: 0.30)
 
-    /// Splatoon shipped as a Wii U launch-window exclusive, so its ink colours are a
-    /// closer fit to "a Wii U game's own palette" than a generic neon preset would be.
+    /// Splatoon ink colours.
     static let inkling = MuffinColourFile(
         name: "Inkling",
         fills: ["A": .init("#0FF0C0"), "B": .init("#FF4E9E"), "X": .init("#FFE137"), "Y": .init("#8B3FFD"),
@@ -103,9 +81,8 @@ enum MuffinColourPresets {
         glyphs: ["default": .init("#F4F4F5")],
         outline: MuffinRGBA(r: 1, g: 1, b: 1, a: 0.25))
 
-    /// High-contrast rather than themed: pure black glyphs on pure white fills, a heavy
-    /// outline, no colour anywhere. For low vision or a bright outdoor screen, where every
-    /// other preset in this file is optimised for looking good, not for being findable.
+    /// Pure black glyphs on pure white fills with a heavy outline, for low vision or bright
+    /// outdoor screens.
     static let highContrast = MuffinColourFile(
         name: "High Contrast",
         fills: ["default": MuffinRGBA("#FFFFFF")],
@@ -113,8 +90,7 @@ enum MuffinColourPresets {
         outline: MuffinRGBA("#000000"),
         pressedAlphaBoost: 0)
 
-    /// A terminal green, for the part of the audience playing an emulator because they
-    /// like that a thing this old still runs at all.
+    /// Terminal green.
     static let terminal = MuffinColourFile(
         name: "Terminal",
         fills: ["default": MuffinRGBA(r: 0.04, g: 0.10, b: 0.04, a: 0.9)],
@@ -129,10 +105,7 @@ enum MuffinColourPresets {
         glyphs: ["default": .init("#FFF4EC")],
         outline: MuffinRGBA(r: 1, g: 1, b: 1, a: 0.2))
 
-    /// The interactive slot. `MuffinColourFile(name: "Custom", fills: [:], ...)` is the
-    /// starting point `PadColourPickerView` edits in place - it is a real, saveable preset
-    /// like every other one here, just one whose fills start empty and get written by a
-    /// person instead of by this file.
+    /// The starting point `PadColourPickerView` edits.
     static let customStarter = MuffinColourFile(
         name: "Custom", fills: ["default": Sampled.faceFill],
         glyphs: ["default": Sampled.glyphGrey], outline: Sampled.outlineGrey)
@@ -145,10 +118,8 @@ enum MuffinColourPresets {
 
 // MARK: - The Custom picker
 
-/// One row per control group, a `ColorPicker` for its fill and its glyph, live on the pad
-/// behind the sheet. Grouped by `PadGroup` rather than by raw control id for the same
-/// reason moving is grouped that way: nobody wants to colour X, Y, A and B one at a time
-/// when they are, and always have been, one decision.
+/// One row per control group, with a `ColorPicker` for its fill and its glyph, live on the pad
+/// behind the sheet.
 struct PadColourPickerView: View {
     @Binding var scheme: MuffinColourFile
     var onSave: (MuffinColourFile) -> Void
@@ -187,10 +158,8 @@ struct PadColourPickerView: View {
         }
     }
 
-    /// Sticks and the menu row are left out of the per-group list, not because they
-    /// cannot be recoloured - `fill(_:)` will still find them by id if someone edits the
-    /// JSON by hand - but because the sheet already has nine sections without them and a
-    /// stick's own base/knob split does not collapse into one swatch cleanly.
+    /// Sticks and the menu row are left out of the per-group list (a stick's base/knob split
+    /// doesn't fit one swatch); `fill(_:)` still finds them by id.
     private var colourableGroups: [PadGroup] { [.dpad, .face, .start, .select] }
 
     private func colourRow(_ label: String, key: String?, isGlyph: Bool, isOutline: Bool = false) -> some View {
@@ -201,8 +170,11 @@ struct PadColourPickerView: View {
                 return Color(red: c.r, green: c.g, blue: c.b, opacity: c.a)
             },
             set: { newColor in
-                guard let comps = newColor.cgColor?.components, comps.count >= 3 else { return }
-                let rgba = MuffinRGBA(r: comps[0], g: comps[1], b: comps[2], a: comps.count > 3 ? comps[3] : 1)
+                // getRed converts greyscale colours to RGB; cgColor.components would give
+                // only (white, alpha) for a grey.
+                var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+                guard UIColor(newColor).getRed(&r, green: &g, blue: &b, alpha: &a) else { return }
+                let rgba = MuffinRGBA(r: Double(r), g: Double(g), b: Double(b), a: Double(a))
                 if isOutline { scheme.outline = rgba }
                 else if isGlyph { scheme.glyphs[key ?? "default"] = rgba }
                 else { scheme.fills[key ?? "default"] = rgba }
@@ -248,29 +220,3 @@ struct MuffinColourDocument: FileDocument {
         FileWrapper(regularFileWithContents: try file.encoded())
     }
 }
-
-//  ---------------------------------------------------------------------------------
-//  WIRING
-//
-//  1. Move this file to src/ios/App/ alongside GamePadGeometry.swift and
-//     MuffinPadCustomisation.swift.
-//
-//  2. Replace `ControllerSkinsLibrary.getSkin(by:)`'s catalog with `MuffinColourPresets.all`
-//     plus whichever of the 14 non-duplicate shipping skins should stay (Standard, Wii U
-//     Original, Nintendo 64, NES, Switch Pro, PlayStation, Arcade Cabinet, Sega Genesis,
-//     Minimal, Glass, Neon, Mario Theme, Zelda Theme keep their current definitions
-//     unchanged; GameCube, Super Nintendo, Xbox, Dark Mode, Light Mode and Steam Deck are
-//     the ones the measurement found redundant - see GAMEPAD_LAYOUT.md's cull table for
-//     the distance numbers and which surviving skin each name should redirect existing
-//     users to). The shipping `WiiUControllerSkin` and this file's `MuffinColourFile` are
-//     two different shapes - a small adapter converting one to the other is the rest of
-//     this step, not a rewrite of ControllerPad's drawing code.
-//
-//  3. `.fileExporter`/`.fileImporter` with `MuffinColourDocument`/`MuffinLayoutDocument`
-//     is the standard SwiftUI pattern; nothing here depends on anything else being wired
-//     in first.
-//
-//  4. `@AppStorage` for "which preset is active" should store the preset's `name`, with
-//     `MuffinColourPresets.all.first(where: { $0.name == stored })` as the lookup and the
-//     Custom slot's own JSON blob as a separate key - the same shape
-//     `ControllerCustomLayout` already uses for per-element overrides.

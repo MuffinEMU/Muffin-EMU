@@ -18,7 +18,7 @@ PAGES = "https://kiddreads.github.io/MuffinEMU"
 BUNDLE_ID = "com.kiddreads.MuffinEMU"
 VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)$")
 NIGHTLY_NOTE = (
-    'This source serves the NIGHTLY build - the newest code, rebuilt on every change and tested by nobody. It shares its bundle identifier with the standard build, so installing it replaces a standard install and keeps your games, saves and settings; the two do not sit side by side. Add this source only if you want the newest build rather than the one known to work.')
+    'This source serves the nightly build: the newest code, rebuilt on every change and not tested. It has the same bundle identifier as the standard build, so installing it replaces a standard install and keeps your games, saves and settings. Add it only if you want the newest build rather than the one known to work.')
 
 
 def releases(repo, token):

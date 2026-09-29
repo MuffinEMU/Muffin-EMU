@@ -1,12 +1,7 @@
 import SwiftUI
 
-/// Whether a shader is built while the game keeps running, or the game waits for
-/// it. Its own section rather than folded into Graphics or Shader Cache - it used
-/// to share a single "Performance" section with resolution/stretch/vsync, which
-/// read as one bundled decision when it is not: Nano Assault Neo needs this OFF
-/// while every other tested game wants it ON, and that only makes sense as a real
-/// per-setting choice. The per-game override for this one lives in the library's
-/// long-press menu, not here - this is the global default it falls back to.
+/// Whether a shader is built while the game keeps running, or the game waits for it. This is
+/// the global default; the per-game override is in the library's long-press menu.
 struct ShaderCompilationSection: View {
     @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
 
@@ -24,19 +19,16 @@ struct ShaderCompilationSection: View {
             SettingsSectionHeader("Shader Compilation", icon: "hammer", accent: .core)
         } footer: {
             InfoButton.footer(
-                "On, the game keeps running while a new shader builds, which can flicker or appear late the first time it's drawn. Nano Assault Neo needs its own per-game override (long-press it in your library) instead of this off for everyone.",
+                "On keeps the game running while a shader builds; things may flicker the first time they appear. Off waits for each shader and stutters instead.",
                 title: "Shader Compilation",
-                text: "On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead. Neither can build a shader before the game first uses it - the Wii U only reveals them as it draws.\n\nNano Assault Neo specifically breaks with this on - use its own per-game override (long-press the game in your library) rather than turning this off for everyone.")
+                text: "On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead.\n\nNano Assault Neo breaks with this on. Set it off for that game only: long-press it in your library.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 }
 
-/// Storage and clearing, split out of what used to be "Performance" into its own
-/// section - a shader cache is disk state, not a performance knob, and the two
-/// clear actions cost very different things (a slow next launch vs. throwing away
-/// something only playing can earn back), which is exactly why there are two
-/// buttons here rather than one "clear cache" button that hides that difference.
+/// Shader cache sizes and the two clear actions (compiled shaders only, or everything
+/// including learned ones).
 struct ShaderCacheSection: View {
     @State private var learnedCacheBytes: Int64 = 0
     @State private var compiledCacheBytes: Int64 = 0
@@ -50,8 +42,8 @@ struct ShaderCacheSection: View {
             Button {
                 let freed = cemu_bridge_clear_shader_cache(0, false)
                 cacheStatusMessage = freed < 0
-                    ? "Cannot clear this while a game is running."
-                    : "Freed \(Self.formatBytes(freed)). The next launch of each game is slow once, then back to normal."
+                    ? "Close the game first, then clear the cache."
+                    : "Freed \(Self.formatBytes(freed)). The next launch of each game is slow once."
                 refreshCacheStats()
             } label: {
                 Label("Clear compiled shaders", systemImage: "arrow.counterclockwise")
@@ -67,7 +59,6 @@ struct ShaderCacheSection: View {
         } header: {
             SettingsSectionHeader("Shader Cache", icon: "externaldrive", accent: .core)
         } footer: {
-            // Already one short sentence pair - nothing to cut behind an info button.
             InfoButton.footer("Learned shaders are what a game has revealed by drawing with them, saved so the next launch skips rebuilding them. Compiled shaders rebuild on their own.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
@@ -76,13 +67,13 @@ struct ShaderCacheSection: View {
             Button("Clear everything", role: .destructive) {
                 let freed = cemu_bridge_clear_shader_cache(0, true)
                 cacheStatusMessage = freed < 0
-                    ? "Cannot clear this while a game is running."
+                    ? "Close the game first, then clear the cache."
                     : "Freed \(Self.formatBytes(freed)). Games will stutter while they relearn their shaders."
                 refreshCacheStats()
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This cannot be undone by pressing a button - each game only relearns its shaders by being played again.")
+            Text("Games will stutter while they rebuild their shaders.")
         }
     }
 

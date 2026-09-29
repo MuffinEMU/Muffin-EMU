@@ -2,16 +2,14 @@
 //  GamePadGeometry.swift
 //  Muffin - the on-screen pad, taken from the Wii U GamePad hardware.
 //
-//  Wired into the preview showcase build (branch preview/showcase-sneak-peek). `src/ios/project.yml` pulls `src/ios/App` in as a group, so
-//  every .swift in that folder compiles; this file lives under docs/ so it cannot break
-//  a build before anyone has read it. Moving it into `src/ios/App/` is the whole of
-//  "wiring it in" - see WIRING at the bottom.
+//  Real hardware dimensions, expressed in face-button diameters, plus the device-size
+//  fitting that turns them into placements. Used by the experimental new pad.
 //
 //  ---------------------------------------------------------------------------------
 //  Where the numbers come from
 //
-//  The shipping `ControllerGeometry` is measured from IMG_3278.jpeg, a screenshot of an
-//  on-screen pad. This one is measured from the GamePad itself: the official Wii U
+//  The shipping `ControllerGeometry` is measured from a reference photo of an on-screen
+//  pad. This one is measured from the GamePad itself: the official Wii U
 //  controller illustration, at 0.425 mm per pixel. That scale is not assumed, it is
 //  checked twice against the real hardware and agrees both times:
 //
@@ -27,7 +25,7 @@
 //
 //  What is measured and what is not: everything on the front face is measured. The
 //  shoulders are not - L/R/ZL/ZR are on the top edge and do not appear in a front view -
-//  so their pill size is kept from the IMG_3278 measurement and their position is
+//  so their pill size is kept from that photo measurement and their position is
 //  placed, directly above their own stick, which is where they are on the hardware.
 //  They are the only placed geometry here, and they are marked at their definition.
 //
@@ -100,8 +98,8 @@ enum GamePadGeometry {
     static let systemElbow = CGPoint(x: 1.414, y: -1.414)
 
     // PLACED, NOT MEASURED - the shoulders are on the top edge, not the front face.
-    // The pill size is the one real measurement available (IMG_3278, via the shipping
-    // layout); the position is "centred above its own stick", as on the hardware.
+    // The pill size is the one real measurement available (the reference photo, via the
+    // shipping layout); the position is "centred above its own stick", as on the hardware.
     static let shoulderSize = CGSize(width: 1.151, height: 0.874)
     static let shoulderCorner: CGFloat = 0.235
     static let shoulderSpread: CGFloat = 0.675    // half the L<->ZL centre distance
@@ -141,10 +139,8 @@ enum GamePadGeometry {
 
     /// The largest D at which both clusters fit side by side and still clear each other.
     ///
-    /// The two edge margins belong in this denominator. Leaving them out is not a rounding
-    /// error - it prescribes a *negative* gap, so the clusters get placed overlapping by
-    /// construction. That is exactly what happened in Slide Over and in portrait, where Y
-    /// was drawn on top of the d-pad's right arm.
+    /// Includes the edge margins; without them the gap can go negative and the clusters
+    /// overlap.
     static func widthFit(armAngle: CGFloat, hardwareSystem: Bool, width: CGFloat) -> CGFloat {
         width / (extents(armAngle: armAngle, hardwareSystem: hardwareSystem).total
                  + 2 * PadLayout.edgeMargin + PadLayout.minimumClusterGap)
@@ -617,7 +613,6 @@ enum DeviceMetrics {
 
 #if canImport(UIKit)
 import UIKit
-import SwiftUI
 
 extension DeviceMetrics {
     /// Read the machine. Call once at launch, log `detail`, and keep the value.
@@ -648,72 +643,4 @@ extension DeviceMetrics {
     }
 }
 
-/// The calibration itself, for when `measurement(...).source == .derived` - an unknown
-/// device where the derived answer is a reasoned guess rather than a fact.
-///
-/// One draggable rectangle and one instruction. The user holds any bank card against the
-/// screen and sizes the rectangle to match it; that is a direct physical measurement of
-/// the display, and it is exact on hardware nobody has seen yet.
-struct PadCalibrationView: View {
-    var onDone: (CGFloat) -> Void
-    @State private var width: CGFloat = 320
-
-    var body: some View {
-        VStack(spacing: 24) {
-            Text("Hold a bank card against the screen")
-                .font(.headline)
-            Text("Drag until the outline matches the card exactly. Any card will do - they are all the same size.")
-                .font(.subheadline).foregroundStyle(.secondary)
-                .multilineTextAlignment(.center).padding(.horizontal, 40)
-
-            RoundedRectangle(cornerRadius: width * 0.0374)      // the card's own corner radius
-                // Color.accentColor, not the ShapeStyle .tint - .tint needs iOS 16, and
-                // this target's deploymentTarget is 15.0 (project.yml).
-                .strokeBorder(Color.accentColor, lineWidth: 2)
-                .frame(width: width, height: width / 1.5858)    // ID-1 is 85.60 x 53.98 mm
-                .gesture(DragGesture()
-                    .onChanged { width = max(120, min(700, width + $0.translation.width / 12)) })
-
-            Slider(value: $width, in: 120...700)
-                .frame(maxWidth: 420)
-                .accessibilityLabel("Card width")
-
-            Button("That matches") { onDone(width) }
-                .buttonStyle(.borderedProminent)
-                .disabled(!DeviceMetrics.isPlausible(DeviceMetrics.calibration(fromCardWidthInPoints: width)))
-        }
-        .padding()
-    }
-}
 #endif
-
-//  ---------------------------------------------------------------------------------
-//  WIRING
-//
-//  1. Move this file to src/ios/App/. project.yml pulls that folder in as a group, so
-//     nothing else needs editing to compile it.
-//
-//  2. Once at launch, and again on a size change:
-//
-//         let metrics = DeviceMetrics.current()
-//         logger.info("pad metrics: \(metrics.detail)")
-//
-//     Keep `metrics.pointsPerInch`. If `metrics.source == .derived`, the device is one
-//     nobody has taught this app about yet - the layout will still be close, and
-//     PadCalibrationView will make it exact if the user wants to spend ten seconds on it.
-//
-//  3. In ControllerPad.body, replace
-//         let unit = ControllerGeometry.automaticDiameter(in: proxy.size) * CGFloat(userScale)
-//     with
-//         let layout = PadLayout.resolve(container: proxy.size,
-//                                        safeArea: proxy.frame(in: .local)
-//                                            .inset(by: proxy.safeAreaInsets),
-//                                        pointsPerInch: metrics.pointsPerInch,
-//                                        userScale: CGFloat(userScale))
-//     and position each control at layout.controls[id]!.centre. The user's drag offsets
-//     and ControllerCustomLayout's per-element overrides apply on top exactly as they do
-//     now - this only changes where "unmoved" is.
-//
-//  4. The d-pad is a .cross, not four circles. Hit-test it with
-//     PadLayout.dpadDirections(at:centre:size:), which is eight-way and presses two ids
-//     on a diagonal. Four separate rects meeting at a corner have no diagonals at all.

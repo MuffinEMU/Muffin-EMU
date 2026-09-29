@@ -3,35 +3,14 @@ import SwiftUI
 import UIKit
 #endif
 
-// Shared chrome for the app's standalone screens - the ones reached from the library,
-// the in-game top bar, or Settings' links, as opposed to the Settings form itself.
-//
-// WHY THIS FILE EXISTS
-//
-// Every screen here had already converged on the same design-system rules (see the row
-// label / sub-caption / empty-state caption conventions repeated across
-// GraphicPacksView, SaveStateView, EmulatedDevicesView and the pickers), but each one
-// re-implemented the SHAPE of those rules by hand: an empty state was a lone sentence of
-// brownMid text in a Section, a status message was an unadorned Text, a selectable card
-// in a grid had no press response at all. The tokens matched; the treatment didn't.
-//
-// These types are the treatment, in one place. They deliberately keep the established
-// fonts and colours rather than introducing new ones - an empty-state caption here is
-// still .system(size: 13, design: .rounded) in brownMid, it just now sits under a symbol
-// and a headline instead of floating alone in a list row.
-//
-// Nothing in here paints a colour that isn't a MuffinTheme token, so every one of these
-// follows the selected theme and light/dark exactly like the rest of the app.
+// Shared empty states, status callouts, badges and row-action styles for standalone screens
+// (those reached from the library, the in-game top bar or Settings links). Everything uses
+// MuffinTheme tokens, so it follows the selected theme and light/dark.
 
 // MARK: - Empty states
 
-/// The empty state every list/grid screen shows when it genuinely has nothing: a symbol,
-/// a short headline, the explanatory caption, and - only where there is a single obvious
-/// thing to do about it - one primary action.
-///
-/// `message` keeps the established empty-state caption styling rather than inventing a
-/// new one, so a screen that previously showed just that sentence reads as the same
-/// sentence, better framed.
+/// The empty state for a list/grid screen with nothing to show: a symbol, a headline, a
+/// caption, and optionally one primary action.
 struct ScreenEmptyState: View {
     let systemImage: String
     let headline: String
@@ -40,11 +19,7 @@ struct ScreenEmptyState: View {
     var action: (() -> Void)?
 
     var body: some View {
-        // Classic UI: v2.0 had no designed empty state at all - every one of these was a
-        // single line of caption text, 13pt rounded in brownMid. This component did not
-        // exist then, so "classic" means rendering its content the way that sentence
-        // looked, NOT hiding it: the headline and body are still both shown, and any
-        // action still works, they just stop being a symbol-and-headline composition.
+        // Classic UI: plain 13pt caption text; headline and body are still both shown.
         if UIStyle.isClassic {
             return AnyView(
                 VStack(alignment: .leading, spacing: 4) {
@@ -94,9 +69,7 @@ struct ScreenEmptyState: View {
                 .padding(.top, 2)
             }
         }
-        // Capped and centred rather than left to stretch: these run full-width inside a
-        // List section or a ScrollView, and a centred three-line caption spanning a
-        // landscape iPad reads as a paragraph nobody finished.
+        // Width capped and centred so captions don't span a landscape iPad.
         .frame(maxWidth: 380)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
@@ -105,16 +78,13 @@ struct ScreenEmptyState: View {
 
 // MARK: - Status callouts
 
-/// A one-line-or-two result message with a symbol - what a screen says after an action
-/// finished, succeeded, or was refused. Distinct from an error alert, which interrupts:
-/// this sits in place and can be ignored.
+/// A short result message with a symbol, shown after an action finishes or is refused. It
+/// sits in place instead of interrupting like an alert.
 struct ScreenStatusCallout: View {
     enum Tone {
         /// Something worked, or is simply informational.
         case info
-        /// Something was refused or went wrong, but not badly enough to interrupt with an
-        /// alert. blushPink is the palette's own "something is off" colour - see its use
-        /// for error text in the onboarding pages and LaunchLogView's severity colouring.
+        /// Something was refused or went wrong, but not badly enough for an alert.
         case warning
 
         var symbol: String {
@@ -154,9 +124,8 @@ struct ScreenStatusCallout: View {
 
 // MARK: - Badges
 
-/// The small leading marker on a slot row - a save-state slot, an emulated-device figure
-/// slot. Filled in the accent when the slot holds something, hollow when it doesn't, so
-/// occupancy is readable down the left edge of the list without reading a word of it.
+/// The small leading marker on a slot row (save-state slot, emulated-device figure slot):
+/// filled when the slot holds something, hollow when empty.
 struct ScreenSlotBadge: View {
     let label: String
     let isFilled: Bool
@@ -176,8 +145,7 @@ struct ScreenSlotBadge: View {
             }
         }
         .frame(width: 30, height: 30)
-        // The number is already read out by the row's own "Slot N" label; repeating it
-        // here would make VoiceOver say it twice.
+        // The row's own "Slot N" label already speaks the number.
         .accessibilityHidden(true)
     }
 }
@@ -189,8 +157,7 @@ struct ScreenChip: View {
     var isMuted = true
 
     var body: some View {
-        // Classic UI: v2.0 rendered these counts as a plain 11pt secondary caption line,
-        // not a capsule. Same text, same information, old presentation.
+        // Classic UI: a plain 11pt secondary caption line instead of a capsule.
         if UIStyle.isClassic {
             return AnyView(
                 Text(text)
@@ -215,13 +182,8 @@ struct ScreenChip: View {
 
 // MARK: - Selection
 
-/// The press response every selectable card in a grid was missing. `.buttonStyle(.plain)`
-/// - what ThemePickerView and IconPickerView both used - renders the label and nothing
-/// else: no highlight, no scale, no indication a tap landed at all, which on a grid of
-/// thirty icon tiles reads as an unresponsive screen rather than a fast one.
-///
-/// Deliberately quieter than MuffinPrimaryButtonStyle's 0.97: these cards are large, and
-/// a large surface scaling the same amount as a small pill looks like it lurched.
+/// Press response for selectable grid cards (used instead of `.buttonStyle(.plain)`, which
+/// gives no feedback). Scales less than MuffinPrimaryButtonStyle because the cards are large.
 struct ScreenCardButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -231,16 +193,10 @@ struct ScreenCardButtonStyle: ButtonStyle {
     }
 }
 
-/// A compact action button for inside a list row - "Load", "Clear", "Create".
-///
-/// The rows these replace used bare `.buttonStyle(.borderless)` at 12pt, which gives a
-/// tap target the height of the text and nothing more; several of them sat 20pt apart in
-/// a single HStack, well under the 44pt minimum, so the wrong one was easy to hit. This
-/// keeps the compact look and pads the target out to something a thumb can actually
-/// land on.
+/// A compact action button for inside a list row ("Load", "Clear", "Create"). The padding
+/// makes the target somewhat larger than the text (about 30pt tall).
 struct ScreenRowActionStyle: ButtonStyle {
-    /// Destructive actions take the palette's own "something is off" colour rather than
-    /// the system red, which reads as a foreign element on a cream surface.
+    /// Destructive actions use the palette's "something is off" colour instead of system red.
     var isDestructive = false
     var isProminent = false
 
@@ -254,10 +210,8 @@ struct ScreenRowActionStyle: ButtonStyle {
 }
 
 extension View {
-    /// The capsule an in-row action wears. Factored out of ScreenRowActionStyle so a
-    /// NavigationLink or a Menu - neither of which is a Button and neither of which
-    /// reliably takes a ButtonStyle - can sit in the same row wearing the same chrome,
-    /// instead of a styled pill next to a bare blue word.
+    /// The capsule an in-row action wears. Factored out so a NavigationLink or Menu, which
+    /// don't reliably take a ButtonStyle, can share it.
     func screenRowActionChrome(isDestructive: Bool = false,
                               isProminent: Bool = false,
                               isPressed: Bool = false) -> some View {
@@ -275,17 +229,15 @@ extension View {
                     .fill(isProminent ? MuffinTheme.pixelBlue : MuffinTheme.wrapper)
                     .opacity(isPressed ? 0.65 : 1.0)
             )
-            // The capsule is the visual; this is the target. Without it only the glyph
-            // and its padding are tappable, and a List row swallows the rest.
+            // Makes the whole capsule tappable inside a List row.
             .contentShape(Capsule())
     }
 }
 
 // MARK: - Haptics
 
-/// The one thing that makes picking a theme or an icon feel like picking something rather
-/// than like a redraw. Used only on genuine selection changes - never on a tap that was
-/// ignored, and never on scrolling.
+/// Haptics for genuine selection changes (theme or icon picks), never for ignored taps or
+/// scrolling.
 enum ScreenHaptics {
     static func selectionChanged() {
         #if os(iOS)
@@ -293,8 +245,7 @@ enum ScreenHaptics {
         #endif
     }
 
-    /// For a tap that deliberately did nothing - a locked Pro icon, for instance. A soft
-    /// bump plus a visible explanation beats silence, which reads as a broken button.
+    /// For a tap that deliberately did nothing, such as a locked Pro icon.
     static func rejected() {
         #if os(iOS)
         UINotificationFeedbackGenerator().notificationOccurred(.warning)

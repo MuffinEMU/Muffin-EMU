@@ -1,30 +1,14 @@
 import Foundation
 
-/// How fast the emulated console believes time is passing.
+/// How fast the emulated console believes time is passing. Not an overclock: the emulator
+/// runs exactly as fast as it runs; this changes the clock the guest sees.
 ///
-/// Not a speed control in the sense a game menu means it, and not an overclock. The
-/// emulator runs exactly as fast as it runs; this changes what the *guest* thinks the
-/// clock is doing while it does.
-///
-/// It exists because of a mismatch this port cannot avoid while the recompiler is off.
-/// The PPC interpreter retires instructions on the order of a hundred times slower than
-/// the Espresso it stands in for, but `PPCTimer_getFromRDTSC()` still derives the guest's
-/// clock from the host's wall clock. So the emulated console sees a CPU that has, from
-/// its point of view, very nearly stopped: every deadline it sets for itself - coreinit
-/// alarms, the AX audio callback every few milliseconds, thread quanta - is already long
-/// expired by the time it is serviced. coreinit can then spend entire timeslices on
-/// overdue timer work and hand the title's own thread nothing at all. What that looks
-/// like from the outside is a game that presents one frame and then never advances,
-/// which is not a hang and will not be fixed by waiting.
-///
-/// Slowing the guest's clock puts its deadlines back within reach, so it runs in honest
-/// slow motion rather than drowning. Cemu has shipped this knob for years - desktop
-/// exposes it as the Timer Speed menu - and iOS simply never set it, so every launch to
-/// date ran at real time no matter which CPU it was using.
-///
-/// No emulated result changes with this. The shift is applied per call to the rate a
-/// monotonic tick counter accumulates, so time still only ever moves forward, and it is
-/// safe to change while a title is running.
+/// Without the recompiler the PPC interpreter is far slower than the real CPU, but the
+/// guest's clock still follows the host's wall clock, so its own deadlines (alarms, the AX
+/// audio callback, thread quanta) are already overdue when serviced and a game can present
+/// one frame and never advance. Slowing the guest clock puts those deadlines back in reach.
+/// This is Cemu's Timer Speed setting. It is safe to change while a title is running, and
+/// guest time still only moves forward.
 enum TimebaseScale: Int, CaseIterable, Identifiable {
     /// Values are the right-shift factor Cemu's `ActiveSettings::SetTimerShiftFactor()`
     /// takes: the accumulated tick delta is shifted left 3 and then right by this, so 3
@@ -51,29 +35,26 @@ enum TimebaseScale: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// One line saying what picking this actually does, in terms of the symptom.
+    /// One line saying what picking this does.
     var summary: String {
         switch self {
         case .realTime:
-            return "What every build before this one used. Correct with the recompiler; under the interpreter it is what makes a running game look frozen."
+            return "Normal game speed. Right when the recompiler is running."
         case .half, .quarter:
-            return "A mild correction. Worth trying first if a game advances but stutters badly."
+            return "Slows the game a little. Try this first if a game runs but stutters."
         case .eighth:
-            return "The starting point under the interpreter. Enough slack for most titles' own deadlines to stay reachable."
+            return "Slows the game a lot. Helps most games under the interpreter."
         case .sixteenth, .thirtySecond:
-            return "For a title that still will not advance at 1/8. The game plays in slow motion; it does not run slower than it already was."
+            return "For games that still won't advance at 1/8. Gameplay runs in slow motion."
         case .sixtyFourth:
-            return "As slow as this goes. If a game will not move here, the problem is not the clock."
+            return "The slowest setting. If a game still won't move, the clock isn't the problem."
         }
     }
 
     static let storageKey = "timebaseShift"
 
-    /// Whether the user has ever chosen a value. When they have not, the engine's own
-    /// default stands - it is picked in `cemu_bridge_initialize()` from the CPU mode that
-    /// launch actually got, which Swift does not know yet at that point. Overriding it
-    /// here with a Swift-side guess would throw away the one piece of information that
-    /// makes the default correct.
+    /// Whether the user has ever chosen a value. When they haven't, the engine's own default
+    /// stands (picked in `cemu_bridge_initialize()` from the CPU mode that launch got).
     static var hasExplicitChoice: Bool {
         UserDefaults.standard.object(forKey: storageKey) != nil
     }
@@ -87,49 +68,25 @@ enum TimebaseScale: Int, CaseIterable, Identifiable {
         return TimebaseScale(rawValue: Int(cemu_bridge_get_timebase_shift())) ?? .realTime
     }
 
-    /// Pushes a chosen value to the engine and remembers it. Safe mid-title.
-    ///
-    /// Turning the ladder off is part of applying, not a separate step someone could
-    /// forget: a search that keeps stepping after a person has stated what they want is
-    /// not a convenience, it is the app overruling them. Once this is called the chosen
-    /// value stands for good, including on every later launch.
+    /// Pushes a chosen value to the engine and remembers it. Safe mid-title. Choosing a value
+    /// turns the automatic ladder off for good, including on later launches.
     static func apply(_ scale: TimebaseScale) {
         UserDefaults.standard.set(scale.rawValue, forKey: storageKey)
         cemu_bridge_set_timebase_auto_enabled(false)
         cemu_bridge_set_timebase_shift(Int32(scale.rawValue))
     }
 
-    /// Forgets the stored choice and hands the decision back to the engine.
-    ///
-    /// Needed because storing a value is otherwise permanent and one-way: it disables the
-    /// automatic ladder for good, and until now nothing in the app could undo that. It
-    /// mattered most for values nobody chose deliberately - see EmulatedClockSection for
-    /// how the ladder's own searching used to end up written here.
+    /// Forgets the stored choice and hands the decision back to the engine's automatic ladder.
     static func clearChoice() {
         UserDefaults.standard.removeObject(forKey: storageKey)
         cemu_bridge_set_timebase_shift(Int32(TimebaseScale.realTime.rawValue))
         cemu_bridge_set_timebase_auto_enabled(true)
     }
 
-    /// Re-applies a stored choice after the engine has initialized, and otherwise arms the
-    /// automatic ladder. These are the same decision seen from two sides: either the user
-    /// has told us what the clock should be, in which case it is set and nothing searches,
-    /// or nobody has, in which case the engine is free to find out for itself.
-    /// One-time repair for a value the app wrote to itself.
-    ///
-    /// EmulatedClockSection used to persist whatever the automatic ladder had stepped the
-    /// clock to, as though it were a deliberate choice - so an install that once booted a
-    /// title slowly was pinned at a fraction of real speed on every launch afterwards,
-    /// through every update. Measured: 4.6fps against MeloCafe's 45 on the same device,
-    /// ROM and CPU mode, which is the factor of eight almost exactly.
-    ///
-    /// The bug is fixed, but fixing it does nothing for the installs already carrying the
-    /// bad value - it is data on the device, the same shape as the controller-profile and
-    /// render-scale bugs before it. So the value is cleared once, guarded by its own flag
-    /// so a deliberate choice made afterwards is never touched again.
-    ///
-    /// Only clears a SLOWED clock. Someone who picked real time explicitly keeps it, and
-    /// clearing would be a no-op for them anyway.
+    /// One-time repair: an older version wrote the automatic ladder's own stepped value as if
+    /// it were a user choice, pinning some installs at a fraction of real speed. Clears a
+    /// stored slowed clock once, guarded by its own flag so a later deliberate choice is
+    /// never touched. A stored real-time choice is kept.
     private static let repairedKey = "muffin.timebase.clearedAccidentalChoice"
 
     static func repairAccidentalChoiceOnce() {
@@ -143,9 +100,10 @@ enum TimebaseScale: Int, CaseIterable, Identifiable {
         cemu_bridge_log_line("timebase: cleared a stored \(stored.title) clock that the app had written to itself; back to automatic")
     }
 
+    /// Re-applies a stored choice after the engine has initialized; otherwise arms the
+    /// automatic ladder.
     static func applyStoredChoiceIfAny() {
-        // Before reading the stored value, not after - the point is to not re-apply one
-        // that was never chosen.
+        // Run the repair before reading the stored value.
         repairAccidentalChoiceOnce()
         guard hasExplicitChoice,
               let value = TimebaseScale(rawValue: UserDefaults.standard.integer(forKey: storageKey))

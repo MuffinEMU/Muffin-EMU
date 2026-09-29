@@ -18,10 +18,16 @@ on:
   workflow_dispatch: {}
   push:
     branches: [ main, ios27-sdk ]
-    # Documentation cannot change the binary.
+    # Documentation, issue templates, bench tooling and the install-source generator cannot change the binary.
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.gitignore'
+      - 'bench/**'
+      - 'homebrew/**'
+      - 'dist/**'
+      - 'ci/generate-sidestore-source.py'
   # A pull request compiles the whole thing and publishes NOTHING - the three
   # release steps at the end are skipped for this event. Until this existed there
   # was no way to compile-check a change without a push to main taking the next
@@ -33,6 +39,12 @@ on:
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.gitignore'
+      - 'bench/**'
+      - 'homebrew/**'
+      - 'dist/**'
+      - 'ci/generate-sidestore-source.py'
 
 # One build per branch: three pushes in a row should produce the newest IPA, not three.
 concurrency:
@@ -327,13 +339,8 @@ jobs:
           ls "$APP_PATH/Frameworks"
 
       - name: Package IPA for re-signing installers
-        # Ad-hoc signed with a deliberately minimal entitlements file, and get-task-allow
-        # in it is the fix for a real bug: this IPA used to ship with no signature at all,
-        # so no entitlements
-        # dict at all, and MuffinEMU was invisible to every JIT enabler. Those tools list
-        # apps by reading get-task-allow off the INSTALLED app, and a re-signer that
-        # merges the app's existing entitlements has nothing to merge when the app arrives
-        # with none. The app installed, ran, and was simply never offered for debugging.
+        # Ad-hoc signed with a minimal entitlements file (get-task-allow only). Without an
+        # entitlements dict, JIT enablers cannot list the app.
         #
         # Only get-task-allow - see src/ios/Sideload.entitlements for why reusing
         # Cemu.entitlements here would make things worse rather than better.
@@ -443,7 +450,7 @@ jobs:
         #     ...why, at length, for whoever reads the history...
         #
         #     Release-note: Games run much faster on hot devices. MuffinEMU now uses one
-        #     Release-note: CPU core by default, the way MeloCafe does.
+        #     Release-note: CPU core by default.
         #
         # That is the right moment to write it - the change is fresh and the person who
         # made it knows what it means for someone playing a game. Commits without the
@@ -485,7 +492,7 @@ jobs:
                 # `Release-note: skip` leaves a commit out entirely - for work that is
                 # real but has no user-facing half, like build tooling. Better than
                 # padding the notes with lines nobody installed the build for.
-                if [ "$note" = "skip" ]; then continue; fi
+                if [ "$(printf '%s' "$note" | tr '[:upper:]' '[:lower:]')" = "skip" ]; then continue; fi
                 if [ -n "$note" ]; then
                   printf -- '- %s\n' "$note"
                 else
@@ -517,7 +524,7 @@ jobs:
         # simply produced nothing. A retry re-attaches the missing files to the same
         # draft and publishes it.
         if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         id: publish
         continue-on-error: true
         with:
@@ -546,7 +553,7 @@ jobs:
         # numbered ones are the history people roll back to, and a rolling tag cannot be
         # rolled back to because it does not stay still.
         if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: nightly
           target_commitish: ${{ github.sha }}
@@ -562,16 +569,14 @@ jobs:
           body: |
             The newest build of MuffinEMU, from commit ${{ github.sha }} on `${{ github.ref_name }}`.
 
-            **Known issue:** MuffinEMU's own on-screen controls are currently broken. We're
-            actively working on a fix - this notice comes off once it lands.
+            **Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.
 
-            This tag moves. It is replaced by every successful build, so the download
-            here is always the newest code and never a version you can come back to -
-            for that, use a numbered release.
+            This tag moves. Every successful build replaces it, so the download here is
+            always the newest code, never a version you can come back to. For that, use a
+            numbered release.
 
-            Untested by anyone. A numbered release has at least been installed and run;
-            this has only been compiled. If you want the version that works, not the
-            version that is newest, install the latest numbered release instead.
+            This build has not been tested. If you want the version that is known to
+            work, install the latest numbered release instead.
 
       - name: Re-try publishing the release
         # Only when the first attempt failed. Same inputs, so a partial upload is
@@ -584,7 +589,7 @@ jobs:
         # no separate guard step is needed - and a guard checking failure() would never
         # have fired anyway, because continue-on-error above keeps the job green.
         if: github.event_name != 'pull_request' && steps.publish.outcome == 'failure'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.MUFFIN_TAG }}
           target_commitish: ${{ github.sha }}

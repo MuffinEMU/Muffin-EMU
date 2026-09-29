@@ -1,17 +1,14 @@
 import SwiftUI
 
-/// Settings keys for every row this section exposes - the full set of fields on
-/// CemuConfig's `notification` struct, one @AppStorage key each. This is a second,
-/// independent on-screen draw from the performance overlay (LatteOverlay_RenderNotifications()
-/// in LatteOverlay.cpp, its own ImGui window with its own position/color/scale), not a
-/// Swift-drawn toast layered on top - the engine itself decides when a controller-profile,
-/// low-battery, shader-compiling or friends notification fires and draws it.
+/// Settings keys for the notification rows, one @AppStorage key each, matching CemuConfig's
+/// `notification` struct. The engine draws these itself (LatteOverlay.cpp), independent of
+/// the performance overlay.
 enum NotificationSettings {
     static let positionKey = "muffin.notification.position"
     static let defaultPosition = ScreenPosition.topLeft // matches CemuConfig's notification.position default
 
     static let textColorKey = "muffin.notification.textColor"
-    // Int, not UInt32 - see OverlaySettingsSection.swift's identical note on textColor.
+    // Int, not UInt32: @AppStorage has no UInt32 overload. Packed 0xAARRGGBB.
     static let defaultTextColor: Int = 0xFFFFFFFF // opaque white, matches CemuConfig's default
 
     static let textScaleKey = "muffin.notification.textScale"
@@ -30,15 +27,9 @@ enum NotificationSettings {
     static let defaultFriends = true // matches CemuConfig's notification.friends default
 }
 
-/// Toasts the engine itself draws for controller pairing/battery, shader compile progress
-/// and friend activity - same "app owns the @AppStorage, GameManager pushes it before
-/// boot" split as OverlaySettingsSection, and the same ScreenPosition this app's
-/// Performance Overlay uses, since both are corner-anchored ImGui windows drawn by the
-/// same LatteOverlay.cpp.
-///
-/// The rows below are visually disabled rather than hidden when position is Off, for the
-/// same reason as the overlay section: picking which notifications you want before
-/// turning the feature on somewhere is a normal way to use this.
+/// Pop-ups the engine draws for controller pairing/battery, shader compile progress and
+/// friend activity. Same structure as OverlaySettingsSection: the app owns the @AppStorage,
+/// GameManager pushes it before boot, and rows are disabled while Position is Off.
 struct NotificationSettingsSection: View {
     @AppStorage(NotificationSettings.positionKey) private var positionRaw = NotificationSettings.defaultPosition.rawValue
     @AppStorage(NotificationSettings.textColorKey) private var textColor = NotificationSettings.defaultTextColor
@@ -67,7 +58,7 @@ struct NotificationSettingsSection: View {
             SettingsSectionHeader("Notifications", icon: "bell", accent: .io)
         } footer: {
             InfoButton.footer(
-                "On-screen toasts for controller pairing, low battery, shader compiling and friend activity. The rows below only draw once a corner is picked.",
+                "Pop-ups for controller pairing, low battery, shader compiling and friends. Pick a corner to turn them on.",
                 title: "Notifications",
                 text: fullText)
         }
@@ -91,23 +82,7 @@ struct NotificationSettingsSection: View {
         }
     }
 
-    // Same 0xAARRGGBB packing and same 6/8-digit hex parsing as OverlaySettingsSection's
-    // textColorHex - see its doc comment for why.
-    private var textColorHex: Binding<String> {
-        Binding {
-            String(format: "#%08X", UInt32(textColor))
-        } set: { newValue in
-            let cleaned = newValue
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "#", with: "")
-            guard let parsed = UInt32(cleaned, radix: 16) else { return }
-            switch cleaned.count {
-            case 6: textColor = Int(0xFF000000 | parsed)
-            case 8: textColor = Int(parsed)
-            default: return
-            }
-        }
-    }
+    private var textColorHex: Binding<String> { hexColourBinding($textColor) }
 
     private var textColorField: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -119,7 +94,7 @@ struct NotificationSettingsSection: View {
         }
         .disabled(isOff)
         .onChange(of: textColor) { newValue in
-            cemu_bridge_set_notification_text_color(UInt32(newValue))
+            cemu_bridge_set_notification_text_color(UInt32(truncatingIfNeeded: newValue))
         }
     }
 
@@ -193,9 +168,7 @@ struct NotificationSettingsSection: View {
 
     private var fullText: String {
         """
-        Notifications are a second on-screen readout from the same engine that draws the Performance Overlay - its own corner-anchored window, with its own position, color and scale, independent of whether the overlay is on. Position picks which corner (or top/bottom center) it appears in; Off leaves it out of the picture entirely, and the rows below have no effect until a position is chosen.
-
-        Controller Profiles fires when a controller's saved profile is applied. Low Battery warns when a paired controller's battery is running down. Shader Compiling shows while the engine is building a shader in the background. Friends surfaces friend-related activity from the account system.
+        Controller Profiles: a saved controller profile was applied. Low Battery: a paired controller is running down. Shader Compiling: shown while the engine builds a shader. Friends: friend activity from your account.
         """
     }
 }

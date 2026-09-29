@@ -1,10 +1,9 @@
 // Pause and resume for a running title.
 //
-// The core has no pause of its own - MeloCafe's app only ever shut a title down - but
-// iOS needs one: the app goes to the background, a sheet covers the game, a call comes
+// The core has no pause of its own, but iOS needs one: the app goes to the background, a sheet covers the game, a call comes
 // in. This suspends every active guest thread under the scheduler lock and resumes them
 // again, using only coreinit functions the core already exports, so the core itself is
-// untouched. It is the same mechanism cemu-ios-muffin's own core used.
+// untouched.
 //
 // IMPORTANT for any caller that needs the title to actually be STOPPED, not just marked
 // to stop (save states are the reason this note exists): IOSTitlePause_Pause() returning
