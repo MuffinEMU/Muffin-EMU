@@ -30,9 +30,7 @@ struct OnScreenControlsSection: View {
     private var useMeloControls = MeloControlsSetting.defaultValue
     @State private var showingResetLayoutConfirmation = false
     @State private var showingResetBindingsConfirmation = false
-    /// What the reset actually did, shown inline rather than as an alert: the useful
-    /// answer is a number of bindings, and "it worked" with no number is exactly the kind
-    /// of unverifiable reassurance that cost a day here.
+    /// Shows the binding count so a reset can be confirmed.
     @State private var bindingsResetResult: String?
 
     private var stickGate: ControllerGeometry.StickGate {
@@ -46,7 +44,7 @@ struct OnScreenControlsSection: View {
                     Text("Use melo-controls")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(useMeloControls
-                         ? "Melo-Controller, stossy11's touch controller, with its own layout editor. The options below apply to MuffinEMU's pad."
+                         ? "Melo-Controller by stossy11, with its own layout editor. The options below are for MuffinEMU's pad."
                          : "MuffinEMU's measured GamePad layout.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
@@ -111,16 +109,8 @@ struct OnScreenControlsSection: View {
                 DestructiveSettingsLabel(title: "Reset layout", systemImage: "arrow.uturn.backward")
             }
 
-            // Separate from "Reset layout" on purpose: that one moves buttons around on
-            // screen, this one repairs what a press is wired to underneath. They look
-            // alike and fix completely different things.
-            //
-            // Worth a button of its own because the state it cures lives in
-            // controllerProfiles/ on the device, not in the app binary - so it survives
-            // reinstalling, updating, and every code change, and nothing else in the UI
-            // can touch it. A profile missing only SOME bindings is the nasty case: the
-            // buttons that are bound keep working, so the pad looks half-alive rather
-            // than broken, and the ones that are not look like a bug in the pad.
+            // Separate from "Reset layout": that moves buttons on screen, this repairs what
+            // a press is wired to.
             Button(role: .destructive, action: { showingResetBindingsConfirmation = true }) {
                 DestructiveSettingsLabel(title: "Reset controller bindings", systemImage: "gamecontroller.fill")
             }
@@ -134,7 +124,7 @@ struct OnScreenControlsSection: View {
             SettingsSectionHeader("On-screen Controls", icon: "gamecontroller", accent: .io)
         } footer: {
             InfoButton.footer(
-                "The joystick is analog like the real GamePad's sticks; comfort controls move the shoulder buttons onto it once it's on. MuffinEMU already picks the right button size for your screen - the sliders adjust that choice, not replace it.",
+                "Sticks are analog like the real GamePad. Comfort controls move the shoulder buttons onto the sticks.",
                 title: "On-screen Controls",
                 text: fullText)
         }
@@ -149,9 +139,6 @@ struct OnScreenControlsSection: View {
         }
         .confirmationDialog("Reset controller bindings?", isPresented: $showingResetBindingsConfirmation, titleVisibility: .visible) {
             Button("Reset bindings", role: .destructive) {
-                // Reports the binding count rather than a bare success: the whole point is
-                // to be able to tell "it was reset and there are 16 of them" apart from
-                // "it was reset and there are still none", which a checkmark cannot.
                 let ok = cemu_bridge_reset_controller_bindings()
                 let count = Int(cemu_bridge_input_button_mapping_count())
                 bindingsResetResult = ok
@@ -162,13 +149,11 @@ struct OnScreenControlsSection: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Wipes the saved controller profile and rebuilds MuffinEMU's defaults. Use this if some buttons do nothing while the sticks still work - that means the saved profile lost their bindings, and no update can fix it because it's stored on this device. Any buttons you remapped yourself go back to default.")
+            Text("Rebuilds the default button bindings. Use this if some buttons do nothing while the sticks still work. Any buttons you remapped go back to default.")
         }
     }
 
-    // Only here, under the sticks: with no sticks on screen there is nothing for
-    // L/ZL/minus and R/ZR/plus to move onto, and a deadzone/fine-control slider has
-    // nothing to shape either.
+    // Shown only with sticks on, since these options have nothing to act on otherwise.
     @ViewBuilder private var joystickOptions: some View {
         Toggle(isOn: $comfortControls) {
             VStack(alignment: .leading, spacing: 2) {
@@ -238,6 +223,6 @@ struct OnScreenControlsSection: View {
     }
 
     private var fullText: String {
-        "The joystick is analog, like the sticks on the real GamePad: how far you push it is how fast you go, which a d-pad cannot express - it only ever says fully left or nothing. The position your thumb is at is the position the game receives, at full precision and with nothing smoothing it on the way. It takes the d-pad's own footprint, so nothing else on the pad moves, and turning it on also adds a camera stick on the right for the games that look around. Tap the left stick without pushing it to click it in (L3), which is where that button lives in this mode.\n\nThe gate is the shape the stick can reach. The real GamePad's is an octagon, and that is not decoration: only the four cardinals and the four diagonals reach full travel, and the flats between them stop about 8% short - which is the stick Mario Kart's drift and Zelda's walking were tuned against, and the flats are also the only thing telling your thumb where the diagonals are. Round gives the maximum in every direction instead.\n\nDeadzone is how much of the stick around the centre reads as untouched. Everything past it still reaches full speed, so turning it down buys precision near the middle and costs nothing at the top - turn it up only if a resting thumb makes the game drift. Fine control bends the first part of the travel: at linear, halfway is half speed; above it, halfway is slower than half, so small corrections get more of the stick to happen in. Nothing changes at the rim either way.\n\nMuffin picks a button size for the screen it is on and re-picks it whenever that changes, so the pad is already the right size on a phone and on an iPad without being set here. The size and opacity sliders adjust that choice rather than replacing it.\n\nTo move a cluster - either half, or the camera stick - start a game and tap the move button in the top bar; you need the game underneath to judge where the controls should go. The same joystick switch is in that panel."
+        "Add analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nTo move a cluster, start a game and tap the move button in the top bar."
     }
 }

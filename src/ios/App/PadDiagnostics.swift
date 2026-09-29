@@ -1,52 +1,9 @@
 import SwiftUI
 import Combine
 
-/// A small on-screen readout of why the pad is or is not responding.
-///
-/// # Why this exists
-///
-/// On 2026-09-16 every on-screen control was reported completely unresponsive while
-/// Melo-Controller's pad kept working. That pairing is the whole clue: both overlays mount
-/// at the SAME position in the same ZStack under the same `!padControlsHidden` gate, so
-/// layering cannot explain it - something is choosing between them, or MuffinEMU's pad is
-/// mounted but never reaching the bridge.
-///
-/// Three rounds of reverting by elimination could not settle which, because none of it is
-/// reproducible off-device: there is no iOS SDK on the development machine, only a syntax
-/// check, and the last hit-testing bug compiled, shipped and failed only under a real
-/// finger. So this replaces guessing with reading the answer off the screen.
-///
-/// # What it shows, and why each line is here
-///
-/// **Active pad** - which of the three control systems is actually in the view tree.
-/// `EmulatorViewOptimized` picks between them with two nested conditions, and the
-/// combination that produces "MuffinEMU's pad is not mounted at all" is easy to reach and
-/// invisible from the outside:
-///
-///     if previewPadEnabled && !useMeloControls  ->  PreviewControllerPad   (unverified)
-///     else if useMeloControls                   ->  MeloControlsOverlay
-///     else if !previewPadEnabled                ->  OptimizedControlPanel  (the real pad)
-///
-/// With `previewPadEnabled` ON and Melo-Controller OFF, the third branch is unreachable -
-/// `OptimizedControlPanel` never mounts, and what is on screen is the preview pad, whose
-/// own Settings footer says it has never run on a real device. Controls appear, nothing
-/// happens, and nothing anywhere says why. That is exactly the reported symptom, and this
-/// row is what makes it visible in one glance.
-///
-/// **Gates** - the four flags that decide the above, so a wrong one is readable directly
-/// rather than inferred.
-///
-/// **Inputs** - a live count and the last event. This is the load-bearing line: it
-/// separates "the pad is not receiving touches" from "the pad is receiving touches and the
-/// bridge is not acting on them", which are completely different bugs and had been
-/// indistinguishable all day.
-///
-/// # Cost
-///
-/// Off by default, and free when off: the counter is a plain `@Published` int bumped on an
-/// event that already happens, and the overlay is not in the tree at all unless the toggle
-/// is on. `.allowsHitTesting(false)` throughout - a diagnostic that could itself swallow a
-/// touch would be worse than none.
+/// Optional on-screen readout for diagnosing controls: which pad is mounted, whether
+/// touches arrive, and current bindings. Off by default, and not in the view tree when
+/// off. The overlay never takes touches.
 @MainActor
 final class PadDiagnostics: ObservableObject {
     static let shared = PadDiagnostics()
@@ -54,8 +11,7 @@ final class PadDiagnostics: ObservableObject {
     static let enabledKey = "muffin.diagnostics.padOverlay"
     static let defaultEnabled = false
 
-    /// Which control system is mounted. Set by whichever overlay actually appears, so this
-    /// reports what IS on screen rather than what the flags imply should be.
+    /// Which control system is mounted, set by whichever overlay actually appears.
     enum ActivePad: String {
         case none = "none mounted"
         case muffin = "MuffinEMU pad"
@@ -68,24 +24,17 @@ final class PadDiagnostics: ObservableObject {
     @Published private(set) var lastInput = "-"
     @Published private(set) var stickCount = 0
     @Published private(set) var lastStick = "-"
-    /// Ticks on the raw DragGesture callback inside HeldControl, before the pressed-state
-    /// guard. The input counter above only moves when the state actually changes, so a
-    /// frozen input count cannot tell "the gesture never fired" apart from "it fired and
-    /// the state did not move". This separates them.
+    /// Ticks on every touch callback inside HeldControl, so a frozen input count can be
+    /// told apart as "no touches arrived" versus "touches arrived but state didn't change".
     @Published private(set) var rawTouchCount = 0
 
     /// How the last press ended, and how long it lasted.
-    ///
-    /// This is the line that settles the argument. A press that reverts on its own looks
-    /// identical on screen whether the gesture ended, the view was removed underneath it,
-    /// or the control stopped accepting touches - and those are three completely
-    /// different bugs. Reading the reason off the screen beats estimating a duration by
-    /// eye and reasoning backwards from the number, which is how several wrong theories
-    /// got their confidence.
     enum ReleaseReason: String {
-        /// DragGesture.onEnded - the ordinary path. The finger lifted, or the system
-        /// cancelled the gesture.
+        /// DragGesture.onEnded - the ordinary path. The finger lifted.
         case fingerLifted = "finger lifted"
+        /// The system cancelled the gesture (swipe, banner, app switch) and the press
+        /// was released without a lift.
+        case gestureCancelled = "gesture cancelled by system"
         /// onDisappear - the control left the view tree mid-press. Nobody touched
         /// anything; SwiftUI rebuilt the pad.
         case viewRemoved = "VIEW REMOVED under the finger"
@@ -98,8 +47,7 @@ final class PadDiagnostics: ObservableObject {
     private init() {}
 
     func recordPressBegan() {
-        // Nothing to publish yet; the interesting half is how it ends. Kept as its own
-        // call so the press path reads symmetrically and a future counter has a home.
+        // Nothing to publish; kept so the press and release paths are symmetric.
     }
 
     func recordRelease(_ reason: ReleaseReason, heldSince began: Date) {
@@ -116,9 +64,8 @@ final class PadDiagnostics: ObservableObject {
         self.activePad = activePad
     }
 
-    /// Called from the pad's own onInput closure, on the path that already runs for every
-    /// press - so if this number stays at 0 while buttons are being pressed, the touches
-    /// are not reaching the pad at all, and the bug is above it in the view tree.
+    /// Called from the pad's onInput closure. If this stays at 0 while buttons are
+    /// pressed, touches aren't reaching the pad.
     func recordInput(_ label: String, _ pressed: Bool) {
         inputCount += 1
         lastInput = "\(label) \(pressed ? "down" : "up")"
@@ -134,8 +81,7 @@ final class PadDiagnostics: ObservableObject {
     }
 }
 
-/// The overlay itself. Deliberately plain - this is a diagnostic, not a design exercise,
-/// and it has to stay legible over arbitrary game content.
+/// The overlay itself: plain, and legible over game content.
 struct PadDiagnosticsOverlay: View {
     @ObservedObject private var diag = PadDiagnostics.shared
 
@@ -145,23 +91,13 @@ struct PadDiagnosticsOverlay: View {
     let isEditingLayout: Bool
     let isPaused: Bool
 
-    /// The specific combination that silently unmounts MuffinEMU's pad. Called out
-    /// explicitly because every flag in it is individually reasonable - it is only the
-    /// pairing that breaks, which is precisely the kind of thing a list of booleans does
-    /// not make obvious.
-    private var padSilentlyUnmounted: Bool {
-        previewPadEnabled && !useMeloControls
-    }
-
-    /// Read once per render rather than cached: it is a couple of map lookups, it has to
-    /// reflect a reset taking effect immediately, and a stale "0 bindings" would send
-    /// someone chasing a bug that had already been fixed.
+    /// Read on every render so a reset shows up immediately.
     private var buttonBindings: Int { Int(cemu_bridge_input_button_mapping_count()) }
 
     private var bindingsText: String {
         let n = buttonBindings
         if n < 0 { return "no GamePad wired" }
-        if n == 0 { return "0 - THIS is why buttons are dead" }
+        if n == 0 { return "0 - buttons have no bindings" }
         return "\(n) buttons"
     }
 
@@ -173,17 +109,15 @@ struct PadDiagnosticsOverlay: View {
             row("inputs", "\(diag.inputCount)  last \(diag.lastInput)",
                 warn: diag.inputCount == 0)
             row("stick", "\(diag.stickCount)  last \(diag.lastStick)", warn: false)
-            // The decisive row: touches arriving at a button's gesture at all.
+            // Touches arriving at a button's gesture at all.
             row("touches", "\(diag.rawTouchCount)", warn: diag.rawTouchCount == 0)
-            // Yellow whenever a press ended for any reason other than a finger coming
-            // off, because that is always a bug and never a normal press.
+            // Yellow when a press ended because the view was removed or stopped accepting
+            // touches.
             row("released", diag.lastRelease,
                 warn: diag.lastRelease.contains("VIEW REMOVED")
                    || diag.lastRelease.contains("stopped accepting"))
 
-            // The line that would have ended a day of debugging in one glance. Buttons
-            // only - axes bypass the mapping table entirely, so counting them would show a
-            // healthy number for exactly the broken case (sticks bound, buttons not).
+            // Buttons only: axes bypass the mapping table.
             row("bindings", bindingsText, warn: buttonBindings <= 0)
             row("profile", String(cString: cemu_bridge_input_profile_name()), warn: false)
 
@@ -195,8 +129,8 @@ struct PadDiagnosticsOverlay: View {
             row("editing", isEditingLayout ? "YES" : "no", warn: isEditingLayout)
             row("paused", isPaused ? "YES" : "no", warn: isPaused)
 
-            if padSilentlyUnmounted {
-                Text("Preview pad is ON and Melo is OFF, so MuffinEMU's own pad is not mounted. Turn off Settings > Preview: New Pad System.")
+            if diag.activePad == .preview {
+                Text("The experimental new pad is active. If controls don't respond, turn it off in Settings.")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundColor(.yellow)
                     .fixedSize(horizontal: false, vertical: true)
@@ -208,7 +142,7 @@ struct PadDiagnosticsOverlay: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 240, alignment: .leading)
             } else if diag.inputCount == 0 && diag.activePad == .muffin {
-                Text("Pad is mounted but no touch has reached it. Something above it in the view tree is taking them.")
+                Text("Pad is mounted but no touches are reaching it.")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundColor(.yellow)
                     .fixedSize(horizontal: false, vertical: true)
@@ -220,7 +154,6 @@ struct PadDiagnosticsOverlay: View {
         .cornerRadius(8)
         .padding(.leading, 8)
         .padding(.top, 8)
-        // A diagnostic that could swallow a touch would be worse than no diagnostic.
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }

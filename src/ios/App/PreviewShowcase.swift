@@ -1,22 +1,14 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-//  Preview showcase - the new geometry/colour/group system wired in as a genuine,
-//  compiled, running alternative to the shipping pad rather than a rewrite of it.
-//
-//  Branch preview/showcase-sneak-peek. Off by default (PreviewSettings.enabledKey), so
-//  the shipping OptimizedControlPanel path is completely unaffected until someone turns
-//  this on in Settings. That is a deliberate scope decision, not a shortcut: this code
-//  has never run on a device or in a simulator, only typechecked, and the responsible
-//  thing to do with untested code that touches how a game receives input is to make it
-//  opt-in rather than to replace the pad every existing player already depends on.
+//  Preview showcase: the experimental new pad (geometry, colour and movable groups).
+//  Off by default (PreviewSettings.enabledKey); the standard pad is unaffected until it
+//  is turned on in Settings.
 
 // MARK: - The three layout presets
 
-/// Exactly three, as asked. Each is a real .muffinlyt - captured from an actual
-/// PadLayout.resolve() on a real device profile, not hand-typed numbers - so
-/// PadPresetFitter's own "fit, then fix only what's broken" logic is what places every
-/// preset, on every device, including the one it was captured on.
+/// The three layout presets. Each is a real .muffinlyt captured from PadLayout.resolve()
+/// on a device profile, and PadPresetFitter places every preset on every device.
 enum PreviewLayoutPreset: String, CaseIterable, Identifiable {
     case native, iPadPro2020, compact
 
@@ -33,11 +25,11 @@ enum PreviewLayoutPreset: String, CaseIterable, Identifiable {
     var summary: String {
         switch self {
         case .native:
-            return "No transplant - this device's own measured layout, at whatever size the four laws give it."
+            return "This device's own layout."
         case .iPadPro2020:
-            return "Captured from the A12Z this port targets: life-size, framed, +/- in their real hardware slot. Fitted onto whatever you're actually on."
+            return "The layout from a 12.9-inch iPad Pro, fitted to your screen."
         case .compact:
-            return "Captured at 70% of life-size - smaller buttons, more of the screen left for the picture."
+            return "70% of life-size: smaller buttons, more of the picture."
         }
     }
 
@@ -99,17 +91,8 @@ final class PreviewPadStore: ObservableObject {
 
     static let enabledKey = "muffin.preview.enabled"
 
-    /// The ONE default for enabledKey. It existed twice before, as two bare literals in
-    /// two @AppStorage declarations that disagreed: SettingsView.swift said `true` and
-    /// ContentView.swift said `false`. b43ea77a deliberately flipped both on for the
-    /// sneak-peek build and the merge in 22f22340 took only one of them back, so the
-    /// Settings row read "on" while the game screen behaved as "off" - a toggle that
-    /// showed the opposite of what it did, for anyone who had never touched it.
-    ///
-    /// Kept at false, which is the behaviour users have actually been getting; making it
-    /// true would have changed what the pad does rather than just stopping the UI from
-    /// misreporting it. ControllerLayoutSettings already does exactly this for every one
-    /// of its own keys - a named constant is why none of those drifted.
+    /// The single default for enabledKey, shared by every @AppStorage that reads it.
+    /// Off: the experimental pad is opt-in.
     static let defaultEnabled = false
     static let layoutPresetKey = "muffin.preview.layoutPreset"
     static let colourPresetKey = "muffin.preview.colourPreset"
