@@ -151,22 +151,16 @@ void cemu_bridge_log_line(const char* message);
 double cemu_bridge_get_fps(void);
 
 /// The four counters the engine's own progress heartbeat prints, readable on demand.
+/// cemu_bridge_get_fps() rounds to whole frames per second, so a title running below one
+/// frame per second reads 0, the same as one that stopped. These separate the two:
 ///
-/// This exists because `cemu_bridge_get_fps()` cannot answer the question that actually
-/// matters on this port. It reports whole frames per second, so a title genuinely
-/// rendering at a fraction of a frame per second - the normal case under the forced
-/// interpreter - rounds to 0 and the HUD reads "-- FPS", identical to a title that
-/// stopped dead. These counters separate the two, on screen, without anyone having to
-/// export log.txt:
-///
-///   gx2FrameCount climbing, however slowly  -> running past the first frame, just slow
+///   gx2FrameCount climbing, however slowly  -> running, just slow
 ///   gx2FrameCount pinned, gx2InitReached    -> stalled after handing over to GX2
 ///   gx2InitReached false, others climbing   -> still in OSScreen boot
 ///   nothing moving at all                   -> a real deadlock, not slowness
 ///
-/// `gx2FramesPerSecond` is fractional on purpose and is the heartbeat's own measurement,
-/// not a second one taken here, so the number on screen and the number in the log are
-/// the same number rather than two samples that disagree.
+/// `gx2FramesPerSecond` is fractional and is the heartbeat's own measurement, so the
+/// number on screen matches the log.
 typedef struct {
     bool gx2_init_reached;
     unsigned long long gx2_frame_count;
@@ -388,26 +382,15 @@ const char* cemu_bridge_usb_device_create(CemuBridgeUSBDevice device, uint32_t f
 const char* cemu_bridge_usb_device_move_dimensions(int fromSlot, int toSlot);
 
 /// How fast the emulated console believes time is passing, as a right-shift factor:
-/// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on. This is
-/// Cemu's own `ActiveSettings::SetTimerShiftFactor()`, which desktop Cemu exposes as its
-/// Timer Speed menu; nothing on iOS was setting it, so it sat at 3 on every launch.
+/// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on
+/// (ActiveSettings::SetTimerShiftFactor(), desktop Cemu's Timer Speed).
 ///
-/// It matters here far more than it does on desktop. Under the forced interpreter the
-/// emulated CPU retires instructions on the order of a hundred times slower than the
-/// hardware it is pretending to be, while `PPCTimer_getFromRDTSC()` keeps deriving the
-/// guest's clock from the host's wall clock. The guest therefore experiences a console
-/// whose CPU has effectively stopped: every periodic deadline it sets - coreinit alarms,
-/// the AX audio callback, thread quanta - is already long overdue by the time it is
-/// serviced, so the scheduler can spend all of its time on overdue timer work and never
-/// return to the title's own thread. The visible result is a title that presents one
-/// frame and then appears to hang, which is not a hang.
-///
-/// Raising the shift makes the guest's clock advance more slowly, so its deadlines stay
-/// reachable and it runs in honest slow motion instead of drowning. It changes no
-/// emulated result: it is the rate a monotonic counter accumulates, applied per call, so
-/// it can be changed while a title runs and time still only ever moves forward.
-///
-/// This is a compensation for an emulator that is too slow. It does not make it faster.
+/// Under the interpreter the emulated CPU is far slower than the real console while the
+/// guest clock follows the host's wall clock, so periodic deadlines (alarms, audio
+/// callbacks, thread quanta) can be overdue faster than they are serviced and the title
+/// appears to hang. Raising the shift slows the guest clock so it runs in slow motion
+/// instead. It can be changed while a title runs; time still only moves forward. It
+/// compensates for a slow emulator and does not make it faster.
 void cemu_bridge_set_timebase_shift(int shift);
 
 /// The shift currently in effect. See above for the scale.
@@ -415,21 +398,10 @@ int cemu_bridge_get_timebase_shift(void);
 
 /// Turns the automatic clock ladder on or off.
 ///
-/// The Emulated clock setting above is only useful if somebody knows which value to pick,
-/// and nothing knows that in advance - it depends on how tight a particular title's own
-/// deadlines are. Left to a person it means launch, wait, decide it is still stuck, open
-/// Settings, step down one, wait again. On a port with one test device that loop is the
-/// bottleneck, not the code.
-///
-/// So the engine walks it itself. While a title is booting on the interpreter and has not
-/// reached GX2Init, the ladder steps the guest's clock down one notch every twelve seconds
-/// to a floor of 1/64, and stops the moment GX2 is reached - logging which value got there,
-/// which is a measurement this port has never had.
-///
-/// Enabled unless the user has chosen a value by hand; choosing one turns it off for good,
-/// because a search that overrides a deliberate choice is a bug rather than a convenience.
-/// It never runs under the recompiler, where the premise does not hold. Stepping is always
-/// downward, so a step that was not needed costs slow motion, never a hang.
+/// While a title boots on the interpreter and has not reached GX2Init, the ladder steps
+/// the guest clock down one notch every twelve seconds (floor 1/64). Once the title is
+/// advancing, the clock is restored to its starting value. Enabled unless the user has
+/// chosen a value by hand, which turns it off; never runs under the recompiler.
 void cemu_bridge_set_timebase_auto_enabled(bool enabled);
 
 /// Whether the ladder is allowed to run. See above.

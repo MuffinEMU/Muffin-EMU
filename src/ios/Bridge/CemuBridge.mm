@@ -15,6 +15,8 @@
 //  CemuBridge.h, which is plain C.
 //
 #include "Common/precompiled.h"
+#include <cxxabi.h>
+#include <typeinfo>
 #import "CemuBridge.h"
 #import "IOSLiveLog.h"
 #import <Foundation/Foundation.h>
@@ -62,17 +64,10 @@
 #include "input/emulated/VPADController.h"
 #include "input/InputManager.h"
 
-// Forward-declared rather than reached through coreinit_Thread.h: that header pulls the
-// whole coreinit thread/scheduler surface into an ARC-compiled ObjC++ translation unit
-// that includes no other Cafe/OS header, and this needs exactly one function from it.
-//
-// MUST stay OUTSIDE the extern "C" block below, and that is not a style preference - it
-// is what makes this link. A `namespace` nested inside `extern "C"` does NOT restore C++
-// linkage: the declaration keeps C language linkage, so the reference is emitted as the
-// unmangled `_OSSetThermalThrottleMicros` while the definition in coreinit_Thread.cpp is
-// an ordinary mangled C++ symbol. The two never meet, and the only symptom is a linker
-// error at the very end of a full framework build - which on the arm64 runner is an hour
-// of cold vcpkg rebuild before it tells you.
+// Forward-declared here because coreinit_Thread.h pulls the whole scheduler surface into
+// this ARC-compiled translation unit. Must stay OUTSIDE the extern "C" block: a namespace
+// nested inside extern "C" keeps C linkage, so the reference would not match the mangled
+// C++ definition and the framework would fail to link.
 namespace coreinit { void OSSetThermalThrottleMicros(uint32 micros); }
 
 // The core's C entry points. Defined inside extern "C" blocks in src/main.cpp and
@@ -321,6 +316,18 @@ static uint64_t cemu_sysctl_u64(const char* name)
 // the day a device ships, and a wrong name is worse than an identifier.
 // Built once, under the thread-safe static initialiser, so concurrent first callers can't
 // observe a half-built string; the returned pointer stays valid for the process lifetime.
+// Describes the exception currently being handled. Call only from inside a catch block.
+static std::string cemu_describe_current_exception(void)
+{
+    try { throw; }
+    catch (const std::exception& ex) { return std::string(typeid(ex).name()) + ": " + ex.what(); }
+    catch (...)
+    {
+        const std::type_info* type = abi::__cxa_current_exception_type();
+        return std::string("non-standard exception ") + (type ? type->name() : "of unknown type");
+    }
+}
+
 static std::string cemu_build_device_report(void)
 {
     std::string report;
@@ -376,22 +383,15 @@ const char* cemu_bridge_memory_headroom_summary(void) {
     const uint64_t avail = (uint64_t)os_proc_available_memory();
     const uint64_t arena = (uint64_t)PPCRecompiler_getJitArenaSize();
 
-    // Deliberately reports what was OBTAINED, not what was requested. The entitlement is
-    // a request; whether iOS honoured it is only visible in the numbers, and an app that
-    // says "increased memory limit: on" while running a 64MB arena would be telling a
-    // reassuring lie. The arena size is the one number that says whether the recompiler
-    // got room to work.
+    // Reports what iOS actually granted, not which entitlements were requested; the JIT
+    // arena size shows whether the recompiler got room to work.
     char buf[256];
     if (arena == 0) {
         snprintf(buf, sizeof(buf),
             "%llu MB headroom - no JIT arena, so this launch is running the interpreter",
             (unsigned long long)(avail / (1024ull * 1024ull)));
     } else {
-        // Reservation and water level, separately, because they are different things and
-        // conflating them is what makes a big arena look alarming. The reservation is
-        // address space and costs almost nothing; the used figure is what the process is
-        // actually holding, and it rises as code is translated and drops to nothing on a
-        // flush.
+        // Reserved address space costs almost nothing; "in use" is what the process holds.
         const uint64_t used = (uint64_t)PPCRecompiler_getJitArenaUsed();
         snprintf(buf, sizeof(buf), "%llu MB headroom - JIT arena %llu MB reserved, %llu MB in use%s",
             (unsigned long long)(avail / (1024ull * 1024ull)),
@@ -1604,9 +1604,9 @@ void cemu_bridge_initialize(const char* mlcPath) {
     {
         CemuInitialize(executablePath.fileSystemRepresentation, userData.c_str(), userData.c_str(), cache.c_str(), data.c_str());
     }
-    catch (const std::exception& ex)
+    catch (...)
     {
-        std::string message = std::string("initialize: CemuInitialize() threw: ") + ex.what();
+        std::string message = "initialize: CemuInitialize() threw: " + cemu_describe_current_exception();
         cemu_bridge_log_checkpoint(message.c_str());
         setStatus("The emulator core failed to start (see the crash log).");
         g_initialized.store(false);
@@ -1804,9 +1804,9 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
         // (and, if registered, GamePad) layers and starts the title thread.
         CemuRun();
     }
-    catch (const std::exception& ex)
+    catch (...)
     {
-        std::string message = std::string("boot_title: CemuRun() threw: ") + ex.what();
+        std::string message = "boot_title: CemuRun() threw: " + cemu_describe_current_exception();
         cemu_bridge_log_checkpoint(message.c_str());
         setStatus("The title failed to start (see the crash log).");
         return CEMU_BRIDGE_UNABLE_TO_MOUNT;
@@ -1880,9 +1880,15 @@ bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool t
             g_decryptBytesWritten.store(bytesWritten);
             g_decryptFilesWritten.store(filesWritten);
         };
-        int status = toWua
-            ? IOSTitleDecrypt_ExtractToWua(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress)
-            : IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress);
+        int status = 5; // IOS_DECRYPT_INCOMPLETE: an exception means the output can't be trusted
+        try {
+            status = toWua
+                ? IOSTitleDecrypt_ExtractToWua(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress)
+                : IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress);
+        } catch (...) {
+            std::string message = "decrypt: threw: " + cemu_describe_current_exception();
+            cemu_bridge_log_checkpoint(message.c_str());
+        }
         g_decryptResultStatus.store(status);
         g_decryptCompleted.store(true);
         g_decryptRunning.store(false);
@@ -2376,19 +2382,10 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
 // see them, so a state where every on-screen button is dead but the sticks work can be
 // diagnosed from the app.
 //
-// The reason that pairing happens is worth stating once, because it is the whole shape of
-// the bug: axes reach the emulated controller directly (GCController.mm assigns
-// result.axis from the stick values) and never consult the mapping table, while EVERY
-// button goes through it. So "sticks respond, no button does" means, precisely, an
-// emulated controller with no button mappings - a state a stale or partial profile can
-// produce and keep producing on every launch, on every future build, because it is data
-// on the device rather than anything in the binary.
-//
-// These three functions exist so that is visible and fixable from the UI instead of
-// requiring a source-level diagnosis. They are deliberately the smallest surface that
-// answers "how many bindings are there", "which profile am I on", and "put it back" -
-// porting InputManager itself to Swift would fork ~3,200 lines of shared core that the
-// desktop build also uses, and would not have prevented this bug in the first place.
+// Axes reach the emulated controller directly, while every button goes through the
+// mapping table, so "sticks respond but no button does" means the controller has no
+// button mappings (for example from a stale profile on disk). These functions report
+// the binding count and the profile name, and reset the bindings.
 
 int cemu_bridge_input_button_mapping_count(void) {
     auto vpad = InputManager::instance().get_vpad_controller(0);
