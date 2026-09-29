@@ -3,7 +3,7 @@ import Foundation
 /// Automatic box art: on import, derive the game's real GameTDB Game ID from its own
 /// dump metadata (see IOSCoverArt.cpp for the derivation, verified against GameTDB's
 /// live site rather than guessed) and fetch real cover art for it - no picker, no
-/// manual step. A picker UI was considered and rejected.
+/// manual step.
 ///
 /// This only ever adds a cover for games GameManager.findCover() couldn't already
 /// answer for (a hand-placed override always wins, and this never touches a game with
@@ -100,11 +100,13 @@ enum CoverArtFetcher {
     /// `fetch()` below), and throws only for a real transport failure. Does no
     /// caching or disk I/O of any kind - callers decide what to do with the bytes.
     static func fetchArt(forGameTdbId tdbId: String) async throws -> (data: Data, ext: String)? {
+        // Only a plain 4-6 character alphanumeric ID can name a GameTDB cover.
+        guard tdbId.range(of: "^[A-Za-z0-9]{4,6}$", options: .regularExpression) != nil else { return nil }
         for region in regions {
             for ext in extensions {
                 guard let url = URL(string: "https://art.gametdb.com/wiiu/cover/\(region)/\(tdbId).\(ext)") else { continue }
                 do {
-                    if let data = try await fetch(url), !data.isEmpty {
+                    if let data = try await fetch(url), isImage(data) {
                         return (data, ext)
                     }
                 } catch {
@@ -143,6 +145,13 @@ enum CoverArtFetcher {
             return cached.path
         }
         return nil
+    }
+
+    /// JPEG or PNG magic bytes, so an error or captive-portal page served with 200 is never
+    /// cached as art.
+    private static func isImage(_ data: Data) -> Bool {
+        let b = [UInt8](data.prefix(4))
+        return b.starts(with: [0xFF, 0xD8, 0xFF]) || b == [0x89, 0x50, 0x4E, 0x47]
     }
 
     /// 200 returns the body, 404 returns nil (GameTDB has nothing at this URL, a normal
