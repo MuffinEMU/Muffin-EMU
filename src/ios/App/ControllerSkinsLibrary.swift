@@ -25,7 +25,9 @@ struct ControllerSkinLibrary {
     ]
 
     static func getSkin(by name: String) -> WiiUControllerSkin? {
-        return allSkins.first { $0.name == name }
+        // "Custom" was renamed "Violet"; keep resolving the old stored name.
+        let current = name == "Custom" ? "Violet" : name
+        return allSkins.first { $0.name == current }
     }
 }
 
@@ -294,7 +296,7 @@ extension WiiUControllerSkin {
     )
 
     static let custom = WiiUControllerSkin(
-        name: "Custom",
+        name: "Violet",
         dpadColor: ControllerSkinPalette.Custom.dpad,
         buttonColors: [
             "A": ControllerSkinPalette.Custom.a,
@@ -339,106 +341,4 @@ extension WiiUControllerSkin {
         shadowOpacity: 0.45,
         cornerRadius: 20
     )
-}
-
-struct ControllerSkinSelector: View {
-    @Binding var selectedSkin: WiiUControllerSkin
-    @State private var showingSelector = false
-
-    var body: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Text("Controller Skin")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundColor(MuffinTheme.brownDarkest)
-
-                Spacer()
-
-                Button(action: { showingSelector.toggle() }) {
-                    Text(selectedSkin.name)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundColor(MuffinTheme.pixelBlue)
-                }
-            }
-
-            if showingSelector {
-                VStack(spacing: 8) {
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(spacing: 10) {
-                            ForEach(ControllerSkinLibrary.allSkins, id: \.name) { skin in
-                                SkinOption(
-                                    skin: skin,
-                                    isSelected: selectedSkin.name == skin.name,
-                                    onSelect: {
-                                        selectedSkin = skin
-                                        showingSelector = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 300)
-                }
-                .padding(12)
-                .background(MuffinTheme.wrapper.opacity(0.5))
-                .cornerRadius(12)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .padding(12)
-        .background(MuffinTheme.cream)
-        .cornerRadius(12)
-    }
-}
-
-struct SkinOption: View {
-    let skin: WiiUControllerSkin
-    let isSelected: Bool
-    let onSelect: () -> Void
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(skin.name)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownDarkest)
-
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(skin.dpadColor)
-                            .frame(width: 12, height: 12)
-
-                        Circle()
-                            .fill(skin.buttonColors["A"] ?? Color.gray)
-                            .frame(width: 12, height: 12)
-
-                        Circle()
-                            .fill(skin.buttonColors["B"] ?? Color.gray)
-                            .frame(width: 12, height: 12)
-
-                        Circle()
-                            .fill(skin.buttonColors["X"] ?? Color.gray)
-                            .frame(width: 12, height: 12)
-
-                        Circle()
-                            .fill(skin.buttonColors["Y"] ?? Color.gray)
-                            .frame(width: 12, height: 12)
-                    }
-                }
-
-                Spacer()
-
-                if isSelected {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(MuffinTheme.pixelBlue)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(10)
-            .background(isSelected ? MuffinTheme.wrapper : MuffinTheme.cream)
-            .cornerRadius(8)
-        }
-    }
 }

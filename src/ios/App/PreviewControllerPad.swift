@@ -18,13 +18,9 @@ extension Color {
 /// selected `PreviewColourPreset` instead) so it drops into `EmulatorViewOptimized` as a
 /// straight substitute, gated behind `PreviewPadStore`'s enabled flag.
 ///
-/// Scope note: this reuses `HeldControl` for reliable press/release the same way the
-/// shipping pad does, and hit-tests the d-pad with `PadLayout.dpadDirections` rather than
-/// four separate rects, for the same reason the shipping pad's diamond shape matters -
-/// but the stick here is a plain octagon-gated analog, without the shipping pad's
-/// deadzone/curve feel settings. That is a deliberate scope cut for a preview build, not
-/// an oversight: this file has never run on a device, and duplicating the full feel-tuned
-/// stick untested was a worse trade than shipping a simpler, honestly-scoped one.
+/// Reuses `HeldControl` for press/release and hit-tests the d-pad with
+/// `PadLayout.dpadDirections`. The stick is a plain octagon-gated analog without the
+/// standard pad's deadzone/curve settings. Experimental; off by default.
 struct PreviewControllerPad: View {
     @ObservedObject var store: PreviewPadStore
     let onInput: (String, Bool) -> Void
@@ -33,9 +29,7 @@ struct PreviewControllerPad: View {
 
     var body: some View {
         GeometryReader { proxy in
-            // CGRect has no .inset(by:) that takes SwiftUI's own EdgeInsets (only
-            // UIKit's UIEdgeInsets, a different type), so the safe rect is built by hand
-            // rather than reached for an extension that does not apply here.
+            // Safe rect built by hand: CGRect.inset(by:) takes UIEdgeInsets, not EdgeInsets.
             let insets = proxy.safeAreaInsets
             let full = proxy.frame(in: .local)
             let safeArea = CGRect(x: full.minX + insets.leading, y: full.minY + insets.top,
@@ -88,12 +82,19 @@ private struct PreviewGroupView: View {
                     .position(x: anchor.x, y: anchor.y + captionOffset(for: group))
             }
         }
-        // The drag handle covers the whole editing surface rather than one shape, since a
-        // group like L+ZL has no single outline to grab - dragging anywhere inside its
-        // bounding area moves the pair together, matching how ControllerCustomLayout
-        // already groups them.
-        .contentShape(Rectangle())
+        // The edit surface is the group's own bounding rect, not the whole container
+        // (each group's ZStack fills the container), so every group can be picked up.
+        .contentShape(Path(editRect))
         .gesture(isEditingLayout ? editGesture : nil)
+    }
+
+    private var editRect: CGRect {
+        group.controlIDs
+            .compactMap { resolved.controls[$0] }
+            .map { CGRect(x: $0.centre.x - $0.boundingSize.width / 2,
+                          y: $0.centre.y - $0.boundingSize.height / 2,
+                          width: $0.boundingSize.width, height: $0.boundingSize.height) }
+            .reduce(CGRect.null) { $0.union($1) }
     }
 
     /// Move and resize as one attached gesture, not two separate `.gesture()` modifiers -
@@ -218,52 +219,59 @@ private struct PreviewDpadView: View {
     let onInput: (String, Bool) -> Void
 
     @State private var held: Set<String> = []
+    /// True while a finger is down. Resets if the system cancels the gesture.
+    @GestureState private var touching = false
 
-    var body: some View {
+    /// The cross, drawn around the middle of its own w x h frame.
+    private func cross() -> Path {
         let w = size.width, h = size.height
-        Path { p in
-            let a = arm / 2, hw = w / 2, hh = h / 2
-            p.move(to: CGPoint(x: -a, y: -hh)); p.addLine(to: CGPoint(x: a, y: -hh))
-            p.addLine(to: CGPoint(x: a, y: -a)); p.addLine(to: CGPoint(x: hw, y: -a))
-            p.addLine(to: CGPoint(x: hw, y: a)); p.addLine(to: CGPoint(x: a, y: a))
-            p.addLine(to: CGPoint(x: a, y: hh)); p.addLine(to: CGPoint(x: -a, y: hh))
-            p.addLine(to: CGPoint(x: -a, y: a)); p.addLine(to: CGPoint(x: -hw, y: a))
-            p.addLine(to: CGPoint(x: -hw, y: -a)); p.addLine(to: CGPoint(x: -a, y: -a))
+        let a = arm / 2, hw = w / 2, hh = h / 2
+        return Path { p in
+            p.move(to: CGPoint(x: hw - a, y: 0)); p.addLine(to: CGPoint(x: hw + a, y: 0))
+            p.addLine(to: CGPoint(x: hw + a, y: hh - a)); p.addLine(to: CGPoint(x: w, y: hh - a))
+            p.addLine(to: CGPoint(x: w, y: hh + a)); p.addLine(to: CGPoint(x: hw + a, y: hh + a))
+            p.addLine(to: CGPoint(x: hw + a, y: h)); p.addLine(to: CGPoint(x: hw - a, y: h))
+            p.addLine(to: CGPoint(x: hw - a, y: hh + a)); p.addLine(to: CGPoint(x: 0, y: hh + a))
+            p.addLine(to: CGPoint(x: 0, y: hh - a)); p.addLine(to: CGPoint(x: hw - a, y: hh - a))
             p.closeSubpath()
         }
-        .offset(x: centre.x, y: centre.y)
-        .fill(Color(colours.fill("dpad")))
-        .overlay(
-            Path { p in
-                let a = arm / 2, hw = w / 2, hh = h / 2
-                p.move(to: CGPoint(x: -a, y: -hh)); p.addLine(to: CGPoint(x: a, y: -hh))
-                p.addLine(to: CGPoint(x: a, y: -a)); p.addLine(to: CGPoint(x: hw, y: -a))
-                p.addLine(to: CGPoint(x: hw, y: a)); p.addLine(to: CGPoint(x: a, y: a))
-                p.addLine(to: CGPoint(x: a, y: hh)); p.addLine(to: CGPoint(x: -a, y: hh))
-                p.addLine(to: CGPoint(x: -a, y: a)); p.addLine(to: CGPoint(x: -hw, y: a))
-                p.addLine(to: CGPoint(x: -hw, y: -a)); p.addLine(to: CGPoint(x: -a, y: -a))
-                p.closeSubpath()
+    }
+
+    private func releaseAll() {
+        for id in held { onInput(id, false) }
+        held = []
+    }
+
+    var body: some View {
+        // Drawn, hit-tested and measured in the same w x h frame; `.position` comes last.
+        cross()
+            .fill(Color(colours.fill("dpad")))
+            .overlay(cross().stroke(Color(colours.outline), lineWidth: max(1, arm * 0.06)))
+            .frame(width: size.width, height: size.height)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($touching) { _, state, _ in state = true }
+                    .onChanged { value in
+                        let next = PadLayout.dpadDirections(
+                            at: value.location,
+                            centre: CGPoint(x: size.width / 2, y: size.height / 2),
+                            size: size)
+                        for id in held.subtracting(next) { onInput(id, false) }
+                        for id in next.subtracting(held) { onInput(id, true) }
+                        held = next
+                    }
+                    .onEnded { _ in releaseAll() }
+            )
+            .allowsHitTesting(isInteractive)
+            .position(centre)
+            .onChange(of: touching) { down in
+                if !down { releaseAll() }
             }
-            .offset(x: centre.x, y: centre.y)
-            .stroke(Color(colours.outline), lineWidth: max(1, arm * 0.06))
-        )
-        .frame(width: w + 40, height: h + 40) // generous frame so the offset path still hit-tests
-        .contentShape(Rectangle())
-        .allowsHitTesting(isInteractive)
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    let next = PadLayout.dpadDirections(at: value.location, centre: centre, size: size)
-                    for id in held.subtracting(next) { onInput(id, false) }
-                    for id in next.subtracting(held) { onInput(id, true) }
-                    held = next
-                }
-                .onEnded { _ in
-                    for id in held { onInput(id, false) }
-                    held = []
-                }
-        )
-        .onDisappear { for id in held { onInput(id, false) }; held = [] }
+            .onChange(of: isInteractive) { active in
+                if !active { releaseAll() }
+            }
+            .onDisappear { releaseAll() }
     }
 }
 
@@ -281,6 +289,8 @@ private struct PreviewStickView: View {
 
     @State private var knobOffset: CGSize = .zero
     @State private var pushed = false
+    /// True while a finger is on the stick. Resets if the system cancels the gesture.
+    @GestureState private var touching = false
     /// The pending release of a tap-click, so a view that goes away mid-click cannot leave
     /// L3/R3 held. Mirrors JoystickControl's own clickRelease in ControllerPad.swift.
     @State private var clickRelease: DispatchWorkItem?
@@ -292,10 +302,8 @@ private struct PreviewStickView: View {
     private var knobRadius: CGFloat { diameter * 0.28 }
     private var travel: CGFloat { radius - knobRadius }
 
-    /// Same reasoning and the same value as JoystickControl.clickHoldSeconds: a press and
-    /// release fired back to back in one call stack is not observable by a title polling
-    /// VPADRead on its own schedule under the forced interpreter, so the click has to be
-    /// held open for a few frames instead of pulsed.
+    /// How long a tap holds L3/R3 before releasing, so a title polling on its own schedule
+    /// can see it.
     private static let clickHoldSeconds = 0.12
 
     var body: some View {
@@ -309,12 +317,12 @@ private struct PreviewStickView: View {
                 .offset(knobOffset)
         }
         .frame(width: diameter, height: diameter)
-        .position(centre)
         .contentShape(Circle())
-        .allowsHitTesting(isInteractive)
         .gesture(
             DragGesture(minimumDistance: 0)
+                .updating($touching) { _, state, _ in state = true }
                 .onChanged { value in
+                    // Local to the stick's own frame, so its centre is (radius, radius).
                     let dx = value.location.x - radius, dy = value.location.y - radius
                     let distance = (dx * dx + dy * dy).squareRoot()
                     let reach = travel * ControllerGeometry.StickGate.octagon.radiusFraction(atAngle: atan2(dy, dx))
@@ -330,22 +338,31 @@ private struct PreviewStickView: View {
                 }
                 .onEnded { _ in
                     if !pushed { click() }
-                    pushed = false
-                    withAnimation(.spring(response: 0.2, dampingFraction: 0.6)) { knobOffset = .zero }
-                    onStick(id == "stickL" ? 0 : 1, .zero)
                 }
         )
+        .allowsHitTesting(isInteractive)
+        .position(centre)
+        .onChange(of: touching) { down in
+            if !down { recentre() }
+        }
+        .onChange(of: isInteractive) { active in
+            if !active { recentre() }
+        }
         .onDisappear {
             clickRelease?.cancel()
             clickRelease = nil
-            // A view that disappears mid-click must not leave L3/R3 held forever waiting
-            // for a release that will now never come - the unconditional call here is the
-            // same insurance JoystickControl's onDisappear takes.
+            // Don't leave L3/R3 held if the view goes away mid-click.
             onInput(clickID, false)
             pushed = false
             knobOffset = .zero
             onStick(id == "stickL" ? 0 : 1, .zero)
         }
+    }
+
+    private func recentre() {
+        pushed = false
+        onStick(id == "stickL" ? 0 : 1, .zero)
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.6)) { knobOffset = .zero }
     }
 
     private func click() {

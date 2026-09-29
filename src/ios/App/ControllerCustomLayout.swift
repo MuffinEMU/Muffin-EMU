@@ -3,25 +3,14 @@ import Combine
 
 /// Per-element placement, on top of the measured defaults.
 ///
-/// The measured layout was taken off a photograph of a real GamePad and it is still wrong
-/// on a real device - which says the approach was wrong, not that the measurement needed
-/// another pass. Where a control belongs depends on the size of the screen and the size of
-/// the hands holding it, and neither of those is knowable from a photo. So the defaults
-/// stay as the starting point and every element can be moved and resized from there.
-///
-/// Stored as one JSON blob rather than a pair of @AppStorage keys per control, because the
-/// control set is data - it changes with the skin and the ZL/ZR toggle - and @AppStorage
-/// needs a key known at compile time.
+/// Stored as one JSON blob rather than @AppStorage keys per control, because the control
+/// set changes with the skin and the ZL/ZR toggle.
 struct ControlOverride: Codable, Equatable {
-    /// Displacement from the control's default position, in POINTS.
-    ///
-    /// Points, not layout units, for the same reason the cluster offsets are: a drag is
-    /// something a finger did at one particular size, and re-reading it against a
-    /// different unit when the size slider moves would make everything wander.
+    /// Displacement from the default position, in points (not layout units, so it doesn't
+    /// wander when the size slider moves).
     var dx: Double = 0
     var dy: Double = 0
-    /// Multiplier on the control's default size. Clamped on the way in rather than at
-    /// draw time, so a stored value can never be one a slider cannot get back to.
+    /// Multiplier on the default size, clamped on the way in.
     var scale: Double = 1.0
 
     static let identity = ControlOverride()
@@ -93,32 +82,21 @@ final class ControllerCustomLayout: ObservableObject {
 
     var hasCustomisations: Bool { !overrides.isEmpty }
 
-    /// Call once a drag or pinch ends, to write to disk what `write(_:for:)` below only
-    /// kept in `overrides` while the gesture was live.
-    ///
-    /// Safe to call even when nothing actually changed since the last commit - it always
-    /// re-encodes and rewrites the whole dictionary, which is already what every other
-    /// caller of `persist()` here does, so there is no separate "was it dirty" state to
-    /// get out of sync.
+    /// Call when a drag or pinch ends, to write to disk what `write(_:for:)` only kept in
+    /// `overrides` while the gesture was live.
     func commit() {
         persist()
     }
 
     private func write(_ value: ControlOverride, for controlID: String) {
         let key = Self.groupID(for: controlID)
-        // An override equal to the default is stored as nothing at all. Otherwise dragging
-        // a control away and back would leave a record behind, and "reset everything"
-        // would keep claiming there was something to reset.
+        // An override equal to the default is stored as nothing.
         if value.isIdentity {
             overrides.removeValue(forKey: key)
         } else {
             overrides[key] = value
         }
-        // No persist() here. `move`/`setScale` call this on every DragGesture/
-        // MagnificationGesture onChanged tick - at 60 Hz that is a JSON encode and a
-        // UserDefaults write every 16 ms for the length of a drag. `overrides` is
-        // @Published, so the view still updates immediately either way; only the disk
-        // write waits for the caller's onEnded to call commit() above.
+        // No persist() here: this runs on every gesture tick. `commit()` writes to disk.
     }
 
     private func persist() {
