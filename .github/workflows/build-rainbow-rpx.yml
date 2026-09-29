@@ -2,7 +2,7 @@ name: Build Rainbow Demo RPX (Homebrew)
 
 # Builds homebrew/rainbow into rainbow.rpx with the standard devkitPro Wii U toolchain.
 #
-# Same shape and the same reasoning as build-test-rpx.yml: homebrew RPX files carry no
+# Homebrew RPX files carry no
 # encryption, so this is built from source in a plain Linux container with no relation
 # to the Xcode/iOS build in build-ios-app.yml, and no console keys are involved at any
 # point.

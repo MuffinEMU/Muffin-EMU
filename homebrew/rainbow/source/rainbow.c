@@ -24,7 +24,7 @@
 // independent of GX2SwapScanBuffers(), and it is the path with the least emulator
 // surface underneath it - the shortest possible route from "PPC code ran" to "pixels".
 //
-// Licence: written for cemu-ios-muffin, same terms as the repo.
+// Licence: same terms as the repository (MPL-2.0).
 
 #include <coreinit/cache.h>
 #include <coreinit/debug.h>
