@@ -1,7 +1,6 @@
 MuffinEMU, Wii U emulation for iPhone and iPad, built from commit @COMMIT@.
 
-**Known issue:** MuffinEMU's own on-screen controls are currently broken. We're
-actively working on a fix - this notice comes off once it lands.
+**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.
 
 **`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign
 with your own Apple ID at install.
