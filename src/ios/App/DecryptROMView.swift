@@ -1,18 +1,6 @@
 import SwiftUI
 
-/// Decrypt-to-Files: the options were either replace the encrypted ROM in place, or
-/// export a decrypted copy and keep using the encrypted original. Only the second is
-/// implemented - replacing a user's only copy of a legally-owned dump in place, where a
-/// crash or a full disk mid-write could destroy it with nothing left to recover, isn't
-/// something to ship without a device to actually test the failure paths on. Exporting
-/// leaves the encrypted original completely untouched and gets the same practical
-/// result (a plain copy you can move, share, or open in another app) at a fraction of
-/// the risk.
-///
-/// Destination is a fixed, predictable place - Documents/Decrypted/<gameID>/ - rather
-/// than a folder picker: UIFileSharingEnabled is already on (see the AlternateIcons
-/// plist comment), so it's already visible and movable from Files without building a
-/// second picker flow that would need its own security-scoped-URL handling.
+/// Exports a decrypted copy to Documents/Decrypted/<id>; the original is never modified.
 struct DecryptProgress: Equatable {
     var isRunning = false
     var completed = false
@@ -31,10 +19,7 @@ struct DecryptProgress: Equatable {
             filesWritten: raw.files_written)
     }
 
-    /// Mirrors the IOS_DECRYPT_* enum in IOSTitleDecrypt.cpp - kept as a duplicated
-    /// literal rather than a shared header constant because the C bridge only exposes
-    /// the raw int (see CemuBridgeDecryptProgress.result_status), the same tradeoff
-    /// CemuBridgeStatus's Swift-side callers already accept.
+    /// Mirrors the IOS_DECRYPT_* enum in IOSTitleDecrypt.cpp.
     var isSuccess: Bool { completed && resultStatus == 0 }
 }
 
@@ -54,7 +39,7 @@ enum DecryptFormat {
     case wua
 
     var toWua: Bool { self == .wua }
-    var navigationTitle: String { self == .wua ? "Decrypt to WUA" : "Decrypt to Raw Source" }
+    var navigationTitle: String { self == .wua ? "Decrypt to WUA" : "Decrypt to Folder" }
 }
 
 struct DecryptROMView: View {
@@ -100,24 +85,21 @@ struct DecryptROMView: View {
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .foregroundColor(MuffinTheme.brownDarkest)
                     .multilineTextAlignment(.center)
-                Text("The encrypted original is never touched either way.")
+                Text("Your original file isn't changed.")
                     .font(.system(size: 12, design: .rounded))
                     .foregroundColor(MuffinTheme.brownMid)
 
-                // Cards, not pills. These are two-line choices with a title and an
-                // explanation, and MuffinSecondaryButtonStyle is a capsule built for a
-                // single short word - on iOS 26 it wraps a paragraph in Liquid Glass and
-                // reads as a lozenge somebody overfilled.
+                // Cards rather than capsule buttons: each choice has a title and a description.
                 VStack(spacing: 12) {
                     formatChoice(
-                        title: "Decrypt to Raw Source",
-                        detail: "A code/, content/, meta/ folder - importable and bootable as-is.",
+                        title: "Decrypt to Folder",
+                        detail: "A folder you can import and play directly.",
                         systemImage: "folder.fill"
                     ) { format = .rawSource }
 
                     formatChoice(
                         title: "Decrypt to WUA",
-                        detail: "A single portable .wua archive file.",
+                        detail: "A single .wua file that's easy to move around.",
                         systemImage: "doc.zipper"
                     ) { format = .wua }
                 }
@@ -216,7 +198,7 @@ struct DecryptROMView: View {
                         .font(.system(size: 13, design: .rounded))
                         .foregroundColor(MuffinTheme.brownMid)
                         .monospacedDigit()
-                    Text("The encrypted original is untouched the whole time.")
+                    Text("Your original file isn't changed.")
                         .font(.system(size: 12, design: .rounded))
                         .foregroundColor(MuffinTheme.brownMid)
                 }
@@ -229,9 +211,6 @@ struct DecryptROMView: View {
                     } label: {
                         Text("Cancel")
                     }
-                    // No .foregroundColor override here: MuffinSecondaryButtonStyle sets
-                    // the label's colour itself, so one applied out here never reached
-                    // the text.
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .padding(.bottom, 8)
                 }
@@ -257,9 +236,7 @@ struct DecryptROMView: View {
             ? "\(documentsPath)/Decrypted/\(game.id).wua"
             : "\(documentsPath)/Decrypted/\(game.id)"
         guard cemu_bridge_start_decrypt(game.romPath, destinationPath, chosenFormat.toWua) else {
-            // Already running (shouldn't happen - this view owns the one decrypt slot) or
-            // a bad path. Either way, show it as a poll result rather than silently doing
-            // nothing.
+            // Already running or a bad path; show it as a failed result.
             progress = DecryptProgress(isRunning: false, completed: true, resultStatus: -1)
             return
         }
@@ -296,7 +273,58 @@ struct DecryptROMView: View {
         case 2: return "No matching key in keys.txt for this disc. Import the right key and try again."
         case 3: return "Couldn't write the decrypted output."
         case 4: return "Cancelled."
-        default: return "Something went wrong before decryption could start."
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+d
+e
+f
+a
+u
+l
+t
+:
+ 
+r
+e
+t
+u
+r
+n
+ 
+"
+D
+e
+c
+r
+y
+p
+t
+i
+o
+n
+ 
+c
+o
+u
+l
+d
+n
+'
+t
+ 
+s
+t
+a
+r
+t
+.
+"
         }
     }
 }
