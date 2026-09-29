@@ -81,8 +81,11 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <thread>
 #include <vector>
+
+#include <unistd.h>
 
 bool IOSTitlePause_Pause();
 bool IOSTitlePause_Resume();
@@ -187,12 +190,16 @@ namespace
 		return true;
 	}
 
+	// Writes to "<path>.tmp" and renames it over the slot only after every byte was
+	// written, flushed and closed successfully, so a failed save (for example a full
+	// disk) leaves the slot's previous save untouched.
 	bool WriteSaveFile(const char* path)
 	{
-		FILE* f = fopen(path, "wb");
+		const std::string tmpPath = std::string(path) + ".tmp";
+		FILE* f = fopen(tmpPath.c_str(), "wb");
 		if (!f)
 		{
-			cemuLog_log(LogType::Force, "IOSSaveState: could not open '{}' for writing", path);
+			cemuLog_log(LogType::Force, "IOSSaveState: could not open '{}' for writing", tmpPath);
 			return false;
 		}
 
@@ -239,11 +246,18 @@ namespace
 			}
 		}
 
-		fclose(f);
+		if (ok && fflush(f) != 0)
+			ok = false;
+		if (ok && fsync(fileno(f)) != 0)
+			ok = false;
+		if (fclose(f) != 0)
+			ok = false;
+		if (ok && std::rename(tmpPath.c_str(), path) != 0)
+			ok = false;
 		if (!ok)
 		{
-			cemuLog_log(LogType::Force, "IOSSaveState: write failed, removing partial file '{}'", path);
-			std::remove(path);
+			cemuLog_log(LogType::Force, "IOSSaveState: write failed, removing partial file '{}' (previous save kept)", tmpPath);
+			std::remove(tmpPath.c_str());
 		}
 		return ok;
 	}
