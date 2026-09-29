@@ -1,17 +1,14 @@
 import SwiftUI
 
-/// Settings keys for every row this section exposes - the full set of fields on
-/// CemuConfig's `notification` struct, one @AppStorage key each. This is a second,
-/// independent on-screen draw from the performance overlay (LatteOverlay_RenderNotifications()
-/// in LatteOverlay.cpp, its own ImGui window with its own position/color/scale), not a
-/// Swift-drawn toast layered on top - the engine itself decides when a controller-profile,
-/// low-battery, shader-compiling or friends notification fires and draws it.
+/// Settings keys for the notification rows, one @AppStorage key each, matching CemuConfig's
+/// `notification` struct. The engine draws these itself (LatteOverlay.cpp), independent of
+/// the performance overlay.
 enum NotificationSettings {
     static let positionKey = "muffin.notification.position"
     static let defaultPosition = ScreenPosition.topLeft // matches CemuConfig's notification.position default
 
     static let textColorKey = "muffin.notification.textColor"
-    // Int, not UInt32 - see OverlaySettingsSection.swift's identical note on textColor.
+    // Int, not UInt32: @AppStorage has no UInt32 overload. Packed 0xAARRGGBB.
     static let defaultTextColor: Int = 0xFFFFFFFF // opaque white, matches CemuConfig's default
 
     static let textScaleKey = "muffin.notification.textScale"
@@ -30,15 +27,9 @@ enum NotificationSettings {
     static let defaultFriends = true // matches CemuConfig's notification.friends default
 }
 
-/// Toasts the engine itself draws for controller pairing/battery, shader compile progress
-/// and friend activity - same "app owns the @AppStorage, GameManager pushes it before
-/// boot" split as OverlaySettingsSection, and the same ScreenPosition this app's
-/// Performance Overlay uses, since both are corner-anchored ImGui windows drawn by the
-/// same LatteOverlay.cpp.
-///
-/// The rows below are visually disabled rather than hidden when position is Off, for the
-/// same reason as the overlay section: picking which notifications you want before
-/// turning the feature on somewhere is a normal way to use this.
+/// Pop-ups the engine draws for controller pairing/battery, shader compile progress and
+/// friend activity. Same structure as OverlaySettingsSection: the app owns the @AppStorage,
+/// GameManager pushes it before boot, and rows are disabled while Position is Off.
 struct NotificationSettingsSection: View {
     @AppStorage(NotificationSettings.positionKey) private var positionRaw = NotificationSettings.defaultPosition.rawValue
     @AppStorage(NotificationSettings.textColorKey) private var textColor = NotificationSettings.defaultTextColor

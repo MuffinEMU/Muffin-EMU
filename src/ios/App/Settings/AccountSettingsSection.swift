@@ -1,11 +1,8 @@
 import SwiftUI
 
-/// Wii U console accounts (Cafe/Account/Account.h) - a real, already-working desktop Cemu
-/// feature (the same account.dat files desktop Cemu creates, lists and boots under) that
-/// had no iOS surface at all before this. Ported from MeloCafe's AccountSettingsView,
-/// split into two sections (this one and NetworkServiceSettingsSection below) to match
-/// this app's one-struct-per-Section settings layout - see ShaderSettingsSections.swift
-/// for the same split applied to a different feature.
+/// Wii U console accounts (Cafe/Account/Account.h): pick, create and delete accounts, the
+/// same account.dat files desktop Cemu uses. The Network Service picker is a separate
+/// section below.
 struct AccountSettingsSection: View {
     @State private var accounts: [Account] = []
     @State private var activePersistentId: UInt32 = 0
@@ -98,10 +95,8 @@ struct AccountSettingsSection: View {
     }
 }
 
-/// The active account's Network Service - which online backend it connects through, kept
-/// separate from AccountSettingsSection above because it's a per-account setting rather
-/// than an account-management action, the same distinction MeloCafe draws between its own
-/// "Account" and "Network Service" sections.
+/// The active account's Network Service: which online backend it connects through. A
+/// per-account setting, so it sits apart from the account-management section above.
 struct NetworkServiceSettingsSection: View {
     @State private var activePersistentId: UInt32 = 0
     @State private var activeAccountName: String?

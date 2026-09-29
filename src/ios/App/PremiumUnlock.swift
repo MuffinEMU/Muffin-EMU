@@ -4,70 +4,22 @@ import Security
 
 /// Premium unlock codes.
 ///
-/// WHAT THIS ACTUALLY DEFENDS AGAINST, stated plainly so nobody trusts it further
-/// than it goes. The check runs on a device the user controls, and this app's
-/// audience installs through TrollStore, which means filesystem access. Anything
-/// computable on-device is forgeable on-device, and a determined person can patch
-/// the binary. There is no client-side design that prevents that - only a server
-/// that decides, which this app does not have.
+/// The check runs on the user's device, so it can be patched or forged locally; only a
+/// server could prevent that. It stops casual bypasses: codes are 100 bits of entropy
+/// stored only as salted PBKDF2-HMAC-SHA256 hashes (200,000 rounds), and the stored unlock
+/// is a token bound to a per-install key rather than a plain flag.
 ///
-/// So the goal is not "impossible". It is to move the bar from *read a comment*
-/// to *reverse-engineer and patch the app*, which it does:
-///
-///  - GUESSING: dead. Codes carry 100 bits of entropy over a 32-character
-///    alphabet. The previous code was MUFFIN-VIP-0001, which fell to brute force
-///    from its hash alone in under a millisecond - the whole keyspace was 10,000
-///    candidates because the format was guessable.
-///  - READING THE SOURCE: dead. No plaintext code appears anywhere in this file
-///    or in the binary. The old version printed the code in a comment directly
-///    above its own hash.
-///  - REVERSING A LEAKED HASH: PBKDF2-HMAC-SHA256, 200,000 iterations, salted.
-///    Moot at 100 bits of entropy, but it costs nothing and means a future short
-///    code does not become an instant loss.
-///  - FLIPPING THE STORED FLAG: previously `UserDefaults.bool(forKey:)` - one
-///    line in a plist editor, no code required at all. It is now a token bound to
-///    a per-install random key, so forging it means running the HMAC rather than
-///    typing `true`. A speed bump, not a wall, and deliberately not the load-
-///    bearing part.
-///
-/// WHY THE TOKEN IS NOT KEYCHAIN-ONLY, which was the first attempt here.
-/// Most of this app's users arrive through SideStore or LiveContainer, not
-/// TrollStore, and keychain-only storage breaks under both:
-///
-///  - SideStore re-signs the IPA with the user's own certificate. A generic
-///    password's default access group is derived from the signing Team ID, so an
-///    item written under one identity is unreadable after a re-sign under
-///    another. Switching install method, or re-signing with a different Apple ID,
-///    silently loses the unlock.
-///  - LiveContainer runs guest apps inside its own process and container, so
-///    keychain semantics are the host's, shared across guests, and not
-///    guaranteed to survive a LiveContainer update.
-///
-/// Losing a paid unlock every time someone changes how they install is a far
-/// worse outcome than a determined person forging a token, so the token is
-/// written to BOTH the keychain and UserDefaults and either is accepted. The
-/// keychain copy is the durable one where it works; UserDefaults lives in the
-/// app's data container and survives a re-sign.
-///
-/// This costs little, because storage was never where the security was. The real
-/// property is that codes carry 100 bits of entropy and appear nowhere in the
-/// binary - and that holds identically under TrollStore, SideStore and
-/// LiveContainer.
+/// The token and install key are written to both the Keychain and UserDefaults, and either
+/// is accepted: Keychain access groups change when an app is re-signed (SideStore) or run
+/// inside LiveContainer, and the unlock must survive that.
 enum PremiumUnlock {
     private static let service = "com.cemu.Cemu.premium"
     private static let account = "unlock"
     private static let tokenKey = "muffin.premium.token"
     private static let installKeyDefaultsKey = "muffin.premium.ik"
 
-    /// Salt and iteration count are public by construction - they are in the
-    /// binary either way. They are not secrets; the entropy of the code is.
-    /// The salt, as the 16 RAW BYTES the hex spells - NOT the ASCII of the hex string.
-    ///
-    /// The generator that produced the stored hashes salted with the decoded bytes
-    /// (Python `bytes.fromhex`). Salting with `Data("...".utf8)` fed PBKDF2 a
-    /// different 32-byte salt, so every hash came out different and every valid
-    /// code would have been rejected - with no error a user could act on, because
-    /// "that code didn't work" is all the UI can say.
+    /// Salt and iteration count aren't secrets. The salt is the 16 raw bytes (not the ASCII
+    /// of a hex string), matching the generator that produced the stored hashes.
     private static let salt = Data([0x86, 0x6c, 0x34, 0x12, 0x4d, 0x50, 0xb5, 0x9e, 0x6c, 0xe5, 0xcc, 0x08, 0x28, 0x3e, 0x00, 0x19])
     private static let iterations = 200000
 
@@ -101,9 +53,7 @@ enum PremiumUnlock {
     @discardableResult
     static func attemptUnlock(code: String) -> Bool {
         let candidate = pbkdf2(normalize(code))
-        // Constant-time-ish: compare against every entry rather than returning on
-        // the first match, so response time carries no information about which
-        // code was close. The set is tiny, so this costs nothing.
+        // Compare against every entry rather than returning on the first match.
         var matched = false
         for known in validCodeHashes where constantTimeEquals(known, candidate) { matched = true }
         guard matched else { return false }
@@ -123,19 +73,7 @@ enum PremiumUnlock {
 
     // MARK: - derivation
 
-    /// PBKDF2-HMAC-SHA256, implemented on CryptoKit rather than CommonCrypto.
-    ///
-    /// CommonCrypto needs `import CommonCrypto`, which is a module this target does
-    /// not link, and its C pointer API does not bridge cleanly from a Swift
-    /// `[UInt8]` - the first attempt failed the build on both counts
-    /// (`cannot find 'CCKeyDerivationPBKDF' in scope`, and `UnsafePointer<UInt8>`
-    /// has no `assumingMemoryBound`). CryptoKit is already imported, already used
-    /// for the HMAC below, and is pure Swift at the call site.
-    ///
-    /// This is the standard construction from RFC 2898: for each block, U1 = PRF
-    /// (password, salt || INT(i)), then U2..Uc = PRF(password, U(n-1)), all XORed
-    /// together. One block is enough - SHA-256 gives 32 bytes and that is the whole
-    /// output length.
+    /// PBKDF2-HMAC-SHA256 (RFC 2898) on CryptoKit; one 32-byte block is the whole output.
     private static func pbkdf2(_ s: String) -> String {
         let key = SymmetricKey(data: Data(s.utf8))
         var block = salt
@@ -149,9 +87,7 @@ enum PremiumUnlock {
         return out.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// The value stored on unlock. Bound to a per-install random key held in the
-    /// Keychain, so the stored blob is useless on any other device and cannot be
-    /// shared around as a "patch".
+    /// The value stored on unlock, bound to a per-install random key.
     private static func expectedToken() -> String {
         let key = SymmetricKey(data: installKey())
         let mac = HMAC<SHA256>.authenticationCode(for: Data("premium-v2".utf8), using: key)
@@ -159,9 +95,7 @@ enum PremiumUnlock {
     }
 
     private static func installKey() -> Data {
-        // Same reasoning as the token: if this is keychain-only it does not survive
-        // a re-sign, and then expectedToken() changes and a legitimately unlocked
-        // user is locked out through no action of their own.
+        // Also kept in UserDefaults: a Keychain-only key wouldn't survive a re-sign.
         if let existing = keychainRead(account: "installkey"), let d = Data(base64Encoded: existing) {
             return d
         }

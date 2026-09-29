@@ -16,13 +16,8 @@ struct GameOverrides: Codable, Equatable {
     /// Settings' "Compile shaders in the background", true/false pin this one game.
     var preCompileShaders: Bool?
 
-    /// Same escape hatch, for Settings' "Favour accuracy". A new Optional field on an
-    /// existing Codable struct decodes to nil for every override already saved on
-    /// disk before this existed - Swift's synthesized Decodable calls
-    /// decodeIfPresent for Optional properties, so old JSON with no
-    /// "favourAccuracy" key is not a decode failure, it's just nil, which is
-    /// exactly the "follow the global default" behaviour a game nobody has
-    /// overridden yet should have.
+    /// Same escape hatch, for Settings' "Favour accuracy". Decodes to nil for overrides saved
+    /// before this field existed (follow the global default).
     var favourAccuracy: Bool?
 
     static let identity = GameOverrides()
@@ -71,9 +66,8 @@ final class PerGameSettingsStore: ObservableObject {
         write(next, for: gameID)
     }
 
-    /// Same "per-game override first, global default underneath" read GameManager
-    /// already does for shader compilation, for the lead's Favour accuracy push
-    /// before boot - see cemu_bridge_set_favour_accuracy's call site.
+    /// Per-game override first, global default underneath. Read before boot (see
+    /// cemu_bridge_set_favour_accuracy's call site).
     func effectiveFavourAccuracy(for gameID: String) -> Bool {
         let globalDefault = defaults.object(forKey: "muffin.cpu.favourAccuracy") as? Bool ?? false
         return overrides(for: gameID).favourAccuracy ?? globalDefault
@@ -108,17 +102,12 @@ final class PerGameSettingsStore: ObservableObject {
     }
 }
 
-/// The quick actions offered from a long-press on a library title - same pattern as
-/// Manic's game grid: a couple of fast toggles right in the context menu, plus a way into
-/// the full screen for everything else. Applied at the call site as a `.contextMenu`
-/// modifier on the game's card, so it needs no changes to `GameCardOptimized` itself.
+/// Quick actions offered from a long-press on a library title: a couple of toggles, plus a
+/// way into the full options screen. Applied as a `.contextMenu` modifier on the game's card.
 struct GameContextMenu: View {
     let game: GameMetadata
     @ObservedObject var store: PerGameSettingsStore
-    /// Only used here to check/clear a manual cover override (hasManualCoverOverride/
-    /// removeManualCover) - the actual picker screen this menu opens into
-    /// (CoverArtPickerView) takes its own reference, passed down from ContentView the
-    /// same way `store` is.
+    /// Used to check/clear a manual cover override; the picker screen takes its own reference.
     @ObservedObject var gameManager: GameManager
     let onViewOptions: () -> Void
     let onDecryptToFiles: () -> Void
@@ -249,11 +238,7 @@ struct GameOptionsView: View {
     }
 
     var body: some View {
-        // NavigationStack needs iOS 16+; this project's deployment target is 15.0 -
-        // same reasoning as SettingsView.swift's own NavigationView, whose overall
-        // shape (a background gradient behind a Form, rather than the plain white
-        // Form this screen had before) this now matches exactly - this was the one
-        // real settings screen in the app that hadn't picked it up.
+        // NavigationStack needs iOS 16+; the deployment target is 15.0.
         NavigationView {
             ZStack {
                 MuffinTheme.backgroundGradient
@@ -273,10 +258,6 @@ struct GameOptionsView: View {
                             .pickerStyle(.menu)
                             .tint(MuffinTheme.pixelBlue)
                         }
-                        // Next to Compile Shaders in Background rather than its own section: both
-                        // are the same shape of override on the same screen, and Favour
-                        // accuracy is exactly the setting Nano Assault Neo's own
-                        // shader-compile override sits next to in Settings itself.
                         HStack {
                             Text("Favour Accuracy")
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -292,10 +273,6 @@ struct GameOptionsView: View {
                     } header: {
                         SettingsSectionHeader("Overrides", icon: "slider.horizontal.3", accent: .core)
                     } footer: {
-                        // Same "one short sentence inline, the rest one tap away" shape
-                        // every other settings section's footer in this app already
-                        // uses - see InfoButton.swift - instead of a single paragraph
-                        // dump nobody who already knows what these do has to read past.
                         InfoButton.footer(
                             "\"Use Global Default\" tracks Settings; On/Off pins this game regardless of it.",
                             title: "Overrides",
