@@ -7,7 +7,7 @@
 
 namespace MlcTitleDirectoryCase
 {
-// damn you iOS for being case sensitive. this was a pain in my ass :sob: -stossy11
+// iOS file systems are case sensitive, so title directory names are normalised to the case Cemu expects.
 template<typename Log>
 void Normalize(const std::filesystem::path& mlc, Log log)
 {
