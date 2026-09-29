@@ -1,10 +1,8 @@
 import Foundation
 
-/// A real Wii U console account (Cafe/Account/Account.h) - the same account.dat file
-/// desktop Cemu creates under mlc/usr/save/system/act/. Ported from MeloCafe's
-/// Account.swift; the only change is the initializer, which parses one 0x1F-delimited
-/// record from cemu_bridge_accounts_list() instead of an Obj-C dictionary - the same
-/// wire shape GraphicPacksView.swift already reads from cemu_bridge_graphic_packs_list().
+/// A Wii U console account (Cafe/Account/Account.h) - the same account.dat file
+/// desktop Cemu creates under mlc/usr/save/system/act/. Parsed from one 0x1F-delimited
+/// record returned by cemu_bridge_accounts_list().
 struct Account: Identifiable, Hashable {
     let persistentId: UInt32
     var miiName: String
@@ -51,9 +49,7 @@ struct Account: Identifiable, Hashable {
     }
 }
 
-/// A real Wii U country code (NCrypto's own list, the one desktop Cemu's account editor
-/// uses) - ported from MeloCafe's AccountCountry with the same record-parsing adjustment
-/// as Account above.
+/// A Wii U country code, from the same list desktop Cemu's account editor uses.
 struct AccountCountry: Identifiable, Hashable {
     let code: Int
     let name: String
