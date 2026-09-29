@@ -1,12 +1,7 @@
 import SwiftUI
 
-/// Whether a shader is built while the game keeps running, or the game waits for
-/// it. Its own section rather than folded into Graphics or Shader Cache - it used
-/// to share a single "Performance" section with resolution/stretch/vsync, which
-/// read as one bundled decision when it is not: Nano Assault Neo needs this OFF
-/// while every other tested game wants it ON, and that only makes sense as a real
-/// per-setting choice. The per-game override for this one lives in the library's
-/// long-press menu, not here - this is the global default it falls back to.
+/// Whether a shader is built while the game keeps running, or the game waits for it. This is
+/// the global default; the per-game override is in the library's long-press menu.
 struct ShaderCompilationSection: View {
     @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
 
@@ -32,11 +27,8 @@ struct ShaderCompilationSection: View {
     }
 }
 
-/// Storage and clearing, split out of what used to be "Performance" into its own
-/// section - a shader cache is disk state, not a performance knob, and the two
-/// clear actions cost very different things (a slow next launch vs. throwing away
-/// something only playing can earn back), which is exactly why there are two
-/// buttons here rather than one "clear cache" button that hides that difference.
+/// Shader cache sizes and the two clear actions (compiled shaders only, or everything
+/// including learned ones).
 struct ShaderCacheSection: View {
     @State private var learnedCacheBytes: Int64 = 0
     @State private var compiledCacheBytes: Int64 = 0
@@ -67,7 +59,6 @@ struct ShaderCacheSection: View {
         } header: {
             SettingsSectionHeader("Shader Cache", icon: "externaldrive", accent: .core)
         } footer: {
-            // Already one short sentence pair - nothing to cut behind an info button.
             InfoButton.footer("Learned shaders are what a game has revealed by drawing with them, saved so the next launch skips rebuilding them. Compiled shaders rebuild on their own.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)

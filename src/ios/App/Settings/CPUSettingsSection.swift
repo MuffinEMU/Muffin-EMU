@@ -1,9 +1,7 @@
 import SwiftUI
 
-/// First section in the Form on purpose: this is the single decision worth more to
-/// speed than everything below it combined, and it is not really "a setting" - it
-/// is decided by HOW the app was launched, which is exactly why CPUModeRow needs
-/// saying up top rather than buried under Graphics or Diagnostics.
+/// First section in the Form: whether the recompiler is running is decided by how the app
+/// was launched, and matters more to speed than anything below it.
 struct CPUSettingsSection: View {
     // Must keep matching GameManager's defaults for the same keys: the engine reads
     // them at title start, and a disagreement here would show a switch in the wrong
@@ -20,9 +18,7 @@ struct CPUSettingsSection: View {
         Section {
             CPUModeRow()
 
-            // On by default: the recompiler is the fast path this build
-            // exists for. Without a JIT enabler attached it cannot run at all, and
-            // the bridge falls back to the interpreter by itself.
+            // On by default. Without a JIT enabler the bridge falls back to the interpreter.
             Toggle(isOn: $recompilerEnabled) {
                 Text("Use the recompiler (JIT)")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -48,10 +44,7 @@ struct CPUSettingsSection: View {
                 cemu_bridge_set_favour_accuracy(newValue)
             }
 
-            // Sits with the CPU settings rather than under Graphics because the core
-            // count is what it actually changes, and that is a CPU decision. See
-            // LowPowerMode in RenderScale.swift for why one emulated core is the lever
-            // that matters for heat and what it costs.
+            // See LowPowerMode in RenderScale.swift.
             Toggle(isOn: $lowPowerMode) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Low Power Mode")
@@ -68,15 +61,8 @@ struct CPUSettingsSection: View {
                 cemu_bridge_set_low_power_mode(newValue)
             }
 
-            // Off by default, and that default is measured rather than assumed. On an
-            // A12Z iPad Pro running Wind Waker HD, MeloCafe on one core holds 40-60fps
-            // and MuffinEMU on three managed 4-20. Three host threads on a fanless part
-            // do not buy three times the work - they buy three times the power draw, and
-            // the SoC takes the clocks back within a minute. The multi-core win is real
-            // on a desktop with a fan; this is not that.
-            //
-            // Kept as a switch rather than deleted because a newer, better-cooled device
-            // may well come out ahead, and that is worth being able to find out.
+            // Off by default: three host threads heat a fanless device and usually run slower than
+            // one. Kept as a switch for better-cooled devices.
             Toggle(isOn: $multicoreEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Use all three CPU cores")
@@ -93,11 +79,8 @@ struct CPUSettingsSection: View {
                 cemu_bridge_set_multicore_enabled(newValue)
             }
 
-            // Defaults ON, unlike Low Power Mode. Not a contradiction: at .serious iOS is
-            // ALREADY throttling the CPU and GPU, so the frame rate has already dropped.
-            // Cutting the pixel count is how those frames come back, and how the device
-            // gets to a temperature where the OS stops throttling at all. This protects
-            // speed rather than trading it away.
+            // On by default: at .serious iOS is already throttling, so lowering the pixel count
+            // gives frames back.
             Toggle(isOn: $autoReduceWhenHot) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Cool down automatically")
@@ -109,14 +92,9 @@ struct CPUSettingsSection: View {
             }
             .tint(MuffinTheme.pixelBlue)
 
-            // Memory headroom and what the recompiler got out of it.
-            //
-            // The JIT reserves its arena in one piece, and if that reservation fails the
-            // recompiler is switched off and the title runs on the interpreter instead -
-            // about an order of magnitude slower. So the arena size is the number worth
-            // showing: it says whether the increased-memory-limit and
-            // extended-virtual-addressing entitlements were actually honoured on this
-            // device, which no amount of asking for them can tell you.
+            // Memory headroom. If the JIT's memory reservation fails, the recompiler is switched
+            // off and the interpreter runs, so the arena size shows whether the memory
+            // entitlements were honoured on this device.
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Image(systemName: "memorychip")
                     .font(.system(size: 13, weight: .semibold))
@@ -132,8 +110,7 @@ struct CPUSettingsSection: View {
                 }
             }
 
-            // What iOS itself reports, shown because until now nothing in the app could
-            // see it - the only way to know was a third-party thermal app.
+            // What iOS reports for the device's thermal state.
             HStack(spacing: 10) {
                 Image(systemName: "thermometer.medium")
                     .font(.system(size: 13, weight: .semibold))
@@ -146,11 +123,7 @@ struct CPUSettingsSection: View {
             }
             .frame(minHeight: 30)
 
-            // The picker only appears when the numeric modes can actually do something.
-            // iOS publishes no device temperature to apps, and on most installs the
-            // battery sensor is unreachable too - so on those builds there is exactly one
-            // honest way to show this, and offering a choice between one real option and
-            // two that silently fall back to it is worse than offering no choice at all.
+            // Only shown when a numeric temperature is actually available.
             if HeatStatus.hasRealTemperature {
                 Picker("Show as", selection: $heatDisplayMode) {
                     ForEach(HeatDisplayMode.allCases) { mode in
@@ -171,13 +144,8 @@ struct CPUSettingsSection: View {
     }
 }
 
-/// Reports whether this launch got the PPC recompiler or the interpreter, and why.
-///
-/// This exists because the answer was previously only obtainable by pulling
-/// CemuCrashLog.txt off the device and reading a cs_flags hex value out of it - an absurd
-/// thing to ask of someone whose actual question is "did launching through StikJIT do
-/// anything". The bridge decides this once at engine init, so a plain `let` read in
-/// `init` is correct; there is no path that changes it while this sheet is open.
+/// Reports whether this launch got the PPC recompiler or the interpreter, and why. The
+/// bridge decides once at engine init, so a plain `let` read is correct.
 private struct CPUModeRow: View {
     private let mode = cemu_bridge_cpu_mode()
     private let detail = String(cString: cemu_bridge_cpu_mode_detail())
@@ -191,9 +159,7 @@ private struct CPUModeRow: View {
     }
 
     private var tint: Color {
-        // Amber rather than red for the interpreter: it is slow, but it is a working,
-        // correct emulator, and it is the state every launch has been in so far. Red
-        // would be claiming something is broken when nothing is.
+        // Amber rather than red for the interpreter: it is slow, but it works.
         switch mode {
         case 2:  return MuffinTheme.pixelBlue
         case 1:  return .orange

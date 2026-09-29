@@ -1,11 +1,8 @@
 import SwiftUI
 
-/// Picks which MuffinTheme palette is active - completely independent of
-/// IconPickerView. Every icon in IconManifest has a matching theme here (see
-/// MuffinThemePresets.swift), shown first and labelled "Matches your icon", but
-/// nothing stops picking any theme with any icon: liking Strawberry's icon but
-/// preferring the Galaxy Space theme is a fully supported combination, not a
-/// workaround. See MuffinThemeStore's header for why that decoupling is deliberate.
+/// Picks which MuffinTheme palette is active, independent of IconPickerView. The theme
+/// matching the current icon is shown first and labelled "Matches your icon", but any theme
+/// works with any icon.
 struct ThemePickerView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var store = MuffinThemeStore.shared

@@ -1,12 +1,7 @@
 import SwiftUI
 
-/// One numbered save-state slot for one game.
-///
-/// Deliberately thin: `savedAt` is read straight off the slot file's own modification
-/// date (see `SaveStateStore.slots(for:)`) rather than kept in a separate sidecar record
-/// that could drift from what is actually on disk - the same "ask the filesystem, don't
-/// keep a second copy of the answer" reasoning `GameContextMenu`'s DLC/update removal
-/// already uses in PerGameSettings.swift.
+/// One numbered save-state slot for one game. `savedAt` is the slot file's modification date
+/// (see `SaveStateStore.slots(for:)`), so there is no separate record to drift.
 struct SaveStateSlot: Identifiable {
     let number: Int
     let fileURL: URL
@@ -16,24 +11,14 @@ struct SaveStateSlot: Identifiable {
     var isOccupied: Bool { savedAt != nil }
 }
 
-/// Where save-state slot files live on disk, and the numbering every game shares.
-///
-/// Namespaced by `GameMetadata.id` - the same string `PerGameSettingsStore` and
-/// `MeloControlsOverlay` already key per-game state by (see PerGameSettings.swift and
-/// MeloControls.swift's `gameID` parameter) - rather than by `titleId`. `id` is always
-/// present (it's the ROM/dump's own filename, assigned in GameManager.loadGames()) while
-/// `titleId` is nil whenever the bridge couldn't derive one, and a homebrew build or an
-/// unrecognized dump is exactly the kind of thing that would fall into a shared "no title
-/// ID" bucket and collide with every other such game's slots. Matching the established
-/// convention avoids that for free.
+/// Where save-state slot files live on disk and the numbering every game shares. Namespaced
+/// by `GameMetadata.id` (the same key PerGameSettingsStore uses), which is always present,
+/// unlike `titleId`.
 enum SaveStateStore {
-    /// "e.g. 1-4" - a small fixed number of slots, not an open-ended list. Raising this
-    /// is a one-line change; nothing else here assumes 4 specifically.
+    /// Number of slots per game; nothing else assumes a specific count.
     static let slotCount = 4
 
-    /// Documents/SaveStates/<game.id>/ - its own top-level folder, not mixed into ROMs,
-    /// covers, or Documents/mlc (the installed-title tree DlcUpdateImport.swift owns),
-    /// so nothing here can collide with or complicate cleanup of those.
+    /// Documents/SaveStates/<game.id>/, separate from ROMs, covers and Documents/mlc.
     static func directory(for gameID: String) -> URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return documents
@@ -45,10 +30,8 @@ enum SaveStateStore {
         directory(for: gameID).appendingPathComponent("slot\(slot).sav", isDirectory: false)
     }
 
-    /// Must run before the first save for a game. `cemu_bridge_save_state`'s own
-    /// `WriteSaveFile` (IOSSaveState.cpp) does a plain `fopen(path, "wb")`, which fails
-    /// outright - and therefore makes the whole bridge call return false - if the parent
-    /// directory doesn't exist yet.
+    /// Must run before the first save: `WriteSaveFile` (IOSSaveState.cpp) fails if the parent
+    /// directory doesn't exist.
     @discardableResult
     static func ensureDirectoryExists(for gameID: String) -> Bool {
         let dir = directory(for: gameID)
@@ -59,8 +42,7 @@ enum SaveStateStore {
         return (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil
     }
 
-    /// Every slot's occupancy + timestamp for one game, read straight from whatever is
-    /// actually on disk right now.
+    /// Every slot's occupancy and timestamp for one game, read from disk.
     static func slots(for gameID: String) -> [SaveStateSlot] {
         (1...slotCount).map { number in
             let url = fileURL(for: gameID, slot: number)
@@ -75,25 +57,17 @@ enum SaveStateStore {
     }
 }
 
-/// The in-game save-state sheet, opened from EmulatorViewOptimized's top bar. All the
-/// actual bridge calls and file I/O happen in the parent view (see its
-/// `performSaveState`/`performLoadState` - both dispatch off `Self.saveStateQueue`,
-/// never straight from a button action, for the same main-thread-deadlock reason the
-/// pause button next to this one already routes through `titlePauseQueue`); this view
-/// only renders whatever state it's handed and reports taps back through closures.
+/// The in-game save-state sheet, opened from EmulatorViewOptimized's top bar. It only renders
+/// the state it is given and reports taps through closures; bridge calls and file I/O happen in
+/// the parent (off `Self.saveStateQueue`, to avoid main-thread deadlocks).
 struct SaveStateSheet: View {
     let gameTitle: String
     let slots: [SaveStateSlot]
-    /// Non-nil while a save/load for that slot number is in flight. Every row's buttons
-    /// disable while this is set - not just the busy row's - because the bridge calls
-    /// are synchronous and a second one dispatched on the same serial queue would just
-    /// sit blocked behind the first, which would read as an unresponsive button if it
-    /// were left tappable.
+    /// Non-nil while a save/load for that slot is in flight. All rows disable meanwhile, since
+    /// the bridge calls are synchronous and a second would sit blocked on the same queue.
     let busySlot: Int?
-    /// Set after every completed save/load/delete, cleared when the sheet is reopened.
-    /// This is the one place the "doesn't match this session" refusal reason actually
-    /// reaches the screen - without it, a refused load looks identical to a load nobody
-    /// ever asked for.
+    /// Set after every completed save/load/delete; cleared when the sheet is reopened. This is
+    /// where a refused load ("doesn't match this session") reaches the screen.
     let statusMessage: String?
     let onSave: (Int) -> Void
     let onLoad: (Int) -> Void
@@ -116,10 +90,7 @@ struct SaveStateSheet: View {
                 List {
                     if let statusMessage {
                         Section {
-                            // The refusal reason ("doesn't match this session") arrives
-                            // here alongside plain confirmations, and the two used to look
-                            // identical - same weight, same colour, no marker. A refusal
-                            // is the one message on this screen someone needs to act on.
+                            // Refusals get a warning tone so they stand out from confirmations.
                             ScreenStatusCallout(
                                 tone: statusMessage.localizedCaseInsensitiveContains("couldn't")
                                     || statusMessage.localizedCaseInsensitiveContains("doesn't match")
@@ -135,23 +106,12 @@ struct SaveStateSheet: View {
                             row(for: slot)
                         }
                     } header: {
-                        // The game's name lives here rather than in the navigation title.
-                        // "Save States - <title>" in an inline bar truncates to
-                        // "Save States - The Legend of Z..." on a phone, which loses the
-                        // one word that identifies which game's slots these are.
+                        // The game's name is here because a long title truncates in an inline nav bar.
                         Text(gameTitle)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .foregroundColor(MuffinTheme.brownMid)
                             .textCase(nil)
                     } footer: {
-                        // The one place the whole feature's real scope limits are spelled
-                        // out honestly, rather than only living in code comments nobody
-                        // playing the game will ever read. See cemu_bridge_save_state/
-                        // cemu_bridge_load_state's doc comments in CemuBridge.h and the
-                        // file-level comment at the top of IOSSaveState.cpp for the full
-                        // reasoning behind both sentences below.
-                        // Delete is a swipe and a long-press now rather than a trash glyph
-                        // wedged between Load and Overwrite, so it has to be said once.
                         Text("Swipe a slot left, or press and hold it, to delete.\n\nA save state only loads back while the same game is still running. Quitting or relaunching the game or the app invalidates it.\n\nAfter loading, some textures may briefly flash their old contents.")
                     }
                 }
@@ -190,8 +150,7 @@ struct SaveStateSheet: View {
     private func row(for slot: SaveStateSlot) -> some View {
         let canDelete = slot.isOccupied && busySlot == nil
 
-        // The context menu is attached only when there is something to delete: an empty
-        // slot with an empty menu long-presses into a blank popover, which looks broken.
+        // Attach the context menu only when there is something to delete.
         if canDelete {
             rowContent(for: slot)
                 .contextMenu {
@@ -210,8 +169,6 @@ struct SaveStateSheet: View {
         let disabled = busySlot != nil
 
         HStack(spacing: 12) {
-            // Occupancy, readable straight down the left edge without reading "Empty" on
-            // each row in turn.
             ScreenSlotBadge(label: "\(slot.number)", isFilled: slot.isOccupied)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -230,10 +187,7 @@ struct SaveStateSheet: View {
                 ProgressView()
                     .padding(.trailing, 4)
             } else {
-                // Two actions at most, both with a real target. Delete moved to a swipe
-                // and a long-press menu: three buttons 20pt apart in one row put a
-                // destructive control inside a thumb's width of "Load", and the trash
-                // glyph's own tap target was the size of the glyph.
+                // Delete is a swipe and a long-press menu, to keep it away from Load.
                 if slot.isOccupied {
                     Button(action: { onLoad(slot.number) }) {
                         Text("Load")

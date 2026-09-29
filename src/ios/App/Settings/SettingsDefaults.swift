@@ -17,11 +17,7 @@ enum SettingsDefaults {
         OnboardingState.completedKey,
     ]
 
-    /// @MainActor because it touches two main-actor-isolated stores on the way out:
-    /// UIStyleStore (to repaint after the style keys are deleted) and ThermalMonitor
-    /// (to unwind a throttle that was active when the reset happened). Both callers are
-    /// in AboutSettingsSection's view body, which is already on the main actor, so this
-    /// costs them nothing.
+    /// @MainActor: touches UIStyleStore and ThermalMonitor, which are main-actor isolated.
     @MainActor
     static func reset(includingPerGameOverrides: Bool) {
         let defaults = UserDefaults.standard
@@ -44,21 +40,13 @@ enum SettingsDefaults {
         if includingPerGameOverrides {
             PerGameSettingsStore.shared.removeAllOverrides()
         }
-        // The style store caches both UI keys in @Published properties, and the loop
-        // above removed them from UserDefaults without going through it - so without
-        // this the app would keep rendering the pre-reset styling until relaunch.
+        // The style store caches its keys, so it must re-read them after the loop above.
         UIStyleStore.shared.reloadFromDefaults()
         pushDefaultsToBridge()
     }
 
-    /// The same five calls GameManager already makes before every boot, and
-    /// SettingsView's own onChange handlers make on every toggle. Removing a key
-    /// makes its @AppStorage revert to the declared default on its own, but nothing
-    /// re-runs an onChange for a change SwiftUI didn't originate here, so the
-    /// running engine needs telling directly rather than left to notice.
-    /// @MainActor for the ThermalMonitor call below. Its only caller, reset(), is already
-    /// isolated, but a private static func is nonisolated by default in Swift 6 - it does
-    /// not inherit isolation from whoever calls it.
+    /// Tells the running engine the default values. Removing a key reverts its @AppStorage on
+    /// its own, but no onChange fires for it, so the engine has to be told directly.
     @MainActor
     private static func pushDefaultsToBridge() {
         cemu_bridge_set_recompiler_enabled(true)

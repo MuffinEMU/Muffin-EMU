@@ -1,10 +1,8 @@
 import SwiftUI
 
-/// Settings keys for the three toy-to-life peripherals nsyshid already emulates in full
-/// (Cafe/OS/libs/nsyshid/Skylander.cpp, Infinity.cpp, Dimensions.cpp) - a complete,
-/// already-working engine feature that had no iOS surface before this, same story as
-/// GraphicPacksView's graphic packs. Read from ContentView.swift too, to decide whether
-/// the in-game "Emulated Devices" button is worth showing at all.
+/// Settings keys for the three toy-to-life peripherals the engine emulates (nsyshid:
+/// Skylander.cpp, Infinity.cpp, Dimensions.cpp). Also read by ContentView.swift to decide
+/// whether to show the in-game "Emulated Devices" button.
 enum EmulatedDevicesSettings {
     static let skylanderPortalKey = "muffin.emulatedDevices.skylanderPortal"
     static let infinityBaseKey = "muffin.emulatedDevices.infinityBase"
@@ -12,11 +10,8 @@ enum EmulatedDevicesSettings {
     static let defaultEnabled = false // matches CemuConfig's emulated_usb_devices defaults
 }
 
-/// Mirrors MeloCafe's own "Emulated Devices" settings section content (three enable
-/// toggles plus a manage-figures entry point), pushed through this app's own
-/// AppStorage -> cemu_bridge_set_emulate_* -> GameManager pre-boot-push pipeline instead
-/// of MeloCafe's shared ConfigManager object - see OverlaySettingsSection.swift for the
-/// same three-part shape this section follows.
+/// Three enable toggles plus a Manage Figures entry point, pushed through AppStorage ->
+/// cemu_bridge_set_emulate_* -> GameManager's pre-boot push (same shape as OverlaySettingsSection).
 struct EmulatedDevicesSettingsSection: View {
     @AppStorage(EmulatedDevicesSettings.skylanderPortalKey) private var skylanderPortalEnabled = EmulatedDevicesSettings.defaultEnabled
     @AppStorage(EmulatedDevicesSettings.infinityBaseKey) private var infinityBaseEnabled = EmulatedDevicesSettings.defaultEnabled

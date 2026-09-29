@@ -1,14 +1,10 @@
 import SwiftUI
 import Metal
 
-/// Which graphics API the engine draws through. Metal is this port's own native
-/// backend and the one every device here has been tested against; Vulkan runs
-/// through MoltenVK's translation layer instead, which exists for the compatibility
-/// cases Metal doesn't cover rather than as an equal alternative.
+/// Which graphics API the engine draws through. Metal is the native backend; Vulkan runs
+/// through MoltenVK's translation layer, for compatibility cases Metal doesn't cover.
 ///
-/// Declared metal-then-vulkan (not in rawValue order) so `.allCases` puts the native
-/// default first in the segmented control - CaseIterable follows declaration order,
-/// not rawValue order.
+/// Declared metal-then-vulkan so `.allCases` puts the default first in the segmented control.
 enum RendererAPI: Int, CaseIterable, Identifiable {
     case metal = 2
     case vulkan = 1
@@ -57,29 +53,18 @@ enum DownscaleFilterSetting {
     static let defaultValue = ScaleFilter.linear
 }
 
-/// Backs cemu_bridge_set_display_gamma(). The bridge itself also accepts exactly 0 to
-/// mean sRGB (see CemuBridge.h), but this settings page only ever offers a real gamma
-/// value in the 1.0-3.0 range the bridge clamps to - there is no on-screen way to send
-/// 0 from here, so this app's own effective floor is 1.0, not sRGB. minValue/maxValue
-/// mirror the bridge's own clamp so the slider can never show a position the push would
-/// silently correct out from under it.
+/// Backs cemu_bridge_set_display_gamma(). minValue/maxValue mirror the bridge's clamp so the
+/// slider can't show a position the push would silently correct.
 enum DisplayGammaSetting {
     static let storageKey = "muffin.render.displayGamma"
-    // Double, not Float: @AppStorage has no Float overload (Bool/Int/Double/String/URL/
-    // Data and RawRepresentable-over-those only) - Float compiles as a plain property
-    // with no error until Xcode's real type-checker sees it, which nothing in this
-    // environment runs. cemu_bridge_set_display_gamma still takes the C `float` the
-    // engine expects; the one call site converts explicitly.
+    // Double, not Float: @AppStorage has no Float overload; converted at the call site.
     static let defaultValue: Double = 2.2
     static let minValue: Double = 1.0
     static let maxValue: Double = 3.0
 }
 
-/// Backs cemu_bridge_set_override_gamma_value() - a separate gamma stage from Display
-/// Gamma above, not a second control for the same value. See that function's doc comment
-/// in CemuBridge.h for what actually differs: this one replaces or adds to a game's own
-/// gamma request, Display Gamma is applied on top of the result. Same Double-not-Float and
-/// 1.0-3.0 reasoning as DisplayGammaSetting.
+/// Backs cemu_bridge_set_override_gamma_value(): a separate gamma stage from Display Gamma
+/// (see that function's doc in CemuBridge.h). Same Double storage and 1.0-3.0 range.
 enum OverrideGammaSetting {
     static let storageKey = "muffin.render.overrideGammaValue"
     static let defaultValue: Double = 2.2 // matches CemuConfig's overrideGammaValue default
@@ -87,9 +72,9 @@ enum OverrideGammaSetting {
     static let maxValue: Double = 3.0
 }
 
-/// Which MoltenVK build the Vulkan renderer loads: 1.4.3 by default, or 1.2.8,
-/// the build 64Touch uses. The bridge reads the key once when the engine starts, because a
-/// loaded MoltenVK cannot be swapped inside a running process.
+/// Which MoltenVK build the Vulkan renderer loads: 1.4.3 by default, or the older 1.2.8. The
+/// bridge reads the key once at engine start; a loaded MoltenVK can't be swapped in a
+/// running process.
 enum MoltenVKBuild: String, CaseIterable, Identifiable {
     case v143 = "1.4.3"
     case v128 = "1.2.8"
@@ -107,12 +92,8 @@ enum MoltenVKBuild: String, CaseIterable, Identifiable {
     static let defaultValue: MoltenVKBuild = .v143
 }
 
-/// Renderer, filters, resolution, stretching and VSync - everything that decides
-/// how the finished picture is drawn and presented, in one section. The bridge
-/// reads muffin.render.graphicsAPI/upscaleFilter/downscaleFilter itself before
-/// every launch, the same way GameManager already pushes recompiler/favourAccuracy/
-/// vsync/stretch - so this view only owns the @AppStorage and the picker, with no
-/// bridge call of its own for those three keys.
+/// Renderer, filters, resolution, stretching, VSync and gamma. The bridge reads the
+/// renderer and filter keys itself before every launch, so those three have no bridge call here.
 struct GraphicsSettingsSection: View {
     @AppStorage(RendererAPI.storageKey) private var rendererRaw = RendererAPI.defaultValue.rawValue
     @AppStorage(UpscaleFilterSetting.storageKey) private var upscaleRaw = UpscaleFilterSetting.defaultValue.rawValue
@@ -123,9 +104,7 @@ struct GraphicsSettingsSection: View {
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
     @AppStorage("muffin.render.upsideDown") private var upsideDownEnabled = false
     @AppStorage(DisplayGammaSetting.storageKey) private var displayGamma = DisplayGammaSetting.defaultValue
-    // Default true: matches CemuConfig's framebuffer_fetch{true} compiled-in default, same
-    // "don't show a switch in a position the engine isn't actually in" reasoning as every
-    // other @AppStorage default on this page.
+    // Default true: matches CemuConfig's framebuffer_fetch default.
     @AppStorage("muffin.render.framebufferFetch") private var framebufferFetchEnabled = true
     @AppStorage("muffin.render.overrideAppGamma") private var overrideAppGammaEnabled = false
     @AppStorage(OverrideGammaSetting.storageKey) private var overrideGammaValue = OverrideGammaSetting.defaultValue
@@ -193,8 +172,7 @@ struct GraphicsSettingsSection: View {
         }
     }
 
-    // Says what is running now as well as what is picked, because the two differ until the
-    // next launch and a switch that looks like it did nothing is worse than no switch.
+    // Shows what is running now as well as what is picked; the two differ until the next launch.
     private var moltenVKCaption: String {
         let active = String(cString: cemu_bridge_active_moltenvk())
         if !active.isEmpty && active != moltenVKRaw {
@@ -289,10 +267,7 @@ struct GraphicsSettingsSection: View {
         }
     }
 
-    // Metal only: MetalRenderer.cpp is the only backend that reads framebuffer_fetch, so a
-    // toggle shown under Vulkan would be a switch that moves and changes nothing - the same
-    // reason precompiled_shaders (a real CemuConfig field, but inert on this core's Metal/
-    // Vulkan backends) is not exposed anywhere on this page either.
+    // Metal only: MetalRenderer.cpp is the only backend that reads framebuffer_fetch.
     private var framebufferFetchToggle: some View {
         Toggle(isOn: $framebufferFetchEnabled) {
             Text("Framebuffer Fetch")
@@ -335,11 +310,8 @@ struct GraphicsSettingsSection: View {
         }
     }
 
-    // A real, current hardware limitation, not a hedge - see MetalRenderer.cpp's
-    // mesh-shader gate. GraphicPacksView carries the full version of this note
-    // where it actually matters (right next to the packs it affects); this is the
-    // same fact surfaced here too, because "three screens deep" is too deep for the
-    // first place someone would look for why a pack isn't rendering.
+    // Shown only on GPUs without mesh shader support (see MetalRenderer.cpp's mesh-shader gate).
+    // GraphicPacksView carries the full note next to the packs it affects.
     private var meshShadersUnsupported: Bool {
         !(MTLCreateSystemDefaultDevice()?.supportsFamily(.apple7) ?? false)
     }

@@ -18,12 +18,8 @@ struct FilesSettingsSection: View {
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
-    /// Computed live rather than written down, for the same reason BootFailureView's
-    /// crash-log hint is: only the OS knows what $HOME actually resolved to for this
-    /// install, and that differs between a normal signed install and a sideloaded one.
-    /// The Wii U Keys section already tells someone to "open MuffinEMU in the Files app" -
-    /// this is the exact path that instruction means, spelled out, so it is followable
-    /// rather than a folder name to guess at.
+    /// Computed live: only the OS knows where Documents resolved for this install (normal and
+    /// sideloaded installs differ).
     private static var documentsPathHint: String {
         guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             return "Could not resolve a Documents folder for this install."

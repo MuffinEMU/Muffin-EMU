@@ -1,19 +1,14 @@
 import SwiftUI
 
-/// Settings keys for every row this section exposes - the full set of fields on
-/// CemuConfig's `overlay` struct, one @AppStorage key each. See CemuBridge.h's comment
-/// on the overlay bridge functions for which rows the renderer actually acts on
-/// (cpu_mode round-trips but isn't currently read by LatteOverlay_renderOverlay()).
+/// Settings keys for the overlay rows, one @AppStorage key each, matching CemuConfig's
+/// `overlay` struct. `cpuMode` has a key and default (GameManager still pushes it) but no
+/// row: the overlay's draw pass doesn't read it.
 enum OverlaySettings {
     static let positionKey = "muffin.overlay.position"
     static let defaultPosition = ScreenPosition.disabled
 
     static let textColorKey = "muffin.overlay.textColor"
-    // Int, not UInt32: @AppStorage has no UInt32 overload (Bool/Int/Double/String/URL/Data
-    // and RawRepresentable-over-those only - see GraphicsSettingsSection.swift's identical
-    // note on DisplayGammaSetting/Float). The packed 0xAARRGGBB value fits Int on every
-    // platform this app runs on; cemu_bridge_set_overlay_text_color still takes the C
-    // `uint32_t` the engine expects, converted at the one call site.
+    // Int, not UInt32: @AppStorage has no UInt32 overload. Packed 0xAARRGGBB.
     static let defaultTextColor: Int = 0xFFFFFFFF // opaque white, matches CemuConfig's default
 
     static let textScaleKey = "muffin.overlay.textScale"
@@ -62,15 +57,9 @@ func hexColourBinding(_ value: Binding<Int>) -> Binding<String> {
     }
 }
 
-/// The on-screen FPS/CPU/RAM readout the core already knows how to draw - this section
-/// only ever decides where it goes, how it looks, and which rows are on, the same "app
-/// owns the @AppStorage, GameManager pushes it before boot" split every other graphics
-/// setting on this screen uses (see GraphicsSettingsSection.swift's header comment).
-///
-/// The rows below are visually disabled rather than hidden when position is Off: the
-/// overlay only reads them when it draws, so choosing what you want *before* turning it
-/// on somewhere is a normal way to use this, and disabling communicates "this has no
-/// effect right now" without discarding the choice the way hiding would.
+/// The on-screen FPS/CPU/RAM readout the core draws. This section sets where it goes, how it
+/// looks and which rows are on; GameManager pushes the stored values before boot. Rows are
+/// disabled (not hidden) while Position is Off so choices can be made before turning it on.
 struct OverlaySettingsSection: View {
     @AppStorage(OverlaySettings.positionKey) private var positionRaw = OverlaySettings.defaultPosition.rawValue
     @AppStorage(OverlaySettings.textColorKey) private var textColor = OverlaySettings.defaultTextColor

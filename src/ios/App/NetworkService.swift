@@ -1,12 +1,7 @@
 import Foundation
 
-/// Which backend an account's online traffic goes to - ported verbatim (by value) from
-/// MeloCafe's NetworkService.swift. Only the bridging changes: MeloCafe crosses this as
-/// its own ObjCNetworkService Obj-C enum through the CemuConfigWrapper class; this app's
-/// plain-C bridge exposes the identical four cases as CemuBridgeNetworkService instead,
-/// converted with an explicit switch the same way ContentView.swift/MeloControls.swift
-/// already convert CemuBridgeButton, rather than relying on the two enums sharing a
-/// raw value representation.
+/// Which backend an account's online traffic goes to. The plain-C bridge exposes the same
+/// four cases as CemuBridgeNetworkService, converted with explicit switches below.
 enum NetworkService: Int, CaseIterable, Identifiable {
     case offline = 0
     case nintendo = 1
@@ -43,10 +38,8 @@ enum NetworkService: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// Pretendo is a community-run reimplementation of Nintendo's original Wii U online
-    /// services (pretendo.network), not a MuffinEMU- or MeloCafe-specific idea - its
-    /// server hostnames are already built into the engine (PretendoURLs in
-    /// config/NetworkSettings.h), so selecting it needs nothing else from the user.
+    /// Pretendo is a community-run reimplementation of Nintendo's Wii U online services; its
+    /// server hostnames are built into the engine (PretendoURLs in config/NetworkSettings.h).
     var accountHelp: String {
         switch self {
         case .offline: return "Online functionality disabled for this account"
