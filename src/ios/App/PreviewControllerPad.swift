@@ -18,13 +18,9 @@ extension Color {
 /// selected `PreviewColourPreset` instead) so it drops into `EmulatorViewOptimized` as a
 /// straight substitute, gated behind `PreviewPadStore`'s enabled flag.
 ///
-/// Scope note: this reuses `HeldControl` for reliable press/release the same way the
-/// shipping pad does, and hit-tests the d-pad with `PadLayout.dpadDirections` rather than
-/// four separate rects, for the same reason the shipping pad's diamond shape matters -
-/// but the stick here is a plain octagon-gated analog, without the shipping pad's
-/// deadzone/curve feel settings. That is a deliberate scope cut for a preview build, not
-/// an oversight: this file has never run on a device, and duplicating the full feel-tuned
-/// stick untested was a worse trade than shipping a simpler, honestly-scoped one.
+/// Reuses `HeldControl` for press/release and hit-tests the d-pad with
+/// `PadLayout.dpadDirections`. The stick is a plain octagon-gated analog without the
+/// standard pad's deadzone/curve settings. Experimental; off by default.
 struct PreviewControllerPad: View {
     @ObservedObject var store: PreviewPadStore
     let onInput: (String, Bool) -> Void
@@ -33,9 +29,7 @@ struct PreviewControllerPad: View {
 
     var body: some View {
         GeometryReader { proxy in
-            // CGRect has no .inset(by:) that takes SwiftUI's own EdgeInsets (only
-            // UIKit's UIEdgeInsets, a different type), so the safe rect is built by hand
-            // rather than reached for an extension that does not apply here.
+            // Safe rect built by hand: CGRect.inset(by:) takes UIEdgeInsets, not EdgeInsets.
             let insets = proxy.safeAreaInsets
             let full = proxy.frame(in: .local)
             let safeArea = CGRect(x: full.minX + insets.leading, y: full.minY + insets.top,
@@ -308,10 +302,8 @@ private struct PreviewStickView: View {
     private var knobRadius: CGFloat { diameter * 0.28 }
     private var travel: CGFloat { radius - knobRadius }
 
-    /// Same reasoning and the same value as JoystickControl.clickHoldSeconds: a press and
-    /// release fired back to back in one call stack is not observable by a title polling
-    /// VPADRead on its own schedule under the forced interpreter, so the click has to be
-    /// held open for a few frames instead of pulsed.
+    /// How long a tap holds L3/R3 before releasing, so a title polling on its own schedule
+    /// can see it.
     private static let clickHoldSeconds = 0.12
 
     var body: some View {
@@ -359,9 +351,7 @@ private struct PreviewStickView: View {
         .onDisappear {
             clickRelease?.cancel()
             clickRelease = nil
-            // A view that disappears mid-click must not leave L3/R3 held forever waiting
-            // for a release that will now never come - the unconditional call here is the
-            // same insurance JoystickControl's onDisappear takes.
+            // Don't leave L3/R3 held if the view goes away mid-click.
             onInput(clickID, false)
             pushed = false
             knobOffset = .zero
