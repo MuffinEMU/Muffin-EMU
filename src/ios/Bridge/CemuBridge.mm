@@ -15,6 +15,8 @@
 //  CemuBridge.h, which is plain C.
 //
 #include "Common/precompiled.h"
+#include <cxxabi.h>
+#include <typeinfo>
 #import "CemuBridge.h"
 #import "IOSLiveLog.h"
 #import <Foundation/Foundation.h>
@@ -62,22 +64,15 @@
 #include "input/emulated/VPADController.h"
 #include "input/InputManager.h"
 
-// Forward-declared rather than reached through coreinit_Thread.h: that header pulls the
-// whole coreinit thread/scheduler surface into an ARC-compiled ObjC++ translation unit
-// that includes no other Cafe/OS header, and this needs exactly one function from it.
-//
-// MUST stay OUTSIDE the extern "C" block below, and that is not a style preference - it
-// is what makes this link. A `namespace` nested inside `extern "C"` does NOT restore C++
-// linkage: the declaration keeps C language linkage, so the reference is emitted as the
-// unmangled `_OSSetThermalThrottleMicros` while the definition in coreinit_Thread.cpp is
-// an ordinary mangled C++ symbol. The two never meet, and the only symptom is a linker
-// error at the very end of a full framework build - which on the arm64 runner is an hour
-// of cold vcpkg rebuild before it tells you.
+// Forward-declared here because coreinit_Thread.h pulls the whole scheduler surface into
+// this ARC-compiled translation unit. Must stay OUTSIDE the extern "C" block: a namespace
+// nested inside extern "C" keeps C linkage, so the reference would not match the mangled
+// C++ definition and the framework would fail to link.
 namespace coreinit { void OSSetThermalThrottleMicros(uint32 micros); }
 
 // The core's C entry points. Defined inside extern "C" blocks in src/main.cpp and
-// src/gui/uikit/WindowSystem.mm, and only ever declared in MeloCafe's own app target, so
-// they are declared again here.
+// src/gui/uikit/WindowSystem.mm, and not declared in any header this
+// bridge includes, so they are declared again here.
 extern "C" {
 void CemuInitialize(const char* execPath, const char* user_data_path, const char* config_path, const char* cache_path, const char* data_path);
 void CemuRun(void);
@@ -296,8 +291,6 @@ namespace {
     }
 }
 
-static std::string g_deviceReport;
-
 static std::string cemu_sysctl_string(const char* name)
 {
     size_t len = 0;
@@ -321,11 +314,23 @@ static uint64_t cemu_sysctl_u64(const char* name)
 
 // The raw model identifier rather than a marketing name: a lookup table is out of date
 // the day a device ships, and a wrong name is worse than an identifier.
-extern "C" const char* cemu_bridge_device_report(void)
+// Built once, under the thread-safe static initialiser, so concurrent first callers can't
+// observe a half-built string; the returned pointer stays valid for the process lifetime.
+// Describes the exception currently being handled. Call only from inside a catch block.
+static std::string cemu_describe_current_exception(void)
 {
-    if (!g_deviceReport.empty())
-        return g_deviceReport.c_str();
+    try { throw; }
+    catch (const std::exception& ex) { return std::string(typeid(ex).name()) + ": " + ex.what(); }
+    catch (...)
+    {
+        const std::type_info* type = abi::__cxa_current_exception_type();
+        return std::string("non-standard exception ") + (type ? type->name() : "of unknown type");
+    }
+}
 
+static std::string cemu_build_device_report(void)
+{
+    std::string report;
     const std::string model = cemu_sysctl_string("hw.machine");
     const uint64_t memBytes = cemu_sysctl_u64("hw.memsize");
     const uint64_t cores    = cemu_sysctl_u64("hw.ncpu");
@@ -342,24 +347,30 @@ extern "C" const char* cemu_bridge_device_report(void)
         [[[NSProcessInfo processInfo] operatingSystemVersionString] UTF8String],
         (unsigned long long)(memBytes / (1024ull * 1024ull)),
         (unsigned long long)cores);
-    g_deviceReport = buf;
+    report = buf;
 
     if (pcores && ecores)
     {
         snprintf(buf, sizeof(buf), " (%llu perf + %llu eff)",
                  (unsigned long long)pcores, (unsigned long long)ecores);
-        g_deviceReport += buf;
+        report += buf;
     }
     if (avail)
     {
         snprintf(buf, sizeof(buf), " | %llu MB available to this app before iOS kills it",
                  (unsigned long long)(avail / (1024ull * 1024ull)));
-        g_deviceReport += buf;
+        report += buf;
     }
     // BUILD_VERSION_STRING is a parenthesised expression, not a bare literal.
-    g_deviceReport += " | build ";
-    g_deviceReport += BUILD_VERSION_STRING;
-    return g_deviceReport.c_str();
+    report += " | build ";
+    report += BUILD_VERSION_STRING;
+    return report;
+}
+
+extern "C" const char* cemu_bridge_device_report(void)
+{
+    static const std::string report = cemu_build_device_report();
+    return report.c_str();
 }
 
 // Declared here rather than in a header: PPCRecompiler.h is a core header the bridge does
@@ -368,26 +379,19 @@ size_t PPCRecompiler_getJitArenaSize();
 size_t PPCRecompiler_getJitArenaUsed();
 
 const char* cemu_bridge_memory_headroom_summary(void) {
-    static std::string summary;
+    static thread_local std::string summary;
     const uint64_t avail = (uint64_t)os_proc_available_memory();
     const uint64_t arena = (uint64_t)PPCRecompiler_getJitArenaSize();
 
-    // Deliberately reports what was OBTAINED, not what was requested. The entitlement is
-    // a request; whether iOS honoured it is only visible in the numbers, and an app that
-    // says "increased memory limit: on" while running a 64MB arena would be telling a
-    // reassuring lie. The arena size is the one number that says whether the recompiler
-    // got room to work.
+    // Reports what iOS actually granted, not which entitlements were requested; the JIT
+    // arena size shows whether the recompiler got room to work.
     char buf[256];
     if (arena == 0) {
         snprintf(buf, sizeof(buf),
             "%llu MB headroom - no JIT arena, so this launch is running the interpreter",
             (unsigned long long)(avail / (1024ull * 1024ull)));
     } else {
-        // Reservation and water level, separately, because they are different things and
-        // conflating them is what makes a big arena look alarming. The reservation is
-        // address space and costs almost nothing; the used figure is what the process is
-        // actually holding, and it rises as code is translated and drops to nothing on a
-        // flush.
+        // Reserved address space costs almost nothing; "in use" is what the process holds.
         const uint64_t used = (uint64_t)PPCRecompiler_getJitArenaUsed();
         snprintf(buf, sizeof(buf), "%llu MB headroom - JIT arena %llu MB reserved, %llu MB in use%s",
             (unsigned long long)(avail / (1024ull * 1024ull)),
@@ -546,8 +550,8 @@ static void ios_timebase_ladder_stop();
 // ---------------------------------------------------------------------------
 // JIT environment
 //
-// A port of MeloCafe's own launch-time checks (MeloCafeApp.configureJITEnvironment and
-// ProcessInfo.hasTXM), because its recompiler reads the answers from the environment:
+// Launch-time checks for the JIT (dual-mapped memory and TXM detection), because the
+// recompiler reads the answers from the environment:
 // DUAL_MAPPED_JIT selects the dual-mapped arena that iOS 26 needs, and HAS_TXM tells it
 // whether the Trusted Execution Monitor is enforcing, which changes how that arena has
 // to be mapped. Set before CemuInitialize(), and never changed afterwards.
@@ -659,33 +663,11 @@ void ios_apply_cpu_mode()
     const bool debugged = ios_process_is_debugged(csFlags);
     const bool accuracy = g_favourAccuracy.load();
     const bool lowPower = g_lowPowerMode.load();
-    // THE dominant thermal difference between this port and MeloCafe, and it is by
-    // design rather than a bug. On iOS the core's GetCPUMode() returns the config value
-    // unresolved and _LaunchTitleThread() only starts the three emulated cores on their
-    // own host threads for the two explicit Multicore modes - so MeloCafe's default
-    // (Auto) runs every title on ONE host thread. This bridge always writes an explicit
-    // mode, and Speed first means Multicore, so MuffinEMU runs THREE.
-    //
-    // Those host threads sit in PPCCore_boostBaseTime's `while (true)` loop
-    // (coreinit_Thread.cpp), which reschedules without sleeping. Three of them resident
-    // on a fanless A12Z is roughly three times the sustained CPU power draw of one, which
-    // is exactly the "hot fast, while MeloCafe stays cool" report - MeloCafe is not doing
-    // something clever, it is doing a third of the work.
-    //
-    // So single-core is the single biggest lever available - and as of the measurements
-    // below it is also the DEFAULT, which is the opposite of what this comment used to
-    // say.
-    //
-    // The original reasoning was "Speed first means Multicore". Measured on the same
-    // device and the same title (Wind Waker HD, A12Z iPad Pro), that is simply false:
-    // MeloCafe on one core holds 40-60fps, MuffinEMU on three managed 4-20. Three host
-    // threads on a fanless part do not buy three times the work, they buy three times
-    // the power draw, and the SoC gives the clocks back as soon as it heats up - which
-    // it does within a minute. The multi-core win is real on a desktop with a fan and
-    // headroom; this device has neither.
-    //
-    // Multi-core is still reachable for anyone who wants to try it per-device, but it
-    // has to be asked for now rather than being what everyone gets by default.
+    // Single-core is the default; multi-core has to be requested (cemu_bridge_set_multicore_enabled).
+    // On iOS the core starts the three emulated cores on their own host threads only for the
+    // explicit Multicore modes, and those threads reschedule without sleeping. On a fanless
+    // A12Z iPad Pro running Wind Waker HD, one core held 40-60fps while three managed 4-20:
+    // the extra power draw heats the SoC within a minute and the clocks drop.
     const bool singleCore = accuracy || lowPower || !g_multicoreRequested.load();
     const char* cores = singleCore ? "single-core" : "multi-core";
     auto& config = GetConfig();
@@ -1564,8 +1546,7 @@ void cemu_bridge_initialize(const char* mlcPath) {
     cemu_bridge_start_memory_watchdog();
     ios_configure_jit_environment();
     // MoltenVK reads these once, when CemuInitialize() loads it for the Vulkan backend.
-    // Same values MeloCafe's app sets: asynchronous queue submits, and enough active
-    // command buffers per queue that Cemu's pipeline compiles do not stall the frame.
+    // Asynchronous queue submits, so Cemu's pipeline compiles do not stall the frame.
     setenv("MVK_CONFIG_SYNCHRONOUS_QUEUE_SUBMITS", "0", 1);
     setenv("MVK_CONFIG_DEBUG", "0", 1);
     setenv("MVK_CONFIG_MAX_ACTIVE_METAL_COMMAND_BUFFERS_PER_QUEUE", "128", 1);
@@ -1623,9 +1604,9 @@ void cemu_bridge_initialize(const char* mlcPath) {
     {
         CemuInitialize(executablePath.fileSystemRepresentation, userData.c_str(), userData.c_str(), cache.c_str(), data.c_str());
     }
-    catch (const std::exception& ex)
+    catch (...)
     {
-        std::string message = std::string("initialize: CemuInitialize() threw: ") + ex.what();
+        std::string message = "initialize: CemuInitialize() threw: " + cemu_describe_current_exception();
         cemu_bridge_log_checkpoint(message.c_str());
         setStatus("The emulator core failed to start (see the crash log).");
         g_initialized.store(false);
@@ -1793,7 +1774,7 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
             setStatus("Unable to mount title (bad/outdated path).");
             return CEMU_BRIDGE_UNABLE_TO_MOUNT;
         case 3:
-            setStatus("This game is encrypted and no key in keys.txt opens it. Put the keys.txt you dumped from your own Wii U in Muffin's \"keys\" folder in the Files app (or import it in Settings), then relaunch Muffin and try again.");
+            setStatus("This game is encrypted and no key in keys.txt opens it. Put the keys.txt you dumped from your own Wii U in MuffinEMU's \"keys\" folder in the Files app (or import it in Settings), then relaunch MuffinEMU and try again.");
             return CEMU_BRIDGE_NO_DISC_KEY;
         case 4:
             setStatus("This title has no usable title.tik, so its content cannot be decrypted.");
@@ -1823,9 +1804,9 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
         // (and, if registered, GamePad) layers and starts the title thread.
         CemuRun();
     }
-    catch (const std::exception& ex)
+    catch (...)
     {
-        std::string message = std::string("boot_title: CemuRun() threw: ") + ex.what();
+        std::string message = "boot_title: CemuRun() threw: " + cemu_describe_current_exception();
         cemu_bridge_log_checkpoint(message.c_str());
         setStatus("The title failed to start (see the crash log).");
         return CEMU_BRIDGE_UNABLE_TO_MOUNT;
@@ -1899,9 +1880,15 @@ bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool t
             g_decryptBytesWritten.store(bytesWritten);
             g_decryptFilesWritten.store(filesWritten);
         };
-        int status = toWua
-            ? IOSTitleDecrypt_ExtractToWua(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress)
-            : IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress);
+        int status = 5; // IOS_DECRYPT_INCOMPLETE: an exception means the output can't be trusted
+        try {
+            status = toWua
+                ? IOSTitleDecrypt_ExtractToWua(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress)
+                : IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress);
+        } catch (...) {
+            std::string message = "decrypt: threw: " + cemu_describe_current_exception();
+            cemu_bridge_log_checkpoint(message.c_str());
+        }
         g_decryptResultStatus.store(status);
         g_decryptCompleted.store(true);
         g_decryptRunning.store(false);
@@ -1983,7 +1970,7 @@ void cemu_bridge_graphic_packs_refresh(void) {
 }
 
 const char* cemu_bridge_graphic_packs_list(void) {
-    static std::string g_graphicPacksList;
+    static thread_local std::string g_graphicPacksList;
     g_graphicPacksList = IOSGraphicPacks_List();
     return g_graphicPacksList.c_str();
 }
@@ -1999,7 +1986,7 @@ void cemu_bridge_graphic_pack_set_enabled(int index, bool enabled) {
 // graphic pack functions above.
 
 const char* cemu_bridge_accounts_list(void) {
-    static std::string g_accountsList;
+    static thread_local std::string g_accountsList;
     g_accountsList = IOSAccounts_List();
     return g_accountsList.c_str();
 }
@@ -2066,7 +2053,7 @@ bool cemu_bridge_account_is_online_valid(uint32_t persistentId) {
 }
 
 const char* cemu_bridge_countries_list(void) {
-    static std::string g_countriesList;
+    static thread_local std::string g_countriesList;
     g_countriesList = IOSAccounts_CountriesList();
     return g_countriesList.c_str();
 }
@@ -2122,37 +2109,37 @@ int cemu_bridge_usb_device_slot_count(CemuBridgeUSBDevice device) {
 }
 
 const char* cemu_bridge_usb_device_slot_names(CemuBridgeUSBDevice device) {
-    static std::string g_usbDeviceSlotNames;
+    static thread_local std::string g_usbDeviceSlotNames;
     g_usbDeviceSlotNames = IOSEmulatedDevices_SlotNames((int)device);
     return g_usbDeviceSlotNames.c_str();
 }
 
 const char* cemu_bridge_usb_device_figure_list(CemuBridgeUSBDevice device, int slot) {
-    static std::string g_usbDeviceFigureList;
+    static thread_local std::string g_usbDeviceFigureList;
     g_usbDeviceFigureList = IOSEmulatedDevices_FigureList((int)device, slot);
     return g_usbDeviceFigureList.c_str();
 }
 
 const char* cemu_bridge_usb_device_load(CemuBridgeUSBDevice device, int slot, const char* path) {
-    static std::string g_usbDeviceLoadError;
+    static thread_local std::string g_usbDeviceLoadError;
     g_usbDeviceLoadError = IOSEmulatedDevices_Load((int)device, slot, path);
     return g_usbDeviceLoadError.empty() ? nullptr : g_usbDeviceLoadError.c_str();
 }
 
 const char* cemu_bridge_usb_device_clear(CemuBridgeUSBDevice device, int slot) {
-    static std::string g_usbDeviceClearError;
+    static thread_local std::string g_usbDeviceClearError;
     g_usbDeviceClearError = IOSEmulatedDevices_Clear((int)device, slot);
     return g_usbDeviceClearError.empty() ? nullptr : g_usbDeviceClearError.c_str();
 }
 
 const char* cemu_bridge_usb_device_create(CemuBridgeUSBDevice device, uint32_t figureId, uint16_t variant, const char* path) {
-    static std::string g_usbDeviceCreateError;
+    static thread_local std::string g_usbDeviceCreateError;
     g_usbDeviceCreateError = IOSEmulatedDevices_Create((int)device, figureId, variant, path);
     return g_usbDeviceCreateError.empty() ? nullptr : g_usbDeviceCreateError.c_str();
 }
 
 const char* cemu_bridge_usb_device_move_dimensions(int fromSlot, int toSlot) {
-    static std::string g_usbDeviceMoveError;
+    static thread_local std::string g_usbDeviceMoveError;
     g_usbDeviceMoveError = IOSEmulatedDevices_MoveDimensions(fromSlot, toSlot);
     return g_usbDeviceMoveError.empty() ? nullptr : g_usbDeviceMoveError.c_str();
 }
@@ -2239,16 +2226,10 @@ static void ios_timebase_ladder_entry() {
                                progress.guest_flip_requests > baseGuestFlipRequests;
         if (advancing) {
             const int shift = cemu_bridge_get_timebase_shift();
-            // Put the clock back. The old code stopped here and called wherever it had
-            // stepped to "the value that worked", which is post-hoc reasoning wired into
-            // a control loop: the title reached GX2Init because it finished booting, not
-            // because the console had been made slower. Keeping the slow clock after the
-            // stall is over costs exactly the factor it was stepped down by - measured at
-            // 4.6fps against MeloCafe's 45 on the same device, ROM and game.
-            //
-            // The ladder still earns its keep for the boot stall itself; it just no
-            // longer charges for it afterwards. A title that genuinely needs a slower
-            // clock has Settings > CPU > Timebase, where it is somebody's decision.
+            // Put the clock back once the title is advancing: it got past the stall because
+            // it finished booting, not because the console was slowed, and keeping the slow
+            // clock costs frame rate for the rest of the session. A title that needs a
+            // slower clock has Settings > CPU > Timebase.
             if (shift != startShift) {
                 cemuLog_log(LogType::Force,
                     "Emulated timebase: the title is advancing ({}) after {:.1f}s. Restoring the clock from "
@@ -2397,23 +2378,14 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
 // Input introspection
 //
 // The GamePad's button mappings live in C++ (InputManager / EmulatedController) and are
-// persisted to controllerProfiles/controller{N} on the device. Swift could not see any of
-// it, and that blind spot cost an entire day: every on-screen button was dead while the
-// sticks still worked, and nothing in the app could say why.
+// persisted to controllerProfiles/controller{N} on the device. These functions let Swift
+// see them, so a state where every on-screen button is dead but the sticks work can be
+// diagnosed from the app.
 //
-// The reason that pairing happens is worth stating once, because it is the whole shape of
-// the bug: axes reach the emulated controller directly (GCController.mm assigns
-// result.axis from the stick values) and never consult the mapping table, while EVERY
-// button goes through it. So "sticks respond, no button does" means, precisely, an
-// emulated controller with no button mappings - a state a stale or partial profile can
-// produce and keep producing on every launch, on every future build, because it is data
-// on the device rather than anything in the binary.
-//
-// These three functions exist so that is visible and fixable from the UI instead of
-// requiring a source-level diagnosis. They are deliberately the smallest surface that
-// answers "how many bindings are there", "which profile am I on", and "put it back" -
-// porting InputManager itself to Swift would fork ~3,200 lines of shared core that the
-// desktop build also uses, and would not have prevented this bug in the first place.
+// Axes reach the emulated controller directly, while every button goes through the
+// mapping table, so "sticks respond but no button does" means the controller has no
+// button mappings (for example from a stale profile on disk). These functions report
+// the binding count and the profile name, and reset the bindings.
 
 int cemu_bridge_input_button_mapping_count(void) {
     auto vpad = InputManager::instance().get_vpad_controller(0);
@@ -2433,7 +2405,7 @@ int cemu_bridge_input_button_mapping_count(void) {
 }
 
 const char* cemu_bridge_input_profile_name(void) {
-    static std::string name;
+    static thread_local std::string name;
     auto vpad = InputManager::instance().get_vpad_controller(0);
     name = vpad ? vpad->get_profile_name() : std::string("<no controller>");
     return name.c_str();
