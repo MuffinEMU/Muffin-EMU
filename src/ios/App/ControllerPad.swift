@@ -779,7 +779,6 @@ private struct JoystickControl: View {
         // the octagon would drop it on the floor instead.
         .contentShape(Circle())
         .accessibilityLabel(clickButton == nil ? "Camera stick" : "Left stick")
-        .allowsHitTesting(isInteractive)
         .gesture(
             DragGesture(minimumDistance: 0)
                 .updating($touching) { _, state, _ in state = true }
@@ -821,6 +820,7 @@ private struct JoystickControl: View {
                     if !pushed { click() }
                 }
         )
+        .allowsHitTesting(isInteractive)
         .onChange(of: touching) { down in
             if !down { recentre() }
         }
