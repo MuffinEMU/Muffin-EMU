@@ -1384,9 +1384,8 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device, 
 	}
 
 	// VK_KHR_sampler_mirror_clamp_to_edge was promoted to core in Vulkan 1.2 as the
-	// samplerMirrorClampToEdge feature. A device passes if it lists the extension, or if it
-	// is a 1.2+ device that reports the core feature. Whichever route exists is recorded so
-	// device creation can enable it.
+	// samplerMirrorClampToEdge feature. It is optional: whichever route exists is
+	// recorded so device creation can enable it, and samplers fall back to mirrored repeat if neither does.
 	info.deviceExtensions.sampler_mirror_clamp_to_edge = isExtensionAvailable(VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME);
 	info.samplerMirrorClampToEdgeCore = false;
 	if (!info.deviceExtensions.sampler_mirror_clamp_to_edge)
@@ -1404,10 +1403,7 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device, 
 			info.samplerMirrorClampToEdgeCore = features12.samplerMirrorClampToEdge == VK_TRUE;
 		}
 		if (!info.samplerMirrorClampToEdgeCore)
-		{
-			cemuLog_log(LogType::Force, "Vulkan: neither VK_KHR_sampler_mirror_clamp_to_edge nor the Vulkan 1.2 samplerMirrorClampToEdge feature is available");
-			return false;
-		}
+			cemuLog_log(LogType::Force, "Vulkan: neither VK_KHR_sampler_mirror_clamp_to_edge nor the Vulkan 1.2 samplerMirrorClampToEdge feature is available, mirror-clamp sampling will fall back to mirrored repeat");
 	}
 
 	info.deviceExtensions.tooling_info = isExtensionAvailable(VK_EXT_TOOLING_INFO_EXTENSION_NAME);
