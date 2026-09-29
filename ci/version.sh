@@ -8,8 +8,7 @@
 # See "Choose the version" in .github/workflows/build-ios-app.yml.
 #
 # Tags always have a single-digit minor (v1.0 ... v1.9, v2.0), so the arithmetic never
-# has to guess what a tag means. Guessing is what broke Muffin's old flat tags (v47,
-# v138).
+# has to guess what a tag means.
 #
 # It lives in ci/ and NOT at the repository root: macOS is case-insensitive, the
 # compiler is invoked with -I . , and C++20 has a standard header called <version>, so a

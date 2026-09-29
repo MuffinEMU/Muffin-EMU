@@ -78,8 +78,7 @@ struct EmulatedFigureOption: Identifiable, Hashable {
 }
 
 /// Where figure files live: Documents/Emulated Devices/<device>/, one UUID subfolder per
-/// figure so two figures sharing a display name can't collide on the same filename - same
-/// per-feature top-level folder convention SaveStateStore.swift uses for save states.
+/// figure so figures with the same name do not collide.
 enum EmulatedFigureStore {
     static func directory(for device: EmulatedDevice) -> URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -112,25 +111,33 @@ enum EmulatedFigureStore {
             .appendingPathExtension(device.fileExtension)
     }
 
-    /// Copies a user-picked (possibly security-scoped) file into our own folder. Always
-    /// copies rather than loading in place - DocumentImport hands back a URL outside our
-    /// sandboxed storage, and cemu_bridge_usb_device_load()/Clear() below assume the path
-    /// they were given keeps working for as long as the figure stays loaded.
+    /// Returns a file inside our own folder for a user-picked (possibly security-scoped)
+    /// file. A file already in the folder is used in place, and a figure with the same file
+    /// name is reused, so its saved progress is not forked into a second copy.
     static func importFile(_ source: URL, device: EmulatedDevice) -> URL? {
+        let root = directory(for: device).resolvingSymlinksInPath().path + "/"
+        if source.resolvingSymlinksInPath().path.hasPrefix(root) { return source }
+
+        let fileManager = FileManager.default
+        let folders = (try? fileManager.contentsOfDirectory(
+            at: directory(for: device), includingPropertiesForKeys: nil)) ?? []
+        for folder in folders {
+            let existing = folder.appendingPathComponent(source.lastPathComponent)
+            if fileManager.fileExists(atPath: existing.path) { return existing }
+        }
+
         guard let destination = newFileURL(for: device, name: source.deletingPathExtension().lastPathComponent) else {
             return nil
         }
         let accessing = source.startAccessingSecurityScopedResource()
         defer { if accessing { source.stopAccessingSecurityScopedResource() } }
-        guard (try? FileManager.default.copyItem(at: source, to: destination)) != nil else { return nil }
+        guard (try? fileManager.copyItem(at: source, to: destination)) != nil else { return nil }
         return destination
     }
 }
 
-/// The in-game figure manager, opened from EmulatorViewOptimized's top bar (ContentView.swift)
-/// while any of the three peripherals is on, and reachable from Settings' "Manage Figures"
-/// link regardless. Ported from MeloCafe's EmulatedDevicesView.swift onto this app's own
-/// cemu_bridge_usb_device_* bridge and Documents-file storage convention.
+/// In-game figure manager for the emulated portal, base and toypad, opened from the top bar
+/// while one of them is on and from Settings.
 struct EmulatedDevicesView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var device = EmulatedDevice.skylanders
@@ -199,16 +206,11 @@ private struct EmulatedDeviceSlotsSection: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
-                        // Sixteen Skylander slots is a long list to read a word at a time
-                        // to find the two that hold anything.
                         ScreenSlotBadge(label: "\(slot + 1)", isFilled: occupied)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(device.slotLabels[slot])
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            // "Empty", matching SaveStateSheet's word for the same state.
-                            // This said "None", which is the same fact in a different
-                            // vocabulary for no reason.
                             Text(occupied ? name(at: slot) : "Empty")
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
@@ -217,9 +219,6 @@ private struct EmulatedDeviceSlotsSection: View {
                         Spacer(minLength: 0)
                     }
 
-                    // Real targets. These were 12pt borderless words 20pt apart, which put
-                    // a destructive "Clear" within a thumb's width of "Load" and gave each
-                    // one a tap target the height of its own text.
                     HStack(spacing: 8) {
                         Button("Load") { load(slot: slot) }
                             .buttonStyle(ScreenRowActionStyle())
@@ -267,7 +266,7 @@ private struct EmulatedDeviceSlotsSection: View {
         } header: {
             Text("Figures")
         } footer: {
-            Text("Load a .\(device.fileExtension) figure dump or create a figure. Files and game progress are saved in Documents/Emulated Devices. Clear removes a figure from the device and keeps its file.")
+            Text("Load a .\(device.fileExtension) figure file or create a new one. Figures and their progress are saved in Documents/Emulated Devices. Clear removes the figure from the slot but keeps the file.")
         }
         .onAppear(perform: refresh)
         .alert("Error", isPresented: Binding(
@@ -358,8 +357,6 @@ private struct CreateEmulatedFigureView: View {
                 }
                 if device == .dimensions {
                     Section {
-                        // The established sub-caption styling, rather than default body
-                        // text that happened to be grey.
                         Text("Use figure ID 0 to create a blank vehicle or gadget tag for the game to write.")
                             .font(.system(size: 12))
                             .foregroundColor(.secondary)
@@ -420,7 +417,7 @@ private struct CreateEmulatedFigureView: View {
         }
 
         if let error = file.path.withCString({ cemu_bridge_usb_device_load(device.bridgeDevice, Int32(slot), $0) }) {
-            errorMessage = "The figure was saved, but could not be loaded: \(String(cString: error))"
+            errorMessage = "Figure saved, but it couldn't be loaded: \(String(cString: error))"
             return
         }
 
@@ -447,12 +444,11 @@ private struct EmulatedFigurePicker: View {
 
             List {
                 if figures.isEmpty {
-                    // The core's built-in table has no entries for this device/slot.
-                    // Previously an empty List, indistinguishable from one still loading.
+                    // The core has no built-in figures for this device/slot.
                     ScreenEmptyState(
                         systemImage: "tray",
                         headline: "No known figures",
-                        message: "MuffinEMU has no built-in list for this slot. Type the figure ID by hand on the previous screen instead."
+                        message: "No built-in list for this slot. Enter the figure ID on the previous screen."
                     )
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -460,7 +456,7 @@ private struct EmulatedFigurePicker: View {
                     ScreenEmptyState(
                         systemImage: "magnifyingglass",
                         headline: "No matches",
-                        message: "Nothing here matches \u{201C}\(search)\u{201D}. Try part of the name, or the numeric figure ID."
+                        message: "No figures match \u{201C}\(search)\u{201D}."
                     )
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)

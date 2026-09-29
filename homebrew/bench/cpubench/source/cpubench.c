@@ -1,5 +1,5 @@
 // cpubench.rpx - five deterministic, allocation-free CPU/FPU/memory workloads
-// for the Muffin vs. MeloCafe engine benchmark. See ../../README.md for the
+// for the cross-engine benchmark. See ../../README.md for the
 // marker protocol and how the host times this against gpubench.rpx.
 //
 // Every test below is pure computation on data that is either a compile-time
@@ -12,7 +12,7 @@
 // Iteration counts are declared as constants up top exactly so they can be
 // retuned. They were sized by rough instruction-count reasoning (an
 // interpreter doing tens of millions of simple ops per second), not measured
-// on real hardware or against Muffin/MeloCafe directly - there is no PPC
+// on real hardware or against another emulator directly - there is no PPC
 // toolchain or Wii U/Cemu instance available to calibrate them where this
 // file was written. Treat the "~5-20s on a slow interpreter" comments as a
 // first guess to correct after the first real run, not a verified fact.

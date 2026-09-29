@@ -92,14 +92,8 @@ static constexpr int kGCBitDDown   = kButtonDown;
 static constexpr int kGCBitDLeft   = kButtonLeft;
 static constexpr int kGCBitDRight  = kButtonRight;
 
-// True when EVERY GamePad button has a binding - not "at least one".
-//
-// Deliberately checks buttons rather than "any mapping at all": a profile with only stick
-// bindings is exactly the broken state this exists to catch, and it would pass an
-// is-the-table-empty test while leaving every button dead.
-//
-// And deliberately ALL of them rather than a sample, which is the stricter half and the
-// one that was missing. See the loop below for what sampling two ids cost.
+// True when every GamePad button has a binding. A profile with only stick bindings (or only some
+// buttons) is treated as incomplete so the defaults can fill the gaps.
 static bool has_complete_button_mappings(const EmulatedControllerPtr& emulated,
                                          EmulatedController::Type type)
 {
@@ -107,21 +101,8 @@ static bool has_complete_button_mappings(const EmulatedControllerPtr& emulated,
         return false;
     if (type == EmulatedController::Type::VPAD)
     {
-        // Every GamePad button apply_default_gc_mappings binds, checked as a whole.
-        //
-        // This used to sample A and B and take their presence as proof the profile was
-        // fine. It is not: a profile can carry SOME bindings and not others, and the
-        // sampled check waved that state straight through. That is exactly how the d-pad
-        // stayed completely dead while the face buttons answered - four unbound ids in a
-        // profile whose A and B happened to be bound, so the heal below never ran, on
-        // every launch and every rebuild, because the bad state is data on the device
-        // rather than anything in the binary.
-        //
-        // The range is the same one cemu_bridge_input_button_mapping_count() reports:
-        // A through StickR inclusive. StickL_Up and everything after it are AXIS
-        // mappings, which never consult this table at all - counting them here would
-        // report a healthy controller for precisely the broken case, sticks bound and
-        // buttons not.
+        // A through StickR inclusive, matching cemu_bridge_input_button_mapping_count(). Stick axes are
+        // excluded: they never consult this table.
         for (uint64 id = VPADController::kButtonId_A; id < VPADController::kButtonId_StickL_Up; ++id)
         {
             if (!emulated->get_mapping_controller(id))
@@ -129,18 +110,12 @@ static bool has_complete_button_mappings(const EmulatedControllerPtr& emulated,
         }
         return true;
     }
-    // Non-VPAD types are left alone: their defaults are applied by the same path above
-    // when they are created, and this heal is targeted at the GamePad case that was
-    // actually observed failing rather than speculatively widened.
+    // Non-VPAD types are left alone; their defaults are applied when they are created.
     return true;
 }
 
-/// Whether a heal is allowed to overwrite bindings that are already there.
-///
-/// A newly created controller has none, so All is right for it. A heal, by contrast, is
-/// repairing a profile the user may also have customised, and re-applying every default
-/// would silently throw away a deliberate remap to fix an unrelated missing one. Gaps
-/// only, so the repair touches exactly the buttons that have nothing bound.
+/// Whether a heal may overwrite existing bindings. A new controller has none (All); a heal only
+/// fills unbound buttons (GapsOnly) so deliberate remaps are kept.
 enum class MappingFill { All, GapsOnly };
 
 static void apply_default_gc_mappings(EmulatedControllerPtr& emulated,
@@ -302,31 +277,9 @@ void InputManager::load_gc_controllers()
             }
             else if (!has_complete_button_mappings(emulated, type))
             {
-                // Self-heal a controller that exists but is MISSING button bindings -
-                // any of them, not only all of them.
-                //
-                // Defaults used to be applied only when a controller was newly created.
-                // That leaves one reachable state permanently broken: a persisted profile
-                // in controllerProfiles/controller{N} is loaded at startup, so the branch
-                // above is skipped - and if that profile carries no usable button
-                // mappings, every button is dead for the rest of the app's life, on every
-                // launch, on every future build.
-                //
-                // Sticks keep working throughout, which is what makes it so confusing to
-                // diagnose: axes reach ControllerState directly
-                // (GCController.mm's `result.axis.x = s.leftStick.x`) and never consult
-                // the mapping table at all, while every button goes through
-                // set_mapping/m_mappings. "Sticks respond, no button does" is the exact
-                // signature of an empty button mapping, and nothing in the UI said so.
-                //
-                // Reverting code cannot fix this, because the bad state is DATA on the
-                // device rather than anything in the binary - which is why several rounds
-                // of restoring the input path byte-for-byte changed nothing.
-                //
-                // GapsOnly: this repairs a profile the user may also have customised, so
-                // it binds the ids that have nothing bound and leaves every deliberate
-                // remap exactly where they put it. A wholesale re-apply would fix the
-                // d-pad by silently throwing away their A-and-B.
+                // Self-heal a persisted profile that is missing button bindings (sticks bypass the mapping
+                // table, so they keep working while buttons are dead). Only unbound buttons are filled;
+                // existing remaps are kept.
                 apply_default_gc_mappings(emulated, device, MappingFill::GapsOnly);
                 cemuLog_log(LogType::Force,
                     "input: controller {} was missing button mappings (stale or partial profile); defaults filled in for the unbound ones", i);

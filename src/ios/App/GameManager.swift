@@ -112,6 +112,7 @@ class GameManager: ObservableObject {
     private var frameRateTimer: Timer?
 
     private let romsDirectory = "Roms"
+    private var didSweepStaging = false
     private let gameListFile = "games.json"
     private var emulationEngine: EmulationEngine?
     private var surfaceRegistered = false
@@ -144,98 +145,124 @@ class GameManager: ObservableObject {
         // game has been launched and before the engine has ever been initialized.
         WiiUKeys.ensureDirectoryExists()
 
-        // Without this, every encrypted disc image (.wud/.wux/.iso - i.e. almost every
-        // real Wii U game) fails TitleInfo's construction with NO_DISC_KEY right here,
-        // even when keys.txt is present and correct: KeyCache_Reload() was previously
-        // only ever called from the launch path (IOSTitleLaunch.cpp), never before this
-        // scan. That silently broke both DLC/update title-ID matching below and cover-
-        // art derivation (IOSCoverArt.cpp does the same TitleInfo construction) for
-        // every game on first launch, with no error surfaced anywhere - it just looked
-        // like "the updates and DLC stuff doesn't work" and "no cover art ever shows up
-        // until later." Reusing the exact same reload already proven safe on the launch
-        // path, not writing a new one.
+        let sweepStaging = !didSweepStaging
+        didSweepStaging = true
+        // The scan opens every dump through the bridge and reads the disk, so it runs off
+        // the main actor; only the published results are applied here.
+        let discovered = await Task.detached(priority: .userInitiated) {
+            Self.scanRoms(romsPath: romsPath, sweepStaging: sweepStaging)
+        }.value
+        guard let discovered else {
+            print("Error scanning Roms directory")
+            return
+        }
+        self.games = discovered.sorted { $0.title < $1.title }
+        self.favorites = self.games.filter { $0.isFavorite }
+        enrichMissingCoverArt()
+    }
+
+    /// Scans Roms/ for games. Pure disk and bridge work with no main-actor state, so it is
+    /// safe to run detached. Returns nil if the directory can't be read.
+    private nonisolated static func scanRoms(romsPath: URL, sweepStaging: Bool) -> [GameMetadata]? {
+        let fileManager = FileManager.default
+
+        // Staging folders hold partial copies from an import that was killed or ran out of
+        // space. Nothing else can be importing at launch, so clear them once per launch.
+        if sweepStaging {
+            let staging = romsPath.appendingPathComponent(stagingDirectoryName)
+            try? fileManager.removeItem(at: staging)
+            let dlcStaging = romsPath.deletingLastPathComponent().appendingPathComponent("mlc").appendingPathComponent(".incoming-dlcupdate")
+            try? fileManager.removeItem(at: dlcStaging)
+        }
+
+        guard let contents = try? fileManager.contentsOfDirectory(at: romsPath, includingPropertiesForKeys: nil) else {
+            return nil
+        }
+        // Encrypted disc images need the key cache loaded before TitleInfo can open them
+        // (DLC/update matching and cover derivation both do); loading it here keeps it
+        // off the main thread.
         _ = cemu_bridge_reload_and_count_keys()
 
-        do {
-            let contents = try fileManager.contentsOfDirectory(
-                at: romsPath,
-                includingPropertiesForKeys: nil
+        // Stable order so duplicate-id resolution below is deterministic.
+        let sortedContents = contents.sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+        var discoveredGames: [GameMetadata] = []
+        var usedIDs = Set<String>()
+        for item in sortedContents {
+            // A Roms entry is either a single-file dump or a dumped game DIRECTORY.
+            // For a directory the engine still boots an .rpx, but it must be the one
+            // sitting inside code/ so Cemu sees the real layout next to it - boot it
+            // from anywhere else and it falls back to standalone mode and logs
+            // "incorrect layout or missing meta files", losing the title metadata.
+            var gameID: String
+            let bootPath: String
+            // The dump directory, when the entry is one. Only a directory dump keeps
+            // its meta/ on disk where the icon can be read from; a single-file dump
+            // keeps meta/ inside the container, where only the engine can reach it.
+            let dumpDirectory: URL?
+
+            var isDirectory: ObjCBool = false
+            _ = fileManager.fileExists(atPath: item.path, isDirectory: &isDirectory)
+
+            if isDirectory.boolValue {
+                if Self.looksLikeWiiUDump(item), let rpx = Self.executableInDump(item) {
+                    gameID = item.lastPathComponent
+                    bootPath = rpx.path
+                    dumpDirectory = item
+                } else if let tmd = Self.titleTmdInDump(item) {
+                    // NUS dump: boot path points straight at title.tmd, matching
+                    // TitleInfo::DetectFormat's own NUS-format detection.
+                    gameID = item.lastPathComponent
+                    bootPath = tmd.path
+                    dumpDirectory = item
+                } else {
+                    continue
+                }
+            } else {
+                let pathExtension = item.pathExtension.lowercased()
+                guard Self.supportedROMExtensions.contains(pathExtension) else { continue }
+                gameID = item.deletingPathExtension().lastPathComponent
+                bootPath = item.path
+                dumpDirectory = nil
+            }
+
+            // Ids are the filename without extension, so Game.wud and Game.wux (or a file and a
+            // folder with the same base name) would collide. The first keeps the plain id, so
+            // existing favourites and settings stay attached; later ones use the full filename.
+            if !usedIDs.insert(gameID).inserted {
+                gameID = item.lastPathComponent
+                usedIDs.insert(gameID)
+            }
+
+            let addedDate = (try? fileManager.attributesOfItem(atPath: item.path))?[.creationDate] as? Date
+
+            let gameMetadata = GameMetadata(
+                id: gameID,
+                title: gameID,
+                romPath: bootPath,
+                coverPath: Self.findCover(for: gameID, romPath: bootPath, in: romsPath),
+                region: Self.nonEmptyOrNil(LibraryMetadataCache.cachedRegion(for: gameID)),
+                releaseDate: "Unknown",
+                genre: "Game",
+                titleId: Self.deriveBaseTitleId(romPath: bootPath),
+                dumpDirectoryPath: dumpDirectory?.path,
+                displayTitle: Self.nonEmptyOrNil(LibraryMetadataCache.cachedTitleName(for: gameID)),
+                addedDate: addedDate
             )
 
-            var discoveredGames: [GameMetadata] = []
-
-            for item in contents {
-                // A Roms entry is either a single-file dump or a dumped game DIRECTORY.
-                // For a directory the engine still boots an .rpx, but it must be the one
-                // sitting inside code/ so Cemu sees the real layout next to it - boot it
-                // from anywhere else and it falls back to standalone mode and logs
-                // "incorrect layout or missing meta files", losing the title metadata.
-                let gameID: String
-                let bootPath: String
-                // The dump directory, when the entry is one. Only a directory dump keeps
-                // its meta/ on disk where the icon can be read from; a single-file dump
-                // keeps meta/ inside the container, where only the engine can reach it.
-                let dumpDirectory: URL?
-
-                var isDirectory: ObjCBool = false
-                _ = fileManager.fileExists(atPath: item.path, isDirectory: &isDirectory)
-
-                if isDirectory.boolValue {
-                    if Self.looksLikeWiiUDump(item), let rpx = Self.executableInDump(item) {
-                        gameID = item.lastPathComponent
-                        bootPath = rpx.path
-                        dumpDirectory = item
-                    } else if let tmd = Self.titleTmdInDump(item) {
-                        // NUS dump: boot path points straight at title.tmd, matching
-                        // TitleInfo::DetectFormat's own NUS-format detection.
-                        gameID = item.lastPathComponent
-                        bootPath = tmd.path
-                        dumpDirectory = item
-                    } else {
-                        continue
-                    }
-                } else {
-                    let pathExtension = item.pathExtension.lowercased()
-                    guard Self.supportedROMExtensions.contains(pathExtension) else { continue }
-                    gameID = item.deletingPathExtension().lastPathComponent
-                    bootPath = item.path
-                    dumpDirectory = nil
-                }
-
-                let addedDate = (try? fileManager.attributesOfItem(atPath: item.path))?[.creationDate] as? Date
-
-                let gameMetadata = GameMetadata(
-                    id: gameID,
-                    title: gameID,
-                    romPath: bootPath,
-                    coverPath: findCover(for: gameID, romPath: bootPath, in: romsPath),
-                    region: Self.nonEmptyOrNil(LibraryMetadataCache.cachedRegion(for: gameID)),
-                    releaseDate: "Unknown",
-                    genre: "Game",
-                    titleId: Self.deriveBaseTitleId(romPath: bootPath),
-                    dumpDirectoryPath: dumpDirectory?.path,
-                    displayTitle: Self.nonEmptyOrNil(LibraryMetadataCache.cachedTitleName(for: gameID)),
-                    addedDate: addedDate
-                )
-
-                discoveredGames.append(gameMetadata)
-            }
-
-            // Favorites used to be rebuilt false on every scan - nothing anywhere
-            // wrote them back out, so a favorited game forgot it the moment the app
-            // relaunched. Applied here, against a real on-disk record, before the
-            // array is even published.
-            let favoriteIDs = Self.loadFavoriteIDs()
-            for index in discoveredGames.indices {
-                discoveredGames[index].isFavorite = favoriteIDs.contains(discoveredGames[index].id)
-            }
-
-            self.games = discoveredGames.sorted { $0.title < $1.title }
-            self.favorites = self.games.filter { $0.isFavorite }
-            enrichMissingCoverArt()
-        } catch {
-            print("Error scanning Roms directory: \(error)")
+            discoveredGames.append(gameMetadata)
         }
+
+        // Favorites used to be rebuilt false on every scan - nothing anywhere
+        // wrote them back out, so a favorited game forgot it the moment the app
+        // relaunched. Applied here, against a real on-disk record, before the
+        // array is even published.
+        let favoriteIDs = Self.loadFavoriteIDs()
+        for index in discoveredGames.indices {
+            discoveredGames[index].isFavorite = favoriteIDs.contains(discoveredGames[index].id)
+        }
+
+        return discoveredGames
     }
 
     /// A dumped Wii U title is a directory containing code/, content/ and meta/.
@@ -323,7 +350,7 @@ class GameManager: ObservableObject {
     /// Before this existed at all, nothing in the app ever wrote a `<gameID>_cover.png`,
     /// so every card fell through to the placeholder controller glyph no matter what
     /// was installed.
-    private func findCover(for gameID: String, romPath: String, in directory: URL) -> String? {
+    private nonisolated static func findCover(for gameID: String, romPath: String, in directory: URL) -> String? {
         let fileManager = FileManager.default
 
         // A hand-placed cover wins. Someone who dropped a file in specifically to
@@ -366,37 +393,8 @@ class GameManager: ObservableObject {
         // constructs a real TitleInfo, and TitleInfo's constructor auto-mounts through
         // fsc_mount() as a side effect of parsing meta.xml.
         //
-        // CORRECTION to what this comment said before: fsc.cpp is NOT unlocked. It
-        // declares `std::recursive_mutex s_fscMutex` (fsc.cpp:69) and takes it at 21
-        // sites, including wrapped directly around the tree mutation this comment used
-        // to blame:
-        //
-        //     fscEnter();
-        //     FSCMountPathNode* node = fsc_createMountPath(parsedMountPath, priority);
-        //     node->AssignDevice(fscDevice, ctx, targetPathWithSlash);
-        //     fscLeave();
-        //
-        // So concurrent TitleInfo constructions were already serialised by that mutex,
-        // and a data race there was not what produced the signal 11 in the crash log.
-        //
-        // The actual cause was a null root: s_fscRootNodePerPrio is `{}` at file scope
-        // and is only ever populated by fsc_reset() <- fsc_init() <-
-        // CafeSystem::Initialize(), which runs at TITLE BOOT. Cover art builds a
-        // TitleInfo during loadGames at app launch, before any title has booted, so
-        // fsc_createMountPath read a null root and dereferenced nodeParent->subnodes.
-        // Deterministic, single-threaded, on the first call - which is why it crashed
-        // every launch rather than intermittently. Fixed in fsc.cpp by
-        // fsc_ensureRootNodes(), which allocates any missing root under that same mutex.
-        //
-        // The sequential pass below is KEPT, on its own merits rather than as the crash
-        // fix: one TitleInfo mount at a time is less startup load than N concurrent
-        // ones, and doing the eligibility check off the main actor keeps it off the UI
-        // thread. It would not, by itself, have fixed a null dereference - the first
-        // call still hits it.
-        //
-        // The correction matters because "fsc.cpp has no locking anywhere" is the kind
-        // of premise that gets a second mutex added to a file that already has one, or
-        // gets the next crash in it misdiagnosed.
+        // Sequential on purpose: TitleInfo mounts through fsc, and fsc_ensureRootNodes()
+        // covers the pre-boot case where the mount roots don't exist yet.
         let candidates = games
         guard !candidates.isEmpty else { return }
 
@@ -480,7 +478,7 @@ class GameManager: ObservableObject {
     /// no reload, no relaunch, no separate cache to invalidate.
     private func refreshCoverPath(forGameID gameID: String) {
         guard let index = games.firstIndex(where: { $0.id == gameID }), let romsPath = romsDirectoryURL else { return }
-        let newCoverPath = findCover(for: gameID, romPath: games[index].romPath, in: romsPath)
+        let newCoverPath = Self.findCover(for: gameID, romPath: games[index].romPath, in: romsPath)
         games[index].coverPath = newCoverPath
         if let favIndex = favorites.firstIndex(where: { $0.id == gameID }) {
             favorites[favIndex].coverPath = newCoverPath
@@ -601,9 +599,9 @@ class GameManager: ObservableObject {
                 // check runs against the copy we already made, and every way it can fail
                 // - unsupported extension, supported extension over the wrong bytes -
                 // means the same thing to the person holding the iPad.
-                return "This is not a valid Wii U ROM format."
+                return "This isn't a valid Wii U game file."
             case .notAWiiUDump(let name):
-                return "\"\(name)\" doesn't look like a Wii U dump - a dumped game folder has code/, content/ and meta/ inside it, or (for a decrypted NUS dump) a title.tmd alongside its .app files."
+                return "\"\(name)\" isn't a Wii U game dump. A dump folder needs code, content and meta folders inside it, or a title.tmd next to its .app files (a decrypted NUS dump)."
             case .accessDenied:
                 return "Couldn't access that file."
             case .copyFailed(let error):
@@ -907,7 +905,12 @@ class GameManager: ObservableObject {
         UserDefaults.standard.set(Array(ids), forKey: favoriteIDsKey)
     }
 
+    /// Identifies the current launch. Changed by launchGame and stopEmulation so a boot that
+    /// finishes after the user has gone back can tell it is stale.
+    private var launchToken = UUID()
+
     func launchGame(_ game: GameMetadata) {
+        launchToken = UUID()
         currentGame = game
         emulationState = .loading
         surfaceRegistered = false
@@ -917,8 +920,7 @@ class GameManager: ObservableObject {
             return
         }
 
-        // Delegate to the real Cemu core via the bridge. Pre-M1 (core not compiled
-        // for iOS yet) this honestly reports "engine not built" rather than faking a run.
+        // Delegate to the Cemu core via the bridge.
         guard engine.coreAvailable else {
             lastStatusMessage = engine.statusText
             emulationState = .error
@@ -928,10 +930,8 @@ class GameManager: ObservableObject {
         // Actual init/boot is deferred to registerRenderSurface(...) below, called by
         // MetalViewIOS once its view has mounted while emulationState == .loading (see
         // ContentView.swift). WindowSystem::GetWindowPhysSize() is read synchronously
-        // by the GPU thread the instant boot() spawns it (M3, CemuBridge.mm), so a real
-        // surface must be registered with the bridge before boot() runs, not after -
-        // this view previously only appeared once emulationState == .running, i.e.
-        // strictly after boot() had already returned.
+        // by the GPU thread the instant boot() spawns it (CemuBridge.mm), so a real
+        // surface must be registered with the bridge before boot() runs.
     }
 
     /// Called by DisplayRouter once it has decided which display the Wii U TV screen
@@ -976,6 +976,7 @@ class GameManager: ObservableObject {
         cemu_bridge_register_render_surface(surfacePtr, width, height, dpiScale)
 
         let romPath = game.romPath
+        let token = launchToken
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
             let mlcPath = documentsPath.appendingPathComponent("mlc").path
@@ -1167,6 +1168,14 @@ class GameManager: ObservableObject {
 
             await MainActor.run {
                 guard let self else { return }
+                guard self.launchToken == token, self.emulationState == .loading else {
+                    // Back was pressed (or another launch started) while this boot ran.
+                    // Don't flip the UI to .running; shut down a title that did boot.
+                    if status == CEMU_BRIDGE_OK, self.currentGame == nil {
+                        self.stopEmulation()
+                    }
+                    return
+                }
                 engine.refreshStatus()
                 self.lastStatusMessage = engine.statusText
                 self.emulationState = (status == CEMU_BRIDGE_OK) ? .running : .error
@@ -1181,6 +1190,7 @@ class GameManager: ObservableObject {
     #endif
 
     func stopEmulation() {
+        launchToken = UUID()
         stopFrameRateMonitor()
         #if os(iOS)
         // Resume before stopping, unconditionally, even though nothing here knows or
@@ -1322,17 +1332,17 @@ struct EmulatorProgress: Equatable {
             // rate AND the count: the rate says how slow, the count is the thing whose
             // movement proves it is not stuck.
             if gx2FramesPerSecond > 0 {
-                return String(format: "%.2f fps · %llu frames", gx2FramesPerSecond, gx2FrameCount)
+                return String(format: "%.1f FPS", gx2FramesPerSecond)
             }
             return String(format: "%llu frames", gx2FrameCount)
         }
         if gx2InitReached {
             // Past handover with nothing drawn. This is the case that is a real bug
             // rather than a slow one, so it says so instead of showing a rate of zero.
-            return "GX2 · no frames yet"
+            return "Started, no picture yet"
         }
         if osScreenScanouts > 0 || guestFlipRequests > 0 {
-            return "Booting · \(osScreenScanouts) scanouts"
+            return "Booting..."
         }
         return "-- FPS"
     }

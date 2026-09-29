@@ -4,16 +4,8 @@ import MetalKit
 import UIKit
 #endif
 
-/// Plain `UIView` has no hook that fires when its own bounds change - UIKit posts no
-/// "bounds changed" notification, and SwiftUI only calls `updateUIView` in response to
-/// state changes, not layout passes - so without this override `DisplayRouter` had no
-/// way to learn that the container it was handed had settled into a new size, and the
-/// TV/pad `CAMetalLayer` sublayers (and the C++-side geometry `WindowSystem` keeps for
-/// them) kept whatever size they were given at registration time for the rest of the
-/// session, even through a rotation or (`UIRequiresFullScreen` is not set in
-/// `project.yml`, so this is a real, reachable case) an iPad Split View/Slide Over
-/// resize. `layoutSubviews()` is the one hook UIKit reliably calls whenever this
-/// view's own bounds actually change, regardless of what drove the change.
+/// Plain `UIView` has no bounds-changed notification, so `layoutSubviews()` tells `DisplayRouter`
+/// when the container settles into a new size (rotation, iPad Split View / Slide Over resize).
 final class DeviceContainerView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -24,37 +16,19 @@ final class DeviceContainerView: UIView {
 struct MetalViewIOS: UIViewRepresentable {
     var gameManager: GameManager
 
-    // This returns a plain CONTAINER view; the view the C++ renderer actually draws
-    // into is DisplayRouter.shared.tvRenderView, added as a subview of it. The
-    // indirection is what makes the Wii U TV screen movable between this device and an
-    // external display without destroying its CAMetalLayer: SwiftUI only ever sees the
-    // container, so it can create, lay out and tear that down as it likes, while the
-    // render view - and the layer the GPU thread holds a bare pointer to - is reparented
-    // by DisplayRouter and outlives all of it.
+    // Returns a plain container view; the view the C++ renderer draws into is
+    // DisplayRouter.shared.tvRenderView, added as a subview. That lets DisplayRouter move the
+    // TV screen between this device and an external display without destroying its CAMetalLayer.
     //
-    // Neither is an MTKView, deliberately. MTKView overrides +layerClass to make its OWN
-    // .layer a CAMetalLayer with its own active render loop. CreateMetalLayer()
-    // (MetalLayer.mm) then added the REAL C++ renderer's CAMetalLayer as a SUBLAYER of
-    // that already-active Metal-backed layer - two independent Metal render loops
-    // fighting over one layer tree, one requesting drawables via MTKView's own
-    // currentDrawable every frame, the other calling nextDrawable() directly on the
-    // sublayer from the GPU thread. A live device test confirmed this is genuinely
-    // unstable (crashes recurring in MetalRenderer::BeginFrame -> nextDrawable even
-    // after fixing the separate view-retain issue) - a plain UIView's .layer is an
-    // ordinary CALayer with no competing rendering machinery of its own, so the C++
-    // sublayer has the view's layer tree to itself.
+    // Plain UIView, not MTKView: MTKView would make its own layer an active CAMetalLayer, and
+    // the C++ renderer's CAMetalLayer sublayer would then compete with it.
     func makeUIView(context: Context) -> UIView {
-        // DisplayRouter.shared.sharedDeviceContainer() hands back the SAME container
-        // every time this is called, not a fresh one - see its doc comment in
-        // DisplayRouter.swift for why that matters once this view can be conditionally
-        // mounted/unmounted (Screen Layout's `visibleScreens`-driven composition).
+        // Returns the same container every time (see DisplayRouter.sharedDeviceContainer()).
         let container = DisplayRouter.shared.sharedDeviceContainer()
 
-        // Arm display detection before anything is registered, so a TV that is already
-        // connected at launch and one plugged in later take the same code path. The
-        // router decides where the Wii U TV screen goes, registers the surface (which is
-        // what starts the boot - see GameManager.registerRenderSurface), and creates a
-        // GamePad surface only when there is a second display to put it on.
+        // Arm display detection before registering, so a display connected at launch and one
+        // plugged in later take the same path. Registering the surface starts the boot
+        // (see GameManager.registerRenderSurface).
         DisplayRouter.shared.startObserving()
         DisplayRouter.shared.attach(deviceContainer: container)
         DisplayRouter.shared.registerSurfaces(with: gameManager)
@@ -63,30 +37,17 @@ struct MetalViewIOS: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        // Fallback: if for some reason makeUIView's registration above didn't take (e.g.
-        // this view is recreated after boot already started), retry. Both calls are
-        // idempotent - attach() ignores a container it already has, and
-        // registerSurfaces() ignores everything once the TV surface exists.
+        // Fallback if makeUIView's registration didn't take; both calls are idempotent.
         DisplayRouter.shared.attach(deviceContainer: uiView)
         DisplayRouter.shared.registerSurfaces(with: gameManager)
     }
 }
 
-/// `MetalViewIOS`'s pad-screen equivalent - see `DisplayRouter.attachLocalPadContainer`/
-/// `localPadContainerDidLayout`. Mounted by `EmulatorViewOptimized`'s `visibleScreens`
-/// composition (a true port of MeloCafe's `EmulationView.body`) whenever `ScreenLayout`
-/// calls for the GamePad screen to be visible on this device (`.bothScreens`,
-/// `.smallGamePadTopRight`, or `.singleScreen` with the pad currently the one swapped
-/// to) and `DisplayRouter.placement` is not `.dualScreen` - a real external display
-/// still takes the pad exactly as it did before this feature existed.
-///
-/// Safe to conditionally mount and unmount exactly like MeloCafe's own GamePad view,
-/// which is what `EmulatorViewOptimized` now does: `makeUIView()` below hands back a
-/// container `DisplayRouter` created once and caches (`sharedLocalPadContainer()`), not
-/// a fresh `PadContainerView()` per call, so a remount can never hand
-/// `attachLocalPadContainer` a container it hasn't already seen. See
-/// `DisplayRouter.sharedLocalPadContainer()`'s doc comment for the black-screen bug this
-/// fixes and why it was this view, not `DeviceContainerView`, that actually needed it.
+/// `MetalViewIOS`'s pad-screen equivalent (see `DisplayRouter.attachLocalPadContainer` /
+/// `localPadContainerDidLayout`). Mounted by `EmulatorViewOptimized` when `ScreenLayout` shows
+/// the GamePad screen on this device and `DisplayRouter.placement` is not `.dualScreen`. Safe to
+/// mount and unmount repeatedly: `makeUIView()` returns the container `DisplayRouter` caches
+/// (`sharedLocalPadContainer()`).
 final class PadContainerView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()

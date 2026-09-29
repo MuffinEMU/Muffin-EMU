@@ -1,6 +1,6 @@
 //
 //  GraphicPackDownloader.h
-//  MeloCafe
+//  MuffinEMU
 //
 
 #pragma once

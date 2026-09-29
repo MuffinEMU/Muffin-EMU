@@ -216,7 +216,15 @@ namespace coreinit
 		}
 
 		const std::string moduleName = RPLLoader_GetModuleNameByHandle(moduleHandle);
-		std::strncpy(nameBuf, moduleName.c_str(), *nameBufSize);
+		if (!nameBuf || !nameBufSize)
+			return 0;
+		const sint32 bufSize = *nameBufSize;
+		if (bufSize <= 0)
+			return 0;
+		// copy at most bufSize-1 characters and always NUL-terminate
+		const size_t copyLen = std::min<size_t>((size_t)bufSize - 1, moduleName.size());
+		std::memcpy(nameBuf, moduleName.data(), copyLen);
+		nameBuf[copyLen] = '\0';
 
 		return 0;
 

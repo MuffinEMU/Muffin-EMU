@@ -19,6 +19,10 @@ struct AboutSettingsSection: View {
                 Label("View on GitHub", systemImage: "arrow.up.right.square")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
+            Link(destination: URL(string: "https://kiddreads.github.io/MuffinEMU/docs/licenses.html")!) {
+                Label("Open-source licences", systemImage: "doc.text")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
 
             Text("MuffinEMU is built on Cemu. The optional melo-controls pad is Melo-Controller by stossy11.")
                 .font(.system(size: 12))
@@ -55,7 +59,7 @@ struct AboutSettingsSection: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This puts every emulation, graphics and control setting back to how MuffinEMU ships. Your library, favorites, keys.txt, theme, app icon and premium unlock are untouched, unless you pick the per-game option too.")
+            Text("Puts emulation, graphics, display, audio and control settings back to their defaults. Your library, favorites, keys.txt, theme, app icon and premium unlock are not affected.")
         }
     }
 }

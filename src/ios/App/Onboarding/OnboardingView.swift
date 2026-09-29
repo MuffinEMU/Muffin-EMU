@@ -1,59 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Wiring notes for the lead
-//
-// Nothing here needed a new closure poked through ContentView or GameManager - both
-// actions on screen reuse entry points that already exist and are already public:
-//
-//   - Keys import: DocumentImport.present(contentTypes: [.item]) + WiiUKeys.importKeys(from:),
-//     the exact two calls KeysSettingsSection.swift already makes.
-//   - Game import: DocumentImport.present(contentTypes: [.item]) + GameManager.importROM(from:),
-//     the exact two calls ContentView.swift's GameBrowserView.beginImport()/handleImport()
-//     already make.
-//
-// The one thing this file cannot do for itself is decide WHEN to appear - that has to
-// live in ContentView, which this task was told not to touch. The whole hook is one
-// @State var and one .fullScreenCover modifier on ContentView's own body (the
-// top-level `struct ContentView: View`, not GameBrowserView):
-//
-//     struct ContentView: View {
-//         @StateObject var gameManager = GameManager()
-//         @State private var showingOnboarding = OnboardingState.shouldPresentOnFirstLaunch
-//         ...
-//         var body: some View {
-//             ZStack { /* existing body, unchanged */ }
-//                 .ignoresSafeArea()
-//                 .fullScreenCover(isPresented: $showingOnboarding) {
-//                     OnboardingView(gameManager: gameManager) {
-//                         showingOnboarding = false
-//                     }
-//                 }
-//         }
-//     }
-//
-// OnboardingView marks itself complete via OnboardingState.markCompleted() before
-// calling onFinished, so a relaunch never shows it again on its own.
-//
-// To reopen it from Settings later, drop SettingsOnboardingRow (OnboardingState.swift)
-// into AboutSettingsSection's Section body, passing an `onRequestReopen` closure that
-// flips whatever makes `showingOnboarding` true again - e.g. exposing it as a Binding
-// threaded down through GameBrowserView -> SettingsView -> AboutSettingsSection, or a
-// small shared ObservableObject flag if that plumbing is unwelcome. The row already
-// calls OnboardingState.reset() itself; it only needs to be told how to make the view
-// reappear.
-
-/// First-launch flow: what MuffinEMU is, where keys and games come from, and what
-/// actually makes it fast. Four pages, one idea each, at most one action per page.
-///
-/// `gameManager` is the same instance ContentView already owns - passed in rather than
-/// re-created, since a second `GameManager()` would start its own background load and
-/// answer questions about a library import made through this screen with stale state.
+/// First-launch flow in four pages: welcome, keys, games, and speed/controls. ContentView
+/// presents it on first launch and passes in its own `gameManager`.
 struct OnboardingView: View {
     @ObservedObject var gameManager: GameManager
-    /// Called once "Start playing" is tapped, after OnboardingState.markCompleted()
-    /// has already run. Wire it to dismiss whatever presented this view - see the
-    /// notes above.
+    /// Called once "Start playing" is tapped, after OnboardingState.markCompleted() has run.
     var onFinished: () -> Void
 
     @State private var page = 0
@@ -76,8 +28,7 @@ struct OnboardingView: View {
                     OnboardingSpeedControlsPage()
                         .tag(3)
                 }
-                // Themed dots in the footer instead, rather than the system's plain
-                // black-and-white page control - see `pageDots` below.
+                // Themed dots in the footer replace the system page control (see `pageDots`).
                 .tabViewStyle(.page(indexDisplayMode: .never))
 
                 footer
@@ -113,9 +64,7 @@ struct OnboardingView: View {
         .padding(.bottom, 16)
     }
 
-    /// Decorative on their own - `accessibilityHidden` on the HStack, since the
-    /// Back/Next buttons' own labels already say where a VoiceOver user is in the
-    /// flow, and a row of unlabeled dots would just be noise on top of that.
+    /// Decorative; hidden from VoiceOver since the Back/Next labels already say where you are.
     private var pageDots: some View {
         HStack(spacing: 8) {
             ForEach(0..<totalPages, id: \.self) { index in
@@ -148,10 +97,8 @@ struct OnboardingView: View {
 
 // MARK: - Shared page chrome
 
-/// The illustration at the top of an onboarding page. The welcome page gets the app's own
-/// muffin - the same mark the launch intro draws, so the thing that just animated itself
-/// together is the thing greeting you - and the working pages get a symbol in the brand
-/// accent, which says what the page is about before a word of it is read.
+/// The illustration at the top of an onboarding page: the app's muffin on the welcome page,
+/// a brand-accent symbol on the others.
 private enum OnboardingHero {
     case none
     case mark
@@ -179,16 +126,12 @@ private enum OnboardingHero {
     }
 }
 
-/// One page's worth of chrome: a heading, one or two sentences under it, then
-/// whatever the page needs. Wrapped in a ScrollView and width-capped rather than left
-/// to stretch full width on an iPad, so a long piece of body text (Dynamic Type
-/// pushed up, or a long error message) scrolls instead of ever being cut off, and so
-/// text lines don't run edge-to-edge on a landscape iPad.
+/// One page of chrome: a heading, a subtitle, then the page's content. Scrollable and
+/// width-capped so long text or large Dynamic Type never gets cut off on any device.
 private struct OnboardingPageScaffold<Content: View>: View {
     let title: String
     let subtitle: String
-    /// What sits above the heading. Four pages of nothing but left-aligned text is
-    /// accurate and completely forgettable; this is the first thing a new install shows.
+    /// What sits above the heading.
     var hero: OnboardingHero = .none
     @ViewBuilder var content: Content
 
@@ -215,17 +158,14 @@ private struct OnboardingPageScaffold<Content: View>: View {
             }
             .padding(.horizontal, 24)
             .padding(.top, 40)
-            // Capped width, centered: on a phone this is just "full width, some
-            // padding"; on an iPad, landscape included, it keeps lines of text and the
-            // action card from stretching absurdly wide.
+            // Capped width, centered, so text and cards don't stretch across a landscape iPad.
             .frame(maxWidth: 640, alignment: .leading)
             .frame(maxWidth: .infinity)
         }
     }
 }
 
-/// One fact with a leading glyph - used on the speed/controls page, where three short
-/// unrelated facts share a page by design (see the task's own page breakdown).
+/// One fact with a leading glyph, used on the speed/controls page.
 private struct OnboardingFactRow: View {
     let systemImage: String
     let text: String
@@ -251,7 +191,7 @@ private struct OnboardingWelcomePage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Welcome to MuffinEMU",
-            subtitle: "MuffinEMU runs real Wii U software on your device. This guide covers keys, games, and speed in under a minute - skip anything you don't need.",
+            subtitle: "Play your own Wii U games. This takes a minute and you can skip any step.",
             hero: .mark
         ) {
             EmptyView()
@@ -262,8 +202,7 @@ private struct OnboardingWelcomePage: View {
 // MARK: - Page 2: Your keys
 
 private struct OnboardingKeysPage: View {
-    /// Advances the flow exactly like "Next" would - skipping keys isn't a dead end,
-    /// it's just choosing not to do this one optional thing right now.
+    /// Advances the flow like "Next".
     var onSkip: () -> Void
 
     @State private var hasKeys = WiiUKeys.keysFileExists()
@@ -273,7 +212,7 @@ private struct OnboardingKeysPage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Your keys",
-            subtitle: "Real Wii U games are encrypted, and MuffinEMU ships no keys - only a keys.txt dumped from your own Wii U can unlock them. Homebrew needs none of this.",
+            subtitle: "Encrypted Wii U games need a keys.txt dumped from your own Wii U. MuffinEMU doesn't include one. Homebrew doesn't need it.",
             hero: .symbol("key.fill")
         ) {
             MuffinCard {
@@ -313,10 +252,7 @@ private struct OnboardingKeysPage: View {
     }
 
     private func importKeys() {
-        // DocumentImport's completion always lands on the main thread - it is called
-        // directly from a UIDocumentPickerViewController delegate method, the same
-        // assumption KeysSettingsSection.handleKeysImport already makes - so touching
-        // @State here needs no extra hop.
+        // DocumentImport's completion runs on the main thread (a picker delegate callback).
         DocumentImport.present(contentTypes: [.item]) { result in
             switch result {
             case .success(let urls):
@@ -334,12 +270,9 @@ private struct OnboardingKeysPage: View {
         }
     }
 
-    /// Mirrors KeysSettingsSection's own count, with the same fallback reasoning: the
-    /// bridge can only answer once the engine has been initialized (see
-    /// cemu_bridge_reload_and_count_keys's doc comment in CemuBridge.h), which has not
-    /// happened yet on a first launch - nothing has been booted. Reading the file
-    /// directly through WiiUKeys is the same real count, just derived without the
-    /// engine.
+    /// Same count as KeysSettingsSection. The bridge can only answer once the engine has been
+    /// initialized (see cemu_bridge_reload_and_count_keys in CemuBridge.h); before that, read
+    /// the file directly through WiiUKeys.
     private static func currentKeyCount() -> Int {
         let bridgeCount = cemu_bridge_reload_and_count_keys()
         if bridgeCount >= 0 {
@@ -358,7 +291,7 @@ private struct OnboardingGamesPage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Add your games",
-            subtitle: "Games come from Files - .wud, .wux, .wua, .iso, a dumped game folder, or a homebrew .rpx - through the same Import picker your library's toolbar uses. Drop files straight into Documents/Roms from the Files app instead, if you'd rather.",
+            subtitle: "Import games from Files: .wud, .wux, .wua, .iso, a dumped game folder or a homebrew .rpx. You can also drop them into Documents/Roms in the Files app.",
             hero: .symbol("square.and.arrow.down.fill")
         ) {
             MuffinCard {
@@ -393,19 +326,19 @@ private struct OnboardingGamesPage: View {
 
     private func importGame() {
         DocumentImport.present(contentTypes: [.item]) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                Task {
+            Task { @MainActor in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
                     do {
                         try await gameManager.importROM(from: url)
                         errorMessage = nil
                     } catch {
                         errorMessage = error.localizedDescription
                     }
+                case .failure(let error):
+                    errorMessage = error.localizedDescription
                 }
-            case .failure(let error):
-                errorMessage = error.localizedDescription
             }
         }
     }
@@ -417,18 +350,18 @@ private struct OnboardingSpeedControlsPage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Speed and controls",
-            subtitle: "MuffinEMU is fastest with the recompiler running. Three things decide how that actually goes for you:",
+            subtitle: "Three things affect speed and control:",
             hero: .symbol("bolt.fill")
         ) {
             MuffinCard {
                 VStack(alignment: .leading, spacing: 18) {
                     OnboardingFactRow(
                         systemImage: "bolt.fill",
-                        text: "The recompiler needs a JIT enabler - StikJIT, SideStore, or LiveContainer - attached at launch. Without one, the interpreter runs instead: it works, just much slower. Settings always shows which one you got."
+                        text: "Full speed needs a JIT enabler (StikJIT, SideStore or LiveContainer) attached at launch. Without one, MuffinEMU still runs but much slower. Settings shows which you have."
                     )
                     OnboardingFactRow(
                         systemImage: "checkmark.seal.fill",
-                        text: "If a game glitches, desyncs, or crashes, turn on Favour accuracy in Settings > CPU - it trades speed for correctness."
+                        text: "If a game glitches, desyncs or crashes, turn on Favour accuracy in Settings > CPU. It's slower but more accurate."
                     )
                     OnboardingFactRow(
                         systemImage: "gamecontroller.fill",

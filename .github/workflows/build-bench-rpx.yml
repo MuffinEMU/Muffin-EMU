@@ -4,8 +4,7 @@ name: Build Bench RPX (Homebrew)
 # and homebrew/bench/gpubench - into cpubench.rpx and gpubench.rpx with the
 # standard devkitPro Wii U toolchain.
 #
-# Same shape and the same reasoning as build-rainbow-rpx.yml and
-# build-showcase-rpx.yml: homebrew RPX files carry no encryption, so this is
+# Same shape and the same reasoning as build-rainbow-rpx.yml: homebrew RPX files carry no encryption, so this is
 # built from source in a plain Linux container with no relation to the
 # Xcode/iOS build in build-ios-app.yml, and no console keys are involved at
 # any point.

@@ -172,7 +172,7 @@ void memory_init()
 #if BOOST_OS_IOS
 	if (!memory_base)
 	{
-		// this kinda doesn't work, but it produces practically the same result as without it except giving me more info, so like i'll keep it -stossy11
+		// Diagnostic fallback: try sparse reservations and log the outcome. It rarely succeeds where the contiguous reservation failed.
 		cemuLog_log(LogType::Force, "Contiguous guest reservation failed; trying sparse reservations (host page size: {})", MemMapper::GetPageSize());
         
 		for (uintptr_t base = 0x10000000ULL; base < 0x1000000000ULL; base += 0x10000000ULL)
@@ -361,18 +361,6 @@ uint32 memory_getVirtualOffsetFromPointer(void* ptr)
 	if( !ptr )
 		return MPTR_NULL;
 	return (uint32)((uint8*)ptr - (uint8*)memory_base);
-}
-
-uint8* memory_getPointerFromVirtualOffset(uint32 virtualOffset)
-{	
-	return memory_base + virtualOffset;
-}
-
-uint8* memory_getPointerFromVirtualOffsetAllowNull(uint32 virtualOffset)
-{	
-	if( virtualOffset == MPTR_NULL )
-		return nullptr;
-	return memory_getPointerFromVirtualOffset(virtualOffset);
 }
 
 // write access

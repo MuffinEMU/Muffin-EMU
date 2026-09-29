@@ -83,6 +83,13 @@ LatteTextureMtl::LatteTextureMtl(class MetalRenderer* mtlRenderer, Latte::E_DIM 
 	desc->setUsage(usage);
 
 	m_texture = mtlRenderer->GetDevice()->newTexture(desc);
+	if (!m_texture)
+	{
+		// Allocation failed (memory pressure): use the shared 1x1 null texture so later view
+		// creation and readback never see a null texture.
+		cemuLog_logOnce(LogType::Force, "Metal: could not allocate a {}x{} guest texture; substituting a null texture", width, height);
+		m_texture = mtlRenderer->GetNullTexture2D()->retain();
+	}
 }
 
 LatteTextureMtl::~LatteTextureMtl()

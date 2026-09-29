@@ -6,7 +6,7 @@
 # Why this exists: project.yml's `sources:` list only ever named directories under
 # src/ios, so nothing under bin/ reached MuffinEMU.app even though both trees are in the
 # repo. Two things were missing on device, and both showed up in the first successful
-# boot log (see STATUS.md):
+# boot log:
 #
 #   * bin/resources/sharedFonts - CafeSystem::LoadSharedData() looks for these at
 #     ActiveSettings::GetDataPath("resources/sharedFonts/<name>.ttf") and, finding
@@ -56,7 +56,7 @@ SRC_PROFILES="$REPO_ROOT/bin/gameProfiles"
 DEST="${BUILT_PRODUCTS_DIR:?not running inside an Xcode build}/${UNLOCALIZED_RESOURCES_FOLDER_PATH:?}"
 
 # Fail loudly rather than producing an app that silently has no fonts again - a
-# missing source tree here is a broken checkout (bin/ is tracked in git, 259 files),
+# missing source tree here is a broken checkout (bin/ is tracked in git),
 # not a condition to shrug at.
 for d in "$SRC_FONTS" "$SRC_PROFILES"; do
     if [ ! -d "$d" ]; then

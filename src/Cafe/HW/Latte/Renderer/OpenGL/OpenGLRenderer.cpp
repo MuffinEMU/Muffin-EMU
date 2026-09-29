@@ -546,7 +546,10 @@ void OpenGLRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool pad
 	const sint32 pixelDataSize = screenshotWidth * screenshotHeight * 3;
 	std::vector<uint8> rgb_data(pixelDataSize);
 
+	// rows are tightly packed (w*3 bytes); the default pack alignment of 4 would pad them
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
 	glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_UNSIGNED_BYTE, rgb_data.data());
+	glPixelStorei(GL_PACK_ALIGNMENT, 4); // texture readbacks assume the default alignment
 	texture_bindAndActivate(nullptr, 0);
 	
 	const bool srcUsesSRGB = HAS_FLAG(texView->format, Latte::E_GX2SURFFMT::FMT_BIT_SRGB);

@@ -11,8 +11,8 @@ enum ControllerCategory: String, CaseIterable {
     case xbox = "Xbox"
     case steamDeck = "Steam Deck"
     case arcade = "Arcade"
-    case modern = "Modern/Minimalist"
-    case gameThemed = "Game-Themed"
+    case modern = "Modern"
+    case gameThemed = "Game Themes"
 
     var displayName: String {
         self.rawValue
