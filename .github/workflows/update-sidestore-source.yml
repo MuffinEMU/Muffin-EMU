@@ -1,23 +1,12 @@
 name: Update SideStore source
 
-# Regenerates docs/apps.json from the repository's real releases and commits it to
-# main, so the source feed cannot drift from what is actually downloadable. Without
-# this, every release would need someone to remember to hand-edit a JSON file - and
-# a source that advertises a build nobody can install is worse than no source.
+# Regenerates the install-source JSON in docs/ from the repository's releases and
+# commits it to main, so the feeds always match what can actually be downloaded.
 
 on:
-  # The load-bearing trigger. A release published by CI's GITHUB_TOKEN does NOT raise
-  # the `release` event - GitHub suppresses it so a workflow cannot trigger itself in a
-  # loop - so `release` alone never fires for our own builds.
-  #
-  # That was hidden for a while by accident: hand-editing a release's notes under a
-  # personal token DOES raise `release: edited`, so every release whose notes were
-  # rewritten by hand happened to refresh the source. The moment the notes became
-  # automatic, nothing edited them, nothing fired, and v4.2 shipped with the source
-  # still advertising v4.1 - a feed pointing at a build that is no longer the newest.
-  #
-  # workflow_run is not suppressed the same way: it keys off a workflow FINISHING, not
-  # off who holds the token.
+  # Runs after every build. A release published with CI's GITHUB_TOKEN does not raise
+  # the `release` event (GitHub suppresses it to prevent loops), so `workflow_run` is
+  # what keeps the feeds current for our own builds.
   workflow_run:
     workflows: ["Build MuffinEMU (iOS)"]
     types: [completed]
@@ -71,12 +60,19 @@ jobs:
 
       - name: Commit if changed
         run: |
-          if git diff --quiet -- docs/*.json; then
+          git add docs/*.json
+          if git diff --cached --quiet; then
             echo "source already up to date"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/*.json
           git commit -m "Update install sources for $GITHUB_REF_NAME"
-          git push
+          # main may have moved since checkout (a new build, another feed run), so
+          # rebase onto it and retry rather than fail on a non-fast-forward push.
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main && git push && exit 0
+            sleep $((attempt * 3))
+          done
+          echo "could not push the updated source" >&2
+          exit 1
