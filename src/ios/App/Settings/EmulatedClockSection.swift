@@ -61,9 +61,9 @@ struct EmulatedClockSection: View {
             SettingsSectionHeader("Emulated Clock", icon: "clock", accent: .core)
         } footer: {
             InfoButton.footer(
-                "\(timebase.summary) Changes how fast the game believes time passes, not how fast MuffinEMU runs, and takes effect immediately.",
+                "\(timebase.summary) Changes how fast the game thinks time passes; it doesn't change how fast MuffinEMU runs.",
                 title: "Emulated Clock",
-                text: "\(timebase.summary)\n\nUntil you pick a value here, MuffinEMU finds one itself: if a game has not reached its graphics handover after twelve seconds it steps its own clock down a notch, as far as 1/64, and the log says which value freed it. Choosing anything on this list stops that search for good and keeps your choice.\n\nThis changes how fast the game believes time is passing, not how fast MuffinEMU runs. Without the recompiler the emulated CPU is far slower than the console's, while the game's own clock keeps up with real time - so every deadline it sets itself is already overdue, and it can spend all its time on overdue work and never draw. Slowing its clock puts those deadlines back in reach. Nothing about the emulation is made less accurate by it, and it takes effect straight away.")
+                text: "Until you choose a value, MuffinEMU picks one itself: if a game hasn't started drawing after 12 seconds, it slows its clock a step (down to 1/64). Choosing a value here turns that off.\n\nWithout the recompiler the emulated CPU is much slower than the console's, so games can fall behind their own timers and never draw a frame. Slowing the game's clock gives them room. Emulation accuracy isn't affected.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

@@ -105,7 +105,7 @@ struct OverlaySettingsSection: View {
             SettingsSectionHeader("Performance Overlay", icon: "speedometer", accent: .io)
         } footer: {
             InfoButton.footer(
-                "A small on-screen readout of FPS, CPU and RAM use. Off by default; the rows below only draw once a corner is picked.",
+                "Shows FPS, CPU and RAM use on screen. Pick a corner to turn it on.",
                 title: "Performance Overlay",
                 text: fullText)
         }
@@ -251,9 +251,9 @@ struct OverlaySettingsSection: View {
 
     private var fullText: String {
         """
-        The performance overlay is the engine's own on-screen readout, the same one desktop Cemu draws in a corner of the window. Position picks which corner (or top/bottom center) it appears in on the TV screen; Off leaves it out of the picture entirely, and the rows below have no effect until a position is chosen.
+        The overlay is the engine's own readout, like desktop Cemu's. Position picks a corner of the TV screen; Off hides it.
 
-        Text Color and Text Scale style the readout itself. FPS is the frame rate the engine is actually producing, the same number cemu_bridge_get_fps() reports elsewhere in this app. CPU Usage, CPU Per Core Usage, RAM Usage and VRAM Usage are the engine's own measurements of its own process, not the device's - they say what MuffinEMU itself is using, not what iOS is using overall. Draw Calls shows how many draw commands the current frame issued. Debug adds a short block of internal renderer state. CPU Mode is a real, saved setting on this same overlay, but the current build's overlay draw pass doesn't act on it yet - toggling it has no visible effect.
+        FPS is the frame rate the game is producing. CPU, per-core CPU, RAM and VRAM usage measure MuffinEMU itself, not the whole device. Draw Calls counts draw commands in the current frame. Debug adds a few lines of renderer state.
         """
     }
 }

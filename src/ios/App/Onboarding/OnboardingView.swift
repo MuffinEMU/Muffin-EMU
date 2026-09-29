@@ -251,7 +251,7 @@ private struct OnboardingWelcomePage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Welcome to MuffinEMU",
-            subtitle: "MuffinEMU runs real Wii U software on your device. This guide covers keys, games, and speed in under a minute - skip anything you don't need.",
+            subtitle: "Play your own Wii U games. This takes a minute and you can skip any step.",
             hero: .mark
         ) {
             EmptyView()
@@ -273,7 +273,7 @@ private struct OnboardingKeysPage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Your keys",
-            subtitle: "Real Wii U games are encrypted, and MuffinEMU ships no keys - only a keys.txt dumped from your own Wii U can unlock them. Homebrew needs none of this.",
+            subtitle: "Encrypted Wii U games need a keys.txt dumped from your own Wii U. MuffinEMU doesn't include one. Homebrew doesn't need it.",
             hero: .symbol("key.fill")
         ) {
             MuffinCard {
@@ -358,7 +358,7 @@ private struct OnboardingGamesPage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Add your games",
-            subtitle: "Games come from Files - .wud, .wux, .wua, .iso, a dumped game folder, or a homebrew .rpx - through the same Import picker your library's toolbar uses. Drop files straight into Documents/Roms from the Files app instead, if you'd rather.",
+            subtitle: "Import games from Files: .wud, .wux, .wua, .iso, a dumped game folder or a homebrew .rpx. You can also drop them into Documents/Roms in the Files app.",
             hero: .symbol("square.and.arrow.down.fill")
         ) {
             MuffinCard {
@@ -417,18 +417,18 @@ private struct OnboardingSpeedControlsPage: View {
     var body: some View {
         OnboardingPageScaffold(
             title: "Speed and controls",
-            subtitle: "MuffinEMU is fastest with the recompiler running. Three things decide how that actually goes for you:",
+            subtitle: "Three things affect speed and control:",
             hero: .symbol("bolt.fill")
         ) {
             MuffinCard {
                 VStack(alignment: .leading, spacing: 18) {
                     OnboardingFactRow(
                         systemImage: "bolt.fill",
-                        text: "The recompiler needs a JIT enabler - StikJIT, SideStore, or LiveContainer - attached at launch. Without one, the interpreter runs instead: it works, just much slower. Settings always shows which one you got."
+                        text: "Full speed needs a JIT enabler (StikJIT, SideStore or LiveContainer) attached at launch. Without one, MuffinEMU still runs but much slower. Settings shows which you have."
                     )
                     OnboardingFactRow(
                         systemImage: "checkmark.seal.fill",
-                        text: "If a game glitches, desyncs, or crashes, turn on Favour accuracy in Settings > CPU - it trades speed for correctness."
+                        text: "If a game glitches, desyncs or crashes, turn on Favour accuracy in Settings > CPU. It's slower but more accurate."
                     )
                     OnboardingFactRow(
                         systemImage: "gamecontroller.fill",
