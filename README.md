@@ -89,12 +89,14 @@ Every build of `main` is a numbered release, 0.1 higher than the last; after `.9
 
 - [Cemu](https://github.com/cemu-project/Cemu) — the Wii U emulator MuffinEMU's core is built on.
 - [Melo-Controller](https://github.com/stossy11/Melo-Controller) — the optional alternative on-screen pad.
+- [MeloCafe](https://github.com/stossy11/MeloCafe) — includes code from MeloCafe (MPL-2.0).
+- [etcpak](https://github.com/wolfpld/etcpak) — ETC2 texture encoding on GPUs without BC support (BSD-3-Clause).
 - [MoltenVK](https://github.com/KhronosGroup/MoltenVK) — Vulkan on Metal.
 
 ## License
 
 MuffinEMU's source is licensed under the [Mozilla Public License 2.0](LICENSE.txt). Source files keep their original copyright and authorship notices.
 
-Melo-Controller (GPL-3.0) is linked into every build, whether or not it is switched on, so a MuffinEMU IPA as a whole is distributed under GPL-3.0, with this repository as its corresponding source.
+Melo-Controller (GPL-3.0) is linked into every build, whether or not it is switched on, so a MuffinEMU IPA as a whole is distributed under [GPL-3.0](LICENSE-GPL-3.0.txt), with this repository as its corresponding source.
 
 MuffinEMU is not affiliated with Nintendo. Wii U is a trademark of Nintendo.
