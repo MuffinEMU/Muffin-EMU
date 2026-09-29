@@ -56,9 +56,8 @@ const  std::vector<const char*> kOptionalDeviceExtensions =
 
 const std::vector<const char*> kRequiredDeviceExtensions =
 {
-	VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-	VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME
-}; // Intel doesnt support VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME
+	VK_KHR_SWAPCHAIN_EXTENSION_NAME
+}; // Mirror-clamp support is checked separately (extension or Vulkan 1.2 core feature). Intel doesnt support VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME
 
 VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageTypes, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
 {
@@ -703,6 +702,16 @@ VulkanRenderer::VulkanRenderer()
 		pipelineRobustnessFeature.pipelineRobustness = VK_TRUE;
 	}
 
+	// enable the Vulkan 1.2 core mirror-clamp feature when the extension is not what provides it
+	VkPhysicalDeviceVulkan12Features vulkan12Features{};
+	if (m_featureControl.samplerMirrorClampToEdgeCore)
+	{
+		vulkan12Features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+		vulkan12Features.pNext = deviceExtensionFeatures;
+		deviceExtensionFeatures = &vulkan12Features;
+		vulkan12Features.samplerMirrorClampToEdge = VK_TRUE;
+	}
+
 	std::vector<const char*> used_extensions;
 	VkDeviceCreateInfo createInfo = CreateDeviceCreateInfo(queueCreateInfos, deviceFeatures, deviceExtensionFeatures, used_extensions);
 
@@ -1255,19 +1264,10 @@ std::vector<VkDeviceQueueCreateInfo> VulkanRenderer::CreateQueueCreateInfos(cons
 VkDeviceCreateInfo VulkanRenderer::CreateDeviceCreateInfo(const std::vector<VkDeviceQueueCreateInfo>& queueCreateInfos, const VkPhysicalDeviceFeatures& deviceFeatures, const void* deviceExtensionStructs, std::vector<const char*>& used_extensions) const
 {
 	used_extensions = kRequiredDeviceExtensions;
-	// Matches the same core-promotion check in CheckDeviceExtensionSupport(): a device
-	// already at Vulkan 1.2+ may not list VK_KHR_sampler_mirror_clamp_to_edge by name
-	// even though its functionality is present as core, and some drivers reject
-	// vkCreateDevice() outright over a name they no longer recognise, whether or not
-	// they'd have honoured the underlying feature. Only ask for it by name pre-1.2.
-	VkPhysicalDeviceProperties physicalDeviceProperties{};
-	vkGetPhysicalDeviceProperties(m_physicalDevice, &physicalDeviceProperties);
-	if (physicalDeviceProperties.apiVersion >= VK_API_VERSION_1_2)
-	{
-		used_extensions.erase(std::remove_if(used_extensions.begin(), used_extensions.end(),
-			[](const char* name) { return strcmp(name, VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME) == 0; }),
-			used_extensions.end());
-	}
+	// Sampler mirror-clamp is enabled through whichever route the device offers: the
+	// extension when it is listed, otherwise the Vulkan 1.2 core feature (enabled by the caller).
+	if (m_featureControl.deviceExtensions.sampler_mirror_clamp_to_edge)
+		used_extensions.emplace_back(VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME);
 	if (m_featureControl.deviceExtensions.tooling_info)
 		used_extensions.emplace_back(VK_EXT_TOOLING_INFO_EXTENSION_NAME);
 	if (m_featureControl.deviceExtensions.depth_range_unrestricted)
@@ -1383,19 +1383,32 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device, 
 		requiredExtensions.erase(extension.extensionName);
 	}
 
-	// VK_KHR_sampler_mirror_clamp_to_edge was promoted to Vulkan core in 1.2. A driver is
-	// not obliged to keep listing a promoted extension's name in
-	// vkEnumerateDeviceExtensionProperties once its functionality is already part of
-	// core at the device's own apiVersion - MoltenVK on iOS is exactly such a driver, so
-	// the plain string-matching loop above rejected every device it was ever handed,
-	// unconditionally, string-matching being the ONLY thing this function did before this
-	// device-version check existed. Deferred to here (after the string sweep, before
-	// requiredExtensions is inspected) rather than folded into kRequiredDeviceExtensions
-	// itself, which has no way to express "except when already core".
-	VkPhysicalDeviceProperties deviceProperties{};
-	vkGetPhysicalDeviceProperties(device, &deviceProperties);
-	if (deviceProperties.apiVersion >= VK_API_VERSION_1_2)
-		requiredExtensions.erase(VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME);
+	// VK_KHR_sampler_mirror_clamp_to_edge was promoted to core in Vulkan 1.2 as the
+	// samplerMirrorClampToEdge feature. A device passes if it lists the extension, or if it
+	// is a 1.2+ device that reports the core feature. Whichever route exists is recorded so
+	// device creation can enable it.
+	info.deviceExtensions.sampler_mirror_clamp_to_edge = isExtensionAvailable(VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME);
+	info.samplerMirrorClampToEdgeCore = false;
+	if (!info.deviceExtensions.sampler_mirror_clamp_to_edge)
+	{
+		VkPhysicalDeviceProperties deviceProperties{};
+		vkGetPhysicalDeviceProperties(device, &deviceProperties);
+		if (deviceProperties.apiVersion >= VK_API_VERSION_1_2)
+		{
+			VkPhysicalDeviceVulkan12Features features12{};
+			features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+			VkPhysicalDeviceFeatures2 features2{};
+			features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+			features2.pNext = &features12;
+			vkGetPhysicalDeviceFeatures2(device, &features2);
+			info.samplerMirrorClampToEdgeCore = features12.samplerMirrorClampToEdge == VK_TRUE;
+		}
+		if (!info.samplerMirrorClampToEdgeCore)
+		{
+			cemuLog_log(LogType::Force, "Vulkan: neither VK_KHR_sampler_mirror_clamp_to_edge nor the Vulkan 1.2 samplerMirrorClampToEdge feature is available");
+			return false;
+		}
+	}
 
 	info.deviceExtensions.tooling_info = isExtensionAvailable(VK_EXT_TOOLING_INFO_EXTENSION_NAME);
 	info.deviceExtensions.depth_range_unrestricted = isExtensionAvailable(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME);
@@ -1522,13 +1535,7 @@ std::vector<const char*> VulkanRenderer::CheckInstanceExtensionSupport(FeatureCo
 
 bool VulkanRenderer::IsDeviceSuitable(VkSurfaceKHR surface, const VkPhysicalDevice& device)
 {
-	// Every early return here used to be a bare `return false`, so a device rejected for
-	// any of these four reasons all produced the exact same caller-side message ("No
-	// physical GPU could be found with the required extensions and swap chain support.")
-	// - on a platform with exactly one possible device (MoltenVK on iOS), that told
-	// nobody which of the four actually failed. Logged here instead, once, at the point
-	// that already has the answer, rather than guessed at afterward from a device with
-	// no Vulkan validation layer output attached.
+	// Each rejection is logged with its reason so a failed device can be diagnosed from the log.
 	VkPhysicalDeviceProperties deviceProperties{};
 	vkGetPhysicalDeviceProperties(device, &deviceProperties);
 
@@ -2213,22 +2220,8 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 			// not signaled
 			break;
 		}
-		// A real device loss (GPU fault/timeout, or a lost connection to the driver) is
-		// PERMANENT - every future fence query on this device returns the same error
-		// forever, since no command buffer this device owns can ever actually finish
-		// again. Before this, that meant an unthrottled infinite spin right here: this
-		// loop's own condition never changes (m_commandBufferSyncIndex can only ever
-		// advance in the VK_SUCCESS branch above), cemu_assert_debug() is a no-op in
-		// Release, and there was nothing else to stop it - the exact repeated-every-
-		// millisecond "vkGetFenceStatus returned unexpected error -4" flood confirmed on
-		// device is what that spin looks like from the log. WaitCommandBufferFinished()'s
-		// own while loop calls straight back into this, so whatever thread hit this
-		// (the GPU/Latte thread, holding whatever locks/state it held) never yielded
-		// again - which is what actually made the whole app look frozen, not anything in
-		// the input path. UnrecoverableError() throws, which at least turns a silent,
-		// permanent, undiagnosable hang into a real crash with a log line explaining why.
-		// A full live-recreate of the swapchain/device is real future work, not something
-		// to improvise here.
+		// Device loss is permanent: every later fence query fails the same way and this loop would
+		// spin forever, so fail loudly instead of hanging the calling thread.
 		if (fenceStatus == VK_ERROR_DEVICE_LOST)
 			UnrecoverableError("Vulkan device lost - a command buffer's fence can never signal again");
 		cemuLog_log(LogType::Force, "vkGetFenceStatus returned unexpected error {}", (sint32)fenceStatus);

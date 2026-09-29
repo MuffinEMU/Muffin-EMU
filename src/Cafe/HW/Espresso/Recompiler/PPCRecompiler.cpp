@@ -163,11 +163,7 @@ bool PPCRecompiler_readTXMEnvVar()
 
 static void PPCRecompiler_finishJitMappingSession()
 {
-    // Both PPCRecompiler_init() and the arena setup end a mapping session, so on a TXM
-    // device this ran twice per launch and the second JIT26Detach() trapped into a
-    // debugger that had already let go. Detaching is a once-per-process operation, so
-    // latch it: exchange() also makes the two call sites safe if they ever stop being
-    // on the same thread.
+    // Detaching the TXM debugger is once-per-process (both call sites end a mapping session), so latch it.
     static std::atomic<bool> s_txmDetached{false};
     if (PPCRecompiler_readTXMEnvVar() && !s_txmDetached.exchange(true))
     {
@@ -291,6 +287,7 @@ struct DualMapArena
         {
             cemuLog_log(LogType::Force, "JIT arena: allocation failed (rw={:p} rx={:p} size={}MB)",
                 region.rwAlias, region.rxAlias, size / 1024 / 1024);
+            region = {}; // don't keep a size with null aliases; reset() would publish a range at nullptr
             return false;
         }
         reset();
@@ -369,22 +366,9 @@ struct DualMapArena
             freeRanges.emplace(0, region.size);
 
 #if BOOST_OS_IOS
-        // Hand the physical pages back, not just the offsets.
-        //
-        // The arena is one anonymous mmap, so its SIZE is address space and its cost is
-        // only the pages actually written - which is why a large arena is close to free
-        // until it is used. But once written, those pages stay resident, and clearing
-        // freeRanges alone only forgets about them: the process keeps every page of
-        // translated code it ever emitted, for the rest of its life, against a jetsam
-        // limit that does not care that the code is dead.
-        //
-        // MADV_FREE tells the kernel the contents no longer matter. It reclaims the
-        // pages under memory pressure and the footprint drops, while the mapping itself
-        // stays exactly where it is - which it must, because generated code branches
-        // within this region by address.
-        //
-        // Only ever called with no live code: from init() on a fresh mapping, and from
-        // the shutdown path, which disables the recompiler in the same breath.
+        // Return the physical pages to the kernel (MADV_FREE); the mapping stays in place because
+        // generated code branches within it by address. Only called with no live code (init on a fresh
+        // mapping, and shutdown).
         if (region.rwAlias && region.size)
             madvise(region.rwAlias, region.size, MADV_FREE);
 #endif
@@ -1292,39 +1276,11 @@ bool PPCRecompiler_Init26() {
     
     try
     {
-        // Step down rather than give up.
-        //
-        // This asked for exactly 1 GiB and, if that one reservation failed, switched the
-        // recompiler off entirely - so a device that could not spare a gigabyte of
-        // address space fell all the way back to the interpreter, which is roughly an
-        // order of magnitude slower. That is a cliff, and nothing about it was
-        // necessary: a 256 MiB arena still runs JIT-compiled code at JIT speed. It just
-        // recycles blocks more often.
-        //
-        // 1 GiB is still tried first, so a device where it already worked is completely
-        // unaffected. The smaller sizes only ever come into play where the alternative
-        // was no recompiler at all.
-        //
-        // This is also where com.apple.developer.kernel.increased-memory-limit and
-        // extended-virtual-addressing earn their keep: both make the largest reservation
-        // more likely to succeed, and the largest arena is the one that recycles least.
-        // Retrying is safe - init() re-calls PPCRecompiler_allocateDualMap(), which
-        // reports failure as null aliases rather than leaving a half-built region.
+        // Try progressively smaller arenas before falling back to the interpreter. init() reports
+        // failure as null aliases, so retrying is safe.
         constexpr size_t kMB = 1024ull * 1024ull;
-        // Reaches well past 1 GiB now, and that is close to free.
-        //
-        // The arena is an anonymous mmap: its size is a RESERVATION of address space, and
-        // physical pages are only backed when something writes to them. So asking for
-        // 3 GiB does not take 3 GiB - it takes as much as the translated code actually
-        // occupies, exactly as 1 GiB did, and simply stops being a ceiling so soon.
-        // extended-virtual-addressing is what makes reservations this size plausible on
-        // a 64-bit iOS process.
-        //
-        // What a bigger arena buys is fewer flushes: when it fills, every block of
-        // translated code is thrown away and retranslated from scratch. What it does NOT
-        // buy is speed beyond that - once the arena comfortably holds a title's working
-        // set of translated code, more room does nothing at all, so this is a ceiling
-        // being raised rather than a dial being turned up.
+        // The arena is an anonymous mmap: its size only reserves address space, pages are backed when
+        // written. A larger arena means fewer full flushes of translated code.
         constexpr size_t kArenaSizes[] = {
             3072 * kMB, 2560 * kMB, 2048 * kMB, 1536 * kMB,
             1024 * kMB, 512 * kMB, 256 * kMB, 128 * kMB, 64 * kMB
@@ -1455,12 +1411,8 @@ void PPCRecompiler_init()
     }
     
     bool init26 = false;
-    // Whether PPCRecompiler_Init26() actually ran THIS call, as opposed to init26 simply
-    // defaulting to false because dual-map was already set up by an earlier call
-    // (ppcRecompilerInited already true - see the UAF fix above, the arena and
-    // ppcRecompilerInstanceData are both allocated once for the process, not re-touched
-    // on a second title launch). Only this case means "we just tried and it failed";
-    // the other three call sites of `!init26` below only mean "we didn't need to try".
+    // True only if PPCRecompiler_Init26() ran in this call (not skipped because the arena and
+    // instance data already exist from an earlier title launch).
     const bool attemptedInit26 = s_dualMapJITEnabled && !ppcRecompilerInited;
     if (attemptedInit26)
     {
@@ -1469,22 +1421,9 @@ void PPCRecompiler_init()
 
     if (attemptedInit26 && !init26)
     {
-        // Dual-mapped JIT was actually attempted just now and genuinely failed - a real
-        // vm_remap/allocation failure, logged by PPCRecompiler_Init26() itself
-        // ("JIT arena allocation failed, disabling JIT"), which already set
-        // ppcRecompilerEnabled = false. This used to fall straight through to the
-        // `!init26` fallback below regardless of why init26 was false, which on iOS is
-        // the DUAL-MAP path's own one-time setup, not a working alternative JIT scheme -
-        // and control then reached "Recompiler initialized" / ppcRecompilerEnabled =
-        // true unconditionally a few lines down, silently overwriting the `false`
-        // PPCRecompiler_Init26() had just set. The result: a title reported as running
-        // the recompiler while every actual code-generation request failed forever
-        // ("JIT arena: no free range for 4096 bytes", over and over) because the arena
-        // backing it was never allocated - the CPU thread never made progress again
-        // while audio, input and whatever frame was already on screen kept going,
-        // which is exactly what looks like "everything but rendering is frozen" from
-        // outside. Bail to the interpreter here instead, the same way the CS_DEBUGGED
-        // and command-line checks above already do.
+        // Dual-mapped JIT was attempted and failed (logged by PPCRecompiler_Init26(), which already
+        // disabled the recompiler). Fall back to the interpreter instead of continuing to enable it,
+        // which would leave code generation failing forever.
         cemuLog_log(LogType::Force, "Recompiler disabled: the JIT memory arena could not be allocated");
         ppcRecompilerEnabled = false;
         PPCCore_InitializePointer(false);
@@ -1492,9 +1431,7 @@ void PPCRecompiler_init()
     }
 
     if (!init26) {
-        // Same reasoning as PPCRecompiler_Init26() above: allocate once per process, not
-        // on every call, or the platform's recompiler trampolines outlive the memory
-        // their generated code was pointed at.
+        // Allocate once per process, not on every call.
         if (!ppcRecompilerInstanceData)
         {
         debug_printf("Allocating %dMB for recompiler instance data...\n", (sint32)(sizeof(PPCRecompilerInstanceData_t) / 1024 / 1024));

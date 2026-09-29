@@ -49,13 +49,9 @@ namespace coreinit
 
 	/* 64bit atomic operations */
 
-	// The guest only has to give these a 4-byte aligned pointer. Espresso has no 64-bit
-	// atomic instruction, so coreinit implements them with a lock internally and alignment
-	// never mattered on the console. std::atomic<uint64be> is happy with that on x86, but
-	// on AArch64 it lowers to exclusive load/store pairs that fault on a misaligned address
-	// (SIGBUS on device - seen in Angry Birds Star Wars, which hands OSSetAtomic64 a counter
-	// that is only 4-byte aligned). Serialise the misaligned case behind our own lock and do
-	// a plain read-modify-write instead. The aligned path is untouched and stays lock-free.
+	// Guests may pass 4-byte aligned pointers. std::atomic<uint64be> on AArch64 uses exclusive
+	// load/store pairs that fault on a misaligned address, so the misaligned case is serialised behind
+	// a lock. The aligned path stays lock-free.
 	static std::mutex s_unalignedAtomic64Mutex;
 
 	static inline bool IsAtomic64Aligned(const void* mem)

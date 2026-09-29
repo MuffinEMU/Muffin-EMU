@@ -204,6 +204,8 @@ MetalRenderer::MetalRenderer()
 
     // Null resources
     m_nullBuffer = m_device->newBuffer(64 * 1024, MTL::ResourceStorageModeShared);
+    if (!m_nullBuffer)
+        throw std::runtime_error("Metal: could not allocate the null buffer");
     std::memset(m_nullBuffer->contents(), 0, m_nullBuffer->length());
 #ifdef CEMU_DEBUG_ASSERT
     m_nullBuffer->setLabel(GetLabel("Null buffer", m_nullBuffer));
@@ -222,6 +224,8 @@ MetalRenderer::MetalRenderer()
     textureDescriptor->setHeight(1);
     textureDescriptor->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageRenderTarget);
     m_nullTexture2D = m_device->newTexture(textureDescriptor);
+    if (!m_nullTexture2D)
+        throw std::runtime_error("Metal: could not allocate the null 2D texture");
 #ifdef CEMU_DEBUG_ASSERT
     m_nullTexture2D->setLabel(GetLabel("Null texture 2D", m_nullTexture2D));
 #endif
@@ -240,6 +244,8 @@ MetalRenderer::MetalRenderer()
 
     // Occlusion queries
     m_occlusionQuery.m_resultBuffer = m_device->newBuffer(OCCLUSION_QUERY_BUFFER_COUNT * OCCLUSION_QUERY_POOL_SIZE * sizeof(uint64), MTL::ResourceStorageModeShared);
+    if (!m_occlusionQuery.m_resultBuffer)
+        throw std::runtime_error("Metal: could not allocate the occlusion query result buffer");
 #ifdef CEMU_DEBUG_ASSERT
     m_occlusionQuery.m_resultBuffer->setLabel(GetLabel("Occlusion query result buffer", m_occlusionQuery.m_resultBuffer));
 #endif
@@ -677,6 +683,8 @@ ImTextureID MetalRenderer::GenerateTexture(const std::vector<uint8>& data, const
         desc->setUsage(MTL::TextureUsageShaderRead);
 
         MTL::Texture* texture = m_device->newTexture(desc);
+        if (!texture)
+            return nullptr;
 
         // TODO: do a GPU copy?
         texture->replaceRegion(MTL::Region(0, 0, size.x, size.y), 0, 0, tmp.data(), size.x * 4, 0);
@@ -1103,13 +1111,7 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
 
 LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView* textureView)
 {
-    // Force the readback buffer into existence here. It is allocated lazily, on the first
-    // readback of a session - so a 32 MB request lands mid-gameplay, which on iOS is the
-    // worst moment to ask for one. LatteTextureReadbackInfoMtl uses it in two places that
-    // cannot refuse: StartTransfer() hands it to copyFromTexture() as the blit destination,
-    // and GetData() returns contents() + offset straight to the caller, which memcpys from
-    // it without a null check. Both callers of this function already treat a null return as
-    // "skip this readback", so that is the seam to fail at.
+    // The readback buffer is allocated lazily; a null return here makes callers skip the readback.
     if (!GetTextureReadbackBuffer())
     {
         cemuLog_logOnce(LogType::Force,
@@ -1118,7 +1120,16 @@ LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView
         return nullptr;
     }
 
-    size_t uploadSize = static_cast<LatteTextureMtl*>(textureView->baseTexture)->GetTexture()->allocatedSize();
+    MTL::Texture* mtlTexture = static_cast<LatteTextureMtl*>(textureView->baseTexture)->GetTexture();
+    if (!mtlTexture)
+        return nullptr;
+
+    size_t uploadSize = mtlTexture->allocatedSize();
+    if (uploadSize > TEXTURE_READBACK_SIZE)
+    {
+        cemuLog_logOnce(LogType::Force, "Metal: texture is too large for the {} MB readback buffer; skipping readback", TEXTURE_READBACK_SIZE / (1024 * 1024));
+        return nullptr;
+    }
 
     if ((m_readbackBufferWriteOffset + uploadSize) > TEXTURE_READBACK_SIZE)
     {
@@ -1808,7 +1819,9 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     // Draw
     if (usesGeometryShader)
     {
-        if (hostIndexType != INDEX_TYPE::NONE && vertexShader->resourceMapping.argumentBufferBindingPoint < 0)
+        // indexAllocationMtl is null when index memory could not be reserved; skip the draw then.
+        const bool indexMemoryMissing = hostIndexType != INDEX_TYPE::NONE && !indexAllocationMtl;
+        if (hostIndexType != INDEX_TYPE::NONE && !indexMemoryMissing && vertexShader->resourceMapping.argumentBufferBindingPoint < 0)
             SetBuffer(renderCommandEncoder, METAL_SHADER_TYPE_OBJECT, indexAllocationMtl->mtlBuffer, indexAllocationMtl->bufferOffset, vertexShader->resourceMapping.indexBufferBinding);
 
         uint8 hostIndexTypeU8 = (uint8)hostIndexType;
@@ -1843,7 +1856,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         }
 
         uint64 threadgroupCount = primitivesPerInstance * instanceCount;
-        if (threadgroupCount > 0)
+        if (threadgroupCount > 0 && !indexMemoryMissing)
             renderCommandEncoder->drawMeshThreadgroups(MTL::Size(threadgroupCount, 1, 1), MTL::Size(verticesPerPrimitive, 1, 1), MTL::Size(1, 1, 1));
     }
     else if (usesVertexStreamout)
