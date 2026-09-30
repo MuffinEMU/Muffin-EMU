@@ -64,6 +64,7 @@ struct SetupView: View {
     @State private var repeatCount = 1
     @State private var seedText = "1"
     @State private var logProfile = 1
+    @State private var capsLine = ""
 
     var body: some View {
         NavigationView {
@@ -75,6 +76,9 @@ struct SetupView: View {
                     LabeledValue("MuffinEMU", "\(BuildInfo.plist("AuditMuffinRef")) @ \(String(BuildInfo.plist("AuditMuffinSha").prefix(10)))")
                     LabeledValue("Core fingerprint", String(BuildInfo.plist("AuditCoreFingerprint").prefix(16)))
                     LabeledValue("Audit app", "\(BuildInfo.appVersion) (\(BuildInfo.appBuild))")
+                }
+                Section(header: Text("This device")) {
+                    Text(capsLine.isEmpty ? "Reading the device capabilities..." : capsLine).font(.system(.caption, design: .monospaced))
                 }
                 Section(header: Text("Suites")) {
                     ForEach(session.catalogue.suites, id: \.suite) { s in
@@ -117,7 +121,10 @@ struct SetupView: View {
                 }
             }
             .navigationTitle("MuffinEMU Audit")
-            .onAppear { if suiteIds.isEmpty { suiteIds = Set(session.catalogue.suites.map { $0.suite }) } }
+            .onAppear {
+                if suiteIds.isEmpty { suiteIds = Set(session.catalogue.suites.map { $0.suite }) }
+                if capsLine.isEmpty { capsLine = CoreDriver.shared.captureCapabilities().line }
+            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
     }
