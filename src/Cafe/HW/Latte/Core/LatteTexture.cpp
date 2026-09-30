@@ -967,6 +967,9 @@ void LatteTexture_DeleteAbsorbedSubtextures(LatteTexture* texture)
 
 void LatteTexture_RecreateTextureWithDifferentMipSliceCount(LatteTexture* texture, MPTR physMipAddr, sint32 newMipCount, sint32 newDepth)
 {
+	// the allocation inside LatteTexture_CreateTexture() below can evict textures that haven't been used for a few frames (iOS budget eviction, or the out-of-memory retry).
+	// 'texture' is used again after that call, so it must not be eligible
+	LatteTC_MarkTextureStillInUse(texture);
 	Latte::E_DIM newDim = texture->dim;
 	if (newDim == Latte::E_DIM::DIM_2D && newDepth > 1)
 		newDim = Latte::E_DIM::DIM_2D_ARRAY;
