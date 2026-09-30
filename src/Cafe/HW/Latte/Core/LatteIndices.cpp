@@ -45,6 +45,22 @@ void LatteIndices_invalidate(const void* memPtr, uint32 size)
 	}
 }
 
+// Drops every cached entry WITHOUT releasing its index memory. The cache is global and outlives the renderer,
+// so entries made for a renderer that has been destroyed point into its freed allocator: releasing them
+// against the next renderer corrupts that allocator's bookkeeping, and reusing one as a cache hit draws from
+// a freed buffer. Called when a renderer is created and before it is destroyed.
+void LatteIndices_forgetAll()
+{
+	for(auto& entry : LatteIndexCache.entry)
+	{
+		entry.lastPtr = nullptr;
+		entry.lastCount = 0;
+		entry.lastUsed = 0;
+		entry.indexAllocation = {};
+	}
+	LatteIndexCache.currentUsageCounter = 0;
+}
+
 void LatteIndices_invalidateAll()
 {
 	for(auto& entry : LatteIndexCache.entry)

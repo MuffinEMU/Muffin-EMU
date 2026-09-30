@@ -127,7 +127,11 @@ bool MetalLayerHandle::AcquireDrawable()
         return true;
 
     // nextDrawable() returns an autoreleased object; retain it until PresentDrawable() or the destructor releases it.
-    m_drawable = m_layer->nextDrawable();
+    // It can block (up to a second) when every drawable is still in use, so it leaves a breadcrumb.
+    {
+        LatteWait::Scope waitScope("waiting for a screen drawable", LatteWait::Kind::Display);
+        m_drawable = m_layer->nextDrawable();
+    }
     if (!m_drawable)
     {
         auto& state = LatteWait::Get();

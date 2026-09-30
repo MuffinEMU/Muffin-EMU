@@ -14,7 +14,7 @@ enum RendererAPI: Int, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .metal:  return "Metal"
-        case .vulkan: return "Vulkan (MoltenVK)"
+        case .vulkan: return "Vulkan (Experimental)"
         }
     }
 
@@ -98,7 +98,7 @@ struct GraphicsSettingsSection: View {
     @AppStorage(RendererAPI.storageKey) private var rendererRaw = RendererAPI.defaultValue.rawValue
     @AppStorage(UpscaleFilterSetting.storageKey) private var upscaleRaw = UpscaleFilterSetting.defaultValue.rawValue
     @AppStorage(DownscaleFilterSetting.storageKey) private var downscaleRaw = DownscaleFilterSetting.defaultValue.rawValue
-    @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.balanced.rawValue
+    @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.deviceDefault.rawValue
     @AppStorage("muffin.render.vsync") private var vsyncEnabled = true
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
@@ -110,7 +110,7 @@ struct GraphicsSettingsSection: View {
     @AppStorage(OverrideGammaSetting.storageKey) private var overrideGammaValue = OverrideGammaSetting.defaultValue
 
     private var renderScale: RenderScale {
-        RenderScale(rawValue: renderScaleRaw) ?? .balanced
+        RenderScale(rawValue: renderScaleRaw) ?? RenderScale.deviceDefault
     }
 
     var body: some View {
@@ -157,7 +157,16 @@ struct GraphicsSettingsSection: View {
                 // Picking Vulkan again is a retry: forget that it failed to start before
                 if newValue == RendererAPI.vulkan.rawValue {
                     UserDefaults.standard.removeObject(forKey: "muffin.render.vulkanFailedBuild")
+                    UserDefaults.standard.removeObject(forKey: "muffin.render.vulkanFailureReason")
                 }
+            }
+            Text("Experimental: Vulkan runs through MoltenVK on top of Metal. Some games may draw wrongly or stop, and if Vulkan fails the next launch switches back to Metal.")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+            if let reason = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailureReason"), !reason.isEmpty {
+                Text("Last Vulkan failure: \(reason)")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
             }
             if let failedBuild = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailedBuild"),
                rendererRaw == RendererAPI.metal.rawValue {
