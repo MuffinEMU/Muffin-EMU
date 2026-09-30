@@ -189,6 +189,7 @@ public:
 	// this latches a flag, tells the platform layer to stop the title (on iOS: the bridge, which also remembers that Vulkan
 	// failed), and from then on every wait and submit in this renderer completes immediately instead of touching the dead device.
 	void HandleDeviceLost(const char* what);
+	uint64 GetTextureBudgetBytes() const { return m_textureBudgetBytes; } // 0 = no cap
 	bool IsDeviceLost() const { return m_deviceLost.load(std::memory_order_acquire); }
 
 	void GetDeviceFeatures();
@@ -472,6 +473,7 @@ private:
 			bool portability_subset = false; // VK_KHR_portability_subset (MoltenVK). The spec requires enabling it whenever the device lists it
 		}deviceExtensions;
 
+		bool geometryShader = false; // the core geometryShader feature was enabled on the device (never on MoltenVK). Without it GS stages can't be used
 		bool samplerMirrorClampToEdgeCore = false; // Vulkan 1.2 samplerMirrorClampToEdge, used when the extension is not listed
 
 		struct
@@ -598,6 +600,8 @@ private:
 	VkDevice  m_logicalDevice = VK_NULL_HANDLE;
 	VkDebugUtilsMessengerEXT m_debugCallback = nullptr;
 	std::atomic_bool m_deviceLost{ false };
+	uint64 m_textureBudgetBytes = 0;
+	std::atomic_bool m_initializeCalled{ false }; // Initialize() ran, so the GPU thread owns this renderer and failures stop the title
 	volatile bool m_destructionRequested = false;
 
 	QueueFamilyIndices m_indices{};
