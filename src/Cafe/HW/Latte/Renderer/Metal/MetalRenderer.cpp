@@ -3056,11 +3056,9 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     const uint64 available = os_proc_available_memory();
     if (m_startAvailableMemory == 0)
         m_startAvailableMemory = available;
-    const bool smallHeadroom = m_startAvailableMemory < 1536ull * MB;
-    const uint64 lowPercent = smallHeadroom ? 45 : 35;
-    const uint64 criticalPercent = smallHeadroom ? 25 : 20;
-    const uint64 lowMark = std::max<uint64>(m_startAvailableMemory * lowPercent / 100, std::min<uint64>(600ull * MB, m_startAvailableMemory / 2));
-    const uint64 criticalMark = std::max<uint64>(m_startAvailableMemory * criticalPercent / 100, std::min<uint64>(400ull * MB, m_startAvailableMemory * 30 / 100));
+    // One rule for every device, in DeviceCaps::EvictionMarks (Common/DeviceCapabilities.h).
+    uint64 lowMark, criticalMark;
+    const bool smallHeadroom = DeviceCaps::EvictionMarks(DeviceCaps::GetBudgets(), m_startAvailableMemory, lowMark, criticalMark);
     static bool s_loggedMemoryMarks = false;
     if (!s_loggedMemoryMarks && m_startAvailableMemory != 0)
     {

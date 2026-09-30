@@ -162,35 +162,28 @@ namespace DeviceCaps
 	}
 
 	// Eviction marks for the Metal texture cache, from what the process had free when the first
-	// frame was presented. The fractions are what shipped (35% and 20%); the absolute floors were
-	// measured on a device with about 4.5 GB free, so on a device with much less they are capped
-	// to a share of what it really has instead of evicting from the first frame.
-	inline void EvictionMarks(const Budgets& b, uint64_t startAvailable, uint64_t& lowMark, uint64_t& criticalMark)
-	{
-		if (startAvailable == 0) // os_proc_available_memory() failed: keep the measured floors as they are
-		{
-			lowMark = b.evictLowFloorBytes;
-			criticalMark = b.evictCriticalFloorBytes;
-			return;
-		}
-		const uint64_t lowFloor = std::min<uint64_t>(b.evictLowFloorBytes, startAvailable * 55 / 100);
-		const uint64_t criticalFloor = std::min<uint64_t>(b.evictCriticalFloorBytes, startAvailable * 35 / 100);
-		lowMark = std::max<uint64_t>(lowFloor, startAvailable * 35 / 100);
-		criticalMark = std::max<uint64_t>(criticalFloor, startAvailable * 20 / 100);
-	}
-
-	// When the running title is this close to the limit, say so while a save state still works.
-	// 160 MB is what shipped; a device with far more headroom gets proportionally more margin,
-	// because it also allocates in bigger steps. The recovery mark is the old 300/160 ratio above it.
-	inline uint64_t OutOfMemoryMarkBytes(uint64_t availableAtLaunch)
+	// frame was presented. Below 1.5 GB of headroom the device is small: it keeps a larger share in
+	// reserve (45% and 25% instead of the shipped 35% and 20%), because a texture dropped early only
+	// costs a re-upload while a process killed for memory costs the whole session. The absolute
+	// floors were measured on a device with about 4.5 GB free, so they are capped to a share of the
+	// headroom the device really has (50% and 30%) instead of evicting from the first frame.
+	// Returns true for the small-headroom class. An unreadable headroom (0) gives marks of 0: no
+	// eviction is requested from a number that means nothing.
+	inline bool EvictionMarks(const Budgets& b, uint64_t startAvailable, uint64_t& lowMark, uint64_t& criticalMark)
 	{
 		constexpr uint64_t MB = 1024ull * 1024ull;
-		return std::max<uint64_t>(160 * MB, availableAtLaunch * 3 / 100);
+		const bool small = startAvailable < 1536 * MB;
+		const uint64_t lowPercent = small ? 45 : 35;
+		const uint64_t criticalPercent = small ? 25 : 20;
+		lowMark = std::max<uint64_t>(startAvailable * lowPercent / 100, std::min<uint64_t>(b.evictLowFloorBytes, startAvailable / 2));
+		criticalMark = std::max<uint64_t>(startAvailable * criticalPercent / 100, std::min<uint64_t>(b.evictCriticalFloorBytes, startAvailable * 30 / 100));
+		return small;
 	}
-	inline uint64_t OutOfMemoryRecoveredBytes(uint64_t availableAtLaunch)
-	{
-		return OutOfMemoryMarkBytes(availableAtLaunch) * 15 / 8;
-	}
+
+	// There is deliberately no low-memory card threshold here. The video-stall watchdog
+	// (ios/Bridge/StallDetector.h, unit-tested in ci/stall-detector-test.cpp) owns it, as fractions of
+	// the process's own memory limit (warn below 4%, clear above 7%, 32 MB floor), so it already scales
+	// with the device without a tier.
 
 	namespace detail
 	{
