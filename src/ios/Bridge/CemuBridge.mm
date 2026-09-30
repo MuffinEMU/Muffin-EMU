@@ -1601,7 +1601,7 @@ void cemu_bridge_initialize(const char* mlcPath) {
     }
 
     // The library screen can call KeyCache_Prepare() (via a TitleInfo for a .wud/.wux/
-    // NUS dump already in the library) before this point, which permanently latches the
+    // encrypted game folder already in the library) before this point, which permanently latches the
     // key cache against whatever keys.txt path was in effect before CemuInitialize() (the
     // only thing that calls ActiveSettings::SetPaths() on this core) has run. Re-arm the
     // latch right before that call, so the next KeyCache_Prepare() reads keys.txt from
