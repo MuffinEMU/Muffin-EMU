@@ -160,7 +160,7 @@ bool cemu_bridge_video_stalled(void);
 /// Why the picture is flagged by cemu_bridge_video_stalled(): 0 = not flagged, 1 = no new
 /// frames for several seconds, 2 = the GPU reported an error (a page fault, for example) and
 /// iOS is no longer running this app's GPU work, 3 = the screen's layer cannot get frame
-/// buffers (out of memory for the screen). Kind 2 does not clear until the title stops; 3
+/// buffers (out of memory for the screen), 4 = the app is nearly out of memory. Kind 2 does not clear until the title stops; 3
 /// clears when drawables come back.
 int cemu_bridge_video_stall_kind(void);
 
