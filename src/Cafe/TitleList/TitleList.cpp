@@ -169,17 +169,23 @@ void CafeTitleList::SetMLCPath(fs::path path)
 
 void CafeTitleList::Refresh()
 {
-	std::unique_lock _lock(sTLMutex);
-	cemu_assert_debug(sTLInitialized);
-	sTLRefreshRequests++;
-	if (!sTLRefreshWorkerActive)
+	// The previous worker is joined after the lock is released: it takes the same lock to store the cache file
+	// as its last step, so joining it while holding the lock could wait on it forever.
+	std::thread previousWorker;
 	{
-		if (sTLRefreshWorker.joinable())
-			sTLRefreshWorker.join();
-		sTLRefreshWorkerActive = true;
-		sTLRefreshWorker = std::thread(RefreshWorkerThread);
+		std::unique_lock _lock(sTLMutex);
+		cemu_assert_debug(sTLInitialized);
+		sTLRefreshRequests++;
+		if (!sTLRefreshWorkerActive)
+		{
+			previousWorker = std::move(sTLRefreshWorker);
+			sTLRefreshWorkerActive = true;
+			sTLRefreshWorker = std::thread(RefreshWorkerThread);
+		}
+		sTLIsScanMandatory = false;
 	}
-	sTLIsScanMandatory = false;
+	if (previousWorker.joinable())
+		previousWorker.join();
 }
 
 bool CafeTitleList::IsScanning()
@@ -224,7 +230,12 @@ void CafeTitleList::AddTitleFromPath(fs::path path)
 		}
 		// enumerate all contained titles
 		ZArchiveNodeHandle rootDir = zar->LookUp("", false, true);
-		cemu_assert(rootDir != ZARCHIVE_INVALID_NODE);
+		if (rootDir == ZARCHIVE_INVALID_NODE)
+		{
+			cemuLog_log(LogType::Force, "Found {} but its root directory cannot be read", _pathToUtf8(path));
+			delete zar;
+			return;
+		}
 		for (uint32 i = 0; i < zar->GetDirEntryCount(rootDir); i++)
 		{
 			ZArchiveReader::DirEntry dirEntry;
@@ -259,36 +270,67 @@ void CafeTitleList::AddTitleFromPath(fs::path path)
 bool CafeTitleList::RefreshWorkerThread()
 {
 	SetThreadName("TitleListWorker");
-	while (sTLRefreshRequests.load())
+	while (true)
 	{
-		sTLRefreshRequests.store(0);
-		// create copies of all the paths
-		sTLMutex.lock();
-		fs::path mlcPath = sTLMLCPath;
-		std::vector<fs::path> gamePaths = sTLScanPaths;
-		// remember the current list of known titles
-		// during the scanning process we will erase matches from the pending list
-		// at the end of scanning, we can then use this list to identify and remove any titles that are no longer discoverable
-		sTLListPending = sTLList;
-		sTLMutex.unlock();
-		// scan game paths
-		for (auto& it : gamePaths)
-			ScanGamePath(it);
-		// scan MLC
-		if (!mlcPath.empty())
+		fs::path mlcPath;
+		std::vector<fs::path> gamePaths;
 		{
-			std::error_code ec;
-			for (auto& it : fs::directory_iterator(mlcPath / "usr/title", ec))
+			std::unique_lock _lock(sTLMutex);
+			// Decided under the lock that Refresh() also takes, so a request made while the worker is
+			// finishing is either seen here or starts a new worker, never lost
+			if (sTLRefreshRequests.load() == 0)
 			{
-				if (!it.is_directory(ec))
-					continue;
-				ScanMLCPath(it.path());
+				sTLRefreshWorkerActive = false;
+				// send notification that scanning finished
+				CafeTitleListCallbackEvent evt;
+				evt.eventType = CafeTitleListCallbackEvent::TYPE::SCAN_FINISHED;
+				evt.titleInfo = nullptr;
+				for (auto& it : sTLCallbackList)
+					it.cb(&evt, it.ctx);
+				break;
 			}
-			ScanMLCPath(mlcPath / "sys/title/00050010");
-			ScanMLCPath(mlcPath / "sys/title/00050030");
+			sTLRefreshRequests.store(0);
+			// create copies of all the paths
+			mlcPath = sTLMLCPath;
+			gamePaths = sTLScanPaths;
+			// remember the current list of known titles
+			// during the scanning process we will erase matches from the pending list
+			// at the end of scanning, we can then use this list to identify and remove any titles that are no longer discoverable
+			sTLListPending = sTLList;
 		}
-
-		// remove any titles that are still pending
+		try
+		{
+			// scan game paths
+			for (auto& it : gamePaths)
+				ScanGamePath(it);
+			// scan MLC
+			if (!mlcPath.empty())
+			{
+				std::error_code ec;
+				for (auto& it : fs::directory_iterator(mlcPath / "usr/title", ec))
+				{
+					if (!it.is_directory(ec))
+						continue;
+					ScanMLCPath(it.path());
+				}
+				ScanMLCPath(mlcPath / "sys/title/00050010");
+				ScanMLCPath(mlcPath / "sys/title/00050030");
+			}
+		}
+		catch (const std::exception& ex)
+		{
+			// One unreadable folder must not end the scan thread, which would take the app down with it
+			cemuLog_log(LogType::Force, "Title scan stopped early: {}", ex.what());
+			{
+				// titles that were not reached stay in the list
+				std::unique_lock _lock(sTLMutex);
+				sTLListPending.clear();
+			}
+			continue;
+		}
+		// remove any titles that are still pending. Under the lock: titles are added from other threads while a
+		// scan runs (a launch adds the title it is starting), and this erases from the same containers
+		std::unique_lock _lock(sTLMutex);
 		for (auto& itPending : sTLListPending)
 		{
 			_RemoveTitleFromMultimap(itPending);
@@ -308,20 +350,14 @@ bool CafeTitleList::RefreshWorkerThread()
 		}
 		sTLListPending.clear();
 	}
-	sTLMutex.lock();
-	sTLRefreshWorkerActive = false;
-	// send notification that scanning finished
-	CafeTitleListCallbackEvent evt;
-	evt.eventType = CafeTitleListCallbackEvent::TYPE::SCAN_FINISHED;
-	evt.titleInfo = nullptr;
-	for (auto& it : sTLCallbackList)
-		it.cb(&evt, it.ctx);
-	sTLMutex.unlock();
-	if (sTLCacheDirty)
+	bool storeCache = false;
 	{
-		StoreCacheFile();
+		std::unique_lock _lock(sTLMutex);
+		storeCache = sTLCacheDirty;
 		sTLCacheDirty = false;
 	}
+	if (storeCache)
+		StoreCacheFile();
 	return true;
 }
 
@@ -417,7 +453,7 @@ void CafeTitleList::ScanMLCPath(const fs::path& path)
 	std::error_code ec;
 	for (auto& it : fs::directory_iterator(path, ec))
 	{
-		if (!it.is_directory())
+		if (!it.is_directory(ec))
 			continue;
 		// only scan directories which match the title id naming scheme
 		std::string dirName = _pathToUtf8(it.path().filename());
@@ -553,7 +589,8 @@ void CafeTitleList::UnregisterCallback(uint64 id)
 {
 	std::unique_lock _lock(sTLMutex);
 	auto it = std::find_if(sTLCallbackList.begin(), sTLCallbackList.end(), [id](auto& e) { return e.uniqueId == id; });
-	cemu_assert(it != sTLCallbackList.end()); // must be a valid callback
+	if (it == sTLCallbackList.end())
+		return; // not registered (or already removed)
 	sTLCallbackList.erase(it);
 }
 
