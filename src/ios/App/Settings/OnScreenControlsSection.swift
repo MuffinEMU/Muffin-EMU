@@ -28,6 +28,8 @@ struct OnScreenControlsSection: View {
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
     @AppStorage(MeloControlsSetting.storageKey)
     private var useMeloControls = MeloControlsSetting.defaultValue
+    @AppStorage(TouchLabSettings.schemeKey)
+    private var touchLabScheme = TouchLabSettings.defaultScheme
     @State private var showingResetLayoutConfirmation = false
     @State private var showingResetBindingsConfirmation = false
     /// Shows the binding count so a reset can be confirmed.
@@ -37,8 +39,14 @@ struct OnScreenControlsSection: View {
         ControllerGeometry.StickGate(rawValue: stickGateRaw) ?? ControllerLayoutSettings.defaultStickGate
     }
 
+    /// A TouchLab style is chosen. It carries its own layout, so the rows that only apply to
+    /// MuffinEMU's pad (analog-stick mode, comfort controls) are hidden.
+    private var usingTouchLab: Bool { TouchLabSettings.isTouchLab(touchLabScheme) }
+
     var body: some View {
         Section {
+            TouchLabStyleSettingsRows()
+
             Toggle(isOn: $useMeloControls) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Use melo-controls")
@@ -52,22 +60,25 @@ struct OnScreenControlsSection: View {
             }
             .tint(MuffinTheme.pixelBlue)
 
-            Toggle(isOn: $joystickMode) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Add analog sticks")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(joystickMode
-                         ? "Both sticks shown alongside the d-pad and face buttons, not instead of them."
-                         : "Just the d-pad and face buttons, from the measured layout.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+            if !usingTouchLab {
+                Toggle(isOn: $joystickMode) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Add analog sticks")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text(joystickMode
+                             ? "Both sticks shown alongside the d-pad and face buttons, not instead of them."
+                             : "Just the d-pad and face buttons, from the measured layout.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
                 }
+                .tint(MuffinTheme.pixelBlue)
             }
-            .tint(MuffinTheme.pixelBlue)
 
             // Only while the mode they belong to is on. A deadzone slider
-            // under a d-pad is a control with nothing behind it.
-            if joystickMode {
+            // under a d-pad is a control with nothing behind it. The TouchLab styles always
+            // have sticks, and read the same gate, deadzone and curve.
+            if joystickMode || usingTouchLab {
                 joystickOptions
             }
 
@@ -105,6 +116,8 @@ struct OnScreenControlsSection: View {
             }
             .tint(MuffinTheme.pixelBlue)
 
+            // Resets MuffinEMU's own pad (size, opacity, dragged clusters), which is also what
+            // the TouchLab styles read for size and opacity.
             Button(role: .destructive, action: { showingResetLayoutConfirmation = true }) {
                 DestructiveSettingsLabel(title: "Reset layout", systemImage: "arrow.uturn.backward")
             }
@@ -155,18 +168,20 @@ struct OnScreenControlsSection: View {
 
     // Shown only with sticks on, since these options have nothing to act on otherwise.
     @ViewBuilder private var joystickOptions: some View {
-        Toggle(isOn: $comfortControls) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Comfort controls")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(comfortControls
-                     ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick."
-                     : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+        if !usingTouchLab {
+            Toggle(isOn: $comfortControls) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Comfort controls")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text(comfortControls
+                         ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick."
+                         : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
             }
+            .tint(MuffinTheme.pixelBlue)
         }
-        .tint(MuffinTheme.pixelBlue)
 
         // Above the two sliders because it is a different kind of question: the
         // gate is the shape of the stick, and the sliders are how that shape is
