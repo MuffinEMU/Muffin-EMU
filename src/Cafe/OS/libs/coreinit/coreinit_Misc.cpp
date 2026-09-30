@@ -690,6 +690,7 @@ namespace coreinit
 		// ShutdownTitle() and LaunchForegroundTitle() CafeSystem::IsTitleRunning() is false
 		CafeSystem::SetTitleSwitchInProgress(true);
 		CafeSystem::ShutdownTitle();
+		CafeSystem::NotifyTitleSwitching(titleId); // the host applies the new title's own settings before it is prepared
 		if (CafeSystem::PrepareForegroundTitle(titleId) != CafeSystem::PREPARE_STATUS_CODE::SUCCESS)
 		{
 			// the old title is already gone, so there is nothing to go back to. Tell the host instead of

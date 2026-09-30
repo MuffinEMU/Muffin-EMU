@@ -22,6 +22,8 @@
 
 // Defined in CemuBridge.mm (plain C++ linkage). Blocks until the renderer and layers exist.
 bool IOSBridge_RecreateRenderSurface();
+// Defined in CemuBridge.mm: lets the app apply the per-game settings of the title the Wii U Menu is switching to.
+void IOSBridge_TitleSwitching(uint64 titleId);
 
 static std::atomic_bool sTitleExitedItself{false};
 static std::atomic<sint32> sTitleExitStatus{0};
@@ -50,6 +52,11 @@ public:
 		sTitleExitStatus.store(status);
 		sTitleExitedItself.store(true);
 		cemuLog_log(LogType::Force, "iOS: the title exited on its own (status {})", status);
+	}
+
+	void CafeTitleSwitching(TitleId titleId) override
+	{
+		IOSBridge_TitleSwitching((uint64)titleId);
 	}
 
 	void CafeTitleSwitchFailed(TitleId titleId) override

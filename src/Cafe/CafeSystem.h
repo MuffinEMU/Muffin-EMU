@@ -16,6 +16,9 @@ namespace CafeSystem
 		// the running title asked to switch to another title (Wii U Menu launching a game) and the next title
 		// could not be prepared. The previous title is already shut down. Default: treat as process exit
 		virtual void CafeTitleSwitchFailed(TitleId titleId) { CafePPCProcessExit(); }
+		// the running title is being replaced by titleId (Wii U Menu launching a game). Called after the old title is shut down and
+		// before the new one is prepared, so the host can apply that title's own settings exactly as it does for a normal launch
+		virtual void CafeTitleSwitching(TitleId titleId) {}
 	};
 
 	enum class PREPARE_STATUS_CODE
@@ -74,6 +77,7 @@ namespace CafeSystem
 	void SetTitleSwitchInProgress(bool inProgress);
 	bool IsTitleSwitchInProgress();
 	void NotifyTitleSwitchFailed(TitleId titleId);
+	void NotifyTitleSwitching(TitleId titleId);
 
 };
 

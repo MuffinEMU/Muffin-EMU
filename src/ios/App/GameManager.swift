@@ -133,6 +133,11 @@ class GameManager: ObservableObject {
     private static let favoriteIDsKey = "muffin.library.favoriteGameIDs"
 
     init() {
+        // The Wii U Menu can start a game without going through launchGame(); the engine tells us which title it is switching to
+        // and the per-game settings that a library launch pushes before boot are pushed here too.
+        cemu_bridge_set_title_switch_callback { titleId in
+            TitleSwitchSettings.apply(titleId: titleId)
+        }
         emulationEngine = EmulationEngine()
         Task {
             await loadGames()
@@ -171,6 +176,7 @@ class GameManager: ObservableObject {
             return
         }
         self.games = discovered.sorted { $0.title < $1.title }
+        TitleSwitchSettings.shared.update(games: self.games)
         self.favorites = self.games.filter { $0.isFavorite }
         enrichMissingCoverArt()
     }
@@ -1490,4 +1496,41 @@ enum EmulationState {
     case running
     case paused
     case error
+}
+
+/// Applies a game's own settings when the Wii U Menu switches to it, exactly as a library launch does before boot:
+/// "Favour accuracy" and "Compile shaders in the background" (the two per-game overrides), and the starting controls and screen
+/// layout for titles that need them (GameControlHints). Settings that are global (renderer, audio, overlays, CPU cores, ...) were
+/// already pushed when the Menu itself was launched and stay as they are. Runs on the engine's title-switch thread, so it only
+/// touches thread-safe state.
+final class TitleSwitchSettings {
+    static let shared = TitleSwitchSettings()
+    private let lock = NSLock()
+    private var gameIDByTitleId: [UInt64: String] = [:]
+
+    func update(games: [GameMetadata]) {
+        var map: [UInt64: String] = [:]
+        for game in games {
+            if let titleId = game.titleId { map[titleId] = game.id }
+        }
+        lock.lock()
+        gameIDByTitleId = map
+        lock.unlock()
+    }
+
+    private func gameID(for titleId: UInt64) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return gameIDByTitleId[titleId]
+    }
+
+    static func apply(titleId: UInt64) {
+        // A title that is not in the library has no overrides, so it gets the global defaults.
+        let id = shared.gameID(for: titleId) ?? ""
+        cemu_bridge_set_favour_accuracy(PerGameSettingsStore.shared.effectiveFavourAccuracy(for: id))
+        cemu_bridge_set_async_shader_compile(PerGameSettingsStore.shared.effectivePreCompileShaders(for: id))
+        #if os(iOS)
+        GameControlHints.applyBeforeLaunch(titleId: titleId)
+        #endif
+    }
 }
