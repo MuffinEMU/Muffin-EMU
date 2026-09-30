@@ -318,7 +318,7 @@ uint32 VkTextureChunkedHeap::allocateNewChunk(uint32 chunkIndex, uint32 minimumA
 		cemuLog_log(LogType::Force, "Failed to allocate texture memory chunk with size {}MB. Trying again with smaller allocation size", allocationSize / 1024 / 1024);
 	}
 	cemuLog_log(LogType::Force, "Unable to allocate image memory chunk ({} heaps)", deviceLocalMemoryTypeIndices.size());
-	throw std::runtime_error("failed to allocate image memory!");
+	VulkanRenderer::GetInstance()->UnrecoverableError("failed to allocate image memory!");
 	return 0;
 }
 
@@ -585,6 +585,40 @@ VkImageMemAllocation* VKRMemoryManager::imageMemoryAllocate(VkImage image)
 
 	// alloc mem from heap
 	uint32 allocationSize = (uint32)memRequirements.size;
+
+#if BOOST_OS_IOS
+	// Unified memory: texture memory is taken from the same ~4.5 GB the guest's RAM and everything else live in, so the Vulkan
+	// heap size MoltenVK reports (recommendedMaxWorkingSetSize) is not a budget for us. Keep the textures in use under a cap
+	// and drop unused ones before growing past it, instead of being killed by iOS.
+	{
+		const uint64 budget = m_vkr->GetTextureBudgetBytes();
+		uint64 used = 0;
+		for (auto& itr : map_textureHeap)
+		{
+			uint32 heapSize, allocatedBytes;
+			itr.second->getStatistics(heapSize, allocatedBytes);
+			used += allocatedBytes;
+		}
+		if (budget > 0 && used + allocationSize > budget)
+		{
+			std::vector<LatteTexture*> deleteableTextures = LatteTC_GetDeleteableTextures();
+			size_t next = 0;
+			while (next < deleteableTextures.size() && used + allocationSize > budget)
+			{
+				LatteTexture* tex = deleteableTextures[next++];
+				LatteTexture_Delete(tex);
+				uint64 newUsed = 0;
+				for (auto& itr : map_textureHeap)
+				{
+					uint32 heapSize, allocatedBytes;
+					itr.second->getStatistics(heapSize, allocatedBytes);
+					newUsed += allocatedBytes;
+				}
+				used = newUsed;
+			}
+		}
+	}
+#endif
 
 	CHAddr mem = texHeap->allocMem(allocationSize, (uint32)memRequirements.alignment);
 	if (!mem.isValid())

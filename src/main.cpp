@@ -581,32 +581,55 @@ void CemuPrepareRenderer()
 #endif
 
 #ifdef ENABLE_VULKAN
+#ifdef ENABLE_METAL
+    // MoltenVK can refuse to start on some devices ("No physical GPU could be found...", "Unable to create a
+    // logical device", a swapchain that can't be created). The launch continues on Metal, and the caller tells the player.
+    auto fallBackToMetal = [&](const std::string& why)
+    {
+        cemuLog_log(LogType::Force, "Vulkan failed to start ({}). Using Metal for this launch.", why);
+        g_renderer.reset();
+        GetConfig().graphic_api = kMetal;
+        if (g_current_game_profile)
+            g_current_game_profile->ForceGraphicsAPI(kMetal);
+        g_renderer = std::make_unique<MetalRenderer>();
+        usingMetal = true;
+        std::lock_guard lock(sRendererFallbackMutex);
+        sRendererFallbackReason = why;
+    };
     if (!g_renderer)
     {
-#ifdef ENABLE_METAL
-        // MoltenVK can refuse to start on some devices ("No physical GPU could be found...", "Unable to create a
-        // logical device"). The launch continues on Metal, and the caller tells the player.
         try
         {
             g_renderer = std::make_unique<VulkanRenderer>();
         }
         catch (const std::exception& ex)
         {
-            const std::string why = ex.what();
-            cemuLog_log(LogType::Force, "Vulkan failed to start ({}). Using Metal for this launch.", why);
-            g_renderer.reset();
-            GetConfig().graphic_api = kMetal;
-            if (g_current_game_profile)
-                g_current_game_profile->ForceGraphicsAPI(kMetal);
-            g_renderer = std::make_unique<MetalRenderer>();
-            usingMetal = true;
-            std::lock_guard lock(sRendererFallbackMutex);
-            sRendererFallbackReason = why;
+            fallBackToMetal(ex.what());
         }
+    }
+    if (!g_renderer)
+        throw std::runtime_error("No renderer could be created");
+    try
+    {
+        CemuUIKit_SetMetal(usingMetal);
+        CemuUIKit_InitializeLayer(true);
+        CemuUIKit_InitializeLayer(false);
+    }
+    catch (const std::exception& ex)
+    {
+        if (usingMetal)
+            throw;
+        // Vulkan got as far as a device but could not build its swapchain on the TV or GamePad layer.
+        fallBackToMetal(ex.what());
+        CemuUIKit_SetMetal(true);
+        CemuUIKit_InitializeLayer(true);
+        CemuUIKit_InitializeLayer(false);
+    }
+    return;
 #else
+    if (!g_renderer)
         g_renderer = std::make_unique<VulkanRenderer>();
 #endif
-    }
 #endif
 
     if (!g_renderer)
