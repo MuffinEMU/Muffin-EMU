@@ -54,6 +54,7 @@
 #include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
+#include "util/Fiber/Fiber.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cemu/Logging/CemuLogging.h"
 #include "config/ActiveSettings.h"
@@ -151,6 +152,8 @@ bool IOSSaveState_Save(const char* path);
 bool IOSSaveState_Load(const char* path);
 void IOSSystemImplementation_Install();
 bool IOSSystemImplementation_TitleExited(int* statusOut);
+void IOSSystemImplementation_ReportFatal(const char* reason);
+const char* IOSSystemImplementation_FatalReason();
 void IOSSystemImplementation_ResetExit();
 
 // ---------------------------------------------------------------------------
@@ -869,6 +872,8 @@ namespace {
 
         if (w.gpuError.load())
             cemuLog_log(LogType::Force, "VIDEO STALL: GPU ERROR - a command buffer failed with code {}; iOS stops running this app's GPU work after that", w.gpuErrorCode.load());
+        else if (w.drawableFailuresInARow.load() >= 8)
+            cemuLog_log(LogType::Force, "VIDEO STALL: OUT OF MEMORY FOR THE SCREEN - {} drawable requests in a row failed (iOS cannot give the layer a new frame buffer)", w.drawableFailuresInARow.load());
         else
             cemuLog_log(LogType::Force, "VIDEO STALL: no frame for {:.1f} s while the title is running and not paused (frame {}, flips {}, draw calls {})",
                 stalledSeconds, (uint32)LatteGPUState.frameCounter, (uint32)LatteGPUState.flipCounter, (uint32)LatteGPUState.drawCallCounter);
@@ -930,6 +935,24 @@ namespace {
                         ios_stall_log_snapshot(0.0);
                     }
                     continue;
+                }
+
+                // Repeated failures to get a drawable from the layer: the screen itself is out of memory.
+                if (g_titleRunning.load() && LatteWait::Get().drawableFailuresInARow.load() >= 8)
+                {
+                    if (g_videoStallKind.load() != 3)
+                    {
+                        g_videoStallKind.store(3);
+                        g_videoStalled.store(true);
+                        ios_stall_log_snapshot(0.0);
+                    }
+                    continue;
+                }
+                if (g_videoStallKind.load() == 3)
+                {
+                    g_videoStalled.store(false);
+                    g_videoStallKind.store(0);
+                    cemuLog_log(LogType::Force, "VIDEO STALL: drawables are available again");
                 }
 
                 if (!expectFrames || !haveBaseline || frames != lastFrames)
@@ -1814,6 +1837,20 @@ void cemu_bridge_initialize(const char* mlcPath) {
     ios_input_start();
     ios_stats_start();
     ios_stall_watchdog_start();
+    Fiber::SetStackFailureHandlers(
+        [] {
+            // Ask the GPU thread to drop unused textures, and give it a moment to do so.
+            auto& w = LatteWait::Get();
+            const uint32 passes = w.evictionPasses.load();
+            w.evictionRequested.store(true);
+            for (int i = 0; i < 150 && w.evictionPasses.load() == passes; ++i)
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        },
+        [] {
+            cemuLog_log(LogType::Force, "out of address space creating a game thread");
+            cemu_bridge_log_checkpoint("out of address space creating a game thread");
+            IOSSystemImplementation_ReportFatal("Out of memory address space creating a game thread. Restart the app and try again.");
+        });
     ios_log_tail_start();
     dispatch_async(dispatch_get_main_queue(), ^{
         if (UIWindow* window = ios_key_window())
@@ -2619,7 +2656,11 @@ void cemu_bridge_release_all_buttons(void) {
 
 const char* cemu_bridge_status_text(void) {
     int exitStatus = 0;
-    if (g_titleRunning.load() && IOSSystemImplementation_TitleExited(&exitStatus))
+    if (const char* fatal = IOSSystemImplementation_FatalReason())
+    {
+        setStatus(fatal);
+    }
+    else if (g_titleRunning.load() && IOSSystemImplementation_TitleExited(&exitStatus))
     {
         char line[96];
         snprintf(line, sizeof(line), "The game closed itself (exit status %d).", exitStatus);
