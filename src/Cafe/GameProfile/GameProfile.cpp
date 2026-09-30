@@ -339,6 +339,13 @@ void GameProfile::Save(uint64_t title_id)
 void GameProfile::ResetOptional()
 {
 	m_gameName.reset();
+	// Load() returns early when a title has no profile file and leaves these untouched, so without this the previous
+	// title's graphics API, precompiled-shader choice and title id (and "loaded" state) would carry into the next one
+	m_graphics_api.reset();
+	m_precompiledShaders.reset();
+	m_title_id = 0;
+	m_is_loaded = false;
+	m_is_default = true;
 
 	// general settings
 	m_loadSharedLibraries.reset(); // true;
