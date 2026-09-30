@@ -166,15 +166,27 @@ struct TopBarOverflowScroll<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            content()
-                .fixedSize(horizontal: true, vertical: false)
-            ScrollView(.horizontal, showsIndicators: false) {
-                content()
+        Group {
+            if #available(iOS 16.0, *) {
+                ViewThatFits(in: .horizontal) {
+                    content()
+                        .fixedSize(horizontal: true, vertical: false)
+                    scrolling
+                }
+            } else {
+                // No ViewThatFits before iOS 16. Those versions have no scroll edge effect
+                // either, so the scrolling row has no blur to draw there.
+                scrolling
             }
-            .topBarNoScrollEdgeEffect()
         }
         .layoutPriority(1)
+    }
+
+    private var scrolling: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            content()
+        }
+        .topBarNoScrollEdgeEffect()
     }
 }
 
