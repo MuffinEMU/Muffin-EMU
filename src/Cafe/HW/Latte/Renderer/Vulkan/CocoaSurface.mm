@@ -3,6 +3,8 @@
 
 #include "Cafe/HW/Latte/Renderer/MetalView.h"
 
+#import <Metal/Metal.h>
+
 VkSurfaceKHR CreateCocoaSurface(VkInstance instance, void* handle)
 {
     VkMetalSurfaceCreateInfoEXT surface;
@@ -19,5 +21,29 @@ VkSurfaceKHR CreateCocoaSurface(VkInstance instance, void* handle)
         throw std::runtime_error(fmt::format("Cannot create a Metal Vulkan surface: {}", err));
     }
 
+    return result;
+}
+
+std::string GetAppleGpuFamilyDescription()
+{
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    if (!device)
+        return "no Metal device";
+
+    // MTLGPUFamilyApple1..Apple9 are 1001..1009. Raw values are used so older SDKs still compile;
+    // an unknown family simply reports NO.
+    int highest = 0;
+    for (int fam = 1; fam <= 9; fam++)
+    {
+        if ([device supportsFamily:(MTLGPUFamily)(1000 + fam)])
+            highest = fam;
+    }
+
+    std::string result = std::string([[device name] UTF8String] ? [[device name] UTF8String] : "?");
+    result += highest ? (" / Apple GPU family " + std::to_string(highest)) : std::string(" / Apple GPU family unknown");
+    bool bc = false;
+    if (@available(iOS 16.4, macOS 11.0, *))
+        bc = [device supportsBCTextureCompression];
+    result += std::string(" / Metal BC textures: ") + (bc ? "yes" : "no");
     return result;
 }
