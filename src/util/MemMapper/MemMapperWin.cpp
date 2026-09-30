@@ -52,6 +52,11 @@ namespace MemMapper
 		return r;
 	}
 
+	void FreeMemoryKeepPages(void* baseAddr, size_t size)
+	{
+		VirtualFree(baseAddr, size, MEM_DECOMMIT);
+	}
+
 	void FreeMemory(void* baseAddr, size_t size, bool fromReservation)
 	{
 		if(fromReservation)
