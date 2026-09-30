@@ -81,6 +81,13 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      # The video-stall decision logic is plain C++ with no Cemu, Metal or UIKit in it, so it is tested here
+      # in seconds, before the long build, with the compiler every runner already has.
+      - name: Unit-test the video-stall detector
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -I src/ios/Bridge ci/stall-detector-test.cpp -o "$RUNNER_TEMP/stall-detector-test"
+          "$RUNNER_TEMP/stall-detector-test"
+
       - name: Select full Xcode and install build tools
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
