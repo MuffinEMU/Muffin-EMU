@@ -852,6 +852,11 @@ void MetalRenderer::rendertarget_deleteCachedFBO(LatteCachedFBO* cfbo)
 {
     if (cfbo == (LatteCachedFBO*)m_state.m_activeFBO.m_fbo)
         m_state.m_activeFBO = {nullptr};
+    // The last used FBO is dereferenced when the next render pass is chosen. Texture eviction deletes FBOs
+    // while a pass that used them is still open, so forget it here instead of reading freed memory. With no
+    // last FBO the next draw opens a new render pass, which is the safe answer.
+    if (cfbo == (LatteCachedFBO*)m_state.m_lastUsedFBO.m_fbo)
+        m_state.m_lastUsedFBO.m_fbo = nullptr;
 }
 
 void MetalRenderer::rendertarget_bindFramebufferObject(LatteCachedFBO* cfbo)
@@ -1435,12 +1440,14 @@ void MetalRenderer::buffer_bindVertexBuffer(uint32 bufferIndex, uint32 offset, u
         m_state.m_vertexBuffers[bufferIndex] = nullptr;
         m_state.m_vertexBufferOffsets[bufferIndex] = INVALID_OFFSET;
         m_state.m_vertexBufferSizes[bufferIndex] = 0;
+        m_state.m_vertexBufferRequired[bufferIndex] = size;
         return;
     }
 
     m_state.m_vertexBuffers[bufferIndex] = buffer;
     m_state.m_vertexBufferOffsets[bufferIndex] = offset;
     m_state.m_vertexBufferSizes[bufferIndex] = std::min<size_t>(size, buffer->length() - offset);
+    m_state.m_vertexBufferRequired[bufferIndex] = size;
 }
 
 void MetalRenderer::buffer_bindUniformBuffer(LatteConst::ShaderType shaderType, uint32 bufferIndex, uint32 offset, uint32 size)
@@ -1574,6 +1581,8 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     auto& encoderState = m_state.m_encoderState;
+    m_crumb = nullptr;
+    uint32 suspectFlags = 0;
 
     // Shaders
     LatteDecompilerShader* vertexShader = LatteSHRC_GetActiveVertexShader();
@@ -1619,6 +1628,21 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     LatteIndices_decode(memory_getPointerFromVirtualOffset(indexDataMPTR), indexType, count, primitiveMode, indexMin, indexMax, hostIndexType, hostIndexCount, indexAllocation);
     auto indexAllocationMtl = static_cast<MetalSynchronizedHeapAllocator::AllocatorReservation*>(indexAllocation.rendererInternal);
     const sint32 signedBaseVertex = static_cast<sint32>(baseVertex);
+    if (indexAllocationMtl && hostIndexType != INDEX_TYPE::NONE)
+    {
+        // The index count must fit what was reserved for it. The decoder sizes the reservation from the same
+        // count, so this only trips if the two ever disagree, and then the GPU would read past the allocation.
+        const uint64 indexBytes = hostIndexType == INDEX_TYPE::U16 ? 2 : 4;
+        const uint64 bufferLength = indexAllocationMtl->mtlBuffer ? indexAllocationMtl->mtlBuffer->length() : 0;
+        const uint64 reachable = indexAllocationMtl->bufferOffset < bufferLength ? bufferLength - indexAllocationMtl->bufferOffset : 0;
+        const uint64 capacity = std::min<uint64>(indexAllocationMtl->size, reachable);
+        if ((uint64)hostIndexCount * indexBytes > capacity)
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: index count {} ({} bytes each) does not fit its {} byte allocation; drawing {} indices instead", hostIndexCount, indexBytes, capacity, capacity / indexBytes);
+            hostIndexCount = static_cast<uint32>(capacity / indexBytes);
+            suspectFlags |= MetalDrawBreadcrumb::SUSPECT_INDEX_BUFFER;
+        }
+    }
     m_state.m_drawResources.indexBuffer = indexAllocationMtl ? indexAllocationMtl->mtlBuffer : nullptr;
     m_state.m_drawResources.indexBufferOffset = indexAllocationMtl ? indexAllocationMtl->bufferOffset : 0;
     m_state.m_drawResources.indexBufferSize = indexAllocationMtl ? indexAllocationMtl->size : 0;
@@ -1836,17 +1860,108 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     }
 
     // Scissor
-    if (m_state.m_scissor.x != encoderState.m_scissor.x ||
-        m_state.m_scissor.y != encoderState.m_scissor.y ||
-        m_state.m_scissor.width != encoderState.m_scissor.width ||
-        m_state.m_scissor.height != encoderState.m_scissor.height)
+    // Metal requires the scissor rectangle to lie inside the render pass attachments. The guest can set one that
+    // reaches past the render target (it is only a clip for the hardware there), and on a tile-based GPU a
+    // rectangle outside the attachment is undefined behaviour, so clamp it to the real attachment size.
+    MTL::ScissorRect scissorToSend = m_state.m_scissor;
+    const uint32 renderAreaWidth = m_state.m_activeFBO.m_fbo->GetRenderAreaWidth();
+    const uint32 renderAreaHeight = m_state.m_activeFBO.m_fbo->GetRenderAreaHeight();
+    if (renderAreaWidth != 0 && renderAreaHeight != 0)
     {
-        encoderState.m_scissor = m_state.m_scissor;
-
-        // TODO: clamp scissor to render target dimensions?
-        //scissor.width = ;
-        //scissor.height = ;
+        const uint64 x = std::min<uint64>(scissorToSend.x, renderAreaWidth);
+        const uint64 y = std::min<uint64>(scissorToSend.y, renderAreaHeight);
+        const uint64 w = std::min<uint64>(scissorToSend.width, renderAreaWidth - x);
+        const uint64 h = std::min<uint64>(scissorToSend.height, renderAreaHeight - y);
+        if (x != scissorToSend.x || y != scissorToSend.y || w != scissorToSend.width || h != scissorToSend.height)
+            suspectFlags |= MetalDrawBreadcrumb::SUSPECT_SCISSOR;
+        scissorToSend = MTL::ScissorRect{(NS::UInteger)x, (NS::UInteger)y, (NS::UInteger)w, (NS::UInteger)h};
+    }
+    if (scissorToSend.x != encoderState.m_scissor.x ||
+        scissorToSend.y != encoderState.m_scissor.y ||
+        scissorToSend.width != encoderState.m_scissor.width ||
+        scissorToSend.height != encoderState.m_scissor.height)
+    {
+        encoderState.m_scissor = scissorToSend;
         renderCommandEncoder->setScissorRect(encoderState.m_scissor);
+    }
+
+    // Breadcrumb for this draw (see MetalDrawBreadcrumb) and a last check of what hardware vertex fetch will read
+    {
+        auto* crumb = BeginDrawBreadcrumb();
+        crumb->count = count;
+        crumb->hostIndexCount = hostIndexCount;
+        crumb->instanceCount = instanceCount;
+        crumb->baseInstance = baseInstance;
+        crumb->baseVertex = signedBaseVertex;
+        crumb->minVertex = minVertexIndex;
+        crumb->maxVertex = maxVertexIndex;
+        crumb->primitive = static_cast<uint8>(primitiveMode);
+        crumb->indexType = static_cast<uint8>(hostIndexType);
+        crumb->flags = (fetchVertexManually ? 1 : 0) | (usesGeometryShader ? 2 : 0) | (usesVertexStreamout ? 4 : 0);
+        crumb->indexOffset = indexAllocationMtl ? indexAllocationMtl->bufferOffset : 0;
+        crumb->indexAllocSize = indexAllocationMtl ? indexAllocationMtl->size : 0;
+        crumb->indexBufferLength = indexAllocationMtl && indexAllocationMtl->mtlBuffer ? indexAllocationMtl->mtlBuffer->length() : 0;
+        crumb->renderAreaWidth = renderAreaWidth;
+        crumb->renderAreaHeight = renderAreaHeight;
+        crumb->scissor[0] = (uint32)m_state.m_scissor.x;
+        crumb->scissor[1] = (uint32)m_state.m_scissor.y;
+        crumb->scissor[2] = (uint32)m_state.m_scissor.width;
+        crumb->scissor[3] = (uint32)m_state.m_scissor.height;
+        crumb->scissorSent[0] = (uint32)scissorToSend.x;
+        crumb->scissorSent[1] = (uint32)scissorToSend.y;
+        crumb->scissorSent[2] = (uint32)scissorToSend.width;
+        crumb->scissorSent[3] = (uint32)scissorToSend.height;
+        crumb->viewport[0] = (float)m_state.m_viewport.originX;
+        crumb->viewport[1] = (float)m_state.m_viewport.originY;
+        crumb->viewport[2] = (float)m_state.m_viewport.width;
+        crumb->viewport[3] = (float)m_state.m_viewport.height;
+        crumb->vertexShaderHash = vertexShader ? vertexShader->baseHash : 0;
+        crumb->pixelShaderHash = pixelShader ? pixelShader->baseHash : 0;
+        crumb->suspect = suspectFlags;
+        for (const auto& group : fetchShader->bufferGroups)
+        {
+            const uint32 i = group.attributeBufferIndex;
+            if (i >= MAX_MTL_VERTEX_BUFFERS || crumb->numVertexBuffers >= MetalDrawBreadcrumb::MAX_VERTEX_BUFFERS)
+                continue;
+            auto& entry = crumb->vertexBuffers[crumb->numVertexBuffers++];
+            entry.slot = static_cast<uint8>(i);
+            entry.stride = (LatteGPUState.contextRegister[mmSQ_VTX_ATTRIBUTE_BLOCK_START + i * 7 + 2] >> 11) & 0xFFFF;
+            entry.offset = m_state.m_vertexBufferOffsets[i] == INVALID_OFFSET ? 0 : m_state.m_vertexBufferOffsets[i];
+            entry.size = m_state.m_vertexBufferSizes[i];
+            entry.required = m_state.m_vertexBufferRequired[i];
+            entry.bufferLength = m_state.m_vertexBuffers[i] ? m_state.m_vertexBuffers[i]->length() : 0;
+        }
+    }
+
+    if (!fetchVertexManually)
+    {
+        // Hardware vertex fetch has no bounds check: a slot that is unbound, or bound to less than the draw reads,
+        // is a GPU page fault. Manual fetch checks the size in the shader and gets a null buffer below instead.
+        bool vertexBuffersUsable = true;
+        for (const auto& group : fetchShader->bufferGroups)
+        {
+            const uint32 i = group.attributeBufferIndex;
+            if (i >= MAX_MTL_VERTEX_BUFFERS)
+            {
+                vertexBuffersUsable = false;
+                break;
+            }
+            MTL::Buffer* buffer = m_state.m_vertexBuffers[i];
+            const size_t offset = m_state.m_vertexBufferOffsets[i];
+            if (!buffer || offset == INVALID_OFFSET || offset >= buffer->length() || m_state.m_vertexBufferSizes[i] < m_state.m_vertexBufferRequired[i])
+            {
+                vertexBuffersUsable = false;
+                break;
+            }
+        }
+        if (!vertexBuffersUsable)
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: skipping a draw whose vertex buffer is missing or smaller than the range it reads (hardware vertex fetch would fault)");
+            m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_VERTEX_BUFFER | MetalDrawBreadcrumb::SUSPECT_SKIPPED;
+            streamout_rendererFinishDrawcall();
+            LatteGPUState.drawCallCounter++;
+            return;
+        }
     }
 
     // Resources
@@ -2006,16 +2121,31 @@ void MetalRenderer::draw_updateVertexBuffersDirectAccess(uint32 minIndex, uint32
         if (bufferAddress == MPTR_NULL) [[unlikely]]
             bufferAddress = m_memoryManager->GetImportedMemBaseAddress();
 
-        uint32 bufferSize = 0;
+        // 64-bit on purpose: a stride times a large index used to wrap around in 32 bits, which made the
+        // range look tiny and the GPU then read far past the buffer it was given.
+        uint64 bufferSize64 = 0;
         if (bufferGroup.hasVtxIndexAccess)
-            bufferSize = bufferStride * (maxIndex + 1) + bufferGroup.maxOffset;
+            bufferSize64 = (uint64)bufferStride * ((uint64)maxIndex + 1) + bufferGroup.maxOffset;
         if (bufferGroup.hasInstanceIndexAccess)
         {
-            uint32 instanceBufferSize = bufferStride * ((baseInstance + instanceCount) + 1) + bufferGroup.maxOffset;
-            bufferSize = std::max(bufferSize, instanceBufferSize);
+            const uint64 instanceBufferSize = (uint64)bufferStride * ((uint64)baseInstance + instanceCount + 1) + bufferGroup.maxOffset;
+            bufferSize64 = std::max(bufferSize64, instanceBufferSize);
         }
-        if (bufferSize == 0 || bufferStride == 0)
-            bufferSize += 128;
+        if (bufferSize64 == 0 || bufferStride == 0)
+            bufferSize64 += 128;
+        if (bufferSize64 > 0x7FFFFFFFull)
+        {
+            // No real vertex buffer is this large, so the index range is garbage. Unbind the slot so the draw is
+            // skipped instead of letting the GPU walk off the end of guest memory.
+            cemuLog_logOnce(LogType::Force, "Metal: vertex buffer {} would need {} bytes (stride {}, max index {}); skipping draws that use it", bufferIndex, bufferSize64, bufferStride, maxIndex);
+            m_state.m_vertexBuffers[bufferIndex] = nullptr;
+            m_state.m_vertexBufferOffsets[bufferIndex] = INVALID_OFFSET;
+            m_state.m_vertexBufferSizes[bufferIndex] = 0;
+            m_state.m_vertexBufferRequired[bufferIndex] = std::numeric_limits<uint32>::max();
+            continue;
+        }
+        const uint32 bufferSize = static_cast<uint32>(bufferSize64);
+        m_state.m_vertexBufferRequired[bufferIndex] = bufferSize;
 
         if (m_memoryManager->IsRangeImported(bufferAddress, bufferSize))
         {
@@ -2331,6 +2461,11 @@ MTL::CommandBuffer* MetalRenderer::GetCommandBuffer()
     bool needsNewCommandBuffer = (!m_currentCommandBuffer.m_commandBuffer || m_currentCommandBuffer.m_commited);
     if (needsNewCommandBuffer)
     {
+        // A page fault was seen on the previous queue; nothing is being recorded right now, so this is the
+        // moment to replace it (once) before the next command buffer is made.
+        if (m_gpuRecoveryPending && !m_gpuRecovering)
+            RecoverFromGpuFault();
+
         // Debug
         //m_commandQueue->insertDebugCaptureBoundary();
 
@@ -2560,6 +2695,7 @@ void MetalRenderer::CommitCommandBuffer()
 
         m_executingCommandBuffers.push_back(mtlCommandBuffer);
         m_executingEventValues.push_back(m_eventValue);
+        m_executingQueueGenerations.push_back(m_queueGeneration);
         LatteWait::Get().executingCommandBuffers.store((uint32)m_executingCommandBuffers.size(), std::memory_order_relaxed);
 
         // Debug
@@ -2578,10 +2714,128 @@ void MetalRenderer::LabelEncoder(MTL::CommandEncoder* encoder, const char* kind)
     pool->release();
 }
 
-static void LogFailedEncoders(MTL::CommandBuffer* commandBuffer, NS::Error* error)
+MetalDrawBreadcrumb* MetalRenderer::BeginDrawBreadcrumb()
 {
+    MetalDrawBreadcrumb& crumb = m_breadcrumbs[m_breadcrumbNext];
+    m_breadcrumbNext = (m_breadcrumbNext + 1) % BREADCRUMB_COUNT;
+    ++m_breadcrumbsWritten;
+    crumb = MetalDrawBreadcrumb{};
+    crumb.frame = (uint32)LatteGPUState.frameCounter;
+    crumb.draw = (uint32)LatteGPUState.drawCallCounter;
+    m_crumb = &crumb;
+    return m_crumb;
+}
+
+void MetalRenderer::RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, uint32 unit, uint32 dim, MTL::Texture* texture, bool fallback)
+{
+    if (!m_crumb)
+        return;
+    if (fallback)
+        m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_TEXTURE;
+    if (!texture || m_crumb->numTextures >= MetalDrawBreadcrumb::MAX_TEXTURES)
+        return;
+    auto& entry = m_crumb->textures[m_crumb->numTextures++];
+    entry.stage = static_cast<uint8>(shaderType);
+    entry.unit = static_cast<uint8>(unit);
+    entry.type = static_cast<uint8>(dim);
+    entry.fallback = fallback ? 1 : 0;
+    entry.width = (uint32)texture->width();
+    entry.height = (uint32)texture->height();
+    entry.depth = (uint32)std::max<NS::UInteger>(texture->depth(), texture->arrayLength());
+    entry.mips = (uint16)texture->mipmapLevelCount();
+    entry.pixelFormat = (uint16)texture->pixelFormat();
+}
+
+// Logs what the last draws bound, so a GPU fault can be tied to a buffer, a texture or an index range from the
+// log alone. The encoders that did not finish name the draw they started at; everything from there to a few
+// dozen draws after it is printed, and any draw in the ring that looked wrong when it was recorded.
+void MetalRenderer::DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool haveRange)
+{
+    const uint32 stored = std::min(m_breadcrumbsWritten, BREADCRUMB_COUNT);
+    if (stored == 0)
+    {
+        cemuLog_log(LogType::Force, "Metal: no draw breadcrumbs were recorded");
+        return;
+    }
+    const uint32 start = (m_breadcrumbNext + BREADCRUMB_COUNT - stored) % BREADCRUMB_COUNT;
+    auto at = [&](uint32 n) -> const MetalDrawBreadcrumb& { return m_breadcrumbs[(start + n) % BREADCRUMB_COUNT]; };
+    if (haveRange)
+        cemuLog_log(LogType::Force, "Metal: draw breadcrumbs: {} draws kept (draw {} to {}), unfinished encoders start at draws {} to {}", stored, at(0).draw, at(stored - 1).draw, firstDraw, lastDraw);
+    else
+        cemuLog_log(LogType::Force, "Metal: draw breadcrumbs: {} draws kept (draw {} to {}), the failed command buffer named no encoders", stored, at(0).draw, at(stored - 1).draw);
+
+    auto print = [&](const MetalDrawBreadcrumb& d) {
+        cemuLog_log(LogType::Force, "Metal: crumb draw {} frame {} prim {} count {} indexed {} (type {}, offset {}, alloc {}, buffer {}) inst {}+{} baseVertex {} vertices {}..{} flags {:#x} suspect {:#x} vs {:016x} ps {:016x}",
+            d.draw, d.frame, (uint32)d.primitive, d.count, d.hostIndexCount, (uint32)d.indexType, d.indexOffset, d.indexAllocSize, d.indexBufferLength,
+            d.baseInstance, d.instanceCount, d.baseVertex, d.minVertex, d.maxVertex, (uint32)d.flags, d.suspect, d.vertexShaderHash, d.pixelShaderHash);
+        cemuLog_log(LogType::Force, "Metal:   target {}x{} scissor {},{} {}x{} sent {},{} {}x{} viewport {:.0f},{:.0f} {:.0f}x{:.0f}",
+            d.renderAreaWidth, d.renderAreaHeight, d.scissor[0], d.scissor[1], d.scissor[2], d.scissor[3], d.scissorSent[0], d.scissorSent[1], d.scissorSent[2], d.scissorSent[3],
+            d.viewport[0], d.viewport[1], d.viewport[2], d.viewport[3]);
+        std::string buffers;
+        for (uint32 i = 0; i < d.numVertexBuffers; ++i)
+        {
+            const auto& b = d.vertexBuffers[i];
+            buffers += fmt::format(" vb{}[stride {} off {} size {} need {} len {}]", (uint32)b.slot, b.stride, b.offset, b.size, b.required, b.bufferLength);
+        }
+        for (uint32 i = 0; i < d.numUniformBuffers; ++i)
+        {
+            const auto& b = d.uniformBuffers[i];
+            buffers += fmt::format(" ub{}.{}[off {} size {} need {} len {}]", (uint32)b.stage, (uint32)b.index, b.offset, b.size, b.required, b.bufferLength);
+        }
+        cemuLog_log(LogType::Force, "Metal:   buffers{}", buffers);
+        std::string textures;
+        for (uint32 i = 0; i < d.numTextures; ++i)
+        {
+            const auto& t = d.textures[i];
+            textures += fmt::format(" tex{}.{}[{}x{}x{} mips {} fmt {} dim {}{}]", (uint32)t.stage, (uint32)t.unit, t.width, t.height, t.depth, (uint32)t.mips, (uint32)t.pixelFormat, (uint32)t.type, t.fallback ? " FALLBACK" : "");
+        }
+        cemuLog_log(LogType::Force, "Metal:   textures{}", textures);
+    };
+
+    uint32 suspects = 0;
+    for (uint32 n = 0; n < stored; ++n)
+        if (at(n).suspect != 0)
+            ++suspects;
+    cemuLog_log(LogType::Force, "Metal: {} of the kept draws were flagged when recorded (1 vertex buffer, 2 uniform buffer, 4 index buffer, 8 scissor clamped, 16 texture, 32 skipped)", suspects);
+
+    uint32 printed = 0;
+    for (uint32 n = 0; n < stored && printed < 12; ++n)
+    {
+        if (at(n).suspect != 0)
+        {
+            print(at(n));
+            ++printed;
+        }
+    }
+
+    if (haveRange)
+    {
+        printed = 0;
+        for (uint32 n = 0; n < stored && printed < 80; ++n)
+        {
+            const auto& d = at(n);
+            if (d.draw >= firstDraw && d.draw <= lastDraw + 48)
+            {
+                print(d);
+                ++printed;
+            }
+        }
+    }
+    else
+    {
+        for (uint32 n = stored > 24 ? stored - 24 : 0; n < stored; ++n)
+            print(at(n));
+    }
+}
+
+static void LogFailedEncoders(MTL::CommandBuffer* commandBuffer, NS::Error* error, uint32& firstDraw, uint32& lastDraw, bool& haveRange)
+{
+    firstDraw = 0xFFFFFFFF;
+    lastDraw = 0;
+    haveRange = false;
     if (!error || !error->userInfo())
         return;
+
     auto* encoderInfos = static_cast<NS::Array*>(error->userInfo()->object(MTL::CommandBufferEncoderInfoErrorKey));
     if (!encoderInfos)
         return;
@@ -2593,6 +2847,13 @@ static void LogFailedEncoders(MTL::CommandBuffer* commandBuffer, NS::Error* erro
             continue;
         const char* label = info->label() ? info->label()->utf8String() : "(no label)";
         cemuLog_log(LogType::Force, "Metal:   encoder \"{}\" state {} (0 unknown, 2 affected, 3 pending, 4 faulted)", label, (int)info->errorState());
+        if (const char* drawText = std::strstr(label, " draw "))
+        {
+            const uint32 draw = (uint32)std::strtoul(drawText + 6, nullptr, 10);
+            firstDraw = std::min(firstDraw, draw);
+            lastDraw = std::max(lastDraw, draw);
+            haveRange = true;
+        }
         ++logged;
     }
 }
@@ -2703,6 +2964,9 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
         auto commandBuffer = m_executingCommandBuffers[i];
         if (CommandBufferCompleted(commandBuffer))
         {
+            const uint32 generation = i < m_executingQueueGenerations.size() ? m_executingQueueGenerations[i] : m_queueGeneration;
+            // Failures of a queue that has been replaced (or is being replaced) are the old queue dying, not new faults.
+            const bool staleQueue = generation != m_queueGeneration || m_gpuRecovering;
             if (commandBuffer->status() == MTL::CommandBufferStatusError)
             {
                 // A command buffer that fails may never signal the event the next one is waiting
@@ -2713,25 +2977,59 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
                 if (errorCount <= 8)
                 {
                     NS::Error* error = commandBuffer->error();
-                    cemuLog_log(LogType::Force, "Metal: command buffer failed (#{}): code {} {}", errorCount,
+                    cemuLog_log(LogType::Force, "Metal: command buffer failed (#{}): code {} {}{}", errorCount,
                         error ? (long)error->code() : 0L,
-                        (error && error->localizedDescription()) ? error->localizedDescription()->utf8String() : "");
-                    LogFailedEncoders(commandBuffer, error);
+                        (error && error->localizedDescription()) ? error->localizedDescription()->utf8String() : "",
+                        staleQueue ? " (command queue that was replaced)" : "");
+                    uint32 firstDraw, lastDraw;
+                    bool haveRange;
+                    LogFailedEncoders(commandBuffer, error, firstDraw, lastDraw, haveRange);
+                    if (!m_breadcrumbsDumped && !staleQueue)
+                    {
+                        m_breadcrumbsDumped = true;
+                        DumpDrawBreadcrumbs(firstDraw, lastDraw, haveRange);
+                    }
                 }
                 // Timeout, page fault, access revoked/ignored, not permitted, out of memory, invalid resource,
                 // device removed: the GPU is no longer doing this process's work, so tell the UI right away.
                 const long errorCode = commandBuffer->error() ? (long)commandBuffer->error()->code() : 0L;
                 if (errorCode == 2 || errorCode == 3 || errorCode == 4 || errorCode == 7 || errorCode == 8 || errorCode == 9 || errorCode == 11)
                 {
-                    waitState.gpuErrorCode.store((int32_t)errorCode);
-                    waitState.gpuError.store(true);
+                    if (staleQueue)
+                    {
+                        // the queue that was replaced: its remaining command buffers are expected to fail
+                    }
+                    else if (m_gpuRecoveryPending)
+                    {
+                        // follow-on failures of the faulted queue; it is replaced before the next command buffer is made
+                    }
+                    else if (errorCode == 3 && m_gpuRecoveryCount == 0)
+                    {
+                        // First page fault: try once to carry on with a fresh command queue instead of stopping.
+                        m_gpuRecoveryPending = true;
+                        cemuLog_log(LogType::Force, "Metal: GPU page fault, will replace the command queue and try to carry on (one attempt)");
+                    }
+                    else
+                    {
+                        if (m_gpuRecoveryCount > 0)
+                            cemuLog_log(LogType::Force, "Metal: the command queue made after the page fault failed as well (code {}); stopping", errorCode);
+                        waitState.gpuErrorCode.store((int32_t)errorCode);
+                        waitState.gpuError.store(true);
+                    }
                 }
                 static_cast<MTL::SharedEvent*>(m_event)->setSignaledValue((uint64_t)m_executingEventValues[i]);
+            }
+            else if (m_gpuRecoveryCount > 0 && !staleQueue && !m_gpuRecoveryLogged)
+            {
+                m_gpuRecoveryLogged = true;
+                cemuLog_log(LogType::Force, "Metal: the first command buffer on the new command queue completed without error");
             }
             m_memoryManager->CleanupBuffers(commandBuffer);
             commandBuffer->release();
             m_executingCommandBuffers.erase(m_executingCommandBuffers.begin() + i);
             m_executingEventValues.erase(m_executingEventValues.begin() + i);
+            if (i < m_executingQueueGenerations.size())
+                m_executingQueueGenerations.erase(m_executingQueueGenerations.begin() + i);
         }
         else
         {
@@ -2739,6 +3037,54 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
         }
     }
     LatteWait::Get().executingCommandBuffers.store((uint32)m_executingCommandBuffers.size(), std::memory_order_relaxed);
+}
+
+// After a page fault iOS marks the faulting queue and ignores what is submitted to it afterwards (every later
+// command buffer in the recorded logs failed with "submissions ignored"). Whether a new queue on the same device
+// is accepted again is not documented and could not be tested here, so this is a single, bounded attempt: wait
+// for the dead queue to drain, make a new one, and let the next command buffer prove it works. If that one fails
+// too the usual stop (and the stall card) follows, exactly as before.
+bool MetalRenderer::RecoverFromGpuFault()
+{
+    m_gpuRecoveryPending = false;
+    m_gpuRecovering = true;
+    auto fail = [&](const char* why) {
+        m_gpuRecovering = false;
+        m_gpuRecoveryCount++;
+        cemuLog_log(LogType::Force, "Metal: could not replace the command queue ({}); stopping", why);
+        auto& waitState = LatteWait::Get();
+        waitState.gpuErrorCode.store(3);
+        waitState.gpuError.store(true);
+        return false;
+    };
+
+    // everything already submitted has to be finished (they all fail quickly on a dead queue) and retired first
+    for (int guard = 0; guard < 64 && !m_executingCommandBuffers.empty(); ++guard)
+    {
+        const bool finished = WaitForCommandBuffer(m_executingCommandBuffers.front(), "GPU recovery: waiting for the faulted command queue to drain");
+        ProcessFinishedCommandBuffers();
+        if (!finished)
+            return fail("the old command buffers did not finish");
+    }
+    if (!m_executingCommandBuffers.empty())
+        return fail("the old command buffers did not finish");
+
+    MTL::CommandQueue* newQueue = m_device->newCommandQueue();
+    if (!newQueue)
+        return fail("newCommandQueue returned nothing");
+
+    // Command buffers wait on the event value of the one before them; make sure that value reads as reached
+    auto* sharedEvent = static_cast<MTL::SharedEvent*>(m_event);
+    if (m_eventValue >= 0 && sharedEvent->signaledValue() < (uint64_t)m_eventValue)
+        sharedEvent->setSignaledValue((uint64_t)m_eventValue);
+
+    m_commandQueue->release();
+    m_commandQueue = newQueue;
+    m_queueGeneration++;
+    m_gpuRecoveryCount++;
+    m_gpuRecovering = false;
+    cemuLog_log(LogType::Force, "Metal: command queue replaced after the page fault (generation {}); rendering continues if the new queue is accepted", m_queueGeneration);
+    return true;
 }
 
 bool MetalRenderer::AcquireDrawable(bool mainWindow)
@@ -2985,6 +3331,7 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         }
         
         MTL::Texture* mtlTexture = nullptr;
+        bool textureViewFailed = false;
         const bool integerTexture = shader->textureIsIntegerFormat[relative_textureUnit];
         const bool depthTexture = shader->textureUsesDepthCompare[relative_textureUnit] && IsValidDepthTextureType(textureDim);
         MTL::Texture* nullTexture = GetNullSampledTexture(textureDim, integerTexture, depthTexture);
@@ -3011,7 +3358,16 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             // get texture register word 0
             uint32 word4 = LatteGPUState.contextRegister[texUnitRegIndex + 4];
             mtlTexture = textureView->GetSwizzledView(word4);
+            if (!mtlTexture)
+            {
+                // The view could not be created (its base texture was replaced by the null texture after an
+                // allocation failure). A null texture in an argument buffer is a GPU read of address zero.
+                mtlTexture = nullTexture;
+                textureViewFailed = true;
+            }
         }
+        
+        RecordBreadcrumbTexture(shader->shaderType, relative_textureUnit, (uint32)textureDim, mtlTexture, textureViewFailed);
         
         if (argumentEncoder)
         {
@@ -3154,6 +3510,24 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
             }
 
             m_memoryManager->TrackSharedCache(buffer, offset, size);
+
+            if (m_crumb && m_crumb->numUniformBuffers < MetalDrawBreadcrumb::MAX_UNIFORM_BUFFERS)
+            {
+                uint64 requiredSize = 0;
+                for (const auto& quick : shader->list_quickBufferList)
+                    if (quick.index == i)
+                        requiredSize = quick.size;
+                const uint64 reach = buffer == m_nullBuffer ? buffer->length() : size;
+                auto& entry = m_crumb->uniformBuffers[m_crumb->numUniformBuffers++];
+                entry.stage = static_cast<uint8>(shader->shaderType);
+                entry.index = static_cast<uint8>(i);
+                entry.offset = offset;
+                entry.size = reach;
+                entry.required = requiredSize;
+                entry.bufferLength = buffer->length();
+                if (requiredSize > reach)
+                    m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_UNIFORM_BUFFER;
+            }
 
             if (argumentEncoder)
             {

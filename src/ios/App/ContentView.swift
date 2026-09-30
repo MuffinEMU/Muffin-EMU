@@ -38,6 +38,15 @@ struct ContentView: View {
                         isRunning: $showingGameBrowser,
                         controllerSkin: $selectedSkin
                     )
+                    .overlay(alignment: .top) {
+                        if let notice = gameManager.launchNotice {
+                            LaunchNoticeBanner(text: notice)
+                                .padding(.top, 24)
+                                .padding(.horizontal, 16)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                                .allowsHitTesting(false)
+                        }
+                    }
                 case .error:
                     BootFailureView(
                         game: game,
@@ -237,6 +246,29 @@ struct LibraryActivityBanner: View {
                 .stroke(MuffinTheme.wrapper, lineWidth: 1)
         )
         .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+    }
+}
+
+/// One line over the game about how this launch differed from the request, for example Vulkan not starting so Metal
+/// was used. Fades on its own (GameManager.showLaunchNotice) and never takes touches.
+struct LaunchNoticeBanner: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 13, weight: .semibold, design: .rounded))
+            .foregroundColor(MuffinTheme.brownDarkest)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(MuffinTheme.cream)
+            .cornerRadius(14)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(MuffinTheme.wrapper, lineWidth: 1)
+            )
+            .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+            .frame(maxWidth: 520)
     }
 }
 
@@ -1248,6 +1280,14 @@ struct EmulatorViewOptimized: View {
     /// ever surfaced - without it, a refusal and a tap that did nothing look identical.
     @State private var saveStateStatus: SaveStateStatus?
 
+    // MARK: Microphone
+    //
+    // With "Use <device> Microphone" on (Settings > Audio) the game hears the real mic, and the
+    // Blow button - which fakes a puff into it - has nothing to do, so it is hidden. A denied
+    // permission means the real mic can't work, so the button stays.
+    @AppStorage(AudioSettings.microphoneEnabledKey) private var realMicEnabled = AudioSettings.defaultMicrophoneEnabled
+    private var realMicInUse: Bool { realMicEnabled && MicrophoneAccess.status != .denied }
+
     // MARK: Emulated devices
     //
     // Skylanders Portal / Disney Infinity Base / LEGO Dimensions Toypad. Read-only here -
@@ -1444,6 +1484,7 @@ struct EmulatorViewOptimized: View {
                     }
                     .frame(maxWidth: .infinity)
 
+                    TopBarOverflowScroll {
                     HStack(spacing: 8) {
                         Button(action: { showSkinSelector.toggle() }) {
                             Image(systemName: "gamecontroller.fill")
@@ -1487,6 +1528,15 @@ struct EmulatorViewOptimized: View {
                             }
                             .buttonStyle(MuffinSecondaryButtonStyle())
                             .accessibilityLabel("Save States")
+                        }
+
+                        // Simulated blow into the GamePad mic, for the games that ask for
+                        // one (Captain Toad, 3D World, NSMBU, Zelda). Only while a title is
+                        // running - the mic can't be open before that - and not at all when
+                        // the real microphone is in use instead. Turns itself off when the
+                        // title stops or changes (see BlowButton).
+                        if gameManager.emulationState == .running && !realMicInUse {
+                            BlowButton(titleID: "\(game.id)")
                         }
 
                         // Same "reachable without leaving the game" reasoning as Save
@@ -1616,6 +1666,7 @@ struct EmulatorViewOptimized: View {
                         .padding(.horizontal, 12)
                         .background(Color.white.opacity(0.08))
                         .cornerRadius(10)
+                    }
                     }
                 }
                 .padding(12)
