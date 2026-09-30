@@ -270,11 +270,13 @@ MetalRenderer::MetalRenderer()
     // destroyed allocator, and the GPU-fault latches and counters of the previous renderer.
     LatteIndices_forgetAll();
     {
-        uint64 physicalMemory = 0;
-        size_t physicalMemorySize = sizeof(physicalMemory);
-        if (sysctlbyname("hw.memsize", &physicalMemory, &physicalMemorySize, nullptr, 0) != 0 || physicalMemory == 0)
-            physicalMemory = 4ull << 30;
-        m_breadcrumbCapacity = physicalMemory >= (6ull << 30) ? 1024 : (physicalMemory >= (3ull << 30) ? 512 : 256);
+        // A fault is reported when the command buffer that contains it finishes, and by then up to 10 later ones can be
+        // on the GPU or queued behind it, so the ring has to reach back over all of them or the failed encoder's draws
+        // are already overwritten when they are needed. A command buffer holds at most twice the default commit
+        // threshold (196) draws. The same size on every device: the entries are about a kilobyte each.
+        constexpr uint32 kDrawsPerCommandBuffer = 2 * 196;
+        constexpr uint32 kCommandBuffersCovered = 12; // 10 in flight, the one being recorded, one being retired
+        m_breadcrumbCapacity = std::max<uint32>(1024, kDrawsPerCommandBuffer * kCommandBuffersCovered);
         m_breadcrumbs.assign(m_breadcrumbCapacity, MetalDrawBreadcrumb{});
     }
     {
@@ -3289,6 +3291,8 @@ void MetalRenderer::DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool 
         cemuLog_log(LogType::Force, "Metal: draw breadcrumbs: {} draws kept (draw {} to {}), unfinished encoders start at draws {} to {}", stored, at(0).draw, at(stored - 1).draw, firstDraw, lastDraw);
     else
         cemuLog_log(LogType::Force, "Metal: draw breadcrumbs: {} draws kept (draw {} to {}), the failed command buffer named no encoders", stored, at(0).draw, at(stored - 1).draw);
+    if (haveRange && firstDraw < at(0).draw)
+        cemuLog_log(LogType::Force, "Metal: the failed encoder starts at draw {}, {} draws older than the oldest breadcrumb kept (draw {}); its early draws are not in the ring", firstDraw, at(0).draw - firstDraw, at(0).draw);
 
     auto print = [&](const MetalDrawBreadcrumb& d) {
         cemuLog_log(LogType::Force, "Metal: crumb draw {} frame {} prim {} count {} indexed {} (type {}, offset {}, alloc {}, buffer {}) inst {}+{} baseVertex {} vertices {}..{} flags {:#x} suspect {:#x} vs {:016x} ps {:016x}",
