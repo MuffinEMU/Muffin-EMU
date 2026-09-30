@@ -2603,12 +2603,35 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     w.memStatsValid.store(true, std::memory_order_relaxed);
 
 #if BOOST_OS_IOS
-    if (!evictionRequested && os_proc_available_memory() >= (1200ull * MB))
+    // The limit differs per device, so the marks are fractions of what the process had free when the first
+    // frame was presented: evict what is cheap to bring back below 35%, and anything unused for ten seconds
+    // below 20%. The 3D World run on an A12Z climbed to the 4.5 GB limit with no eviction at all.
+    const uint64 available = os_proc_available_memory();
+    if (m_startAvailableMemory == 0)
+        m_startAvailableMemory = available;
+    const uint64 lowMark = std::max<uint64>(600ull * MB, m_startAvailableMemory * 35 / 100);
+    const uint64 criticalMark = std::max<uint64>(400ull * MB, m_startAvailableMemory * 20 / 100);
+    if (!evictionRequested && available >= lowMark)
         return;
 
-    // Close to the limit: delete what LatteTC says is safe (unused for several frames and restorable from
-    // guest memory, or overwritten), bounded per pass so it cannot stall a frame.
+    // Delete what LatteTC says is safe (unused for several frames and restorable from guest memory, or
+    // overwritten), bounded per pass so it cannot stall a frame.
     std::vector<LatteTexture*> candidates = LatteTC_GetDeleteableTextures();
+    if (available < criticalMark)
+    {
+        // Still short: also drop GPU-written textures nobody has touched for ten seconds. Their contents are
+        // lost, which is better than the app being killed.
+        const uint32 currentTick = GetTickCount();
+        const uint32 currentFrame = LatteGPUState.frameCounter;
+        for (LatteTexture* texture : LatteTexture::GetAllTextures())
+        {
+            if (!texture || texture->lastAccessFrameCount == 0)
+                continue;
+            if ((currentTick - texture->lastAccessTick) >= 10000 && (currentFrame - texture->lastAccessFrameCount) >= 30 &&
+                std::find(candidates.begin(), candidates.end(), texture) == candidates.end())
+                candidates.push_back(texture);
+        }
+    }
     uint32 deleted = 0;
     uint64 freedBytes = 0;
     for (LatteTexture* texture : candidates)

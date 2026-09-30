@@ -593,6 +593,7 @@ private:
 
     std::chrono::steady_clock::time_point m_lastMemoryCheck;
     uint32 m_memoryPressureLogs = 0;
+    uint64 m_startAvailableMemory = 0;
 
     uint32 m_defaultCommitTreshlod;
     uint32 m_commitTreshold;
