@@ -21,7 +21,7 @@
         {
           "version": "2026.9.30",
           "date": "2026-09-30T21:40:16Z",
-          "localizedDescription": "The newest build of MuffinEMU, from commit d0265b15c5152a0d7ede065ec77aad5954b68c99 on `feature/metal-binary-archive`.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\nThis tag moves. Every successful build replaces it, so the download here is\nalways the newest code, never a version you can come back to. For that, use a\nnumbered release.\n\nThis build has not been tested. If you want the version that is known to\nwork, install the latest numbered release instead.",
+          "localizedDescription": "The newest build of MuffinEMU from `main`, from commit d02157244252c7c63b01fb08fb57fe5798c98988 - currently the same build as MuffinEMU 6.1.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit d02157244252c7c63b01fb08fb57fe5798c98988.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v6.0...v6.1",
           "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/nightly/MuffinEMU-fakesigned.ipa",
           "size": 68602883,
           "minOSVersion": "15.0"
