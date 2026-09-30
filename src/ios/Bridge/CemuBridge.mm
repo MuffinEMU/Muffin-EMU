@@ -1130,7 +1130,7 @@ namespace {
         if (availBytes != 0)
         {
             uint64_t limit = availBytes + cemu_mem_footprint_bytes();
-            const uint64_t physBytes = cemu_sysctl_u64("hw.memsize");
+            static const uint64_t physBytes = cemu_sysctl_u64("hw.memsize");
             if (physBytes != 0 && limit > physBytes)
                 limit = physBytes;
             if (limit > s_memLimitBytes)
