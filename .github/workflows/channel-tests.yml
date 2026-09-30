@@ -1,0 +1,35 @@
+name: Channel tests
+
+# Proves the distribution rules (docs/CI.md) without touching a real release: which publishing jobs run
+# for which trigger, that the publishing scripts refuse what they must and publish only what they
+# should (against a throwaway git history, a stand-in `gh` and DRY_RUN=1), and that the install-source
+# generator keeps the channels apart. Cheap, so it runs on every change to the pipeline.
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths: [ 'ci/**', '.github/workflows/**', 'docs/CI.md' ]
+  push:
+    branches: [ main ]
+    paths: [ 'ci/**', '.github/workflows/**', 'docs/CI.md' ]
+
+permissions:
+  contents: read
+
+jobs:
+  channels:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Which jobs publish for which trigger (the real workflow's conditions)
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 ci/test-workflow-gates.py
+      - name: The publishing scripts, dry run
+        run: ci/test-publish.sh
+      - name: The install-source generator
+        run: python3 ci/test-generator.py
+      - name: Shell syntax of every CI script
+        run: for f in ci/*.sh; do bash -n "$f"; done

@@ -50,6 +50,14 @@ jobs:
           assert files, "no source feeds produced"
           for f in files:
               d=json.load(open(f)); app=d["apps"][0]
+              # Channel separation, re-checked on the files themselves (the generator also refuses).
+              text=open(f).read()
+              name=f.split("/")[-1]
+              if name.startswith("experimental"):
+                  assert "/releases/download/nightly/" not in text, f"{f}: experimental feed mentions nightly"
+                  assert "/releases/download/experimental/" not in text, f"{f}: experimental feed mentions the rolling release"
+              else:
+                  assert "/experimental" not in text, f"{f}: a stable or nightly feed mentions an experimental URL"
               assert app["versions"], f"{f}: no versions"
               for v in app["versions"]:
                   for k in ("version","date","downloadURL","size"):
@@ -60,7 +68,8 @@ jobs:
 
       - name: Commit if changed
         run: |
-          git add docs/*.json
+          # -A so that a feed the generator removed (no live experiments) is removed here too.
+          git add -A -- 'docs/*.json'
           if git diff --cached --quiet; then
             echo "source already up to date"
             exit 0
