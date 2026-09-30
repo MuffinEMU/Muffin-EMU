@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "5.4",
+          "date": "2026-09-30T00:59:38Z",
+          "localizedDescription": "## What changed\n\n- Fixed a rare crash when quitting a game on iPhone and iPad.\n- Older Vulkan devices that were previously rejected can now run games through the Vulkan renderer.\n- Controller skins have new colour names (Indigo, Primary, Sky and so on); the skin you picked stays selected and looks the same.\n- Fixes blurry, low-quality graphics and frequent crashes during gameplay that started in 5.3.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 157c7faced8021e40c388e6732c3335ed3e46b5a.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v5.3...v5.4",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v5.4/MuffinEMU.ipa",
+          "size": 68095034,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "5.2",
           "date": "2026-09-26T21:51:22Z",
           "localizedDescription": "## What changed\n\n- The landing page hero drops the small-caps line that repeated what the sentence under it already said.\n- The site nav's underline for the current page is a straight line again, not a curved one.\n- The landing page hero is spaced more evenly from the title down to the buttons.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit d346ca6eac7dc5f18df3677a4fd906baa03d1f15.\n\n**Known issue:** MuffinEMU's own on-screen controls are currently broken. We're\nactively working on a fix - this notice comes off once it lands.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v5.1...v5.2",
@@ -371,12 +379,12 @@
   ],
   "news": [
     {
-      "title": "MuffinEMU 5.2",
-      "identifier": "muffinemu-v5.2",
-      "caption": "The landing page hero drops the small-caps line that repeated what the sentence under it already said. The site nav's underline for the current page is a straight line again, not a curved one.",
-      "date": "2026-09-26",
+      "title": "MuffinEMU 5.4",
+      "identifier": "muffinemu-v5.4",
+      "caption": "Fixed a rare crash when quitting a game on iPhone and iPad. Older Vulkan devices that were previously rejected can now run games through the Vulkan renderer.",
+      "date": "2026-09-30",
       "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v5.2",
+      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v5.4",
       "appID": "com.kiddreads.MuffinEMU",
       "notify": false
     }
