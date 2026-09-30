@@ -2528,6 +2528,7 @@ void MetalRenderer::CommitCommandBuffer()
     // Commit the command buffer
     if (!m_currentCommandBuffer.m_commited)
     {
+
         // Handled differently, since it seems like Metal doesn't always call the completion handler
         //commandBuffer.m_commandBuffer->addCompletedHandler(^(MTL::CommandBuffer*) {
         //    m_memoryManager->GetTemporaryBufferAllocator().CommandBufferFinished(commandBuffer.m_commandBuffer);
@@ -2797,6 +2798,12 @@ bool MetalRenderer::CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader)
             if (colorTarget && colorTarget->baseTexture == baseTexture)
                 return true;
         }
+        // The depth attachment counts too. Only colour targets were checked, so a shader sampling the depth
+        // texture that the same pass is writing stayed in one pass, a read of a texture being written that
+        // the GPU can fault on.
+        auto depthTarget = m_state.m_activeFBO.m_fbo->depthBuffer.texture;
+        if (depthTarget && depthTarget->baseTexture == baseTexture)
+            return true;
     }
 
     return false;
