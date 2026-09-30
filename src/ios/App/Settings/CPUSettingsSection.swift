@@ -9,7 +9,7 @@ struct CPUSettingsSection: View {
     @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = true
     @AppStorage("muffin.cpu.favourAccuracy") private var favourAccuracy = false
     @AppStorage(LowPowerMode.storageKey) private var lowPowerMode = LowPowerMode.defaultValue
-    @AppStorage(MulticoreMode.storageKey) private var multicoreEnabled = MulticoreMode.defaultValue
+    @AppStorage(CoreMode.storageKey) private var coreModeRaw = CoreMode.current.rawValue
     @AppStorage(ThermalMonitor.autoThrottleKey) private var autoReduceWhenHot = ThermalMonitor.autoThrottleDefault
     @ObservedObject private var thermal = ThermalMonitor.shared
     @AppStorage(HeatDisplayMode.storageKey) private var heatDisplayMode = HeatDisplayMode.word.rawValue
@@ -61,22 +61,28 @@ struct CPUSettingsSection: View {
                 cemu_bridge_set_low_power_mode(newValue)
             }
 
-            // Off by default: three host threads heat a fanless device and usually run slower than
-            // one. Kept as a switch for better-cooled devices.
-            Toggle(isOn: $multicoreEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Use all three CPU cores")
+            // Auto by default: decides per game from its profile, this device's performance cores and
+            // its thermal state, and leans to one core (see CoreMode in RenderScale.swift).
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("CPU cores")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(multicoreEnabled
-                         ? "Three cores. Can be faster on cooler devices, but heats up quickly on most iPads."
-                         : "One core. Cooler and usually faster on this hardware.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                    Spacer()
+                    Picker("CPU cores", selection: $coreModeRaw) {
+                        ForEach(CoreMode.allCases) { mode in
+                            Text(mode.title).tag(mode.rawValue)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(MuffinTheme.pixelBlue)
                 }
+                Text((CoreMode(rawValue: coreModeRaw) ?? CoreMode.defaultValue).summary)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .tint(MuffinTheme.pixelBlue)
-            .onChange(of: multicoreEnabled) { newValue in
-                cemu_bridge_set_multicore_enabled(newValue)
+            .onChange(of: coreModeRaw) { newValue in
+                cemu_bridge_set_cpu_core_mode((CoreMode(rawValue: newValue) ?? CoreMode.defaultValue).bridgeValue)
             }
 
             // On by default: at .serious iOS is already throttling, so lowering the pixel count

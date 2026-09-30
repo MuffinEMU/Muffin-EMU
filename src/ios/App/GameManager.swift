@@ -1055,6 +1055,7 @@ class GameManager: ObservableObject {
         cemu_bridge_register_render_surface(surfacePtr, width, height, dpiScale)
 
         let romPath = game.romPath
+        let gameID = game.id
         let token = launchToken
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
@@ -1096,7 +1097,11 @@ class GameManager: ObservableObject {
             cemu_bridge_set_low_power_mode(LowPowerMode.isEnabled)
             // Read at title start like the rest: the core count is fixed once the
             // scheduler threads exist, so this has to be right before the title runs.
-            cemu_bridge_set_multicore_enabled(MulticoreMode.isEnabled)
+            // Per-game choice first, Settings underneath; Auto then decides in the bridge from the
+            // game's profile, this device and its thermal state. The second call tells Auto whether
+            // an earlier three-core run of this title went badly.
+            cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: game.id).bridgeValue)
+            cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemotedAtLaunch(gameID: game.id))
             // Global, not per-game - see CemuBridge.h's cemu_bridge_set_vsync_enabled().
             // Applied once per layer (re)init, so reading it here before boot is what
             // makes a mid-session Settings change take effect on the next launch.
@@ -1261,6 +1266,9 @@ class GameManager: ObservableObject {
                 self.emulationState = (status == CEMU_BRIDGE_OK) ? .running : .error
                 if self.emulationState == .running {
                     self.startFrameRateMonitor()
+                    if cemu_bridge_cpu_auto_picked_multicore() {
+                        AutoCoreHistory.sessionStarted(gameID: gameID)
+                    }
                 }
             }
         }
@@ -1281,6 +1289,10 @@ class GameManager: ObservableObject {
 
     func stopEmulation() {
         launchToken = UUID()
+        if let gameID = currentGame?.id {
+            // A three-core run that Auto chose and that ended with the picture stopped is not retried.
+            AutoCoreHistory.sessionEnded(gameID: gameID, stalled: videoStalled && videoStallKind == 1)
+        }
         stopFrameRateMonitor()
         #if os(iOS)
         // Resume before stopping, unconditionally, even though nothing here knows or
