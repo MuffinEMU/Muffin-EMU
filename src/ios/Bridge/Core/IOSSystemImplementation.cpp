@@ -79,8 +79,25 @@ bool IOSSystemImplementation_TitleSwitchFailed()
 	return sTitleSwitchFailed.load();
 }
 
+// The core hit something it cannot continue from (out of address space for a game thread). Marks the
+// title as ended so the UI stops it, with a reason (a string literal) the status text can show.
+static std::atomic<const char*> sFatalReason{nullptr};
+
+void IOSSystemImplementation_ReportFatal(const char* reason)
+{
+	sFatalReason.store(reason);
+	sTitleExitStatus.store(-1);
+	sTitleExitedItself.store(true);
+}
+
+const char* IOSSystemImplementation_FatalReason()
+{
+	return sFatalReason.load();
+}
+
 void IOSSystemImplementation_ResetExit()
 {
+	sFatalReason.store(nullptr);
 	sTitleExitedItself.store(false);
 	sTitleExitStatus.store(0);
 	sTitleSwitchFailed.store(false);

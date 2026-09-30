@@ -44,10 +44,29 @@ void MetalSynchronizedRingAllocator::allocateAdditionalUploadBuffer(uint32 sizeR
 		bufferAllocSize += m_minimumBufferAllocSize;
 
 	MTL::Buffer* mtlBuffer = m_mtlr->GetDevice()->newBuffer(bufferAllocSize, m_options);
+	// When the usual chunk (a multiple of the minimum size) cannot be had, settle for less: halve the request
+	// down to what this allocation needs, rounded to 1 MB, before giving up.
+	uint32 attemptSize = bufferAllocSize;
+	while (!mtlBuffer && attemptSize > sizeRequiredForAlloc)
+	{
+		attemptSize = std::max<uint32>(sizeRequiredForAlloc, attemptSize / 2);
+		attemptSize = (attemptSize + 0xFFFFF) & ~0xFFFFFu;
+		if (attemptSize < sizeRequiredForAlloc)
+			attemptSize = sizeRequiredForAlloc;
+		mtlBuffer = m_mtlr->GetDevice()->newBuffer(attemptSize, m_options);
+		if (attemptSize <= sizeRequiredForAlloc)
+			break;
+	}
+	if (mtlBuffer)
+		bufferAllocSize = attemptSize;
 	if (!mtlBuffer)
 	{
-		// Out of memory: leave the list alone so AllocateBufferMemory() reports the failure.
-		cemuLog_log(LogType::Force, "Metal: staging buffer allocation failed, wanted {} bytes", bufferAllocSize);
+		// Out of memory: leave the list alone so AllocateBufferMemory() reports the failure, and ask the GPU
+		// thread to drop unused textures at the end of the frame. The upload that needed this is skipped.
+		static uint32 s_failures = 0;
+		if (s_failures++ < 8 || (s_failures % 500) == 0)
+			cemuLog_log(LogType::Force, "Metal: staging buffer allocation failed, wanted {} bytes ({} failures so far)", bufferAllocSize, s_failures);
+		LatteWait::Get().evictionRequested.store(true);
 		return;
 	}
 
