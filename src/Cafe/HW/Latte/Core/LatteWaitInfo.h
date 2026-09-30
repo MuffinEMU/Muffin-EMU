@@ -47,6 +47,10 @@ namespace LatteWait
 		std::atomic<uint32_t> memXfbMB{0};
 		std::atomic<uint32_t> memReadbackMB{0};
 		std::atomic<uint32_t> texturesEvicted{0};
+		// Another thread (a guest thread that could not get a stack) asks the GPU thread to evict textures now;
+		// the GPU thread bumps evictionPasses when it has done so.
+		std::atomic<bool> evictionRequested{false};
+		std::atomic<uint32_t> evictionPasses{0};
 		std::atomic<bool> memStatsValid{false};
 
 		// presentation
