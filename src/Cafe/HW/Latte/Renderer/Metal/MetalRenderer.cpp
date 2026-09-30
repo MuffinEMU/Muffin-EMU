@@ -2902,13 +2902,30 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
 
 #if BOOST_OS_IOS
     // The limit differs per device, so the marks are fractions of what the process had free when the first
-    // frame was presented: evict what is cheap to bring back below 35%, and anything unused for ten seconds
-    // below 20%. The 3D World run on an A12Z climbed to the 4.5 GB limit with no eviction at all.
+    // frame was presented: evict what is cheap to bring back below the low mark, and anything unused for ten
+    // seconds below the critical mark. The 3D World run on an A12Z climbed to the 4.5 GB limit with no eviction
+    // at all.
+    //
+    // The fractions follow the headroom this device actually gave the process. A small phone starts with
+    // little to spare, so it keeps a larger share in reserve (a texture that is dropped early only costs a
+    // re-upload; a process killed for memory costs the whole session). The absolute floors below used to apply
+    // to every device, which on a small one meant evicting from the first frame on; they are now capped to a
+    // share of that device's own headroom.
     const uint64 available = os_proc_available_memory();
     if (m_startAvailableMemory == 0)
         m_startAvailableMemory = available;
-    const uint64 lowMark = std::max<uint64>(600ull * MB, m_startAvailableMemory * 35 / 100);
-    const uint64 criticalMark = std::max<uint64>(400ull * MB, m_startAvailableMemory * 20 / 100);
+    const bool smallHeadroom = m_startAvailableMemory < 1536ull * MB;
+    const uint64 lowPercent = smallHeadroom ? 45 : 35;
+    const uint64 criticalPercent = smallHeadroom ? 25 : 20;
+    const uint64 lowMark = std::max<uint64>(m_startAvailableMemory * lowPercent / 100, std::min<uint64>(600ull * MB, m_startAvailableMemory / 2));
+    const uint64 criticalMark = std::max<uint64>(m_startAvailableMemory * criticalPercent / 100, std::min<uint64>(400ull * MB, m_startAvailableMemory * 30 / 100));
+    static bool s_loggedMemoryMarks = false;
+    if (!s_loggedMemoryMarks && m_startAvailableMemory != 0)
+    {
+        s_loggedMemoryMarks = true;
+        cemuLog_log(LogType::Force, "Metal: {} memory headroom ({} MB free at the first frame): dropping cheap textures below {} MB free, all idle ones below {} MB",
+            smallHeadroom ? "small" : "standard", m_startAvailableMemory / MB, lowMark / MB, criticalMark / MB);
+    }
     if (!evictionRequested && available >= lowMark)
         return;
 
