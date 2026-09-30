@@ -153,6 +153,26 @@ static void thermal_throttling_lengthens_windows()
 	CHECK(!t.stalled() && t.raises == 0, "windows scale with the thermal state");
 }
 
+// Breath of the Wild, v5.8 log botw-1222: heavy loading at 12:22:14 and 12:22:22, frame 467 -> 470 with draw
+// calls 2150 -> 5677 inside one frame, 0 command buffers pending, 0 failed, "frames are arriving again" 4 s later.
+// The old 4 s rule fired twice on this. Nothing may fire, however long it goes on.
+static void botw_heavy_loading_slow_frames()
+{
+	Sim t; t.Run(30, 30);
+	for (int gap = 0; gap < 12; gap++) // a frame every 4 s for 48 s while the GPU thread draws the whole time
+	{
+		for (int i = 0; i < 16; i++) { t.s.draws += 220; t.Step(); }
+		t.s.frames++; t.s.presented++;
+	}
+	CHECK(!t.stalled() && t.raises == 0 && t.suspects == 0, "slow frames with draw calls climbing");
+	// the same but nothing presents at all for 30 s while draws climb (offscreen-only loading pass)
+	for (int i = 0; i < 120; i++) { t.s.draws += 220; t.Step(); }
+	CHECK(!t.stalled() && t.raises == 0 && t.suspects == 0, "no frame for 30 s with the GPU thread drawing");
+	// and the real fault that followed is still immediate
+	t.s.gpuError = true; t.s.gpuErrorCode = 3; t.Step();
+	CHECK(t.det.kind() == Kind::GpuFault, "the page fault that followed is shown at once");
+}
+
 static void drawable_hiccups_are_ignored()
 {
 	Sim t; t.Run(20, 30);
@@ -277,6 +297,7 @@ static void gpu_thread_no_progress()
 int main()
 {
 	healthy_game_is_quiet();
+	botw_heavy_loading_slow_frames();
 	low_fps_game_is_quiet();
 	loading_screen_is_not_a_freeze();
 	sync_load_with_gpu_thread_busy_is_not_a_freeze();

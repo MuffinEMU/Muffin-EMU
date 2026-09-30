@@ -114,6 +114,7 @@ namespace StallDetect
 		uint32_t cbRetired = 0;        // command buffers that finished without error
 		uint32_t cbErrorStreak = 0;    // consecutive failed command buffers, reset by a success
 		uint32_t pm4 = 0;              // GPU command packets processed
+		uint32_t draws = 0;            // draw calls issued (the GPU thread is busy even when no frame completes)
 		uint32_t flipRequests = 0;
 		uint32_t evictionPasses = 0;
 		// state
@@ -359,6 +360,7 @@ namespace StallDetect
 			prevPresented_ = s.presented; tPresented_ = now;
 			prevRetired_ = s.cbRetired; tRetired_ = now;
 			prevPm4_ = s.pm4; tPm4_ = now;
+			prevDraws_ = s.draws;
 			prevFlips_ = s.flipRequests; tFlips_ = now;
 			prevFailures_ = s.drawableFailures; tFailure_ = now;
 			prevEvictions_ = s.evictionPasses;
@@ -379,6 +381,8 @@ namespace StallDetect
 			if (s.presented != prevPresented_) { prevPresented_ = s.presented; tPresented_ = now; }
 			if (s.cbRetired != prevRetired_) { prevRetired_ = s.cbRetired; tRetired_ = now; }
 			if (s.pm4 != prevPm4_) { prevPm4_ = s.pm4; tPm4_ = now; }
+			// A long stretch of draws with no finished frame is heavy loading or rendering, which is progress.
+			if (s.draws != prevDraws_) { prevDraws_ = s.draws; tPm4_ = now; }
 			if (s.flipRequests != prevFlips_) { prevFlips_ = s.flipRequests; tFlips_ = now; }
 			if (s.drawableFailures != prevFailures_) { prevFailures_ = s.drawableFailures; tFailure_ = now; }
 			// A memory-pressure eviction pass is the GPU thread busy with real work: count it as progress.
@@ -485,6 +489,7 @@ namespace StallDetect
 			raisePresented_ = s.presented;
 			raiseRetired_ = s.cbRetired;
 			raisePm4_ = s.pm4;
+			raiseDraws_ = s.draws;
 			d.action = Action::Raise;
 			d.kind = kind;
 			d.rule = rule;
@@ -525,7 +530,7 @@ namespace StallDetect
 				std::snprintf(why, sizeof(why), "frames are back: presented %u -> %u", (unsigned)raisePresented_, (unsigned)s.presented);
 				break;
 			default:
-				recovered = s.frames != raiseFrames_ || s.pm4 != raisePm4_ || s.presented != raisePresented_ || s.cbRetired != raiseRetired_;
+				recovered = s.frames != raiseFrames_ || s.pm4 != raisePm4_ || s.draws != raiseDraws_ || s.presented != raisePresented_ || s.cbRetired != raiseRetired_;
 				std::snprintf(why, sizeof(why), "frames are back: frame %u -> %u, GPU packets %u -> %u, presented %u -> %u", (unsigned)raiseFrames_, (unsigned)s.frames, (unsigned)raisePm4_, (unsigned)s.pm4, (unsigned)raisePresented_, (unsigned)s.presented);
 				break;
 			}
@@ -541,7 +546,7 @@ namespace StallDetect
 		Kind stallKind_ = Kind::None;
 		Rule stallRule_ = Rule::None;
 		int64_t raisedAtMs_ = 0;
-		uint32_t raiseFrames_ = 0, raisePresented_ = 0, raiseRetired_ = 0, raisePm4_ = 0;
+		uint32_t raiseFrames_ = 0, raisePresented_ = 0, raiseRetired_ = 0, raisePm4_ = 0, raiseDraws_ = 0;
 		bool memRaised_ = false;
 		int64_t memLowSince_ = -1;
 
@@ -549,7 +554,7 @@ namespace StallDetect
 		int64_t lastNowMs_ = 0;
 		int64_t settleUntilMs_ = 0;
 		uint32_t layoutStamp_ = 0;
-		uint32_t prevFrames_ = 0, prevPresented_ = 0, prevRetired_ = 0, prevPm4_ = 0, prevFlips_ = 0, prevFailures_ = 0, prevEvictions_ = 0;
+		uint32_t prevFrames_ = 0, prevPresented_ = 0, prevRetired_ = 0, prevPm4_ = 0, prevDraws_ = 0, prevFlips_ = 0, prevFailures_ = 0, prevEvictions_ = 0;
 		int64_t tFrames_ = 0, tPresented_ = 0, tRetired_ = 0, tPm4_ = 0, tFlips_ = 0, tFailure_ = 0;
 		int64_t presumedLostSince_ = -1, streakSince_ = -1;
 		int64_t lastGuestWaitMs_ = -1000000000LL;
