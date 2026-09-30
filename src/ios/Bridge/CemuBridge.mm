@@ -2995,6 +2995,18 @@ bool IOSBridge_RecreateRenderSurface() {
     return state->ok.load();
 }
 
+// Called by the Vulkan renderer (GPU or render-worker thread) when the GPU reports the device lost or a command buffer never
+// finishes. Stops the title with a message the UI shows, and remembers the failure against this MoltenVK build so the next
+// launch uses Metal, the same bookkeeping as a Vulkan start failure (ios_report_renderer_fallback).
+void IOSBridge_VulkanDeviceLost(const char* why) {
+    NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setObject:[NSString stringWithUTF8String:g_activeMoltenVK.c_str()] forKey:kVulkanFailedBuildKey];
+    ios_migrate_renderer_setting_to_metal();
+    cemu_bridge_log_checkpoint((std::string("Renderer: the GPU was lost while using Vulkan with MoltenVK ") + g_activeMoltenVK
+        + " (" + (why ? why : "unknown") + "). The title is being stopped and the saved renderer is now Metal.").c_str());
+    IOSSystemImplementation_ReportFatal("The GPU stopped responding while this game was using Vulkan, so the game was stopped. The renderer is back on Metal for the next launch; you can try Vulkan again in Settings > Graphics.");
+}
+
 void cemu_bridge_pause(void) {
     IOSTitlePause_Pause();
 }
