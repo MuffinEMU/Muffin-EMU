@@ -85,10 +85,33 @@ enum DlcUpdateImport {
     private static let stagingDirectoryName = ".incoming-dlcupdate"
 
     private static func mlcRoot() -> URL? {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+        _ = migratedMisplacedContent
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
             .first?
             .appendingPathComponent("mlc")
     }
+
+    /// Earlier versions installed DLC and updates into `Documents/mlc/usr/title`, one level above
+    /// where the engine looks (`Documents/mlc/mlc01/usr/title`), so they never reached the game.
+    /// Moves each installed title folder into the real location, once per launch, only when that
+    /// title is not installed there already. Anything that can't be moved stays where it is.
+    private static let migratedMisplacedContent: Void = {
+        let fm = FileManager.default
+        guard let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let wrongRoot = docs.appendingPathComponent("mlc/usr/title", isDirectory: true)
+        let rightRoot = docs.appendingPathComponent("mlc/mlc01/usr/title", isDirectory: true)
+        guard let highs = try? fm.contentsOfDirectory(at: wrongRoot, includingPropertiesForKeys: nil) else { return }
+        for high in highs {
+            guard let lows = try? fm.contentsOfDirectory(at: high, includingPropertiesForKeys: nil) else { continue }
+            let rightHigh = rightRoot.appendingPathComponent(high.lastPathComponent, isDirectory: true)
+            for low in lows {
+                let target = rightHigh.appendingPathComponent(low.lastPathComponent, isDirectory: true)
+                if fm.fileExists(atPath: target.path) { continue }
+                try? fm.createDirectory(at: rightHigh, withIntermediateDirectories: true)
+                try? fm.moveItem(at: low, to: target)
+            }
+        }
+    }()
 
     private static func titleTypeName(forByte byte: Int32) -> String {
         switch byte {
@@ -210,7 +233,7 @@ enum DlcUpdateImport {
         let lowerHex = String(cString: lowerHexBuf)
 
         let destination = mlcRoot
-            .appendingPathComponent("usr/title")
+            .appendingPathComponent("mlc01/usr/title")
             .appendingPathComponent(upperHex)
             .appendingPathComponent(lowerHex)
 
@@ -283,7 +306,7 @@ enum DlcUpdateImport {
         cemu_bridge_get_mlc_title_path_components(titleId, &upperHexBuf, &lowerHexBuf)
 
         let destination = mlcRoot
-            .appendingPathComponent("usr/title")
+            .appendingPathComponent("mlc01/usr/title")
             .appendingPathComponent(String(cString: upperHexBuf))
             .appendingPathComponent(String(cString: lowerHexBuf))
         return FileManager.default.fileExists(atPath: destination.path) ? destination : nil
