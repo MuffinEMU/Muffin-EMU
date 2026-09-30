@@ -8,3 +8,5 @@
 #import "IOSLiveLog.h"
 // Motion aiming (gyro) settings; also plain C.
 #import "IOSMotion.h"
+// Pure C as well: the graphic pack screens (scan, list, enable, presets).
+#import "IOSGraphicPackBridge.h"
