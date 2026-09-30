@@ -23,6 +23,7 @@ struct SettingsView: View {
         DisplaySettingsSection()
         LibrarySettingsSection(gameManager: gameManager)
         KeysSettingsSection()
+        WiiUMenuSettingsSection()
     }
 
     @ViewBuilder private var formBottom: some View {

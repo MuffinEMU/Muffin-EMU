@@ -1175,6 +1175,24 @@ namespace CafeSystem
 		s_implementation->CafePPCProcessExit();
 	}
 
+	static std::atomic_bool s_titleSwitchInProgress{false};
+
+	void SetTitleSwitchInProgress(bool inProgress)
+	{
+		s_titleSwitchInProgress = inProgress;
+	}
+
+	bool IsTitleSwitchInProgress()
+	{
+		return s_titleSwitchInProgress;
+	}
+
+	void NotifyTitleSwitchFailed(TitleId titleId)
+	{
+		s_foregroundReturnStatus = -1;
+		s_implementation->CafeTitleSwitchFailed(titleId);
+	}
+
 	std::optional<sint32> GetForegroundTitleReturnStatus()
 	{
 		return s_foregroundReturnStatus;

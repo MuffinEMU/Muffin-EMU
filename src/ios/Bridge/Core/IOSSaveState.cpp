@@ -36,6 +36,7 @@
 bool IOSTitlePause_Pause();
 bool IOSTitlePause_Resume();
 bool IOSTitlePause_IsPaused();
+extern "C" bool cemu_bridge_video_stalled(void); // CemuBridge.h
 
 namespace
 {
@@ -74,12 +75,22 @@ namespace
 
 	// True while the title is genuinely quiescent: no core mid-timeslice, no GPU command
 	// still in flight. Everything IOSSaveState touches assumes this already holds.
-	bool WaitForQuiescence()
+	//
+	// skipGpuDrain: a save may go ahead without waiting for the GPU when the bridge's watchdog
+	// had flagged the picture as stopped (sampled before pausing: pausing clears the flag). The GPU thread is not going to drain, so waiting would
+	// only turn "the picture froze" into "and saving failed too"; the guest CPU state, which is
+	// what a save captures, is still complete. Never used for a load.
+	bool WaitForQuiescence(bool skipGpuDrain = false)
 	{
 		if (!WaitForCoresIdle(kCoreIdleTimeoutMs))
 		{
 			cemuLog_log(LogType::Force, "IOSSaveState: timed out waiting for all cores to idle; refusing (a guest thread is stuck in a long call)");
 			return false;
+		}
+		if (skipGpuDrain)
+		{
+			cemuLog_log(LogType::Force, "IOSSaveState: the picture has stalled, saving without waiting for the GPU command queue to drain");
+			return true;
 		}
 		if (!WaitForGPUDrain(kGpuDrainTimeoutMs))
 		{
@@ -350,11 +361,12 @@ bool IOSSaveState_Save(const char* path)
 	if (!CafeSystem::IsTitleRunning())
 		return false;
 
+	const bool videoStalled = cemu_bridge_video_stalled();
 	const bool wasAlreadyPaused = IOSTitlePause_IsPaused();
 	if (!wasAlreadyPaused && !IOSTitlePause_Pause())
 		return false;
 
-	bool ok = WaitForQuiescence() && WriteSaveFile(path);
+	bool ok = WaitForQuiescence(videoStalled) && WriteSaveFile(path);
 
 	if (!wasAlreadyPaused)
 		IOSTitlePause_Resume();

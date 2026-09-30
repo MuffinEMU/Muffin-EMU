@@ -1282,10 +1282,13 @@ bool PPCRecompiler_Init26() {
         // failure as null aliases, so retrying is safe.
         constexpr size_t kMB = 1024ull * 1024ull;
         // The arena is an anonymous mmap: its size only reserves address space, pages are backed when
-        // written. A larger arena means fewer full flushes of translated code.
+        // written. The dual mapping means the space is taken twice (the executable and the writable alias),
+        // on top of the guest's 4 GB reservation, and on iOS address space runs out well before RAM does:
+        // a 1 GB arena is 2 GB of it, and a game that then could not allocate a 2 MB thread stack crashed.
+        // A game's translated code needs far less, so start at 512 MB; a smaller arena only means translated
+        // code is flushed and rebuilt a little more often.
         constexpr size_t kArenaSizes[] = {
-            3072 * kMB, 2560 * kMB, 2048 * kMB, 1536 * kMB,
-            1024 * kMB, 512 * kMB, 256 * kMB, 128 * kMB, 64 * kMB
+            512 * kMB, 384 * kMB, 256 * kMB, 128 * kMB, 64 * kMB
         };
         size_t chosenArena = 0;
         for (size_t candidate : kArenaSizes)

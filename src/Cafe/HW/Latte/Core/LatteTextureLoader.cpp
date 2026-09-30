@@ -686,6 +686,8 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	uint32 imageSize = texDecoder->calculateImageSize(&textureLoader);
 
 	uint8* pixelData = (uint8*)g_renderer->texture_acquireTextureUploadBuffer(imageSize);
+	if (!pixelData)
+		return; // out of memory: leave the texture as it is rather than decode into nothing
 	// decode texture (if data is required)
 #ifdef BENCHMARK_TEXTURE_DECODING
 	LARGE_INTEGER benchmark_begin;

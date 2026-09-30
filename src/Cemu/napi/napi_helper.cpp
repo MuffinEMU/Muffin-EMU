@@ -260,6 +260,15 @@ bool CurlRequestHelper::submitRequest(bool isPost)
 
 	// submit
 	int res = curl_easy_perform(m_curl);
+	if (res == CURLE_SSL_CONNECT_ERROR || res == CURLE_SSL_CERTPROBLEM || res == CURLE_PEER_FAILED_VERIFICATION || res == CURLE_SSL_CACERT_BADFILE)
+	{
+		// A TLS setup or certificate failure comes from missing otp.bin/seeprom.bin/dumped certificates or a
+		// rejected certificate. Retrying repeats the same failure a second later, so fail at once and only log it once.
+		static std::atomic_bool s_loggedTlsFailure{false};
+		if (!s_loggedTlsFailure.exchange(true))
+			cemuLog_log(LogType::Force, "CURL web request failed with TLS error {} (online files missing or invalid). Not retrying; further TLS failures are not logged", res);
+		return false;
+	}
 	if (res != CURLE_OK)
 	{
 		cemuLog_log(LogType::Force, "CURL web request failed with error {}. Retrying...", res);

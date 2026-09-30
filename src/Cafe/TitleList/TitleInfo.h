@@ -138,7 +138,7 @@ public:
 		HOST_FS = 1, // host filesystem directory (fullPath points to root with content/code/meta subfolders)
 		WUD = 2, // WUD or WUX
 		WIIU_ARCHIVE = 3, // Wii U compressed single-file archive (.wua)
-	  	NUS = 4, // NUS format. Directory with .app files, title.tik and title.tmd
+	  	NUS = 4, // NUS format: an encrypted game folder with title.tmd, title.tik and .app files. fullPath points at title.tmd
 	  	WUHB = 5,
 		// error
 		INVALID_STRUCTURE = 0,
@@ -151,7 +151,14 @@ public:
 		UNKNOWN_FORMAT = 2,
 		NO_DISC_KEY = 3,
 		NO_TITLE_TIK = 4,
-		MISSING_XML_FILES = 4,
+		// Was 4, the same value as NO_TITLE_TIK, so a title with missing meta files was
+		// reported as one with a missing ticket. CemuBridge.h's CemuTitleMissingXmlFiles is 5.
+		MISSING_XML_FILES = 5,
+		// Encrypted game folders (NUS): what specifically stopped FSTVolume::OpenFromContentFolder()
+		BAD_TITLE_TMD = 6,
+		BAD_TITLE_TIK = 7,
+		TITLE_KEY_INVALID = 8,
+		MISSING_CONTENT_FILE = 9,
 	};
 
 	struct CachedInfo
