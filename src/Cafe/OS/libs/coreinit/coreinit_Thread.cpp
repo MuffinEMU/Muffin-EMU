@@ -1311,6 +1311,9 @@ namespace coreinit
 		bool isMainCore = g_isMulticoreMode == false || t_assignedCoreIndex == 1;
 		sint32 coreIndex = t_assignedCoreIndex;
 		__OSUnlockScheduler();
+		// This host thread is about to run guest code: the recompiler's deferred release of invalidated
+		// code has to know about it (JitReclaim.h).
+		PPCRecompiler_jitHostRegister();
 		// Main core only. Used to be a bare spin (about 6 million passes a second, one performance
 		// core at 100% whenever the guest had nothing to run, which heats a fanless iPad into
 		// throttling). Now: a few passes hot, then a wait that a newly runnable thread ends at once
@@ -1322,6 +1325,8 @@ namespace coreinit
 		uint64 idleSegmentStart = PerfTelemetry::NowNs();
 		while (true)
 		{
+			// Not inside recompiled code here: whatever this core was running has returned or parked.
+			PPCRecompiler_jitHostQuiescent();
 			// Sampled before the run queues are looked at, so a thread queued after that is seen
 			// as a changed sequence number by the wait below instead of being slept through.
 			const uint64 wakeSeq = g_idleWakeSeq.load();
@@ -1345,12 +1350,14 @@ namespace coreinit
 			else if (isMainCore && ++emptyRunQueueSpins > kIdleSpinBudget)
 			{
 				bool signalled;
+				PPCRecompiler_jitHostIdle(true);
 				{
 					std::unique_lock lk(g_idleWakeMtx);
 					signalled = g_idleWakeCv.wait_for(lk, kIdleWakeTimeout, [wakeSeq]() {
 						return g_idleWakeSeq.load() != wakeSeq || !sSchedulerActive.load(std::memory_order::relaxed);
 					});
 				}
+				PPCRecompiler_jitHostIdle(false);
 				// Woken by a thread becoming runnable: go back to the hot passes, because in
 				// single-core mode the core index rotates and the thread may be on the next one.
 				// Timed out: stay asleep-ready until something actually runs.
@@ -1369,7 +1376,9 @@ namespace coreinit
 			else
 			{
 				// wait for semaphore (only in multicore mode)
+				PPCRecompiler_jitHostIdle(true);
 				g_coreRunQueueThreadCount[t_assignedCoreIndex].waitUntilNonZero();
+				PPCRecompiler_jitHostIdle(false);
 				if (!sSchedulerActive.load(std::memory_order::relaxed))
 					Fiber::Switch(*t_schedulerFiber); // switch back to original thread to exit
 			}
@@ -1389,6 +1398,9 @@ namespace coreinit
 		// store context of current thread
 		__OSStoreThread(OSGetCurrentThread(), &hostThread->ppcInstance);
 		cemu_assert_debug(PPCInterpreter_getCurrentInstance() == nullptr);
+		// This host thread is leaving the guest thread it was running, and with it any recompiled code. The
+		// thread's own frames may still be in such code (it is parked in an HLE call) - those are pinned.
+		PPCRecompiler_jitHostQuiescent();
 
 		if (!sSchedulerActive.load(std::memory_order::relaxed))
 		{

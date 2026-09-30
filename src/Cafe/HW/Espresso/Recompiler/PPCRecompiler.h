@@ -185,6 +185,26 @@ DualMapRegion PPCRecompiler_allocateJitArena(size_t size);
 void PPCRecompiler_releaseJitArena(const DualMapRegion& region);
 void PPCRecompiler_flushInstructionCache(void* codePtr, size_t codeSize);
 
+// Invalidated code is handed back to the arena only once no thread can still be in it (JitReclaim.h).
+// The three calls below are the execution side of that: a PPC core's host thread registers once before it
+// runs guest code, reports every point where it is not inside recompiled code, and brackets its idle waits.
+void PPCRecompiler_jitHostRegister();
+void PPCRecompiler_jitHostQuiescent();
+void PPCRecompiler_jitHostIdle(bool idle);
+// Around a call from recompiled code into an HLE function (which may block and switch fibers). The token
+// returned by the first goes to the second; returnAddress is the call's return address inside the code.
+uint32 PPCRecompiler_jitHleEnter(const void* returnAddress);
+void PPCRecompiler_jitHleLeave(uint32 token);
+// Hands back whatever invalidated code is now safe to hand back. Cheap when nothing is pending.
+void PPCRecompiler_jitReclaimPending();
+
+#if defined(_MSC_VER) && !defined(__clang__)
+	#include <intrin.h>
+	#define PPCREC_RETURN_ADDRESS() _ReturnAddress()
+#else
+	#define PPCREC_RETURN_ADDRESS() __builtin_return_address(0)
+#endif
+
 extern void ATTR_MS_ABI (*PPCRecompiler_enterRecompilerCode)(uint64 codeMem, uint64 ppcInterpreterInstance);
 extern void ATTR_MS_ABI (*PPCRecompiler_leaveRecompilerCode_visited)();
 extern void ATTR_MS_ABI (*PPCRecompiler_leaveRecompilerCode_unvisited)();

@@ -167,7 +167,10 @@ void* ATTR_MS_ABI PPCRecompiler_virtualHLE(PPCInterpreter_t* hCPU, uint32 hleFun
 	{
 		auto hleCall = PPCInterpreter_getHLECall(hleFuncId);
 		cemu_assert(hleCall != nullptr);
+		// see JitReclaim.h: a blocked HLE call leaves its return address in the code that made it
+		const uint32 jitPin = PPCRecompiler_jitHleEnter(PPCREC_RETURN_ADDRESS());
 		hleCall(hCPU);
+		PPCRecompiler_jitHleLeave(jitPin);
 	}
 	hCPU->rspTemp = prevRSPTemp;
 	return PPCInterpreter_getCurrentInstance();
