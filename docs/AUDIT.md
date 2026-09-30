@@ -176,6 +176,12 @@ MUFFINAUDIT BYE
 The host writes its own tags into the same stream with `cemu_bridge_log_line("AUDIT> BEGIN <id> token=..")`, so
 the core's `log.txt` carries the test ids too, not only the report's slices.
 
+The core's log reaches the app through the bridge's tail of `log.txt`, which polls every 250 ms. Lines therefore
+arrive up to 250 ms after they were written: their order is exact, their timestamps (`tNs`) have that resolution,
+and the runner cuts each test's slice between that test's own `AUDIT> BEGIN` and `AUDIT> END` tags, which sit in the
+log in the order things happened, instead of at the moment the app noticed the test had ended. The mailbox, the
+frames and the snapshots are read directly and are not subject to the delay.
+
 ### 5.3 Mailbox (both ways)
 
 512 bytes, big-endian 32-bit words and NUL-terminated strings. Key offsets (full table in the header):
@@ -585,7 +591,7 @@ Assumptions the catalogue rests on (a mismatch here means check the assumption b
 - **Guest memory access from the host.** The hooks refuse anything outside the guest's data range and any access while no
   title runs, but they read and write guest memory from another thread without the scheduler's lock; the mailbox is
   written payload first and sequence number last, and only ever touches 32-bit aligned words.
-- **The log ring holds 1024 lines.** The app drains it every 20 ms and counts what it lost (`droppedLines`); a burst of
+- **The log ring holds 1024 lines and is fed by a 250 ms tail.** The app drains it every 20 ms and counts what it lost (`droppedLines`); a burst of
   thousands of lines between drains (verbose logging during a heavy test) still loses some. Profile 1 is chosen to stay
   quiet.
 - **Hooks drift.** The hooks read core internals (`LatteWait`, `PerfTelemetry`, `LatteGPUState`, `g_renderer`). A core change
