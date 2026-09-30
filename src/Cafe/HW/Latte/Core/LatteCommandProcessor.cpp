@@ -154,7 +154,7 @@ uint32 LatteCP_readU32Deprc()
 			return cmdWord;
 		}
 
-		LatteWait::Set("idle: the game is not sending GPU commands");
+		LatteWait::Set("idle: the game is not sending GPU commands", LatteWait::Kind::GuestIdle);
 		g_renderer->NotifyLatteCommandProcessorIdle(); // let the renderer know in case it wants to flush any commands
 		performanceMonitor.gpuTime_idleTime.beginMeasuring();
 		// no command data available, spin in a busy loop for a bit then check again
@@ -586,7 +586,7 @@ LatteCMDPtr LatteCP_itMemSemaphore(LatteCMDPtr cmd, uint32 nWords)
 	{
 		// wait
 		LatteCP_signalEnterWait();
-		LatteWait::Scope waitScope("waiting on a GPU semaphore the game has not signalled");
+		LatteWait::Scope waitScope("waiting on a GPU semaphore the game has not signalled", LatteWait::Kind::GuestWait);
 		size_t loopCount = 0;
 		while (true)
 		{
@@ -919,7 +919,7 @@ LatteCMDPtr LatteCP_itHLEWaitForFlip(LatteCMDPtr cmd, uint32 nWords)
 	MPTR reserved1 = LatteReadCMD(); // reserved
 	// wait for flip
 	uint32 currentFlipCount = LatteGPUState.flipCounter;
-	LatteWait::Scope waitScope("waiting for the next flip (vsync)");
+	LatteWait::Scope waitScope("waiting for the next flip (vsync)", LatteWait::Kind::GuestWait);
 	while (true)
 	{
 		_mm_pause();
