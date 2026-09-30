@@ -1,5 +1,14 @@
 project(cemuMain)
 
+# MuffinEMU Audit (tools/audit-app). Off for every normal build. When ON, the hooks the audit app needs
+# (probe mailbox access, state snapshots, framebuffer readback, audio and frame-timing measurement) are
+# compiled in: ios/Bridge/IOSAudit*.{h,cpp}, plus the #if MUFFIN_AUDIT_HOOKS blocks in MetalRenderer.cpp
+# and iOSAudioAPI.mm. Defined here, before the subdirectories, so every library sees the same flag.
+option(MUFFIN_AUDIT_HOOKS "Compile the MuffinEMU Audit hooks into the core" OFF)
+if(MUFFIN_AUDIT_HOOKS)
+	add_compile_definitions(MUFFIN_AUDIT_HOOKS=1)
+endif()
+
 option(CEMU_CXX_FLAGS "Additional flags used for compiling Cemu source code")
 if(CEMU_CXX_FLAGS)
 	add_compile_options(${CEMU_CXX_FLAGS})
@@ -136,6 +145,14 @@ if(IOS)
 		ios/Bridge/Core/IOSTitlePause.cpp
 	)
 	target_include_directories(CemuBin PRIVATE ios/Bridge)
+	if(MUFFIN_AUDIT_HOOKS)
+		target_sources(CemuBin PRIVATE
+			ios/Bridge/IOSAuditFrameStats.h
+			ios/Bridge/IOSAuditHooks.h
+			ios/Bridge/IOSAuditHooks.cpp
+			ios/Bridge/IOSAuditMetal.cpp
+		)
+	endif()
 	target_link_libraries(CemuBin PRIVATE
 		ZArchive::zarchive
 		"-framework UIKit"

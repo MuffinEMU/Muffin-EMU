@@ -1,0 +1,493 @@
+name: Build MuffinEMU Audit IPA
+
+# Builds the standalone "MuffinEMU Audit" app (tools/audit-app, bundle id com.kiddreads.MuffinEMUAudit) against a CHOSEN
+# MuffinEMU ref: checks that ref out, builds its core (Cemu.framework) fresh with -DMUFFIN_AUDIT_HOOKS=ON, builds the
+# guest program audit.rpx with devkitPPC + wut, and builds the app against both. The app installs next to MuffinEMU
+# and shares nothing with it. See docs/AUDIT.md.
+#
+# What this workflow can NOT do, on purpose:
+#   * it never creates a numbered (vX.Y) release, never moves the `nightly` tag, never touches docs/*.json or the
+#     SideStore source. The only thing it publishes is an `audit-<sha>` PRE-release, and only on a manual run.
+#   * it never runs on a push to main or ios27-sdk, and build-ios-app.yml is not involved at all.
+#
+# Triggers:
+#   workflow_dispatch  Pick the MuffinEMU ref (default main). Publishes the audit-<sha> pre-release unless switched off.
+#   pull_request       Builds when the PR carries the `audit-ipa` label; artifacts only, publishes nothing.
+#   push               feature/audit-ipa only, so the workflow can be validated before it is on the default branch
+#                      (GitHub offers workflow_dispatch only for workflows that exist on the default branch).
+#
+# The tested ref must contain the audit hooks (src/ios/Bridge/IOSAudit*.{h,cpp}, the MUFFIN_AUDIT_HOOKS option in
+# src/CMakeLists.txt): they are compiled in only here, and the shipping MuffinEMU build is unaffected.
+
+on:
+  workflow_dispatch:
+    inputs:
+      muffinemu_ref:
+        description: "MuffinEMU ref to test (branch, tag or commit). It must contain the audit hooks."
+        required: false
+        default: main
+      prerelease:
+        description: "Publish the IPA as an audit-<sha> pre-release (never a numbered release)"
+        type: boolean
+        required: false
+        default: true
+  pull_request:
+    branches: [ main ]
+    types: [ opened, reopened, synchronize, labeled ]
+  push:
+    branches: [ feature/audit-ipa ]
+
+# One build per ref. A newer push replaces an older one: an audit IPA is throwaway.
+concurrency:
+  group: audit-ipa-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-archives,readwrite"
+  # The devkitPro image and the wut commit the bench workloads are already built with.
+  DEVKITPPC_IMAGE: devkitpro/devkitppc@sha256:44cb1a920e1ec3ec7c06767493c3b85f8d643d6137cc4661f0201895ac6e4967
+
+jobs:
+  # Decides whether this event runs at all and which MuffinEMU ref it tests.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.p.outputs.run }}
+      ref: ${{ steps.p.outputs.ref }}
+    steps:
+      - id: p
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_REF: ${{ github.event.inputs.muffinemu_ref }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -eu
+          run=true
+          case "$EVENT" in
+            workflow_dispatch) ref="${INPUT_REF:-main}" ;;
+            pull_request)
+              ref="$PR_SHA"
+              case ",$PR_LABELS," in *,audit-ipa,*) ;; *) run=false ;; esac ;;
+            *) ref="$GITHUB_SHA" ;;
+          esac
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          echo "event=$EVENT run=$run ref=$ref"
+
+  # Everything about the app that needs no iOS SDK and no core: catalogue against schema and guest, protocol constants,
+  # the frame-statistics C++ and the app's Swift logic, a sample report against the report schema, the diff tool.
+  checks:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jsonschema
+        run: python3 -m pip install --user --break-system-packages jsonschema || python3 -m pip install --user jsonschema
+      - name: Host checks
+        run: tools/audit-app/run-host-checks.sh "$RUNNER_TEMP/audit-checks"
+      - name: Keep the sample report
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-sample-report
+          path: ${{ runner.temp }}/audit-checks/sample-report.json
+          retention-days: 7
+
+  # Type-checks the whole app (including the SwiftUI screens) against the iOS SDK and the MuffinEMU bridge headers in about a minute,
+  # so a Swift error does not wait behind the core build.
+  typecheck-ios:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Audit tools (this workflow's own commit)
+        uses: actions/checkout@v4
+        with:
+          path: audit-src
+      - name: MuffinEMU bridge headers (the ref under test)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          path: muffin
+          sparse-checkout: src/ios/Bridge
+      - name: Check the ref has the audit hooks
+        run: |
+          set -eo pipefail
+          test -f muffin/src/ios/Bridge/IOSAuditHooks.h || { echo "::error::ref '${{ needs.plan.outputs.ref }}' has no src/ios/Bridge/IOSAuditHooks.h - it predates the audit hooks. Test a ref that contains them (for example feature/audit-ipa), or merge that branch first."; exit 1; }
+      - name: Type-check the app for iOS
+        run: |
+          set -eo pipefail
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          xcrun --sdk iphoneos swiftc -typecheck -target arm64-apple-ios15.0 -sdk "$SDK" -swift-version 5 \
+            -import-objc-header audit-src/tools/audit-app/Bridge/AuditBridging-Header.h -Xcc -I"$PWD/muffin/src/ios/Bridge" \
+            audit-src/tools/audit-app/Sources/*/*.swift
+
+  # audit.rpx: real Wii U homebrew built with the same devkitPPC container and wut commit the bench workloads use. The
+  # shader is compiled to GX2 with CafeGLSL's glslcompiler, exactly as in build-bench-rpx.yml.
+  # The container has no bash, so this is POSIX sh (dash) with `set -eu`.
+  guest:
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container: devkitpro/devkitppc@sha256:44cb1a920e1ec3ec7c06767493c3b85f8d643d6137cc4661f0201895ac6e4967
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install wut (Wii U userland toolchain)
+        run: dkp-pacman -Sy --noconfirm wut
+
+      - name: Clone wut (for its sample Makefile)
+        run: git init -q /tmp/wut && git -C /tmp/wut fetch -q --depth 1 https://github.com/devkitPro/wut.git 0a740dccd2bc038395dacc48e701a3228f63c245 && git -C /tmp/wut checkout -q FETCH_HEAD
+
+      - name: Assemble the project
+        run: |
+          set -eu
+          cp -r /tmp/wut/samples/make/helloworld /tmp/audit
+          rm -f /tmp/audit/source/*.c /tmp/audit/source/*.cpp
+          cp tools/audit-app/guest/*.c tools/audit-app/guest/audit_protocol.h tools/audit-app/guest/audit_internal.h /tmp/audit/source/
+          ls -la /tmp/audit/source
+
+      - name: Download CafeGLSL's glslcompiler (PC-hosted GLSL-to-GX2 compiler)
+        run: |
+          set -eu
+          URL="https://github.com/Exzap/CafeGLSL/releases/download/v0.2.0/glslcompiler.elf"
+          if command -v curl >/dev/null 2>&1; then
+            curl -fsSL -o /tmp/glslcompiler.elf "$URL"
+          elif command -v wget >/dev/null 2>&1; then
+            wget -q -O /tmp/glslcompiler.elf "$URL"
+          else
+            echo "neither curl nor wget is available in this container" >&2
+            exit 1
+          fi
+          echo "067402bde2fbda66fcde65534ae8ffbf99ef46da5ed67af8294cd7b385d84acd  /tmp/glslcompiler.elf" | sha256sum -c -
+          chmod +x /tmp/glslcompiler.elf
+
+      - name: Compile audit.vs/audit.ps to a GX2 shader and embed it
+        run: |
+          set -eu
+          /tmp/glslcompiler.elf -vs tools/audit-app/guest/shaders/audit.vs -ps tools/audit-app/guest/shaders/audit.ps -o /tmp/audit.gsh
+          test -s /tmp/audit.gsh
+          SIZE=$(stat -c%s /tmp/audit.gsh)
+          echo "audit.gsh = $SIZE bytes"
+          test "$SIZE" -gt 64
+          od -An -v -tx1 /tmp/audit.gsh | awk '
+            BEGIN {
+              print "// Generated at build time from shaders/audit.vs + shaders/audit.ps by CafeGLSL glslcompiler. Do not edit."
+              print "static const unsigned char kAuditShaderGsh[] = {"
+            }
+            { for (i = 1; i <= NF; i++) printf "0x%s,", $i }
+            END { print ""; print "};" }
+          ' > /tmp/audit/source/audit_shader_gsh.h
+          echo "static const unsigned int kAuditShaderGshSize = ${SIZE}u;" >> /tmp/audit/source/audit_shader_gsh.h
+          test -s /tmp/audit/source/audit_shader_gsh.h
+
+      - name: Build audit.rpx
+        run: |
+          set -eu
+          make -C /tmp/audit TARGET=audit LIBS="-lwut -lm"
+          test -f /tmp/audit/audit.rpx
+
+      - name: Verify the built RPX
+        run: |
+          set -eu
+          RPX=/tmp/audit/audit.rpx
+          SIZE=$(stat -c%s "$RPX")
+          echo "audit.rpx = $SIZE bytes"
+          test "$SIZE" -gt 8192
+          head -c 4 "$RPX" | od -An -tx1 | tr -d ' \n' | grep -qi '^7f454c46'
+          echo "verify: PASS"
+
+      - name: Upload audit.rpx
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-rpx
+          path: /tmp/audit/audit.rpx
+          retention-days: 30
+
+  # The core with the hooks compiled in, then the app around it, then the IPAs. The fast jobs above gate this one so a
+  # broken catalogue or Swift error does not cost a core build.
+  ipa:
+    needs: [ plan, checks, typecheck-ios, guest ]
+    if: needs.plan.outputs.run == 'true'
+    # Same image as build-ios-app.yml (the iOS 27 SDK, arm64): the audited core is compiled the way the shipping one is.
+    runs-on: xcode-27
+    timeout-minutes: 330
+    steps:
+      # The MuffinEMU ref under test at the workspace root (so the vcpkg cache key below hashes the same files as
+      # build-ios-app.yml's and the two share a cache), this workflow's own commit under audit-src.
+      - name: MuffinEMU ref under test
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.ref }}
+          submodules: recursive
+          fetch-depth: 0
+      - name: Audit tools (this workflow's own commit)
+        uses: actions/checkout@v4
+        with:
+          path: audit-src
+
+      - name: Check the ref has the audit hooks
+        run: |
+          set -eo pipefail
+          if [ ! -f src/ios/Bridge/IOSAuditHooks.cpp ] || ! grep -q MUFFIN_AUDIT_HOOKS src/CMakeLists.txt; then
+            echo "::error::ref '${{ needs.plan.outputs.ref }}' predates the audit hooks (src/ios/Bridge/IOSAuditHooks.cpp / MUFFIN_AUDIT_HOOKS). Test a ref that contains them, for example feature/audit-ipa, or merge that branch first."
+            exit 1
+          fi
+
+      - name: Identify the tested build
+        id: id
+        run: |
+          set -eo pipefail
+          SHA=$(git rev-parse HEAD)
+          TOOLS=$(git -C audit-src rev-parse HEAD)
+          VERSION=$(git describe --tags --exact-match 2>/dev/null || true)
+          if [ -z "$VERSION" ]; then VERSION="$(git describe --tags --abbrev=0 2>/dev/null || true)+$(git rev-parse --short HEAD)"; fi
+          {
+            echo "sha=$SHA"
+            echo "short=${SHA:0:7}"
+            echo "tools=$TOOLS"
+            echo "version=$VERSION"
+          } >> "$GITHUB_OUTPUT"
+          echo "testing $SHA ($VERSION) with audit tools $TOOLS"
+
+      - name: Select full Xcode and install build tools
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          brew install xcodegen ninja
+
+      - name: Identify the pinned vcpkg
+        id: vcpkg
+        run: echo "rev=$(git -C dependencies/vcpkg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-archives
+          key: vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
+          restore-keys: |
+            vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-
+
+      # The same configure as build-ios-app.yml plus the one flag that makes this core an audit core.
+      - name: Configure the core for iOS with the audit hooks
+        run: |
+          set -eo pipefail
+          mkdir -p .vcpkg-archives
+          configure() {
+          cmake -S . -B build-ios -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
+            -DVCPKG_TARGET_TRIPLET=arm64-ios \
+            -DBUILD_HEADLESS_DYLIB=ON \
+            -DCMAKE_MACOSX_BUNDLE=OFF \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMUFFIN_AUDIT_HOOKS=ON 2>&1 | tee configure.log
+          }
+          for attempt in 1 2 3; do
+            if configure; then exit 0; fi
+            if [ "$attempt" = 3 ]; then
+              echo "::error::configure failed three times - see configure.log"
+              exit 1
+            fi
+            echo "configure attempt $attempt failed; waiting $((attempt * 30))s"
+            sleep $((attempt * 30))
+          done
+
+      - name: Save vcpkg binary cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-archives
+          key: vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
+
+      - name: Build Cemu.framework (core + bridge + audit hooks)
+        run: |
+          set -eo pipefail
+          cmake --build build-ios --target CemuBin 2>&1 | tee build.log
+          FW=$(find build-ios bin -type d -name Cemu.framework -not -path '*/CMakeFiles/*' 2>/dev/null | head -n1)
+          if [ -z "$FW" ]; then echo "::error::the build finished but produced no Cemu.framework"; exit 1; fi
+          rm -rf build-ios/out && mkdir -p build-ios/out
+          cp -R "$FW" build-ios/out/
+          file build-ios/out/Cemu.framework/Cemu
+
+      - name: Gate - every function Swift can call is in the framework
+        run: |
+          set -eo pipefail
+          # The bridge functions, as build-ios-app.yml checks them.
+          grep -hoE '(cemu_bridge|ios_live_log)_[a-z0-9_]+[[:space:]]*\(' src/ios/Bridge/CemuBridge.h src/ios/Bridge/IOSLiveLog.h \
+            | sed -E 's/[[:space:]]*\($//' | sort -u > declared.txt
+          # The audit hooks: the C part of the header only (everything after its closing extern "C" is C++ linkage).
+          awk '/^} \/\/ extern "C"/ {exit} {print}' src/ios/Bridge/IOSAuditHooks.h \
+            | grep -hoE 'cemu_audit_[a-z0-9_]+[[:space:]]*\(' | sed -E 's/[[:space:]]*\($//' | sort -u >> declared.txt
+          sort -u declared.txt -o declared.txt
+          nm -gU build-ios/out/Cemu.framework/Cemu | grep -oE '_(cemu_bridge|ios_live_log|cemu_audit)_[a-z0-9_]+$' \
+            | sed 's/^_//' | sort -u > defined.txt
+          MISSING=$(comm -23 declared.txt defined.txt)
+          if [ -n "$MISSING" ]; then
+            echo "::error::declared in the bridge or audit-hook headers but not exported by Cemu.framework:"
+            echo "$MISSING"
+            exit 1
+          fi
+          echo "all $(wc -l < declared.txt | tr -d ' ') bridge and audit-hook functions are exported"
+
+      - name: Fingerprint the core
+        id: fp
+        continue-on-error: true
+        run: |
+          set -eo pipefail
+          if [ -x ci/core-cache-key.sh ]; then
+            echo "fingerprint=$(./ci/core-cache-key.sh)+audit-hooks" >> "$GITHUB_OUTPUT"
+          else
+            echo "fingerprint=$(git rev-parse HEAD:src HEAD:dependencies HEAD:CMakeLists.txt | shasum | cut -c1-40)+audit-hooks" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Collect the guest program
+        uses: actions/download-artifact@v4
+        with:
+          name: audit-rpx
+          path: audit-src/tools/audit-app/Resources
+
+      - name: xcodegen generate
+        env:
+          MUFFIN_CORE_DIR: ${{ github.workspace }}
+        run: |
+          set -eo pipefail
+          test -s audit-src/tools/audit-app/Resources/audit.rpx
+          cd audit-src/tools/audit-app
+          xcodegen generate
+
+      - name: Build the MuffinEMU Audit app
+        run: |
+          set -eo pipefail
+          cd audit-src/tools/audit-app
+          xcodebuild -project MuffinEMUAudit.xcodeproj -scheme MuffinEMUAudit -sdk iphoneos \
+            -configuration Release CODE_SIGNING_ALLOWED=NO build \
+            2>&1 | tee "$GITHUB_WORKSPACE/xcodebuild.log"
+
+      - name: Stamp the build identity
+        env:
+          MUFFIN_SHA: ${{ steps.id.outputs.sha }}
+          MUFFIN_VERSION: ${{ steps.id.outputs.version }}
+          TOOLS_SHA: ${{ steps.id.outputs.tools }}
+          MUFFIN_REF: ${{ needs.plan.outputs.ref }}
+          CORE_FP: ${{ steps.fp.outputs.fingerprint }}
+        run: |
+          set -eo pipefail
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinEMUAudit.app" -path "*Release-iphoneos*" | head -n1)
+          PL="$APP_PATH/Info.plist"
+          pb() { /usr/libexec/PlistBuddy "$@"; }
+          setkey() { pb -c "Set :$1 $2" "$PL" 2>/dev/null || pb -c "Add :$1 string $2" "$PL"; }
+          setkey CFBundleDisplayName "MuffinEMU Audit"
+          setkey CFBundleShortVersionString "1.0"
+          setkey CFBundleVersion "${GITHUB_RUN_NUMBER}"
+          setkey AuditMuffinRef "$MUFFIN_REF"
+          setkey AuditMuffinSha "$MUFFIN_SHA"
+          setkey AuditMuffinVersion "$MUFFIN_VERSION"
+          setkey AuditCoreFingerprint "${CORE_FP:-unknown}"
+          setkey AuditToolsSha "$TOOLS_SHA"
+          setkey AuditGuestBuild "phase1"
+          setkey AuditWorkflowRun "${GITHUB_RUN_ID}/${GITHUB_RUN_NUMBER}"
+          setkey AuditBuiltAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "bundle id: $(pb -c 'Print :CFBundleIdentifier' "$PL")"
+          echo "stamped ref: $(pb -c 'Print :AuditMuffinRef' "$PL") @ $(pb -c 'Print :AuditMuffinSha' "$PL")"
+          ls "$APP_PATH/Frameworks"
+          ls "$APP_PATH/Catalogue"
+          test -s "$APP_PATH/audit.rpx"
+
+      - name: Package the IPAs
+        env:
+          SHORT: ${{ steps.id.outputs.short }}
+        run: |
+          set -eo pipefail
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinEMUAudit.app" -path "*Release-iphoneos*" | head -n1)
+          T=audit-src/tools/audit-app
+          rm -rf PayloadSideload PayloadSigned iparoot iparoot-sideload out && mkdir -p out
+          # Re-signing installers (SideStore / AltStore / LiveContainer): frameworks first, then the app with get-task-allow.
+          mkdir -p PayloadSideload && cp -R "$APP_PATH" PayloadSideload/
+          for fw in PayloadSideload/MuffinEMUAudit.app/Frameworks/*.framework; do codesign -f -s - "$fw"; done
+          codesign -f -s - --entitlements "$T/AuditSideload.entitlements" --generate-entitlement-der PayloadSideload/MuffinEMUAudit.app
+          if ! codesign -d --entitlements - --xml PayloadSideload/MuffinEMUAudit.app 2>/dev/null \
+               | python3 -c "import sys,plistlib; d=sys.stdin.buffer.read(); i=d.find(b'<?xml'); sys.exit(0 if i>=0 and plistlib.loads(d[i:]).get('get-task-allow') is True else 1)"; then
+            echo "::error::the sideload IPA was signed without get-task-allow - JIT enablers would not see it"
+            exit 1
+          fi
+          mkdir -p iparoot-sideload/Payload && cp -R PayloadSideload/MuffinEMUAudit.app iparoot-sideload/Payload/
+          ( cd iparoot-sideload && zip -qry "../out/MuffinEMU-Audit-${SHORT}.ipa" Payload )
+          # TrollStore / jailbroken: the full entitlement set embedded.
+          mkdir -p PayloadSigned && cp -R "$APP_PATH" PayloadSigned/
+          for fw in PayloadSigned/MuffinEMUAudit.app/Frameworks/*.framework; do codesign -f -s - "$fw"; done
+          codesign -f -s - --entitlements "$T/Audit.entitlements" --generate-entitlement-der PayloadSigned/MuffinEMUAudit.app
+          mkdir -p iparoot/Payload && cp -R PayloadSigned/MuffinEMUAudit.app iparoot/Payload/
+          ( cd iparoot && zip -qry "../out/MuffinEMU-Audit-${SHORT}-fakesigned.ipa" Payload )
+          ls -la out
+
+      - name: Verify the IPAs are structurally sound
+        run: |
+          set -eo pipefail
+          for ipa in out/*.ipa; do audit-src/ci/verify-ipa.sh "$ipa"; done
+
+      - name: Upload the IPAs
+        uses: actions/upload-artifact@v4
+        with:
+          name: MuffinEMU-Audit-${{ steps.id.outputs.short }}
+          path: out/*.ipa
+          retention-days: 30
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-build-logs
+          path: |
+            configure.log
+            build.log
+            xcodebuild.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+    outputs:
+      short: ${{ steps.id.outputs.short }}
+      sha: ${{ steps.id.outputs.sha }}
+      ref: ${{ needs.plan.outputs.ref }}
+
+  # The only thing this workflow publishes, and only on a manual run: a PRE-release tagged audit-<sha> (the tested
+  # MuffinEMU commit), which ci/generate-sidestore-source.py ignores (it lists non-prerelease vX.Y tags and the `nightly`
+  # tag only). Its own job so the build job needs no write permission.
+  publish:
+    needs: [ plan, ipa ]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.prerelease != 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the IPAs
+        uses: actions/download-artifact@v4
+        with:
+          name: MuffinEMU-Audit-${{ needs.ipa.outputs.short }}
+          path: out
+      - name: Publish the pre-release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: audit-${{ needs.ipa.outputs.sha }}
+          target_commitish: ${{ github.sha }}
+          name: MuffinEMU Audit for ${{ needs.plan.outputs.ref }} (${{ needs.ipa.outputs.short }})
+          prerelease: true
+          make_latest: "false"
+          files: out/*.ipa
+          body: |
+            MuffinEMU Audit built against MuffinEMU `${{ needs.plan.outputs.ref }}` at `${{ needs.ipa.outputs.sha }}`.
+
+            A standalone diagnostic app (bundle id com.kiddreads.MuffinEMUAudit): it installs next to MuffinEMU and shares
+            nothing with it. Not a release of MuffinEMU. `MuffinEMU-Audit-*.ipa` is for SideStore / AltStore / LiveContainer,
+            `*-fakesigned.ipa` for TrollStore. Reports are written to Files > MuffinEMU Audit > MuffinAuditReports.
+            See docs/AUDIT.md.

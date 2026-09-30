@@ -1,0 +1,17 @@
+// audit.ps - pixel shader of the audit guest: the texel (a 4x4 white texture for plain colour) times the vertex colour.
+// Sampler at binding 0, varyings at locations 0 and 1, matching audit.vs. Same model as the bench's scene.ps.
+
+#version 420
+
+layout(binding = 0) uniform sampler2D tex0;
+
+layout(location = 0) in vec4 in_color;
+layout(location = 1) in vec2 in_uv;
+
+layout(location = 0) out vec4 out_color;
+
+void main()
+{
+   vec4 texel = texture(tex0, in_uv);
+   out_color = texel * in_color;
+}

@@ -1,0 +1,5368 @@
+{
+ "schema": "muffinaudit.suite/1",
+ "suite": "black-surface",
+ "title": "Black-surface regression",
+ "order": 10,
+ "description": "The first suite: render-target copies at varied sizes and mips, texture uploads across formats, render-to-texture feedback, texture creation and eviction under pressure, flicker over many frames, clears, blending and depth tests, an audio tone sweep and an input echo. Built to catch black frames and black surfaces, and everything that looks like them.",
+ "tests": [
+  {
+   "id": "bs.orientation",
+   "title": "Screen orientation and corner markers",
+   "subsystems": [
+    "render.present",
+    "render.compositing"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "orientation",
+    "params": {
+     "hold": "20"
+    }
+   },
+   "estimatedSec": 10,
+   "tags": [
+    "calibration",
+    "quick"
+   ],
+   "stimulus": "Four small squares, one in each corner of the TV picture (red top right, green bottom left, blue top left, white bottom right) and a grey square in the middle, on a dark background.",
+   "expected": "The markers sit where the guest drew them. The app measures which way the picture came out and maps every later expectation through that; a flipped picture is reported here once.",
+   "reproduce": "In any Wii U emulator, run audit.rpx and compare the four corner markers with the list above.",
+   "checkpoints": [
+    {
+     "name": "markers",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "orientation",
+       "name": "orientation"
+      },
+      {
+       "type": "not_black",
+       "name": "frame not black",
+       "maxBlackFraction": 0.97
+      }
+     ]
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "corners",
+     "text": "Is the red square at the top right of the TV picture and the green one at the bottom left?",
+     "type": "yesno",
+     "bad": "no",
+     "severity": "warn",
+     "subsystem": "render.present"
+    },
+    {
+     "id": "black",
+     "text": "Did you see black spots, black bars or flicker on the picture?",
+     "type": "yesno",
+     "bad": "yes",
+     "subsystem": "render.present"
+    }
+   ]
+  },
+  {
+   "id": "bs.clear_colours",
+   "title": "Clear to seven colours",
+   "subsystems": [
+    "render.clear",
+    "render.colour"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "clear_colours",
+    "params": {
+     "hold": "20"
+    }
+   },
+   "estimatedSec": 15,
+   "tags": [
+    "quick"
+   ],
+   "stimulus": "The whole picture is cleared to red, green, blue, white, black, mid grey and a steel blue, one after another, about half a second each.",
+   "expected": "Each clear fills the whole TV picture with exactly that colour. Black appears only for the black step.",
+   "reproduce": "Run audit.rpx; the first test after the orientation markers is this sequence.",
+   "checkpoints": [
+    {
+     "name": "clear_0",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "frame is red",
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 6
+      },
+      {
+       "type": "not_black",
+       "name": "not black",
+       "maxBlackFraction": 0.05
+      }
+     ]
+    },
+    {
+     "name": "clear_1",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "frame is green",
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 6
+      },
+      {
+       "type": "not_black",
+       "name": "not black",
+       "maxBlackFraction": 0.05
+      }
+     ]
+    },
+    {
+     "name": "clear_2",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "frame is blue",
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 6
+      },
+      {
+       "type": "not_black",
+       "name": "not black",
+       "maxBlackFraction": 0.05
+      }
+     ]
+    },
+    {
+     "name": "clear_3",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "frame is white",
+       "rgb": [
+        255,
+        255,
+        255
+       ],
+       "tol": 6
+      },
+      {
+       "type": "not_black",
+       "name": "not black",
+       "maxBlackFraction": 0.05
+      }
+     ]
+    },
+    {
+     "name": "clear_4",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "frame is black",
+       "rgb": [
+        0,
+        0,
+        0
+       ],
+       "tol": 6
+      }
+     ]
+    },
+    {
+     "name": "clear_5",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "frame is grey",
+       "rgb": [
+        128,
+        128,
+        128
+       ],
+       "tol": 6
+      },
+      {
+       "type": "not_black",
+       "name": "not black",
+       "maxBlackFraction": 0.05
+      }
+     ]
+    },
+    {
+     "name": "clear_6",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "frame is steel",
+       "rgb": [
+        64,
+        128,
+        191
+       ],
+       "tol": 6
+      },
+      {
+       "type": "not_black",
+       "name": "not black",
+       "maxBlackFraction": 0.05
+      }
+     ]
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "black",
+     "text": "Did you see black spots, black frames or flicker between the colours?",
+     "type": "yesno",
+     "bad": "yes",
+     "subsystem": "render.clear"
+    },
+    {
+     "id": "colours",
+     "text": "Did the colours look correct (red, green, blue, white, black, grey, steel blue)?",
+     "type": "yesno",
+     "bad": "no",
+     "subsystem": "render.colour"
+    }
+   ]
+  },
+  {
+   "id": "bs.clear_colours_pad",
+   "title": "Clear colours on TV and GamePad",
+   "subsystems": [
+    "render.clear",
+    "render.pad"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "clear_colours",
+    "params": {
+     "hold": "20"
+    }
+   },
+   "requires": {
+    "pad": true
+   },
+   "estimatedSec": 15,
+   "stimulus": "As the clear test, with the GamePad screen cleared to the inverse of each colour.",
+   "expected": "Both screens fill with their own colour; neither screen shows the other's.",
+   "checkpoints": [
+    {
+     "name": "clear_0",
+     "capture": {
+      "views": [
+       "tv",
+       "pad"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "TV is red",
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 6
+      },
+      {
+       "type": "mean_color",
+       "name": "GamePad is the inverse of red",
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 6,
+       "view": "pad"
+      }
+     ]
+    },
+    {
+     "name": "clear_1",
+     "capture": {
+      "views": [
+       "tv",
+       "pad"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "TV is green",
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 6
+      },
+      {
+       "type": "mean_color",
+       "name": "GamePad is the inverse of green",
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 6,
+       "view": "pad"
+      }
+     ]
+    },
+    {
+     "name": "clear_2",
+     "capture": {
+      "views": [
+       "tv",
+       "pad"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "TV is blue",
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 6
+      },
+      {
+       "type": "mean_color",
+       "name": "GamePad is the inverse of blue",
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 6,
+       "view": "pad"
+      }
+     ]
+    },
+    {
+     "name": "clear_3",
+     "capture": {
+      "views": [
+       "tv",
+       "pad"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "TV is white",
+       "rgb": [
+        255,
+        255,
+        255
+       ],
+       "tol": 6
+      },
+      {
+       "type": "mean_color",
+       "name": "GamePad is the inverse of white",
+       "rgb": [
+        0,
+        0,
+        0
+       ],
+       "tol": 6,
+       "view": "pad"
+      }
+     ]
+    },
+    {
+     "name": "clear_4",
+     "capture": {
+      "views": [
+       "tv",
+       "pad"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "TV is black",
+       "rgb": [
+        0,
+        0,
+        0
+       ],
+       "tol": 6
+      },
+      {
+       "type": "mean_color",
+       "name": "GamePad is the inverse of black",
+       "rgb": [
+        255,
+        255,
+        255
+       ],
+       "tol": 6,
+       "view": "pad"
+      }
+     ]
+    },
+    {
+     "name": "clear_5",
+     "capture": {
+      "views": [
+       "tv",
+       "pad"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "TV is grey",
+       "rgb": [
+        128,
+        128,
+        128
+       ],
+       "tol": 6
+      },
+      {
+       "type": "mean_color",
+       "name": "GamePad is the inverse of grey",
+       "rgb": [
+        127,
+        127,
+        127
+       ],
+       "tol": 6,
+       "view": "pad"
+      }
+     ]
+    },
+    {
+     "name": "clear_6",
+     "capture": {
+      "views": [
+       "tv",
+       "pad"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "mean_color",
+       "name": "TV is steel",
+       "rgb": [
+        64,
+        128,
+        191
+       ],
+       "tol": 6
+      },
+      {
+       "type": "mean_color",
+       "name": "GamePad is the inverse of steel",
+       "rgb": [
+        191,
+        127,
+        64
+       ],
+       "tol": 6,
+       "view": "pad"
+      }
+     ]
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "pad",
+     "text": "Did the GamePad screen show the inverse of the TV colour each time, without black flashes?",
+     "type": "yesno",
+     "bad": "no",
+     "subsystem": "render.pad"
+    }
+   ]
+  },
+  {
+   "id": "bs.blend_alpha",
+   "title": "Alpha blending and blend modes",
+   "subsystems": [
+    "render.blend",
+    "render.alpha"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "blend_alpha",
+    "params": {
+     "hold": "20"
+    }
+   },
+   "estimatedSec": 10,
+   "tags": [
+    "quick"
+   ],
+   "stimulus": "Eight cells in two rows, each a known background with a translucent or blended quad over it: standard alpha at 0.5 and 0.25, additive, multiply, premultiplied, fully transparent, a texture whose left half is transparent, and a max combine.",
+   "expected": "Each cell shows the arithmetic result of its blend (for example red at 50% over blue is purple (128, 0, 128)).",
+   "checkpoints": [
+    {
+     "name": "blend_cells",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "region_color",
+       "name": "standard blend, alpha 0.5, red over blue",
+       "rect": [
+        0.02,
+        0.04,
+        0.21,
+        0.42
+       ],
+       "rgb": [
+        128,
+        0,
+        128
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "standard blend, alpha 0.25",
+       "rect": [
+        0.27,
+        0.04,
+        0.21,
+        0.42
+       ],
+       "rgb": [
+        64,
+        0,
+        191
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "additive",
+       "rect": [
+        0.52,
+        0.04,
+        0.21,
+        0.42
+       ],
+       "rgb": [
+        204,
+        153,
+        255
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "multiply",
+       "rect": [
+        0.77,
+        0.04,
+        0.21,
+        0.42
+       ],
+       "rgb": [
+        102,
+        102,
+        26
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "premultiplied alpha",
+       "rect": [
+        0.02,
+        0.54,
+        0.21,
+        0.42
+       ],
+       "rgb": [
+        128,
+        128,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "alpha 0 leaves the background",
+       "rect": [
+        0.27,
+        0.54,
+        0.21,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "quadrants",
+       "name": "texture alpha split (left transparent, right opaque red)",
+       "rect": [
+        0.52,
+        0.54,
+        0.21,
+        0.42
+       ],
+       "tl": [
+        0,
+        0,
+        255
+       ],
+       "tr": [
+        255,
+        0,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "max combine",
+       "rect": [
+        0.77,
+        0.54,
+        0.21,
+        0.42
+       ],
+       "rgb": [
+        153,
+        230,
+        102
+       ],
+       "tol": 10
+      }
+     ]
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "blend",
+     "text": "Do the eight cells look like smooth blends with no black holes or hard edges where a blend should be?",
+     "type": "yesno",
+     "bad": "no",
+     "subsystem": "render.blend"
+    }
+   ]
+  },
+  {
+   "id": "bs.depth_test",
+   "title": "Depth test functions",
+   "subsystems": [
+    "render.depth"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "depth_test",
+    "params": {
+     "hold": "20"
+    }
+   },
+   "estimatedSec": 10,
+   "tags": [
+    "quick"
+   ],
+   "stimulus": "Eight cells, each with a near red quad and a far green quad overlapping in the middle, drawn in both orders under LESS, GREATER, ALWAYS and NEVER, and once with the red quad not writing depth.",
+   "expected": "The overlap shows whichever quad the depth function lets through (red for LESS, green for GREATER, the last one drawn for ALWAYS, nothing for NEVER, green when the red quad wrote no depth).",
+   "checkpoints": [
+    {
+     "name": "depth_cells",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "region_color",
+       "name": "LESS, A then B: A-only",
+       "rect": [
+        0.02,
+        0.04,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "LESS, A then B: overlap",
+       "rect": [
+        0.0914,
+        0.04,
+        0.0672,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "LESS, A then B: B-only",
+       "rect": [
+        0.1586,
+        0.04,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "LESS, B then A: A-only",
+       "rect": [
+        0.27,
+        0.04,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "LESS, B then A: overlap",
+       "rect": [
+        0.3414,
+        0.04,
+        0.0672,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "LESS, B then A: B-only",
+       "rect": [
+        0.4086,
+        0.04,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "GREATER, A then B: A-only",
+       "rect": [
+        0.52,
+        0.04,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "GREATER, A then B: overlap",
+       "rect": [
+        0.5914,
+        0.04,
+        0.0672,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "GREATER, A then B: B-only",
+       "rect": [
+        0.6586,
+        0.04,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "GREATER, B then A: A-only",
+       "rect": [
+        0.77,
+        0.04,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "GREATER, B then A: overlap",
+       "rect": [
+        0.8414,
+        0.04,
+        0.0672,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "GREATER, B then A: B-only",
+       "rect": [
+        0.9086,
+        0.04,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "ALWAYS, A then B (last wins): A-only",
+       "rect": [
+        0.02,
+        0.54,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "ALWAYS, A then B (last wins): overlap",
+       "rect": [
+        0.0914,
+        0.54,
+        0.0672,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "ALWAYS, A then B (last wins): B-only",
+       "rect": [
+        0.1586,
+        0.54,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "ALWAYS, B then A (last wins): A-only",
+       "rect": [
+        0.27,
+        0.54,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "ALWAYS, B then A (last wins): overlap",
+       "rect": [
+        0.3414,
+        0.54,
+        0.0672,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "ALWAYS, B then A (last wins): B-only",
+       "rect": [
+        0.4086,
+        0.54,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "NEVER: nothing drawn: A-only",
+       "rect": [
+        0.52,
+        0.54,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        51,
+        51,
+        51
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "NEVER: nothing drawn: overlap",
+       "rect": [
+        0.5914,
+        0.54,
+        0.0672,
+        0.42
+       ],
+       "rgb": [
+        51,
+        51,
+        51
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "NEVER: nothing drawn: B-only",
+       "rect": [
+        0.6586,
+        0.54,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        51,
+        51,
+        51
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "LESS, A writes no depth: A-only",
+       "rect": [
+        0.77,
+        0.54,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "LESS, A writes no depth: overlap",
+       "rect": [
+        0.8414,
+        0.54,
+        0.0672,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "LESS, A writes no depth: B-only",
+       "rect": [
+        0.9086,
+        0.54,
+        0.0714,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      }
+     ]
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "depth",
+     "text": "Do the overlaps look clean, with no speckling or z-fighting where the quads cross?",
+     "type": "yesno",
+     "bad": "no",
+     "subsystem": "render.depth"
+    }
+   ]
+  },
+  {
+   "id": "bs.texture_formats",
+   "title": "Texture uploads across formats",
+   "subsystems": [
+    "render.texture.upload",
+    "render.texture.format",
+    "render.texture.compressed"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "texture_formats",
+    "params": {
+     "hold": "30"
+    }
+   },
+   "estimatedSec": 12,
+   "tags": [
+    "quick"
+   ],
+   "stimulus": "Nineteen 64x64 textures, one per format (RGBA8, sRGB RGBA8, RGBA16, RGBA16F, RGBA32F, RG8, R8, 565, 5551, 4444, 10:10:10:2, BC1 to BC5, sRGB BC1 to BC3), each in four quadrants, sampled into a 5 by 4 grid.",
+   "expected": "Colour formats show red, green, blue, yellow; RG8 and BC5 show red, green, black, yellow; R8 and BC4 show the red channel only; the packed formats show white, black, black, white; BC1 to BC3 show four distinct colours. Devices without native BC transcode the BC formats (see the capabilities line, bcTextures); the picture must be the same either way. A magenta cell means that format could not be created.",
+   "checkpoints": [
+    {
+     "name": "format_cells",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "quadrants",
+       "name": "format rgba8",
+       "rect": [
+        0.016,
+        0.02,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 12
+      },
+      {
+       "type": "quadrants",
+       "name": "format srgb_rgba8",
+       "rect": [
+        0.216,
+        0.02,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 12
+      },
+      {
+       "type": "quadrants",
+       "name": "format rgba16",
+       "rect": [
+        0.416,
+        0.02,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 12
+      },
+      {
+       "type": "quadrants",
+       "name": "format rgba16f",
+       "rect": [
+        0.616,
+        0.02,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 12
+      },
+      {
+       "type": "quadrants",
+       "name": "format rgba32f",
+       "rect": [
+        0.816,
+        0.02,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 12
+      },
+      {
+       "type": "quadrants",
+       "name": "format rg8",
+       "rect": [
+        0.016,
+        0.27,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        0
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 12
+      },
+      {
+       "type": "quadrants",
+       "name": "format r8",
+       "rect": [
+        0.216,
+        0.27,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        0,
+        0
+       ],
+       "bl": [
+        128,
+        0,
+        0
+       ],
+       "br": [
+        255,
+        0,
+        0
+       ],
+       "tol": 12
+      },
+      {
+       "type": "quadrants",
+       "name": "format rgb565",
+       "rect": [
+        0.416,
+        0.27,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        255,
+        255
+       ],
+       "tr": [
+        0,
+        0,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        0
+       ],
+       "br": [
+        255,
+        255,
+        255
+       ],
+       "tol": 16
+      },
+      {
+       "type": "quadrants",
+       "name": "format rgb5a1",
+       "rect": [
+        0.616,
+        0.27,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        255,
+        255
+       ],
+       "tr": [
+        0,
+        0,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        0
+       ],
+       "br": [
+        255,
+        255,
+        255
+       ],
+       "tol": 16
+      },
+      {
+       "type": "quadrants",
+       "name": "format rgba4",
+       "rect": [
+        0.816,
+        0.27,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        255,
+        255
+       ],
+       "tr": [
+        0,
+        0,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        0
+       ],
+       "br": [
+        255,
+        255,
+        255
+       ],
+       "tol": 16
+      },
+      {
+       "type": "quadrants",
+       "name": "format rgb10a2",
+       "rect": [
+        0.016,
+        0.52,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        255,
+        255
+       ],
+       "tr": [
+        0,
+        0,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        0
+       ],
+       "br": [
+        255,
+        255,
+        255
+       ],
+       "tol": 16
+      },
+      {
+       "type": "quadrants",
+       "name": "format bc1",
+       "rect": [
+        0.216,
+        0.52,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        24,
+        227,
+        255
+       ],
+       "tr": [
+        231,
+        28,
+        0
+       ],
+       "bl": [
+        0,
+        227,
+        57
+       ],
+       "br": [
+        255,
+        28,
+        198
+       ],
+       "tol": 16
+      },
+      {
+       "type": "quadrants",
+       "name": "format bc2",
+       "rect": [
+        0.416,
+        0.52,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        24,
+        227,
+        255
+       ],
+       "tr": [
+        231,
+        28,
+        0
+       ],
+       "bl": [
+        0,
+        227,
+        57
+       ],
+       "br": [
+        255,
+        28,
+        198
+       ],
+       "tol": 16
+      },
+      {
+       "type": "quadrants",
+       "name": "format bc3",
+       "rect": [
+        0.616,
+        0.52,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        24,
+        227,
+        255
+       ],
+       "tr": [
+        231,
+        28,
+        0
+       ],
+       "bl": [
+        0,
+        227,
+        57
+       ],
+       "br": [
+        255,
+        28,
+        198
+       ],
+       "tol": 16
+      },
+      {
+       "type": "quadrants",
+       "name": "format bc4",
+       "rect": [
+        0.816,
+        0.52,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        0,
+        0
+       ],
+       "bl": [
+        128,
+        0,
+        0
+       ],
+       "br": [
+        255,
+        0,
+        0
+       ],
+       "tol": 16
+      },
+      {
+       "type": "quadrants",
+       "name": "format bc5",
+       "rect": [
+        0.016,
+        0.77,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        0
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 16
+      },
+      {
+       "type": "quadrants",
+       "name": "format srgb_bc1",
+       "rect": [
+        0.216,
+        0.77,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        2,
+        196,
+        255
+       ],
+       "tr": [
+        204,
+        3,
+        0
+       ],
+       "bl": [
+        0,
+        196,
+        10
+       ],
+       "br": [
+        255,
+        3,
+        144
+       ],
+       "tol": 20
+      },
+      {
+       "type": "quadrants",
+       "name": "format srgb_bc2",
+       "rect": [
+        0.416,
+        0.77,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        2,
+        196,
+        255
+       ],
+       "tr": [
+        204,
+        3,
+        0
+       ],
+       "bl": [
+        0,
+        196,
+        10
+       ],
+       "br": [
+        255,
+        3,
+        144
+       ],
+       "tol": 20
+      },
+      {
+       "type": "quadrants",
+       "name": "format srgb_bc3",
+       "rect": [
+        0.616,
+        0.77,
+        0.168,
+        0.21
+       ],
+       "tl": [
+        2,
+        196,
+        255
+       ],
+       "tr": [
+        204,
+        3,
+        0
+       ],
+       "bl": [
+        0,
+        196,
+        10
+       ],
+       "br": [
+        255,
+        3,
+        144
+       ],
+       "tol": 20
+      }
+     ]
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "black",
+     "text": "Is any of the nineteen squares black, blank or solid magenta when it should show four quarters?",
+     "type": "yesno",
+     "bad": "yes",
+     "subsystem": "render.texture.upload"
+    },
+    {
+     "id": "colours",
+     "text": "Do the colours look correct (no swapped red and blue, no washed-out or over-dark squares)?",
+     "type": "yesno",
+     "bad": "no",
+     "subsystem": "render.colour"
+    }
+   ]
+  },
+  {
+   "id": "bs.rt_copy",
+   "title": "Render-target copies: sizes and mip levels",
+   "subsystems": [
+    "render.copy",
+    "render.mip",
+    "render.rendertarget"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "rt_copy",
+    "params": {
+     "hold": "30"
+    }
+   },
+   "estimatedSec": 12,
+   "tags": [
+    "quick"
+   ],
+   "stimulus": "GX2CopySurface between render targets: same size; from mip level 1 and 2 of a 256x256 target; a 64x64 source into a 128x128 destination (source smaller than destination, the case behind the black-surface regression); a 128x128 source into a 64x64 destination; and a 64x64 source into mip level 1 of a two-level target. Each result is drawn as a texture in one of six cells.",
+   "expected": "Cells 1 to 3 and 6 show four coloured quarters (red/green/blue/yellow; cyan/magenta/white/grey; orange/purple/lime/pink; red/green/blue/yellow). Cell 4 shows the copied 64x64 pattern in its top-left quarter over the destination's dark grey. Cell 5 (larger into smaller) is not defined by the hardware; it is only required not to be black.",
+   "checkpoints": [
+    {
+     "name": "copy_cells",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "quadrants",
+       "name": "same-size copy",
+       "rect": [
+        0.0267,
+        0.04,
+        0.28,
+        0.42
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "quadrants",
+       "name": "mip level 1 to base",
+       "rect": [
+        0.36,
+        0.04,
+        0.28,
+        0.42
+       ],
+       "tl": [
+        0,
+        255,
+        255
+       ],
+       "tr": [
+        255,
+        0,
+        255
+       ],
+       "bl": [
+        255,
+        255,
+        255
+       ],
+       "br": [
+        128,
+        128,
+        128
+       ],
+       "tol": 10
+      },
+      {
+       "type": "quadrants",
+       "name": "mip level 2 to base",
+       "rect": [
+        0.6933,
+        0.04,
+        0.28,
+        0.42
+       ],
+       "tl": [
+        255,
+        128,
+        0
+       ],
+       "tr": [
+        128,
+        0,
+        255
+       ],
+       "bl": [
+        128,
+        255,
+        0
+       ],
+       "br": [
+        255,
+        128,
+        128
+       ],
+       "tol": 10
+      },
+      {
+       "type": "quadrants",
+       "name": "source smaller than destination: the copied area",
+       "rect": [
+        0.0267,
+        0.54,
+        0.14,
+        0.21
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 12
+      },
+      {
+       "type": "region_color",
+       "name": "source smaller than destination: the rest of the destination keeps its clear colour",
+       "rect": [
+        0.1667,
+        0.54,
+        0.14,
+        0.21
+       ],
+       "rgb": [
+        64,
+        64,
+        64
+       ],
+       "tol": 12,
+       "severity": "warn"
+      },
+      {
+       "type": "not_black",
+       "name": "source larger than destination: not black",
+       "rect": [
+        0.36,
+        0.54,
+        0.28,
+        0.42
+       ],
+       "maxBlackFraction": 0.3,
+       "severity": "warn"
+      },
+      {
+       "type": "quadrants",
+       "name": "copy into mip level 1",
+       "rect": [
+        0.6933,
+        0.54,
+        0.28,
+        0.42
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 10
+      }
+     ]
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "black",
+     "text": "Is any of the six squares completely black or blank?",
+     "type": "yesno",
+     "bad": "yes",
+     "subsystem": "render.copy"
+    }
+   ]
+  },
+  {
+   "id": "bs.rt_copy_fuzz",
+   "title": "Render-target copies: randomised sizes, mips and formats",
+   "subsystems": [
+    "render.copy",
+    "render.mip",
+    "render.rendertarget"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "rt_copy_fuzz",
+    "params": {
+     "iterations": "48",
+     "checkEvery": "16"
+    },
+    "seedMode": "random"
+   },
+   "estimatedSec": 20,
+   "tags": [
+    "soak"
+   ],
+   "stimulus": "Forty-eight GX2CopySurface calls between randomly sized surfaces (4 to 300 texels) with random mip counts, levels and formats (RGBA8, RGBA16F, RGB10A2), chosen from the run's seed. Every iteration's parameters are logged as NOTE lines.",
+   "expected": "No crash, no hang and no black picture: the destination is cleared to grey before each copy, so a black result means the copy or the sampling of it failed. Reproduce an iteration from the seed and the logged parameters.",
+   "reproduce": "Run the test with the same seed (the report records it), or use the logged iter= parameters to build the same copy.",
+   "checkpoints": [
+    {
+     "name": "fuzz_*",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "not_black",
+       "name": "result not black",
+       "rect": [
+        0.1,
+        0.1,
+        0.8,
+        0.8
+       ],
+       "maxBlackFraction": 0.6
+      }
+     ]
+    }
+   ],
+   "checks": [
+    {
+     "type": "guest_clean",
+     "name": "guest reported no errors"
+    }
+   ],
+   "soak": {
+    "weight": 2
+   },
+   "questionnaire": [
+    {
+     "id": "black",
+     "text": "Did you see the picture go black, flash, or show garbage while the copies ran?",
+     "type": "yesno",
+     "bad": "yes",
+     "subsystem": "render.copy"
+    }
+   ]
+  },
+  {
+   "id": "bs.rt_feedback",
+   "title": "Render-to-texture feedback with each depth format",
+   "subsystems": [
+    "render.rendertarget",
+    "render.depth",
+    "render.texture.feedback"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "rt_feedback",
+    "params": {
+     "hold": "30"
+    }
+   },
+   "estimatedSec": 10,
+   "tags": [
+    "quick"
+   ],
+   "stimulus": "A four-colour pattern is rendered into a render target, then sampled into a second target and back, six generations, with a depth buffer of D32 float, D16, D24 S8 or D24 X8 attached to each pass.",
+   "expected": "After six 1:1 generations the pattern is unchanged in all four columns: red, green, blue, yellow quarters.",
+   "checkpoints": [
+    {
+     "name": "feedback_cells",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "quadrants",
+       "name": "six generations through render targets with a D32 float depth buffer",
+       "rect": [
+        0.02,
+        0.206,
+        0.21,
+        0.357
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "quadrants",
+       "name": "six generations through render targets with a D16 depth buffer",
+       "rect": [
+        0.27,
+        0.206,
+        0.21,
+        0.357
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "quadrants",
+       "name": "six generations through render targets with a D24 S8 float depth buffer",
+       "rect": [
+        0.52,
+        0.206,
+        0.21,
+        0.357
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "quadrants",
+       "name": "six generations through render targets with a D24 X8 depth buffer",
+       "rect": [
+        0.77,
+        0.206,
+        0.21,
+        0.357
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 10
+      }
+     ]
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "black",
+     "text": "Are all four columns showing four clear coloured quarters, with none black or smeared?",
+     "type": "yesno",
+     "bad": "no",
+     "subsystem": "render.rendertarget"
+    }
+   ]
+  },
+  {
+   "id": "bs.texture_churn",
+   "title": "Texture creation and eviction under pressure",
+   "subsystems": [
+    "render.texture.cache",
+    "render.texture.eviction",
+    "memory.pressure"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "texture_churn",
+    "params": {
+     "size": "256",
+     "perFrame": "4",
+     "residentMB": "64",
+     "totalMB": "1024",
+     "checkEvery": "150"
+    },
+    "durationMs": 20000,
+    "seedMode": "random"
+   },
+   "estimatedSec": 25,
+   "timeoutSec": 135,
+   "stimulus": "Textures are created, filled, drawn once and discarded far faster than a game would, into an 8x8 grid (each cell's colour is decided by its position), while a canary texture created first is never freed. Every few seconds the scene holds still for a check.",
+   "expected": "Every grid cell shows its own colour at every check, the canary keeps its four quarters, and the control rectangle stays green: a black or wrong cell means a live texture was evicted or a new one never reached the GPU.",
+   "reproduce": "Run audit.rpx's texture_churn; with no app attached it runs with the default parameters.",
+   "checkpoints": [
+    {
+     "name": "churn_*",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "region_color",
+       "name": "churn cell 0",
+       "rect": [
+        0.01,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 1",
+       "rect": [
+        0.135,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 2",
+       "rect": [
+        0.26,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 3",
+       "rect": [
+        0.385,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 4",
+       "rect": [
+        0.51,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 5",
+       "rect": [
+        0.635,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 6",
+       "rect": [
+        0.76,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 7",
+       "rect": [
+        0.885,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 8",
+       "rect": [
+        0.01,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 9",
+       "rect": [
+        0.135,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 10",
+       "rect": [
+        0.26,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 11",
+       "rect": [
+        0.385,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 12",
+       "rect": [
+        0.51,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 13",
+       "rect": [
+        0.635,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 14",
+       "rect": [
+        0.76,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 15",
+       "rect": [
+        0.885,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 16",
+       "rect": [
+        0.01,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 17",
+       "rect": [
+        0.135,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 18",
+       "rect": [
+        0.26,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 19",
+       "rect": [
+        0.385,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 20",
+       "rect": [
+        0.51,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 21",
+       "rect": [
+        0.635,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 22",
+       "rect": [
+        0.76,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 23",
+       "rect": [
+        0.885,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 24",
+       "rect": [
+        0.01,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 25",
+       "rect": [
+        0.135,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 26",
+       "rect": [
+        0.26,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 27",
+       "rect": [
+        0.385,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 28",
+       "rect": [
+        0.51,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 29",
+       "rect": [
+        0.635,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 30",
+       "rect": [
+        0.76,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 31",
+       "rect": [
+        0.885,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 32",
+       "rect": [
+        0.01,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 33",
+       "rect": [
+        0.135,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 34",
+       "rect": [
+        0.26,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 35",
+       "rect": [
+        0.385,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 36",
+       "rect": [
+        0.51,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 37",
+       "rect": [
+        0.635,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 38",
+       "rect": [
+        0.76,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 39",
+       "rect": [
+        0.885,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 40",
+       "rect": [
+        0.01,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 41",
+       "rect": [
+        0.135,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 42",
+       "rect": [
+        0.26,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 43",
+       "rect": [
+        0.385,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 44",
+       "rect": [
+        0.51,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 45",
+       "rect": [
+        0.635,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 46",
+       "rect": [
+        0.76,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 47",
+       "rect": [
+        0.885,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 48",
+       "rect": [
+        0.01,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 49",
+       "rect": [
+        0.135,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 50",
+       "rect": [
+        0.26,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 51",
+       "rect": [
+        0.385,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 52",
+       "rect": [
+        0.51,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 53",
+       "rect": [
+        0.635,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 54",
+       "rect": [
+        0.76,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 55",
+       "rect": [
+        0.885,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 56",
+       "rect": [
+        0.01,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 57",
+       "rect": [
+        0.135,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 58",
+       "rect": [
+        0.26,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 59",
+       "rect": [
+        0.385,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 60",
+       "rect": [
+        0.51,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 61",
+       "rect": [
+        0.635,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 62",
+       "rect": [
+        0.76,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 63",
+       "rect": [
+        0.885,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "quadrants",
+       "name": "long-lived canary texture",
+       "rect": [
+        0.05,
+        0.9,
+        0.4,
+        0.08
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "plain control rectangle",
+       "rect": [
+        0.55,
+        0.9,
+        0.4,
+        0.08
+       ],
+       "rgb": [
+        0,
+        204,
+        0
+       ],
+       "tol": 10
+      }
+     ]
+    }
+   ],
+   "checks": [
+    {
+     "type": "guest_clean",
+     "name": "guest reported no errors"
+    },
+    {
+     "type": "memory_growth",
+     "name": "memory settles",
+     "maxGrowthMB": 200,
+     "severity": "warn"
+    }
+   ],
+   "soak": {
+    "weight": 2
+   },
+   "questionnaire": [
+    {
+     "id": "flash",
+     "text": "Did any square flash black, or did the picture flicker, while the textures were being created?",
+     "type": "yesno",
+     "bad": "yes",
+     "subsystem": "render.texture.cache"
+    }
+   ]
+  },
+  {
+   "id": "bs.texture_churn_heavy",
+   "title": "Texture creation and eviction under heavy pressure",
+   "subsystems": [
+    "render.texture.cache",
+    "render.texture.eviction",
+    "memory.pressure"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "texture_churn",
+    "params": {
+     "size": "512",
+     "perFrame": "4",
+     "residentMB": "256",
+     "totalMB": "3072",
+     "checkEvery": "150"
+    },
+    "durationMs": 40000,
+    "seedMode": "random"
+   },
+   "estimatedSec": 50,
+   "timeoutSec": 210,
+   "stimulus": "Textures are created, filled, drawn once and discarded far faster than a game would, into an 8x8 grid (each cell's colour is decided by its position), while a canary texture created first is never freed. Every few seconds the scene holds still for a check.",
+   "expected": "Every grid cell shows its own colour at every check, the canary keeps its four quarters, and the control rectangle stays green: a black or wrong cell means a live texture was evicted or a new one never reached the GPU.",
+   "reproduce": "Run audit.rpx's texture_churn; with no app attached it runs with the default parameters.",
+   "checkpoints": [
+    {
+     "name": "churn_*",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "region_color",
+       "name": "churn cell 0",
+       "rect": [
+        0.01,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 1",
+       "rect": [
+        0.135,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 2",
+       "rect": [
+        0.26,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 3",
+       "rect": [
+        0.385,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 4",
+       "rect": [
+        0.51,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 5",
+       "rect": [
+        0.635,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 6",
+       "rect": [
+        0.76,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 7",
+       "rect": [
+        0.885,
+        0.0089,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 8",
+       "rect": [
+        0.01,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 9",
+       "rect": [
+        0.135,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 10",
+       "rect": [
+        0.26,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 11",
+       "rect": [
+        0.385,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 12",
+       "rect": [
+        0.51,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 13",
+       "rect": [
+        0.635,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 14",
+       "rect": [
+        0.76,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 15",
+       "rect": [
+        0.885,
+        0.12,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 16",
+       "rect": [
+        0.01,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 17",
+       "rect": [
+        0.135,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 18",
+       "rect": [
+        0.26,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 19",
+       "rect": [
+        0.385,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 20",
+       "rect": [
+        0.51,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 21",
+       "rect": [
+        0.635,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 22",
+       "rect": [
+        0.76,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 23",
+       "rect": [
+        0.885,
+        0.2311,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 24",
+       "rect": [
+        0.01,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 25",
+       "rect": [
+        0.135,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 26",
+       "rect": [
+        0.26,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 27",
+       "rect": [
+        0.385,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 28",
+       "rect": [
+        0.51,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 29",
+       "rect": [
+        0.635,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 30",
+       "rect": [
+        0.76,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 31",
+       "rect": [
+        0.885,
+        0.3422,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 32",
+       "rect": [
+        0.01,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 33",
+       "rect": [
+        0.135,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 34",
+       "rect": [
+        0.26,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 35",
+       "rect": [
+        0.385,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 36",
+       "rect": [
+        0.51,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 37",
+       "rect": [
+        0.635,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 38",
+       "rect": [
+        0.76,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 39",
+       "rect": [
+        0.885,
+        0.4533,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 40",
+       "rect": [
+        0.01,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 41",
+       "rect": [
+        0.135,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 42",
+       "rect": [
+        0.26,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 43",
+       "rect": [
+        0.385,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 44",
+       "rect": [
+        0.51,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 45",
+       "rect": [
+        0.635,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 46",
+       "rect": [
+        0.76,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 47",
+       "rect": [
+        0.885,
+        0.5644,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 48",
+       "rect": [
+        0.01,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 49",
+       "rect": [
+        0.135,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 50",
+       "rect": [
+        0.26,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 51",
+       "rect": [
+        0.385,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 52",
+       "rect": [
+        0.51,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 53",
+       "rect": [
+        0.635,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 54",
+       "rect": [
+        0.76,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 55",
+       "rect": [
+        0.885,
+        0.6756,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 56",
+       "rect": [
+        0.01,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 57",
+       "rect": [
+        0.135,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 58",
+       "rect": [
+        0.26,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 59",
+       "rect": [
+        0.385,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 60",
+       "rect": [
+        0.51,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 61",
+       "rect": [
+        0.635,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 62",
+       "rect": [
+        0.76,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        255,
+        127,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "churn cell 63",
+       "rect": [
+        0.885,
+        0.7867,
+        0.105,
+        0.0933
+       ],
+       "rgb": [
+        127,
+        0,
+        255
+       ],
+       "tol": 14
+      },
+      {
+       "type": "quadrants",
+       "name": "long-lived canary texture",
+       "rect": [
+        0.05,
+        0.9,
+        0.4,
+        0.08
+       ],
+       "tl": [
+        255,
+        0,
+        0
+       ],
+       "tr": [
+        0,
+        255,
+        0
+       ],
+       "bl": [
+        0,
+        0,
+        255
+       ],
+       "br": [
+        255,
+        255,
+        0
+       ],
+       "tol": 14
+      },
+      {
+       "type": "region_color",
+       "name": "plain control rectangle",
+       "rect": [
+        0.55,
+        0.9,
+        0.4,
+        0.08
+       ],
+       "rgb": [
+        0,
+        204,
+        0
+       ],
+       "tol": 10
+      }
+     ]
+    }
+   ],
+   "checks": [
+    {
+     "type": "guest_clean",
+     "name": "guest reported no errors"
+    },
+    {
+     "type": "memory_growth",
+     "name": "memory settles",
+     "maxGrowthMB": 200,
+     "severity": "warn"
+    }
+   ],
+   "soak": {
+    "weight": 2
+   },
+   "questionnaire": [
+    {
+     "id": "flash",
+     "text": "Did any square flash black, or did the picture flicker, while the textures were being created?",
+     "type": "yesno",
+     "bad": "yes",
+     "subsystem": "render.texture.cache"
+    }
+   ],
+   "requires": {
+    "minTier": 1
+   }
+  },
+  {
+   "id": "bs.rt_lifecycle",
+   "title": "Render-target lifecycle: create, use, destroy",
+   "subsystems": [
+    "render.rendertarget",
+    "memory.lifecycle"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "rt_lifecycle",
+    "params": {
+     "iterations": "30",
+     "checkEvery": "10"
+    }
+   },
+   "estimatedSec": 15,
+   "timeoutSec": 120,
+   "stimulus": "Six render targets of different sizes (up to 1280x720) are created, filled with a solid colour, sampled and destroyed every frame, thirty times.",
+   "expected": "The six cells never change colour, and the app's memory footprint does not keep growing.",
+   "checkpoints": [
+    {
+     "name": "cycle_*",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 1
+     },
+     "expect": [
+      {
+       "type": "region_color",
+       "name": "render target 1 of a different size",
+       "rect": [
+        0.0267,
+        0.04,
+        0.28,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "render target 2 of a different size",
+       "rect": [
+        0.36,
+        0.04,
+        0.28,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "render target 3 of a different size",
+       "rect": [
+        0.6933,
+        0.04,
+        0.28,
+        0.42
+       ],
+       "rgb": [
+        0,
+        0,
+        255
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "render target 4 of a different size",
+       "rect": [
+        0.0267,
+        0.54,
+        0.28,
+        0.42
+       ],
+       "rgb": [
+        255,
+        255,
+        0
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "render target 5 of a different size",
+       "rect": [
+        0.36,
+        0.54,
+        0.28,
+        0.42
+       ],
+       "rgb": [
+        0,
+        255,
+        255
+       ],
+       "tol": 10
+      },
+      {
+       "type": "region_color",
+       "name": "render target 6 of a different size",
+       "rect": [
+        0.6933,
+        0.54,
+        0.28,
+        0.42
+       ],
+       "rgb": [
+        255,
+        0,
+        255
+       ],
+       "tol": 10
+      }
+     ]
+    }
+   ],
+   "checks": [
+    {
+     "type": "guest_clean",
+     "name": "guest reported no errors"
+    },
+    {
+     "type": "memory_growth",
+     "name": "no leak across the cycles",
+     "maxGrowthMB": 48,
+     "severity": "warn"
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "flash",
+     "text": "Did any of the six squares flash or go black while they were being created and destroyed?",
+     "type": "yesno",
+     "bad": "yes",
+     "subsystem": "render.rendertarget"
+    }
+   ]
+  },
+  {
+   "id": "bs.flicker_static",
+   "title": "Flicker: a static scene over time",
+   "subsystems": [
+    "render.present",
+    "render.stability"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "flicker_static",
+    "params": {
+     "early": "60",
+     "late": "300"
+    }
+   },
+   "estimatedSec": 20,
+   "tags": [
+    "quick"
+   ],
+   "stimulus": "A scene that never changes (colour ramp, checkerboard texture, two translucent quads, thin white lines), presented for several seconds; the app reads back forty frames shortly after the start and forty more after about five seconds.",
+   "expected": "Every captured frame is bit-identical, at both times. Any difference is flicker, shimmer or a frame that was drawn wrong and then corrected.",
+   "checkpoints": [
+    {
+     "name": "static_early",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 40
+     },
+     "expect": [
+      {
+       "type": "frames_identical",
+       "name": "frames identical (early)",
+       "maxDistinct": 1
+      },
+      {
+       "type": "not_black",
+       "name": "not black",
+       "maxBlackFraction": 0.6
+      }
+     ]
+    },
+    {
+     "name": "static_late",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 40
+     },
+     "expect": [
+      {
+       "type": "frames_identical",
+       "name": "frames identical (late)",
+       "maxDistinct": 1
+      },
+      {
+       "type": "not_black",
+       "name": "not black",
+       "maxBlackFraction": 0.6
+      }
+     ]
+    }
+   ],
+   "checks": [
+    {
+     "type": "guest_clean",
+     "name": "guest reported no errors"
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "flicker",
+     "text": "Did you see black spots, flicker or shimmering lines on the still picture?",
+     "type": "yesno",
+     "bad": "yes",
+     "subsystem": "render.stability"
+    }
+   ]
+  },
+  {
+   "id": "bs.motion_counter",
+   "title": "Tearing and frame order",
+   "subsystems": [
+    "render.present",
+    "timing.sync"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "motion_counter",
+    "params": {
+     "early": "90"
+    }
+   },
+   "estimatedSec": 12,
+   "tags": [
+    "quick"
+   ],
+   "stimulus": "An orange bar sweeps across the picture while the frame number is drawn twice, as sixteen black and white squares along the top and again along the bottom edge.",
+   "expected": "In every frame the app captures, the top and bottom numbers agree (no tear) and they increase from capture to capture (no repeats or backwards steps).",
+   "checkpoints": [
+    {
+     "name": "motion",
+     "capture": {
+      "views": [
+       "tv"
+      ],
+      "count": 40
+     },
+     "expect": [
+      {
+       "type": "frame_counter",
+       "name": "frame numbers agree and increase",
+       "maxTornFraction": 0,
+       "maxBackwards": 0
+      }
+     ]
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "smooth",
+     "text": "Did the orange bar move smoothly, without tearing, jumps or stutter?",
+     "type": "yesno",
+     "bad": "no",
+     "severity": "warn",
+     "subsystem": "timing.pacing"
+    }
+   ]
+  },
+  {
+   "id": "bs.frame_pacing",
+   "title": "Frame pacing",
+   "subsystems": [
+    "timing.pacing"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "motion_counter",
+    "params": {
+     "early": "600"
+    }
+   },
+   "estimatedSec": 20,
+   "stimulus": "The moving-bar scene for about ten seconds with no frame readback, while the core timestamps every present on the GPU thread.",
+   "expected": "A steady rate close to the display's (60 fps with vsync), no frame longer than 2.5 times the median more than 1% of the time.",
+   "checkpoints": [
+    {
+     "name": "motion"
+    }
+   ],
+   "checks": [
+    {
+     "type": "frame_pacing",
+     "name": "present intervals",
+     "minFps": 50,
+     "maxP99Ms": 40,
+     "maxLongFraction": 0.05,
+     "severity": "warn"
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "smooth",
+     "text": "Did the animation look smooth?",
+     "type": "yesno",
+     "bad": "no",
+     "severity": "warn",
+     "subsystem": "timing.pacing"
+    }
+   ]
+  },
+  {
+   "id": "bs.audio_sweep_lpcm16",
+   "title": "Audio: tone and pitch sweep (16-bit PCM, TV and GamePad)",
+   "subsystems": [
+    "audio.output",
+    "audio.ax"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "audio_sweep",
+    "params": {
+     "format": "lpcm16",
+     "device": "both",
+     "toneMs": "1500",
+     "sweepMs": "4000",
+     "gapMs": "700"
+    }
+   },
+   "estimatedSec": 15,
+   "timeoutSec": 60,
+   "stimulus": "A 750 Hz sine tone for a second and a half, then a four-second sweep up and a four-second sweep down through one emulated AX voice (16-bit PCM, sent to the TV and GamePad mix), then silence.",
+   "expected": "A steady tone, then a smooth rise and fall in pitch, then silence. No pops, crackles, dropouts or clipping. The core's own measurements of what reached the device must show no underruns and no sample jumps.",
+   "reproduce": "Run audio_sweep on any Wii U emulator and listen.",
+   "checks": [
+    {
+     "type": "audio_window",
+     "name": "tone (lpcm16)",
+     "step": 1,
+     "minRms": 0.02,
+     "maxUnderrunFrames": 0,
+     "maxDiscontinuities": 0,
+     "minPeak": 2000,
+     "maxPeak": 32000
+    },
+    {
+     "type": "audio_window",
+     "name": "sweep up (lpcm16)",
+     "step": 2,
+     "minRms": 0.02,
+     "maxUnderrunFrames": 0,
+     "maxDiscontinuities": 0,
+     "minPeak": 2000,
+     "maxPeak": 32000
+    },
+    {
+     "type": "audio_window",
+     "name": "sweep down (lpcm16)",
+     "step": 3,
+     "minRms": 0.02,
+     "maxUnderrunFrames": 0,
+     "maxDiscontinuities": 0,
+     "minPeak": 2000,
+     "maxPeak": 32000
+    },
+    {
+     "type": "guest_clean",
+     "name": "guest reported no errors"
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "clean",
+     "text": "Did the audio sound clean? Any pops, crackles or silence?",
+     "type": "choice",
+     "options": [
+      "Clean",
+      "Pops or clicks",
+      "Crackling",
+      "Dropouts or silence",
+      "Distorted or wrong pitch",
+      "No sound at all"
+     ],
+     "badOptions": [
+      "Pops or clicks",
+      "Crackling",
+      "Dropouts or silence",
+      "Distorted or wrong pitch",
+      "No sound at all"
+     ],
+     "subsystem": "audio.output"
+    },
+    {
+     "id": "pitch",
+     "text": "Did the pitch rise and then fall smoothly?",
+     "type": "yesno",
+     "bad": "no",
+     "severity": "warn",
+     "subsystem": "audio.output"
+    }
+   ]
+  },
+  {
+   "id": "bs.audio_sweep_lpcm8",
+   "title": "Audio: tone and pitch sweep (8-bit PCM, TV only)",
+   "subsystems": [
+    "audio.output",
+    "audio.ax"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "audio_sweep",
+    "params": {
+     "format": "lpcm8",
+     "device": "tv",
+     "toneMs": "1500",
+     "sweepMs": "4000",
+     "gapMs": "700"
+    }
+   },
+   "estimatedSec": 15,
+   "timeoutSec": 60,
+   "stimulus": "The same tone and sweep from an 8-bit PCM voice sent to the TV mix only.",
+   "expected": "A steady tone, then a smooth rise and fall in pitch, then silence. No pops, crackles, dropouts or clipping. The core's own measurements of what reached the device must show no underruns and no sample jumps.",
+   "reproduce": "Run audio_sweep on any Wii U emulator and listen.",
+   "checks": [
+    {
+     "type": "audio_window",
+     "name": "tone (lpcm8)",
+     "step": 1,
+     "minRms": 0.02,
+     "maxUnderrunFrames": 0,
+     "maxDiscontinuities": 0,
+     "minPeak": 2000,
+     "maxPeak": 32000
+    },
+    {
+     "type": "audio_window",
+     "name": "sweep up (lpcm8)",
+     "step": 2,
+     "minRms": 0.02,
+     "maxUnderrunFrames": 0,
+     "maxDiscontinuities": 0,
+     "minPeak": 2000,
+     "maxPeak": 32000
+    },
+    {
+     "type": "audio_window",
+     "name": "sweep down (lpcm8)",
+     "step": 3,
+     "minRms": 0.02,
+     "maxUnderrunFrames": 0,
+     "maxDiscontinuities": 0,
+     "minPeak": 2000,
+     "maxPeak": 32000
+    },
+    {
+     "type": "guest_clean",
+     "name": "guest reported no errors"
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "clean",
+     "text": "Did the audio sound clean? Any pops, crackles or silence?",
+     "type": "choice",
+     "options": [
+      "Clean",
+      "Pops or clicks",
+      "Crackling",
+      "Dropouts or silence",
+      "Distorted or wrong pitch",
+      "No sound at all"
+     ],
+     "badOptions": [
+      "Pops or clicks",
+      "Crackling",
+      "Dropouts or silence",
+      "Distorted or wrong pitch",
+      "No sound at all"
+     ],
+     "subsystem": "audio.output"
+    },
+    {
+     "id": "pitch",
+     "text": "Did the pitch rise and then fall smoothly?",
+     "type": "yesno",
+     "bad": "no",
+     "severity": "warn",
+     "subsystem": "audio.output"
+    }
+   ]
+  },
+  {
+   "id": "bs.input_echo",
+   "title": "Input: buttons, sticks and touch echo",
+   "subsystems": [
+    "input.vpad",
+    "input.touch"
+   ],
+   "kind": "guest",
+   "guest": {
+    "test": "input_echo",
+    "params": {},
+    "durationMs": 90000
+   },
+   "estimatedSec": 45,
+   "timeoutSec": 150,
+   "tags": [
+    "quick"
+   ],
+   "stimulus": "The guest reads the GamePad through VPAD every frame and draws what it sees: sixteen button squares that light up, two stick wells with a dot each, and an orange marker where the screen is touched. The app presses every button, moves both sticks and touches four points through the core's input path, then waits six seconds for you to press a real button or touch the screen.",
+   "expected": "Every injected button lights its square and is reported held, then released; the sticks report the direction sent; touches are reported touched at about the position sent (touch position is a warning, since the mapping differs between layouts).",
+   "script": [
+    {
+     "action": "release",
+     "label": "start with nothing held"
+    },
+    {
+     "action": "press",
+     "button": "A",
+     "holdMs": 350,
+     "label": "press A"
+    },
+    {
+     "action": "press",
+     "button": "B",
+     "holdMs": 350,
+     "label": "press B"
+    },
+    {
+     "action": "press",
+     "button": "X",
+     "holdMs": 350,
+     "label": "press X"
+    },
+    {
+     "action": "press",
+     "button": "Y",
+     "holdMs": 350,
+     "label": "press Y"
+    },
+    {
+     "action": "press",
+     "button": "L",
+     "holdMs": 350,
+     "label": "press L"
+    },
+    {
+     "action": "press",
+     "button": "R",
+     "holdMs": 350,
+     "label": "press R"
+    },
+    {
+     "action": "press",
+     "button": "ZL",
+     "holdMs": 350,
+     "label": "press ZL"
+    },
+    {
+     "action": "press",
+     "button": "ZR",
+     "holdMs": 350,
+     "label": "press ZR"
+    },
+    {
+     "action": "press",
+     "button": "PLUS",
+     "holdMs": 350,
+     "label": "press PLUS"
+    },
+    {
+     "action": "press",
+     "button": "MINUS",
+     "holdMs": 350,
+     "label": "press MINUS"
+    },
+    {
+     "action": "press",
+     "button": "UP",
+     "holdMs": 350,
+     "label": "press UP"
+    },
+    {
+     "action": "press",
+     "button": "DOWN",
+     "holdMs": 350,
+     "label": "press DOWN"
+    },
+    {
+     "action": "press",
+     "button": "LEFT",
+     "holdMs": 350,
+     "label": "press LEFT"
+    },
+    {
+     "action": "press",
+     "button": "RIGHT",
+     "holdMs": 350,
+     "label": "press RIGHT"
+    },
+    {
+     "action": "press",
+     "button": "STICK_L",
+     "holdMs": 350,
+     "label": "click the left stick",
+     "severity": "warn"
+    },
+    {
+     "action": "press",
+     "button": "STICK_R",
+     "holdMs": 350,
+     "label": "click the right stick",
+     "severity": "warn"
+    },
+    {
+     "action": "stick",
+     "stick": "left",
+     "x": 1,
+     "y": 0,
+     "settleMs": 450,
+     "tolerance": 0.15,
+     "label": "left stick (1, 0)"
+    },
+    {
+     "action": "stick",
+     "stick": "left",
+     "x": -1,
+     "y": 0,
+     "settleMs": 450,
+     "tolerance": 0.15,
+     "label": "left stick (-1, 0)"
+    },
+    {
+     "action": "stick",
+     "stick": "left",
+     "x": 0,
+     "y": 1,
+     "settleMs": 450,
+     "tolerance": 0.15,
+     "label": "left stick (0, 1)"
+    },
+    {
+     "action": "stick",
+     "stick": "left",
+     "x": 0,
+     "y": -1,
+     "settleMs": 450,
+     "tolerance": 0.15,
+     "label": "left stick (0, -1)"
+    },
+    {
+     "action": "stick",
+     "stick": "left",
+     "x": 0.6,
+     "y": -0.6,
+     "settleMs": 450,
+     "tolerance": 0.15,
+     "label": "left stick (0.6, -0.6)"
+    },
+    {
+     "action": "stick",
+     "stick": "right",
+     "x": 1,
+     "y": 0,
+     "settleMs": 450,
+     "tolerance": 0.15,
+     "label": "right stick (1, 0)"
+    },
+    {
+     "action": "stick",
+     "stick": "right",
+     "x": -1,
+     "y": 0,
+     "settleMs": 450,
+     "tolerance": 0.15,
+     "label": "right stick (-1, 0)"
+    },
+    {
+     "action": "stick",
+     "stick": "right",
+     "x": 0,
+     "y": 1,
+     "settleMs": 450,
+     "tolerance": 0.15,
+     "label": "right stick (0, 1)"
+    },
+    {
+     "action": "stick",
+     "stick": "right",
+     "x": 0,
+     "y": -1,
+     "settleMs": 450,
+     "tolerance": 0.15,
+     "label": "right stick (0, -1)"
+    },
+    {
+     "action": "stick",
+     "stick": "right",
+     "x": 0.6,
+     "y": -0.6,
+     "settleMs": 450,
+     "tolerance": 0.15,
+     "label": "right stick (0.6, -0.6)"
+    },
+    {
+     "action": "touch",
+     "x": 0.5,
+     "y": 0.5,
+     "settleMs": 600,
+     "tolerance": 0.15,
+     "label": "touch (0.5, 0.5)"
+    },
+    {
+     "action": "touch",
+     "x": 0.1,
+     "y": 0.1,
+     "settleMs": 600,
+     "tolerance": 0.15,
+     "label": "touch (0.1, 0.1)"
+    },
+    {
+     "action": "touch",
+     "x": 0.9,
+     "y": 0.9,
+     "settleMs": 600,
+     "tolerance": 0.15,
+     "label": "touch (0.9, 0.9)"
+    },
+    {
+     "action": "touch",
+     "x": 0.1,
+     "y": 0.9,
+     "settleMs": 600,
+     "tolerance": 0.15,
+     "label": "touch (0.1, 0.9)"
+    },
+    {
+     "action": "await_physical",
+     "holdMs": 6000,
+     "label": "press a real button or touch the screen now (optional)"
+    },
+    {
+     "action": "release",
+     "label": "release everything"
+    }
+   ],
+   "checks": [
+    {
+     "type": "guest_clean",
+     "name": "guest reported no errors"
+    }
+   ],
+   "questionnaire": [
+    {
+     "id": "echo",
+     "text": "If you pressed a real controller button or touched the screen, did the on-screen echo follow it?",
+     "type": "choice",
+     "options": [
+      "Yes",
+      "Partly",
+      "No",
+      "I did not try"
+     ],
+     "badOptions": [
+      "Partly",
+      "No"
+     ],
+     "severity": "warn",
+     "subsystem": "input.vpad"
+    },
+    {
+     "id": "touch",
+     "text": "Did the orange touch marker appear where you touched?",
+     "type": "choice",
+     "options": [
+      "Yes",
+      "Roughly",
+      "No",
+      "I did not touch"
+     ],
+     "badOptions": [
+      "No"
+     ],
+     "severity": "warn",
+     "subsystem": "input.touch"
+    }
+   ]
+  },
+  {
+   "id": "bs.lifecycle_reboot",
+   "title": "Lifecycle: boot and stop the guest repeatedly",
+   "subsystems": [
+    "memory.lifecycle",
+    "core.boot"
+   ],
+   "kind": "host",
+   "host": {
+    "action": "reboot_cycle",
+    "params": {
+     "cycles": "5"
+    }
+   },
+   "estimatedSec": 60,
+   "timeoutSec": 300,
+   "stimulus": "The app boots audit.rpx, waits for frames, stops it, and repeats five times.",
+   "expected": "Every boot reaches a presenting guest within 45 seconds, and the app's memory after each stop does not keep climbing.",
+   "checks": [
+    {
+     "type": "memory_growth",
+     "name": "memory after each stop",
+     "maxGrowthMB": 64,
+     "severity": "warn"
+    }
+   ]
+  }
+ ]
+}
