@@ -150,7 +150,6 @@ if(IOS)
 			ios/Bridge/IOSAuditFrameStats.h
 			ios/Bridge/IOSAuditHooks.h
 			ios/Bridge/IOSAuditHooks.cpp
-			ios/Bridge/IOSAuditMetal.cpp
 		)
 	endif()
 	target_link_libraries(CemuBin PRIVATE

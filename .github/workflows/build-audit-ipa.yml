@@ -313,7 +313,8 @@ jobs:
       - name: Build Cemu.framework (core + bridge + audit hooks)
         run: |
           set -eo pipefail
-          cmake --build build-ios --target CemuBin 2>&1 | tee build.log
+          # -k 0: keep compiling after an error, so a failing core reports every broken file in one run.
+          cmake --build build-ios --target CemuBin -- -k 0 2>&1 | tee build.log
           FW=$(find build-ios bin -type d -name Cemu.framework -not -path '*/CMakeFiles/*' 2>/dev/null | head -n1)
           if [ -z "$FW" ]; then echo "::error::the build finished but produced no Cemu.framework"; exit 1; fi
           rm -rf build-ios/out && mkdir -p build-ios/out

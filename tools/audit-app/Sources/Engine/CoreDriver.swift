@@ -58,6 +58,7 @@ final class CoreDriver {
     }
 
     var deviceReport: String { String(cString: cemu_bridge_device_report()) }
+    var crashLogPath: String { String(cString: cemu_bridge_crash_log_path()) }
 
     /// One-time engine set-up under Application Support (the app's Documents folder is for reports only).
     func initializeCore(logProfile: Int) throws {
@@ -85,6 +86,9 @@ final class CoreDriver {
         // After initialize, which installs its own mix of log categories.
         cemu_audit_set_log_profile(Int32(logProfile))
         ios_live_log_set_enabled(true)
+        // A 10 Hz memory sampler and the memory-warning hook, written to the crash log with synchronous writes: the
+        // termination they explain (jetsam) leaves no other trace.
+        cemu_bridge_start_memory_watchdog()
         initialized = true
     }
 
