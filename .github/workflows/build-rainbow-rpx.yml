@@ -23,7 +23,9 @@ jobs:
   # is the one whose exit status matters.
   build-rainbow-rpx:
     runs-on: ubuntu-latest
-    container: devkitpro/devkitppc:latest
+    # Pinned to the digest of devkitpro/devkitppc:latest from the 2026-09-21 green run, so the
+    # toolchain only changes when this line does.
+    container: devkitpro/devkitppc@sha256:44cb1a920e1ec3ec7c06767493c3b85f8d643d6137cc4661f0201895ac6e4967
     steps:
       - name: Check out this repository
         uses: actions/checkout@v4
@@ -32,7 +34,7 @@ jobs:
         run: dkp-pacman -Sy --noconfirm wut
 
       - name: Clone wut (for its sample Makefile)
-        run: git clone --depth 1 https://github.com/devkitPro/wut.git /tmp/wut
+        run: git init -q /tmp/wut && git -C /tmp/wut fetch -q --depth 1 https://github.com/devkitPro/wut.git 0a740dccd2bc038395dacc48e701a3228f63c245 && git -C /tmp/wut checkout -q FETCH_HEAD
 
       - name: Assemble the project
         run: |

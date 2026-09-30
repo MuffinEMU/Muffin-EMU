@@ -1229,7 +1229,7 @@ struct EmulatorViewOptimized: View {
     /// The result of the most recent save/load/delete, shown inside the sheet. This is
     /// the only place a refused load's real reason ("doesn't match this session") is
     /// ever surfaced - without it, a refusal and a tap that did nothing look identical.
-    @State private var saveStateStatusMessage: String?
+    @State private var saveStateStatus: SaveStateStatus?
 
     // MARK: Emulated devices
     //
@@ -1315,11 +1315,7 @@ struct EmulatorViewOptimized: View {
                     let resolved = previewPad.resolve(container: proxy.size, safeArea: safeArea,
                                                       pointsPerInch: DeviceMetrics.current().pointsPerInch)
                     ZStack(alignment: .topLeading) {
-                        #if os(iOS)
                         MetalViewIOS(gameManager: gameManager)
-                        #else
-                        MetalView(gameManager: gameManager)
-                        #endif
                     }
                     .frame(width: previewPad.displayMode == .native ? resolved.video.width : proxy.size.width,
                           height: previewPad.displayMode == .native ? resolved.video.height : proxy.size.height)
@@ -1384,12 +1380,7 @@ struct EmulatorViewOptimized: View {
                     #endif
                 }
             } else {
-                #if os(iOS)
                 screenLayoutComposition
-                #else
-                MetalView(gameManager: gameManager)
-                    .ignoresSafeArea()
-                #endif
             }
 
             VStack(spacing: 0) {
@@ -1471,7 +1462,7 @@ struct EmulatorViewOptimized: View {
                         if gameManager.emulationState == .running {
                             Button(action: {
                                 saveStateSlots = SaveStateStore.slots(for: game.id)
-                                saveStateStatusMessage = nil
+                                saveStateStatus = nil
                                 showSaveStates = true
                             }) {
                                 Image(systemName: "bookmark.fill")
@@ -2084,7 +2075,7 @@ struct EmulatorViewOptimized: View {
                 gameTitle: game.title,
                 slots: saveStateSlots,
                 busySlot: saveStateBusySlot,
-                statusMessage: saveStateStatusMessage,
+                status: saveStateStatus,
                 onSave: performSaveState,
                 onLoad: performLoadState,
                 onDelete: deleteSaveState
@@ -2109,9 +2100,9 @@ struct EmulatorViewOptimized: View {
             DispatchQueue.main.async {
                 saveStateBusySlot = nil
                 saveStateSlots = SaveStateStore.slots(for: gameID)
-                saveStateStatusMessage = ok
-                    ? "Slot \(slot) saved."
-                    : "Couldn't save Slot \(slot). Make sure the game is actually running and try again."
+                saveStateStatus = ok
+                    ? SaveStateStatus(message: "Slot \(slot) saved.", isWarning: false)
+                    : SaveStateStatus(message: "Couldn't save Slot \(slot). Make sure the game is actually running and try again.", isWarning: true)
             }
         }
     }
@@ -2131,9 +2122,9 @@ struct EmulatorViewOptimized: View {
             let ok = path.withCString { cemu_bridge_load_state($0) }
             DispatchQueue.main.async {
                 saveStateBusySlot = nil
-                saveStateStatusMessage = ok
-                    ? "Slot \(slot) loaded. If a texture or effect looks briefly wrong, that clears itself on the next frame the game redraws it."
-                    : "Couldn't load Slot \(slot) - most likely it doesn't match this game's current run (quitting or relaunching the game breaks that match). That's expected, not a bug."
+                saveStateStatus = ok
+                    ? SaveStateStatus(message: "Slot \(slot) loaded. If a texture or effect looks briefly wrong, that clears itself on the next frame the game redraws it.", isWarning: false)
+                    : SaveStateStatus(message: "Couldn't load Slot \(slot) - most likely it doesn't match this game's current run (quitting or relaunching the game breaks that match). That's expected, not a bug.", isWarning: true)
             }
         }
     }
@@ -2142,7 +2133,7 @@ struct EmulatorViewOptimized: View {
         let gameID = game.id
         SaveStateStore.delete(gameID: gameID, slot: slot)
         saveStateSlots = SaveStateStore.slots(for: gameID)
-        saveStateStatusMessage = "Slot \(slot) deleted."
+        saveStateStatus = SaveStateStatus(message: "Slot \(slot) deleted.", isWarning: false)
     }
 
     #if os(iOS)
