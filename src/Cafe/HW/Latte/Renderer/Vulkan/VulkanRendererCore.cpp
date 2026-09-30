@@ -9,6 +9,7 @@
 #include "Cafe/HW/Latte/Core/FetchShader.h"
 #include "Cafe/HW/Latte/Core/LatteIndices.h"
 #include "Cafe/OS/libs/gx2/GX2.h"
+#include <atomic>
 #include "imgui/imgui_impl_vulkan.h"
 #include "Cafe/GameProfile/GameProfile.h"
 #include "util/helpers/helpers.h"
@@ -743,11 +744,20 @@ VkDescriptorSetInfo* VulkanRenderer::draw_getOrCreateDescriptorSet(PipelineInfo*
 			auto filterZ = samplerWords->WORD0.get_Z_FILTER();
 			// todo: z-filter for texture array samplers is customizable for GPU7 but OpenGL/Vulkan doesn't expose this functionality?
 
-			static const VkSamplerAddressMode s_vkClampTable[] = {
+			// mirror-clamp is optional; without it (Vulkan 1.1, no extension) mirrored repeat is the closest mode
+			const bool hasMirrorClamp = m_featureControl.deviceExtensions.sampler_mirror_clamp_to_edge || m_featureControl.samplerMirrorClampToEdgeCore;
+			if (!hasMirrorClamp)
+			{
+				static std::atomic_flag s_mirrorClampFallbackLogged;
+				if (!s_mirrorClampFallbackLogged.test_and_set())
+					cemuLog_log(LogType::Force, "Vulkan: sampler mirror-clamp is unavailable on this device, using mirrored repeat instead");
+			}
+			const VkSamplerAddressMode mirrorOnceLastTexel = hasMirrorClamp ? VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+			const VkSamplerAddressMode s_vkClampTable[] = {
 				VK_SAMPLER_ADDRESS_MODE_REPEAT, // WRAP
 				VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT, // MIRROR
 				VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, // CLAMP_LAST_TEXEL
-				VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE, // MIRROR_ONCE_LAST_TEXEL
+				mirrorOnceLastTexel, // MIRROR_ONCE_LAST_TEXEL
 				VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, // unsupported HALF_BORDER
 				VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, // unsupported MIRROR_ONCE_HALF_BORDER
 				VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER, // CLAMP_BORDER
