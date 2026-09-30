@@ -12,9 +12,8 @@ struct MetalPixelFormatSupport
 	bool m_supportsPacked16BitFormats;
 	bool m_supportsDepth24Unorm_Stencil8;
     bool m_supportsBCFormats;
-    // Apple GPUs lack native BC support, so BC textures need a fallback. ETC2/EAC is a baseline
-    // Metal feature (GPUFamilyApple2 and later); BC1-3 are re-encoded to it.
-    bool m_supportsETC2Formats;
+    // Apple GPUs lack native BC support; ASTC LDR (GPUFamilyApple2 and later) is the fallback.
+    bool m_supportsASTCFormats;
 
 	MetalPixelFormatSupport() = default;
 	MetalPixelFormatSupport(MTL::Device* device)
@@ -24,7 +23,7 @@ struct MetalPixelFormatSupport
         m_supportsPacked16BitFormats = device->supportsFamily(MTL::GPUFamilyApple1);
         m_supportsDepth24Unorm_Stencil8 = false; //device->depth24Stencil8PixelFormatSupported();
         m_supportsBCFormats = device->supportsBCTextureCompression();
-        m_supportsETC2Formats = device->supportsFamily(MTL::GPUFamilyApple2);
+        m_supportsASTCFormats = device->supportsFamily(MTL::GPUFamilyApple2);
 	}
 };
 
