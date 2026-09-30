@@ -44,6 +44,7 @@
 #endif
 
 extern std::atomic_int g_compiling_pipelines;
+extern std::atomic_int g_compiling_pipelines_async;
 
 const  std::vector<const char*> kOptionalDeviceExtensions =
 {
@@ -531,6 +532,22 @@ void VulkanRenderer::LogVulkanStartupDiagnostics(const VkPhysicalDeviceFeatures&
 	cemuLog_log(LogType::Force, "Vulkan diagnostic: device '{}' type {} vendor 0x{:x} device 0x{:x} apiVersion {}.{}.{}", p.deviceName, (sint32)p.deviceType, p.vendorID, p.deviceID,
 		VK_API_VERSION_MAJOR(p.apiVersion), VK_API_VERSION_MINOR(p.apiVersion), p.apiVersion & 0xFFF);
 	// MoltenVK packs its own version as major*10000 + minor*100 + patch into driverVersion
+	{
+		// Cross-check the library that really loaded against the build the bridge asked for (MUFFIN_MOLTENVK_PATH names the framework file).
+		const char* chosenPath = getenv("MUFFIN_MOLTENVK_PATH");
+		const uint32_t mvkMajor = p.driverVersion / 10000, mvkMinor = (p.driverVersion / 100) % 100;
+		if (chosenPath && p.vendorID == 0x106B)
+		{
+			const bool wants128 = strstr(chosenPath, "MoltenVK128") != nullptr;
+			const bool reports128 = (mvkMajor == 1 && mvkMinor == 2);
+			cemuLog_log(LogType::Force, "Vulkan diagnostic: MoltenVK build check: bridge selected {} ({}), the loaded library reports {}.{}.{} - {}", wants128 ? "1.2.8" : "1.4.3", chosenPath, mvkMajor, mvkMinor, p.driverVersion % 100,
+				(wants128 == reports128) ? "match" : "MISMATCH (driverVersion decoding or the selector is wrong)");
+		}
+		else
+			cemuLog_log(LogType::Force, "Vulkan diagnostic: MoltenVK build check: no MUFFIN_MOLTENVK_PATH (system search was used)");
+	}
+	cemuLog_log(LogType::Force, "Vulkan diagnostic: geometryShader {} - {}", m_featureControl.geometryShader ? "enabled" : "NOT enabled",
+		m_featureControl.geometryShader ? "game geometry shaders and RECT emulation are possible" : "pipelines that need a geometry shader (game GS, RECTS primitives without VK_NV_fill_rectangle) are skipped");
 	cemuLog_log(LogType::Force, "Vulkan diagnostic: driverVersion raw {} (as MoltenVK version: {}.{}.{}) driverName '{}' driverInfo '{}'", p.driverVersion,
 		p.driverVersion / 10000, (p.driverVersion / 100) % 100, p.driverVersion % 100,
 		m_featureControl.deviceExtensions.driver_properties ? driverProps.driverName : "n/a",
@@ -885,9 +902,11 @@ VulkanRenderer::VulkanRenderer()
 
 	LogVulkanStartupDiagnostics(deviceFeatures2.features, requestedFeatures, deviceFeatures, used_extensions);
 
+	m_featureControl.geometryShader = deviceFeatures.geometryShader == VK_TRUE;
 	VkResult result = vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_logicalDevice);
 	if (result == VK_ERROR_FEATURE_NOT_PRESENT || result == VK_ERROR_EXTENSION_NOT_PRESENT)
 	{
+		m_featureControl.geometryShader = false;
 		// Last resort before giving up on Vulkan: a bare device with the swapchain extension and no optional features.
 		cemuLog_log(LogType::Force, "Vulkan: vkCreateDevice returned {} ({}) even though the request was filtered against the device's reported features and extensions. Retrying with every optional feature and extension off", (sint32)result, result == VK_ERROR_FEATURE_NOT_PRESENT ? "VK_ERROR_FEATURE_NOT_PRESENT" : "VK_ERROR_EXTENSION_NOT_PRESENT");
 		const bool portabilitySubset = m_featureControl.deviceExtensions.portability_subset;
@@ -1034,6 +1053,39 @@ VulkanRenderer::VulkanRenderer()
 
 VulkanRenderer::~VulkanRenderer()
 {
+	if (!m_initializeCalled.load())
+	{
+		// Initialize() never ran (the swapchain could not be created, so the launch is falling back to Metal). Nothing was
+		// recorded, there is no pipeline cache thread or render worker, so the normal teardown below would join threads that
+		// don't exist. Release just what the constructor created.
+		m_padSwapchainInfo = nullptr;
+		m_mainSwapchainInfo = nullptr;
+		memoryManager.reset();
+		if (m_logicalDevice)
+		{
+			vkDeviceWaitIdle(m_logicalDevice);
+			for (auto& it : m_cmd_buffer_fences)
+				if (it != VK_NULL_HANDLE)
+					vkDestroyFence(m_logicalDevice, it, nullptr);
+			for (auto& sem : m_commandBufferSemaphores)
+				if (sem != VK_NULL_HANDLE)
+					vkDestroySemaphore(m_logicalDevice, sem, nullptr);
+			if (m_commandPool != VK_NULL_HANDLE)
+				vkDestroyCommandPool(m_logicalDevice, m_commandPool, nullptr);
+			vkDestroyDevice(m_logicalDevice, nullptr);
+		}
+		if (m_instance)
+		{
+			if (m_debugCallback)
+			{
+				auto destroyMessenger = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(m_instance, "vkDestroyDebugUtilsMessengerEXT"));
+				if (destroyMessenger)
+					destroyMessenger(m_instance, m_debugCallback, nullptr);
+			}
+			vkDestroyInstance(m_instance, nullptr);
+		}
+		return;
+	}
 	SubmitCommandBuffer();
 	WaitDeviceIdle();
 	WaitCommandBufferFinished(GetCurrentCommandBufferId());
@@ -2101,6 +2153,7 @@ void VulkanRenderer::ImguiInit()
 
 void VulkanRenderer::Initialize()
 {
+	m_initializeCalled.store(true);
 	Renderer::Initialize();
 	StartRenderWorker("VulkanSubmit");
 	InitFirstCommandBuffer();
@@ -2111,6 +2164,7 @@ void VulkanRenderer::Initialize()
 
 void VulkanRenderer::Shutdown()
 {
+	cemuLog_log(LogType::Force, "Vulkan: pipelines compiled this session: {} ({} of them asynchronously), presented frames {}", g_compiling_pipelines.load(), g_compiling_pipelines_async.load(), LatteWait::Get().presentedFrames.load());
 	SubmitCommandBuffer();
 	WaitDeviceIdle();
 	StopRenderWorker();
@@ -2151,6 +2205,12 @@ void VulkanRenderer::UnrecoverableError(const char* errMsg) const
 {
 	cemuLog_log(LogType::Force, "Unrecoverable error in Vulkan renderer");
 	cemuLog_log(LogType::Force, "Msg: {}", errMsg);
+#if BOOST_OS_IOS
+	// Once the GPU thread owns the renderer, the exception below ends up in the GPU thread's catch-all (LatteThread.cpp). Latch the
+	// failure and have the bridge stop the title and mark Vulkan failed now, so it doesn't depend on where the throw lands.
+	if (m_initializeCalled.load())
+		const_cast<VulkanRenderer*>(this)->HandleDeviceLost(errMsg);
+#endif
 	throw std::runtime_error(errMsg);
 }
 
@@ -2229,6 +2289,19 @@ void VulkanRenderer::QueryMemoryInfo()
 	{
 		cemuLog_log(LogType::Force, "Memory {} - HeapIndex {} Flags 0x{:08x}", i, (sint32)memProperties.memoryTypes[i].heapIndex, (uint32)memProperties.memoryTypes[i].propertyFlags);
 	}
+#if BOOST_OS_IOS
+	{
+		// Unified memory: the device-local heap is the whole working set the OS will allow, shared with the guest's RAM. Allow textures
+		// roughly a third of it, within 768 MB .. 2 GB (see VKRMemoryManager::imageMemoryAllocate).
+		uint64 heapBytes = 0;
+		for (uint32 i = 0; i < memProperties.memoryHeapCount; i++)
+			if (memProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+				heapBytes = std::max<uint64>(heapBytes, memProperties.memoryHeaps[i].size);
+		const uint64 mb = 1024ull * 1024ull;
+		m_textureBudgetBytes = heapBytes ? std::clamp<uint64>(heapBytes / 3, 768 * mb, 2048 * mb) : 0;
+		cemuLog_log(LogType::Force, "Vulkan: texture memory budget {} MB (device-local heap {} MB)", m_textureBudgetBytes / mb, heapBytes / mb);
+	}
+#endif
 }
 
 void VulkanRenderer::QueryAvailableFormats()
@@ -2773,6 +2846,7 @@ void VulkanRenderer::CreatePipelineCache()
 
 	size_t cache_size = 0;
 	vkGetPipelineCacheData(m_logicalDevice, m_pipeline_cache, &cache_size, nullptr);
+	cemuLog_log(LogType::Force, "Vulkan: pipeline cache opened, {} KB read from disk, {} KB in use (async pipeline compile: {})", cacheData.size() / 1024, cache_size / 1024, m_featureControl.deviceExtensions.pipeline_creation_cache_control ? "yes" : "no");
 
 	m_pipeline_cache_save_thread = std::thread(&VulkanRenderer::PipelineCacheSaveThread, this, cache_size);
 }
@@ -3456,9 +3530,35 @@ bool VulkanRenderer::UpdateSwapchainProperties(bool mainWindow)
 		WindowSystem::GetWindowPhysSize(width, height);
 	else
 		WindowSystem::GetPadWindowPhysSize(width, height);
+#if BOOST_OS_IOS || BOOST_OS_MACOS
+	// On Apple platforms the CAMetalLayer decides the swapchain size (MoltenVK reports layer bounds * contentsScale as currentExtent), so compare
+	// against what the surface says, not against the window's own idea of its pixel size: if the two ever differ by a pixel the swapchain
+	// would otherwise be rebuilt every frame.
+	{
+		VkSurfaceCapabilitiesKHR caps{};
+		if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physicalDevice, chainInfo.m_surface, &caps) == VK_SUCCESS &&
+			caps.currentExtent.width != std::numeric_limits<uint32>::max() && caps.currentExtent.width > 0 && caps.currentExtent.height > 0)
+		{
+			width = (int)caps.currentExtent.width;
+			height = (int)caps.currentExtent.height;
+		}
+	}
+#endif
+	// A zero-sized surface (the view isn't laid out yet, or the app is in the background) can't hold a swapchain: skip this frame, don't rebuild.
+	if (width <= 0 || height <= 0)
+	{
+		static std::atomic<uint32> s_zeroExtentFrames{0};
+		const uint32 n = s_zeroExtentFrames.fetch_add(1) + 1;
+		if (n == 1 || n % 600 == 0)
+			cemuLog_log(LogType::Force, "Vulkan: {} surface is {}x{}, not presenting until it has a size (frames skipped so far: {})", mainWindow ? "TV" : "GamePad", width, height, n);
+		return false;
+	}
 	auto extent = chainInfo.getExtent();
 	if (width != extent.width || height != extent.height)
+	{
+		cemuLog_log(LogType::Force, "Vulkan: {} swapchain {}x{} -> {}x{}", mainWindow ? "TV" : "GamePad", extent.width, extent.height, width, height);
 		stateChanged = true;
+	}
 
 	if(stateChanged)
 	{

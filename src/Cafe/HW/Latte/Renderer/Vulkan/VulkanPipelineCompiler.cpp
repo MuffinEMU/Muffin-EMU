@@ -337,6 +337,16 @@ void PipelineCompiler::CreateDescriptorSetLayout(VulkanRenderer* vkRenderer, Lat
 
 bool PipelineCompiler::InitShaderStages(VulkanRenderer* vkRenderer, RendererShaderVk* vkVertexShader, RendererShaderVk* vkPixelShader, RendererShaderVk* vkGeometryShader)
 {
+	if (!vkRenderer->m_featureControl.geometryShader && (vkGeometryShader || m_rectNeedsGeometryShader))
+	{
+		// A pipeline with a geometry stage can't be created without the feature (the driver refuses it). The draw is skipped.
+		static std::atomic<uint32> s_skipped{0};
+		const uint32 n = s_skipped.fetch_add(1) + 1;
+		if (n <= 5 || n % 500 == 0)
+			cemuLog_log(LogType::Force, "Vulkan: skipping a pipeline that needs a geometry shader ({}), this device has none. Skipped so far: {}", vkGeometryShader ? "game geometry shader" : "RECTS primitive emulation", n);
+		return false;
+	}
+
 	// prepare shader stages
 	cemu_assert_debug(vkVertexShader == nullptr || vkVertexShader->IsCompiled());
 	cemu_assert_debug(vkPixelShader == nullptr || vkPixelShader->IsCompiled());
@@ -841,9 +851,17 @@ bool PipelineCompiler::InitFromCurrentGPUState(PipelineInfo* pipelineInfo, const
 	// if required generate RECT emulation geometry shader
 	if (!vkRenderer->m_featureControl.deviceExtensions.nv_fill_rectangle && isPrimitiveRect)
 	{
-		cemu_assert(m_vkGeometryShader == nullptr); // todo - handle cases where the game already provides a GS
-		m_rectEmulationGS = rectsEmulationGS_generate(pipelineInfo->vertexShader, latteRegister);
-		pipelineInfo->rectEmulationGS = m_rectEmulationGS;
+		if (!vkRenderer->m_featureControl.geometryShader)
+		{
+			// MoltenVK has no geometry shaders, so the RECT emulation GS can't be used. Don't pay for generating and compiling it.
+			m_rectNeedsGeometryShader = true;
+		}
+		else
+		{
+			cemu_assert(m_vkGeometryShader == nullptr); // todo - handle cases where the game already provides a GS
+			m_rectEmulationGS = rectsEmulationGS_generate(pipelineInfo->vertexShader, latteRegister);
+			pipelineInfo->rectEmulationGS = m_rectEmulationGS;
+		}
 	}
 
 	// ##########################################################################################################################################
