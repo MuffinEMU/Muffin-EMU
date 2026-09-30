@@ -66,8 +66,17 @@ namespace StallDetect
 		GuestNote,       // the game is not sending work; explicitly not a video freeze (log only)
 	};
 
+	// Every time below is written for a 30 fps game and is the floor: the detector stretches all of them by how slow
+	// the running device actually is (median frame interval of this session against refFrameMs, at most
+	// maxFrameScale times) and by the thermal state, and never shortens them, so a fast device keeps the listed
+	// values and a slow one is given proportionally longer. Memory limits are fractions of this process's own
+	// memory limit, not megabytes, so they mean the same on a 3 GB iPhone and a 6 GB iPad Pro.
 	struct Thresholds
 	{
+		double refFrameMs = 1000.0 / 30.0;
+		double maxFrameScale = 4.0;
+		uint32_t minFrameSamples = 16;
+
 		// Quiet time after a title starts, after the app comes back, after a resume from pause, after the
 		// display layout changes and after the watchdog itself was starved (a debugger stop, JIT enable).
 		int64_t settleTitleStartMs = 15000;
@@ -85,14 +94,15 @@ namespace StallDetect
 
 		uint32_t failuresInARowMin = 30;
 		int64_t failureFreshMs = 1500;       // a failure must have happened this recently to count as "still failing"
-		uint32_t screenMemoryBelowMB = 400;  // present failures with less than this free are reported as memory
+		double screenMemoryFraction = 0.10;  // present failures with less than this share of the memory limit free count as memory
 
 		int64_t guestNoteMs = 10000;
 		int64_t guestNoteRepeatMs = 60000;
 		int64_t guestRecentMs = 2000;        // a guest wait seen this recently means the game is involved
 
-		uint32_t lowMemBelowMB = 160;
-		uint32_t lowMemClearMB = 300;
+		double lowMemFraction = 0.04;        // warn below this share of the memory limit free (about 160 MB on a 4 GB limit)
+		double lowMemClearFraction = 0.07;
+		uint32_t memFloorMB = 32;            // never warn above or clear below less than this, whatever the limit
 		int64_t lowMemHoldMs = 3000;
 	};
 
@@ -123,7 +133,8 @@ namespace StallDetect
 		int32_t lastCbErrorCode = 0;
 		bool gpuPresumedLost = false;  // bounded GPU waits are timing out
 		WaitClass waitClass = WaitClass::None;
-		uint32_t availMemMB = 0;       // 0 = unknown
+		uint32_t availMemMB = 0;       // os_proc_available_memory, 0 = unknown
+		uint32_t memLimitMB = 0;       // this process's memory limit (available + footprint, capped by physical RAM), 0 = unknown
 	};
 
 	struct Decision
@@ -131,7 +142,7 @@ namespace StallDetect
 		Action action = Action::None;
 		Kind kind = Kind::None;
 		Rule rule = Rule::None;
-		char text[420] = {0};
+		char text[700] = {0};
 	};
 
 	inline const char* RuleName(Rule r)
@@ -169,6 +180,12 @@ namespace StallDetect
 		// A title started or was replaced: everything learned about the old one is void.
 		void Reset(int64_t nowMs, bool titleStart)
 		{
+			// The device does not change between titles: carry what this session learned about its speed into the
+			// next title until that one has enough frames of its own.
+			if (frameCount_ >= t_.minFrameSamples)
+				priorFrameMs_ = MedianFrameMs();
+			frameCount_ = 0;
+			framePos_ = 0;
 			stallKind_ = Kind::None;
 			stallRule_ = Rule::None;
 			raisedAtMs_ = 0;
@@ -178,13 +195,26 @@ namespace StallDetect
 			suspectRule_ = Rule::None;
 			suspectSinceMs_ = 0;
 			lastNowMs_ = nowMs;
-			settleUntilMs_ = nowMs + (titleStart ? t_.settleTitleStartMs : t_.settleResumeMs);
+			settleUntilMs_ = nowMs + (int64_t)((titleStart ? t_.settleTitleStartMs : t_.settleResumeMs) * FrameScale());
 		}
 
 		Kind kind() const { return stallKind_ != Kind::None ? stallKind_ : (memRaised_ ? Kind::LowMemory : Kind::None); }
 		Rule rule() const { return stallKind_ != Kind::None ? stallRule_ : (memRaised_ ? Rule::LowMemory : Rule::None); }
 		int64_t raisedAtMs() const { return raisedAtMs_; }
 		bool stallRaised() const { return stallKind_ != Kind::None; }
+
+		// How much slower than the 30 fps reference this session has been running, 1.0 or more.
+		double FrameScale() const
+		{
+			double m = frameCount_ >= t_.minFrameSamples ? MedianFrameMs() : priorFrameMs_;
+			if (m <= 0.0)
+				return 1.0;
+			double f = m / t_.refFrameMs;
+			if (f < 1.0) f = 1.0;
+			if (f > t_.maxFrameScale) f = t_.maxFrameScale;
+			return f;
+		}
+		double MedianFrameMsForLog() const { return frameCount_ >= t_.minFrameSamples ? MedianFrameMs() : priorFrameMs_; }
 
 		Decision Update(const Sample& s)
 		{
@@ -232,13 +262,13 @@ namespace StallDetect
 
 			if (!have_)
 			{
-				Rebaseline(s, t_.settleResumeMs);
+				Rebaseline(s, (int64_t)(t_.settleResumeMs * ScaleFor(s)));
 				lastNowMs_ = now;
 				return d;
 			}
 			if (now - lastNowMs_ > t_.hiccupMs || s.layoutStamp != layoutStamp_)
 			{
-				Rebaseline(s, t_.settleResumeMs);
+				Rebaseline(s, (int64_t)(t_.settleResumeMs * ScaleFor(s)));
 				lastNowMs_ = now;
 				return d;
 			}
@@ -256,7 +286,7 @@ namespace StallDetect
 				return d;
 			}
 
-			const double scale = s.windowScale < 1.0 ? 1.0 : s.windowScale;
+			const double scale = ScaleFor(s);
 			Candidate c = Evaluate(s, scale);
 			if (c.rule != Rule::None)
 			{
@@ -295,7 +325,9 @@ namespace StallDetect
 		{
 			Decision d;
 			const int64_t now = s.nowMs;
-			const bool judge = s.titleRunning && s.appActive && s.availMemMB != 0;
+			const uint32_t warnMB = MemThresholdMB(s, t_.lowMemFraction);
+			const uint32_t clearMB = MemThresholdMB(s, t_.lowMemClearFraction);
+			const bool judge = s.titleRunning && s.appActive && s.availMemMB != 0 && warnMB != 0;
 			if (!judge)
 			{
 				memLowSince_ = -1;
@@ -310,17 +342,17 @@ namespace StallDetect
 			}
 			if (memRaised_)
 			{
-				if (s.availMemMB >= t_.lowMemClearMB)
+				if (s.availMemMB >= clearMB)
 				{
 					memRaised_ = false;
 					memLowSince_ = -1;
 					d.action = Action::Clear;
 					d.rule = Rule::LowMemory;
-					std::snprintf(d.text, sizeof(d.text), "rule=low_memory cleared: %u MB free (clear threshold %u MB)", (unsigned)s.availMemMB, (unsigned)t_.lowMemClearMB);
+					std::snprintf(d.text, sizeof(d.text), "rule=low_memory cleared: %u MB free (clear threshold %u MB = %.0f%% of the %u MB limit)", (unsigned)s.availMemMB, (unsigned)clearMB, t_.lowMemClearFraction * 100.0, (unsigned)s.memLimitMB);
 				}
 				return d;
 			}
-			if (s.availMemMB < t_.lowMemBelowMB)
+			if (s.availMemMB < warnMB)
 			{
 				if (memLowSince_ < 0)
 					memLowSince_ = now;
@@ -330,8 +362,8 @@ namespace StallDetect
 					d.action = Action::Raise;
 					d.kind = Kind::LowMemory;
 					d.rule = Rule::LowMemory;
-					std::snprintf(d.text, sizeof(d.text), "rule=low_memory CONFIRMED: %u MB free for %.1f s (threshold < %u MB held %.1f s); this is a warning, the picture may still be moving",
-						(unsigned)s.availMemMB, (double)(now - memLowSince_) / 1000.0, (unsigned)t_.lowMemBelowMB, (double)t_.lowMemHoldMs / 1000.0);
+					std::snprintf(d.text, sizeof(d.text), "rule=low_memory CONFIRMED: %u MB free for %.1f s (threshold < %u MB = %.0f%% of the %u MB memory limit, held >= %.1f s); this is a warning, the picture may still be moving",
+						(unsigned)s.availMemMB, (double)(now - memLowSince_) / 1000.0, (unsigned)warnMB, t_.lowMemFraction * 100.0, (unsigned)s.memLimitMB, (double)t_.lowMemHoldMs / 1000.0);
 				}
 			}
 			else
@@ -347,10 +379,45 @@ namespace StallDetect
 			Rule rule = Rule::None;
 			Kind kind = Kind::None;
 			int64_t confirmMs = 0;
-			char body[300] = {0};
+			char body[520] = {0};
 		};
 
+		// A share of this process's memory limit, never below the floor. 0 when the limit is not known.
+		uint32_t MemThresholdMB(const Sample& s, double fraction) const
+		{
+			if (s.memLimitMB == 0)
+				return 0;
+			const uint32_t mb = (uint32_t)((double)s.memLimitMB * fraction);
+			return mb < t_.memFloorMB ? t_.memFloorMB : mb;
+		}
+
 		static double Sec(int64_t ms) { return (double)ms / 1000.0; }
+
+		// thermal state and how slow this session has been running both lengthen every window
+		double ScaleFor(const Sample& s) const
+		{
+			const double thermal = s.windowScale < 1.0 ? 1.0 : s.windowScale;
+			return thermal * FrameScale();
+		}
+
+		void ScaleNote(const Sample& s, double scale, char* out, size_t cap) const
+		{
+			std::snprintf(out, cap, "windows x%.2f = median frame %.0f ms vs %.0f ms reference x%.2f, thermal x%.1f", scale, MedianFrameMsForLog(), t_.refFrameMs, FrameScale(), s.windowScale < 1.0 ? 1.0 : s.windowScale);
+		}
+
+		double MedianFrameMs() const
+		{
+			double v[kFrameRing];
+			const uint32_t n = frameCount_ < kFrameRing ? frameCount_ : kFrameRing;
+			for (uint32_t i = 0; i < n; i++) v[i] = frameMs_[i];
+			for (uint32_t i = 1; i < n; i++) // insertion sort, n <= 64
+			{
+				double x = v[i]; uint32_t j = i;
+				while (j > 0 && v[j - 1] > x) { v[j] = v[j - 1]; j--; }
+				v[j] = x;
+			}
+			return n == 0 ? 0.0 : ((n & 1) ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]));
+		}
 
 		void Rebaseline(const Sample& s, int64_t settleMs)
 		{
@@ -377,7 +444,18 @@ namespace StallDetect
 		void Track(const Sample& s)
 		{
 			const int64_t now = s.nowMs;
-			if (s.frames != prevFrames_) { prevFrames_ = s.frames; tFrames_ = now; idleNotedAtMs_ = -1; }
+			if (s.frames != prevFrames_)
+			{
+				// one frame-interval sample per poll that saw frames: time since the previous such poll / frames seen
+				const uint32_t n = s.frames - prevFrames_;
+				if (n > 0 && n < 100000 && now > tFrames_)
+				{
+					frameMs_[framePos_] = (double)(now - tFrames_) / (double)n;
+					framePos_ = (framePos_ + 1) % kFrameRing;
+					if (frameCount_ < kFrameRing) frameCount_++;
+				}
+				prevFrames_ = s.frames; tFrames_ = now; idleNotedAtMs_ = -1;
+			}
 			if (s.presented != prevPresented_) { prevPresented_ = s.presented; tPresented_ = now; }
 			if (s.cbRetired != prevRetired_) { prevRetired_ = s.cbRetired; tRetired_ = now; }
 			if (s.pm4 != prevPm4_) { prevPm4_ = s.pm4; tPm4_ = now; }
@@ -405,13 +483,16 @@ namespace StallDetect
 
 			// 1. Command buffers keep failing with none succeeding in between while the app is in the foreground.
 			// (Not-permitted errors while in the background are expected; Rebaseline clears them on return.)
-			if (streakSince_ >= 0 && now - streakSince_ >= t_.streakWindowMs)
+			char note[160];
+			ScaleNote(s, scale, note, sizeof(note));
+			const int64_t wsk = (int64_t)(t_.streakWindowMs * scale);
+			if (streakSince_ >= 0 && now - streakSince_ >= wsk)
 			{
 				c.rule = Rule::CbErrorStreak;
 				c.kind = Kind::GpuFault;
-				c.confirmMs = t_.streakConfirmMs;
-				std::snprintf(c.body, sizeof(c.body), "%u command buffers in a row failed (last code %d), none succeeded for %.1f s (need >= %u in a row held >= %.1f s) while the app is in the foreground",
-					(unsigned)s.cbErrorStreak, (int)s.lastCbErrorCode, Sec(now - streakSince_), (unsigned)t_.streakMin, Sec(t_.streakWindowMs));
+				c.confirmMs = (int64_t)(t_.streakConfirmMs * scale);
+				std::snprintf(c.body, sizeof(c.body), "%u command buffers in a row failed (last code %d), none succeeded for %.1f s (need >= %u in a row held >= %.1f s) while the app is in the foreground [%s]",
+					(unsigned)s.cbErrorStreak, (int)s.lastCbErrorCode, Sec(now - streakSince_), (unsigned)t_.streakMin, Sec(wsk), note);
 				return c;
 			}
 
@@ -423,23 +504,25 @@ namespace StallDetect
 			{
 				c.rule = Rule::GpuQueue;
 				c.kind = Kind::Picture;
-				c.confirmMs = t_.confirmMs;
-				std::snprintf(c.body, sizeof(c.body), "GPU waits have been timing out for %.1f s, no command buffer finished for %.1f s, no frame presented for %.1f s (each >= %.1f s); the game is still submitting (last GPU packet %.1f s ago, last flip request %.1f s ago); GPU thread: %s",
-					Sec(now - presumedLostSince_), Sec(ageRetired), Sec(agePresent), Sec(wq), Sec(agePm4), Sec(ageFlips), WaitName(s.waitClass));
+				c.confirmMs = (int64_t)(t_.confirmMs * scale);
+				std::snprintf(c.body, sizeof(c.body), "GPU waits have been timing out for %.1f s, no command buffer finished for %.1f s, no frame presented for %.1f s (each >= %.1f s); the game is still submitting (last GPU packet %.1f s ago, last flip request %.1f s ago); GPU thread: %s [%s]",
+					Sec(now - presumedLostSince_), Sec(ageRetired), Sec(agePresent), Sec(wq), Sec(agePm4), Sec(ageFlips), WaitName(s.waitClass), note);
 				return c;
 			}
 
 			// 3. Frames are being made but the screen takes none of them.
 			const int64_t wp = (int64_t)(t_.presentWindowMs * scale);
-			if (s.drawableFailuresInARow >= t_.failuresInARowMin && ageFailure < t_.failureFreshMs && agePresent >= wp)
+			const int64_t wfresh = (int64_t)(t_.failureFreshMs * scale);
+			if (s.drawableFailuresInARow >= t_.failuresInARowMin && ageFailure < wfresh && agePresent >= wp)
 			{
 				c.rule = Rule::PresentFailing;
-				const bool lowMem = s.availMemMB != 0 && s.availMemMB < t_.screenMemoryBelowMB;
+				const uint32_t screenMemMB = MemThresholdMB(s, t_.screenMemoryFraction);
+				const bool lowMem = s.availMemMB != 0 && screenMemMB != 0 && s.availMemMB < screenMemMB;
 				c.kind = lowMem ? Kind::ScreenMemory : Kind::ScreenStopped;
-				c.confirmMs = t_.confirmMs;
-				std::snprintf(c.body, sizeof(c.body), "%u drawable requests in a row failed (need >= %u), the latest %.1f s ago (< %.1f s), no frame presented for %.1f s (>= %.1f s); free memory %u MB (%s)",
-					(unsigned)s.drawableFailuresInARow, (unsigned)t_.failuresInARowMin, Sec(ageFailure), Sec(t_.failureFreshMs), Sec(agePresent), Sec(wp),
-					(unsigned)s.availMemMB, lowMem ? "low, counted as out of memory for the screen" : "not low, cause unknown");
+				c.confirmMs = (int64_t)(t_.confirmMs * scale);
+				std::snprintf(c.body, sizeof(c.body), "%u drawable requests in a row failed (need >= %u), the latest %.1f s ago (< %.1f s), no frame presented for %.1f s (>= %.1f s); free memory %u MB of a %u MB limit (%s, memory cause below %u MB = %.0f%%) [%s]",
+					(unsigned)s.drawableFailuresInARow, (unsigned)t_.failuresInARowMin, Sec(ageFailure), Sec(wfresh), Sec(agePresent), Sec(wp),
+					(unsigned)s.availMemMB, (unsigned)s.memLimitMB, lowMem ? "low, counted as out of memory for the screen" : "not low, cause unknown", (unsigned)screenMemMB, t_.screenMemoryFraction * 100.0, note);
 				return c;
 			}
 
@@ -451,9 +534,9 @@ namespace StallDetect
 			{
 				c.rule = Rule::GpuThreadNoProgress;
 				c.kind = Kind::Picture;
-				c.confirmMs = t_.confirmMs;
-				std::snprintf(c.body, sizeof(c.body), "no frame for %.1f s, no GPU packet for %.1f s, nothing finished for %.1f s, nothing presented for %.1f s (each >= %.1f s) and the GPU thread is not waiting for the game (%s); cause unverified",
-					Sec(ageFrames), Sec(agePm4), Sec(ageRetired), Sec(agePresent), Sec(wu), WaitName(s.waitClass));
+				c.confirmMs = (int64_t)(t_.confirmMs * scale);
+				std::snprintf(c.body, sizeof(c.body), "no frame for %.1f s, no GPU packet or draw call for %.1f s, nothing finished for %.1f s, nothing presented for %.1f s (each >= %.1f s) and the GPU thread is not waiting for the game (%s); cause unverified [%s]",
+					Sec(ageFrames), Sec(agePm4), Sec(ageRetired), Sec(agePresent), Sec(wu), WaitName(s.waitClass), note);
 				return c;
 			}
 			return c;
@@ -472,10 +555,12 @@ namespace StallDetect
 			if (idleNotedAtMs_ >= 0 && now - idleNotedAtMs_ < t_.guestNoteRepeatMs)
 				return d;
 			idleNotedAtMs_ = now;
+			char note[160];
+			ScaleNote(s, scale, note, sizeof(note));
 			d.action = Action::GuestNote;
 			d.rule = Rule::GuestNotSending;
-			std::snprintf(d.text, sizeof(d.text), "rule=guest_not_sending: no frame for %.1f s (note threshold %.1f s) but the GPU thread is waiting on the game (%s), last GPU packet %.1f s ago, last flip request %.1f s ago; a game-side load or hang, NOT a video freeze, no card shown",
-				Sec(ageFrames), Sec(wn), WaitName(s.waitClass), Sec(now - tPm4_), Sec(now - tFlips_));
+			std::snprintf(d.text, sizeof(d.text), "rule=guest_not_sending: no frame for %.1f s (note threshold %.1f s) but the GPU thread is waiting on the game (%s), last GPU packet %.1f s ago, last flip request %.1f s ago; a game-side load or hang, NOT a video freeze, no card shown [%s]",
+				Sec(ageFrames), Sec(wn), WaitName(s.waitClass), Sec(now - tPm4_), Sec(now - tFlips_), note);
 			return d;
 		}
 
@@ -538,9 +623,14 @@ namespace StallDetect
 				return Decision();
 			Decision d = ClearStall(s, why);
 			// Judge the title afresh from here so the same old numbers cannot re-raise it at once.
-			Rebaseline(s, t_.settleResumeMs);
+			Rebaseline(s, (int64_t)(t_.settleResumeMs * ScaleFor(s)));
 			return d;
 		}
+
+		static constexpr uint32_t kFrameRing = 64;
+		double frameMs_[kFrameRing] = {0};
+		uint32_t frameCount_ = 0, framePos_ = 0;
+		double priorFrameMs_ = 0.0;
 
 		Thresholds t_;
 		Kind stallKind_ = Kind::None;
