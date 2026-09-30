@@ -29,7 +29,14 @@
 #include "config/CemuConfig.h"
 #include "WindowSystem.h"
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstring>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 #define IMGUI_IMPL_METAL_CPP
 #include "imgui/imgui_extension.h"
@@ -43,6 +50,187 @@ float supportBufferData[512 * 4];
 
 // Defined in the Common renderer
 void LatteDraw_handleSpecialState8_clearAsDepth();
+
+// ---------------------------------------------------------------------------------------------------------------
+// Guard log. Every upload, copy, draw or clamp the renderer refuses or shrinks because its input looked out of
+// bounds is recorded here: one line the first time a distinct case is seen (format, sizes, mip, slice, reason),
+// then again at 10, 100, 1000... occurrences, all rate limited so a bad frame cannot flood the log. Nothing is
+// dropped silently: every distinct case is kept with its count and printed in the summary at title stop and in
+// the draw breadcrumb dump, so a device log shows exactly what, if anything, was skipped.
+// ---------------------------------------------------------------------------------------------------------------
+enum class MetalGuard : uint32
+{
+    UploadNoTarget,
+    UploadPlaceholder,
+    UploadBadLevel,
+    UploadBadSize,
+    UploadTooFewBytes,
+    UploadDepthStencilBytes,
+    UploadStagingFull,
+    UploadClampedSize,
+    UploadClampedRows,
+    CopyBadLevel,
+    CopyStartOutside,
+    CopyNoSlices,
+    CopyClampedRegion,
+    CopyClampedSlices,
+    CopyBlockMismatch,
+    DrawVertexBuffer,
+    DrawVertexHuge,
+    IndexClamped,
+    ScissorClamped,
+    PresentScissorClamped,
+    SurfaceCopyScissorClamped,
+    Count
+};
+
+namespace
+{
+    struct MetalGuardInfo
+    {
+        const char* name;
+        const char* kind; // skip: nothing was issued, clamp: issued smaller, note: issued unchanged
+    };
+    constexpr MetalGuardInfo kMetalGuardInfo[] = {
+        {"upload-no-target", "skip"},
+        {"upload-placeholder-target", "skip"},
+        {"upload-bad-level", "skip"},
+        {"upload-bad-size", "skip"},
+        {"upload-too-few-bytes", "skip"},
+        {"upload-depth-stencil-bytes", "skip"},
+        {"upload-staging-full", "skip"},
+        {"upload-size-clamped", "clamp"},
+        {"upload-rows-clamped", "clamp"},
+        {"copy-bad-level", "skip"},
+        {"copy-start-outside", "skip"},
+        {"copy-no-slices", "skip"},
+        {"copy-region-clamped", "clamp"},
+        {"copy-slices-clamped", "clamp"},
+        {"copy-block-size-mismatch", "note"},
+        {"draw-vertex-buffer", "skip"},
+        {"draw-vertex-range-huge", "skip"},
+        {"draw-index-count-clamped", "clamp"},
+        {"scissor-clamped", "clamp"},
+        {"present-scissor-clamped", "clamp"},
+        {"surface-copy-scissor-clamped", "clamp"},
+    };
+    constexpr uint32 kMetalGuardCount = (uint32)MetalGuard::Count;
+    static_assert(std::size(kMetalGuardInfo) == kMetalGuardCount, "MetalGuard names out of step with the enum");
+
+    struct MetalGuardEntry
+    {
+        MetalGuard reason;
+        uint64 count;
+        std::string text;
+    };
+
+    std::mutex s_guardMutex;
+    std::unordered_map<uint64, MetalGuardEntry> s_guardEntries;
+    std::atomic<uint64> s_guardTotals[kMetalGuardCount];
+    uint64 s_guardOverflow = 0;   // events of distinct cases beyond the table size (still counted in the totals)
+    uint64 s_guardSuppressed = 0; // log lines withheld by the rate limit (the cases are still in the table)
+    double s_guardTokens = 40.0;
+    std::chrono::steady_clock::time_point s_guardLastRefill{};
+    constexpr size_t kMetalGuardMaxDistinct = 1024;
+
+    // describe() builds the text of a case and only runs the first time the case is seen; key identifies the case.
+    template<typename Describe>
+    void MetalGuardNote(MetalGuard reason, std::initializer_list<uint64> key, Describe&& describe)
+    {
+        s_guardTotals[(uint32)reason].fetch_add(1, std::memory_order_relaxed);
+        uint64 h = 0xcbf29ce484222325ull ^ ((uint64)reason * 0x9e3779b97f4a7c15ull);
+        for (uint64 v : key)
+        {
+            h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+            h *= 0x100000001b3ull;
+        }
+
+        std::lock_guard<std::mutex> lock(s_guardMutex);
+        auto it = s_guardEntries.find(h);
+        if (it == s_guardEntries.end())
+        {
+            if (s_guardEntries.size() >= kMetalGuardMaxDistinct)
+            {
+                ++s_guardOverflow;
+                return;
+            }
+            it = s_guardEntries.emplace(h, MetalGuardEntry{reason, 0, describe()}).first;
+        }
+        const uint64 n = ++it->second.count;
+        uint64 decade = n;
+        while (decade % 10 == 0)
+            decade /= 10;
+        if (decade != 1)
+            return; // only 1, 10, 100, ... are worth a line
+
+        const auto now = std::chrono::steady_clock::now();
+        if (s_guardLastRefill.time_since_epoch().count() != 0)
+        {
+            const double seconds = std::chrono::duration<double>(now - s_guardLastRefill).count();
+            s_guardTokens = std::min(40.0, s_guardTokens + seconds * 5.0);
+        }
+        s_guardLastRefill = now;
+        if (s_guardTokens < 1.0)
+        {
+            ++s_guardSuppressed;
+            return;
+        }
+        s_guardTokens -= 1.0;
+        const auto& info = kMetalGuardInfo[(uint32)reason];
+        cemuLog_log(LogType::Force, "Metal guard [{} {}] {} (seen {})", info.kind, info.name, it->second.text, n);
+    }
+
+    // The totals of one session as one line, only the reasons that happened.
+    std::string MetalGuardTotalsLine()
+    {
+        std::string line;
+        for (uint32 i = 0; i < kMetalGuardCount; ++i)
+        {
+            const uint64 total = s_guardTotals[i].load(std::memory_order_relaxed);
+            if (total != 0)
+                line += fmt::format(" {}={}", kMetalGuardInfo[i].name, total);
+        }
+        return line.empty() ? std::string(" none") : line;
+    }
+
+    // Totals plus the most frequent distinct cases. reset starts the next session from zero (title stop).
+    void MetalGuardReport(const char* when, size_t maxCases, bool reset)
+    {
+        std::vector<std::pair<uint64, std::string>> cases;
+        uint64 suppressed, overflow;
+        {
+            std::lock_guard<std::mutex> lock(s_guardMutex);
+            cases.reserve(s_guardEntries.size());
+            for (const auto& kv : s_guardEntries)
+            {
+                const auto& info = kMetalGuardInfo[(uint32)kv.second.reason];
+                cases.emplace_back(kv.second.count, fmt::format("[{} {}] {}", info.kind, info.name, kv.second.text));
+            }
+            suppressed = s_guardSuppressed;
+            overflow = s_guardOverflow;
+            if (reset)
+            {
+                s_guardEntries.clear();
+                s_guardSuppressed = 0;
+                s_guardOverflow = 0;
+                s_guardTokens = 40.0;
+            }
+        }
+        std::sort(cases.begin(), cases.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        cemuLog_log(LogType::Force, "Metal guard summary ({}): {} distinct cases;{}", when, cases.size(), MetalGuardTotalsLine());
+        if (suppressed != 0 || overflow != 0)
+            cemuLog_log(LogType::Force, "Metal guard summary ({}): {} log lines were withheld by the rate limit, {} events fell outside the {} case table", when, suppressed, overflow, kMetalGuardMaxDistinct);
+        for (size_t i = 0; i < cases.size() && i < maxCases; ++i)
+            cemuLog_log(LogType::Force, "Metal guard case x{}: {}", cases[i].first, cases[i].second);
+        if (cases.size() > maxCases)
+            cemuLog_log(LogType::Force, "Metal guard summary ({}): {} less frequent cases not listed", when, cases.size() - maxCases);
+        if (reset)
+        {
+            for (auto& total : s_guardTotals)
+                total.store(0, std::memory_order_relaxed);
+        }
+    }
+}
 
 std::vector<MetalRenderer::DeviceInfo> MetalRenderer::GetDevices()
 {
@@ -438,6 +626,7 @@ void MetalRenderer::Initialize()
 void MetalRenderer::Shutdown()
 {
     Flush(true);
+    MetalGuardReport("title stop", 200, true);
     // TODO: should shutdown both layers
     ImGui_ImplMetal_Shutdown();
     Renderer::Shutdown();
@@ -2886,6 +3075,7 @@ void MetalRenderer::RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, u
 // dozen draws after it is printed, and any draw in the ring that looked wrong when it was recorded.
 void MetalRenderer::DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool haveRange)
 {
+    MetalGuardReport("breadcrumb dump", 24, false);
     const uint32 stored = std::min(m_breadcrumbsWritten, m_breadcrumbCapacity);
     if (stored == 0)
     {
