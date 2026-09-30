@@ -2566,12 +2566,12 @@ static void LogFailedEncoders(MTL::CommandBuffer* commandBuffer, NS::Error* erro
 // new render targets grows until the app is killed.
 void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
 {
+    auto& w = LatteWait::Get();
+    const bool evictionRequested = w.evictionRequested.exchange(false);
     const auto now = std::chrono::steady_clock::now();
-    if (now - m_lastMemoryCheck < std::chrono::milliseconds(500))
+    if (!evictionRequested && now - m_lastMemoryCheck < std::chrono::milliseconds(500))
         return;
     m_lastMemoryCheck = now;
-
-    auto& w = LatteWait::Get();
     constexpr uint64 MB = 1024 * 1024;
 
     uint32 numBuffers;
@@ -2603,7 +2603,7 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     w.memStatsValid.store(true, std::memory_order_relaxed);
 
 #if BOOST_OS_IOS
-    if (os_proc_available_memory() >= (1200ull * MB))
+    if (!evictionRequested && os_proc_available_memory() >= (1200ull * MB))
         return;
 
     // Close to the limit: delete what LatteTC says is safe (unused for several frames and restorable from
@@ -2630,6 +2630,8 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
         if (m_memoryPressureLogs++ < 12)
             cemuLog_log(LogType::Force, "Metal: memory is low ({} MB left), deleted {} unused textures (about {} MB)", os_proc_available_memory() / MB, deleted, freedBytes / MB);
     }
+    if (evictionRequested)
+        w.evictionPasses.fetch_add(1);
 #endif
 }
 
