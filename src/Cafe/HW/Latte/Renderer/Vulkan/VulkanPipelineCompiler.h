@@ -16,6 +16,7 @@ private:
 	/* shader stages (requires compiled shader) */
 
 	RendererShaderVk* m_rectEmulationGS{};
+	bool m_rectNeedsGeometryShader{}; // RECTS primitive with neither VK_NV_fill_rectangle nor a usable geometry shader
 
 	bool InitShaderStages(VulkanRenderer* vkRenderer, RendererShaderVk* vkVertexShader, RendererShaderVk* vkPixelShader, RendererShaderVk* vkGeometryShader);
 

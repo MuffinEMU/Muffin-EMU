@@ -40,6 +40,7 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var formExtra: some View {
+        MotionSettingsSection()
         AccountSettingsSection()
         NetworkServiceSettingsSection()
         EmulatedDevicesSettingsSection()
