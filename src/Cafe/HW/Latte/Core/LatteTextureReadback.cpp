@@ -2,6 +2,7 @@
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
+#include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 
 #define LOG_READBACK_TIME
 
@@ -107,6 +108,7 @@ void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish)
 		LatteTextureReadback_Update(true);
 	}
 	performanceMonitor.gpuTime_waitForAsync.beginMeasuring();
+	LatteWait::Get().readbacksPending.store((uint32)sTextureActiveReadbackQueue.size(), std::memory_order_relaxed);
 	while (!sTextureActiveReadbackQueue.empty())
 	{
 		LatteTextureReadbackInfo* readbackInfo = sTextureActiveReadbackQueue.front();
@@ -123,9 +125,16 @@ void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish)
 				}
 #endif
 				readbackInfo->forceFinish = true;
+				LatteWait::Scope waitScope("waiting for a texture readback");
 				readbackInfo->ForceFinish();
-				// rerun logic since ->ForceFinish() can recurively call this function and thus modify the queue
-				continue;
+				if (readbackInfo->IsFinished() || sTextureActiveReadbackQueue.empty() || sTextureActiveReadbackQueue.front() != readbackInfo)
+				{
+					// rerun logic since ->ForceFinish() can recurively call this function and thus modify the queue
+					continue;
+				}
+				// The GPU never delivered this readback. Use whatever the buffer holds rather than
+				// looping here forever and freezing the picture.
+				cemuLog_log(LogType::Force, "Latte: texture readback did not finish in time, using stale data");
 			}
 		}
 		else
@@ -157,6 +166,7 @@ void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish)
 		cemu_assert_debug(readbackInfo == sTextureActiveReadbackQueue.front());
 		sTextureActiveReadbackQueue.pop();
 	}
+	LatteWait::Get().readbacksPending.store((uint32)sTextureActiveReadbackQueue.size(), std::memory_order_relaxed);
 	performanceMonitor.gpuTime_waitForAsync.endMeasuring();
 }
 
@@ -168,7 +178,8 @@ bool LatteTextureReadback_ReadbackToLinearBlocking(LatteTextureView* sourceView,
 
 	info->StartTransfer();
 	info->ForceFinish();
-	cemu_assert(info->IsFinished());
+	if (!info->IsFinished())
+		cemuLog_log(LogType::Force, "Latte: blocking texture readback did not finish in time, using stale data");
 
 	uint8* data = info->GetData(); // returned pixel format should match Latte format
 	uint32 bpp = Latte::GetFormatBits(sourceView->baseTexture->format) / 8;

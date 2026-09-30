@@ -50,9 +50,17 @@ enum DlcUpdateImport {
                 case 3: // CemuTitleNoDiscKey
                     return "This file is encrypted and no matching key is installed. Add your keys.txt in Settings first."
                 case 4: // CemuTitleNoTicket
-                    return "This dump is incomplete: title.tik is missing."
+                    return "This folder is missing title.tik (the ticket), which MuffinEMU needs to decrypt it."
                 case 5: // CemuTitleMissingXmlFiles
                     return "Meta files (app.xml, meta.xml, cos.xml) are missing or damaged."
+                case 6: // CemuTitleBadTitleTmd
+                    return "This encrypted folder's title.tmd couldn't be read."
+                case 7: // CemuTitleBadTitleTik
+                    return "This encrypted folder's title.tik couldn't be read."
+                case 8: // CemuTitleKeyInvalid
+                    return "MuffinEMU couldn't decrypt this folder. Its title.tik doesn't unlock the .app files."
+                case 9: // CemuTitleMissingContentFile
+                    return "This encrypted folder is missing one or more .app files listed in its title.tmd."
                 default:
                     return "That file is corrupted or incomplete."
                 }
@@ -121,10 +129,16 @@ enum DlcUpdateImport {
             throw ImportError.wuaNotYetSupported
         }
 
+        // A parent folder holding the game, update and DLC as separate encrypted folders
+        // ("Game (USA)/{Game, Update, DLC}") is fine to pick: the subfolder that matches
+        // `kind` is the one to install.
+        let kindForFolder: GameManager.NUSFolderKind = kind == .dlc ? .dlc : .update
+        let installSource = GameManager.nusSubfolder(in: source, kind: kindForFolder) ?? source
+
         // Copying and inspecting can take a while on a large dump, so run it off the main actor.
         return try await Task.detached {
             try copyInspectAndInstall(
-                source: source, kind: kind, library: library, manualMatch: manualMatch, mlcRoot: mlcRoot
+                source: installSource, kind: kind, library: library, manualMatch: manualMatch, mlcRoot: mlcRoot
             )
         }.value
     }

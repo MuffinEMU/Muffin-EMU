@@ -56,6 +56,10 @@ enum
 	// entry, unwritable output, short read, unsafe entry name). The partial output must
 	// not be treated as a complete copy.
 	IOS_DECRYPT_INCOMPLETE = 5,
+	// Encrypted game folder (title.tmd, title.tik and .app files) sources
+	IOS_DECRYPT_NO_TITLE_TIK = 6, // title.tmd or title.tik missing or unreadable
+	IOS_DECRYPT_TITLE_KEY_INVALID = 7, // ticket (and keys.txt) do not decrypt the .app files
+	IOS_DECRYPT_MISSING_CONTENT = 8, // a .app file listed in title.tmd is missing
 };
 
 // One 4MB buffer reused for every file rather than one allocation per file - a real
@@ -212,7 +216,8 @@ static bool DecryptWalkDirectory(FSTVolume* volume, const std::string& fstPath, 
 	return true;
 }
 
-// Opens srcPath (WUD/WUX) and writes a fully decrypted copy of its file tree under
+// Opens srcPath (WUD/WUX, or an encrypted game folder given as its title.tmd or the folder
+// itself) and writes a fully decrypted copy of its file tree under
 // destFolderPath, preserving the FST's own directory structure - a plain code/,
 // content/, meta/ tree the app can already import and boot as a folder dump. The
 // original file at srcPath is never opened for writing and never touched.
@@ -237,12 +242,35 @@ int IOSTitleDecrypt_ExtractToFolder(const char* srcPath, const char* destFolderP
 		return IOS_DECRYPT_DEST_NOT_WRITABLE;
 	}
 
-	FSTVolume::ErrorCode fstError;
-	FSTVolume* volume = FSTVolume::OpenFromDiscImage(fs::path(srcPath), &fstError);
+	// An encrypted game folder is mounted through the same FSTVolume, from its .app files;
+	// its file tree is the same code/, content/, meta/ layout a disc has.
+	const fs::path srcFsPath(srcPath);
+	std::error_code srcEc;
+	const bool srcIsFolder = fs::is_directory(srcFsPath, srcEc);
+	const bool srcIsNus = srcIsFolder || boost::iequals(_pathToUtf8(srcFsPath.filename()), "title.tmd");
+
+	FSTVolume::ErrorCode fstError = FSTVolume::ErrorCode::UNKNOWN_ERROR;
+	FSTVolume* volume = srcIsNus
+		? FSTVolume::OpenFromContentFolder(srcIsFolder ? srcFsPath : srcFsPath.parent_path(), &fstError)
+		: FSTVolume::OpenFromDiscImage(srcFsPath, &fstError);
 	if (!volume)
 	{
 		cemuLog_log(LogType::Force, "Decrypt: could not open '{}' ({})", srcPath, (sint32)fstError);
-		return fstError == FSTVolume::ErrorCode::DISC_KEY_MISSING ? IOS_DECRYPT_NO_DISC_KEY : IOS_DECRYPT_UNABLE_TO_MOUNT;
+		switch (fstError)
+		{
+		case FSTVolume::ErrorCode::DISC_KEY_MISSING:
+			return IOS_DECRYPT_NO_DISC_KEY;
+		case FSTVolume::ErrorCode::TITLE_TIK_MISSING:
+		case FSTVolume::ErrorCode::BAD_TITLE_TMD:
+		case FSTVolume::ErrorCode::BAD_TITLE_TIK:
+			return IOS_DECRYPT_NO_TITLE_TIK;
+		case FSTVolume::ErrorCode::TITLE_KEY_INVALID:
+			return IOS_DECRYPT_TITLE_KEY_INVALID;
+		case FSTVolume::ErrorCode::CONTENT_FILE_MISSING:
+			return IOS_DECRYPT_MISSING_CONTENT;
+		default:
+			return IOS_DECRYPT_UNABLE_TO_MOUNT;
+		}
 	}
 
 	uint64 bytesWritten = 0;

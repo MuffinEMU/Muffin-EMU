@@ -3,6 +3,10 @@
 #include "Cafe/HW/Latte/Core/LatteDraw.h"
 
 #include "Cafe/HW/Latte/Core/LatteQueryObject.h"
+#include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
+
+#include <chrono>
+#include <thread>
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 
 #define GPU7_QUERY_TYPE_OCCLUSION	(1)
@@ -91,6 +95,7 @@ void LatteQuery_UpdateFinishedQueries()
 		i--;
 		g_renderer->occlusionQuery_destroy(queryObject);
 	}
+	LatteWait::Get().queriesInFlight.store((uint32)list_queriesInFlight.size(), std::memory_order_relaxed);
 	// check for finished GX2 queries
 	for (sint32 i = 0; i < list_activeGX2Queries2.size(); i++)
 	{
@@ -108,12 +113,30 @@ void LatteQuery_UpdateFinishedQueries()
 void LatteQuery_UpdateFinishedQueriesForceFinishAll()
 {
 	cemu_assert_debug(_currentlyActiveRendererQuery == nullptr);
+	LatteWait::Scope waitScope("waiting for occlusion query results (sync)");
 	g_renderer->occlusionQuery_flush(); // guarantees that all query commands have been submitted and finished processing
+	// This used to spin until every query was in the finished state. A query that is still open (a
+	// nested GX2 query keeps a renderer query running) or whose GPU result never arrives is never
+	// removed from the list, and the GPU thread then spun here for good while the game carried on.
+	const auto start = std::chrono::steady_clock::now();
 	while (true)
 	{
 		LatteQuery_UpdateFinishedQueries();
 		if (list_queriesInFlight.empty())
 			break;
+		if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(1500))
+		{
+			size_t unended = 0;
+			for (auto* q : list_queriesInFlight)
+				unended += q->queryEnded ? 0 : 1;
+			static uint32 s_giveUps = 0;
+			if (s_giveUps++ < 8)
+				cemuLog_log(LogType::Force, "Latte: gave up waiting for {} occlusion queries ({} still open) after 1500 ms", list_queriesInFlight.size(), unended);
+			LatteWait::Get().timeouts.fetch_add(1);
+			LatteWait::Get().lastTimeoutReason.store("waiting for occlusion query results (sync)");
+			break;
+		}
+		std::this_thread::yield();
 	}
 }
 
@@ -126,6 +149,7 @@ void LatteQuery_endActiveRendererQuery(uint64 currentEventId)
 		LatteQuery_end(_currentlyActiveRendererQuery, currentEventId);
 		list_queriesInFlight.emplace_back(_currentlyActiveRendererQuery);
 		_currentlyActiveRendererQuery = nullptr;
+		LatteWait::Get().queriesInFlight.store((uint32)list_queriesInFlight.size(), std::memory_order_relaxed);
 	}
 }
 

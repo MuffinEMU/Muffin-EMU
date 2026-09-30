@@ -23,6 +23,7 @@
 #include "Cafe/TitleList/TitleInfo.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
+#include "Cafe/Filesystem/FST/FST.h"
 #include <cctype>
 #include <fstream>
 #include <thread>
@@ -33,7 +34,9 @@
 
 #include <atomic>
 #include <filesystem>
+#include <iterator>
 #include <string>
+#include <vector>
 
 // Mirrored 1:1 by CemuBridgeStatus in src/ios/Bridge/CemuBridge.h. Plain ints across
 // the boundary so neither side has to include the other's header.
@@ -46,7 +49,26 @@ enum
 	IOS_TITLE_LAUNCH_NO_TITLE_TIK = 4,
 	IOS_TITLE_LAUNCH_UNSUPPORTED_FORMAT = 5,
 	IOS_TITLE_LAUNCH_BASE_NOT_FOUND = 6,
+	// Encrypted game folder (title.tmd, title.tik and .app files) that could not be opened
+	IOS_TITLE_LAUNCH_BAD_TITLE_TMD = 7,
+	IOS_TITLE_LAUNCH_BAD_TITLE_TIK = 8,
+	IOS_TITLE_LAUNCH_TITLE_KEY_INVALID = 9,
+	IOS_TITLE_LAUNCH_MISSING_CONTENT_FILE = 10,
+	IOS_TITLE_LAUNCH_TITLE_NOT_INSTALLED = 11,
 };
+
+// Extra detail for the last failure, e.g. the name of the missing .app file. Read by the
+// bridge right after IOSTitleLaunch_PrepareForegroundTitle() returns, on the same thread.
+static thread_local std::string sLastLaunchDetail;
+
+const char* IOSTitleLaunch_LastErrorDetail()
+{
+	return sLastLaunchDetail.c_str();
+}
+
+// Defined in IOSDlcUpdateImport.cpp
+bool IOSDlcUpdateImport_ReadTmdTitleId(const char* tmdPath, uint64* titleIdOut);
+uint64 IOSDlcUpdateImport_DeriveBaseTitleId(uint64 titleId);
 
 // Defined below, next to the rest of the key handling. Declared here because the
 // launch path above it calls it too.
@@ -70,19 +92,216 @@ void IOSTitleLaunch_InitializeTitleList()
 // DLC that DlcUpdateImport.swift installed moments ago part of the GameInfo that
 // PrepareForegroundTitle() builds. The cap keeps a huge library from holding a launch
 // hostage: past it the title boots with whatever the scan has found so far and says so.
-static void IOSTitleLaunch_RescanInstalledContent()
+static void IOSTitleLaunch_RescanInstalledContent(int maxSeconds = 10)
 {
 	CafeTitleList::Refresh();
-	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(maxSeconds);
 	while (CafeTitleList::IsScanning())
 	{
 		if (std::chrono::steady_clock::now() >= deadline)
 		{
-			cemuLog_log(LogType::Force, "iOS: title rescan still running after 10s - launching with the titles found so far");
+			cemuLog_log(LogType::Force, "iOS: title rescan still running after {}s - launching with the titles found so far", maxSeconds);
 			return;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Wii U Menu
+//
+// The Menu (0005001010040000 JPN / ...0100 USA / ...0200 EUR) is a system title. It lives
+// in the MLC (Documents/mlc/mlc01/sys/title/00050010/10040X00), which CafeTitleList's own
+// scan already covers, and it starts games by title id through coreinit rather than by
+// path. The pieces it needs beside the title itself: the shared data in
+// sys/title/0005001b (fonts, Mii data), and the console's cafeLibs (Documents/mlc/cafeLibs,
+// read by rpl.cpp). otp.bin and seeprom.bin are only needed for online features. All of
+// them come from the user's own console; none is bundled or fetched.
+static bool IOSTitleLaunch_IsWiiUMenuTitleId(uint64 titleId)
+{
+	return titleId == 0x0005001010040000ull || titleId == 0x0005001010040100ull || titleId == 0x0005001010040200ull;
+}
+
+// Games the Menu can launch are the titles in the core's list. On iOS the list is built from
+// the MLC only (CemuInitialize adds no game paths), so a game living in Documents/Roms - which
+// is where every imported game lives - would be invisible to the Menu. While the Menu is what
+// the user launched, Documents/Roms is a scan path; it is dropped again when an ordinary
+// title launches, so the rescan that launch does stays as cheap as it was.
+static bool sMenuScanPathActive{false};
+
+static void IOSTitleLaunch_ExposeRomsToTheMenu()
+{
+	if (sMenuScanPathActive)
+		return;
+	const fs::path userData = ActiveSettings::GetUserDataPath();
+	if (userData.empty())
+		return;
+	const fs::path roms = userData.parent_path() / "Roms";
+	CafeTitleList::AddScanPath(roms);
+	sMenuScanPathActive = true;
+	cemuLog_log(LogType::Force, "iOS: Wii U Menu - {} added to the title list scan, so the Menu can list and launch those games", _pathToUtf8(roms));
+}
+
+static void IOSTitleLaunch_DropMenuScanPath()
+{
+	if (!sMenuScanPathActive)
+		return;
+	CafeTitleList::ClearScanPaths();
+	sMenuScanPathActive = false;
+}
+
+// Says, in the log, what the Menu is going to be missing. It may still boot without any of
+// these - the log is what turns a null-pointer crash seven seconds in into a known cause.
+static void IOSTitleLaunch_LogMenuPreflight()
+{
+	std::error_code ec;
+	const fs::path mlc = ActiveSettings::GetMlcPath();
+	const fs::path userData = ActiveSettings::GetUserDataPath();
+	if (!fs::exists(userData / "otp.bin", ec))
+		cemuLog_log(LogType::Force, "iOS: Wii U Menu - otp.bin is missing (Documents/mlc/otp.bin); online features will not work, the Menu may still start");
+	if (!fs::exists(userData / "seeprom.bin", ec))
+		cemuLog_log(LogType::Force, "iOS: Wii U Menu - seeprom.bin is missing (Documents/mlc/seeprom.bin); online features will not work, the Menu may still start");
+	if (!fs::is_directory(mlc / "sys/title/0005001b", ec))
+		cemuLog_log(LogType::Force, "iOS: Wii U Menu - sys/title/0005001b (shared data: fonts, Mii) is missing from the MLC; the Menu is likely to crash without it");
+	static const char* const cafeLibs[] = {"drmapp", "erreula", "nn_sl", "nsyskbd", "snd_user", "snduser2", "swkbd"};
+	int missingLibs = 0;
+	for (const char* lib : cafeLibs)
+	{
+		if (!fs::exists(userData / "cafeLibs" / (std::string(lib) + ".rpl"), ec))
+			missingLibs++;
+	}
+	// Titles in sys/title that have code/content/meta folders but lack the XML files the core reads. The
+	// core only warns ("Title has missing meta .xml files"); naming them here says which dump is bad.
+	int incomplete = 0;
+	for (auto& group : fs::directory_iterator(mlc / "sys/title", ec))
+	{
+		for (auto& title : fs::directory_iterator(group.path(), ec))
+		{
+			const fs::path dir = title.path();
+			if (!fs::is_directory(dir / "code", ec) || !fs::is_directory(dir / "meta", ec))
+				continue;
+			if (fs::exists(dir / "code/app.xml", ec) && fs::exists(dir / "code/cos.xml", ec) && fs::exists(dir / "meta/meta.xml", ec))
+				continue;
+			if (++incomplete <= 8)
+				cemuLog_log(LogType::Force, "iOS: Wii U Menu - system title {} is missing app.xml, cos.xml or meta.xml", _pathToUtf8(dir.lexically_relative(mlc)));
+		}
+	}
+	if (incomplete > 8)
+		cemuLog_log(LogType::Force, "iOS: Wii U Menu - and {} more incomplete system titles", incomplete - 8);
+	if (missingLibs > 0)
+		cemuLog_log(LogType::Force, "iOS: Wii U Menu - {} of {} cafeLibs .rpl files are missing from Documents/mlc/cafeLibs; the Menu will not work without them", missingLibs, (int)std::size(cafeLibs));
+}
+
+// Launches a title that is installed in the MLC by its title id - the Wii U Menu, mainly.
+// Same contract as IOSTitleLaunch_PrepareForegroundTitle: prepares, does not launch.
+int IOSTitleLaunch_PrepareForegroundTitleById(uint64 titleId)
+{
+	IOSTitleLaunch_AdoptDroppedKeys();
+	KeyCache_Prepare();
+	IOSTitleLaunch_InitializeTitleList();
+
+	const bool isMenu = IOSTitleLaunch_IsWiiUMenuTitleId(titleId);
+	if (isMenu)
+	{
+		IOSTitleLaunch_LogMenuPreflight();
+		IOSTitleLaunch_ExposeRomsToTheMenu();
+	}
+	else
+		IOSTitleLaunch_DropMenuScanPath();
+
+	// sys/title first (system titles), then usr/title. Directory names are the two halves
+	// of the title id in lower-case hex, the same layout the core's MLC scan expects.
+	const std::string high = fmt::format("{:08x}", (uint32)(titleId >> 32));
+	const std::string low = fmt::format("{:08x}", (uint32)(titleId & 0xFFFFFFFFull));
+	const fs::path mlc = ActiveSettings::GetMlcPath();
+	std::error_code ec;
+	fs::path titleDir;
+	for (const char* group : {"sys/title", "usr/title"})
+	{
+		const fs::path candidate = mlc / group / high / low;
+		if (fs::is_directory(candidate / "code", ec))
+		{
+			titleDir = candidate;
+			break;
+		}
+	}
+	if (titleDir.empty())
+	{
+		cemuLog_log(LogType::Force, "iOS: title {:016x} is not installed in the MLC ({}/{{sys,usr}}/title/{}/{})", titleId, _pathToUtf8(mlc), high, low);
+		return IOS_TITLE_LAUNCH_TITLE_NOT_INSTALLED;
+	}
+
+	// Ensure the list has it before anything depends on it: added explicitly, then a bounded
+	// rescan (which also picks up the Roms scan path and anything imported a moment ago),
+	// then added again in case the rescan dropped an entry it did not rediscover.
+	CafeTitleList::AddTitleFromPath(titleDir);
+	IOSTitleLaunch_RescanInstalledContent(isMenu ? 30 : 10);
+	CafeTitleList::AddTitleFromPath(titleDir);
+
+	TitleId baseTitleId;
+	if (!CafeTitleList::FindBaseTitleId(titleId, baseTitleId))
+		return IOS_TITLE_LAUNCH_BASE_NOT_FOUND;
+	cemuLog_log(LogType::Force, "iOS: launching installed title {:016x} from {}", (uint64)baseTitleId, _pathToUtf8(titleDir));
+	CafeSystem::PREPARE_STATUS_CODE r = CafeSystem::PrepareForegroundTitle(baseTitleId);
+	switch (r)
+	{
+	case CafeSystem::PREPARE_STATUS_CODE::SUCCESS:
+		return IOS_TITLE_LAUNCH_OK;
+	case CafeSystem::PREPARE_STATUS_CODE::INVALID_RPX:
+		return IOS_TITLE_LAUNCH_INVALID_RPX;
+	default:
+		return IOS_TITLE_LAUNCH_UNABLE_TO_MOUNT;
+	}
+}
+
+// Encrypted game folders often come as a parent folder holding one subfolder each for the
+// game, its update and its DLC, every one with its own title.tmd. The update and DLC are
+// not in the MLC, so nothing would ever tell the core about them. They are found here by
+// their title.tmd (title ID high word 0005000E update, 0005000C DLC, base ID must match) in
+// the folders next to the game's folder and inside it, and added to the title list next to
+// the game so PrepareForegroundTitle() builds its GameInfo with them.
+static std::vector<fs::path> IOSTitleLaunch_FindCompanionTitles(const TitleInfo& base, TitleId baseTitleId)
+{
+	std::vector<fs::path> found;
+	if (base.GetFormat() != TitleInfo::TitleDataFormat::NUS)
+		return found;
+	const fs::path baseFolder = base.GetPath().parent_path();
+	std::vector<fs::path> searchRoots{baseFolder};
+	if (baseFolder.has_parent_path() && baseFolder.parent_path() != baseFolder)
+		searchRoots.push_back(baseFolder.parent_path());
+	std::error_code ec;
+	for (const fs::path& root : searchRoots)
+	{
+		for (auto& dir : fs::directory_iterator(root, ec))
+		{
+			if (!dir.is_directory(ec) || dir.path() == baseFolder)
+				continue;
+			fs::path tmdPath;
+			for (auto& file : fs::directory_iterator(dir.path(), ec))
+			{
+				std::string name = _pathToUtf8(file.path().filename());
+				for (auto& c : name)
+					c = (char)std::tolower((unsigned char)c);
+				if (name == "title.tmd")
+				{
+					tmdPath = file.path();
+					break;
+				}
+			}
+			if (tmdPath.empty())
+				continue;
+			uint64 tmdTitleId = 0;
+			if (!IOSDlcUpdateImport_ReadTmdTitleId(_pathToUtf8(tmdPath).c_str(), &tmdTitleId))
+				continue;
+			const uint32 high = (uint32)(tmdTitleId >> 32);
+			if (high != 0x0005000E && high != 0x0005000C)
+				continue;
+			if (IOSDlcUpdateImport_DeriveBaseTitleId(tmdTitleId) != (uint64)baseTitleId)
+				continue;
+			found.push_back(tmdPath);
+		}
+	}
+	return found;
 }
 
 // Prepares whatever the user actually picked, mirroring the same decision tree the
@@ -92,6 +311,7 @@ static void IOSTitleLaunch_RescanInstalledContent()
 // is reported before a title thread exists.
 int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 {
+	sLastLaunchDetail.clear();
 	if (!pathStr || pathStr[0] == '\0')
 		return IOS_TITLE_LAUNCH_UNSUPPORTED_FORMAT;
 	fs::path launchPath = fs::path(pathStr);
@@ -117,6 +337,21 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 			cemuLog_log(LogType::Force, "iOS: no base title found for {:016x} - an update or DLC was launched without its base game", (uint64)launchTitle.GetAppTitleId());
 			return IOS_TITLE_LAUNCH_BASE_NOT_FOUND;
 		}
+		// A Wii U Menu launched from a folder in Documents/Roms is still the Menu: it has to be
+		// able to see the other games. An ordinary title drops that scan path again.
+		if (IOSTitleLaunch_IsWiiUMenuTitleId((uint64)baseTitleId))
+		{
+			IOSTitleLaunch_LogMenuPreflight();
+			IOSTitleLaunch_ExposeRomsToTheMenu();
+		}
+		else
+			IOSTitleLaunch_DropMenuScanPath();
+		const std::vector<fs::path> companionTitles = IOSTitleLaunch_FindCompanionTitles(launchTitle, baseTitleId);
+		for (const fs::path& companion : companionTitles)
+		{
+			cemuLog_log(LogType::Force, "iOS: adding update/DLC folder {} next to the game", _pathToUtf8(companion));
+			CafeTitleList::AddTitleFromPath(companion);
+		}
 		// Picks up anything DlcUpdateImport.swift has installed into Documents/mlc since
 		// the title list was last populated. Without it PrepareForegroundTitle below builds
 		// its GameInfo2 from the base game alone and boots unpatched.
@@ -127,6 +362,8 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 		// and fails with "Game meta information is either missing...". Re-adding is
 		// synchronous and deduplicated by location.
 		CafeTitleList::AddTitleFromPath(launchPath);
+		for (const fs::path& companion : companionTitles)
+			CafeTitleList::AddTitleFromPath(companion);
 		cemuLog_log(LogType::Force, "iOS: launching real title {:016x} from {}", (uint64)baseTitleId, _pathToUtf8(launchPath));
 		CafeSystem::PREPARE_STATUS_CODE r = CafeSystem::PrepareForegroundTitle(baseTitleId);
 		switch (r)
@@ -168,6 +405,19 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 	case TitleInfo::InvalidReason::NO_TITLE_TIK:
 		cemuLog_log(LogType::Force, "iOS: {} has no usable title.tik", _pathToUtf8(launchPath));
 		return IOS_TITLE_LAUNCH_NO_TITLE_TIK;
+	case TitleInfo::InvalidReason::BAD_TITLE_TMD:
+		cemuLog_log(LogType::Force, "iOS: {} has a title.tmd that could not be read", _pathToUtf8(launchPath));
+		return IOS_TITLE_LAUNCH_BAD_TITLE_TMD;
+	case TitleInfo::InvalidReason::BAD_TITLE_TIK:
+		cemuLog_log(LogType::Force, "iOS: {} has a title.tik that could not be read", _pathToUtf8(launchPath));
+		return IOS_TITLE_LAUNCH_BAD_TITLE_TIK;
+	case TitleInfo::InvalidReason::TITLE_KEY_INVALID:
+		cemuLog_log(LogType::Force, "iOS: {} could not be decrypted with its ticket or any key in keys.txt", _pathToUtf8(launchPath));
+		return IOS_TITLE_LAUNCH_TITLE_KEY_INVALID;
+	case TitleInfo::InvalidReason::MISSING_CONTENT_FILE:
+		sLastLaunchDetail = FSTVolume::GetLastMissingContentFile();
+		cemuLog_log(LogType::Force, "iOS: {} is missing content file {}", _pathToUtf8(launchPath), sLastLaunchDetail);
+		return IOS_TITLE_LAUNCH_MISSING_CONTENT_FILE;
 	default:
 		cemuLog_log(LogType::Force, "iOS: {} is not a title this build can launch (invalid reason {})", _pathToUtf8(launchPath), (int)launchTitle.GetInvalidReason());
 		return IOS_TITLE_LAUNCH_UNSUPPORTED_FORMAT;

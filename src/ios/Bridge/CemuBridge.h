@@ -26,9 +26,13 @@ typedef enum {
     // every key it has against the disc header, so this is never a "wrong key selected"
     // problem, only a "key not present" one.
     CEMU_BRIDGE_NO_DISC_KEY     = 3,
-    CEMU_BRIDGE_NO_TITLE_TIK    = 4,   // installed title with no usable title.tik
+    CEMU_BRIDGE_NO_TITLE_TIK    = 4,   // encrypted game folder with no title.tik (and no matching title key in keys.txt)
     CEMU_BRIDGE_UNSUPPORTED     = 5,   // not a title and not a loadable executable
     CEMU_BRIDGE_BASE_NOT_FOUND  = 6,   // an update/DLC was launched without its base game
+    CEMU_BRIDGE_BAD_TITLE_TMD   = 7,   // encrypted game folder whose title.tmd can't be read
+    CEMU_BRIDGE_BAD_TITLE_TIK   = 8,   // encrypted game folder whose title.tik can't be read
+    CEMU_BRIDGE_TITLE_KEY_INVALID = 9, // ticket read, but it (and keys.txt) don't decrypt the .app files
+    CEMU_BRIDGE_MISSING_CONTENT = 10,  // a .app file listed in title.tmd is not in the folder
     CEMU_BRIDGE_CORE_NOT_BUILT  = 100, // real engine not linked into this build yet (never returned by current builds)
     CEMU_BRIDGE_BAD_ARG         = 101, // null/empty path etc.
 } CemuBridgeStatus;
@@ -42,7 +46,7 @@ bool cemu_bridge_core_available(void);
 void cemu_bridge_initialize(const char* mlcPath);
 
 /// Boot whatever the user picked: an encrypted disc image (.wux/.wud/.iso), a Wii U
-/// archive (.wua), a dumped game folder, or a standalone homebrew .rpx. Returns
+/// archive (.wua), a dumped game folder, an encrypted game folder (title.tmd, title.tik and .app files), or a standalone homebrew .rpx. Returns
 /// CEMU_BRIDGE_OK when the title starts.
 ///
 /// Real games are decrypted with the user's OWN console keys, read from keys.txt in the
@@ -51,6 +55,18 @@ void cemu_bridge_initialize(const char* mlcPath);
 /// exactly as before. The engine's key cache reads keys.txt once per app launch, so a
 /// keys.txt imported mid-session is only used after the app is relaunched.
 CemuBridgeStatus cemu_bridge_boot_title(const char* path);
+
+/// Boot a title that is installed in the MLC (Documents/mlc/mlc01/{sys,usr}/title/...) by
+/// its 64-bit title id, e.g. the Wii U Menu: 0005001010040000 (JPN), ...0100 (USA),
+/// ...0200 (EUR). Returns CEMU_BRIDGE_UNABLE_TO_MOUNT with a status text when the title
+/// is not installed. cemu_bridge_boot_title() also accepts "mlc-title:<16 hex digits>"
+/// as its path and routes it here, so callers that only carry a path string (the library)
+/// need no second entry point.
+///
+/// The Menu additionally needs the console's cafeLibs, the shared data under
+/// sys/title/0005001b and (for online features) otp.bin/seeprom.bin. The engine logs which
+/// of those are missing at launch; the Menu may still start without them.
+CemuBridgeStatus cemu_bridge_boot_title_id(uint64_t titleId);
 
 /// Boot a standalone .rpx and nothing else. Kept as the narrow homebrew entry point;
 /// cemu_bridge_boot_title() is what the app calls, and it falls through to this same
@@ -150,6 +166,20 @@ void cemu_bridge_log_line(const char* message);
 /// available.
 double cemu_bridge_get_fps(void);
 
+/// True while a running, unpaused title has stopped producing frames for several seconds
+/// even though the emulator itself is still alive (the game's audio and input carry on
+/// while the picture is frozen or black). Set by a watchdog inside the bridge, which also
+/// writes a one-off diagnostic snapshot to log.txt when it trips, and cleared as soon as
+/// frames start arriving again. Safe to poll from the UI at any time.
+bool cemu_bridge_video_stalled(void);
+
+/// Why the picture is flagged by cemu_bridge_video_stalled(): 0 = not flagged, 1 = no new
+/// frames for several seconds, 2 = the GPU reported an error (a page fault, for example) and
+/// iOS is no longer running this app's GPU work, 3 = the screen's layer cannot get frame
+/// buffers (out of memory for the screen), 4 = the app is nearly out of memory. Kind 2 does not clear until the title stops; 3
+/// clears when drawables come back.
+int cemu_bridge_video_stall_kind(void);
+
 /// The four counters the engine's own progress heartbeat prints, readable on demand.
 /// cemu_bridge_get_fps() rounds to whole frames per second, so a title running below one
 /// frame per second reads 0, the same as one that stopped. These separate the two:
@@ -175,7 +205,7 @@ typedef struct {
 /// rather than placeholders. Safe to call from any thread, cheap enough to poll.
 void cemu_bridge_get_progress(CemuBridgeProgress* out);
 
-/// Decrypt-to-Files / Decrypt-to-WUA: takes a WUD/WUX (or a folder/NUS dump) the app
+/// Decrypt-to-Files / Decrypt-to-WUA: takes a WUD/WUX (or an encrypted game folder: title.tmd, title.tik and .app files) the app
 /// already has a working key for and writes a fully decrypted copy of it to destPath,
 /// in one of two shapes depending on `toWua`:
 ///   - false: destPath is a FOLDER, filled with the same code/, content/, meta/ layout
@@ -235,6 +265,12 @@ bool cemu_bridge_get_title_name(const char* romPath, char* outName, size_t outNa
 /// leaves outTitleId untouched if romPath isn't a valid, fully-parsed title.
 bool cemu_bridge_derive_title_id(const char* romPath, uint64_t* outTitleId);
 
+/// Reads the 64-bit title ID from a title.tmd file without decrypting anything, so an
+/// encrypted game folder can be told apart as base game (high word 00050000), update
+/// (0005000E) or DLC (0005000C) even before its ticket or keys are checked. Returns
+/// false if the file can't be read or isn't a valid title.tmd.
+bool cemu_bridge_read_tmd_title_id(const char* tmdPath, uint64_t* outTitleId);
+
 /// Reduces any title ID - base, update, or AOC/DLC - to its base title's ID, using the
 /// same bit-math CafeTitleList::FindBaseTitleId() already uses for the real boot path.
 /// Two different titles with the same base ID belong to the same game; this is how the
@@ -266,6 +302,10 @@ typedef enum {
     CemuTitleNoDiscKey = 3,
     CemuTitleNoTicket = 4,
     CemuTitleMissingXmlFiles = 5,
+    CemuTitleBadTitleTmd = 6,
+    CemuTitleBadTitleTik = 7,
+    CemuTitleKeyInvalid = 8,
+    CemuTitleMissingContentFile = 9,
 } CemuTitleInvalidReason;
 
 /// Inspects romPath as a candidate DLC/update import in one pass: on success (true),
