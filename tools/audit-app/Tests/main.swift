@@ -164,7 +164,11 @@ do {
     check(FrameAnalysis.decodeCounter(counterFrame(top: 0x1234, bottom: 0x1234, seq: 1, latte: 1), bottom: false, orientation: .normal) == 0x1234, "counter decodes (top)")
     check(FrameAnalysis.decodeCounter(counterFrame(top: 0x1234, bottom: 0xABCD, seq: 1, latte: 1), bottom: true, orientation: .normal) == 0xABCD, "counter decodes (bottom)")
     var fc = Expectation(type: "frame_counter")
-    let clean = (0..<6).map { counterFrame(top: 100 + $0 * 2, bottom: 100 + $0 * 2, seq: UInt32($0 + 1), latte: UInt32(50 + $0 * 2)) }
+    var clean: [CapturedFrame] = []
+    for i in 0..<6 {
+        let counter: Int = 100 + i * 2
+        clean.append(counterFrame(top: counter, bottom: counter, seq: UInt32(i + 1), latte: UInt32(50 + i * 2)))
+    }
     check(FrameAnalysis.evaluate(fc, frames: clean, orientation: .normal).pass, "a clean, increasing burst passes")
     var torn = clean; torn[3] = counterFrame(top: 106, bottom: 104, seq: 4, latte: 56)
     let tr = FrameAnalysis.evaluate(fc, frames: torn, orientation: .normal)
@@ -179,7 +183,8 @@ do {
 // MARK: Pacing
 
 do {
-    let steady = (0..<200).map { UInt64($0) * 16_666_667 }
+    var steady: [UInt64] = []
+    for i in 0..<200 { steady.append(UInt64(i) * 16_666_667) }
     let s = Pacing.stats(intervalsMs: Pacing.intervalsMs(steady), dropped: 0)!
     check(abs(s.fps - 60.0) < 0.1 && s.long == 0, "steady 60 fps")
     var stutter = steady
@@ -235,10 +240,18 @@ do {
     check(ids.contains("counter.textures_evicted") && ids.contains("counter.audio_underruns") && ids.contains("counter.low_memory"), "eviction, audio and memory anomalies found")
     check(an.first { $0.id == "counter.textures_evicted" }?.severity == "info", "eviction alone is informational")
 
-    let rising = (0..<40).map { JSONValue.parse("{\"memory\":{\"footprintBytes\":\(500_000_000 + $0 * 10_000_000)}}")! }
+    var rising: [JSONValue] = []
+    for i in 0..<40 {
+        let bytes: Int = 500_000_000 + i * 10_000_000
+        rising.append(JSONValue.parse("{\"memory\":{\"footprintBytes\":\(bytes)}}")!)
+    }
     let g = AnomalyDetector.memoryGrowth(samples: rising, thresholdMB: 64, testId: "t")
     check(g.anomaly != nil && g.growthMB > 200, "steady growth is flagged")
-    let flat = (0..<40).map { JSONValue.parse("{\"memory\":{\"footprintBytes\":\(500_000_000 + ($0 % 2) * 5_000_000)}}")! }
+    var flat: [JSONValue] = []
+    for i in 0..<40 {
+        let bytes: Int = 500_000_000 + (i % 2) * 5_000_000
+        flat.append(JSONValue.parse("{\"memory\":{\"footprintBytes\":\(bytes)}}")!)
+    }
     check(AnomalyDetector.memoryGrowth(samples: flat, thresholdMB: 64, testId: "t").anomaly == nil, "noise is not growth")
 }
 
