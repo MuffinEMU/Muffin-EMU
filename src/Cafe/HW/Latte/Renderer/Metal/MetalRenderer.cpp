@@ -1170,6 +1170,15 @@ void* MetalRenderer::texture_acquireTextureUploadBuffer(uint32 size)
     return m_memoryManager->AcquireTextureUploadBuffer(size);
 }
 
+// The texture loader found no upload buffer for this texture. Goes through the same bookkeeping as a skipped upload,
+// which flags the texture for reload once per stamp and stops after repeated failures, so a texture that is also
+// skipped by a guard in the same load is not flagged twice (two inversions of the hash would cancel out).
+void MetalRenderer::texture_uploadBufferUnavailable(LatteTexture* texture)
+{
+    if (texture)
+        MetalUploadSkipped(static_cast<LatteTextureMtl*>(texture), MetalGuard::UploadStagingFull, 0);
+}
+
 void MetalRenderer::texture_releaseTextureUploadBuffer(uint8* mem)
 {
     m_memoryManager->ReleaseTextureUploadBuffer(mem);
@@ -3473,6 +3482,33 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     m_lastMemoryCheck = now;
     constexpr uint64 MB = 1024 * 1024;
 
+    // A texture that could not get GPU memory stands on the shared 1x1 null texture (see LatteTextureMtl) and would
+    // stay black for as long as the cache keeps it. Delete those so the game's next use allocates it again.
+    {
+        std::vector<LatteTexture*> substitutes;
+        for (LatteTexture* texture : LatteTexture::GetAllTextures())
+        {
+            if (texture && static_cast<LatteTextureMtl*>(texture)->IsNullSubstitute())
+                substitutes.push_back(texture);
+        }
+        uint32 replaced = 0;
+        for (LatteTexture* texture : substitutes)
+        {
+            // deleting one texture can delete related ones, so make sure this one is still alive
+            const auto& live = LatteTexture::GetAllTextures();
+            if (std::find(live.begin(), live.end(), texture) == live.end())
+                continue;
+            LatteTexture_Delete(texture);
+            ++replaced;
+        }
+        if (replaced > 0)
+        {
+            static uint32 s_substituteLogs = 0;
+            if (s_substituteLogs++ < 8)
+                cemuLog_log(LogType::Force, "Metal: dropped {} textures that had no GPU memory so they are allocated again on their next use", replaced);
+        }
+    }
+
     uint32 numBuffers;
     size_t totalSize, freeSize;
     m_memoryManager->GetStagingAllocator().GetStats(numBuffers, totalSize, freeSize);
@@ -3538,21 +3574,6 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     // Delete what LatteTC says is safe (unused for several frames and restorable from guest memory, or
     // overwritten), bounded per pass so it cannot stall a frame.
     std::vector<LatteTexture*> candidates = LatteTC_GetDeleteableTextures();
-    if (available < criticalMark)
-    {
-        // Still short: also drop GPU-written textures nobody has touched for ten seconds. Their contents are
-        // lost, which is better than the app being killed.
-        const uint32 currentTick = GetTickCount();
-        const uint32 currentFrame = LatteGPUState.frameCounter;
-        for (LatteTexture* texture : LatteTexture::GetAllTextures())
-        {
-            if (!texture || texture->lastAccessFrameCount == 0)
-                continue;
-            if ((currentTick - texture->lastAccessTick) >= 10000 && (currentFrame - texture->lastAccessFrameCount) >= 30 &&
-                std::find(candidates.begin(), candidates.end(), texture) == candidates.end())
-                candidates.push_back(texture);
-        }
-    }
     uint32 deleted = 0;
     uint64 freedBytes = 0;
     for (LatteTexture* texture : candidates)
@@ -3567,6 +3588,43 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
             freedBytes += mtlTexture->allocatedSize();
         LatteTexture_Delete(texture);
         ++deleted;
+    }
+    // Textures the GPU wrote (render targets) cannot be restored from guest memory: the next use finds whatever the
+    // CPU last left there, usually nothing, and the surface comes back black or stale until the game redraws it. So
+    // they are the last resort: only when the restorable ones above did not free enough to get back over the low mark,
+    // only ones nobody has touched for half a minute, and the largest first so as few as possible are lost.
+    if (available < criticalMark)
+    {
+        const uint64 needed = lowMark > available ? lowMark - available : 0;
+        if (freedBytes < needed)
+        {
+            const uint32 currentTick = GetTickCount();
+            const uint32 currentFrame = LatteGPUState.frameCounter;
+            std::vector<std::pair<uint64, LatteTexture*>> idleGpuWritten;
+            for (LatteTexture* texture : LatteTexture::GetAllTextures())
+            {
+                if (!texture || texture->lastAccessFrameCount == 0)
+                    continue;
+                if ((currentTick - texture->lastAccessTick) < 30000 || (currentFrame - texture->lastAccessFrameCount) < 300)
+                    continue;
+                auto* mtlTexture = static_cast<LatteTextureMtl*>(texture)->GetTexture();
+                idleGpuWritten.emplace_back(mtlTexture ? (uint64)mtlTexture->allocatedSize() : 0, texture);
+            }
+            std::sort(idleGpuWritten.begin(), idleGpuWritten.end(), [](const auto& l, const auto& r) { return l.first > r.first; });
+            uint32 lost = 0;
+            for (const auto& [size, texture] : idleGpuWritten)
+            {
+                if (freedBytes >= needed || lost >= 16)
+                    break;
+                const auto& live = LatteTexture::GetAllTextures();
+                if (std::find(live.begin(), live.end(), texture) == live.end())
+                    continue;
+                freedBytes += size;
+                LatteTexture_Delete(texture);
+                ++deleted;
+                ++lost;
+            }
+        }
     }
     if (deleted > 0)
     {
