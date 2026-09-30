@@ -689,9 +689,9 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	if (!pixelData)
 	{
 		// out of memory: leave the texture as it is rather than decode into nothing. The texture cache believes the
-		// data is current once LatteTexture_ReloadData() returns, so also make the next once-a-frame change check see a
-		// different hash and reload it, instead of leaving it empty until the game rewrites that memory
-		tex->texDataHash2 = ~tex->texDataHash2;
+		// data is current once LatteTexture_ReloadData() returns, so also have the renderer flag it to be loaded again (it makes
+		// the next once-a-frame change check see a different hash), instead of leaving it empty until the game rewrites that memory
+		g_renderer->texture_uploadBufferUnavailable(tex);
 		return;
 	}
 	// decode texture (if data is required)

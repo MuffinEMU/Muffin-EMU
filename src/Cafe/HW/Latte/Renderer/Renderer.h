@@ -109,6 +109,8 @@ public:
 	// texture functions
 	virtual void* texture_acquireTextureUploadBuffer(uint32 size) = 0;
 	virtual void texture_releaseTextureUploadBuffer(uint8* mem) = 0;
+	// Called when a texture's data could not be uploaded because no upload buffer could be had. A renderer that keeps a record of skipped uploads flags the texture to be loaded again.
+	virtual void texture_uploadBufferUnavailable(LatteTexture* texture) {}
 
 	virtual TextureDecoder* texture_chooseDecodedFormat(Latte::E_GX2SURFFMT format, bool isDepth, Latte::E_DIM dim, uint32 width, uint32 height) = 0;
 
