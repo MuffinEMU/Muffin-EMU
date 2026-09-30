@@ -65,7 +65,7 @@
 	<!-- Lets Files/Mail/AirDrop offer "Open in Muffin" for these two extensions, and is
 	     what actually makes a double-tapped .muffinlyt/.muffinclr launch the app rather
 	     than just being importable through Settings' own fileImporter buttons. Editor,
-	     not Viewer, since PadPresetFitter/PadColourPickerView write these files too. -->
+	     not Viewer, since the preview pad writes these files too (Settings export). -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

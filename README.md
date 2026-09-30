@@ -90,7 +90,6 @@ Every build of `main` is a numbered release, 0.1 higher than the last; after `.9
 - [Cemu](https://github.com/cemu-project/Cemu) — the Wii U emulator MuffinEMU's core is built on.
 - [Melo-Controller](https://github.com/stossy11/Melo-Controller) — the optional alternative on-screen pad.
 - [MeloCafe](https://github.com/stossy11/MeloCafe) — includes code from MeloCafe (MPL-2.0).
-- [etcpak](https://github.com/wolfpld/etcpak) — ETC2 texture encoding on GPUs without BC support (BSD-3-Clause).
 - [MoltenVK](https://github.com/KhronosGroup/MoltenVK) — Vulkan on Metal.
 
 ## License
