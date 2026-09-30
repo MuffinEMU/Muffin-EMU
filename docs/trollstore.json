@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "6.1",
+          "date": "2026-09-30T21:23:11Z",
+          "localizedDescription": "## What changed\n\n- Graphic packs can now be browsed and changed before you've launched a game for the first time, and switching a pack off and on no longer forgets the options you chose.\n- Graphic packs, built in. Download the community packs from inside MuffinEMU, turn packs on for a game, and choose options like resolution and frame rate. Suggestions fit your device, packs Metal can't fully use are marked, and you can import your own from Files. Changes apply the next time you launch a game.\n- The emulator logs a performance summary every 5 seconds and shows it under FPS in the overlay, the idle CPU core no longer spins at 100% while a game waits, and CPU cores can be set to Auto, One or Three.\n- New CPU cores setting (Auto, One core, Three cores - Experimental), also per game. The GamePad screen no longer renders at full TV resolution and no longer draws while hidden.\n- MuffinEMU now adapts to your device: older 2 to 4 GB iPhones and iPads get safer memory settings and a clear message if a game will not fit, newer iPads and iPhones get a sharper default picture, and phones keep at least 720p. Bug reports now start with one line describing your device.\n- On iPhones and iPads with less than 4.5 GB of memory, or fewer than three CPU cores, every CPU cores choice (including Auto and Three cores) now runs on one core, and Settings says why.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit d02157244252c7c63b01fb08fb57fe5798c98988.\n\n**`MuffinEMU.ipa`** - SideSto...",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v6.1/MuffinEMU-fakesigned.ipa",
+          "size": 68602883,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "6.0",
           "date": "2026-09-30T20:52:05Z",
           "localizedDescription": "## What changed\n\n- Vulkan renderer now starts on more iPads: unsupported GPU features are skipped instead of failing, and the log records exactly what the GPU offers.\n- The \"video stopped\" warning now only appears when the picture is really frozen, not during loading screens, pauses or brief screen changes, and it goes away by itself when the game recovers.\n- Fixes another cause of graphics errors in Breath of the Wild, Captain Toad and Super Mario 3D World, and stops the error log from filling with repeated lines after a graphics fault.\n- Heavy loading in games like Breath of the Wild no longer triggers the \"video stopped\" warning.\n- Games that aim with the GamePad's gyro, such as Splatoon, now work with your iPad's motion sensors. Settings > Motion & Aiming has a sensitivity slider, a recentre button and a stick-only option.\n- If the GPU stops responding under Vulkan, the game now stops with a message and the next launch uses Metal, instead of the app crashing.\n- Fixes graphics errors when you start a second game without restarting the app (for example Wii U Menu then Captain Toad, or Breath of the Wild then Super Mario 3D World).\n- Vulkan falls back to Metal if it can't set up the screen, and uses less memory for textures on iPad.\n- Settings now marks Vulkan as Experimental and shows why it last failed, if it did.\n- Vulkan sizes its texture memory from what each iPhone or iPad reports instead of a fixed limit.\n- Fixed game discs (.wux/.wud) that would not open after updati...",
@@ -427,12 +435,12 @@
   ],
   "news": [
     {
-      "title": "MuffinEMU 6.0",
-      "identifier": "muffinemu-v6.0",
-      "caption": "Vulkan renderer now starts on more iPads: unsupported GPU features are skipped instead of failing, and the log records exactly what the GPU offers. The \"video stopped\" warning now only appears when the picture is...",
+      "title": "MuffinEMU 6.1",
+      "identifier": "muffinemu-v6.1",
+      "caption": "Graphic packs can now be browsed and changed before you've launched a game for the first time, and switching a pack off and on no longer forgets the options you chose. Graphic packs, built in. Download the community...",
       "date": "2026-09-30",
       "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v6.0",
+      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v6.1",
       "appID": "com.kiddreads.MuffinEMU",
       "notify": false
     }
