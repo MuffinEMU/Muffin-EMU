@@ -23,12 +23,14 @@ struct DecryptProgress: Equatable {
     var isSuccess: Bool { completed && resultStatus == 0 }
 }
 
-/// Only disc images actually go through FSTVolume's decryption - a folder dump is
+/// Only encrypted sources actually go through FSTVolume's decryption - disc images and
+/// encrypted game folders (title.tmd, title.tik and .app files). A folder dump is
 /// already plain files, .rpx/.elf homebrew was never encrypted, and .wuhb is its own
 /// container format FSTVolume doesn't open. Offering this action on any of those would
 /// either no-op or fail in a way that looks like a bug rather than "not applicable."
 func gameSupportsDecryptToFiles(romPath: String) -> Bool {
     let ext = (romPath as NSString).pathExtension.lowercased()
+    if (romPath as NSString).lastPathComponent.lowercased() == "title.tmd" { return true }
     return ext == "wud" || ext == "wux" || ext == "wua"
 }
 
@@ -273,6 +275,9 @@ struct DecryptROMView: View {
         case 2: return "No matching key in keys.txt for this disc. Import the right key and try again."
         case 3: return "Couldn't write the decrypted output."
         case 4: return "Cancelled."
+        case 6: return "This game folder is missing a readable title.tmd or title.tik, which MuffinEMU needs to decrypt it."
+        case 7: return "MuffinEMU couldn't decrypt this game folder. Its title.tik doesn't unlock the .app files - check that title.tmd, title.tik and the .app files are from the same download."
+        case 8: return "This game folder is missing one or more .app files listed in its title.tmd."
         case 5: return "Some files couldn't be copied, so the decrypted copy is incomplete. Your original wasn't changed. Free up some space and try again."
         default: return "Decryption couldn't start."
         }
