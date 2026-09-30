@@ -1188,7 +1188,7 @@ struct EmulatorViewOptimized: View {
     @AppStorage(TouchLabSettings.schemeKey) private var touchLabScheme = TouchLabSettings.defaultScheme
     /// Where the TV / GamePad views are on screen, reported by the screen views themselves.
     /// Written only when the screen layout changes - never from the input path.
-    @State private var touchLabScreens = TouchLabScreenState(frames: [:])
+    @State private var touchLabScreens = TouchLabScreenState()
     /// Bottom edge of the top bar, so TouchLab's controls stay clear of Back / pause.
     @State private var topBarHeight: CGFloat = 0
     /// The slider in this view's own edit-layout panel writes here directly, the same
