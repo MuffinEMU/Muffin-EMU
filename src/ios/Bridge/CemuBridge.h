@@ -26,9 +26,13 @@ typedef enum {
     // every key it has against the disc header, so this is never a "wrong key selected"
     // problem, only a "key not present" one.
     CEMU_BRIDGE_NO_DISC_KEY     = 3,
-    CEMU_BRIDGE_NO_TITLE_TIK    = 4,   // installed title with no usable title.tik
+    CEMU_BRIDGE_NO_TITLE_TIK    = 4,   // encrypted game folder with no title.tik (and no matching title key in keys.txt)
     CEMU_BRIDGE_UNSUPPORTED     = 5,   // not a title and not a loadable executable
     CEMU_BRIDGE_BASE_NOT_FOUND  = 6,   // an update/DLC was launched without its base game
+    CEMU_BRIDGE_BAD_TITLE_TMD   = 7,   // encrypted game folder whose title.tmd can't be read
+    CEMU_BRIDGE_BAD_TITLE_TIK   = 8,   // encrypted game folder whose title.tik can't be read
+    CEMU_BRIDGE_TITLE_KEY_INVALID = 9, // ticket read, but it (and keys.txt) don't decrypt the .app files
+    CEMU_BRIDGE_MISSING_CONTENT = 10,  // a .app file listed in title.tmd is not in the folder
     CEMU_BRIDGE_CORE_NOT_BUILT  = 100, // real engine not linked into this build yet (never returned by current builds)
     CEMU_BRIDGE_BAD_ARG         = 101, // null/empty path etc.
 } CemuBridgeStatus;
@@ -42,7 +46,7 @@ bool cemu_bridge_core_available(void);
 void cemu_bridge_initialize(const char* mlcPath);
 
 /// Boot whatever the user picked: an encrypted disc image (.wux/.wud/.iso), a Wii U
-/// archive (.wua), a dumped game folder, or a standalone homebrew .rpx. Returns
+/// archive (.wua), a dumped game folder, an encrypted game folder (title.tmd, title.tik and .app files), or a standalone homebrew .rpx. Returns
 /// CEMU_BRIDGE_OK when the title starts.
 ///
 /// Real games are decrypted with the user's OWN console keys, read from keys.txt in the
@@ -187,7 +191,7 @@ typedef struct {
 /// rather than placeholders. Safe to call from any thread, cheap enough to poll.
 void cemu_bridge_get_progress(CemuBridgeProgress* out);
 
-/// Decrypt-to-Files / Decrypt-to-WUA: takes a WUD/WUX (or a folder/NUS dump) the app
+/// Decrypt-to-Files / Decrypt-to-WUA: takes a WUD/WUX (or an encrypted game folder: title.tmd, title.tik and .app files) the app
 /// already has a working key for and writes a fully decrypted copy of it to destPath,
 /// in one of two shapes depending on `toWua`:
 ///   - false: destPath is a FOLDER, filled with the same code/, content/, meta/ layout
@@ -247,6 +251,12 @@ bool cemu_bridge_get_title_name(const char* romPath, char* outName, size_t outNa
 /// leaves outTitleId untouched if romPath isn't a valid, fully-parsed title.
 bool cemu_bridge_derive_title_id(const char* romPath, uint64_t* outTitleId);
 
+/// Reads the 64-bit title ID from a title.tmd file without decrypting anything, so an
+/// encrypted game folder can be told apart as base game (high word 00050000), update
+/// (0005000E) or DLC (0005000C) even before its ticket or keys are checked. Returns
+/// false if the file can't be read or isn't a valid title.tmd.
+bool cemu_bridge_read_tmd_title_id(const char* tmdPath, uint64_t* outTitleId);
+
 /// Reduces any title ID - base, update, or AOC/DLC - to its base title's ID, using the
 /// same bit-math CafeTitleList::FindBaseTitleId() already uses for the real boot path.
 /// Two different titles with the same base ID belong to the same game; this is how the
@@ -278,6 +288,10 @@ typedef enum {
     CemuTitleNoDiscKey = 3,
     CemuTitleNoTicket = 4,
     CemuTitleMissingXmlFiles = 5,
+    CemuTitleBadTitleTmd = 6,
+    CemuTitleBadTitleTik = 7,
+    CemuTitleKeyInvalid = 8,
+    CemuTitleMissingContentFile = 9,
 } CemuTitleInvalidReason;
 
 /// Inspects romPath as a candidate DLC/update import in one pass: on success (true),
