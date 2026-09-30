@@ -2,7 +2,9 @@
 //  LogCapture.swift
 //  Keeps the whole run's core log, each line stamped on the core's monotonic clock, and cuts it into
 //  per-test slices. The core's own live-log ring holds only the most recent 1024 lines, so this drains
-//  it often (the runner calls drain() every 20 ms) and counts any lines it lost.
+//  it often (the runner calls drain() every 20 ms) and counts any lines it lost. The ring itself is fed by
+//  the bridge's tail of log.txt (polled every 250 ms), so a line can reach this capture up to 250 ms late:
+//  its order is exact, its timestamp is not.
 //
 //  The test id goes into the log itself as well: the runner writes "AUDIT> BEGIN <id> ..." lines through
 //  cemu_bridge_log_line, so the core's own log.txt carries the same tags as the report's slices.
