@@ -1493,17 +1493,36 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
             return;
         }
 
-        const bool srcCube = mtlSrc->textureType() == MTL::TextureTypeCubeArray || mtlSrc->textureType() == MTL::TextureTypeCube;
-        const bool dstCube = mtlDst->textureType() == MTL::TextureTypeCubeArray || mtlDst->textureType() == MTL::TextureTypeCube;
-        if (!src->Is3DTexture() && !srcCube && (srcSlice < 0 || srcDepth_ < 1 || (NS::UInteger)(srcSlice + srcDepth_) > std::max<NS::UInteger>(1, mtlSrc->arrayLength())))
+        // Slices (2D array layers, cube faces) or depth (3D). A cube array has 6 faces per array element, and the
+        // slice numbers the blit takes count faces. A 3D texture has max(1, depth >> mip) slices at each level.
+        auto slicesFrom = [](MTL::Texture* texture, sint32 level, sint64 firstSlice) -> sint64 {
+            switch (texture->textureType())
+            {
+            case MTL::TextureType3D:
+                return std::max<sint64>(1, (sint64)texture->depth() >> std::min(std::max(level, 0), 63)) - firstSlice;
+            case MTL::TextureTypeCube:
+                return 6 - firstSlice;
+            case MTL::TextureTypeCubeArray:
+                return (sint64)std::max<NS::UInteger>(1, texture->arrayLength()) * 6 - firstSlice;
+            default:
+                return (sint64)std::max<NS::UInteger>(1, texture->arrayLength()) - firstSlice;
+            }
+        };
+        if (srcSlice < 0 || dstSlice < 0 || srcDepth_ < 1)
         {
-            MetalGuardNote(MetalGuard::CopyNoSlices, {keyFormats, keyMips, keyLevels, (uint64)(uint32)srcSlice, (uint64)(uint32)srcDepth_}, [&] { return describe("the source has fewer slices than the copy names"); });
+            MetalGuardNote(MetalGuard::CopyNoSlices, {keyFormats, keyMips, keyLevels, (uint64)(uint32)srcSlice, (uint64)(uint32)dstSlice, (uint64)(uint32)srcDepth_}, [&] { return describe("the copy names no valid slice"); });
             return;
         }
-        if (!dst->Is3DTexture() && !dstCube && (dstSlice < 0 || srcDepth_ < 1 || (NS::UInteger)(dstSlice + srcDepth_) > std::max<NS::UInteger>(1, mtlDst->arrayLength())))
+        const sint64 slicesAvailable = std::min(slicesFrom(mtlSrc, srcMip, srcSlice), slicesFrom(mtlDst, dstMip, dstSlice));
+        if (slicesAvailable < 1)
         {
-            MetalGuardNote(MetalGuard::CopyNoSlices, {keyFormats, keyMips, keyLevels, (uint64)(uint32)dstSlice, (uint64)(uint32)srcDepth_}, [&] { return describe("the destination has fewer slices than the copy names"); });
+            MetalGuardNote(MetalGuard::CopyNoSlices, {keyFormats, keyMips, keyLevels, (uint64)(uint32)srcSlice, (uint64)(uint32)dstSlice, (uint64)(uint32)srcDepth_}, [&] { return describe("a slice the copy starts at does not exist"); });
             return;
+        }
+        if (srcDepth_ > slicesAvailable)
+        {
+            MetalGuardNote(MetalGuard::CopyClampedSlices, {keyFormats, keyMips, keyLevels, (uint64)(uint32)srcSlice, (uint64)(uint32)dstSlice, (uint64)(uint32)srcDepth_}, [&] { return describe(fmt::format("more slices than both textures have, cut to {}", slicesAvailable).c_str()); });
+            srcDepth_ = (sint32)slicesAvailable;
         }
     }
 
