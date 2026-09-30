@@ -97,6 +97,15 @@ jobs:
           # all of them is idempotent and keeps one command working on either image.
           brew install xcodegen ninja
 
+      # The control styles under Settings > On-screen Controls > Control style are a vendored
+      # Swift package. Its behaviour and layout checks are plain Swift with no UIKit, so they run
+      # here in seconds and fail the build before the long part on any input or layout regression.
+      # The scratch path keeps the package directory free of build output for xcodegen.
+      - name: TouchLab behaviour and layout checks
+        run: |
+          swift run --package-path src/ios/Packages/MuffinTouchLab \
+            --scratch-path "$RUNNER_TEMP/touchlab-build" touchlab-check
+
       - name: Identify the pinned vcpkg
         id: vcpkg
         run: echo "rev=$(git -C dependencies/vcpkg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
