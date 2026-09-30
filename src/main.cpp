@@ -405,7 +405,7 @@ void CemuInitialize(const char* execPath, const char* user_data_path, const char
     ActiveSettings::Init();
     
     std::future<int> futureInitAudioAPI = std::async(std::launch::async, []{ IAudioAPI::InitializeStatic(); IAudioInputAPI::InitializeStatic(); return 0; });
-    std::future<int> futureInitGraphicPacks = std::async(std::launch::async, []{ GraphicPack2::LoadAll(); return 0; });
+    std::future<int> futureInitGraphicPacks = std::async(std::launch::async, []{ GraphicPack2::ClearGraphicPacks(); GraphicPack2::LoadAll(); return 0; });
     InputManager::instance().load();
     futureInitAudioAPI.wait();
     futureInitGraphicPacks.wait();
@@ -413,6 +413,13 @@ void CemuInitialize(const char* execPath, const char* user_data_path, const char
     CafeSaveList::Initialize();
     CafeSystem::Initialize();
     gInitialized = true;
+}
+
+// True once CemuInitialize() has finished. The iOS graphic pack screens use it to tell whether the
+// engine has already set up the user data path and config, or they need to do it themselves.
+bool CemuIsInitialized()
+{
+    return gInitialized;
 }
 
 
