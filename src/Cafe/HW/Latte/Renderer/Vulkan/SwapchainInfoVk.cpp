@@ -4,6 +4,7 @@
 #include "WindowSystem.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteTiming.h"
+#include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
 
@@ -45,7 +46,27 @@ void SwapchainInfoVk::Create()
 
 	VkResult result = vkCreateSwapchainKHR(m_logicalDevice, &create_info, nullptr, &m_swapchain);
 	if (result != VK_SUCCESS)
+	{
+		cemuLog_log(LogType::Force, "Vulkan: vkCreateSwapchainKHR failed with {} ({} swapchain): {}x{} (surface currentExtent {}x{}, min {}x{}, max {}x{}, desired {}x{}), {} images, format {}, present mode {}",
+			(sint32)result, mainWindow ? "TV" : "GamePad", m_actualExtent.width, m_actualExtent.height,
+			details.capabilities.currentExtent.width, details.capabilities.currentExtent.height,
+			details.capabilities.minImageExtent.width, details.capabilities.minImageExtent.height,
+			details.capabilities.maxImageExtent.width, details.capabilities.maxImageExtent.height,
+			m_desiredExtent.x, m_desiredExtent.y, image_count, (sint32)m_surfaceFormat.format, (sint32)create_info.presentMode);
 		UnrecoverableError("Error attempting to create a swapchain");
+	}
+	cemuLog_log(LogType::Force, "Vulkan: {} swapchain created: {}x{} (surface currentExtent {}x{}, desired {}x{}), {} images requested, format {}, present mode {}",
+		mainWindow ? "TV" : "GamePad", m_actualExtent.width, m_actualExtent.height,
+		details.capabilities.currentExtent.width, details.capabilities.currentExtent.height, m_desiredExtent.x, m_desiredExtent.y,
+		image_count, (sint32)m_surfaceFormat.format, (sint32)create_info.presentMode);
+	if (mainWindow)
+	{
+		auto& wait = LatteWait::Get();
+		wait.tvDrawableWidth.store(m_actualExtent.width, std::memory_order_relaxed);
+		wait.tvDrawableHeight.store(m_actualExtent.height, std::memory_order_relaxed);
+		wait.tvLayerAttached.store(true, std::memory_order_relaxed);
+		wait.tvLayerHasDevice.store(true, std::memory_order_relaxed); // MoltenVK assigns its device to the layer when it creates the swapchain
+	}
 
 	result = vkGetSwapchainImagesKHR(m_logicalDevice, m_swapchain, &image_count, nullptr);
 	if (result != VK_SUCCESS)
@@ -234,16 +255,35 @@ bool SwapchainInfoVk::AcquireImage()
 	if (result == VK_TIMEOUT)
 	{
 		swapchainImageIndex = -1;
+		if (mainWindow)
+		{
+			auto& wait = LatteWait::Get();
+			wait.drawableFailures.fetch_add(1, std::memory_order_relaxed);
+			wait.drawableFailuresInARow.fetch_add(1, std::memory_order_relaxed);
+		}
 		return false;
 	}
 
 	if (result < 0)
 	{
 		swapchainImageIndex = -1;
+		if (result == VK_ERROR_DEVICE_LOST)
+		{
+			VulkanRenderer::GetInstance()->HandleDeviceLost("vkAcquireNextImageKHR returned VK_ERROR_DEVICE_LOST");
+			return false;
+		}
+		if (result == VK_ERROR_SURFACE_LOST_KHR)
+		{
+			cemuLog_log(LogType::Force, "Vulkan: acquire reported the surface lost, the swapchain will be recreated");
+			m_shouldRecreate = true;
+			return false;
+		}
 		if (result != VK_ERROR_OUT_OF_DATE_KHR)
 			throw std::runtime_error(fmt::format("Failed to acquire next image: {}", result));
 		return false;
 	}
+	if (mainWindow)
+		LatteWait::Get().drawableFailuresInARow.store(0, std::memory_order_relaxed);
 	m_currentSemaphore = acquireSemaphore;
 	m_awaitableFence = m_imageAvailableFence;
 	m_acquireIndex = (m_acquireIndex + 1) % m_swapchainImages.size();
@@ -328,12 +368,17 @@ VkSurfaceFormatKHR SwapchainInfoVk::ChooseSurfaceFormat(const std::vector<VkSurf
 
 VkExtent2D SwapchainInfoVk::ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) const
 {
-	if (capabilities.currentExtent.width != std::numeric_limits<uint32>::max())
+	// A zero currentExtent (MoltenVK reads the CAMetalLayer, which reports 0x0 before the view has been laid out) can't
+	// be used to create a swapchain, so treat it like "surface doesn't decide" and use the window size.
+	if (capabilities.currentExtent.width != std::numeric_limits<uint32>::max() && capabilities.currentExtent.width > 0 && capabilities.currentExtent.height > 0)
 		return capabilities.currentExtent;
 
-	VkExtent2D actualExtent = { (uint32)m_desiredExtent.x, (uint32)m_desiredExtent.y };
-	actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
-	actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
+	VkExtent2D actualExtent = { (uint32)std::max(m_desiredExtent.x, 1), (uint32)std::max(m_desiredExtent.y, 1) };
+	if (capabilities.maxImageExtent.width > 0 && capabilities.maxImageExtent.height > 0)
+	{
+		actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));
+		actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
+	}
 	return actualExtent;
 }
 
