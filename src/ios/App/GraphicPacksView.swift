@@ -689,7 +689,7 @@ struct GraphicPackDetailView: View {
 
                 if let details {
                     ForEach(details.categories, id: \.self) { category in
-                        optionSection(pack: pack, details: details, category: category)
+                        optionSection(pack: pack, info: details, category: category)
                     }
                     if details.categories.contains(where: { details.isResolutionCategory($0) }) {
                         Section {
@@ -738,10 +738,10 @@ struct GraphicPackDetailView: View {
         }
     }
 
-    @ViewBuilder private func optionSection(pack: GraphicPack, details: GraphicPackDetails, category: String) -> some View {
-        let choices = details.visiblePresets(in: category)
+    @ViewBuilder private func optionSection(pack: GraphicPack, info: GraphicPackDetails, category: String) -> some View {
+        let choices = info.visiblePresets(in: category)
         if choices.count >= 1 {
-            let isResolution = details.isResolutionCategory(category)
+            let isResolution = info.isResolutionCategory(category)
             let suggestion = isResolution ? profile.suggestedPreset(in: choices) : nil
             let selected = choices.first(where: \.active)?.name ?? ""
             Section {
