@@ -1159,6 +1159,8 @@ namespace CafeSystem
 		}
 		// GPU
 		Latte_CollectLeftovers(dangerous);
+		if (size_t kept = memory_getKeptRangeCount(); kept != 0)
+			informational.emplace_back(fmt::format("{} guest memory range(s) kept their old pages because a GPU mapping was still alive", kept));
 		// graphic packs are re-evaluated for every title
 		if (!GraphicPack2::GetActiveGraphicPacks().empty() || GraphicPack2::CountActivated() != 0)
 			dangerous.emplace_back(fmt::format("{} graphic pack(s) still activated", std::max(GraphicPack2::GetActiveGraphicPacks().size(), GraphicPack2::CountActivated())));
