@@ -310,6 +310,16 @@ protected:
 
 static thread_local std::string s_lastMissingContentFile;
 
+// While a volume is being opened by trying several keys, most attempts are expected to fail, and each used to log
+// "FST has invalid header". The caller reports the outcome once, with the path (TitleInfo::Mount).
+static thread_local int s_quietHeaderErrors = 0;
+
+struct QuietHeaderErrors
+{
+	QuietHeaderErrors() { s_quietHeaderErrors++; }
+	~QuietHeaderErrors() { s_quietHeaderErrors--; }
+};
+
 std::string FSTVolume::GetLastMissingContentFile()
 {
 	return s_lastMissingContentFile;
@@ -394,7 +404,7 @@ public:
 		cemu_assert_debug(clusterIndex < m_clusterFile.size());
 		cemu_assert_debug(m_clusterFile[clusterIndex].get());
 		cemu_assert_debug(size <= 0xFFFFFFFF);
-		if (!m_clusterFile[clusterIndex].get())
+		if (clusterIndex >= m_clusterFile.size() || !m_clusterFile[clusterIndex].get())
 			return 0;
 		m_clusterFile[clusterIndex].get()->SetPosition(offset);
 		return m_clusterFile[clusterIndex].get()->readData(data, (uint32)size);
@@ -545,6 +555,7 @@ FSTVolume* FSTVolume::OpenFromDiscImage(const fs::path& path, NCrypto::AesKey& d
 	// 4) use SI information to get titleKey for GM partition
 	// 5) Load FST for GM
 	SET_FST_ERROR(UNKNOWN_ERROR);
+	QuietHeaderErrors quietHeaderErrors;
 	std::unique_ptr<FSTDataSourceWUD> dataSource(FSTDataSourceWUD::Open(path));
 	if (!dataSource)
 		return nullptr;
@@ -690,8 +701,9 @@ FSTVolume* FSTVolume::OpenFromDiscImage(const fs::path& path, NCrypto::AesKey& d
 	// load GM partition
 	dataSource->SetBaseOffset((uint64)partitionArray[gmPartitionIndex].partitionAddress * DISC_SECTOR_SIZE);
 	FSTVolume* r = OpenFST(std::move(dataSource), (uint64)partitionHeaderGM.fstSector * DISC_SECTOR_SIZE, partitionHeaderGM.fstSize, &gmTitleKey, static_cast<FSTVolume::ClusterHashMode>(partitionHeaderGM.fstHashType), nullptr);
-	if (r)
-		SET_FST_ERROR(OK);
+	if (!r)
+		return nullptr; // OpenFST() failed (wrong key for the GM partition, damaged FST)
+	SET_FST_ERROR(OK);
 	cemu_assert_debug(!(r->HashIsDisabled() && partitionHeaderGM.h3HashNum != 0)); // if hash is disabled, no H3 data may be present
 	return r;
 }
@@ -700,6 +712,7 @@ FSTVolume* FSTVolume::OpenFromContentFolder(fs::path folderPath, ErrorCode* erro
 {
 	SET_FST_ERROR(UNKNOWN_ERROR);
 	s_lastMissingContentFile.clear();
+	QuietHeaderErrors quietHeaderErrors;
 	FolderNameResolver resolver(folderPath);
 	// load TMD
 	FileStream* tmdFile = FileStream::openFile2(resolver.Resolve("title.tmd"));
@@ -776,11 +789,28 @@ FSTVolume* FSTVolume::OpenFromContentFolder(fs::path folderPath, ErrorCode* erro
 	FSTVolume* fstVolume = nullptr;
 	if (hasTicketKey)
 		fstVolume = FSTVolume::OpenFST(dataSource.get(), 0, fstSize, &titleKey, fstHashMode, &tmdParser);
+	// The first 16 bytes of the FST decrypt on their own (CBC, zero IV) and hold the magic and the cluster count, so
+	// a key that does not open this FST is rejected from one block instead of decrypting and parsing all of it.
+	// keys.txt can hold hundreds of keys and this used to run the whole FST open for each of them.
+	uint8 firstBlock[16]{};
+	bool haveFirstBlock = fstSize >= sizeof(FSTHeader) && dataSource->readData(0, 0, 0, firstBlock, sizeof(firstBlock)) == sizeof(firstBlock);
 	for (sint32 i = 0; i < 0x7FFFFFFF && !fstVolume; i++)
 	{
 		uint8* key128 = KeyCache_GetAES128(i);
 		if (!key128)
 			break;
+		if (haveFirstBlock)
+		{
+			uint8 header[16];
+			uint8 zeroIv[16]{};
+			uint8 cipher[16];
+			std::memcpy(cipher, firstBlock, sizeof(cipher));
+			AES128_CBC_decrypt(header, cipher, sizeof(header), key128, zeroIv);
+			const uint32 magic = ((uint32)header[0] << 24) | ((uint32)header[1] << 16) | ((uint32)header[2] << 8) | (uint32)header[3];
+			const uint32 numCluster = ((uint32)header[8] << 24) | ((uint32)header[9] << 16) | ((uint32)header[10] << 8) | (uint32)header[11];
+			if (magic != 0x46535400 || numCluster >= 0x1000)
+				continue;
+		}
 		NCrypto::AesKey candidate;
 		std::memcpy(candidate.b, key128, 16);
 		fstVolume = FSTVolume::OpenFST(dataSource.get(), 0, fstSize, &candidate, fstHashMode, &tmdParser);
@@ -802,6 +832,13 @@ FSTVolume* FSTVolume::OpenFST(FSTDataSource* dataSource, uint64 fstOffset, uint3
 	cemu_assert_debug(fstHashMode != ClusterHashMode::RAW || fstHashMode != ClusterHashMode::RAW_STREAM);
 	if (fstSize < sizeof(FSTHeader))
 		return nullptr;
+	// A real FST is a few MB at most. The size comes from a header that can be garbage (wrong key, damaged image),
+	// and allocating whatever it says can be gigabytes.
+	if (fstSize > 256u * 1024u * 1024u)
+	{
+		cemuLog_log(LogType::Force, "FST: size {} is not plausible", fstSize);
+		return nullptr;
+	}
 	constexpr uint64 FST_CLUSTER_OFFSET = 0;
 	uint32 fstSizePadded = (fstSize + 15) & ~15; // pad to AES block size
 	// read FST data and decrypt
@@ -815,7 +852,8 @@ FSTVolume* FSTVolume::OpenFST(FSTDataSource* dataSource, uint64 fstOffset, uint3
 	const void* fstEnd = fstData.data() + fstSize;
 	if (fstHeader->magic != 0x46535400 || fstHeader->numCluster >= 0x1000)
 	{
-		cemuLog_log(LogType::Force, "FST has invalid header");
+		if (!s_quietHeaderErrors)
+			cemuLog_log(LogType::Force, "FST has invalid header");
 		return nullptr;
 	}
 	// load cluster table
@@ -1082,25 +1120,28 @@ bool FSTVolume::OpenFile(std::string_view path, FSTFileHandle& fileHandleOut, bo
 
 bool FSTVolume::IsDirectory(const FSTFileHandle& fileHandle) const
 {
-	cemu_assert_debug(fileHandle.m_fstIndex < m_entries.size());
+	if (fileHandle.m_fstIndex >= m_entries.size())
+		return false;
 	return m_entries[fileHandle.m_fstIndex].GetType() == FSTEntry::TYPE::DIRECTORY;
 };
 
 bool FSTVolume::IsFile(const FSTFileHandle& fileHandle) const
 {
-	cemu_assert_debug(fileHandle.m_fstIndex < m_entries.size());
+	if (fileHandle.m_fstIndex >= m_entries.size())
+		return false;
 	return m_entries[fileHandle.m_fstIndex].GetType() == FSTEntry::TYPE::FILE;
 };
 
 bool FSTVolume::HasLinkFlag(const FSTFileHandle& fileHandle) const
 {
-	cemu_assert_debug(fileHandle.m_fstIndex < m_entries.size());
+	if (fileHandle.m_fstIndex >= m_entries.size())
+		return false;
 	return HAS_FLAG(m_entries[fileHandle.m_fstIndex].GetFlags(), FSTEntry::FLAGS::FLAG_LINK);
 };
 
 std::string_view FSTVolume::GetName(const FSTFileHandle& fileHandle) const
 {
-	if (fileHandle.m_fstIndex > m_entries.size())
+	if (fileHandle.m_fstIndex >= m_entries.size())
 		return "";
 	const char* entryName = m_nameStringTable.data() + m_entries[fileHandle.m_fstIndex].nameOffset;
 	return entryName;
@@ -1139,6 +1180,8 @@ std::string FSTVolume::GetPath(const FSTFileHandle& fileHandle) const
 
 uint32 FSTVolume::GetFileSize(const FSTFileHandle& fileHandle) const
 {
+	if (fileHandle.m_fstIndex >= m_entries.size())
+		return 0;
 	if (m_entries[fileHandle.m_fstIndex].GetType() != FSTEntry::TYPE::FILE)
 		return 0;
 	return m_entries[fileHandle.m_fstIndex].fileInfo.fileSize;
@@ -1146,6 +1189,8 @@ uint32 FSTVolume::GetFileSize(const FSTFileHandle& fileHandle) const
 
 uint32 FSTVolume::ReadFile(FSTFileHandle& fileHandle, uint32 offset, uint32 size, void* dataOut)
 {
+	if (fileHandle.m_fstIndex >= m_entries.size())
+		return 0;
 	FSTEntry& entry = m_entries[fileHandle.m_fstIndex];
 	if (entry.GetType() != FSTEntry::TYPE::FILE)
 		return 0;

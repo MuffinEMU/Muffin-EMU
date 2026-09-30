@@ -32,7 +32,7 @@ std::string ToUpper(std::string s)
 }
 } // namespace
 
-std::string IOSCoverArt_DeriveGameTdbId(const char* romPath)
+static std::string IOSCoverArt_DeriveGameTdbId_Impl(const char* romPath)
 {
 	if (!romPath || romPath[0] == '\0')
 		return {};
@@ -65,7 +65,7 @@ std::string IOSCoverArt_DeriveGameTdbId(const char* romPath)
 // The title's own long name from meta.xml, for the library card. Same parse as the GameTDB
 // id above, so a dump that can supply one can supply the other. Empty when there is no
 // usable meta.xml (homebrew, a bare RPX), and the card keeps its file name.
-std::string IOSCoverArt_GetTitleName(const char* romPath)
+static std::string IOSCoverArt_GetTitleName_Impl(const char* romPath)
 {
 	if (!romPath || romPath[0] == '\0')
 		return {};
@@ -73,4 +73,30 @@ std::string IOSCoverArt_GetTitleName(const char* romPath)
 	if (!titleInfo.IsValid() || !titleInfo.HasValidXmlInfo())
 		return {};
 	return titleInfo.GetMetaTitleName();
+}
+
+// The library screen calls these for every title, from Swift. An exception leaving them would unwind through
+// Swift frames and end the app, so a title that cannot be read just has no id and no name.
+std::string IOSCoverArt_DeriveGameTdbId(const char* romPath)
+{
+	try
+	{
+		return IOSCoverArt_DeriveGameTdbId_Impl(romPath);
+	}
+	catch (...)
+	{
+		return {};
+	}
+}
+
+std::string IOSCoverArt_GetTitleName(const char* romPath)
+{
+	try
+	{
+		return IOSCoverArt_GetTitleName_Impl(romPath);
+	}
+	catch (...)
+	{
+		return {};
+	}
 }
