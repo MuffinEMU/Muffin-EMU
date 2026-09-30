@@ -109,10 +109,19 @@ void RemoveQuiet(const sfs::path& p)
 
 struct MetalBinaryArchive::Impl
 {
-	// Archive state. archiveMutex guards add and serialize (and release).
+	// Two archives are opened from the same file, so nothing is ever read and written through
+	// the same object:
+	//  - read archive: attached to pipeline descriptors, never modified, never serialised.
+	//    readMutex only guards the pointer, so an in-flight pipeline creation can take its
+	//    own reference and is unaffected when Close() drops ours.
+	//  - write archive: only the worker thread adds to and serialises it. Descriptors never
+	//    reference it. archiveMutex guards it against Release().
+	// The next launch opens the saved file as its new read archive.
+	std::mutex readMutex;
+	MTL::BinaryArchive* readArchive = nullptr;
+	NS::Array* readArray = nullptr;
 	std::mutex archiveMutex;
-	MTL::BinaryArchive* archive = nullptr;
-	NS::Array* archiveArray = nullptr;
+	MTL::BinaryArchive* archive = nullptr; // the write archive
 	sfs::path path, tmpPath, countPath, markerPath;
 	uint64_t capBytes = 0;
 	std::atomic<uint64_t> fileBytes{0};
@@ -243,19 +252,26 @@ void MetalBinaryArchive::Open(MTL::Device* device, uint64_t titleId)
 		std::ofstream marker(d.markerPath);
 	}
 
-	// Load, or start fresh
+	// Load the read and write archives from the existing file, or start empty
 	d.entriesAtLoad = 0;
 	d.entriesKnown = true;
 	d.fileBytes = 0;
+	bool writeUnavailable = false;
+	auto openFromFile = [&](NS::Error** error) -> MTL::BinaryArchive* {
+		NS_STACK_SCOPED MTL::BinaryArchiveDescriptor* desc = MTL::BinaryArchiveDescriptor::alloc()->init();
+		desc->setUrl(ToNSURL(d.path.string()));
+		return device->newBinaryArchive(desc, error);
+	};
 	if (sfs::exists(d.path, ec))
 	{
 		const uint64_t size = FileSizeOrZero(d.path);
-		NS_STACK_SCOPED MTL::BinaryArchiveDescriptor* desc = MTL::BinaryArchiveDescriptor::alloc()->init();
-		desc->setUrl(ToNSURL(d.path.string()));
 		NS::Error* error = nullptr;
-		d.archive = device->newBinaryArchive(desc, &error);
-		if (d.archive)
+		MTL::BinaryArchive* readArchive = openFromFile(&error);
+		if (readArchive)
 		{
+			d.readArchive = readArchive;
+			d.archive = openFromFile(&error);
+			writeUnavailable = (d.archive == nullptr); // never write through the read archive
 			d.fileBytes = size;
 			std::ifstream in(d.countPath);
 			int64_t count = -1;
@@ -271,7 +287,7 @@ void MetalBinaryArchive::Open(MTL::Device* device, uint64_t titleId)
 			RemoveQuiet(d.countPath);
 		}
 	}
-	if (!d.archive)
+	if (!d.readArchive)
 	{
 		NS_STACK_SCOPED MTL::BinaryArchiveDescriptor* desc = MTL::BinaryArchiveDescriptor::alloc()->init();
 		NS::Error* error = nullptr;
@@ -285,10 +301,11 @@ void MetalBinaryArchive::Open(MTL::Device* device, uint64_t titleId)
 			return;
 		}
 	}
-	d.archiveArray = NS::Array::array(d.archive)->retain();
+	if (d.readArchive)
+		d.readArray = NS::Array::array(d.readArchive)->retain();
 
 	d.hits = d.misses = d.added = d.dropped = d.saves = 0;
-	d.full = d.fileBytes.load() >= d.capBytes;
+	d.full = writeUnavailable || d.fileBytes.load() >= d.capBytes;
 	d.addsDisabled = false;
 	d.addsSinceSave = 0;
 	d.lastSave = Clock::now();
@@ -298,8 +315,8 @@ void MetalBinaryArchive::Open(MTL::Device* device, uint64_t titleId)
 	d.worker = std::thread(&Impl::WorkerMain, &d);
 
 	m_active.store(true, std::memory_order_release);
-	cemuLog_log(LogType::Force, "Metal archive: loaded {} ({:.1f} MB, {} entries, cap {} MB, GPU family Apple{})", stem, d.fileBytes.load() / 1048576.0,
-				d.entriesKnown ? std::to_string(d.entriesAtLoad) : std::string("unknown"), d.capBytes >> 20, family);
+	cemuLog_log(LogType::Force, "Metal archive: {} read archive {} ({:.1f} MB, {} entries), separate write archive {}, cap {} MB, GPU family Apple{}", d.readArchive ? "opened" : "no existing file, no", stem, d.fileBytes.load() / 1048576.0,
+				d.entriesKnown ? std::to_string(d.entriesAtLoad) : std::string("unknown"), writeUnavailable ? "unavailable (read only)" : "ready", d.capBytes >> 20, family);
 }
 
 void MetalBinaryArchive::OnLoadingFinished()
@@ -356,12 +373,20 @@ void MetalBinaryArchive::Impl::Release()
 			desc->release();
 		queue.clear();
 	}
-	std::lock_guard lock(archiveMutex);
-	if (archiveArray)
 	{
-		archiveArray->release();
-		archiveArray = nullptr;
+		std::lock_guard readLock(readMutex);
+		if (readArray)
+		{
+			readArray->release();
+			readArray = nullptr;
+		}
+		if (readArchive)
+		{
+			readArchive->release();
+			readArchive = nullptr;
+		}
 	}
+	std::lock_guard lock(archiveMutex);
 	if (archive)
 	{
 		archive->release();
@@ -375,20 +400,41 @@ MTL::RenderPipelineState* MetalBinaryArchive::CreateRenderPipeline(MTL::Device* 
 		return device->newRenderPipelineState(desc, error);
 
 	Impl& d = *m_impl;
-	desc->setBinaryArchives(d.archiveArray);
 
-	// Probe: is it already in the archive? This only detects hits, a miss falls through to a
-	// normal compile below and never fails the pipeline.
-	NS::Error* probeError = nullptr;
-	MTL::RenderPipelineState* pipeline = device->newRenderPipelineState(desc, MTL::PipelineOptionFailOnBinaryArchiveMiss, nullptr, &probeError);
+	// Take our own reference to the read archive for the duration of this call, so Close()
+	// releasing the shared one cannot pull it out from under a creation in progress.
+	NS::Array* readArray = nullptr;
+	{
+		std::lock_guard lock(d.readMutex);
+		if (d.readArray)
+			readArray = d.readArray->retain();
+	}
+
+	MTL::RenderPipelineState* pipeline = nullptr;
+	uint32_t missCount = 0;
+	if (readArray)
+	{
+		desc->setBinaryArchives(readArray);
+		// Probe: is it already in the read archive? This only detects hits, a miss falls
+		// through to a normal compile below and never fails the pipeline.
+		NS::Error* probeError = nullptr;
+		pipeline = device->newRenderPipelineState(desc, MTL::PipelineOptionFailOnBinaryArchiveMiss, nullptr, &probeError);
+		if (pipeline)
+			++d.hits;
+		else
+			missCount = ++d.misses;
+	}
+	else
+		missCount = ++d.misses; // nothing to read from yet (first play of this title)
 	if (pipeline)
 	{
-		++d.hits;
+		readArray->release();
 		return pipeline;
 	}
-	const uint32_t missCount = ++d.misses;
 
 	pipeline = device->newRenderPipelineState(desc, MTL::PipelineOptionNone, nullptr, error);
+	if (readArray)
+		readArray->release();
 	if (!pipeline)
 		return nullptr;
 
@@ -409,6 +455,7 @@ void MetalBinaryArchive::Impl::QueueAdd(MTL::RenderPipelineDescriptor* desc)
 		return;
 	}
 	MTL::RenderPipelineDescriptor* copy = desc->copy();
+	copy->setBinaryArchives(nullptr); // queued copies hold no archive at all
 	{
 		std::lock_guard lock(queueMutex);
 		if (stop || queue.size() >= kMaxQueuedAdds)
@@ -566,5 +613,5 @@ std::string MetalBinaryArchive::FormatStatsLine() const
 	const Stats s = GetStats();
 	if (!s.active)
 		return "archive off";
-	return fmt::format("archive hit {} miss {} add {} dropped {} saves {} ({:.1f} MB)", s.hits, s.misses, s.added, s.dropped, s.saves, s.fileBytes / 1048576.0);
+	return fmt::format("archive read hit {} miss {} | write add {} dropped {} saves {} | file {:.1f} MB", s.hits, s.misses, s.added, s.dropped, s.saves, s.fileBytes / 1048576.0);
 }
