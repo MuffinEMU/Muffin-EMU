@@ -1280,6 +1280,14 @@ struct EmulatorViewOptimized: View {
     /// ever surfaced - without it, a refusal and a tap that did nothing look identical.
     @State private var saveStateStatus: SaveStateStatus?
 
+    // MARK: Microphone
+    //
+    // With "Use <device> Microphone" on (Settings > Audio) the game hears the real mic, and the
+    // Blow button - which fakes a puff into it - has nothing to do, so it is hidden. A denied
+    // permission means the real mic can't work, so the button stays.
+    @AppStorage(AudioSettings.microphoneEnabledKey) private var realMicEnabled = AudioSettings.defaultMicrophoneEnabled
+    private var realMicInUse: Bool { realMicEnabled && MicrophoneAccess.status != .denied }
+
     // MARK: Emulated devices
     //
     // Skylanders Portal / Disney Infinity Base / LEGO Dimensions Toypad. Read-only here -
@@ -1476,6 +1484,7 @@ struct EmulatorViewOptimized: View {
                     }
                     .frame(maxWidth: .infinity)
 
+                    TopBarOverflowScroll {
                     HStack(spacing: 8) {
                         Button(action: { showSkinSelector.toggle() }) {
                             Image(systemName: "gamecontroller.fill")
@@ -1519,6 +1528,15 @@ struct EmulatorViewOptimized: View {
                             }
                             .buttonStyle(MuffinSecondaryButtonStyle())
                             .accessibilityLabel("Save States")
+                        }
+
+                        // Simulated blow into the GamePad mic, for the games that ask for
+                        // one (Captain Toad, 3D World, NSMBU, Zelda). Only while a title is
+                        // running - the mic can't be open before that - and not at all when
+                        // the real microphone is in use instead. Turns itself off when the
+                        // title stops or changes (see BlowButton).
+                        if gameManager.emulationState == .running && !realMicInUse {
+                            BlowButton(titleID: "\(game.id)")
                         }
 
                         // Same "reachable without leaving the game" reasoning as Save
@@ -1648,6 +1666,7 @@ struct EmulatorViewOptimized: View {
                         .padding(.horizontal, 12)
                         .background(Color.white.opacity(0.08))
                         .cornerRadius(10)
+                    }
                     }
                 }
                 .padding(12)

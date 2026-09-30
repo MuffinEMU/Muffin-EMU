@@ -27,8 +27,13 @@ IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
     AVAudioSession* session = [AVAudioSession sharedInstance];
     
     if (GetConfig().microphone_enabled) {
+        // Keep in step with IOSAudioInputAPI::ConfigureSession (default mode: no earpiece
+        // routing, no ducking; A2DP so Bluetooth headphones stay high quality).
         [session setCategory:AVAudioSessionCategoryPlayAndRecord
-                 withOptions:AVAudioSessionCategoryOptionMixWithOthers | AVAudioSessionCategoryOptionDefaultToSpeaker
+                        mode:AVAudioSessionModeDefault
+                     options:AVAudioSessionCategoryOptionMixWithOthers |
+                             AVAudioSessionCategoryOptionDefaultToSpeaker |
+                             AVAudioSessionCategoryOptionAllowBluetoothA2DP
                        error:&error];
     }
     else {
