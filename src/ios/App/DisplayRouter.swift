@@ -678,6 +678,16 @@ final class DisplayRouter: ObservableObject {
             padRenderView?.frame = host.bounds
         }
         let geometry = padGeometry()
+        // The bridge's pad resize ignores the scale it is given and sizes the drawable from the
+        // layer's own contentsScale, which was fixed when the surface was registered. padGeometry()
+        // can now return a different scale for a different size (PadSurfaceScale), and
+        // ContentView.sendPadTouch multiplies touches by that scale, so bring the layer in step
+        // first or the GamePad touchscreen lands off by the ratio of the two.
+        if geometry.scale.isFinite, geometry.scale > 0,
+           let layer = padRenderView?.layer as? CAMetalLayer,
+           abs(Double(layer.contentsScale) - geometry.scale) > 0.001 {
+            layer.contentsScale = CGFloat(geometry.scale)
+        }
         cemu_bridge_resize_render_surface(
             cInt(geometry.size.width),
             cInt(geometry.size.height),
