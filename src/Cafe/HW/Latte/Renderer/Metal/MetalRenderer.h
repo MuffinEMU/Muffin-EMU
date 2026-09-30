@@ -339,6 +339,7 @@ public:
 
 	// buffer cache
 	void bufferCache_init(const sint32 bufferSize) override;
+	sint32 bufferCache_getGrantedSize(sint32 requestedSize) override;
 	void bufferCache_upload(uint8* buffer, sint32 size, uint32 bufferOffset) override;
 	void bufferCache_copy(uint32 srcOffset, uint32 dstOffset, uint32 size) override;
 	void bufferCache_copyStreamoutToMainBuffer(uint32 srcOffset, uint32 dstOffset, uint32 size) override;
