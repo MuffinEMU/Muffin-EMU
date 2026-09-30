@@ -209,12 +209,15 @@ class GameManager: ObservableObject {
                     gameID = item.lastPathComponent
                     bootPath = rpx.path
                     dumpDirectory = item
-                } else if let tmd = Self.titleTmdInDump(item) {
-                    // NUS dump: boot path points straight at title.tmd, matching
-                    // TitleInfo::DetectFormat's own NUS-format detection.
+                } else if let tmd = Self.nusBaseTitleTmd(in: item) {
+                    // Encrypted game folder: boot path points straight at title.tmd,
+                    // matching TitleInfo::DetectFormat's own NUS-format detection. The
+                    // base game may be the folder itself or a subfolder of it (e.g.
+                    // "Game (USA)/Game"); its update and DLC subfolders are found by the
+                    // engine at launch (IOSTitleLaunch_FindCompanionTitles).
                     gameID = item.lastPathComponent
                     bootPath = tmd.path
-                    dumpDirectory = item
+                    dumpDirectory = tmd.deletingLastPathComponent()
                 } else {
                     continue
                 }
@@ -297,10 +300,10 @@ class GameManager: ObservableObject {
             .first
     }
 
-    /// A decrypted NUS dump - the flat "title.tmd plus a pile of .app files" layout
-    /// produced by NUS downloaders/decryptors, as opposed to the code/content/meta
-    /// layout above. TitleInfo::DetectFormat (TitleInfo.cpp) already recognizes this
-    /// shape whenever it is pointed straight at title.tmd - boost::iequals, so the
+    /// An encrypted game folder - the flat "title.tmd, title.tik and a pile of encrypted
+    /// .app files" layout produced by NUS downloaders - as opposed to the
+    /// code/content/meta layout above. TitleInfo::DetectFormat (TitleInfo.cpp) recognizes
+    /// this shape whenever it is pointed straight at title.tmd - boost::iequals, so the
     /// match here is case-insensitive too, matching the engine rather than guessing.
     nonisolated static func titleTmdInDump(_ directory: URL) -> URL? {
         let entries = (try? FileManager.default.contentsOfDirectory(
@@ -310,8 +313,76 @@ class GameManager: ObservableObject {
         return entries.first { $0.lastPathComponent.caseInsensitiveCompare("title.tmd") == .orderedSame }
     }
 
+    /// What a title.tmd's title ID says the folder holds. The high word is the title type:
+    /// 00050000 base game, 0005000E update, 0005000C DLC.
+    enum NUSFolderKind {
+        case base
+        case update
+        case dlc
+
+        var titleIdHighWord: UInt32 {
+            switch self {
+            case .base: return 0x00050000
+            case .update: return 0x0005000E
+            case .dlc: return 0x0005000C
+            }
+        }
+    }
+
+    /// Classifies a title.tmd by its title ID (read straight from the file, no keys
+    /// needed). A tmd that can't be read counts as a base game, so a damaged folder still
+    /// shows up in the library and fails with a specific message at launch instead of
+    /// silently vanishing.
+    nonisolated static func nusKind(ofTmd tmd: URL) -> NUSFolderKind {
+        var titleId: UInt64 = 0
+        let ok = tmd.path.withCString { cemu_bridge_read_tmd_title_id($0, &titleId) }
+        guard ok else { return .base }
+        switch UInt32(truncatingIfNeeded: titleId >> 32) {
+        case NUSFolderKind.update.titleIdHighWord: return .update
+        case NUSFolderKind.dlc.titleIdHighWord: return .dlc
+        default: return .base
+        }
+    }
+
+    /// Every folder at or below `directory` (down to two levels) that has its own
+    /// title.tmd, in name order, with what each one is. `directory` itself comes first
+    /// when it has one.
+    nonisolated static func nusTitleFolders(in directory: URL, maxDepth: Int = 2) -> [(tmd: URL, kind: NUSFolderKind)] {
+        var found: [(tmd: URL, kind: NUSFolderKind)] = []
+        if let tmd = titleTmdInDump(directory) {
+            found.append((tmd, nusKind(ofTmd: tmd)))
+            return found
+        }
+        guard maxDepth > 0 else { return found }
+        let subfolders = ((try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )) ?? [])
+            .filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for subfolder in subfolders {
+            found.append(contentsOf: nusTitleFolders(in: subfolder, maxDepth: maxDepth - 1))
+        }
+        return found
+    }
+
+    /// The title.tmd of the base game in `directory`: the folder's own when it is a base
+    /// game, otherwise the first base game among its subfolders (a "Game (USA)" folder with
+    /// Game, Update and DLC inside). nil when there is no base game, e.g. an update or DLC
+    /// folder on its own.
+    nonisolated static func nusBaseTitleTmd(in directory: URL) -> URL? {
+        nusTitleFolders(in: directory).first { $0.kind == .base }?.tmd
+    }
+
+    /// The folder for `kind` (update or DLC) inside a parent folder that holds several
+    /// encrypted game folders, or nil when `directory` is itself a single title folder.
+    nonisolated static func nusSubfolder(in directory: URL, kind: NUSFolderKind) -> URL? {
+        guard titleTmdInDump(directory) == nil else { return nil }
+        return nusTitleFolders(in: directory).first { $0.kind == kind }?.tmd.deletingLastPathComponent()
+    }
+
     nonisolated static func looksLikeNUSDump(_ directory: URL) -> Bool {
-        titleTmdInDump(directory) != nil
+        nusBaseTitleTmd(in: directory) != nil
     }
 
     /// Wraps cemu_bridge_derive_title_id + cemu_bridge_derive_base_title_id (see

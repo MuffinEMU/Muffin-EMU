@@ -239,6 +239,12 @@ bool cemu_bridge_get_title_name(const char* romPath, char* outName, size_t outNa
 /// leaves outTitleId untouched if romPath isn't a valid, fully-parsed title.
 bool cemu_bridge_derive_title_id(const char* romPath, uint64_t* outTitleId);
 
+/// Reads the 64-bit title ID from a title.tmd file without decrypting anything, so an
+/// encrypted game folder can be told apart as base game (high word 00050000), update
+/// (0005000E) or DLC (0005000C) even before its ticket or keys are checked. Returns
+/// false if the file can't be read or isn't a valid title.tmd.
+bool cemu_bridge_read_tmd_title_id(const char* tmdPath, uint64_t* outTitleId);
+
 /// Reduces any title ID - base, update, or AOC/DLC - to its base title's ID, using the
 /// same bit-math CafeTitleList::FindBaseTitleId() already uses for the real boot path.
 /// Two different titles with the same base ID belong to the same game; this is how the

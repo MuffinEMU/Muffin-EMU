@@ -112,6 +112,7 @@ int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destPath,
 std::string IOSCoverArt_DeriveGameTdbId(const char* romPath);
 std::string IOSCoverArt_GetTitleName(const char* romPath);
 bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64_t* titleIdOut);
+bool IOSDlcUpdateImport_ReadTmdTitleId(const char* tmdPath, uint64_t* titleIdOut);
 uint64_t IOSDlcUpdateImport_DeriveBaseTitleId(uint64_t titleId);
 int IOSDlcUpdateImport_GetTitleType(uint64_t titleId);
 void IOSDlcUpdateImport_GetMlcTitlePathComponents(uint64_t titleId, char* outUpperHex, char* outLowerHex);
@@ -1962,6 +1963,10 @@ bool cemu_bridge_derive_title_id(const char* romPath, uint64_t* outTitleId) {
     if (!romPath || !outTitleId)
         return false;
     return IOSDlcUpdateImport_DeriveTitleId(romPath, outTitleId);
+}
+
+bool cemu_bridge_read_tmd_title_id(const char* tmdPath, uint64_t* outTitleId) {
+    return IOSDlcUpdateImport_ReadTmdTitleId(tmdPath, outTitleId);
 }
 
 uint64_t cemu_bridge_derive_base_title_id(uint64_t titleId) {
