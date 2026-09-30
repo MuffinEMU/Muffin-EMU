@@ -121,13 +121,23 @@ void FreeMemory(void* baseAddr, size_t size, bool fromReservation)
 {
     if (fromReservation)
     {
-        vm_protect(
-            mach_task_self(),
-            (vm_address_t)baseAddr,
-            size,
-            FALSE,
-            VM_PROT_NONE
-        );
+        // Returning a range to the reservation has to give back its pages, not just its access. Protecting it
+        // with VM_PROT_NONE alone leaves the old contents in place and resident: the next title that maps the
+        // range sees the previous title's memory instead of zeroes, and on a small device the dirty pages of a
+        // stopped game count against the app until they are overwritten. Mapping fresh anonymous pages over the
+        // range replaces it in one step (no window in which another allocation could take the address), and
+        // costs the kernel only the pages that were actually touched.
+        void* remapped = mmap(baseAddr, size, PROT_NONE, MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (remapped != baseAddr)
+        {
+            vm_protect(
+                mach_task_self(),
+                (vm_address_t)baseAddr,
+                size,
+                FALSE,
+                VM_PROT_NONE
+            );
+        }
     }
     else
     {

@@ -13,6 +13,16 @@ struct CoreinitAsyncCallback
 		s_asyncCallbackSpinlock.unlock();
 	}
 
+	// drops callbacks that were queued but never run. They hold function pointers into the title that queued them
+	static void discardQueued()
+	{
+		s_asyncCallbackSpinlock.lock();
+		for (CoreinitAsyncCallback* cb : s_asyncCallbackQueue)
+			releaseToPool(cb);
+		s_asyncCallbackQueue.clear();
+		s_asyncCallbackSpinlock.unlock();
+	}
+
 	static void callNextFromQueue()
 	{
 		s_asyncCallbackSpinlock.lock();
@@ -106,6 +116,7 @@ void coreinitAsyncCallback_add(MPTR functionMPTR, uint32 numParameters, uint32 r
 
 void InitializeAsyncCallback()
 {
+	CoreinitAsyncCallback::discardQueued();
 	coreinit::OSInitSemaphore(g_asyncCallbackAsync.GetPtr(), 0);
 
 	coreinit::OSCreateThreadType(g_coreinitCallbackThread.GetPtr(), PPCInterpreter_makeCallableExportDepr(_coreinitCallbackThread), 0, nullptr, _g_coreinitCallbackThreadStack.GetPtr() + _g_coreinitCallbackThreadStack.GetByteSize(), (sint32)_g_coreinitCallbackThreadStack.GetByteSize(), 0, 7, OSThread_t::THREAD_TYPE::TYPE_IO);
