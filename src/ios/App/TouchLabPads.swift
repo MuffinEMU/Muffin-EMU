@@ -196,7 +196,7 @@ struct TouchLabPadOverlay: View {
     let schemeID: String
     let gameID: String?
     /// Window-coordinate frames of the TV / GamePad views (from TouchLabScreenFramesKey).
-    let screens: TouchLabScreens
+    let screens: TouchLabScreenState
     /// False while paused or while the layout editor is open: drawn, but inert.
     let enabled: Bool
     /// Height reserved for the top bar, so no control lands under Back / pause.
@@ -214,8 +214,8 @@ struct TouchLabPadOverlay: View {
     var body: some View {
         TouchPad(schemeID: schemeID,
                  output: CemuBridgePadOutput.shared,
-                 touchscreenRect: screens.touchscreenRect,
-                 videoRects: screens.videoRects,
+                 touchscreenRect: screens.screens.touchscreenRect,
+                 videoRects: screens.screens.videoRects,
                  scale: scale,
                  opacity: opacity,
                  haptics: haptics,
@@ -242,7 +242,7 @@ struct TouchLabPadOverlay: View {
     }
 
     private func syncGamepadSize() {
-        CemuBridgePadOutput.shared.gamepadViewSize = screens.touchscreenRect?.size ?? .zero
+        CemuBridgePadOutput.shared.gamepadViewSize = screens.screens.touchscreenRect?.size ?? .zero
         CemuBridgePadOutput.shared.renderScale = UIScreen.main.effectiveRenderScale
     }
 
@@ -266,8 +266,13 @@ struct TouchLabPadOverlay: View {
 // ContentView doesn't import the package. It uses the names below instead, so
 // `import TouchLabUI` stays in this one file.
 
-/// Where the TV and GamePad views are on screen (see `TouchLabPadOverlay.screens`).
-typealias TouchLabScreenState = TouchLabScreens
+/// Where the TV and GamePad views are on screen, as ContentView holds it. A wrapper
+/// rather than a typealias: a property of a type that lives in TouchLabUI makes the
+/// compiler warn in any file that doesn't import that module.
+struct TouchLabScreenState: Equatable {
+    fileprivate var screens = TouchLabScreens(frames: [:])
+    init() {}
+}
 
 extension View {
     /// Marks this view as the one showing the TV picture.
@@ -282,7 +287,8 @@ extension View {
     func trackTouchLabScreens(_ screens: Binding<TouchLabScreenState>,
                               imageIsAspectFit: @escaping () -> Bool) -> some View {
         onPreferenceChange(TouchLabScreenFramesKey.self) { frames in
-            let next = TouchLabScreens(frames: frames, imageIsAspectFit: imageIsAspectFit())
+            var next = TouchLabScreenState()
+            next.screens = TouchLabScreens(frames: frames, imageIsAspectFit: imageIsAspectFit())
             if next != screens.wrappedValue { screens.wrappedValue = next }
         }
     }
