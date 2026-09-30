@@ -129,6 +129,9 @@ public:
 
 	// buffer cache
 	virtual void bufferCache_init(const sint32 bufferSize) = 0;
+	// The size the backend really allocated for the buffer cache, which may be less than it was asked for on a device
+	// with less memory. The cache's own heap is sized to this. Backends that always get what they ask for keep the default.
+	virtual sint32 bufferCache_getGrantedSize(sint32 requestedSize) { return requestedSize; }
 	virtual void bufferCache_upload(uint8* buffer, sint32 size, uint32 bufferOffset) = 0;
 	virtual void bufferCache_copy(uint32 srcOffset, uint32 dstOffset, uint32 size) = 0;
 	virtual void bufferCache_copyStreamoutToMainBuffer(uint32 srcOffset, uint32 dstOffset, uint32 size) = 0;
