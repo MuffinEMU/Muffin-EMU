@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalVoidVertexPipeline.h"
+#include "Cafe/HW/Latte/Renderer/Metal/MetalBinaryArchive.h"
 
 MetalVoidVertexPipeline::MetalVoidVertexPipeline(class MetalRenderer* mtlRenderer, MTL::Library* library, const std::string& vertexFunctionName)
 {
@@ -10,7 +11,7 @@ MetalVoidVertexPipeline::MetalVoidVertexPipeline(class MetalRenderer* mtlRendere
     renderPipelineDescriptor->setRasterizationEnabled(false);
 
     NS::Error* error = nullptr;
-    m_renderPipelineState = mtlRenderer->GetDevice()->newRenderPipelineState(renderPipelineDescriptor, &error);
+    m_renderPipelineState = MetalBinaryArchive::GetInstance().CreateRenderPipeline(mtlRenderer->GetDevice(), renderPipelineDescriptor, &error);
     if (error)
     {
         cemuLog_log(LogType::Force, "error creating hybrid render pipeline state: {}", error->localizedDescription()->utf8String());

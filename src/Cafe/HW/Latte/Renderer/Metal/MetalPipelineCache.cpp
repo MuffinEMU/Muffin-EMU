@@ -2,6 +2,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #include "Cafe/HW/Latte/Renderer/Metal/LatteToMtl.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalPipelineCompiler.h"
+#include "Cafe/HW/Latte/Renderer/Metal/MetalBinaryArchive.h"
 
 #include "Cafe/HW/Latte/Core/FetchShader.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
@@ -355,6 +356,9 @@ void MetalPipelineCache::EndLoading()
 		m_compilationQueue.push({}); // push empty workload for every thread. Threads then will shutdown after checking for m_numCompilationThreads == 0
 	}
 	// keep cache file open for writing of new pipelines
+
+	// every pipeline of the "loading shaders" phase is created now; let the archive save them
+	MetalBinaryArchive::GetInstance().OnLoadingFinished();
 }
 
 void MetalPipelineCache::Close()

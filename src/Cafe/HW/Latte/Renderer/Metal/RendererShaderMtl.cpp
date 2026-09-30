@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/RendererShaderMtl.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalCommon.h"
+#include "Cafe/HW/Latte/Renderer/Metal/MetalBinaryArchive.h"
 
 //#include "Cemu/FileCache/FileCache.h"
 //#include "config/ActiveSettings.h"
@@ -164,6 +165,9 @@ void RendererShaderMtl::ShaderCacheLoading_begin(uint64 cacheTitleId)
 {
     s_isLoadingShadersMtl = true;
 
+    // Open the compiled-pipeline archive for this title (no-op when off or unsupported)
+    MetalBinaryArchive::GetInstance().Open(static_cast<MetalRenderer*>(g_renderer.get())->GetDevice(), cacheTitleId);
+
     // Open AIR cache
     /*
     if (s_airCache)
@@ -193,6 +197,9 @@ void RendererShaderMtl::ShaderCacheLoading_end()
 
 void RendererShaderMtl::ShaderCacheLoading_Close()
 {
+    // Save and close the compiled-pipeline archive
+    MetalBinaryArchive::GetInstance().Close();
+
     // Close the AIR cache
     /*
     if (s_airCache)

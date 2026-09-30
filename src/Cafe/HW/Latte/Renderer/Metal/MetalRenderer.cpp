@@ -3,6 +3,7 @@
 #include <os/proc.h>
 #include <sys/sysctl.h>
 #endif
+#include "Cafe/HW/Latte/Renderer/Metal/MetalBinaryArchive.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalVoidVertexPipeline.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalMemoryManager.h"
 #include "Cafe/HW/Latte/Renderer/Metal/LatteTextureMtl.h"
@@ -1358,7 +1359,7 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
             m_copyColorToDepthDesc->setDepthAttachmentPixelFormat(formatInfo.pixelFormat);
             m_copyColorToDepthDesc->setStencilAttachmentPixelFormat(formatInfo.hasStencil ? formatInfo.pixelFormat : MTL::PixelFormatInvalid);
             NS::Error* error = nullptr;
-            cachedPipeline = m_device->newRenderPipelineState(m_copyColorToDepthDesc, &error);
+            cachedPipeline = MetalBinaryArchive::GetInstance().CreateRenderPipeline(m_device, m_copyColorToDepthDesc, &error);
             if (error)
                 cemuLog_log(LogType::Force, "Failed to create Metal color-to-depth copy pipeline: {}", error->localizedDescription()->utf8String());
         }
@@ -1379,7 +1380,7 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         {
             m_copyDepthToColorDesc->colorAttachments()->object(0)->setPixelFormat(pixelFormat);
             NS::Error* error = nullptr;
-            cachedPipeline = m_device->newRenderPipelineState(m_copyDepthToColorDesc, &error);
+            cachedPipeline = MetalBinaryArchive::GetInstance().CreateRenderPipeline(m_device, m_copyDepthToColorDesc, &error);
             if (error)
                 cemuLog_log(LogType::Force, "Failed to create Metal depth-to-color copy pipeline: {}", error->localizedDescription()->utf8String());
         }

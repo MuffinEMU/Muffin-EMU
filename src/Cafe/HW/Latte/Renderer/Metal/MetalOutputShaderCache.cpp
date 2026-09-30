@@ -1,5 +1,6 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalOutputShaderCache.h"
 #include "Cafe/HW/Latte/Renderer/Metal/RendererShaderMtl.h"
+#include "Cafe/HW/Latte/Renderer/Metal/MetalBinaryArchive.h"
 
 MetalOutputShaderCache::~MetalOutputShaderCache()
 {
@@ -27,7 +28,7 @@ MTL::RenderPipelineState* MetalOutputShaderCache::GetPipeline(RendererOutputShad
     renderPipelineDescriptor->colorAttachments()->object(0)->setPixelFormat(usesSRGB ? MTL::PixelFormatBGRA8Unorm_sRGB : MTL::PixelFormatBGRA8Unorm);
 
     NS::Error* error = nullptr;
-    renderPipelineState = m_mtlr->GetDevice()->newRenderPipelineState(renderPipelineDescriptor, &error);
+    renderPipelineState = MetalBinaryArchive::GetInstance().CreateRenderPipeline(m_mtlr->GetDevice(), renderPipelineDescriptor, &error);
     if (error)
     {
         cemuLog_log(LogType::Force, "error creating output render pipeline state: {}", error->localizedDescription()->utf8String());

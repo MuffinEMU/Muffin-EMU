@@ -5,6 +5,7 @@ struct CemuApp: App {
     // Theme tokens are plain statics, so views do not redraw on their own.
     // Keying the tree to the current theme id rebuilds it when the theme changes.
     @ObservedObject private var themeStore = MuffinThemeStore.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // Earliest Swift-side checkpoint; if it is missing from the crash log, the
@@ -39,6 +40,26 @@ struct CemuApp: App {
                 // of them all over the app. Set once here, it reaches every scroll view below,
                 // including the ones in sheets and in screens added later.
                 .muffinScrollEdgeBlurHidden()
+                .onChange(of: scenePhase) { phase in
+                    #if os(iOS)
+                    // The app can be killed while suspended, so write the compiled-shader
+                    // archive of a running game now. The wait is bounded inside the engine
+                    // and the work runs under a background task, off the main thread.
+                    guard phase == .background else { return }
+                    var taskID = UIBackgroundTaskIdentifier.invalid
+                    taskID = UIApplication.shared.beginBackgroundTask(withName: "metal-archive-flush") {
+                        UIApplication.shared.endBackgroundTask(taskID)
+                        taskID = .invalid
+                    }
+                    DispatchQueue.global(qos: .utility).async {
+                        cemu_bridge_metal_archive_flush()
+                        DispatchQueue.main.async {
+                            if taskID != .invalid { UIApplication.shared.endBackgroundTask(taskID) }
+                            taskID = .invalid
+                        }
+                    }
+                    #endif
+                }
                 .onAppear {
                     cemu_bridge_log_checkpoint("ContentView.onAppear reached")
                     #if os(iOS)

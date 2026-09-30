@@ -796,6 +796,21 @@ long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includ
 /// Returns 0 on success. Either out pointer may be null.
 int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLearnedBytes, long long* outCompiledBytes);
 
+/// Saved compiled shaders: the Metal binary archive, shaderCache/metal. Compiled GPU code for
+/// each title's pipelines, kept so later launches skip the GPU compile. It is part of the
+/// "compiled" cache: cemu_bridge_clear_shader_cache() deletes it with either choice.
+///
+/// Size on disk in bytes for one title, or 0 for every title.
+long long cemu_bridge_metal_archive_bytes(unsigned long long titleId);
+/// The "Save compiled shaders" setting. Read when a title starts, so a change made while a
+/// title runs applies to the next launch. Off means archives are neither loaded, used nor
+/// written; files already on disk are left alone.
+void cemu_bridge_set_binary_archive_enabled(bool enabled);
+bool cemu_bridge_binary_archive_enabled(void);
+/// Writes the running title's archive to disk (bounded wait of a few seconds). Call when the
+/// app moves to the background. Does nothing when no archive is open.
+void cemu_bridge_metal_archive_flush(void);
+
 
 /// The reason behind cemu_bridge_cpu_mode(), in a sentence the person holding the iPad
 /// can act on - which is the point: the answer used to be obtainable only by reading a

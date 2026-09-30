@@ -32,11 +32,34 @@ struct ShaderCompilationSection: View {
 struct ShaderCacheSection: View {
     @State private var learnedCacheBytes: Int64 = 0
     @State private var compiledCacheBytes: Int64 = 0
+    @State private var archiveBytes: Int64 = 0
+    /// Global default; a game can override it from its options. Pushed to the engine when a
+    /// game starts (GameManager), so a change here applies from the next launch.
+    @AppStorage("muffin.shaders.saveCompiled") private var saveCompiledShaders = true
     @State private var confirmClearLearned = false
     @State private var cacheStatusMessage: String?
 
     var body: some View {
         Section {
+            Toggle(isOn: $saveCompiledShaders) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Save compiled shaders")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("Faster loading and fewer stutters after the first play; uses some storage.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .tint(MuffinTheme.pixelBlue)
+            .onChange(of: saveCompiledShaders) { newValue in
+                cemu_bridge_set_binary_archive_enabled(newValue)
+            }
+            if cemu_bridge_is_title_running() {
+                Text("Takes effect the next time a game starts.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            SettingsRow(label: "Saved compiled shaders", value: Self.formatBytes(archiveBytes))
             SettingsRow(label: "Compiled shaders", value: Self.formatBytes(compiledCacheBytes))
             SettingsRow(label: "Learned shaders", value: Self.formatBytes(learnedCacheBytes))
             Button {
@@ -59,7 +82,7 @@ struct ShaderCacheSection: View {
         } header: {
             SettingsSectionHeader("Shader Cache", icon: "externaldrive", accent: .core)
         } footer: {
-            InfoButton.footer("Learned shaders are what a game has revealed by drawing with them, saved so the next launch skips rebuilding them. Compiled shaders rebuild on their own.")
+            InfoButton.footer("Learned shaders are what a game has revealed by drawing with them, saved so the next launch skips rebuilding them. Saved compiled shaders are the GPU code built from them, kept so later launches load faster. Both compiled kinds rebuild on their own.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: refreshCacheStats)
@@ -83,6 +106,7 @@ struct ShaderCacheSection: View {
         _ = cemu_bridge_shader_cache_stats(0, &learned, &compiled)
         learnedCacheBytes = learned
         compiledCacheBytes = compiled
+        archiveBytes = cemu_bridge_metal_archive_bytes(0)
     }
 
     private static func formatBytes(_ bytes: Int64) -> String {

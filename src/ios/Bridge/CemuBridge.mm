@@ -57,6 +57,7 @@
 #include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
+#include "Cafe/HW/Latte/Renderer/Metal/MetalBinaryArchive.h"
 #include "StallDetector.h"
 #include "util/Fiber/Fiber.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
@@ -1576,6 +1577,8 @@ long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includ
         return -1;
     }
     long long freed = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, true);
+    // The Metal pipeline archives are compiled output too: they rebuild on their own.
+    freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/metal"), titleId, true);
     if (includeLearned)
         freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId, true);
     cemuLog_log(LogType::Force, "Shader cache: cleared {} bytes ({})", freed, includeLearned ? "compiled and learned" : "compiled only");
@@ -1588,6 +1591,22 @@ int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLea
     if (outCompiledBytes)
         *outCompiledBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, false);
     return 0;
+}
+
+long long cemu_bridge_metal_archive_bytes(unsigned long long titleId) {
+    return IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/metal"), titleId, false);
+}
+
+void cemu_bridge_set_binary_archive_enabled(bool enabled) {
+    MetalBinaryArchive::SetEnabledSetting(enabled);
+}
+
+bool cemu_bridge_binary_archive_enabled(void) {
+    return MetalBinaryArchive::GetEnabledSetting();
+}
+
+void cemu_bridge_metal_archive_flush(void) {
+    MetalBinaryArchive::GetInstance().Flush(4000);
 }
 
 // ---------------------------------------------------------------------------

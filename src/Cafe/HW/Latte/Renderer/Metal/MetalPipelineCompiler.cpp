@@ -1,5 +1,6 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalCommon.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalPipelineCompiler.h"
+#include "Cafe/HW/Latte/Renderer/Metal/MetalBinaryArchive.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #include "Cafe/HW/Latte/Renderer/Metal/CachedFBOMtl.h"
 #include "Cafe/HW/Latte/Renderer/Metal/LatteToMtl.h"
@@ -408,7 +409,8 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
             desc->setFragmentFunction(fragmentFunction);
 
         desc->setLabel(ToNSString(fmt::format("pipeline VS {:016x}-{:016x} PS {:016x}-{:016x}", m_vertexShaderMtl->GetBaseHash(), m_vertexShaderMtl->GetAuxHash(), m_pixelShaderMtl ? m_pixelShaderMtl->GetBaseHash() : 0, m_pixelShaderMtl ? m_pixelShaderMtl->GetAuxHash() : 0)));
-       	pipeline = m_mtlr->GetDevice()->newRenderPipelineState(desc, MTL::PipelineOptionNone, nullptr, &error);
+       	// Mesh pipelines (above) are not archived: metal-cpp has no binaryArchives on MeshRenderPipelineDescriptor.
+       	pipeline = MetalBinaryArchive::GetInstance().CreateRenderPipeline(m_mtlr->GetDevice(), desc, &error);
     }
     auto end = std::chrono::high_resolution_clock::now();
 
