@@ -8,6 +8,8 @@
 // Drops the asynchronous pipeline compiles that are queued and waits for the running ones (see MetalPipelineCache.cpp)
 void MetalPipelineCache_DrainAsyncCompiles();
 size_t MetalPipelineCache_GetAsyncCompileCount();
+// true if a loader thread could not be stopped in time: it may still use the renderer and the cache, which were leaked instead of freed
+bool MetalPipelineCache_LoaderAbandoned();
 
 class MetalPipelineCache
 {
@@ -25,6 +27,8 @@ public:
 	void EndLoading();
 	void LoadPipelineFromCache(std::span<uint8> fileData);
        void Close(); // called on title exit
+	// stops and waits for the background loader threads; false if they are still running after timeoutMs
+	bool StopLoading(uint32 timeoutMs);
 
     // Debug
     size_t GetPipelineCacheSize() const { return m_pipelineCache.size(); }
@@ -40,6 +44,7 @@ private:
 	class FileCache* s_cache{nullptr};
 
 	std::atomic_uint32_t m_numCompilationThreads{ 0 };
+	std::atomic_uint32_t m_loaderThreadsRunning{ 0 };
 	ConcurrentQueue<std::vector<uint8>> m_compilationQueue;
 	std::atomic_uint32_t m_compilationCount;
 
