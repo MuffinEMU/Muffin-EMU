@@ -234,3 +234,33 @@ void LatteQuery_CancelActiveGPU7Queries()
 void LatteQuery_Init()
 {
 }
+
+// Called when the GPU thread is shutting down, while the renderer still exists. The query lists are process-wide:
+// whatever a stopped title left in them belongs to a renderer that is about to be destroyed (the query objects), or
+// to guest memory that the next title will reuse (the GX2 query bindings write their result to a guest address
+// when they finish). Dropped, not finished: nothing is waiting for these results any more.
+void LatteQuery_Reset()
+{
+	if (g_renderer)
+	{
+		if (_currentlyActiveRendererQuery)
+			g_renderer->occlusionQuery_destroy(_currentlyActiveRendererQuery);
+		for (LatteQueryObject* queryObject : list_queriesInFlight)
+			g_renderer->occlusionQuery_destroy(queryObject);
+	}
+	_currentlyActiveRendererQuery = nullptr;
+	list_queriesInFlight.clear();
+	for (LatteGX2QueryInformation* gx2Query : list_activeGX2Queries2)
+		free(gx2Query);
+	list_activeGX2Queries2.clear();
+	queryEventCounter = 1;
+	latestQueryFinishedEventId = 0;
+	checkQueriesCounter = 0;
+	LatteWait::Get().queriesInFlight.store(0, std::memory_order_relaxed);
+}
+
+// for the post-teardown check: number of query objects and GX2 query bindings still tracked
+size_t LatteQuery_GetTrackedCount()
+{
+	return list_queriesInFlight.size() + list_activeGX2Queries2.size() + (_currentlyActiveRendererQuery ? 1 : 0);
+}

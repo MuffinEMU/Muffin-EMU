@@ -2,6 +2,8 @@
 
 void LatteBufferCache_init(size_t bufferSize);
 void LatteBufferCache_UnloadAll();
+void LatteBufferCache_ResetHostState();
+size_t LatteBufferCache_GetNodeCount();
 
 uint32 LatteBufferCache_retrieveDataInCache(MPTR physAddress, uint32 size);
 void LatteBufferCache_copyStreamoutDataToCache(MPTR physAddress, uint32 size, uint32 streamoutBufferOffset);

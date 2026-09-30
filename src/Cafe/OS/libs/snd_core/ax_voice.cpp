@@ -509,6 +509,10 @@ namespace snd_core
     {
         AXVoiceList_Reset();
         __AXVPBResetVoices();
+        // a title stopped between AXUserBegin and AXUserEnd would leave AXUserIsProtected() true for the next one
+        __AXUserProtectionArraySize = 0;
+        memset(__AXUserProtectionArray, 0, sizeof(__AXUserProtectionArray));
+        memset(__AXVoiceProtection, 0, sizeof(__AXVoiceProtection));
     }
 
 	sint32 AXIsValidDevice(sint32 device, sint32 deviceIndex)

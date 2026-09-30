@@ -68,6 +68,16 @@ class MetalSynchronizedRingAllocator
 public:
 	MetalSynchronizedRingAllocator(class MetalRenderer* mtlRenderer, MTL::ResourceOptions options, uint32 minimumBufferAllocSize) : m_mtlr(mtlRenderer), m_options(GetResourceOptions(options)), m_minimumBufferAllocSize(minimumBufferAllocSize) {};
 	MetalSynchronizedRingAllocator(const MetalSynchronizedRingAllocator&) = delete; // disallow copy
+	// The ring owns its buffers (the staging ring is at least 32 MB) and nothing else releases them when the allocator is
+	// deleted with its renderer, so every stopped title leaked the whole ring
+	~MetalSynchronizedRingAllocator()
+	{
+		for (auto& buffer : m_buffers)
+		{
+			if (buffer.mtlBuffer)
+				buffer.mtlBuffer->release();
+		}
+	}
 
 	struct BufferSyncPoint_t
 	{

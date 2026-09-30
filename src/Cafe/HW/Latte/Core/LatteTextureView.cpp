@@ -128,6 +128,24 @@ void LatteTextureViewLookupCache::Add(LatteTextureView* view, uint32 baseMip, ui
 	vectorAppendUnique(view->viewLookUpCacheKeysNoRes, key);
 }
 
+void LatteTextureViewLookupCache::ResetAll()
+{
+	for (auto& bucket : texViewBucket)
+		bucket.list.clear();
+	for (auto& bucket : texViewBucket_nores)
+		bucket.list.clear();
+}
+
+size_t LatteTextureViewLookupCache::GetEntryCount()
+{
+	size_t count = 0;
+	for (auto& bucket : texViewBucket)
+		count += bucket.list.size();
+	for (auto& bucket : texViewBucket_nores)
+		count += bucket.list.size();
+	return count;
+}
+
 void LatteTextureViewLookupCache::RemoveAll(LatteTextureView* view)
 {
 	for (auto& key : view->viewLookUpCacheKeys)
