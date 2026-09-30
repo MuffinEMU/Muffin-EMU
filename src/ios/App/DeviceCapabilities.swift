@@ -42,12 +42,10 @@ struct DeviceCapabilities {
     /// device whatever the CPU cores setting says, including Auto (ios_decide_core_count in CemuBridge.mm).
     static let oneCoreOnlyText = "One core only: this device has too little memory or too few cores to run three at once."
 
-    /// Where Resolution starts when the player has not chosen. Balanced everywhere it was tuned;
-    /// High on an A17 Pro or later and on every M-series chip with 7 GiB or more, which have
-    /// the GPU and thermal room for it.
-    var defaultRenderScale: RenderScale {
-        (raw.isHighEndSoc && tier == .high) ? .high : .balanced
-    }
+    /// A17 Pro or later, or any M-series chip, with 7 GiB or more: the GPU and thermal room to start
+    /// Resolution at High. `RenderScale.deviceDefault` is the one place the default is decided, and
+    /// this is the capability it reads.
+    var startsAtHighRenderScale: Bool { raw.isHighEndSoc && tier == .high }
 
     /// The snapshot. Taken on first use; `bootstrap()` makes that the first thing the app does.
     static let current: DeviceCapabilities = {

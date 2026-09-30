@@ -56,11 +56,6 @@ enum RenderScale: String, CaseIterable, Identifiable {
 
     static let storageKey = "renderScale"
 
-    /// Where it starts when the player has not chosen: `.balanced` on most devices, because the
-    /// CPU is the bottleneck and extra GPU pixels buy nothing, and `.high` on an A17 Pro or later
-    /// and on M-series iPads, which have room for them (`DeviceCapabilities.defaultRenderScale`).
-    static var defaultValue: RenderScale { DeviceCapabilities.current.defaultRenderScale }
-
     /// What the person chose, or the preset picked for this device (`deviceDefault`) if they never did.
     static var current: RenderScale {
         guard let raw = UserDefaults.standard.string(forKey: storageKey),
@@ -68,19 +63,21 @@ enum RenderScale: String, CaseIterable, Identifiable {
         return value
     }
 
-    /// The preset for someone who never touched Resolution, worked out from this device.
+    /// The preset for someone who never touched Resolution, worked out from this device. The only place
+    /// that default is decided.
     ///
     /// Emulation is usually CPU-bound, so extra pixels buy little; the goal is the cheapest preset that still
-    /// presents about as many pixels across as the Wii U renders (1280). An iPad Pro or iPhone Pro lands on
-    /// Balanced. A small-screened device, where Balanced would be well under 720p (an iPhone SE, say), steps up
+    /// presents about as many pixels across as the Wii U renders (1280). Most iPads and iPhones land on
+    /// Balanced (the newest chips with 7 GiB or more start at High, see below). A small-screened device, where Balanced would be well under 720p (an iPhone SE, say), steps up
     /// to a sharper one. The memory of the device bounds how many pixels that may be, so a 3 GB iPad does not
     /// default to a larger surface than it can afford, and a device with more memory may go further. Battery
     /// saver is only ever chosen by hand.
     static var deviceDefault: RenderScale {
         #if os(iOS)
-        // iPads with 8 GB or more (M-series, whose GPUs and memory bandwidth are several times an
-        // A12Z's) start at `.high`.
-        if UIDevice.current.userInterfaceIdiom == .pad && ProcessInfo.processInfo.physicalMemory >= 7_500_000_000 {
+        // A17 Pro or later and every M-series chip with 7 GiB or more (8 GB and 16 GB iPads and the
+        // 8 GB Pro iPhones) have GPU, bandwidth and thermal room for `.high`; see
+        // `DeviceCapabilities.startsAtHighRenderScale`. Everything else goes by screen and memory below.
+        if DeviceCapabilities.current.startsAtHighRenderScale {
             return .high
         }
         let screen = UIScreen.main
