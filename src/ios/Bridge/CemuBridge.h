@@ -838,6 +838,13 @@ void cemu_bridge_resume(void);
 void cemu_bridge_shutdown_title(void);
 void cemu_bridge_shutdown(void);
 
+/// True when starting another title in this process is not safe and the app has to be closed and reopened first. Set only
+/// when a real problem was found while stopping a title (the GPU stopped running this app's work, or the post-stop check
+/// found emulator state that could not be reset), never by a normal stop. Stays true until the app restarts.
+bool cemu_bridge_clean_start_required(void);
+/// A one-line reason for the log and the message, valid until the next call on the same thread.
+const char* cemu_bridge_clean_start_reason(void);
+
 /// Freezes the running title's guest RAM to `path` (any slot file the caller wants -
 /// naming/organizing save slots is entirely the UI's job). Pauses the title if it isn't
 /// already paused, waits for it to genuinely go idle (not just "asked to pause" - see the

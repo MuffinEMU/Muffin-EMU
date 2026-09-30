@@ -20,6 +20,7 @@
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/GameInfo.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
+#include "Cafe/OS/libs/coreinit/coreinit_FS.h"
 #include "Cafe/OS/libs/snd_core/ax.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
@@ -435,8 +436,11 @@ void cemu_initForGame()
 	snd_core::AXOut_init();
 }
 
+extern MPTR sysAreaAllocatorOffset; // coreinit_MEM.cpp: how much of the system area has been handed out
+
 namespace CafeSystem
 {
+	static void CaptureFscBaseline();
 	void InitVirtualMlcStorage();
 	void MlcStorageMountTitle(TitleInfo& titleInfo);
     void MlcStorageUnmountAllTitles();
@@ -757,10 +761,20 @@ namespace CafeSystem
 		return PREPARE_STATUS_CODE::SUCCESS;
 	}
 
+    // set while a standalone launch has /vol/content mounted from its own content folder
+    static bool sStandaloneContentMounted = false;
+
     void UnmountForegroundTitle()
     {
         if(sLaunchModeIsStandalone)
+        {
+            if (sStandaloneContentMounted)
+            {
+                fsc_unmount("/vol/content", FSC_PRIORITY_BASE);
+                sStandaloneContentMounted = false;
+            }
             return;
+        }
         cemu_assert_debug(sGameInfo_ForegroundTitle.IsValid()); // unmounting title which was never mounted?
         if (!sGameInfo_ForegroundTitle.IsValid())
             return;
@@ -848,6 +862,7 @@ namespace CafeSystem
 	{
 		CafeTitleList::WaitForMandatoryScan();
 		AbortPreparedTitle(); // anything left over from a launch that never started
+		CaptureFscBaseline();
 		sLaunchModeIsStandalone = false;
 		s_foregroundReturnStatus = std::nullopt;
         _pathToExecutable.clear();
@@ -882,6 +897,7 @@ namespace CafeSystem
 	PREPARE_STATUS_CODE PrepareForegroundTitleFromStandaloneRPX(const fs::path& path)
 	{
 		AbortPreparedTitle(); // anything left over from a launch that never started
+		CaptureFscBaseline();
 		sLaunchModeIsStandalone = true;
 		sPreparedTitleMounted = true;
 		cemuLog_log(LogType::Force, "Launching executable in standalone mode due to incorrect layout or missing meta files");
@@ -902,6 +918,7 @@ namespace CafeSystem
 					AbortPreparedTitle();
 					return PREPARE_STATUS_CODE::UNABLE_TO_MOUNT;
 				}
+				sStandaloneContentMounted = true;
 			}
 		}
 		// mount code folder to a virtual temporary path
@@ -1091,12 +1108,141 @@ namespace CafeSystem
         fsc_unmount("/internal/code/", FSC_PRIORITY_BASE);
 	}
 
+	/* Clean slate: what a stopped title must leave behind is what a fresh launch starts with.
+	 *
+	 * ShutdownTitle() is the only way a title ends (the app's stop button, a game that exits, and the Wii U Menu switching
+	 * to another game all come through it), so a second, third or Nth title in one process only behaves like the first if
+	 * this unwinds everything the first one touched. The check below runs at the end of every stop, costs a few counter
+	 * reads, and names whatever is left so a future leak shows up in the log instead of in the next game.
+	 */
+	static std::vector<std::string> sCleanSlateLeftovers;
+	static bool sCleanSlateDangerous = false;
+	static bool sCleanSlateChecked = false;
+	static size_t sFscBaselineMounts[FSC_PRIORITY_COUNT] = {};
+	static uint32 sSysAreaUsedAtLastStop = 0;
+	static uint32 sTitlesStoppedInThisProcess = 0;
+
+	// the mounts that exist when a title is about to be prepared are the base set that a stopped title has to return to
+	static void CaptureFscBaseline()
+	{
+		for (sint32 i = 0; i < FSC_PRIORITY_COUNT; i++)
+			sFscBaselineMounts[i] = fsc_getMountCount(i);
+	}
+
+	// Looks at the state a fresh launch has and lists what is different. "Dangerous" leftovers are the ones that are
+	// unsafe to start another title on top of (stale pointers, live threads, mapped memory); the others are logged only.
+	static void VerifyCleanSlate(uint32 elapsedMs)
+	{
+		std::vector<std::string> dangerous;
+		std::vector<std::string> informational;
+
+		// guest CPU
+		if (activeThreadCount != 0)
+			dangerous.emplace_back(fmt::format("{} guest thread(s) still alive", activeThreadCount));
+		if (coreinit::OSIsSchedulerActive())
+			dangerous.emplace_back("PPC scheduler still active");
+		// loader
+		if (size_t modules = RPLLoader_GetLoadedModuleCount(); modules != 0)
+			dangerous.emplace_back(fmt::format("{} RPL module(s)/dependencies still loaded", modules));
+		// recompiler
+		if (size_t blocks = PPCRecompiler_GetReservedLookupBlockCount(); blocks != 0)
+			dangerous.emplace_back(fmt::format("{} PPC recompiler lookup block(s) still reserved", blocks));
+		if (size_t queued = PPCRecompiler_GetQueuedTargetCount(); queued != 0)
+			dangerous.emplace_back(fmt::format("{} PPC recompiler request(s) still queued", queued));
+		if (PPCRecompilerInitialized())
+			dangerous.emplace_back("PPC recompiler still initialized");
+		// guest memory: only the ranges that stay mapped for the life of the process may be mapped
+		for (MMURange* range : memory_getMMURanges())
+		{
+			if (range->isMapped() && !range->isMappedEarly())
+				dangerous.emplace_back(fmt::format("guest memory range {} still mapped", range->getName()));
+		}
+		// GPU
+		Latte_CollectLeftovers(dangerous);
+		// graphic packs are re-evaluated for every title
+		if (!GraphicPack2::GetActiveGraphicPacks().empty() || GraphicPack2::CountActivated() != 0)
+			dangerous.emplace_back(fmt::format("{} graphic pack(s) still activated", std::max(GraphicPack2::GetActiveGraphicPacks().size(), GraphicPack2::CountActivated())));
+		if (size_t redirects = fscDeviceRedirect_getEntryCount(); redirects != 0)
+			dangerous.emplace_back(fmt::format("{} graphic pack file redirect(s) still registered", redirects));
+		// IOSU
+		{
+			uint32 clients = 0, files = 0, dirs = 0;
+			iosu::fsa::GetOpenCounts(clients, files, dirs);
+			if (clients || files || dirs)
+				dangerous.emplace_back(fmt::format("FSA: {} client(s), {} open file(s), {} open directorie(s) left open", clients, files, dirs));
+		}
+		if (uint32 pending = iosuIoctl_getPendingCount(); pending != 0)
+			dangerous.emplace_back(fmt::format("IOSU: requests still queued for {} device(s)", pending));
+		// filesystem: back to the mounts that existed before the title was prepared. The redirect priority keeps its one
+		// permanent mount and is left out
+		for (sint32 i = 0; i < FSC_PRIORITY_REDIRECT; i++)
+		{
+			const size_t mounts = fsc_getMountCount(i);
+			if (mounts != sFscBaselineMounts[i])
+				informational.emplace_back(fmt::format("FSC: {} mount(s) at priority {}, expected {}", mounts, i, sFscBaselineMounts[i]));
+		}
+		// The system area is a bump allocator that is never rewound. Its use grows slowly with every title (a few KiB) and
+		// the process would run out of it after very many titles: report the use so growth is visible, and call it
+		// dangerous when little is left
+		{
+			const uint32 used = (uint32)sysAreaAllocatorOffset;
+			const uint32 total = mmuRange_CEMU_AREA.getSize();
+			const uint32 growth = used - sSysAreaUsedAtLastStop;
+			sSysAreaUsedAtLastStop = used;
+			if (sTitlesStoppedInThisProcess > 0 && growth > 1024 * 1024)
+				informational.emplace_back(fmt::format("system area grew by {} KiB during this title", growth / 1024));
+			if ((uint64)used * 10 >= (uint64)total * 9)
+				dangerous.emplace_back(fmt::format("system area {} of {} KiB used", used / 1024, total / 1024));
+			cemuLog_log(LogType::Force, "clean slate: system area {} of {} KiB used (+{} KiB)", used / 1024, total / 1024, growth / 1024);
+		}
+		sTitlesStoppedInThisProcess++;
+
+		sCleanSlateLeftovers.clear();
+		sCleanSlateLeftovers.insert(sCleanSlateLeftovers.end(), dangerous.begin(), dangerous.end());
+		sCleanSlateLeftovers.insert(sCleanSlateLeftovers.end(), informational.begin(), informational.end());
+		sCleanSlateDangerous = !dangerous.empty();
+		sCleanSlateChecked = true;
+		if (sCleanSlateLeftovers.empty())
+		{
+			cemuLog_log(LogType::Force, "clean slate: OK (title stopped in {} ms)", elapsedMs);
+			return;
+		}
+		cemuLog_log(LogType::Force, "clean slate: {} leftover(s), {} of them unsafe to start another title on (title stopped in {} ms):", sCleanSlateLeftovers.size(), dangerous.size(), elapsedMs);
+		for (auto& it : dangerous)
+			cemuLog_log(LogType::Force, "clean slate: LEFTOVER (unsafe) - {}", it);
+		for (auto& it : informational)
+			cemuLog_log(LogType::Force, "clean slate: leftover - {}", it);
+	}
+
+	bool CleanSlateHasDangerousLeftover()
+	{
+		return sCleanSlateChecked && sCleanSlateDangerous;
+	}
+
+	std::vector<std::string> GetCleanSlateLeftovers()
+	{
+		return sCleanSlateLeftovers;
+	}
+
 	void ShutdownTitle()
 	{
 		if(!sSystemRunning)
 			return;
+		const auto shutdownStart = std::chrono::steady_clock::now();
+		// the timing of the slow phases goes in the log: stopping has to stay within a couple of seconds on every device
+		auto phaseStart = shutdownStart;
+		auto logPhase = [&](const char* phase)
+		{
+			const auto now = std::chrono::steady_clock::now();
+			const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - phaseStart).count();
+			if (ms >= 250)
+				cemuLog_log(LogType::Force, "Title stop: {} took {} ms", phase, ms);
+			phaseStart = now;
+		};
         coreinit::OSSchedulerEnd();
+		logPhase("ending the PPC scheduler");
         Latte_Stop();
+		logPhase("stopping the GPU thread and renderer");
         // reset Cafe OS userspace modules
         snd_core::reset();
         coreinit::OSAlarm_Shutdown();
@@ -1104,16 +1250,27 @@ namespace CafeSystem
         nn::save::ResetToDefaultState();
         coreinit::__OSDeleteAllActivePPCThreads();
         RPLLoader_UnloadAll();
+		logPhase("unloading the title's modules");
+		// IOSU: what the title left open or queued. The FSA reset runs on the FSA thread, so it is ordered after any
+		// request that thread was still serving, and it has to precede the unmounts below (open files sit on those mounts)
+		iosu::fsa::ResetClientState();
+		iosuIoctl_reset();
 		for(auto it = s_iosuModules.rbegin(); it != s_iosuModules.rend(); ++it)
 			(*it)->TitleStop();
+		iosuAct_resetAccountCache();
+		coreinit::FSResetMounts();
+		logPhase("resetting IOSU");
         // reset Cemu subsystems
         PPCRecompiler_Shutdown();
         GraphicPack2::Reset();
+		logPhase("resetting the recompiler and graphic packs");
         UnmountCurrentTitle();
         MlcStorageUnmountAllTitles();
         UnmountBaseDirectories();
         DestroyMemorySpace();
+		logPhase("unmounting and releasing guest memory");
 		sSystemRunning = false;
+		VerifyCleanSlate((uint32)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - shutdownStart).count());
 	}
 
 	// Undoes PrepareForegroundTitle()/PrepareForegroundTitleFromStandaloneRPX() for a title that never started.
@@ -1216,6 +1373,7 @@ namespace CafeSystem
         {
             std::string mlcStoragePath = GetMlcStoragePath(it.first);
             it.second->Unmount(mlcStoragePath);
+            delete it.second; // a private copy made by MlcStorageMountTitle(), nothing else refers to it
         }
         m_mlcMountedTitles.clear();
     }

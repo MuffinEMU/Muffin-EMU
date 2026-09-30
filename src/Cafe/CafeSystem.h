@@ -52,6 +52,12 @@ namespace CafeSystem
 	void ShutdownTitle();
 	void AbortPreparedTitle(); // unwinds a prepared title that was never launched
 
+	// Every title stop ends with a check that the emulator is back in the state a fresh launch has (see ShutdownTitle).
+	// The result of the last check: true if something was left behind that makes starting another title in this process
+	// unsafe, and the names of everything that was left (also in the log, as "clean slate: ...").
+	bool CleanSlateHasDangerousLeftover();
+	std::vector<std::string> GetCleanSlateLeftovers();
+
 	std::string GetMlcStoragePath(TitleId titleId);
 	void MlcStorageMountAllTitles();
 
