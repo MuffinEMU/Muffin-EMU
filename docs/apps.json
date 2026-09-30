@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "5.9",
+          "date": "2026-09-30T20:10:38Z",
+          "localizedDescription": "## What changed\n\n- Fixes a blur over the buttons in the in-game top bar.\n- Removes the blur that iOS 26 and later drew over buttons and rows at the edges of scrolling screens throughout the app.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 4c70e7d38d217acfa480d7e941c314b2ddb4123b.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v5.8...v5.9",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v5.9/MuffinEMU.ipa",
+          "size": 68273922,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "5.8",
           "date": "2026-09-30T19:03:13Z",
           "localizedDescription": "## What changed\n\n- New Blow button in the in-game top bar blows into the GamePad microphone, for games like Captain Toad that ask you to blow. Settings > Audio can now also pass your device's real microphone to games.\n- Captain Toad, Super Mario 3D World and the Wii U Menu no longer stop with a graphics error in cases where a draw asked for more data than its buffer held. If the graphics chip still faults, the game now tries once to carry on, and the log records which draw was responsible.\n- The library loads faster when some games can't be opened, and the log no longer fills with thousands of repeated lines.\n- If Vulkan can't start on your iPad, MuffinEMU now switches to Metal for that game, tells you, and keeps Metal selected. Launching a game that fails to start no longer crashes the next launch.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 92fb7b72d885ed531129ffca94cc7841433d4d44.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v5.7...v5.8",
@@ -411,12 +419,12 @@
   ],
   "news": [
     {
-      "title": "MuffinEMU 5.8",
-      "identifier": "muffinemu-v5.8",
-      "caption": "New Blow button in the in-game top bar blows into the GamePad microphone, for games like Captain Toad that ask you to blow. Settings > Audio can now also pass your device's real microphone to games. Captain Toad,...",
+      "title": "MuffinEMU 5.9",
+      "identifier": "muffinemu-v5.9",
+      "caption": "Fixes a blur over the buttons in the in-game top bar. Removes the blur that iOS 26 and later drew over buttons and rows at the edges of scrolling screens throughout the app.",
       "date": "2026-09-30",
       "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v5.8",
+      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v5.9",
       "appID": "com.kiddreads.MuffinEMU",
       "notify": false
     }
