@@ -50,6 +50,8 @@ private:
     MotionSample            m_last_motion_cache{};
     WiiUMotionHandler       m_motion_handler;
     double                  m_last_motion_ts = 0.0;
+    uint32                  m_recenter_seen = 0;
+    bool                    m_motion_settled = false;
 };
 
 #endif // BOOST_OS_IOS

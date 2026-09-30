@@ -116,8 +116,21 @@ MotionSample GCControllerDevice::get_motion_sample()
         return {};
 
     GCBridgeMotionState s = m_desc.poll_motion(m_desc.context);
-    
-    
+
+    // Start the orientation estimate from the pose the device is actually in, on the first sample and
+    // whenever the player recentres. Left alone it starts from the default flat pose and takes a couple of
+    // seconds to swing round to the real one, during which the GamePad appears to drift.
+    if (std::isfinite(s.timestamp) && s.timestamp > 0.0 && (!m_motion_settled || s.recenterCount != m_recenter_seen))
+    {
+        m_motion_settled = true;
+        m_recenter_seen = s.recenterCount;
+        m_motion_handler = WiiUMotionHandler();
+        for (int i = 0; i < 60; ++i)
+            m_motion_handler.processMotionSample(0.2f, 0.0f, 0.0f, 0.0f,
+                s.accelerometer.x, s.accelerometer.y, s.accelerometer.z);
+        m_last_motion_cache = m_motion_handler.getMotionSample();
+    }
+
     if (!std::isfinite(s.timestamp) || s.timestamp <= m_last_motion_ts)
         return m_last_motion_cache;
     

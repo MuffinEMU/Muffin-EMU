@@ -54,11 +54,38 @@ enum RenderScale: String, CaseIterable, Identifiable {
 
     static let storageKey = "renderScale"
 
-    /// `.balanced`: on most devices the CPU is the bottleneck, so extra GPU pixels buy nothing.
+    /// What the person chose, or the preset picked for this device (`deviceDefault`) if they never did.
     static var current: RenderScale {
         guard let raw = UserDefaults.standard.string(forKey: storageKey),
-              let value = RenderScale(rawValue: raw) else { return .balanced }
+              let value = RenderScale(rawValue: raw) else { return deviceDefault }
         return value
+    }
+
+    /// The preset for someone who never touched Resolution, worked out from this device.
+    ///
+    /// Emulation is usually CPU-bound, so extra pixels buy little; the goal is the cheapest preset that still
+    /// presents about as many pixels across as the Wii U renders (1280). An iPad Pro or iPhone Pro lands on
+    /// Balanced. A small-screened device, where Balanced would be well under 720p (an iPhone SE, say), steps up
+    /// to a sharper one. The memory of the device bounds how many pixels that may be, so a 3 GB iPad does not
+    /// default to a larger surface than it can afford, and a device with more memory may go further. Battery
+    /// saver is only ever chosen by hand.
+    static var deviceDefault: RenderScale {
+        #if os(iOS)
+        let screen = UIScreen.main
+        let nativeScale = Double(screen.scale)
+        let longEdge = Double(max(screen.bounds.width, screen.bounds.height)) * nativeScale
+        let shortEdge = Double(min(screen.bounds.width, screen.bounds.height)) * nativeScale
+        let memoryGiB = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824.0
+        // Presented pixels the device can comfortably afford, by memory class.
+        let pixelBudget: Double = memoryGiB >= 5.0 ? 2_500_000 : (memoryGiB >= 3.0 ? 2_000_000 : 1_600_000)
+        let ladder: [RenderScale] = [.balanced, .high, .native]
+        func pixels(_ scale: RenderScale) -> Double { longEdge * scale.factor * shortEdge * scale.factor }
+        let sharpEnough = ladder.first { longEdge * $0.factor >= 1_100 } ?? .native
+        if pixels(sharpEnough) <= pixelBudget { return sharpEnough }
+        return ladder.last { pixels($0) <= pixelBudget } ?? .balanced
+        #else
+        return .balanced
+        #endif
     }
 }
 

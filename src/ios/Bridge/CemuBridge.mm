@@ -19,6 +19,7 @@
 #include <typeinfo>
 #import "CemuBridge.h"
 #import "IOSLiveLog.h"
+#import "IOSMotion.h"
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <GameController/GameController.h>
@@ -1395,6 +1396,21 @@ namespace {
         return s;
     }
 
+    // The GamePad's motion: the device's own sensors (or a controller's), see IOSMotion.mm. The sample is
+    // already in the convention the core's motion handler expects, so it passes straight through.
+    GCBridgeMotionState ios_poll_motion(void* context)
+    {
+        (void)context;
+        IOSMotionSample sample;
+        IOSMotion_Poll(&sample);
+        GCBridgeMotionState s{};
+        s.accelerometer = GCBridgeVec3{sample.accelerometer[0], sample.accelerometer[1], sample.accelerometer[2]};
+        s.gyroscope = GCBridgeVec3{sample.gyroscope[0], sample.gyroscope[1], sample.gyroscope[2]};
+        s.timestamp = sample.timestamp;
+        s.recenterCount = sample.recenterCount;
+        return s;
+    }
+
     void ios_update_physical(GCExtendedGamepad* pad)
     {
         uint32_t buttons = 0;
@@ -1463,7 +1479,7 @@ namespace {
         desc.display_name = "Muffin GamePad";
         desc.controllerType = (uint8)EmulatedController::Type::VPAD;
         desc.poll_state = ios_poll_state;
-        desc.poll_motion = nullptr;
+        desc.poll_motion = ios_poll_motion;
         desc.rumble = nullptr;
         desc.release = nullptr;
         g_inputHandle = GCControllerBridge_add(&desc);
@@ -1473,6 +1489,7 @@ namespace {
             return;
         }
         GCControllerBridge_notifyChanged();
+        IOSMotion_Start();
         cemu_bridge_log_checkpoint("iOS input: GamePad registered with the core (on-screen pad + first physical controller)");
 
         dispatch_async(dispatch_get_main_queue(), ^{
