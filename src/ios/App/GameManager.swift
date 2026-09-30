@@ -106,7 +106,9 @@ class GameManager: ObservableObject {
     /// True while the picture has stopped although the game is still running (the bridge's
     /// render-stall watchdog, `cemu_bridge_video_stalled()`). Polled with the frame rate.
     @Published private(set) var videoStalled = false
-    /// 1 = no new frames, 2 = the GPU reported an error (`cemu_bridge_video_stall_kind()`).
+    /// 1 = the GPU stopped finishing frames, 2 = the GPU reported an error, 3 = out of memory for the screen,
+    /// 4 = low-memory warning, 5 = the screen stopped taking frames (`cemu_bridge_video_stall_kind()`).
+    /// Kinds 1, 3 and 5 are heuristics and clear by themselves when frames resume.
     @Published private(set) var videoStallKind = 0
     /// Refreshed alongside `frameRate`. See `EmulatorProgress` below for why a second
     /// source of frame information is not redundant with the first.
