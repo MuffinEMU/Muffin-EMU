@@ -425,6 +425,28 @@ jobs:
       - name: Verify the ad-hoc signed IPA is structurally sound
         run: ./ci/verify-ipa.sh MuffinEMU-fakesigned.ipa
 
+      # Seeds the core cache (docs/CI.md, ci/core-cache-key.sh). Nothing here changes how the build
+      # runs: it compiled everything from scratch above, and it still does. Only after the framework
+      # has built, passed the export gate and both IPAs have passed verification is that framework
+      # stamped with the fingerprint of everything it was built from and saved as the current core.
+      # The save is push-to-main only. A pull request never promotes a core, and a failure in either
+      # step cannot fail the release.
+      - name: Fingerprint the verified core
+        id: corefp
+        continue-on-error: true
+        run: |
+          set -eo pipefail
+          ./ci/core-cache-key.sh --stamp build-ios/out
+          echo "fingerprint=$(./ci/core-cache-key.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Save the verified core as the current core
+        if: steps.corefp.outcome == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: build-ios/out
+          key: muffin-core-current-v1-${{ steps.corefp.outputs.fingerprint }}-${{ github.run_id }}
+
       - name: Upload IPAs
         uses: actions/upload-artifact@v4
         with:

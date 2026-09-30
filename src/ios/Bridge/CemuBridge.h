@@ -510,6 +510,34 @@ void cemu_bridge_set_thermal_throttle_micros(uint32_t micros);
 /// thermal headroom; not worth being the default on this one.
 void cemu_bridge_set_multicore_enabled(bool enabled);
 
+/// How many host threads run the three emulated cores: 0 = Auto, 1 = one core, 2 = three
+/// cores (experimental). Auto decides per title at launch from the title's game profile, the
+/// device (performance-core count) and its thermal state, and leans to one core; see
+/// ios_decide_core_count() in CemuBridge.mm. The choice made, and why, is written to the
+/// launch log as "CPU cores: ...". Read when a title starts.
+void cemu_bridge_set_cpu_core_mode(int mode);
+
+/// Tells Auto that an earlier three-core run of the title about to launch crashed or hung, so
+/// it stays on one core. Set before boot for every launch; ignored by an explicit core choice.
+void cemu_bridge_set_cpu_auto_demoted(bool demoted);
+
+/// Host threads running the emulated cores for the current/last boot (1 or 3), and whether Auto
+/// (rather than an explicit choice) is what picked three.
+int cemu_bridge_cpu_cores_running(void);
+bool cemu_bridge_cpu_auto_picked_multicore(void);
+
+/// Per-draw breadcrumb recording in the Metal renderer (a record of recent draws kept to
+/// explain a GPU fault). On by default; off saves a little CPU per draw.
+void cemu_bridge_set_draw_breadcrumbs(bool enabled);
+
+/// The most recent performance line (the same text that is logged every ~5 s while a title
+/// runs), or an empty string before the first one. Copy it; the pointer is per-thread.
+const char* cemu_bridge_perf_line(void);
+
+/// "iPad8,11, Apple A12Z GPU, 4 performance + 4 efficiency cores, 5664 MB RAM": what the
+/// performance log and reports use to tell devices apart.
+const char* cemu_bridge_device_summary(void);
+
 /// Low Power Mode: run one emulated CPU core and nothing else changes. Separate from
 /// cemu_bridge_set_favour_accuracy(), which also forces synchronous shader compilation
 /// and accurate barriers (more work, the wrong lever for a device that is already hot).

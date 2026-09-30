@@ -322,6 +322,8 @@ MTL::Library* RendererShaderMtl::LibraryFromAIR(std::span<uint8> data)
 
 void RendererShaderMtl::CompileInternal()
 {
+	PerfTelemetry::Get().shaderCompiles.fetch_add(1, std::memory_order_relaxed);
+	PerfTelemetry::ScopedTimer compileTimer(PerfTelemetry::Get().shaderCompileNs);
 	NS_STACK_SCOPED NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
     MTL::Library* library = nullptr;
 

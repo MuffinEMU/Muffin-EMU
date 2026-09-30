@@ -19,6 +19,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/UtilityShaderSource.h"
 
 #include "Cafe/HW/Latte/Core/LatteShader.h"
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 #include "Cafe/HW/Latte/Core/LatteIndices.h"
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
 #include "CafeSystem.h"
@@ -196,7 +197,8 @@ MetalRenderer::MetalRenderer()
     m_supportsFramebufferFetch = GetConfig().framebuffer_fetch.GetValue() ? m_device->supportsFamily(MTL::GPUFamilyApple2) : false;
     m_hasUnifiedMemory = m_device->hasUnifiedMemory();
     m_supportsMetal3 = m_device->supportsFamily(MTL::GPUFamilyMetal3);
-    m_supportsMeshShaders = (m_supportsMetal3 && (m_vendor != GfxVendor::Intel || GetConfig().force_mesh_shaders.GetValue())); // Intel GPUs have issues with mesh shaders
+    // Metal 3 also runs on A13 (Apple6), whose GPU has no mesh shader hardware: on Apple GPUs it takes Apple7 (A14, M1) or later.
+    m_supportsMeshShaders = (m_supportsMetal3 && (!m_isAppleGPU || m_device->supportsFamily(MTL::GPUFamilyApple7)) && (m_vendor != GfxVendor::Intel || GetConfig().force_mesh_shaders.GetValue())); // Intel GPUs have issues with mesh shaders
     m_argumentBufferTier = m_device->argumentBuffersSupport();
     m_maxArgumentBufferSamplerCount = static_cast<uint32>(m_device->maxArgumentBufferSamplerCount());
     cemuLog_log(LogType::Force, "Metal argument buffers: Tier {}, {} samplers", m_argumentBufferTier == MTL::ArgumentBuffersTier2 ? 2 : 1, m_maxArgumentBufferSamplerCount);
@@ -1277,7 +1279,7 @@ LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView
     {
         cemuLog_logOnce(LogType::Force,
             "Metal: could not allocate the {} MB texture readback buffer; skipping texture readbacks",
-            TEXTURE_READBACK_SIZE / (1024 * 1024));
+            TextureReadbackSize() / (1024 * 1024));
         return nullptr;
     }
 
@@ -1286,13 +1288,13 @@ LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView
         return nullptr;
 
     size_t uploadSize = mtlTexture->allocatedSize();
-    if (uploadSize > TEXTURE_READBACK_SIZE)
+    if (uploadSize > TextureReadbackSize())
     {
-        cemuLog_logOnce(LogType::Force, "Metal: texture is too large for the {} MB readback buffer; skipping readback", TEXTURE_READBACK_SIZE / (1024 * 1024));
+        cemuLog_logOnce(LogType::Force, "Metal: texture is too large for the {} MB readback buffer; skipping readback", TextureReadbackSize() / (1024 * 1024));
         return nullptr;
     }
 
-    if ((m_readbackBufferWriteOffset + uploadSize) > TEXTURE_READBACK_SIZE)
+    if ((m_readbackBufferWriteOffset + uploadSize) > TextureReadbackSize())
     {
         m_readbackBufferWriteOffset = 0;
     }
@@ -1989,7 +1991,8 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         renderCommandEncoder->setScissorRect(encoderState.m_scissor);
     }
 
-    // Breadcrumb for this draw (see MetalDrawBreadcrumb) and a last check of what hardware vertex fetch will read
+    // Breadcrumb for this draw (see MetalDrawBreadcrumb); skipped when recording is switched off
+    if (PerfTelemetry::DrawBreadcrumbsEnabled().load(std::memory_order_relaxed))
     {
         auto* crumb = BeginDrawBreadcrumb();
         crumb->count = count;
@@ -2037,6 +2040,7 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         }
     }
 
+    // A last check of what hardware vertex fetch will read
     if (!fetchVertexManually)
     {
         // Hardware vertex fetch has no bounds check: a slot that is unbound, or bound to less than the draw reads,
@@ -2061,7 +2065,8 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         if (!vertexBuffersUsable)
         {
             cemuLog_logOnce(LogType::Force, "Metal: skipping a draw whose vertex buffer is missing or smaller than the range it reads (hardware vertex fetch would fault)");
-            m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_VERTEX_BUFFER | MetalDrawBreadcrumb::SUSPECT_SKIPPED;
+            if (m_crumb)
+                m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_VERTEX_BUFFER | MetalDrawBreadcrumb::SUSPECT_SKIPPED;
             streamout_rendererFinishDrawcall();
             LatteGPUState.drawCallCounter++;
             return;
@@ -2575,8 +2580,10 @@ MTL::CommandBuffer* MetalRenderer::GetCommandBuffer()
 
         auto pool = NS::AutoreleasePool::alloc()->init();
         // Ask for per-encoder execution status, so a failed command buffer names the encoder that faulted.
+        // Part of the same forensic set as the draw breadcrumbs, so the same switch turns it off.
         auto* commandBufferDescriptor = MTL::CommandBufferDescriptor::alloc()->init();
-        commandBufferDescriptor->setErrorOptions(MTL::CommandBufferErrorOptionEncoderExecutionStatus);
+        if (PerfTelemetry::DrawBreadcrumbsEnabled().load(std::memory_order_relaxed))
+            commandBufferDescriptor->setErrorOptions(MTL::CommandBufferErrorOptionEncoderExecutionStatus);
         MTL::CommandBuffer* mtlCommandBuffer = m_commandQueue->commandBuffer(commandBufferDescriptor)->retain();
         commandBufferDescriptor->release();
         pool->release();
@@ -2817,6 +2824,8 @@ void MetalRenderer::CommitCommandBuffer()
 // "command buffer failed" log line say which encoder faulted and roughly where in the frame.
 void MetalRenderer::LabelEncoder(MTL::CommandEncoder* encoder, const char* kind)
 {
+    if (!PerfTelemetry::DrawBreadcrumbsEnabled().load(std::memory_order_relaxed))
+        return;
     char text[96];
     snprintf(text, sizeof(text), "%s frame %u draw %u", kind, (uint32)LatteGPUState.frameCounter, (uint32)LatteGPUState.drawCallCounter);
     auto pool = NS::AutoreleasePool::alloc()->init();
@@ -2829,7 +2838,12 @@ MetalDrawBreadcrumb* MetalRenderer::BeginDrawBreadcrumb()
     MetalDrawBreadcrumb& crumb = m_breadcrumbs[m_breadcrumbNext];
     m_breadcrumbNext = (m_breadcrumbNext + 1) % m_breadcrumbCapacity;
     ++m_breadcrumbsWritten;
-    crumb = MetalDrawBreadcrumb{};
+    // Every scalar is written by draw_execute and entries past the counts are never read, so only the
+    // counts need clearing. Re-zeroing the whole struct (over 700 bytes) for every draw was measurable.
+    crumb.numVertexBuffers = 0;
+    crumb.numUniformBuffers = 0;
+    crumb.numTextures = 0;
+    crumb.suspect = 0;
     crumb.frame = (uint32)LatteGPUState.frameCounter;
     crumb.draw = (uint32)LatteGPUState.drawCallCounter;
     m_crumb = &crumb;
@@ -3007,18 +3021,25 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     w.memDeviceMB.store((uint32)(m_device->currentAllocatedSize() / MB), std::memory_order_relaxed);
     w.memHostMappedMB.store((uint32)(m_memoryManager->GetHostAllocationSize() / MB), std::memory_order_relaxed);
 
-    uint64 textureBytes = 0;
-    uint32 textureCount = 0;
-    for (LatteTexture* texture : LatteTexture::GetAllTextures())
+    // Walking every texture and asking Metal for its size is the expensive part of this pass (thousands of
+    // objc calls on the GPU thread), so the texture totals refresh every two seconds, not every pass.
+    static std::chrono::steady_clock::time_point s_lastTextureStats;
+    if (evictionRequested || now - s_lastTextureStats >= std::chrono::seconds(2))
     {
-        if (!texture)
-            continue;
-        ++textureCount;
-        if (auto* mtlTexture = static_cast<LatteTextureMtl*>(texture)->GetTexture())
-            textureBytes += mtlTexture->allocatedSize();
+        s_lastTextureStats = now;
+        uint64 textureBytes = 0;
+        uint32 textureCount = 0;
+        for (LatteTexture* texture : LatteTexture::GetAllTextures())
+        {
+            if (!texture)
+                continue;
+            ++textureCount;
+            if (auto* mtlTexture = static_cast<LatteTextureMtl*>(texture)->GetTexture())
+                textureBytes += mtlTexture->allocatedSize();
+        }
+        w.memTextureCount.store(textureCount, std::memory_order_relaxed);
+        w.memTextureMB.store((uint32)(textureBytes / MB), std::memory_order_relaxed);
     }
-    w.memTextureCount.store(textureCount, std::memory_order_relaxed);
-    w.memTextureMB.store((uint32)(textureBytes / MB), std::memory_order_relaxed);
     w.memStatsValid.store(true, std::memory_order_relaxed);
 
 #if BOOST_OS_IOS
@@ -3035,11 +3056,9 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     const uint64 available = os_proc_available_memory();
     if (m_startAvailableMemory == 0)
         m_startAvailableMemory = available;
-    const bool smallHeadroom = m_startAvailableMemory < 1536ull * MB;
-    const uint64 lowPercent = smallHeadroom ? 45 : 35;
-    const uint64 criticalPercent = smallHeadroom ? 25 : 20;
-    const uint64 lowMark = std::max<uint64>(m_startAvailableMemory * lowPercent / 100, std::min<uint64>(600ull * MB, m_startAvailableMemory / 2));
-    const uint64 criticalMark = std::max<uint64>(m_startAvailableMemory * criticalPercent / 100, std::min<uint64>(400ull * MB, m_startAvailableMemory * 30 / 100));
+    // One rule for every device, in DeviceCaps::EvictionMarks (Common/DeviceCapabilities.h).
+    uint64 lowMark, criticalMark;
+    const bool smallHeadroom = DeviceCaps::EvictionMarks(DeviceCaps::GetBudgets(), m_startAvailableMemory, lowMark, criticalMark);
     static bool s_loggedMemoryMarks = false;
     if (!s_loggedMemoryMarks && m_startAvailableMemory != 0)
     {
@@ -3180,6 +3199,17 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
                     cemuLog_log(LogType::Force, "Metal: the first command buffer on the new command queue completed without error");
                 }
             }
+            if (commandBuffer->status() == MTL::CommandBufferStatusCompleted)
+            {
+                // GPUStartTime/GPUEndTime are what the GPU itself reports, not host wall time
+                const double gpuStart = commandBuffer->GPUStartTime();
+                const double gpuEnd = commandBuffer->GPUEndTime();
+                if (gpuStart > 0.0 && gpuEnd > gpuStart)
+                {
+                    PerfTelemetry::Get().mtlGpuNs.fetch_add((uint64)((gpuEnd - gpuStart) * 1e9), std::memory_order_relaxed);
+                    PerfTelemetry::Get().mtlCommandBuffers.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
             m_memoryManager->CleanupBuffers(commandBuffer);
             commandBuffer->release();
             m_executingCommandBuffers.erase(m_executingCommandBuffers.begin() + i);
@@ -3262,7 +3292,13 @@ bool MetalRenderer::AcquireDrawable(bool mainWindow)
         layer.GetLayer()->setPixelFormat(pixelFormat);
     m_state.m_usesSRGB = latteBufferUsesSRGB;
 
-    return layer.AcquireDrawable();
+    // nextDrawable() blocks while the display still owns every drawable, which is the present-side sync cost
+    const uint64 acquireStart = PerfTelemetry::NowNs();
+    const bool acquired = layer.AcquireDrawable();
+    const uint64 acquireNs = PerfTelemetry::NowNs() - acquireStart;
+    PerfTelemetry::Get().drawableWaitNs.fetch_add(acquireNs, std::memory_order_relaxed);
+    PerfTelemetry::Get().gpuSyncNs.fetch_add(acquireNs, std::memory_order_relaxed);
+    return acquired;
 }
 
 bool MetalRenderer::CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader)
@@ -3843,6 +3879,7 @@ void MetalRenderer::SwapBuffer(bool mainWindow)
 
     auto commandBuffer = GetCommandBuffer();
     layer.PresentDrawable(commandBuffer);
+    (mainWindow ? PerfTelemetry::Get().tvPresents : PerfTelemetry::Get().padPresents).fetch_add(1, std::memory_order_relaxed);
 }
 
 void MetalRenderer::EnsureImGuiBackend()
