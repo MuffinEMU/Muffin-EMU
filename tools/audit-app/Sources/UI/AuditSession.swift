@@ -12,7 +12,9 @@ final class MetalSurfaceView: UIView {
     override class var layerClass: AnyClass { CAMetalLayer.self }
 }
 
-final class AuditSession: ObservableObject, RunnerHost {
+// The screen state is only touched on the main thread and the cross-thread state is behind `lock`; the runner
+// and the questionnaire hand-off use it from background tasks.
+final class AuditSession: ObservableObject, RunnerHost, @unchecked Sendable {
     // MARK: Screen state (main thread only)
     @Published var statusText = "Ready"
     @Published var progressDone = 0
