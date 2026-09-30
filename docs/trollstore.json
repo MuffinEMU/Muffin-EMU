@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "6.2",
+          "date": "2026-09-30T22:27:50Z",
+          "localizedDescription": "## What changed\n\n- Motion aiming starts from your real hold instead of drifting into place, keeps steady when you turn the screen or come back to the app, and has a new \"If aim feels backwards\" option for reversing left/right or up/down.\n- Debug logs now list every texture upload, copy or draw the Metal renderer skipped or clamped, so graphics glitches can be traced from one log.\n- Textures that arrive slightly short or oversized now show what they have instead of staying black or stale.\n- Fixes black or stale patches on textures that the game builds on the GPU and copies into compressed textures.\n- Fixes cube map, texture array and 3D texture copies that were skipped or read past the texture.\n- Fixes missing geometry in games whose vertex shaders ignore some of their vertex buffers.\n- Debug logs now show every scissor and index-count clamp the Metal renderer applies.\n- GPU fault reports now include the draws that caused the fault on every device.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 7b34c7a9b45143a6b1357e08115aad5f5b253e95.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to s...",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v6.2/MuffinEMU-fakesigned.ipa",
+          "size": 68625114,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "6.1",
           "date": "2026-09-30T21:23:11Z",
           "localizedDescription": "## What changed\n\n- Graphic packs can now be browsed and changed before you've launched a game for the first time, and switching a pack off and on no longer forgets the options you chose.\n- Graphic packs, built in. Download the community packs from inside MuffinEMU, turn packs on for a game, and choose options like resolution and frame rate. Suggestions fit your device, packs Metal can't fully use are marked, and you can import your own from Files. Changes apply the next time you launch a game.\n- The emulator logs a performance summary every 5 seconds and shows it under FPS in the overlay, the idle CPU core no longer spins at 100% while a game waits, and CPU cores can be set to Auto, One or Three.\n- New CPU cores setting (Auto, One core, Three cores - Experimental), also per game. The GamePad screen no longer renders at full TV resolution and no longer draws while hidden.\n- MuffinEMU now adapts to your device: older 2 to 4 GB iPhones and iPads get safer memory settings and a clear message if a game will not fit, newer iPads and iPhones get a sharper default picture, and phones keep at least 720p. Bug reports now start with one line describing your device.\n- On iPhones and iPads with less than 4.5 GB of memory, or fewer than three CPU cores, every CPU cores choice (including Auto and Three cores) now runs on one core, and Settings says why.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit d02157244252c7c63b01fb08fb57fe5798c98988.\n\n**`MuffinEMU.ipa`** - SideSto...",
@@ -435,12 +443,12 @@
   ],
   "news": [
     {
-      "title": "MuffinEMU 6.1",
-      "identifier": "muffinemu-v6.1",
-      "caption": "Graphic packs can now be browsed and changed before you've launched a game for the first time, and switching a pack off and on no longer forgets the options you chose. Graphic packs, built in. Download the community...",
+      "title": "MuffinEMU 6.2",
+      "identifier": "muffinemu-v6.2",
+      "caption": "Motion aiming starts from your real hold instead of drifting into place, keeps steady when you turn the screen or come back to the app, and has a new \"If aim feels backwards\" option for reversing left/right or...",
       "date": "2026-09-30",
       "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v6.1",
+      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v6.2",
       "appID": "com.kiddreads.MuffinEMU",
       "notify": false
     }
