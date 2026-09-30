@@ -1,0 +1,1358 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "$id": "https://github.com/kiddreads/MuffinEMU/tools/audit-app/schema/report.schema.json",
+ "title": "MuffinEMU Audit report (muffinaudit.report/1)",
+ "description": "Written by the MuffinEMU Audit app as report.json. Every tNs is nanoseconds on the core's monotonic clock (cemu_audit_now_ns). Additional properties are allowed everywhere so a newer app can add fields without breaking older readers; readers must ignore what they do not know.",
+ "type": "object",
+ "properties": {
+  "schema": {
+   "const": "muffinaudit.report/1"
+  },
+  "reportId": {
+   "type": "string"
+  },
+  "createdAt": {
+   "type": "string"
+  },
+  "finishedAt": {
+   "type": [
+    "string",
+    "null"
+   ]
+  },
+  "tool": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string"
+    },
+    "version": {
+     "type": "string"
+    },
+    "probeProtocol": {
+     "type": "integer"
+    },
+    "hooksApi": {
+     "type": "integer"
+    },
+    "catalogueHash": {
+     "type": "string"
+    },
+    "catalogueSuites": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "name",
+    "version",
+    "probeProtocol",
+    "hooksApi",
+    "catalogueHash",
+    "catalogueSuites"
+   ],
+   "additionalProperties": true
+  },
+  "build": {
+   "type": "object",
+   "properties": {
+    "muffinRef": {
+     "type": "string"
+    },
+    "muffinSha": {
+     "type": "string"
+    },
+    "muffinVersion": {
+     "type": "string"
+    },
+    "coreFingerprint": {
+     "type": "string"
+    },
+    "hooksBuildInfo": {
+     "type": "string"
+    },
+    "auditAppVersion": {
+     "type": "string"
+    },
+    "auditAppBuild": {
+     "type": "string"
+    },
+    "auditToolsSha": {
+     "type": "string"
+    },
+    "guestBuild": {
+     "type": "string"
+    },
+    "workflowRun": {
+     "type": "string"
+    },
+    "builtAt": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "muffinRef",
+    "muffinSha",
+    "muffinVersion",
+    "coreFingerprint",
+    "hooksBuildInfo",
+    "auditAppVersion",
+    "auditAppBuild",
+    "auditToolsSha",
+    "guestBuild",
+    "workflowRun",
+    "builtAt"
+   ],
+   "additionalProperties": true
+  },
+  "device": {
+   "type": "object",
+   "properties": {
+    "machine": {
+     "type": "string"
+    },
+    "systemName": {
+     "type": "string"
+    },
+    "systemVersion": {
+     "type": "string"
+    },
+    "deviceReport": {
+     "type": "string"
+    },
+    "capsLine": {
+     "type": "string"
+    },
+    "chip": {
+     "type": "string"
+    },
+    "tier": {
+     "type": "integer"
+    },
+    "appleGpuFamily": {
+     "type": "integer"
+    },
+    "bcTextures": {
+     "type": "boolean"
+    },
+    "metal3": {
+     "type": "boolean"
+    },
+    "physicalMemoryMB": {
+     "type": "integer"
+    },
+    "logicalCores": {
+     "type": "integer"
+    },
+    "isPad": {
+     "type": "boolean"
+    },
+    "screenPoints": {
+     "type": "array",
+     "items": {
+      "type": "number"
+     }
+    },
+    "screenScale": {
+     "type": "number"
+    },
+    "thermalStateAtStart": {
+     "type": "string"
+    },
+    "lowPowerMode": {
+     "type": "boolean"
+    },
+    "jitPermitted": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "machine",
+    "systemName",
+    "systemVersion",
+    "deviceReport",
+    "capsLine",
+    "chip",
+    "tier",
+    "appleGpuFamily",
+    "bcTextures",
+    "metal3",
+    "physicalMemoryMB",
+    "logicalCores",
+    "isPad",
+    "screenPoints",
+    "screenScale",
+    "thermalStateAtStart",
+    "lowPowerMode",
+    "jitPermitted"
+   ],
+   "additionalProperties": true
+  },
+  "config": {
+   "type": "object",
+   "properties": {
+    "mode": {
+     "type": "string"
+    },
+    "suites": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "testIds": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "seed": {
+     "type": "integer"
+    },
+    "renderer": {
+     "type": "string",
+     "enum": [
+      "metal",
+      "vulkan"
+     ]
+    },
+    "padSurface": {
+     "type": "boolean"
+    },
+    "cpu": {
+     "type": "string"
+    },
+    "cpuModeReported": {
+     "type": "string"
+    },
+    "coresRunning": {
+     "type": "integer"
+    },
+    "attended": {
+     "type": "boolean"
+    },
+    "repeatCount": {
+     "type": "integer"
+    },
+    "soakMinutes": {
+     "type": "integer"
+    },
+    "logProfile": {
+     "type": "integer"
+    },
+    "captureAvailable": {
+     "type": "boolean"
+    },
+    "graphicsApiReported": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "mode",
+    "suites",
+    "testIds",
+    "seed",
+    "renderer",
+    "padSurface",
+    "cpu",
+    "cpuModeReported",
+    "coresRunning",
+    "attended",
+    "repeatCount",
+    "soakMinutes",
+    "logProfile",
+    "captureAvailable",
+    "graphicsApiReported"
+   ],
+   "additionalProperties": true
+  },
+  "summary": {
+   "type": "object",
+   "properties": {
+    "verdict": {
+     "type": "string",
+     "enum": [
+      "pass",
+      "fail",
+      "incomplete"
+     ]
+    },
+    "counts": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "integer"
+     }
+    },
+    "totalTests": {
+     "type": "integer"
+    },
+    "durationSec": {
+     "type": "number"
+    },
+    "affectedSubsystems": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "subsystem": {
+        "type": "string"
+       },
+       "failedTests": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "anomalies": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "subsystem",
+       "failedTests",
+       "anomalies"
+      ],
+      "additionalProperties": true
+     }
+    },
+    "anomalyCounts": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "integer"
+     }
+    }
+   },
+   "required": [
+    "verdict",
+    "counts",
+    "totalTests",
+    "durationSec",
+    "affectedSubsystems",
+    "anomalyCounts"
+   ],
+   "additionalProperties": true
+  },
+  "findings": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "properties": {
+     "testId": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "result": {
+      "type": "string",
+      "enum": [
+       "fail",
+       "error"
+      ]
+     },
+     "reason": {
+      "type": "string"
+     },
+     "sentence": {
+      "type": "string"
+     },
+     "subsystems": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "failedExpectations": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "failedChecks": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "userReported": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "question": {
+         "type": "string"
+        },
+        "answer": {
+         "type": "string"
+        },
+        "tNs": {
+         "type": "integer"
+        }
+       },
+       "required": [
+        "question",
+        "answer",
+        "tNs"
+       ],
+       "additionalProperties": true
+      }
+     },
+     "logHighlights": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "tNs": {
+         "type": "integer"
+        },
+        "coreElapsed": {
+         "type": [
+          "number",
+          "null"
+         ]
+        },
+        "text": {
+         "type": "string"
+        },
+        "tag": {
+         "type": [
+          "string",
+          "null"
+         ]
+        }
+       },
+       "required": [
+        "tNs",
+        "text"
+       ],
+       "additionalProperties": true
+      }
+     },
+     "path": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "reproduce": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "testId",
+     "title",
+     "result",
+     "reason",
+     "sentence",
+     "subsystems",
+     "failedExpectations",
+     "failedChecks",
+     "userReported",
+     "logHighlights",
+     "path",
+     "reproduce"
+    ],
+    "additionalProperties": true
+   }
+  },
+  "tests": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "suite": {
+      "type": "string"
+     },
+     "subsystems": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "runIndex": {
+      "type": "integer"
+     },
+     "iteration": {
+      "type": "integer"
+     },
+     "token": {
+      "type": "integer"
+     },
+     "result": {
+      "type": "string",
+      "enum": [
+       "pass",
+       "fail",
+       "skip",
+       "error"
+      ]
+     },
+     "reason": {
+      "type": "string"
+     },
+     "configuration": {
+      "type": "object",
+      "properties": {
+       "kind": {
+        "type": "string"
+       },
+       "guestTest": {
+        "type": "string"
+       },
+       "guestParams": {
+        "type": "string"
+       },
+       "seed": {
+        "type": "integer"
+       },
+       "durationMs": {
+        "type": "integer"
+       },
+       "renderer": {
+        "type": "string",
+        "enum": [
+         "metal",
+         "vulkan"
+        ]
+       },
+       "padSurface": {
+        "type": "boolean"
+       },
+       "cpuMode": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "kind",
+       "guestTest",
+       "guestParams",
+       "seed",
+       "durationMs",
+       "renderer",
+       "padSurface",
+       "cpuMode"
+      ],
+      "additionalProperties": true
+     },
+     "stimulus": {
+      "type": "string"
+     },
+     "expected": {
+      "type": "string"
+     },
+     "startedAt": {
+      "type": "string"
+     },
+     "endedAt": {
+      "type": "string"
+     },
+     "startNs": {
+      "type": "integer"
+     },
+     "endNs": {
+      "type": "integer"
+     },
+     "durationMs": {
+      "type": "number"
+     },
+     "path": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "tNs": {
+         "type": "integer"
+        },
+        "kind": {
+         "type": "string"
+        },
+        "name": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "tNs",
+        "kind",
+        "name"
+       ],
+       "additionalProperties": true
+      }
+     },
+     "checkpoints": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "tNs": {
+         "type": "integer"
+        },
+        "guestFrame": {
+         "type": "integer"
+        },
+        "frames": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "seq": {
+            "type": "integer"
+           },
+           "view": {
+            "type": "string",
+            "enum": [
+             "tv",
+             "pad"
+            ]
+           },
+           "status": {
+            "type": "string",
+            "enum": [
+             "ok",
+             "unsupported_format",
+             "readback_failed"
+            ]
+           },
+           "latteFrame": {
+            "type": "integer"
+           },
+           "tNs": {
+            "type": "integer"
+           },
+           "width": {
+            "type": "integer"
+           },
+           "height": {
+            "type": "integer"
+           },
+           "pixelFormat": {
+            "type": "integer"
+           },
+           "meanRGB": {
+            "type": "array",
+            "items": {
+             "type": "number"
+            },
+            "minItems": 3,
+            "maxItems": 3
+           },
+           "blackFraction": {
+            "type": "number"
+           },
+           "whiteFraction": {
+            "type": "number"
+           },
+           "minLuma": {
+            "type": "integer"
+           },
+           "maxLuma": {
+            "type": "integer"
+           },
+           "hash": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "seq",
+           "view",
+           "status",
+           "latteFrame",
+           "tNs",
+           "width",
+           "height",
+           "pixelFormat",
+           "meanRGB",
+           "blackFraction",
+           "whiteFraction",
+           "minLuma",
+           "maxLuma",
+           "hash"
+          ],
+          "additionalProperties": true
+         }
+        },
+        "expectations": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "type": {
+            "type": "string"
+           },
+           "name": {
+            "type": "string"
+           },
+           "pass": {
+            "type": "boolean"
+           },
+           "severity": {
+            "type": "string",
+            "enum": [
+             "fail",
+             "warn",
+             "info"
+            ]
+           },
+           "expected": {
+            "type": "string"
+           },
+           "measured": {
+            "type": "string"
+           },
+           "values": {
+            "type": "object",
+            "additionalProperties": {
+             "type": "number"
+            }
+           }
+          },
+          "required": [
+           "type",
+           "name",
+           "pass",
+           "severity",
+           "expected",
+           "measured",
+           "values"
+          ],
+          "additionalProperties": true
+         }
+        },
+        "thumbnailFiles": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        }
+       },
+       "required": [
+        "name",
+        "tNs",
+        "guestFrame",
+        "frames",
+        "expectations",
+        "thumbnailFiles"
+       ],
+       "additionalProperties": true
+      }
+     },
+     "checks": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "type": {
+         "type": "string"
+        },
+        "name": {
+         "type": "string"
+        },
+        "pass": {
+         "type": "boolean"
+        },
+        "severity": {
+         "type": "string",
+         "enum": [
+          "fail",
+          "warn",
+          "info"
+         ]
+        },
+        "summary": {
+         "type": "string"
+        },
+        "values": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "number"
+         }
+        }
+       },
+       "required": [
+        "type",
+        "name",
+        "pass",
+        "severity",
+        "summary",
+        "values"
+       ],
+       "additionalProperties": true
+      }
+     },
+     "scriptSteps": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "label": {
+         "type": "string"
+        },
+        "action": {
+         "type": "string"
+        },
+        "pass": {
+         "type": "boolean"
+        },
+        "severity": {
+         "type": "string",
+         "enum": [
+          "fail",
+          "warn",
+          "info"
+         ]
+        },
+        "expected": {
+         "type": "string"
+        },
+        "measured": {
+         "type": "string"
+        },
+        "tNs": {
+         "type": "integer"
+        }
+       },
+       "required": [
+        "label",
+        "action",
+        "pass",
+        "severity",
+        "expected",
+        "measured",
+        "tNs"
+       ],
+       "additionalProperties": true
+      }
+     },
+     "answers": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "questionId": {
+         "type": "string"
+        },
+        "question": {
+         "type": "string"
+        },
+        "type": {
+         "type": "string"
+        },
+        "answer": {
+         "type": "string"
+        },
+        "bad": {
+         "type": "boolean"
+        },
+        "severity": {
+         "type": "string",
+         "enum": [
+          "fail",
+          "warn",
+          "info"
+         ]
+        },
+        "subsystem": {
+         "type": "string"
+        },
+        "answeredAt": {
+         "type": "string"
+        },
+        "tNs": {
+         "type": "integer"
+        },
+        "testId": {
+         "type": "string"
+        },
+        "runToken": {
+         "type": "integer"
+        },
+        "logContext": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "tNs": {
+            "type": "integer"
+           },
+           "coreElapsed": {
+            "type": [
+             "number",
+             "null"
+            ]
+           },
+           "text": {
+            "type": "string"
+           },
+           "tag": {
+            "type": [
+             "string",
+             "null"
+            ]
+           }
+          },
+          "required": [
+           "tNs",
+           "text"
+          ],
+          "additionalProperties": true
+         }
+        }
+       },
+       "required": [
+        "questionId",
+        "question",
+        "type",
+        "answer",
+        "bad",
+        "severity",
+        "subsystem",
+        "answeredAt",
+        "tNs",
+        "testId",
+        "runToken",
+        "logContext"
+       ],
+       "additionalProperties": true
+      }
+     },
+     "userFlags": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "tNs": {
+         "type": "integer"
+        },
+        "at": {
+         "type": "string"
+        },
+        "note": {
+         "type": "string"
+        },
+        "logContext": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "properties": {
+           "tNs": {
+            "type": "integer"
+           },
+           "coreElapsed": {
+            "type": [
+             "number",
+             "null"
+            ]
+           },
+           "text": {
+            "type": "string"
+           },
+           "tag": {
+            "type": [
+             "string",
+             "null"
+            ]
+           }
+          },
+          "required": [
+           "tNs",
+           "text"
+          ],
+          "additionalProperties": true
+         }
+        }
+       },
+       "required": [
+        "tNs",
+        "at",
+        "note",
+        "logContext"
+       ],
+       "additionalProperties": true
+      }
+     },
+     "performance": {
+      "type": "object",
+      "properties": {
+       "frameIntervals": {
+        "anyOf": [
+         {
+          "type": "object",
+          "properties": {
+           "count": {
+            "type": "integer"
+           },
+           "meanMs": {
+            "type": "number"
+           },
+           "p50Ms": {
+            "type": "number"
+           },
+           "p95Ms": {
+            "type": "number"
+           },
+           "p99Ms": {
+            "type": "number"
+           },
+           "maxMs": {
+            "type": "number"
+           },
+           "stdDevMs": {
+            "type": "number"
+           },
+           "fps": {
+            "type": "number"
+           },
+           "long": {
+            "type": "integer"
+           },
+           "veryLong": {
+            "type": "integer"
+           },
+           "dropped": {
+            "type": "integer"
+           }
+          },
+          "required": [
+           "count",
+           "meanMs",
+           "p50Ms",
+           "p95Ms",
+           "p99Ms",
+           "maxMs",
+           "stdDevMs",
+           "fps",
+           "long",
+           "veryLong",
+           "dropped"
+          ],
+          "additionalProperties": true
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "reportedFps": {
+        "type": "number"
+       },
+       "guestFrames": {
+        "type": "integer"
+       },
+       "footprintStartMB": {
+        "type": "number"
+       },
+       "footprintEndMB": {
+        "type": "number"
+       },
+       "footprintPeakMB": {
+        "type": "number"
+       },
+       "availableMinMB": {
+        "type": "number"
+       },
+       "snapshotSamples": {
+        "type": "integer"
+       },
+       "videoStallSeen": {
+        "type": "boolean"
+       },
+       "thermalStateEnd": {
+        "type": "string"
+       },
+       "perfLine": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "reportedFps",
+       "guestFrames",
+       "footprintStartMB",
+       "footprintEndMB",
+       "footprintPeakMB",
+       "availableMinMB",
+       "snapshotSamples",
+       "videoStallSeen",
+       "thermalStateEnd",
+       "perfLine"
+      ],
+      "additionalProperties": true
+     },
+     "snapshotBefore": {},
+     "snapshotAfter": {},
+     "snapshotDelta": {},
+     "logSlice": {
+      "type": "object",
+      "properties": {
+       "startNs": {
+        "type": "integer"
+       },
+       "endNs": {
+        "type": "integer"
+       },
+       "lineCount": {
+        "type": "integer"
+       },
+       "droppedLines": {
+        "type": "integer"
+       },
+       "truncated": {
+        "type": "boolean"
+       },
+       "file": {
+        "type": "string"
+       },
+       "lines": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "tNs": {
+           "type": "integer"
+          },
+          "coreElapsed": {
+           "type": [
+            "number",
+            "null"
+           ]
+          },
+          "text": {
+           "type": "string"
+          },
+          "tag": {
+           "type": [
+            "string",
+            "null"
+           ]
+          }
+         },
+         "required": [
+          "tNs",
+          "text"
+         ],
+         "additionalProperties": true
+        }
+       }
+      },
+      "required": [
+       "startNs",
+       "endNs",
+       "lineCount",
+       "droppedLines",
+       "truncated",
+       "file",
+       "lines"
+      ],
+      "additionalProperties": true
+     },
+     "anomalies": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "kind": {
+         "type": "string"
+        },
+        "severity": {
+         "type": "string",
+         "enum": [
+          "fail",
+          "warn",
+          "info"
+         ]
+        },
+        "subsystem": {
+         "type": "string"
+        },
+        "testId": {
+         "type": [
+          "string",
+          "null"
+         ]
+        },
+        "tNs": {
+         "type": [
+          "integer",
+          "null"
+         ]
+        },
+        "message": {
+         "type": "string"
+        },
+        "evidence": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        }
+       },
+       "required": [
+        "id",
+        "kind",
+        "severity",
+        "subsystem",
+        "message",
+        "evidence"
+       ],
+       "additionalProperties": true
+      }
+     },
+     "guestResult": {
+      "type": "string"
+     },
+     "guestChecksum": {
+      "type": "string"
+     },
+     "reproduction": {
+      "type": "object",
+      "properties": {
+       "seed": {
+        "type": "integer"
+       },
+       "params": {
+        "type": "string"
+       },
+       "guestTest": {
+        "type": "string"
+       },
+       "outsideTool": {
+        "type": "string"
+       },
+       "command": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "seed",
+       "params",
+       "guestTest",
+       "outsideTool",
+       "command"
+      ],
+      "additionalProperties": true
+     }
+    },
+    "required": [
+     "id",
+     "title",
+     "suite",
+     "subsystems",
+     "runIndex",
+     "iteration",
+     "token",
+     "result",
+     "reason",
+     "configuration",
+     "stimulus",
+     "expected",
+     "startedAt",
+     "endedAt",
+     "startNs",
+     "endNs",
+     "durationMs",
+     "path",
+     "checkpoints",
+     "checks",
+     "scriptSteps",
+     "answers",
+     "userFlags",
+     "performance",
+     "logSlice",
+     "anomalies",
+     "guestResult",
+     "guestChecksum",
+     "reproduction"
+    ],
+    "additionalProperties": true
+   }
+  },
+  "anomalies": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "kind": {
+      "type": "string"
+     },
+     "severity": {
+      "type": "string",
+      "enum": [
+       "fail",
+       "warn",
+       "info"
+      ]
+     },
+     "subsystem": {
+      "type": "string"
+     },
+     "testId": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "tNs": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "message": {
+      "type": "string"
+     },
+     "evidence": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    },
+    "required": [
+     "id",
+     "kind",
+     "severity",
+     "subsystem",
+     "message",
+     "evidence"
+    ],
+    "additionalProperties": true
+   }
+  },
+  "notes": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   }
+  }
+ },
+ "required": [
+  "schema",
+  "reportId",
+  "createdAt",
+  "tool",
+  "build",
+  "device",
+  "config",
+  "summary",
+  "findings",
+  "tests",
+  "anomalies",
+  "notes"
+ ],
+ "additionalProperties": true
+}

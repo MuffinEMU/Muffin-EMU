@@ -1,0 +1,79 @@
+name: MuffinEMUAudit
+
+# The standalone MuffinEMU Audit app. It is NOT a target of MuffinEMU's Xcode project: its own bundle id, its
+# own settings, nothing shared with MuffinEMU's app code or UserDefaults, so it installs next to MuffinEMU.
+#
+# It links the core (Cemu.framework) built from a chosen MuffinEMU checkout with -DMUFFIN_AUDIT_HOOKS=ON. The
+# audit workflow (.github/workflows/build-audit-ipa.yml) sets MUFFIN_CORE_DIR to that checkout; XcodeGen
+# substitutes ${...} from the environment. Relative paths resolve against this file's directory.
+options:
+  bundleIdPrefix: com.kiddreads
+  deploymentTarget:
+    iOS: '15.0'
+  xcodeVersion: '15.0'
+
+settings:
+  PRODUCT_NAME: MuffinEMUAudit
+  PRODUCT_BUNDLE_IDENTIFIER: com.kiddreads.MuffinEMUAudit
+  SDKROOT: iphoneos
+  IPHONEOS_DEPLOYMENT_TARGET: '15.0'
+  SWIFT_VERSION: '5.0'
+  CODE_SIGN_IDENTITY: iPhone Developer
+  CODE_SIGN_ENTITLEMENTS: Audit.entitlements
+  SWIFT_OBJC_BRIDGING_HEADER: Bridge/AuditBridging-Header.h
+  CLANG_ENABLE_MODULES: 'YES'
+  # The bridge headers come from the same checkout the framework was built from, so the app always matches its core.
+  HEADER_SEARCH_PATHS:
+    - '${MUFFIN_CORE_DIR}/src/ios/Bridge'
+  FRAMEWORK_SEARCH_PATHS:
+    - '${MUFFIN_CORE_DIR}/build-ios/out'
+  LD_RUNPATH_SEARCH_PATHS: '$(inherited) @executable_path/Frameworks'
+  GENERATE_INFOPLIST_FILE: 'YES'
+  MARKETING_VERSION: '1.0'
+  CURRENT_PROJECT_VERSION: '1'
+  INFOPLIST_KEY_CFBundleDisplayName: 'MuffinEMU Audit'
+  INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
+  INFOPLIST_KEY_UIApplicationSceneManifest_Generation: 'YES'
+  INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+  INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad: 'UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+  # Reports live in Documents/MuffinAuditReports, visible in the Files app.
+  INFOPLIST_KEY_UIFileSharingEnabled: 'YES'
+  INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: 'YES'
+  INFOPLIST_KEY_GCSupportsControllerUserInteraction: 'YES'
+  # The core opens the microphone when a title asks for GamePad microphone input; without a usage string iOS
+  # would terminate the app at that moment. The audit guest never asks, and the app never records.
+  INFOPLIST_KEY_NSMicrophoneUsageDescription: 'The emulator core may open the microphone if a Wii U title asks. MuffinEMU Audit never records audio.'
+
+targets:
+  MuffinEMUAudit:
+    type: application
+    platform: iOS
+    deploymentTarget: '15.0'
+
+    sources:
+      - path: Sources
+        type: group
+      - path: Bridge
+        type: group
+      # A folder reference, so a suite file added to Catalogue/ is in the bundle with no project change; the app
+      # reads Bundle.main's "Catalogue" subdirectory.
+      - path: Catalogue
+        type: folder
+      # The guest program, built by the workflow's guest job and copied here before this project is generated.
+      - path: Resources/audit.rpx
+        buildPhase: resources
+
+    dependencies:
+      - framework: ${MUFFIN_CORE_DIR}/build-ios/out/Cemu.framework
+        embed: true
+      # The two MoltenVK builds for the Vulkan renderer, embedded and deliberately not linked, exactly as MuffinEMU does:
+      # the bridge picks one per launch and the core loads only that one.
+      - framework: ${MUFFIN_CORE_DIR}/dependencies/MoltenVK.xcframework
+        embed: true
+        link: false
+      - framework: ${MUFFIN_CORE_DIR}/dependencies/MoltenVK128.framework
+        embed: true
+        link: false
+
+    scheme:
+      gatherCoverageData: false
