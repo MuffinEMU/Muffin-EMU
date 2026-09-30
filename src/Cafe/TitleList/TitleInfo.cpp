@@ -9,6 +9,98 @@
 #include "util/crypto/crc32.h"
 #include "config/ActiveSettings.h"
 #include "util/helpers/helpers.h"
+#include "Cafe/Filesystem/FST/KeyCache.h"
+
+#include <mutex>
+#include <unordered_map>
+#include <unordered_set>
+
+// A title that cannot be opened (wrong or missing key, damaged ticket, unreadable disc image) fails the same
+// way every time until the file, its folder or keys.txt changes. The library screen, cover lookup and title
+// scan each build a TitleInfo for every title, several times per launch, and every failed attempt against an
+// encrypted game folder used to try every key in keys.txt and log a line per key. Failures are remembered per
+// path together with a stamp of what they depend on, so each title is tried once, and logged once.
+namespace
+{
+	struct OpenFailure
+	{
+		uint64 stamp;
+		TitleInfo::InvalidReason reason;
+	};
+	std::mutex sOpenFailureMutex;
+	std::unordered_map<std::string, OpenFailure> sOpenFailures;
+	std::unordered_set<std::string> sLoggedOnce;
+
+	// true the first time this category/path pair is seen
+	bool FirstTimeFor(std::string_view category, const fs::path& path)
+	{
+		std::string key(category);
+		key.push_back('|');
+		key.append(_pathToUtf8(path));
+		std::lock_guard lock(sOpenFailureMutex);
+		return sLoggedOnce.insert(std::move(key)).second;
+	}
+
+	uint64 OpenStamp(const fs::path& path, bool isNusTmd)
+	{
+		uint64 h = 1469598103934665603ull;
+		auto mix = [&](uint64 v) { h = (h ^ v) * 1099511628211ull; };
+		auto mixFile = [&](const fs::path& p)
+		{
+			std::error_code e;
+			const auto size = fs::file_size(p, e);
+			mix(e ? ~0ull : (uint64)size);
+			e.clear();
+			const auto time = fs::last_write_time(p, e);
+			mix(e ? 0ull : (uint64)time.time_since_epoch().count());
+		};
+		mixFile(path);
+		if (isNusTmd)
+		{
+			std::error_code e;
+			const fs::path folder = path.parent_path();
+			const auto folderTime = fs::last_write_time(folder, e);
+			mix(e ? 0ull : (uint64)folderTime.time_since_epoch().count());
+			mixFile(folder / "title.tik");
+		}
+		KeyCache_Prepare();
+		uint64 keyCount = 0;
+		while (keyCount < 0x100000 && KeyCache_GetAES128((sint32)keyCount) != nullptr)
+			keyCount++;
+		mix(keyCount);
+		return h;
+	}
+
+	bool LookupOpenFailure(const fs::path& path, uint64 stamp, TitleInfo::InvalidReason& reasonOut)
+	{
+		std::lock_guard lock(sOpenFailureMutex);
+		auto it = sOpenFailures.find(_pathToUtf8(path));
+		if (it == sOpenFailures.end() || it->second.stamp != stamp)
+			return false;
+		reasonOut = it->second.reason;
+		return true;
+	}
+
+	void RememberOpenFailure(const fs::path& path, uint64 stamp, TitleInfo::InvalidReason reason)
+	{
+		std::lock_guard lock(sOpenFailureMutex);
+		sOpenFailures[_pathToUtf8(path)] = OpenFailure{stamp, reason};
+	}
+
+	const char* DescribeOpenFailure(TitleInfo::InvalidReason reason)
+	{
+		switch (reason)
+		{
+		case TitleInfo::InvalidReason::NO_DISC_KEY: return "no key in keys.txt decrypts this disc image";
+		case TitleInfo::InvalidReason::NO_TITLE_TIK: return "it has no title.tik and no key in keys.txt opens it";
+		case TitleInfo::InvalidReason::BAD_TITLE_TMD: return "its title.tmd is unreadable";
+		case TitleInfo::InvalidReason::BAD_TITLE_TIK: return "its title.tik is unreadable";
+		case TitleInfo::InvalidReason::TITLE_KEY_INVALID: return "neither its title.tik nor any key in keys.txt decrypts it";
+		case TitleInfo::InvalidReason::MISSING_CONTENT_FILE: return "a .app file listed in title.tmd is missing";
+		default: return "it could not be read";
+		}
+	}
+}
 
 // detect format by reading file header/footer
 CafeTitleFileType DetermineCafeSystemFileType(fs::path filePath)
@@ -115,7 +207,11 @@ TitleInfo::TitleInfo(const TitleInfo::CachedInfo& cachedInfo)
 
 TitleInfo::~TitleInfo()
 {
-	cemu_assert(m_mountpoints.empty());
+	if (!m_mountpoints.empty())
+	{
+		cemuLog_log(LogType::Force, "A title was released while still mounted ({}); unmounting it", _pathToUtf8(m_fullPath));
+		UnmountAll();
+	}
 	delete m_parsedMetaXml;
 	delete m_parsedAppXml;
 	delete m_parsedCosXml;
@@ -224,6 +320,11 @@ bool TitleInfo::DetectFormat(const fs::path& path, fs::path& pathOut, TitleDataF
 			if (!zar)
 				return false;
 			ZArchiveNodeHandle rootDir = zar->LookUp("", false, true);
+			if (rootDir == ZARCHIVE_INVALID_NODE)
+			{
+				delete zar;
+				return false;
+			}
 			bool foundBase = false;
 			for (uint32 i = 0; i < zar->GetDirEntryCount(rootDir); i++)
 			{
@@ -404,7 +505,11 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 {
 	cemu_assert_debug(subfolder.empty() || (subfolder.front() != '/' || subfolder.front() != '\\')); // only relative subfolder allowed
 
-	cemu_assert(m_isValid);
+	if (!m_isValid)
+	{
+		cemuLog_log(LogType::Force, "Refusing to mount {} to {}: the title is not valid", _pathToUtf8(m_fullPath), virtualPath);
+		return false;
+	}
 	if (m_titleFormat == TitleDataFormat::HOST_FS)
 	{
 		fs::path hostFSPath = m_fullPath;
@@ -421,9 +526,18 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 	else if (m_titleFormat == TitleDataFormat::WUD || m_titleFormat == TitleDataFormat::NUS)
 	{
 		FSTVolume::ErrorCode fstError = FSTVolume::ErrorCode::UNKNOWN_ERROR;
+		uint64 openStamp = 0;
 		if (m_mountpoints.empty())
 		{
 			cemu_assert_debug(!m_wudVolume);
+			m_wudVolume = nullptr; // never a volume left over from an earlier failed mount
+			openStamp = OpenStamp(m_fullPath, m_titleFormat == TitleDataFormat::NUS);
+			InvalidReason knownReason;
+			if (LookupOpenFailure(m_fullPath, openStamp, knownReason))
+			{
+				SetInvalidReason(knownReason);
+				return false;
+			}
 			if(m_titleFormat == TitleDataFormat::WUD)
 				m_wudVolume = FSTVolume::OpenFromDiscImage(m_fullPath, &fstError); // open wud/wux
 			else
@@ -443,6 +557,12 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 				SetInvalidReason(InvalidReason::TITLE_KEY_INVALID);
 			else if (fstError == FSTVolume::ErrorCode::CONTENT_FILE_MISSING)
 				SetInvalidReason(InvalidReason::MISSING_CONTENT_FILE);
+			// A missing .app file is cheap to find again and the launch path reads its name straight from the
+			// failed attempt, so only the expensive, repeatable failures are remembered
+			if (m_invalidReason != InvalidReason::MISSING_CONTENT_FILE)
+				RememberOpenFailure(m_fullPath, openStamp, m_invalidReason);
+			if (FirstTimeFor("open", m_fullPath))
+				cemuLog_log(LogType::Force, "Cannot open {}: {}", _pathToUtf8(m_fullPath), DescribeOpenFailure(m_invalidReason));
 			return false;
 		}
 		bool r = FSCDeviceWUD_Mount(virtualPath, subfolder, m_wudVolume, mountPriority);
@@ -451,6 +571,7 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 		{
 			cemuLog_log(LogType::Force, "Failed to mount {} to {}", virtualPath, subfolder);
 			delete m_wudVolume;
+			m_wudVolume = nullptr;
 			return false;
 		}
 	}
@@ -467,6 +588,7 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 		{
 			cemuLog_log(LogType::Force, "Failed to mount {} to {}", virtualPath, subfolder);
 			_ZArchivePool_ReleaseInstance(m_fullPath, m_zarchive);
+			m_zarchive = nullptr;
 			return false;
 		}
 	}
@@ -546,7 +668,8 @@ std::string TitleInfo::GetUniqueTempMountingPath()
 
 bool TitleInfo::ParseXmlInfo()
 {
-	cemu_assert(m_isValid);
+	if (!m_isValid)
+		return false;
 	if (m_hasParsedXmlFiles)
 		return m_isValid;
 	m_hasParsedXmlFiles = true;
@@ -594,7 +717,7 @@ bool TitleInfo::ParseXmlInfo()
 	if ((allowMissingMetaXml == false && !m_parsedMetaXml) || !m_parsedAppXml || !m_parsedCosXml)
 	{
 		bool hasAnyXml = m_parsedMetaXml || m_parsedAppXml || m_parsedCosXml;
-		if (hasAnyXml)
+		if (hasAnyXml && FirstTimeFor("xml", m_fullPath))
 			cemuLog_log(LogType::Force, "Title has missing meta .xml files. Title path: {}", _pathToUtf8(m_fullPath));
 		delete m_parsedMetaXml;
 		delete m_parsedAppXml;
@@ -632,7 +755,10 @@ ParsedMetaXml* TitleInfo::ParseAromaIni(std::span<unsigned char> content)
 	if (shortName)
 		parsed->m_short_name[(size_t)CafeConsoleLanguage::EN] = *shortName;
 
-	auto checksumInput = std::string{*author}.append(*longName).append(*shortName);
+	// A bundle missing any of these used to dereference an empty optional here
+	if (!author && !longName && !shortName)
+		return nullptr;
+	auto checksumInput = std::string{author.value_or(std::string_view{})}.append(longName.value_or(std::string_view{})).append(shortName.value_or(std::string_view{}));
 	parsed->m_title_id = (0x0005000Full<<32) | crc32_calc(checksumInput.data(), checksumInput.length());
 
 	return parsed.release();
@@ -650,19 +776,30 @@ bool TitleInfo::ParseAppXml(std::vector<uint8>& appXmlData)
 
 	m_parsedAppXml = new ParsedAppXml();
 
-	for (const auto& child : root.children())
+	// std::stoull throws on an empty or non-numeric value, and nothing above this catches it
+	try
 	{
-		std::string_view name = child.name();
-		if (name == "title_version")
-			m_parsedAppXml->title_version = (uint16)std::stoull(child.text().as_string(), nullptr, 16);
-		else if (name == "title_id")
-			m_parsedAppXml->title_id = std::stoull(child.text().as_string(), nullptr, 16);
-		else if (name == "app_type")
-			m_parsedAppXml->app_type = (uint32)std::stoull(child.text().as_string(), nullptr, 16);
-		else if (name == "group_id")
-			m_parsedAppXml->group_id = (uint32)std::stoull(child.text().as_string(), nullptr, 16);
-		else if (name == "sdk_version")
-			m_parsedAppXml->sdk_version = (uint32)std::stoull(child.text().as_string(), nullptr, 10);
+		for (const auto& child : root.children())
+		{
+			std::string_view name = child.name();
+			if (name == "title_version")
+				m_parsedAppXml->title_version = (uint16)std::stoull(child.text().as_string(), nullptr, 16);
+			else if (name == "title_id")
+				m_parsedAppXml->title_id = std::stoull(child.text().as_string(), nullptr, 16);
+			else if (name == "app_type")
+				m_parsedAppXml->app_type = (uint32)std::stoull(child.text().as_string(), nullptr, 16);
+			else if (name == "group_id")
+				m_parsedAppXml->group_id = (uint32)std::stoull(child.text().as_string(), nullptr, 16);
+			else if (name == "sdk_version")
+				m_parsedAppXml->sdk_version = (uint32)std::stoull(child.text().as_string(), nullptr, 10);
+		}
+	}
+	catch (const std::exception&)
+	{
+		cemuLog_log(LogType::Force, "app.xml has a value that is not a number. Title path: {}", _pathToUtf8(m_fullPath));
+		delete m_parsedAppXml;
+		m_parsedAppXml = nullptr;
+		return false;
 	}
 	return true;
 }

@@ -560,6 +560,11 @@ void cemu_bridge_set_stretch_to_fill(bool enabled);
 void cemu_bridge_set_graphics_api(int api);
 int cemu_bridge_graphics_api(void);
 
+/// A one-line note for the player about how the last launch differed from what they asked for, for example
+/// Vulkan not starting so Metal was used. Empty when there is nothing to say; reading it clears it. The string
+/// is only valid until the next call on the same thread.
+const char* cemu_bridge_take_launch_notice(void);
+
 /// Filters for scaling the 1280x720 (or GamePad 854x480) image to the screen: 0 linear,
 /// 1 bicubic, 2 bicubic hermite, 3 nearest neighbour. Upscale defaults to bicubic,
 /// downscale to linear - the core's own defaults. Out-of-range values are ignored.

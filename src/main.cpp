@@ -554,20 +554,64 @@ void CemuUIKit_SetMetal(bool metals);
 // needs exactly this again without starting a title: ShutdownTitle() stops the GPU thread,
 // and the GPU thread's exit destroys g_renderer, so the next title has no renderer until
 // this runs. Desktop Cemu gets the same effect by destroying and recreating its canvas.
+static std::mutex sRendererFallbackMutex;
+static std::string sRendererFallbackReason;
+
+// True once after a launch that had to fall back from Vulkan to Metal; copies why into reasonOut.
+extern "C" bool CemuTakeRendererFallback(char* reasonOut, size_t capacity)
+{
+    std::lock_guard lock(sRendererFallbackMutex);
+    if (sRendererFallbackReason.empty())
+        return false;
+    if (reasonOut && capacity > 0)
+        snprintf(reasonOut, capacity, "%s", sRendererFallbackReason.c_str());
+    sRendererFallbackReason.clear();
+    return true;
+}
+
 void CemuPrepareRenderer()
 {
+    bool usingMetal = false;
 #ifdef ENABLE_METAL
     if (ActiveSettings::GetGraphicsAPI() == kMetal)
+    {
         g_renderer = std::make_unique<MetalRenderer>();
+        usingMetal = true;
+    }
 #endif
 
 #ifdef ENABLE_VULKAN
     if (!g_renderer)
+    {
+#ifdef ENABLE_METAL
+        // MoltenVK can refuse to start on some devices ("No physical GPU could be found...", "Unable to create a
+        // logical device"). The launch continues on Metal, and the caller tells the player.
+        try
+        {
+            g_renderer = std::make_unique<VulkanRenderer>();
+        }
+        catch (const std::exception& ex)
+        {
+            const std::string why = ex.what();
+            cemuLog_log(LogType::Force, "Vulkan failed to start ({}). Using Metal for this launch.", why);
+            g_renderer.reset();
+            GetConfig().graphic_api = kMetal;
+            if (g_current_game_profile)
+                g_current_game_profile->ForceGraphicsAPI(kMetal);
+            g_renderer = std::make_unique<MetalRenderer>();
+            usingMetal = true;
+            std::lock_guard lock(sRendererFallbackMutex);
+            sRendererFallbackReason = why;
+        }
+#else
         g_renderer = std::make_unique<VulkanRenderer>();
 #endif
+    }
+#endif
 
-    cemu_assert(g_renderer != nullptr);
-    CemuUIKit_SetMetal(ActiveSettings::GetGraphicsAPI() == kMetal);
+    if (!g_renderer)
+        throw std::runtime_error("No renderer could be created");
+    CemuUIKit_SetMetal(usingMetal);
     CemuUIKit_InitializeLayer(true);
     CemuUIKit_InitializeLayer(false);
 }
@@ -581,7 +625,8 @@ void CemuRun()
 
 
 bool CemuInitJIT() {
-    PPCRecompiler_Init26();
+    // Used to fall off the end without returning: undefined behaviour for a bool function, which clang compiles to a trap
+    return PPCRecompiler_Init26();
 }
 
 
