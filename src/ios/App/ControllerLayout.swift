@@ -227,9 +227,20 @@ enum ControllerGeometry {
     /// rather than a dot that happens to move.
     static let stickKnobDiameter: CGFloat = 1.15
     /// How far the knob's centre may leave the base's centre before it is at full
-    /// deflection - the knob stays inside its own ring at the extremes, as a real stick's
-    /// cap does.
-    static var stickTravel: CGFloat { (stickBaseDiameter - stickKnobDiameter) / 2 }
+    /// deflection, as a fraction of the ring's radius. The rule for every on-screen stick,
+    /// in both pads.
+    ///
+    /// 1.0: the knob stays tethered to the centre, but its centre reaches the ring itself,
+    /// so at full push half the knob hangs past the ring - the way the GamePad's cap tilts
+    /// out over the edge of its dish. It used to stop with the knob's edge touching the
+    /// ring, which left only (ring - knob) / 2 of travel: 1.17 D here, and just 0.43 D on
+    /// the new pad's hardware-sized dish, too short to steer with.
+    static let stickTravelFraction: CGFloat = 1.0
+
+    /// Full-deflection travel for a stick whose ring has this diameter, in the same units.
+    static func stickTravel(ringDiameter: CGFloat) -> CGFloat {
+        ringDiameter / 2 * stickTravelFraction
+    }
 
     /// The shape the knob may reach. The real GamePad's sticks sit in an octagonal gate:
     /// the eight cardinals and diagonals reach full travel, the flats between them stop
