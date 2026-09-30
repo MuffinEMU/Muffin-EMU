@@ -20,6 +20,11 @@ struct GameOverrides: Codable, Equatable {
     /// before this field existed (follow the global default).
     var favourAccuracy: Bool?
 
+    /// CoreMode.rawValue ("auto", "single", "multi"), or nil to follow Settings > CPU. A string
+    /// rather than the enum so an unknown value from a future version decodes instead of
+    /// throwing away every override.
+    var coreMode: String?
+
     static let identity = GameOverrides()
     var isIdentity: Bool { self == GameOverrides.identity }
 }
@@ -76,6 +81,20 @@ final class PerGameSettingsStore: ObservableObject {
     func setFavourAccuracy(_ value: Bool?, for gameID: String) {
         var next = overrides(for: gameID)
         next.favourAccuracy = value
+        write(next, for: gameID)
+    }
+
+    /// Per-game core count first, Settings' choice underneath. Read before boot.
+    func effectiveCoreMode(for gameID: String) -> CoreMode {
+        if let raw = overrides(for: gameID).coreMode, let mode = CoreMode(rawValue: raw) {
+            return mode
+        }
+        return CoreMode.current
+    }
+
+    func setCoreMode(_ value: CoreMode?, for gameID: String) {
+        var next = overrides(for: gameID)
+        next.coreMode = value?.rawValue
         write(next, for: gameID)
     }
 
@@ -237,6 +256,13 @@ struct GameOptionsView: View {
         binding(for: \.favourAccuracy) { store.setFavourAccuracy($0, for: game.id) }
     }
 
+    /// nil is "Use Global Default"; the tag is CoreMode.rawValue otherwise.
+    private var coreModeChoice: Binding<String> {
+        Binding(
+            get: { store.overrides(for: game.id).coreMode ?? "" },
+            set: { store.setCoreMode(CoreMode(rawValue: $0), for: game.id) })
+    }
+
     var body: some View {
         // NavigationStack needs iOS 16+; the deployment target is 15.0.
         NavigationView {
@@ -265,6 +291,19 @@ struct GameOptionsView: View {
                             Picker("Favour Accuracy", selection: favourAccuracyChoice) {
                                 ForEach(TriState.allCases) { choice in
                                     Text(choice.title).tag(choice)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(MuffinTheme.pixelBlue)
+                        }
+                        HStack {
+                            Text("CPU Cores")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Spacer()
+                            Picker("CPU Cores", selection: coreModeChoice) {
+                                Text("Use Global Default").tag("")
+                                ForEach(CoreMode.allCases) { mode in
+                                    Text(mode.title).tag(mode.rawValue)
                                 }
                             }
                             .pickerStyle(.menu)
