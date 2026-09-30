@@ -180,6 +180,10 @@ struct MetalDrawBreadcrumb
         uint32 depth;
         uint16 mips;
         uint16 pixelFormat;
+        uint16 parentLevel;  // first level of the parent texture this view starts at
+        uint16 parentSlice;  // first slice of the parent texture this view starts at
+        uint16 parentMips;   // level count of the parent texture (0 when the texture is not a view)
+        uint16 parentLayers; // array length of the parent texture
     } textures[MAX_TEXTURES]{};
 };
 
@@ -401,6 +405,18 @@ public:
         cemu_assert_debug(m_currentCommandBuffer.m_commandBuffer);
 
         return m_currentCommandBuffer.m_commandBuffer;
+    }
+
+    // The command buffer a release should wait for: everything recorded so far is in it or in one before it.
+    // Null when nothing is pending, so the memory can be given back at once. Unlike GetCurrentCommandBuffer()
+    // this never returns one that has been finished and released already.
+    MTL::CommandBuffer* GetCommandBufferToRetireOn() const
+    {
+        if (m_currentCommandBuffer.m_commandBuffer && !m_currentCommandBuffer.m_commited)
+            return m_currentCommandBuffer.m_commandBuffer;
+        if (!m_executingCommandBuffers.empty())
+            return m_executingCommandBuffers.back();
+        return nullptr;
     }
 
     MTL::CommandBuffer* GetAndRetainCurrentCommandBufferIfNotCompleted() const
