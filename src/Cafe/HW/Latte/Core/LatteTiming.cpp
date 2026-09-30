@@ -92,8 +92,9 @@ void LatteTiming_signalVsync()
 		if (LatteGPUState.sharedArea)
 		{
 			// hack/workaround - only execute flip if GX2SwapScanBuffers() isn't lagging behind
+			// Breath of the Wild, all three regions (the JP entry used to name the update's title id, so JP never got it)
 			uint64 currentTitleId = CafeSystem::GetForegroundTitleId();
-			if (currentTitleId == 0x00050000101c9500 || currentTitleId == 0x00050000101c9400 || currentTitleId == 0x0005000e101c9300)
+			if (currentTitleId == 0x00050000101c9500 || currentTitleId == 0x00050000101c9400 || currentTitleId == 0x00050000101c9300 || currentTitleId == 0x0005000e101c9300)
 			{
 				uint32 currentFlipRequestCount = _swapEndianU32(LatteGPUState.sharedArea->flipRequestCountBE);
 				uint32 currentFlipExecuteCount = _swapEndianU32(LatteGPUState.sharedArea->flipExecuteCountBE);

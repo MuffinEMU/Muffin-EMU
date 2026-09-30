@@ -180,6 +180,10 @@ struct MetalDrawBreadcrumb
         uint32 depth;
         uint16 mips;
         uint16 pixelFormat;
+        uint16 parentLevel;  // first level of the parent texture this view starts at
+        uint16 parentSlice;  // first slice of the parent texture this view starts at
+        uint16 parentMips;   // level count of the parent texture (0 when the texture is not a view)
+        uint16 parentLayers; // array length of the parent texture
     } textures[MAX_TEXTURES]{};
 };
 
@@ -339,6 +343,7 @@ public:
 
 	// buffer cache
 	void bufferCache_init(const sint32 bufferSize) override;
+	sint32 bufferCache_getGrantedSize(sint32 requestedSize) override;
 	void bufferCache_upload(uint8* buffer, sint32 size, uint32 bufferOffset) override;
 	void bufferCache_copy(uint32 srcOffset, uint32 dstOffset, uint32 size) override;
 	void bufferCache_copyStreamoutToMainBuffer(uint32 srcOffset, uint32 dstOffset, uint32 size) override;
@@ -401,6 +406,18 @@ public:
         cemu_assert_debug(m_currentCommandBuffer.m_commandBuffer);
 
         return m_currentCommandBuffer.m_commandBuffer;
+    }
+
+    // The command buffer a release should wait for: everything recorded so far is in it or in one before it.
+    // Null when nothing is pending, so the memory can be given back at once. Unlike GetCurrentCommandBuffer()
+    // this never returns one that has been finished and released already.
+    MTL::CommandBuffer* GetCommandBufferToRetireOn() const
+    {
+        if (m_currentCommandBuffer.m_commandBuffer && !m_currentCommandBuffer.m_commited)
+            return m_currentCommandBuffer.m_commandBuffer;
+        if (!m_executingCommandBuffers.empty())
+            return m_executingCommandBuffers.back();
+        return nullptr;
     }
 
     MTL::CommandBuffer* GetAndRetainCurrentCommandBufferIfNotCompleted() const
@@ -680,8 +697,11 @@ private:
     uint64 m_startAvailableMemory = 0;
 
     // Draw breadcrumbs (see MetalDrawBreadcrumb)
-    static constexpr uint32 BREADCRUMB_COUNT = 1024;
-    std::vector<MetalDrawBreadcrumb> m_breadcrumbs = std::vector<MetalDrawBreadcrumb>(BREADCRUMB_COUNT);
+    // Ring capacity is chosen from the device's physical memory when the renderer is created (about 0.7 KB per
+    // entry): 1024 draws on devices with 6 GB or more, fewer on small ones, so a low-memory iPhone does not
+    // pay for a trail it rarely needs while a big iPad keeps a long one.
+    uint32 m_breadcrumbCapacity = 1024;
+    std::vector<MetalDrawBreadcrumb> m_breadcrumbs;
     uint32 m_breadcrumbNext = 0;
     uint32 m_breadcrumbsWritten = 0;
     MetalDrawBreadcrumb* m_crumb = nullptr; // the entry of the draw being set up, null between draws
