@@ -291,7 +291,7 @@ Orientation: the `orientation` test draws a marker in each corner; the app reads
 maps every later expectation through it, so a flipped output is reported once as a finding instead of failing
 everything.
 
-The app keeps the screen awake for the length of a run. Every run records the thermal state at start and end.
+The app keeps the screen awake for the length of a run and must stay in the foreground: iOS suspends GPU work for a backgrounded app, which stops the guest and fails the test in progress. Every run records the thermal state at start and end. In a long soak, tests that pass after the first forty are recorded without per-frame detail, snapshots and most of the log, and the report file is rewritten every tenth test after the first hundred.
 
 ## 8. The report
 
