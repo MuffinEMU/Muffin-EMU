@@ -97,6 +97,9 @@ class GameManager: ObservableObject {
     @Published var emulationState: EmulationState = .idle
     /// Last human-readable message from the engine bridge (e.g. "engine not built yet").
     @Published var lastStatusMessage: String = ""
+    /// A short note about how the last launch differed from what was asked for (for example Vulkan not starting so
+    /// Metal was used). Shown as a banner over the game for a few seconds.
+    @Published var launchNotice: String?
     /// Real emulator frame rate, polled from the bridge once a second while a title
     /// is running (see startFrameRateMonitor()). 0 whenever nothing is rendering.
     @Published private(set) var frameRate: Int = 0
@@ -1113,11 +1116,11 @@ class GameManager: ObservableObject {
             // boot, like everything above. Defaults match Settings: Metal, bicubic up,
             // linear down.
             cemu_bridge_set_graphics_api(
-                Int32(UserDefaults.standard.object(forKey: "muffin.render.graphicsAPI") as? Int ?? 2))
+                Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.graphicsAPI") as? Int ?? 2))
             cemu_bridge_set_upscale_filter(
-                Int32(UserDefaults.standard.object(forKey: "muffin.render.upscaleFilter") as? Int ?? 1))
+                Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.upscaleFilter") as? Int ?? 1))
             cemu_bridge_set_downscale_filter(
-                Int32(UserDefaults.standard.object(forKey: "muffin.render.downscaleFilter") as? Int ?? 0))
+                Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.downscaleFilter") as? Int ?? 0))
 
             // Screen flip, gamma and the performance overlay - same "push from UserDefaults
             // before boot" reasoning as everything above: the engine reads all of these once
@@ -1137,13 +1140,13 @@ class GameManager: ObservableObject {
                 UserDefaults.standard.object(forKey: OverrideGammaSetting.storageKey) as? Double
                     ?? OverrideGammaSetting.defaultValue))
             cemu_bridge_set_overlay_position(
-                Int32(UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
+                Int32(clamping: UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
                     ?? OverlaySettings.defaultPosition.rawValue))
             cemu_bridge_set_overlay_text_color(
-                UInt32(UserDefaults.standard.object(forKey: OverlaySettings.textColorKey) as? Int
+                UInt32(clamping: UserDefaults.standard.object(forKey: OverlaySettings.textColorKey) as? Int
                     ?? OverlaySettings.defaultTextColor))
             cemu_bridge_set_overlay_text_scale(
-                Int32(UserDefaults.standard.object(forKey: OverlaySettings.textScaleKey) as? Int
+                Int32(clamping: UserDefaults.standard.object(forKey: OverlaySettings.textScaleKey) as? Int
                     ?? OverlaySettings.defaultTextScale))
             cemu_bridge_set_overlay_fps(
                 UserDefaults.standard.object(forKey: OverlaySettings.fpsKey) as? Bool
@@ -1171,13 +1174,13 @@ class GameManager: ObservableObject {
             // NotificationSettingsSection.swift's header comment); same push-before-boot
             // reasoning as the performance overlay above.
             cemu_bridge_set_notification_position(
-                Int32(UserDefaults.standard.object(forKey: NotificationSettings.positionKey) as? Int
+                Int32(clamping: UserDefaults.standard.object(forKey: NotificationSettings.positionKey) as? Int
                     ?? NotificationSettings.defaultPosition.rawValue))
             cemu_bridge_set_notification_text_color(
-                UInt32(UserDefaults.standard.object(forKey: NotificationSettings.textColorKey) as? Int
+                UInt32(clamping: UserDefaults.standard.object(forKey: NotificationSettings.textColorKey) as? Int
                     ?? NotificationSettings.defaultTextColor))
             cemu_bridge_set_notification_text_scale(
-                Int32(UserDefaults.standard.object(forKey: NotificationSettings.textScaleKey) as? Int
+                Int32(clamping: UserDefaults.standard.object(forKey: NotificationSettings.textScaleKey) as? Int
                     ?? NotificationSettings.defaultTextScale))
             cemu_bridge_set_notification_controller_profiles(
                 UserDefaults.standard.object(forKey: NotificationSettings.controllerProfilesKey) as? Bool
@@ -1217,15 +1220,15 @@ class GameManager: ObservableObject {
             cemu_bridge_set_tv_audio_enabled(
                 UserDefaults.standard.object(forKey: AudioSettings.tvEnabledKey) as? Bool ?? AudioSettings.defaultTvEnabled)
             cemu_bridge_set_tv_volume(
-                Int32(UserDefaults.standard.object(forKey: AudioSettings.tvVolumeKey) as? Int ?? AudioSettings.defaultTvVolume))
+                Int32(clamping: UserDefaults.standard.object(forKey: AudioSettings.tvVolumeKey) as? Int ?? AudioSettings.defaultTvVolume))
             cemu_bridge_set_tv_channels(
-                Int32(UserDefaults.standard.object(forKey: AudioSettings.tvChannelsKey) as? Int ?? AudioSettings.defaultTvChannels))
+                Int32(clamping: UserDefaults.standard.object(forKey: AudioSettings.tvChannelsKey) as? Int ?? AudioSettings.defaultTvChannels))
             cemu_bridge_set_pad_audio_enabled(
                 UserDefaults.standard.object(forKey: AudioSettings.padEnabledKey) as? Bool ?? AudioSettings.defaultPadEnabled)
             cemu_bridge_set_pad_volume(
-                Int32(UserDefaults.standard.object(forKey: AudioSettings.padVolumeKey) as? Int ?? AudioSettings.defaultPadVolume))
+                Int32(clamping: UserDefaults.standard.object(forKey: AudioSettings.padVolumeKey) as? Int ?? AudioSettings.defaultPadVolume))
             cemu_bridge_set_pad_channels(
-                Int32(UserDefaults.standard.object(forKey: AudioSettings.padChannelsKey) as? Int ?? AudioSettings.defaultPadChannels))
+                Int32(clamping: UserDefaults.standard.object(forKey: AudioSettings.padChannelsKey) as? Int ?? AudioSettings.defaultPadChannels))
             // Mic input, same "sync from UserDefaults before boot" reason - mic.cpp only
             // reads microphone_enabled/input_volume the moment a title calls MICInit, which
             // can happen any time after boot, not just here, so this is what makes a change
@@ -1233,7 +1236,7 @@ class GameManager: ObservableObject {
             cemu_bridge_set_microphone_enabled(
                 UserDefaults.standard.object(forKey: AudioSettings.microphoneEnabledKey) as? Bool ?? AudioSettings.defaultMicrophoneEnabled)
             cemu_bridge_set_input_volume(
-                Int32(UserDefaults.standard.object(forKey: AudioSettings.inputVolumeKey) as? Int ?? AudioSettings.defaultInputVolume))
+                Int32(clamping: UserDefaults.standard.object(forKey: AudioSettings.inputVolumeKey) as? Int ?? AudioSettings.defaultInputVolume))
 
             cemu_bridge_log_checkpoint("launchGame: about to call engine.boot() [background]")
             let status = EmulationEngine.bootBlocking(path: romPath)
@@ -1251,6 +1254,10 @@ class GameManager: ObservableObject {
                 }
                 engine.refreshStatus()
                 self.lastStatusMessage = engine.statusText
+                let notice = String(cString: cemu_bridge_take_launch_notice())
+                if !notice.isEmpty {
+                    self.showLaunchNotice(notice)
+                }
                 self.emulationState = (status == CEMU_BRIDGE_OK) ? .running : .error
                 if self.emulationState == .running {
                     self.startFrameRateMonitor()
@@ -1261,6 +1268,16 @@ class GameManager: ObservableObject {
         return true
     }
     #endif
+
+    private func showLaunchNotice(_ notice: String) {
+        launchNotice = notice
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            if self?.launchNotice == notice {
+                self?.launchNotice = nil
+            }
+        }
+    }
 
     func stopEmulation() {
         launchToken = UUID()
