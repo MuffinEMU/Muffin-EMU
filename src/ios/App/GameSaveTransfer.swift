@@ -189,7 +189,7 @@ enum GameSaveTransfer {
         case highFolder(titleFolder: URL)
     }
 
-    private static func shape(of url: URL) -> PickedShape? {
+    private static func shape(of url: URL, preferredTitleFolder: String? = nil) -> PickedShape? {
         let fm = FileManager.default
         func hasDir(_ name: String) -> Bool {
             existingChild(of: url, named: name).map { u in
@@ -208,9 +208,17 @@ enum GameSaveTransfer {
         // A <HIGH> folder's children are title folders, and a title folder contains
         // user/. That test is what separates it from a user/ folder, whose children are
         // account IDs - also eight hex digits, but with nothing named user inside.
-        if let title = hexDirs.first(where: { existingChild(of: $0, named: "user") != nil }) {
-            return .highFolder(titleFolder: title)
+        // Several title folders (a whole-console export): only this game's own folder will do. Taking
+        // the first one would import another game's save into this game.
+        let titleFolders = hexDirs.filter { existingChild(of: $0, named: "user") != nil }
+        if let preferred = preferredTitleFolder,
+           let match = titleFolders.first(where: { $0.lastPathComponent.caseInsensitiveCompare(preferred) == .orderedSame }) {
+            return .highFolder(titleFolder: match)
         }
+        if titleFolders.count == 1, let only = titleFolders.first {
+            return .highFolder(titleFolder: only)
+        }
+        if titleFolders.count > 1 { return nil }
         if !hexDirs.isEmpty { return .userFolder }
         return nil
     }
@@ -226,7 +234,7 @@ enum GameSaveTransfer {
         let scoped = picked.startAccessingSecurityScopedResource()
         defer { if scoped { picked.stopAccessingSecurityScopedResource() } }
 
-        guard let shape = shape(of: picked) else { throw TransferError.unrecognisedFolder }
+        guard let shape = shape(of: picked, preferredTitleFolder: destination.lastPathComponent) else { throw TransferError.unrecognisedFolder }
 
         let fm = FileManager.default
         var backupNote = ""

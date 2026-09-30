@@ -17,8 +17,6 @@ public:
 	    return m_texture;
 	}
 
-	void AllocateOnHost() override;
-
 	// Bookkeeping for the guard that flags a texture whose upload was skipped to be loaded again (MetalUploadSkipped)
 	uint32 m_retryInvertedHash = 0;
 	uint32 m_retryLastFrame = 0;
@@ -27,6 +25,14 @@ public:
 	bool m_retryHashInverted = false;
 	bool m_retryStopped = false;
 
+	void AllocateOnHost() override;
+
+	// True when the GPU had no memory for this texture and it is standing on the shared 1x1 null texture instead.
+	// Such a texture samples as black and renders nowhere, so the renderer drops it to let the next use try again.
+	bool IsNullSubstitute() const {
+	    return m_isNullSubstitute;
+	}
+
 protected:
 	LatteTextureView* CreateView(Latte::E_DIM dim, Latte::E_GX2SURFFMT format, sint32 firstMip, sint32 mipCount, sint32 firstSlice, sint32 sliceCount) override;
 
@@ -34,4 +40,5 @@ private:
 	class MetalRenderer* m_mtlr;
 
 	MTL::Texture* m_texture;
+	bool m_isNullSubstitute = false;
 };
