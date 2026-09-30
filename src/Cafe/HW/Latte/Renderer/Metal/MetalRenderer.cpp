@@ -2528,6 +2528,22 @@ void MetalRenderer::CommitCommandBuffer()
     // Commit the command buffer
     if (!m_currentCommandBuffer.m_commited)
     {
+        // Do not let the emulated GPU run arbitrarily far ahead of the real one. Every command buffer in
+        // flight keeps its staging chunks, snapshot and index allocations and the textures it used alive, and
+        // with nothing limiting it a game that is heavier on the GPU than the CPU (Super Mario 3D World on an
+        // A12Z) allocated tens of megabytes of new chunks per frame until the app was killed. Waiting on the
+        // oldest one is bounded, and once the GPU is presumed lost it only polls briefly.
+        constexpr size_t MAX_COMMAND_BUFFERS_IN_FLIGHT = 10;
+        for (int guard = 0; guard < 4 && m_executingCommandBuffers.size() >= MAX_COMMAND_BUFFERS_IN_FLIGHT; ++guard)
+        {
+            static uint32 s_throttleLogs = 0;
+            if (s_throttleLogs++ < 4)
+                cemuLog_log(LogType::Force, "Metal: {} command buffers are still on the GPU, waiting for the oldest before submitting more", m_executingCommandBuffers.size());
+            const bool finished = WaitForCommandBuffer(m_executingCommandBuffers.front(), "waiting for the GPU to catch up (too many command buffers in flight)");
+            ProcessFinishedCommandBuffers();
+            if (!finished)
+                break;
+        }
 
         // Handled differently, since it seems like Metal doesn't always call the completion handler
         //commandBuffer.m_commandBuffer->addCompletedHandler(^(MTL::CommandBuffer*) {
