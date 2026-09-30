@@ -24,7 +24,7 @@ struct Sim
 	Sim()
 	{
 		s.titleRunning = true; s.gx2Init = true; s.appActive = true; s.paused = false;
-		s.availMemMB = 900; s.frames = 100; s.presented = 100; s.cbRetired = 100; s.pm4 = 1000; s.flipRequests = 100;
+		s.availMemMB = 900; s.memLimitMB = 4000; s.frames = 100; s.presented = 100; s.cbRetired = 100; s.pm4 = 1000; s.flipRequests = 100;
 		det.Reset(now, true);
 	}
 	void Step()
@@ -210,6 +210,55 @@ static void memory_eviction_dip_and_real_low_memory()
 	CHECK(!t.stalled(), "clears when memory recovers");
 }
 
+// Nothing is tuned to one chip: windows follow the median frame time this session measured, memory limits follow the
+// process's own memory limit.
+static void windows_follow_the_device_speed()
+{
+	// a slow device: 10 fps is a 100 ms median, 3x the 30 fps reference, so the 15 s window is 45 s there
+	Sim slow; slow.Run(30, 10);
+	CHECK(slow.det.FrameScale() > 2.9 && slow.det.FrameScale() < 3.3, "median frame time of a 10 fps session");
+	slow.Run(40, 0, false);
+	CHECK(!slow.stalled() && slow.raises == 0 && slow.suspects == 0, "40 s stall on a 10 fps device is still inside the scaled window");
+	slow.Run(15, 0, false);
+	CHECK(slow.stalled() && slow.lastRule == Rule::GpuThreadNoProgress, "but a real one is caught after the scaled window + confirmation");
+
+	// a fast device keeps the unscaled floor exactly (this is the A12Z-at-30-fps behaviour, unchanged)
+	Sim fast; fast.Run(30, 60);
+	CHECK(fast.det.FrameScale() == 1.0, "60 fps never shortens a window");
+	fast.Run(16, 0, false);
+	CHECK(fast.suspects == 1, "suspected at 15 s on a fast device");
+	fast.Run(3, 0, false);
+	CHECK(fast.stalled(), "confirmed on a fast device");
+
+	// what this session learned about the device carries into the next title
+	Sim carry; carry.Run(30, 10);
+	carry.det.Reset(carry.now, true);
+	CHECK(carry.det.FrameScale() > 2.9, "the next title starts with the device's measured scale");
+	carry.s.frames = 0;
+	carry.Run(40, 0, false);
+	CHECK(!carry.stalled() && carry.raises == 0, "title-start grace is scaled as well");
+}
+
+static void memory_limits_scale_with_the_device()
+{
+	// a device with a 1.5 GB process limit warns below 60 MB (4%), not 160 MB
+	Sim small; small.s.memLimitMB = 1500; small.Run(20, 30);
+	small.s.availMemMB = 100; small.Run(10, 30);
+	CHECK(!small.stalled(), "100 MB free is fine on a 1.5 GB limit");
+	small.s.availMemMB = 50; small.Run(4, 30);
+	CHECK(small.det.kind() == Kind::LowMemory, "50 MB free is low on a 1.5 GB limit");
+	CHECK(small.lastText.find("1500 MB memory limit") != std::string::npos || small.lastText.find("1500 MB") != std::string::npos, "log states the limit");
+
+	// the same 100 MB on a big device is low
+	Sim big; big.s.memLimitMB = 6000; big.Run(20, 30);
+	big.s.availMemMB = 100; big.Run(4, 30);
+	CHECK(big.det.kind() == Kind::LowMemory, "100 MB free is low on a 6 GB limit");
+
+	// unknown limit: nothing is judged rather than guessed
+	Sim unk; unk.s.memLimitMB = 0; unk.Run(20, 30); unk.s.availMemMB = 10; unk.Run(10, 30);
+	CHECK(!unk.stalled(), "unknown limit");
+}
+
 static void debugger_or_jit_pause_is_a_hiccup()
 {
 	Sim t; t.Run(20, 30);
@@ -262,13 +311,13 @@ static void present_failing_reports_cause()
 {
 	Sim t; t.Run(20, 30);
 	// frames keep being made, the layer never gives a drawable
-	for (int i = 0; i < 4 * 12; i++) { t.s.frames += 2; t.s.drawableFailures += 15; t.s.drawableFailuresInARow += 15; t.Step(); }
+	for (int i = 0; i < 4 * 12; i++) { t.s.frames += 8; t.s.drawableFailures += 15; t.s.drawableFailuresInARow += 15; t.Step(); }
 	CHECK(t.stalled() && t.det.kind() == Kind::ScreenStopped, "screen stopped, memory fine");
 	t.s.drawableFailuresInARow = 0; t.s.presented++; t.Run(0.5, 0, false);
 	CHECK(!t.stalled(), "clears on the next present");
 
 	Sim u; u.Run(20, 30); u.s.availMemMB = 250;
-	for (int i = 0; i < 4 * 12; i++) { u.s.frames += 2; u.s.drawableFailures += 15; u.s.drawableFailuresInARow += 15; u.Step(); }
+	for (int i = 0; i < 4 * 12; i++) { u.s.frames += 8; u.s.drawableFailures += 15; u.s.drawableFailuresInARow += 15; u.Step(); }
 	CHECK(u.stalled() && u.det.kind() == Kind::ScreenMemory, "same symptom with memory gone is reported as out of memory");
 }
 
@@ -306,6 +355,8 @@ int main()
 	pause_menu_and_save_state();
 	title_start_and_switch_grace();
 	thermal_throttling_lengthens_windows();
+	windows_follow_the_device_speed();
+	memory_limits_scale_with_the_device();
 	drawable_hiccups_are_ignored();
 	occlusion_query_wait_that_completes();
 	memory_eviction_dip_and_real_low_memory();

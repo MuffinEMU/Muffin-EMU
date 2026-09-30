@@ -1123,7 +1123,21 @@ namespace {
         s.lastCbErrorCode = w.cbLastErrorCode.load();
         s.gpuPresumedLost = w.gpuPresumedLost.load();
         s.waitClass = w.reason.load() ? (StallDetect::WaitClass)w.reasonKind.load() : StallDetect::WaitClass::None;
-        s.availMemMB = (uint32_t)((uint64_t)os_proc_available_memory() >> 20);
+        // The limit jetsam enforces on this process, from what it has left plus what it holds, capped by the
+        // device's RAM. Memory thresholds are fractions of it, so they fit a 3 GB iPhone and a 6 GB iPad alike.
+        static uint64_t s_memLimitBytes = 0;
+        const uint64_t availBytes = (uint64_t)os_proc_available_memory();
+        if (availBytes != 0)
+        {
+            uint64_t limit = availBytes + cemu_mem_footprint_bytes();
+            const uint64_t physBytes = cemu_sysctl_u64("hw.memsize");
+            if (physBytes != 0 && limit > physBytes)
+                limit = physBytes;
+            if (limit > s_memLimitBytes)
+                s_memLimitBytes = limit;
+        }
+        s.availMemMB = (uint32_t)(availBytes >> 20);
+        s.memLimitMB = availBytes != 0 ? (uint32_t)(s_memLimitBytes >> 20) : 0;
         return s;
     }
 
@@ -1153,8 +1167,8 @@ namespace {
         cemuLog_log(LogType::Force, "VIDEO STALL: presented frames {}, TV drawable held: {}, drawable failures {} ({} in a row), TV drawable size {}x{}, layer device {}",
             w.presentedFrames.load(), w.tvDrawableHeld.load() ? "yes" : "no", w.drawableFailures.load(), w.drawableFailuresInARow.load(),
             w.tvDrawableWidth.load(), w.tvDrawableHeight.load(), w.tvLayerHasDevice.load() ? "set" : "unknown/missing");
-        cemuLog_log(LogType::Force, "VIDEO STALL: free memory {} MB, thermal state {} (windows x{:.1f}), app active {}, paused {}",
-            s.availMemMB, thermalState, s.windowScale, s.appActive ? "yes" : "no", s.paused ? "yes" : "no");
+        cemuLog_log(LogType::Force, "VIDEO STALL: free memory {} MB of a {} MB process limit, thermal state {} (x{:.1f}), app active {}, paused {}",
+            s.availMemMB, s.memLimitMB, thermalState, s.windowScale, s.appActive ? "yes" : "no", s.paused ? "yes" : "no");
         cemuLog_log(LogType::Force, "VIDEO STALL: window {}x{} points at {:.2f}x scale ({}x{} px), visible outputs mask {}",
             (int)info.width, (int)info.height, (double)info.dpi_scale.load(), (int)info.phys_width, (int)info.phys_height, (uint32)info.visible_outputs.load());
         cemuLog_log(LogType::Force, "VIDEO STALL: TV view: {}", surface);
