@@ -53,6 +53,7 @@
 #include "Cafe/CafeSystem.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
+#include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cemu/Logging/CemuLogging.h"
 #include "config/ActiveSettings.h"
@@ -85,6 +86,7 @@ void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale
 
 void CemuUIKit_UpdatePadWindowSize(void);
 void CemuUIKit_SetVisibleOutputs(bool tv, bool pad);
+void CemuUIKit_DescribeMainSurface(char* out, size_t outSize);
 void CemuUIKit_SetPadTouch(CGFloat x, CGFloat y, bool down);
 void* GCControllerBridge_add(const GCBridgeControllerDesc* desc);
 void GCControllerBridge_remove(void* handle);
@@ -810,6 +812,113 @@ namespace {
             }
         }).detach();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Render-stall watchdog
+//
+// The game's audio and input run on the guest CPU, the picture on the GPU thread, and the
+// two are not tied together (the speed setting "Full sync at GX2DrawDone" is off), so the
+// GPU side can stop while everything else carries on. LatteGPUState.frameCounter is bumped
+// once per emulated frame; if it stops moving for a few seconds while a title is running and
+// not paused, the picture has stopped. The watchdog raises a flag for the UI and writes one
+// snapshot of everything the GPU thread's breadcrumbs (LatteWaitInfo.h) can say about why.
+namespace {
+    std::atomic<bool> g_videoStalled{false};
+    std::atomic<bool> g_stallWatchRunning{false};
+    std::atomic<bool> g_appIsActive{true};
+
+    void ios_stall_log_snapshot(double stalledSeconds)
+    {
+        auto& w = LatteWait::Get();
+        const char* reason = w.reason.load();
+        const int64_t reasonMs = reason ? (LatteWait::NowMs() - w.reasonSinceMs.load()) : 0;
+        const char* lastTimeout = w.lastTimeoutReason.load();
+        auto& info = WindowSystem::GetWindowInfo();
+
+        char surface[640];
+        CemuUIKit_DescribeMainSurface(surface, sizeof(surface));
+
+        cemuLog_log(LogType::Force, "VIDEO STALL: no frame for {:.1f} s while the title is running and not paused (frame {}, flips {}, draw calls {})",
+            stalledSeconds, (uint32)LatteGPUState.frameCounter, (uint32)LatteGPUState.flipCounter, (uint32)LatteGPUState.drawCallCounter);
+        if (reason)
+            cemuLog_log(LogType::Force, "VIDEO STALL: GPU thread is blocked: {} (for {} ms)", reason, reasonMs);
+        else
+            cemuLog_log(LogType::Force, "VIDEO STALL: GPU thread is not in a known wait (it is running, or stuck somewhere without a breadcrumb)");
+        cemuLog_log(LogType::Force, "VIDEO STALL: last PM4 opcode 0x{:02x}, guest flip requests {}, GX2Init calls {}",
+            w.lastPM4Opcode.load(), (uint64)LatteGPUState.flipRequestCount.load(), (uint32)LatteGPUState.gx2InitCalled);
+        cemuLog_log(LogType::Force, "VIDEO STALL: pending: {} occlusion queries, {} texture readbacks, {} command buffers on the GPU, {} command buffers failed so far",
+            w.queriesInFlight.load(), w.readbacksPending.load(), w.executingCommandBuffers.load(), w.erroredCommandBuffers.load());
+        cemuLog_log(LogType::Force, "VIDEO STALL: waits that gave up: {} (last: {}), GPU presumed lost: {}",
+            w.timeouts.load(), lastTimeout ? lastTimeout : "none", w.gpuPresumedLost.load() ? "yes" : "no");
+        cemuLog_log(LogType::Force, "VIDEO STALL: presented frames {}, TV drawable held: {}, drawable failures {} ({} in a row), TV drawable size {}x{}, layer device {}",
+            w.presentedFrames.load(), w.tvDrawableHeld.load() ? "yes" : "no", w.drawableFailures.load(), w.drawableFailuresInARow.load(),
+            w.tvDrawableWidth.load(), w.tvDrawableHeight.load(), w.tvLayerHasDevice.load() ? "set" : "unknown/missing");
+        cemuLog_log(LogType::Force, "VIDEO STALL: window {}x{} points at {:.2f}x scale ({}x{} px), visible outputs mask {}",
+            (int)info.width, (int)info.height, (double)info.dpi_scale.load(), (int)info.phys_width, (int)info.phys_height, (uint32)info.visible_outputs.load());
+        cemuLog_log(LogType::Force, "VIDEO STALL: TV view: {}", surface);
+    }
+
+    void ios_stall_watchdog_start()
+    {
+        if (g_stallWatchRunning.exchange(true))
+            return;
+
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:nil
+            usingBlock:^(NSNotification*) { g_appIsActive.store(false); }];
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil
+            usingBlock:^(NSNotification*) { g_appIsActive.store(false); }];
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil
+            usingBlock:^(NSNotification*) { g_appIsActive.store(true); }];
+
+        std::thread([] {
+            constexpr double kStallSeconds = 4.0;
+            uint32 lastFrames = 0;
+            auto lastChange = std::chrono::steady_clock::now();
+            auto lastReport = lastChange;
+            bool haveBaseline = false;
+            while (g_stallWatchRunning.load())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+                // Only judge a title that is really expected to be drawing: running, past GX2Init,
+                // not paused, and the app in the foreground (iOS stops the GPU in the background).
+                const bool expectFrames = g_titleRunning.load() && CafeSystem::IsTitleRunning()
+                    && LatteGPUState.gx2InitCalled > 0 && !IOSTitlePause_IsPaused() && g_appIsActive.load();
+                const auto now = std::chrono::steady_clock::now();
+                const uint32 frames = LatteGPUState.frameCounter;
+                if (!expectFrames || !haveBaseline || frames != lastFrames)
+                {
+                    if (g_videoStalled.exchange(false))
+                        cemuLog_log(LogType::Force, "VIDEO STALL: frames are arriving again (frame {})", frames);
+                    haveBaseline = expectFrames;
+                    lastFrames = frames;
+                    lastChange = now;
+                    lastReport = now;
+                    continue;
+                }
+
+                const double stalled = std::chrono::duration<double>(now - lastChange).count();
+                if (stalled < kStallSeconds)
+                    continue;
+                if (!g_videoStalled.exchange(true))
+                {
+                    ios_stall_log_snapshot(stalled);
+                    lastReport = now;
+                }
+                else if (now - lastReport >= std::chrono::seconds(15))
+                {
+                    lastReport = now;
+                    const char* reason = LatteWait::Get().reason.load();
+                    cemuLog_log(LogType::Force, "VIDEO STALL: still stalled after {:.0f} s ({})", stalled, reason ? reason : "no known wait");
+                }
+            }
+        }).detach();
+    }
+}
+
+bool cemu_bridge_video_stalled(void) {
+    return g_videoStalled.load();
 }
 
 // ---------------------------------------------------------------------------
@@ -1651,6 +1760,7 @@ void cemu_bridge_initialize(const char* mlcPath) {
 
     ios_input_start();
     ios_stats_start();
+    ios_stall_watchdog_start();
     ios_log_tail_start();
     dispatch_async(dispatch_get_main_queue(), ^{
         if (UIWindow* window = ios_key_window())
@@ -2339,6 +2449,7 @@ void cemu_bridge_shutdown_title(void) {
     g_renderer.reset();
     g_titleRunning.store(false);
     g_framesPerSecond.store(0.0);
+    g_videoStalled.store(false);
     cemu_bridge_release_all_buttons();
     setStatus("Title shut down.");
 }

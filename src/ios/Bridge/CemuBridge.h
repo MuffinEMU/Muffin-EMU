@@ -150,6 +150,13 @@ void cemu_bridge_log_line(const char* message);
 /// available.
 double cemu_bridge_get_fps(void);
 
+/// True while a running, unpaused title has stopped producing frames for several seconds
+/// even though the emulator itself is still alive (the game's audio and input carry on
+/// while the picture is frozen or black). Set by a watchdog inside the bridge, which also
+/// writes a one-off diagnostic snapshot to log.txt when it trips, and cleared as soon as
+/// frames start arriving again. Safe to poll from the UI at any time.
+bool cemu_bridge_video_stalled(void);
+
 /// The four counters the engine's own progress heartbeat prints, readable on demand.
 /// cemu_bridge_get_fps() rounds to whole frames per second, so a title running below one
 /// frame per second reads 0, the same as one that stopped. These separate the two:
