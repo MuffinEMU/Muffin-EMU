@@ -47,7 +47,7 @@ bool IOSDlcUpdateImport_ReadTmdTitleId(const char* tmdPath, uint64* titleIdOut)
 	return true;
 }
 
-bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64* titleIdOut)
+static bool IOSDlcUpdateImport_DeriveTitleId_Impl(const char* romPath, uint64* titleIdOut)
 {
 	if (!romPath || romPath[0] == '\0' || !titleIdOut)
 		return false;
@@ -68,7 +68,7 @@ bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64* titleIdOut)
 // categories on top of what the engine already determined while parsing.
 // Returns false (and only outInvalidReason) for an invalid title; true (and
 // everything else, outInvalidReason left at NONE) for a valid one.
-bool IOSDlcUpdateImport_Inspect(const char* romPath, uint64* outTitleId, uint16* outVersion,
+static bool IOSDlcUpdateImport_Inspect_Impl(const char* romPath, uint64* outTitleId, uint16* outVersion,
 	int* outRegion, int* outInvalidReason)
 {
 	if (outInvalidReason)
@@ -159,4 +159,32 @@ int IOSDlcUpdateImport_GetTitleType(uint64 titleId)
 {
 	TitleIdParser parser((TitleId)titleId);
 	return (int)parser.GetType();
+}
+
+// Same reason as IOSCoverArt.cpp: called from Swift, where an escaping exception ends the app.
+bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64* titleIdOut)
+{
+	try
+	{
+		return IOSDlcUpdateImport_DeriveTitleId_Impl(romPath, titleIdOut);
+	}
+	catch (...)
+	{
+		return false;
+	}
+}
+
+bool IOSDlcUpdateImport_Inspect(const char* romPath, uint64* outTitleId, uint16* outVersion,
+	int* outRegion, int* outInvalidReason)
+{
+	try
+	{
+		return IOSDlcUpdateImport_Inspect_Impl(romPath, outTitleId, outVersion, outRegion, outInvalidReason);
+	}
+	catch (...)
+	{
+		if (outInvalidReason)
+			*outInvalidReason = (int)TitleInfo::InvalidReason::UNKNOWN_FORMAT;
+		return false;
+	}
 }

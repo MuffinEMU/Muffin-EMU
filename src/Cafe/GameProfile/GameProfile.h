@@ -28,6 +28,8 @@ public:
 	[[nodiscard]] bool StartWithGamepadView() const { return m_startWithPadView; }
 
 	[[nodiscard]] const std::optional<GraphicAPI>& GetGraphicsAPI() const { return m_graphics_api; }
+	// In-memory only (never saved): pins the renderer for the title being launched, used when the profile's choice cannot start
+	void ForceGraphicsAPI(GraphicAPI api) { m_graphics_api = api; }
 	[[nodiscard]] const AccurateShaderMulOption& GetAccurateShaderMul() const { return m_accurateShaderMul; }
 #ifdef ENABLE_METAL
 	[[nodiscard]] bool GetShaderFastMath() const { return m_shaderFastMath; }

@@ -560,6 +560,11 @@ void cemu_bridge_set_stretch_to_fill(bool enabled);
 void cemu_bridge_set_graphics_api(int api);
 int cemu_bridge_graphics_api(void);
 
+/// A one-line note for the player about how the last launch differed from what they asked for, for example
+/// Vulkan not starting so Metal was used. Empty when there is nothing to say; reading it clears it. The string
+/// is only valid until the next call on the same thread.
+const char* cemu_bridge_take_launch_notice(void);
+
 /// Filters for scaling the 1280x720 (or GamePad 854x480) image to the screen: 0 linear,
 /// 1 bicubic, 2 bicubic hermite, 3 nearest neighbour. Upscale defaults to bicubic,
 /// downscale to linear - the core's own defaults. Out-of-range values are ignored.
@@ -760,6 +765,15 @@ bool cemu_bridge_microphone_enabled(void);
 /// only takes effect the next time a title opens the mic (next title launch, in practice).
 void cemu_bridge_set_input_volume(int volume);
 int cemu_bridge_input_volume(void);
+
+/// Simulated blow into the GamePad microphone (the in-game "Blow" button). While on, the
+/// game's mic buffer is fed synthetic wind noise instead of microphone audio: no real
+/// microphone and no permission involved, works whether or not the real-mic setting above is
+/// on. Safe to call from any thread at any time, including with no title running. The core
+/// clears it when the title that owned the mic goes away, so read it back with
+/// cemu_bridge_mic_blow() rather than assuming your last write stuck.
+void cemu_bridge_set_mic_blow(bool blowing);
+bool cemu_bridge_mic_blow(void);
 
 /// Which MoltenVK build the Vulkan renderer uses this launch: "1.4.3" (the default)
 /// or "1.2.8". Chosen from the muffin.render.moltenVK setting when the engine

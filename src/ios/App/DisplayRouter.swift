@@ -322,8 +322,8 @@ final class DisplayRouter: ObservableObject {
         // renderer that has no first one.
         guard gameManager.registerRenderSurface(
             uiView: tvRenderView,
-            width: Int32(geometry.size.width),
-            height: Int32(geometry.size.height),
+            width: cInt(geometry.size.width),
+            height: cInt(geometry.size.height),
             dpiScale: geometry.scale
         ) else { return }
 
@@ -334,7 +334,7 @@ final class DisplayRouter: ObservableObject {
         // unrendered, which is intended) - both go through applyPlacement so surface
         // creation and display routing can never disagree about which view is which.
         applyPlacement(reason: "the TV surface was registered")
-        log("routing the Wii U TV screen to \(placement == .dualScreen && !swapScreens ? "the external display" : "this device") at \(Int(geometry.size.width))x\(Int(geometry.size.height)) points, \(geometry.scale)x scale (placement=\(placementName))")
+        log("routing the Wii U TV screen to \(placement == .dualScreen && !swapScreens ? "the external display" : "this device") at \(cInt(geometry.size.width))x\(cInt(geometry.size.height)) points, \(geometry.scale)x scale (placement=\(placementName))")
     }
 
     /// Called when a title stops. `CafeSystem::ShutdownTitle()` -> `LatteThread_Exit()`
@@ -653,8 +653,8 @@ final class DisplayRouter: ObservableObject {
         }
         let geometry = tvGeometry()
         cemu_bridge_resize_render_surface(
-            Int32(geometry.size.width),
-            Int32(geometry.size.height),
+            cInt(geometry.size.width),
+            cInt(geometry.size.height),
             geometry.scale,
             true
         )
@@ -670,8 +670,8 @@ final class DisplayRouter: ObservableObject {
         }
         let geometry = padGeometry()
         cemu_bridge_resize_render_surface(
-            Int32(geometry.size.width),
-            Int32(geometry.size.height),
+            cInt(geometry.size.width),
+            cInt(geometry.size.height),
             geometry.scale,
             false
         )
@@ -725,7 +725,7 @@ final class DisplayRouter: ObservableObject {
             // cleared on release, and the layer must outlive that.
             let surface = Unmanaged.passRetained(view).toOpaque()
             let geometry = padGeometry()
-            cemu_bridge_register_pad_render_surface(surface, Int32(geometry.size.width), Int32(geometry.size.height), geometry.scale)
+            cemu_bridge_register_pad_render_surface(surface, cInt(geometry.size.width), cInt(geometry.size.height), geometry.scale)
         } else if !wantPad, havePad {
             cemu_bridge_release_pad_render_surface()
             padRenderView?.isHidden = true
@@ -782,7 +782,7 @@ final class DisplayRouter: ObservableObject {
 
             let surface = Unmanaged.passRetained(view).toOpaque()
             let geometry = padGeometry()
-            cemu_bridge_register_pad_render_surface(surface, Int32(geometry.size.width), Int32(geometry.size.height), geometry.scale)
+            cemu_bridge_register_pad_render_surface(surface, cInt(geometry.size.width), cInt(geometry.size.height), geometry.scale)
         } else if !wantLocalPad, havePad, padRenderView?.superview === localPadContainer {
             // The `padRenderView?.superview === localPadContainer` guard is what keeps
             // this from releasing a pad surface the OTHER sync function (dualScreen's)
@@ -868,3 +868,10 @@ final class DisplayRouter: ObservableObject {
     }
 }
 #endif
+
+/// Points as a C int. `Int32(someDouble)` traps on NaN, infinity and out-of-range values, and a view that has not
+/// been laid out yet can report any of them.
+func cInt(_ value: CGFloat) -> Int32 {
+    guard value.isFinite else { return 0 }
+    return Int32(max(0, min(value, 100_000)))
+}
