@@ -135,6 +135,14 @@ bool iosuAct_isAccountDataLoaded()
 	return _actAccountDataInitialized;
 }
 
+// The account data is read the first time a title initializes ACT and then kept for the life of the process, so an
+// account or online-mode change made between two titles would not show up until the app is restarted. Forgetting the
+// data when a title stops makes the next title's ACT init read it again, as a fresh launch does.
+void iosuAct_resetAccountCache()
+{
+	_actAccountDataInitialized = false;
+}
+
 uint32 iosuAct_acquirePrincipalIdByAccountId(const char* nnid, uint32* pid)
 {
 	NAPI::AuthInfo authInfo;

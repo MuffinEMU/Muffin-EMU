@@ -696,6 +696,9 @@ namespace coreinit
 			// launching a title that was never mounted
 			cemuLog_log(LogType::Force, "Title switch to {:016x} failed: the title could not be prepared", titleId);
 			CafeSystem::SetTitleSwitchInProgress(false);
+			// the launch parameters were meant for the title that could not be prepared; left set they would be handed to
+			// whatever the user launches next
+			CafeSystem::UnsetOverrideArgs();
 			CafeSystem::NotifyTitleSwitchFailed(titleId);
 			return;
 		}

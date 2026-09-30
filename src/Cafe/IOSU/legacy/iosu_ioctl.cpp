@@ -58,6 +58,28 @@ void iosuIoctl_completeRequest(ioQueueEntry_t* ioQueueEntry, uint32 returnValue)
 	coreinit::OSResumeThread(ioQueueEntry->ppcThread);
 }
 
+// Drops requests that were queued for a stopped title and not yet picked up: the entries live on that title's stack, so
+// handing one to a device thread after its memory is gone would write to unmapped memory. A request a device thread is
+// already working on cannot be recalled here.
+void iosuIoctl_reset()
+{
+	std::lock_guard<std::mutex> lock(ioctlMutex);
+	for (sint32 i = 0; i < IOS_DEVICE_COUNT; i++)
+	{
+		_ioctlRingbuffer[i].Clear();
+		_ioctlRingbufferSemaphore[i].reset();
+	}
+}
+
+uint32 iosuIoctl_getPendingCount()
+{
+	std::lock_guard<std::mutex> lock(ioctlMutex);
+	uint32 count = 0;
+	for (sint32 i = 0; i < IOS_DEVICE_COUNT; i++)
+		count += _ioctlRingbuffer[i].HasData() ? 1 : 0;
+	return count;
+}
+
 void iosuIoctl_init()
 {
 	for (sint32 i = 0; i < IOS_DEVICE_COUNT; i++)
