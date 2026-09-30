@@ -76,6 +76,7 @@ namespace coreinit { void OSSetThermalThrottleMicros(uint32 micros); }
 extern "C" {
 void CemuInitialize(const char* execPath, const char* user_data_path, const char* config_path, const char* cache_path, const char* data_path);
 void CemuRun(void);
+void CemuPrepareRenderer(void);
 void CemuShutdown(void);
 void CemuUIKit_SetMainWindow(UIWindow* window);
 void CemuUIKit_SetMainView(UIView* view);
@@ -149,6 +150,7 @@ bool IOSSaveState_Save(const char* path);
 bool IOSSaveState_Load(const char* path);
 void IOSSystemImplementation_Install();
 bool IOSSystemImplementation_TitleExited(int* statusOut);
+bool IOSSystemImplementation_TitleSwitchFailed();
 void IOSSystemImplementation_ResetExit();
 
 // ---------------------------------------------------------------------------
@@ -2303,7 +2305,53 @@ static void ios_timebase_ladder_start() {
 bool cemu_bridge_is_title_running(void) {
     // A title that called coreinit exit() has finished even though CafeSystem still holds it,
     // and the UI should see that as the end of the game rather than a frozen one.
+    // A title switch (the Wii U Menu launching a game) has CafeSystem::IsTitleRunning() false
+    // for a moment between the old title's shutdown and the new one's start. That is not the
+    // end of the session, and reporting it as one would tear the emulator view down.
+    if (g_titleRunning.load() && CafeSystem::IsTitleSwitchInProgress())
+        return true;
     return g_titleRunning.load() && CafeSystem::IsTitleRunning() && !IOSSystemImplementation_TitleExited(nullptr);
+}
+
+// Called by the iOS SystemImplementation from the title-switch launcher thread. The
+// renderer has to be rebuilt (ShutdownTitle() destroyed it), and desktop Cemu does its
+// equivalent - recreating the canvas - on the UI thread, so this runs on the main thread
+// and blocks until it is done. If the main thread is not responding within 10 seconds it is
+// done on the calling thread instead rather than deadlocking the switch.
+bool IOSBridge_RecreateRenderSurface() {
+    struct State {
+        std::atomic_bool claimed{false};
+        std::atomic_bool ok{true};
+    };
+    auto state = std::make_shared<State>();
+    auto work = [state]() {
+        if (state->claimed.exchange(true))
+            return;
+        try
+        {
+            ios_apply_render_profile();
+            CemuPrepareRenderer();
+        }
+        catch (...)
+        {
+            state->ok.store(false);
+            std::string message = "title switch: rebuilding the renderer threw: " + cemu_describe_current_exception();
+            cemu_bridge_log_checkpoint(message.c_str());
+        }
+    };
+    if ([NSThread isMainThread]) {
+        work();
+        return state->ok.load();
+    }
+    dispatch_group_t group = dispatch_group_create();
+    dispatch_group_async(group, dispatch_get_main_queue(), ^{ work(); });
+    if (dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) != 0) {
+        cemuLog_log(LogType::Force, "iOS: title switch - the main thread did not respond in 10s, rebuilding the renderer on the launcher thread");
+        work();
+        // work() returns at once if the main thread got there first; wait for it to finish.
+        dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+    }
+    return state->ok.load();
 }
 
 void cemu_bridge_pause(void) {
@@ -2451,6 +2499,8 @@ const char* cemu_bridge_status_text(void) {
         snprintf(line, sizeof(line), "The game closed itself (exit status %d).", exitStatus);
         setStatus(line);
     }
+    if (g_titleRunning.load() && IOSSystemImplementation_TitleSwitchFailed())
+        setStatus("The Wii U Menu tried to open another title and it couldn't be started. Check that game is in your library and its keys are installed, then launch it from the library instead.");
     // Only fall back to a computed default when nothing specific has been set, so a boot
     // failure's reason is not overwritten by a generic line on the next read.
     if (statusIsEmpty())
