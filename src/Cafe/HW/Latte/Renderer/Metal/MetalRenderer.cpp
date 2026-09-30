@@ -58,6 +58,18 @@ std::vector<MetalRenderer::DeviceInfo> MetalRenderer::GetDevices()
 
 MetalRenderer::MetalRenderer()
 {
+    // State left behind by the previous title in this process: cached index reservations that belong to a
+    // destroyed allocator, and the GPU-fault latches and counters of the previous renderer.
+    LatteIndices_forgetAll();
+    {
+        auto& waitState = LatteWait::Get();
+        waitState.gpuError.store(false);
+        waitState.gpuErrorCode.store(0);
+        waitState.gpuPresumedLost.store(false);
+        waitState.erroredCommandBuffers.store(0);
+        waitState.executingCommandBuffers.store(0);
+    }
+
     // Options
 
     // Position invariance
@@ -346,6 +358,9 @@ MetalRenderer::~MetalRenderer()
     }
     m_executingCommandBuffers.clear();
     m_executingEventValues.clear();
+
+    // The index cache is global and still holds reservations from the allocator deleted below
+    LatteIndices_forgetAll();
 
     delete m_outputShaderCache;
     delete m_pipelineCache;
