@@ -281,6 +281,18 @@ bool TitleInfo::DetectFormat(const fs::path& path, fs::path& pathOut, TitleDataF
 			pathOut = path;
 			return true;
 		}
+		// or to an encrypted game folder (NUS): title.tmd next to the .app files. Any spelling of the
+		// name is accepted; pathOut becomes the real title.tmd so the rest of TitleInfo treats it
+		// like the file it would have been given directly.
+		for (auto& entry : fs::directory_iterator(path, ec))
+		{
+			if (boost::iequals(_pathToUtf8(entry.path().filename()), "title.tmd") && entry.is_regular_file(ec))
+			{
+				formatOut = TitleDataFormat::NUS;
+				pathOut = entry.path();
+				return true;
+			}
+		}
 	}
 	SetInvalidReason(InvalidReason::UNKNOWN_FORMAT);
 	return false;
@@ -408,7 +420,7 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 	}
 	else if (m_titleFormat == TitleDataFormat::WUD || m_titleFormat == TitleDataFormat::NUS)
 	{
-		FSTVolume::ErrorCode fstError;
+		FSTVolume::ErrorCode fstError = FSTVolume::ErrorCode::UNKNOWN_ERROR;
 		if (m_mountpoints.empty())
 		{
 			cemu_assert_debug(!m_wudVolume);
@@ -423,6 +435,14 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 				SetInvalidReason(InvalidReason::NO_DISC_KEY);
 			else if (fstError == FSTVolume::ErrorCode::TITLE_TIK_MISSING)
 				SetInvalidReason(InvalidReason::NO_TITLE_TIK);
+			else if (fstError == FSTVolume::ErrorCode::BAD_TITLE_TMD)
+				SetInvalidReason(InvalidReason::BAD_TITLE_TMD);
+			else if (fstError == FSTVolume::ErrorCode::BAD_TITLE_TIK)
+				SetInvalidReason(InvalidReason::BAD_TITLE_TIK);
+			else if (fstError == FSTVolume::ErrorCode::TITLE_KEY_INVALID)
+				SetInvalidReason(InvalidReason::TITLE_KEY_INVALID);
+			else if (fstError == FSTVolume::ErrorCode::CONTENT_FILE_MISSING)
+				SetInvalidReason(InvalidReason::MISSING_CONTENT_FILE);
 			return false;
 		}
 		bool r = FSCDeviceWUD_Mount(virtualPath, subfolder, m_wudVolume, mountPriority);

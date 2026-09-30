@@ -445,6 +445,25 @@ void CafeTitleList::ScanMLCPath(const fs::path& path)
 				AddDiscoveredTitle(titleInfo);
 			else
 				delete titleInfo;
+			continue;
+		}
+		// an encrypted game folder (NUS) installed here as-is, e.g. an update or DLC that was imported without decrypting
+		bool hasTitleTmd = false;
+		for (auto& file : fs::directory_iterator(it.path(), ec))
+		{
+			if (boost::iequals(_pathToUtf8(file.path().filename()), "title.tmd"))
+			{
+				hasTitleTmd = true;
+				break;
+			}
+		}
+		if (hasTitleTmd)
+		{
+			TitleInfo* titleInfo = new TitleInfo(it.path());
+			if (titleInfo->IsValid() && titleInfo->ParseXmlInfo())
+				AddDiscoveredTitle(titleInfo);
+			else
+				delete titleInfo;
 		}
 	}
 }
