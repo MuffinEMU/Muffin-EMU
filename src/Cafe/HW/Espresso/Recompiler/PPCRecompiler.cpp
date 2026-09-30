@@ -1506,6 +1506,20 @@ void PPCRecompiler_init()
 
 }
 
+// for the post-teardown check: how many lookup table blocks are still reserved and how many compile requests are queued
+size_t PPCRecompiler_GetReservedLookupBlockCount()
+{
+    return ppcRecompiler_reservedBlockMask.count();
+}
+
+size_t PPCRecompiler_GetQueuedTargetCount()
+{
+    PPCRecompilerState.recompilerSpinlock.lock();
+    size_t count = PPCRecompilerState.targetQueue.size() + PPCRecompilerState.invalidationRanges.size();
+    PPCRecompilerState.recompilerSpinlock.unlock();
+    return count;
+}
+
 void PPCRecompiler_Shutdown()
 {
     s_threadPool.Stop();
