@@ -575,6 +575,7 @@ private:
 	// Active objects
 	MetalCommandBuffer m_currentCommandBuffer{};
 	std::vector<MTL::CommandBuffer*> m_executingCommandBuffers;
+	std::vector<int32_t> m_executingEventValues; // event value each executing command buffer signals, same order
 	MetalEncoderType m_encoderType = MetalEncoderType::None;
 	MTL::CommandEncoder* m_commandEncoder = nullptr;
 
