@@ -1,5 +1,27 @@
 name: Build MuffinEMU (iOS)
 
+# WHERE A BUILD GOES: THREE CHANNELS, DECIDED ONCE, NEVER INFERRED
+# (details and the reasoning: docs/CI.md; the decision is ci/decide-channel.sh)
+#
+#   stable        numbered releases (vX.Y). Builds of main only: a push to main, or a dispatch run on
+#                 main. Listed in apps.json and trollstore.json.
+#   nightly       the rolling `nightly` release: the newest ELIGIBLE build of main. Eligible means the
+#                 ref is refs/heads/main, the event is a push or a dispatch on main, the build and every
+#                 verification succeeded, the commit is on main's first-parent history, this build is not
+#                 older than the nightly already published (re-running an old build cannot move Nightly
+#                 backwards), and main has not moved on to code this build lacks. Published by its own
+#                 job (publish-nightly) in the `nightly` environment, which only main may deploy to.
+#                 Listed in nightly.json and nightly-trollstore.json, and only if its tag is on main.
+#   experimental  a workflow_dispatch on a branch other than main with channel=experimental. Published
+#                 as "Experimental: <name> (<branch> @ <sha7>)" (tag experimental-<slug>-<sha7>) plus
+#                 the rolling `experimental` release. Listed only in experimental.json and
+#                 experimental-trollstore.json (per-experiment releases only). Never in stable or nightly.
+#   everything else (pull requests, pushes to other branches, dispatches without channel=experimental,
+#                 audit builds): run artifacts only. No release of any kind.
+#
+# Every publishing step checks the ref and the event itself as well as the channel, so a bug in the
+# channel cannot publish a build to the wrong place.
+
 # The whole build, in order:
 #   1. The Cemu core for arm64-ios as Cemu.framework (CMake + vcpkg), with the Swift
 #      bridge and its glue compiled into it (src/CMakeLists.txt, IOS block).
@@ -15,7 +37,19 @@ name: Build MuffinEMU (iOS)
 
 on:
   # A manual run on main publishes the next numbered release, exactly like a push.
-  workflow_dispatch: {}
+  # On main a dispatch is a release, exactly like a push. On any other branch it publishes NOTHING
+  # unless channel is experimental (then it publishes an experimental build, see above).
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Off main only: "experimental" publishes an Experimental pre-release; anything else leaves run artifacts only'
+        type: choice
+        options: [ artifacts-only, experimental ]
+        default: artifacts-only
+      experiment_name:
+        description: 'Experimental builds: a short name for the release title (defaults to the branch name)'
+        type: string
+        default: ''
   push:
     branches: [ main, ios27-sdk ]
     # Documentation, issue templates, bench tooling and the install-source generator cannot change the binary.
@@ -75,11 +109,27 @@ jobs:
     timeout-minutes: 330
     permissions:
       contents: write
+    outputs:
+      channel: ${{ steps.channel.outputs.channel }}
+      tag: ${{ steps.channel.outputs.tag }}
+      title: ${{ steps.channel.outputs.title }}
+      short_name: ${{ steps.channel.outputs.short_name }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
+
+      - name: Decide distribution channel
+        id: channel
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_NAME: ${{ inputs.experiment_name }}
+        run: ./ci/decide-channel.sh
 
       # The video-stall decision logic is plain C++ with no Cemu, Metal or UIKit in it, so it is tested here
       # in seconds, before the long build, with the compiler every runner already has.
@@ -295,6 +345,7 @@ jobs:
         run: |
           set -eo pipefail
           git fetch --tags --force -q origin
+          PUBLISH=true
           if [ "$GITHUB_REF_NAME" = "main" ]; then
             LAST=$(git tag -l 'v*' | sed -nE 's/^v([0-9]+)\.([0-9])$/\1 \2/p' | sort -n -k1,1 -k2,2 | tail -n1)
             if [ -z "$LAST" ]; then
@@ -306,6 +357,9 @@ jobs:
               MIN=$((MIN + 1))
               if [ "$MIN" -ge 10 ]; then MAJ=$((MAJ + 1)); MIN=0; fi
               VER="$MAJ.$MIN"
+              # A numbered release must strictly contain the latest one. A re-run of an old build of
+              # main would otherwise ship old code as the newest version.
+              if ! ./ci/check-stable.sh "$PREV"; then PUBLISH=false; fi
             fi
             TAG="v$VER"
             if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
@@ -318,12 +372,13 @@ jobs:
             TAG="auto-${GITHUB_SHA}"
             LABEL=$(echo "$GITHUB_SHA" | cut -c1-7); RELEASE=false
           fi
-          echo "version $VER, tag $TAG, numbered release: $RELEASE"
+          echo "version $VER, tag $TAG, numbered release: $RELEASE, publish it: $PUBLISH"
           {
             echo "MUFFIN_VERSION=$VER"
             echo "MUFFIN_TAG=$TAG"
             echo "MUFFIN_LABEL=$LABEL"
             echo "MUFFIN_RELEASE=$RELEASE"
+            echo "MUFFIN_PUBLISH=$PUBLISH"
             echo "MUFFIN_PREV_TAG=${PREV:-}"
           } >> "$GITHUB_ENV"
 
@@ -494,43 +549,7 @@ jobs:
           {
             if [ "$MUFFIN_RELEASE" = "true" ] && [ -n "$MUFFIN_PREV_TAG" ] \
                && git rev-parse -q --verify "refs/tags/$MUFFIN_PREV_TAG" >/dev/null; then
-              BODY=$(git log --no-merges --reverse --format='%H' "$MUFFIN_PREV_TAG..HEAD" | while read -r sha; do
-                subj=$(git show -s --format='%s' "$sha")
-                # Housekeeping the installer writes back to the repo. It is not a change
-                # anybody installed the build for. Written as a prefix strip rather than
-                # a case statement: bash 3.2, which is what macOS runners still ship,
-                # mis-parses a case pattern's ')' inside $( ).
-                if [ "${subj#Update install sources}" != "$subj" ]; then continue; fi
-                # Repeated trailers are ONE note that was wrapped across lines, so they
-                # join back into a single bullet. Prefixing each line instead turned a
-                # wrapped sentence into two bullets, the second starting mid-sentence.
-                note=$(git show -s --format='%(trailers:key=Release-note,valueonly)' "$sha" \
-                       | sed '/^[[:space:]]*$/d' | paste -sd' ' -)
-                # Second chance for a commit that is already pushed. Its message cannot
-                # be edited without rewriting main, so the note lives beside it instead:
-                #
-                #     git notes --ref=release-notes add -m "what this means" <sha>
-                #     git push origin refs/notes/release-notes
-                #
-                # The trailer still wins where both exist, so adding one never silently
-                # overrides what the commit itself said.
-                if [ -z "$note" ]; then
-                  note=$(git notes --ref=release-notes show "$sha" 2>/dev/null \
-                         | sed '/^[[:space:]]*$/d' | paste -sd' ' -)
-                fi
-                # `Release-note: skip` leaves a commit out entirely - for work that is
-                # real but has no user-facing half, like build tooling. Better than
-                # padding the notes with lines nobody installed the build for.
-                if [ "$(printf '%s' "$note" | tr '[:upper:]' '[:lower:]')" = "skip" ]; then continue; fi
-                if [ -n "$note" ]; then
-                  printf -- '- %s\n' "$note"
-                else
-                  printf -- '- %s\n' "$subj"
-                fi
-              done)
-              if [ -n "$BODY" ]; then
-                printf '## What changed\n\n%s\n\n' "$BODY"
-              fi
+              ./ci/release-notes.sh "$MUFFIN_PREV_TAG" HEAD
             fi
             sed "s|@COMMIT@|$GITHUB_SHA|" ci/release-body.md
             if [ -n "$MUFFIN_PREV_TAG" ]; then
@@ -552,7 +571,7 @@ jobs:
         # only reads published releases) and looking from the outside like the build
         # simply produced nothing. A retry re-attaches the missing files to the same
         # draft and publishes it.
-        if: github.event_name != 'pull_request'
+        if: steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         id: publish
         continue-on-error: true
@@ -572,41 +591,6 @@ jobs:
             MuffinEMU.app.dSYM.zip
           body_path: RELEASE_NOTES.md
 
-      - name: Update the rolling nightly
-        # A second, always-moving release that points at whatever was built last -
-        # including branch work, which never gets a numbered version. The tag is reused
-        # rather than created per build, so the nightly source has ONE download URL that
-        # is always the newest IPA instead of a new URL every time.
-        #
-        # Separate from the numbered release above rather than replacing it: the
-        # numbered ones are the history people roll back to, and a rolling tag cannot be
-        # rolled back to because it does not stay still.
-        if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
-        with:
-          tag_name: nightly
-          target_commitish: ${{ github.sha }}
-          name: Nightly
-          prerelease: true
-          # Never Latest. That belongs to the newest numbered release, and pointing it at
-          # a rolling prerelease would make every install page offer the bleeding edge.
-          make_latest: false
-          generate_release_notes: false
-          files: |
-            MuffinEMU.ipa
-            MuffinEMU-fakesigned.ipa
-          body: |
-            The newest build of MuffinEMU, from commit ${{ github.sha }} on `${{ github.ref_name }}`.
-
-            **Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.
-
-            This tag moves. Every successful build replaces it, so the download here is
-            always the newest code, never a version you can come back to. For that, use a
-            numbered release.
-
-            This build has not been tested. If you want the version that is known to
-            work, install the latest numbered release instead.
-
       - name: Re-try publishing the release
         # Only when the first attempt failed. Same inputs, so a partial upload is
         # completed rather than duplicated - the action updates the existing draft for
@@ -617,7 +601,7 @@ jobs:
         # assets is not installable and must not read as a green build. That also means
         # no separate guard step is needed - and a guard checking failure() would never
         # have fired anyway, because continue-on-error above keeps the job green.
-        if: github.event_name != 'pull_request' && steps.publish.outcome == 'failure'
+        if: steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false' && steps.publish.outcome == 'failure'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.MUFFIN_TAG }}
@@ -645,3 +629,74 @@ jobs:
             build-ios/**/*.log
           if-no-files-found: warn
           retention-days: 30
+
+  # The rolling Nightly. A separate job, so the `nightly` environment's deployment-branch rule (main
+  # only) is a physical barrier in front of it, in addition to this condition and the guards inside
+  # ci/publish-nightly.sh. Nothing in build-app can publish nightly any more.
+  publish-nightly:
+    needs: build-app
+    if: >-
+      needs.build-app.outputs.channel == 'main' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment: nightly
+    permissions:
+      contents: write
+    # One at a time, and a waiting run is never cancelled for a newer one: ordering is decided by the
+    # guards (an older build refuses to replace a newer nightly), not by who cancels whom.
+    concurrency:
+      group: publish-nightly
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: MuffinEMU-ipa
+          path: .
+      - name: Publish Nightly (guarded)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          CHANNEL: ${{ needs.build-app.outputs.channel }}
+        run: ./ci/publish-nightly.sh
+
+  # An experimental build: its own "Experimental: ..." pre-release and the rolling `experimental` one.
+  # Never touches nightly, a numbered release or any install source.
+  publish-experimental:
+    needs: build-app
+    if: >-
+      needs.build-app.outputs.channel == 'experimental' &&
+      github.ref != 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-experimental
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: MuffinEMU-*
+          merge-multiple: true
+          path: .
+      - name: Publish Experimental (guarded)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+          CHANNEL: ${{ needs.build-app.outputs.channel }}
+          TAG: ${{ needs.build-app.outputs.tag }}
+          TITLE: ${{ needs.build-app.outputs.title }}
+          SHORT_NAME: ${{ needs.build-app.outputs.short_name }}
+        run: ./ci/publish-experimental.sh
