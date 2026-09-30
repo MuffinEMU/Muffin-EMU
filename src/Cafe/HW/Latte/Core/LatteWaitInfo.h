@@ -29,6 +29,21 @@ namespace LatteWait
 		std::atomic<uint32_t> executingCommandBuffers{0};
 		std::atomic<uint32_t> erroredCommandBuffers{0};
 
+		// GPU memory breakdown in MB, refreshed by the GPU thread about twice a second so the
+		// memory watchdog can put it in every MEM line without touching GPU-thread data.
+		std::atomic<uint32_t> memDeviceMB{0};
+		std::atomic<uint32_t> memHostMappedMB{0};
+		std::atomic<uint32_t> memTextureCount{0};
+		std::atomic<uint32_t> memTextureMB{0};
+		std::atomic<uint32_t> memStagingMB{0};
+		std::atomic<uint32_t> memIndexMB{0};
+		std::atomic<uint32_t> memSnapshotMB{0};
+		std::atomic<uint32_t> memBufferCacheMB{0};
+		std::atomic<uint32_t> memXfbMB{0};
+		std::atomic<uint32_t> memReadbackMB{0};
+		std::atomic<uint32_t> texturesEvicted{0};
+		std::atomic<bool> memStatsValid{false};
+
 		// presentation
 		std::atomic<uint32_t> presentedFrames{0};
 		std::atomic<uint32_t> drawableFailures{0};

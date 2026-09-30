@@ -1,4 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
+#if BOOST_OS_IOS
+#include <os/proc.h>
+#endif
 #include "Cafe/HW/Latte/Renderer/Metal/MetalVoidVertexPipeline.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalMemoryManager.h"
 #include "Cafe/HW/Latte/Renderer/Metal/LatteTextureMtl.h"
@@ -433,6 +436,8 @@ void MetalRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 
     // Reset the command buffers (they are released by TemporaryBufferAllocator)
     CommitCommandBuffer();
+
+    UpdateMemoryStatsAndRelievePressure();
 
     // Debug
     m_performanceMonitor.ResetPerFrameData();
@@ -2501,6 +2506,79 @@ void MetalRenderer::CommitCommandBuffer()
         // Debug
         //m_commandQueue->insertDebugCaptureBoundary();
     }
+}
+
+// Once about every half second: publish a memory breakdown for the bridge's MEM log lines, and if the
+// process is close to its memory limit, drop textures that are cheap to bring back. The texture cache
+// otherwise only frees GPU-written textures when the game overwrites them, so a scene that keeps making
+// new render targets grows until the app is killed.
+void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (now - m_lastMemoryCheck < std::chrono::milliseconds(500))
+        return;
+    m_lastMemoryCheck = now;
+
+    auto& w = LatteWait::Get();
+    constexpr uint64 MB = 1024 * 1024;
+
+    uint32 numBuffers;
+    size_t totalSize, freeSize;
+    m_memoryManager->GetStagingAllocator().GetStats(numBuffers, totalSize, freeSize);
+    w.memStagingMB.store((uint32)(totalSize / MB), std::memory_order_relaxed);
+    m_memoryManager->GetIndexAllocator().GetStats(numBuffers, totalSize, freeSize);
+    w.memIndexMB.store((uint32)(totalSize / MB), std::memory_order_relaxed);
+    m_memoryManager->GetSnapshotStats(numBuffers, totalSize, freeSize);
+    w.memSnapshotMB.store((uint32)(totalSize / MB), std::memory_order_relaxed);
+    w.memBufferCacheMB.store(m_memoryManager->GetBufferCache() ? (uint32)(m_memoryManager->GetBufferCache()->length() / MB) : 0, std::memory_order_relaxed);
+    w.memXfbMB.store(m_xfbRingBuffer ? (uint32)(m_xfbRingBuffer->length() / MB) : 0, std::memory_order_relaxed);
+    w.memReadbackMB.store(m_readbackBuffer ? (uint32)(m_readbackBuffer->length() / MB) : 0, std::memory_order_relaxed);
+    w.memDeviceMB.store((uint32)(m_device->currentAllocatedSize() / MB), std::memory_order_relaxed);
+    w.memHostMappedMB.store((uint32)(m_memoryManager->GetHostAllocationSize() / MB), std::memory_order_relaxed);
+
+    uint64 textureBytes = 0;
+    uint32 textureCount = 0;
+    for (LatteTexture* texture : LatteTexture::GetAllTextures())
+    {
+        if (!texture)
+            continue;
+        ++textureCount;
+        if (auto* mtlTexture = static_cast<LatteTextureMtl*>(texture)->GetTexture())
+            textureBytes += mtlTexture->allocatedSize();
+    }
+    w.memTextureCount.store(textureCount, std::memory_order_relaxed);
+    w.memTextureMB.store((uint32)(textureBytes / MB), std::memory_order_relaxed);
+    w.memStatsValid.store(true, std::memory_order_relaxed);
+
+#if BOOST_OS_IOS
+    if (os_proc_available_memory() >= (1200ull * MB))
+        return;
+
+    // Close to the limit: delete what LatteTC says is safe (unused for several frames and restorable from
+    // guest memory, or overwritten), bounded per pass so it cannot stall a frame.
+    std::vector<LatteTexture*> candidates = LatteTC_GetDeleteableTextures();
+    uint32 deleted = 0;
+    uint64 freedBytes = 0;
+    for (LatteTexture* texture : candidates)
+    {
+        if (deleted >= 200)
+            break;
+        // deleting one texture can delete related ones, so make sure this one is still alive
+        const auto& live = LatteTexture::GetAllTextures();
+        if (std::find(live.begin(), live.end(), texture) == live.end())
+            continue;
+        if (auto* mtlTexture = static_cast<LatteTextureMtl*>(texture)->GetTexture())
+            freedBytes += mtlTexture->allocatedSize();
+        LatteTexture_Delete(texture);
+        ++deleted;
+    }
+    if (deleted > 0)
+    {
+        w.texturesEvicted.fetch_add(deleted, std::memory_order_relaxed);
+        if (m_memoryPressureLogs++ < 12)
+            cemuLog_log(LogType::Force, "Metal: memory is low ({} MB left), deleted {} unused textures (about {} MB)", os_proc_available_memory() / MB, deleted, freedBytes / MB);
+    }
+#endif
 }
 
 void MetalRenderer::ProcessFinishedCommandBuffers()

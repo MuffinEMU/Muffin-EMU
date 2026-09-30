@@ -210,6 +210,7 @@ public:
 
 	// flush control
 	void Flush(bool waitIdle = false) override;		// called when explicit flush is required (e.g. by imgui)
+	void UpdateMemoryStatsAndRelievePressure();
 	void NotifyLatteCommandProcessorIdle() override; // called when command processor has no more commands available or when stalled
 
 	// imgui
@@ -588,6 +589,9 @@ private:
         uint32 m_recordedDrawcalls = 0;
         std::chrono::steady_clock::time_point m_since;
     } m_idleCommit;
+
+    std::chrono::steady_clock::time_point m_lastMemoryCheck;
+    uint32 m_memoryPressureLogs = 0;
 
     uint32 m_defaultCommitTreshlod;
     uint32 m_commitTreshold;
