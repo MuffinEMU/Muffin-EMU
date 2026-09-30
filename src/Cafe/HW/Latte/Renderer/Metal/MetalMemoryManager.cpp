@@ -11,6 +11,9 @@
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
 
 #include <cstring>
+#if BOOST_OS_IOS
+#include <os/proc.h>
+#endif
 
 MetalMemoryManager::~MetalMemoryManager()
 {
@@ -231,18 +234,48 @@ void MetalMemoryManager::InitBufferCache(size_t size)
         }
     }
 
-    if (!m_bufferCache)
-        m_bufferCache = m_mtlr->GetDevice()->newBuffer(size, (m_metalBufferCacheMode == MetalBufferCacheMode::DevicePrivate ? MTL::ResourceStorageModePrivate : MTL::ResourceStorageModeShared));
-    if (!m_bufferCache)
+    // The size is worked out from the device that is running, not from one device's limits: what the core asks for is
+    // capped by the device's maximum buffer length and by a share of the memory this process still has (iOS), and a
+    // failed allocation is retried smaller instead of ending the launch. Devices with room get exactly what was asked.
+    constexpr size_t MB = 1024 * 1024;
+    constexpr size_t MIN_BUFFER_CACHE_SIZE = 48 * MB;
+    const size_t requestedSize = size;
+    size_t attemptSize = size;
+    const size_t deviceMaxLength = static_cast<size_t>(m_mtlr->GetDevice()->maxBufferLength());
+    if (deviceMaxLength != 0 && attemptSize > deviceMaxLength)
+        attemptSize = deviceMaxLength & ~(MB - 1);
+#if BOOST_OS_IOS
+    const size_t availableMemory = static_cast<size_t>(os_proc_available_memory());
+    if (availableMemory != 0)
+        attemptSize = std::min(attemptSize, std::max(availableMemory / 3, MIN_BUFFER_CACHE_SIZE) & ~(MB - 1));
+#endif
+    const MTL::ResourceOptions cacheOptions = (m_metalBufferCacheMode == MetalBufferCacheMode::DevicePrivate ? MTL::ResourceStorageModePrivate : MTL::ResourceStorageModeShared);
+    while (!m_bufferCache && attemptSize >= MIN_BUFFER_CACHE_SIZE)
+    {
+        m_bufferCache = m_mtlr->GetDevice()->newBuffer(attemptSize, cacheOptions);
+        if (m_bufferCache)
+            break;
+        cemuLog_log(LogType::Force, "Metal: a {} MB GPU buffer cache could not be allocated (device max buffer {} MB, allocated {} MB, recommended working set {} MB), trying smaller",
+            attemptSize / MB, deviceMaxLength / MB, static_cast<size_t>(m_mtlr->GetDevice()->currentAllocatedSize()) / MB, static_cast<size_t>(m_mtlr->GetDevice()->recommendedMaxWorkingSetSize()) / MB);
+        attemptSize = (attemptSize - attemptSize / 4) & ~(MB - 1);
+    }
+    if (m_bufferCache)
+    {
+        m_bufferCacheSize = m_bufferCache->length();
+        if (m_bufferCacheSize < requestedSize)
+            cemuLog_log(LogType::Force, "Metal: GPU buffer cache is {} MB instead of the {} MB requested; heavy scenes may stream geometry more often", m_bufferCacheSize / MB, requestedSize / MB);
+    }
+    else
     {
         // Left null so the upload and copy paths can skip instead of writing through contents().
+        m_bufferCacheSize = requestedSize;
         cemuLog_log(LogType::Force,
-            "Metal: failed to allocate the {} MB GPU buffer cache. Nothing will render; this is an out-of-memory condition, not a shader or pipeline fault",
-            size / (1024 * 1024));
+            "Metal: failed to allocate the GPU buffer cache (asked for {} MB, nothing down to {} MB fit). Nothing will render; this is an out-of-memory condition, not a shader or pipeline fault",
+            requestedSize / MB, MIN_BUFFER_CACHE_SIZE / MB);
     }
 
     if (m_metalBufferCacheMode == MetalBufferCacheMode::DeviceShared)
-        m_sharedTracker.Initialize(size);
+        m_sharedTracker.Initialize(m_bufferCacheSize);
     
     LatteBufferCache_hostSetVolatilityTracking(m_metalBufferCacheMode == MetalBufferCacheMode::Host);
 

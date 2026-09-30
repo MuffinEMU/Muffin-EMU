@@ -86,6 +86,11 @@ public:
 
     // Buffer cache
     void InitBufferCache(size_t size);
+    // Size the buffer cache really got (InitBufferCache() can grant less than it was asked for)
+    size_t GetBufferCacheSize() const
+    {
+        return m_bufferCacheSize;
+    }
     void UploadToBufferCache(const void* data, size_t offset, size_t size);
     void CopyBufferCache(size_t srcOffset, size_t dstOffset, size_t size);
     void TrackSharedCache(MTL::Buffer* buffer, size_t offset, size_t size, bool write = false);
@@ -160,6 +165,7 @@ private:
     } m_argumentSnapshots[METAL_SHADER_TYPE_TOTAL]{};
 
     MTL::Buffer* m_bufferCache = nullptr;
+    size_t m_bufferCacheSize = 0;
     MTL::Buffer* m_importedMemoryBuffer = nullptr;
     MetalBufferCacheMode m_metalBufferCacheMode;
     MPTR m_importedMemBaseAddress;
