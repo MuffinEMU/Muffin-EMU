@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "5.5",
+          "date": "2026-09-30T03:27:29Z",
+          "localizedDescription": "## What changed\n\n- MuffinEMU no longer crashes on launch when an encrypted game folder is in your library.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 921e0f8cd32c89f3cc4e2ed44d9de82191c6ce61.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v5.4...v5.5",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v5.5/MuffinEMU.ipa",
+          "size": 68094338,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "5.4",
           "date": "2026-09-30T00:59:38Z",
           "localizedDescription": "## What changed\n\n- Fixed a rare crash when quitting a game on iPhone and iPad.\n- Older Vulkan devices that were previously rejected can now run games through the Vulkan renderer.\n- Controller skins have new colour names (Indigo, Primary, Sky and so on); the skin you picked stays selected and looks the same.\n- Fixes blurry, low-quality graphics and frequent crashes during gameplay that started in 5.3.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 157c7faced8021e40c388e6732c3335ed3e46b5a.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v5.3...v5.4",
@@ -379,12 +387,12 @@
   ],
   "news": [
     {
-      "title": "MuffinEMU 5.4",
-      "identifier": "muffinemu-v5.4",
-      "caption": "Fixed a rare crash when quitting a game on iPhone and iPad. Older Vulkan devices that were previously rejected can now run games through the Vulkan renderer.",
+      "title": "MuffinEMU 5.5",
+      "identifier": "muffinemu-v5.5",
+      "caption": "MuffinEMU no longer crashes on launch when an encrypted game folder is in your library.",
       "date": "2026-09-30",
       "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v5.4",
+      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v5.5",
       "appID": "com.kiddreads.MuffinEMU",
       "notify": false
     }
