@@ -282,6 +282,16 @@ namespace {
         return (uint64_t)info.phys_footprint;
     }
 
+    // Total address space the process has mapped or reserved. On iOS this can run out long before RAM does
+    // (the guest's 4 GB reservation and the JIT arena are all address space), so it is logged beside RAM.
+    uint64_t cemu_mem_virtual_bytes() {
+        task_vm_info_data_t info{};
+        mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+        if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS)
+            return 0;
+        return (uint64_t)info.virtual_size;
+    }
+
     void cemu_mem_write_line(const char* tag, uint64_t availableBytes, uint64_t footprintBytes) {
         char line[720];
         int n = snprintf(line, sizeof(line),
@@ -291,6 +301,11 @@ namespace {
                  (unsigned long long)(footprintBytes / (1024ull * 1024ull)));
         // Where the GPU side's memory is, as last published by the GPU thread (LatteWaitInfo.h), so one
         // line can name what grew. Absent until a Metal renderer has published once.
+        if (n > 0 && n < (int)sizeof(line))
+        {
+            int m = snprintf(line + n, sizeof(line) - n, " | address space reserved %llu MB", (unsigned long long)(cemu_mem_virtual_bytes() / (1024ull * 1024ull)));
+            if (m > 0) n += m;
+        }
         auto& w = LatteWait::Get();
         if (n > 0 && n < (int)sizeof(line) && w.memStatsValid.load())
         {
