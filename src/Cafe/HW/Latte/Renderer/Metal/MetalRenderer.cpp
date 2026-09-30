@@ -230,6 +230,24 @@ namespace
                 total.store(0, std::memory_order_relaxed);
         }
     }
+
+    // Does the vertex shader read any attribute of this buffer group? Only used groups matter for hardware fetch:
+    // the pipeline's vertex descriptor leaves unused attributes (and groups made only of them) out, so the GPU
+    // never touches their buffer. usedEnd receives the end of the furthest attribute that is read.
+    bool MetalVertexGroupIsRead(const LatteParsedFetchShaderBufferGroup_t& group, const LatteDecompilerShader* vertexShader, uint32& usedEnd)
+    {
+        usedEnd = 0;
+        bool used = false;
+        for (sint32 j = 0; j < group.attribCount; ++j)
+        {
+            const auto& attr = group.attrib[j];
+            if ((uint32)vertexShader->resourceMapping.attributeMapping[attr.semanticId] == (uint32)-1)
+                continue;
+            used = true;
+            usedEnd = std::max<uint32>(usedEnd, attr.offset + GetMtlVertexFormatSize(attr.format));
+        }
+        return used;
+    }
 }
 
 std::vector<MetalRenderer::DeviceInfo> MetalRenderer::GetDevices()
@@ -2364,25 +2382,50 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         // Hardware vertex fetch has no bounds check: a slot that is unbound, or bound to less than the draw reads,
         // is a GPU page fault. Manual fetch checks the size in the shader and gets a null buffer below instead.
         bool vertexBuffersUsable = true;
+        const uint64 vertexShaderHash = vertexShader ? vertexShader->baseHash : 0;
         for (const auto& group : fetchShader->bufferGroups)
         {
             const uint32 i = group.attributeBufferIndex;
             if (i >= MAX_MTL_VERTEX_BUFFERS)
             {
                 vertexBuffersUsable = false;
-                break;
+                MetalGuardNote(MetalGuard::DrawVertexBuffer, {vertexShaderHash, i, 1}, [&] { return fmt::format("vertex buffer slot {} is out of range (vs {:016x})", i, vertexShaderHash); });
+                continue;
             }
+            // The pipeline's vertex descriptor leaves out attributes the vertex shader does not read, so the GPU
+            // never fetches from a group made only of those, whatever its registers say.
+            uint32 usedEnd = 0;
+            if (!MetalVertexGroupIsRead(group, vertexShader, usedEnd))
+                continue;
             MTL::Buffer* buffer = m_state.m_vertexBuffers[i];
             const size_t offset = m_state.m_vertexBufferOffsets[i];
-            if (!buffer || offset == INVALID_OFFSET || offset >= buffer->length() || m_state.m_vertexBufferSizes[i] < m_state.m_vertexBufferRequired[i])
+            const size_t bound = m_state.m_vertexBufferSizes[i];
+            // The size the buffer was bound for is a conservative one (a whole stride past the last index, plus the
+            // start offset of the last attribute). What the hardware reads is the last element the draw reaches
+            // plus the end of the furthest attribute it fetches, so that is what has to be in the buffer.
+            const uint64 stride = (LatteGPUState.contextRegister[mmSQ_VTX_ATTRIBUTE_BLOCK_START + i * 7 + 2] >> 11) & 0xFFFF;
+            uint64 reach = 0;
+            if (group.hasVtxIndexAccess)
+                reach = stride * (uint64)maxVertexIndex + usedEnd;
+            if (group.hasInstanceIndexAccess)
+                reach = std::max<uint64>(reach, stride * ((uint64)baseInstance + std::max<uint32>(instanceCount, 1) - 1) + usedEnd);
+            if (stride == 0)
+                reach = usedEnd; // constant step: only the first element is read
+            const uint64 needed = std::min<uint64>(m_state.m_vertexBufferRequired[i], reach);
+            if (!buffer || offset == INVALID_OFFSET || offset >= buffer->length() || bound < needed)
             {
                 vertexBuffersUsable = false;
-                break;
+                const uint64 failure = !buffer ? 2 : (offset == INVALID_OFFSET ? 3 : (offset >= buffer->length() ? 4 : 5));
+                MetalGuardNote(MetalGuard::DrawVertexBuffer, {vertexShaderHash, i, failure}, [&] {
+                    return fmt::format("vertex buffer {} {} (vs {:016x}): stride {}, offset {}, buffer length {}, bound {} bytes, conservative size {}, draw reaches {}, max vertex {}, base vertex {}, instances {}+{}",
+                        i, failure == 2 ? "is not bound" : (failure == 3 ? "has no valid offset" : (failure == 4 ? "starts past its buffer" : "is smaller than what the draw reads")),
+                        vertexShaderHash, stride, offset == INVALID_OFFSET ? (sint64)-1 : (sint64)offset, buffer ? (uint64)buffer->length() : (uint64)0, (uint64)bound, (uint64)m_state.m_vertexBufferRequired[i], reach,
+                        maxVertexIndex, signedBaseVertex, baseInstance, instanceCount);
+                });
             }
         }
         if (!vertexBuffersUsable)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: skipping a draw whose vertex buffer is missing or smaller than the range it reads (hardware vertex fetch would fault)");
             if (m_crumb)
                 m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_VERTEX_BUFFER | MetalDrawBreadcrumb::SUSPECT_SKIPPED;
             streamout_rendererFinishDrawcall();
@@ -2564,7 +2607,15 @@ void MetalRenderer::draw_updateVertexBuffersDirectAccess(uint32 minIndex, uint32
         {
             // No real vertex buffer is this large, so the index range is garbage. Unbind the slot so the draw is
             // skipped instead of letting the GPU walk off the end of guest memory.
-            cemuLog_logOnce(LogType::Force, "Metal: vertex buffer {} would need {} bytes (stride {}, max index {}); skipping draws that use it", bufferIndex, bufferSize64, bufferStride, maxIndex);
+            {
+                uint32 usedEnd = 0;
+                LatteDecompilerShader* activeVertexShader = LatteSHRC_GetActiveVertexShader();
+                // a group the vertex shader does not read is unbound too, but no draw depends on it
+                if (fetchVertexManually || !activeVertexShader || MetalVertexGroupIsRead(bufferGroup, activeVertexShader, usedEnd))
+                    MetalGuardNote(MetalGuard::DrawVertexHuge, {activeVertexShader ? activeVertexShader->baseHash : 0, bufferIndex, bufferStride}, [&] {
+                        return fmt::format("vertex buffer {} would need {} bytes (stride {}, max index {}, instances {}+{}); its draws are skipped (vs {:016x})", bufferIndex, bufferSize64, bufferStride, maxIndex, baseInstance, instanceCount, activeVertexShader ? activeVertexShader->baseHash : (uint64)0);
+                    });
+            }
             m_state.m_vertexBuffers[bufferIndex] = nullptr;
             m_state.m_vertexBufferOffsets[bufferIndex] = INVALID_OFFSET;
             m_state.m_vertexBufferSizes[bufferIndex] = 0;
