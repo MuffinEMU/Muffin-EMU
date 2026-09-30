@@ -22,6 +22,10 @@
 
 #include "util/helpers/helpers.h"
 
+#include <condition_variable>
+#include <mutex>
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
+
 #ifdef __arm64__
 #if defined(__clang__)
 #include <arm_acle.h>
@@ -79,6 +83,26 @@ namespace coreinit
 
 	SysAllocator<OSThreadQueue, 3> g_coreRunQueue;
 	CounterSemaphore g_coreRunQueueThreadCount[3];
+
+	// Wake-up channel for the main core's idle wait. It sleeps on this rather than on the
+	// counters above because it also has to wake by itself: guest alarms and AX audio are only
+	// ever driven from this loop (__OSCheckSystemEvents), so an untimed wait would stop them.
+	// The sequence number is bumped under the mutex after a thread is queued, which is what
+	// makes "a thread became runnable while the core was deciding to sleep" detectable.
+	std::mutex g_idleWakeMtx;
+	std::condition_variable g_idleWakeCv;
+	std::atomic<uint64> g_idleWakeSeq{0};
+
+	// Call after the run-queue counters were incremented. Lock order is scheduler lock, then
+	// g_idleWakeMtx; the idle loop never holds the scheduler lock while it waits.
+	void __OSNotifyRunQueueChanged()
+	{
+		{
+			std::lock_guard lk(g_idleWakeMtx);
+			g_idleWakeSeq.fetch_add(1);
+		}
+		g_idleWakeCv.notify_all();
+	}
 
 	bool g_isMulticoreMode;
 
@@ -787,6 +811,7 @@ namespace coreinit
 	// adds the thread to each core's run queue if in runable state
 	void __OSAddReadyThreadToRunQueue(OSThread_t* thread)
 	{
+		bool queuedAnywhere = false;
         cemu_assert_debug(MMU_IsInPPCMemorySpace(thread));
         cemu_assert_debug(thread->IsValidMagic());
 		cemu_assert_debug(__OSHasSchedulerLock());
@@ -805,7 +830,10 @@ namespace coreinit
 			g_coreRunQueue.GetPtr()[i].addThread(thread, thread->linkRun + i);
 			thread->currentRunQueue[i] = (g_coreRunQueue.GetPtr() + i);
 			g_coreRunQueueThreadCount[i].increment();
+			queuedAnywhere = true;
 		}
+		if (queuedAnywhere)
+			__OSNotifyRunQueueChanged();
 	}
 
 	void __OSRemoveThreadFromRunQueues(OSThread_t* thread)
@@ -1283,8 +1311,21 @@ namespace coreinit
 		bool isMainCore = g_isMulticoreMode == false || t_assignedCoreIndex == 1;
 		sint32 coreIndex = t_assignedCoreIndex;
 		__OSUnlockScheduler();
+		// Main core only. Used to be a bare spin (about 6 million passes a second, one performance
+		// core at 100% whenever the guest had nothing to run, which heats a fanless iPad into
+		// throttling). Now: a few passes hot, then a wait that a newly runnable thread ends at once
+		// and that times out often enough for guest alarms and AX audio.
+		constexpr uint32 kIdleSpinBudget = 32;
+		constexpr auto kIdleWakeTimeout = std::chrono::microseconds(250);
+		uint32 emptyRunQueueSpins = 0;
+		// PerfTelemetry: time spent in this fiber instead of in a guest thread
+		uint64 idleSegmentStart = PerfTelemetry::NowNs();
 		while (true)
 		{
+			// Sampled before the run queues are looked at, so a thread queued after that is seen
+			// as a changed sequence number by the wait below instead of being slept through.
+			const uint64 wakeSeq = g_idleWakeSeq.load();
+			bool ranGuestThread = false;
 			if (!g_coreRunQueueThreadCount[coreIndex].isZero()) // avoid hammering the lock on the main core if there is no runable thread
 			{
 				__OSLockScheduler();
@@ -1292,12 +1333,35 @@ namespace coreinit
 				if (nextThread)
 				{
 					cemu_assert_debug(nextThread->state == OSThread_t::THREAD_STATE::STATE_RUNNING);
+					PerfTelemetry::Get().ppcIdleNs.fetch_add(PerfTelemetry::NowNs() - idleSegmentStart, std::memory_order_relaxed);
 					__OSSwitchToThreadFiber(nextThread, coreIndex);
+					idleSegmentStart = PerfTelemetry::NowNs();
+					ranGuestThread = true;
 				}
 				__OSUnlockScheduler();
 			}
+			if (ranGuestThread)
+				emptyRunQueueSpins = 0; // not the run-queue counters: OSSchedulerEnd() bumps those without queueing anything
+			else if (isMainCore && ++emptyRunQueueSpins > kIdleSpinBudget)
+			{
+				bool signalled;
+				{
+					std::unique_lock lk(g_idleWakeMtx);
+					signalled = g_idleWakeCv.wait_for(lk, kIdleWakeTimeout, [wakeSeq]() {
+						return g_idleWakeSeq.load() != wakeSeq || !sSchedulerActive.load(std::memory_order::relaxed);
+					});
+				}
+				// Woken by a thread becoming runnable: go back to the hot passes, because in
+				// single-core mode the core index rotates and the thread may be on the next one.
+				// Timed out: stay asleep-ready until something actually runs.
+				emptyRunQueueSpins = signalled ? 0 : kIdleSpinBudget;
+			}
 			if (isMainCore)
 			{
+				// Same exit the other cores have, needed now that this one can be asleep when
+				// OSSchedulerEnd() runs.
+				if (!sSchedulerActive.load(std::memory_order::relaxed))
+					Fiber::Switch(*t_schedulerFiber); // switch back to original thread to exit
 				__OSCheckSystemEvents();
 				if(g_isMulticoreMode == false)
 					coreIndex = (coreIndex + 1) % 3;
@@ -1474,6 +1538,7 @@ namespace coreinit
 			return;
 		cemu_assert_debug(numCPUEmulationThreads == 1 || numCPUEmulationThreads == 3);
 		g_isMulticoreMode = numCPUEmulationThreads > 1;
+		PerfTelemetry::Get().ppcHostThreads.store((uint32)numCPUEmulationThreads, std::memory_order_relaxed);
 		if (numCPUEmulationThreads == 1)
 			sSchedulerThreads.emplace_back(OSSchedulerCoreEmulationThread, (void*)0);
 		else if (numCPUEmulationThreads == 3)
@@ -1494,6 +1559,7 @@ namespace coreinit
 		sSchedulerActive.store(false);
 		for (size_t i = 0; i < Espresso::CORE_COUNT; i++)
 			g_coreRunQueueThreadCount[i].increment(); // make sure to wake up cores if they are paused and waiting for runnable threads
+		__OSNotifyRunQueueChanged(); // and the main core, which waits on its own channel
 		// wait for threads to stop execution
 		for (auto& threadItr : sSchedulerThreads)
 			threadItr.join();
