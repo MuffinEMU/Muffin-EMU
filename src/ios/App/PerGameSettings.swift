@@ -308,6 +308,12 @@ struct GameOptionsView: View {
                             }
                             .pickerStyle(.menu)
                             .tint(MuffinTheme.pixelBlue)
+                            .disabled(!DeviceCapabilities.current.multicoreViable)
+                        }
+                        if !DeviceCapabilities.current.multicoreViable {
+                            Text(DeviceCapabilities.oneCoreOnlyText)
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
                         }
                     } header: {
                         SettingsSectionHeader("Overrides", icon: "slider.horizontal.3", accent: .core)

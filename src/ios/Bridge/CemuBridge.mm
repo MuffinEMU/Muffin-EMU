@@ -987,6 +987,15 @@ namespace {
             d.reason = "one core, chosen in Settings";
             return d;
         }
+        // A hard limit of the device, ahead of both the manual and the Auto choice: under 4.5 GB of RAM, or with
+        // fewer than three host cores, three host threads starve the GPU and heat the part (DeviceCapabilities.h).
+        if (!DeviceCaps::GetBudgets().multicoreViable)
+        {
+            d.reason = std::string(setting == kCoreModeMulti ? "one core: three were chosen in Settings, but this device has too little memory or too few cores to run three at once"
+                                                              : "one core: this device has too little memory or too few cores to run three at once")
+                + " (" + deviceText + ")";
+            return d;
+        }
         if (setting == kCoreModeMulti)
         {
             d.singleCore = false;
