@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #if BOOST_OS_IOS
 #include <os/proc.h>
+#include <sys/sysctl.h>
 #endif
 #include "Cafe/HW/Latte/Renderer/Metal/MetalVoidVertexPipeline.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalMemoryManager.h"
@@ -61,6 +62,14 @@ MetalRenderer::MetalRenderer()
     // State left behind by the previous title in this process: cached index reservations that belong to a
     // destroyed allocator, and the GPU-fault latches and counters of the previous renderer.
     LatteIndices_forgetAll();
+    {
+        uint64 physicalMemory = 0;
+        size_t physicalMemorySize = sizeof(physicalMemory);
+        if (sysctlbyname("hw.memsize", &physicalMemory, &physicalMemorySize, nullptr, 0) != 0 || physicalMemory == 0)
+            physicalMemory = 4ull << 30;
+        m_breadcrumbCapacity = physicalMemory >= (6ull << 30) ? 1024 : (physicalMemory >= (3ull << 30) ? 512 : 256);
+        m_breadcrumbs.assign(m_breadcrumbCapacity, MetalDrawBreadcrumb{});
+    }
     {
         auto& waitState = LatteWait::Get();
         waitState.gpuError.store(false);
@@ -2811,7 +2820,7 @@ void MetalRenderer::LabelEncoder(MTL::CommandEncoder* encoder, const char* kind)
 MetalDrawBreadcrumb* MetalRenderer::BeginDrawBreadcrumb()
 {
     MetalDrawBreadcrumb& crumb = m_breadcrumbs[m_breadcrumbNext];
-    m_breadcrumbNext = (m_breadcrumbNext + 1) % BREADCRUMB_COUNT;
+    m_breadcrumbNext = (m_breadcrumbNext + 1) % m_breadcrumbCapacity;
     ++m_breadcrumbsWritten;
     crumb = MetalDrawBreadcrumb{};
     crumb.frame = (uint32)LatteGPUState.frameCounter;
@@ -2856,14 +2865,14 @@ void MetalRenderer::RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, u
 // dozen draws after it is printed, and any draw in the ring that looked wrong when it was recorded.
 void MetalRenderer::DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool haveRange)
 {
-    const uint32 stored = std::min(m_breadcrumbsWritten, BREADCRUMB_COUNT);
+    const uint32 stored = std::min(m_breadcrumbsWritten, m_breadcrumbCapacity);
     if (stored == 0)
     {
         cemuLog_log(LogType::Force, "Metal: no draw breadcrumbs were recorded");
         return;
     }
-    const uint32 start = (m_breadcrumbNext + BREADCRUMB_COUNT - stored) % BREADCRUMB_COUNT;
-    auto at = [&](uint32 n) -> const MetalDrawBreadcrumb& { return m_breadcrumbs[(start + n) % BREADCRUMB_COUNT]; };
+    const uint32 start = (m_breadcrumbNext + m_breadcrumbCapacity - stored) % m_breadcrumbCapacity;
+    auto at = [&](uint32 n) -> const MetalDrawBreadcrumb& { return m_breadcrumbs[(start + n) % m_breadcrumbCapacity]; };
     if (haveRange)
         cemuLog_log(LogType::Force, "Metal: draw breadcrumbs: {} draws kept (draw {} to {}), unfinished encoders start at draws {} to {}", stored, at(0).draw, at(stored - 1).draw, firstDraw, lastDraw);
     else
