@@ -17,6 +17,14 @@ public:
 	    return m_texture;
 	}
 
+	// Bookkeeping for the guard that flags a texture whose upload was skipped to be loaded again (MetalUploadSkipped)
+	uint32 m_retryInvertedHash = 0;
+	uint32 m_retryLastFrame = 0;
+	uint8 m_retryReason = 0;
+	uint8 m_retryFailedFrames = 0;
+	bool m_retryHashInverted = false;
+	bool m_retryStopped = false;
+
 	void AllocateOnHost() override;
 
 	// True when the GPU had no memory for this texture and it is standing on the shared 1x1 null texture instead.
