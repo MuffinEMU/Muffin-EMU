@@ -1626,6 +1626,11 @@ void LatteBufferCache_init(size_t bufferSize)
 	cemu_assert_debug(g_gpuBufferCache.IsEmpty());
 	g_gpuBufferHeap.reset(new VHeap(nullptr, (uint32)bufferSize));
 	g_renderer->bufferCache_init((uint32)bufferSize);
+	// the backend may have had to settle for a smaller buffer on a device with less memory: the heap must not hand out
+	// offsets beyond what exists (nothing has been allocated from it yet)
+	const uint32 grantedSize = (uint32)g_renderer->bufferCache_getGrantedSize((sint32)bufferSize);
+	if (grantedSize != 0 && grantedSize < (uint32)bufferSize)
+		g_gpuBufferHeap.reset(new VHeap(nullptr, grantedSize));
 }
 
 void LatteBufferCache_UnloadAll()

@@ -22,6 +22,11 @@
 // path together with a stamp of what they depend on, so each title is tried once, and logged once.
 namespace
 {
+	// Bumped whenever a fix changes what can open, so a failure memorised by an earlier build of this code is never
+	// trusted. The memo lives in memory only, so it cannot outlive an app update; this covers the case of a fix that
+	// lands while a failure is still remembered (a hot reload of the keys, a migration) and documents the contract.
+	constexpr uint64 kOpenFailureMemoVersion = 2;
+
 	struct OpenFailure
 	{
 		uint64 stamp;
@@ -64,10 +69,10 @@ namespace
 			mixFile(folder / "title.tik");
 		}
 		KeyCache_Prepare();
-		uint64 keyCount = 0;
-		while (keyCount < 0x100000 && KeyCache_GetAES128((sint32)keyCount) != nullptr)
-			keyCount++;
-		mix(keyCount);
+		// the whole key list, not only how many keys there are: a keys.txt with the same number of different keys must
+		// not be answered from a failure recorded against the old ones
+		mix(KeyCache_GetFingerprint());
+		mix(kOpenFailureMemoVersion);
 		return h;
 	}
 
@@ -531,9 +536,14 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 		{
 			cemu_assert_debug(!m_wudVolume);
 			m_wudVolume = nullptr; // never a volume left over from an earlier failed mount
-			openStamp = OpenStamp(m_fullPath, m_titleFormat == TitleDataFormat::NUS);
+			// Only encrypted game folders are memorised: opening one means trying every key against a large FST.
+			// A disc image (.wud/.wux) costs one 48-byte read per key, so it is always tried afresh - a disc that
+			// could not be opened while the key cache was still empty must open the moment the keys are there.
+			const bool memoise = m_titleFormat == TitleDataFormat::NUS;
+			if (memoise)
+				openStamp = OpenStamp(m_fullPath, true);
 			InvalidReason knownReason;
-			if (LookupOpenFailure(m_fullPath, openStamp, knownReason))
+			if (memoise && LookupOpenFailure(m_fullPath, openStamp, knownReason))
 			{
 				SetInvalidReason(knownReason);
 				return false;
@@ -559,9 +569,11 @@ bool TitleInfo::Mount(std::string_view virtualPath, std::string_view subfolder, 
 				SetInvalidReason(InvalidReason::MISSING_CONTENT_FILE);
 			// A missing .app file is cheap to find again and the launch path reads its name straight from the
 			// failed attempt, so only the expensive, repeatable failures are remembered
-			if (m_invalidReason != InvalidReason::MISSING_CONTENT_FILE)
+			// and nothing is memorised while there are no keys at all: that is the state before keys.txt is reachable
+			if (openStamp != 0 && m_invalidReason != InvalidReason::MISSING_CONTENT_FILE && KeyCache_GetAES128(0) != nullptr)
 				RememberOpenFailure(m_fullPath, openStamp, m_invalidReason);
-			if (FirstTimeFor("open", m_fullPath))
+			// logged again when the reason or the keys changed, so a later, different failure is not hidden
+			if (FirstTimeFor(fmt::format("open{}|{:x}", (int)m_invalidReason, KeyCache_GetFingerprint()), m_fullPath))
 				cemuLog_log(LogType::Force, "Cannot open {}: {}", _pathToUtf8(m_fullPath), DescribeOpenFailure(m_invalidReason));
 			return false;
 		}

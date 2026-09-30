@@ -91,6 +91,7 @@ namespace GX2
 		UknArg7 = 7,
 		UknArg8 = 8,
 		UknArg9 = 9,
+		UknArg10 = 10, // seen in Sonic & All-Stars Racing Transformed; one value follows like every other attribute
 		UknArg11 = 11,
 	};
 
@@ -127,13 +128,17 @@ namespace GX2
 				else if (paramId == GX2InitArgId::UknArg7 ||
 					paramId == GX2InitArgId::UknArg8 ||
 					paramId == GX2InitArgId::UknArg9 ||
+					paramId == GX2InitArgId::UknArg10 ||
 					paramId == GX2InitArgId::UknArg11)
 				{
 					initArgStream++;
 				}
 				else
 				{
+					// Every GX2Init attribute is an id followed by one value. An id that isn't known must still have its value
+					// skipped, otherwise the value is read as the next id and the rest of the list is misparsed
 					cemuLog_log(LogType::Force, "GX2Init: Unsupported init arg {}", (uint32)paramId);
+					initArgStream++;
 				}
 			}
 		}
