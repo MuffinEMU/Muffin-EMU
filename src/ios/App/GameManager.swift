@@ -100,6 +100,10 @@ class GameManager: ObservableObject {
     /// A short note about how the last launch differed from what was asked for (for example Vulkan not starting so
     /// Metal was used). Shown as a banner over the game for a few seconds.
     @Published var launchNotice: String?
+    /// True when the last game stopped in a way that makes starting another one in this process unsafe (the GPU stopped
+    /// running the app's work, or the engine could not fully reset). Only closing and reopening the app clears it, so the
+    /// launch is refused with a message and a button that closes the app. Never set by a normal stop.
+    @Published private(set) var needsCleanRestart = false
     /// Real emulator frame rate, polled from the bridge once a second while a title
     /// is running (see startFrameRateMonitor()). 0 whenever nothing is rendering.
     @Published private(set) var frameRate: Int = 0
@@ -993,8 +997,20 @@ class GameManager: ObservableObject {
     func launchGame(_ game: GameMetadata) {
         launchToken = UUID()
         currentGame = game
-        emulationState = .loading
         surfaceRegistered = false
+
+        // A real problem was found when the previous game stopped: starting another on top of it is likely to fault. The
+        // bridge only says so for a real leftover (a GPU fault, state that could not be reset), never after a normal stop.
+        if cemu_bridge_clean_start_required() {
+            needsCleanRestart = true
+            let reason = String(cString: cemu_bridge_clean_start_reason())
+            lastStatusMessage = "For a clean start, close and reopen MuffinEMU."
+                + (reason.isEmpty ? "" : "\n\n\(reason.prefix(1).uppercased() + reason.dropFirst()).")
+            emulationState = .error
+            return
+        }
+        needsCleanRestart = false
+        emulationState = .loading
 
         guard let engine = emulationEngine else {
             emulationState = .error
