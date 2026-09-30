@@ -1070,6 +1070,30 @@ namespace {
 
     std::mutex g_inputMutex;
     uint32_t g_touchButtons = 0;
+
+    // Press latching for the on-screen pad. The core only looks at g_touchButtons when the
+    // title calls VPADRead, which on a slow-running title can be 100ms or more apart in real
+    // time - longer than an ordinary tap. A tap that went down and up between two reads was
+    // never seen, which is why presses only registered when the finger was dragged (and so
+    // held for longer). A released button now stays down until at least one read has seen
+    // it AND kMinTouchHold has passed, then the release is applied on a later read.
+    //
+    // A second press that lands while the first is still being held back (mashing a
+    // button) must not merge into one long press, or the title sees one press instead of
+    // two. If a read has already seen the first press, the second is queued: the release
+    // goes out on one read and the new press on the next.
+    constexpr auto kMinTouchHold = std::chrono::milliseconds(50);
+    uint32_t g_touchSeen = 0;            // pressed bits a poll has reported since the press
+    uint32_t g_touchPendingRelease = 0;  // released by the finger, not yet by the latch
+    uint32_t g_touchRepress = 0;         // pressed again while a release was pending
+    uint32_t g_touchRepressQueued = 0;   // re-presses to apply at the next poll
+    uint32_t g_touchRepressReleased = 0; // re-presses whose finger has already lifted
+    std::chrono::steady_clock::time_point g_touchPressedAt[32] = {};
+
+    bool ios_touch_release_due(int bit, std::chrono::steady_clock::time_point now)
+    {
+        return (g_touchSeen & (1u << bit)) && now - g_touchPressedAt[bit] >= kMinTouchHold;
+    }
     GCBridgeVec2 g_touchSticks[2] = {};
     uint32_t g_physicalButtons = 0;
     GCBridgeVec2 g_physicalSticks[2] = {};
@@ -1107,8 +1131,42 @@ namespace {
     {
         (void)context;
         std::lock_guard lock(g_inputMutex);
+        const auto now = std::chrono::steady_clock::now();
+        // Re-presses queued by the previous poll, which reported their release.
+        if (g_touchRepressQueued)
+        {
+            for (int bit = 0; bit < 32; ++bit)
+                if (g_touchRepressQueued & (1u << bit))
+                    g_touchPressedAt[bit] = now;
+            g_touchButtons |= g_touchRepressQueued;
+            g_touchSeen &= ~g_touchRepressQueued;
+            g_touchPendingRelease |= g_touchRepressReleased & g_touchRepressQueued;
+            g_touchRepressReleased &= ~g_touchRepressQueued;
+            g_touchRepressQueued = 0;
+        }
+        // Apply releases the latch was holding back, but only ones an EARLIER poll already
+        // reported, so the poll that first sees a press still reports it.
+        if (g_touchPendingRelease)
+        {
+            for (int bit = 0; bit < 32; ++bit)
+            {
+                const uint32_t mask = 1u << bit;
+                if ((g_touchPendingRelease & mask) && ios_touch_release_due(bit, now))
+                {
+                    g_touchButtons &= ~mask;
+                    g_touchPendingRelease &= ~mask;
+                    g_touchSeen &= ~mask;
+                    if (g_touchRepress & mask)
+                    {
+                        g_touchRepress &= ~mask;
+                        g_touchRepressQueued |= mask;
+                    }
+                }
+            }
+        }
         GCBridgeControllerState s{};
         s.buttons = g_touchButtons | g_physicalButtons;
+        g_touchSeen |= g_touchButtons;
         for (int i = 0; i < 2; i++)
         {
             const GCBridgeVec2& touch = g_touchSticks[i];
@@ -2727,11 +2785,58 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
         }
         return;
     }
+    const uint32_t mask = 1u << bit;
+    const auto now = std::chrono::steady_clock::now();
     std::lock_guard lock(g_inputMutex);
     if (pressed)
-        g_touchButtons |= (1u << bit);
+    {
+        // Already queued to come back down: the finger is simply down again.
+        if ((g_touchRepress | g_touchRepressQueued) & mask)
+        {
+            g_touchRepressReleased &= ~mask;
+            return;
+        }
+        if (!(g_touchButtons & mask))
+        {
+            g_touchButtons |= mask;
+            g_touchSeen &= ~mask;
+            g_touchPendingRelease &= ~mask;
+            g_touchPressedAt[bit] = now;
+            return;
+        }
+        if (g_touchPendingRelease & mask)
+        {
+            // Lifted and pressed again before the latch let go. If a read saw the first
+            // press, the title needs an up and a second down; if none did, there is only
+            // one press to report and it simply continues.
+            if (g_touchSeen & mask)
+                g_touchRepress |= mask;
+            else
+                g_touchPendingRelease &= ~mask;
+        }
+        // Otherwise a repeat "down" for a held button: a no-op, so the pad may re-assert
+        // a press freely without restarting the latch.
+    }
     else
-        g_touchButtons &= ~(1u << bit);
+    {
+        if ((g_touchRepress | g_touchRepressQueued) & mask)
+        {
+            g_touchRepressReleased |= mask;
+            return;
+        }
+        if (!(g_touchButtons & mask))
+            return;
+        if (ios_touch_release_due(bit, now))
+        {
+            g_touchButtons &= ~mask;
+            g_touchSeen &= ~mask;
+            g_touchPendingRelease &= ~mask;
+        }
+        else
+        {
+            g_touchPendingRelease |= mask;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2799,7 +2904,14 @@ void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y) {
 
 void cemu_bridge_release_all_buttons(void) {
     std::lock_guard lock(g_inputMutex);
+    // Immediate, bypassing the latch: this is the "nothing may stay held" path (pause,
+    // pad hidden, app backgrounded).
     g_touchButtons = 0;
+    g_touchSeen = 0;
+    g_touchPendingRelease = 0;
+    g_touchRepress = 0;
+    g_touchRepressQueued = 0;
+    g_touchRepressReleased = 0;
     g_touchSticks[0] = g_touchSticks[1] = GCBridgeVec2{};
 }
 
