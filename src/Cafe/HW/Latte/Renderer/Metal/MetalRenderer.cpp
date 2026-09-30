@@ -1312,6 +1312,12 @@ void MetalRenderer::bufferCache_init(const sint32 bufferSize)
     m_memoryManager->InitBufferCache(bufferSize);
 }
 
+sint32 MetalRenderer::bufferCache_getGrantedSize(sint32 requestedSize)
+{
+    const size_t granted = m_memoryManager->GetBufferCacheSize();
+    return granted != 0 ? static_cast<sint32>(std::min<size_t>(granted, static_cast<size_t>(requestedSize))) : requestedSize;
+}
+
 void MetalRenderer::bufferCache_upload(uint8* buffer, sint32 size, uint32 bufferOffset)
 {
     m_memoryManager->UploadToBufferCache(buffer, bufferOffset, size);

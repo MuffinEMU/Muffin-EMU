@@ -16,6 +16,31 @@
 
 static_assert(sizeof(NCrypto::AesIv) == 16); // make sure IV is actually 16 bytes
 
+#if BOOST_OS_MACOS || BOOST_OS_IOS
+#include <sys/sysctl.h>
+#endif
+
+// How many bytes each disc/folder read cache (the WUD block cache and the decrypted-block cache of an open volume)
+// may hold. They were a fixed 128 MB each, which is fine with 6+ GB and a large share of the budget of an iPhone with
+// 3-4 GB, where iOS ends the app at well under the installed RAM. Scaled to the device, never above the old value.
+static size_t FSTReadCacheBudgetBytes()
+{
+	static const size_t budget = []() -> size_t
+	{
+		constexpr size_t MB = 1024ULL * 1024ULL;
+		uint64 physicalMemory = 0;
+#if BOOST_OS_MACOS || BOOST_OS_IOS
+		size_t len = sizeof(physicalMemory);
+		if (sysctlbyname("hw.memsize", &physicalMemory, &len, nullptr, 0) != 0)
+			physicalMemory = 0;
+#endif
+		if (physicalMemory == 0)
+			return 128 * MB; // unknown: the previous fixed size
+		return (size_t)std::clamp<uint64>(physicalMemory / 48, 24 * MB, 128 * MB); // 3 GB -> 64 MB, 6 GB+ -> 125-128 MB
+	}();
+	return budget;
+}
+
 class FSTDataSource
 {
 public:
@@ -79,7 +104,6 @@ public:
 protected:
     static constexpr uint64 WUD_CACHE_BLOCK_SIZE = 2ULL * 1024ULL * 1024ULL;
     static constexpr uint64 WUD_CACHE_MIN_FOREGROUND_FILL_SIZE = WUD_CACHE_BLOCK_SIZE;
-    static constexpr size_t WUD_CACHE_MAX_BYTES = 128ULL * 1024ULL * 1024ULL;
     static constexpr uint32 WUD_READAHEAD_BLOCK_COUNT = 4;
     static constexpr size_t WUD_READAHEAD_MAX_QUEUE = 32;
     
@@ -113,7 +137,7 @@ protected:
     
     void TrimCacheLocked()
     {
-        while (m_cacheBytes > WUD_CACHE_MAX_BYTES && !m_cache.empty())
+        while (m_cacheBytes > FSTReadCacheBudgetBytes() && !m_cache.empty())
         {
             auto dropItr = std::min_element(m_cache.begin(), m_cache.end(), [](const auto& a, const auto& b) {
                 return a.second->lastAccess < b.second->lastAccess;
@@ -1187,27 +1211,9 @@ uint32 FSTVolume::GetFileSize(const FSTFileHandle& fileHandle) const
 	return m_entries[fileHandle.m_fstIndex].fileInfo.fileSize;
 }
 
-uint32 FSTVolume::ReadFile(FSTFileHandle& fileHandle, uint32 offset, uint32 size, void* dataOut)
-{
-	if (fileHandle.m_fstIndex >= m_entries.size())
-		return 0;
-	FSTEntry& entry = m_entries[fileHandle.m_fstIndex];
-	if (entry.GetType() != FSTEntry::TYPE::FILE)
-		return 0;
-	cemu_assert_debug(!HAS_FLAG(entry.GetFlags(), FSTEntry::FLAGS::FLAG_LINK));
-	FSTCluster& cluster = m_cluster[entry.fileInfo.clusterIndex];
-	if (cluster.hashMode == ClusterHashMode::RAW || cluster.hashMode == ClusterHashMode::RAW_STREAM)
-		return ReadFile_HashModeRaw(entry.fileInfo.clusterIndex, entry, offset, size, dataOut);
-	else if (cluster.hashMode == ClusterHashMode::HASH_INTERLEAVED)
-		return ReadFile_HashModeHashed(entry.fileInfo.clusterIndex, entry, offset, size, dataOut);
-	cemu_assert_debug(false);
-	return 0;
-}
-
 constexpr size_t BLOCK_SIZE = 0x10000;
 constexpr size_t BLOCK_HASH_SIZE = 0x0400;
 constexpr size_t BLOCK_FILE_SIZE = 0xFC00;
-constexpr size_t FST_DECRYPTED_BLOCK_CACHE_MAX_BYTES = 128ULL * 1024ULL * 1024ULL;
 
 struct FSTRawBlock
 {
@@ -1278,7 +1284,7 @@ void FSTVolume::TrimCacheIfRequired(FSTCachedRawBlock** droppedRawBlock, FSTCach
 	for (auto& itr : m_cacheDecryptedHashedBlocks)
 		cacheSize += sizeof(FSTCachedHashedBlock) + sizeof(FSTHashedBlock);
 	// keep enough decrypted FST data for large sequential asset loads -stossy11
-	if (cacheSize < FST_DECRYPTED_BLOCK_CACHE_MAX_BYTES)
+	if (cacheSize < FSTReadCacheBudgetBytes())
 		return;
 	// scan both cache lists to find least recently accessed block to drop
 	auto dropRawItr = std::min_element(m_cacheDecryptedRawBlocks.begin(), m_cacheDecryptedRawBlocks.end(), [](const auto& a, const auto& b) -> bool
@@ -1529,6 +1535,52 @@ uint32 FSTVolume::ReadFile_HashModeHashed(uint32 clusterIndex, FSTEntry& entry, 
 		offsetWithinBlock = 0;
 	}
 	return readSize - bytesRemaining;
+}
+
+uint32 FSTVolume::ReadFile(FSTFileHandle& fileHandle, uint32 offset, uint32 size, void* dataOut)
+{
+	if (fileHandle.m_fstIndex >= m_entries.size())
+		return 0;
+	FSTEntry& entry = m_entries[fileHandle.m_fstIndex];
+	if (entry.GetType() != FSTEntry::TYPE::FILE)
+		return 0;
+	cemu_assert_debug(!HAS_FLAG(entry.GetFlags(), FSTEntry::FLAGS::FLAG_LINK));
+	FSTCluster& cluster = m_cluster[entry.fileInfo.clusterIndex];
+	auto doRead = [&]() -> uint32
+	{
+		if (cluster.hashMode == ClusterHashMode::RAW || cluster.hashMode == ClusterHashMode::RAW_STREAM)
+			return ReadFile_HashModeRaw(entry.fileInfo.clusterIndex, entry, offset, size, dataOut);
+		else if (cluster.hashMode == ClusterHashMode::HASH_INTERLEAVED)
+			return ReadFile_HashModeHashed(entry.fileInfo.clusterIndex, entry, offset, size, dataOut);
+		cemu_assert_debug(false);
+		return 0;
+	};
+	// An allocation failure while reading (a cache block, a block buffer) used to escape through the IOSU file thread
+	// and end the process: nothing above this catches it. It is a failed read instead. The decrypted-block caches are
+	// emptied first, since they are the memory this volume itself can give back, and the read is tried once more.
+	try
+	{
+		return doRead();
+	}
+	catch (const std::bad_alloc&)
+	{
+		cemuLog_log(LogType::Force, "FST: out of memory while reading a file; releasing the read cache and retrying");
+		for (auto& itr : m_cacheDecryptedRawBlocks)
+			delete itr.second;
+		m_cacheDecryptedRawBlocks.clear();
+		for (auto& itr : m_cacheDecryptedHashedBlocks)
+			delete itr.second;
+		m_cacheDecryptedHashedBlocks.clear();
+	}
+	try
+	{
+		return doRead();
+	}
+	catch (const std::bad_alloc&)
+	{
+		cemuLog_log(LogType::Force, "FST: still out of memory, the read fails");
+		return 0;
+	}
 }
 
 bool FSTVolume::OpenDirectoryIterator(std::string_view path, FSTDirectoryIterator& directoryIteratorOut)
