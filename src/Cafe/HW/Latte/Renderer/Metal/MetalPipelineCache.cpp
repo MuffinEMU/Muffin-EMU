@@ -331,6 +331,7 @@ uint32 MetalPipelineCache::BeginLoading(uint64 cacheTitleId)
 
 	for (uint32 i = 0; i < m_numCompilationThreads; i++)
 	{
+		m_loaderThreadsRunning.fetch_add(1);
 		std::thread compileThread(&MetalPipelineCache::CompilerThread, this);
 		compileThread.detach();
 	}
@@ -652,7 +653,29 @@ int MetalPipelineCache::CompilerThread()
 		LoadPipelineFromCache(pipelineData);
 		++g_mtlCacheState.pipelinesLoaded;
 	}
+	m_loaderThreadsRunning.fetch_sub(1); // last access to this object
 	return 0;
+}
+
+static std::atomic<bool> g_mtlLoaderAbandoned{false};
+
+bool MetalPipelineCache_LoaderAbandoned()
+{
+	return g_mtlLoaderAbandoned.load();
+}
+
+// Stops the threads that load the pipeline cache in the background and waits for them. They hold this object, the renderer and
+// the title's shaders, so a stop that arrives while a cache is still loading has to wait until they are done.
+bool MetalPipelineCache::StopLoading(uint32 timeoutMs)
+{
+	EndLoading(); // signals every thread to stop after the pipeline it is on
+	for (uint32 waited = 0; m_loaderThreadsRunning.load() != 0 && waited < timeoutMs; waited += 2)
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	if (m_loaderThreadsRunning.load() == 0)
+		return true;
+	cemuLog_log(LogType::Force, "Metal: {} pipeline cache loader thread(s) did not stop within {} ms", m_loaderThreadsRunning.load(), timeoutMs);
+	g_mtlLoaderAbandoned.store(true);
+	return false;
 }
 
 void MetalPipelineCache::WorkerThread()
