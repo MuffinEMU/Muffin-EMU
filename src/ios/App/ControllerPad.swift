@@ -446,14 +446,20 @@ private struct ControlButton: View {
 
 /// A control that is held for as long as a finger is on it.
 ///
-/// A control that reports press and release.
-///
 /// Built on `DragGesture(minimumDistance: 0)` rather than `Button`, so a control can be
 /// held and several can be held at once with different fingers.
 ///
-/// The pressed state is a `@GestureState`, which SwiftUI resets whenever the gesture ends
-/// for any reason - a lift, or the system cancelling it (a swipe, a banner, hit testing
-/// being switched off). The release is reported from that reset, so it cannot be missed.
+/// The press and the lift are reported straight from the gesture's own callbacks. They
+/// used to be reported from `.onChange(of: isPressed)`, which only runs when SwiftUI
+/// renders: a tap whose touch-down and touch-up were both handled before the next render
+/// flipped `isPressed` true and back to false unseen, and nothing was sent at all.
+/// A moving finger survived only because it kept the gesture alive across renders.
+///
+/// `isPressed` (a `@GestureState`, reset by SwiftUI whenever the gesture ends for any
+/// reason) is still the safety net for a gesture the system cancels, which never calls
+/// `onEnded`. `downSent` only stops a moving finger re-sending "down" on every event;
+/// the bridge treats a repeated down as a no-op anyway, and every path that could strand
+/// it true also sends the release.
 ///
 /// Release-all lives on the pad's `.onDisappear`, not on each control: a per-control
 /// release fired a frame after every press began.
@@ -462,9 +468,13 @@ struct HeldControl<Content: View>: View {
     /// Whether this control can be pressed right now. Turning it off cancels a press in
     /// progress, which releases it.
     var isInteractive: Bool = true
+    /// The area that takes touches. The whole frame by default, so a finger on the
+    /// transparent corner of a round button still presses it.
+    var hitShape: HeldControlHitShape = .rectangle
     let content: (Bool) -> Content
 
     @GestureState private var isPressed = false
+    @State private var downSent = false
     /// True once the gesture ended normally, to tell a lift from a cancel in diagnostics.
     @State private var endedNormally = false
     @State private var pressBegan = Date()
@@ -473,21 +483,40 @@ struct HeldControl<Content: View>: View {
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     var body: some View {
-        content(isPressed)
-            // Without this the hit area is only what the label paints, so a finger on the
-            // transparent corner of a round button would reach the view behind it.
-            .contentShape(Rectangle())
+        content(isPressed || downSent)
+            .contentShape(hitShape)
             .accessibilityAddTraits(.isButton)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .updating($isPressed) { _, state, _ in state = true }
-                    .onChanged { _ in PadDiagnostics.shared.recordRawTouch() }
-                    .onEnded { _ in endedNormally = true }
+                    .onChanged { _ in
+                        PadDiagnostics.shared.recordRawTouch()
+                        if !downSent {
+                            downSent = true
+                            report(true)
+                        }
+                    }
+                    .onEnded { _ in
+                        endedNormally = true
+                        release()
+                    }
             )
+            // The system cancelled the gesture (no onEnded).
             .onChange(of: isPressed) { pressed in
-                report(pressed)
+                if !pressed { release() }
+            }
+            // A cancel that landed before the first render after the press: isPressed
+            // went true and back to false unseen, so the handler above never ran.
+            .onChange(of: downSent) { sent in
+                if sent && !isPressed { release() }
             }
             .allowsHitTesting(isInteractive)
+    }
+
+    private func release() {
+        guard downSent else { return }
+        downSent = false
+        report(false)
     }
 
     // Report first, then diagnostics, then haptics: nothing may sit between the state
@@ -505,6 +534,24 @@ struct HeldControl<Content: View>: View {
             PadDiagnostics.shared.recordRelease(reason, heldSince: began)
         }
         if pressed, hapticsEnabled { PadHaptics.shared.fire() }
+    }
+}
+
+/// The touch area of a `HeldControl`, in its own frame.
+enum HeldControlHitShape: Shape {
+    case rectangle
+    /// A circle centred in the frame, with this diameter as a fraction of the frame's
+    /// shorter side - for a control that has to leave the space around it to a neighbour.
+    case circle(fraction: CGFloat)
+
+    func path(in rect: CGRect) -> Path {
+        switch self {
+        case .rectangle:
+            return Path(rect)
+        case .circle(let fraction):
+            let d = min(rect.width, rect.height) * fraction
+            return Path(ellipseIn: CGRect(x: rect.midX - d / 2, y: rect.midY - d / 2, width: d, height: d))
+        }
     }
 }
 
@@ -689,10 +736,18 @@ private struct JoystickControl: View {
                     }
                     report(deflection: deflection, dx: dx, dy: dy, distance: distance)
                 }
+                // Recentre on the lift itself, not only when `touching` is next seen false
+                // at a render: a flick handled entirely between two renders never shows
+                // `touching` as true, and left the stick deflected.
+                .onEnded { _ in recentre() }
         )
         .allowsHitTesting(isInteractive)
         .onChange(of: touching) { down in
             if !down { recentre() }
+        }
+        // A system cancel handled before a render has the same blind spot, and no onEnded.
+        .onChange(of: knobOffset) { offset in
+            if offset != .zero && !touching { recentre() }
         }
         .onChange(of: isInteractive) { active in
             if !active { recentre() }

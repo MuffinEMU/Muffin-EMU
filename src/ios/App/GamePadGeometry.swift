@@ -456,10 +456,14 @@ struct PadLayout {
     /// button rects: four rects meeting at a corner have no diagonal, and a Wii U d-pad
     /// very much has diagonals. The dead centre reports nothing, which is what leaves the
     /// middle free to be L3's tap target.
+    /// Radius of the d-pad's dead centre, as a fraction of its half-size. A touch inside
+    /// it presses no direction, which leaves the middle to L3.
+    static let dpadDeadZone: CGFloat = 0.18
+
     static func dpadDirections(at point: CGPoint, centre: CGPoint, size: CGSize) -> Set<String> {
         let dx = (point.x - centre.x) / (size.width / 2)
         let dy = (point.y - centre.y) / (size.height / 2)
-        guard dx * dx + dy * dy > 0.18 * 0.18 else { return [] }
+        guard dx * dx + dy * dy > dpadDeadZone * dpadDeadZone else { return [] }
         let sector = Int(((atan2(dy, dx) + 2 * .pi + .pi / 8)
             .truncatingRemainder(dividingBy: 2 * .pi)) / (.pi / 4))
         switch sector {
