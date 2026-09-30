@@ -63,6 +63,13 @@
 #include "input/emulated/EmulatedController.h"
 #include "input/emulated/VPADController.h"
 #include "input/InputManager.h"
+#include "util/crypto/aes128.h"
+
+// Library scans open encrypted game folders (title.tmd + title.tik + .app files) before
+// the engine starts, and the AES routines are null until AES128_init() runs. Initialise
+// them as soon as the framework loads; AES128_init() is safe to call again from
+// CemuInitialize().
+__attribute__((constructor)) static void ios_crypto_init_at_load() { AES128_init(); }
 
 // Forward-declared here because coreinit_Thread.h pulls the whole scheduler surface into
 // this ARC-compiled translation unit. Must stay OUTSIDE the extern "C" block: a namespace
