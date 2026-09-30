@@ -36,4 +36,14 @@ private:
     float m_layerScaleY = 1.0f;
 
     CA::MetalDrawable* m_drawable = nullptr;
+
+    // Kept so a layer that lost its device or was given a degenerate size can be put back.
+    MTL::Device* m_device = nullptr;
+    bool m_isMainWindow = false;
+    double m_lastGoodWidth = 0.0;
+    double m_lastGoodHeight = 0.0;
+    uint32_t m_acquireCount = 0;
+
+    void RecordLayerState() const;
+    void RepairLayer();
 };
