@@ -328,7 +328,8 @@ private struct PreviewStickView: View {
 
     private var radius: CGFloat { diameter / 2 }
     private var knobRadius: CGFloat { diameter * 0.28 }
-    private var travel: CGFloat { radius - knobRadius }
+    /// Shared with the shipping pad's stick - see ControllerGeometry.stickTravelFraction.
+    private var travel: CGFloat { ControllerGeometry.stickTravel(ringDiameter: diameter) }
 
     /// How long a tap holds L3/R3 before releasing, so a title polling on its own schedule
     /// can see it.

@@ -676,7 +676,7 @@ private struct JoystickControl: View {
 
     private var base: CGFloat { ControllerGeometry.stickBaseDiameter * unit }
     private var knob: CGFloat { ControllerGeometry.stickKnobDiameter * unit }
-    private var travel: CGFloat { ControllerGeometry.stickTravel * unit }
+    private var travel: CGFloat { ControllerGeometry.stickTravel(ringDiameter: base) }
 
     var body: some View {
         ZStack {
