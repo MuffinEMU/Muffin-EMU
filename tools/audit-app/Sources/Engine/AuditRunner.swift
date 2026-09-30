@@ -77,6 +77,7 @@ final class AuditRunner {
         var coreError: String?
         do { try core.initializeCore(logProfile: request.logProfile) } catch { coreError = "\(error)" }
         captureAvailable = coreError == nil && request.renderer == "metal"
+        if coreError == nil { notes.append("The core's crash log (memory samples and, after an abrupt end, the last milestones) is at \(core.crashLogPath).") }
         if request.renderer != "metal" {
             notes.append("Frame readback is implemented for the Metal renderer only; with \(request.renderer) every frame-based expectation is reported as inconclusive and only logs, counters, audio, input and the questionnaire judge the run.")
         }

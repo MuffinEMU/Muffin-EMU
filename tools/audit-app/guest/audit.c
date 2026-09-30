@@ -590,6 +590,8 @@ void RTBegin(RT *rt, uint32_t mip, const float clear[4])
    if (rt->hasDepth && mip == 0) {
       GX2ClearDepthStencilEx(&rt->db, 1.0f, 0, GX2_CLEAR_FLAGS_BOTH);
    }
+   // The clear functions use their own state on hardware; putting the context back is what WHBGfxClearColor does too.
+   GX2SetContextState(WHBGfxGetTVContextState());
    ApplyDefaultState();
 }
 
