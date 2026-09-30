@@ -22,7 +22,6 @@ IOSAudioInputAPI::IOSAudioInputAPI(uint32 samplerate,
 	: IAudioInputAPI(samplerate, channels, samples_per_block, bits_per_sample),
 	  m_buffer((size_t)samples_per_block * channels * (bits_per_sample / 8) * kBlockCount)
 {
-    NSError* error = nil;
     AVAudioSession* session = [AVAudioSession sharedInstance];
     
     if (session.recordPermission == AVAudioSessionRecordPermissionDenied)
@@ -31,12 +30,7 @@ IOSAudioInputAPI::IOSAudioInputAPI(uint32 samplerate,
     if (session.recordPermission == AVAudioSessionRecordPermissionUndetermined)
         [session requestRecordPermission:^(BOOL granted) {}];
     
-    [session setCategory:AVAudioSessionCategoryPlayAndRecord
-             withOptions:AVAudioSessionCategoryOptionMixWithOthers | AVAudioSessionCategoryOptionDefaultToSpeaker
-                   error:&error];
-    [session setPreferredSampleRate:samplerate error:&error];
-    [session setPreferredIOBufferDuration:(double)samples_per_block / samplerate error:&error];
-    [session setActive:YES error:&error];
+    ConfigureSession(samplerate, samples_per_block);
     
     AudioComponentDescription desc{};
     desc.componentType = kAudioUnitType_Output;
@@ -87,18 +81,85 @@ IOSAudioInputAPI::IOSAudioInputAPI(uint32 samplerate,
         throw std::runtime_error("can't set iOS microphone callback");
     }
     
+    // Sized for the worst case rather than for the session as it is right now: a route change
+    // (Bluetooth, headset) can raise the IO buffer size later, and a callback that doesn't
+    // fit would be dropped.
     const auto sessionFrames = static_cast<size_t>(std::ceil(session.sampleRate * session.IOBufferDuration));
-    const auto captureFrames = std::max<size_t>(samples_per_block, sessionFrames) + 1;
+    const auto captureFrames = std::max<size_t>({(size_t)samples_per_block, sessionFrames, (size_t)4096}) + 1;
     m_captureBuffer.resize(captureFrames * m_channels * (bits_per_sample / 8));
     
     if (AudioUnitInitialize(m_audioUnit) != noErr) {
         disposeAudioUnitOnError();
         throw std::runtime_error("can't initialize iOS microphone audio unit");
     }
+    
+    // Registered last: nothing above can throw after this point, so there is never an
+    // observer to clean up for an object whose destructor won't run.
+    m_notificationControl = std::make_shared<NotificationControl>();
+    m_notificationControl->self = this;
+    auto control = m_notificationControl;
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    m_interruptionObserver = (void*)CFBridgingRetain(
+        [center addObserverForName:AVAudioSessionInterruptionNotification
+                            object:session
+                             queue:[NSOperationQueue mainQueue]
+                        usingBlock:^(NSNotification* note) {
+            std::lock_guard<std::mutex> lock(control->mutex);
+            if (!control->self)
+                return;
+            const NSUInteger type = [note.userInfo[AVAudioSessionInterruptionTypeKey] unsignedIntegerValue];
+            control->self->HandleInterruption(type == AVAudioSessionInterruptionTypeBegan);
+        }]);
+    m_routeObserver = (void*)CFBridgingRetain(
+        [center addObserverForName:AVAudioSessionRouteChangeNotification
+                            object:session
+                             queue:[NSOperationQueue mainQueue]
+                        usingBlock:^(NSNotification* note) {
+            std::lock_guard<std::mutex> lock(control->mutex);
+            if (!control->self)
+                return;
+            control->self->HandleRouteChange();
+        }]);
+}
+
+// Session setup shared by construction and by recovery after a route change.
+//
+// PlayAndRecord with the *Default* mode on purpose: VoiceChat/VideoChat modes route output to
+// the earpiece, enable echo cancellation and duck other audio - all wrong for a game. The
+// capture goes through plain RemoteIO (not the voice-processing unit), which doesn't duck.
+// DefaultToSpeaker keeps the game on the loudspeaker, MixWithOthers matches the output
+// backend, and AllowBluetoothA2DP keeps Bluetooth headphones on high-quality stereo output
+// (the HFP "allowBluetooth" option would drop game audio to a phone-call codec).
+void IOSAudioInputAPI::ConfigureSession(uint32 samplerate, uint32 samplesPerBlock)
+{
+    NSError* error = nil;
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    [session setCategory:AVAudioSessionCategoryPlayAndRecord
+                    mode:AVAudioSessionModeDefault
+                 options:AVAudioSessionCategoryOptionMixWithOthers |
+                         AVAudioSessionCategoryOptionDefaultToSpeaker |
+                         AVAudioSessionCategoryOptionAllowBluetoothA2DP
+                   error:&error];
+    [session setPreferredSampleRate:samplerate error:&error];
+    [session setPreferredIOBufferDuration:(double)samplesPerBlock / samplerate error:&error];
+    [session setActive:YES error:&error];
 }
 
 IOSAudioInputAPI::~IOSAudioInputAPI()
 {
+    if (m_notificationControl) {
+        std::lock_guard<std::mutex> lock(m_notificationControl->mutex);
+        m_notificationControl->self = nullptr;
+    }
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    if (m_interruptionObserver) {
+        [center removeObserver:(__bridge id)m_interruptionObserver];
+        CFRelease(m_interruptionObserver);
+    }
+    if (m_routeObserver) {
+        [center removeObserver:(__bridge id)m_routeObserver];
+        CFRelease(m_routeObserver);
+    }
     if (m_audioUnit) {
         m_isPlaying = false;
         AudioOutputUnitStop(m_audioUnit);
@@ -110,20 +171,56 @@ IOSAudioInputAPI::~IOSAudioInputAPI()
 
 bool IOSAudioInputAPI::ConsumeBlock(sint16* data)
 {
+    // Lock-free SPSC: InputCallback (capture thread) writes, this (mic/AX thread) reads.
+    // Everything that discards audio happens here so the ring buffer keeps one consumer.
+    std::uint8_t discard[256];
+    if (m_flushRequested.exchange(false)) {
+        while (m_buffer.read(discard, sizeof(discard)) != 0) {}
+    }
+    else {
+        // The capture side can get ahead (the game polls the mic irregularly, or the route
+        // changed). Drop the oldest audio rather than let latency build up.
+        const size_t backlog = m_buffer.size();
+        if (backlog > (size_t)m_bytesPerBlock * 6) {
+            size_t toDrop = backlog - (size_t)m_bytesPerBlock * 2;
+            while (toDrop > 0) {
+                const size_t n = m_buffer.read(discard, std::min(toDrop, sizeof(discard)));
+                if (n == 0)
+                    break;
+                toDrop -= n;
+            }
+        }
+    }
+    
+    // Underrun: whatever wasn't captured yet is silence.
     const auto copied = m_buffer.read(reinterpret_cast<std::uint8_t*>(data), m_bytesPerBlock);
     if (copied != m_bytesPerBlock)
         std::memset(reinterpret_cast<std::uint8_t*>(data) + copied, 0, m_bytesPerBlock - copied);
+    
+    // Microphone Volume (0-100, default 50 = unity, 100 = +6 dB).
+    if (m_volume != 50 && m_bitsPerSample == 16) {
+        const float gain = std::clamp(m_volume, 0, 100) / 50.0f;
+        const size_t count = m_bytesPerBlock / sizeof(sint16);
+        for (size_t i = 0; i < count; i++) {
+            const float v = data[i] * gain;
+            data[i] = (sint16)std::clamp(v, -32768.0f, 32767.0f);
+        }
+    }
     
     return true;
 }
 
 bool IOSAudioInputAPI::Play()
 {
+    m_wantPlaying = true;
     if (!m_audioUnit)
         return false;
     if (m_isPlaying)
         return true;
+    if (m_interrupted)
+        return false; // restarted by HandleInterruption when the interruption ends
     
+    m_flushRequested = true; // nothing captured before this start is worth hearing
     if (AudioOutputUnitStart(m_audioUnit) != noErr)
         return false;
     
@@ -133,6 +230,7 @@ bool IOSAudioInputAPI::Play()
 
 bool IOSAudioInputAPI::Stop()
 {
+    m_wantPlaying = false;
     if (!m_audioUnit)
         return false;
     if (!m_isPlaying)
@@ -143,6 +241,44 @@ bool IOSAudioInputAPI::Stop()
     
     m_isPlaying = false;
     return true;
+}
+
+void IOSAudioInputAPI::HandleInterruption(bool began)
+{
+    if (began) {
+        // The system has already stopped the unit; Play() won't retry until this ends.
+        m_interrupted = true;
+        m_isPlaying = false;
+        return;
+    }
+    
+    m_interrupted = false;
+    NSError* error = nil;
+    [[AVAudioSession sharedInstance] setActive:YES error:&error];
+    m_flushRequested = true;
+    if (m_wantPlaying && m_audioUnit && AudioOutputUnitStart(m_audioUnit) == noErr)
+        m_isPlaying = true;
+}
+
+void IOSAudioInputAPI::HandleRouteChange()
+{
+    // Plugging in or removing headphones / Bluetooth can change the sample rate and buffer
+    // size underneath us. RemoteIO converts to our requested format on its own; what needs
+    // care is the session category (something else may have changed it) and the unit
+    // having stopped.
+    AVAudioSession* session = [AVAudioSession sharedInstance];
+    if (![session.category isEqualToString:AVAudioSessionCategoryPlayAndRecord])
+        ConfigureSession(m_samplerate, m_samplesPerBlock);
+    
+    m_flushRequested = true;
+    if (!m_wantPlaying || !m_audioUnit || m_interrupted)
+        return;
+    
+    UInt32 running = 0;
+    UInt32 size = sizeof(running);
+    AudioUnitGetProperty(m_audioUnit, kAudioOutputUnitProperty_IsRunning, kAudioUnitScope_Global, 0, &running, &size);
+    if (!running)
+        m_isPlaying = (AudioOutputUnitStart(m_audioUnit) == noErr);
 }
 
 OSStatus IOSAudioInputAPI::InputCallback(void* inRefCon,
