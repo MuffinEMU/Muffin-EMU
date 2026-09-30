@@ -23,6 +23,7 @@
 #include "Cafe/TitleList/TitleInfo.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
+#include "Cafe/Filesystem/FST/FST.h"
 #include <cctype>
 #include <fstream>
 #include <thread>
@@ -34,6 +35,7 @@
 #include <atomic>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 // Mirrored 1:1 by CemuBridgeStatus in src/ios/Bridge/CemuBridge.h. Plain ints across
 // the boundary so neither side has to include the other's header.
@@ -46,7 +48,25 @@ enum
 	IOS_TITLE_LAUNCH_NO_TITLE_TIK = 4,
 	IOS_TITLE_LAUNCH_UNSUPPORTED_FORMAT = 5,
 	IOS_TITLE_LAUNCH_BASE_NOT_FOUND = 6,
+	// Encrypted game folder (title.tmd, title.tik and .app files) that could not be opened
+	IOS_TITLE_LAUNCH_BAD_TITLE_TMD = 7,
+	IOS_TITLE_LAUNCH_BAD_TITLE_TIK = 8,
+	IOS_TITLE_LAUNCH_TITLE_KEY_INVALID = 9,
+	IOS_TITLE_LAUNCH_MISSING_CONTENT_FILE = 10,
 };
+
+// Extra detail for the last failure, e.g. the name of the missing .app file. Read by the
+// bridge right after IOSTitleLaunch_PrepareForegroundTitle() returns, on the same thread.
+static thread_local std::string sLastLaunchDetail;
+
+const char* IOSTitleLaunch_LastErrorDetail()
+{
+	return sLastLaunchDetail.c_str();
+}
+
+// Defined in IOSDlcUpdateImport.cpp
+bool IOSDlcUpdateImport_ReadTmdTitleId(const char* tmdPath, uint64* titleIdOut);
+uint64 IOSDlcUpdateImport_DeriveBaseTitleId(uint64 titleId);
 
 // Defined below, next to the rest of the key handling. Declared here because the
 // launch path above it calls it too.
@@ -85,6 +105,56 @@ static void IOSTitleLaunch_RescanInstalledContent()
 	}
 }
 
+// Encrypted game folders often come as a parent folder holding one subfolder each for the
+// game, its update and its DLC, every one with its own title.tmd. The update and DLC are
+// not in the MLC, so nothing would ever tell the core about them. They are found here by
+// their title.tmd (title ID high word 0005000E update, 0005000C DLC, base ID must match) in
+// the folders next to the game's folder and inside it, and added to the title list next to
+// the game so PrepareForegroundTitle() builds its GameInfo with them.
+static std::vector<fs::path> IOSTitleLaunch_FindCompanionTitles(const TitleInfo& base, TitleId baseTitleId)
+{
+	std::vector<fs::path> found;
+	if (base.GetFormat() != TitleInfo::TitleDataFormat::NUS)
+		return found;
+	const fs::path baseFolder = base.GetPath().parent_path();
+	std::vector<fs::path> searchRoots{baseFolder};
+	if (baseFolder.has_parent_path() && baseFolder.parent_path() != baseFolder)
+		searchRoots.push_back(baseFolder.parent_path());
+	std::error_code ec;
+	for (const fs::path& root : searchRoots)
+	{
+		for (auto& dir : fs::directory_iterator(root, ec))
+		{
+			if (!dir.is_directory(ec) || dir.path() == baseFolder)
+				continue;
+			fs::path tmdPath;
+			for (auto& file : fs::directory_iterator(dir.path(), ec))
+			{
+				std::string name = _pathToUtf8(file.path().filename());
+				for (auto& c : name)
+					c = (char)std::tolower((unsigned char)c);
+				if (name == "title.tmd")
+				{
+					tmdPath = file.path();
+					break;
+				}
+			}
+			if (tmdPath.empty())
+				continue;
+			uint64 tmdTitleId = 0;
+			if (!IOSDlcUpdateImport_ReadTmdTitleId(_pathToUtf8(tmdPath).c_str(), &tmdTitleId))
+				continue;
+			const uint32 high = (uint32)(tmdTitleId >> 32);
+			if (high != 0x0005000E && high != 0x0005000C)
+				continue;
+			if (IOSDlcUpdateImport_DeriveBaseTitleId(tmdTitleId) != (uint64)baseTitleId)
+				continue;
+			found.push_back(tmdPath);
+		}
+	}
+	return found;
+}
+
 // Prepares whatever the user actually picked, mirroring the same decision tree the
 // desktop GUI uses (MainWindow.cpp), rather than assuming everything is a standalone RPX.
 //
@@ -92,6 +162,7 @@ static void IOSTitleLaunch_RescanInstalledContent()
 // is reported before a title thread exists.
 int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 {
+	sLastLaunchDetail.clear();
 	if (!pathStr || pathStr[0] == '\0')
 		return IOS_TITLE_LAUNCH_UNSUPPORTED_FORMAT;
 	fs::path launchPath = fs::path(pathStr);
@@ -117,6 +188,12 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 			cemuLog_log(LogType::Force, "iOS: no base title found for {:016x} - an update or DLC was launched without its base game", (uint64)launchTitle.GetAppTitleId());
 			return IOS_TITLE_LAUNCH_BASE_NOT_FOUND;
 		}
+		const std::vector<fs::path> companionTitles = IOSTitleLaunch_FindCompanionTitles(launchTitle, baseTitleId);
+		for (const fs::path& companion : companionTitles)
+		{
+			cemuLog_log(LogType::Force, "iOS: adding update/DLC folder {} next to the game", _pathToUtf8(companion));
+			CafeTitleList::AddTitleFromPath(companion);
+		}
 		// Picks up anything DlcUpdateImport.swift has installed into Documents/mlc since
 		// the title list was last populated. Without it PrepareForegroundTitle below builds
 		// its GameInfo2 from the base game alone and boots unpatched.
@@ -127,6 +204,8 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 		// and fails with "Game meta information is either missing...". Re-adding is
 		// synchronous and deduplicated by location.
 		CafeTitleList::AddTitleFromPath(launchPath);
+		for (const fs::path& companion : companionTitles)
+			CafeTitleList::AddTitleFromPath(companion);
 		cemuLog_log(LogType::Force, "iOS: launching real title {:016x} from {}", (uint64)baseTitleId, _pathToUtf8(launchPath));
 		CafeSystem::PREPARE_STATUS_CODE r = CafeSystem::PrepareForegroundTitle(baseTitleId);
 		switch (r)
@@ -168,6 +247,19 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 	case TitleInfo::InvalidReason::NO_TITLE_TIK:
 		cemuLog_log(LogType::Force, "iOS: {} has no usable title.tik", _pathToUtf8(launchPath));
 		return IOS_TITLE_LAUNCH_NO_TITLE_TIK;
+	case TitleInfo::InvalidReason::BAD_TITLE_TMD:
+		cemuLog_log(LogType::Force, "iOS: {} has a title.tmd that could not be read", _pathToUtf8(launchPath));
+		return IOS_TITLE_LAUNCH_BAD_TITLE_TMD;
+	case TitleInfo::InvalidReason::BAD_TITLE_TIK:
+		cemuLog_log(LogType::Force, "iOS: {} has a title.tik that could not be read", _pathToUtf8(launchPath));
+		return IOS_TITLE_LAUNCH_BAD_TITLE_TIK;
+	case TitleInfo::InvalidReason::TITLE_KEY_INVALID:
+		cemuLog_log(LogType::Force, "iOS: {} could not be decrypted with its ticket or any key in keys.txt", _pathToUtf8(launchPath));
+		return IOS_TITLE_LAUNCH_TITLE_KEY_INVALID;
+	case TitleInfo::InvalidReason::MISSING_CONTENT_FILE:
+		sLastLaunchDetail = FSTVolume::GetLastMissingContentFile();
+		cemuLog_log(LogType::Force, "iOS: {} is missing content file {}", _pathToUtf8(launchPath), sLastLaunchDetail);
+		return IOS_TITLE_LAUNCH_MISSING_CONTENT_FILE;
 	default:
 		cemuLog_log(LogType::Force, "iOS: {} is not a title this build can launch (invalid reason {})", _pathToUtf8(launchPath), (int)launchTitle.GetInvalidReason());
 		return IOS_TITLE_LAUNCH_UNSUPPORTED_FORMAT;

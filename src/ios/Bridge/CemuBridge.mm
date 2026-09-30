@@ -101,6 +101,7 @@ int csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
 
 // Muffin's glue, in Core/. Plain C++ linkage: only this file calls them.
 int IOSTitleLaunch_PrepareForegroundTitle(const char* path);
+const char* IOSTitleLaunch_LastErrorDetail();
 int IOSTitleLaunch_ReloadAndCountKeys();
 int IOSTitleDecrypt_ExtractToFolder(const char* srcPath, const char* destFolderPath,
     std::atomic_bool& cancelRequested,
@@ -111,6 +112,7 @@ int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destPath,
 std::string IOSCoverArt_DeriveGameTdbId(const char* romPath);
 std::string IOSCoverArt_GetTitleName(const char* romPath);
 bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64_t* titleIdOut);
+bool IOSDlcUpdateImport_ReadTmdTitleId(const char* tmdPath, uint64_t* titleIdOut);
 uint64_t IOSDlcUpdateImport_DeriveBaseTitleId(uint64_t titleId);
 int IOSDlcUpdateImport_GetTitleType(uint64_t titleId);
 void IOSDlcUpdateImport_GetMlcTitlePathComponents(uint64_t titleId, char* outUpperHex, char* outLowerHex);
@@ -1599,7 +1601,7 @@ void cemu_bridge_initialize(const char* mlcPath) {
     }
 
     // The library screen can call KeyCache_Prepare() (via a TitleInfo for a .wud/.wux/
-    // NUS dump already in the library) before this point, which permanently latches the
+    // encrypted game folder already in the library) before this point, which permanently latches the
     // key cache against whatever keys.txt path was in effect before CemuInitialize() (the
     // only thing that calls ActiveSettings::SetPaths() on this core) has run. Re-arm the
     // latch right before that call, so the next KeyCache_Prepare() reads keys.txt from
@@ -1784,8 +1786,22 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
             setStatus("This game is encrypted and no key in keys.txt opens it. Put the keys.txt you dumped from your own Wii U in MuffinEMU's \"keys\" folder in the Files app (or import it in Settings), then relaunch MuffinEMU and try again.");
             return CEMU_BRIDGE_NO_DISC_KEY;
         case 4:
-            setStatus("This title has no usable title.tik, so its content cannot be decrypted.");
+            setStatus("This game folder is missing title.tik (the ticket), which MuffinEMU needs to decrypt it. Copy title.tik into the folder next to title.tmd, or add this game's title key to keys.txt.");
             return CEMU_BRIDGE_NO_TITLE_TIK;
+        case 7:
+            setStatus("This game folder's title.tmd couldn't be read. The file may be damaged or incomplete - copy the whole folder again.");
+            return CEMU_BRIDGE_BAD_TITLE_TMD;
+        case 8:
+            setStatus("This game folder's title.tik (the ticket) couldn't be read, so MuffinEMU can't decrypt it. The file may be damaged - copy it again, or add this game's title key to keys.txt.");
+            return CEMU_BRIDGE_BAD_TITLE_TIK;
+        case 9:
+            setStatus("MuffinEMU couldn't decrypt this game folder. Its title.tik doesn't unlock the .app files (the ticket may belong to another console, or the files are damaged). Check that title.tmd, title.tik and the .app files are from the same download.");
+            return CEMU_BRIDGE_TITLE_KEY_INVALID;
+        case 10: {
+            const std::string missingFile = IOSTitleLaunch_LastErrorDetail();
+            setStatus(("This game folder is missing " + (missingFile.empty() ? std::string("a .app file") : missingFile) + ", which title.tmd lists. Copy every .app file from the download into the folder.").c_str());
+            return CEMU_BRIDGE_MISSING_CONTENT;
+        }
         case 6:
             setStatus("That looks like an update or DLC. Launch the base game instead.");
             return CEMU_BRIDGE_BASE_NOT_FOUND;
@@ -1947,6 +1963,10 @@ bool cemu_bridge_derive_title_id(const char* romPath, uint64_t* outTitleId) {
     if (!romPath || !outTitleId)
         return false;
     return IOSDlcUpdateImport_DeriveTitleId(romPath, outTitleId);
+}
+
+bool cemu_bridge_read_tmd_title_id(const char* tmdPath, uint64_t* outTitleId) {
+    return IOSDlcUpdateImport_ReadTmdTitleId(tmdPath, outTitleId);
 }
 
 uint64_t cemu_bridge_derive_base_title_id(uint64_t titleId) {
