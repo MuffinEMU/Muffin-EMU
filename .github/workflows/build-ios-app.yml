@@ -138,6 +138,14 @@ jobs:
           clang++ -std=c++17 -Wall -Wextra -I src/ios/Bridge ci/stall-detector-test.cpp -o "$RUNNER_TEMP/stall-detector-test"
           "$RUNNER_TEMP/stall-detector-test"
 
+      # The rule that decides when invalidated recompiler code may go back to the arena (no thread running it
+      # or parked in it) is also plain C++, and a mistake in it is a crash that only shows in a long session.
+      # The test includes a multi-threaded run that fails if any freed range is found in use.
+      - name: Unit-test the recompiler arena release rule
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -O1 -I src/Cafe/HW/Espresso/Recompiler ci/jit-reclaim-test.cpp -o "$RUNNER_TEMP/jit-reclaim-test" -pthread
+          "$RUNNER_TEMP/jit-reclaim-test"
+
       - name: Select full Xcode and install build tools
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer

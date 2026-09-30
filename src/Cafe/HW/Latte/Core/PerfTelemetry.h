@@ -45,6 +45,8 @@ namespace PerfTelemetry
 		std::atomic<uint32_t> jitInvalidations{0}; // functions dropped because guest code changed
 		std::atomic<uint32_t> jitArenaReleases{0}; // ranges handed back to the arena
 		std::atomic<uint32_t> jitArenaAllocFails{0}; // a block could not get arena space
+		std::atomic<uint64_t> jitArenaPendingBytes{0}; // invalidated code waiting for the last thread to leave it (a level)
+		std::atomic<uint64_t> jitArenaFreedBytes{0};   // invalidated code handed back to the arena (a running total)
 	};
 
 	inline Counters& Get()
