@@ -185,7 +185,8 @@ MetalRenderer::MetalRenderer()
     m_commandQueue = m_device->newCommandQueue();
 
     // Synchronization resources
-    m_event = m_device->newEvent();
+    // A shared event so the CPU can signal it too: see ProcessFinishedCommandBuffers().
+    m_event = m_device->newSharedEvent();
 
     // Resources
     NS_STACK_SCOPED MTL::SamplerDescriptor* samplerDescriptor = MTL::SamplerDescriptor::alloc()->init();
@@ -598,7 +599,7 @@ void MetalRenderer::Flush(bool waitIdle)
 
     if (waitIdle && m_executingCommandBuffers.size() != 0)
     {
-        m_executingCommandBuffers.back()->waitUntilCompleted();
+        WaitForCommandBuffer(m_executingCommandBuffers.back(), "Flush: waiting for the last command buffer");
         ProcessFinishedCommandBuffers();
     }
 }
@@ -2111,8 +2112,8 @@ void MetalRenderer::PrepareOcclusionQueryDraw()
     if (completion)
     {
 
-        if (!CommandBufferCompleted(completion))
-            completion->waitUntilCompleted();
+        // Bounded: if the GPU never answers, carry on with the counts we have instead of freezing.
+        WaitForCommandBuffer(completion, "occlusion query buffer reuse: waiting for an older command buffer");
 
         for (auto* query : m_occlusionQuery.m_queries)
             query->AccumulateBuffer(nextBuffer);
@@ -2128,7 +2129,7 @@ void MetalRenderer::PrepareOcclusionQueryDraw()
 void MetalRenderer::occlusionQuery_flush() {
     CommitCommandBuffer();
     if (m_occlusionQuery.m_lastCommandBuffer)
-        m_occlusionQuery.m_lastCommandBuffer->waitUntilCompleted();
+        WaitForCommandBuffer(m_occlusionQuery.m_lastCommandBuffer, "occlusion query flush: waiting for the query command buffer");
 }
 
 void MetalRenderer::occlusionQuery_updateState() {
@@ -2466,6 +2467,8 @@ void MetalRenderer::CommitCommandBuffer()
         m_currentCommandBuffer.m_commited = true;
 
         m_executingCommandBuffers.push_back(mtlCommandBuffer);
+        m_executingEventValues.push_back(m_eventValue);
+        LatteWait::Get().executingCommandBuffers.store((uint32)m_executingCommandBuffers.size(), std::memory_order_relaxed);
 
         // Debug
         //m_commandQueue->insertDebugCaptureBoundary();
@@ -2475,20 +2478,38 @@ void MetalRenderer::CommitCommandBuffer()
 void MetalRenderer::ProcessFinishedCommandBuffers()
 {
     // Check for finished command buffers
-    for (auto it = m_executingCommandBuffers.begin(); it != m_executingCommandBuffers.end();)
+    for (size_t i = 0; i < m_executingCommandBuffers.size();)
     {
-        auto commandBuffer = *it;
+        auto commandBuffer = m_executingCommandBuffers[i];
         if (CommandBufferCompleted(commandBuffer))
         {
+            if (commandBuffer->status() == MTL::CommandBufferStatusError)
+            {
+                // A command buffer that fails may never signal the event the next one is waiting
+                // on, which would leave every later command buffer (and every present) stuck.
+                // Signal it from the CPU so the queue keeps moving.
+                auto& waitState = LatteWait::Get();
+                const uint32 errorCount = waitState.erroredCommandBuffers.fetch_add(1) + 1;
+                if (errorCount <= 8)
+                {
+                    NS::Error* error = commandBuffer->error();
+                    cemuLog_log(LogType::Force, "Metal: command buffer failed (#{}): code {} {}", errorCount,
+                        error ? (long)error->code() : 0L,
+                        (error && error->localizedDescription()) ? error->localizedDescription()->utf8String() : "");
+                }
+                static_cast<MTL::SharedEvent*>(m_event)->setSignaledValue((uint64_t)m_executingEventValues[i]);
+            }
             m_memoryManager->CleanupBuffers(commandBuffer);
             commandBuffer->release();
-            it = m_executingCommandBuffers.erase(it);
+            m_executingCommandBuffers.erase(m_executingCommandBuffers.begin() + i);
+            m_executingEventValues.erase(m_executingEventValues.begin() + i);
         }
         else
         {
-            ++it;
+            ++i;
         }
     }
+    LatteWait::Get().executingCommandBuffers.store((uint32)m_executingCommandBuffers.size(), std::memory_order_relaxed);
 }
 
 bool MetalRenderer::AcquireDrawable(bool mainWindow)

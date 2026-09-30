@@ -4,6 +4,10 @@
 #include <Metal/Metal.hpp>
 
 #include "Cafe/HW/Latte/Core/LatteConst.h"
+#include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
+
+#include <chrono>
+#include <thread>
 
 struct MetalPixelFormatSupport
 {
@@ -118,6 +122,42 @@ inline bool CommandBufferCompleted(MTL::CommandBuffer* commandBuffer)
 {
     auto status = commandBuffer->status();
     return (status == MTL::CommandBufferStatusCompleted || status == MTL::CommandBufferStatusError);
+}
+
+// Waits for a command buffer without ever blocking the GPU thread forever. A command buffer
+// that the GPU never finishes (a lost reply, a dead event dependency) would otherwise freeze
+// the picture while the game keeps running. Returns false if it gave up; the first few
+// give-ups are logged with what was being waited for. After one give-up the GPU is presumed
+// lost and later waits only poll briefly, until a wait succeeds again.
+inline bool WaitForCommandBuffer(MTL::CommandBuffer* commandBuffer, const char* what)
+{
+    if (!commandBuffer || CommandBufferCompleted(commandBuffer))
+        return true;
+
+    auto& state = LatteWait::Get();
+    LatteWait::Scope waitScope(what);
+
+    const int64_t timeoutMs = state.gpuPresumedLost.load(std::memory_order_relaxed) ? 50 : 2500;
+    const auto start = std::chrono::steady_clock::now();
+    uint32 spins = 0;
+    while (!CommandBufferCompleted(commandBuffer))
+    {
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count() >= timeoutMs)
+        {
+            const uint32 count = state.timeouts.fetch_add(1) + 1;
+            state.lastTimeoutReason.store(what);
+            state.gpuPresumedLost.store(true);
+            if (count <= 8)
+                cemuLog_log(LogType::Force, "Metal: gave up waiting for the GPU ({}) after {} ms, command buffer status {} (timeout #{})", what, timeoutMs, (int)commandBuffer->status(), count);
+            return false;
+        }
+        if (++spins < 64)
+            std::this_thread::yield();
+        else
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+    }
+    state.gpuPresumedLost.store(false, std::memory_order_relaxed);
+    return true;
 }
 
 inline bool FormatIsRenderable(Latte::E_GX2SURFFMT format)
