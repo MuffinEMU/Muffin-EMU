@@ -19,6 +19,7 @@
 #include <typeinfo>
 #import "CemuBridge.h"
 #import "IOSLiveLog.h"
+#import "IOSMotion.h"
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <GameController/GameController.h>
@@ -57,6 +58,7 @@
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalBinaryArchive.h"
+#include "StallDetector.h"
 #include "util/Fiber/Fiber.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cemu/Logging/CemuLogging.h"
@@ -1039,20 +1041,30 @@ namespace {
 //
 // The game's audio and input run on the guest CPU, the picture on the GPU thread, and the
 // two are not tied together (the speed setting "Full sync at GX2DrawDone" is off), so the
-// GPU side can stop while everything else carries on. LatteGPUState.frameCounter is bumped
-// once per emulated frame; if it stops moving for a few seconds while a title is running and
-// not paused, the picture has stopped. The watchdog raises a flag for the UI and writes one
-// snapshot of everything the GPU thread's breadcrumbs (LatteWaitInfo.h) can say about why.
+// GPU side can stop while everything else carries on. Whether the picture is really frozen
+// is decided by StallDetector.h (pure logic, unit tested in ci/stall-detector-test.cpp); this
+// file only reads the live counters into a Sample every 250 ms and acts on the answer.
+//
+// In short: a command buffer error that iOS answers by ignoring this app's GPU work is shown at
+// once; anything heuristic (the GPU not finishing work, the screen not taking frames, a GPU
+// thread with no progress) has to hold for a whole window and survive a second look; a game
+// that simply stops sending GPU work (loading, a game-side hang) is logged and never shown as
+// a video freeze; and a raised card is dismissed by itself when progress resumes. Every log
+// line names the rule, the measured values and the thresholds (see StallDetector.h).
 namespace {
     std::atomic<bool> g_videoStalled{false};
-    std::atomic<int> g_videoStallKind{0}; // 0 none, 1 picture stopped, 2 GPU error
+    // 0 none, 1 GPU stopped finishing frames, 2 GPU fault, 3 screen out of memory, 4 low memory
+    // warning, 5 screen stopped taking frames (StallDetect::Kind)
+    std::atomic<int> g_videoStallKind{0};
     std::atomic<bool> g_stallWatchRunning{false};
     std::atomic<bool> g_appIsActive{true};
+    // Bumped whenever a title starts, ends or is replaced; the watchdog thread then starts judging afresh.
+    std::atomic<uint32_t> g_stallResetGen{0};
 
     // Clears the stall flag, the stall kind and the GPU-fault state (a failed command buffer, a
-    // presumed-lost GPU, the drawable-failure count). Used when a title ends and when a title
-    // switch replaces the renderer: those flags describe the renderer that is being thrown away,
-    // and left set they would make the watchdog report the new title as stalled, or as
+    // presumed-lost GPU, the drawable-failure count). Used when a title starts or ends and when a
+    // title switch replaces the renderer: those flags describe the renderer that is being thrown
+    // away, and left set they would make the watchdog report the new title as stalled, or as
     // GPU-faulted, before it has drawn a frame.
     void ios_reset_video_stall_state()
     {
@@ -1064,9 +1076,74 @@ namespace {
         w.gpuPresumedLost.store(false);
         w.memStatsValid.store(false);
         w.drawableFailuresInARow.store(0);
+        w.cbErrorStreak.store(0);
+        g_stallResetGen.fetch_add(1);
     }
 
-    void ios_stall_log_snapshot(double stalledSeconds)
+    // Windows get longer when iOS is throttling the device: a hot A12Z legitimately runs slowly.
+    double ios_stall_thermal_scale(int* stateOut)
+    {
+        const NSInteger state = [[NSProcessInfo processInfo] thermalState];
+        if (stateOut)
+            *stateOut = (int)state;
+        switch (state)
+        {
+        case NSProcessInfoThermalStateSerious: return 1.5;
+        case NSProcessInfoThermalStateCritical: return 2.0;
+        default: return 1.0;
+        }
+    }
+
+    StallDetect::Sample ios_stall_make_sample(int* thermalState)
+    {
+        auto& w = LatteWait::Get();
+        auto& info = WindowSystem::GetWindowInfo();
+        StallDetect::Sample s;
+        s.nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        s.titleRunning = g_titleRunning.load() && CafeSystem::IsTitleRunning() && !CafeSystem::IsTitleSwitchInProgress();
+        s.gx2Init = LatteGPUState.gx2InitCalled > 0;
+        s.paused = IOSTitlePause_IsPaused();
+        s.appActive = g_appIsActive.load();
+        uint32_t stamp = 17;
+        for (uint32_t v : { (uint32_t)(int)info.width, (uint32_t)(int)info.height, (uint32_t)(int)info.phys_width, (uint32_t)(int)info.phys_height,
+                            (uint32_t)((double)info.dpi_scale.load() * 100.0), (uint32_t)info.visible_outputs.load() })
+            stamp = stamp * 31u + v;
+        s.layoutStamp = stamp;
+        s.windowScale = ios_stall_thermal_scale(thermalState);
+        s.frames = LatteGPUState.frameCounter;
+        s.presented = w.presentedFrames.load();
+        s.drawableFailures = w.drawableFailures.load();
+        s.drawableFailuresInARow = w.drawableFailuresInARow.load();
+        s.cbRetired = w.cbRetired.load();
+        s.cbErrorStreak = w.cbErrorStreak.load();
+        s.pm4 = w.pm4Count.load();
+        s.draws = (uint32_t)LatteGPUState.drawCallCounter;
+        s.flipRequests = (uint32_t)LatteGPUState.flipRequestCount.load();
+        s.evictionPasses = w.evictionPasses.load();
+        s.gpuError = w.gpuError.load();
+        s.gpuErrorCode = w.gpuErrorCode.load();
+        s.lastCbErrorCode = w.cbLastErrorCode.load();
+        s.gpuPresumedLost = w.gpuPresumedLost.load();
+        s.waitClass = w.reason.load() ? (StallDetect::WaitClass)w.reasonKind.load() : StallDetect::WaitClass::None;
+        // The limit jetsam enforces on this process, from what it has left plus what it holds, capped by the
+        // device's RAM. Memory thresholds are fractions of it, so they fit a 3 GB iPhone and a 6 GB iPad alike.
+        static uint64_t s_memLimitBytes = 0;
+        const uint64_t availBytes = (uint64_t)os_proc_available_memory();
+        if (availBytes != 0)
+        {
+            uint64_t limit = availBytes + cemu_mem_footprint_bytes();
+            static const uint64_t physBytes = cemu_sysctl_u64("hw.memsize");
+            if (physBytes != 0 && limit > physBytes)
+                limit = physBytes;
+            if (limit > s_memLimitBytes)
+                s_memLimitBytes = limit;
+        }
+        s.availMemMB = (uint32_t)(availBytes >> 20);
+        s.memLimitMB = availBytes != 0 ? (uint32_t)(s_memLimitBytes >> 20) : 0;
+        return s;
+    }
+
+    void ios_stall_log_snapshot(const StallDetect::Sample& s, int thermalState)
     {
         auto& w = LatteWait::Get();
         const char* reason = w.reason.load();
@@ -1077,29 +1154,52 @@ namespace {
         char surface[640];
         CemuUIKit_DescribeMainSurface(surface, sizeof(surface));
 
-        if (w.gpuError.load())
-            cemuLog_log(LogType::Force, "VIDEO STALL: GPU ERROR - a command buffer failed with code {}; iOS stops running this app's GPU work after that", w.gpuErrorCode.load());
-        else if (w.drawableFailuresInARow.load() >= 8)
-            cemuLog_log(LogType::Force, "VIDEO STALL: OUT OF MEMORY FOR THE SCREEN - {} drawable requests in a row failed (iOS cannot give the layer a new frame buffer)", w.drawableFailuresInARow.load());
-        else
-            cemuLog_log(LogType::Force, "VIDEO STALL: no frame for {:.1f} s while the title is running and not paused (frame {}, flips {}, draw calls {})",
-                stalledSeconds, (uint32)LatteGPUState.frameCounter, (uint32)LatteGPUState.flipCounter, (uint32)LatteGPUState.drawCallCounter);
         if (reason)
-            cemuLog_log(LogType::Force, "VIDEO STALL: GPU thread is blocked: {} (for {} ms)", reason, reasonMs);
+            cemuLog_log(LogType::Force, "VIDEO STALL: GPU thread is blocked: {} (for {} ms, class {})", reason, reasonMs, StallDetect::WaitName(s.waitClass));
         else
             cemuLog_log(LogType::Force, "VIDEO STALL: GPU thread is not in a known wait (it is running, or stuck somewhere without a breadcrumb)");
-        cemuLog_log(LogType::Force, "VIDEO STALL: last PM4 opcode 0x{:02x}, guest flip requests {}, GX2Init calls {}",
-            w.lastPM4Opcode.load(), (uint64)LatteGPUState.flipRequestCount.load(), (uint32)LatteGPUState.gx2InitCalled);
-        cemuLog_log(LogType::Force, "VIDEO STALL: pending: {} occlusion queries, {} texture readbacks, {} command buffers on the GPU, {} command buffers failed so far",
-            w.queriesInFlight.load(), w.readbacksPending.load(), w.executingCommandBuffers.load(), w.erroredCommandBuffers.load());
+        cemuLog_log(LogType::Force, "VIDEO STALL: frame {}, flips {}, draw calls {}, last PM4 opcode 0x{:02x}, GPU packets {}, guest flip requests {}, GX2Init calls {}",
+            (uint32)LatteGPUState.frameCounter, (uint32)LatteGPUState.flipCounter, (uint32)LatteGPUState.drawCallCounter,
+            w.lastPM4Opcode.load(), w.pm4Count.load(), (uint64)LatteGPUState.flipRequestCount.load(), (uint32)LatteGPUState.gx2InitCalled);
+        cemuLog_log(LogType::Force, "VIDEO STALL: pending: {} occlusion queries, {} texture readbacks, {} command buffers on the GPU (submitted {}, finished {}, failed {}, failing in a row {}, last error code {})",
+            w.queriesInFlight.load(), w.readbacksPending.load(), w.executingCommandBuffers.load(), w.cbSubmitted.load(), w.cbRetired.load(),
+            w.erroredCommandBuffers.load(), w.cbErrorStreak.load(), w.cbLastErrorCode.load());
         cemuLog_log(LogType::Force, "VIDEO STALL: waits that gave up: {} (last: {}), GPU presumed lost: {}",
             w.timeouts.load(), lastTimeout ? lastTimeout : "none", w.gpuPresumedLost.load() ? "yes" : "no");
         cemuLog_log(LogType::Force, "VIDEO STALL: presented frames {}, TV drawable held: {}, drawable failures {} ({} in a row), TV drawable size {}x{}, layer device {}",
             w.presentedFrames.load(), w.tvDrawableHeld.load() ? "yes" : "no", w.drawableFailures.load(), w.drawableFailuresInARow.load(),
             w.tvDrawableWidth.load(), w.tvDrawableHeight.load(), w.tvLayerHasDevice.load() ? "set" : "unknown/missing");
+        cemuLog_log(LogType::Force, "VIDEO STALL: free memory {} MB of a {} MB process limit, thermal state {} (x{:.1f}), app active {}, paused {}",
+            s.availMemMB, s.memLimitMB, thermalState, s.windowScale, s.appActive ? "yes" : "no", s.paused ? "yes" : "no");
         cemuLog_log(LogType::Force, "VIDEO STALL: window {}x{} points at {:.2f}x scale ({}x{} px), visible outputs mask {}",
             (int)info.width, (int)info.height, (double)info.dpi_scale.load(), (int)info.phys_width, (int)info.phys_height, (uint32)info.visible_outputs.load());
         cemuLog_log(LogType::Force, "VIDEO STALL: TV view: {}", surface);
+    }
+
+    void ios_stall_log_decision(const StallDetect::Decision& d, const StallDetect::Sample& s, int thermalState)
+    {
+        using StallDetect::Action;
+        switch (d.action)
+        {
+        case Action::Suspect:
+            cemuLog_log(LogType::Force, "VIDEO STALL: suspected (not shown yet) - {}", d.text);
+            break;
+        case Action::SuspectDropped:
+            cemuLog_log(LogType::Force, "VIDEO STALL: suspicion dropped - {}", d.text);
+            break;
+        case Action::Raise:
+            cemuLog_log(LogType::Force, "VIDEO STALL: card shown (kind {}) - {}", (int)d.kind, d.text);
+            ios_stall_log_snapshot(s, thermalState);
+            break;
+        case Action::Clear:
+            cemuLog_log(LogType::Force, "VIDEO STALL: card dismissed - {}", d.text);
+            break;
+        case Action::GuestNote:
+            cemuLog_log(LogType::Force, "VIDEO STALL: not a video freeze - {}", d.text);
+            break;
+        default:
+            break;
+        }
     }
 
     void ios_stall_watchdog_start()
@@ -1115,105 +1215,46 @@ namespace {
             usingBlock:^(NSNotification*) { g_appIsActive.store(true); }];
 
         std::thread([] {
-            constexpr double kStallSeconds = 4.0;
-            constexpr double kBootStallSeconds = 45.0;
-            uint32 lastFrames = 0;
-            auto lastChange = std::chrono::steady_clock::now();
-            auto lastReport = lastChange;
-            bool haveBaseline = false;
+            StallDetect::Detector detector;
+            uint32_t seenResetGen = g_stallResetGen.load();
+            int64_t lastStillLogMs = 0;
             while (g_stallWatchRunning.load())
             {
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
 
-                // Only judge a title that is really expected to be drawing: running, past GX2Init,
-                // not paused, and the app in the foreground (iOS stops the GPU in the background).
-                const bool expectFrames = g_titleRunning.load() && CafeSystem::IsTitleRunning()
-                    && LatteGPUState.gx2InitCalled > 0 && !IOSTitlePause_IsPaused() && g_appIsActive.load();
-                const auto now = std::chrono::steady_clock::now();
-                const uint32 frames = LatteGPUState.frameCounter;
-
-                // A failed GPU submission is reported at once and stays reported: after a page fault iOS
-                // ignores the rest of this process's GPU work, so frames will not come back.
-                if (g_titleRunning.load() && LatteWait::Get().gpuError.load())
+                int thermalState = 0;
+                const StallDetect::Sample sample = ios_stall_make_sample(&thermalState);
+                const uint32_t resetGen = g_stallResetGen.load();
+                if (resetGen != seenResetGen)
                 {
-                    if (!g_videoStalled.exchange(true))
-                    {
-                        g_videoStallKind.store(2);
-                        ios_stall_log_snapshot(0.0);
-                    }
-                    continue;
+                    seenResetGen = resetGen;
+                    detector.Reset(sample.nowMs, true);
                 }
 
-                // Nearly out of memory: iOS is about to end the app. Say so now, while Save State still works.
-                if (g_titleRunning.load() && (g_videoStallKind.load() < 2 || g_videoStallKind.load() == 4))
+                const StallDetect::Decision stallDecision = detector.Update(sample);
+                ios_stall_log_decision(stallDecision, sample, thermalState);
+                const StallDetect::Decision memoryDecision = detector.UpdateMemory(sample);
+                ios_stall_log_decision(memoryDecision, sample, thermalState);
+
+                const int kind = (int)detector.kind();
+                g_videoStallKind.store(kind);
+                g_videoStalled.store(kind != 0);
+
+                if (detector.stallRaised())
                 {
-                    const uint64_t availableNow = (uint64_t)os_proc_available_memory();
-                    if (availableNow > 0 && availableNow < (160ull << 20))
+                    if (lastStillLogMs == 0 || stallDecision.action == StallDetect::Action::Raise)
+                        lastStillLogMs = sample.nowMs;
+                    else if (sample.nowMs - lastStillLogMs >= 15000)
                     {
-                        g_videoStallKind.store(4);
-                        if (!g_videoStalled.exchange(true))
-                        {
-                            cemuLog_log(LogType::Force, "VIDEO STALL: OUT OF MEMORY - only {} MB left before iOS ends the app", availableNow >> 20);
-                            ios_stall_log_snapshot(0.0);
-                        }
-                        continue;
-                    }
-                    if (g_videoStallKind.load() == 4)
-                    {
-                        if (availableNow < (300ull << 20))
-                            continue; // still tight, keep the card up
-                        g_videoStalled.store(false);
-                        g_videoStallKind.store(0);
-                        cemuLog_log(LogType::Force, "VIDEO STALL: memory has recovered ({} MB free)", availableNow >> 20);
+                        lastStillLogMs = sample.nowMs;
+                        const char* reason = LatteWait::Get().reason.load();
+                        cemuLog_log(LogType::Force, "VIDEO STALL: rule={} still in effect after {:.0f} s ({})", StallDetect::RuleName(detector.rule()),
+                            (double)(sample.nowMs - detector.raisedAtMs()) / 1000.0, reason ? reason : "no known wait");
                     }
                 }
-
-                // Repeated failures to get a drawable from the layer: the screen itself is out of memory.
-                if (g_titleRunning.load() && LatteWait::Get().drawableFailuresInARow.load() >= 8)
+                else
                 {
-                    if (g_videoStallKind.load() != 3)
-                    {
-                        g_videoStallKind.store(3);
-                        g_videoStalled.store(true);
-                        ios_stall_log_snapshot(0.0);
-                    }
-                    continue;
-                }
-                if (g_videoStallKind.load() == 3)
-                {
-                    g_videoStalled.store(false);
-                    g_videoStallKind.store(0);
-                    cemuLog_log(LogType::Force, "VIDEO STALL: drawables are available again");
-                }
-
-                if (!expectFrames || !haveBaseline || frames != lastFrames)
-                {
-                    if (g_videoStalled.exchange(false))
-                        cemuLog_log(LogType::Force, "VIDEO STALL: frames are arriving again (frame {})", frames);
-                    g_videoStallKind.store(0);
-                    haveBaseline = expectFrames;
-                    lastFrames = frames;
-                    lastChange = now;
-                    lastReport = now;
-                    continue;
-                }
-
-                // Loading can go a long time without finishing a frame (3D World was flagged at frame 0),
-                // so a title that has not drawn its first frames gets a much longer grace period.
-                const double stalled = std::chrono::duration<double>(now - lastChange).count();
-                if (stalled < (frames < 30 ? kBootStallSeconds : kStallSeconds))
-                    continue;
-                if (!g_videoStalled.exchange(true))
-                {
-                    g_videoStallKind.store(1);
-                    ios_stall_log_snapshot(stalled);
-                    lastReport = now;
-                }
-                else if (now - lastReport >= std::chrono::seconds(15))
-                {
-                    lastReport = now;
-                    const char* reason = LatteWait::Get().reason.load();
-                    cemuLog_log(LogType::Force, "VIDEO STALL: still stalled after {:.0f} s ({})", stalled, reason ? reason : "no known wait");
+                    lastStillLogMs = 0;
                 }
             }
         }).detach();
@@ -1356,6 +1397,21 @@ namespace {
         return s;
     }
 
+    // The GamePad's motion: the device's own sensors (or a controller's), see IOSMotion.mm. The sample is
+    // already in the convention the core's motion handler expects, so it passes straight through.
+    GCBridgeMotionState ios_poll_motion(void* context)
+    {
+        (void)context;
+        IOSMotionSample sample;
+        IOSMotion_Poll(&sample);
+        GCBridgeMotionState s{};
+        s.accelerometer = GCBridgeVec3{sample.accelerometer[0], sample.accelerometer[1], sample.accelerometer[2]};
+        s.gyroscope = GCBridgeVec3{sample.gyroscope[0], sample.gyroscope[1], sample.gyroscope[2]};
+        s.timestamp = sample.timestamp;
+        s.recenterCount = sample.recenterCount;
+        return s;
+    }
+
     void ios_update_physical(GCExtendedGamepad* pad)
     {
         uint32_t buttons = 0;
@@ -1424,7 +1480,7 @@ namespace {
         desc.display_name = "Muffin GamePad";
         desc.controllerType = (uint8)EmulatedController::Type::VPAD;
         desc.poll_state = ios_poll_state;
-        desc.poll_motion = nullptr;
+        desc.poll_motion = ios_poll_motion;
         desc.rumble = nullptr;
         desc.release = nullptr;
         g_inputHandle = GCControllerBridge_add(&desc);
@@ -1434,6 +1490,7 @@ namespace {
             return;
         }
         GCControllerBridge_notifyChanged();
+        IOSMotion_Start();
         cemu_bridge_log_checkpoint("iOS input: GamePad registered with the core (on-screen pad + first physical controller)");
 
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -1590,6 +1647,8 @@ const char* cemu_bridge_take_launch_notice(void) {
 // clears it when the player picks Vulkan again, and switching MoltenVK builds makes it stop applying.
 static NSString* const kVulkanFailedBuildKey = @"muffin.render.vulkanFailedBuild";
 static NSString* const kGraphicsAPIKey = @"muffin.render.graphicsAPI";
+// Why Vulkan last failed, shown under the renderer picker in Settings > Graphics (cleared when the player picks Vulkan again).
+static NSString* const kVulkanFailureReasonKey = @"muffin.render.vulkanFailureReason";
 
 static void ios_migrate_renderer_setting_to_metal() {
     [[NSUserDefaults standardUserDefaults] setInteger:(NSInteger)kMetal forKey:kGraphicsAPIKey];
@@ -1603,6 +1662,7 @@ static void ios_report_renderer_fallback() {
         return;
     NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
     [defaults setObject:[NSString stringWithUTF8String:g_activeMoltenVK.c_str()] forKey:kVulkanFailedBuildKey];
+    [defaults setObject:[NSString stringWithFormat:@"could not start: %s", why] forKey:kVulkanFailureReasonKey];
     ios_migrate_renderer_setting_to_metal();
     cemu_bridge_log_checkpoint((std::string("Renderer: Vulkan could not start (") + why + "). This launch uses Metal, and the saved renderer is now Metal.").c_str());
     ios_set_launch_notice("Vulkan couldn't start on this iPad, so this game is using Metal. The renderer setting is back on Metal.");
@@ -2467,6 +2527,8 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
     }
     cemu_bridge_log_checkpoint("boot_title: CemuRun() returned");
     ios_report_renderer_fallback();
+    // A new title: judge it from scratch, with the start-up grace period counted from now.
+    ios_reset_video_stall_state();
     g_titleRunning.store(true);
     ios_timebase_ladder_start();
     setStatus("Title launched.");
@@ -3012,6 +3074,19 @@ bool IOSBridge_RecreateRenderSurface() {
         dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
     }
     return state->ok.load();
+}
+
+// Called by the Vulkan renderer (GPU or render-worker thread) when the GPU reports the device lost, a command buffer never
+// finishes. Stops the title with a message the UI shows, and remembers the failure against this MoltenVK build so the next
+// launch uses Metal, the same bookkeeping as a Vulkan start failure (ios_report_renderer_fallback).
+void IOSBridge_VulkanDeviceLost(const char* why) {
+    NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setObject:[NSString stringWithUTF8String:g_activeMoltenVK.c_str()] forKey:kVulkanFailedBuildKey];
+    [defaults setObject:[NSString stringWithFormat:@"stopped while running: %s", (why && *why) ? why : "unknown"] forKey:kVulkanFailureReasonKey];
+    ios_migrate_renderer_setting_to_metal();
+    cemu_bridge_log_checkpoint((std::string("Renderer: Vulkan failed while running with MoltenVK ") + g_activeMoltenVK
+        + " (" + (why ? why : "unknown") + "). The title is being stopped and the saved renderer is now Metal.").c_str());
+    IOSSystemImplementation_ReportFatal("Vulkan stopped working while this game was running (the GPU stopped responding or ran out of memory), so the game was stopped. The renderer is back on Metal for the next launch; you can try Vulkan again in Settings > Graphics.");
 }
 
 void cemu_bridge_pause(void) {

@@ -155,6 +155,10 @@ void CurlRequestHelper::initate(NetworkService service, std::string url, SERVER_
 	curl_easy_setopt(m_curl, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(m_curl, CURLOPT_SSLVERSION, CURL_SSLVERSION_DEFAULT);
 	curl_easy_setopt(m_curl, CURLOPT_TIMEOUT, 60);
+	// A network that accepts nothing (no route, a captive portal, a blocked address) would otherwise hold a
+	// request for the full timeout, twice. Titles that start online services in the background, like Splatoon,
+	// should reach their offline behaviour in seconds.
+	curl_easy_setopt(m_curl, CURLOPT_CONNECTTIMEOUT, 10L);
 
 	// SSL
 	curl_easy_setopt(m_curl, CURLOPT_SSL_VERIFYPEER, 1L);

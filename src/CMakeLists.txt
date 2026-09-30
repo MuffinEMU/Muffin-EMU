@@ -104,6 +104,10 @@ if(IOS)
 	set_source_files_properties(gui/uikit/EmulatedUSBDevices.mm ios/Bridge/CemuBridge.mm PROPERTIES
 		COMPILE_OPTIONS "-fobjc-arc;-include;${CMAKE_SOURCE_DIR}/src/Common/precompiled.h"
 		SKIP_PRECOMPILE_HEADERS ON)
+	# Motion aiming needs nothing from the core, so it is plain ARC Objective-C++ with no precompiled header.
+	set_source_files_properties(ios/Bridge/IOSMotion.mm PROPERTIES
+		COMPILE_OPTIONS "-fobjc-arc"
+		SKIP_PRECOMPILE_HEADERS ON)
 	target_link_libraries(CemuBin PRIVATE
 		"-framework Foundation"
 	)
@@ -116,6 +120,8 @@ if(IOS)
 		ios/Bridge/CemuBridge.mm
 		ios/Bridge/IOSLiveLog.h
 		ios/Bridge/IOSLiveLog.cpp
+		ios/Bridge/IOSMotion.h
+		ios/Bridge/IOSMotion.mm
 		ios/Bridge/Core/IOSAccounts.cpp
 		ios/Bridge/Core/IOSCoverArt.cpp
 		ios/Bridge/Core/IOSDlcUpdateImport.cpp
@@ -132,6 +138,7 @@ if(IOS)
 		ZArchive::zarchive
 		"-framework UIKit"
 		"-framework GameController"
+		"-framework CoreMotion"
 		"-framework Metal"
 		"-framework QuartzCore"
 	)

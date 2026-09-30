@@ -43,6 +43,8 @@ typedef struct {
     GCBridgeQuat quaternion;
     // Monotonic sample time in seconds; zero means no sample received yet.
     double timestamp;
+    // Bumped each time the player asks to recentre; the device restarts its orientation estimate.
+    uint32_t recenterCount;
 } GCBridgeMotionState;
 
 typedef GCBridgeControllerState (*GCBridgePollStateFn)(void* context);
