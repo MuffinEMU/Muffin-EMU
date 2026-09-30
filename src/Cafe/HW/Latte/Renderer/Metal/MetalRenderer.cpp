@@ -1429,40 +1429,80 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
     auto mtlSrc = static_cast<LatteTextureMtl*>(src)->GetTexture();
     auto mtlDst = static_cast<LatteTextureMtl*>(dst)->GetTexture();
 
-    // A blit outside a level or layer of either texture is a GPU fault, so keep the region inside both.
+    // A blit outside a level or layer of either texture is a GPU fault, so keep the region inside both. Only what
+    // really lies outside is removed: a region that reaches past a level is cut to the part that fits, a slice
+    // count the textures cannot both supply is cut to the slices they have, and a copy is refused only when nothing
+    // of it would land inside the textures.
     {
+        const bool blockMismatch = srcBlockTexelSize.x != dstBlockTexelSize.x || srcBlockTexelSize.y != dstBlockTexelSize.y;
+        const sint64 srcLevelW = mtlSrc ? std::max<sint64>(1, (sint64)mtlSrc->width() >> std::min(std::max(srcMip, 0), 63)) : 0;
+        const sint64 srcLevelH = mtlSrc ? std::max<sint64>(1, (sint64)mtlSrc->height() >> std::min(std::max(srcMip, 0), 63)) : 0;
+        const sint64 dstLevelW = mtlDst ? std::max<sint64>(1, (sint64)mtlDst->width() >> std::min(std::max(dstMip, 0), 63)) : 0;
+        const sint64 dstLevelH = mtlDst ? std::max<sint64>(1, (sint64)mtlDst->height() >> std::min(std::max(dstMip, 0), 63)) : 0;
+        const uint64 keyFormats = ((uint64)(uint32)src->format << 32) | (uint32)dst->format;
+        const uint64 keyMips = ((uint64)(uint32)srcMip << 32) | (uint32)dstMip;
+        const uint64 keyLevels = ((uint64)(uint32)srcLevelW << 48) ^ ((uint64)(uint32)srcLevelH << 32) ^ ((uint64)(uint32)dstLevelW << 16) ^ (uint64)(uint32)dstLevelH;
+        auto describe = [&](const char* why) {
+            return fmt::format("{} - src format {:04x}{} level {}x{} mip {} slice {} at {},{} ({} block {}x{}), dst format {:04x}{} level {}x{} mip {} slice {} at {},{} ({} block {}x{}), region {}x{}, {} slices",
+                why, (uint32)src->format, src->isDepth ? " depth" : "", srcLevelW, srcLevelH, srcMip, srcSlice, effectiveSrcX, effectiveSrcY,
+                mtlSrc ? (uint64)mtlSrc->pixelFormat() : 0, srcBlockTexelSize.x, srcBlockTexelSize.y,
+                (uint32)dst->format, dst->isDepth ? " depth" : "", dstLevelW, dstLevelH, dstMip, dstSlice, effectiveDstX, effectiveDstY,
+                mtlDst ? (uint64)mtlDst->pixelFormat() : 0, dstBlockTexelSize.x, dstBlockTexelSize.y, effectiveCopyWidth, effectiveCopyHeight, srcDepth_);
+        };
+
         if (!mtlSrc || !mtlDst || srcMip < 0 || dstMip < 0 || (NS::UInteger)srcMip >= mtlSrc->mipmapLevelCount() || (NS::UInteger)dstMip >= mtlDst->mipmapLevelCount())
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture copy names a level that does not exist; skipping it");
+            MetalGuardNote(MetalGuard::CopyBadLevel, {keyFormats, keyMips, keyLevels}, [&] { return describe("a texture has no such mip level"); });
             return;
         }
-        const sint64 srcW = std::max<sint64>(1, (sint64)mtlSrc->width() >> srcMip), srcH = std::max<sint64>(1, (sint64)mtlSrc->height() >> srcMip);
-        const sint64 dstW = std::max<sint64>(1, (sint64)mtlDst->width() >> dstMip), dstH = std::max<sint64>(1, (sint64)mtlDst->height() >> dstMip);
-        if (effectiveSrcX < 0 || effectiveSrcY < 0 || effectiveDstX < 0 || effectiveDstY < 0 || effectiveSrcX >= srcW || effectiveSrcY >= srcH || effectiveDstX >= dstW || effectiveDstY >= dstH)
+        if (effectiveSrcX < 0 || effectiveSrcY < 0 || effectiveDstX < 0 || effectiveDstY < 0 || effectiveSrcX >= srcLevelW || effectiveSrcY >= srcLevelH || effectiveDstX >= dstLevelW || effectiveDstY >= dstLevelH)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture copy starts outside its texture; skipping it");
+            MetalGuardNote(MetalGuard::CopyStartOutside, {keyFormats, keyMips, keyLevels, (uint64)(uint32)effectiveSrcX, (uint64)(uint32)effectiveSrcY, (uint64)(uint32)effectiveDstX, (uint64)(uint32)effectiveDstY}, [&] { return describe("the copy starts outside a level"); });
             return;
         }
-        const sint64 fitW = std::min<sint64>(srcW - effectiveSrcX, dstW - effectiveDstX);
-        const sint64 fitH = std::min<sint64>(srcH - effectiveSrcY, dstH - effectiveDstY);
+        const sint64 srcRoomW = srcLevelW - effectiveSrcX, srcRoomH = srcLevelH - effectiveSrcY;
+        const sint64 dstRoomW = dstLevelW - effectiveDstX, dstRoomH = dstLevelH - effectiveDstY;
+        sint64 fitW, fitH;
+        if (!blockMismatch)
+        {
+            // same block size: the region is in the same units on both sides, so it has to fit both
+            fitW = std::min(srcRoomW, dstRoomW);
+            fitH = std::min(srcRoomH, dstRoomH);
+        }
+        else
+        {
+            // Different block sizes (a compressed texture and an integer alias of it, or a transcoded format next to
+            // an uncompressed one): the size above was already rescaled for the blocks, and a texel of one side is
+            // several texels of the other, so a texel-for-texel fit against both would cut legitimate copies. Only a
+            // region larger than either texture can hold in any unit is out of bounds; say so in the log so a device
+            // run can confirm how these copies behave.
+            fitW = std::max(srcRoomW, dstRoomW);
+            fitH = std::max(srcRoomH, dstRoomH);
+            MetalGuardNote(MetalGuard::CopyBlockMismatch, {keyFormats, keyMips, keyLevels, (uint64)(uint32)effectiveCopyWidth, (uint64)(uint32)effectiveCopyHeight}, [&] { return describe("copy between different block sizes"); });
+        }
         if (effectiveCopyWidth > fitW || effectiveCopyHeight > fitH)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture copy reaches past its texture ({}x{} from {},{} into {}x{} at {},{}); clamping it", effectiveCopyWidth, effectiveCopyHeight, effectiveSrcX, effectiveSrcY, dstW, dstH, effectiveDstX, effectiveDstY);
+            MetalGuardNote(MetalGuard::CopyClampedRegion, {keyFormats, keyMips, keyLevels, (uint64)(uint32)effectiveCopyWidth, (uint64)(uint32)effectiveCopyHeight, (uint64)(uint32)effectiveSrcX, (uint64)(uint32)effectiveSrcY, (uint64)(uint32)effectiveDstX, (uint64)(uint32)effectiveDstY},
+                [&] { return describe(fmt::format("region reaches past a level, cut to {}x{}", std::min<sint64>(effectiveCopyWidth, fitW), std::min<sint64>(effectiveCopyHeight, fitH)).c_str()); });
             effectiveCopyWidth = (sint32)std::min<sint64>(effectiveCopyWidth, fitW);
             effectiveCopyHeight = (sint32)std::min<sint64>(effectiveCopyHeight, fitH);
         }
         if (effectiveCopyWidth <= 0 || effectiveCopyHeight <= 0)
+        {
+            MetalGuardNote(MetalGuard::CopyStartOutside, {keyFormats, keyMips, keyLevels, (uint64)(uint32)effectiveCopyWidth, (uint64)(uint32)effectiveCopyHeight}, [&] { return describe("empty region"); });
             return;
+        }
+
         const bool srcCube = mtlSrc->textureType() == MTL::TextureTypeCubeArray || mtlSrc->textureType() == MTL::TextureTypeCube;
         const bool dstCube = mtlDst->textureType() == MTL::TextureTypeCubeArray || mtlDst->textureType() == MTL::TextureTypeCube;
         if (!src->Is3DTexture() && !srcCube && (srcSlice < 0 || srcDepth_ < 1 || (NS::UInteger)(srcSlice + srcDepth_) > std::max<NS::UInteger>(1, mtlSrc->arrayLength())))
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture copy names slices the source does not have; skipping it");
+            MetalGuardNote(MetalGuard::CopyNoSlices, {keyFormats, keyMips, keyLevels, (uint64)(uint32)srcSlice, (uint64)(uint32)srcDepth_}, [&] { return describe("the source has fewer slices than the copy names"); });
             return;
         }
         if (!dst->Is3DTexture() && !dstCube && (dstSlice < 0 || srcDepth_ < 1 || (NS::UInteger)(dstSlice + srcDepth_) > std::max<NS::UInteger>(1, mtlDst->arrayLength())))
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture copy names slices the destination does not have; skipping it");
+            MetalGuardNote(MetalGuard::CopyNoSlices, {keyFormats, keyMips, keyLevels, (uint64)(uint32)dstSlice, (uint64)(uint32)srcDepth_}, [&] { return describe("the destination has fewer slices than the copy names"); });
             return;
         }
     }
