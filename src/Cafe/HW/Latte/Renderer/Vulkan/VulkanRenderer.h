@@ -186,6 +186,7 @@ public:
 	void UnrecoverableError(const char* errMsg) const;
 
 	void GetDeviceFeatures();
+	void LogVulkanStartupDiagnostics(const VkPhysicalDeviceFeatures& supported, const VkPhysicalDeviceFeatures& requested, const VkPhysicalDeviceFeatures& enabled, const std::vector<const char*>& enabledDeviceExtensions);
 	void DetermineVendor();
 	void InitializeSurface(const Vector2i& size, bool mainWindow);
 
@@ -462,6 +463,7 @@ private:
 			bool depth_clip_enable = false; // VK_EXT_depth_clip_enable
 			bool pipeline_robustness = false; // VK_EXT_pipeline_robustness
 			bool sampler_mirror_clamp_to_edge = false; // VK_KHR_sampler_mirror_clamp_to_edge
+			bool portability_subset = false; // VK_KHR_portability_subset (MoltenVK). The spec requires enabling it whenever the device lists it
 		}deviceExtensions;
 
 		bool samplerMirrorClampToEdgeCore = false; // Vulkan 1.2 samplerMirrorClampToEdge, used when the extension is not listed
@@ -474,6 +476,7 @@ private:
 		struct
 		{
 			bool debug_utils = false; // VK_EXT_DEBUG_UTILS
+			bool portability_enumeration = false; // VK_KHR_portability_enumeration (needs VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR)
 		}instanceExtensions;
 
 		struct
