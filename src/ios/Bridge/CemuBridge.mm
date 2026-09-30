@@ -3613,6 +3613,17 @@ void cemu_bridge_shutdown_title(void) {
     setStatus("Title shut down.");
 }
 
+static std::atomic<CemuTitleSwitchCallback> g_titleSwitchCallback{nullptr};
+
+void cemu_bridge_set_title_switch_callback(CemuTitleSwitchCallback callback) {
+    g_titleSwitchCallback.store(callback);
+}
+
+void IOSBridge_TitleSwitching(uint64_t titleId) {
+    if (CemuTitleSwitchCallback callback = g_titleSwitchCallback.load())
+        callback(titleId);
+}
+
 bool cemu_bridge_clean_start_required(void) {
     return g_cleanStartRequired.load();
 }

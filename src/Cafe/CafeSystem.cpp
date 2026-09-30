@@ -1413,6 +1413,12 @@ namespace CafeSystem
 		return s_titleSwitchInProgress;
 	}
 
+	void NotifyTitleSwitching(TitleId titleId)
+	{
+		if (s_implementation)
+			s_implementation->CafeTitleSwitching(titleId);
+	}
+
 	void NotifyTitleSwitchFailed(TitleId titleId)
 	{
 		s_foregroundReturnStatus = -1;
