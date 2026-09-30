@@ -937,6 +937,30 @@ namespace {
                     continue;
                 }
 
+                // Nearly out of memory: iOS is about to end the app. Say so now, while Save State still works.
+                if (g_titleRunning.load() && (g_videoStallKind.load() < 2 || g_videoStallKind.load() == 4))
+                {
+                    const uint64_t availableNow = (uint64_t)os_proc_available_memory();
+                    if (availableNow > 0 && availableNow < (160ull << 20))
+                    {
+                        g_videoStallKind.store(4);
+                        if (!g_videoStalled.exchange(true))
+                        {
+                            cemuLog_log(LogType::Force, "VIDEO STALL: OUT OF MEMORY - only {} MB left before iOS ends the app", availableNow >> 20);
+                            ios_stall_log_snapshot(0.0);
+                        }
+                        continue;
+                    }
+                    if (g_videoStallKind.load() == 4)
+                    {
+                        if (availableNow < (300ull << 20))
+                            continue; // still tight, keep the card up
+                        g_videoStalled.store(false);
+                        g_videoStallKind.store(0);
+                        cemuLog_log(LogType::Force, "VIDEO STALL: memory has recovered ({} MB free)", availableNow >> 20);
+                    }
+                }
+
                 // Repeated failures to get a drawable from the layer: the screen itself is out of memory.
                 if (g_titleRunning.load() && LatteWait::Get().drawableFailuresInARow.load() >= 8)
                 {
