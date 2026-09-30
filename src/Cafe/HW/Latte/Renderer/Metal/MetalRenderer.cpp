@@ -2427,6 +2427,9 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
             // start offset of the last attribute). What the hardware reads is the last element the draw reaches
             // plus the end of the furthest attribute it fetches, so that is what has to be in the buffer.
             const uint64 stride = (LatteGPUState.contextRegister[mmSQ_VTX_ATTRIBUTE_BLOCK_START + i * 7 + 2] >> 11) & 0xFFFF;
+            // maxVertexIndex already includes the base vertex: indexMax + signedBaseVertex for indexed draws (clamped at 0),
+            // baseVertex + count - 1 otherwise. It is also the maxIndex m_vertexBufferRequired was computed from, so
+            // the base vertex is counted in both sizes and must not be added again here.
             uint64 reach = 0;
             if (group.hasVtxIndexAccess)
                 reach = stride * (uint64)maxVertexIndex + usedEnd;
