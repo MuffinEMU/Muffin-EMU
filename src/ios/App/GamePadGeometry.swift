@@ -530,17 +530,27 @@ enum DeviceMetrics {
     private static let phoneOLED: CGFloat = 460        // 458 on the older ones; a 0.4% difference
     private static let phoneMini: CGFloat = 476        // 12 mini and 13 mini only
     private static let phoneLCD: CGFloat = 326
+    private static let phonePlus: CGFloat = 401        // 6s/7/8 Plus
 
     private static let modelTable: [String: CGFloat] = [
-        // The target device and its siblings.
+        // The 2020 iPad Pros.
         "iPad8,11": padStandard, "iPad8,12": padStandard,   // iPad Pro 12.9 in, 2020 (A12Z)
         "iPad8,9":  padStandard, "iPad8,10": padStandard,   // iPad Pro 11 in, 2020 (A12Z)
+        // The 9.7 in iPads (Air 2, Pro 9.7, iPad 5th and 6th gen) share a 2048x1536 panel with the
+        // 326 ppi minis but are 264 ppi; the panel size alone cannot tell them apart, so the model does.
+        "iPad5,3": padStandard,  "iPad5,4": padStandard,    // Air 2
+        "iPad6,3": padStandard,  "iPad6,4": padStandard,    // Pro 9.7 in
+        "iPad6,11": padStandard, "iPad6,12": padStandard,   // iPad 5th gen
+        "iPad7,5": padStandard,  "iPad7,6": padStandard,    // iPad 6th gen
         // iPad mini is the only iPad that is not 264.
         "iPad14,1": padMini, "iPad14,2": padMini,           // mini 6
         "iPad16,1": padMini, "iPad16,2": padMini,           // mini 7
         "iPad5,1": padMini,  "iPad5,2": padMini,            // mini 4
         // The 3x phones that are not 460.
         "iPhone13,1": phoneMini, "iPhone14,4": phoneMini,   // 12 mini, 13 mini
+        // The Plus phones: a 1080p panel that iOS scales from 1242 px, 401 ppi.
+        "iPhone8,2": phonePlus, "iPhone9,2": phonePlus, "iPhone9,4": phonePlus,   // 6s Plus, 7 Plus
+        "iPhone10,2": phonePlus, "iPhone10,5": phonePlus,                          // 8 Plus
         // The 2x phones.
         "iPhone14,6": phoneLCD, "iPhone12,8": phoneLCD,     // SE 3, SE 2
         "iPhone11,8": phoneLCD, "iPhone12,1": phoneLCD,     // XR, 11
