@@ -144,7 +144,28 @@ void* MetalMemoryManager::AcquireTextureUploadBuffer(size_t size)
 {
     if (m_textureUploadBuffer.size() < size)
     {
-        m_textureUploadBuffer.resize(size);
+        // std::vector throws when the process is out of address space, and an exception nobody catches
+        // aborts the app. Free the old buffer first (it is scratch), try once more, and report failure
+        // so the caller skips the upload.
+        try
+        {
+            m_textureUploadBuffer.resize(size);
+        }
+        catch (const std::bad_alloc&)
+        {
+            std::vector<uint8>().swap(m_textureUploadBuffer);
+            try
+            {
+                m_textureUploadBuffer.resize(size);
+            }
+            catch (const std::bad_alloc&)
+            {
+                std::vector<uint8>().swap(m_textureUploadBuffer);
+                cemuLog_logOnce(LogType::Force, "Metal: could not allocate a {} byte texture upload buffer, skipping the upload", size);
+                LatteWait::Get().evictionRequested.store(true);
+                return nullptr;
+            }
+        }
     }
 
     return m_textureUploadBuffer.data();

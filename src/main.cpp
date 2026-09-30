@@ -549,8 +549,12 @@ bool SetInterpreter(bool interpreter) {
 
 void CemuUIKit_SetMetal(bool metals);
 
-// Start execution
-void CemuRun()
+// Builds the renderer for the configured graphics API and initializes the TV and GamePad
+// layers. Split out of CemuRun() because a title switch (the Wii U Menu launching a game)
+// needs exactly this again without starting a title: ShutdownTitle() stops the GPU thread,
+// and the GPU thread's exit destroys g_renderer, so the next title has no renderer until
+// this runs. Desktop Cemu gets the same effect by destroying and recreating its canvas.
+void CemuPrepareRenderer()
 {
 #ifdef ENABLE_METAL
     if (ActiveSettings::GetGraphicsAPI() == kMetal)
@@ -566,7 +570,12 @@ void CemuRun()
     CemuUIKit_SetMetal(ActiveSettings::GetGraphicsAPI() == kMetal);
     CemuUIKit_InitializeLayer(true);
     CemuUIKit_InitializeLayer(false);
+}
 
+// Start execution
+void CemuRun()
+{
+    CemuPrepareRenderer();
     CafeSystem::LaunchForegroundTitle();
 }
 
