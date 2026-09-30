@@ -160,9 +160,13 @@ extension AuditRunner {
 
         let endNs = core.nowNs
         let endDate = Date()
-        let endIdx = logs.count
         logs.hostLine("END \(test.id) token=\(token) guest=\(m.lastGuest.resultName)")
         if core.titleRunning == false { guestUp = false }
+
+        // The core's log reaches the app through a tail of log.txt that polls every 250 ms, so the lines of the last moments of
+        // the test (and the END tag just written) arrive a little late. The slice is cut between the test's own BEGIN and END
+        // tags, which are in the log in the order things happened, rather than at the moment the app noticed the test had ended.
+        let (beginIdx, endIdx) = await sliceBounds(testId: test.id, token: token, from: startIdx)
 
         // A latched GPU error stays until the title stops; stop it so the next test starts clean.
         if after?.path("gpuThread.gpuError")?.bool == true {
@@ -171,7 +175,30 @@ extension AuditRunner {
         }
 
         return await finishRecord(item: item, token: token, params: params, startDate: startDate, endDate: endDate,
-                                  startNs: startNs, endNs: endNs, startIdx: startIdx, endIdx: endIdx, startDropped: startDropped, before: before, after: after, m: &m)
+                                  startNs: startNs, endNs: endNs, startIdx: beginIdx, endIdx: endIdx, startDropped: startDropped, before: before, after: after, m: &m)
+    }
+
+    /// Indices into the captured log of the test's BEGIN tag and one past its END tag. Waits up to two seconds for the END tag.
+    func sliceBounds(testId: String, token: UInt32, from: Int) async -> (Int, Int) {
+        let begin = "AUDIT> BEGIN \(testId) token=\(token)"
+        let end = "AUDIT> END \(testId) token=\(token)"
+        func find(_ needle: String) -> Int? {
+            let lines = logs.lines
+            var i = max(0, min(from, lines.count))
+            while i < lines.count {
+                if lines[i].text.contains(needle) { return i }
+                i += 1
+            }
+            return nil
+        }
+        let deadline = Date().addingTimeInterval(2.0)
+        while find(end) == nil && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            logs.drain()
+        }
+        let b = find(begin) ?? from
+        let e = find(end).map { $0 + 1 } ?? logs.count
+        return (b, max(e, b))
     }
 
     // MARK: Checkpoint
