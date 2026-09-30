@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
+#include "Common/DeviceCapabilities.h"
 #include "Cafe/OS/libs/gx2/GX2.h" // todo - remove dependency
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteDraw.h"
@@ -135,7 +136,7 @@ int Latte_ThreadEntry()
 	LatteTiming_Init();
 	LatteTexture_init();
 	LatteTC_Init();
-	LatteBufferCache_init(164 * 1024 * 1024);
+	LatteBufferCache_init((size_t)DeviceCaps::GetBudgets().bufferCacheBytes); // 164 MB on a standard device, see DeviceCapabilities.h
 	LatteQuery_Init();
 	LatteSHRC_Init();
 	LatteStreamout_InitCache();

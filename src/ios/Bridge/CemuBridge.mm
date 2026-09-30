@@ -62,6 +62,8 @@
 #include "config/ActiveSettings.h"
 #include "config/CemuConfig.h"
 #include "Common/version.h"
+#include "Common/DeviceCapabilities.h"
+#include "CemuDeviceCaps.h"
 #include "gui/interface/WindowSystem.h"
 #include "input/api/iOS/GCControllerProvider.h"
 #include "input/emulated/EmulatedController.h"
@@ -568,7 +570,8 @@ static std::string cemu_build_device_report(void)
         [[[NSProcessInfo processInfo] operatingSystemVersionString] UTF8String],
         (unsigned long long)(memBytes / (1024ull * 1024ull)),
         (unsigned long long)cores);
-    report = buf;
+    // The capability line leads every device report, so reports from different devices compare line for line.
+    report = std::string(cemu_device_caps_line()) + "\n" + buf;
 
     if (pcores && ecores)
     {
@@ -618,7 +621,7 @@ const char* cemu_bridge_memory_headroom_summary(void) {
             (unsigned long long)(avail / (1024ull * 1024ull)),
             (unsigned long long)(arena / (1024ull * 1024ull)),
             (unsigned long long)(used / (1024ull * 1024ull)),
-            arena < (1024ull << 20) ? " (reduced - less room than the JIT asked for)" : "");
+            arena < ((uint64_t)DeviceCaps::GetBudgets().jitArenaStartMB << 20) ? " (reduced - less room than the JIT asked for)" : "");
     }
     summary = buf;
     return summary.c_str();
@@ -889,7 +892,12 @@ void ios_apply_cpu_mode()
     // explicit Multicore modes, and those threads reschedule without sleeping. On a fanless
     // A12Z iPad Pro running Wind Waker HD, one core held 40-60fps while three managed 4-20:
     // the extra power draw heats the SoC within a minute and the clocks drop.
-    const bool singleCore = accuracy || lowPower || !g_multicoreRequested.load();
+    // Also single-core where the device cannot run three host threads for the emulated cores: under 4.5 GB of RAM,
+    // or fewer than three host cores (DeviceCapabilities.h).
+    const bool multicoreViable = DeviceCaps::GetBudgets().multicoreViable;
+    if (g_multicoreRequested.load() && !multicoreViable)
+        cemuLog_logOnce(LogType::Force, "iOS: multi-core was requested, but this device has too little memory or too few cores for it; running single-core");
+    const bool singleCore = accuracy || lowPower || !g_multicoreRequested.load() || !multicoreViable;
     const char* cores = singleCore ? "single-core" : "multi-core";
     auto& config = GetConfig();
     char detail[320];
@@ -1147,7 +1155,9 @@ namespace {
                 if (g_titleRunning.load() && (g_videoStallKind.load() < 2 || g_videoStallKind.load() == 4))
                 {
                     const uint64_t availableNow = (uint64_t)os_proc_available_memory();
-                    if (availableNow > 0 && availableNow < (160ull << 20))
+                    // 160 MB on a device that starts with about 4.5 GB free; more on one with far more room (DeviceCapabilities.h).
+                    const uint64_t oomMark = DeviceCaps::OutOfMemoryMarkBytes(DeviceCaps::Get().availableAtLaunch);
+                    if (availableNow > 0 && availableNow < oomMark)
                     {
                         g_videoStallKind.store(4);
                         if (!g_videoStalled.exchange(true))
@@ -1159,7 +1169,7 @@ namespace {
                     }
                     if (g_videoStallKind.load() == 4)
                     {
-                        if (availableNow < (300ull << 20))
+                        if (availableNow < DeviceCaps::OutOfMemoryRecoveredBytes(DeviceCaps::Get().availableAtLaunch))
                             continue; // still tight, keep the card up
                         g_videoStalled.store(false);
                         g_videoStallKind.store(0);
@@ -2079,6 +2089,9 @@ void cemu_bridge_initialize(const char* mlcPath) {
         where += (crashPath && crashPath[0]) ? crashPath : "(nowhere - $HOME was not set, so no file could be opened)";
         cemu_bridge_log_checkpoint(where.c_str());
     }
+    // The capability snapshot, taken before the memory watchdog, the JIT setup or the renderer read it.
+    cemu_device_caps_initialize();
+    cemu_bridge_log_checkpoint(cemu_device_caps_line());
     cemu_bridge_start_memory_watchdog();
     ios_configure_jit_environment();
     // MoltenVK reads these once, when CemuInitialize() loads it for the Vulkan backend.
@@ -2155,7 +2168,13 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // OSReport and the OS libs' parameter errors are what homebrew narrates its progress
     // through. Without these a ROM that is working looks exactly like one that never started.
     cemuLog_setActiveLoggingFlags(cemuLog_getFlag(LogType::CoreinitLogging) | cemuLog_getFlag(LogType::APIErrors));
-    cemuLog_log(LogType::Force, "iOS {}", cemu_bridge_device_report());
+    // The capability line is the first line of log.txt's iOS section; the rest of the report follows it.
+    {
+        const char* report = cemu_bridge_device_report();
+        const char* split = strchr(report, '\n');
+        cemuLog_log(LogType::Force, "{}", std::string(report, split ? (size_t)(split - report) : strlen(report)));
+        cemuLog_log(LogType::Force, "iOS {}", split ? split + 1 : report);
+    }
     {
         std::error_code fontsEc, profilesEc;
         const bool haveFonts = fs::exists(dataPath / "resources" / "sharedFonts" / "CafeStd.ttf", fontsEc);
@@ -2416,6 +2435,24 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
         default:
             setStatus("Not a Wii U title this build can launch.");
             return CEMU_BRIDGE_UNSUPPORTED;
+    }
+
+    // Not enough memory left to bring the renderer up: say so, rather than let iOS end the app partway through the boot.
+    {
+        const uint64_t needed = DeviceCaps::GetBudgets().minBootHeadroomBytes;
+        const uint64_t available = (uint64_t)os_proc_available_memory();
+        if (needed != 0 && available != 0 && available < needed)
+        {
+            char message[512];
+            snprintf(message, sizeof(message),
+                "This game can't start: only %llu MB of memory is free and it needs about %llu MB. Close other apps and try again. "
+                "If it keeps happening, this device may not have enough memory for this game.",
+                (unsigned long long)(available >> 20), (unsigned long long)(needed >> 20));
+            cemu_bridge_log_checkpoint((std::string("boot_title: not enough memory - ") + message).c_str());
+            CafeSystem::AbortPreparedTitle();
+            setStatus(message);
+            return CEMU_BRIDGE_UNABLE_TO_MOUNT;
+        }
     }
 
     // A pad view left over from an earlier title must not be initialized by this one.

@@ -6,3 +6,5 @@
 // Pure C already, and lives next to CemuBridge.h. This is the in-app launch log the boot
 // overlay renders.
 #import "IOSLiveLog.h"
+// The device capability snapshot (Common/DeviceCapabilities.h); plain C.
+#import "CemuDeviceCaps.h"
