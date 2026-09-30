@@ -2155,10 +2155,10 @@ struct EmulatorViewOptimized: View {
     /// rest of the overlay lets them through to the game.
     private var videoStalledCard: some View {
         VStack(spacing: 10) {
-            Text(gameManager.videoStallKind == 2 ? "The GPU stopped" : "Video stopped responding")
+            Text(gameManager.videoStallKind == 2 ? "The GPU stopped" : gameManager.videoStallKind == 3 ? "Out of memory for the screen" : "Video stopped responding")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundColor(.white)
-            if gameManager.videoStallKind == 2 && !stallSaveRequested {
+            if gameManager.videoStallKind >= 2 && !stallSaveRequested {
                 Text("Save State, then restart the app.")
                     .font(.system(size: 12, weight: .regular, design: .rounded))
                     .foregroundColor(.white.opacity(0.85))
@@ -2176,7 +2176,7 @@ struct EmulatorViewOptimized: View {
                     gameManager.stopEmulation()
                     isRunning = true
                 }
-                Button(gameManager.videoStallKind == 2 ? "Dismiss" : "Keep waiting") {
+                Button(gameManager.videoStallKind >= 2 ? "Dismiss" : "Keep waiting") {
                     stallCardDismissed = true
                     stallSaveRequested = false
                 }
