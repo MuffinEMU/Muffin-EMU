@@ -7,6 +7,10 @@ struct CemuApp: App {
     @ObservedObject private var themeStore = MuffinThemeStore.shared
 
     init() {
+        // The device capability snapshot and its one-line summary, before anything else is written:
+        // every device log starts with it, so reports from different devices compare.
+        DeviceCapabilities.bootstrap()
+
         // Earliest Swift-side checkpoint; if it is missing from the crash log, the
         // crash happened in native static initialisation.
         cemu_bridge_log_checkpoint("CemuApp.init() reached")
