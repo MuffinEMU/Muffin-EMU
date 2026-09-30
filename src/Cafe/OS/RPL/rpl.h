@@ -6,6 +6,7 @@ struct RPLModule;
 
 void RPLLoader_InitState();
 void RPLLoader_UnloadAll();
+size_t RPLLoader_GetLoadedModuleCount();
 
 uint8* RPLLoader_AllocateTrampolineCodeSpace(sint32 size);
 

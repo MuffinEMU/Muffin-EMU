@@ -1819,6 +1819,9 @@ void RPLLoader_UnloadModule(RPLDependency* rplDependency, bool skipPPCCalls)
 	RPLLoader_decrementModuleDependencyRefs(rpl);
 	// save module config for this module in the debugger
 	g_debuggerDispatcher.NotifyModuleUnloaded(rpl);
+	// graphic packs keep a list of loaded modules to apply their patches to; a module that stays listed after it is
+	// deleted is a dangling pointer the next activation walks
+	GraphicPack2::NotifyModuleUnloaded(rpl);
 	// call rpl_entry with reason unload
 	if (!skipPPCCalls)
 	{
@@ -2485,6 +2488,12 @@ void RPLLoader_ReleaseCodeCaveMem(MEMPTR<void> addr)
 	heapCodeCaveArea.free(addr.GetMPTR());
 }
 
+// for the post-teardown check: loaded modules plus registered dependencies (HLE modules included)
+size_t RPLLoader_GetLoadedModuleCount()
+{
+	return s_rplModuleList.size() + s_rplDependencyList.size();
+}
+
 void RPLLoader_UnloadAll()
 {
 	// unload all RPL modules
@@ -2517,6 +2526,10 @@ void RPLLoader_UnloadAll()
 	rplLoader_maxCodeAddress = 0;
 	rplLoader_currentDataAllocatorAddr = 0x10000000;
 	rplLoader_currentTLSModuleIndex = 1;
+	// the counters that hand out TLS module indices and module handles are process-wide, every module that used them is
+	// gone now, and a fresh start begins at the same values (the variable above is a leftover nothing reads)
+	rplLoader_currentTlsModuleIndex = 0x0001;
+	rplLoader_currentHandleCounter = 0x00001000;
 	rplLoader_sdataAddr = MPTR_NULL;
 	rplLoader_sdata2Addr = MPTR_NULL;
 	rplLoader_mainModule = nullptr;

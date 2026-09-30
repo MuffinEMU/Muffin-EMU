@@ -299,4 +299,5 @@ namespace coreinit
 	FS_VOLSTATE FSGetVolumeState(FSClient_t* fsClient);
 
 	void InitializeFS();
+	void FSResetMounts();
 }; // namespace coreinit

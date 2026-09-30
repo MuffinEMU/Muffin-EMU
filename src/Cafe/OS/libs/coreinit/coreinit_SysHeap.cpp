@@ -23,7 +23,14 @@ namespace coreinit
 	void InitSysHeap()
 	{
 		uint32 sysHeapSize = 8 * 1024 * 1024; // actual size is unknown
-		MEMPTR<void> heapBaseAddress = memory_getPointerFromVirtualOffset(coreinit_allocFromSysArea(sysHeapSize, 0x1000));
+		// The system area (CEMU_AREA) is a bump allocator that is never rewound and is not remapped between titles.
+		// Carving a new 8 MiB heap out of its 32 MiB on every title exhausted it on the fourth title of a session,
+		// so the block is taken once per process and the heap is created over it again each title (creating an
+		// expanded heap rewrites its header, nothing allocated from the old heap survives the title anyway).
+		static MPTR s_sysHeapBlock = MPTR_NULL;
+		if (s_sysHeapBlock == MPTR_NULL)
+			s_sysHeapBlock = coreinit_allocFromSysArea(sysHeapSize, 0x1000);
+		MEMPTR<void> heapBaseAddress = memory_getPointerFromVirtualOffset(s_sysHeapBlock);
 		_sysHeapHandle = coreinit::MEMCreateExpHeapEx(heapBaseAddress.GetPtr(), sysHeapSize, MEM_HEAP_OPTION_THREADSAFE);
 		_sysHeapAllocCounter = 0;
 		_sysHeapFreeCounter = 0;
