@@ -29,6 +29,11 @@ namespace LatteWait
 		std::atomic<uint32_t> executingCommandBuffers{0};
 		std::atomic<uint32_t> erroredCommandBuffers{0};
 
+		// A command buffer ended in an error that stops the GPU doing this process's work
+		// (page fault, ignored submissions, timeout...). Latched until the title stops.
+		std::atomic<bool> gpuError{false};
+		std::atomic<int32_t> gpuErrorCode{0};
+
 		// GPU memory breakdown in MB, refreshed by the GPU thread about twice a second so the
 		// memory watchdog can put it in every MEM line without touching GPU-thread data.
 		std::atomic<uint32_t> memDeviceMB{0};

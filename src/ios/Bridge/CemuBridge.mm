@@ -837,6 +837,7 @@ namespace {
 // snapshot of everything the GPU thread's breadcrumbs (LatteWaitInfo.h) can say about why.
 namespace {
     std::atomic<bool> g_videoStalled{false};
+    std::atomic<int> g_videoStallKind{0}; // 0 none, 1 picture stopped, 2 GPU error
     std::atomic<bool> g_stallWatchRunning{false};
     std::atomic<bool> g_appIsActive{true};
 
@@ -851,8 +852,11 @@ namespace {
         char surface[640];
         CemuUIKit_DescribeMainSurface(surface, sizeof(surface));
 
-        cemuLog_log(LogType::Force, "VIDEO STALL: no frame for {:.1f} s while the title is running and not paused (frame {}, flips {}, draw calls {})",
-            stalledSeconds, (uint32)LatteGPUState.frameCounter, (uint32)LatteGPUState.flipCounter, (uint32)LatteGPUState.drawCallCounter);
+        if (w.gpuError.load())
+            cemuLog_log(LogType::Force, "VIDEO STALL: GPU ERROR - a command buffer failed with code {}; iOS stops running this app's GPU work after that", w.gpuErrorCode.load());
+        else
+            cemuLog_log(LogType::Force, "VIDEO STALL: no frame for {:.1f} s while the title is running and not paused (frame {}, flips {}, draw calls {})",
+                stalledSeconds, (uint32)LatteGPUState.frameCounter, (uint32)LatteGPUState.flipCounter, (uint32)LatteGPUState.drawCallCounter);
         if (reason)
             cemuLog_log(LogType::Force, "VIDEO STALL: GPU thread is blocked: {} (for {} ms)", reason, reasonMs);
         else
@@ -900,10 +904,23 @@ namespace {
                 const auto now = std::chrono::steady_clock::now();
                 const uint32 frames = LatteGPUState.frameCounter;
 
+                // A failed GPU submission is reported at once and stays reported: after a page fault iOS
+                // ignores the rest of this process's GPU work, so frames will not come back.
+                if (g_titleRunning.load() && LatteWait::Get().gpuError.load())
+                {
+                    if (!g_videoStalled.exchange(true))
+                    {
+                        g_videoStallKind.store(2);
+                        ios_stall_log_snapshot(0.0);
+                    }
+                    continue;
+                }
+
                 if (!expectFrames || !haveBaseline || frames != lastFrames)
                 {
                     if (g_videoStalled.exchange(false))
                         cemuLog_log(LogType::Force, "VIDEO STALL: frames are arriving again (frame {})", frames);
+                    g_videoStallKind.store(0);
                     haveBaseline = expectFrames;
                     lastFrames = frames;
                     lastChange = now;
@@ -916,6 +933,7 @@ namespace {
                     continue;
                 if (!g_videoStalled.exchange(true))
                 {
+                    g_videoStallKind.store(1);
                     ios_stall_log_snapshot(stalled);
                     lastReport = now;
                 }
@@ -934,6 +952,9 @@ bool cemu_bridge_video_stalled(void) {
     return g_videoStalled.load();
 }
 
+int cemu_bridge_video_stall_kind(void) {
+    return g_videoStalled.load() ? g_videoStallKind.load() : 0;
+}
 
 // ---------------------------------------------------------------------------
 // Input

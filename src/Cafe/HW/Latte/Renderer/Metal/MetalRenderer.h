@@ -210,6 +210,7 @@ public:
 
 	// flush control
 	void Flush(bool waitIdle = false) override;		// called when explicit flush is required (e.g. by imgui)
+	void LabelEncoder(MTL::CommandEncoder* encoder, const char* kind);
 	void UpdateMemoryStatsAndRelievePressure();
 	void NotifyLatteCommandProcessorIdle() override; // called when command processor has no more commands available or when stalled
 
