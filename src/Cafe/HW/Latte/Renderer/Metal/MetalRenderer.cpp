@@ -1518,6 +1518,12 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
     auto mtlSrc = static_cast<LatteTextureMtl*>(src)->GetTexture();
     auto mtlDst = static_cast<LatteTextureMtl*>(dst)->GetTexture();
 
+    // A copy that is skipped here is NOT retried, unlike a skipped upload. The level, start and slice checks depend
+    // only on the two textures and the arguments the core derived from them, so the same call fails the same way every
+    // time, and the core stamps the destination slice as up to date itself after this returns
+    // (LatteTexture_UpdateTextureFromDynamicChanges sets lastDynamicUpdate right after LatteTexture_SyncSlice), so the
+    // renderer cannot roll that back without changing the shared core and the renderer interface. Every skip is in the
+    // guard log and its totals.
     // A blit outside a level or layer of either texture is a GPU fault, so keep the region inside both. Only what
     // really lies outside is removed: a region that reaches past a level is cut to the part that fits, a slice
     // count the textures cannot both supply is cut to the slices they have, and a copy is refused only when nothing
