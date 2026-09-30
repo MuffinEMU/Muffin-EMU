@@ -47,6 +47,15 @@ void cemu_bridge_set_motion_sensitivity(float sensitivity);
 /// One of CemuBridgeMotionSource.
 void cemu_bridge_set_motion_source(int source);
 
+/// Reverses the direction the GamePad turns for a given movement: horizontal for turning left
+/// and right, vertical for tilting up and down. Both off is the normal, GamePad-true setting.
+/// Only there so aim that feels backwards can be put right without waiting for an update.
+void cemu_bridge_set_motion_invert(bool horizontal, bool vertical);
+
+/// Writes a line a second to the engine log with the sensor's values before and after they are
+/// turned into the GamePad's axes. For working out which way is which on a real device.
+void cemu_bridge_set_motion_diagnostic(bool enabled);
+
 /// Forgets where the GamePad has been pointing and takes the current pose as "straight
 /// ahead", like pressing the recentre button in a game that has one. Use it when aim has
 /// crept off after long play or after turning in your seat.
@@ -65,9 +74,12 @@ typedef struct {
     /// in g, angular rate in rad/s, both already turned into the GamePad's axes.
     float accelerometer[3];
     float gyroscope[3];
-    /// Seconds on a monotonic clock. Only moves forward when there is new data.
+    /// Seconds on a monotonic clock (the sensor's own timestamp for the device). Only moves forward
+    /// when there is new data.
     double timestamp;
-    /// Changes every time cemu_bridge_motion_recenter() is called.
+    /// Changes every time cemu_bridge_motion_recenter() is called, and whenever the sensors start
+/// again or the interface turns to another orientation. The core then restarts its orientation
+/// estimate from this sample's gravity.
     uint32_t recenterCount;
 } IOSMotionSample;
 
