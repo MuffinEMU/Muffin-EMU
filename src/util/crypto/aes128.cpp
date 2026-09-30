@@ -11,6 +11,7 @@
 /*****************************************************************************/
 #include "aes128.h"
 #include "Common/cpu_features.h"
+#include <mutex>
 
 /*****************************************************************************/
 /* Defines:                                                                  */
@@ -828,30 +829,35 @@ void AES128CTR_transform(uint8* data, sint32 length, uint8* key, uint8* nonceIv)
 
 void AES128_init()
 {
-	for (uint32 i = 0; i <= 0xFF; i++)
+	// Called at framework load on iOS and again from CemuInitialize(); the tables and function pointers are written once.
+	static std::once_flag s_initOnce;
+	std::call_once(s_initOnce, []()
 	{
-		uint32 vE = Multiply((uint8)(i & 0xFF), 0x0E) & 0xFF;
-		uint32 v9 = Multiply((uint8)(i & 0xFF), 0x09) & 0xFF;
-		uint32 vD = Multiply((uint8)(i & 0xFF), 0x0D) & 0xFF;
-		uint32 vB = Multiply((uint8)(i & 0xFF), 0x0B) & 0xFF;
-		lookupTable_multiply[i] = (vE << 0) | (v9 << 8) | (vD << 16) | (vB << 24);
-	}
-	// check if AES-NI is available
-	#if defined(ARCH_X86_64)
-	if (g_CPUFeatures.x86.aesni)
-	{
-		// AES-NI implementation
-		AES128_CBC_decrypt = __aesni__AES128_CBC_decrypt;
-		AES128_ECB_encrypt = __aesni__AES128_ECB_encrypt;
-	}
-	else
-	{
-		// basic software implementation
+		for (uint32 i = 0; i <= 0xFF; i++)
+		{
+			uint32 vE = Multiply((uint8)(i & 0xFF), 0x0E) & 0xFF;
+			uint32 v9 = Multiply((uint8)(i & 0xFF), 0x09) & 0xFF;
+			uint32 vD = Multiply((uint8)(i & 0xFF), 0x0D) & 0xFF;
+			uint32 vB = Multiply((uint8)(i & 0xFF), 0x0B) & 0xFF;
+			lookupTable_multiply[i] = (vE << 0) | (v9 << 8) | (vD << 16) | (vB << 24);
+		}
+		// check if AES-NI is available
+		#if defined(ARCH_X86_64)
+		if (g_CPUFeatures.x86.aesni)
+		{
+			// AES-NI implementation
+			AES128_CBC_decrypt = __aesni__AES128_CBC_decrypt;
+			AES128_ECB_encrypt = __aesni__AES128_ECB_encrypt;
+		}
+		else
+		{
+			// basic software implementation
+			AES128_CBC_decrypt = __soft__AES128_CBC_decrypt;
+			AES128_ECB_encrypt = __soft__AES128_ECB_encrypt;
+		}
+	    #else
 		AES128_CBC_decrypt = __soft__AES128_CBC_decrypt;
 		AES128_ECB_encrypt = __soft__AES128_ECB_encrypt;
-	}
-    #else
-	AES128_CBC_decrypt = __soft__AES128_CBC_decrypt;
-	AES128_ECB_encrypt = __soft__AES128_ECB_encrypt;
-    #endif
+	    #endif
+	});
 }
