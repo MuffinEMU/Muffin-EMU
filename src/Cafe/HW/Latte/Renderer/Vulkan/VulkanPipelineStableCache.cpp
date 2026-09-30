@@ -124,6 +124,11 @@ void VulkanPipelineStableCache::Close()
         delete s_cache;
         s_cache = nullptr;
     }
+    // this object outlives the title: pipelines that were recorded as already cached belong to the cache file that was just
+    // closed, and the next title (with a different file) would skip writing them
+    m_pipelineIsCachedLock.lock();
+    m_pipelineIsCached.clear();
+    m_pipelineIsCachedLock.unlock();
 }
 
 struct CachedPipeline

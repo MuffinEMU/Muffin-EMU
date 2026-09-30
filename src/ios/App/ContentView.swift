@@ -51,6 +51,7 @@ struct ContentView: View {
                     BootFailureView(
                         game: game,
                         message: gameManager.lastStatusMessage,
+                        needsCleanRestart: gameManager.needsCleanRestart,
                         onDismiss: {
                             gameManager.stopEmulation()
                             showingGameBrowser = true
@@ -98,6 +99,8 @@ struct ContentView: View {
 struct BootFailureView: View {
     let game: GameMetadata
     let message: String
+    /// Set when the launch was refused because the last game left the emulator in a state that only an app restart fixes.
+    var needsCleanRestart: Bool = false
     let onDismiss: () -> Void
 
     /// Where the diagnostics actually are. Computed from the bridge rather than written
@@ -120,7 +123,7 @@ struct BootFailureView: View {
                     .font(.system(size: 34, weight: .semibold))
                     .foregroundColor(MuffinTheme.blushPink)
 
-                Text("Couldn't start \(game.title)")
+                Text(needsCleanRestart ? "Restart needed before \(game.title)" : "Couldn't start \(game.title)")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
@@ -148,6 +151,17 @@ struct BootFailureView: View {
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
                     .frame(maxWidth: 480)
+
+                if needsCleanRestart {
+                    // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
+                    // exit(0) after a tap is accepted for a sideloaded app.
+                    Button(action: { exit(0) }) {
+                        Text("Close MuffinEMU")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    }
+                    .buttonStyle(MuffinPrimaryButtonStyle())
+                    .padding(.top, 4)
+                }
 
                 Button(action: onDismiss) {
                     HStack(spacing: 6) {

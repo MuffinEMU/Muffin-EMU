@@ -480,6 +480,22 @@ struct FetchShaderLookupInfo
 };
 
 LookupTableL3<8, 8, 8, FetchShaderLookupInfo*> g_fetchShaderLookupCache;
+// every lookup entry ever created (the table has no way to enumerate or clear itself)
+static std::vector<FetchShaderLookupInfo*> s_fetchShaderLookupInfos;
+
+// FindByGPUState() trusts an entry whose size matches and that was used in the current frame. After a title stops the
+// frame counter starts again from zero, so an entry from the old title can look current, and the guest address it is
+// keyed by can hold a different fetch shader in the next title. Entries are invalidated instead of freed: the table
+// hands out the pointers and has no removal. s_fetchShaderByHash is content addressed, so it stays valid.
+void LatteFetchShader::ResetLookupCache()
+{
+	for (FetchShaderLookupInfo* info : s_fetchShaderLookupInfos)
+	{
+		info->fetchShader = nullptr;
+		info->programSize = 0xFFFFFFFFu; // never equals a real size (the size register is shifted left by 3)
+		info->lastFrameAccessed = 0;
+	}
+}
 
 LatteFetchShader::CacheHash LatteFetchShader::CalculateCacheHash(void* programCode, uint32 programSize)
 {
@@ -562,6 +578,7 @@ LatteFetchShader* LatteFetchShader::FindByGPUState()
 		}
 		// create new lookup entry
 		lookupInfo = new FetchShaderLookupInfo();
+		s_fetchShaderLookupInfos.push_back(lookupInfo);
 		lookupInfo->fetchShader = fetchShader;
 		lookupInfo->programSize = _getFSProgramSize();
 		lookupInfo->lastFrameAccessed = LatteGPUState.frameCounter;

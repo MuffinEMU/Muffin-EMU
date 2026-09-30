@@ -166,6 +166,9 @@ extern PPCRecompilerInstanceData_t* ppcRecompilerInstanceData;
 
 void PPCRecompiler_init();
 void PPCRecompiler_Shutdown();
+bool PPCRecompilerInitialized();
+size_t PPCRecompiler_GetReservedLookupBlockCount();
+size_t PPCRecompiler_GetQueuedTargetCount();
 
 void PPCRecompiler_Enable();
 void PPCRecompiler_Disable();

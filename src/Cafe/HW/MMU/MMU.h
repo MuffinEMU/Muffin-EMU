@@ -3,6 +3,14 @@
 void memory_init();
 void memory_mapForCurrentTitle();
 void memory_unmapForCurrentTitle();
+
+// Guest ranges that a GPU buffer wraps without copying (Metal imports MEM2 this way). A range that is registered here is never
+// replaced with fresh pages when it is unmapped: replacing pages under a live GPU mapping is a GPU page fault. The owner
+// registers when it creates the buffer and unregisters only when it has proven the buffer is gone.
+void memory_registerGpuMapping(MPTR baseAddress, uint32 size);
+void memory_unregisterGpuMapping(MPTR baseAddress, uint32 size);
+bool memory_isRangeGpuMapped(MPTR baseAddress, uint32 size);
+size_t memory_getKeptRangeCount(); // ranges the last unmap kept because of a GPU mapping
 void memory_logModifiedMemoryRanges();
 
 void memory_enableOverlayArena();

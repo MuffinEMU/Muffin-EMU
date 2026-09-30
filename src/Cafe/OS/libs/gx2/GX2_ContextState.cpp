@@ -21,6 +21,13 @@
 
 MPTR gx2CurrentContextStateMPTR = MPTR_NULL;
 
+// GX2SetContextState() skips loading a state that is already current. The address it compares against belongs to the
+// title that set it, and the next title can put a different context state at the same address.
+void gx2ContextState_resetToDefaultState()
+{
+	gx2CurrentContextStateMPTR = MPTR_NULL;
+}
+
 typedef struct  
 {
 	uint32 regOffset;

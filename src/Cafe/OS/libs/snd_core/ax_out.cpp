@@ -456,6 +456,12 @@ namespace snd_core
 			g_portalAudio->Stop();
 			g_portalAudio.reset();
 		}
+		// the staging buffers fill four blocks before anything is written out. Stopped part way through, the next title
+		// would start out of phase and play the samples the last one left behind
+		tempAudioBlockCounter = 0;
+		tempDRCAudioBlockCounter = 0;
+		memset(tempTVChannelData, 0, sizeof(tempTVChannelData));
+		memset(tempDRCChannelData, 0, sizeof(tempDRCChannelData));
 	}
 
 	void AXOut_updateDevicePlayState(bool isPlaying)

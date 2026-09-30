@@ -168,6 +168,7 @@ private:
     MTL::Buffer* m_bufferCache = nullptr;
     size_t m_bufferCacheSize = 0;
     MTL::Buffer* m_importedMemoryBuffer = nullptr;
+    bool m_importedRegistered = false; // registered with the MMU as a GPU mapping of guest memory
     MetalBufferCacheMode m_metalBufferCacheMode;
     MPTR m_importedMemBaseAddress;
     size_t m_hostAllocationSize = 0;

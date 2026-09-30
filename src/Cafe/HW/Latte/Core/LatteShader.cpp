@@ -1176,4 +1176,21 @@ void LatteSHRC_UnloadAll()
     while(!sPixelShaders.empty())
         LatteShader_free(sPixelShaders.begin()->second);
     cemu_assert_debug(sPixelShaders.empty());
+    // the shaders just freed were the ones bound, and the hash cache is keyed by the host address of the shader
+    // program in guest memory, which the next title can reuse for a different program of the same size
+    _activeFetchShader = nullptr;
+    _activeVertexShader = nullptr;
+    _activeGeometryShader = nullptr;
+    _activePixelShader = nullptr;
+    _shaderBaseHash_vs = 0;
+    _shaderBaseHash_gs = 0;
+    _shaderBaseHash_ps = 0;
+    _activePSImportTable = LatteShaderPSInputTable{};
+    LatteSHRC_ResetCachedShaderHash();
+    LatteFetchShader::ResetLookupCache();
+}
+
+size_t LatteSHRC_GetCachedShaderCount()
+{
+    return sVertexShaders.size() + sGeometryShaders.size() + sPixelShaders.size();
 }

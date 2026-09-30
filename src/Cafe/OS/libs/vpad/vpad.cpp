@@ -1148,6 +1148,18 @@ namespace vpad
 
 	void start()
 	{
+		// start() runs once for every title, before its code. Whatever the previous title registered is stale: the sampling
+		// callback is a guest function pointer the tick below would call, and the per-channel parameters are what
+		// the title chose for itself, not what the next one should start with
+		for (auto& controller : g_vpad.controller_data)
+			controller.sampling_callback = nullptr;
+		for (size_t i = 0; i < VPAD_MAX_CONTROLLERS; i++)
+		{
+			g_vpadGyroZeroDriftMode[i] = VPAD_GYRO_ZERODRIFT_STANDARD;
+			g_vpadPlayMode[i] = VPAD_PLAY_MODE_TIGHT;
+			vpadButtonProcMode[i] = VPAD_BUTTON_PROC_MODE_TIGHT;
+			vpadLcdMode[i] = VPAD_LCD_MODE_ON;
+		}
 		coreinit::OSCreateAlarm(&g_vpad.alarm);
 		const uint64 start_tick = coreinit::OSGetTime();
 		const uint64 period_tick = coreinit::EspressoTime::GetTimerClock() * 5 / 1000;

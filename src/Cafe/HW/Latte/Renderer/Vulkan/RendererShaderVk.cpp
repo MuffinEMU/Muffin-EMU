@@ -147,6 +147,7 @@ public:
 		for (auto& it : s_threads)
 			it.join();
 		s_threads.clear();
+		s_compilationQueueCount.reset(); // wake-ups counted for shaders that will never be compiled
 	}
 
 	~_ShaderVkThreadPool()
@@ -209,6 +210,12 @@ RendererShaderVk::RendererShaderVk(ShaderType type, uint64 baseHash, uint64 auxH
 
 RendererShaderVk::~RendererShaderVk()
 {
+	// unqueue: a shader deleted while still queued would be popped by the next title's compile threads
+	{
+		std::lock_guard<std::mutex> lock(ShaderVkThreadPool.s_compilationQueueMutex);
+		auto& queue = ShaderVkThreadPool.s_compilationQueue;
+		queue.erase(std::remove(queue.begin(), queue.end(), this), queue.end());
+	}
 	while (!list_pipelineInfo.empty())
 		delete list_pipelineInfo[0];
 
@@ -224,6 +231,7 @@ void RendererShaderVk::Init()
 void RendererShaderVk::Shutdown()
 {
 	ShaderVkThreadPool.StopThreads();
+	s_isLoadingShadersVk = false; // a title stopped during shader cache loading never reached the end of the load
 }
 
 void RendererShaderVk::CreateVkShaderModule(std::span<uint32> spirvBuffer)

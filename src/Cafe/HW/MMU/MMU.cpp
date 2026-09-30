@@ -142,9 +142,56 @@ void MMURange::mapMem()
 	m_isMapped = true;
 }
 
+static std::mutex s_gpuMappingMutex;
+static std::vector<std::pair<MPTR, uint32>> s_gpuMappings;
+static size_t s_keptRangeCount = 0;
+
+void memory_registerGpuMapping(MPTR baseAddress, uint32 size)
+{
+	std::lock_guard<std::mutex> lock(s_gpuMappingMutex);
+	s_gpuMappings.emplace_back(baseAddress, size);
+}
+
+void memory_unregisterGpuMapping(MPTR baseAddress, uint32 size)
+{
+	std::lock_guard<std::mutex> lock(s_gpuMappingMutex);
+	auto it = std::find(s_gpuMappings.begin(), s_gpuMappings.end(), std::make_pair(baseAddress, size));
+	if (it != s_gpuMappings.end())
+		s_gpuMappings.erase(it);
+}
+
+bool memory_isRangeGpuMapped(MPTR baseAddress, uint32 size)
+{
+	std::lock_guard<std::mutex> lock(s_gpuMappingMutex);
+	for (auto& m : s_gpuMappings)
+	{
+		if ((uint64)baseAddress < (uint64)m.first + m.second && (uint64)m.first < (uint64)baseAddress + size)
+			return true;
+	}
+	return false;
+}
+
+size_t memory_getKeptRangeCount()
+{
+	return s_keptRangeCount;
+}
+
 void MMURange::unmapMem()
 {
-    MemMapper::FreeMemory(memory_base + baseAddress, size, true);
+	if (memory_isRangeGpuMapped(baseAddress, size))
+	{
+		// something on the GPU side still maps these pages: replacing them would pull them out from under it
+		MemMapper::FreeMemoryKeepPages(memory_base + baseAddress, size);
+		s_keptRangeCount++;
+		cemuLog_log(LogType::Force, "clean slate: kept {} pages (GPU mapping still alive)", name);
+	}
+	else
+	{
+		const auto start = std::chrono::steady_clock::now();
+		MemMapper::FreeMemory(memory_base + baseAddress, size, true);
+		const auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+		cemuLog_log(LogType::Force, "Guest memory: replaced {} ({} MiB) with fresh pages in {}.{} ms", name, size / (1024 * 1024), us / 1000, (us % 1000) / 100);
+	}
 	m_isMapped = false;
 }
 
@@ -271,6 +318,7 @@ void memory_mapForCurrentTitle()
 
 void memory_unmapForCurrentTitle()
 {
+	s_keptRangeCount = 0;
     for (auto& itr : g_mmuRanges)
     {
         if (itr->isMapped() && !itr->isMappedEarly())
