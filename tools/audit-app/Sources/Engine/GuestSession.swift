@@ -60,6 +60,14 @@ extension AuditRunner {
             throw CoreError.message("the guest could not start: \(s.message)")
         }
         link.setHostFlags(captureWorking: captureAvailable, padSurface: request.padSurface)
+        // Tell the guest a host is here. Without any command it would start its built-in sequence 8 seconds after HELLO,
+        // which must not happen under a host that is merely slow to send its first test.
+        link.send(command: Mailbox.cmdPing)
+        for _ in 0..<100 {
+            if link.lastCommandAcknowledged() { break }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        if !link.lastCommandAcknowledged() { logs.hostLine("NOTE the guest did not acknowledge the first PING within 2 s") }
         guestUp = true
         let ms = Double(core.nowNs &- bootStart) / 1_000_000.0
         logs.hostLine("GUEST UP in \(Int(ms)) ms build=\(helloBuild)")

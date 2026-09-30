@@ -104,7 +104,9 @@ final class AuditRunner {
             }
             records.append(rec)
             host?.record(ResultRow(id: rec.id + (rec.iteration > 0 ? " #\(rec.iteration + 1)" : ""), title: rec.title, result: rec.result, reason: rec.reason))
-            writeReport(started: started, startNs: startNs, complete: false)
+            // The report is rewritten after every test so a run that dies leaves one; in a long soak the file gets large, so
+            // after the first hundred tests it is rewritten every tenth.
+            if records.count <= 100 || records.count % 10 == 0 { writeReport(started: started, startNs: startNs, complete: false) }
             index += 1
         }
 
