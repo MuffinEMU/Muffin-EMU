@@ -67,7 +67,7 @@ bool IOSDlcUpdateImport_Inspect(const char* romPath, uint64* outTitleId, uint16*
 	if (!titleInfo.HasValidXmlInfo())
 	{
 		if (outInvalidReason)
-			*outInvalidReason = 5; // MISSING_XML_FILES
+			*outInvalidReason = (int)TitleInfo::InvalidReason::MISSING_XML_FILES;
 		return false;
 	}
 

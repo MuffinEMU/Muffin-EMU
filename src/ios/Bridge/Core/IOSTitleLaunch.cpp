@@ -23,6 +23,7 @@
 #include "Cafe/TitleList/TitleInfo.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
+#include "Cafe/Filesystem/FST/FST.h"
 #include <cctype>
 #include <fstream>
 #include <thread>
@@ -46,7 +47,21 @@ enum
 	IOS_TITLE_LAUNCH_NO_TITLE_TIK = 4,
 	IOS_TITLE_LAUNCH_UNSUPPORTED_FORMAT = 5,
 	IOS_TITLE_LAUNCH_BASE_NOT_FOUND = 6,
+	// Encrypted game folder (title.tmd, title.tik and .app files) that could not be opened
+	IOS_TITLE_LAUNCH_BAD_TITLE_TMD = 7,
+	IOS_TITLE_LAUNCH_BAD_TITLE_TIK = 8,
+	IOS_TITLE_LAUNCH_TITLE_KEY_INVALID = 9,
+	IOS_TITLE_LAUNCH_MISSING_CONTENT_FILE = 10,
 };
+
+// Extra detail for the last failure, e.g. the name of the missing .app file. Read by the
+// bridge right after IOSTitleLaunch_PrepareForegroundTitle() returns, on the same thread.
+static thread_local std::string sLastLaunchDetail;
+
+const char* IOSTitleLaunch_LastErrorDetail()
+{
+	return sLastLaunchDetail.c_str();
+}
 
 // Defined below, next to the rest of the key handling. Declared here because the
 // launch path above it calls it too.
@@ -92,6 +107,7 @@ static void IOSTitleLaunch_RescanInstalledContent()
 // is reported before a title thread exists.
 int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 {
+	sLastLaunchDetail.clear();
 	if (!pathStr || pathStr[0] == '\0')
 		return IOS_TITLE_LAUNCH_UNSUPPORTED_FORMAT;
 	fs::path launchPath = fs::path(pathStr);
@@ -168,6 +184,19 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 	case TitleInfo::InvalidReason::NO_TITLE_TIK:
 		cemuLog_log(LogType::Force, "iOS: {} has no usable title.tik", _pathToUtf8(launchPath));
 		return IOS_TITLE_LAUNCH_NO_TITLE_TIK;
+	case TitleInfo::InvalidReason::BAD_TITLE_TMD:
+		cemuLog_log(LogType::Force, "iOS: {} has a title.tmd that could not be read", _pathToUtf8(launchPath));
+		return IOS_TITLE_LAUNCH_BAD_TITLE_TMD;
+	case TitleInfo::InvalidReason::BAD_TITLE_TIK:
+		cemuLog_log(LogType::Force, "iOS: {} has a title.tik that could not be read", _pathToUtf8(launchPath));
+		return IOS_TITLE_LAUNCH_BAD_TITLE_TIK;
+	case TitleInfo::InvalidReason::TITLE_KEY_INVALID:
+		cemuLog_log(LogType::Force, "iOS: {} could not be decrypted with its ticket or any key in keys.txt", _pathToUtf8(launchPath));
+		return IOS_TITLE_LAUNCH_TITLE_KEY_INVALID;
+	case TitleInfo::InvalidReason::MISSING_CONTENT_FILE:
+		sLastLaunchDetail = FSTVolume::GetLastMissingContentFile();
+		cemuLog_log(LogType::Force, "iOS: {} is missing content file {}", _pathToUtf8(launchPath), sLastLaunchDetail);
+		return IOS_TITLE_LAUNCH_MISSING_CONTENT_FILE;
 	default:
 		cemuLog_log(LogType::Force, "iOS: {} is not a title this build can launch (invalid reason {})", _pathToUtf8(launchPath), (int)launchTitle.GetInvalidReason());
 		return IOS_TITLE_LAUNCH_UNSUPPORTED_FORMAT;
