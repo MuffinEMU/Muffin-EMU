@@ -20,10 +20,10 @@
       "versions": [
         {
           "version": "2026.9.30",
-          "date": "2026-09-30T22:27:55Z",
-          "localizedDescription": "The newest build of MuffinEMU, from commit 7b34c7a9b45143a6b1357e08115aad5f5b253e95 on `main`.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\nThis tag moves. Every successful build replaces it, so the download here is\nalways the newest code, never a version you can come back to. For that, use a\nnumbered release.\n\nThis build has not been tested. If you want the version that is known to\nwork, install the latest numbered release instead.",
+          "date": "2026-09-30T23:56:00Z",
+          "localizedDescription": "The newest build of MuffinEMU, from commit b12737566c32dbabab1d4182e51eb27fbc89acf1 on `main`.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\nThis tag moves. Every eligible build of main replaces it, so the download here is\nalways the newest code, never a version you can come back to. For that, use a\nnumbered release.\n\nThis build has not been tested. If you want the version that is known to\nwork, install the latest numbered release instead.",
           "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/nightly/MuffinEMU-fakesigned.ipa",
-          "size": 68625114,
+          "size": 68630926,
           "minOSVersion": "15.0"
         }
       ],
