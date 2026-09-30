@@ -631,6 +631,12 @@ if(ENABLE_METAL)
         HW/Latte/Renderer/Metal/UtilityShaderSource.h
     )
 
+    # MuffinEMU Audit (tools/audit-app): the frame readback lives with the other audit hooks in ios/Bridge but is compiled
+    # here, in the target that has the Metal renderer's include paths. Only with -DMUFFIN_AUDIT_HOOKS=ON.
+    if(MUFFIN_AUDIT_HOOKS)
+        target_sources(CemuCafe PRIVATE ../ios/Bridge/IOSAuditMetal.cpp)
+    endif()
+
     target_sources(CemuCafe PRIVATE
         HW/Latte/LegacyShaderDecompiler/LatteDecompilerEmitMSLAttrDecoder.cpp
         HW/Latte/LegacyShaderDecompiler/LatteDecompilerEmitMSL.cpp
