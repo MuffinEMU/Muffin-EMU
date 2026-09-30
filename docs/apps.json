@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "5.6",
+          "date": "2026-09-30T05:03:01Z",
+          "localizedDescription": "## What changed\n\n- If the GPU stops answering in a game, MuffinEMU now recovers instead of leaving the picture frozen.\n- Fixes some games freezing the picture while waiting on the GPU.\n- Fixes the picture going black in some games until the app is restarted.\n- You can now save a state from a game whose picture has frozen.\n- If the picture freezes while a game keeps running, MuffinEMU now says so and lets you save your progress.\n- Importing a game save now works, and saves you imported before are moved to where the game can find them. Exporting a save now finds it too.\n- Games that use a lot of graphics memory are less likely to be closed by iOS.\n- If the GPU stops working in a game, MuffinEMU now says so straight away and tells you to save and restart.\n- Quitting a game now gives its memory back, so the next game can start after a GPU error.\n- MuffinEMU no longer crashes on launch when an encrypted game folder is in your library.\n- Encrypted game folders (title.tmd, title.tik and .app files) now load even when their file names are upper-case, and a missing or damaged file is reported by name.\n- When an encrypted game folder can't be opened, MuffinEMU now says why, for example that title.tik or a named .app file is missing.\n- Encrypted game folders that contain separate game, update and DLC subfolders are now recognised, and the update and DLC are used when the game starts.\n- You can now use Decrypt to Files on an encrypted game folder (title.tmd, title.tik and .app files) to ...",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v5.6/MuffinEMU.ipa",
+          "size": 68208959,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "5.5",
           "date": "2026-09-30T03:27:29Z",
           "localizedDescription": "## What changed\n\n- MuffinEMU no longer crashes on launch when an encrypted game folder is in your library.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 921e0f8cd32c89f3cc4e2ed44d9de82191c6ce61.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v5.4...v5.5",
@@ -387,12 +395,12 @@
   ],
   "news": [
     {
-      "title": "MuffinEMU 5.5",
-      "identifier": "muffinemu-v5.5",
-      "caption": "MuffinEMU no longer crashes on launch when an encrypted game folder is in your library.",
+      "title": "MuffinEMU 5.6",
+      "identifier": "muffinemu-v5.6",
+      "caption": "If the GPU stops answering in a game, MuffinEMU now recovers instead of leaving the picture frozen. Fixes some games freezing the picture while waiting on the GPU.",
       "date": "2026-09-30",
       "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v5.5",
+      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v5.6",
       "appID": "com.kiddreads.MuffinEMU",
       "notify": false
     }
