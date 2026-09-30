@@ -16,7 +16,9 @@ enum RenderScale: String, CaseIterable, Identifiable {
     case high
     /// Half of native. On a 2x screen that is one pixel per point - 1366x1024 on the
     /// iPad Pro, still comfortably above the Wii U's own 1280x720, so the console image
-    /// is not being downsampled below its source at this setting.
+    /// is not being downsampled below its source at this setting. On a 3x iPhone that
+    /// would be 1.5 pixels per point, under 720 lines in landscape, so `effectiveRenderScale`
+    /// raises it to 720 lines there.
     case balanced
     /// Three eighths of native, for when frame rate matters more than edges do.
     case battery
@@ -53,6 +55,11 @@ enum RenderScale: String, CaseIterable, Identifiable {
     }
 
     static let storageKey = "renderScale"
+
+    /// Where it starts when the player has not chosen: `.balanced` on most devices, because the
+    /// CPU is the bottleneck and extra GPU pixels buy nothing, and `.high` on an A17 Pro or later
+    /// and on M-series iPads, which have room for them (`DeviceCapabilities.defaultRenderScale`).
+    static var defaultValue: RenderScale { DeviceCapabilities.current.defaultRenderScale }
 
     /// What the person chose, or the preset picked for this device (`deviceDefault`) if they never did.
     static var current: RenderScale {
@@ -233,8 +240,21 @@ enum FrameStretch {
 extension UIScreen {
     /// The backing scale to hand the renderer, after the user's render-scale setting.
     /// Floored at 0.5 so the points-to-pixels conversion can't round a dimension to zero.
+    ///
+    /// Every choice but Battery saver keeps at least the Wii U's own 720 lines on the short side
+    /// of the screen, as far as the panel has them: a phone's 390 pt landscape height at half of
+    /// a 3x scale is only 585 pixels, which is below the picture the game draws. Devices whose
+    /// screen is already taller than that at the chosen scale (every iPad) are unaffected.
     var effectiveRenderScale: Double {
-        max(0.5, Double(scale) * RenderScale.current.factor)
+        let choice = RenderScale.current
+        var value = Double(scale) * choice.factor
+        if choice != .battery {
+            let shortSide = Double(min(bounds.width, bounds.height))
+            if shortSide > 0 {
+                value = max(value, min(720.0 / shortSide, Double(scale)))
+            }
+        }
+        return max(0.5, value)
     }
 }
 #endif

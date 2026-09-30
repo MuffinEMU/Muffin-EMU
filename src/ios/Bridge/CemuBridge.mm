@@ -66,6 +66,8 @@
 #include "config/ActiveSettings.h"
 #include "config/CemuConfig.h"
 #include "Common/version.h"
+#include "Common/DeviceCapabilities.h"
+#include "CemuDeviceCaps.h"
 #include "gui/interface/WindowSystem.h"
 #include "input/api/iOS/GCControllerProvider.h"
 #include "input/emulated/EmulatedController.h"
@@ -572,7 +574,8 @@ static std::string cemu_build_device_report(void)
         [[[NSProcessInfo processInfo] operatingSystemVersionString] UTF8String],
         (unsigned long long)(memBytes / (1024ull * 1024ull)),
         (unsigned long long)cores);
-    report = buf;
+    // The capability line leads every device report, so reports from different devices compare line for line.
+    report = std::string(cemu_device_caps_line()) + "\n" + buf;
 
     if (pcores && ecores)
     {
@@ -622,7 +625,7 @@ const char* cemu_bridge_memory_headroom_summary(void) {
             (unsigned long long)(avail / (1024ull * 1024ull)),
             (unsigned long long)(arena / (1024ull * 1024ull)),
             (unsigned long long)(used / (1024ull * 1024ull)),
-            arena < (1024ull << 20) ? " (reduced - less room than the JIT asked for)" : "");
+            arena < ((uint64_t)DeviceCaps::GetBudgets().jitArenaStartMB << 20) ? " (reduced - less room than the JIT asked for)" : "");
     }
     summary = buf;
     return summary.c_str();
@@ -2549,6 +2552,9 @@ void cemu_bridge_initialize(const char* mlcPath) {
         where += (crashPath && crashPath[0]) ? crashPath : "(nowhere - $HOME was not set, so no file could be opened)";
         cemu_bridge_log_checkpoint(where.c_str());
     }
+    // The capability snapshot, taken before the memory watchdog, the JIT setup or the renderer read it.
+    cemu_device_caps_initialize();
+    cemu_bridge_log_checkpoint(cemu_device_caps_line());
     cemu_bridge_start_memory_watchdog();
     ios_configure_jit_environment();
     // MoltenVK reads these once, when CemuInitialize() loads it for the Vulkan backend.
@@ -2625,7 +2631,13 @@ void cemu_bridge_initialize(const char* mlcPath) {
     // OSReport and the OS libs' parameter errors are what homebrew narrates its progress
     // through. Without these a ROM that is working looks exactly like one that never started.
     cemuLog_setActiveLoggingFlags(cemuLog_getFlag(LogType::CoreinitLogging) | cemuLog_getFlag(LogType::APIErrors));
-    cemuLog_log(LogType::Force, "iOS {}", cemu_bridge_device_report());
+    // The capability line is the first line of log.txt's iOS section; the rest of the report follows it.
+    {
+        const char* report = cemu_bridge_device_report();
+        const char* split = strchr(report, '\n');
+        cemuLog_log(LogType::Force, "{}", std::string(report, split ? (size_t)(split - report) : strlen(report)));
+        cemuLog_log(LogType::Force, "iOS {}", split ? split + 1 : report);
+    }
     {
         std::error_code fontsEc, profilesEc;
         const bool haveFonts = fs::exists(dataPath / "resources" / "sharedFonts" / "CafeStd.ttf", fontsEc);
@@ -2887,6 +2899,24 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
         default:
             setStatus("Not a Wii U title this build can launch.");
             return CEMU_BRIDGE_UNSUPPORTED;
+    }
+
+    // Not enough memory left to bring the renderer up: say so, rather than let iOS end the app partway through the boot.
+    {
+        const uint64_t needed = DeviceCaps::GetBudgets().minBootHeadroomBytes;
+        const uint64_t available = (uint64_t)os_proc_available_memory();
+        if (needed != 0 && available != 0 && available < needed)
+        {
+            char message[512];
+            snprintf(message, sizeof(message),
+                "This game can't start: only %llu MB of memory is free and it needs about %llu MB. Close other apps and try again. "
+                "If it keeps happening, this device may not have enough memory for this game.",
+                (unsigned long long)(available >> 20), (unsigned long long)(needed >> 20));
+            cemu_bridge_log_checkpoint((std::string("boot_title: not enough memory - ") + message).c_str());
+            CafeSystem::AbortPreparedTitle();
+            setStatus(message);
+            return CEMU_BRIDGE_UNABLE_TO_MOUNT;
+        }
     }
 
     // A pad view left over from an earlier title must not be initialized by this one.

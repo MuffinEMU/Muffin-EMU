@@ -4,6 +4,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalSharedBufferTracker.h"
 
 #include "GameProfile/GameProfile.h"
+#include "Common/DeviceCapabilities.h"
 
 #include <array>
 
@@ -32,7 +33,7 @@ using MetalArgumentBindings = std::array<MetalArgumentBinding, MetalArgumentBuff
 class MetalMemoryManager
 {
 public:
-    MetalMemoryManager(class MetalRenderer* metalRenderer) : m_mtlr{metalRenderer}, m_stagingAllocator(m_mtlr, m_mtlr->GetOptimalBufferStorageMode(), 32u * 1024 * 1024), m_indexAllocator(m_mtlr, m_mtlr->GetOptimalBufferStorageMode(), 4u * 1024 * 1024), m_snapshotAllocator(m_mtlr, m_mtlr->GetOptimalBufferStorageMode(), 4u * 1024 * 1024) {}
+    MetalMemoryManager(class MetalRenderer* metalRenderer) : m_mtlr{metalRenderer}, m_stagingAllocator(m_mtlr, m_mtlr->GetOptimalBufferStorageMode(), (size_t)DeviceCaps::GetBudgets().stagingChunkBytes), m_indexAllocator(m_mtlr, m_mtlr->GetOptimalBufferStorageMode(), 4u * 1024 * 1024), m_snapshotAllocator(m_mtlr, m_mtlr->GetOptimalBufferStorageMode(), 4u * 1024 * 1024) {}
     ~MetalMemoryManager();
 
     // One snapshot slot per thing that can be cached: every vertex buffer, every uniform

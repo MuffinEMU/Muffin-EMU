@@ -197,7 +197,8 @@ MetalRenderer::MetalRenderer()
     m_supportsFramebufferFetch = GetConfig().framebuffer_fetch.GetValue() ? m_device->supportsFamily(MTL::GPUFamilyApple2) : false;
     m_hasUnifiedMemory = m_device->hasUnifiedMemory();
     m_supportsMetal3 = m_device->supportsFamily(MTL::GPUFamilyMetal3);
-    m_supportsMeshShaders = (m_supportsMetal3 && (m_vendor != GfxVendor::Intel || GetConfig().force_mesh_shaders.GetValue())); // Intel GPUs have issues with mesh shaders
+    // Metal 3 also runs on A13 (Apple6), whose GPU has no mesh shader hardware: on Apple GPUs it takes Apple7 (A14, M1) or later.
+    m_supportsMeshShaders = (m_supportsMetal3 && (!m_isAppleGPU || m_device->supportsFamily(MTL::GPUFamilyApple7)) && (m_vendor != GfxVendor::Intel || GetConfig().force_mesh_shaders.GetValue())); // Intel GPUs have issues with mesh shaders
     m_argumentBufferTier = m_device->argumentBuffersSupport();
     m_maxArgumentBufferSamplerCount = static_cast<uint32>(m_device->maxArgumentBufferSamplerCount());
     cemuLog_log(LogType::Force, "Metal argument buffers: Tier {}, {} samplers", m_argumentBufferTier == MTL::ArgumentBuffersTier2 ? 2 : 1, m_maxArgumentBufferSamplerCount);
@@ -1278,7 +1279,7 @@ LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView
     {
         cemuLog_logOnce(LogType::Force,
             "Metal: could not allocate the {} MB texture readback buffer; skipping texture readbacks",
-            TEXTURE_READBACK_SIZE / (1024 * 1024));
+            TextureReadbackSize() / (1024 * 1024));
         return nullptr;
     }
 
@@ -1287,13 +1288,13 @@ LatteTextureReadbackInfo* MetalRenderer::texture_createReadback(LatteTextureView
         return nullptr;
 
     size_t uploadSize = mtlTexture->allocatedSize();
-    if (uploadSize > TEXTURE_READBACK_SIZE)
+    if (uploadSize > TextureReadbackSize())
     {
-        cemuLog_logOnce(LogType::Force, "Metal: texture is too large for the {} MB readback buffer; skipping readback", TEXTURE_READBACK_SIZE / (1024 * 1024));
+        cemuLog_logOnce(LogType::Force, "Metal: texture is too large for the {} MB readback buffer; skipping readback", TextureReadbackSize() / (1024 * 1024));
         return nullptr;
     }
 
-    if ((m_readbackBufferWriteOffset + uploadSize) > TEXTURE_READBACK_SIZE)
+    if ((m_readbackBufferWriteOffset + uploadSize) > TextureReadbackSize())
     {
         m_readbackBufferWriteOffset = 0;
     }
