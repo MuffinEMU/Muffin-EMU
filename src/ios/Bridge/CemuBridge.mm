@@ -49,6 +49,8 @@
 #include <mach/mach.h>
 #include <os/proc.h>
 #include <dlfcn.h>
+#include <pthread.h>
+#include <sys/ucontext.h>
 
 #include "Cafe/CafeSystem.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
@@ -83,6 +85,7 @@ namespace coreinit { void OSSetThermalThrottleMicros(uint32 micros); }
 // src/gui/uikit/WindowSystem.mm, and not declared in any header this
 // bridge includes, so they are declared again here.
 extern "C" {
+bool CemuTakeRendererFallback(char* reasonOut, size_t capacity);
 void CemuInitialize(const char* execPath, const char* user_data_path, const char* config_path, const char* cache_path, const char* data_path);
 void CemuRun(void);
 void CemuPrepareRenderer(void);
@@ -184,20 +187,166 @@ namespace {
         if (g_crashLogFd >= 0 && s) write(g_crashLogFd, s, strlen(s));
     }
 
-    // Async-signal-safe calls only.
-    void cemu_crash_signal_handler(int signum) {
-        cemu_crash_write("\n=== CEMU CRASH: signal ");
-        char digits[16];
-        int n = signum, i = 0;
+    void crash_hex(uint64_t v) {
+        char buf[18];
+        buf[0] = '0'; buf[1] = 'x';
+        for (int i = 0; i < 16; i++) {
+            const int nibble = (int)((v >> ((15 - i) * 4)) & 0xF);
+            buf[2 + i] = (char)(nibble < 10 ? '0' + nibble : 'a' + nibble - 10);
+        }
+        if (g_crashLogFd >= 0) write(g_crashLogFd, buf, sizeof(buf));
+    }
+
+    void crash_dec(int64_t v) {
+        char digits[24];
+        int i = 0;
+        const bool negative = v < 0;
+        uint64_t n = negative ? (uint64_t)(-v) : (uint64_t)v;
         if (n == 0) digits[i++] = '0';
-        while (n > 0) { digits[i++] = '0' + (n % 10); n /= 10; }
-        for (int j = 0; j < i / 2; j++) { char t = digits[j]; digits[j] = digits[i - 1 - j]; digits[i - 1 - j] = t; }
-        if (g_crashLogFd >= 0) write(g_crashLogFd, digits, i);
+        while (n > 0) { digits[i++] = (char)('0' + (n % 10)); n /= 10; }
+        if (negative) digits[i++] = '-';
+        char out[24];
+        for (int j = 0; j < i; j++) out[j] = digits[i - 1 - j];
+        if (g_crashLogFd >= 0) write(g_crashLogFd, out, (size_t)i);
+    }
+
+    // "0x... Image +offset symbol +offset". The raw address always goes out first: dladdr takes dyld's lock,
+    // and a crash inside dyld would otherwise leave the line empty.
+    void crash_describe_address(uint64_t addr) {
+        crash_hex(addr);
+        Dl_info di;
+        if (addr && dladdr((const void*)addr, &di) && di.dli_fname) {
+            const char* base = strrchr(di.dli_fname, '/');
+            base = base ? base + 1 : di.dli_fname;
+            cemu_crash_write(" ");
+            cemu_crash_write(base);
+            cemu_crash_write(" +");
+            crash_dec((int64_t)(addr - (uint64_t)di.dli_fbase));
+            if (di.dli_sname) {
+                cemu_crash_write(" ");
+                cemu_crash_write(di.dli_sname);
+                cemu_crash_write(" +");
+                crash_dec((int64_t)(addr - (uint64_t)di.dli_saddr));
+            }
+        }
+    }
+
+    // vm_read_overwrite instead of a pointer dereference: a bad frame pointer must not fault inside the handler.
+    bool crash_read(uint64_t addr, void* out, size_t n) {
+        vm_size_t got = 0;
+        return vm_read_overwrite(mach_task_self(), (vm_address_t)addr, (vm_size_t)n, (vm_address_t)out, &got) == KERN_SUCCESS && got == n;
+    }
+
+    // A thread's own frames from its registers, walking the frame-pointer chain.
+    void crash_frames(uint64_t pc, uint64_t lr, uint64_t fp, uint64_t sp, int maxFrames) {
+        constexpr uint64_t kAddressMask = 0x00007FFFFFFFFFFFull;
+        cemu_crash_write("    #0 pc "); crash_describe_address(pc & kAddressMask); cemu_crash_write("\n");
+        if (lr) { cemu_crash_write("    #1 lr "); crash_describe_address(lr & kAddressMask); cemu_crash_write("\n"); }
+        uint64_t previous = sp;
+        for (int i = 0; i < maxFrames && fp != 0 && (fp & 0xF) == 0 && fp >= previous; i++) {
+            uint64_t record[2];
+            if (!crash_read(fp, record, sizeof(record)))
+                break;
+            cemu_crash_write("    #"); crash_dec(i + 2); cemu_crash_write(" "); crash_describe_address(record[1] & kAddressMask); cemu_crash_write("\n");
+            if (record[0] <= fp)
+                break;
+            previous = fp;
+            fp = record[0];
+        }
+    }
+
+    void crash_thread_name(pthread_t thread, char* out, size_t cap) {
+        out[0] = '\0';
+        if (thread)
+            pthread_getname_np(thread, out, cap);
+        if (out[0] == '\0')
+            snprintf(out, cap, "(unnamed)");
+    }
+
+    // Every other thread's pc, so a trap on one thread is found even when the signal was delivered to another.
+    // A brk instruction at a thread's pc is marked. The threads are left suspended: the process is about to die.
+    void crash_dump_other_threads() {
+#if defined(__arm64__)
+        thread_act_array_t threads = nullptr;
+        mach_msg_type_number_t count = 0;
+        if (task_threads(mach_task_self(), &threads, &count) != KERN_SUCCESS)
+            return;
+        const mach_port_t self = mach_thread_self();
+        cemu_crash_write("--- other threads ("); crash_dec((int64_t)count - 1); cemu_crash_write(") ---\n");
+        for (mach_msg_type_number_t i = 0; i < count && i < 96; i++) {
+            const thread_act_t t = threads[i];
+            if (t == self)
+                continue;
+            thread_suspend(t);
+            arm_thread_state64_t state;
+            mach_msg_type_number_t stateCount = ARM_THREAD_STATE64_COUNT;
+            if (thread_get_state(t, ARM_THREAD_STATE64, (thread_state_t)&state, &stateCount) != KERN_SUCCESS)
+                continue;
+            char name[64];
+            crash_thread_name(pthread_from_mach_thread_np(t), name, sizeof(name));
+            const uint64_t pc = __darwin_arm_thread_state64_get_pc(state);
+            uint32_t insn = 0;
+            const bool isBrk = crash_read(pc, &insn, sizeof(insn)) && (insn & 0xFFE0001Fu) == 0xD4200000u;
+            cemu_crash_write("  thread '"); cemu_crash_write(name); cemu_crash_write("'");
+            if (isBrk) { cemu_crash_write(" STOPPED AT brk #"); crash_dec((int64_t)((insn >> 5) & 0xFFFF)); }
+            cemu_crash_write("\n");
+            crash_frames(pc, __darwin_arm_thread_state64_get_lr(state), __darwin_arm_thread_state64_get_fp(state),
+                         __darwin_arm_thread_state64_get_sp(state), isBrk ? 16 : 6);
+        }
+#endif
+    }
+
+    std::atomic<bool> g_crashInProgress{false};
+
+    // Runs on the thread that received the signal. Not strictly async-signal-safe (dladdr, Mach calls), which is
+    // the trade for naming the faulting thread and its own frames; alarm() below ends the process if anything hangs.
+    void cemu_crash_signal_handler(int signum, siginfo_t* info, void* context) {
+        if (g_crashInProgress.exchange(true)) {
+            // Another thread is already writing the report (or this one faulted inside it): wait for the alarm
+            for (;;) sleep(1);
+        }
+        alarm(5);
+        cemu_crash_write("\n=== CEMU CRASH: signal ");
+        crash_dec(signum);
         cemu_crash_write(" ===\n");
 
-        void* frames[64];
-        int count = backtrace(frames, 64);
-        if (g_crashLogFd >= 0) backtrace_symbols_fd(frames, count, g_crashLogFd);
+        pthread_t self = pthread_self();
+        char name[64];
+        crash_thread_name(self, name, sizeof(name));
+        uint64_t tid = 0;
+        pthread_threadid_np(nullptr, &tid);
+        cemu_crash_write("received on thread '"); cemu_crash_write(name);
+        cemu_crash_write("' tid "); crash_dec((int64_t)tid);
+        cemu_crash_write(pthread_main_np() ? " (the main thread)\n" : " (not the main thread)\n");
+        if (info) {
+            cemu_crash_write("si_code "); crash_dec(info->si_code);
+            cemu_crash_write(" si_addr "); crash_hex((uint64_t)info->si_addr);
+            // si_pid is set when another process or thread sent the signal with kill()/pthread_kill(), not for a hardware trap
+            cemu_crash_write(" si_pid "); crash_dec(info->si_pid);
+            cemu_crash_write("\n");
+        }
+
+#if defined(__arm64__)
+        if (context) {
+            ucontext_t* uc = (ucontext_t*)context;
+            const auto& ss = uc->uc_mcontext->__ss;
+            const uint64_t pc = __darwin_arm_thread_state64_get_pc(ss);
+            uint32_t insn = 0;
+            if (crash_read(pc, &insn, sizeof(insn)) && (insn & 0xFFE0001Fu) == 0xD4200000u) {
+                cemu_crash_write("the interrupted instruction is brk #"); crash_dec((int64_t)((insn >> 5) & 0xFFFF)); cemu_crash_write("\n");
+            }
+            cemu_crash_write("this thread's own frames:\n");
+            crash_frames(pc, __darwin_arm_thread_state64_get_lr(ss), __darwin_arm_thread_state64_get_fp(ss),
+                         __darwin_arm_thread_state64_get_sp(ss), 40);
+        } else
+#endif
+        {
+            void* frames[64];
+            int count = backtrace(frames, 64);
+            if (g_crashLogFd >= 0) backtrace_symbols_fd(frames, count, g_crashLogFd);
+        }
+        crash_dump_other_threads();
+        cemu_crash_write("=== end of crash report ===\n");
 
         // Re-raise so iOS still writes its own report as well.
         signal(signum, SIG_DFL);
@@ -262,8 +411,14 @@ void cemu_bridge_install_early_crash_handler() {
     cemu_crash_open_log();
     cemu_crash_write("=== Cemu process started (early constructor) ===\n");
     int sigs[] = {SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGTRAP, SIGFPE};
-    for (int s : sigs)
-        signal(s, cemu_crash_signal_handler);
+    for (int s : sigs) {
+        struct sigaction action;
+        memset(&action, 0, sizeof(action));
+        action.sa_sigaction = cemu_crash_signal_handler;
+        action.sa_flags = SA_SIGINFO;
+        sigemptyset(&action.sa_mask);
+        sigaction(s, &action, nullptr);
+    }
     g_previousTerminateHandler = std::set_terminate(cemu_terminate_handler);
 }
 
@@ -278,6 +433,28 @@ void cemu_bridge_log_checkpoint(const char* message) {
     cemu_crash_write("\n");
     // Mirrored into the live ring so the on-screen launch log is one timeline.
     ios_live_log_push(message);
+}
+
+// A failed core assert (cemu_assert, assert_dbg, cemu_assert_error) used to raise SIGTRAP and end the app. On iOS
+// DEBUG_BREAK calls this instead (Common/precompiled.h): the assert is logged with the calling thread's name and
+// backtrace, and execution continues. Only the first few are logged in full, since an assert inside a loop can
+// fire thousands of times a second.
+extern "C" void cemu_ios_assert_hit(void) {
+    static std::atomic<uint32_t> hits{0};
+    const uint32_t n = ++hits;
+    if (n > 20 && (n % 1000) != 0)
+        return;
+    cemu_crash_open_log();
+    char name[64];
+    name[0] = '\0';
+    pthread_getname_np(pthread_self(), name, sizeof(name));
+    char line[160];
+    snprintf(line, sizeof(line), "CEMU ASSERT #%u on thread '%s' - continuing. Backtrace:", n, name[0] ? name : "(unnamed)");
+    cemu_bridge_log_checkpoint(line);
+    void* frames[24];
+    const int count = backtrace(frames, 24);
+    if (g_crashLogFd >= 0)
+        backtrace_symbols_fd(frames, count, g_crashLogFd);
 }
 
 // ---------------------------------------------------------------------------
@@ -1314,7 +1491,57 @@ void cemu_bridge_set_stretch_to_fill(bool enabled) {
     GetConfig().fullscreen_scaling = enabled ? (sint32)kStretch : (sint32)kKeepAspectRatio;
 }
 
+// A one-line message for the player about how this launch differed from what was asked for (Vulkan not
+// available, so Metal). Read and cleared by cemu_bridge_take_launch_notice().
+static std::mutex g_launchNoticeMutex;
+static std::string g_launchNotice;
+
+static void ios_set_launch_notice(const std::string& notice) {
+    std::lock_guard<std::mutex> lock(g_launchNoticeMutex);
+    g_launchNotice = notice;
+}
+
+const char* cemu_bridge_take_launch_notice(void) {
+    static thread_local std::string snapshot;
+    std::lock_guard<std::mutex> lock(g_launchNoticeMutex);
+    snapshot = g_launchNotice;
+    g_launchNotice.clear();
+    return snapshot.c_str();
+}
+
+// Vulkan (MoltenVK) that failed to start is remembered with the MoltenVK build it failed on. Settings > Graphics
+// clears it when the player picks Vulkan again, and switching MoltenVK builds makes it stop applying.
+static NSString* const kVulkanFailedBuildKey = @"muffin.render.vulkanFailedBuild";
+static NSString* const kGraphicsAPIKey = @"muffin.render.graphicsAPI";
+
+static void ios_migrate_renderer_setting_to_metal() {
+    [[NSUserDefaults standardUserDefaults] setInteger:(NSInteger)kMetal forKey:kGraphicsAPIKey];
+}
+
+// Called after a renderer was built. When Vulkan could not start and Metal was used instead, tells the player and
+// turns the saved Vulkan choice into Metal, so the same failure is not repeated on every launch.
+static void ios_report_renderer_fallback() {
+    char why[256];
+    if (!CemuTakeRendererFallback(why, sizeof(why)))
+        return;
+    NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setObject:[NSString stringWithUTF8String:g_activeMoltenVK.c_str()] forKey:kVulkanFailedBuildKey];
+    ios_migrate_renderer_setting_to_metal();
+    cemu_bridge_log_checkpoint((std::string("Renderer: Vulkan could not start (") + why + "). This launch uses Metal, and the saved renderer is now Metal.").c_str());
+    ios_set_launch_notice("Vulkan couldn't start on this iPad, so this game is using Metal. The renderer setting is back on Metal.");
+}
+
 void cemu_bridge_set_graphics_api(int api) {
+    if (api == (int)kVulkan) {
+        NSString* failedBuild = [[NSUserDefaults standardUserDefaults] stringForKey:kVulkanFailedBuildKey];
+        if (failedBuild.length > 0 && failedBuild.UTF8String && g_activeMoltenVK == failedBuild.UTF8String) {
+            cemu_bridge_log_checkpoint(("Renderer: Vulkan failed to start on this device with MoltenVK " + g_activeMoltenVK
+                + " earlier, so the saved Vulkan choice is replaced with Metal").c_str());
+            ios_migrate_renderer_setting_to_metal();
+            ios_set_launch_notice("Vulkan didn't start on this iPad last time, so MuffinEMU is using Metal. You can try Vulkan again in Settings > Graphics.");
+            api = (int)kMetal;
+        }
+    }
     GetConfig().graphic_api = (api == (int)kVulkan) ? kVulkan : kMetal;
 }
 
@@ -1820,7 +2047,7 @@ void cemu_bridge_initialize(const char* mlcPath) {
         {
             setenv("MUFFIN_MOLTENVK_PATH", path.fileSystemRepresentation, 1);
             g_activeMoltenVK = legacy ? "1.2.8" : "1.4.3";
-            cemu_bridge_log_checkpoint(("MoltenVK: using " + g_activeMoltenVK + " for the Vulkan renderer this launch").c_str());
+            cemu_bridge_log_checkpoint(("MoltenVK: " + g_activeMoltenVK + " is the build for this launch (loaded only if the Vulkan renderer is selected)").c_str());
         }
         else
         {
@@ -2004,6 +2231,22 @@ void cemu_bridge_log_line(const char* message) {
 }
 
 static CemuBridgeStatus ios_boot_prepared_title(int prepared);
+static void ios_report_renderer_fallback();
+
+// A C++ exception leaving this function would unwind through Swift frames and end the app, so anything the
+// prepare step throws (a filesystem error, a failed allocation, a bad number in an .xml file) becomes status 13.
+static int IOSTitleLaunch_PrepareForegroundTitle_Guarded(const char* path) {
+    try
+    {
+        return IOSTitleLaunch_PrepareForegroundTitle(path);
+    }
+    catch (...)
+    {
+        cemu_bridge_log_checkpoint(("boot_title: preparing the title threw: " + cemu_describe_current_exception()).c_str());
+        CafeSystem::AbortPreparedTitle();
+        return 13;
+    }
+}
 
 CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
     if (!path || path[0] == '\0') {
@@ -2029,7 +2272,7 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
     }
 
     cemu_bridge_log_checkpoint("boot_title: about to prepare title");
-    const int prepared = IOSTitleLaunch_PrepareForegroundTitle(path);
+    int prepared = IOSTitleLaunch_PrepareForegroundTitle_Guarded(path);
     cemu_bridge_log_checkpoint("boot_title: prepare returned");
     return ios_boot_prepared_title(prepared);
 }
@@ -2044,7 +2287,16 @@ CemuBridgeStatus cemu_bridge_boot_title_id(uint64_t titleId) {
         return CEMU_BRIDGE_CORE_NOT_BUILT;
     }
     cemu_bridge_log_checkpoint("boot_title_id: about to prepare title");
-    const int prepared = IOSTitleLaunch_PrepareForegroundTitleById(titleId);
+    int prepared = 13;
+    try
+    {
+        prepared = IOSTitleLaunch_PrepareForegroundTitleById(titleId);
+    }
+    catch (...)
+    {
+        cemu_bridge_log_checkpoint(("boot_title_id: preparing the title threw: " + cemu_describe_current_exception()).c_str());
+        CafeSystem::AbortPreparedTitle();
+    }
     cemu_bridge_log_checkpoint("boot_title_id: prepare returned");
     return ios_boot_prepared_title(prepared);
 }
@@ -2087,6 +2339,9 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
         case 11:
             setStatus("That system title isn't installed. Import it in Settings > Wii U Menu.");
             return CEMU_BRIDGE_UNABLE_TO_MOUNT;
+        case 13:
+            setStatus("MuffinEMU hit an internal error while opening this game. The files may be damaged. Details are in the crash log.");
+            return CEMU_BRIDGE_UNABLE_TO_MOUNT;
         default:
             setStatus("Not a Wii U title this build can launch.");
             return CEMU_BRIDGE_UNSUPPORTED;
@@ -2113,10 +2368,15 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
     {
         std::string message = "boot_title: CemuRun() threw: " + cemu_describe_current_exception();
         cemu_bridge_log_checkpoint(message.c_str());
-        setStatus("The title failed to start (see the crash log).");
+        // The title was prepared (mounted, memory mapped) before the renderer failed. Left like that, the next launch
+        // starts on top of it and trips over it.
+        CafeSystem::AbortPreparedTitle();
+        g_renderer.reset();
+        setStatus("The title failed to start: the graphics renderer could not be created. Try the other renderer in Settings > Graphics. Details are in the crash log.");
         return CEMU_BRIDGE_UNABLE_TO_MOUNT;
     }
     cemu_bridge_log_checkpoint("boot_title: CemuRun() returned");
+    ios_report_renderer_fallback();
     g_titleRunning.store(true);
     ios_timebase_ladder_start();
     setStatus("Title launched.");
@@ -2640,6 +2900,7 @@ bool IOSBridge_RecreateRenderSurface() {
             ios_reset_video_stall_state();
             ios_apply_render_profile();
             CemuPrepareRenderer();
+            ios_report_renderer_fallback();
         }
         catch (...)
         {
