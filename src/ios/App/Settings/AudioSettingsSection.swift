@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The channel layouts from CemuConfig.h's `enum AudioChannels` (kMono = 0, kStereo = 1,
 /// kSurround = 2).
@@ -60,6 +61,11 @@ struct AudioSettingsSection: View {
 
     @AppStorage(AudioSettings.microphoneEnabledKey) private var microphoneEnabled = AudioSettings.defaultMicrophoneEnabled
     @AppStorage(AudioSettings.inputVolumeKey) private var inputVolume = AudioSettings.defaultInputVolume
+    @State private var showMicDenied = false
+
+    private var deviceName: String {
+        UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+    }
 
     var body: some View {
         Section {
@@ -70,7 +76,7 @@ struct AudioSettingsSection: View {
             SettingsSectionHeader("Audio", icon: "speaker.wave.2", accent: .io)
         } footer: {
             InfoButton.footer(
-                "TV and GamePad audio have their own volume and channel layout. GamePad audio plays through this device's speaker or headphones. Microphone lets games use this device's mic as the GamePad mic.",
+                "TV and GamePad audio have their own volume and channel layout. GamePad audio plays through this device's speaker or headphones. Use the microphone to give games your real voice and sounds through the GamePad mic; otherwise the in-game Blow button covers games that ask you to blow.",
                 title: "Audio",
                 text: fullText)
         }
@@ -134,14 +140,44 @@ struct AudioSettingsSection: View {
     }
 
     // No channel picker for input: input_channels has no effect even in desktop Cemu.
+    //
+    // Off (default): games still see a GamePad mic, but it only carries what the in-game Blow
+    // button generates, so iOS never asks for permission. On: the real microphone is captured
+    // while a game has the mic open, and the Blow button is hidden.
     @ViewBuilder private var microphoneGroup: some View {
         Toggle(isOn: $microphoneEnabled) {
-            Text("Microphone")
+            Text("Use \(deviceName) Microphone")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.pixelBlue)
         .onChange(of: microphoneEnabled) { newValue in
-            cemu_bridge_set_microphone_enabled(newValue)
+            guard newValue else {
+                cemu_bridge_set_microphone_enabled(false)
+                return
+            }
+            // Asks the first time; a stored denial comes back as false without a prompt.
+            MicrophoneAccess.request { granted in
+                if granted {
+                    cemu_bridge_set_microphone_enabled(true)
+                } else {
+                    microphoneEnabled = false
+                    cemu_bridge_set_microphone_enabled(false)
+                    showMicDenied = true
+                }
+            }
+        }
+        .onAppear {
+            // Permission can be revoked in iOS Settings while this switch stays on.
+            if microphoneEnabled && MicrophoneAccess.status == .denied {
+                microphoneEnabled = false
+                cemu_bridge_set_microphone_enabled(false)
+            }
+        }
+        .alert("Microphone access is off", isPresented: $showMicDenied) {
+            Button("Open Settings") { MicrophoneAccess.openSystemSettings() }
+            Button("Not Now", role: .cancel) {}
+        } message: {
+            Text("MuffinEMU can't use your \(deviceName)'s microphone until you allow it in iOS Settings. Until then, games use the Blow button in the top bar instead.")
         }
 
         if microphoneEnabled {
@@ -177,6 +213,6 @@ struct AudioSettingsSection: View {
     }
 
     private var fullText: String {
-        "TV and GamePad audio are separate tracks with their own on/off, volume and channel layout.\n\nChannels: Mono mixes everything to one channel, Stereo splits left and right (default), Surround asks the game for more channels; most games only use stereo.\n\nGamePad audio plays whatever the game sends to the GamePad speaker. Many games send nothing different from the TV mix.\n\nMicrophone lets a game that asks for the GamePad mic use this device's microphone. When it's off, the game sees no mic and iOS never asks for permission. Microphone Volume applies the next time a game opens the mic."
+        "TV and GamePad audio are separate tracks with their own on/off, volume and channel layout.\n\nChannels: Mono mixes everything to one channel, Stereo splits left and right (default), Surround asks the game for more channels; most games only use stereo.\n\nGamePad audio plays whatever the game sends to the GamePad speaker. Many games send nothing different from the TV mix.\n\nUse Microphone feeds your device's real microphone to games that ask for the GamePad mic, while the game has the mic open. iOS asks for permission the first time you turn it on; if you say no, it switches back off. While it's on, the in-game Blow button is hidden. When it's off, games still see a GamePad mic, but it only hears the Blow button (a simulated puff of air) and iOS never asks for permission. Microphone Volume (50 is normal, 100 is twice as loud) applies the next time a game opens the mic."
     }
 }
