@@ -129,10 +129,16 @@ enum DlcUpdateImport {
             throw ImportError.wuaNotYetSupported
         }
 
+        // A parent folder holding the game, update and DLC as separate encrypted folders
+        // ("Game (USA)/{Game, Update, DLC}") is fine to pick: the subfolder that matches
+        // `kind` is the one to install.
+        let kindForFolder: GameManager.NUSFolderKind = kind == .dlc ? .dlc : .update
+        let installSource = GameManager.nusSubfolder(in: source, kind: kindForFolder) ?? source
+
         // Copying and inspecting can take a while on a large dump, so run it off the main actor.
         return try await Task.detached {
             try copyInspectAndInstall(
-                source: source, kind: kind, library: library, manualMatch: manualMatch, mlcRoot: mlcRoot
+                source: installSource, kind: kind, library: library, manualMatch: manualMatch, mlcRoot: mlcRoot
             )
         }.value
     }

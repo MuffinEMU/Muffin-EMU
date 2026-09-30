@@ -20,8 +20,32 @@
 #include "Cafe/TitleList/TitleInfo.h"
 #include "Cafe/TitleList/TitleList.h"
 #include "Cafe/TitleList/TitleId.h"
+#include "Cemu/ncrypto/ncrypto.h"
+#include "Common/FileStream.h"
 
 #include <cstdio>
+#include <memory>
+#include <vector>
+
+// Title ID straight out of a title.tmd, without decrypting anything. An encrypted game folder
+// (title.tmd, title.tik and .app files) can be classified by it - high word 00050000 base,
+// 0005000E update, 0005000C DLC - even when its ticket or keys are missing, which
+// IOSDlcUpdateImport_DeriveTitleId (it has to mount the title) cannot do.
+bool IOSDlcUpdateImport_ReadTmdTitleId(const char* tmdPath, uint64* titleIdOut)
+{
+	if (!tmdPath || tmdPath[0] == '\0' || !titleIdOut)
+		return false;
+	std::unique_ptr<FileStream> tmdFile(FileStream::openFile2(fs::path(tmdPath)));
+	if (!tmdFile)
+		return false;
+	std::vector<uint8> tmdData;
+	tmdFile->extract(tmdData);
+	NCrypto::TMDParser parser;
+	if (!parser.parse(tmdData.data(), tmdData.size()))
+		return false;
+	*titleIdOut = parser.getTitleId();
+	return true;
+}
 
 bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64* titleIdOut)
 {
