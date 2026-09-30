@@ -11,6 +11,16 @@ struct CemuApp: App {
         // every device log starts with it, so reports from different devices compare.
         DeviceCapabilities.bootstrap()
 
+        // Which build is this? The release commit and core are stamped into Info.plist when the IPA
+        // is packaged (ci/package-ipas.sh), outside the core's own fingerprint, so a core reused
+        // across releases still names the release it shipped in. Device logs are identified by it.
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info["CFBundleVersion"] as? String ?? "?"
+        let release = info["MuffinReleaseCommit"] as? String ?? "unstamped"
+        let core = info["MuffinCoreFingerprint"] as? String ?? "unstamped"
+        cemu_bridge_log_checkpoint("MuffinEMU \(version) (build \(build)) release \(release), core \(core)")
+
         // Earliest Swift-side checkpoint; if it is missing from the crash log, the
         // crash happened in native static initialisation.
         cemu_bridge_log_checkpoint("CemuApp.init() reached")
