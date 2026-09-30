@@ -84,6 +84,7 @@ VKFUNC_INSTANCE(vkGetPhysicalDeviceMemoryProperties);
 VKFUNC_INSTANCE(vkGetPhysicalDeviceProperties);
 VKFUNC_INSTANCE(vkGetPhysicalDeviceProperties2);
 VKFUNC_INSTANCE(vkGetPhysicalDeviceFeatures2);
+VKFUNC_INSTANCE(vkGetPhysicalDeviceMemoryProperties2);
 VKFUNC_INSTANCE(vkGetPhysicalDeviceFormatProperties);
 
 // semaphore
