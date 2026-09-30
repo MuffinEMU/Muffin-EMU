@@ -49,15 +49,15 @@ uint8* KeyCache_GetAES128(sint32 index)
 
 // A hash of how many keys there are and what they are. Anything that remembers a result that depended on the keys
 // (TitleInfo's failed-open memo) stores this next to it, so a different keys.txt can never be answered from the past.
-usint64 KeyCache_GetFingerprint()
+uint64 KeyCache_GetFingerprint()
 {
 	const std::vector<KeyCacheEntry>* list = sKeyList.load(std::memory_order_acquire);
-	usint64 h = 1469598103934665603ull;
-	auto mix = [&](usint64 v) { h = (h ^ v) * 1099511628211ull; };
+	uint64 h = 1469598103934665603ull;
+	auto mix = [&](uint64 v) { h = (h ^ v) * 1099511628211ull; };
 	mix(list->size());
 	for (const KeyCacheEntry& entry : *list)
 	{
-		usint64 a, b;
+		uint64 a, b;
 		memcpy(&a, entry.aes128key, 8);
 		memcpy(&b, entry.aes128key + 8, 8);
 		mix(a);
@@ -71,7 +71,7 @@ usint64 KeyCache_GetFingerprint()
 // right before a launch) used to be ignored until the next app start.
 static bool sKeyCachePrepared = false;
 static fs::path sLoadedKeysPath;
-static usint64 sLoadedKeysSize = 0;
+static uint64 sLoadedKeysSize = 0;
 static sint64 sLoadedKeysTime = 0;
 
 void KeyCache_ResetForNewPaths()
@@ -80,7 +80,7 @@ void KeyCache_ResetForNewPaths()
 	sKeyCachePrepared = false;
 }
 
-static bool KeyCache_StatKeysFile(const fs::path& keysPath, usint64& sizeOut, sint64& timeOut)
+static bool KeyCache_StatKeysFile(const fs::path& keysPath, uint64& sizeOut, sint64& timeOut)
 {
 	std::error_code ec;
 	const auto size = fs::file_size(keysPath, ec);
@@ -89,7 +89,7 @@ static bool KeyCache_StatKeysFile(const fs::path& keysPath, usint64& sizeOut, si
 	const auto time = fs::last_write_time(keysPath, ec);
 	if (ec)
 		return false;
-	sizeOut = (usint64)size;
+	sizeOut = (uint64)size;
 	timeOut = (sint64)time.time_since_epoch().count();
 	return true;
 }
@@ -103,7 +103,7 @@ void KeyCache_Prepare()
 	if (ActiveSettings::GetUserDataPath().empty())
 		return;
 	auto keysPath = ActiveSettings::GetUserDataPath("keys.txt");
-	usint64 fileSize = 0;
+	uint64 fileSize = 0;
 	sint64 fileTime = 0;
 	const bool haveFile = KeyCache_StatKeysFile(keysPath, fileSize, fileTime);
 	if (sKeyCachePrepared && keysPath == sLoadedKeysPath && haveFile && fileSize == sLoadedKeysSize && fileTime == sLoadedKeysTime)
