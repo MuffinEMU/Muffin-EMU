@@ -3,36 +3,51 @@ import SwiftUI
 struct ControllerSkinLibrary {
     static let allSkins: [WiiUControllerSkin] = [
         .standard,
-        .wiiUOriginal,
-        .gameCube,
-        .nintendo64,
-        .superNintendo,
-        .nes,
-        .switchPro,
-        .playStation,
-        .xbox,
-        .steamDeck,
+        .sky,
+        .indigo,
+        .primary,
+        .lilacGrey,
+        .redAndCream,
+        .charcoal,
+        .blueAndRose,
+        .green,
+        .slate,
         .arcadeCabinet,
-        .segaGenesis,
+        .blackAndGold,
         .minimal,
         .glass,
         .neon,
         .darkMode,
         .lightMode,
         .custom,
-        .marioTheme,
-        .zeldaTheme,
+        .sunsetOrange,
+        .forestGold,
     ]
 
     static func getSkin(by name: String) -> WiiUControllerSkin? {
-        // "Custom" was renamed "Violet"; keep resolving the old stored name.
-        let current = name == "Custom" ? "Violet" : name
+        // Renamed skins keep resolving the name a player stored earlier.
+        let renamed: [String: String] = [
+            "Custom": "Violet",
+            "GameCube": "Indigo",
+            "Nintendo 64": "Primary",
+            "Super Nintendo": "Lilac Grey",
+            "NES": "Red and Cream",
+            "Switch Pro": "Charcoal",
+            "Wii U Original": "Sky",
+            "Mario Theme": "Sunset Orange",
+            "Zelda Theme": "Forest Gold",
+            "PlayStation": "Blue and Rose",
+            "Xbox": "Green",
+            "Steam Deck": "Slate",
+            "Sega Genesis": "Black and Gold",
+        ]
+        let current = renamed[name] ?? name
         return allSkins.first { $0.name == current }
     }
 }
 
 extension WiiUControllerSkin {
-    // MARK: - Nintendo Official Themes
+    // MARK: - Core
 
     static let standard = WiiUControllerSkin(
         name: "Standard",
@@ -49,138 +64,138 @@ extension WiiUControllerSkin {
         cornerRadius: 24
     )
 
-    static let wiiUOriginal = WiiUControllerSkin(
-        name: "Wii U Original",
-        dpadColor: ControllerSkinPalette.WiiUOriginal.dpad,
+    static let sky = WiiUControllerSkin(
+        name: "Sky",
+        dpadColor: ControllerSkinPalette.Sky.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.WiiUOriginal.a,
-            "B": ControllerSkinPalette.WiiUOriginal.b,
-            "X": ControllerSkinPalette.WiiUOriginal.x,
-            "Y": ControllerSkinPalette.WiiUOriginal.y
+            "A": ControllerSkinPalette.Sky.a,
+            "B": ControllerSkinPalette.Sky.b,
+            "X": ControllerSkinPalette.Sky.x,
+            "Y": ControllerSkinPalette.Sky.y
         ],
-        backgroundColor: ControllerSkinPalette.WiiUOriginal.background,
+        backgroundColor: ControllerSkinPalette.Sky.background,
         borderColor: Color.white.opacity(0.12),
         shadowOpacity: 0.45,
         cornerRadius: 22
     )
 
-    static let gameCube = WiiUControllerSkin(
-        name: "GameCube",
-        dpadColor: ControllerSkinPalette.GameCube.dpad,
+    static let indigo = WiiUControllerSkin(
+        name: "Indigo",
+        dpadColor: ControllerSkinPalette.Indigo.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.GameCube.a,
-            "B": ControllerSkinPalette.GameCube.b,
-            "X": ControllerSkinPalette.GameCube.x,
-            "Y": ControllerSkinPalette.GameCube.y
+            "A": ControllerSkinPalette.Indigo.a,
+            "B": ControllerSkinPalette.Indigo.b,
+            "X": ControllerSkinPalette.Indigo.x,
+            "Y": ControllerSkinPalette.Indigo.y
         ],
-        backgroundColor: ControllerSkinPalette.GameCube.background,
+        backgroundColor: ControllerSkinPalette.Indigo.background,
         borderColor: Color.white.opacity(0.1),
         shadowOpacity: 0.5,
         cornerRadius: 20
     )
 
-    static let nintendo64 = WiiUControllerSkin(
-        name: "Nintendo 64",
-        dpadColor: ControllerSkinPalette.Nintendo64.dpad,
+    static let primary = WiiUControllerSkin(
+        name: "Primary",
+        dpadColor: ControllerSkinPalette.Primary.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.Nintendo64.a,
-            "B": ControllerSkinPalette.Nintendo64.b,
-            "X": ControllerSkinPalette.Nintendo64.x,
-            "Y": ControllerSkinPalette.Nintendo64.y
+            "A": ControllerSkinPalette.Primary.a,
+            "B": ControllerSkinPalette.Primary.b,
+            "X": ControllerSkinPalette.Primary.x,
+            "Y": ControllerSkinPalette.Primary.y
         ],
-        backgroundColor: ControllerSkinPalette.Nintendo64.background,
+        backgroundColor: ControllerSkinPalette.Primary.background,
         borderColor: Color.white.opacity(0.15),
         shadowOpacity: 0.4,
         cornerRadius: 18
     )
 
-    static let superNintendo = WiiUControllerSkin(
-        name: "Super Nintendo",
-        dpadColor: ControllerSkinPalette.SuperNintendo.dpad,
+    static let lilacGrey = WiiUControllerSkin(
+        name: "Lilac Grey",
+        dpadColor: ControllerSkinPalette.LilacGrey.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.SuperNintendo.a,
-            "B": ControllerSkinPalette.SuperNintendo.b,
-            "X": ControllerSkinPalette.SuperNintendo.x,
-            "Y": ControllerSkinPalette.SuperNintendo.y
+            "A": ControllerSkinPalette.LilacGrey.a,
+            "B": ControllerSkinPalette.LilacGrey.b,
+            "X": ControllerSkinPalette.LilacGrey.x,
+            "Y": ControllerSkinPalette.LilacGrey.y
         ],
-        backgroundColor: ControllerSkinPalette.SuperNintendo.background,
+        backgroundColor: ControllerSkinPalette.LilacGrey.background,
         borderColor: Color.white.opacity(0.1),
         shadowOpacity: 0.35,
         cornerRadius: 16
     )
 
-    static let nes = WiiUControllerSkin(
-        name: "NES",
-        dpadColor: ControllerSkinPalette.NES.dpad,
+    static let redAndCream = WiiUControllerSkin(
+        name: "Red and Cream",
+        dpadColor: ControllerSkinPalette.RedAndCream.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.NES.a,
-            "B": ControllerSkinPalette.NES.b,
-            "X": ControllerSkinPalette.NES.x,
-            "Y": ControllerSkinPalette.NES.y
+            "A": ControllerSkinPalette.RedAndCream.a,
+            "B": ControllerSkinPalette.RedAndCream.b,
+            "X": ControllerSkinPalette.RedAndCream.x,
+            "Y": ControllerSkinPalette.RedAndCream.y
         ],
-        backgroundColor: ControllerSkinPalette.NES.background,
+        backgroundColor: ControllerSkinPalette.RedAndCream.background,
         borderColor: Color.white.opacity(0.08),
         shadowOpacity: 0.3,
         cornerRadius: 12
     )
 
-    static let switchPro = WiiUControllerSkin(
-        name: "Switch Pro",
-        dpadColor: ControllerSkinPalette.SwitchPro.dpad,
+    static let charcoal = WiiUControllerSkin(
+        name: "Charcoal",
+        dpadColor: ControllerSkinPalette.Charcoal.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.SwitchPro.a,
-            "B": ControllerSkinPalette.SwitchPro.b,
-            "X": ControllerSkinPalette.SwitchPro.x,
-            "Y": ControllerSkinPalette.SwitchPro.y
+            "A": ControllerSkinPalette.Charcoal.a,
+            "B": ControllerSkinPalette.Charcoal.b,
+            "X": ControllerSkinPalette.Charcoal.x,
+            "Y": ControllerSkinPalette.Charcoal.y
         ],
-        backgroundColor: ControllerSkinPalette.SwitchPro.background,
+        backgroundColor: ControllerSkinPalette.Charcoal.background,
         borderColor: Color.white.opacity(0.12),
         shadowOpacity: 0.5,
         cornerRadius: 20
     )
 
-    // MARK: - Third-Party Themes
+    // MARK: - Colour sets
 
-    static let playStation = WiiUControllerSkin(
-        name: "PlayStation",
-        dpadColor: ControllerSkinPalette.PlayStation.dpad,
+    static let blueAndRose = WiiUControllerSkin(
+        name: "Blue and Rose",
+        dpadColor: ControllerSkinPalette.BlueAndRose.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.PlayStation.a,
-            "B": ControllerSkinPalette.PlayStation.b,
-            "X": ControllerSkinPalette.PlayStation.x,
-            "Y": ControllerSkinPalette.PlayStation.y
+            "A": ControllerSkinPalette.BlueAndRose.a,
+            "B": ControllerSkinPalette.BlueAndRose.b,
+            "X": ControllerSkinPalette.BlueAndRose.x,
+            "Y": ControllerSkinPalette.BlueAndRose.y
         ],
-        backgroundColor: ControllerSkinPalette.PlayStation.background,
+        backgroundColor: ControllerSkinPalette.BlueAndRose.background,
         borderColor: Color.white.opacity(0.1),
         shadowOpacity: 0.55,
         cornerRadius: 22
     )
 
-    static let xbox = WiiUControllerSkin(
-        name: "Xbox",
-        dpadColor: ControllerSkinPalette.Xbox.dpad,
+    static let green = WiiUControllerSkin(
+        name: "Green",
+        dpadColor: ControllerSkinPalette.Green.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.Xbox.a,
-            "B": ControllerSkinPalette.Xbox.b,
-            "X": ControllerSkinPalette.Xbox.x,
-            "Y": ControllerSkinPalette.Xbox.y
+            "A": ControllerSkinPalette.Green.a,
+            "B": ControllerSkinPalette.Green.b,
+            "X": ControllerSkinPalette.Green.x,
+            "Y": ControllerSkinPalette.Green.y
         ],
-        backgroundColor: ControllerSkinPalette.Xbox.background,
-        borderColor: ControllerSkinPalette.Xbox.border.opacity(0.3),
+        backgroundColor: ControllerSkinPalette.Green.background,
+        borderColor: ControllerSkinPalette.Green.border.opacity(0.3),
         shadowOpacity: 0.5,
         cornerRadius: 18
     )
 
-    static let steamDeck = WiiUControllerSkin(
-        name: "Steam Deck",
-        dpadColor: ControllerSkinPalette.SteamDeck.dpad,
+    static let slate = WiiUControllerSkin(
+        name: "Slate",
+        dpadColor: ControllerSkinPalette.Slate.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.SteamDeck.a,
-            "B": ControllerSkinPalette.SteamDeck.b,
-            "X": ControllerSkinPalette.SteamDeck.x,
-            "Y": ControllerSkinPalette.SteamDeck.y
+            "A": ControllerSkinPalette.Slate.a,
+            "B": ControllerSkinPalette.Slate.b,
+            "X": ControllerSkinPalette.Slate.x,
+            "Y": ControllerSkinPalette.Slate.y
         ],
-        backgroundColor: ControllerSkinPalette.SteamDeck.background,
+        backgroundColor: ControllerSkinPalette.Slate.background,
         borderColor: Color.white.opacity(0.15),
         shadowOpacity: 0.45,
         cornerRadius: 20
@@ -203,16 +218,16 @@ extension WiiUControllerSkin {
         cornerRadius: 12
     )
 
-    static let segaGenesis = WiiUControllerSkin(
-        name: "Sega Genesis",
-        dpadColor: ControllerSkinPalette.SegaGenesis.dpad,
+    static let blackAndGold = WiiUControllerSkin(
+        name: "Black and Gold",
+        dpadColor: ControllerSkinPalette.BlackAndGold.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.SegaGenesis.a,
-            "B": ControllerSkinPalette.SegaGenesis.b,
-            "X": ControllerSkinPalette.SegaGenesis.x,
-            "Y": ControllerSkinPalette.SegaGenesis.y
+            "A": ControllerSkinPalette.BlackAndGold.a,
+            "B": ControllerSkinPalette.BlackAndGold.b,
+            "X": ControllerSkinPalette.BlackAndGold.x,
+            "Y": ControllerSkinPalette.BlackAndGold.y
         ],
-        backgroundColor: ControllerSkinPalette.SegaGenesis.background,
+        backgroundColor: ControllerSkinPalette.BlackAndGold.background,
         borderColor: Color.white.opacity(0.1),
         shadowOpacity: 0.4,
         cornerRadius: 14
@@ -310,34 +325,34 @@ extension WiiUControllerSkin {
         cornerRadius: 20
     )
 
-    // MARK: - Game-Themed
+    // MARK: - Colour themes
 
-    static let marioTheme = WiiUControllerSkin(
-        name: "Mario Theme",
-        dpadColor: ControllerSkinPalette.MarioTheme.dpad,
+    static let sunsetOrange = WiiUControllerSkin(
+        name: "Sunset Orange",
+        dpadColor: ControllerSkinPalette.SunsetOrange.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.MarioTheme.a,
-            "B": ControllerSkinPalette.MarioTheme.b,
-            "X": ControllerSkinPalette.MarioTheme.x,
-            "Y": ControllerSkinPalette.MarioTheme.y
+            "A": ControllerSkinPalette.SunsetOrange.a,
+            "B": ControllerSkinPalette.SunsetOrange.b,
+            "X": ControllerSkinPalette.SunsetOrange.x,
+            "Y": ControllerSkinPalette.SunsetOrange.y
         ],
-        backgroundColor: ControllerSkinPalette.MarioTheme.background.opacity(0.1),
-        borderColor: ControllerSkinPalette.MarioTheme.dpad.opacity(0.3),
+        backgroundColor: ControllerSkinPalette.SunsetOrange.background.opacity(0.1),
+        borderColor: ControllerSkinPalette.SunsetOrange.dpad.opacity(0.3),
         shadowOpacity: 0.4,
         cornerRadius: 20
     )
 
-    static let zeldaTheme = WiiUControllerSkin(
-        name: "Zelda Theme",
-        dpadColor: ControllerSkinPalette.ZeldaTheme.dpad,
+    static let forestGold = WiiUControllerSkin(
+        name: "Forest Gold",
+        dpadColor: ControllerSkinPalette.ForestGold.dpad,
         buttonColors: [
-            "A": ControllerSkinPalette.ZeldaTheme.a,
-            "B": ControllerSkinPalette.ZeldaTheme.b,
-            "X": ControllerSkinPalette.ZeldaTheme.x,
-            "Y": ControllerSkinPalette.ZeldaTheme.y
+            "A": ControllerSkinPalette.ForestGold.a,
+            "B": ControllerSkinPalette.ForestGold.b,
+            "X": ControllerSkinPalette.ForestGold.x,
+            "Y": ControllerSkinPalette.ForestGold.y
         ],
-        backgroundColor: ControllerSkinPalette.ZeldaTheme.background,
-        borderColor: ControllerSkinPalette.ZeldaTheme.dpad.opacity(0.25),
+        backgroundColor: ControllerSkinPalette.ForestGold.background,
+        borderColor: ControllerSkinPalette.ForestGold.dpad.opacity(0.25),
         shadowOpacity: 0.45,
         cornerRadius: 20
     )

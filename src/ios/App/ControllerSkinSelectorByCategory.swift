@@ -2,17 +2,17 @@ import SwiftUI
 
 enum ControllerCategory: String, CaseIterable {
     case wiiU = "Wii U"
-    case gameCube = "GameCube"
-    case nintendo64 = "Nintendo 64"
-    case snes = "SNES"
-    case nes = "NES"
-    case switchPro = "Switch Pro"
-    case playStation = "PlayStation"
-    case xbox = "Xbox"
-    case steamDeck = "Steam Deck"
+    case indigo = "Indigo"
+    case primary = "Primary"
+    case lilacGrey = "Lilac Grey"
+    case redAndCream = "Red and Cream"
+    case charcoal = "Charcoal"
+    case blueAndRose = "Blue and Rose"
+    case green = "Green"
+    case slate = "Slate"
     case arcade = "Arcade"
     case modern = "Modern"
-    case gameThemed = "Game Themes"
+    case gameThemed = "Colour Themes"
 
     var displayName: String {
         self.rawValue
@@ -21,29 +21,29 @@ enum ControllerCategory: String, CaseIterable {
     var skins: [WiiUControllerSkin] {
         switch self {
         case .wiiU:
-            return [.standard, .wiiUOriginal, .custom]
-        case .gameCube:
-            return [.gameCube]
-        case .nintendo64:
-            return [.nintendo64]
-        case .snes:
-            return [.superNintendo]
-        case .nes:
-            return [.nes]
-        case .switchPro:
-            return [.switchPro]
-        case .playStation:
-            return [.playStation]
-        case .xbox:
-            return [.xbox]
-        case .steamDeck:
-            return [.steamDeck]
+            return [.standard, .sky, .custom]
+        case .indigo:
+            return [.indigo]
+        case .primary:
+            return [.primary]
+        case .lilacGrey:
+            return [.lilacGrey]
+        case .redAndCream:
+            return [.redAndCream]
+        case .charcoal:
+            return [.charcoal]
+        case .blueAndRose:
+            return [.blueAndRose]
+        case .green:
+            return [.green]
+        case .slate:
+            return [.slate]
         case .arcade:
-            return [.arcadeCabinet, .segaGenesis]
+            return [.arcadeCabinet, .blackAndGold]
         case .modern:
             return [.minimal, .glass, .neon, .darkMode, .lightMode]
         case .gameThemed:
-            return [.marioTheme, .zeldaTheme]
+            return [.sunsetOrange, .forestGold]
         }
     }
 }
