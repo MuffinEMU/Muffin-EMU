@@ -889,6 +889,7 @@ namespace {
 
         std::thread([] {
             constexpr double kStallSeconds = 4.0;
+            constexpr double kBootStallSeconds = 45.0;
             uint32 lastFrames = 0;
             auto lastChange = std::chrono::steady_clock::now();
             auto lastReport = lastChange;
@@ -928,8 +929,10 @@ namespace {
                     continue;
                 }
 
+                // Loading can go a long time without finishing a frame (3D World was flagged at frame 0),
+                // so a title that has not drawn its first frames gets a much longer grace period.
                 const double stalled = std::chrono::duration<double>(now - lastChange).count();
-                if (stalled < kStallSeconds)
+                if (stalled < (frames < 30 ? kBootStallSeconds : kStallSeconds))
                     continue;
                 if (!g_videoStalled.exchange(true))
                 {
