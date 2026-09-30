@@ -21,7 +21,7 @@ struct GameMetadata: Codable, Identifiable {
     // matching then has no choice but to fall back to manual selection for. See
     // DlcUpdateImport.swift.
     var titleId: UInt64?
-    /// Root of the dumped title directory (code/content/meta, or a flat NUS dump) -
+    /// Root of the dumped title directory (code/content/meta, or an encrypted game folder with title.tmd, title.tik and .app files) -
     /// nil for a single-file dump (.wux/.wud/.wua), whose meta/ lives inside the
     /// container where only the engine can read it. Lets the background enrichment
     /// pass in enrichMissingCoverArt() find meta/iconTex.tga without re-deriving a
@@ -672,7 +672,7 @@ class GameManager: ObservableObject {
                 // means the same thing to the person holding the iPad.
                 return "This isn't a valid Wii U game file."
             case .notAWiiUDump(let name):
-                return "\"\(name)\" isn't a Wii U game dump. A dump folder needs code, content and meta folders inside it, or a title.tmd next to its .app files (a decrypted NUS dump)."
+                return "\"\(name)\" isn't a Wii U game dump. A dump folder needs code, content and meta folders inside it, or an encrypted game folder: title.tmd and title.tik next to its .app files."
             case .accessDenied:
                 return "Couldn't access that file."
             case .copyFailed(let error):
@@ -824,7 +824,7 @@ class GameManager: ObservableObject {
             // against source, whereas copying first would mean recursively duplicating
             // whatever the user tapped - a 30 GB Downloads folder - before earning the
             // right to say no. Check, then copy. Accepts either the code/content/meta
-            // layout or a decrypted NUS dump (title.tmd plus its .app files).
+            // layout or an encrypted game folder (title.tmd, title.tik and .app files).
             guard Self.looksLikeWiiUDump(source) || Self.looksLikeNUSDump(source) else {
                 throw ROMImportError.notAWiiUDump(source.lastPathComponent)
             }

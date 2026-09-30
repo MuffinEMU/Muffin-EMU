@@ -46,7 +46,7 @@ bool cemu_bridge_core_available(void);
 void cemu_bridge_initialize(const char* mlcPath);
 
 /// Boot whatever the user picked: an encrypted disc image (.wux/.wud/.iso), a Wii U
-/// archive (.wua), a dumped game folder, or a standalone homebrew .rpx. Returns
+/// archive (.wua), a dumped game folder, an encrypted game folder (title.tmd, title.tik and .app files), or a standalone homebrew .rpx. Returns
 /// CEMU_BRIDGE_OK when the title starts.
 ///
 /// Real games are decrypted with the user's OWN console keys, read from keys.txt in the
@@ -179,7 +179,7 @@ typedef struct {
 /// rather than placeholders. Safe to call from any thread, cheap enough to poll.
 void cemu_bridge_get_progress(CemuBridgeProgress* out);
 
-/// Decrypt-to-Files / Decrypt-to-WUA: takes a WUD/WUX (or a folder/NUS dump) the app
+/// Decrypt-to-Files / Decrypt-to-WUA: takes a WUD/WUX (or an encrypted game folder: title.tmd, title.tik and .app files) the app
 /// already has a working key for and writes a fully decrypted copy of it to destPath,
 /// in one of two shapes depending on `toWua`:
 ///   - false: destPath is a FOLDER, filled with the same code/, content/, meta/ layout

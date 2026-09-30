@@ -146,6 +146,9 @@
     <p class="symptom-answer">Encrypted retail games need <code>keys.txt</code> dumped from your own Wii U. Homebrew does not.</p>
     <p>MuffinEMU does not include keys. Use the <code>keys.txt</code> from your own Wii U.</p>
     <p>Drop the file into the <code>keys</code> folder MuffinEMU creates in the Files app — under the app's own name, since file sharing is enabled — or import it from Settings. A file dropped in mid-session is picked up before the next key read, so no relaunch is needed.</p>
+    <h3 id="game-folders">Encrypted game folders</h3>
+    <p>A game folder made of <code>title.tmd</code>, <code>title.tik</code>, <code>title.cert</code> and encrypted <code>.app</code> / <code>.h3</code> files works too, in Files &gt; MuffinEMU &gt; Roms or through the folder importer. It is decrypted with the title key in its own <code>title.tik</code>, so it needs no <code>keys.txt</code>. Every <code>.app</code> file listed by <code>title.tmd</code> has to be present; file-name case does not matter. If a file is missing or the ticket doesn't fit, MuffinEMU names the problem when you start the game.</p>
+    <p>A parent folder with separate subfolders for the game, its update and its DLC (each with its own <code>title.tmd</code>) is recognised: the game is the library entry and the update and DLC are used when it starts.</p>
 
     <h2 id="moltenvk">MoltenVK</h2>
     <p>The Vulkan renderer can use MoltenVK 1.4.3 (default) or 1.2.8 — Settings &gt; Graphics. The choice applies on the next launch. Metal, the default renderer, does not use MoltenVK.</p>
