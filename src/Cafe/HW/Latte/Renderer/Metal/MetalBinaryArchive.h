@@ -21,6 +21,12 @@ class Error;
 // binaries are specific to all three. Whatever is left from another key is deleted when the
 // archive opens.
 //
+// Two archive objects are opened from the same file. The READ archive is attached to pipeline
+// descriptors and is never modified or serialised. The WRITE archive is touched only by the
+// background worker (add, serialise) and is never referenced by a descriptor. A save replaces
+// the file; the next launch opens it as its read archive. So no archive object is ever read
+// and written at the same time.
+//
 // Everything here is best effort: any failure (unsupported GPU, corrupt file, full disk)
 // drops back to plain pipeline creation and never throws or crashes.
 //
