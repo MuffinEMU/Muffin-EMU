@@ -2,6 +2,7 @@
 #include "iosu_ioctl.h"
 #include "iosu_act.h"
 #include "iosu_mcp.h"
+#include "iosu_crypto.h"
 #include "util/crypto/aes128.h"
 #include "curl/curl.h"
 #include "openssl/bn.h"
@@ -248,6 +249,22 @@ namespace iosu
 			while (iosuAct_isAccountDataLoaded() == false)
 			{
 				std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			}
+
+			// Nothing here can succeed without the console's identity and certificates, and for the
+			// Wii U menu the download list is discarded anyway. Asking the network regardless made
+			// every request fail its TLS handshake and retry, and the menu waits for this thread
+			// (iosuNim_waitUntilPackageListReady) before it finishes starting. Go offline quietly.
+			std::string missingInfo;
+			const bool downloadsDisabled = nim_CheckDownloadsDisabled();
+			const sint32 onlineRequirements = downloadsDisabled ? IOS_CRYPTO_ONLINE_REQ_OK : iosuCrypt_checkRequirementsForOnlineMode(missingInfo);
+			if (downloadsDisabled || onlineRequirements != IOS_CRYPTO_ONLINE_REQ_OK)
+			{
+				cemuLog_log(LogType::Force, "NIM: skipping the online update check ({})",
+					downloadsDisabled ? "not used by this title" : "otp.bin, seeprom.bin or the online certificates are missing");
+				g_nim.packages.clear();
+				g_nim.packageListReady = true;
+				return;
 			}
 
 			if (nim_getLatestVersion())

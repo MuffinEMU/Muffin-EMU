@@ -13,6 +13,9 @@ namespace CafeSystem
 	public:
 		virtual void CafeRecreateCanvas() = 0;
 		virtual void CafePPCProcessExit() = 0; // emulated process exited
+		// the running title asked to switch to another title (Wii U Menu launching a game) and the next title
+		// could not be prepared. The previous title is already shut down. Default: treat as process exit
+		virtual void CafeTitleSwitchFailed(TitleId titleId) { CafePPCProcessExit(); }
 	};
 
 	enum class PREPARE_STATUS_CODE
@@ -58,6 +61,12 @@ namespace CafeSystem
 
 	void RequestRecreateCanvas();
 	void NotifyPPCProcessExit(sint32 status);
+
+	// title switching (coreinit __LaunchByTitleId): true from the moment the old title starts shutting down
+	// until the new one is running (or failed to prepare). IsTitleRunning() is false for part of that window
+	void SetTitleSwitchInProgress(bool inProgress);
+	bool IsTitleSwitchInProgress();
+	void NotifyTitleSwitchFailed(TitleId titleId);
 
 };
 
