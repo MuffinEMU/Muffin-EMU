@@ -1170,6 +1170,15 @@ void* MetalRenderer::texture_acquireTextureUploadBuffer(uint32 size)
     return m_memoryManager->AcquireTextureUploadBuffer(size);
 }
 
+// The texture loader found no upload buffer for this texture. Goes through the same bookkeeping as a skipped upload,
+// which flags the texture for reload once per stamp and stops after repeated failures, so a texture that is also
+// skipped by a guard in the same load is not flagged twice (two inversions of the hash would cancel out).
+void MetalRenderer::texture_uploadBufferUnavailable(LatteTexture* texture)
+{
+    if (texture)
+        MetalUploadSkipped(static_cast<LatteTextureMtl*>(texture), MetalGuard::UploadStagingFull, 0);
+}
+
 void MetalRenderer::texture_releaseTextureUploadBuffer(uint8* mem)
 {
     m_memoryManager->ReleaseTextureUploadBuffer(mem);
