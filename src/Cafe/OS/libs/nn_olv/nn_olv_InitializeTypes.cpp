@@ -239,9 +239,11 @@ namespace nn
 
 			g_IsInitialized = true;
 
-			if(ActiveSettings::GetNetworkService() == NetworkService::Nintendo)
+			if(ActiveSettings::GetNetworkService() == NetworkService::Nintendo || (ActiveSettings::GetNetworkService() == NetworkService::Offline && (pParam->m_Flags & InitializeParam::FLAG_OFFLINE_MODE) == 0))
 			{
-				// since the official Miiverse was shut down, use local post archive instead
+				// since the official Miiverse was shut down, use local post archive instead.
+				// Offline takes the same path unless the title asked for offline mode itself: it answers at once from the
+				// local archive (Wind Waker HD's Tingle Bottle reads it) instead of starting a network request that can only fail.
 				g_IsOnlineMode = true;
 				g_IsOfflineDBMode = true;
 				return OLV_RESULT_SUCCESS;
