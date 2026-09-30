@@ -469,6 +469,7 @@ private:
 			bool present_wait = false; // VK_KHR_present_wait
 			bool depth_clip_enable = false; // VK_EXT_depth_clip_enable
 			bool pipeline_robustness = false; // VK_EXT_pipeline_robustness
+			bool memory_budget = false; // VK_EXT_memory_budget
 			bool sampler_mirror_clamp_to_edge = false; // VK_KHR_sampler_mirror_clamp_to_edge
 			bool portability_subset = false; // VK_KHR_portability_subset (MoltenVK). The spec requires enabling it whenever the device lists it
 		}deviceExtensions;
