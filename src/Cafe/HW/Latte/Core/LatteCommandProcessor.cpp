@@ -13,6 +13,7 @@
 #include "Cafe/HW/Latte/Core/LattePM4.h"
 #include "Cafe/HW/Latte/Core/LatteSurfaceCopy.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
 #include "Cafe/OS/libs/TCL/TCL.h" // TCL currently handles the GPU command ringbuffer
@@ -156,6 +157,7 @@ uint32 LatteCP_readU32Deprc()
 
 		LatteWait::Set("idle: the game is not sending GPU commands", LatteWait::Kind::GuestIdle);
 		g_renderer->NotifyLatteCommandProcessorIdle(); // let the renderer know in case it wants to flush any commands
+		const uint64 idleIterationStart = PerfTelemetry::NowNs();
 		performanceMonitor.gpuTime_idleTime.beginMeasuring();
 		// no command data available, spin in a busy loop for a bit then check again
 		for (sint32 busy = 0; busy < 80; busy++)
@@ -168,6 +170,7 @@ uint32 LatteCP_readU32Deprc()
 		{
 			LatteWait::Clear();
 			performanceMonitor.gpuTime_idleTime.endMeasuring();
+			PerfTelemetry::Get().gpuIdleNs.fetch_add(PerfTelemetry::NowNs() - idleIterationStart, std::memory_order_relaxed);
 			return cmdWord;
 		}
 		if (Latte_GetStopSignal())
@@ -178,6 +181,7 @@ uint32 LatteCP_readU32Deprc()
 		LatteAsyncCommands_checkAndExecute();
 		std::this_thread::yield();
 		performanceMonitor.gpuTime_idleTime.endMeasuring();
+		PerfTelemetry::Get().gpuIdleNs.fetch_add(PerfTelemetry::NowNs() - idleIterationStart, std::memory_order_relaxed);
 	}
 	UNREACHABLE;
 }
@@ -433,6 +437,7 @@ LatteCMDPtr LatteCP_itWaitRegMem(LatteCMDPtr cmd, uint32 nWords)
 	{
 		// wait for memory address
 		performanceMonitor.gpuTime_fenceTime.beginMeasuring();
+		PerfTelemetry::ScopedTimer syncTimer(PerfTelemetry::Get().gpuSyncNs);
 		while (true)
 		{
 			uint32 fenceMemValue = _swapEndianU32(*fencePtr);
@@ -587,6 +592,7 @@ LatteCMDPtr LatteCP_itMemSemaphore(LatteCMDPtr cmd, uint32 nWords)
 		// wait
 		LatteCP_signalEnterWait();
 		LatteWait::Scope waitScope("waiting on a GPU semaphore the game has not signalled", LatteWait::Kind::GuestWait);
+		PerfTelemetry::ScopedTimer syncTimer(PerfTelemetry::Get().gpuSyncNs);
 		size_t loopCount = 0;
 		while (true)
 		{
@@ -920,6 +926,7 @@ LatteCMDPtr LatteCP_itHLEWaitForFlip(LatteCMDPtr cmd, uint32 nWords)
 	// wait for flip
 	uint32 currentFlipCount = LatteGPUState.flipCounter;
 	LatteWait::Scope waitScope("waiting for the next flip (vsync)", LatteWait::Kind::GuestWait);
+	PerfTelemetry::ScopedTimer syncTimer(PerfTelemetry::Get().gpuSyncNs);
 	while (true)
 	{
 		_mm_pause();

@@ -1,5 +1,6 @@
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "Cafe/HW/Latte/Core/LattePerformanceMonitor.h"
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cafe/Account/Account.h"
 #include "config/CemuConfig.h"
@@ -83,7 +84,18 @@ void LatteOverlay_renderOverlay(ImVec2& position, ImVec2& pivot, sint32 directio
 		if (ImGui::Begin("Stats overlay", nullptr, kPopupFlags))
 		{
 			if (config.overlay.fps)
+			{
 				ImGui::Text("FPS: %.2lf", g_state.fps);
+				// The same window the 5 s log line reports; only present where a sampler publishes it
+				const auto& perf = PerfTelemetry::GetSummary();
+				if (perf.valid.load(std::memory_order_relaxed))
+				{
+					ImGui::Text("Host %.1f / game %.1f fps", perf.hostFps.load(std::memory_order_relaxed), perf.guestFps.load(std::memory_order_relaxed));
+					ImGui::Text("PPC %.0f%%  GPU thread %.0f%%", perf.ppcExecPct.load(std::memory_order_relaxed), perf.gpuThreadBusyPct.load(std::memory_order_relaxed));
+					ImGui::Text("GPU %.1f ms/f (%.0f%%)  Limit: %s", perf.mtlGpuMsPerFrame.load(std::memory_order_relaxed), perf.mtlGpuBusyPct.load(std::memory_order_relaxed),
+						PerfTelemetry::BottleneckName(perf.bottleneck.load(std::memory_order_relaxed)));
+				}
+			}
 
 			if (config.overlay.drawcalls)
 				ImGui::Text("Draws/f: %d (fast: %d)", g_state.draw_calls_per_frame, g_state.fast_draw_calls_per_frame);

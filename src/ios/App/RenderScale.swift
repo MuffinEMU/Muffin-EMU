@@ -71,6 +71,11 @@ enum RenderScale: String, CaseIterable, Identifiable {
     /// saver is only ever chosen by hand.
     static var deviceDefault: RenderScale {
         #if os(iOS)
+        // iPads with 8 GB or more (M-series, whose GPUs and memory bandwidth are several times an
+        // A12Z's) start at `.high`.
+        if UIDevice.current.userInterfaceIdiom == .pad && ProcessInfo.processInfo.physicalMemory >= 7_500_000_000 {
+            return .high
+        }
         let screen = UIScreen.main
         let nativeScale = Double(screen.scale)
         let longEdge = Double(max(screen.bounds.width, screen.bounds.height)) * nativeScale
@@ -104,18 +109,108 @@ enum LowPowerMode {
     }
 }
 
+/// How the GamePad surface is sized. The console's GamePad screen is 854x480, so the surface
+/// needs no more than about twice that across its long side whatever the display's own scale is.
+enum PadSurfaceScale {
+    static let maxLongSidePixels: Double = 1708
+
+    static func scale(forPoints size: CGSize, renderScale: Double) -> Double {
+        let longSide = Double(max(size.width, size.height))
+        guard longSide > 0 else { return renderScale }
+        return max(0.5, min(renderScale, maxLongSidePixels / longSide))
+    }
+}
+
 /// Whether the three emulated Espresso cores get three host threads or share one.
 ///
-/// One is the default: three host threads on a fanless device such as the A12Z iPad Pro
-/// draw about three times the power, the SoC heats up within a minute and iOS lowers the
-/// clocks, so it usually runs slower than one thread. Kept as a switch because a
-/// better-cooled device may come out ahead.
-enum MulticoreMode {
-    static let storageKey = "muffin.cpu.multicore"
-    static let defaultValue = false
+/// `auto` decides per game at launch: from the game's own profile, the device's performance-core
+/// count and its thermal state (see ios_decide_core_count in CemuBridge.mm). It leans to one
+/// core, because on a fanless A12Z iPad Pro three host threads drew about three times the power,
+/// the SoC throttled within a minute, and Wind Waker HD ran 4-20 fps against 40-60 on one. Three
+/// cores stay available as a labelled experiment, globally and per game.
+enum CoreMode: String, CaseIterable, Identifiable {
+    case auto, single, multi
 
-    static var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .auto:   return "Auto"
+        case .single: return "One core"
+        case .multi:  return "Three cores (Experimental)"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .auto:   return "Picks per game and per device. Uses one core unless the game's profile asks for three and this device has the headroom."
+        case .single: return "One core. Cooler, and usually faster on this hardware."
+        case .multi:  return "Three cores. Can be faster on a device with spare performance cores and cooling, but heats up quickly on most iPads and has hung some games."
+        }
+    }
+
+    /// The value cemu_bridge_set_cpu_core_mode() takes.
+    var bridgeValue: Int32 {
+        switch self {
+        case .auto:   return 0
+        case .single: return 1
+        case .multi:  return 2
+        }
+    }
+
+    static let storageKey = "muffin.cpu.coreMode"
+    /// The on/off switch this replaced. Kept readable so an explicit choice made with it survives.
+    private static let legacyKey = "muffin.cpu.multicore"
+    static let defaultValue: CoreMode = .auto
+
+    static var current: CoreMode {
+        let defaults = UserDefaults.standard
+        if let raw = defaults.string(forKey: storageKey), let value = CoreMode(rawValue: raw) {
+            return value
+        }
+        if let legacy = defaults.object(forKey: legacyKey) as? Bool {
+            return legacy ? .multi : .single
+        }
+        return defaultValue
+    }
+}
+
+/// Titles where Auto stays on one core because an earlier three-core run that Auto chose either
+/// ended without a clean stop (crash, hang, the app killed) or stalled. Remembered per title.
+enum AutoCoreHistory {
+    private static let demotedKey = "muffin.cpu.autoDemoted"
+    private static let pendingKey = "muffin.cpu.autoMultiPending"
+
+    /// Call at launch. Settles a run that never ended cleanly, then says whether this title is demoted.
+    static func isDemotedAtLaunch(gameID: String) -> Bool {
+        let defaults = UserDefaults.standard
+        var demoted = Set(defaults.stringArray(forKey: demotedKey) ?? [])
+        if let pending = defaults.string(forKey: pendingKey) {
+            defaults.removeObject(forKey: pendingKey)
+            if demoted.insert(pending).inserted {
+                defaults.set(demoted.sorted(), forKey: demotedKey)
+                cemu_bridge_log_line("CPU cores: \(pending) ended a three-core run without a clean stop, so Auto keeps it on one core from now on")
+            }
+        }
+        return demoted.contains(gameID)
+    }
+
+    /// Call once a title that Auto put on three cores has booted.
+    static func sessionStarted(gameID: String) {
+        UserDefaults.standard.set(gameID, forKey: pendingKey)
+    }
+
+    /// Call when the title stops normally.
+    static func sessionEnded(gameID: String, stalled: Bool) {
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: pendingKey) == gameID else { return }
+        defaults.removeObject(forKey: pendingKey)
+        guard stalled else { return }
+        var demoted = Set(defaults.stringArray(forKey: demotedKey) ?? [])
+        if demoted.insert(gameID).inserted {
+            defaults.set(demoted.sorted(), forKey: demotedKey)
+            cemu_bridge_log_line("CPU cores: a three-core run of \(gameID) stalled, so Auto keeps it on one core from now on")
+        }
     }
 }
 

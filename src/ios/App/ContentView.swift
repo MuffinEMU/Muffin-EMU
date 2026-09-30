@@ -2449,7 +2449,8 @@ struct EmulatorViewOptimized: View {
     }
 
     private func sendPadTouch(_ location: CGPoint, down: Bool) {
-        let scale = UIScreen.main.effectiveRenderScale
+        // The pad surface is sized at PadSurfaceScale, not at the TV's render scale
+        let scale = DisplayRouter.shared.padSurfaceScale
         cemu_bridge_set_pad_touch(Double(location.x) * scale, Double(location.y) * scale, down)
     }
 
