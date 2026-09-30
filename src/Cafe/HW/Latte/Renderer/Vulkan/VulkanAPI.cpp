@@ -144,6 +144,12 @@ void* dlopen_vulkan_loader()
 		vulkan_so = dlopen("libvulkan.so.1", RTLD_NOW);
 #elif BOOST_OS_MACOS || BOOST_OS_IOS
 	void* vulkan_so = nullptr;
+	// MoltenVK reads its MVK_CONFIG_* settings the first time it initialises, so they have to be in
+	// the environment before it is loaded. overwrite=0 lets an explicit setting from the user win.
+	// Cemu samples textures through arbitrary component swizzles (Latte swizzles are free on the
+	// GPU), so let MoltenVK emulate any swizzle the hardware can't do natively, instead of
+	// rejecting it or silently using the identity swizzle.
+	setenv("MVK_CONFIG_FULL_IMAGE_VIEW_SWIZZLE", "1", 0);
 #if BOOST_OS_IOS
 	// MuffinEMU embeds two MoltenVK builds and chooses one per launch; its bridge names the
 	// chosen one here before the engine initializes.

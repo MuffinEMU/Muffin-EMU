@@ -30,6 +30,9 @@
 #include "Cafe/HW/Latte/Core/LatteTiming.h" // vsync control
 
 #include <cstdint>
+#include <cstdlib>
+#include <array>
+#include <algorithm>
 #include <glslang/Public/ShaderLang.h>
 
 #ifndef VK_API_VERSION_MAJOR
@@ -90,6 +93,24 @@ VKAPI_ATTR VkBool32 VKAPI_CALL DebugUtilsCallback(VkDebugUtilsMessageSeverityFla
 	return VK_FALSE;
 }
 
+static constexpr const char* kPortabilityEnumerationExtName = "VK_KHR_portability_enumeration";
+static constexpr const char* kPortabilitySubsetExtName = "VK_KHR_portability_subset";
+static constexpr VkInstanceCreateFlags kInstanceEnumeratePortabilityBit = 0x00000001; // VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
+
+static bool IsInstanceExtensionAvailable(const char* name)
+{
+	uint32_t count = 0;
+	if (vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr) != VK_SUCCESS || count == 0)
+		return false;
+	std::vector<VkExtensionProperties> props(count);
+	if (vkEnumerateInstanceExtensionProperties(nullptr, &count, props.data()) != VK_SUCCESS)
+		return false;
+	for (const auto& p : props)
+		if (strcmp(p.extensionName, name) == 0)
+			return true;
+	return false;
+}
+
 std::vector<VulkanRenderer::DeviceInfo> VulkanRenderer::GetDevices()
 {
     if(!vkEnumerateInstanceVersion)
@@ -122,6 +143,11 @@ std::vector<VulkanRenderer::DeviceInfo> VulkanRenderer::GetDevices()
 	#elif BOOST_OS_MACOS || BOOST_OS_IOS
 	requiredExtensions.emplace_back(VK_EXT_METAL_SURFACE_EXTENSION_NAME);
 	#endif
+	// MoltenVK devices are "portability" devices. Loaders (and newer MoltenVK builds) only enumerate them
+	// when the instance opts in, so opt in whenever the extension is offered.
+	const bool portabilityEnumeration = IsInstanceExtensionAvailable(kPortabilityEnumerationExtName);
+	if (portabilityEnumeration)
+		requiredExtensions.emplace_back(kPortabilityEnumerationExtName);
 
 	VkApplicationInfo app_info{};
 	app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -136,6 +162,8 @@ std::vector<VulkanRenderer::DeviceInfo> VulkanRenderer::GetDevices()
 	create_info.pApplicationInfo = &app_info;
 	create_info.ppEnabledExtensionNames = requiredExtensions.data();
 	create_info.enabledExtensionCount = requiredExtensions.size();
+	if (portabilityEnumeration)
+		create_info.flags |= kInstanceEnumeratePortabilityBit;
 	create_info.ppEnabledLayerNames = nullptr;
 	create_info.enabledLayerCount = 0;
 
@@ -298,7 +326,9 @@ void VulkanRenderer::GetDeviceFeatures()
 	/* Determine which subfeatures we can use */
 
 	m_featureControl.deviceExtensions.pipeline_creation_cache_control = pcc.pipelineCreationCacheControl;
-	m_featureControl.deviceExtensions.custom_border_color_without_format = m_featureControl.deviceExtensions.custom_border_color && bcf.customBorderColorWithoutFormat;
+	m_featureControl.deviceExtensions.custom_border_color_without_format = m_featureControl.deviceExtensions.custom_border_color && bcf.customBorderColors && bcf.customBorderColorWithoutFormat;
+	// both extensions being listed is not enough: asking vkCreateDevice for a feature the device doesn't report fails with VK_ERROR_FEATURE_NOT_PRESENT
+	m_featureControl.deviceExtensions.present_wait = m_featureControl.deviceExtensions.present_wait && pwf.presentWait && pidf.presentId;
 	m_featureControl.shaderFloatControls.shaderRoundingModeRTEFloat32 = m_featureControl.deviceExtensions.shader_float_controls && pfcp.shaderRoundingModeRTEFloat32;
 	if(!m_featureControl.shaderFloatControls.shaderRoundingModeRTEFloat32)
 		cemuLog_log(LogType::Force, "Shader round mode control not available on this device or driver. Some rendering issues might occur.");
@@ -466,6 +496,113 @@ static void LinuxBreathOfTheWildWorkaround(VkInstance& instance, const VkInstanc
 
 #endif
 
+// Names of VkPhysicalDeviceFeatures members in declaration order (the struct is 55 consecutive VkBool32).
+static const std::array<const char*, 55> kVkFeatureNames = {
+	"robustBufferAccess", "fullDrawIndexUint32", "imageCubeArray", "independentBlend", "geometryShader", "tessellationShader",
+	"sampleRateShading", "dualSrcBlend", "logicOp", "multiDrawIndirect", "drawIndirectFirstInstance", "depthClamp", "depthBiasClamp",
+	"fillModeNonSolid", "depthBounds", "wideLines", "largePoints", "alphaToOne", "multiViewport", "samplerAnisotropy",
+	"textureCompressionETC2", "textureCompressionASTC_LDR", "textureCompressionBC", "occlusionQueryPrecise", "pipelineStatisticsQuery",
+	"vertexPipelineStoresAndAtomics", "fragmentStoresAndAtomics", "shaderTessellationAndGeometryPointSize", "shaderImageGatherExtended",
+	"shaderStorageImageExtendedFormats", "shaderStorageImageMultisample", "shaderStorageImageReadWithoutFormat",
+	"shaderStorageImageWriteWithoutFormat", "shaderUniformBufferArrayDynamicIndexing", "shaderSampledImageArrayDynamicIndexing",
+	"shaderStorageBufferArrayDynamicIndexing", "shaderStorageImageArrayDynamicIndexing", "shaderClipDistance", "shaderCullDistance",
+	"shaderFloat64", "shaderInt64", "shaderInt16", "shaderResourceResidency", "shaderResourceMinLod", "sparseBinding",
+	"sparseResidencyBuffer", "sparseResidencyImage2D", "sparseResidencyImage3D", "sparseResidency2Samples", "sparseResidency4Samples",
+	"sparseResidency8Samples", "sparseResidency16Samples", "sparseResidencyAliased", "variableMultisampleRate", "inheritedQueries"
+};
+static_assert(sizeof(VkPhysicalDeviceFeatures) == 55 * sizeof(VkBool32), "VkPhysicalDeviceFeatures layout changed, update kVkFeatureNames");
+
+// Logged once per Vulkan launch, just before vkCreateDevice, so a device log proves what the driver offered
+// even when device creation then fails.
+void VulkanRenderer::LogVulkanStartupDiagnostics(const VkPhysicalDeviceFeatures& supported, const VkPhysicalDeviceFeatures& requested, const VkPhysicalDeviceFeatures& enabled, const std::vector<const char*>& enabledDeviceExtensions)
+{
+	cemuLog_log(LogType::Force, "---- Vulkan startup diagnostic ----");
+
+	// device identity + driver (MoltenVK) version
+	VkPhysicalDeviceDriverProperties driverProps{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES };
+	VkPhysicalDeviceProperties2 props2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+	if (m_featureControl.deviceExtensions.driver_properties)
+		props2.pNext = &driverProps;
+	vkGetPhysicalDeviceProperties2(m_physicalDevice, &props2);
+	const auto& p = props2.properties;
+	cemuLog_log(LogType::Force, "Vulkan diagnostic: device '{}' type {} vendor 0x{:x} device 0x{:x} apiVersion {}.{}.{}", p.deviceName, (sint32)p.deviceType, p.vendorID, p.deviceID,
+		VK_API_VERSION_MAJOR(p.apiVersion), VK_API_VERSION_MINOR(p.apiVersion), p.apiVersion & 0xFFF);
+	// MoltenVK packs its own version as major*10000 + minor*100 + patch into driverVersion
+	cemuLog_log(LogType::Force, "Vulkan diagnostic: driverVersion raw {} (as MoltenVK version: {}.{}.{}) driverName '{}' driverInfo '{}'", p.driverVersion,
+		p.driverVersion / 10000, (p.driverVersion / 100) % 100, p.driverVersion % 100,
+		m_featureControl.deviceExtensions.driver_properties ? driverProps.driverName : "n/a",
+		m_featureControl.deviceExtensions.driver_properties ? driverProps.driverInfo : "n/a");
+#if BOOST_OS_MACOS || BOOST_OS_IOS
+	cemuLog_log(LogType::Force, "Vulkan diagnostic: Metal GPU: {}", GetAppleGpuFamilyDescription());
+	const char* mvkSwizzle = getenv("MVK_CONFIG_FULL_IMAGE_VIEW_SWIZZLE");
+	const char* mvkArgBuf = getenv("MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS");
+	cemuLog_log(LogType::Force, "Vulkan diagnostic: MVK_CONFIG_FULL_IMAGE_VIEW_SWIZZLE={} MVK_CONFIG_USE_METAL_ARGUMENT_BUFFERS={} MUFFIN_MOLTENVK_PATH={}", mvkSwizzle ? mvkSwizzle : "(unset)", mvkArgBuf ? mvkArgBuf : "(unset)",
+		getenv("MUFFIN_MOLTENVK_PATH") ? getenv("MUFFIN_MOLTENVK_PATH") : "(unset)");
+#endif
+
+	// device extensions
+	std::vector<VkExtensionProperties> available;
+	uint32_t extCount = 0;
+	if (vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &extCount, nullptr) == VK_SUCCESS && extCount > 0)
+	{
+		available.resize(extCount);
+		vkEnumerateDeviceExtensionProperties(m_physicalDevice, nullptr, &extCount, available.data());
+	}
+	auto isAvailable = [&](const char* name) { return std::any_of(available.begin(), available.end(), [&](const VkExtensionProperties& e) { return strcmp(e.extensionName, name) == 0; }); };
+	auto isEnabled = [&](const char* name) { return std::any_of(enabledDeviceExtensions.begin(), enabledDeviceExtensions.end(), [&](const char* e) { return strcmp(e, name) == 0; }); };
+	{
+		std::string list;
+		for (const auto& e : available)
+			list += (list.empty() ? "" : ", ") + std::string(e.extensionName);
+		cemuLog_log(LogType::Force, "Vulkan diagnostic: {} device extension(s) available: {}", available.size(), list);
+	}
+	{
+		// the extensions Cemu can use or would like to have, and what became of each
+		std::vector<const char*> interesting = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, kPortabilitySubsetExtName, VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
+			VK_EXT_CUSTOM_BORDER_COLOR_EXTENSION_NAME, VK_EXT_DEPTH_CLIP_ENABLE_EXTENSION_NAME, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+			VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME, VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME, VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME };
+		for (const char* opt : kOptionalDeviceExtensions)
+			if (std::find_if(interesting.begin(), interesting.end(), [&](const char* e) { return strcmp(e, opt) == 0; }) == interesting.end())
+				interesting.push_back(opt);
+		std::string line;
+		for (const char* name : interesting)
+			line += fmt::format("{}{}={}", line.empty() ? "" : ", ", name, isEnabled(name) ? "ENABLED" : (isAvailable(name) ? "available-not-enabled" : "absent"));
+		cemuLog_log(LogType::Force, "Vulkan diagnostic: extension status: {}", line);
+		std::string enabledList;
+		for (const char* e : enabledDeviceExtensions)
+			enabledList += (enabledList.empty() ? "" : ", ") + std::string(e);
+		cemuLog_log(LogType::Force, "Vulkan diagnostic: device extensions requested from vkCreateDevice: {}", enabledList);
+	}
+
+	// features: supported vs requested vs enabled
+	{
+		const VkBool32* sup = reinterpret_cast<const VkBool32*>(&supported);
+		const VkBool32* req = reinterpret_cast<const VkBool32*>(&requested);
+		const VkBool32* en = reinterpret_cast<const VkBool32*>(&enabled);
+		std::string supportedList, requestedList, droppedList, absentList;
+		for (size_t i = 0; i < kVkFeatureNames.size(); i++)
+		{
+			const std::string name = kVkFeatureNames[i];
+			if (sup[i])
+				supportedList += (supportedList.empty() ? "" : ", ") + name;
+			else
+				absentList += (absentList.empty() ? "" : ", ") + name;
+			if (req[i])
+				requestedList += (requestedList.empty() ? "" : ", ") + name + (en[i] ? "" : "(dropped)");
+			if (req[i] && !en[i])
+				droppedList += (droppedList.empty() ? "" : ", ") + name;
+		}
+		cemuLog_log(LogType::Force, "Vulkan diagnostic: core features supported: {}", supportedList);
+		cemuLog_log(LogType::Force, "Vulkan diagnostic: core features NOT supported: {}", absentList);
+		cemuLog_log(LogType::Force, "Vulkan diagnostic: core features requested by Cemu: {}", requestedList);
+		cemuLog_log(LogType::Force, "Vulkan diagnostic: requested but unsupported (dropped, running without): {}", droppedList.empty() ? "none" : droppedList);
+	}
+	cemuLog_log(LogType::Force, "Vulkan diagnostic: texture formats: BC={} ASTC_LDR={} mirrorClamp(ext)={} mirrorClamp(core1.2)={} presentWait={} customBorderColorWithoutFormat={} pipelineRobustness={}",
+		m_supportedFormatInfo.fmt_bc, m_supportedFormatInfo.fmt_astc, m_featureControl.deviceExtensions.sampler_mirror_clamp_to_edge, m_featureControl.samplerMirrorClampToEdgeCore,
+		m_featureControl.deviceExtensions.present_wait, m_featureControl.deviceExtensions.custom_border_color_without_format, m_featureControl.deviceExtensions.pipeline_robustness);
+	cemuLog_log(LogType::Force, "---- end Vulkan startup diagnostic ----");
+}
+
 VulkanRenderer::VulkanRenderer()
 {
 	glslang::InitializeProcess();
@@ -511,6 +648,8 @@ VulkanRenderer::VulkanRenderer()
 	create_info.enabledExtensionCount = enabledInstanceExtensions.size();
 	create_info.ppEnabledLayerNames = m_layerNames.data();
 	create_info.enabledLayerCount = m_layerNames.size();
+	if (m_featureControl.instanceExtensions.portability_enumeration)
+		create_info.flags |= kInstanceEnumeratePortabilityBit;
 
 	err = vkCreateInstance(&create_info, nullptr, &m_instance);
 
@@ -653,6 +792,24 @@ VulkanRenderer::VulkanRenderer()
 
 	deviceFeatures.vertexPipelineStoresAndAtomics = true;
 
+	// Only ask vkCreateDevice for what the device reports. Requesting an unsupported core feature fails with
+	// VK_ERROR_FEATURE_NOT_PRESENT (-8), which is what MoltenVK 1.2.8 returned on the A12Z. Cemu doesn't hard-require
+	// any of these (depthClamp/depthBiasClamp/anisotropy/precise occlusion queries are never used by the pipelines it builds),
+	// so each unsupported one is dropped and named in the log instead of aborting Vulkan.
+	const VkPhysicalDeviceFeatures requestedFeatures = deviceFeatures;
+	{
+		const VkBool32* supportedBits = reinterpret_cast<const VkBool32*>(&deviceFeatures2.features);
+		VkBool32* enabledBits = reinterpret_cast<VkBool32*>(&deviceFeatures);
+		for (size_t i = 0; i < kVkFeatureNames.size(); i++)
+		{
+			if (enabledBits[i] && !supportedBits[i])
+			{
+				enabledBits[i] = VK_FALSE;
+				cemuLog_log(LogType::Force, "Vulkan: requested feature '{}' is not supported by this device, continuing without it", kVkFeatureNames[i]);
+			}
+		}
+	}
+
 	void* deviceExtensionFeatures = nullptr;
 
 	// enable VK_EXT_pipeline_creation_cache_control
@@ -715,7 +872,26 @@ VulkanRenderer::VulkanRenderer()
 	std::vector<const char*> used_extensions;
 	VkDeviceCreateInfo createInfo = CreateDeviceCreateInfo(queueCreateInfos, deviceFeatures, deviceExtensionFeatures, used_extensions);
 
+	LogVulkanStartupDiagnostics(deviceFeatures2.features, requestedFeatures, deviceFeatures, used_extensions);
+
 	VkResult result = vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_logicalDevice);
+	if (result == VK_ERROR_FEATURE_NOT_PRESENT || result == VK_ERROR_EXTENSION_NOT_PRESENT)
+	{
+		// Last resort before giving up on Vulkan: a bare device with the swapchain extension and no optional features.
+		cemuLog_log(LogType::Force, "Vulkan: vkCreateDevice returned {} ({}) even though the request was filtered against the device's reported features and extensions. Retrying with every optional feature and extension off", (sint32)result, result == VK_ERROR_FEATURE_NOT_PRESENT ? "VK_ERROR_FEATURE_NOT_PRESENT" : "VK_ERROR_EXTENSION_NOT_PRESENT");
+		const bool portabilitySubset = m_featureControl.deviceExtensions.portability_subset;
+		m_featureControl.deviceExtensions = {};
+		m_featureControl.deviceExtensions.portability_subset = portabilitySubset;
+		m_featureControl.samplerMirrorClampToEdgeCore = false;
+		m_supportedFormatInfo.fmt_bc = false;
+		m_supportedFormatInfo.fmt_astc = false;
+		VkPhysicalDeviceFeatures minimalFeatures = {};
+		std::vector<const char*> minimalExtensions;
+		createInfo = CreateDeviceCreateInfo(queueCreateInfos, minimalFeatures, nullptr, minimalExtensions);
+		result = vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_logicalDevice);
+		if (result == VK_SUCCESS)
+			cemuLog_log(LogType::Force, "Vulkan: minimal logical device created, running without optional features and extensions");
+	}
 	if (result != VK_SUCCESS)
 	{
 		cemuLog_log(LogType::Force, "Vulkan: Unable to create a logical device. Error {}", (sint32)result);
@@ -1268,6 +1444,8 @@ VkDeviceCreateInfo VulkanRenderer::CreateDeviceCreateInfo(const std::vector<VkDe
 	// extension when it is listed, otherwise the Vulkan 1.2 core feature (enabled by the caller).
 	if (m_featureControl.deviceExtensions.sampler_mirror_clamp_to_edge)
 		used_extensions.emplace_back(VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME);
+	if (m_featureControl.deviceExtensions.portability_subset)
+		used_extensions.emplace_back(kPortabilitySubsetExtName);
 	if (m_featureControl.deviceExtensions.tooling_info)
 		used_extensions.emplace_back(VK_EXT_TOOLING_INFO_EXTENSION_NAME);
 	if (m_featureControl.deviceExtensions.depth_range_unrestricted)
@@ -1406,6 +1584,7 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device, 
 			cemuLog_log(LogType::Force, "Vulkan: neither VK_KHR_sampler_mirror_clamp_to_edge nor the Vulkan 1.2 samplerMirrorClampToEdge feature is available, mirror-clamp sampling will fall back to mirrored repeat");
 	}
 
+	info.deviceExtensions.portability_subset = isExtensionAvailable(kPortabilitySubsetExtName);
 	info.deviceExtensions.tooling_info = isExtensionAvailable(VK_EXT_TOOLING_INFO_EXTENSION_NAME);
 	info.deviceExtensions.depth_range_unrestricted = isExtensionAvailable(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME);
 	info.deviceExtensions.nv_fill_rectangle = isExtensionAvailable(VK_NV_FILL_RECTANGLE_EXTENSION_NAME);
@@ -1526,6 +1705,20 @@ std::vector<const char*> VulkanRenderer::CheckInstanceExtensionSupport(FeatureCo
 	info.instanceExtensions.debug_utils = isExtensionAvailable(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 	if (info.instanceExtensions.debug_utils)
 		enabledInstanceExtensions.emplace_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+	info.instanceExtensions.portability_enumeration = isExtensionAvailable(kPortabilityEnumerationExtName);
+	if (info.instanceExtensions.portability_enumeration)
+		enabledInstanceExtensions.emplace_back(kPortabilityEnumerationExtName);
+
+	// startup diagnostic (once per Vulkan launch): which instance extensions exist and which are enabled
+	{
+		std::string available, enabled;
+		for (const auto& ext : availableInstanceExtensions)
+			available += (available.empty() ? "" : ", ") + std::string(ext.extensionName);
+		for (const char* ext : enabledInstanceExtensions)
+			enabled += (enabled.empty() ? "" : ", ") + std::string(ext);
+		cemuLog_log(LogType::Force, "Vulkan diagnostic: {} instance extension(s) available: {}", availableInstanceExtensions.size(), available);
+		cemuLog_log(LogType::Force, "Vulkan diagnostic: instance extensions enabled: {}", enabled);
+	}
 	return enabledInstanceExtensions;
 }
 
