@@ -12,6 +12,7 @@
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
 #include "Cafe/HW/Latte/Core/LattePM4.h"
 #include "Cafe/HW/Latte/Core/LatteSurfaceCopy.h"
+#include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 
 #include "Cafe/OS/libs/coreinit/coreinit_Time.h"
 #include "Cafe/OS/libs/TCL/TCL.h" // TCL currently handles the GPU command ringbuffer
@@ -148,8 +149,12 @@ uint32 LatteCP_readU32Deprc()
 	{
 		uint32 cmdWord;
 		if ( TCL::TCLGPUReadRBWord(cmdWord) )
+		{
+			LatteWait::Clear();
 			return cmdWord;
+		}
 
+		LatteWait::Set("idle: the game is not sending GPU commands");
 		g_renderer->NotifyLatteCommandProcessorIdle(); // let the renderer know in case it wants to flush any commands
 		performanceMonitor.gpuTime_idleTime.beginMeasuring();
 		// no command data available, spin in a busy loop for a bit then check again
@@ -161,6 +166,7 @@ uint32 LatteCP_readU32Deprc()
 
 		if ( TCL::TCLGPUReadRBWord(cmdWord) )
 		{
+			LatteWait::Clear();
 			performanceMonitor.gpuTime_idleTime.endMeasuring();
 			return cmdWord;
 		}
@@ -580,6 +586,7 @@ LatteCMDPtr LatteCP_itMemSemaphore(LatteCMDPtr cmd, uint32 nWords)
 	{
 		// wait
 		LatteCP_signalEnterWait();
+		LatteWait::Scope waitScope("waiting on a GPU semaphore the game has not signalled");
 		size_t loopCount = 0;
 		while (true)
 		{
@@ -912,6 +919,7 @@ LatteCMDPtr LatteCP_itHLEWaitForFlip(LatteCMDPtr cmd, uint32 nWords)
 	MPTR reserved1 = LatteReadCMD(); // reserved
 	// wait for flip
 	uint32 currentFlipCount = LatteGPUState.flipCounter;
+	LatteWait::Scope waitScope("waiting for the next flip (vsync)");
 	while (true)
 	{
 		_mm_pause();
@@ -990,6 +998,7 @@ void LatteCP_processCommandBuffer_continuousDrawPass(DrawPassContext& drawPassCt
 			if (itHeaderType == 3)
 			{
 				uint32 itCode = (itHeader >> 8) & 0xFF;
+				LatteWait::NotePM4(itCode);
 				uint32 nWords = ((itHeader >> 16) & 0x3FFF) + 1;
 				LatteCMDPtr cmdData = cmd;
 				cmd += nWords;
@@ -1101,6 +1110,7 @@ void LatteCP_processCommandBuffer(DrawPassContext& drawPassCtx)
 			if (itHeaderType == 3)
 			{
 				uint32 itCode = (itHeader >> 8) & 0xFF;
+				LatteWait::NotePM4(itCode);
 				uint32 nWords = ((itHeader >> 16) & 0x3FFF) + 1;
 				LatteCMDPtr cmdData = cmd;
 				cmd += nWords;
@@ -1373,6 +1383,7 @@ void LatteCP_ProcessRingbuffer()
 		if (itHeaderType == 3)
 		{
 			uint32 itCode = (itHeader >> 8) & 0xFF;
+			LatteWait::NotePM4(itCode);
 			uint32 nWords = ((itHeader >> 16) & 0x3FFF) + 1;
 			cemu_assert(nWords < 128);
 			for (sint32 i=0; i<nWords; i++)
@@ -1681,6 +1692,7 @@ void LatteCP_DebugPrintCmdBuffer(uint32be* bufferPtr, uint32 size)
 		if (itHeaderType == 3)
 		{
 			uint32 itCode = (itHeader >> 8) & 0xFF;
+			LatteWait::NotePM4(itCode);
 			uint32 nWords = ((itHeader >> 16) & 0x3FFF) + 1;
 			uint32be* cmdData = bufferPtr;
 			bufferPtr += nWords;
