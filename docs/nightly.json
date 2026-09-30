@@ -20,10 +20,10 @@
       "versions": [
         {
           "version": "2026.9.30",
-          "date": "2026-09-30T21:23:18Z",
-          "localizedDescription": "The newest build of MuffinEMU, from commit d02157244252c7c63b01fb08fb57fe5798c98988 on `main`.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\nThis tag moves. Every successful build replaces it, so the download here is\nalways the newest code, never a version you can come back to. For that, use a\nnumbered release.\n\nThis build has not been tested. If you want the version that is known to\nwork, install the latest numbered release instead.",
+          "date": "2026-09-30T21:28:34Z",
+          "localizedDescription": "The newest build of MuffinEMU, from commit be1f2980d3329c1796bd3b1660d68bf7e3c9d293 on `feature/touchlab-controls`.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\nThis tag moves. Every successful build replaces it, so the download here is\nalways the newest code, never a version you can come back to. For that, use a\nnumbered release.\n\nThis build has not been tested. If you want the version that is known to\nwork, install the latest numbered release instead.",
           "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/nightly/MuffinEMU.ipa",
-          "size": 68602332,
+          "size": 68519530,
           "minOSVersion": "15.0"
         }
       ],
