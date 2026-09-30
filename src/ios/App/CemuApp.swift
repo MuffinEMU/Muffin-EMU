@@ -33,6 +33,12 @@ struct CemuApp: App {
         WindowGroup {
             ContentView()
                 .id(themeStore.current.id)
+                // iOS 26 gives every scroll view, list and form a scroll edge effect: a soft
+                // blur drawn over whatever sits along its edges. MuffinEMU's screens put
+                // buttons, headers and rows right at those edges, so the blur landed on top
+                // of them all over the app. Set once here, it reaches every scroll view below,
+                // including the ones in sheets and in screens added later.
+                .muffinScrollEdgeBlurHidden()
                 .onAppear {
                     cemu_bridge_log_checkpoint("ContentView.onAppear reached")
                     #if os(iOS)
@@ -44,5 +50,20 @@ struct CemuApp: App {
                     #endif
                 }
         }
+    }
+}
+
+extension View {
+    /// Turns off iOS 26's scroll edge effect for every scroll view inside this view.
+    @ViewBuilder func muffinScrollEdgeBlurHidden() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.scrollEdgeEffectHidden(true, for: .all)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
     }
 }
