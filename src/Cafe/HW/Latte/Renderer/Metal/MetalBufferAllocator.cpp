@@ -49,10 +49,15 @@ void MetalSynchronizedRingAllocator::allocateAdditionalUploadBuffer(uint32 sizeR
 	uint32 attemptSize = bufferAllocSize;
 	while (!mtlBuffer && attemptSize > sizeRequiredForAlloc)
 	{
+		const uint32 previousAttemptSize = attemptSize;
 		attemptSize = std::max<uint32>(sizeRequiredForAlloc, attemptSize / 2);
 		attemptSize = (attemptSize + 0xFFFFF) & ~0xFFFFFu;
 		if (attemptSize < sizeRequiredForAlloc)
 			attemptSize = sizeRequiredForAlloc;
+		// Rounding up to 1 MB can land on the size that just failed (a request below 1 MB, at 1 MB): nothing
+		// smaller is left to try, and without this the loop retried that size for as long as memory stayed short.
+		if (attemptSize >= previousAttemptSize)
+			break;
 		mtlBuffer = m_mtlr->GetDevice()->newBuffer(attemptSize, m_options);
 		if (attemptSize <= sizeRequiredForAlloc)
 			break;
