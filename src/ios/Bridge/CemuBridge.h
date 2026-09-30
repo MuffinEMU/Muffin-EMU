@@ -929,6 +929,10 @@ typedef enum {
 /// must be paired with a release - see cemu_bridge_release_all_buttons() for the case
 /// where the UI cannot be sure it will get one.
 ///
+/// A press is latched: a release arriving before the title's next VPADRead has seen
+/// the press (or within 50ms of it) is deferred until both have happened, so a quick tap
+/// is never lost between two reads. Repeated "down" calls for a held button are no-ops.
+///
 /// Safe to call from the main thread while the emulated title polls from its own; a
 /// no-op until cemu_bridge_initialize() has brought input up.
 void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed);

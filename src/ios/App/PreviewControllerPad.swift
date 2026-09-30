@@ -68,6 +68,18 @@ private struct PreviewGroupView: View {
 
     var body: some View {
         ZStack {
+            // The edit surface exists only in edit mode, and only over this group's own
+            // controls. It used to be a .contentShape on this ZStack, applied all the time:
+            // first a full-screen Rectangle, which let the last group drawn (HOME) take
+            // every touch on the screen and left the whole pad dead, then the group's rect,
+            // which still made each group's empty space swallow touches meant for a
+            // neighbour drawn beneath it. Out of edit mode the group itself now takes no
+            // touches at all; only its controls do.
+            if isEditingLayout, !editRect.isNull {
+                Path(editRect)
+                    .fill(Color.white.opacity(0.001))
+                    .gesture(editGesture)
+            }
             ForEach(group.controlIDs, id: \.self) { id in
                 if let placement = resolved.controls[id] {
                     PreviewControlView(id: id, placement: placement, colours: colours,
@@ -80,12 +92,9 @@ private struct PreviewGroupView: View {
                     .font(.system(size: 9, weight: .bold, design: .rounded))
                     .foregroundColor(Color(colours.glyph(group.anchorControl)))
                     .position(x: anchor.x, y: anchor.y + captionOffset(for: group))
+                    .allowsHitTesting(false)
             }
         }
-        // The edit surface is the group's own bounding rect, not the whole container
-        // (each group's ZStack fills the container), so every group can be picked up.
-        .contentShape(Path(editRect))
-        .gesture(isEditingLayout ? editGesture : nil)
     }
 
     private var editRect: CGRect {
@@ -159,7 +168,8 @@ private struct PreviewControlView: View {
             } else if id.hasPrefix("knob") {
                 EmptyView() // drawn by the stick itself
             } else {
-                HeldControl(onPressChange: { onInput(id, $0) }, isInteractive: !isEditingLayout) { isPressed in
+                HeldControl(onPressChange: { onInput(id, $0) }, isInteractive: !isEditingLayout,
+                            hitShape: hitShape(for: id, diameter: diameter)) { isPressed in
                     ZStack {
                         Circle()
                             .fill(Color(colours.fill(id)).opacity(colours.alpha(id, pressed: isPressed)))
@@ -204,6 +214,19 @@ private struct PreviewControlView: View {
             PreviewDpadView(centre: centre, size: size, arm: arm, colours: colours,
                             isInteractive: !isEditingLayout, onInput: onInput)
         }
+    }
+
+    /// L3 sits on the middle of the d-pad cross. With the default full-frame hit area its
+    /// square covered the inner part of every arm, so a d-pad press near the centre fired
+    /// L3 instead. It now takes only the cross's dead centre - the circle
+    /// `PadLayout.dpadDirections` reports no direction for - and R3 matches it.
+    private func hitShape(for id: String, diameter: CGFloat) -> HeldControlHitShape {
+        guard id == "L3" || id == "R3", diameter > 0,
+              let dpad = resolved.controls["dpad"], case .cross(_, let size, _) = dpad else {
+            return .rectangle
+        }
+        let deadDiameter = 2 * PadLayout.dpadDeadZone * min(size.width, size.height) / 2
+        return .circle(fraction: min(1, deadDiameter / diameter))
     }
 }
 
@@ -267,6 +290,11 @@ private struct PreviewDpadView: View {
             .position(centre)
             .onChange(of: touching) { down in
                 if !down { releaseAll() }
+            }
+            // A cancel handled before the first render after the press never flips
+            // `touching` visibly, so the handler above cannot see it.
+            .onChange(of: held) { now in
+                if !now.isEmpty && !touching { releaseAll() }
             }
             .onChange(of: isInteractive) { active in
                 if !active { releaseAll() }
@@ -344,6 +372,10 @@ private struct PreviewStickView: View {
         .position(centre)
         .onChange(of: touching) { down in
             if !down { recentre() }
+        }
+        // Same unseen-cancel case as the d-pad's.
+        .onChange(of: knobOffset) { offset in
+            if offset != .zero && !touching { recentre() }
         }
         .onChange(of: isInteractive) { active in
             if !active { recentre() }
