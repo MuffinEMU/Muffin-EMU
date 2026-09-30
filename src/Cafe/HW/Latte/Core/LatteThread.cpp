@@ -112,7 +112,7 @@ void LatteThread_HandleOSScreen()
 		g_renderer->SwapBuffers(swapTV, swapDRC);
 }
 
-int Latte_ThreadEntry()
+static int Latte_ThreadEntryImpl()
 {
 	SetThreadName("LatteThread");
 
@@ -219,6 +219,46 @@ int Latte_ThreadEntry()
 	}
 	LatteCP_ProcessRingbuffer();
 	cemu_assert_debug(false); // should never reach
+	return 0;
+}
+
+#if BOOST_OS_IOS
+// Defined in CemuBridge.mm: stops the title with a message and remembers that Vulkan failed on this MoltenVK build.
+void IOSBridge_VulkanDeviceLost(const char* why);
+#endif
+
+// An exception escaping this thread is std::terminate and ends the app. The renderers throw on failures they can't continue from (Vulkan device
+// loss, out of memory, swapchain trouble), so catch here: stop the title instead of crashing, then keep the thread parked until it is asked to stop.
+int Latte_ThreadEntry()
+{
+	try
+	{
+		return Latte_ThreadEntryImpl();
+	}
+	catch (const std::exception& ex)
+	{
+		cemuLog_log(LogType::Force, "GPU thread: uncaught exception: {}. Stopping the title.", ex.what());
+	}
+	catch (...)
+	{
+		cemuLog_log(LogType::Force, "GPU thread: uncaught unknown exception. Stopping the title.");
+	}
+	sLatteThreadFinishedInit = true;
+	g_isGPUInitFinished = true;
+#if BOOST_OS_IOS
+	if (g_renderer && g_renderer->GetType() == RendererAPI::Vulkan)
+		IOSBridge_VulkanDeviceLost("an exception escaped the GPU thread");
+#endif
+	while (!Latte_GetStopSignal())
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	try
+	{
+		LatteThread_Exit();
+	}
+	catch (...)
+	{
+		cemuLog_log(LogType::Force, "GPU thread: shutting the renderer down threw as well, leaving it");
+	}
 	return 0;
 }
 

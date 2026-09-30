@@ -240,8 +240,13 @@ void RendererShaderVk::CreateVkShaderModule(std::span<uint32> spirvBuffer)
 	VkResult result = vkCreateShaderModule(m_device, &createInfo, nullptr, &m_shader_module);
 	if (result != VK_SUCCESS)
 	{
-		cemuLog_log(LogType::Force, "Vulkan: Shader error");
-		throw std::runtime_error(fmt::format("Failed to create shader module: {}", result));
+		// This runs on shader compile threads, where an exception is std::terminate. Leave the module null instead: the pipeline
+		// compiler already treats a null module as "invalid shader" and skips the draw.
+		cemuLog_log(LogType::Force, "Vulkan: Shader error, vkCreateShaderModule returned {}", (sint32)result);
+		if (result == VK_ERROR_DEVICE_LOST || result == VK_ERROR_OUT_OF_HOST_MEMORY || result == VK_ERROR_OUT_OF_DEVICE_MEMORY)
+			vkr->HandleDeviceLost(fmt::format("vkCreateShaderModule returned {}", (sint32)result).c_str());
+		m_shader_module = VK_NULL_HANDLE;
+		return;
 	}
 
 	// set debug name
