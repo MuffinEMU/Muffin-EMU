@@ -1,4 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
+#if BOOST_OS_IOS
+#include <os/proc.h>
+#endif
 #include "Cafe/HW/Latte/Renderer/Metal/MetalVoidVertexPipeline.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalMemoryManager.h"
 #include "Cafe/HW/Latte/Renderer/Metal/LatteTextureMtl.h"
@@ -185,7 +188,8 @@ MetalRenderer::MetalRenderer()
     m_commandQueue = m_device->newCommandQueue();
 
     // Synchronization resources
-    m_event = m_device->newEvent();
+    // A shared event so the CPU can signal it too: see ProcessFinishedCommandBuffers().
+    m_event = m_device->newSharedEvent();
 
     // Resources
     NS_STACK_SCOPED MTL::SamplerDescriptor* samplerDescriptor = MTL::SamplerDescriptor::alloc()->init();
@@ -323,6 +327,26 @@ MetalRenderer::~MetalRenderer()
         pipeline->release();
     m_copyColorToDepthState->release();
 
+    // Give back every command buffer and encoder still held. Executing command buffers keep the textures and
+    // buffers they used alive until they are released, so leaving them (as happens after a GPU fault, when
+    // they never get processed again) kept the whole scene's memory after the title stopped.
+    if (m_commandEncoder)
+    {
+        m_commandEncoder->endEncoding();
+        m_commandEncoder->release();
+        m_commandEncoder = nullptr;
+    }
+    if (m_currentCommandBuffer.m_commandBuffer && !m_currentCommandBuffer.m_commited)
+        m_currentCommandBuffer.m_commandBuffer->release();
+    m_currentCommandBuffer = {};
+    for (MTL::CommandBuffer* commandBuffer : m_executingCommandBuffers)
+    {
+        WaitForCommandBuffer(commandBuffer, "shutdown: waiting for a command buffer");
+        commandBuffer->release();
+    }
+    m_executingCommandBuffers.clear();
+    m_executingEventValues.clear();
+
     delete m_outputShaderCache;
     delete m_pipelineCache;
     delete m_depthStencilCache;
@@ -413,7 +437,7 @@ void MetalRenderer::ClearColorbuffer(bool padView)
     if (!AcquireDrawable(!padView))
         return;
 
-    ClearColorTextureInternal(GetLayer(!padView).GetDrawable()->texture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
+    ClearColorTextureInternal(GetLayer(!padView).GetDrawableTexture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
 }
 
 void MetalRenderer::DrawEmptyFrame(bool mainWindow)
@@ -425,6 +449,15 @@ void MetalRenderer::DrawEmptyFrame(bool mainWindow)
 
 void MetalRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
+    if (LatteWait::Get().gpuError.load(std::memory_order_relaxed))
+    {
+        // Nothing can be presented any more. Keep retiring command buffers so their memory comes back.
+        CommitCommandBuffer();
+        ProcessFinishedCommandBuffers();
+        UpdateMemoryStatsAndRelievePressure();
+        return;
+    }
+
     if (swapTV)
         SwapBuffer(true);
     if (swapDRC)
@@ -432,6 +465,8 @@ void MetalRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 
     // Reset the command buffers (they are released by TemporaryBufferAllocator)
     CommitCommandBuffer();
+
+    UpdateMemoryStatsAndRelievePressure();
 
     // Debug
     m_performanceMonitor.ResetPerFrameData();
@@ -532,6 +567,8 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 
     // Create render pass
     auto& layer = GetLayer(!padView);
+    if (!layer.GetDrawableTexture() || !presentTexture)
+        return;
 
     NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
     auto colorAttachment = renderPassDescriptor->colorAttachments()->object(0);
@@ -587,7 +624,7 @@ bool MetalRenderer::BeginFrame(bool mainWindow)
     if (!AcquireDrawable(mainWindow))
         return false;
     
-    ClearColorTextureInternal(GetLayer(mainWindow).GetDrawable()->texture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
+    ClearColorTextureInternal(GetLayer(mainWindow).GetDrawableTexture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
     return true;
 }
 
@@ -598,15 +635,43 @@ void MetalRenderer::Flush(bool waitIdle)
 
     if (waitIdle && m_executingCommandBuffers.size() != 0)
     {
-        m_executingCommandBuffers.back()->waitUntilCompleted();
+        WaitForCommandBuffer(m_executingCommandBuffers.back(), "Flush: waiting for the last command buffer");
         ProcessFinishedCommandBuffers();
     }
 }
 
 void MetalRenderer::NotifyLatteCommandProcessorIdle()
 {
-    //if (m_commitOnIdle)
-    //    CommitCommandBuffer();
+    // Committing on every idle notification would split the game's bursts of commands into many
+    // tiny command buffers (the reason this was left disabled), and this is called in a tight loop.
+    // Recorded work that nothing has submitted must still not wait for the next frame or the next
+    // 60 draw calls though: an occlusion query or readback the game is waiting on lives in it, and
+    // the game may not send anything more until it gets its answer. So submit it once the command
+    // processor has been idle, with the same work pending, for a short while.
+    constexpr auto IDLE_COMMIT_DELAY = std::chrono::milliseconds(20);
+
+    if (!m_currentCommandBuffer.m_commandBuffer || m_currentCommandBuffer.m_commited)
+    {
+        m_idleCommit.m_watching = false;
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (!m_idleCommit.m_watching || m_idleCommit.m_commandBuffer != m_currentCommandBuffer.m_commandBuffer || m_idleCommit.m_recordedDrawcalls != m_recordedDrawcalls)
+    {
+        // new work since the last notification: start the clock again
+        m_idleCommit.m_watching = true;
+        m_idleCommit.m_commandBuffer = m_currentCommandBuffer.m_commandBuffer;
+        m_idleCommit.m_recordedDrawcalls = m_recordedDrawcalls;
+        m_idleCommit.m_since = now;
+        return;
+    }
+
+    if (now - m_idleCommit.m_since >= IDLE_COMMIT_DELAY)
+    {
+        CommitCommandBuffer();
+        m_idleCommit.m_watching = false;
+    }
 }
 
 bool MetalRenderer::ImguiBegin(bool mainWindow)
@@ -625,6 +690,8 @@ bool MetalRenderer::ImguiBegin(bool mainWindow)
         ImGui_ImplMetal_CreateFontsTexture(m_device);
 
     auto& layer = GetLayer(mainWindow);
+    if (!layer.GetDrawableTexture())
+        return false;
 
     // Render pass descriptor
     NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
@@ -1431,6 +1498,13 @@ void MetalRenderer::draw_beginSequence()
 {
     m_state.m_skipDrawSequence = false;
 
+    // After a GPU error iOS ignores this app's GPU work; recording more only grows memory.
+    if (LatteWait::Get().gpuError.load(std::memory_order_relaxed))
+    {
+        m_state.m_skipDrawSequence = true;
+        return;
+    }
+
     bool streamoutEnable = LatteGPUState.contextRegister[mmVGT_STRMOUT_EN] != 0;
 
     // update shader state
@@ -2111,8 +2185,8 @@ void MetalRenderer::PrepareOcclusionQueryDraw()
     if (completion)
     {
 
-        if (!CommandBufferCompleted(completion))
-            completion->waitUntilCompleted();
+        // Bounded: if the GPU never answers, carry on with the counts we have instead of freezing.
+        WaitForCommandBuffer(completion, "occlusion query buffer reuse: waiting for an older command buffer");
 
         for (auto* query : m_occlusionQuery.m_queries)
             query->AccumulateBuffer(nextBuffer);
@@ -2128,7 +2202,7 @@ void MetalRenderer::PrepareOcclusionQueryDraw()
 void MetalRenderer::occlusionQuery_flush() {
     CommitCommandBuffer();
     if (m_occlusionQuery.m_lastCommandBuffer)
-        m_occlusionQuery.m_lastCommandBuffer->waitUntilCompleted();
+        WaitForCommandBuffer(m_occlusionQuery.m_lastCommandBuffer, "occlusion query flush: waiting for the query command buffer");
 }
 
 void MetalRenderer::occlusionQuery_updateState() {
@@ -2261,7 +2335,11 @@ MTL::CommandBuffer* MetalRenderer::GetCommandBuffer()
         //m_commandQueue->insertDebugCaptureBoundary();
 
         auto pool = NS::AutoreleasePool::alloc()->init();
-        MTL::CommandBuffer* mtlCommandBuffer = m_commandQueue->commandBuffer()->retain();
+        // Ask for per-encoder execution status, so a failed command buffer names the encoder that faulted.
+        auto* commandBufferDescriptor = MTL::CommandBufferDescriptor::alloc()->init();
+        commandBufferDescriptor->setErrorOptions(MTL::CommandBufferErrorOptionEncoderExecutionStatus);
+        MTL::CommandBuffer* mtlCommandBuffer = m_commandQueue->commandBuffer(commandBufferDescriptor)->retain();
+        commandBufferDescriptor->release();
         pool->release();
         m_currentCommandBuffer = {mtlCommandBuffer};
 
@@ -2292,9 +2370,7 @@ MTL::RenderCommandEncoder* MetalRenderer::GetTemporaryRenderCommandEncoder(MTL::
     auto pool = NS::AutoreleasePool::alloc()->init();
     auto renderCommandEncoder = commandBuffer->renderCommandEncoder(renderPassDescriptor)->retain();
     pool->release();
-#ifdef CEMU_DEBUG_ASSERT
-    renderCommandEncoder->setLabel(GetLabel("Temporary render command encoder", renderCommandEncoder));
-#endif
+    LabelEncoder(renderCommandEncoder, "temporary render");
     m_commandEncoder = renderCommandEncoder;
     m_encoderType = MetalEncoderType::Render;
 
@@ -2357,9 +2433,7 @@ MTL::RenderCommandEncoder* MetalRenderer::GetRenderCommandEncoder(bool forceRecr
     auto pool = NS::AutoreleasePool::alloc()->init();
     auto renderCommandEncoder = commandBuffer->renderCommandEncoder(m_state.m_activeFBO.m_fbo->GetRenderPassDescriptor())->retain();
     pool->release();
-#ifdef CEMU_DEBUG_ASSERT
-    renderCommandEncoder->setLabel(GetLabel("Render command encoder", renderCommandEncoder));
-#endif
+    LabelEncoder(renderCommandEncoder, "render pass");
     m_commandEncoder = renderCommandEncoder;
     m_encoderType = MetalEncoderType::Render;
 
@@ -2392,6 +2466,7 @@ MTL::ComputeCommandEncoder* MetalRenderer::GetComputeCommandEncoder()
     auto pool = NS::AutoreleasePool::alloc()->init();
     auto computeCommandEncoder = commandBuffer->computeCommandEncoder()->retain();
     pool->release();
+    LabelEncoder(computeCommandEncoder, "compute");
     m_commandEncoder = computeCommandEncoder;
     m_encoderType = MetalEncoderType::Compute;
 
@@ -2417,6 +2492,7 @@ MTL::BlitCommandEncoder* MetalRenderer::GetBlitCommandEncoder()
     auto pool = NS::AutoreleasePool::alloc()->init();
     auto blitCommandEncoder = commandBuffer->blitCommandEncoder()->retain();
     pool->release();
+    LabelEncoder(blitCommandEncoder, "blit");
     m_commandEncoder = blitCommandEncoder;
     m_encoderType = MetalEncoderType::Blit;
 
@@ -2466,29 +2542,186 @@ void MetalRenderer::CommitCommandBuffer()
         m_currentCommandBuffer.m_commited = true;
 
         m_executingCommandBuffers.push_back(mtlCommandBuffer);
+        m_executingEventValues.push_back(m_eventValue);
+        LatteWait::Get().executingCommandBuffers.store((uint32)m_executingCommandBuffers.size(), std::memory_order_relaxed);
 
         // Debug
         //m_commandQueue->insertDebugCaptureBoundary();
     }
 }
 
+// Names an encoder after the frame and draw call it was opened at. Not much, but it is what lets a
+// "command buffer failed" log line say which encoder faulted and roughly where in the frame.
+void MetalRenderer::LabelEncoder(MTL::CommandEncoder* encoder, const char* kind)
+{
+    char text[96];
+    snprintf(text, sizeof(text), "%s frame %u draw %u", kind, (uint32)LatteGPUState.frameCounter, (uint32)LatteGPUState.drawCallCounter);
+    auto pool = NS::AutoreleasePool::alloc()->init();
+    encoder->setLabel(NS::String::string(text, NS::UTF8StringEncoding));
+    pool->release();
+}
+
+static void LogFailedEncoders(MTL::CommandBuffer* commandBuffer, NS::Error* error)
+{
+    if (!error || !error->userInfo())
+        return;
+    auto* encoderInfos = static_cast<NS::Array*>(error->userInfo()->object(MTL::CommandBufferEncoderInfoErrorKey));
+    if (!encoderInfos)
+        return;
+    uint32 logged = 0;
+    for (NS::UInteger i = 0; i < encoderInfos->count() && logged < 6; ++i)
+    {
+        auto* info = static_cast<MTL::CommandBufferEncoderInfo*>(encoderInfos->object(i));
+        if (!info || info->errorState() == MTL::CommandEncoderErrorStateCompleted)
+            continue;
+        const char* label = info->label() ? info->label()->utf8String() : "(no label)";
+        cemuLog_log(LogType::Force, "Metal:   encoder \"{}\" state {} (0 unknown, 2 affected, 3 pending, 4 faulted)", label, (int)info->errorState());
+        ++logged;
+    }
+}
+
+// Once about every half second: publish a memory breakdown for the bridge's MEM log lines, and if the
+// process is close to its memory limit, drop textures that are cheap to bring back. The texture cache
+// otherwise only frees GPU-written textures when the game overwrites them, so a scene that keeps making
+// new render targets grows until the app is killed.
+void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
+{
+    auto& w = LatteWait::Get();
+    const bool evictionRequested = w.evictionRequested.exchange(false);
+    const auto now = std::chrono::steady_clock::now();
+    if (!evictionRequested && now - m_lastMemoryCheck < std::chrono::milliseconds(500))
+        return;
+    m_lastMemoryCheck = now;
+    constexpr uint64 MB = 1024 * 1024;
+
+    uint32 numBuffers;
+    size_t totalSize, freeSize;
+    m_memoryManager->GetStagingAllocator().GetStats(numBuffers, totalSize, freeSize);
+    w.memStagingMB.store((uint32)(totalSize / MB), std::memory_order_relaxed);
+    m_memoryManager->GetIndexAllocator().GetStats(numBuffers, totalSize, freeSize);
+    w.memIndexMB.store((uint32)(totalSize / MB), std::memory_order_relaxed);
+    m_memoryManager->GetSnapshotStats(numBuffers, totalSize, freeSize);
+    w.memSnapshotMB.store((uint32)(totalSize / MB), std::memory_order_relaxed);
+    w.memBufferCacheMB.store(m_memoryManager->GetBufferCache() ? (uint32)(m_memoryManager->GetBufferCache()->length() / MB) : 0, std::memory_order_relaxed);
+    w.memXfbMB.store(m_xfbRingBuffer ? (uint32)(m_xfbRingBuffer->length() / MB) : 0, std::memory_order_relaxed);
+    w.memReadbackMB.store(m_readbackBuffer ? (uint32)(m_readbackBuffer->length() / MB) : 0, std::memory_order_relaxed);
+    w.memDeviceMB.store((uint32)(m_device->currentAllocatedSize() / MB), std::memory_order_relaxed);
+    w.memHostMappedMB.store((uint32)(m_memoryManager->GetHostAllocationSize() / MB), std::memory_order_relaxed);
+
+    uint64 textureBytes = 0;
+    uint32 textureCount = 0;
+    for (LatteTexture* texture : LatteTexture::GetAllTextures())
+    {
+        if (!texture)
+            continue;
+        ++textureCount;
+        if (auto* mtlTexture = static_cast<LatteTextureMtl*>(texture)->GetTexture())
+            textureBytes += mtlTexture->allocatedSize();
+    }
+    w.memTextureCount.store(textureCount, std::memory_order_relaxed);
+    w.memTextureMB.store((uint32)(textureBytes / MB), std::memory_order_relaxed);
+    w.memStatsValid.store(true, std::memory_order_relaxed);
+
+#if BOOST_OS_IOS
+    // The limit differs per device, so the marks are fractions of what the process had free when the first
+    // frame was presented: evict what is cheap to bring back below 35%, and anything unused for ten seconds
+    // below 20%. The 3D World run on an A12Z climbed to the 4.5 GB limit with no eviction at all.
+    const uint64 available = os_proc_available_memory();
+    if (m_startAvailableMemory == 0)
+        m_startAvailableMemory = available;
+    const uint64 lowMark = std::max<uint64>(600ull * MB, m_startAvailableMemory * 35 / 100);
+    const uint64 criticalMark = std::max<uint64>(400ull * MB, m_startAvailableMemory * 20 / 100);
+    if (!evictionRequested && available >= lowMark)
+        return;
+
+    // Delete what LatteTC says is safe (unused for several frames and restorable from guest memory, or
+    // overwritten), bounded per pass so it cannot stall a frame.
+    std::vector<LatteTexture*> candidates = LatteTC_GetDeleteableTextures();
+    if (available < criticalMark)
+    {
+        // Still short: also drop GPU-written textures nobody has touched for ten seconds. Their contents are
+        // lost, which is better than the app being killed.
+        const uint32 currentTick = GetTickCount();
+        const uint32 currentFrame = LatteGPUState.frameCounter;
+        for (LatteTexture* texture : LatteTexture::GetAllTextures())
+        {
+            if (!texture || texture->lastAccessFrameCount == 0)
+                continue;
+            if ((currentTick - texture->lastAccessTick) >= 10000 && (currentFrame - texture->lastAccessFrameCount) >= 30 &&
+                std::find(candidates.begin(), candidates.end(), texture) == candidates.end())
+                candidates.push_back(texture);
+        }
+    }
+    uint32 deleted = 0;
+    uint64 freedBytes = 0;
+    for (LatteTexture* texture : candidates)
+    {
+        if (deleted >= 200)
+            break;
+        // deleting one texture can delete related ones, so make sure this one is still alive
+        const auto& live = LatteTexture::GetAllTextures();
+        if (std::find(live.begin(), live.end(), texture) == live.end())
+            continue;
+        if (auto* mtlTexture = static_cast<LatteTextureMtl*>(texture)->GetTexture())
+            freedBytes += mtlTexture->allocatedSize();
+        LatteTexture_Delete(texture);
+        ++deleted;
+    }
+    if (deleted > 0)
+    {
+        w.texturesEvicted.fetch_add(deleted, std::memory_order_relaxed);
+        if (m_memoryPressureLogs++ < 12)
+            cemuLog_log(LogType::Force, "Metal: memory is low ({} MB left), deleted {} unused textures (about {} MB)", os_proc_available_memory() / MB, deleted, freedBytes / MB);
+    }
+    if (evictionRequested)
+        w.evictionPasses.fetch_add(1);
+#endif
+}
+
 void MetalRenderer::ProcessFinishedCommandBuffers()
 {
     // Check for finished command buffers
-    for (auto it = m_executingCommandBuffers.begin(); it != m_executingCommandBuffers.end();)
+    for (size_t i = 0; i < m_executingCommandBuffers.size();)
     {
-        auto commandBuffer = *it;
+        auto commandBuffer = m_executingCommandBuffers[i];
         if (CommandBufferCompleted(commandBuffer))
         {
+            if (commandBuffer->status() == MTL::CommandBufferStatusError)
+            {
+                // A command buffer that fails may never signal the event the next one is waiting
+                // on, which would leave every later command buffer (and every present) stuck.
+                // Signal it from the CPU so the queue keeps moving.
+                auto& waitState = LatteWait::Get();
+                const uint32 errorCount = waitState.erroredCommandBuffers.fetch_add(1) + 1;
+                if (errorCount <= 8)
+                {
+                    NS::Error* error = commandBuffer->error();
+                    cemuLog_log(LogType::Force, "Metal: command buffer failed (#{}): code {} {}", errorCount,
+                        error ? (long)error->code() : 0L,
+                        (error && error->localizedDescription()) ? error->localizedDescription()->utf8String() : "");
+                    LogFailedEncoders(commandBuffer, error);
+                }
+                // Timeout, page fault, access revoked/ignored, not permitted, out of memory, invalid resource,
+                // device removed: the GPU is no longer doing this process's work, so tell the UI right away.
+                const long errorCode = commandBuffer->error() ? (long)commandBuffer->error()->code() : 0L;
+                if (errorCode == 2 || errorCode == 3 || errorCode == 4 || errorCode == 7 || errorCode == 8 || errorCode == 9 || errorCode == 11)
+                {
+                    waitState.gpuErrorCode.store((int32_t)errorCode);
+                    waitState.gpuError.store(true);
+                }
+                static_cast<MTL::SharedEvent*>(m_event)->setSignaledValue((uint64_t)m_executingEventValues[i]);
+            }
             m_memoryManager->CleanupBuffers(commandBuffer);
             commandBuffer->release();
-            it = m_executingCommandBuffers.erase(it);
+            m_executingCommandBuffers.erase(m_executingCommandBuffers.begin() + i);
+            m_executingEventValues.erase(m_executingEventValues.begin() + i);
         }
         else
         {
-            ++it;
+            ++i;
         }
     }
+    LatteWait::Get().executingCommandBuffers.store((uint32)m_executingCommandBuffers.size(), std::memory_order_relaxed);
 }
 
 bool MetalRenderer::AcquireDrawable(bool mainWindow)
@@ -2993,6 +3226,8 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
 
 void MetalRenderer::ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a)
 {
+    if (!mtlTexture)
+        return; // no drawable to clear (the layer stopped handing them out)
     NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
     auto colorAttachment = renderPassDescriptor->colorAttachments()->object(0);
     colorAttachment->setTexture(mtlTexture);
@@ -3050,7 +3285,7 @@ void MetalRenderer::SwapBuffer(bool mainWindow)
         return;
     
     if (!drawableAlreadyAcquired)
-        ClearColorTextureInternal(layer.GetDrawable()->texture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
+        ClearColorTextureInternal(layer.GetDrawableTexture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
 
     auto commandBuffer = GetCommandBuffer();
     layer.PresentDrawable(commandBuffer);

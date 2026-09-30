@@ -388,9 +388,7 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
         if (m_rasterizationEnabled)
             desc->setFragmentFunction(fragmentFunction);
 
-#ifdef CEMU_DEBUG_ASSERT
-        desc->setLabel(GetLabel("Mesh render pipeline state", desc));
-#endif
+        desc->setLabel(ToNSString(fmt::format("mesh pipeline PS {:016x}-{:016x}", m_pixelShaderMtl ? m_pixelShaderMtl->GetBaseHash() : 0, m_pixelShaderMtl ? m_pixelShaderMtl->GetAuxHash() : 0)));
        	pipeline = m_mtlr->GetDevice()->newRenderPipelineState(desc, MTL::PipelineOptionNone, nullptr, &error);
     }
     else
@@ -409,9 +407,7 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
         if (m_rasterizationEnabled)
             desc->setFragmentFunction(fragmentFunction);
 
-#ifdef CEMU_DEBUG_ASSERT
-        desc->setLabel(GetLabel("Render pipeline state", desc));
-#endif
+        desc->setLabel(ToNSString(fmt::format("pipeline VS {:016x}-{:016x} PS {:016x}-{:016x}", m_vertexShaderMtl->GetBaseHash(), m_vertexShaderMtl->GetAuxHash(), m_pixelShaderMtl ? m_pixelShaderMtl->GetBaseHash() : 0, m_pixelShaderMtl ? m_pixelShaderMtl->GetAuxHash() : 0)));
        	pipeline = m_mtlr->GetDevice()->newRenderPipelineState(desc, MTL::PipelineOptionNone, nullptr, &error);
     }
     auto end = std::chrono::high_resolution_clock::now();

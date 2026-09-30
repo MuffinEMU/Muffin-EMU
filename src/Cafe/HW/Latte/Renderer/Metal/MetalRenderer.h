@@ -210,6 +210,8 @@ public:
 
 	// flush control
 	void Flush(bool waitIdle = false) override;		// called when explicit flush is required (e.g. by imgui)
+	void LabelEncoder(MTL::CommandEncoder* encoder, const char* kind);
+	void UpdateMemoryStatsAndRelievePressure();
 	void NotifyLatteCommandProcessorIdle() override; // called when command processor has no more commands available or when stalled
 
 	// imgui
@@ -575,10 +577,24 @@ private:
 	// Active objects
 	MetalCommandBuffer m_currentCommandBuffer{};
 	std::vector<MTL::CommandBuffer*> m_executingCommandBuffers;
+	std::vector<int32_t> m_executingEventValues; // event value each executing command buffer signals, same order
 	MetalEncoderType m_encoderType = MetalEncoderType::None;
 	MTL::CommandEncoder* m_commandEncoder = nullptr;
 
     uint32 m_recordedDrawcalls;
+    // Submits recorded work that has sat unsubmitted while the command processor was idle (see NotifyLatteCommandProcessorIdle())
+    struct
+    {
+        bool m_watching = false;
+        MTL::CommandBuffer* m_commandBuffer = nullptr; // compared by address only, never dereferenced
+        uint32 m_recordedDrawcalls = 0;
+        std::chrono::steady_clock::time_point m_since;
+    } m_idleCommit;
+
+    std::chrono::steady_clock::time_point m_lastMemoryCheck;
+    uint32 m_memoryPressureLogs = 0;
+    uint64 m_startAvailableMemory = 0;
+
     uint32 m_defaultCommitTreshlod;
     uint32 m_commitTreshold;
 

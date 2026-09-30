@@ -154,6 +154,20 @@ void cemu_bridge_log_line(const char* message);
 /// available.
 double cemu_bridge_get_fps(void);
 
+/// True while a running, unpaused title has stopped producing frames for several seconds
+/// even though the emulator itself is still alive (the game's audio and input carry on
+/// while the picture is frozen or black). Set by a watchdog inside the bridge, which also
+/// writes a one-off diagnostic snapshot to log.txt when it trips, and cleared as soon as
+/// frames start arriving again. Safe to poll from the UI at any time.
+bool cemu_bridge_video_stalled(void);
+
+/// Why the picture is flagged by cemu_bridge_video_stalled(): 0 = not flagged, 1 = no new
+/// frames for several seconds, 2 = the GPU reported an error (a page fault, for example) and
+/// iOS is no longer running this app's GPU work, 3 = the screen's layer cannot get frame
+/// buffers (out of memory for the screen), 4 = the app is nearly out of memory. Kind 2 does not clear until the title stops; 3
+/// clears when drawables come back.
+int cemu_bridge_video_stall_kind(void);
+
 /// The four counters the engine's own progress heartbeat prints, readable on demand.
 /// cemu_bridge_get_fps() rounds to whole frames per second, so a title running below one
 /// frame per second reads 0, the same as one that stopped. These separate the two:
