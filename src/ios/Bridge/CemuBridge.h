@@ -761,6 +761,15 @@ bool cemu_bridge_microphone_enabled(void);
 void cemu_bridge_set_input_volume(int volume);
 int cemu_bridge_input_volume(void);
 
+/// Simulated blow into the GamePad microphone (the in-game "Blow" button). While on, the
+/// game's mic buffer is fed synthetic wind noise instead of microphone audio: no real
+/// microphone and no permission involved, works whether or not the real-mic setting above is
+/// on. Safe to call from any thread at any time, including with no title running. The core
+/// clears it when the title that owned the mic goes away, so read it back with
+/// cemu_bridge_mic_blow() rather than assuming your last write stuck.
+void cemu_bridge_set_mic_blow(bool blowing);
+bool cemu_bridge_mic_blow(void);
+
 /// Which MoltenVK build the Vulkan renderer uses this launch: "1.4.3" (the default)
 /// or "1.2.8". Chosen from the muffin.render.moltenVK setting when the engine
 /// initializes; a loaded MoltenVK cannot be swapped inside a running process, so a change
