@@ -155,36 +155,51 @@ struct BlowButton: View {
 
 /// Keeps the in-game top bar's button group on one row at any width. The bar used to be a
 /// plain HStack: on a narrow iPhone the group had nowhere to go, so the buttons squeezed
-/// and overlapped the title and the FPS readout. When everything fits this is invisible
-/// (the scroll view is exactly as wide as its content and can't scroll); when it doesn't,
-/// the group scrolls horizontally and the title gives up its space first.
-// File-level: Swift doesn't allow static stored properties inside a generic type.
-private struct TopBarContentWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-}
-
+/// and overlapped the title and the FPS readout.
+///
+/// When the group fits, it is laid out as the plain row it always was - no scroll view at
+/// all. A scroll view here, even one that can't scroll, picks up iOS 26's scroll edge
+/// effect, which draws a blur across whatever sits at its edges: here, every button in the
+/// bar. Only when the row genuinely doesn't fit does it fall back to scrolling, with that
+/// edge effect turned off.
 struct TopBarOverflowScroll<Content: View>: View {
     @ViewBuilder var content: () -> Content
-    @State private var contentWidth: CGFloat = 0
-
-    // Room above and below the buttons for their shadows, which the scroll view clips; the
-    // negative padding on the outside gives the same height back to the bar's layout.
-    private let shadowRoom: CGFloat = 6
 
     var body: some View {
+        Group {
+            if #available(iOS 16.0, *) {
+                ViewThatFits(in: .horizontal) {
+                    content()
+                        .fixedSize(horizontal: true, vertical: false)
+                    scrolling
+                }
+            } else {
+                // No ViewThatFits before iOS 16. Those versions have no scroll edge effect
+                // either, so the scrolling row has no blur to draw there.
+                scrolling
+            }
+        }
+        .layoutPriority(1)
+    }
+
+    private var scrolling: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             content()
-                .padding(.vertical, shadowRoom)
-                .background(
-                    GeometryReader { proxy in
-                        Color.clear.preference(key: TopBarContentWidthKey.self, value: proxy.size.width)
-                    }
-                )
         }
-        .frame(maxWidth: contentWidth > 0 ? contentWidth : nil)
-        .padding(.vertical, -shadowRoom)
-        .onPreferenceChange(TopBarContentWidthKey.self) { contentWidth = $0 }
-        .layoutPriority(1)
+        .topBarNoScrollEdgeEffect()
+    }
+}
+
+private extension View {
+    @ViewBuilder func topBarNoScrollEdgeEffect() -> some View {
+        #if compiler(>=6.2)
+        if #available(iOS 26.0, *) {
+            self.scrollEdgeEffectHidden(true, for: .all)
+        } else {
+            self
+        }
+        #else
+        self
+        #endif
     }
 }
