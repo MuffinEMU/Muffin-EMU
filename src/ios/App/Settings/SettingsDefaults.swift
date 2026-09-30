@@ -52,7 +52,7 @@ enum SettingsDefaults {
         cemu_bridge_set_recompiler_enabled(true)
         cemu_bridge_set_favour_accuracy(false)
         cemu_bridge_set_low_power_mode(LowPowerMode.defaultValue)
-        cemu_bridge_set_multicore_enabled(MulticoreMode.defaultValue)
+        cemu_bridge_set_cpu_core_mode(CoreMode.defaultValue.bridgeValue)
         cemu_bridge_set_async_shader_compile(true)
         cemu_bridge_set_vsync_enabled(true)
         cemu_bridge_set_stretch_to_fill(FrameStretch.defaultValue)
