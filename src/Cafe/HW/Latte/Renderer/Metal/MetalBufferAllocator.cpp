@@ -238,7 +238,9 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalSynchronizedHeapAlloc
 void MetalSynchronizedHeapAllocator::FreeReservation(AllocatorReservation* uploadReservation)
 {
 	// put the allocation on a delayed release queue for the current command buffer
-	MTL::CommandBuffer* currentCommandBuffer = m_mtlr->GetCurrentCommandBuffer();
+	// Never key the release on a command buffer that has already finished and been released: the entry would
+	// never be processed (a leak), or be hit by a new command buffer that reuses the address.
+	MTL::CommandBuffer* currentCommandBuffer = m_mtlr->GetCommandBufferToRetireOn();
 	auto it = std::find_if(m_activeAllocations.begin(), m_activeAllocations.end(), [&uploadReservation](const TrackedAllocation& allocation) { return allocation.allocation.chunkIndex == uploadReservation->bufferIndex && allocation.allocation.offset == uploadReservation->bufferOffset; });
 	if (it == m_activeAllocations.end())
 	{
@@ -250,10 +252,14 @@ void MetalSynchronizedHeapAllocator::FreeReservation(AllocatorReservation* uploa
 			"(buffer {}, offset {}) this allocator has no record of - likely a double "
 			"free. Skipping it rather than dereferencing an invalid iterator.",
 			uploadReservation->bufferIndex, uploadReservation->bufferOffset);
-		m_poolAllocatorReservation.freeObj(uploadReservation);
+		// Not returned to the pool: it was already, and pushing it a second time would hand the same object to
+		// two different allocations later.
 		return;
 	}
-	m_releaseQueue[currentCommandBuffer].emplace_back(it->allocation);
+	if (currentCommandBuffer)
+		m_releaseQueue[currentCommandBuffer].emplace_back(it->allocation);
+	else
+		m_chunkedHeap.free(it->allocation);
 	m_activeAllocations.erase(it);
 	m_poolAllocatorReservation.freeObj(uploadReservation);
 }

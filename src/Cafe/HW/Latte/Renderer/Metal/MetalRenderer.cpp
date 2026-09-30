@@ -1,6 +1,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #if BOOST_OS_IOS
 #include <os/proc.h>
+#include <sys/sysctl.h>
 #endif
 #include "Cafe/HW/Latte/Renderer/Metal/MetalVoidVertexPipeline.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalMemoryManager.h"
@@ -58,6 +59,26 @@ std::vector<MetalRenderer::DeviceInfo> MetalRenderer::GetDevices()
 
 MetalRenderer::MetalRenderer()
 {
+    // State left behind by the previous title in this process: cached index reservations that belong to a
+    // destroyed allocator, and the GPU-fault latches and counters of the previous renderer.
+    LatteIndices_forgetAll();
+    {
+        uint64 physicalMemory = 0;
+        size_t physicalMemorySize = sizeof(physicalMemory);
+        if (sysctlbyname("hw.memsize", &physicalMemory, &physicalMemorySize, nullptr, 0) != 0 || physicalMemory == 0)
+            physicalMemory = 4ull << 30;
+        m_breadcrumbCapacity = physicalMemory >= (6ull << 30) ? 1024 : (physicalMemory >= (3ull << 30) ? 512 : 256);
+        m_breadcrumbs.assign(m_breadcrumbCapacity, MetalDrawBreadcrumb{});
+    }
+    {
+        auto& waitState = LatteWait::Get();
+        waitState.gpuError.store(false);
+        waitState.gpuErrorCode.store(0);
+        waitState.gpuPresumedLost.store(false);
+        waitState.erroredCommandBuffers.store(0);
+        waitState.executingCommandBuffers.store(0);
+    }
+
     // Options
 
     // Position invariance
@@ -347,6 +368,9 @@ MetalRenderer::~MetalRenderer()
     m_executingCommandBuffers.clear();
     m_executingEventValues.clear();
 
+    // The index cache is global and still holds reservations from the allocator deleted below
+    LatteIndices_forgetAll();
+
     delete m_outputShaderCache;
     delete m_pipelineCache;
     delete m_depthStencilCache;
@@ -612,7 +636,12 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
     }
 
     renderCommandEncoder->setViewport(MTL::Viewport{(double)imageX, (double)imageY, (double)imageWidth, (double)imageHeight, 0.0, 1.0});
-    renderCommandEncoder->setScissorRect(MTL::ScissorRect{(uint32)imageX, (uint32)imageY, (uint32)imageWidth, (uint32)imageHeight});
+    {
+        MTL::Texture* target = layer.GetDrawable()->texture();
+        const uint64 tw = target->width(), th = target->height();
+        const uint64 sx = std::min<uint64>((uint32)std::max(imageX, 0), tw), sy = std::min<uint64>((uint32)std::max(imageY, 0), th);
+        renderCommandEncoder->setScissorRect(MTL::ScissorRect{(NS::UInteger)sx, (NS::UInteger)sy, (NS::UInteger)std::min<uint64>((uint32)std::max(imageWidth, 0), tw - sx), (NS::UInteger)std::min<uint64>((uint32)std::max(imageHeight, 0), th - sy)});
+    }
 
     renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
 
@@ -944,6 +973,32 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
 
     const auto& formatInfo = GetMtlPixelFormatInfo(textureMtl->format, textureMtl->isDepth);
     size_t bytesPerRow = GetMtlTextureBytesPerRow(textureMtl->format, textureMtl->isDepth, width);
+    {
+        // The blit reads rows * bytesPerRow from the staging copy and writes width x height into the level. If either
+        // does not fit, the GPU reads or writes outside the buffer or the texture.
+        MTL::Texture* target = textureMtl->GetTexture();
+        const uint32 blockW = std::max<uint32>(1, formatInfo.blockTexelSize.x);
+        const uint32 blockH = std::max<uint32>(1, formatInfo.blockTexelSize.y);
+        const uint64 levelW = target ? std::max<uint64>(1, (uint64)target->width() >> mipIndex) : 0;
+        const uint64 levelH = target ? std::max<uint64>(1, (uint64)target->height() >> mipIndex) : 0;
+        const uint64 alignedW = (levelW + blockW - 1) / blockW * blockW;
+        const uint64 alignedH = (levelH + blockH - 1) / blockH * blockH;
+        if (!target || mipIndex < 0 || (NS::UInteger)mipIndex >= target->mipmapLevelCount() || width <= 0 || height <= 0 || (uint64)width > alignedW || (uint64)height > alignedH)
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: texture upload of {}x{} does not fit level {} of its texture; skipping it", width, height, mipIndex);
+            return;
+        }
+        if (!(textureMtl->isDepth && formatInfo.hasStencil))
+        {
+            const uint64 rows = ((uint64)height + blockH - 1) / blockH;
+            const uint64 lastRowBytes = (((uint64)width + blockW - 1) / blockW) * formatInfo.bytesPerBlock;
+            if ((rows - 1) * bytesPerRow + lastRowBytes > compressedImageSize)
+            {
+                cemuLog_logOnce(LogType::Force, "Metal: texture upload has {} bytes but {}x{} needs more; skipping it", compressedImageSize, width, height);
+                return;
+            }
+        }
+    }
     // No need to set bytesPerImage for 3D textures, since we always load just one slice
     //size_t bytesPerImage = GetMtlTextureBytesPerImage(textureMtl->GetFormat(), textureMtl->isDepth, height, bytesPerRow);
     //if (m_isAppleGPU)
@@ -1112,6 +1167,44 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
 
     auto mtlSrc = static_cast<LatteTextureMtl*>(src)->GetTexture();
     auto mtlDst = static_cast<LatteTextureMtl*>(dst)->GetTexture();
+
+    // A blit outside a level or layer of either texture is a GPU fault, so keep the region inside both.
+    {
+        if (!mtlSrc || !mtlDst || srcMip < 0 || dstMip < 0 || (NS::UInteger)srcMip >= mtlSrc->mipmapLevelCount() || (NS::UInteger)dstMip >= mtlDst->mipmapLevelCount())
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: texture copy names a level that does not exist; skipping it");
+            return;
+        }
+        const sint64 srcW = std::max<sint64>(1, (sint64)mtlSrc->width() >> srcMip), srcH = std::max<sint64>(1, (sint64)mtlSrc->height() >> srcMip);
+        const sint64 dstW = std::max<sint64>(1, (sint64)mtlDst->width() >> dstMip), dstH = std::max<sint64>(1, (sint64)mtlDst->height() >> dstMip);
+        if (effectiveSrcX < 0 || effectiveSrcY < 0 || effectiveDstX < 0 || effectiveDstY < 0 || effectiveSrcX >= srcW || effectiveSrcY >= srcH || effectiveDstX >= dstW || effectiveDstY >= dstH)
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: texture copy starts outside its texture; skipping it");
+            return;
+        }
+        const sint64 fitW = std::min<sint64>(srcW - effectiveSrcX, dstW - effectiveDstX);
+        const sint64 fitH = std::min<sint64>(srcH - effectiveSrcY, dstH - effectiveDstY);
+        if (effectiveCopyWidth > fitW || effectiveCopyHeight > fitH)
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: texture copy reaches past its texture ({}x{} from {},{} into {}x{} at {},{}); clamping it", effectiveCopyWidth, effectiveCopyHeight, effectiveSrcX, effectiveSrcY, dstW, dstH, effectiveDstX, effectiveDstY);
+            effectiveCopyWidth = (sint32)std::min<sint64>(effectiveCopyWidth, fitW);
+            effectiveCopyHeight = (sint32)std::min<sint64>(effectiveCopyHeight, fitH);
+        }
+        if (effectiveCopyWidth <= 0 || effectiveCopyHeight <= 0)
+            return;
+        const bool srcCube = mtlSrc->textureType() == MTL::TextureTypeCubeArray || mtlSrc->textureType() == MTL::TextureTypeCube;
+        const bool dstCube = mtlDst->textureType() == MTL::TextureTypeCubeArray || mtlDst->textureType() == MTL::TextureTypeCube;
+        if (!src->Is3DTexture() && !srcCube && (srcSlice < 0 || srcDepth_ < 1 || (NS::UInteger)(srcSlice + srcDepth_) > std::max<NS::UInteger>(1, mtlSrc->arrayLength())))
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: texture copy names slices the source does not have; skipping it");
+            return;
+        }
+        if (!dst->Is3DTexture() && !dstCube && (dstSlice < 0 || srcDepth_ < 1 || (NS::UInteger)(dstSlice + srcDepth_) > std::max<NS::UInteger>(1, mtlDst->arrayLength())))
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: texture copy names slices the destination does not have; skipping it");
+            return;
+        }
+    }
 
     uint32 srcBaseLayer = 0;
     uint32 dstBaseLayer = 0;
@@ -1301,7 +1394,12 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
     if (destinationTexture->isDepth)
         renderCommandEncoder->setDepthStencilState(m_copyColorToDepthState);
     renderCommandEncoder->setViewport(MTL::Viewport{0.0, 0.0, (double)effectiveCopyWidth, (double)effectiveCopyHeight, 0.0, 1.0});
-    renderCommandEncoder->setScissorRect(MTL::ScissorRect{0, 0, (uint32)effectiveCopyWidth, (uint32)effectiveCopyHeight});
+    {
+        // the scissor has to stay inside the level that is being rendered to
+        const uint64 levelWidth = std::max<uint64>(1, (uint64)destinationMtl->width() >> dstMip);
+        const uint64 levelHeight = std::max<uint64>(1, (uint64)destinationMtl->height() >> dstMip);
+        renderCommandEncoder->setScissorRect(MTL::ScissorRect{0, 0, (NS::UInteger)std::min<uint64>((uint32)effectiveCopyWidth, levelWidth), (NS::UInteger)std::min<uint64>((uint32)effectiveCopyHeight, levelHeight)});
+    }
     SetTexture(renderCommandEncoder, METAL_SHADER_TYPE_FRAGMENT, sourceView->GetRGBAView(), GET_HELPER_TEXTURE_BINDING(0));
     renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
     EndEncoding();
@@ -1310,6 +1408,12 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
 void MetalRenderer::bufferCache_init(const sint32 bufferSize)
 {
     m_memoryManager->InitBufferCache(bufferSize);
+}
+
+sint32 MetalRenderer::bufferCache_getGrantedSize(sint32 requestedSize)
+{
+    const size_t granted = m_memoryManager->GetBufferCacheSize();
+    return granted != 0 ? static_cast<sint32>(std::min<size_t>(granted, static_cast<size_t>(requestedSize))) : requestedSize;
 }
 
 void MetalRenderer::bufferCache_upload(uint8* buffer, sint32 size, uint32 bufferOffset)
@@ -2509,6 +2613,11 @@ MTL::RenderCommandEncoder* MetalRenderer::GetTemporaryRenderCommandEncoder(MTL::
     m_commandEncoder = renderCommandEncoder;
     m_encoderType = MetalEncoderType::Render;
 
+    // A new encoder starts with nothing bound. The bound-resource cache in m_encoderState still described the
+    // previous encoder, so SetTexture()/SetBuffer() skipped a binding the new encoder never received (a second
+    // surface copy from the same texture, for instance), and the shader then sampled an unbound texture.
+    ResetEncoderState();
+
     // Debug
     m_performanceMonitor.m_renderPasses++;
 
@@ -2697,6 +2806,7 @@ void MetalRenderer::CommitCommandBuffer()
         m_executingEventValues.push_back(m_eventValue);
         m_executingQueueGenerations.push_back(m_queueGeneration);
         LatteWait::Get().executingCommandBuffers.store((uint32)m_executingCommandBuffers.size(), std::memory_order_relaxed);
+        LatteWait::Get().cbSubmitted.fetch_add(1, std::memory_order_relaxed);
 
         // Debug
         //m_commandQueue->insertDebugCaptureBoundary();
@@ -2717,7 +2827,7 @@ void MetalRenderer::LabelEncoder(MTL::CommandEncoder* encoder, const char* kind)
 MetalDrawBreadcrumb* MetalRenderer::BeginDrawBreadcrumb()
 {
     MetalDrawBreadcrumb& crumb = m_breadcrumbs[m_breadcrumbNext];
-    m_breadcrumbNext = (m_breadcrumbNext + 1) % BREADCRUMB_COUNT;
+    m_breadcrumbNext = (m_breadcrumbNext + 1) % m_breadcrumbCapacity;
     ++m_breadcrumbsWritten;
     crumb = MetalDrawBreadcrumb{};
     crumb.frame = (uint32)LatteGPUState.frameCounter;
@@ -2744,6 +2854,17 @@ void MetalRenderer::RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, u
     entry.depth = (uint32)std::max<NS::UInteger>(texture->depth(), texture->arrayLength());
     entry.mips = (uint16)texture->mipmapLevelCount();
     entry.pixelFormat = (uint16)texture->pixelFormat();
+    if (auto* parent = texture->parentTexture())
+    {
+        entry.parentLevel = (uint16)texture->parentRelativeLevel();
+        entry.parentSlice = (uint16)texture->parentRelativeSlice();
+        entry.parentMips = (uint16)parent->mipmapLevelCount();
+        entry.parentLayers = (uint16)parent->arrayLength();
+        // a view has to lie inside the texture it was made from
+        if ((NS::UInteger)entry.parentLevel + texture->mipmapLevelCount() > parent->mipmapLevelCount() ||
+            (NS::UInteger)entry.parentSlice + texture->arrayLength() > std::max<NS::UInteger>(1, parent->arrayLength()) * (parent->textureType() == MTL::TextureTypeCubeArray ? 6 : 1))
+            m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_TEXTURE;
+    }
 }
 
 // Logs what the last draws bound, so a GPU fault can be tied to a buffer, a texture or an index range from the
@@ -2751,14 +2872,14 @@ void MetalRenderer::RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, u
 // dozen draws after it is printed, and any draw in the ring that looked wrong when it was recorded.
 void MetalRenderer::DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool haveRange)
 {
-    const uint32 stored = std::min(m_breadcrumbsWritten, BREADCRUMB_COUNT);
+    const uint32 stored = std::min(m_breadcrumbsWritten, m_breadcrumbCapacity);
     if (stored == 0)
     {
         cemuLog_log(LogType::Force, "Metal: no draw breadcrumbs were recorded");
         return;
     }
-    const uint32 start = (m_breadcrumbNext + BREADCRUMB_COUNT - stored) % BREADCRUMB_COUNT;
-    auto at = [&](uint32 n) -> const MetalDrawBreadcrumb& { return m_breadcrumbs[(start + n) % BREADCRUMB_COUNT]; };
+    const uint32 start = (m_breadcrumbNext + m_breadcrumbCapacity - stored) % m_breadcrumbCapacity;
+    auto at = [&](uint32 n) -> const MetalDrawBreadcrumb& { return m_breadcrumbs[(start + n) % m_breadcrumbCapacity]; };
     if (haveRange)
         cemuLog_log(LogType::Force, "Metal: draw breadcrumbs: {} draws kept (draw {} to {}), unfinished encoders start at draws {} to {}", stored, at(0).draw, at(stored - 1).draw, firstDraw, lastDraw);
     else
@@ -2787,7 +2908,7 @@ void MetalRenderer::DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool 
         for (uint32 i = 0; i < d.numTextures; ++i)
         {
             const auto& t = d.textures[i];
-            textures += fmt::format(" tex{}.{}[{}x{}x{} mips {} fmt {} dim {}{}]", (uint32)t.stage, (uint32)t.unit, t.width, t.height, t.depth, (uint32)t.mips, (uint32)t.pixelFormat, (uint32)t.type, t.fallback ? " FALLBACK" : "");
+            textures += fmt::format(" tex{}.{}[{}x{}x{} mips {} fmt {} dim {}{} view of level {} slice {} in {} mips {} layers]", (uint32)t.stage, (uint32)t.unit, t.width, t.height, t.depth, (uint32)t.mips, (uint32)t.pixelFormat, (uint32)t.type, t.fallback ? " FALLBACK" : "", (uint32)t.parentLevel, (uint32)t.parentSlice, (uint32)t.parentMips, (uint32)t.parentLayers);
         }
         cemuLog_log(LogType::Force, "Metal:   textures{}", textures);
     };
@@ -2902,13 +3023,30 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
 
 #if BOOST_OS_IOS
     // The limit differs per device, so the marks are fractions of what the process had free when the first
-    // frame was presented: evict what is cheap to bring back below 35%, and anything unused for ten seconds
-    // below 20%. The 3D World run on an A12Z climbed to the 4.5 GB limit with no eviction at all.
+    // frame was presented: evict what is cheap to bring back below the low mark, and anything unused for ten
+    // seconds below the critical mark. The 3D World run on an A12Z climbed to the 4.5 GB limit with no eviction
+    // at all.
+    //
+    // The fractions follow the headroom this device actually gave the process. A small phone starts with
+    // little to spare, so it keeps a larger share in reserve (a texture that is dropped early only costs a
+    // re-upload; a process killed for memory costs the whole session). The absolute floors below used to apply
+    // to every device, which on a small one meant evicting from the first frame on; they are now capped to a
+    // share of that device's own headroom.
     const uint64 available = os_proc_available_memory();
     if (m_startAvailableMemory == 0)
         m_startAvailableMemory = available;
-    const uint64 lowMark = std::max<uint64>(600ull * MB, m_startAvailableMemory * 35 / 100);
-    const uint64 criticalMark = std::max<uint64>(400ull * MB, m_startAvailableMemory * 20 / 100);
+    const bool smallHeadroom = m_startAvailableMemory < 1536ull * MB;
+    const uint64 lowPercent = smallHeadroom ? 45 : 35;
+    const uint64 criticalPercent = smallHeadroom ? 25 : 20;
+    const uint64 lowMark = std::max<uint64>(m_startAvailableMemory * lowPercent / 100, std::min<uint64>(600ull * MB, m_startAvailableMemory / 2));
+    const uint64 criticalMark = std::max<uint64>(m_startAvailableMemory * criticalPercent / 100, std::min<uint64>(400ull * MB, m_startAvailableMemory * 30 / 100));
+    static bool s_loggedMemoryMarks = false;
+    if (!s_loggedMemoryMarks && m_startAvailableMemory != 0)
+    {
+        s_loggedMemoryMarks = true;
+        cemuLog_log(LogType::Force, "Metal: {} memory headroom ({} MB free at the first frame): dropping cheap textures below {} MB free, all idle ones below {} MB",
+            smallHeadroom ? "small" : "standard", m_startAvailableMemory / MB, lowMark / MB, criticalMark / MB);
+    }
     if (!evictionRequested && available >= lowMark)
         return;
 
@@ -2993,7 +3131,17 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
                 // Timeout, page fault, access revoked/ignored, not permitted, out of memory, invalid resource,
                 // device removed: the GPU is no longer doing this process's work, so tell the UI right away.
                 const long errorCode = commandBuffer->error() ? (long)commandBuffer->error()->code() : 0L;
-                if (errorCode == 2 || errorCode == 3 || errorCode == 4 || errorCode == 7 || errorCode == 8 || errorCode == 9 || errorCode == 11)
+                if (!staleQueue)
+                {
+                    waitState.cbErrorStreak.fetch_add(1, std::memory_order_relaxed);
+                    waitState.cbLastErrorCode.store((int32_t)errorCode, std::memory_order_relaxed);
+                }
+                // Only the errors that mean iOS has stopped running this app's GPU work are latched here: a page
+                // fault that the new queue did not cure, submissions ignored (4), out of memory, device removed.
+                // Timeout (2), not permitted (7, what a command buffer gets when the app was in the background) and
+                // invalid resource (9) fail that one command buffer and later ones can work, so the stall watchdog
+                // judges them by whether they keep failing (cbErrorStreak) instead of latching for good.
+                if (errorCode == 3 || errorCode == 4 || errorCode == 8 || errorCode == 11)
                 {
                     if (staleQueue)
                     {
@@ -3003,26 +3151,34 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
                     {
                         // follow-on failures of the faulted queue; it is replaced before the next command buffer is made
                     }
-                    else if (errorCode == 3 && m_gpuRecoveryCount == 0)
+                    else if (errorCode == 3 && m_gpuRecoveryCount < 3 && (m_gpuRecoveryCount == 0 || m_gpuRecoveryLogged))
                     {
-                        // First page fault: try once to carry on with a fresh command queue instead of stopping.
+                        // A page fault: carry on with a fresh command queue instead of stopping. Only tried again
+                        // if the previous new queue proved it works, and at most three times.
                         m_gpuRecoveryPending = true;
-                        cemuLog_log(LogType::Force, "Metal: GPU page fault, will replace the command queue and try to carry on (one attempt)");
+                        cemuLog_log(LogType::Force, "Metal: GPU page fault, will replace the command queue and try to carry on (attempt {} of 3)", m_gpuRecoveryCount + 1);
                     }
-                    else
+                    else if (!waitState.gpuError.load())
                     {
-                        if (m_gpuRecoveryCount > 0)
-                            cemuLog_log(LogType::Force, "Metal: the command queue made after the page fault failed as well (code {}); stopping", errorCode);
+                        // logged once: everything after this only repeats it
+                        cemuLog_log(LogType::Force, "Metal: stopping after GPU error code {} ({} command queue replacement(s) tried)", errorCode, m_gpuRecoveryCount);
                         waitState.gpuErrorCode.store((int32_t)errorCode);
                         waitState.gpuError.store(true);
                     }
                 }
                 static_cast<MTL::SharedEvent*>(m_event)->setSignaledValue((uint64_t)m_executingEventValues[i]);
             }
-            else if (m_gpuRecoveryCount > 0 && !staleQueue && !m_gpuRecoveryLogged)
+            else
             {
-                m_gpuRecoveryLogged = true;
-                cemuLog_log(LogType::Force, "Metal: the first command buffer on the new command queue completed without error");
+                auto& waitState = LatteWait::Get();
+                waitState.cbRetired.fetch_add(1, std::memory_order_relaxed);
+                if (!staleQueue)
+                    waitState.cbErrorStreak.store(0, std::memory_order_relaxed);
+                if (m_gpuRecoveryCount > 0 && !staleQueue && !m_gpuRecoveryLogged)
+                {
+                    m_gpuRecoveryLogged = true;
+                    cemuLog_log(LogType::Force, "Metal: the first command buffer on the new command queue completed without error");
+                }
             }
             m_memoryManager->CleanupBuffers(commandBuffer);
             commandBuffer->release();
@@ -3048,6 +3204,7 @@ bool MetalRenderer::RecoverFromGpuFault()
 {
     m_gpuRecoveryPending = false;
     m_gpuRecovering = true;
+    m_gpuRecoveryLogged = false;
     auto fail = [&](const char* why) {
         m_gpuRecovering = false;
         m_gpuRecoveryCount++;
