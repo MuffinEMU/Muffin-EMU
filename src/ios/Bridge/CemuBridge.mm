@@ -85,6 +85,7 @@ namespace coreinit { void OSSetThermalThrottleMicros(uint32 micros); }
 extern "C" {
 void CemuInitialize(const char* execPath, const char* user_data_path, const char* config_path, const char* cache_path, const char* data_path);
 void CemuRun(void);
+void CemuPrepareRenderer(void);
 void CemuShutdown(void);
 void CemuUIKit_SetMainWindow(UIWindow* window);
 void CemuUIKit_SetMainView(UIView* view);
@@ -106,6 +107,7 @@ int csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
 int IOSTitleLaunch_PrepareForegroundTitle(const char* path);
 const char* IOSTitleLaunch_LastErrorDetail();
 int IOSTitleLaunch_ReloadAndCountKeys();
+int IOSTitleLaunch_PrepareForegroundTitleById(uint64_t titleId);
 int IOSTitleDecrypt_ExtractToFolder(const char* srcPath, const char* destFolderPath,
     std::atomic_bool& cancelRequested,
     const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
@@ -161,6 +163,7 @@ bool IOSSaveState_Save(const char* path);
 bool IOSSaveState_Load(const char* path);
 void IOSSystemImplementation_Install();
 bool IOSSystemImplementation_TitleExited(int* statusOut);
+bool IOSSystemImplementation_TitleSwitchFailed();
 void IOSSystemImplementation_ReportFatal(const char* reason);
 const char* IOSSystemImplementation_FatalReason();
 void IOSSystemImplementation_ResetExit();
@@ -867,6 +870,23 @@ namespace {
     std::atomic<int> g_videoStallKind{0}; // 0 none, 1 picture stopped, 2 GPU error
     std::atomic<bool> g_stallWatchRunning{false};
     std::atomic<bool> g_appIsActive{true};
+
+    // Clears the stall flag, the stall kind and the GPU-fault state (a failed command buffer, a
+    // presumed-lost GPU, the drawable-failure count). Used when a title ends and when a title
+    // switch replaces the renderer: those flags describe the renderer that is being thrown away,
+    // and left set they would make the watchdog report the new title as stalled, or as
+    // GPU-faulted, before it has drawn a frame.
+    void ios_reset_video_stall_state()
+    {
+        g_videoStalled.store(false);
+        g_videoStallKind.store(0);
+        auto& w = LatteWait::Get();
+        w.gpuError.store(false);
+        w.gpuErrorCode.store(0);
+        w.gpuPresumedLost.store(false);
+        w.memStatsValid.store(false);
+        w.drawableFailuresInARow.store(0);
+    }
 
     void ios_stall_log_snapshot(double stalledSeconds)
     {
@@ -1983,6 +2003,8 @@ void cemu_bridge_log_line(const char* message) {
     cemuLog_log(LogType::Force, std::string_view(message));
 }
 
+static CemuBridgeStatus ios_boot_prepared_title(int prepared);
+
 CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
     if (!path || path[0] == '\0') {
         setStatus("boot_title: empty path.");
@@ -1993,10 +2015,43 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
         return CEMU_BRIDGE_CORE_NOT_BUILT;
     }
 
+    // "mlc-title:<16 hex digits>" boots a title installed in the MLC by its id (the Wii U
+    // Menu tile uses this), through the same tail as a path launch.
+    static const char kMlcTitlePrefix[] = "mlc-title:";
+    if (strncmp(path, kMlcTitlePrefix, sizeof(kMlcTitlePrefix) - 1) == 0) {
+        char* end = nullptr;
+        const unsigned long long titleId = strtoull(path + sizeof(kMlcTitlePrefix) - 1, &end, 16);
+        if (end == path + sizeof(kMlcTitlePrefix) - 1 || *end != '\0' || titleId == 0) {
+            setStatus("boot_title: bad title id.");
+            return CEMU_BRIDGE_BAD_ARG;
+        }
+        return cemu_bridge_boot_title_id(titleId);
+    }
+
     cemu_bridge_log_checkpoint("boot_title: about to prepare title");
     const int prepared = IOSTitleLaunch_PrepareForegroundTitle(path);
     cemu_bridge_log_checkpoint("boot_title: prepare returned");
+    return ios_boot_prepared_title(prepared);
+}
 
+CemuBridgeStatus cemu_bridge_boot_title_id(uint64_t titleId) {
+    if (titleId == 0) {
+        setStatus("boot_title_id: empty title id.");
+        return CEMU_BRIDGE_BAD_ARG;
+    }
+    if (!g_initialized.load()) {
+        setStatus("The emulator core is not initialized.");
+        return CEMU_BRIDGE_CORE_NOT_BUILT;
+    }
+    cemu_bridge_log_checkpoint("boot_title_id: about to prepare title");
+    const int prepared = IOSTitleLaunch_PrepareForegroundTitleById(titleId);
+    cemu_bridge_log_checkpoint("boot_title_id: prepare returned");
+    return ios_boot_prepared_title(prepared);
+}
+
+// Everything after the title has been prepared: report a failed prepare, otherwise bring up
+// the surfaces and start the title thread. Shared by the path and title-id launches.
+static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
     switch (prepared) {
         case 0:
             break;
@@ -2029,6 +2084,9 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
         case 6:
             setStatus("That looks like an update or DLC. Launch the base game instead.");
             return CEMU_BRIDGE_BASE_NOT_FOUND;
+        case 11:
+            setStatus("That system title isn't installed. Import it in Settings > Wii U Menu.");
+            return CEMU_BRIDGE_UNABLE_TO_MOUNT;
         default:
             setStatus("Not a Wii U title this build can launch.");
             return CEMU_BRIDGE_UNSUPPORTED;
@@ -2554,7 +2612,55 @@ static void ios_timebase_ladder_start() {
 bool cemu_bridge_is_title_running(void) {
     // A title that called coreinit exit() has finished even though CafeSystem still holds it,
     // and the UI should see that as the end of the game rather than a frozen one.
+    // A title switch (the Wii U Menu launching a game) has CafeSystem::IsTitleRunning() false
+    // for a moment between the old title's shutdown and the new one's start. That is not the
+    // end of the session, and reporting it as one would tear the emulator view down.
+    if (g_titleRunning.load() && CafeSystem::IsTitleSwitchInProgress())
+        return true;
     return g_titleRunning.load() && CafeSystem::IsTitleRunning() && !IOSSystemImplementation_TitleExited(nullptr);
+}
+
+// Called by the iOS SystemImplementation from the title-switch launcher thread. The
+// renderer has to be rebuilt (ShutdownTitle() destroyed it), and desktop Cemu does its
+// equivalent - recreating the canvas - on the UI thread, so this runs on the main thread
+// and blocks until it is done. If the main thread is not responding within 10 seconds it is
+// done on the calling thread instead rather than deadlocking the switch.
+bool IOSBridge_RecreateRenderSurface() {
+    struct State {
+        std::atomic_bool claimed{false};
+        std::atomic_bool ok{true};
+    };
+    auto state = std::make_shared<State>();
+    auto work = [state]() {
+        if (state->claimed.exchange(true))
+            return;
+        try
+        {
+            // The outgoing title's GPU state must not carry into the new renderer.
+            ios_reset_video_stall_state();
+            ios_apply_render_profile();
+            CemuPrepareRenderer();
+        }
+        catch (...)
+        {
+            state->ok.store(false);
+            std::string message = "title switch: rebuilding the renderer threw: " + cemu_describe_current_exception();
+            cemu_bridge_log_checkpoint(message.c_str());
+        }
+    };
+    if ([NSThread isMainThread]) {
+        work();
+        return state->ok.load();
+    }
+    dispatch_group_t group = dispatch_group_create();
+    dispatch_group_async(group, dispatch_get_main_queue(), ^{ work(); });
+    if (dispatch_group_wait(group, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) != 0) {
+        cemuLog_log(LogType::Force, "iOS: title switch - the main thread did not respond in 10s, rebuilding the renderer on the launcher thread");
+        work();
+        // work() returns at once if the main thread got there first; wait for it to finish.
+        dispatch_group_wait(group, DISPATCH_TIME_FOREVER);
+    }
+    return state->ok.load();
 }
 
 void cemu_bridge_pause(void) {
@@ -2591,15 +2697,7 @@ void cemu_bridge_shutdown_title(void) {
     g_renderer.reset();
     g_titleRunning.store(false);
     g_framesPerSecond.store(0.0);
-    g_videoStalled.store(false);
-    g_videoStallKind.store(0);
-    {
-        auto& w = LatteWait::Get();
-        w.gpuError.store(false);
-        w.gpuErrorCode.store(0);
-        w.gpuPresumedLost.store(false);
-        w.memStatsValid.store(false);
-    }
+    ios_reset_video_stall_state();
     cemu_bridge_release_all_buttons();
     cemu_bridge_memory_note("after title shutdown");
     setStatus("Title shut down.");
@@ -2717,6 +2815,8 @@ const char* cemu_bridge_status_text(void) {
         snprintf(line, sizeof(line), "The game closed itself (exit status %d).", exitStatus);
         setStatus(line);
     }
+    if (g_titleRunning.load() && IOSSystemImplementation_TitleSwitchFailed())
+        setStatus("The Wii U Menu tried to open another title and it couldn't be started. Check that game is in your library and its keys are installed, then launch it from the library instead.");
     // Only fall back to a computed default when nothing specific has been set, so a boot
     // failure's reason is not overwritten by a generic line on the next read.
     if (statusIsEmpty())

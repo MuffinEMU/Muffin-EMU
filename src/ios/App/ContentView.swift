@@ -506,6 +506,16 @@ struct GameBrowserView: View {
             .padding(.horizontal, 16)
             .padding(.top, 16)
 
+            // The Wii U Menu, when one is installed. Pinned above the grid, not part of it, so
+            // sorting never moves it; it is hidden while searching or viewing favourites.
+            if searchText.isEmpty && !showingFavorites {
+                WiiUMenuTile { menu in
+                    selectedGame = menu
+                    gameManager.launchGame(menu)
+                    showingGameBrowser = false
+                }
+            }
+
             if gameManager.isLoading {
                 LoadingView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

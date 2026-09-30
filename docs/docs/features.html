@@ -77,6 +77,7 @@
         <li><a href="#library">Library &amp; importing</a></li>
         <li><a href="#play">On-screen play</a></li>
         <li><a href="#look">Look &amp; feel</a></li>
+        <li><a href="#wiiu-menu">Wii U Menu (experimental)</a></li>
         <li><a href="#diagnostics">Diagnostics</a></li>
         <li><a href="#under-the-hood">Under the hood</a></li>
       </ul>
@@ -103,6 +104,24 @@
     <ul>
       <li><strong><a href="themes.html">31 app icons and matching themes</a></strong> — three are unlocked with a code, everything else is free.</li>
     </ul>
+
+    <h2 id="wiiu-menu">Wii U Menu (experimental)</h2>
+    <p>MuffinEMU can start the Wii U Menu, the console's own home screen, and the Menu can launch the games in your library. This is experimental and has not been confirmed on a device yet, so expect crashes.</p>
+    <p><strong>The files must come from your own Wii U.</strong> Dump them with Dumpling. MuffinEMU includes none of them and never downloads any.</p>
+    <p>Import them in <strong>Settings &rarr; Wii U Menu</strong>:</p>
+    <ul>
+      <li><strong>Import Wii U Menu</strong> — pick the dump folder. It can be the package folder (the one containing <code>mlc01</code> and <code>cafeLibs</code>), an <code>mlc01</code> folder, a <code>sys</code> folder, a <code>cafeLibs</code> folder, or the Menu's own title folder. Files are merged one by one; anything that gets replaced is saved to <code>Documents/mlc/import-backup-&hellip;</code> first, and your saves are never replaced.</li>
+      <li><strong>Import console files</strong> — pick <code>otp.bin</code> and <code>seeprom.bin</code>. They are only needed for online features; the Menu may start without them.</li>
+    </ul>
+    <p>Where they end up, in the app's Documents folder (visible in the Files app):</p>
+    <ul>
+      <li><code>mlc/mlc01/sys/title/00050010/10040X00</code> — the Menu (<code>10040000</code> Japan, <code>10040100</code> USA, <code>10040200</code> Europe).</li>
+      <li><code>mlc/mlc01/sys/title/0005001b</code> — shared data (fonts, Mii) the Menu needs, along with <code>00050030</code> and <code>0005000e</code> from the same dump.</li>
+      <li><code>mlc/cafeLibs/</code> — <code>drmapp</code>, <code>erreula</code>, <code>nn_sl</code>, <code>nsyskbd</code>, <code>snd_user</code>, <code>snduser2</code> and <code>swkbd</code> (<code>.rpl</code>).</li>
+      <li><code>mlc/otp.bin</code> and <code>mlc/seeprom.bin</code>.</li>
+    </ul>
+    <p>Settings shows which of these are present. Once the Menu is installed, a <strong>Wii U Menu</strong> tile appears at the top of the library; if something the Menu can't start without is missing, tapping it tells you what.</p>
+    <p>Games from your library (<code>Documents/Roms</code>: folders, <code>.wua</code>, <code>.wux</code>, <code>.wud</code>) are added to the Menu's title list while the Menu runs, so they can show up in it and launch from it. Encrypted games still need your keys.txt. Games you installed into <code>mlc/mlc01/usr/title</code> show up too.</p>
 
     <h2 id="diagnostics">Diagnostics</h2>
     <ul>

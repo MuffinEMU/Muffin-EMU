@@ -686,10 +686,22 @@ namespace coreinit
 
 	void OSLauncherThread(uint64 titleId)
 	{
+		// the host UI must keep treating the emulator as running for the whole switch: between
+		// ShutdownTitle() and LaunchForegroundTitle() CafeSystem::IsTitleRunning() is false
+		CafeSystem::SetTitleSwitchInProgress(true);
 		CafeSystem::ShutdownTitle();
-		CafeSystem::PrepareForegroundTitle(titleId);
+		if (CafeSystem::PrepareForegroundTitle(titleId) != CafeSystem::PREPARE_STATUS_CODE::SUCCESS)
+		{
+			// the old title is already gone, so there is nothing to go back to. Tell the host instead of
+			// launching a title that was never mounted
+			cemuLog_log(LogType::Force, "Title switch to {:016x} failed: the title could not be prepared", titleId);
+			CafeSystem::SetTitleSwitchInProgress(false);
+			CafeSystem::NotifyTitleSwitchFailed(titleId);
+			return;
+		}
 		CafeSystem::RequestRecreateCanvas();
 		CafeSystem::LaunchForegroundTitle();
+		CafeSystem::SetTitleSwitchInProgress(false);
 	}
 
 	void OSShutdownThread(sint32 status)
