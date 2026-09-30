@@ -1210,6 +1210,13 @@ struct EmulatorViewOptimized: View {
     /// "Back to games" already IS the confirmation - there's no session underneath it).
     @State private var showingBackConfirmation = false
 
+    // MARK: Video stall
+    //
+    // The bridge's watchdog raises `gameManager.videoStalled` when the picture has stopped
+    // but the game is still running. "Keep waiting" hides the card until the stall clears.
+    @State private var stallCardDismissed = false
+    @State private var stallSaveRequested = false
+
     // MARK: Save states
     //
     // cemu_bridge_save_state()/cemu_bridge_load_state() (CemuBridge.h) are synchronous
@@ -2070,6 +2077,20 @@ struct EmulatorViewOptimized: View {
         // popping up mid-game - a stray swipe near the bottom edge no longer competes
         // with on-screen controls sitting right where it appears.
         .hidingSystemOverlaysDuringPlay()
+        .overlay(alignment: .top) {
+            if (gameManager.videoStalled || (stallSaveRequested && saveStateBusySlot != nil)) && !stallCardDismissed && gameManager.emulationState == .running {
+                videoStalledCard
+                    .padding(.top, 12)
+                    .padding(.horizontal, 16)
+                    .transition(.opacity)
+            }
+        }
+        .onChange(of: gameManager.videoStalled) { stalled in
+            // Saving pauses the game, which also clears the flag; keep the card up until the save is done.
+            if !stalled && saveStateBusySlot == nil {
+                stallCardDismissed = false
+            }
+        }
         .sheet(isPresented: $showSaveStates) {
             SaveStateSheet(
                 gameTitle: game.title,
@@ -2127,6 +2148,57 @@ struct EmulatorViewOptimized: View {
                     : SaveStateStatus(message: "Couldn't load Slot \(slot) - most likely it doesn't match this game's current run (quitting or relaunching the game breaks that match). That's expected, not a bug.", isWarning: true)
             }
         }
+    }
+
+    /// Small card shown while the picture is stopped. The game's audio and input keep running
+    /// in this state, so a save state still works. Only the card itself takes touches; the
+    /// rest of the overlay lets them through to the game.
+    private var videoStalledCard: some View {
+        VStack(spacing: 10) {
+            Text(gameManager.videoStallKind == 2 ? "The GPU stopped" : gameManager.videoStallKind == 3 ? "Out of memory for the screen" : gameManager.videoStallKind == 4 ? "Not enough memory" : "Video stopped responding")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundColor(.white)
+            if gameManager.videoStallKind >= 2 && !stallSaveRequested {
+                Text(gameManager.videoStallKind == 4
+                     ? "Not enough memory for this game on this device. Save State, then try Render Scale: Battery saver."
+                     : "Save State, then restart the app.")
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .foregroundColor(.white.opacity(0.85))
+            }
+            if stallSaveRequested {
+                Text(saveStateBusySlot != nil ? "Saving..." : (saveStateStatus?.message ?? ""))
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .foregroundColor(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+            }
+            HStack(spacing: 8) {
+                Button("Save State") { saveStalledGame() }
+                    .disabled(saveStateBusySlot != nil)
+                Button("Quit Game") {
+                    gameManager.stopEmulation()
+                    isRunning = true
+                }
+                Button(gameManager.videoStallKind >= 2 ? "Dismiss" : "Keep waiting") {
+                    stallCardDismissed = true
+                    stallSaveRequested = false
+                }
+            }
+            .buttonStyle(MuffinSecondaryButtonStyle())
+        }
+        .padding(14)
+        .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(maxWidth: 420)
+    }
+
+    /// Saves into the first empty slot, or the oldest one when all are used.
+    private func saveStalledGame() {
+        let slots = SaveStateStore.slots(for: game.id)
+        let target = slots.first(where: { !$0.isOccupied })
+            ?? slots.min(by: { ($0.savedAt ?? .distantPast) < ($1.savedAt ?? .distantPast) })
+        guard let slot = target?.number else { return }
+        stallSaveRequested = true
+        saveStateStatus = nil
+        performSaveState(slot: slot)
     }
 
     private func deleteSaveState(slot: Int) {
