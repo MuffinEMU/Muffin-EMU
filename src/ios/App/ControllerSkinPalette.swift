@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Console-accurate skin colours; deliberately independent of MuffinTheme.
+/// Controller skin colours; deliberately independent of MuffinTheme.
 enum ControllerSkinPalette {
     enum Standard {
         static let dpad = Color(red: 0.7, green: 0.7, blue: 0.7)
@@ -11,7 +11,7 @@ enum ControllerSkinPalette {
         static let background = Color(red: 0.15, green: 0.15, blue: 0.17)
     }
 
-    enum WiiUOriginal {
+    enum Sky {
         static let dpad = Color(red: 0.2, green: 0.2, blue: 0.2)
         static let a = Color(red: 0.1, green: 0.7, blue: 0.2)
         static let b = Color(red: 0.95, green: 0.2, blue: 0.1)
@@ -20,7 +20,7 @@ enum ControllerSkinPalette {
         static let background = Color(red: 0.18, green: 0.18, blue: 0.19)
     }
 
-    enum GameCube {
+    enum Indigo {
         static let dpad = Color(red: 0.15, green: 0.15, blue: 0.15)
         static let a = Color(red: 0.15, green: 0.75, blue: 0.25)
         static let b = Color(red: 1.0, green: 0.1, blue: 0.1)
@@ -29,7 +29,7 @@ enum ControllerSkinPalette {
         static let background = Color(red: 0.1, green: 0.1, blue: 0.15)
     }
 
-    enum Nintendo64 {
+    enum Primary {
         static let dpad = Color(red: 0.8, green: 0.1, blue: 0.1)
         static let a = Color(red: 0.2, green: 0.8, blue: 0.3)
         static let b = Color(red: 1.0, green: 0.8, blue: 0.0)
@@ -38,7 +38,7 @@ enum ControllerSkinPalette {
         static let background = Color(red: 0.12, green: 0.12, blue: 0.2)
     }
 
-    enum SuperNintendo {
+    enum LilacGrey {
         static let dpad = Color(red: 0.7, green: 0.7, blue: 0.7)
         static let a = Color(red: 0.15, green: 0.75, blue: 0.2)
         static let b = Color(red: 0.95, green: 0.15, blue: 0.15)
@@ -47,7 +47,7 @@ enum ControllerSkinPalette {
         static let background = Color(red: 0.2, green: 0.15, blue: 0.25)
     }
 
-    enum NES {
+    enum RedAndCream {
         static let dpad = Color(red: 0.2, green: 0.2, blue: 0.2)
         static let a = Color(red: 0.95, green: 0.2, blue: 0.2)
         static let b = Color(red: 0.95, green: 0.2, blue: 0.2)
@@ -56,7 +56,7 @@ enum ControllerSkinPalette {
         static let background = Color(red: 0.1, green: 0.1, blue: 0.1)
     }
 
-    enum SwitchPro {
+    enum Charcoal {
         static let dpad = Color(red: 0.3, green: 0.3, blue: 0.3)
         static let a = Color(red: 0.2, green: 0.8, blue: 0.3)
         static let b = Color(red: 1.0, green: 0.3, blue: 0.2)
@@ -65,7 +65,7 @@ enum ControllerSkinPalette {
         static let background = Color(red: 0.08, green: 0.08, blue: 0.1)
     }
 
-    enum PlayStation {
+    enum BlueAndRose {
         static let dpad = Color(red: 0.2, green: 0.2, blue: 0.2)
         static let a = Color(red: 0.2, green: 0.6, blue: 1.0)
         static let b = Color(red: 1.0, green: 0.2, blue: 0.3)
@@ -74,7 +74,7 @@ enum ControllerSkinPalette {
         static let background = Color(red: 0.05, green: 0.05, blue: 0.07)
     }
 
-    enum Xbox {
+    enum Green {
         static let dpad = Color(red: 0.2, green: 0.2, blue: 0.2)
         static let a = Color(red: 0.1, green: 0.7, blue: 0.2)
         static let b = Color(red: 1.0, green: 0.2, blue: 0.1)
@@ -84,7 +84,7 @@ enum ControllerSkinPalette {
         static let border = Color(red: 0.0, green: 0.8, blue: 0.0)
     }
 
-    enum SteamDeck {
+    enum Slate {
         static let dpad = Color(red: 0.15, green: 0.15, blue: 0.15)
         static let a = Color(red: 0.2, green: 0.8, blue: 0.3)
         static let b = Color(red: 1.0, green: 0.3, blue: 0.2)
@@ -103,7 +103,7 @@ enum ControllerSkinPalette {
         static let border = Color(red: 0.95, green: 0.4, blue: 0.0)
     }
 
-    enum SegaGenesis {
+    enum BlackAndGold {
         static let dpad = Color(red: 0.2, green: 0.2, blue: 0.2)
         static let a = Color(red: 0.95, green: 0.15, blue: 0.15)
         static let b = Color(red: 0.15, green: 0.95, blue: 0.15)
@@ -156,7 +156,7 @@ enum ControllerSkinPalette {
         static let background = Color(red: 0.1, green: 0.12, blue: 0.15)
     }
 
-    enum MarioTheme {
+    enum SunsetOrange {
         static let dpad = Color(red: 0.95, green: 0.3, blue: 0.0)
         static let a = Color(red: 0.2, green: 0.8, blue: 0.3)
         static let b = Color(red: 0.95, green: 0.2, blue: 0.1)
@@ -165,7 +165,7 @@ enum ControllerSkinPalette {
         static let background = Color(red: 0.95, green: 0.4, blue: 0.0)
     }
 
-    enum ZeldaTheme {
+    enum ForestGold {
         static let dpad = Color(red: 0.8, green: 0.7, blue: 0.2)
         static let a = Color(red: 0.8, green: 0.7, blue: 0.2)
         static let b = Color(red: 0.3, green: 0.6, blue: 0.2)
