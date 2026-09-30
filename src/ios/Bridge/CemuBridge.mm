@@ -1115,6 +1115,7 @@ namespace {
         s.cbRetired = w.cbRetired.load();
         s.cbErrorStreak = w.cbErrorStreak.load();
         s.pm4 = w.pm4Count.load();
+        s.draws = (uint32_t)LatteGPUState.drawCallCounter;
         s.flipRequests = (uint32_t)LatteGPUState.flipRequestCount.load();
         s.evictionPasses = w.evictionPasses.load();
         s.gpuError = w.gpuError.load();
