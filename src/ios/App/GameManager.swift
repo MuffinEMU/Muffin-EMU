@@ -1072,9 +1072,6 @@ class GameManager: ObservableObject {
             cemu_bridge_set_overlay_fps(
                 UserDefaults.standard.object(forKey: OverlaySettings.fpsKey) as? Bool
                     ?? OverlaySettings.defaultFps)
-            cemu_bridge_set_overlay_cpu_mode(
-                UserDefaults.standard.object(forKey: OverlaySettings.cpuModeKey) as? Bool
-                    ?? OverlaySettings.defaultCpuMode)
             cemu_bridge_set_overlay_drawcalls(
                 UserDefaults.standard.object(forKey: OverlaySettings.drawcallsKey) as? Bool
                     ?? OverlaySettings.defaultDrawcalls)
