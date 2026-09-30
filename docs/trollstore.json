@@ -19,6 +19,14 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "6.0",
+          "date": "2026-09-30T20:52:05Z",
+          "localizedDescription": "## What changed\n\n- Vulkan renderer now starts on more iPads: unsupported GPU features are skipped instead of failing, and the log records exactly what the GPU offers.\n- The \"video stopped\" warning now only appears when the picture is really frozen, not during loading screens, pauses or brief screen changes, and it goes away by itself when the game recovers.\n- Fixes another cause of graphics errors in Breath of the Wild, Captain Toad and Super Mario 3D World, and stops the error log from filling with repeated lines after a graphics fault.\n- Heavy loading in games like Breath of the Wild no longer triggers the \"video stopped\" warning.\n- Games that aim with the GamePad's gyro, such as Splatoon, now work with your iPad's motion sensors. Settings > Motion & Aiming has a sensitivity slider, a recentre button and a stick-only option.\n- If the GPU stops responding under Vulkan, the game now stops with a message and the next launch uses Metal, instead of the app crashing.\n- Fixes graphics errors when you start a second game without restarting the app (for example Wii U Menu then Captain Toad, or Breath of the Wild then Super Mario 3D World).\n- Vulkan falls back to Metal if it can't set up the screen, and uses less memory for textures on iPad.\n- Settings now marks Vulkan as Experimental and shows why it last failed, if it did.\n- Vulkan sizes its texture memory from what each iPhone or iPad reports instead of a fixed limit.\n- Fixed game discs (.wux/.wud) that would not open after updati...",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v6.0/MuffinEMU-fakesigned.ipa",
+          "size": 68329497,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "5.9",
           "date": "2026-09-30T20:10:38Z",
           "localizedDescription": "## What changed\n\n- Fixes a blur over the buttons in the in-game top bar.\n- Removes the blur that iOS 26 and later drew over buttons and rows at the edges of scrolling screens throughout the app.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 4c70e7d38d217acfa480d7e941c314b2ddb4123b.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu.\n\n**Full changelog**: https://github.com/kiddreads/MuffinEMU/compare/v5.8...v5.9",
@@ -419,12 +427,12 @@
   ],
   "news": [
     {
-      "title": "MuffinEMU 5.9",
-      "identifier": "muffinemu-v5.9",
-      "caption": "Fixes a blur over the buttons in the in-game top bar. Removes the blur that iOS 26 and later drew over buttons and rows at the edges of scrolling screens throughout the app.",
+      "title": "MuffinEMU 6.0",
+      "identifier": "muffinemu-v6.0",
+      "caption": "Vulkan renderer now starts on more iPads: unsupported GPU features are skipped instead of failing, and the log records exactly what the GPU offers. The \"video stopped\" warning now only appears when the picture is...",
       "date": "2026-09-30",
       "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v5.9",
+      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v6.0",
       "appID": "com.kiddreads.MuffinEMU",
       "notify": false
     }
