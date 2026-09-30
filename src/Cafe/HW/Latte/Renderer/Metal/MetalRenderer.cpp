@@ -849,7 +849,14 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
         MTL::Texture* target = layer.GetDrawable()->texture();
         const uint64 tw = target->width(), th = target->height();
         const uint64 sx = std::min<uint64>((uint32)std::max(imageX, 0), tw), sy = std::min<uint64>((uint32)std::max(imageY, 0), th);
-        renderCommandEncoder->setScissorRect(MTL::ScissorRect{(NS::UInteger)sx, (NS::UInteger)sy, (NS::UInteger)std::min<uint64>((uint32)std::max(imageWidth, 0), tw - sx), (NS::UInteger)std::min<uint64>((uint32)std::max(imageHeight, 0), th - sy)});
+        const uint64 sw = std::min<uint64>((uint32)std::max(imageWidth, 0), tw - sx), sh = std::min<uint64>((uint32)std::max(imageHeight, 0), th - sy);
+        if (sw < (uint64)std::max(imageWidth, 0) || sh < (uint64)std::max(imageHeight, 0))
+        {
+            MetalGuardNote(MetalGuard::PresentScissorClamped, {(uint64)(uint32)imageX, (uint64)(uint32)imageY, (uint64)(uint32)imageWidth, (uint64)(uint32)imageHeight, tw, th}, [&] {
+                return fmt::format("present image {},{} {}x{} is larger than the {}x{} drawable, scissor cut to {}x{}", imageX, imageY, imageWidth, imageHeight, tw, th, sw, sh);
+            });
+        }
+        renderCommandEncoder->setScissorRect(MTL::ScissorRect{(NS::UInteger)sx, (NS::UInteger)sy, (NS::UInteger)sw, (NS::UInteger)sh});
     }
 
     renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
@@ -1736,7 +1743,14 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         // the scissor has to stay inside the level that is being rendered to
         const uint64 levelWidth = std::max<uint64>(1, (uint64)destinationMtl->width() >> dstMip);
         const uint64 levelHeight = std::max<uint64>(1, (uint64)destinationMtl->height() >> dstMip);
-        renderCommandEncoder->setScissorRect(MTL::ScissorRect{0, 0, (NS::UInteger)std::min<uint64>((uint32)effectiveCopyWidth, levelWidth), (NS::UInteger)std::min<uint64>((uint32)effectiveCopyHeight, levelHeight)});
+        const uint64 scissorWidth = std::min<uint64>((uint32)effectiveCopyWidth, levelWidth), scissorHeight = std::min<uint64>((uint32)effectiveCopyHeight, levelHeight);
+        if (scissorWidth < (uint32)effectiveCopyWidth || scissorHeight < (uint32)effectiveCopyHeight)
+        {
+            MetalGuardNote(MetalGuard::SurfaceCopyScissorClamped, {(uint64)(uint32)destinationTexture->format, (uint64)(uint32)effectiveCopyWidth, (uint64)(uint32)effectiveCopyHeight, levelWidth, levelHeight}, [&] {
+                return fmt::format("surface copy of {}x{} into format {:04x} mip {} ({}x{} level) cut to {}x{}", effectiveCopyWidth, effectiveCopyHeight, (uint32)destinationTexture->format, dstMip, levelWidth, levelHeight, scissorWidth, scissorHeight);
+            });
+        }
+        renderCommandEncoder->setScissorRect(MTL::ScissorRect{0, 0, (NS::UInteger)scissorWidth, (NS::UInteger)scissorHeight});
     }
     SetTexture(renderCommandEncoder, METAL_SHADER_TYPE_FRAGMENT, sourceView->GetRGBAView(), GET_HELPER_TEXTURE_BINDING(0));
     renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
@@ -2080,7 +2094,9 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         const uint64 capacity = std::min<uint64>(indexAllocationMtl->size, reachable);
         if ((uint64)hostIndexCount * indexBytes > capacity)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: index count {} ({} bytes each) does not fit its {} byte allocation; drawing {} indices instead", hostIndexCount, indexBytes, capacity, capacity / indexBytes);
+            MetalGuardNote(MetalGuard::IndexClamped, {hostIndexCount, indexBytes, capacity}, [&] {
+                return fmt::format("index count {} ({} bytes each) does not fit its {} byte allocation (offset {}, buffer length {}); drawing {} indices instead", hostIndexCount, indexBytes, capacity, (uint64)indexAllocationMtl->bufferOffset, bufferLength, capacity / indexBytes);
+            });
             hostIndexCount = static_cast<uint32>(capacity / indexBytes);
             suspectFlags |= MetalDrawBreadcrumb::SUSPECT_INDEX_BUFFER;
         }
@@ -2315,7 +2331,12 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         const uint64 w = std::min<uint64>(scissorToSend.width, renderAreaWidth - x);
         const uint64 h = std::min<uint64>(scissorToSend.height, renderAreaHeight - y);
         if (x != scissorToSend.x || y != scissorToSend.y || w != scissorToSend.width || h != scissorToSend.height)
+        {
             suspectFlags |= MetalDrawBreadcrumb::SUSPECT_SCISSOR;
+            MetalGuardNote(MetalGuard::ScissorClamped, {(uint64)scissorToSend.x, (uint64)scissorToSend.y, (uint64)scissorToSend.width, (uint64)scissorToSend.height, renderAreaWidth, renderAreaHeight}, [&] {
+                return fmt::format("scissor {},{} {}x{} cut to {},{} {}x{} for a {}x{} render area", (uint64)scissorToSend.x, (uint64)scissorToSend.y, (uint64)scissorToSend.width, (uint64)scissorToSend.height, x, y, w, h, renderAreaWidth, renderAreaHeight);
+            });
+        }
         scissorToSend = MTL::ScissorRect{(NS::UInteger)x, (NS::UInteger)y, (NS::UInteger)w, (NS::UInteger)h};
     }
     if (scissorToSend.x != encoderState.m_scissor.x ||
