@@ -606,8 +606,36 @@ void MetalRenderer::Flush(bool waitIdle)
 
 void MetalRenderer::NotifyLatteCommandProcessorIdle()
 {
-    //if (m_commitOnIdle)
-    //    CommitCommandBuffer();
+    // Committing on every idle notification would split the game's bursts of commands into many
+    // tiny command buffers (the reason this was left disabled), and this is called in a tight loop.
+    // Recorded work that nothing has submitted must still not wait for the next frame or the next
+    // 60 draw calls though: an occlusion query or readback the game is waiting on lives in it, and
+    // the game may not send anything more until it gets its answer. So submit it once the command
+    // processor has been idle, with the same work pending, for a short while.
+    constexpr auto IDLE_COMMIT_DELAY = std::chrono::milliseconds(20);
+
+    if (!m_currentCommandBuffer.m_commandBuffer || m_currentCommandBuffer.m_commited)
+    {
+        m_idleCommit.m_watching = false;
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    if (!m_idleCommit.m_watching || m_idleCommit.m_commandBuffer != m_currentCommandBuffer.m_commandBuffer || m_idleCommit.m_recordedDrawcalls != m_recordedDrawcalls)
+    {
+        // new work since the last notification: start the clock again
+        m_idleCommit.m_watching = true;
+        m_idleCommit.m_commandBuffer = m_currentCommandBuffer.m_commandBuffer;
+        m_idleCommit.m_recordedDrawcalls = m_recordedDrawcalls;
+        m_idleCommit.m_since = now;
+        return;
+    }
+
+    if (now - m_idleCommit.m_since >= IDLE_COMMIT_DELAY)
+    {
+        CommitCommandBuffer();
+        m_idleCommit.m_watching = false;
+    }
 }
 
 bool MetalRenderer::ImguiBegin(bool mainWindow)

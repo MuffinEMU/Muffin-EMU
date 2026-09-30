@@ -580,6 +580,15 @@ private:
 	MTL::CommandEncoder* m_commandEncoder = nullptr;
 
     uint32 m_recordedDrawcalls;
+    // Submits recorded work that has sat unsubmitted while the command processor was idle (see NotifyLatteCommandProcessorIdle())
+    struct
+    {
+        bool m_watching = false;
+        MTL::CommandBuffer* m_commandBuffer = nullptr; // compared by address only, never dereferenced
+        uint32 m_recordedDrawcalls = 0;
+        std::chrono::steady_clock::time_point m_since;
+    } m_idleCommit;
+
     uint32 m_defaultCommitTreshlod;
     uint32 m_commitTreshold;
 
