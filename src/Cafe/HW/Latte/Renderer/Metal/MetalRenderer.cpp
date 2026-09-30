@@ -369,7 +369,10 @@ MetalRenderer::~MetalRenderer()
     LatteIndices_forgetAll();
 
     delete m_outputShaderCache;
-    delete m_pipelineCache;
+    // A loader thread that did not stop in time still uses the cache, so it is left alone rather than freed under it. The
+    // clean-slate check reports this as an unsafe leftover and the app asks for a restart.
+    if (!MetalPipelineCache_LoaderAbandoned())
+        delete m_pipelineCache;
     delete m_depthStencilCache;
     delete m_samplerCache;
     delete m_memoryManager;
@@ -435,6 +438,9 @@ void MetalRenderer::Shutdown()
     // First: pipeline compiles queued on the shared compile threads refer to this renderer, its pipeline cache and the
     // title's shaders, all of which are destroyed next
     MetalPipelineCache_DrainAsyncCompiles();
+    // a stop while the pipeline cache is still loading: its loader threads use the shaders that are deleted next
+    if (m_pipelineCache)
+        m_pipelineCache->StopLoading(3000);
     Flush(true);
     // TODO: should shutdown both layers
     // ImGui_ImplMetal_Shutdown() dereferences its backend data without a check, so only call it for a context that has some

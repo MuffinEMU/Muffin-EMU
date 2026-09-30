@@ -349,6 +349,8 @@ void Latte_CollectLeftovers(std::vector<std::string>& leftovers)
 	check("texture readback(s) pending", LatteTextureReadback_GetPendingCount());
 	check("async GPU command(s) pending", LatteAsyncCommands_GetPendingCount());
 #ifdef ENABLE_METAL
+	if (MetalPipelineCache_LoaderAbandoned())
+		leftovers.emplace_back("Metal: a pipeline cache loader thread did not stop and still uses the renderer");
 	check("async Metal pipeline compile(s) in flight", MetalPipelineCache_GetAsyncCompileCount());
 #endif
 	if (LatteGPUState.gx2InitCalled != 0 || LatteGPUState.sharedArea != nullptr || LatteGPUState.frameCounter != 0)
