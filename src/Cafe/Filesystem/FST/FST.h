@@ -35,7 +35,12 @@ public:
 	  	TITLE_TIK_MISSING = 3,
 	    BAD_TITLE_TMD = 4,
 	    BAD_TITLE_TIK = 5,
+	    TITLE_KEY_INVALID = 6, // ticket parsed, but neither its title key nor any key in keys.txt decrypts the FST
+	    CONTENT_FILE_MISSING = 7, // a .app file listed in title.tmd is not in the folder (see GetLastMissingContentFile)
   	};
+
+	// Name of the .app file that made the most recent OpenFromContentFolder() on this thread fail with CONTENT_FILE_MISSING
+	static std::string GetLastMissingContentFile();
 
 	static bool FindDiscKey(const fs::path& path, NCrypto::AesKey& discTitleKey);
 

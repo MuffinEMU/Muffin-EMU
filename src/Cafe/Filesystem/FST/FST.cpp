@@ -308,11 +308,61 @@ protected:
     bool m_prefetchShutdown{};
 };
 
+static thread_local std::string s_lastMissingContentFile;
+
+std::string FSTVolume::GetLastMissingContentFile()
+{
+	return s_lastMissingContentFile;
+}
+
+// Encrypted game folders come from many tools and file managers, so the on-disk names can be TITLE.TMD,
+// 00000000.APP and so on. The names below are built in lower case, which only matches on a case-insensitive
+// volume. This resolves a name to the spelling that is really in the folder: the exact name when it exists,
+// otherwise a case-insensitive match. When nothing matches, the requested name is returned unchanged so the
+// caller's open fails the same way it always did.
+class FolderNameResolver
+{
+public:
+	explicit FolderNameResolver(fs::path folder) : m_folder(std::move(folder)) {}
+
+	fs::path Resolve(const std::string& name)
+	{
+		std::error_code ec;
+		fs::path exact = m_folder / name;
+		if (fs::exists(exact, ec))
+			return exact;
+		if (!m_listed)
+		{
+			m_listed = true;
+			for (auto& entry : fs::directory_iterator(m_folder, ec))
+			{
+				std::string entryName = _pathToUtf8(entry.path().filename());
+				for (auto& c : entryName)
+					c = _ansiToLower(c);
+				m_lowerToReal.emplace(std::move(entryName), entry.path().filename());
+			}
+		}
+		std::string lowerName = name;
+		for (auto& c : lowerName)
+			c = _ansiToLower(c);
+		auto it = m_lowerToReal.find(lowerName);
+		if (it == m_lowerToReal.end())
+			return exact;
+		return m_folder / it->second;
+	}
+
+private:
+	fs::path m_folder;
+	bool m_listed{false};
+	std::unordered_map<std::string, fs::path> m_lowerToReal;
+};
+
 class FSTDataSourceApp : public FSTDataSource
 {
 public:
 	static FSTDataSourceApp* Open(fs::path path, NCrypto::TMDParser& tmd)
 	{
+		FolderNameResolver resolver(path);
 		std::vector<std::unique_ptr<FileStream>> clusterFile;
 		uint32 maxIndex = 0;
 		for (auto& itr : tmd.GetContentList())
@@ -321,9 +371,16 @@ public:
 		// open all the app files
 		for (auto& itr : tmd.GetContentList())
 		{
-			FileStream* appFile = FileStream::openFile2(path / fmt::format("{:08x}.app", itr.contentId));
+			// note: the .h3 hash files that some dumps ship next to the .app files are never read. Hashed
+			// contents carry their hashes inside the .app, so there is nothing to open for them here.
+			const std::string appName = fmt::format("{:08x}.app", itr.contentId);
+			FileStream* appFile = FileStream::openFile2(resolver.Resolve(appName));
 			if (!appFile)
+			{
+				cemuLog_log(LogType::Force, "FST: content file {} is missing from {}", appName, _pathToUtf8(path));
+				s_lastMissingContentFile = appName;
 				return nullptr;
+			}
 			clusterFile[itr.index].reset(appFile);
 		}
 		// construct FSTDataSourceApp
@@ -642,10 +699,15 @@ FSTVolume* FSTVolume::OpenFromDiscImage(const fs::path& path, NCrypto::AesKey& d
 FSTVolume* FSTVolume::OpenFromContentFolder(fs::path folderPath, ErrorCode* errorCodeOut)
 {
 	SET_FST_ERROR(UNKNOWN_ERROR);
+	s_lastMissingContentFile.clear();
+	FolderNameResolver resolver(folderPath);
 	// load TMD
-	FileStream* tmdFile = FileStream::openFile2(folderPath / "title.tmd");
+	FileStream* tmdFile = FileStream::openFile2(resolver.Resolve("title.tmd"));
 	if (!tmdFile)
+	{
+		SET_FST_ERROR(BAD_TITLE_TMD);
 		return nullptr;
+	}
 	std::vector<uint8> tmdData;
 	tmdFile->extract(tmdData);
 	delete tmdFile;
@@ -656,27 +718,42 @@ FSTVolume* FSTVolume::OpenFromContentFolder(fs::path folderPath, ErrorCode* erro
 		return nullptr;
 	}
 	// load ticket
-	FileStream* ticketFile = FileStream::openFile2(folderPath / "title.tik");
-	if (!ticketFile)
-	{
-		SET_FST_ERROR(TITLE_TIK_MISSING);
-		return nullptr;
-	}
-	std::vector<uint8> ticketData;
-	ticketFile->extract(ticketData);
-	delete ticketFile;
-	NCrypto::ETicketParser ticketParser;
-	if (!ticketParser.parse(ticketData.data(), ticketData.size()))
-	{
-		SET_FST_ERROR(BAD_TITLE_TIK);
-		return nullptr;
-	}
+	// A missing or unreadable ticket is not fatal by itself: keys.txt may hold this title's key (see below).
+	// It only becomes the reported error if nothing else opens the volume.
+	ErrorCode ticketError = ErrorCode::OK;
+	bool hasTicketKey = false;
 	NCrypto::AesKey titleKey;
-	ticketParser.GetTitleKey(titleKey);
+	FileStream* ticketFile = FileStream::openFile2(resolver.Resolve("title.tik"));
+	if (!ticketFile)
+		ticketError = ErrorCode::TITLE_TIK_MISSING;
+	else
+	{
+		std::vector<uint8> ticketData;
+		ticketFile->extract(ticketData);
+		delete ticketFile;
+		NCrypto::ETicketParser ticketParser;
+		if (!ticketParser.parse(ticketData.data(), ticketData.size()))
+			ticketError = ErrorCode::BAD_TITLE_TIK;
+		else
+		{
+			ticketParser.GetTitleKey(titleKey);
+			hasTicketKey = true;
+		}
+	}
+	KeyCache_Prepare();
+	if (!hasTicketKey && KeyCache_GetAES128(0) == nullptr)
+	{
+		if (errorCodeOut)
+			*errorCodeOut = ticketError;
+		return nullptr;
+	}
 	// open data source
 	std::unique_ptr<FSTDataSource> dataSource(FSTDataSourceApp::Open(folderPath, tmdParser));
 	if (!dataSource)
+	{
+		SET_FST_ERROR(CONTENT_FILE_MISSING);
 		return nullptr;
+	}
 	// get info about FST from first cluster (todo - is this correct or does the TMD store info about the fst?)
 	ClusterHashMode fstHashMode = ClusterHashMode::RAW;
 	uint32 fstSize = 0;
@@ -692,9 +769,31 @@ FSTVolume* FSTVolume::OpenFromContentFolder(fs::path folderPath, ErrorCode* erro
 	}
 	// load FST
 	// fstSize = size of first cluster?
-	FSTVolume* fstVolume = FSTVolume::OpenFST(std::move(dataSource), 0, fstSize, &titleKey, fstHashMode, &tmdParser);
-	if (fstVolume)
-		SET_FST_ERROR(OK);
+	// The ticket's title key is tried first. A personalized ticket decrypts to a wrong key, so if the FST doesn't
+	// decrypt with it (or there is no usable ticket), fall back to the 128-bit keys the user already has in
+	// keys.txt, the same list disc images use: a title key placed there is accepted when it makes the FST decrypt.
+	// Nothing is derived or guessed.
+	FSTVolume* fstVolume = nullptr;
+	if (hasTicketKey)
+		fstVolume = FSTVolume::OpenFST(dataSource.get(), 0, fstSize, &titleKey, fstHashMode, &tmdParser);
+	for (sint32 i = 0; i < 0x7FFFFFFF && !fstVolume; i++)
+	{
+		uint8* key128 = KeyCache_GetAES128(i);
+		if (!key128)
+			break;
+		NCrypto::AesKey candidate;
+		std::memcpy(candidate.b, key128, 16);
+		fstVolume = FSTVolume::OpenFST(dataSource.get(), 0, fstSize, &candidate, fstHashMode, &tmdParser);
+	}
+	if (!fstVolume)
+	{
+		if (errorCodeOut)
+			*errorCodeOut = hasTicketKey ? ErrorCode::TITLE_KEY_INVALID : ticketError;
+		return nullptr;
+	}
+	fstVolume->m_sourceIsOwned = true;
+	dataSource.release();
+	SET_FST_ERROR(OK);
 	return fstVolume;
 }
 
