@@ -164,6 +164,14 @@ final class DisplayRouter: ObservableObject {
     /// `CreateMetalLayer()` already documents.
     private var padRenderView: UIView?
 
+    /// The scale the GamePad surface was last sized at. Touches on the pad arrive in points and
+    /// have to be converted in the same pixel space, so this is what ContentView multiplies by.
+    private(set) var padSurfaceScale: Double = 1.0
+
+    /// What the screen layout last asked to be visible on this device (TV, GamePad), so a pad
+    /// surface that registers after that call is told instead of defaulting to "both".
+    private var localVisibleOutputs: (tv: Bool, pad: Bool)?
+
     /// The plain SwiftUI-facing container `MetalViewIOS.makeUIView()` hands back, cached
     /// here instead of created fresh every call - see `sharedDeviceContainer()` below.
     private var sharedDeviceContainerStorage: UIView?
@@ -350,6 +358,7 @@ final class DisplayRouter: ObservableObject {
         externalWindow?.isHidden = true
         externalWindow = nil
         tvSurfaceRegistered = false
+        localVisibleOutputs = nil
         // Reset the layout-size caches with the views they describe, so the next launch's new
         // render views get their first resize.
         lastDeviceContainerLayoutSize = nil
@@ -685,11 +694,19 @@ final class DisplayRouter: ObservableObject {
     /// second time here. One source of truth: whatever `padRenderView` is actually
     /// inside right now IS its geometry.
     private func padGeometry() -> (size: CGSize, scale: Double) {
+        // The console's GamePad screen is 854x480, so its surface is capped at about twice that
+        // across its long side (PadSurfaceScale) instead of following the TV's render scale.
+        // At native scale on a 12.9-inch iPad that is 1708 pixels instead of 2732, per frame.
         guard let host = padRenderView?.superview else {
-            return (UIScreen.main.bounds.size, UIScreen.main.effectiveRenderScale)
+            let size = UIScreen.main.bounds.size
+            let scale = PadSurfaceScale.scale(forPoints: size, renderScale: UIScreen.main.effectiveRenderScale)
+            padSurfaceScale = scale
+            return (size, scale)
         }
         let size = host.bounds.size == .zero ? UIScreen.main.bounds.size : host.bounds.size
-        let scale = (host.window?.screen ?? UIScreen.main).effectiveRenderScale
+        let renderScale = (host.window?.screen ?? UIScreen.main).effectiveRenderScale
+        let scale = PadSurfaceScale.scale(forPoints: size, renderScale: renderScale)
+        padSurfaceScale = scale
         return (size, scale)
     }
 
@@ -783,6 +800,10 @@ final class DisplayRouter: ObservableObject {
             let surface = Unmanaged.passRetained(view).toOpaque()
             let geometry = padGeometry()
             cemu_bridge_register_pad_render_surface(surface, cInt(geometry.size.width), cInt(geometry.size.height), geometry.scale)
+            // Registering makes both outputs visible. Put back what the layout asked for, or the
+            // TV-only layouts would keep drawing a GamePad surface nobody can see.
+            let visible = localVisibleOutputs ?? (tv: true, pad: false)
+            cemu_bridge_set_visible_outputs(visible.tv, visible.pad)
         } else if !wantLocalPad, havePad, padRenderView?.superview === localPadContainer {
             // The `padRenderView?.superview === localPadContainer` guard is what keeps
             // this from releasing a pad surface the OTHER sync function (dualScreen's)
@@ -800,6 +821,7 @@ final class DisplayRouter: ObservableObject {
     /// screen is hidden so an in-flight press still sees its release.
     func updateLocalVisibleOutputs(showTV: Bool, showPad: Bool) {
         guard placement != .dualScreen else { return }
+        localVisibleOutputs = (tv: showTV, pad: showPad)
         if !showPad { cemu_bridge_release_all_buttons() }
         cemu_bridge_set_visible_outputs(showTV, showPad)
     }

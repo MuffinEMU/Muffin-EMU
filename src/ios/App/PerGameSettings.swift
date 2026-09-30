@@ -20,6 +20,11 @@ struct GameOverrides: Codable, Equatable {
     /// before this field existed (follow the global default).
     var favourAccuracy: Bool?
 
+    /// CoreMode.rawValue ("auto", "single", "multi"), or nil to follow Settings > CPU. A string
+    /// rather than the enum so an unknown value from a future version decodes instead of
+    /// throwing away every override.
+    var coreMode: String?
+
     static let identity = GameOverrides()
     var isIdentity: Bool { self == GameOverrides.identity }
 }
@@ -76,6 +81,20 @@ final class PerGameSettingsStore: ObservableObject {
     func setFavourAccuracy(_ value: Bool?, for gameID: String) {
         var next = overrides(for: gameID)
         next.favourAccuracy = value
+        write(next, for: gameID)
+    }
+
+    /// Per-game core count first, Settings' choice underneath. Read before boot.
+    func effectiveCoreMode(for gameID: String) -> CoreMode {
+        if let raw = overrides(for: gameID).coreMode, let mode = CoreMode(rawValue: raw) {
+            return mode
+        }
+        return CoreMode.current
+    }
+
+    func setCoreMode(_ value: CoreMode?, for gameID: String) {
+        var next = overrides(for: gameID)
+        next.coreMode = value?.rawValue
         write(next, for: gameID)
     }
 
@@ -237,6 +256,13 @@ struct GameOptionsView: View {
         binding(for: \.favourAccuracy) { store.setFavourAccuracy($0, for: game.id) }
     }
 
+    /// nil is "Use Global Default"; the tag is CoreMode.rawValue otherwise.
+    private var coreModeChoice: Binding<String> {
+        Binding(
+            get: { store.overrides(for: game.id).coreMode ?? "" },
+            set: { store.setCoreMode(CoreMode(rawValue: $0), for: game.id) })
+    }
+
     var body: some View {
         // NavigationStack needs iOS 16+; the deployment target is 15.0.
         NavigationView {
@@ -270,6 +296,25 @@ struct GameOptionsView: View {
                             .pickerStyle(.menu)
                             .tint(MuffinTheme.pixelBlue)
                         }
+                        HStack {
+                            Text("CPU Cores")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Spacer()
+                            Picker("CPU Cores", selection: coreModeChoice) {
+                                Text("Use Global Default").tag("")
+                                ForEach(CoreMode.allCases) { mode in
+                                    Text(mode.title).tag(mode.rawValue)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(MuffinTheme.pixelBlue)
+                            .disabled(!DeviceCapabilities.current.multicoreViable)
+                        }
+                        if !DeviceCapabilities.current.multicoreViable {
+                            Text(DeviceCapabilities.oneCoreOnlyText)
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
                     } header: {
                         SettingsSectionHeader("Overrides", icon: "slider.horizontal.3", accent: .core)
                     } footer: {
@@ -280,6 +325,23 @@ struct GameOptionsView: View {
                         )
                     }
 
+
+                    Section {
+                        NavigationLink {
+                            GraphicPacksView(game: game)
+                        } label: {
+                            Label("Graphic Packs", systemImage: "wand.and.stars")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        }
+                    } header: {
+                        SettingsSectionHeader("Graphic packs", icon: "paintpalette", accent: .core)
+                    } footer: {
+                        InfoButton.footer(
+                            "Resolution, frame rate, fixes and mods for this game. They apply the next time you launch it.",
+                            title: "Graphic packs",
+                            text: "Graphic packs change how a game looks or plays: higher resolutions, frame-rate patches, fixes for known glitches and mods. Download the community packs, turn on the ones you want for this game, and pick their options. Nothing is turned on automatically.\n\nHigher resolutions cost speed and memory, and what is reasonable depends on the device, so the options show a suggestion for this one.\n\nPacks apply the next time you launch the game."
+                        )
+                    }
 
                     Section {
                         Button {
