@@ -1135,12 +1135,11 @@ void PPCRecompiler_deleteFunction(PPCRecFunction_t* func)
         r.storedRange = nullptr;
     }
 
-    if (func->dualMapRegion.rwAlias)
+    if (s_dualMapJITEnabled && func->dualMapRegion.rwAlias)
     {
-        PPCRecompiler_releaseJitArena(func->dualMapRegion);
-        func->dualMapRegion   = DualMapRegion{};
-        func->x86Code         = nullptr;
-        func->x86CodeWritable = nullptr;
+        func->dualMapRegion.size  = 0;
+        func->x86Code             = nullptr;
+        func->x86CodeWritable     = nullptr;
     }
 }
 
@@ -1171,7 +1170,6 @@ void PPCRecompiler_invalidateRangeInternal(uint32 startAddr, uint32 endAddr)
 	while (rangeStore_ppcRanges.findFirstRange(startAddr, endAddr, rStart, rEnd, rFunc) )
 	{
 		PPCRecompiler_deleteFunction(rFunc);
-		delete rFunc;
 	}
 
 	PPCRecompilerState.recompilerSpinlock.unlock();
@@ -1476,17 +1474,7 @@ void PPCRecompiler_Shutdown()
     while (!PPCRecompilerState.targetQueue.empty())
         PPCRecompilerState.targetQueue.pop();
     PPCRecompilerState.invalidationRanges.clear();
-    {
-        MPTR rStart, rEnd;
-        PPCRecFunction_t* rFunc;
-        PPCRecompilerState.recompilerSpinlock.lock();
-        while (rangeStore_ppcRanges.findFirstRange(PPC_REC_CODE_AREA_START, PPC_REC_CODE_AREA_END, rStart, rEnd, rFunc))
-        {
-            PPCRecompiler_deleteFunction(rFunc);
-            delete rFunc;
-        }
-        PPCRecompilerState.recompilerSpinlock.unlock();
-    }
+
     rangeStore_ppcRanges.clear();
 
     uint32 numBlocks = PPCRecompiler_GetNumAddressSpaceBlocks();
