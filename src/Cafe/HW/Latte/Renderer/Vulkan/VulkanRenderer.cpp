@@ -32,6 +32,9 @@
 
 #include <cstdint>
 #include <cstdlib>
+#if BOOST_OS_IOS
+#include <os/proc.h> // os_proc_available_memory()
+#endif
 #include <thread>
 #include <chrono>
 #include <array>
@@ -791,9 +794,8 @@ VulkanRenderer::VulkanRenderer()
 		cemuLog_log(LogType::Force, "Install the privateapi variant of MoltenVK to get logicOp support on macOS");
 #endif
 	}
-#if !BOOST_OS_MACOS && !BOOST_OS_IOS
+	// Requested everywhere and kept only where the device reports it (MoltenVK never does). No platform is assumed either way.
 	deviceFeatures.geometryShader = VK_TRUE;
-#endif
 	deviceFeatures.occlusionQueryPrecise = VK_TRUE;
 	deviceFeatures.depthClamp = VK_TRUE;
 	deviceFeatures.depthBiasClamp = VK_TRUE;
@@ -821,7 +823,7 @@ VulkanRenderer::VulkanRenderer()
 	deviceFeatures.vertexPipelineStoresAndAtomics = true;
 
 	// Only ask vkCreateDevice for what the device reports. Requesting an unsupported core feature fails with
-	// VK_ERROR_FEATURE_NOT_PRESENT (-8), which is what MoltenVK 1.2.8 returned on the A12Z. Cemu doesn't hard-require
+	// VK_ERROR_FEATURE_NOT_PRESENT (-8), which is what MoltenVK 1.2.8 returned on the iPad Pro 2020 (A12Z). Cemu doesn't hard-require
 	// any of these (depthClamp/depthBiasClamp/anisotropy/precise occlusion queries are never used by the pipelines it builds),
 	// so each unsupported one is dropped and named in the log instead of aborting Vulkan.
 	const VkPhysicalDeviceFeatures requestedFeatures = deviceFeatures;
@@ -1535,6 +1537,8 @@ VkDeviceCreateInfo VulkanRenderer::CreateDeviceCreateInfo(const std::vector<VkDe
 		used_extensions.emplace_back(VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME);
 	if (m_featureControl.deviceExtensions.portability_subset)
 		used_extensions.emplace_back(kPortabilitySubsetExtName);
+	if (m_featureControl.deviceExtensions.memory_budget)
+		used_extensions.emplace_back(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
 	if (m_featureControl.deviceExtensions.tooling_info)
 		used_extensions.emplace_back(VK_EXT_TOOLING_INFO_EXTENSION_NAME);
 	if (m_featureControl.deviceExtensions.depth_range_unrestricted)
@@ -1674,6 +1678,7 @@ bool VulkanRenderer::CheckDeviceExtensionSupport(const VkPhysicalDevice device, 
 	}
 
 	info.deviceExtensions.portability_subset = isExtensionAvailable(kPortabilitySubsetExtName);
+	info.deviceExtensions.memory_budget = isExtensionAvailable(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
 	info.deviceExtensions.tooling_info = isExtensionAvailable(VK_EXT_TOOLING_INFO_EXTENSION_NAME);
 	info.deviceExtensions.depth_range_unrestricted = isExtensionAvailable(VK_EXT_DEPTH_RANGE_UNRESTRICTED_EXTENSION_NAME);
 	info.deviceExtensions.nv_fill_rectangle = isExtensionAvailable(VK_NV_FILL_RECTANGLE_EXTENSION_NAME);
@@ -2291,15 +2296,36 @@ void VulkanRenderer::QueryMemoryInfo()
 	}
 #if BOOST_OS_IOS
 	{
-		// Unified memory: the device-local heap is the whole working set the OS will allow, shared with the guest's RAM. Allow textures
-		// roughly a third of it, within 768 MB .. 2 GB (see VKRMemoryManager::imageMemoryAllocate).
+		// Unified memory: the device-local heap is the whole working set the OS lets this process map, and it is shared with the
+		// guest's RAM, so it is not a texture budget. Everything here comes from what the device reports, nothing is tied to a model:
+		//  - os_proc_available_memory(): what iOS will still give this process right now (depends on the device's RAM and the app's entitlements)
+		//  - VK_EXT_memory_budget (when exposed): the driver's own budget for the device-local heap
+		// Textures may use up to 45% of the smallest of these (see VKRMemoryManager::imageMemoryAllocate for the live pressure check).
+		const uint64 mb = 1024ull * 1024ull;
 		uint64 heapBytes = 0;
 		for (uint32 i = 0; i < memProperties.memoryHeapCount; i++)
 			if (memProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
 				heapBytes = std::max<uint64>(heapBytes, memProperties.memoryHeaps[i].size);
-		const uint64 mb = 1024ull * 1024ull;
-		m_textureBudgetBytes = heapBytes ? std::clamp<uint64>(heapBytes / 3, 768 * mb, 2048 * mb) : 0;
-		cemuLog_log(LogType::Force, "Vulkan: texture memory budget {} MB (device-local heap {} MB)", m_textureBudgetBytes / mb, heapBytes / mb);
+		uint64 limitBytes = heapBytes;
+		const uint64 processAvailable = (uint64)os_proc_available_memory();
+		if (processAvailable > 0)
+			limitBytes = limitBytes ? std::min(limitBytes, processAvailable) : processAvailable;
+		uint64 driverBudget = 0;
+		if (m_featureControl.deviceExtensions.memory_budget && vkGetPhysicalDeviceMemoryProperties2)
+		{
+			VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT };
+			VkPhysicalDeviceMemoryProperties2 props2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2 };
+			props2.pNext = &budget;
+			vkGetPhysicalDeviceMemoryProperties2(m_physicalDevice, &props2);
+			for (uint32 i = 0; i < props2.memoryProperties.memoryHeapCount; i++)
+				if (props2.memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
+					driverBudget = std::max<uint64>(driverBudget, budget.heapBudget[i]);
+			if (driverBudget > 0)
+				limitBytes = limitBytes ? std::min(limitBytes, driverBudget) : driverBudget;
+		}
+		m_textureBudgetBytes = limitBytes ? std::max<uint64>(limitBytes * 45 / 100, 256 * mb) : 0;
+		cemuLog_log(LogType::Force, "Vulkan: texture memory budget {} MB (device-local heap {} MB, process can still map {} MB, VK_EXT_memory_budget {})", m_textureBudgetBytes / mb, heapBytes / mb, processAvailable / mb,
+			driverBudget ? fmt::format("{} MB", driverBudget / mb) : std::string("not exposed"));
 	}
 #endif
 }

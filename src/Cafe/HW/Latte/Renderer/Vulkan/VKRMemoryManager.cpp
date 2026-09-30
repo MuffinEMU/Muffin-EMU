@@ -1,5 +1,8 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VKRMemoryManager.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
+#if BOOST_OS_IOS
+#include <os/proc.h>
+#endif
 #include <imgui.h>
 
 /* VKRSynchronizedMemoryBuffer */
@@ -599,11 +602,14 @@ VkImageMemAllocation* VKRMemoryManager::imageMemoryAllocate(VkImage image)
 			itr.second->getStatistics(heapSize, allocatedBytes);
 			used += allocatedBytes;
 		}
-		if (budget > 0 && used + allocationSize > budget)
+		// Budget set at startup from what the device reports, plus live pressure: iOS can still tell how much more this process may map.
+		const bool lowOnMemory = os_proc_available_memory() < (size_t)(384ull * 1024 * 1024);
+		if ((budget > 0 && used + allocationSize > budget) || lowOnMemory)
 		{
 			std::vector<LatteTexture*> deleteableTextures = LatteTC_GetDeleteableTextures();
 			size_t next = 0;
-			while (next < deleteableTextures.size() && used + allocationSize > budget)
+			const uint64 usedAtStart = used;
+			while (next < deleteableTextures.size() && ((budget > 0 && used + allocationSize > budget) || (lowOnMemory && usedAtStart - used < 128ull * 1024 * 1024)))
 			{
 				LatteTexture* tex = deleteableTextures[next++];
 				LatteTexture_Delete(tex);
