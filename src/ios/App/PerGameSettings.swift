@@ -20,6 +20,10 @@ struct GameOverrides: Codable, Equatable {
     /// before this field existed (follow the global default).
     var favourAccuracy: Bool?
 
+    /// Same escape hatch, for Settings' "Save compiled shaders" (the Metal pipeline archive).
+    /// Decodes to nil for overrides saved before this field existed (follow the global default).
+    var saveCompiledShaders: Bool?
+
     static let identity = GameOverrides()
     var isIdentity: Bool { self == GameOverrides.identity }
 }
@@ -63,6 +67,19 @@ final class PerGameSettingsStore: ObservableObject {
     func setPreCompileShaders(_ value: Bool?, for gameID: String) {
         var next = overrides(for: gameID)
         next.preCompileShaders = value
+        write(next, for: gameID)
+    }
+
+    /// Per-game override first, global default underneath (same direct `UserDefaults` read as
+    /// above, for the same reason). Read before boot.
+    func effectiveSaveCompiledShaders(for gameID: String) -> Bool {
+        let globalDefault = defaults.object(forKey: "muffin.shaders.saveCompiled") as? Bool ?? true
+        return overrides(for: gameID).saveCompiledShaders ?? globalDefault
+    }
+
+    func setSaveCompiledShaders(_ value: Bool?, for gameID: String) {
+        var next = overrides(for: gameID)
+        next.saveCompiledShaders = value
         write(next, for: gameID)
     }
 
@@ -233,6 +250,10 @@ struct GameOptionsView: View {
         binding(for: \.preCompileShaders) { store.setPreCompileShaders($0, for: game.id) }
     }
 
+    private var saveCompiledChoice: Binding<TriState> {
+        binding(for: \.saveCompiledShaders) { store.setSaveCompiledShaders($0, for: game.id) }
+    }
+
     private var favourAccuracyChoice: Binding<TriState> {
         binding(for: \.favourAccuracy) { store.setFavourAccuracy($0, for: game.id) }
     }
@@ -259,6 +280,18 @@ struct GameOptionsView: View {
                             .tint(MuffinTheme.pixelBlue)
                         }
                         HStack {
+                            Text("Save Compiled Shaders")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Spacer()
+                            Picker("Save Compiled Shaders", selection: saveCompiledChoice) {
+                                ForEach(TriState.allCases) { choice in
+                                    Text(choice.title).tag(choice)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(MuffinTheme.pixelBlue)
+                        }
+                        HStack {
                             Text("Favour Accuracy")
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                             Spacer()
@@ -276,7 +309,7 @@ struct GameOptionsView: View {
                         InfoButton.footer(
                             "\"Use Global Default\" tracks Settings; On/Off pins this game regardless of it.",
                             title: "Overrides",
-                            text: "Compile Shaders in Background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nFavour Accuracy is slower but more accurate, and can fix a game that glitches, desyncs or crashes. See Settings > CPU.\n\n\"Use Global Default\" follows the matching setting in Settings, even if you change it later. On or Off pins this game."
+                            text: "Compile Shaders in Background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nSave Compiled Shaders keeps the GPU code built for this game so it loads faster next time, at the cost of some storage; it applies from the next launch.\n\nFavour Accuracy is slower but more accurate, and can fix a game that glitches, desyncs or crashes. See Settings > CPU.\n\n\"Use Global Default\" follows the matching setting in Settings, even if you change it later. On or Off pins this game."
                         )
                     }
 

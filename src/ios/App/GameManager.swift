@@ -1089,6 +1089,10 @@ class GameManager: ObservableObject {
             // this background task started fresh on a relaunch.
             cemu_bridge_set_async_shader_compile(
                 PerGameSettingsStore.shared.effectivePreCompileShaders(for: game.id))
+            // Same shape: per-game override, then the global "Save compiled shaders". The
+            // archive is opened when the shader cache loads, so this has to land before boot.
+            cemu_bridge_set_binary_archive_enabled(
+                PerGameSettingsStore.shared.effectiveSaveCompiledShaders(for: game.id))
             // Global, and read here for the same reason as the calls above: the core
             // count is fixed the moment _LaunchTitleThread() starts its host threads, so
             // a Settings change only takes effect on the next launch and has to be pushed
