@@ -1571,6 +1571,8 @@ const char* cemu_bridge_take_launch_notice(void) {
 // clears it when the player picks Vulkan again, and switching MoltenVK builds makes it stop applying.
 static NSString* const kVulkanFailedBuildKey = @"muffin.render.vulkanFailedBuild";
 static NSString* const kGraphicsAPIKey = @"muffin.render.graphicsAPI";
+// Why Vulkan last failed, shown under the renderer picker in Settings > Graphics (cleared when the player picks Vulkan again).
+static NSString* const kVulkanFailureReasonKey = @"muffin.render.vulkanFailureReason";
 
 static void ios_migrate_renderer_setting_to_metal() {
     [[NSUserDefaults standardUserDefaults] setInteger:(NSInteger)kMetal forKey:kGraphicsAPIKey];
@@ -1584,6 +1586,7 @@ static void ios_report_renderer_fallback() {
         return;
     NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
     [defaults setObject:[NSString stringWithUTF8String:g_activeMoltenVK.c_str()] forKey:kVulkanFailedBuildKey];
+    [defaults setObject:[NSString stringWithFormat:@"could not start: %s", why] forKey:kVulkanFailureReasonKey];
     ios_migrate_renderer_setting_to_metal();
     cemu_bridge_log_checkpoint((std::string("Renderer: Vulkan could not start (") + why + "). This launch uses Metal, and the saved renderer is now Metal.").c_str());
     ios_set_launch_notice("Vulkan couldn't start on this iPad, so this game is using Metal. The renderer setting is back on Metal.");
@@ -2995,16 +2998,17 @@ bool IOSBridge_RecreateRenderSurface() {
     return state->ok.load();
 }
 
-// Called by the Vulkan renderer (GPU or render-worker thread) when the GPU reports the device lost or a command buffer never
+// Called by the Vulkan renderer (GPU or render-worker thread) when the GPU reports the device lost, a command buffer never
 // finishes. Stops the title with a message the UI shows, and remembers the failure against this MoltenVK build so the next
 // launch uses Metal, the same bookkeeping as a Vulkan start failure (ios_report_renderer_fallback).
 void IOSBridge_VulkanDeviceLost(const char* why) {
     NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
     [defaults setObject:[NSString stringWithUTF8String:g_activeMoltenVK.c_str()] forKey:kVulkanFailedBuildKey];
+    [defaults setObject:[NSString stringWithFormat:@"stopped while running: %s", (why && *why) ? why : "unknown"] forKey:kVulkanFailureReasonKey];
     ios_migrate_renderer_setting_to_metal();
-    cemu_bridge_log_checkpoint((std::string("Renderer: the GPU was lost while using Vulkan with MoltenVK ") + g_activeMoltenVK
+    cemu_bridge_log_checkpoint((std::string("Renderer: Vulkan failed while running with MoltenVK ") + g_activeMoltenVK
         + " (" + (why ? why : "unknown") + "). The title is being stopped and the saved renderer is now Metal.").c_str());
-    IOSSystemImplementation_ReportFatal("The GPU stopped responding while this game was using Vulkan, so the game was stopped. The renderer is back on Metal for the next launch; you can try Vulkan again in Settings > Graphics.");
+    IOSSystemImplementation_ReportFatal("Vulkan stopped working while this game was running (the GPU stopped responding or ran out of memory), so the game was stopped. The renderer is back on Metal for the next launch; you can try Vulkan again in Settings > Graphics.");
 }
 
 void cemu_bridge_pause(void) {
