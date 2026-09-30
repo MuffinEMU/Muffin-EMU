@@ -321,6 +321,23 @@ struct GameOptionsView: View {
 
 
                     Section {
+                        NavigationLink {
+                            GraphicPacksView(game: game)
+                        } label: {
+                            Label("Graphic Packs", systemImage: "wand.and.stars")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        }
+                    } header: {
+                        SettingsSectionHeader("Graphic packs", icon: "paintpalette", accent: .core)
+                    } footer: {
+                        InfoButton.footer(
+                            "Resolution, frame rate, fixes and mods for this game. They apply the next time you launch it.",
+                            title: "Graphic packs",
+                            text: "Graphic packs change how a game looks or plays: higher resolutions, frame-rate patches, fixes for known glitches and mods. Download the community packs, turn on the ones you want for this game, and pick their options. Nothing is turned on automatically.\n\nHigher resolutions cost speed and memory, and what is reasonable depends on the device, so the options show a suggestion for this one.\n\nPacks apply the next time you launch the game."
+                        )
+                    }
+
+                    Section {
                         Button {
                             GameSaveTransfer.export(game) { result in
                                 switch result {
