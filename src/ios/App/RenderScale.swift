@@ -16,7 +16,9 @@ enum RenderScale: String, CaseIterable, Identifiable {
     case high
     /// Half of native. On a 2x screen that is one pixel per point - 1366x1024 on the
     /// iPad Pro, still comfortably above the Wii U's own 1280x720, so the console image
-    /// is not being downsampled below its source at this setting.
+    /// is not being downsampled below its source at this setting. On a 3x iPhone that
+    /// would be 1.5 pixels per point, under 720 lines in landscape, so `effectiveRenderScale`
+    /// raises it to 720 lines there.
     case balanced
     /// Three eighths of native, for when frame rate matters more than edges do.
     case battery
@@ -61,16 +63,23 @@ enum RenderScale: String, CaseIterable, Identifiable {
         return value
     }
 
-    /// The preset for someone who never touched Resolution, worked out from this device.
+    /// The preset for someone who never touched Resolution, worked out from this device. The only place
+    /// that default is decided.
     ///
     /// Emulation is usually CPU-bound, so extra pixels buy little; the goal is the cheapest preset that still
-    /// presents about as many pixels across as the Wii U renders (1280). An iPad Pro or iPhone Pro lands on
-    /// Balanced. A small-screened device, where Balanced would be well under 720p (an iPhone SE, say), steps up
+    /// presents about as many pixels across as the Wii U renders (1280). Most iPads and iPhones land on
+    /// Balanced (the newest chips with 7 GiB or more start at High, see below). A small-screened device, where Balanced would be well under 720p (an iPhone SE, say), steps up
     /// to a sharper one. The memory of the device bounds how many pixels that may be, so a 3 GB iPad does not
     /// default to a larger surface than it can afford, and a device with more memory may go further. Battery
     /// saver is only ever chosen by hand.
     static var deviceDefault: RenderScale {
         #if os(iOS)
+        // A17 Pro or later and every M-series chip with 7 GiB or more (8 GB and 16 GB iPads and the
+        // 8 GB Pro iPhones) have GPU, bandwidth and thermal room for `.high`; see
+        // `DeviceCapabilities.startsAtHighRenderScale`. Everything else goes by screen and memory below.
+        if DeviceCapabilities.current.startsAtHighRenderScale {
+            return .high
+        }
         let screen = UIScreen.main
         let nativeScale = Double(screen.scale)
         let longEdge = Double(max(screen.bounds.width, screen.bounds.height)) * nativeScale
@@ -104,18 +113,108 @@ enum LowPowerMode {
     }
 }
 
+/// How the GamePad surface is sized. The console's GamePad screen is 854x480, so the surface
+/// needs no more than about twice that across its long side whatever the display's own scale is.
+enum PadSurfaceScale {
+    static let maxLongSidePixels: Double = 1708
+
+    static func scale(forPoints size: CGSize, renderScale: Double) -> Double {
+        let longSide = Double(max(size.width, size.height))
+        guard longSide > 0 else { return renderScale }
+        return max(0.5, min(renderScale, maxLongSidePixels / longSide))
+    }
+}
+
 /// Whether the three emulated Espresso cores get three host threads or share one.
 ///
-/// One is the default: three host threads on a fanless device such as the A12Z iPad Pro
-/// draw about three times the power, the SoC heats up within a minute and iOS lowers the
-/// clocks, so it usually runs slower than one thread. Kept as a switch because a
-/// better-cooled device may come out ahead.
-enum MulticoreMode {
-    static let storageKey = "muffin.cpu.multicore"
-    static let defaultValue = false
+/// `auto` decides per game at launch: from the game's own profile, the device's performance-core
+/// count and its thermal state (see ios_decide_core_count in CemuBridge.mm). It leans to one
+/// core, because on a fanless A12Z iPad Pro three host threads drew about three times the power,
+/// the SoC throttled within a minute, and Wind Waker HD ran 4-20 fps against 40-60 on one. Three
+/// cores stay available as a labelled experiment, globally and per game.
+enum CoreMode: String, CaseIterable, Identifiable {
+    case auto, single, multi
 
-    static var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .auto:   return "Auto"
+        case .single: return "One core"
+        case .multi:  return "Three cores (Experimental)"
+        }
+    }
+
+    var summary: String {
+        switch self {
+        case .auto:   return "Picks per game and per device. Uses one core unless the game's profile asks for three and this device has the headroom."
+        case .single: return "One core. Cooler, and usually faster on this hardware."
+        case .multi:  return "Three cores. Can be faster on a device with spare performance cores and cooling, but heats up quickly on most iPads and has hung some games."
+        }
+    }
+
+    /// The value cemu_bridge_set_cpu_core_mode() takes.
+    var bridgeValue: Int32 {
+        switch self {
+        case .auto:   return 0
+        case .single: return 1
+        case .multi:  return 2
+        }
+    }
+
+    static let storageKey = "muffin.cpu.coreMode"
+    /// The on/off switch this replaced. Kept readable so an explicit choice made with it survives.
+    private static let legacyKey = "muffin.cpu.multicore"
+    static let defaultValue: CoreMode = .auto
+
+    static var current: CoreMode {
+        let defaults = UserDefaults.standard
+        if let raw = defaults.string(forKey: storageKey), let value = CoreMode(rawValue: raw) {
+            return value
+        }
+        if let legacy = defaults.object(forKey: legacyKey) as? Bool {
+            return legacy ? .multi : .single
+        }
+        return defaultValue
+    }
+}
+
+/// Titles where Auto stays on one core because an earlier three-core run that Auto chose either
+/// ended without a clean stop (crash, hang, the app killed) or stalled. Remembered per title.
+enum AutoCoreHistory {
+    private static let demotedKey = "muffin.cpu.autoDemoted"
+    private static let pendingKey = "muffin.cpu.autoMultiPending"
+
+    /// Call at launch. Settles a run that never ended cleanly, then says whether this title is demoted.
+    static func isDemotedAtLaunch(gameID: String) -> Bool {
+        let defaults = UserDefaults.standard
+        var demoted = Set(defaults.stringArray(forKey: demotedKey) ?? [])
+        if let pending = defaults.string(forKey: pendingKey) {
+            defaults.removeObject(forKey: pendingKey)
+            if demoted.insert(pending).inserted {
+                defaults.set(demoted.sorted(), forKey: demotedKey)
+                cemu_bridge_log_line("CPU cores: \(pending) ended a three-core run without a clean stop, so Auto keeps it on one core from now on")
+            }
+        }
+        return demoted.contains(gameID)
+    }
+
+    /// Call once a title that Auto put on three cores has booted.
+    static func sessionStarted(gameID: String) {
+        UserDefaults.standard.set(gameID, forKey: pendingKey)
+    }
+
+    /// Call when the title stops normally.
+    static func sessionEnded(gameID: String, stalled: Bool) {
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: pendingKey) == gameID else { return }
+        defaults.removeObject(forKey: pendingKey)
+        guard stalled else { return }
+        var demoted = Set(defaults.stringArray(forKey: demotedKey) ?? [])
+        if demoted.insert(gameID).inserted {
+            defaults.set(demoted.sorted(), forKey: demotedKey)
+            cemu_bridge_log_line("CPU cores: a three-core run of \(gameID) stalled, so Auto keeps it on one core from now on")
+        }
     }
 }
 
@@ -138,8 +237,21 @@ enum FrameStretch {
 extension UIScreen {
     /// The backing scale to hand the renderer, after the user's render-scale setting.
     /// Floored at 0.5 so the points-to-pixels conversion can't round a dimension to zero.
+    ///
+    /// Every choice but Battery saver keeps at least the Wii U's own 720 lines on the short side
+    /// of the screen, as far as the panel has them: a phone's 390 pt landscape height at half of
+    /// a 3x scale is only 585 pixels, which is below the picture the game draws. Devices whose
+    /// screen is already taller than that at the chosen scale (every iPad) are unaffected.
     var effectiveRenderScale: Double {
-        max(0.5, Double(scale) * RenderScale.current.factor)
+        let choice = RenderScale.current
+        var value = Double(scale) * choice.factor
+        if choice != .battery {
+            let shortSide = Double(min(bounds.width, bounds.height))
+            if shortSide > 0 {
+                value = max(value, min(720.0 / shortSide, Double(scale)))
+            }
+        }
+        return max(0.5, value)
     }
 }
 #endif

@@ -2,6 +2,7 @@
 #include "PPCFunctionBoundaryTracker.h"
 #include "PPCRecompiler.h"
 #include "PPCRecompilerIml.h"
+#include "Common/DeviceCapabilities.h"
 #include "PPCRecompilerThreadPool.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "util/containers/RangeStore.h"
@@ -14,6 +15,7 @@
 #include "util/helpers/fspinlock.h"
 #include "util/helpers/helpers.h"
 #include "util/MemMapper/MemMapper.h"
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -23,6 +25,9 @@
 #if defined(__APPLE__) && defined(__aarch64__)
 #include <pthread.h>
 #include <libkern/OSCacheControl.h>
+#if BOOST_OS_IOS
+#include <os/proc.h>
+#endif
 #include <stdio.h>
 #include <dlfcn.h>
 #include <stdlib.h>
@@ -318,6 +323,7 @@ struct DualMapArena
             }
             return {(uint8*)region.rwAlias + pos, (uint8*)region.rxAlias + pos, size};
         }
+        PerfTelemetry::Get().jitArenaAllocFails.fetch_add(1, std::memory_order_relaxed);
         cemuLog_log(LogType::Force, "JIT arena: no free range for {} bytes", size);
         return {};
     }
@@ -326,6 +332,7 @@ struct DualMapArena
     {
         if (!allocation.rwAlias || !allocation.size)
             return;
+        PerfTelemetry::Get().jitArenaReleases.fetch_add(1, std::memory_order_relaxed);
         const size_t pos = (uint8*)allocation.rwAlias - (uint8*)region.rwAlias;
         cemu_assert(pos <= region.size && allocation.size <= region.size - pos);
         std::lock_guard lock(mutex);
@@ -979,6 +986,7 @@ void PPCRecompiler_recompileAtAddress(uint32 address)
 	PPCRecompilerState.recompilerSpinlock.unlock();
 
 	std::vector<std::pair<MPTR, uint32>> functionEntryPoints;
+	const uint64 compileStartNs = PerfTelemetry::NowNs();
 	auto func = PPCRecompiler_recompileFunction(range, entryAddresses, functionEntryPoints, funcBoundaries);
 
 	if (!func)
@@ -986,6 +994,8 @@ void PPCRecompiler_recompileAtAddress(uint32 address)
 		return; // recompilation failed
 	}
 	bool r = PPCRecompiler_makeRecompiledFunctionActive(address, range, func, functionEntryPoints);
+	PerfTelemetry::Get().jitBlocks.fetch_add(1, std::memory_order_relaxed);
+	PerfTelemetry::Get().jitCompileNs.fetch_add(PerfTelemetry::NowNs() - compileStartNs, std::memory_order_relaxed);
 }
 
 
@@ -1127,6 +1137,7 @@ void PPCRecompiler_invalidateTableRange(uint32 offset, uint32 size)
 void PPCRecompiler_deleteFunction(PPCRecFunction_t* func)
 {
     cemu_assert_debug(PPCRecompilerState.recompilerSpinlock.is_locked());
+    PerfTelemetry::Get().jitInvalidations.fetch_add(1, std::memory_order_relaxed);
     for (auto& r : func->list_ranges)
     {
         PPCRecompiler_invalidateTableRange(r.ppcAddress, r.ppcSize);
@@ -1290,9 +1301,34 @@ bool PPCRecompiler_Init26() {
         constexpr size_t kArenaSizes[] = {
             512 * kMB, 384 * kMB, 256 * kMB, 128 * kMB, 64 * kMB
         };
+        // The first rung comes from the device (DeviceCapabilities.h): 512 MB on every device with 4.5 GB or more,
+        // which is what this was tuned at, and 256 MB on the 2 to 4 GB ones. Translated code is sized by the game,
+        // not by the device, so a bigger arena would only reserve more address space, the thing that ran out here.
+        const size_t arenaStart = (size_t)DeviceCaps::GetBudgets().jitArenaStartMB * kMB;
         size_t chosenArena = 0;
-        for (size_t candidate : kArenaSizes)
+        size_t firstCandidate = 0;
+        // Ceiling from the device tier first (DeviceCapabilities.h), so it also holds when the available
+        // memory cannot be read. The memory-based sizing below can only lower the start further.
+        while (firstCandidate + 1 < std::size(kArenaSizes) && kArenaSizes[firstCandidate] > arenaStart)
+            firstCandidate++;
+#if BOOST_OS_IOS
+        // Then size the arena to what is actually free: translated code is backed by real memory as it is written, so
+        // let the arena claim at most an eighth of what iOS says this process can still use (about 4.5 GB
+        // free on a 6 GB iPad gives 512 MB, about 2.4 GB on a 4 GB iPhone gives 256 MB), never below
+        // 128 MB. The ladder below still steps down if the address space itself is not there.
+        const uint64 availableBytes = os_proc_available_memory();
+        if (availableBytes != 0)
         {
+            const size_t budget = (size_t)(availableBytes / 8);
+            while (firstCandidate + 1 < std::size(kArenaSizes) && kArenaSizes[firstCandidate] > budget && kArenaSizes[firstCandidate] > 128 * kMB)
+                firstCandidate++;
+            cemuLog_log(LogType::Force, "JIT arena: {} MB of memory available to this app, starting at {} MB",
+                (uint64)(availableBytes / kMB), kArenaSizes[firstCandidate] / kMB);
+        }
+#endif
+        for (size_t candidateIndex = firstCandidate; candidateIndex < std::size(kArenaSizes); candidateIndex++)
+        {
+            const size_t candidate = kArenaSizes[candidateIndex];
             if (s_jitArena.init(candidate))
             {
                 chosenArena = candidate;

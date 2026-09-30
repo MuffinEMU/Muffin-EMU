@@ -334,7 +334,7 @@ struct GraphicsSettingsSection: View {
     // Shown only on GPUs without mesh shader support (see MetalRenderer.cpp's mesh-shader gate).
     // GraphicPacksView carries the full note next to the packs it affects.
     private var meshShadersUnsupported: Bool {
-        !(MTLCreateSystemDefaultDevice()?.supportsFamily(.apple7) ?? false)
+        !DeviceCapabilities.current.meshShaders
     }
 
     @ViewBuilder private var meshShaderNote: some View {
