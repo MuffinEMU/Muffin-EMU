@@ -1438,6 +1438,54 @@ namespace {
     // Bumped whenever a title starts, ends or is replaced; the watchdog thread then starts judging afresh.
     std::atomic<uint32_t> g_stallResetGen{0};
 
+    // Set when something makes starting another title in this process unsafe: a GPU that stopped doing this app's work, or
+    // emulator state that the check at the end of every title stop found still alive. Nothing clears it except an app
+    // restart (iOS does not let an app relaunch itself), so the UI shows "close and reopen" on the next launch attempt
+    // instead of starting a game that is likely to fault. It is never set routinely: a normal stop leaves it alone.
+    std::atomic<bool> g_cleanStartRequired{false};
+    std::mutex g_cleanStartMutex;
+    std::string g_cleanStartReason;
+
+    void ios_require_clean_start(const std::string& reason)
+    {
+        std::lock_guard<std::mutex> lock(g_cleanStartMutex);
+        if (g_cleanStartRequired.load())
+            return; // the first reason is the one worth showing
+        g_cleanStartReason = reason;
+        g_cleanStartRequired.store(true);
+        cemuLog_log(LogType::Force, "clean slate: a clean start is needed before the next title: {}", reason);
+    }
+
+    // The GPU-fault latches describe the renderer that is about to be replaced and are cleared right after, so they are
+    // read first. A latched fault is the kind iOS answers by ignoring this app's GPU work: a new renderer gets a new command
+    // queue, but nothing proves the device accepts it, and a game started on top of that shows nothing or faults again.
+    void ios_note_gpu_fault_before_reset()
+    {
+        auto& w = LatteWait::Get();
+        if (w.gpuError.load())
+            ios_require_clean_start("the GPU stopped running this app's work (error code " + std::to_string((int)w.gpuErrorCode.load()) + ") during the last game");
+        else if (w.gpuPresumedLost.load())
+            ios_require_clean_start("the GPU stopped responding during the last game");
+    }
+
+    // Runs after every title stop (the stop button, a game that exits, the Wii U Menu switching to a game): if the check in
+    // CafeSystem::ShutdownTitle() found anything that is unsafe to start another title on, a clean start is needed.
+    void ios_check_clean_slate_after_stop()
+    {
+        if (!CafeSystem::CleanSlateHasDangerousLeftover())
+            return;
+        const std::vector<std::string> leftovers = CafeSystem::GetCleanSlateLeftovers();
+        std::string reason = "the emulator could not fully reset after the last game";
+        if (!leftovers.empty())
+        {
+            reason += " (" + leftovers.front();
+            if (leftovers.size() > 1)
+                reason += " and " + std::to_string(leftovers.size() - 1) + " more";
+            reason += ")";
+        }
+        ios_require_clean_start(reason);
+    }
+
     // Clears the stall flag, the stall kind and the GPU-fault state (a failed command buffer, a
     // presumed-lost GPU, the drawable-failure count). Used when a title starts or ends and when a
     // title switch replaces the renderer: those flags describe the renderer that is being thrown
@@ -1445,6 +1493,7 @@ namespace {
     // GPU-faulted, before it has drawn a frame.
     void ios_reset_video_stall_state()
     {
+        ios_note_gpu_fault_before_reset();
         g_videoStalled.store(false);
         g_videoStallKind.store(0);
         auto& w = LatteWait::Get();
@@ -3479,6 +3528,8 @@ bool IOSBridge_RecreateRenderSurface() {
             return;
         try
         {
+            // The title that was just stopped by the switch went through the same clean-slate check as any other stop
+            ios_check_clean_slate_after_stop();
             // The outgoing title's GPU state must not carry into the new renderer.
             ios_reset_video_stall_state();
             ios_apply_render_profile();
@@ -3548,9 +3599,11 @@ void cemu_bridge_shutdown_title(void) {
     IOSTitlePause_Forget();
     if (CafeSystem::IsTitleRunning())
         CafeSystem::ShutdownTitle();
-    // ShutdownTitle() stops the GPU thread but leaves g_renderer constructed. Dropped here
-    // so the next CemuRun() builds a fresh one for whatever graphics API is configured then,
-    // instead of reusing a renderer whose layers belong to views Swift has since replaced.
+    ios_check_clean_slate_after_stop();
+    // A title that ran has its renderer deleted by the GPU thread when ShutdownTitle() stops it, so this is normally a
+    // no-op. It still matters when a launch failed before the GPU thread started: the renderer CemuRun() built is then
+    // left, and dropping it here makes the next CemuRun() build a fresh one for whatever graphics API is configured
+    // then, instead of reusing a renderer whose layers belong to views Swift has since replaced.
     g_renderer.reset();
     g_titleRunning.store(false);
     g_framesPerSecond.store(0.0);
@@ -3558,6 +3611,19 @@ void cemu_bridge_shutdown_title(void) {
     cemu_bridge_release_all_buttons();
     cemu_bridge_memory_note("after title shutdown");
     setStatus("Title shut down.");
+}
+
+bool cemu_bridge_clean_start_required(void) {
+    return g_cleanStartRequired.load();
+}
+
+const char* cemu_bridge_clean_start_reason(void) {
+    static thread_local std::string reason;
+    {
+        std::lock_guard<std::mutex> lock(g_cleanStartMutex);
+        reason = g_cleanStartReason;
+    }
+    return reason.c_str();
 }
 
 void cemu_bridge_shutdown(void) {
