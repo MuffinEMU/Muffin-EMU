@@ -13,7 +13,7 @@ git init -q --bare "$T/origin.git"
 git init -q -b main "$T/work"; cd "$T/work"
 git remote add origin "$T/origin.git"
 mkdir -p ci docs src
-cp "$REAL/ci/lib-release.sh" "$REAL/ci/publish-nightly.sh" "$REAL/ci/publish-experimental.sh" "$REAL/ci/release-notes.sh" ci/
+cp "$REAL/ci/check-stable.sh" ci/; cp "$REAL/ci/lib-release.sh" "$REAL/ci/publish-nightly.sh" "$REAL/ci/publish-experimental.sh" "$REAL/ci/release-notes.sh" ci/
 commit() { echo "$2" >> "$1"; git add -A; git commit -q -m "$3"; git rev-parse HEAD; }
 C1=$(commit src/a.cpp 1 "c1")
 C2=$(commit src/a.cpp 2 "c2")
@@ -108,6 +108,16 @@ run_exp "a push is refused" refuse EVENT=push REF=refs/heads/feature/x REF_NAME=
 run_exp "channel none is refused" refuse EVENT=workflow_dispatch REF=refs/heads/feature/x REF_NAME=feature/x CHANNEL=none SHA="$F1" TAG=experimental-feature-x-${F1:0:7} TITLE="Experimental: x (feature/x @ ${F1:0:7})" SHORT_NAME=x
 run_exp "a tag that is not experimental-<slug>-<sha7> is refused" refuse EVENT=workflow_dispatch REF=refs/heads/feature/x REF_NAME=feature/x CHANNEL=experimental SHA="$F1" TAG=nightly TITLE="Experimental: x (feature/x @ ${F1:0:7})" SHORT_NAME=x
 run_exp "a title without the Experimental: prefix is refused" refuse EVENT=workflow_dispatch REF=refs/heads/feature/x REF_NAME=feature/x CHANNEL=experimental SHA="$F1" TAG=experimental-feature-x-${F1:0:7} TITLE="MuffinEMU 7.0" SHORT_NAME=x
+
+# ---- the stable guard: a numbered release must strictly contain the latest one
+stable() { ./ci/check-stable.sh "$1" "$2" >/dev/null 2>&1; }
+stable v1.0 "$C4" && ok "a build newer than the latest release may cut the next one" || bad "newer build refused"
+stable v1.0 "$C2" && ok "  ...including one that is only a little newer" || bad "c2 refused"
+stable v1.0 "$C1" && bad "the commit the latest release was cut from was allowed again" || ok "a second run of the build that cut the latest release is refused"
+git tag -f v1.1 "$C3" >/dev/null
+stable v1.1 "$C2" && bad "an OLD re-run was allowed to cut a new release" || ok "a re-run of an old main build (older than the latest release) is refused"
+stable v1.1 "$F1" && bad "a commit off main was allowed" || ok "a commit that does not contain the latest release is refused"
+stable v9.9 "$C4" && bad "a missing tag was allowed" || ok "a tag that does not exist is refused"
 
 # ---- the release notes the experimental body carries
 BODY_OUT=$(./ci/release-notes.sh "$C2" "$F1")

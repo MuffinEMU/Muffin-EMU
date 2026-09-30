@@ -345,6 +345,7 @@ jobs:
         run: |
           set -eo pipefail
           git fetch --tags --force -q origin
+          PUBLISH=true
           if [ "$GITHUB_REF_NAME" = "main" ]; then
             LAST=$(git tag -l 'v*' | sed -nE 's/^v([0-9]+)\.([0-9])$/\1 \2/p' | sort -n -k1,1 -k2,2 | tail -n1)
             if [ -z "$LAST" ]; then
@@ -356,6 +357,9 @@ jobs:
               MIN=$((MIN + 1))
               if [ "$MIN" -ge 10 ]; then MAJ=$((MAJ + 1)); MIN=0; fi
               VER="$MAJ.$MIN"
+              # A numbered release must strictly contain the latest one. A re-run of an old build of
+              # main would otherwise ship old code as the newest version.
+              if ! ./ci/check-stable.sh "$PREV"; then PUBLISH=false; fi
             fi
             TAG="v$VER"
             if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
@@ -368,12 +372,13 @@ jobs:
             TAG="auto-${GITHUB_SHA}"
             LABEL=$(echo "$GITHUB_SHA" | cut -c1-7); RELEASE=false
           fi
-          echo "version $VER, tag $TAG, numbered release: $RELEASE"
+          echo "version $VER, tag $TAG, numbered release: $RELEASE, publish it: $PUBLISH"
           {
             echo "MUFFIN_VERSION=$VER"
             echo "MUFFIN_TAG=$TAG"
             echo "MUFFIN_LABEL=$LABEL"
             echo "MUFFIN_RELEASE=$RELEASE"
+            echo "MUFFIN_PUBLISH=$PUBLISH"
             echo "MUFFIN_PREV_TAG=${PREV:-}"
           } >> "$GITHUB_ENV"
 
@@ -566,7 +571,7 @@ jobs:
         # only reads published releases) and looking from the outside like the build
         # simply produced nothing. A retry re-attaches the missing files to the same
         # draft and publishes it.
-        if: steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         id: publish
         continue-on-error: true
@@ -596,7 +601,7 @@ jobs:
         # assets is not installable and must not read as a green build. That also means
         # no separate guard step is needed - and a guard checking failure() would never
         # have fired anyway, because continue-on-error above keeps the job green.
-        if: steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && steps.publish.outcome == 'failure'
+        if: steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false' && steps.publish.outcome == 'failure'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.MUFFIN_TAG }}

@@ -15,6 +15,14 @@ Why this exists: the rolling nightly used to be updated by every non-PR build, i
 feature branches, so two experimental branch builds became the public Nightly feed. Now publishing to
 Nightly is structurally impossible for anything but an eligible build of `main`.
 
+## Numbered releases only move forward
+
+"Choose the version" takes the next vX.Y from the tags, so an old build of `main` that is re-run would ship old
+code as the newest version. `ci/check-stable.sh` refuses: a numbered release is published only if this build's
+commit strictly contains the commit of the latest vX.Y release (that commit is an ancestor, and the two
+differ). Otherwise the build publishes no numbered release (`MUFFIN_PUBLISH=false`, with a notice in the log).
+Nightly has its own, separate check (below).
+
 ## Nightly eligibility
 
 `ci/publish-nightly.sh` runs in its own job, `publish-nightly`, and publishes only if all of these hold

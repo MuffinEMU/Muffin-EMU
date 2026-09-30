@@ -21,7 +21,7 @@ def evaluate(expr, ctx):
     # names like steps.channel.outputs.channel, needs.build-app.outputs.channel, github.ref
     def sub(m):
         return f"ctx.get({m.group(0)!r}, '')"
-    py = re.sub(r"(?<![\w.'])(?:github|needs|steps|inputs)(?:\.[\w\-]+)+", sub, expr)
+    py = re.sub(r"(?<![\w.'])(?:github|needs|steps|inputs|env)(?:\.[\w\-]+)+", sub, expr)
     py = py.replace("&&", " and ").replace("||", " or ")
     py = re.sub(r"!(?!=)", " not ", py)
     return bool(eval(py, {"ctx": ctx}))
@@ -56,7 +56,7 @@ def outcome(event, ref, ref_name, channel_input="", name=""):
     if ch is None:
         return dict(channel=None, stable=False, nightly=False, experimental=False)
     ctx = {"github.event_name": event, "github.ref": ref, "steps.channel.outputs.channel": ch,
-           "needs.build-app.outputs.channel": ch, "steps.publish.outcome": "failure"}
+           "needs.build-app.outputs.channel": ch, "steps.publish.outcome": "failure", "env.MUFFIN_PUBLISH": "true"}
     return dict(
         channel=ch,
         stable=any(evaluate(s["if"], ctx) for s in stable_steps),
@@ -92,6 +92,12 @@ for ev, ref, ch, label in [("workflow_dispatch", F, "main", "feature branch + a 
            "steps.publish.outcome": "failure"}
     check(f"{label}: nightly still cannot publish", not evaluate(jobs["publish-nightly"]["if"], ctx))
     check(f"{label}: stable still cannot publish", not any(evaluate(s["if"], ctx) for s in stable_steps))
+# The stable guard: a main build that is not strictly newer than the latest release (an old re-run) is
+# marked MUFFIN_PUBLISH=false by "Choose the version", and then neither publish step runs.
+ctx = {"github.event_name": "push", "github.ref": M, "steps.channel.outputs.channel": "main", "needs.build-app.outputs.channel": "main",
+       "steps.publish.outcome": "failure", "env.MUFFIN_PUBLISH": "false"}
+check("an old re-run of main (MUFFIN_PUBLISH=false): no numbered release, not even the retry", not any(evaluate(s["if"], ctx) for s in stable_steps))
+check("...and its nightly is still decided by the nightly job's own guards", evaluate(jobs["publish-nightly"]["if"], ctx))
 ctx = {"github.event_name": "push", "github.ref": M, "steps.channel.outputs.channel": "experimental", "needs.build-app.outputs.channel": "experimental"}
 check("main + a (buggy) channel=experimental: nothing publishes", not evaluate(jobs["publish-nightly"]["if"], ctx) and not evaluate(jobs["publish-experimental"]["if"], ctx))
 
