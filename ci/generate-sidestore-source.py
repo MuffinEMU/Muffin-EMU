@@ -119,7 +119,44 @@ def build_source(rels, asset_name, ident, name, subtitle, app_subtitle, extra_no
         del v["key"]
     src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note)
     src["apps"][0]["versions"] = versions
+    src["news"] = news_for(rels)
     return src
+
+
+def news_for(rels, count=1):
+    """A news card for the latest numbered release.
+
+    The caption is the first two "What changed" bullets, so it reads as the headline
+    changes of that version rather than install instructions.
+    """
+    items = []
+    for rel in rels:
+        if rel.get("draft") or rel.get("prerelease"):
+            continue
+        m = VERSION_TAG.match(rel["tag_name"])
+        if not m:
+            continue
+        body = (rel.get("body") or "").replace("\r\n", "\n")
+        bullets = [l[2:].strip() for l in body.split("\n") if l.startswith("- ")][:2]
+        caption = " ".join(bullets) or "A new version of MuffinEMU is available."
+        if len(caption) > 220:
+            caption = caption[:217].rsplit(" ", 1)[0] + "..."
+        version = f"{m.group(1)}.{m.group(2)}"
+        items.append({
+            "title": f"MuffinEMU {version}",
+            "identifier": f"muffinemu-v{version}",
+            "caption": caption,
+            "date": (rel.get("published_at") or "")[:10],
+            "tintColor": "E5652E",
+            "url": rel.get("html_url"),
+            "appID": BUNDLE_ID,
+            "notify": False,
+            "key": (int(m.group(1)), int(m.group(2))),
+        })
+    items.sort(key=lambda n: n["key"], reverse=True)
+    for n in items:
+        del n["key"]
+    return items[:count]
 
 
 def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
@@ -145,10 +182,16 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
             "developerName": "kiddreads",
             "subtitle": app_subtitle,
             "localizedDescription": (
-                "MuffinEMU is a Wii U emulator for iPhone and iPad, iOS 15 and later, built "
-                "on Cemu: PowerPC interpreters, an AArch64 recompiler, Cafe OS HLE and a "
-                "native Metal renderer under a SwiftUI app with a measured Wii U GamePad "
-                "layout.\n\n"
+                "MuffinEMU is a Wii U emulator for iPhone and iPad (iOS 15 and later), built on Cemu.\n\n"
+                "- Import games from Files: WUA, decrypted games, and encrypted dumps with your own keys.txt. "
+                "DLC and updates install from the app.\n"
+                "- Metal renderer by default, with Vulkan through MoltenVK as an option.\n"
+                "- Runs on the interpreter out of the box, and on the faster recompiler when a JIT "
+                "enabler such as StikDebug is attached.\n"
+                "- An on-screen GamePad laid out from a real Wii U GamePad, with an optional analog stick, "
+                "skins and a layout editor. Hardware controllers work alongside it.\n"
+                "- Single screen, both screens, or the TV image on an external display.\n"
+                "- Save states, graphic packs, and 31 app icons with matching themes.\n\n"
                 + extra_note + "\n\n"
                 "Bring your own games and keys. No copyrighted content is distributed here."),
             "iconURL": f"{PAGES}/icon.png",
