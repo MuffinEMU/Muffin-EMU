@@ -12,6 +12,14 @@
 	     Finder at all, no way to move ROMs/keys/logs onto the device. Writing it
 	     literally here sidesteps the merge entirely rather than trying to explain
 	     the undocumented Xcode behavior. -->
+	<!-- The floor, stated so the OS filters on it instead of the app crashing on launch: a 64-bit
+	     device with Metal. iOS 15 (project.yml) is the real lower bound; every device that runs
+	     it meets both. See docs/DEVICE_SUPPORT.md. -->
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+		<string>metal</string>
+	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

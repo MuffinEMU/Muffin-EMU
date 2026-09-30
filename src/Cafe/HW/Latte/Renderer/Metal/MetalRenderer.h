@@ -6,6 +6,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalPerformanceMonitor.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalOutputShaderCache.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalAttachmentsInfo.h"
+#include "Common/DeviceCapabilities.h"
 
 enum MetalGeneralShaderType
 {
@@ -244,7 +245,8 @@ class MetalRenderer : public Renderer
 public:
     static constexpr uint32 OCCLUSION_QUERY_POOL_SIZE = 1024;
     static constexpr uint32 OCCLUSION_QUERY_BUFFER_COUNT = 3;
-    static constexpr uint32 TEXTURE_READBACK_SIZE = 32 * 1024 * 1024; // 32 MB
+    // 32 MB on a standard device; sized from the device tier (Common/DeviceCapabilities.h).
+    static uint32 TextureReadbackSize() { return (uint32)DeviceCaps::GetBudgets().textureReadbackBytes; }
 
     struct DeviceInfo
     {
@@ -540,7 +542,7 @@ public:
     {
         if (!m_readbackBuffer)
         {
-            m_readbackBuffer = m_device->newBuffer(TEXTURE_READBACK_SIZE, MTL::ResourceStorageModeShared);
+            m_readbackBuffer = m_device->newBuffer(TextureReadbackSize(), MTL::ResourceStorageModeShared);
 #ifdef CEMU_DEBUG_ASSERT
             if (m_readbackBuffer)
                 m_readbackBuffer->setLabel(GetLabel("Texture readback buffer", m_readbackBuffer));

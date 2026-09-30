@@ -10,3 +10,5 @@
 #import "IOSMotion.h"
 // Pure C as well: the graphic pack screens (scan, list, enable, presets).
 #import "IOSGraphicPackBridge.h"
+// The device capability snapshot (Common/DeviceCapabilities.h); plain C.
+#import "CemuDeviceCaps.h"

@@ -2,6 +2,7 @@
 #include "PPCFunctionBoundaryTracker.h"
 #include "PPCRecompiler.h"
 #include "PPCRecompilerIml.h"
+#include "Common/DeviceCapabilities.h"
 #include "PPCRecompilerThreadPool.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "util/containers/RangeStore.h"
@@ -1300,10 +1301,18 @@ bool PPCRecompiler_Init26() {
         constexpr size_t kArenaSizes[] = {
             512 * kMB, 384 * kMB, 256 * kMB, 128 * kMB, 64 * kMB
         };
+        // The first rung comes from the device (DeviceCapabilities.h): 512 MB on every device with 4.5 GB or more,
+        // which is what this was tuned at, and 256 MB on the 2 to 4 GB ones. Translated code is sized by the game,
+        // not by the device, so a bigger arena would only reserve more address space, the thing that ran out here.
+        const size_t arenaStart = (size_t)DeviceCaps::GetBudgets().jitArenaStartMB * kMB;
         size_t chosenArena = 0;
         size_t firstCandidate = 0;
+        // Ceiling from the device tier first (DeviceCapabilities.h), so it also holds when the available
+        // memory cannot be read. The memory-based sizing below can only lower the start further.
+        while (firstCandidate + 1 < std::size(kArenaSizes) && kArenaSizes[firstCandidate] > arenaStart)
+            firstCandidate++;
 #if BOOST_OS_IOS
-        // Size the arena to the device: translated code is backed by real memory as it is written, so
+        // Then size the arena to what is actually free: translated code is backed by real memory as it is written, so
         // let the arena claim at most an eighth of what iOS says this process can still use (about 4.5 GB
         // free on a 6 GB iPad gives 512 MB, about 2.4 GB on a 4 GB iPhone gives 256 MB), never below
         // 128 MB. The ladder below still steps down if the address space itself is not there.
