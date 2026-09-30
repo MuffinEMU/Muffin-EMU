@@ -2697,6 +2697,7 @@ void MetalRenderer::CommitCommandBuffer()
         m_executingEventValues.push_back(m_eventValue);
         m_executingQueueGenerations.push_back(m_queueGeneration);
         LatteWait::Get().executingCommandBuffers.store((uint32)m_executingCommandBuffers.size(), std::memory_order_relaxed);
+        LatteWait::Get().cbSubmitted.fetch_add(1, std::memory_order_relaxed);
 
         // Debug
         //m_commandQueue->insertDebugCaptureBoundary();
@@ -2993,7 +2994,17 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
                 // Timeout, page fault, access revoked/ignored, not permitted, out of memory, invalid resource,
                 // device removed: the GPU is no longer doing this process's work, so tell the UI right away.
                 const long errorCode = commandBuffer->error() ? (long)commandBuffer->error()->code() : 0L;
-                if (errorCode == 2 || errorCode == 3 || errorCode == 4 || errorCode == 7 || errorCode == 8 || errorCode == 9 || errorCode == 11)
+                if (!staleQueue)
+                {
+                    waitState.cbErrorStreak.fetch_add(1, std::memory_order_relaxed);
+                    waitState.cbLastErrorCode.store((int32_t)errorCode, std::memory_order_relaxed);
+                }
+                // Only the errors that mean iOS has stopped running this app's GPU work are latched here: a page
+                // fault that the new queue did not cure, submissions ignored (4), out of memory, device removed.
+                // Timeout (2), not permitted (7, what a command buffer gets when the app was in the background) and
+                // invalid resource (9) fail that one command buffer and later ones can work, so the stall watchdog
+                // judges them by whether they keep failing (cbErrorStreak) instead of latching for good.
+                if (errorCode == 3 || errorCode == 4 || errorCode == 8 || errorCode == 11)
                 {
                     if (staleQueue)
                     {
@@ -3019,10 +3030,17 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
                 }
                 static_cast<MTL::SharedEvent*>(m_event)->setSignaledValue((uint64_t)m_executingEventValues[i]);
             }
-            else if (m_gpuRecoveryCount > 0 && !staleQueue && !m_gpuRecoveryLogged)
+            else
             {
-                m_gpuRecoveryLogged = true;
-                cemuLog_log(LogType::Force, "Metal: the first command buffer on the new command queue completed without error");
+                auto& waitState = LatteWait::Get();
+                waitState.cbRetired.fetch_add(1, std::memory_order_relaxed);
+                if (!staleQueue)
+                    waitState.cbErrorStreak.store(0, std::memory_order_relaxed);
+                if (m_gpuRecoveryCount > 0 && !staleQueue && !m_gpuRecoveryLogged)
+                {
+                    m_gpuRecoveryLogged = true;
+                    cemuLog_log(LogType::Force, "Metal: the first command buffer on the new command queue completed without error");
+                }
             }
             m_memoryManager->CleanupBuffers(commandBuffer);
             commandBuffer->release();
