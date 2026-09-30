@@ -1,5 +1,6 @@
 #include <signal.h>
 #include <execinfo.h>
+#include <dlfcn.h>
 #include <string.h>
 #include <string>
 #include "config/CemuConfig.h"
@@ -121,6 +122,25 @@ void handlerDumpingSignal(int sig, siginfo_t *info, void *context)
             CrashLog_WriteLine(fmt::format("  si_code: {}", info->si_code));
         }
     }
+#endif
+
+#if BOOST_OS_MACOS || BOOST_OS_IOS
+	// Raw frames first, image and offset from dladdr (which does not allocate). backtrace_symbols() below
+	// allocates, and when the crash is an out-of-memory one the handler died in it and wrote no backtrace.
+	for (size_t i = 0; i < size; i++)
+	{
+		Dl_info di{};
+		if (dladdr(backtraceArray[i], &di) && di.dli_fname)
+		{
+			const char* image = strrchr(di.dli_fname, '/');
+			image = image ? image + 1 : di.dli_fname;
+			CrashLog_WriteLine(fmt::format("  bt{}: {:p} {}+0x{:x}", i, backtraceArray[i], image, (uintptr_t)backtraceArray[i] - (uintptr_t)di.dli_fbase));
+		}
+		else
+		{
+			CrashLog_WriteLine(fmt::format("  bt{}: {:p}", i, backtraceArray[i]));
+		}
+	}
 #endif
 
 #if BOOST_OS_LINUX

@@ -9,6 +9,9 @@
 #include "input/InputManager.h"
 #import <UIKit/UIKit.h>
 #include "NativeKeyboard.h"
+#include <memory>
+#include <mutex>
+#include <string>
 
 using namespace WindowSystem;
 
@@ -374,6 +377,60 @@ void CemuUIKit_SetPadTouch(CGFloat x, CGFloat y, bool down)
 void CemuUIKit_SetGameLoadedCallback(void (*callback)())
 {
     g_onGameLoaded = callback;
+}
+
+// One line about the state of the TV view, for the render-stall watchdog's log. UIKit is asked on the
+// main thread, and the caller waits only briefly so a busy main thread cannot hold the watchdog up.
+void CemuUIKit_DescribeMainSurface(char* out, size_t outSize)
+{
+    if (!out || outSize == 0)
+        return;
+    out[0] = 0;
+
+    auto text = std::make_shared<std::string>();
+    auto lock = std::make_shared<std::mutex>();
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        std::string line;
+        UIView* view = g_mainView;
+        if (!view)
+        {
+            line = "no TV view is registered";
+        }
+        else
+        {
+            CALayer* layer = view.layer;
+            const bool sameLayer = ((__bridge void*)layer == (void*)g_windowInfo.window_main.surface);
+            char buf[512];
+            snprintf(buf, sizeof(buf),
+                "view in a window: %s, has superview: %s, view hidden: %s, layer has superlayer: %s, layer hidden: %s, "
+                "bounds %.0fx%.0f, contentsScale %.2f, renderer layer is the view's layer: %s, app state %d, scene state %d",
+                view.window ? "yes" : "NO", view.superview ? "yes" : "NO", view.hidden ? "YES" : "no",
+                layer.superlayer ? "yes" : "NO", layer.hidden ? "YES" : "no",
+                view.bounds.size.width, view.bounds.size.height, (double)layer.contentsScale,
+                sameLayer ? "yes" : "NO",
+                (int)[UIApplication sharedApplication].applicationState,
+                view.window ? (int)view.window.windowScene.activationState : -1);
+            line = buf;
+        }
+        {
+            std::lock_guard<std::mutex> guard(*lock);
+            *text = line;
+        }
+        dispatch_semaphore_signal(done);
+    });
+
+    std::string result;
+    if (dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC)) != 0)
+    {
+        result = "the main thread did not answer within 300 ms";
+    }
+    else
+    {
+        std::lock_guard<std::mutex> guard(*lock);
+        result = *text;
+    }
+    snprintf(out, outSize, "%s", result.c_str());
 }
 
 void CemuUIKit_SetVisibleOutputs(bool tv, bool pad)
