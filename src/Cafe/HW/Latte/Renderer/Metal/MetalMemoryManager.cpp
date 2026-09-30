@@ -32,7 +32,22 @@ MetalMemoryManager::~MetalMemoryManager()
     }
     if (m_importedMemoryBuffer)
     {
+        // The buffer wraps guest memory without copying, so the guest pages must not be replaced until it is really freed.
+        // The renderer has already waited for every command buffer it submitted (they hold the buffer until they finish).
+        // The release happens inside its own autorelease pool that is drained here, so the buffer is freed now and not left
+        // autoreleased, and it only counts as gone if nobody else still held it (a retain count of 1 was ours).
+        NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
+        const NS::UInteger retainCount = m_importedMemoryBuffer->retainCount();
         m_importedMemoryBuffer->release();
+        m_importedMemoryBuffer = nullptr;
+        pool->release();
+        if (retainCount == 1 && m_importedRegistered)
+        {
+            memory_unregisterGpuMapping(m_importedMemBaseAddress, (uint32)m_hostAllocationSize);
+            m_importedRegistered = false;
+        }
+        else
+            cemuLog_log(LogType::Force, "Metal: imported guest memory buffer had a retain count of {}, its pages stay protected but are not replaced", (uint64)retainCount);
     }
 }
 
@@ -219,6 +234,11 @@ void MetalMemoryManager::InitBufferCache(size_t size)
             m_importedMemBaseAddress = mmuRange_MEM2.getBase();
                m_hostAllocationSize = mmuRange_MEM2.getSize();
             m_importedMemoryBuffer = m_mtlr->GetDevice()->newBuffer(memory_getPointerFromVirtualOffset(m_importedMemBaseAddress), m_hostAllocationSize, MTL::ResourceStorageModeShared, nullptr);
+            if (m_importedMemoryBuffer)
+            {
+                memory_registerGpuMapping(m_importedMemBaseAddress, (uint32)m_hostAllocationSize);
+                m_importedRegistered = true;
+            }
             if (!m_importedMemoryBuffer)
             {
                 cemuLog_log(LogType::Force, "Failed to import host memory as a buffer, using device shared mode instead");

@@ -120,6 +120,9 @@ namespace coreinit
 
 	bool _sdCard01Mounted = false;
 	bool _mlc01Mounted = false;
+	// where the running title mounted them, so FSResetMounts() can undo it
+	static std::string s_sdCard01MountPath;
+	static std::string s_mlc01MountPath;
 
 	void mountSDCard()
 	{
@@ -131,6 +134,7 @@ namespace coreinit
 		fs::create_directories(path, ec);
 		FSCDeviceHostFS_Mount("/vol/external01", _pathToUtf8(path), FSC_PRIORITY_BASE);
 
+		s_sdCard01MountPath = "/vol/external01";
 		_sdCard01Mounted = true;
 	}
 
@@ -165,6 +169,7 @@ namespace coreinit
 			fs::create_directories(path, ec);
 			if (!FSCDeviceHostFS_Mount(mountPathOut, _pathToUtf8(path), FSC_PRIORITY_BASE))
 				return FS_RESULT::ERR_PLACEHOLDER;
+			s_sdCard01MountPath = mountPathOut;
 			_sdCard01Mounted = true;
 		}
 		else if (strcmp(mountPathSrc, "/dev/mlc01") == 0)
@@ -174,6 +179,7 @@ namespace coreinit
 
 			if (!FSCDeviceHostFS_Mount(mountPathOut, _pathToUtf8(ActiveSettings::GetMlcPath()), FSC_PRIORITY_BASE))
 				return FS_RESULT::ERR_PLACEHOLDER;
+			s_mlc01MountPath = mountPathOut;
 			_mlc01Mounted = true;
 		}
 		else
@@ -2645,6 +2651,26 @@ namespace coreinit
 						  uint32 flags)
 	{
 		return FSA_RESULT::OK;
+	}
+
+	// Undoes what the stopped title set up through coreinit's FS API: the SD card and mlc bind mounts (a second bind
+	// mount of the same device fails while the flag says it is mounted, which a fresh start would not), the FSA
+	// client list, and the IPC buffer pool, whose buffers are lost if the title stopped with a request in flight.
+	void FSResetMounts()
+	{
+		if (_sdCard01Mounted && !s_sdCard01MountPath.empty())
+			fsc_unmount(s_sdCard01MountPath, FSC_PRIORITY_BASE);
+		if (_mlc01Mounted && !s_mlc01MountPath.empty())
+			fsc_unmount(s_mlc01MountPath, FSC_PRIORITY_BASE);
+		_sdCard01Mounted = false;
+		_mlc01Mounted = false;
+		s_sdCard01MountPath.clear();
+		s_mlc01MountPath.clear();
+		{
+			std::scoped_lock lock(s_fsa_activeClientsMutex);
+			s_fsa_activeClients.clear();
+		}
+		s_fsaInitDone = false;
 	}
 
 	void InitializeFS()

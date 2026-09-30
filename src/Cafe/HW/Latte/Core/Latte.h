@@ -118,6 +118,9 @@ void LatteTC_CleanupUnusedTextures();
 std::vector<LatteTexture*> LatteTC_GetDeleteableTextures();
 
 void LatteTC_UnloadAllTextures();
+void LatteTexture_ResetGlobalState();
+size_t LatteTexture_GetLiveTextureCount();
+size_t LatteTC_GetRegisteredTextureCount();
 
 // texture readback
 
@@ -126,6 +129,8 @@ void LatteTextureReadback_StartTransfer(LatteTextureView* textureView);
 bool LatteTextureReadback_Update(bool forceStart = false);
 void LatteTextureReadback_NotifyTextureDeletion(LatteTexture* texture);
 void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish);
+void LatteTextureReadback_Reset(); // drops queued/in-flight readbacks; renderer must still exist
+size_t LatteTextureReadback_GetPendingCount();
 bool LatteTextureReadback_ReadbackToLinearBlocking(LatteTextureView* sourceView, uint8* dstPtr, uint32 dstWidth, uint32 dstHeight, uint32 dstPitch);
 
 // query
@@ -136,10 +141,13 @@ void LatteQuery_EndOcclusionQuery(MPTR queryMPTR);
 void LatteQuery_UpdateFinishedQueries();
 void LatteQuery_UpdateFinishedQueriesForceFinishAll();
 void LatteQuery_CancelActiveGPU7Queries();
+void LatteQuery_Reset(); // drops every tracked query; renderer must still exist
+size_t LatteQuery_GetTrackedCount();
 
 // streamout
 
 void LatteStreamout_InitCache();
+void LatteStreamout_Reset();
 sint32 LatteStreamout_GetRingBufferSize();
 void LatteStreamout_PrepareDrawcall(uint32 count, uint32 instanceCount);
 void LatteStreamout_FinishDrawcall(bool useDirectMemoryMode);
@@ -148,10 +156,12 @@ void LatteStreamout_FinishDrawcall(bool useDirectMemoryMode);
 
 void LatteTiming_Init();
 void LatteTiming_HandleTimedVsync();
+void LatteTiming_Reset();
 
 // command processor
 
 void LatteCP_ProcessRingbuffer();
+void LatteCP_ResetState();
 
 // buffer cache
 
@@ -172,3 +182,8 @@ void Latte_Start();
 void Latte_Stop();
 bool Latte_GetStopSignal(); // returns true if stop was requested or if in stopped state
 void LatteThread_Exit();
+// Everything below the GPU thread that lives in a global rather than in the renderer is put back to its launch state
+// when the GPU thread exits (and again before the next one starts). Latte_CollectLeftovers() lists, by name, anything
+// that is not, for the post-teardown check.
+void Latte_ResetHostState();
+void Latte_CollectLeftovers(std::vector<std::string>& leftovers);

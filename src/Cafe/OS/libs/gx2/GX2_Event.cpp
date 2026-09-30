@@ -268,6 +268,7 @@ namespace GX2
 
     void GX2EventResetToDefaultState()
     {
+        s_eventCbQueue.clear(); // events that were queued for the stopped title's callback thread
         s_callbackThreadLaunched = false;
         for(auto& it : s_eventCallback)
         {

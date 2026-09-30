@@ -718,6 +718,14 @@ LatteCMDPtr LatteCP_itDrawIndexAuto(LatteCMDPtr cmd, uint32 nWords, DrawPassCont
 
 MPTR _tempIndexArrayMPTR = MPTR_NULL;
 
+// Back to launch state for the command processor's globals. _tempIndexArrayMPTR is a guest address from the
+// title's own system area: kept for the next title it would point into memory that title uses for something else.
+void LatteCP_ResetState()
+{
+	conditionalRenderActive = false;
+	_tempIndexArrayMPTR = MPTR_NULL;
+}
+
 LatteCMDPtr LatteCP_itDrawImmediate(LatteCMDPtr cmd, uint32 nWords, DrawPassContext& drawPassCtx)
 {
 	uint32 count = LatteReadCMD();
