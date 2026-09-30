@@ -2405,10 +2405,30 @@ struct EmulatorViewOptimized: View {
     @ViewBuilder
     private func screenView(main: Bool) -> some View {
         if main {
+            // In dual-screen with the TV on the external display, this view is showing the GamePad screen,
+            // so it has to take GamePad touches too (Splatoon's map and super jump, for one). The gesture is
+            // always attached and decides per touch, so the view keeps the same identity when that changes.
             MetalViewIOS(gameManager: gameManager)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if padIsOnDeviceInDualScreen { sendPadTouch(value.location, down: true) }
+                        }
+                        .onEnded { value in
+                            if padIsOnDeviceInDualScreen { sendPadTouch(value.location, down: false) }
+                        }
+                )
         } else {
             padScreen
         }
+    }
+
+    /// Dual-screen places the GamePad screen on this device unless the screens are swapped.
+    private var padIsOnDeviceInDualScreen: Bool {
+        guard displayRouter.placement == .dualScreen else { return false }
+        let swapped = UserDefaults.standard.object(forKey: DisplayLayoutSettings.swapKey) as? Bool
+            ?? DisplayLayoutSettings.defaultSwap
+        return !swapped
     }
 
     /// The GamePad's own touchscreen - a real Wii U input distinct from every button on
