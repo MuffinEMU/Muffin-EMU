@@ -16,6 +16,13 @@
 #include <cstring>
 #import <AVFoundation/AVFoundation.h>
 
+#if MUFFIN_AUDIT_HOOKS
+// MuffinEMU Audit (tools/audit-app): measures what reaches the device. Defined in ios/Bridge/IOSAuditHooks.cpp.
+extern "C" void cemu_audit_audio_note_render(const void* device, const int16_t* samples, uint32_t bytesValid,
+                                             uint32_t bytesRequested, uint32_t channels, uint32_t bitsPerSample);
+extern "C" void cemu_audit_audio_note_feed_reject(void);
+#endif
+
 IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
                          uint32 channels,
                          uint32 samples_per_block,
@@ -137,7 +144,14 @@ bool IOSAudioAPI::NeedAdditionalBlocks() const
 
 bool IOSAudioAPI::FeedBlock(sint16* data)
 {
+#if MUFFIN_AUDIT_HOOKS
+    const bool accepted = m_buffer.write(reinterpret_cast<const std::uint8_t*>(data), m_bytesPerBlock);
+    if (!accepted)
+        cemu_audit_audio_note_feed_reject();
+    return accepted;
+#else
     return m_buffer.write(reinterpret_cast<const std::uint8_t*>(data), m_bytesPerBlock);
+#endif
 }
 
 OSStatus IOSAudioAPI::RenderCallback(
@@ -166,6 +180,10 @@ OSStatus IOSAudioAPI::RenderCallback(
     const auto copied = self->m_buffer.read(static_cast<std::uint8_t*>(outputBuffer.mData), bytesNeeded);
     if (copied < bytesNeeded)
         std::memset(static_cast<std::uint8_t*>(outputBuffer.mData) + copied, 0, bytesNeeded - copied);
+#if MUFFIN_AUDIT_HOOKS
+    cemu_audit_audio_note_render(self, static_cast<const int16_t*>(outputBuffer.mData), (uint32_t)copied,
+                                 (uint32_t)bytesNeeded, (uint32_t)self->m_channels, (uint32_t)self->m_bitsPerSample);
+#endif
     
     return noErr;
 }

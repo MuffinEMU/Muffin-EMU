@@ -44,6 +44,13 @@
 
 #define EVENT_VALUE_WRAP 4096
 
+#if MUFFIN_AUDIT_HOOKS
+// MuffinEMU Audit (tools/audit-app). Defined in ios/Bridge/IOSAuditMetal.cpp, which only the audit
+// build of the core compiles. With the flag off none of this exists.
+bool IOSAuditMetal_WantsCapture(bool tv);
+void IOSAuditMetal_CaptureView(MetalRenderer* renderer, LatteTextureView* texView, bool padView);
+#endif
+
 extern bool hasValidFramebufferAttached;
 
 float supportBufferData[512 * 4];
@@ -778,6 +785,11 @@ void MetalRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 }
 
 void MetalRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool padView) {
+#if MUFFIN_AUDIT_HOOKS
+    // Called once per presented view, so this is also where the audit times presents.
+    if (IOSAuditMetal_WantsCapture(!padView))
+        IOSAuditMetal_CaptureView(this, texView, padView);
+#endif
     if (!m_screenshot_requested && m_screenshot_state == ScreenshotState::None)
         return;
 
