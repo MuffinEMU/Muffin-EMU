@@ -75,6 +75,7 @@
       <p id="toc-heading">On this page</p>
       <ul>
         <li><a href="#gamepad">The on-screen GamePad</a></li>
+        <li><a href="#motion">Motion aiming</a></li>
         <li><a href="#melo-controller">Melo-Controller</a></li>
         <li><a href="#skins">Controller skins</a></li>
       </ul>
@@ -97,6 +98,20 @@
       <li><strong>Haptic feedback</strong> — a light tap on press; turn it off if it reads as buzzing rather than a button.</li>
       <li><strong>Reset layout</strong> — puts every on-screen control setting back to its shipped default.</li>
     </ul>
+
+    <h2 id="motion">Motion aiming</h2>
+    <p>Games that aim with the GamePad's gyro, Splatoon among them, read this device's own motion sensors. Hold the iPad the way you would hold the GamePad, screen toward you, and tilt or turn it to aim. It works in both landscape orientations. Settings &gt; Motion &amp; Aiming has:</p>
+    <ul>
+      <li><strong>Motion aiming</strong> &mdash; on by default. Turn it off to aim with the sticks only; the game then sees a GamePad that never moves.</li>
+      <li><strong>Motion from</strong> &mdash; this device, or a connected controller that has motion sensors (DualShock 4, DualSense, Switch Pro Controller). Controller motion has had little testing.</li>
+      <li><strong>Sensitivity</strong> &mdash; how far the GamePad turns for a given movement. 1.00x matches the real GamePad.</li>
+      <li><strong>Recentre aim</strong> &mdash; treats the current position as straight ahead. Use it when aim has drifted.</li>
+    </ul>
+    <p>A game with its own motion option needs it switched off as well for stick-only aiming.</p>
+    <div class="callout callout-unverified">
+      <span class="callout-label">Not confirmed on hardware</span>
+      <p>Motion aiming has not been tested on a device yet. If the aim turns the wrong way, or drifts, please <a href="https://github.com/kiddreads/MuffinEMU/issues">report it</a> with the device and orientation.</p>
+    </div>
 
     <h2 id="melo-controller">Melo-Controller</h2>
     <p><a href="https://github.com/stossy11/Melo-Controller">Melo-Controller</a>, stossy11's touch controller, is available as a full alternative to MuffinEMU's measured pad — toggle "Use melo-controls" in Settings &gt; On-screen Controls. It brings its own button art, its own layout editor for repositioning and resizing individual buttons, and its own per-game layouts. A separate scale slider resizes the whole pad as one unit on top of whatever the layout editor has already done to individual buttons.</p>
