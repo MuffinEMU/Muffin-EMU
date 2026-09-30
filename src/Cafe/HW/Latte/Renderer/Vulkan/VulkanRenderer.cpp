@@ -28,9 +28,12 @@
 #include "Cafe/TitleList/GameInfo.h"
 
 #include "Cafe/HW/Latte/Core/LatteTiming.h" // vsync control
+#include "Cafe/HW/Latte/Core/LatteWaitInfo.h" // GPU-thread breadcrumbs read by the iOS stall watchdog
 
 #include <cstdint>
 #include <cstdlib>
+#include <thread>
+#include <chrono>
 #include <array>
 #include <algorithm>
 #include <glslang/Public/ShaderLang.h>
@@ -780,6 +783,13 @@ VulkanRenderer::VulkanRenderer()
 	deviceFeatures.textureCompressionBC = m_supportedFormatInfo.fmt_bc;
 	deviceFeatures.textureCompressionASTC_LDR = m_supportedFormatInfo.fmt_astc;
 
+#if BOOST_OS_MACOS || BOOST_OS_IOS
+	// Apple GPUs fault (and iOS then drops the whole process's GPU work) on an out-of-bounds buffer read instead of returning zero.
+	// Keep robustBufferAccess on where MoltenVK offers it, even when VK_EXT_pipeline_robustness is present.
+	deviceFeatures.robustBufferAccess = VK_TRUE;
+	if (!m_featureControl.deviceExtensions.pipeline_robustness)
+		cemuLog_log(LogType::Force, "VK_EXT_pipeline_robustness not supported. Falling back to robustBufferAccess");
+#else
 	if (m_featureControl.deviceExtensions.pipeline_robustness)
 	{
 		deviceFeatures.robustBufferAccess = VK_FALSE;
@@ -789,6 +799,7 @@ VulkanRenderer::VulkanRenderer()
 		cemuLog_log(LogType::Force, "VK_EXT_pipeline_robustness not supported. Falling back to robustBufferAccess");
 		deviceFeatures.robustBufferAccess = VK_TRUE;
 	}
+#endif
 
 	deviceFeatures.vertexPipelineStoresAndAtomics = true;
 
@@ -921,6 +932,32 @@ VulkanRenderer::VulkanRenderer()
 
 		cemuLog_log(LogType::Force, "Debug: Vulkan validation layer enabled, vkCreateDebugUtilsMessengerEXT will be used to log validation errors");
 	}
+#if BOOST_OS_MACOS || BOOST_OS_IOS
+	else if (m_featureControl.instanceExtensions.debug_utils)
+	{
+		// MoltenVK reports why a Metal command buffer failed (GPU page fault, timeout, ...) only through this callback or stderr.
+		// Errors only, and capped, so the log proves the cause of a device loss without being flooded.
+		auto createMessenger = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(vkGetInstanceProcAddr(m_instance, "vkCreateDebugUtilsMessengerEXT"));
+		if (createMessenger)
+		{
+			VkDebugUtilsMessengerCreateInfoEXT debugCallback{};
+			debugCallback.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+			debugCallback.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+			debugCallback.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
+			debugCallback.pfnUserCallback = +[](VkDebugUtilsMessageSeverityFlagBitsEXT, VkDebugUtilsMessageTypeFlagsEXT, const VkDebugUtilsMessengerCallbackDataEXT* data, void*) -> VkBool32
+			{
+				static std::atomic<int> s_count{0};
+				if (s_count.fetch_add(1) < 100 && data && data->pMessage)
+					cemuLog_log(LogType::Force, "MoltenVK error: {}", data->pMessage);
+				return VK_FALSE;
+			};
+			if (createMessenger(m_instance, &debugCallback, nullptr, &m_debugCallback) == VK_SUCCESS)
+				cemuLog_log(LogType::Force, "Vulkan: MoltenVK error messages are logged (first 100)");
+			else
+				m_debugCallback = nullptr;
+		}
+	}
+#endif
 
 	if (this->IsTracingToolEnabled())
 		cemuLog_log(LogType::Force, "Debug: Tracing tool detected, will recompile all shaders with debug info enabled. This disables the SPIR-V cache.");
@@ -2091,6 +2128,25 @@ void VulkanRenderer::Shutdown()
 	RendererShaderVk::Shutdown();
 }
 
+#if BOOST_OS_IOS
+// Defined in CemuBridge.mm. Stops the title with a player-facing message and remembers that Vulkan failed on this MoltenVK build.
+void IOSBridge_VulkanDeviceLost(const char* why);
+#endif
+
+void VulkanRenderer::HandleDeviceLost(const char* what)
+{
+	if (m_deviceLost.exchange(true))
+		return; // already handled, stay quiet
+	cemuLog_log(LogType::Force, "Vulkan: DEVICE LOST ({}). The GPU stopped running this app's work. No further Vulkan work will be submitted and the title is being stopped", what);
+	auto& w = LatteWait::Get();
+	w.gpuError.store(true);
+	w.gpuErrorCode.store((int32_t)VK_ERROR_DEVICE_LOST);
+	w.gpuPresumedLost.store(true);
+#if BOOST_OS_IOS
+	IOSBridge_VulkanDeviceLost(what);
+#endif
+}
+
 void VulkanRenderer::UnrecoverableError(const char* errMsg) const
 {
 	cemuLog_log(LogType::Force, "Unrecoverable error in Vulkan renderer");
@@ -2214,6 +2270,14 @@ void VulkanRenderer::QueryAvailableFormats()
 	if (fmtProp.optimalTilingFeatures != 0) // todo - more restrictive check
 	{
 		m_supportedFormatInfo.fmt_d24_unorm_s8_uint = true;
+	}
+	{
+		// D24S8 has to be emulated with D32S8 when missing (GetTextureFormatInfoVK); make sure that substitute exists.
+		VkFormatProperties d32s8{};
+		vkGetPhysicalDeviceFormatProperties(m_physicalDevice, VK_FORMAT_D32_SFLOAT_S8_UINT, &d32s8);
+		const bool d32s8Ok = (d32s8.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0;
+		cemuLog_log(LogType::Force, "Vulkan: depth-stencil formats: D24_UNORM_S8_UINT {}, D32_SFLOAT_S8_UINT {}{}", m_supportedFormatInfo.fmt_d24_unorm_s8_uint ? "yes" : "no", d32s8Ok ? "yes" : "no",
+			(!m_supportedFormatInfo.fmt_d24_unorm_s8_uint && !d32s8Ok) ? " - NEITHER is available, depth-stencil rendering will fail" : (m_supportedFormatInfo.fmt_d24_unorm_s8_uint ? "" : " (D24S8 titles use D32S8)"));
 	}
 	// R4G4
 	fmtProp = {};
@@ -2393,7 +2457,14 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 	bool finishedCmdBuffers = false;
 	while (m_commandBufferSyncIndex != m_commandBufferIndex)
 	{
-		VkResult fenceStatus = vkGetFenceStatus(m_logicalDevice, m_cmd_buffer_fences[m_commandBufferSyncIndex]);
+		// After a device loss nothing will ever signal again: count every outstanding command buffer as finished so the
+		// ring drains and nothing waits forever, and let the platform layer stop the title.
+		VkResult fenceStatus = m_deviceLost.load(std::memory_order_acquire) ? VK_SUCCESS : vkGetFenceStatus(m_logicalDevice, m_cmd_buffer_fences[m_commandBufferSyncIndex]);
+		if (fenceStatus == VK_ERROR_DEVICE_LOST)
+		{
+			HandleDeviceLost("vkGetFenceStatus");
+			fenceStatus = VK_SUCCESS;
+		}
 		if (fenceStatus == VK_SUCCESS)
 		{
 			ProcessDestructionQueue();
@@ -2409,10 +2480,6 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 			// not signaled
 			break;
 		}
-		// Device loss is permanent: every later fence query fails the same way and this loop would
-		// spin forever, so fail loudly instead of hanging the calling thread.
-		if (fenceStatus == VK_ERROR_DEVICE_LOST)
-			UnrecoverableError("Vulkan device lost - a command buffer's fence can never signal again");
 		cemuLog_log(LogType::Force, "vkGetFenceStatus returned unexpected error {}", (sint32)fenceStatus);
 		cemu_assert_debug(false);
 		break;
@@ -2421,27 +2488,40 @@ void VulkanRenderer::ProcessFinishedCommandBuffers()
 	{
 		LatteTextureReadback_UpdateFinishedTransfers(false);
 	}
+	if (!m_commandBuffers.empty())
+		LatteWait::Get().executingCommandBuffers.store((uint32_t)((m_commandBufferIndex + m_commandBuffers.size() - m_commandBufferSyncIndex) % m_commandBuffers.size()), std::memory_order_relaxed);
 }
 
 void VulkanRenderer::WaitForNextFinishedCommandBuffer()
 {
 	cemu_assert_debug(m_commandBufferSyncIndex != m_commandBufferIndex);
-	// wait on least recently submitted command buffer
-	VkResult result = vkWaitForFences(m_logicalDevice, 1, &m_cmd_buffer_fences[m_commandBufferSyncIndex], true, UINT64_MAX);
-	if (result == VK_TIMEOUT)
+	if (!m_deviceLost.load(std::memory_order_acquire))
 	{
-		cemuLog_log(LogType::Force, "vkWaitForFences: Returned VK_TIMEOUT on infinite fence");
-	}
-	else if (result == VK_ERROR_DEVICE_LOST)
-	{
-		// Same permanent condition ProcessFinishedCommandBuffers() below also guards
-		// against - caught here too, one call earlier, so this fails as soon as it is
-		// known rather than after one more redundant vkGetFenceStatus() call.
-		UnrecoverableError("Vulkan device lost - a command buffer's fence can never signal again");
-	}
-	else if (result != VK_SUCCESS)
-	{
-		cemuLog_log(LogType::Force, "vkWaitForFences: Returned unhandled error {}", (sint32)result);
+		LatteWait::Scope waitScope("Vulkan: waiting for the GPU to finish a command buffer");
+		// wait on least recently submitted command buffer. Bounded, in one-second slices: a command buffer that hangs the GPU
+		// used to block here until iOS killed the GPU work ~16 s later. No single command buffer legitimately runs this long.
+		constexpr int kMaxWaitSeconds = 12;
+		VkResult result = VK_TIMEOUT;
+		for (int second = 0; second < kMaxWaitSeconds; second++)
+		{
+			result = vkWaitForFences(m_logicalDevice, 1, &m_cmd_buffer_fences[m_commandBufferSyncIndex], true, 1'000'000'000);
+			if (result != VK_TIMEOUT || m_deviceLost.load(std::memory_order_acquire))
+				break;
+		}
+		if (result == VK_TIMEOUT)
+		{
+			LatteWait::Get().timeouts.fetch_add(1, std::memory_order_relaxed);
+			LatteWait::Get().lastTimeoutReason.store("Vulkan: command buffer fence", std::memory_order_relaxed);
+			HandleDeviceLost(fmt::format("a command buffer did not finish within {} s (GPU hang)", kMaxWaitSeconds).c_str());
+		}
+		else if (result == VK_ERROR_DEVICE_LOST)
+		{
+			HandleDeviceLost("vkWaitForFences returned VK_ERROR_DEVICE_LOST");
+		}
+		else if (result != VK_SUCCESS)
+		{
+			cemuLog_log(LogType::Force, "vkWaitForFences: Returned unhandled error {}", (sint32)result);
+		}
 	}
 	// process
 	ProcessFinishedCommandBuffers();
@@ -2493,8 +2573,12 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 		submitInfo.pWaitDstStageMask = semWaitStageMask;
 		submitInfo.pWaitSemaphores = waitSemArray.data();
 
+		if (m_deviceLost.load(std::memory_order_acquire))
+			return; // nothing can run anymore, the fence is treated as finished by ProcessFinishedCommandBuffers()
 		const VkResult result = vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, submittedFence);
-		if (result != VK_SUCCESS)
+		if (result == VK_ERROR_DEVICE_LOST)
+			HandleDeviceLost("vkQueueSubmit returned VK_ERROR_DEVICE_LOST");
+		else if (result != VK_SUCCESS)
 			UnrecoverableError(fmt::format("failed to submit command buffer. Error {}", result).c_str());
 	});
 	m_numSubmittedCmdBuffers++;
@@ -2568,7 +2652,11 @@ void VulkanRenderer::WaitCommandBufferFinished(uint64 commandBufferId)
 		SubmitCommandBuffer();
 	WaitRenderWorkerIdle();
 	while (HasCommandBufferFinished(commandBufferId) == false)
+	{
+		if (m_deviceLost.load(std::memory_order_acquire) && m_commandBufferSyncIndex == m_commandBufferIndex)
+			break; // the ring is drained and the device is gone: nothing more will ever finish
 		WaitForNextFinishedCommandBuffer();
+	}
 }
 
 void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
@@ -3420,6 +3508,13 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
 	auto& presentPending = m_swapchainPresentPending[mainWindow ? 0 : 1];
 	presentPending.store(true, std::memory_order_release);
     QueueRenderWorkerJob([this, &chainInfo, &presentPending, presentSemaphore] {
+        if (m_deviceLost.load(std::memory_order_acquire))
+        {
+            chainInfo.hasDefinedSwapchainImage = false;
+            chainInfo.swapchainImageIndex = -1;
+            presentPending.store(false, std::memory_order_release);
+            return;
+        }
         VkPresentIdKHR presentId = {};
         
         VkPresentInfoKHR presentInfo = {};
@@ -3455,14 +3550,23 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
         {
             chainInfo.m_queueDepth++;
             chainInfo.m_presentId++;
+            LatteWait::Get().presentedFrames.fetch_add(1, std::memory_order_relaxed);
         }
         
         chainInfo.hasDefinedSwapchainImage = false;
         chainInfo.swapchainImageIndex = -1;
         presentPending.store(false, std::memory_order_release);
         
-        if (result < 0 && result != VK_ERROR_OUT_OF_DATE_KHR)
-            throw std::runtime_error(fmt::format("Failed to present image: {}", result));
+        // None of these may throw: this runs on the render worker and the exception would be rethrown on the GPU thread, which ends the app.
+        if (result == VK_ERROR_DEVICE_LOST)
+            HandleDeviceLost("vkQueuePresentKHR returned VK_ERROR_DEVICE_LOST");
+        else if (result == VK_ERROR_SURFACE_LOST_KHR)
+        {
+            cemuLog_log(LogType::Force, "Vulkan: present reported the surface lost, the swapchain will be recreated");
+            chainInfo.m_shouldRecreate = true;
+        }
+        else if (result < 0 && result != VK_ERROR_OUT_OF_DATE_KHR)
+            HandleDeviceLost(fmt::format("Failed to present image: {}", (sint32)result).c_str());
     });
 }
 
@@ -3485,16 +3589,30 @@ void VulkanBenchmarkPrintResults();
 
 void VulkanRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
-	SubmitCommandBuffer();
+	if (m_deviceLost.load(std::memory_order_acquire))
+	{
+		// The title is being stopped. Keep the GPU thread alive and quiet until it is.
+		std::this_thread::sleep_for(std::chrono::milliseconds(8));
+		return;
+	}
+	try
+	{
+		SubmitCommandBuffer();
 
-	if (swapTV && IsSwapchainInfoValid(true))
-		SwapBuffer(true);
+		if (swapTV && IsSwapchainInfoValid(true))
+			SwapBuffer(true);
 
-	if (swapDRC && IsSwapchainInfoValid(false))
-		SwapBuffer(false);
+		if (swapDRC && IsSwapchainInfoValid(false))
+			SwapBuffer(false);
 
-	if(swapTV)
-		VulkanBenchmarkPrintResults();
+		if(swapTV)
+			VulkanBenchmarkPrintResults();
+	}
+	catch (const std::exception& ex)
+	{
+		// An exception escaping the GPU thread is std::terminate() and ends the app. Whatever Vulkan threw while presenting, stop the title instead.
+		HandleDeviceLost(fmt::format("exception while presenting: {}", ex.what()).c_str());
+	}
 }
 
 void VulkanRenderer::ClearColorbuffer(bool padView)

@@ -185,6 +185,12 @@ public:
 
 	void UnrecoverableError(const char* errMsg) const;
 
+	// The GPU (or MoltenVK on its behalf) reported the device lost, or a command buffer never finished. Not an exception:
+	// this latches a flag, tells the platform layer to stop the title (on iOS: the bridge, which also remembers that Vulkan
+	// failed), and from then on every wait and submit in this renderer completes immediately instead of touching the dead device.
+	void HandleDeviceLost(const char* what);
+	bool IsDeviceLost() const { return m_deviceLost.load(std::memory_order_acquire); }
+
 	void GetDeviceFeatures();
 	void LogVulkanStartupDiagnostics(const VkPhysicalDeviceFeatures& supported, const VkPhysicalDeviceFeatures& requested, const VkPhysicalDeviceFeatures& enabled, const std::vector<const char*>& enabledDeviceExtensions);
 	void DetermineVendor();
@@ -591,6 +597,7 @@ private:
 	VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
 	VkDevice  m_logicalDevice = VK_NULL_HANDLE;
 	VkDebugUtilsMessengerEXT m_debugCallback = nullptr;
+	std::atomic_bool m_deviceLost{ false };
 	volatile bool m_destructionRequested = false;
 
 	QueueFamilyIndices m_indices{};
