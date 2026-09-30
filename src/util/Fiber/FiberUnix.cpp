@@ -14,6 +14,15 @@ struct FiberImpl {
 
 thread_local Fiber* sCurrentFiber{};
 
+static void (*sRelieveMemoryHook)() = nullptr;
+static void (*sStackFailedHook)() = nullptr;
+
+void Fiber::SetStackFailureHandlers(void (*relieveMemory)(), void (*failed)())
+{
+    sRelieveMemoryHook = relieveMemory;
+    sStackFailedHook = failed;
+}
+
 static void fiberTrampoline(transfer_t from)
 {
     FiberImpl* fromImpl = static_cast<FiberImpl*>(from.data);
@@ -37,6 +46,21 @@ Fiber::Fiber(void(*FiberEntryPoint)(void*), void* userParam, void* privateData)
 
     const size_t stackSize = 2 * 1024 * 1024;
     m_stackPtr = std::malloc(stackSize);
+    if (!m_stackPtr && sRelieveMemoryHook)
+    {
+        // Out of address space: ask the host to give some back, then try once more.
+        sRelieveMemoryHook();
+        m_stackPtr = std::malloc(stackSize);
+    }
+    if (!m_stackPtr)
+    {
+        // Writing the context at a null stack top crashed the process. Leave this fiber invalid instead:
+        // it never runs, and the host is told so it can stop the title.
+        m_valid = false;
+        if (sStackFailedHook)
+            sStackFailedHook();
+        return;
+    }
 
     void* stackTop = static_cast<char*>(m_stackPtr) + stackSize;
 
@@ -67,6 +91,7 @@ void Fiber::Switch(Fiber& targetFiber)
 {
     Fiber* leaving = sCurrentFiber;
     if (leaving == &targetFiber) return;
+    if (!targetFiber.IsValid()) return;
 
     sCurrentFiber = &targetFiber;
 
