@@ -158,14 +158,15 @@ struct BlowButton: View {
 /// and overlapped the title and the FPS readout. When everything fits this is invisible
 /// (the scroll view is exactly as wide as its content and can't scroll); when it doesn't,
 /// the group scrolls horizontally and the title gives up its space first.
+// File-level: Swift doesn't allow static stored properties inside a generic type.
+private struct TopBarContentWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 struct TopBarOverflowScroll<Content: View>: View {
     @ViewBuilder var content: () -> Content
     @State private var contentWidth: CGFloat = 0
-
-    private struct WidthKey: PreferenceKey {
-        static var defaultValue: CGFloat = 0
-        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-    }
 
     // Room above and below the buttons for their shadows, which the scroll view clips; the
     // negative padding on the outside gives the same height back to the bar's layout.
@@ -177,13 +178,13 @@ struct TopBarOverflowScroll<Content: View>: View {
                 .padding(.vertical, shadowRoom)
                 .background(
                     GeometryReader { proxy in
-                        Color.clear.preference(key: WidthKey.self, value: proxy.size.width)
+                        Color.clear.preference(key: TopBarContentWidthKey.self, value: proxy.size.width)
                     }
                 )
         }
         .frame(maxWidth: contentWidth > 0 ? contentWidth : nil)
         .padding(.vertical, -shadowRoom)
-        .onPreferenceChange(WidthKey.self) { contentWidth = $0 }
+        .onPreferenceChange(TopBarContentWidthKey.self) { contentWidth = $0 }
         .layoutPriority(1)
     }
 }
