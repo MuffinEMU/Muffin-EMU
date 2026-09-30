@@ -105,6 +105,19 @@ void LatteAsyncCommand_queueTextureCopy(const LatteSurfaceCopyParam& src, const 
 	swl_gpuAsyncCommands.UnlockWrite();
 }
 
+// Drops commands a stopped title queued but the GPU thread never ran (they carry guest addresses of that title).
+void LatteAsyncCommands_Reset()
+{
+	swl_gpuAsyncCommands.LockWrite();
+	std::queue<LatteAsyncCommand_t>().swap(LatteAsyncCommandQueue);
+	swl_gpuAsyncCommands.UnlockWrite();
+}
+
+size_t LatteAsyncCommands_GetPendingCount()
+{
+	return LatteAsyncCommandQueue.size();
+}
+
 void LatteAsyncCommands_waitUntilAllProcessed()
 {
 	while (LatteAsyncCommandQueue.empty() == false)

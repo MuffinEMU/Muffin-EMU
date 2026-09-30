@@ -8,6 +8,8 @@
 #include "Cafe/CafeSystem.h"
 
 sint32 s_customVsyncFrequency = -1;
+HRTick s_lastHostVsync = 0;
+uint32 s_vsyncIntervalCounter = 0;
 
 void LatteTiming_NotifyHostVSync();
 
@@ -68,6 +70,17 @@ bool LatteTiming_IsUsingHostDrivenVSync()
 	return s_usingHostDrivenVSync;
 }
 
+// Back to launch state. Host-driven vsync was switched on by a swapchain of the renderer that is being destroyed; if
+// the next title uses another backend nothing would ever call LatteTiming_NotifyHostVSync() for it, and with the flag
+// still set the GPU thread's own vsync timer stays silent: the title would wait for a vsync that never comes.
+void LatteTiming_Reset()
+{
+	s_customVsyncFrequency = -1;
+	s_usingHostDrivenVSync = false;
+	s_lastHostVsync = 0;
+	s_vsyncIntervalCounter = 0;
+}
+
 void LatteTiming_Init()
 {
 	LatteGPUState.timer_frequency = HighResolutionTimer::getFrequency();
@@ -77,8 +90,6 @@ void LatteTiming_Init()
 
 void LatteTiming_signalVsync()
 {
-	static uint32 s_vsyncIntervalCounter = 0;
-
 	if (!LatteGPUState.gx2InitCalled)
 		return;
 	s_vsyncIntervalCounter++;
@@ -124,8 +135,6 @@ void LatteTiming_signalVsync()
 	// vsync
 	GX2::__GX2NotifyEvent(GX2::GX2CallbackEventType::VSYNC);
 }
-
-HRTick s_lastHostVsync = 0;
 
 // notify when host vsync event is triggered (on renderer canvas)
 void LatteTiming_NotifyHostVSync()

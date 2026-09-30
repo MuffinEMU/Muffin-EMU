@@ -628,6 +628,7 @@ void VulkanRenderer::LogVulkanStartupDiagnostics(const VkPhysicalDeviceFeatures&
 
 VulkanRenderer::VulkanRenderer()
 {
+	LatteWait::ResetAll(); // counters and latches of the previous renderer
 	glslang::InitializeProcess();
     InitializeGlobalVulkan();
 

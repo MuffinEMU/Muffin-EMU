@@ -4,6 +4,7 @@
 
 void LatteSHRC_Init();
 void LatteSHRC_UnloadAll();
+size_t LatteSHRC_GetCachedShaderCount(); // for the post-teardown check
 
 void LatteSHRC_ResetCachedShaderHash();
 void LatteShaderSHRC_UpdateFetchShader();
