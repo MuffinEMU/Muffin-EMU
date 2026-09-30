@@ -116,6 +116,54 @@ namespace LatteWait
 		}
 	}
 
+	// Back to what a fresh process has. The counters and latches describe the renderer that is gone (a GPU fault, the
+	// command buffers it had in flight, the drawable it held), so the next renderer starts from zero instead of inheriting
+	// them. Called when a renderer is constructed.
+	inline void ResetAll()
+	{
+		auto& s = Get();
+		s.reason.store(nullptr);
+		s.reasonSinceMs.store(0);
+		s.reasonKind.store(0);
+		s.timeouts.store(0);
+		s.lastTimeoutReason.store(nullptr);
+		s.gpuPresumedLost.store(false);
+		s.lastPM4Opcode.store(0);
+		s.pm4Count.store(0);
+		s.queriesInFlight.store(0);
+		s.readbacksPending.store(0);
+		s.executingCommandBuffers.store(0);
+		s.erroredCommandBuffers.store(0);
+		s.cbSubmitted.store(0);
+		s.cbRetired.store(0);
+		s.cbErrorStreak.store(0);
+		s.cbLastErrorCode.store(0);
+		s.gpuError.store(false);
+		s.gpuErrorCode.store(0);
+		s.memDeviceMB.store(0);
+		s.memHostMappedMB.store(0);
+		s.memTextureCount.store(0);
+		s.memTextureMB.store(0);
+		s.memStagingMB.store(0);
+		s.memIndexMB.store(0);
+		s.memSnapshotMB.store(0);
+		s.memBufferCacheMB.store(0);
+		s.memXfbMB.store(0);
+		s.memReadbackMB.store(0);
+		s.texturesEvicted.store(0);
+		s.evictionRequested.store(false);
+		s.evictionPasses.store(0);
+		s.memStatsValid.store(false);
+		s.presentedFrames.store(0);
+		s.drawableFailures.store(0);
+		s.drawableFailuresInARow.store(0);
+		s.tvDrawableHeld.store(false);
+		s.tvDrawableWidth.store(0);
+		s.tvDrawableHeight.store(0);
+		s.tvLayerAttached.store(false);
+		s.tvLayerHasDevice.store(false);
+	}
+
 	inline void NotePM4(uint32_t opcode)
 	{
 		auto& s = Get();

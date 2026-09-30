@@ -175,6 +175,7 @@ void fsc_init();
 sint32 fsc_mount(std::string_view mountPath, std::string_view targetPath, fscDeviceC* fscDevice, void* ctx, sint32 priority=0);
 bool fsc_unmount(std::string_view mountPath, sint32 priority);
 void fsc_unmountAll();
+size_t fsc_getMountCount(sint32 priority);
 
 FSCVirtualFile* fsc_open(const char* path, FSC_ACCESS_FLAG accessFlags, sint32* fscStatus, sint32 maxPriority=FSC_PRIORITY_MAX);
 FSCVirtualFile* fsc_openDirIterator(const char* path, sint32* fscStatus);
@@ -212,4 +213,6 @@ bool FSCDeviceHostFS_Mount(std::string_view mountPath, std::string_view hostTarg
 
 // redirect device
 void fscDeviceRedirect_map();
+void fscDeviceRedirect_reset();
+size_t fscDeviceRedirect_getEntryCount();
 void fscDeviceRedirect_add(std::string_view virtualSourcePath, size_t fileSize, const fs::path& targetFilePath, sint32 priority);

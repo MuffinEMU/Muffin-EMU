@@ -71,14 +71,9 @@ MetalRenderer::MetalRenderer()
         m_breadcrumbCapacity = physicalMemory >= (6ull << 30) ? 1024 : (physicalMemory >= (3ull << 30) ? 512 : 256);
         m_breadcrumbs.assign(m_breadcrumbCapacity, MetalDrawBreadcrumb{});
     }
-    {
-        auto& waitState = LatteWait::Get();
-        waitState.gpuError.store(false);
-        waitState.gpuErrorCode.store(0);
-        waitState.gpuPresumedLost.store(false);
-        waitState.erroredCommandBuffers.store(0);
-        waitState.executingCommandBuffers.store(0);
-    }
+    // Every LatteWait counter and latch, not only the fault state: the stall watchdog compares them against the
+    // renderer it is watching, and the previous renderer's progress counters would make the new one look stalled
+    LatteWait::ResetAll();
 
     // Options
 
@@ -437,9 +432,14 @@ void MetalRenderer::Initialize()
 
 void MetalRenderer::Shutdown()
 {
+    // First: pipeline compiles queued on the shared compile threads refer to this renderer, its pipeline cache and the
+    // title's shaders, all of which are destroyed next
+    MetalPipelineCache_DrainAsyncCompiles();
     Flush(true);
     // TODO: should shutdown both layers
-    ImGui_ImplMetal_Shutdown();
+    // ImGui_ImplMetal_Shutdown() dereferences its backend data without a check, so only call it for a context that has some
+    if (ImGui::GetCurrentContext() && ImGui::GetIO().BackendRendererUserData)
+        ImGui_ImplMetal_Shutdown();
     Renderer::Shutdown();
     RendererShaderMtl::Shutdown();
 }

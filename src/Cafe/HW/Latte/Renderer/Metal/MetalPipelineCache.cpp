@@ -22,6 +22,9 @@ static bool g_compilePipelineThreadInit{false};
 static std::mutex g_compilePipelineMutex;
 static std::condition_variable g_compilePipelineCondVar;
 static std::queue<MetalPipelineCompiler*> g_compilePipelineRequests;
+// requests that are queued or being compiled. A compile holds references to the renderer, the pipeline object and the
+// shaders of the title that is running, so it must be finished or dropped before those are destroyed
+static std::atomic<uint32_t> g_compilePipelineInFlight{0};
 
 static void compileThreadFunc(sint32 threadIndex)
 {
@@ -45,7 +48,35 @@ static void compileThreadFunc(sint32 threadIndex)
 
 		request->Compile(true, false, true);
 		delete request;
+		g_compilePipelineInFlight.fetch_sub(1);
 	}
+}
+
+// Drops the queued async pipeline compiles and waits for the ones that are running. Runs first when a renderer shuts
+// down: the compile threads outlive the renderer (they are detached and shared by every title of the process), and a
+// request left over would compile against the destroyed renderer, the freed pipeline cache or shaders that were
+// deleted with the title.
+void MetalPipelineCache_DrainAsyncCompiles()
+{
+	{
+		std::unique_lock lock(g_compilePipelineMutex);
+		while (!g_compilePipelineRequests.empty())
+		{
+			delete g_compilePipelineRequests.front();
+			g_compilePipelineRequests.pop();
+			g_compilePipelineInFlight.fetch_sub(1);
+		}
+	}
+	// a compile that is already running finishes on its own; bounded so a hung driver call cannot hold up the stop
+	for (int i = 0; i < 1500 && g_compilePipelineInFlight.load() != 0; i++)
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	if (g_compilePipelineInFlight.load() != 0)
+		cemuLog_log(LogType::Force, "Metal: {} pipeline compile(s) were still running after 3 s", g_compilePipelineInFlight.load());
+}
+
+size_t MetalPipelineCache_GetAsyncCompileCount()
+{
+	return g_compilePipelineInFlight.load();
 }
 
 static void initCompileThread()
@@ -69,6 +100,7 @@ static void initCompileThread()
 
 static void queuePipeline(MetalPipelineCompiler* v)
 {
+	g_compilePipelineInFlight.fetch_add(1);
 	std::unique_lock lock(g_compilePipelineMutex);
 	g_compilePipelineRequests.push(std::move(v));
 	lock.unlock();
@@ -106,11 +138,15 @@ MetalPipelineCache::MetalPipelineCache(class MetalRenderer* metalRenderer) : m_m
 
 MetalPipelineCache::~MetalPipelineCache()
 {
+    EndLoading(); // no-op if loading already ended: stops the background loader threads, which hold this pointer
+    Close();      // stops the cache writer thread, which also holds it, and drops what it had not written yet
     for (auto& [key, pipelineObj] : m_pipelineCache)
     {
         pipelineObj->m_pipeline->release();
         delete pipelineObj;
     }
+    if (g_mtlPipelineCache == this)
+        g_mtlPipelineCache = nullptr;
 }
 
 PipelineObject* MetalPipelineCache::GetRenderPipelineState(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* geometryShader, const LatteDecompilerShader* pixelShader, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, Vector2i extend, uint32 indexCount, const LatteContextRegister& lcr)
@@ -359,15 +395,6 @@ void MetalPipelineCache::EndLoading()
 	// keep cache file open for writing of new pipelines
 }
 
-void MetalPipelineCache::Close()
-{
-    if(s_cache)
-    {
-        delete s_cache;
-        s_cache = nullptr;
-    }
-}
-
 struct CachedPipeline
 {
 	struct ShaderHash
@@ -483,12 +510,35 @@ void MetalPipelineCache::LoadPipelineFromCache(std::span<uint8> fileData)
 
 ConcurrentQueue<CachedPipeline*> g_mtlPipelineCachingQueue;
 
+void MetalPipelineCache::Close()
+{
+    // The writer thread reads s_cache, so it is stopped (a null job is its stop signal) before the cache is deleted. It used
+    // to be detached, which left it blocked on the queue after this object was destroyed, and the next pipeline any title
+    // queued woke it up to run on freed memory.
+    if (m_pipelineCacheStoreThread)
+    {
+        CachedPipeline* stopJob = nullptr;
+        g_mtlPipelineCachingQueue.push(stopJob);
+        m_pipelineCacheStoreThread->join();
+        delete m_pipelineCacheStoreThread;
+        m_pipelineCacheStoreThread = nullptr;
+    }
+    // jobs that were queued but not written describe this title's pipelines; they must not end up in the next title's file
+    CachedPipeline* leftover = nullptr;
+    while (g_mtlPipelineCachingQueue.peek2(leftover))
+        delete leftover;
+    if(s_cache)
+    {
+        delete s_cache;
+        s_cache = nullptr;
+    }
+}
+
 void MetalPipelineCache::AddCurrentStateToCache(uint64 pipelineStateHash, const MetalAttachmentsInfo& lastUsedAttachmentsInfo)
 {
 	if (!m_pipelineCacheStoreThread)
 	{
 		m_pipelineCacheStoreThread = new std::thread(&MetalPipelineCache::WorkerThread, this);
-		m_pipelineCacheStoreThread->detach();
 	}
 	// fill job structure with cached GPU state
 	// for each cached pipeline we store:
@@ -612,6 +662,8 @@ void MetalPipelineCache::WorkerThread()
 	{
 		CachedPipeline* job;
 		g_mtlPipelineCachingQueue.pop(job);
+		if (!job)
+			return; // stop signal from Close()
 		if (!s_cache)
 		{
 			delete job;
