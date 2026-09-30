@@ -56,6 +56,18 @@ void cemu_bridge_initialize(const char* mlcPath);
 /// keys.txt imported mid-session is only used after the app is relaunched.
 CemuBridgeStatus cemu_bridge_boot_title(const char* path);
 
+/// Boot a title that is installed in the MLC (Documents/mlc/mlc01/{sys,usr}/title/...) by
+/// its 64-bit title id, e.g. the Wii U Menu: 0005001010040000 (JPN), ...0100 (USA),
+/// ...0200 (EUR). Returns CEMU_BRIDGE_UNABLE_TO_MOUNT with a status text when the title
+/// is not installed. cemu_bridge_boot_title() also accepts "mlc-title:<16 hex digits>"
+/// as its path and routes it here, so callers that only carry a path string (the library)
+/// need no second entry point.
+///
+/// The Menu additionally needs the console's cafeLibs, the shared data under
+/// sys/title/0005001b and (for online features) otp.bin/seeprom.bin. The engine logs which
+/// of those are missing at launch; the Menu may still start without them.
+CemuBridgeStatus cemu_bridge_boot_title_id(uint64_t titleId);
+
 /// Boot a standalone .rpx and nothing else. Kept as the narrow homebrew entry point;
 /// cemu_bridge_boot_title() is what the app calls, and it falls through to this same
 /// engine path for an RPX/ELF.
