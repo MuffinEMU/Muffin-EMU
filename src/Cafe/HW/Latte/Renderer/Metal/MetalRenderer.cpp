@@ -327,6 +327,26 @@ MetalRenderer::~MetalRenderer()
         pipeline->release();
     m_copyColorToDepthState->release();
 
+    // Give back every command buffer and encoder still held. Executing command buffers keep the textures and
+    // buffers they used alive until they are released, so leaving them (as happens after a GPU fault, when
+    // they never get processed again) kept the whole scene's memory after the title stopped.
+    if (m_commandEncoder)
+    {
+        m_commandEncoder->endEncoding();
+        m_commandEncoder->release();
+        m_commandEncoder = nullptr;
+    }
+    if (m_currentCommandBuffer.m_commandBuffer && !m_currentCommandBuffer.m_commited)
+        m_currentCommandBuffer.m_commandBuffer->release();
+    m_currentCommandBuffer = {};
+    for (MTL::CommandBuffer* commandBuffer : m_executingCommandBuffers)
+    {
+        WaitForCommandBuffer(commandBuffer, "shutdown: waiting for a command buffer");
+        commandBuffer->release();
+    }
+    m_executingCommandBuffers.clear();
+    m_executingEventValues.clear();
+
     delete m_outputShaderCache;
     delete m_pipelineCache;
     delete m_depthStencilCache;
