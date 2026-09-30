@@ -1054,6 +1054,9 @@ class GameManager: ObservableObject {
         let surfacePtr = Unmanaged.passRetained(uiView).toOpaque()
         cemu_bridge_register_render_surface(surfacePtr, width, height, dpiScale)
 
+        // Starting points for titles that need more than the defaults (Splatoon wants sticks and the GamePad screen).
+        GameControlHints.applyBeforeLaunch(titleId: game.titleId)
+
         let romPath = game.romPath
         let token = launchToken
         Task.detached(priority: .userInitiated) { [weak self] in
