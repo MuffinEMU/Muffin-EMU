@@ -157,6 +157,11 @@ double cemu_bridge_get_fps(void);
 /// frames start arriving again. Safe to poll from the UI at any time.
 bool cemu_bridge_video_stalled(void);
 
+/// Why the picture is flagged by cemu_bridge_video_stalled(): 0 = not flagged, 1 = no new
+/// frames for several seconds, 2 = the GPU reported an error (a page fault, for example) and
+/// iOS is no longer running this app's GPU work. Kind 2 does not clear until the title stops.
+int cemu_bridge_video_stall_kind(void);
+
 /// The four counters the engine's own progress heartbeat prints, readable on demand.
 /// cemu_bridge_get_fps() rounds to whole frames per second, so a title running below one
 /// frame per second reads 0, the same as one that stopped. These separate the two:

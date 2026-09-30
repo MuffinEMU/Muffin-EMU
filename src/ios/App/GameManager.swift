@@ -103,6 +103,8 @@ class GameManager: ObservableObject {
     /// True while the picture has stopped although the game is still running (the bridge's
     /// render-stall watchdog, `cemu_bridge_video_stalled()`). Polled with the frame rate.
     @Published private(set) var videoStalled = false
+    /// 1 = no new frames, 2 = the GPU reported an error (`cemu_bridge_video_stall_kind()`).
+    @Published private(set) var videoStallKind = 0
     /// Refreshed alongside `frameRate`. See `EmulatorProgress` below for why a second
     /// source of frame information is not redundant with the first.
     @Published private(set) var progress = EmulatorProgress()
@@ -1277,6 +1279,10 @@ class GameManager: ObservableObject {
                 if stalled != self.videoStalled {
                     self.videoStalled = stalled
                 }
+                let kind = Int(cemu_bridge_video_stall_kind())
+                if kind != self.videoStallKind {
+                    self.videoStallKind = kind
+                }
                 let snapshot = EmulatorProgress.read()
                 if snapshot != self.progress {
                     self.progress = snapshot
@@ -1290,6 +1296,7 @@ class GameManager: ObservableObject {
         frameRateTimer = nil
         frameRate = 0
         videoStalled = false
+        videoStallKind = 0
         progress = EmulatorProgress()
     }
 }

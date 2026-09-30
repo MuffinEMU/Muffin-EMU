@@ -2295,7 +2295,11 @@ MTL::CommandBuffer* MetalRenderer::GetCommandBuffer()
         //m_commandQueue->insertDebugCaptureBoundary();
 
         auto pool = NS::AutoreleasePool::alloc()->init();
-        MTL::CommandBuffer* mtlCommandBuffer = m_commandQueue->commandBuffer()->retain();
+        // Ask for per-encoder execution status, so a failed command buffer names the encoder that faulted.
+        auto* commandBufferDescriptor = MTL::CommandBufferDescriptor::alloc()->init();
+        commandBufferDescriptor->setErrorOptions(MTL::CommandBufferErrorOptionEncoderExecutionStatus);
+        MTL::CommandBuffer* mtlCommandBuffer = m_commandQueue->commandBuffer(commandBufferDescriptor)->retain();
+        commandBufferDescriptor->release();
         pool->release();
         m_currentCommandBuffer = {mtlCommandBuffer};
 
@@ -2326,9 +2330,7 @@ MTL::RenderCommandEncoder* MetalRenderer::GetTemporaryRenderCommandEncoder(MTL::
     auto pool = NS::AutoreleasePool::alloc()->init();
     auto renderCommandEncoder = commandBuffer->renderCommandEncoder(renderPassDescriptor)->retain();
     pool->release();
-#ifdef CEMU_DEBUG_ASSERT
-    renderCommandEncoder->setLabel(GetLabel("Temporary render command encoder", renderCommandEncoder));
-#endif
+    LabelEncoder(renderCommandEncoder, "temporary render");
     m_commandEncoder = renderCommandEncoder;
     m_encoderType = MetalEncoderType::Render;
 
@@ -2391,9 +2393,7 @@ MTL::RenderCommandEncoder* MetalRenderer::GetRenderCommandEncoder(bool forceRecr
     auto pool = NS::AutoreleasePool::alloc()->init();
     auto renderCommandEncoder = commandBuffer->renderCommandEncoder(m_state.m_activeFBO.m_fbo->GetRenderPassDescriptor())->retain();
     pool->release();
-#ifdef CEMU_DEBUG_ASSERT
-    renderCommandEncoder->setLabel(GetLabel("Render command encoder", renderCommandEncoder));
-#endif
+    LabelEncoder(renderCommandEncoder, "render pass");
     m_commandEncoder = renderCommandEncoder;
     m_encoderType = MetalEncoderType::Render;
 
@@ -2426,6 +2426,7 @@ MTL::ComputeCommandEncoder* MetalRenderer::GetComputeCommandEncoder()
     auto pool = NS::AutoreleasePool::alloc()->init();
     auto computeCommandEncoder = commandBuffer->computeCommandEncoder()->retain();
     pool->release();
+    LabelEncoder(computeCommandEncoder, "compute");
     m_commandEncoder = computeCommandEncoder;
     m_encoderType = MetalEncoderType::Compute;
 
@@ -2451,6 +2452,7 @@ MTL::BlitCommandEncoder* MetalRenderer::GetBlitCommandEncoder()
     auto pool = NS::AutoreleasePool::alloc()->init();
     auto blitCommandEncoder = commandBuffer->blitCommandEncoder()->retain();
     pool->release();
+    LabelEncoder(blitCommandEncoder, "blit");
     m_commandEncoder = blitCommandEncoder;
     m_encoderType = MetalEncoderType::Blit;
 
@@ -2505,6 +2507,36 @@ void MetalRenderer::CommitCommandBuffer()
 
         // Debug
         //m_commandQueue->insertDebugCaptureBoundary();
+    }
+}
+
+// Names an encoder after the frame and draw call it was opened at. Not much, but it is what lets a
+// "command buffer failed" log line say which encoder faulted and roughly where in the frame.
+void MetalRenderer::LabelEncoder(MTL::CommandEncoder* encoder, const char* kind)
+{
+    char text[96];
+    snprintf(text, sizeof(text), "%s frame %u draw %u", kind, (uint32)LatteGPUState.frameCounter, (uint32)LatteGPUState.drawCallCounter);
+    auto pool = NS::AutoreleasePool::alloc()->init();
+    encoder->setLabel(NS::String::string(text, NS::UTF8StringEncoding));
+    pool->release();
+}
+
+static void LogFailedEncoders(MTL::CommandBuffer* commandBuffer, NS::Error* error)
+{
+    if (!error || !error->userInfo())
+        return;
+    auto* encoderInfos = static_cast<NS::Array*>(error->userInfo()->object(MTL::CommandBufferEncoderInfoErrorKey));
+    if (!encoderInfos)
+        return;
+    uint32 logged = 0;
+    for (NS::UInteger i = 0; i < encoderInfos->count() && logged < 6; ++i)
+    {
+        auto* info = static_cast<MTL::CommandBufferEncoderInfo*>(encoderInfos->object(i));
+        if (!info || info->errorState() == MTL::CommandEncoderErrorStateCompleted)
+            continue;
+        const char* label = info->label() ? info->label()->utf8String() : "(no label)";
+        cemuLog_log(LogType::Force, "Metal:   encoder \"{}\" state {} (0 unknown, 2 affected, 3 pending, 4 faulted)", label, (int)info->errorState());
+        ++logged;
     }
 }
 
@@ -2602,6 +2634,15 @@ void MetalRenderer::ProcessFinishedCommandBuffers()
                     cemuLog_log(LogType::Force, "Metal: command buffer failed (#{}): code {} {}", errorCount,
                         error ? (long)error->code() : 0L,
                         (error && error->localizedDescription()) ? error->localizedDescription()->utf8String() : "");
+                    LogFailedEncoders(commandBuffer, error);
+                }
+                // Timeout, page fault, access revoked/ignored, not permitted, out of memory, invalid resource,
+                // device removed: the GPU is no longer doing this process's work, so tell the UI right away.
+                const long errorCode = commandBuffer->error() ? (long)commandBuffer->error()->code() : 0L;
+                if (errorCode == 2 || errorCode == 3 || errorCode == 4 || errorCode == 7 || errorCode == 8 || errorCode == 9 || errorCode == 11)
+                {
+                    waitState.gpuErrorCode.store((int32_t)errorCode);
+                    waitState.gpuError.store(true);
                 }
                 static_cast<MTL::SharedEvent*>(m_event)->setSignaledValue((uint64_t)m_executingEventValues[i]);
             }
