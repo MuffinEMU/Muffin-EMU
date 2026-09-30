@@ -67,14 +67,17 @@ struct CPUSettingsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Use all three CPU cores")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(multicoreEnabled
-                         ? "Three cores. Can be faster on cooler devices, but heats up quickly on most iPads."
-                         : "One core. Cooler and usually faster on this hardware.")
+                    Text(!DeviceCapabilities.current.multicoreViable
+                         ? "Not available: this device has too little memory or too few cores to run three at once, so it always uses one."
+                         : (multicoreEnabled
+                            ? "Three cores. Can be faster on cooler devices, but heats up quickly on most iPads."
+                            : "One core. Cooler and usually faster on this hardware."))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
             }
             .tint(MuffinTheme.pixelBlue)
+            .disabled(!DeviceCapabilities.current.multicoreViable)
             .onChange(of: multicoreEnabled) { newValue in
                 cemu_bridge_set_multicore_enabled(newValue)
             }

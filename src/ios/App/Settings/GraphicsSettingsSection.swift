@@ -98,7 +98,7 @@ struct GraphicsSettingsSection: View {
     @AppStorage(RendererAPI.storageKey) private var rendererRaw = RendererAPI.defaultValue.rawValue
     @AppStorage(UpscaleFilterSetting.storageKey) private var upscaleRaw = UpscaleFilterSetting.defaultValue.rawValue
     @AppStorage(DownscaleFilterSetting.storageKey) private var downscaleRaw = DownscaleFilterSetting.defaultValue.rawValue
-    @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.balanced.rawValue
+    @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.defaultValue.rawValue
     @AppStorage("muffin.render.vsync") private var vsyncEnabled = true
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
@@ -110,7 +110,7 @@ struct GraphicsSettingsSection: View {
     @AppStorage(OverrideGammaSetting.storageKey) private var overrideGammaValue = OverrideGammaSetting.defaultValue
 
     private var renderScale: RenderScale {
-        RenderScale(rawValue: renderScaleRaw) ?? .balanced
+        RenderScale(rawValue: renderScaleRaw) ?? RenderScale.defaultValue
     }
 
     var body: some View {
@@ -325,7 +325,7 @@ struct GraphicsSettingsSection: View {
     // Shown only on GPUs without mesh shader support (see MetalRenderer.cpp's mesh-shader gate).
     // GraphicPacksView carries the full note next to the packs it affects.
     private var meshShadersUnsupported: Bool {
-        !(MTLCreateSystemDefaultDevice()?.supportsFamily(.apple7) ?? false)
+        !DeviceCapabilities.current.meshShaders
     }
 
     @ViewBuilder private var meshShaderNote: some View {

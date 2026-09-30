@@ -2,6 +2,7 @@
 #include "PPCFunctionBoundaryTracker.h"
 #include "PPCRecompiler.h"
 #include "PPCRecompilerIml.h"
+#include "Common/DeviceCapabilities.h"
 #include "PPCRecompilerThreadPool.h"
 #include "Cafe/OS/RPL/rpl.h"
 #include "util/containers/RangeStore.h"
@@ -1290,9 +1291,15 @@ bool PPCRecompiler_Init26() {
         constexpr size_t kArenaSizes[] = {
             512 * kMB, 384 * kMB, 256 * kMB, 128 * kMB, 64 * kMB
         };
+        // The first rung comes from the device (DeviceCapabilities.h): 512 MB on every device with 4.5 GB or more,
+        // which is what this was tuned at, and 256 MB on the 2 to 4 GB ones. Translated code is sized by the game,
+        // not by the device, so a bigger arena would only reserve more address space, the thing that ran out here.
+        const size_t arenaStart = (size_t)DeviceCaps::GetBudgets().jitArenaStartMB * kMB;
         size_t chosenArena = 0;
         for (size_t candidate : kArenaSizes)
         {
+            if (candidate > arenaStart)
+                continue;
             if (s_jitArena.init(candidate))
             {
                 chosenArena = candidate;
