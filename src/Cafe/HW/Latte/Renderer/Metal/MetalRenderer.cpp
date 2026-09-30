@@ -3007,6 +3007,33 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
     m_lastMemoryCheck = now;
     constexpr uint64 MB = 1024 * 1024;
 
+    // A texture that could not get GPU memory stands on the shared 1x1 null texture (see LatteTextureMtl) and would
+    // stay black for as long as the cache keeps it. Delete those so the game's next use allocates it again.
+    {
+        std::vector<LatteTexture*> substitutes;
+        for (LatteTexture* texture : LatteTexture::GetAllTextures())
+        {
+            if (texture && static_cast<LatteTextureMtl*>(texture)->IsNullSubstitute())
+                substitutes.push_back(texture);
+        }
+        uint32 replaced = 0;
+        for (LatteTexture* texture : substitutes)
+        {
+            // deleting one texture can delete related ones, so make sure this one is still alive
+            const auto& live = LatteTexture::GetAllTextures();
+            if (std::find(live.begin(), live.end(), texture) == live.end())
+                continue;
+            LatteTexture_Delete(texture);
+            ++replaced;
+        }
+        if (replaced > 0)
+        {
+            static uint32 s_substituteLogs = 0;
+            if (s_substituteLogs++ < 8)
+                cemuLog_log(LogType::Force, "Metal: dropped {} textures that had no GPU memory so they are allocated again on their next use", replaced);
+        }
+    }
+
     uint32 numBuffers;
     size_t totalSize, freeSize;
     m_memoryManager->GetStagingAllocator().GetStats(numBuffers, totalSize, freeSize);
