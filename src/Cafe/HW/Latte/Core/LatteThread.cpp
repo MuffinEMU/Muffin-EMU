@@ -21,6 +21,7 @@
 #include "config/ActiveSettings.h"
 
 #include "Cafe/CafeSystem.h"
+#include <typeinfo>
 #ifdef ENABLE_METAL
 #include "Cafe/HW/Latte/Renderer/Metal/MetalPipelineCache.h"
 #endif
@@ -234,6 +235,8 @@ static int Latte_ThreadEntryImpl()
 #if BOOST_OS_IOS
 // Defined in CemuBridge.mm: stops the title with a message and remembers that Vulkan failed on this MoltenVK build.
 void IOSBridge_VulkanDeviceLost(const char* why);
+// Defined in CemuBridge.mm: writes the exception and this thread's backtrace to the crash log and flags the title to be stopped by the app.
+void IOSBridge_GPUThreadException(const char* type, const char* what);
 #endif
 
 // An exception escaping this thread is std::terminate and ends the app. The renderers throw on failures they can't continue from (Vulkan device
@@ -247,10 +250,16 @@ int Latte_ThreadEntry()
 	catch (const std::exception& ex)
 	{
 		cemuLog_log(LogType::Force, "GPU thread: uncaught exception: {}. Stopping the title.", ex.what());
+#if BOOST_OS_IOS
+		IOSBridge_GPUThreadException(typeid(ex).name(), ex.what());
+#endif
 	}
 	catch (...)
 	{
 		cemuLog_log(LogType::Force, "GPU thread: uncaught unknown exception. Stopping the title.");
+#if BOOST_OS_IOS
+		IOSBridge_GPUThreadException("non-standard exception", "");
+#endif
 	}
 	sLatteThreadFinishedInit = true;
 	g_isGPUInitFinished = true;

@@ -3571,6 +3571,25 @@ void IOSBridge_VulkanDeviceLost(const char* why) {
     IOSSystemImplementation_ReportFatal("Vulkan stopped working while this game was running (the GPU stopped responding or ran out of memory), so the game was stopped. The renderer is back on Metal for the next launch; you can try Vulkan again in Settings > Graphics.");
 }
 
+// Called from the catch-all in Latte_ThreadEntry when an exception escapes the GPU thread, on any renderer. Nothing is torn down here:
+// the GPU thread is the wrong place for it, and Metal had nothing else that stopped the title, so the GPU thread parked and the game
+// froze with no crash log. This writes a crash-style entry (exception type, what(), and the GPU thread's backtrace at the catch site,
+// since the throw site is already unwound) and raises the same fatal flag the core uses. That flag is only an atomic; the app polls
+// it on the main thread, shows the message and runs cemu_bridge_shutdown_title(), the clean-slate stop path.
+void IOSBridge_GPUThreadException(const char* type, const char* what) {
+    cemu_crash_open_log();
+    cemu_bridge_log_checkpoint("\n=== GPU THREAD EXCEPTION ===");
+    cemu_bridge_log_checkpoint((std::string("uncaught C++ exception on the GPU thread, type: ") + (type && *type ? type : "unknown")).c_str());
+    cemu_bridge_log_checkpoint((std::string("what(): ") + (what && *what ? what : "(none)")).c_str());
+    cemu_bridge_log_checkpoint("GPU thread backtrace (where it was caught):");
+    void* frames[32];
+    const int count = backtrace(frames, 32);
+    if (g_crashLogFd >= 0)
+        backtrace_symbols_fd(frames, count, g_crashLogFd);
+    cemu_bridge_log_checkpoint("=== the title is being stopped ===");
+    IOSSystemImplementation_ReportFatal("The graphics engine hit an error and the game was stopped. The details are in CemuCrashLog.txt.");
+}
+
 void cemu_bridge_pause(void) {
     IOSTitlePause_Pause();
 }
