@@ -103,6 +103,86 @@ struct MetalDrawResourceState
 	uint32 baseInstance{};
 };
 
+// One entry per recorded draw, kept in a ring so that a command buffer that faults seconds after
+// it was recorded can still be explained: what was bound, how big it was and how much of it the
+// draw could reach. Plain data on purpose, it is written for every draw.
+struct MetalDrawBreadcrumb
+{
+    static constexpr uint32 MAX_VERTEX_BUFFERS = 6;
+    static constexpr uint32 MAX_UNIFORM_BUFFERS = 8;
+    static constexpr uint32 MAX_TEXTURES = 10;
+
+    enum Suspect : uint32
+    {
+        SUSPECT_VERTEX_BUFFER = 1,  // a vertex buffer is missing or smaller than the range the draw reads
+        SUSPECT_UNIFORM_BUFFER = 2, // a uniform buffer is smaller than what the shader declares
+        SUSPECT_INDEX_BUFFER = 4,   // the index count does not fit the index allocation
+        SUSPECT_SCISSOR = 8,        // the scissor had to be clamped to the render target
+        SUSPECT_TEXTURE = 16,       // a texture was missing and a null texture was bound instead
+        SUSPECT_SKIPPED = 32,       // the draw was not issued because of one of the above
+    };
+
+    uint32 frame{};
+    uint32 draw{};
+    uint32 count{};
+    uint32 hostIndexCount{};
+    uint32 instanceCount{};
+    uint32 baseInstance{};
+    sint32 baseVertex{};
+    uint32 minVertex{};
+    uint32 maxVertex{};
+    uint8 primitive{};
+    uint8 indexType{};
+    uint8 flags{}; // 1 manual vertex fetch, 2 geometry shader, 4 vertex streamout
+    uint8 numVertexBuffers{};
+    uint8 numUniformBuffers{};
+    uint8 numTextures{};
+    uint32 suspect{};
+    uint64 indexOffset{};
+    uint64 indexAllocSize{};
+    uint64 indexBufferLength{};
+    uint32 renderAreaWidth{};
+    uint32 renderAreaHeight{};
+    uint32 scissor[4]{};
+    uint32 scissorSent[4]{};
+    float viewport[4]{};
+    uint64 vertexShaderHash{};
+    uint64 pixelShaderHash{};
+
+    struct
+    {
+        uint8 slot;
+        uint32 stride;
+        uint64 offset;
+        uint64 size;
+        uint64 required;
+        uint64 bufferLength;
+    } vertexBuffers[MAX_VERTEX_BUFFERS]{};
+
+    struct
+    {
+        uint8 stage;
+        uint8 index;
+        uint64 offset;
+        uint64 size;
+        uint64 required;
+        uint64 bufferLength;
+    } uniformBuffers[MAX_UNIFORM_BUFFERS]{};
+
+    struct
+    {
+        uint8 stage;
+        uint8 unit;
+        uint8 type;
+        uint8 fallback;
+        uint32 width;
+        uint32 height;
+        uint32 depth;
+        uint16 mips;
+        uint16 pixelFormat;
+    } textures[MAX_TEXTURES]{};
+};
+
 struct MetalActiveFBOState
 {
     class CachedFBOMtl* m_fbo = nullptr;
@@ -126,6 +206,9 @@ struct MetalState
     MTL::Buffer* m_vertexBuffers[MAX_MTL_VERTEX_BUFFERS] = {};
     size_t m_vertexBufferOffsets[MAX_MTL_VERTEX_BUFFERS];
 	size_t m_vertexBufferSizes[MAX_MTL_VERTEX_BUFFERS]{};
+    // Bytes the current draw can read from each vertex buffer; 0 when unknown. A buffer whose bound
+    // size is below this has been truncated (or refused) and must not be used by hardware vertex fetch.
+    size_t m_vertexBufferRequired[MAX_MTL_VERTEX_BUFFERS]{};
     class LatteTextureViewMtl* m_textures[LATTE_NUM_MAX_TEX_UNITS * 3] = {nullptr};
     MTL::Buffer* m_uniformBuffers[METAL_GENERAL_SHADER_TYPE_TOTAL][MAX_MTL_BUFFERS] = {};
     size_t m_uniformBufferOffsets[METAL_GENERAL_SHADER_TYPE_TOTAL][MAX_MTL_BUFFERS];
@@ -578,6 +661,7 @@ private:
 	MetalCommandBuffer m_currentCommandBuffer{};
 	std::vector<MTL::CommandBuffer*> m_executingCommandBuffers;
 	std::vector<int32_t> m_executingEventValues; // event value each executing command buffer signals, same order
+	std::vector<uint32> m_executingQueueGenerations; // command queue generation each executing command buffer was made on, same order
 	MetalEncoderType m_encoderType = MetalEncoderType::None;
 	MTL::CommandEncoder* m_commandEncoder = nullptr;
 
@@ -594,6 +678,22 @@ private:
     std::chrono::steady_clock::time_point m_lastMemoryCheck;
     uint32 m_memoryPressureLogs = 0;
     uint64 m_startAvailableMemory = 0;
+
+    // Draw breadcrumbs (see MetalDrawBreadcrumb)
+    static constexpr uint32 BREADCRUMB_COUNT = 1024;
+    std::vector<MetalDrawBreadcrumb> m_breadcrumbs = std::vector<MetalDrawBreadcrumb>(BREADCRUMB_COUNT);
+    uint32 m_breadcrumbNext = 0;
+    uint32 m_breadcrumbsWritten = 0;
+    MetalDrawBreadcrumb* m_crumb = nullptr; // the entry of the draw being set up, null between draws
+    bool m_breadcrumbsDumped = false;
+
+    // GPU fault recovery: after one page fault the command queue is replaced once. Command buffers made on an
+    // older queue ("generation") that fail afterwards are the old queue dying and do not count as new faults.
+    uint32 m_queueGeneration = 0;
+    uint32 m_gpuRecoveryCount = 0;
+    bool m_gpuRecoveryPending = false;
+    bool m_gpuRecovering = false;
+    bool m_gpuRecoveryLogged = false;
 
     uint32 m_defaultCommitTreshlod;
     uint32 m_commitTreshold;
@@ -612,6 +712,12 @@ private:
 	}
 
 	void SwapBuffer(bool mainWindow);
+
+	// Draw breadcrumbs and GPU fault recovery
+	MetalDrawBreadcrumb* BeginDrawBreadcrumb();
+	void DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool haveRange);
+	void RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, uint32 unit, uint32 dim, MTL::Texture* texture, bool fallback);
+	bool RecoverFromGpuFault();
 
 	void EnsureImGuiBackend();
 

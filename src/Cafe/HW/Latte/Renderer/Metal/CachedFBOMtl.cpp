@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "Cafe/HW/Latte/Renderer/Metal/CachedFBOMtl.h"
 #include "Cafe/HW/Latte/Renderer/Metal/LatteTextureViewMtl.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
@@ -8,6 +9,14 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 	m_renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
 
 	bool hasAttachment = false;
+	auto trackRenderArea = [this](MTL::Texture* texture) {
+		if (!texture)
+			return;
+		const uint32 width = (uint32)texture->width();
+		const uint32 height = (uint32)texture->height();
+		m_renderAreaWidth = m_renderAreaWidth == 0 ? width : std::min(m_renderAreaWidth, width);
+		m_renderAreaHeight = m_renderAreaHeight == 0 ? height : std::min(m_renderAreaHeight, height);
+	};
 	for (int i = 0; i < 8; ++i)
 	{
 		const auto& buffer = colorBuffer[i];
@@ -18,6 +27,7 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 		}
 		auto colorAttachment = m_renderPassDescriptor->colorAttachments()->object(i);
 		colorAttachment->setTexture(textureView->GetRGBAView());
+		trackRenderArea(textureView->GetRGBAView());
 		colorAttachment->setLoadAction(MTL::LoadActionLoad);
 		colorAttachment->setStoreAction(MTL::StoreActionStore);
 
@@ -30,6 +40,7 @@ CachedFBOMtl::CachedFBOMtl(class MetalRenderer* metalRenderer, uint64 key) : Lat
 		auto textureView = static_cast<LatteTextureViewMtl*>(depthBuffer.texture);
 		auto depthAttachment = m_renderPassDescriptor->depthAttachment();
 		depthAttachment->setTexture(textureView->GetRGBAView());
+		trackRenderArea(textureView->GetRGBAView());
 		depthAttachment->setLoadAction(MTL::LoadActionLoad);
 		depthAttachment->setStoreAction(MTL::StoreActionStore);
 
