@@ -1611,6 +1611,19 @@ int cemu_bridge_input_volume(void) {
     return GetConfig().input_volume;
 }
 
+// Simulated mic blow (see CemuBridge.h). The flag itself is a relaxed atomic in mic.cpp, read
+// by the AX thread that feeds the game's mic buffer.
+void mic_setBlow(bool isBlowing);
+bool mic_isBlowing();
+
+void cemu_bridge_set_mic_blow(bool blowing) {
+    mic_setBlow(blowing);
+}
+
+bool cemu_bridge_mic_blow(void) {
+    return mic_isBlowing();
+}
+
 void cemu_bridge_set_vsync_enabled(bool enabled) {
     GetConfig().vsync = enabled ? 1 : 0;
 }

@@ -2,6 +2,8 @@
 #include "input/InputManager.h"
 #include "audio/IAudioInputAPI.h"
 #include "config/CemuConfig.h"
+#include <algorithm>
+#include <atomic>
 
 enum class MIC_RESULT
 {
@@ -73,13 +75,34 @@ struct micStatus_t
 
 static_assert(sizeof(micStatus_t) == 0xC);
 
+// Simulated blow. Written by the UI thread, consumed by the AX thread in mic_updateOnAXFrame.
+static std::atomic<bool> s_blowRequested{false};
+// Current envelope of the noise (0..1), ramped so that starting/stopping a blow doesn't click.
+// Only the AX thread advances it; mic_resetForTitleStop() zeroes it.
+static std::atomic<float> s_blowGain{0.0f};
+
+void mic_setBlow(bool isBlowing)
+{
+	s_blowRequested.store(isBlowing, std::memory_order_relaxed);
+}
+
+bool mic_isBlowing()
+{
+	return s_blowRequested.load(std::memory_order_relaxed);
+}
+
 bool mic_isConnected(uint32 drcIndex)
 {
 	if( drcIndex != 0 )
 		return false;
 
+#if !BOOST_OS_IOS
+	// On iOS the GamePad mic is always present: the game can be fed synthetic blow noise
+	// (see mic_mixBlowNoise) without any permission. Whether the *real* device microphone is
+	// captured is decided separately in MICInit via microphone_enabled.
 	if (!GetConfig().microphone_enabled)
 		return false;
+#endif
 
 	return InputManager::instance().get_vpad_controller(drcIndex) != nullptr;
 }
@@ -153,8 +176,16 @@ void micExport_MICInit(PPCInterpreter_t* hCPU)
 	const auto audio_api = IAudioInputAPI::Cubeb;
 #endif
 
+#if BOOST_OS_IOS
+	// Real microphone capture only when the user opted in (Settings > Audio). Otherwise the
+	// game still sees a connected mic, fed by synthetic noise (Blow button) or silence.
+	const bool useRealMic = config.microphone_enabled;
+#else
+	const bool useRealMic = true;
+#endif
+
 	std::unique_lock lock(g_audioInputMutex);
-	if (!g_inputAudio)
+	if (useRealMic && !g_inputAudio)
 	{
 		IAudioInputAPI::DeviceDescriptionPtr device_description;
 		if (IAudioInputAPI::IsAudioInputAPIAvailable(audio_api))
@@ -177,7 +208,13 @@ void micExport_MICInit(PPCInterpreter_t* hCPU)
 			catch (std::runtime_error& ex)
 			{
 				cemuLog_log(LogType::Force, "can't initialize audio input: {}", ex.what());
+#if BOOST_OS_IOS
+				// Most likely the microphone permission was denied. Not fatal: fall through with
+				// no input device, so the game gets silence / the Blow button's noise.
+				g_inputAudio.reset();
+#else
 				exit(0);
+#endif
 			}
 		}
 	}
@@ -421,6 +458,40 @@ void mic_updateDevicePlayState(bool isPlaying)
 	}
 }
 
+// Replaces `data` with wind-like noise while a blow is requested (and while the envelope is
+// still fading out afterwards). Returns false, leaving `data` untouched, when there's nothing
+// to add. AX thread only.
+static bool mic_mixBlowNoise(sint16* data, sint32 numSamples, bool blowing)
+{
+	float gain = s_blowGain.load(std::memory_order_relaxed);
+	if (!blowing && gain <= 0.0f)
+		return false;
+
+	static uint32 rng = 0x2545F491u;
+	static float lowpass = 0.0f;
+	const float target = blowing ? 1.0f : 0.0f;
+	const float rampStep = 1.0f / (MIC_SAMPLERATE * 0.02f); // 20ms attack/release
+	for (sint32 i = 0; i < numSamples; i++)
+	{
+		// xorshift32 white noise in [-1,1), low-passed (~1.8kHz) to sound like air rather than hiss
+		rng ^= rng << 13;
+		rng ^= rng >> 17;
+		rng ^= rng << 5;
+		const float white = (float)(sint32)rng * (1.0f / 2147483648.0f);
+		lowpass += 0.35f * (white - lowpass);
+		if (gain < target)
+			gain = std::min(gain + rampStep, target);
+		else if (gain > target)
+			gain = std::max(gain - rampStep, target);
+		// filtered noise has an rms of about 0.27, scale to roughly -7 dBFS so that games'
+		// blow thresholds (which expect a loud puff into the mic) are cleared
+		const float v = std::clamp(lowpass * gain * 1.6f, -0.95f, 0.95f);
+		data[i] = (sint16)(v * 32767.0f);
+	}
+	s_blowGain.store(gain, std::memory_order_relaxed);
+	return true;
+}
+
 void mic_updateOnAXFrame()
 {
 	sint32 drcIndex = 0;
@@ -437,30 +508,38 @@ void mic_updateOnAXFrame()
 
 	std::shared_lock lock(g_audioInputMutex);
 	mic_updateDevicePlayState(true);
+
+	// one AX frame is 3ms: 96 samples at 32kHz
+	sint16 micSampleData[MIC_SAMPLES_PER_3MS_32KHZ];
+	if (g_inputAudio)
+		g_inputAudio->ConsumeBlock(micSampleData); // always drained, even when a blow replaces it
+	else
+		memset(micSampleData, 0x00, sizeof(micSampleData));
+
+	// blow from the UI button, or from a controller button mapped to the VPAD "mic" input
+	bool blowing = mic_isBlowing();
+	if (!blowing)
+	{
+		auto controller = InputManager::instance().get_vpad_controller(drcIndex);
+		blowing = controller && controller->is_mic_active();
+	}
+	mic_mixBlowNoise(micSampleData, MIC_SAMPLES_PER_3MS_32KHZ, blowing);
+
+	mic_feedSamples(0, micSampleData, MIC_SAMPLES_PER_3MS_32KHZ);
+}
+
+// The title that owned the mic is gone: forget its ring buffer, drop any blow, and release
+// the capture device so the audio session and the recording indicator don't outlive the game.
+static void mic_resetForTitleStop()
+{
+	s_blowRequested.store(false, std::memory_order_relaxed);
+	s_blowGain.store(0.0f, std::memory_order_relaxed);
+	std::unique_lock lock(g_audioInputMutex);
+	memset(&MICStatus, 0, sizeof(MICStatus));
 	if (g_inputAudio)
 	{
-		sint16 micSampleData[MIC_SAMPLES_PER_3MS_32KHZ];
-		g_inputAudio->ConsumeBlock(micSampleData);
-		mic_feedSamples(0, micSampleData, MIC_SAMPLES_PER_3MS_32KHZ);
-	}
-	else
-	{
-		const sint32 micSampleCount = 32000 / 32;
-		sint16 micSampleData[micSampleCount];
-
-		auto controller = InputManager::instance().get_vpad_controller(drcIndex);
-		if( controller && controller->is_mic_active() )
-		{
-			for(sint32 i=0; i<micSampleCount; i++)
-			{
-				micSampleData[i] = (sint16)(sin((float)GetTickCount()*0.1f+sin((float)GetTickCount()*0.0001f)*100.0f)*30000.0f);
-			}
-		}
-		else
-		{
-			memset(micSampleData, 0x00, sizeof(micSampleData));
-		}
-		mic_feedSamples(0, micSampleData, micSampleCount);
+		g_inputAudio->Stop();
+		g_inputAudio.reset();
 	}
 }
 
@@ -483,6 +562,11 @@ namespace mic
 			osLib_addFunction("mic", "MICGetState", micExport_MICGetState);
 			osLib_addFunction("mic", "MICSetState", micExport_MICSetState);
 			osLib_addFunction("mic", "MICSetDataConsumed", micExport_MICSetDataConsumed);
+		}
+
+		void RPLUnmapped() override
+		{
+			mic_resetForTitleStop();
 		}
 	}s_COSmicModule;
 
