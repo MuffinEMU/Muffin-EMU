@@ -26,9 +26,13 @@ typedef enum {
     // every key it has against the disc header, so this is never a "wrong key selected"
     // problem, only a "key not present" one.
     CEMU_BRIDGE_NO_DISC_KEY     = 3,
-    CEMU_BRIDGE_NO_TITLE_TIK    = 4,   // installed title with no usable title.tik
+    CEMU_BRIDGE_NO_TITLE_TIK    = 4,   // encrypted game folder with no title.tik (and no matching title key in keys.txt)
     CEMU_BRIDGE_UNSUPPORTED     = 5,   // not a title and not a loadable executable
     CEMU_BRIDGE_BASE_NOT_FOUND  = 6,   // an update/DLC was launched without its base game
+    CEMU_BRIDGE_BAD_TITLE_TMD   = 7,   // encrypted game folder whose title.tmd can't be read
+    CEMU_BRIDGE_BAD_TITLE_TIK   = 8,   // encrypted game folder whose title.tik can't be read
+    CEMU_BRIDGE_TITLE_KEY_INVALID = 9, // ticket read, but it (and keys.txt) don't decrypt the .app files
+    CEMU_BRIDGE_MISSING_CONTENT = 10,  // a .app file listed in title.tmd is not in the folder
     CEMU_BRIDGE_CORE_NOT_BUILT  = 100, // real engine not linked into this build yet (never returned by current builds)
     CEMU_BRIDGE_BAD_ARG         = 101, // null/empty path etc.
 } CemuBridgeStatus;
@@ -266,6 +270,10 @@ typedef enum {
     CemuTitleNoDiscKey = 3,
     CemuTitleNoTicket = 4,
     CemuTitleMissingXmlFiles = 5,
+    CemuTitleBadTitleTmd = 6,
+    CemuTitleBadTitleTik = 7,
+    CemuTitleKeyInvalid = 8,
+    CemuTitleMissingContentFile = 9,
 } CemuTitleInvalidReason;
 
 /// Inspects romPath as a candidate DLC/update import in one pass: on success (true),
