@@ -46,6 +46,17 @@ Add the MuffinEMU source to your installer:
 | SideStore, AltStore, LiveContainer | `MuffinEMU.ipa` | `https://kiddreads.github.io/MuffinEMU/apps.json` |
 | TrollStore, jailbroken | `MuffinEMU-fakesigned.ipa` | `https://kiddreads.github.io/MuffinEMU/trollstore.json` |
 
+Other sources, for people who want something other than the release known to work:
+
+| Channel | Installer | Source |
+|---|---|---|
+| Nightly: the newest build of `main`, untested | SideStore, AltStore, LiveContainer | `https://kiddreads.github.io/MuffinEMU/nightly.json` |
+| Nightly | TrollStore, jailbroken | `https://kiddreads.github.io/MuffinEMU/nightly-trollstore.json` |
+| **Experimental, for testers:** unfinished test builds of work in progress | SideStore, AltStore, LiveContainer | `https://kiddreads.github.io/MuffinEMU/experimental.json` |
+| Experimental, for testers | TrollStore, jailbroken | `https://kiddreads.github.io/MuffinEMU/experimental-trollstore.json` |
+
+Nightly and Experimental builds replace an installed MuffinEMU (same bundle identifier, so games and saves carry over) and can misbehave. Experimental builds never appear in the Stable or Nightly sources. For normal play use the first two.
+
 Both IPAs are attached to every [release](https://github.com/kiddreads/MuffinEMU/releases). The [installation guide](https://kiddreads.github.io/MuffinEMU/docs/installation.html) explains which one to pick, how to turn on JIT, and where `keys.txt` goes.
 
 **Games and keys are not included.** MuffinEMU plays games you have dumped from your own Wii U, and encrypted games need the `keys.txt` from that console.
