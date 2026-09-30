@@ -96,6 +96,7 @@ int csops(pid_t pid, unsigned int ops, void* useraddr, size_t usersize);
 // Muffin's glue, in Core/. Plain C++ linkage: only this file calls them.
 int IOSTitleLaunch_PrepareForegroundTitle(const char* path);
 int IOSTitleLaunch_ReloadAndCountKeys();
+int IOSTitleLaunch_PrepareForegroundTitleById(uint64_t titleId);
 int IOSTitleDecrypt_ExtractToFolder(const char* srcPath, const char* destFolderPath,
     std::atomic_bool& cancelRequested,
     const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
@@ -1752,6 +1753,8 @@ void cemu_bridge_log_line(const char* message) {
     cemuLog_log(LogType::Force, std::string_view(message));
 }
 
+static CemuBridgeStatus ios_boot_prepared_title(int prepared);
+
 CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
     if (!path || path[0] == '\0') {
         setStatus("boot_title: empty path.");
@@ -1762,10 +1765,43 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
         return CEMU_BRIDGE_CORE_NOT_BUILT;
     }
 
+    // "mlc-title:<16 hex digits>" boots a title installed in the MLC by its id (the Wii U
+    // Menu tile uses this), through the same tail as a path launch.
+    static const char kMlcTitlePrefix[] = "mlc-title:";
+    if (strncmp(path, kMlcTitlePrefix, sizeof(kMlcTitlePrefix) - 1) == 0) {
+        char* end = nullptr;
+        const unsigned long long titleId = strtoull(path + sizeof(kMlcTitlePrefix) - 1, &end, 16);
+        if (end == path + sizeof(kMlcTitlePrefix) - 1 || *end != '\0' || titleId == 0) {
+            setStatus("boot_title: bad title id.");
+            return CEMU_BRIDGE_BAD_ARG;
+        }
+        return cemu_bridge_boot_title_id(titleId);
+    }
+
     cemu_bridge_log_checkpoint("boot_title: about to prepare title");
     const int prepared = IOSTitleLaunch_PrepareForegroundTitle(path);
     cemu_bridge_log_checkpoint("boot_title: prepare returned");
+    return ios_boot_prepared_title(prepared);
+}
 
+CemuBridgeStatus cemu_bridge_boot_title_id(uint64_t titleId) {
+    if (titleId == 0) {
+        setStatus("boot_title_id: empty title id.");
+        return CEMU_BRIDGE_BAD_ARG;
+    }
+    if (!g_initialized.load()) {
+        setStatus("The emulator core is not initialized.");
+        return CEMU_BRIDGE_CORE_NOT_BUILT;
+    }
+    cemu_bridge_log_checkpoint("boot_title_id: about to prepare title");
+    const int prepared = IOSTitleLaunch_PrepareForegroundTitleById(titleId);
+    cemu_bridge_log_checkpoint("boot_title_id: prepare returned");
+    return ios_boot_prepared_title(prepared);
+}
+
+// Everything after the title has been prepared: report a failed prepare, otherwise bring up
+// the surfaces and start the title thread. Shared by the path and title-id launches.
+static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
     switch (prepared) {
         case 0:
             break;
@@ -1784,6 +1820,9 @@ CemuBridgeStatus cemu_bridge_boot_title(const char* path) {
         case 6:
             setStatus("That looks like an update or DLC. Launch the base game instead.");
             return CEMU_BRIDGE_BASE_NOT_FOUND;
+        case 7:
+            setStatus("That system title isn't installed. Import it in Settings > Wii U Menu.");
+            return CEMU_BRIDGE_UNABLE_TO_MOUNT;
         default:
             setStatus("Not a Wii U title this build can launch.");
             return CEMU_BRIDGE_UNSUPPORTED;
