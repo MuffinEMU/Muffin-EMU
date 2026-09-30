@@ -441,6 +441,12 @@ namespace CafeSystem
 	void MlcStorageMountTitle(TitleInfo& titleInfo);
     void MlcStorageUnmountAllTitles();
 
+	// A title that was prepared (mounted, memory mapped) but has not been launched yet. ShutdownTitle() only
+	// unwinds a running title, so without these a launch that stops after prepare (for example the renderer
+	// failing to start) leaves its mounts and memory mapping behind for the next launch to trip over.
+	static bool sPreparedTitleMounted = false;
+	static bool sPreparedTitleMemoryMapped = false;
+
     static bool s_initialized = false;
 	static SystemImplementation* s_implementation{nullptr};
     bool sLaunchModeIsStandalone = false;
@@ -807,6 +813,23 @@ namespace CafeSystem
 				}
 			}
 		}
+		// Check the executable now. Found missing later, on the title thread, LoadMainExecutable() has no way to
+		// report it, so the launch would have to end the process.
+		if (_pathToExecutable.empty() && !ScanForRPX())
+		{
+			cemuLog_log(LogType::Force, "Unable to find an RPX executable in the title's code folder");
+			return PREPARE_STATUS_CODE::INVALID_RPX;
+		}
+		{
+			sint32 probeStatus = 0;
+			FSCVirtualFile* probe = fsc_open(_pathToExecutable.c_str(), FSC_ACCESS_FLAG::OPEN_FILE | FSC_ACCESS_FLAG::READ_PERMISSION, &probeStatus);
+			if (!probe)
+			{
+				cemuLog_log(LogType::Force, "Unable to open the executable \"{}\"", _pathToExecutable);
+				return PREPARE_STATUS_CODE::INVALID_RPX;
+			}
+			fsc_close(probe);
+		}
 		return PREPARE_STATUS_CODE::SUCCESS;
 	}
 
@@ -824,32 +847,43 @@ namespace CafeSystem
 	PREPARE_STATUS_CODE PrepareForegroundTitle(TitleId titleId)
 	{
 		CafeTitleList::WaitForMandatoryScan();
+		AbortPreparedTitle(); // anything left over from a launch that never started
 		sLaunchModeIsStandalone = false;
 		s_foregroundReturnStatus = std::nullopt;
         _pathToExecutable.clear();
 		TitleIdParser tip(titleId);
 		if (tip.GetType() == TitleIdParser::TITLE_TYPE::AOC || tip.GetType() == TitleIdParser::TITLE_TYPE::BASE_TITLE_UPDATE)
 			cemuLog_log(LogType::Force, "Launched titleId is not the base of a title");
-        // mount mlc storage
+		// mount mlc storage
 		MountBaseDirectories();
-        // mount title folders
+		sPreparedTitleMounted = true;
+		// mount title folders
 		PREPARE_STATUS_CODE r = LoadAndMountForegroundTitle(titleId);
 		if (r != PREPARE_STATUS_CODE::SUCCESS)
+		{
+			AbortPreparedTitle();
 			return r;
+		}
 		gameProfile_load();
 		// setup memory space and PPC recompiler
 		SetupMemorySpace();
 		PPCRecompiler_init();
+		sPreparedTitleMemoryMapped = true;
 		r = PrepareExecutable(); // load RPX
 		if (r != PREPARE_STATUS_CODE::SUCCESS)
+		{
+			AbortPreparedTitle();
 			return r;
+		}
 		InitVirtualMlcStorage();
 		return PREPARE_STATUS_CODE::SUCCESS;
 	}
 
 	PREPARE_STATUS_CODE PrepareForegroundTitleFromStandaloneRPX(const fs::path& path)
 	{
+		AbortPreparedTitle(); // anything left over from a launch that never started
 		sLaunchModeIsStandalone = true;
+		sPreparedTitleMounted = true;
 		cemuLog_log(LogType::Force, "Launching executable in standalone mode due to incorrect layout or missing meta files");
 		fs::path executablePath = path;
 		std::string dirName = _pathToUtf8(executablePath.parent_path().filename());
@@ -865,6 +899,7 @@ namespace CafeSystem
 				if (!r)
 				{
 					cemuLog_log(LogType::Force, "Failed to mount {}", _pathToUtf8(contentPath));
+					AbortPreparedTitle();
 					return PREPARE_STATUS_CODE::UNABLE_TO_MOUNT;
 				}
 			}
@@ -877,15 +912,23 @@ namespace CafeSystem
 		// since a lot of systems (including save folder location) rely on a TitleId, we derive a placeholder id from the executable hash
 		auto execData = fsc_extractFile(_pathToExecutable.c_str());
 		if (!execData)
+		{
+			AbortPreparedTitle();
 			return PREPARE_STATUS_CODE::INVALID_RPX;
+		}
 		uint32 h = generateHashFromRawRPXData(execData->data(), execData->size());
 		sForegroundTitleId = 0xFFFFFFFF00000000ULL | (uint64)h;
 		cemuLog_log(LogType::Force, "Generated placeholder TitleId: {:016x}", sForegroundTitleId);
 		// setup memory space and ppc recompiler
         SetupMemorySpace();
         PPCRecompiler_init();
+		sPreparedTitleMemoryMapped = true;
         // load executable
-        PrepareExecutable();
+		if (PrepareExecutable() != PREPARE_STATUS_CODE::SUCCESS)
+		{
+			AbortPreparedTitle();
+			return PREPARE_STATUS_CODE::INVALID_RPX;
+		}
 		InitVirtualMlcStorage();
 		return PREPARE_STATUS_CODE::SUCCESS;
 	}
@@ -905,7 +948,9 @@ namespace CafeSystem
 	void LaunchForegroundTitle()
 	{
 		PPCTimer_waitForInit();
-		// start system
+		// start system. From here ShutdownTitle() unwinds the mounts and memory space
+		sPreparedTitleMounted = false;
+		sPreparedTitleMemoryMapped = false;
 		sSystemRunning = true;
 		WindowSystem::NotifyGameLoaded();
 		std::thread t(_LaunchTitleThread);
@@ -1069,6 +1114,27 @@ namespace CafeSystem
         UnmountBaseDirectories();
         DestroyMemorySpace();
 		sSystemRunning = false;
+	}
+
+	// Undoes PrepareForegroundTitle()/PrepareForegroundTitleFromStandaloneRPX() for a title that never started.
+	// The same steps as ShutdownTitle() minus everything that only exists once the title thread has run.
+	void AbortPreparedTitle()
+	{
+		if (sSystemRunning)
+			return; // a running title goes through ShutdownTitle()
+		if (!sPreparedTitleMounted && !sPreparedTitleMemoryMapped)
+			return;
+		cemuLog_log(LogType::Force, "Discarding a prepared title that never started");
+		if (sPreparedTitleMemoryMapped)
+			PPCRecompiler_Shutdown();
+		GraphicPack2::Reset();
+		UnmountCurrentTitle();
+		MlcStorageUnmountAllTitles();
+		UnmountBaseDirectories();
+		if (sPreparedTitleMemoryMapped)
+			DestroyMemorySpace();
+		sPreparedTitleMounted = false;
+		sPreparedTitleMemoryMapped = false;
 	}
 
 	/* Virtual mlc storage */

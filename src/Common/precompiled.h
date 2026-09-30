@@ -575,6 +575,12 @@ inline uint64 _udiv128(uint64 highDividend, uint64 lowDividend, uint64 divisor, 
 
 #if defined(_MSC_VER)
     #define DEBUG_BREAK __debugbreak()
+#elif BOOST_OS_IOS
+    #include <csignal>
+    // A failed core assert raised SIGTRAP and ended the app. On iOS it is logged with the
+    // calling thread's backtrace and execution continues (CemuBridge.mm).
+    extern "C" void cemu_ios_assert_hit(void);
+    #define DEBUG_BREAK cemu_ios_assert_hit()
 #else
     #include <csignal>
     #define DEBUG_BREAK raise(SIGTRAP)
