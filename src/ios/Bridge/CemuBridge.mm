@@ -2475,6 +2475,7 @@ bool cemu_bridge_load_state(const char* path) {
 }
 
 void cemu_bridge_shutdown_title(void) {
+    cemu_bridge_memory_note("before title shutdown");
     ios_timebase_ladder_stop();
     // Suspended guest threads cannot be joined, so a paused title is resumed first.
     IOSTitlePause_Resume();
@@ -2489,7 +2490,15 @@ void cemu_bridge_shutdown_title(void) {
     g_framesPerSecond.store(0.0);
     g_videoStalled.store(false);
     g_videoStallKind.store(0);
+    {
+        auto& w = LatteWait::Get();
+        w.gpuError.store(false);
+        w.gpuErrorCode.store(0);
+        w.gpuPresumedLost.store(false);
+        w.memStatsValid.store(false);
+    }
     cemu_bridge_release_all_buttons();
+    cemu_bridge_memory_note("after title shutdown");
     setStatus("Title shut down.");
 }
 
