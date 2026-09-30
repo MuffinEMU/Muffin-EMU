@@ -153,6 +153,18 @@ struct GraphicsSettingsSection: View {
                 }
             }
             .pickerStyle(.segmented)
+            .onChange(of: rendererRaw) { newValue in
+                // Picking Vulkan again is a retry: forget that it failed to start before
+                if newValue == RendererAPI.vulkan.rawValue {
+                    UserDefaults.standard.removeObject(forKey: "muffin.render.vulkanFailedBuild")
+                }
+            }
+            if let failedBuild = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailedBuild"),
+               rendererRaw == RendererAPI.metal.rawValue {
+                Text("Vulkan didn't start on this device with MoltenVK \(failedBuild). Metal is in use. Choosing Vulkan again tries it again.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
         }
     }
 

@@ -50,6 +50,7 @@ namespace CafeSystem
 	std::optional<sint32> GetForegroundTitleReturnStatus(); // valid once the foreground title exited gracefully via coreinit exit
 
 	void ShutdownTitle();
+	void AbortPreparedTitle(); // unwinds a prepared title that was never launched
 
 	std::string GetMlcStoragePath(TitleId titleId);
 	void MlcStorageMountAllTitles();
