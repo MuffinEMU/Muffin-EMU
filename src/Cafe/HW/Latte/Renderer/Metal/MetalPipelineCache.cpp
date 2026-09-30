@@ -9,6 +9,7 @@
 #include "Cafe/HW/Latte/Common/RegisterSerializer.h"
 #include "Cafe/HW/Latte/Core/LatteShaderCache.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 #include "Cafe/HW/Latte/ISA/LatteReg.h"
 #include "Cemu/FileCache/FileCache.h"
 #include "Common/precompiled.h"
@@ -141,6 +142,7 @@ PipelineObject* MetalPipelineCache::GetRenderPipelineState(const LatteFetchShade
 	else
 	{
 	    // Also force compile to ensure that the pipeline is ready
+        PerfTelemetry::Get().pipelineSyncCompiles.fetch_add(1, std::memory_order_relaxed);
         cemu_assert_debug(compiler->Compile(true, true, true));
         delete compiler;
 	}

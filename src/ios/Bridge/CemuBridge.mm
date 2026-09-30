@@ -58,6 +58,8 @@
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "StallDetector.h"
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
+#include "Cafe/GameProfile/GameProfile.h"
 #include "util/Fiber/Fiber.h"
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
 #include "Cemu/Logging/CemuLogging.h"
@@ -741,9 +743,19 @@ namespace {
     // last thing a device that is already too hot needs. Low power wants the core count
     // down and nothing else changed.
     std::atomic<bool> g_lowPowerMode{false};
-    // Off by default: see ios_apply_cpu_mode() for the measurement that made one core
-    // the default rather than three.
-    std::atomic<bool> g_multicoreRequested{false};
+    // Core count choice from Settings (or this game's override): 0 Auto, 1 one core, 2 three
+    // cores. Auto decides per title in ios_decide_core_count(); see there for why it leans
+    // to one core.
+    constexpr int kCoreModeAuto   = 0;
+    constexpr int kCoreModeSingle = 1;
+    constexpr int kCoreModeMulti  = 2;
+    std::atomic<int> g_coreModeSetting{kCoreModeAuto};
+    // Set by the app when an earlier three-core run of this title crashed or hung (Auto only).
+    std::atomic<bool> g_autoDemoted{false};
+    // What the last boot actually used, for the app: host threads for the emulated cores, and
+    // whether Auto (not the user) is what picked three.
+    std::atomic<int> g_coresRunning{1};
+    std::atomic<bool> g_autoPickedMulti{false};
     std::mutex g_cpuModeDetailMutex;
     std::string g_cpuModeDetail;
 
@@ -871,30 +883,188 @@ bool ios_process_is_debugged(uint32_t& flagsOut)
     return csops(getpid(), 0 /* CS_OPS_STATUS */, &flagsOut, sizeof(flagsOut)) == 0 && (flagsOut & 0x10000000u) != 0;
 }
 
-// Decides the CPU path for the next boot from the two Settings toggles and what the
-// process can actually do, and records both the answer and the reason. Written into the
-// engine's own config, which is what the core's CafeSystem reads when a title starts.
+// What the running device is, read once. Used to decide the core count and written to the
+// performance log so reports from different devices can be compared.
+namespace {
+    struct IosDeviceFacts
+    {
+        std::string model;
+        std::string gpuName;
+        uint64_t perfCores = 0;
+        uint64_t effCores = 0;
+        uint64_t totalCores = 0;
+        uint64_t memoryMB = 0;
+    };
+
+    const IosDeviceFacts& ios_device_facts()
+    {
+        static const IosDeviceFacts facts = [] {
+            IosDeviceFacts f;
+            f.model = cemu_sysctl_string("hw.machine");
+            f.totalCores = cemu_sysctl_u64("hw.ncpu");
+            f.perfCores = cemu_sysctl_u64("hw.perflevel0.physicalcpu");
+            if (!f.perfCores)
+                f.perfCores = cemu_sysctl_u64("hw.perflevel0.logicalcpu");
+            f.effCores = cemu_sysctl_u64("hw.perflevel1.physicalcpu");
+            if (!f.effCores)
+                f.effCores = cemu_sysctl_u64("hw.perflevel1.logicalcpu");
+            if (!f.perfCores)
+                f.perfCores = f.totalCores; // no performance levels reported: treat every core alike
+            f.memoryMB = cemu_sysctl_u64("hw.memsize") / (1024ull * 1024ull);
+            id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+            if (device && device.name)
+                f.gpuName = [device.name UTF8String];
+            return f;
+        }();
+        return facts;
+    }
+
+    // ProcessInfo.ThermalState: 0 nominal, 1 fair, 2 serious, 3 critical
+    int ios_thermal_state() { return (int)[[NSProcessInfo processInfo] thermalState]; }
+
+    const char* ios_thermal_name(int state)
+    {
+        switch (state)
+        {
+        case 0: return "nominal";
+        case 1: return "fair";
+        case 2: return "serious";
+        case 3: return "critical";
+        default: return "unknown";
+        }
+    }
+
+    // Titles recorded as running well on three host threads, per device class. Empty on purpose:
+    // nothing measured so far says three threads help (see ios_decide_core_count). Add a title
+    // here only with a before/after from a real device, and say which device.
+    bool ios_multicore_known_good(uint64_t titleId, const IosDeviceFacts& device)
+    {
+        (void)titleId;
+        (void)device;
+        return false;
+    }
+
+    struct CoreDecision
+    {
+        bool singleCore = true;
+        bool autoPickedMulti = false;
+        std::string reason;
+    };
+
+    // The emulated console has three cores. Running them on three host threads only pays off
+    // when the device has spare performance cores AND the thermal room to power them: on a
+    // fanless iPad Pro (A12Z, 4 performance cores) three threads drew about three times the power,
+    // the SoC throttled within a minute, and Wind Waker HD ran 4-20 fps against 40-60 on one
+    // thread. No shipped Cemu game profile asks for multi-core either (every cpuMode entry is
+    // single-core), so Auto leans to one core and uses three only when the title's profile asks for
+    // it or it is on the known-good list, on a device with at least three performance cores that is
+    // not already hot, and never after an earlier three-core run of the same title crashed or hung.
+    CoreDecision ios_decide_core_count(uint64_t titleId)
+    {
+        const IosDeviceFacts& device = ios_device_facts();
+        const int setting = g_coreModeSetting.load();
+        const int thermal = ios_thermal_state();
+        char deviceText[96];
+        snprintf(deviceText, sizeof(deviceText), "%llu performance core(s), thermal %s",
+            (unsigned long long)device.perfCores, ios_thermal_name(thermal));
+        CoreDecision d;
+
+        if (g_favourAccuracy.load())
+        {
+            d.reason = "one core because Favour accuracy is on";
+            return d;
+        }
+        if (g_lowPowerMode.load())
+        {
+            d.reason = "one core because Low Power Mode is on";
+            return d;
+        }
+        if (setting == kCoreModeSingle)
+        {
+            d.reason = "one core, chosen in Settings";
+            return d;
+        }
+        if (setting == kCoreModeMulti)
+        {
+            d.singleCore = false;
+            d.reason = std::string("three cores, chosen in Settings (experimental; ") + deviceText + ")";
+            if (device.perfCores < 3)
+                d.reason += ". This device has fewer than three performance cores, so expect it to run slower than one core";
+            return d;
+        }
+
+        // Auto
+        if (g_autoDemoted.load())
+        {
+            d.reason = "Auto picked one core: a three-core run of this title crashed or hung before";
+            return d;
+        }
+        if (thermal >= 2)
+        {
+            d.reason = std::string("Auto picked one core: the device is already hot (") + deviceText + ")";
+            return d;
+        }
+        if (device.perfCores < 3)
+        {
+            d.reason = std::string("Auto picked one core: too few performance cores (") + deviceText + ")";
+            return d;
+        }
+        std::optional<CPUMode> profileMode;
+        if (titleId != 0)
+        {
+            GameProfile probe;
+            if (probe.Load(titleId))
+                profileMode = probe.GetCPUMode();
+        }
+        if (profileMode && (*profileMode == CPUMode::SinglecoreInterpreter || *profileMode == CPUMode::SinglecoreRecompiler))
+        {
+            d.reason = std::string("Auto picked one core: this title's game profile asks for single-core (") + deviceText + ")";
+            return d;
+        }
+        if (profileMode && *profileMode == CPUMode::MulticoreRecompiler)
+        {
+            d.singleCore = false;
+            d.autoPickedMulti = true;
+            d.reason = std::string("Auto picked three cores: this title's game profile asks for multi-core (") + deviceText + ")";
+            return d;
+        }
+        if (titleId != 0 && ios_multicore_known_good(titleId, device))
+        {
+            d.singleCore = false;
+            d.autoPickedMulti = true;
+            d.reason = std::string("Auto picked three cores: this title is recorded as faster on three (") + deviceText + ")";
+            return d;
+        }
+        d.reason = std::string("Auto picked one core: no game profile or recorded result says three help this title (") + deviceText + ")";
+        return d;
+    }
+}
+
+// Decides the CPU path for the next boot from the core-count choice, the two Settings
+// toggles and what the process can actually do, and records both the answer and the reason.
+// Written into the engine's own config, which is what the core's CafeSystem reads when a
+// title starts.
 //
-// Always an explicit mode, never Auto. On iOS the core's GetCPUMode() returns the config
-// value unresolved, and _LaunchTitleThread() only starts the three emulated cores on their
-// own host threads for the two Multicore modes - so Auto, the core's default, ran every
-// title on one thread. Speed first means Multicore; Favour accuracy means Singlecore, the
-// mode Cemu is most compatible in.
-void ios_apply_cpu_mode()
+// Always an explicit mode, never the core's Auto. On iOS the core's GetCPUMode() returns the
+// config value unresolved, and _LaunchTitleThread() only starts the three emulated cores on
+// their own host threads for the two Multicore modes, so the core's Auto ran every title on
+// one thread and ignored the game profile. The decision lives in ios_decide_core_count().
+void ios_apply_cpu_mode(bool announce = false)
 {
     uint32_t csFlags = 0;
     const bool debugged = ios_process_is_debugged(csFlags);
-    const bool accuracy = g_favourAccuracy.load();
-    const bool lowPower = g_lowPowerMode.load();
-    // Single-core is the default; multi-core has to be requested (cemu_bridge_set_multicore_enabled).
-    // On iOS the core starts the three emulated cores on their own host threads only for the
-    // explicit Multicore modes, and those threads reschedule without sleeping. On a fanless
-    // A12Z iPad Pro running Wind Waker HD, one core held 40-60fps while three managed 4-20:
-    // the extra power draw heats the SoC within a minute and the clocks drop.
-    const bool singleCore = accuracy || lowPower || !g_multicoreRequested.load();
-    const char* cores = singleCore ? "single-core" : "multi-core";
+    uint64_t titleId = 0;
+    if (announce)
+        titleId = CafeSystem::GetForegroundTitleId();
+    const CoreDecision cores = ios_decide_core_count(titleId);
+    const bool singleCore = cores.singleCore;
     auto& config = GetConfig();
-    char detail[320];
+    char detail[768];
+
+    if (announce)
+        cemuLog_log(LogType::Force, "CPU cores: {}", cores.reason);
+    g_coresRunning.store(singleCore ? 1 : 3);
+    g_autoPickedMulti.store(cores.autoPickedMulti);
 
     if (!g_recompilerRequested.load() || !debugged)
     {
@@ -904,17 +1074,19 @@ void ios_apply_cpu_mode()
         config.cpu_mode = singleCore ? CPUMode::SinglecoreInterpreter : CPUMode::MulticoreInterpreter;
         g_cpuMode.store(kCpuModeInterpreter);
         if (!g_recompilerRequested.load())
-            snprintf(detail, sizeof(detail), "The recompiler is off in Settings, so the %s interpreter is running.", cores);
+            snprintf(detail, sizeof(detail), "The recompiler is off in Settings, so the %s interpreter is running. Cores: %s.",
+                singleCore ? "single-core" : "multi-core", cores.reason.c_str());
         else
             snprintf(detail, sizeof(detail), "The recompiler is on in Settings, but no JIT enabler is attached (cs_flags 0x%08x), "
-                "so the %s interpreter is running. Launch through StikJIT, SideStore or LiveContainer to use the recompiler.", csFlags, cores);
+                "so the %s interpreter is running. Launch through StikJIT, SideStore or LiveContainer to use the recompiler. Cores: %s.",
+                csFlags, singleCore ? "single-core" : "multi-core", cores.reason.c_str());
         setCpuModeDetail(detail);
         return;
     }
     config.cpu_mode = singleCore ? CPUMode::SinglecoreRecompiler : CPUMode::MulticoreRecompiler;
     g_cpuMode.store(kCpuModeRecompiler);
-    snprintf(detail, sizeof(detail), "A JIT enabler is attached, so the AArch64 recompiler runs this launch, %s%s.",
-        cores, lowPower ? " because Low Power Mode is on" : (accuracy ? " because Favour accuracy is on" : ""));
+    snprintf(detail, sizeof(detail), "A JIT enabler is attached, so the AArch64 recompiler runs this launch. Cores: %s.",
+        cores.reason.c_str());
     setCpuModeDetail(detail);
 }
 
@@ -1030,6 +1202,200 @@ namespace {
                 lastFrames = frames;
                 lastTime = now;
                 haveBaseline = true;
+            }
+        }).detach();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Performance line
+//
+// About every five seconds while a title runs, one line says where the time went in that window
+// and which resource the numbers point at. The counters are cumulative relaxed atomics kept by the
+// core (PerfTelemetry.h); this only subtracts two snapshots, so the cost while running is the
+// counters themselves, a few nanoseconds at the points that already wait or compile.
+namespace {
+    std::mutex g_perfLineMutex;
+    std::string g_perfLine;
+
+    struct PerfSnapshot
+    {
+        std::chrono::steady_clock::time_point at;
+        uint32_t frames = 0, flips = 0;
+        uint64_t ppcIdleNs = 0, gpuIdleNs = 0, gpuSyncNs = 0, drawableWaitNs = 0, mtlGpuNs = 0;
+        uint32_t mtlCommandBuffers = 0, tvPresents = 0, padPresents = 0;
+        uint32_t shaderCompiles = 0, pipelineCompiles = 0, pipelineSyncCompiles = 0;
+        uint64_t shaderCompileNs = 0, pipelineCompileNs = 0;
+        uint32_t jitBlocks = 0, jitInvalidations = 0, jitArenaReleases = 0, jitArenaAllocFails = 0;
+        uint64_t jitCompileNs = 0;
+    };
+
+    PerfSnapshot ios_perf_take()
+    {
+        auto& c = PerfTelemetry::Get();
+        PerfSnapshot s;
+        s.at = std::chrono::steady_clock::now();
+        s.frames = LatteGPUState.frameCounter;
+        s.flips = LatteGPUState.flipCounter;
+        s.ppcIdleNs = c.ppcIdleNs.load(std::memory_order_relaxed);
+        s.gpuIdleNs = c.gpuIdleNs.load(std::memory_order_relaxed);
+        s.gpuSyncNs = c.gpuSyncNs.load(std::memory_order_relaxed);
+        s.drawableWaitNs = c.drawableWaitNs.load(std::memory_order_relaxed);
+        s.mtlGpuNs = c.mtlGpuNs.load(std::memory_order_relaxed);
+        s.mtlCommandBuffers = c.mtlCommandBuffers.load(std::memory_order_relaxed);
+        s.tvPresents = c.tvPresents.load(std::memory_order_relaxed);
+        s.padPresents = c.padPresents.load(std::memory_order_relaxed);
+        s.shaderCompiles = c.shaderCompiles.load(std::memory_order_relaxed);
+        s.shaderCompileNs = c.shaderCompileNs.load(std::memory_order_relaxed);
+        s.pipelineCompiles = c.pipelineCompiles.load(std::memory_order_relaxed);
+        s.pipelineCompileNs = c.pipelineCompileNs.load(std::memory_order_relaxed);
+        s.pipelineSyncCompiles = c.pipelineSyncCompiles.load(std::memory_order_relaxed);
+        s.jitBlocks = c.jitBlocks.load(std::memory_order_relaxed);
+        s.jitCompileNs = c.jitCompileNs.load(std::memory_order_relaxed);
+        s.jitInvalidations = c.jitInvalidations.load(std::memory_order_relaxed);
+        s.jitArenaReleases = c.jitArenaReleases.load(std::memory_order_relaxed);
+        s.jitArenaAllocFails = c.jitArenaAllocFails.load(std::memory_order_relaxed);
+        return s;
+    }
+
+    double ios_clamp01(double v) { return v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v); }
+
+    // Whether the game's own frame rate sits on one of the rates a vsync-locked title runs at
+    // (60, 30, 20), which is the normal way to be at full speed.
+    bool ios_fps_on_a_cap(double fps)
+    {
+        for (int divisor = 1; divisor <= 3; divisor++)
+        {
+            const double target = 60.0 / divisor;
+            if (fps >= target * 0.95 && fps <= target * 1.05)
+                return true;
+        }
+        return false;
+    }
+
+    void ios_perf_log_window(const PerfSnapshot& a, const PerfSnapshot& b, bool logHeader)
+    {
+        const double dt = std::chrono::duration<double>(b.at - a.at).count();
+        if (dt <= 0.0)
+            return;
+        const double wallNs = dt * 1e9;
+        const double frames = (double)(uint32_t)(b.frames - a.frames);
+        const double flips = (double)(uint32_t)(b.flips - a.flips);
+        const double hostPresents = (double)(uint32_t)(b.tvPresents - a.tvPresents);
+        const double hostThreads = std::max<double>(1.0, PerfTelemetry::Get().ppcHostThreads.load(std::memory_order_relaxed));
+
+        const double hostFps = hostPresents / dt;
+        const double guestFps = frames / dt;
+        const double vsyncRate = flips / dt;
+        // The emulated console's vsync is 60 Hz of emulated time; below 60 per real second the
+        // emulation as a whole is running slower than the console.
+        const double speedPct = vsyncRate / 60.0 * 100.0;
+        const double ppcWait = ios_clamp01((double)(b.ppcIdleNs - a.ppcIdleNs) / (wallNs * hostThreads));
+        const double ppcRun = 1.0 - ppcWait;
+        const double gpuIdle = ios_clamp01((double)(b.gpuIdleNs - a.gpuIdleNs) / wallNs);
+        const double gpuSync = ios_clamp01((double)(b.gpuSyncNs - a.gpuSyncNs) / wallNs);
+        const double gpuThreadBusy = ios_clamp01(1.0 - gpuIdle - gpuSync);
+        const double mtlBusy = ios_clamp01((double)(b.mtlGpuNs - a.mtlGpuNs) / wallNs);
+        const double mtlMsPerFrame = frames > 0.0 ? (double)(b.mtlGpuNs - a.mtlGpuNs) / 1e6 / frames : 0.0;
+        const double cbPerFrame = frames > 0.0 ? (double)(b.mtlCommandBuffers - a.mtlCommandBuffers) / frames : 0.0;
+        const uint32_t shaders = b.shaderCompiles - a.shaderCompiles;
+        const uint32_t pipelines = b.pipelineCompiles - a.pipelineCompiles;
+        const uint32_t pipelinesOnGpuThread = b.pipelineSyncCompiles - a.pipelineSyncCompiles;
+        const double shaderMs = (double)(b.shaderCompileNs - a.shaderCompileNs) / 1e6;
+        const double pipelineMs = (double)(b.pipelineCompileNs - a.pipelineCompileNs) / 1e6;
+        const uint32_t jitBlocks = b.jitBlocks - a.jitBlocks;
+        const double jitMs = (double)(b.jitCompileNs - a.jitCompileNs) / 1e6;
+        const int thermal = ios_thermal_state();
+
+        // Which resource the window points at, in the order the checks are trustworthy: no frames
+        // at all, then the title simply being at a frame cap at full speed, then the GPU (its own
+        // reported busy time), then the two host threads that feed it, and last waiting.
+        int verdict;
+        if (frames < 1.0)
+            verdict = 7;
+        else if (pipelinesOnGpuThread > 0 && pipelineMs > wallNs / 1e6 * 0.2)
+            verdict = 6;
+        else if (speedPct >= 97.0 && ios_fps_on_a_cap(guestFps))
+            verdict = 1;
+        else if (mtlBusy >= 0.85)
+            verdict = 2;
+        else if (ppcRun >= 0.85)
+            verdict = 3;
+        else if (gpuThreadBusy >= 0.85)
+            verdict = 4;
+        else
+            verdict = 5;
+
+        auto& summary = PerfTelemetry::GetSummary();
+        summary.hostFps.store((float)hostFps, std::memory_order_relaxed);
+        summary.guestFps.store((float)guestFps, std::memory_order_relaxed);
+        summary.vsyncRate.store((float)vsyncRate, std::memory_order_relaxed);
+        summary.ppcExecPct.store((float)(ppcRun * 100.0), std::memory_order_relaxed);
+        summary.gpuThreadBusyPct.store((float)(gpuThreadBusy * 100.0), std::memory_order_relaxed);
+        summary.mtlGpuMsPerFrame.store((float)mtlMsPerFrame, std::memory_order_relaxed);
+        summary.mtlGpuBusyPct.store((float)(mtlBusy * 100.0), std::memory_order_relaxed);
+        summary.bottleneck.store(verdict, std::memory_order_relaxed);
+        summary.valid.store(true, std::memory_order_relaxed);
+
+        if (logHeader)
+        {
+            cemuLog_log(LogType::Force, "perf: device {} | emulated cores on {} host thread(s) | async shaders {} | recompiler arena {} MB",
+                cemu_bridge_device_summary(), (uint32_t)hostThreads, GetConfig().async_compile.GetValue() ? "on" : "off",
+                (uint64_t)(PPCRecompiler_getJitArenaSize() / (1024 * 1024)));
+        }
+        cemuLog_log(LogType::Force,
+            "perf {:.0f}s: fps host {:.1f} game {:.1f} vsync {:.1f} (speed {:.0f}%) | ppc thread run {:.0f}% wait {:.0f}% | "
+            "gpu thread busy {:.0f}% idle {:.0f}% sync {:.0f}% (drawable {:.0f} ms) | metal gpu {:.1f} ms/frame ({:.0f}% busy, {:.1f} cb/frame) | "
+            "compiled shaders {} ({:.0f} ms) pipelines {} ({:.0f} ms, {} on the gpu thread) | "
+            "jit blocks {} ({:.0f} ms) invalidated {} arena released {} alloc-failed {} used {}/{} MB | thermal {} | limit: {}",
+            dt, hostFps, guestFps, vsyncRate, speedPct, ppcRun * 100.0, ppcWait * 100.0,
+            gpuThreadBusy * 100.0, gpuIdle * 100.0, gpuSync * 100.0, (double)(b.drawableWaitNs - a.drawableWaitNs) / 1e6,
+            mtlMsPerFrame, mtlBusy * 100.0, cbPerFrame,
+            shaders, shaderMs, pipelines, pipelineMs, pipelinesOnGpuThread,
+            jitBlocks, jitMs, b.jitInvalidations - a.jitInvalidations, b.jitArenaReleases - a.jitArenaReleases, b.jitArenaAllocFails - a.jitArenaAllocFails,
+            (uint64_t)(PPCRecompiler_getJitArenaUsed() / (1024 * 1024)), (uint64_t)(PPCRecompiler_getJitArenaSize() / (1024 * 1024)),
+            ios_thermal_name(thermal), PerfTelemetry::BottleneckName(verdict));
+
+        char line[160];
+        snprintf(line, sizeof(line), "host %.1f game %.1f fps | ppc %.0f%% gpu thread %.0f%% metal %.1f ms | %s",
+            hostFps, guestFps, ppcRun * 100.0, gpuThreadBusy * 100.0, mtlMsPerFrame, PerfTelemetry::BottleneckName(verdict));
+        std::lock_guard<std::mutex> lock(g_perfLineMutex);
+        g_perfLine = line;
+    }
+
+    std::atomic<bool> g_perfRunning{false};
+
+    void ios_perf_start()
+    {
+        if (g_perfRunning.exchange(true))
+            return;
+        std::thread([] {
+            constexpr double kWindowSeconds = 5.0;
+            PerfSnapshot baseline;
+            bool haveBaseline = false;
+            bool headerLogged = false;
+            while (g_perfRunning.load())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                if (!g_titleRunning.load() || IOSTitlePause_IsPaused())
+                {
+                    haveBaseline = false;
+                    headerLogged = false;
+                    PerfTelemetry::GetSummary().valid.store(false, std::memory_order_relaxed);
+                    continue;
+                }
+                if (!haveBaseline)
+                {
+                    baseline = ios_perf_take();
+                    haveBaseline = true;
+                    continue;
+                }
+                const PerfSnapshot now = ios_perf_take();
+                if (std::chrono::duration<double>(now.at - baseline.at).count() < kWindowSeconds)
+                    continue;
+                ios_perf_log_window(baseline, now, !headerLogged);
+                headerLogged = true;
+                baseline = now;
             }
         }).detach();
     }
@@ -2092,7 +2458,51 @@ void cemu_bridge_set_thermal_throttle_micros(uint32_t micros) {
 }
 
 void cemu_bridge_set_multicore_enabled(bool enabled) {
-    g_multicoreRequested.store(enabled);
+    g_coreModeSetting.store(enabled ? kCoreModeMulti : kCoreModeSingle);
+}
+
+void cemu_bridge_set_cpu_core_mode(int mode) {
+    g_coreModeSetting.store(mode == 1 ? kCoreModeSingle : (mode == 2 ? kCoreModeMulti : kCoreModeAuto));
+    if (g_initialized.load())
+        ios_apply_cpu_mode();
+}
+
+void cemu_bridge_set_cpu_auto_demoted(bool demoted) {
+    g_autoDemoted.store(demoted);
+}
+
+int cemu_bridge_cpu_cores_running(void) {
+    return g_coresRunning.load();
+}
+
+bool cemu_bridge_cpu_auto_picked_multicore(void) {
+    return g_autoPickedMulti.load();
+}
+
+void cemu_bridge_set_draw_breadcrumbs(bool enabled) {
+    PerfTelemetry::DrawBreadcrumbsEnabled().store(enabled, std::memory_order_relaxed);
+}
+
+const char* cemu_bridge_perf_line(void) {
+    static thread_local std::string snapshot;
+    {
+        std::lock_guard<std::mutex> lock(g_perfLineMutex);
+        snapshot = g_perfLine;
+    }
+    return snapshot.c_str();
+}
+
+const char* cemu_bridge_device_summary(void) {
+    static const std::string summary = [] {
+        const IosDeviceFacts& d = ios_device_facts();
+        char buf[320];
+        snprintf(buf, sizeof(buf), "%s, %s, %llu performance + %llu efficiency cores, %llu MB RAM",
+            d.model.empty() ? "unknown device" : d.model.c_str(),
+            d.gpuName.empty() ? "unknown GPU" : d.gpuName.c_str(),
+            (unsigned long long)d.perfCores, (unsigned long long)d.effCores, (unsigned long long)d.memoryMB);
+        return std::string(buf);
+    }();
+    return summary.c_str();
 }
 
 void cemu_bridge_set_low_power_mode(bool enabled) {
@@ -2247,6 +2657,7 @@ void cemu_bridge_initialize(const char* mlcPath) {
 
     ios_input_start();
     ios_stats_start();
+    ios_perf_start();
     ios_stall_watchdog_start();
     Fiber::SetStackFailureHandlers(
         [] {
@@ -2484,7 +2895,7 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
     CemuUIKit_SetVisibleOutputs(true, g_padRegistered.load());
     // CPU mode is written into the config at initialize and on every toggle; re-applied
     // here so a JIT enabler attached after the app started still counts for this boot.
-    ios_apply_cpu_mode();
+    ios_apply_cpu_mode(true);
     ios_apply_render_profile();
 
     IOSSystemImplementation_ResetExit();

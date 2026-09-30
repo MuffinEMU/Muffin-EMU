@@ -5,6 +5,7 @@
 
 #include "Cafe/HW/Latte/Core/LatteConst.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 
 #include <chrono>
 #include <thread>
@@ -136,6 +137,7 @@ inline bool WaitForCommandBuffer(MTL::CommandBuffer* commandBuffer, const char* 
 
     auto& state = LatteWait::Get();
     LatteWait::Scope waitScope(what);
+    PerfTelemetry::ScopedTimer syncTimer(PerfTelemetry::Get().gpuSyncNs);
 
     const int64_t timeoutMs = state.gpuPresumedLost.load(std::memory_order_relaxed) ? 50 : 2500;
     const auto start = std::chrono::steady_clock::now();

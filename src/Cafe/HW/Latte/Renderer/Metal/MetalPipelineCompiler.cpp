@@ -413,6 +413,8 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
     auto end = std::chrono::high_resolution_clock::now();
 
     auto creationDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+    PerfTelemetry::Get().pipelineCompiles.fetch_add(1, std::memory_order_relaxed);
+    PerfTelemetry::Get().pipelineCompileNs.fetch_add((uint64)creationDuration, std::memory_order_relaxed);
 
    	if (error)
    	{
