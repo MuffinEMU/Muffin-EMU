@@ -283,12 +283,24 @@ namespace {
     }
 
     void cemu_mem_write_line(const char* tag, uint64_t availableBytes, uint64_t footprintBytes) {
-        char line[320];
-        snprintf(line, sizeof(line),
+        char line[720];
+        int n = snprintf(line, sizeof(line),
                  "MEM %s: %llu MB still available to this process, %llu MB in use",
                  tag,
                  (unsigned long long)(availableBytes / (1024ull * 1024ull)),
                  (unsigned long long)(footprintBytes / (1024ull * 1024ull)));
+        // Where the GPU side's memory is, as last published by the GPU thread (LatteWaitInfo.h), so one
+        // line can name what grew. Absent until a Metal renderer has published once.
+        auto& w = LatteWait::Get();
+        if (n > 0 && n < (int)sizeof(line) && w.memStatsValid.load())
+        {
+            snprintf(line + n, sizeof(line) - n,
+                     " | GPU: device %u MB (host-mapped %u MB), textures %u = %u MB, staging %u MB, index %u MB, snapshots %u MB, "
+                     "buffer cache %u MB, streamout %u MB, readback %u MB, command buffers in flight %u, textures evicted %u",
+                     (unsigned)w.memDeviceMB.load(), (unsigned)w.memHostMappedMB.load(), (unsigned)w.memTextureCount.load(), (unsigned)w.memTextureMB.load(),
+                     (unsigned)w.memStagingMB.load(), (unsigned)w.memIndexMB.load(), (unsigned)w.memSnapshotMB.load(), (unsigned)w.memBufferCacheMB.load(),
+                     (unsigned)w.memXfbMB.load(), (unsigned)w.memReadbackMB.load(), (unsigned)w.executingCommandBuffers.load(), (unsigned)w.texturesEvicted.load());
+        }
         cemu_bridge_log_checkpoint(line);
     }
 }
@@ -887,6 +899,7 @@ namespace {
                     && LatteGPUState.gx2InitCalled > 0 && !IOSTitlePause_IsPaused() && g_appIsActive.load();
                 const auto now = std::chrono::steady_clock::now();
                 const uint32 frames = LatteGPUState.frameCounter;
+
                 if (!expectFrames || !haveBaseline || frames != lastFrames)
                 {
                     if (g_videoStalled.exchange(false))
@@ -920,6 +933,7 @@ namespace {
 bool cemu_bridge_video_stalled(void) {
     return g_videoStalled.load();
 }
+
 
 // ---------------------------------------------------------------------------
 // Input
@@ -2450,6 +2464,7 @@ void cemu_bridge_shutdown_title(void) {
     g_titleRunning.store(false);
     g_framesPerSecond.store(0.0);
     g_videoStalled.store(false);
+    g_videoStallKind.store(0);
     cemu_bridge_release_all_buttons();
     setStatus("Title shut down.");
 }
