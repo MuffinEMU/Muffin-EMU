@@ -117,6 +117,17 @@ void* AllocateMemory(void* baseAddr, size_t size, PAGE_PERMISSION flags, bool fr
     return (void*)addr;
 }
 
+void FreeMemoryKeepPages(void* baseAddr, size_t size)
+{
+    vm_protect(
+        mach_task_self(),
+        (vm_address_t)baseAddr,
+        size,
+        FALSE,
+        VM_PROT_NONE
+    );
+}
+
 void FreeMemory(void* baseAddr, size_t size, bool fromReservation)
 {
     if (fromReservation)
@@ -203,6 +214,11 @@ void FreeMemory(void* baseAddr, size_t size, bool fromReservation)
 		else
 			r = mmap(baseAddr, size, GetProt(permissionFlags), MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 		return r;
+	}
+
+	void FreeMemoryKeepPages(void* baseAddr, size_t size)
+	{
+		mprotect(baseAddr, size, PROT_NONE);
 	}
 
 	void FreeMemory(void* baseAddr, size_t size, bool fromReservation)
