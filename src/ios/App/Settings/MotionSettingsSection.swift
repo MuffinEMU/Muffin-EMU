@@ -10,6 +10,9 @@ enum MotionSettings {
     static let enabledKey = "muffin.motion.enabled"
     static let sensitivityKey = "muffin.motion.sensitivity"
     static let sourceKey = "muffin.motion.source"
+    static let invertHorizontalKey = "muffin.motion.invertHorizontal"
+    static let invertVerticalKey = "muffin.motion.invertVertical"
+    static let diagnosticKey = "muffin.motion.diagnostic"
 
     /// On by default: a title that does not use motion never notices, and one that does expects it.
     static let defaultEnabled = true
@@ -32,6 +35,8 @@ enum MotionSettings {
         let sensitivity = defaults.object(forKey: sensitivityKey) as? Double ?? defaultSensitivity
         cemu_bridge_set_motion_sensitivity(Float(sensitivity))
         cemu_bridge_set_motion_source(Int32(defaults.object(forKey: sourceKey) as? Int ?? defaultSource))
+        cemu_bridge_set_motion_invert(defaults.bool(forKey: invertHorizontalKey), defaults.bool(forKey: invertVerticalKey))
+        cemu_bridge_set_motion_diagnostic(defaults.bool(forKey: diagnosticKey))
     }
 }
 
@@ -43,6 +48,12 @@ struct MotionSettingsSection: View {
     private var sensitivity = MotionSettings.defaultSensitivity
     @AppStorage(MotionSettings.sourceKey)
     private var source = MotionSettings.defaultSource
+    @AppStorage(MotionSettings.invertHorizontalKey)
+    private var invertHorizontal = false
+    @AppStorage(MotionSettings.invertVerticalKey)
+    private var invertVertical = false
+    @AppStorage(MotionSettings.diagnosticKey)
+    private var logValues = false
     @State private var recentred = false
 
     private var statusText: String {
@@ -115,6 +126,20 @@ struct MotionSettingsSection: View {
                 .onChange(of: sensitivity) { _ in MotionSettings.applyToBridge() }
         }
 
+        DisclosureGroup("If aim feels backwards") {
+            Toggle("Reverse left and right", isOn: $invertHorizontal)
+                .onChange(of: invertHorizontal) { _ in MotionSettings.applyToBridge() }
+            Toggle("Reverse up and down", isOn: $invertVertical)
+                .onChange(of: invertVertical) { _ in MotionSettings.applyToBridge() }
+            Toggle("Log motion values", isOn: $logValues)
+                .onChange(of: logValues) { _ in MotionSettings.applyToBridge() }
+            Text("Leave these off unless aiming turns the wrong way. The log writes one line a second to the engine log, to report when something looks off.")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 13, weight: .semibold, design: .rounded))
+
         Button {
             cemu_bridge_motion_recenter()
             recentred = true
@@ -126,6 +151,6 @@ struct MotionSettingsSection: View {
     }
 
     private var fullText: String {
-        "Motion aiming feeds this device's gyroscope and accelerometer to the emulated GamePad, so games that aim by moving the GamePad work the way they do on a Wii U. Hold the device like the GamePad, screen toward you, and tilt or turn it. It works in both landscape orientations.\n\nMotion from: This device uses the iPad or iPhone itself. Controller uses the motion sensors of a connected controller that has them (DualShock 4, DualSense, Switch Pro Controller) and falls back to the device when there is none. Controller motion has had little testing.\n\nSensitivity is how far the GamePad turns for a given movement. 1.00x matches the real GamePad. Turn it up if you have to move the device a long way to turn.\n\nRecentre aim forgets where the GamePad has been pointing and treats the current position as straight ahead. Use it when aim has drifted, or after turning in your seat. Many games also have their own recentre button.\n\nTurn Motion aiming off to aim with the sticks only. A game with its own motion option, Splatoon included, should have that switched off as well."
+        "Motion aiming feeds this device's gyroscope and accelerometer to the emulated GamePad, so games that aim by moving the GamePad work the way they do on a Wii U. Hold the device like the GamePad, screen toward you, and tilt or turn it. It follows the way the screen is turned, so it works in every orientation.\n\nMotion from: This device uses the iPad or iPhone itself. Controller uses the motion sensors of a connected controller that has them (DualShock 4, DualSense, Switch Pro Controller) and falls back to the device when there is none. Controller motion has had little testing.\n\nSensitivity is how far the GamePad turns for a given movement. 1.00x matches the real GamePad. Turn it up if you have to move the device a long way to turn.\n\nRecentre aim forgets where the GamePad has been pointing and treats the current position as straight ahead. Use it when aim has drifted, or after turning in your seat. Many games also have their own recentre button.\n\nIf aiming turns the wrong way, \"If aim feels backwards\" reverses left and right, or up and down.\n\nTurn Motion aiming off to aim with the sticks only. A game with its own motion option, Splatoon included, should have that switched off as well."
     }
 }

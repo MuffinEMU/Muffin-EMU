@@ -2,22 +2,72 @@
 //  IOSMotion.mm
 //  Motion for the emulated GamePad. See IOSMotion.h.
 //
-//  The GamePad's frame, as the core's motion handler and the real console see it (the same one
-//  SDL uses for a controller lying face up):
+//  The GamePad's frame, as the console and the core's motion handler see it (the same one a
+//  DualShock/DualSense reports in when it lies face up):
 //    X  to the right of the screen
 //    Y  out of the screen, toward the ceiling when the pad lies flat
 //    Z  toward the bottom edge of the screen, toward the player when the pad lies flat
-//  A flat pad reads gravity along Y, and the handler's default pose is exactly that.
+//  (right-handed: X cross Y = Z). A flat pad reads gravity along +Y, and the handler's default
+//  pose (MahonySensorFusion's starting quaternion, which is also the identity attitude matrix in
+//  the real-console captures at the bottom of MotionSample.h) is exactly that.
 //
-//  Devices report in their own frame (CoreMotion: X right, Y toward the top of the device in
-//  portrait, Z out of the screen, gravity read as the vector toward the ground). Two steps
-//  connect them:
-//    1. Turn the device frame into a SCREEN frame (right, up, out) for the orientation the
-//       interface is in, so the same tilt means the same thing in both landscape orientations.
-//    2. Turn the screen frame into the handler's convention - the same arithmetic the core's
-//       SDL controller path ends up with (SDLControllerProvider.cpp): reading (x,y,z) in the
-//       GamePad frame becomes acc = (x, -y, -z) and gyro = (x, -y, -z).
-//  Put together, a screen-frame reading (sx, sy, sz) becomes (sx, -sz, sy) for both.
+//  Devices report in their own frame. CoreMotion: X right, Y toward the top of the device in
+//  portrait, Z out of the screen, right-handed; `gravity + userAcceleration` is the vector
+//  toward the ground (-Z when the device lies face up), rotationRate is rad/s, counter-clockwise
+//  positive about each axis. Three steps connect the two:
+//
+//  1. DEVICE -> SCREEN frame (right, up, out of the screen) for the interface orientation, so the
+//     same tilt means the same thing in every orientation. Apply the same rotation to the ground
+//     vector and to the angular rate (a pure rotation, so both transform alike):
+//
+//       interface orientation                  screen.x  screen.y  screen.z
+//       Portrait                                 d.x       d.y       d.z
+//       PortraitUpsideDown                      -d.x      -d.y       d.z
+//       LandscapeLeft  (home on the left,        d.y      -d.x       d.z
+//                       device top points right)
+//       LandscapeRight (home on the right,      -d.y       d.x       d.z
+//                       device top points left)
+//
+//     UIInterfaceOrientation, not UIDeviceOrientation: the two names are swapped for the
+//     landscapes, and the picture on screen follows the interface.
+//
+//  2. SCREEN -> GamePad frame. screen (x, y, z) is (right, up, out) and the pad is (right, out,
+//     bottom), so a vector v in the screen frame is (v.x, v.z, -v.y) in the pad frame.
+//
+//  3. PAD -> handler. The core's SDL path (SDLControllerProvider.cpp) hands the motion handler
+//     the raw controller readings with the X axis mirrored: acc = (-f.x, f.y, f.z) for the
+//     accelerometer's specific force f (which points away from the ground), and gyro = (w.x,
+//     -w.y, -w.z) for the angular rate w. Mirroring one axis makes the frame left-handed, and an
+//     angular rate is a pseudovector, so it picks up the determinant's extra sign: the two
+//     together are consistent and the handler's fusion agrees with itself.
+//
+//  Our ground vector r is -f, so putting steps 2 and 3 together, for a screen-frame r and rate w:
+//       acc  = ( r.x, -r.z,  r.y)
+//       gyro = ( w.x, -w.z,  w.y)
+//
+//  Checked against the real-console captures in MotionSample.h, for a pad starting flat and
+//  screen up, top edge away (handler input -> attitude the handler produces):
+//       tilt the top edge up 90 deg : w.x > 0, acc (0, 0, -1) -> matches "tilt up 90"
+//       turn 45 deg to the right    : w.z < 0 (clockwise from above), gyro.y > 0, acc stays
+//                                     (0, 1, 0) -> matches "turned 45 deg to the right"
+//       lean on its left side 45 deg: w.y < 0, gyro.z < 0, acc (-.71, .71, 0) -> matches "lean
+//                                     on its left side"
+//  and in each case the fusion's gravity estimate equals the acc given, so nothing fights the gyro.
+//
+//  A controller's own motion (GCMotion) uses CoreMotion's conventions with the controller lying
+//  face up like a phone on its back (X right, Y toward the triggers, Z out of the face), so it
+//  skips step 1.
+//
+//  The rate is scaled by the sensitivity before fusion. The fusion slowly pulls the pose toward
+//  gravity, so a high sensitivity is pulled back a little; the core offers no way around that.
+//
+//  Device test, if aim ever feels wrong (Settings > Motion & Aiming > "Log motion values" writes
+//  a line a second to the engine log: raw device values, screen values, what the core gets):
+//    hold the device flat, screen up, top edge away, then
+//      raise the top edge   -> "gyro" x positive
+//      turn clockwise       -> "gyro" y positive
+//      lower the left edge  -> "gyro" z negative
+//    and lying flat "acc" should read about (0, 1, 0).
 //
 //  Compiled with ARC and without the core's precompiled header: nothing here needs the core.
 //
@@ -29,6 +79,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdio>
 #include <mutex>
 
 #include "IOSMotion.h"
@@ -38,6 +89,7 @@ namespace {
 
 constexpr double kUpdateInterval = 1.0 / 100.0; // the fastest CoreMotion delivers device motion
 constexpr double kIdleSeconds = 3.0;            // no VPADRead for this long: stop the sensors
+constexpr double kDiagnosticInterval = 1.0;     // seconds between "Log motion values" lines
 constexpr float kMinSensitivity = 0.25f;
 constexpr float kMaxSensitivity = 4.0f;
 
@@ -50,6 +102,14 @@ std::atomic<double> g_lastPoll{0.0};
 std::atomic<bool> g_sensorsRunning{false};
 std::atomic<bool> g_wakePending{false};
 std::atomic<double> g_lastWake{0.0};
+std::atomic<bool> g_invertHorizontal{false};
+std::atomic<bool> g_invertVertical{false};
+std::atomic<bool> g_diagnostic{false};
+// Set whenever the pose the core has been tracking can no longer be trusted: the sensors just
+// (re)started, the interface turned to another orientation. The next real sample then bumps
+// g_recenter, which makes the core restart its orientation estimate from that sample's gravity
+// instead of swinging round from wherever it was.
+std::atomic<bool> g_needSeed{true};
 
 // Main thread only.
 CMMotionManager* g_manager = nil;
@@ -57,6 +117,7 @@ NSOperationQueue* g_queue = nil;
 GCController* g_controller = nil;
 bool g_deviceRunning = false;
 bool g_loggedDevice = false;
+bool g_inBackground = false;
 
 struct Samples {
     std::mutex mutex;
@@ -68,6 +129,7 @@ struct Samples {
     float lastGyro[3] = {0, 0, 0};
     double lastDataTime = 0;
     double lastOutTime = 0;
+    double lastDiagTime = 0;
 };
 Samples g_samples;
 
@@ -76,7 +138,13 @@ double Now()
     return NSProcessInfo.processInfo.systemUptime;
 }
 
+bool AllFinite(const double v[3])
+{
+    return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]);
+}
+
 // Reading in the device's own frame -> the screen's frame (right, up, out of the screen).
+// The table is in the comment at the top of the file.
 void DeviceToScreen(UIInterfaceOrientation orientation, const double d[3], double s[3])
 {
     switch (orientation)
@@ -96,20 +164,88 @@ void DeviceToScreen(UIInterfaceOrientation orientation, const double d[3], doubl
     }
 }
 
-// One sensor reading in the screen frame. `reading` is gravity plus movement in g (pointing
-// toward the ground when still), `rate` the angular velocity in rad/s.
-void Submit(const double reading[3], const double rate[3])
+// The aim-direction switches in Settings. They exist so a device test can settle a direction
+// that feels backwards without a new build; the mapping itself is derived above. Horizontal
+// reverses the turn about the vertical (gravity) axis, whichever way the device is held; vertical
+// reverses the tilt about the screen's own left-right axis. Only the rate is changed, so the
+// fusion's gravity correction pulls against a reversed pitch: fine for finding out which way is
+// right, not meant as a permanent setting.
+void ApplyInversion(const double reading[3], double rate[3])
 {
+    if (g_invertVertical.load(std::memory_order_relaxed))
+        rate[0] = -rate[0];
+    if (g_invertHorizontal.load(std::memory_order_relaxed))
+    {
+        const double length = std::sqrt(reading[0] * reading[0] + reading[1] * reading[1] + reading[2] * reading[2]);
+        if (length > 0.3)
+        {
+            const double u[3] = {reading[0] / length, reading[1] / length, reading[2] / length};
+            const double along = rate[0] * u[0] + rate[1] * u[1] + rate[2] * u[2];
+            for (int i = 0; i < 3; ++i)
+                rate[i] -= 2.0 * along * u[i];
+        }
+    }
+}
+
+// One sensor reading in the screen frame. `reading` is gravity plus movement in g (pointing
+// toward the ground when still), `rate` the angular velocity in rad/s, `timestamp` when the
+// sensor took it (seconds on the systemUptime clock). `rawReading`/`rawRate` are the same
+// values before any turning, kept only for the diagnostic line.
+void Submit(const char* source, const double rawReading[3], const double rawRate[3],
+            const double reading[3], const double rateIn[3], double timestamp)
+{
+    // One NaN would poison the core's orientation estimate for good; drop the sample instead.
+    if (!AllFinite(reading) || !AllFinite(rateIn) || !std::isfinite(timestamp))
+        return;
+    double rate[3] = {rateIn[0], rateIn[1], rateIn[2]};
+    ApplyInversion(reading, rate);
+
     const double acc[3] = {reading[0], -reading[2], reading[1]};
     const double gyro[3] = {rate[0], -rate[2], rate[1]};
+    const double now = Now();
+    bool logNow = false;
+    {
+        std::lock_guard lock(g_samples.mutex);
+        if (g_needSeed.exchange(false))
+            g_recenter.fetch_add(1);
+        for (int i = 0; i < 3; ++i)
+        {
+            g_samples.sumAcc[i] += acc[i];
+            g_samples.sumGyro[i] += gyro[i];
+        }
+        ++g_samples.count;
+        g_samples.lastDataTime = std::max(g_samples.lastDataTime, timestamp);
+        if (g_diagnostic.load(std::memory_order_relaxed) && now - g_samples.lastDiagTime >= kDiagnosticInterval)
+        {
+            g_samples.lastDiagTime = now;
+            logNow = true;
+        }
+    }
+    if (logNow)
+    {
+        char line[400];
+        snprintf(line, sizeof line,
+                 "iOS motion values (%s, orientation %d): device grav %.2f %.2f %.2f rate %.2f %.2f %.2f | "
+                 "screen grav %.2f %.2f %.2f rate %.2f %.2f %.2f | core acc %.2f %.2f %.2f gyro %.2f %.2f %.2f "
+                 "| invert h=%d v=%d",
+                 source, g_orientation.load(),
+                 rawReading[0], rawReading[1], rawReading[2], rawRate[0], rawRate[1], rawRate[2],
+                 reading[0], reading[1], reading[2], rateIn[0], rateIn[1], rateIn[2],
+                 acc[0], acc[1], acc[2], gyro[0], gyro[1], gyro[2],
+                 g_invertHorizontal.load() ? 1 : 0, g_invertVertical.load() ? 1 : 0);
+        cemu_bridge_log_line(line);
+    }
+}
+
+// Forgets anything the previous run of the sensors left behind, so a new run starts clean.
+void ResetSamples()
+{
     std::lock_guard lock(g_samples.mutex);
     for (int i = 0; i < 3; ++i)
-    {
-        g_samples.sumAcc[i] += acc[i];
-        g_samples.sumGyro[i] += gyro[i];
-    }
-    ++g_samples.count;
-    g_samples.lastDataTime = Now();
+        g_samples.sumAcc[i] = g_samples.sumGyro[i] = 0.0;
+    g_samples.count = 0;
+    g_samples.haveData = false;
+    g_needSeed.store(true);
 }
 
 void HandleDeviceMotion(CMDeviceMotion* motion)
@@ -124,11 +260,14 @@ void HandleDeviceMotion(CMDeviceMotion* motion)
     double screenReading[3], screenRate[3];
     DeviceToScreen(orientation, reading, screenReading);
     DeviceToScreen(orientation, rate, screenRate);
-    Submit(screenReading, screenRate);
+    // The sensor's own timestamp, not the time this block happened to run: the core integrates
+    // the rate over the gap between samples, and delivery jitter would otherwise leak into it.
+    Submit("device", reading, rate, screenReading, screenRate, motion.timestamp);
 }
 
 // A controller is treated like a phone lying on its back: the face buttons are the screen and
-// the triggers are the top edge, which is how GameController reports its motion.
+// the triggers are the top edge, which is how GameController reports its motion. It has no
+// interface orientation, so there is nothing to turn.
 void HandleControllerMotion(GCMotion* motion)
 {
     double reading[3];
@@ -149,7 +288,8 @@ void HandleControllerMotion(GCMotion* motion)
         motion.hasRotationRate ? motion.rotationRate.y : 0.0,
         motion.hasRotationRate ? motion.rotationRate.z : 0.0,
     };
-    Submit(reading, rate);
+    // GCMotion carries no timestamp; the handler runs as the sample arrives.
+    Submit("controller", reading, rate, reading, rate, Now());
 }
 
 void RefreshOrientation()
@@ -165,7 +305,10 @@ void RefreshOrientation()
         const UIInterfaceOrientation orientation = windowScene.interfaceOrientation;
         if (orientation != UIInterfaceOrientationUnknown)
         {
-            g_orientation.store((int)orientation, std::memory_order_relaxed);
+            // Turning the device over changes what every axis means at once; start the core's
+            // orientation estimate again from the new pose rather than let it swing round.
+            if (g_orientation.exchange((int)orientation, std::memory_order_relaxed) != (int)orientation)
+                g_needSeed.store(true);
             return;
         }
     }
@@ -187,6 +330,7 @@ void StopDevice()
         return;
     [g_manager stopDeviceMotionUpdates];
     g_deviceRunning = false;
+    ResetSamples();
 }
 
 void StopController()
@@ -198,10 +342,12 @@ void StopController()
     if (motion.sensorsRequireManualActivation)
         motion.sensorsActive = NO;
     g_controller = nil;
+    ResetSamples();
 }
 
 void StartController(GCController* controller)
 {
+    ResetSamples();
     GCMotion* motion = controller.motion;
     if (motion.sensorsRequireManualActivation)
         motion.sensorsActive = YES;
@@ -225,6 +371,7 @@ void StartDevice()
         g_queue.maxConcurrentOperationCount = 1;
         g_queue.qualityOfService = NSQualityOfServiceUserInteractive;
     }
+    ResetSamples();
     g_manager.deviceMotionUpdateInterval = kUpdateInterval;
     [g_manager startDeviceMotionUpdatesToQueue:g_queue
                                    withHandler:^(CMDeviceMotion* motion, NSError* error) {
@@ -247,7 +394,9 @@ void Apply()
     RefreshOrientation();
 
     const bool idle = Now() - g_lastPoll.load() > kIdleSeconds;
-    const bool active = g_enabled.load() && !idle;
+    // CoreMotion stops delivering while the app is in the background and does not promise to pick
+    // up again by itself, so let go of the sensors there and start them afresh on return.
+    const bool active = g_enabled.load() && !idle && !g_inBackground;
     if (!active)
     {
         StopDevice();
@@ -299,6 +448,11 @@ void IOSMotion_Start(void)
                                 StopController();
                                 Apply();
                             }];
+            [center addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:[NSOperationQueue mainQueue]
+                            usingBlock:^(NSNotification* note) { (void)note; g_inBackground = true; Apply(); }];
+            [center addObserverForName:UIApplicationWillEnterForegroundNotification object:nil queue:[NSOperationQueue mainQueue]
+                            usingBlock:^(NSNotification* note) { (void)note; g_inBackground = false; Apply(); }];
+            g_inBackground = UIApplication.sharedApplication.applicationState == UIApplicationStateBackground;
             // The interface orientation has no notification that is not deprecated, and it only
             // changes when the player turns the device, so a slow timer is enough. The same tick
             // puts the sensors to sleep when no title has read them for a while.
@@ -395,6 +549,17 @@ void cemu_bridge_set_motion_source(int source)
     g_source.store(source == CEMU_BRIDGE_MOTION_SOURCE_CONTROLLER ? CEMU_BRIDGE_MOTION_SOURCE_CONTROLLER
                                                                   : CEMU_BRIDGE_MOTION_SOURCE_DEVICE);
     ApplyOnMain();
+}
+
+void cemu_bridge_set_motion_invert(bool horizontal, bool vertical)
+{
+    g_invertHorizontal.store(horizontal);
+    g_invertVertical.store(vertical);
+}
+
+void cemu_bridge_set_motion_diagnostic(bool enabled)
+{
+    g_diagnostic.store(enabled);
 }
 
 void cemu_bridge_motion_recenter(void)

@@ -29,7 +29,14 @@
 #include "config/CemuConfig.h"
 #include "WindowSystem.h"
 
+#include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstring>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 #define IMGUI_IMPL_METAL_CPP
 #include "imgui/imgui_extension.h"
@@ -43,6 +50,258 @@ float supportBufferData[512 * 4];
 
 // Defined in the Common renderer
 void LatteDraw_handleSpecialState8_clearAsDepth();
+
+// ---------------------------------------------------------------------------------------------------------------
+// Guard log. Every upload, copy, draw or clamp the renderer refuses or shrinks because its input looked out of
+// bounds is recorded here: one line the first time a distinct case is seen (format, sizes, mip, slice, reason),
+// then again at 10, 100, 1000... occurrences, all rate limited so a bad frame cannot flood the log. Nothing is
+// dropped silently: every distinct case is kept with its count and printed in the summary at title stop and in
+// the draw breadcrumb dump, so a device log shows exactly what, if anything, was skipped.
+// ---------------------------------------------------------------------------------------------------------------
+enum class MetalGuard : uint32
+{
+    UploadNoTarget,
+    UploadPlaceholder,
+    UploadBadLevel,
+    UploadBadSize,
+    UploadTooFewBytes,
+    UploadDepthStencilBytes,
+    UploadStagingFull,
+    UploadClampedSize,
+    UploadClampedRows,
+    CopyBadLevel,
+    CopyStartOutside,
+    CopyNoSlices,
+    CopyClampedRegion,
+    CopyClampedSlices,
+    CopyBlockMismatch,
+    DrawVertexBuffer,
+    DrawVertexHuge,
+    IndexClamped,
+    ScissorClamped,
+    PresentScissorClamped,
+    SurfaceCopyScissorClamped,
+    UploadRetryStopped,
+    Count
+};
+
+namespace
+{
+    struct MetalGuardInfo
+    {
+        const char* name;
+        const char* kind; // skip: nothing was issued, clamp: issued smaller, note: issued unchanged
+    };
+    constexpr MetalGuardInfo kMetalGuardInfo[] = {
+        {"upload-no-target", "skip"},
+        {"upload-placeholder-target", "skip"},
+        {"upload-bad-level", "skip"},
+        {"upload-bad-size", "skip"},
+        {"upload-too-few-bytes", "skip"},
+        {"upload-depth-stencil-bytes", "skip"},
+        {"upload-staging-full", "skip"},
+        {"upload-size-clamped", "clamp"},
+        {"upload-rows-clamped", "clamp"},
+        {"copy-bad-level", "skip"},
+        {"copy-start-outside", "skip"},
+        {"copy-no-slices", "skip"},
+        {"copy-region-clamped", "clamp"},
+        {"copy-slices-clamped", "clamp"},
+        {"copy-block-size-mismatch", "note"},
+        {"draw-vertex-buffer", "skip"},
+        {"draw-vertex-range-huge", "skip"},
+        {"draw-index-count-clamped", "clamp"},
+        {"scissor-clamped", "clamp"},
+        {"present-scissor-clamped", "clamp"},
+        {"surface-copy-scissor-clamped", "clamp"},
+        {"upload-retry-stopped", "note"},
+    };
+    constexpr uint32 kMetalGuardCount = (uint32)MetalGuard::Count;
+    static_assert(std::size(kMetalGuardInfo) == kMetalGuardCount, "MetalGuard names out of step with the enum");
+
+    struct MetalGuardEntry
+    {
+        MetalGuard reason;
+        uint64 count;
+        std::string text;
+    };
+
+    std::mutex s_guardMutex;
+    std::unordered_map<uint64, MetalGuardEntry> s_guardEntries;
+    std::atomic<uint64> s_guardTotals[kMetalGuardCount];
+    std::atomic<uint64> s_guardRetriesScheduled{0}; // skipped uploads whose texture was flagged to be loaded again
+    std::atomic<uint64> s_guardRetryStops{0};       // textures that kept failing and were left alone (retry storm stop)
+    uint64 s_guardOverflow = 0;   // events of distinct cases beyond the table size (still counted in the totals)
+    uint64 s_guardSuppressed = 0; // log lines withheld by the rate limit (the cases are still in the table)
+    double s_guardTokens = 40.0;
+    std::chrono::steady_clock::time_point s_guardLastRefill{};
+    constexpr size_t kMetalGuardMaxDistinct = 1024;
+
+    // describe() builds the text of a case and only runs the first time the case is seen; key identifies the case.
+    template<typename Describe>
+    void MetalGuardNote(MetalGuard reason, std::initializer_list<uint64> key, Describe&& describe)
+    {
+        s_guardTotals[(uint32)reason].fetch_add(1, std::memory_order_relaxed);
+        uint64 h = 0xcbf29ce484222325ull ^ ((uint64)reason * 0x9e3779b97f4a7c15ull);
+        for (uint64 v : key)
+        {
+            h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+            h *= 0x100000001b3ull;
+        }
+
+        std::lock_guard<std::mutex> lock(s_guardMutex);
+        auto it = s_guardEntries.find(h);
+        if (it == s_guardEntries.end())
+        {
+            if (s_guardEntries.size() >= kMetalGuardMaxDistinct)
+            {
+                ++s_guardOverflow;
+                return;
+            }
+            it = s_guardEntries.emplace(h, MetalGuardEntry{reason, 0, describe()}).first;
+        }
+        const uint64 n = ++it->second.count;
+        uint64 decade = n;
+        while (decade % 10 == 0)
+            decade /= 10;
+        if (decade != 1)
+            return; // only 1, 10, 100, ... are worth a line
+
+        const auto now = std::chrono::steady_clock::now();
+        if (s_guardLastRefill.time_since_epoch().count() != 0)
+        {
+            const double seconds = std::chrono::duration<double>(now - s_guardLastRefill).count();
+            s_guardTokens = std::min(40.0, s_guardTokens + seconds * 5.0);
+        }
+        s_guardLastRefill = now;
+        if (s_guardTokens < 1.0)
+        {
+            ++s_guardSuppressed;
+            return;
+        }
+        s_guardTokens -= 1.0;
+        const auto& info = kMetalGuardInfo[(uint32)reason];
+        cemuLog_log(LogType::Force, "Metal guard [{} {}] {} (seen {})", info.kind, info.name, it->second.text, n);
+    }
+
+    // The totals of one session as one line, only the reasons that happened.
+    std::string MetalGuardTotalsLine()
+    {
+        std::string line;
+        for (uint32 i = 0; i < kMetalGuardCount; ++i)
+        {
+            const uint64 total = s_guardTotals[i].load(std::memory_order_relaxed);
+            if (total != 0)
+                line += fmt::format(" {}={}", kMetalGuardInfo[i].name, total);
+        }
+        return line.empty() ? std::string(" none") : line;
+    }
+
+    // Totals plus the most frequent distinct cases. reset starts the next session from zero (title stop).
+    void MetalGuardReport(const char* when, size_t maxCases, bool reset)
+    {
+        std::vector<std::pair<uint64, std::string>> cases;
+        uint64 suppressed, overflow;
+        {
+            std::lock_guard<std::mutex> lock(s_guardMutex);
+            cases.reserve(s_guardEntries.size());
+            for (const auto& kv : s_guardEntries)
+            {
+                const auto& info = kMetalGuardInfo[(uint32)kv.second.reason];
+                cases.emplace_back(kv.second.count, fmt::format("[{} {}] {}", info.kind, info.name, kv.second.text));
+            }
+            suppressed = s_guardSuppressed;
+            overflow = s_guardOverflow;
+            if (reset)
+            {
+                s_guardEntries.clear();
+                s_guardSuppressed = 0;
+                s_guardOverflow = 0;
+                s_guardTokens = 40.0;
+            }
+        }
+        std::sort(cases.begin(), cases.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        cemuLog_log(LogType::Force, "Metal guard summary ({}): {} distinct cases;{}", when, cases.size(), MetalGuardTotalsLine());
+        cemuLog_log(LogType::Force, "Metal guard summary ({}): upload retries scheduled {}, retry-storm stops {}", when, s_guardRetriesScheduled.load(std::memory_order_relaxed), s_guardRetryStops.load(std::memory_order_relaxed));
+        if (suppressed != 0 || overflow != 0)
+            cemuLog_log(LogType::Force, "Metal guard summary ({}): {} log lines were withheld by the rate limit, {} events fell outside the {} case table", when, suppressed, overflow, kMetalGuardMaxDistinct);
+        for (size_t i = 0; i < cases.size() && i < maxCases; ++i)
+            cemuLog_log(LogType::Force, "Metal guard case x{}: {}", cases[i].first, cases[i].second);
+        if (cases.size() > maxCases)
+            cemuLog_log(LogType::Force, "Metal guard summary ({}): {} less frequent cases not listed", when, cases.size() - maxCases);
+        if (reset)
+        {
+            for (auto& total : s_guardTotals)
+                total.store(0, std::memory_order_relaxed);
+            s_guardRetriesScheduled.store(0, std::memory_order_relaxed);
+            s_guardRetryStops.store(0, std::memory_order_relaxed);
+        }
+    }
+
+    // Does the vertex shader read any attribute of this buffer group? Only used groups matter for hardware fetch:
+    // the pipeline's vertex descriptor leaves unused attributes (and groups made only of them) out, so the GPU
+    // never touches their buffer. usedEnd receives the end of the furthest attribute that is read.
+    bool MetalVertexGroupIsRead(const LatteParsedFetchShaderBufferGroup_t& group, const LatteDecompilerShader* vertexShader, uint32& usedEnd)
+    {
+        usedEnd = 0;
+        bool used = false;
+        for (sint32 j = 0; j < group.attribCount; ++j)
+        {
+            const auto& attr = group.attrib[j];
+            if ((uint32)vertexShader->resourceMapping.attributeMapping[attr.semanticId] == (uint32)-1)
+                continue;
+            used = true;
+            usedEnd = std::max<uint32>(usedEnd, attr.offset + GetMtlVertexFormatSize(attr.format));
+        }
+        return used;
+    }
+
+    // A skipped upload leaves the texture's data hash as LatteTC_ResetTextureChangeTracker stamped it just before the
+    // load, and LatteTC_HasTextureChanged only reloads a texture when the hash it computes differs from that stamp, so
+    // the texture would never be loaded again and stays black or stale. Inverting the stamp makes the next check (at
+    // most one per frame) see a change and load the texture again. The inverted value never equals what the check
+    // computes for the same data, it is applied once per stamp (a later slice of the same load can restamp it), and a
+    // texture that fails the same way in kMaxFailedFrames distinct frames is left alone until it has been quiet for
+    // kQuietFrames, so a permanent failure does not reload every frame.
+    void MetalUploadSkipped(LatteTextureMtl* texture, MetalGuard reason, sint32 mipIndex)
+    {
+        constexpr uint32 kMaxFailedFrames = 8;
+        constexpr uint32 kQuietFrames = 600;
+        const uint32 frame = (uint32)LatteGPUState.frameCounter;
+        const bool sameRun = texture->m_retryFailedFrames != 0 && texture->m_retryReason == (uint8)reason && (uint32)(frame - texture->m_retryLastFrame) <= kQuietFrames;
+        if (!sameRun)
+        {
+            texture->m_retryReason = (uint8)reason;
+            texture->m_retryFailedFrames = 0;
+            texture->m_retryStopped = false;
+        }
+        if (texture->m_retryFailedFrames == 0 || texture->m_retryLastFrame != frame)
+        {
+            if (texture->m_retryFailedFrames < 255)
+                ++texture->m_retryFailedFrames;
+            texture->m_retryLastFrame = frame;
+        }
+        if (texture->m_retryFailedFrames > kMaxFailedFrames)
+        {
+            if (!texture->m_retryStopped)
+            {
+                texture->m_retryStopped = true;
+                s_guardRetryStops.fetch_add(1, std::memory_order_relaxed);
+                const auto& info = kMetalGuardInfo[(uint32)reason];
+                MetalGuardNote(MetalGuard::UploadRetryStopped, {(uint64)(uint32)texture->format, ((uint64)(uint32)texture->width << 32) | (uint32)texture->height, (uint64)(uint32)mipIndex, (uint64)reason}, [&] {
+                    return fmt::format("format {:04x} {}x{} mip {} failed '{}' in {} frames, it is not flagged for reload any more until it has been quiet for {} frames", (uint32)texture->format, texture->width, texture->height, mipIndex, info.name, kMaxFailedFrames, kQuietFrames);
+                });
+            }
+            return;
+        }
+        if (texture->m_retryHashInverted && texture->texDataHash2 == texture->m_retryInvertedHash)
+            return; // already flagged and nothing restamped it since
+        texture->texDataHash2 = ~texture->texDataHash2;
+        texture->m_retryInvertedHash = texture->texDataHash2;
+        texture->m_retryHashInverted = true;
+        s_guardRetriesScheduled.fetch_add(1, std::memory_order_relaxed);
+    }
+}
 
 std::vector<MetalRenderer::DeviceInfo> MetalRenderer::GetDevices()
 {
@@ -64,11 +323,13 @@ MetalRenderer::MetalRenderer()
     // destroyed allocator, and the GPU-fault latches and counters of the previous renderer.
     LatteIndices_forgetAll();
     {
-        uint64 physicalMemory = 0;
-        size_t physicalMemorySize = sizeof(physicalMemory);
-        if (sysctlbyname("hw.memsize", &physicalMemory, &physicalMemorySize, nullptr, 0) != 0 || physicalMemory == 0)
-            physicalMemory = 4ull << 30;
-        m_breadcrumbCapacity = physicalMemory >= (6ull << 30) ? 1024 : (physicalMemory >= (3ull << 30) ? 512 : 256);
+        // A fault is reported when the command buffer that contains it finishes, and by then up to 10 later ones can be
+        // on the GPU or queued behind it, so the ring has to reach back over all of them or the failed encoder's draws
+        // are already overwritten when they are needed. A command buffer holds at most twice the default commit
+        // threshold (196) draws. The same size on every device: the entries are about a kilobyte each.
+        constexpr uint32 kDrawsPerCommandBuffer = 2 * 196;
+        constexpr uint32 kCommandBuffersCovered = 12; // 10 in flight, the one being recorded, one being retired
+        m_breadcrumbCapacity = std::max<uint32>(1024, kDrawsPerCommandBuffer * kCommandBuffersCovered);
         m_breadcrumbs.assign(m_breadcrumbCapacity, MetalDrawBreadcrumb{});
     }
     {
@@ -438,6 +699,7 @@ void MetalRenderer::Initialize()
 void MetalRenderer::Shutdown()
 {
     Flush(true);
+    MetalGuardReport("title stop", 200, true);
     // TODO: should shutdown both layers
     ImGui_ImplMetal_Shutdown();
     Renderer::Shutdown();
@@ -642,7 +904,14 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
         MTL::Texture* target = layer.GetDrawable()->texture();
         const uint64 tw = target->width(), th = target->height();
         const uint64 sx = std::min<uint64>((uint32)std::max(imageX, 0), tw), sy = std::min<uint64>((uint32)std::max(imageY, 0), th);
-        renderCommandEncoder->setScissorRect(MTL::ScissorRect{(NS::UInteger)sx, (NS::UInteger)sy, (NS::UInteger)std::min<uint64>((uint32)std::max(imageWidth, 0), tw - sx), (NS::UInteger)std::min<uint64>((uint32)std::max(imageHeight, 0), th - sy)});
+        const uint64 sw = std::min<uint64>((uint32)std::max(imageWidth, 0), tw - sx), sh = std::min<uint64>((uint32)std::max(imageHeight, 0), th - sy);
+        if (sw < (uint64)std::max(imageWidth, 0) || sh < (uint64)std::max(imageHeight, 0))
+        {
+            MetalGuardNote(MetalGuard::PresentScissorClamped, {(uint64)(uint32)imageX, (uint64)(uint32)imageY, (uint64)(uint32)imageWidth, (uint64)(uint32)imageHeight, tw, th}, [&] {
+                return fmt::format("present image {},{} {}x{} is larger than the {}x{} drawable, scissor cut to {}x{}", imageX, imageY, imageWidth, imageHeight, tw, th, sw, sh);
+            });
+        }
+        renderCommandEncoder->setScissorRect(MTL::ScissorRect{(NS::UInteger)sx, (NS::UInteger)sy, (NS::UInteger)sw, (NS::UInteger)sh});
     }
 
     renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
@@ -901,6 +1170,15 @@ void* MetalRenderer::texture_acquireTextureUploadBuffer(uint32 size)
     return m_memoryManager->AcquireTextureUploadBuffer(size);
 }
 
+// The texture loader found no upload buffer for this texture. Goes through the same bookkeeping as a skipped upload,
+// which flags the texture for reload once per stamp and stops after repeated failures, so a texture that is also
+// skipped by a guard in the same load is not flagged twice (two inversions of the hash would cancel out).
+void MetalRenderer::texture_uploadBufferUnavailable(LatteTexture* texture)
+{
+    if (texture)
+        MetalUploadSkipped(static_cast<LatteTextureMtl*>(texture), MetalGuard::UploadStagingFull, 0);
+}
+
 void MetalRenderer::texture_releaseTextureUploadBuffer(uint8* mem)
 {
     m_memoryManager->ReleaseTextureUploadBuffer(mem);
@@ -975,29 +1253,91 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
 
     const auto& formatInfo = GetMtlPixelFormatInfo(textureMtl->format, textureMtl->isDepth);
     size_t bytesPerRow = GetMtlTextureBytesPerRow(textureMtl->format, textureMtl->isDepth, width);
+    // What is actually copied. Normally the whole slice; the checks below shrink it only when the source cannot
+    // fill it or the level cannot hold it, so a partly wrong slice still shows what it can.
+    sint32 uploadWidth = width;
+    sint32 uploadHeight = height;
     {
         // The blit reads rows * bytesPerRow from the staging copy and writes width x height into the level. If either
-        // does not fit, the GPU reads or writes outside the buffer or the texture.
+        // does not fit, the GPU reads or writes outside the buffer or the texture. The decoders size the data as
+        // exactly ceil(width / block) * ceil(height / block) * bytesPerBlock for ONE slice of ONE mip (BC, ASTC
+        // transcode, RGBA8 fallback and depth alike), and the level is max(1, base >> mip) on both sides, so none
+        // of this fires for a well-formed upload.
         MTL::Texture* target = textureMtl->GetTexture();
         const uint32 blockW = std::max<uint32>(1, formatInfo.blockTexelSize.x);
         const uint32 blockH = std::max<uint32>(1, formatInfo.blockTexelSize.y);
-        const uint64 levelW = target ? std::max<uint64>(1, (uint64)target->width() >> mipIndex) : 0;
-        const uint64 levelH = target ? std::max<uint64>(1, (uint64)target->height() >> mipIndex) : 0;
+        const uint64 levelW = target ? std::max<uint64>(1, (uint64)target->width() >> std::min(mipIndex < 0 ? 0 : mipIndex, 63)) : 0;
+        const uint64 levelH = target ? std::max<uint64>(1, (uint64)target->height() >> std::min(mipIndex < 0 ? 0 : mipIndex, 63)) : 0;
         const uint64 alignedW = (levelW + blockW - 1) / blockW * blockW;
         const uint64 alignedH = (levelH + blockH - 1) / blockH * blockH;
-        if (!target || mipIndex < 0 || (NS::UInteger)mipIndex >= target->mipmapLevelCount() || width <= 0 || height <= 0 || (uint64)width > alignedW || (uint64)height > alignedH)
+        const uint64 levelKey = (levelW << 32) | levelH;
+        const uint64 sizeKey = ((uint64)(uint32)width << 32) | (uint32)height;
+        auto describe = [&](const char* why) {
+            return fmt::format("{} - format {:04x}{} {}x{} mip {} first seen at slice {} ({} data bytes, {} per row; texture {}x{} level {}x{} of {} mips, pixel format {})", why,
+                (uint32)textureMtl->format, textureMtl->isDepth ? " depth" : "", width, height, mipIndex, (sint32)offsetZ + sliceIndex, compressedImageSize, bytesPerRow,
+                target ? (uint64)target->width() : 0, target ? (uint64)target->height() : 0, levelW, levelH, target ? (uint64)target->mipmapLevelCount() : 0,
+                target ? (uint64)target->pixelFormat() : 0);
+        };
+        const uint64 formatKey = ((uint64)(uint32)textureMtl->format << 1) | (textureMtl->isDepth ? 1 : 0);
+        const uint64 mipKey = (uint64)(uint32)mipIndex;
+
+        if (!target)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture upload of {}x{} does not fit level {} of its texture; skipping it", width, height, mipIndex);
+            MetalGuardNote(MetalGuard::UploadNoTarget, {formatKey, sizeKey, mipKey}, [&] { return describe("the texture has no Metal texture"); });
+            MetalUploadSkipped(textureMtl, MetalGuard::UploadNoTarget, mipIndex);
             return;
         }
-        if (!(textureMtl->isDepth && formatInfo.hasStencil))
+        if (target == m_nullTexture2D)
         {
-            const uint64 rows = ((uint64)height + blockH - 1) / blockH;
-            const uint64 lastRowBytes = (((uint64)width + blockW - 1) / blockW) * formatInfo.bytesPerBlock;
+            // The real texture could not be allocated and the shared 1x1 placeholder stands in for it. Writing into
+            // it would put this slice into every other texture that failed the same way.
+            MetalGuardNote(MetalGuard::UploadPlaceholder, {formatKey, sizeKey, mipKey}, [&] { return describe("the texture is the shared placeholder"); });
+            MetalUploadSkipped(textureMtl, MetalGuard::UploadPlaceholder, mipIndex);
+            return;
+        }
+        if (mipIndex < 0 || (NS::UInteger)mipIndex >= target->mipmapLevelCount())
+        {
+            MetalGuardNote(MetalGuard::UploadBadLevel, {formatKey, sizeKey, mipKey}, [&] { return describe("the texture has no such mip level"); });
+            MetalUploadSkipped(textureMtl, MetalGuard::UploadBadLevel, mipIndex);
+            return;
+        }
+        if (width <= 0 || height <= 0)
+        {
+            MetalGuardNote(MetalGuard::UploadBadSize, {formatKey, sizeKey, mipKey}, [&] { return describe("empty slice"); });
+            MetalUploadSkipped(textureMtl, MetalGuard::UploadBadSize, mipIndex);
+            return;
+        }
+        const bool packedDepthStencil = textureMtl->isDepth && formatInfo.hasStencil;
+        if ((uint64)width > alignedW || (uint64)height > alignedH)
+        {
+            if (packedDepthStencil)
+            {
+                // the packed depth/stencil path reads the source with the full width as its row length
+                MetalGuardNote(MetalGuard::UploadBadSize, {formatKey, sizeKey, mipKey, levelKey}, [&] { return describe("depth/stencil slice larger than its level"); });
+                MetalUploadSkipped(textureMtl, MetalGuard::UploadBadSize, mipIndex);
+                return;
+            }
+            // The source rows keep their own length (bytesPerRow above); only the part that fits the level is copied.
+            uploadWidth = (sint32)std::min<uint64>((uint64)width, alignedW);
+            uploadHeight = (sint32)std::min<uint64>((uint64)height, alignedH);
+            MetalGuardNote(MetalGuard::UploadClampedSize, {formatKey, sizeKey, mipKey, levelKey}, [&] { return describe("slice larger than its level, copying the part that fits"); });
+        }
+        if (!packedDepthStencil)
+        {
+            const uint64 rows = ((uint64)uploadHeight + blockH - 1) / blockH;
+            const uint64 lastRowBytes = (((uint64)uploadWidth + blockW - 1) / blockW) * formatInfo.bytesPerBlock;
             if ((rows - 1) * bytesPerRow + lastRowBytes > compressedImageSize)
             {
-                cemuLog_logOnce(LogType::Force, "Metal: texture upload has {} bytes but {}x{} needs more; skipping it", compressedImageSize, width, height);
-                return;
+                if (bytesPerRow == 0 || lastRowBytes > compressedImageSize)
+                {
+                    MetalGuardNote(MetalGuard::UploadTooFewBytes, {formatKey, sizeKey, mipKey}, [&] { return describe("not even one row of data"); });
+                    MetalUploadSkipped(textureMtl, MetalGuard::UploadTooFewBytes, mipIndex);
+                    return;
+                }
+                // copy the rows that are there
+                const uint64 rowsFit = (compressedImageSize - lastRowBytes) / bytesPerRow + 1;
+                uploadHeight = (sint32)std::min<uint64>((uint64)uploadHeight, rowsFit * blockH);
+                MetalGuardNote(MetalGuard::UploadClampedRows, {formatKey, sizeKey, mipKey}, [&] { return describe("less data than the slice needs, copying the rows that are there"); });
             }
         }
     }
@@ -1019,7 +1359,10 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
         const size_t expectedSourceSize = pixelCount * sourceBytesPerTexel;
         if ((sourceBytesPerTexel != 4 && sourceBytesPerTexel != 8) || uploadLayout.stencilOffset >= sourceBytesPerTexel || expectedSourceSize > compressedImageSize)
         {
-            cemuLog_log(LogType::Force, "Invalid packed depth/stencil upload size for format {:04x}", (uint32)textureMtl->format);
+            MetalGuardNote(MetalGuard::UploadDepthStencilBytes, {(uint64)(uint32)textureMtl->format, ((uint64)(uint32)width << 32) | (uint32)height}, [&] {
+                return fmt::format("packed depth/stencil upload of format {:04x} {}x{} mip {} needs {} bytes ({} per texel) but has {}", (uint32)textureMtl->format, width, height, mipIndex, expectedSourceSize, sourceBytesPerTexel, compressedImageSize);
+            });
+            MetalUploadSkipped(textureMtl, MetalGuard::UploadDepthStencilBytes, mipIndex);
             return;
         }
         
@@ -1034,7 +1377,14 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
         auto depthAllocation = bufferAllocator.AllocateBufferMemory(depthDataSize, depthBytesPerTexel);
         auto stencilAllocation = bufferAllocator.AllocateBufferMemory(stencilDataSize, stencilBytesPerTexel);
         if (!depthAllocation.mtlBuffer || !stencilAllocation.mtlBuffer)
-            return; // out of staging memory - skip the upload rather than write through null
+        {
+            // out of staging memory - skip the upload rather than write through null
+            MetalGuardNote(MetalGuard::UploadStagingFull, {(uint64)(uint32)textureMtl->format, ((uint64)(uint32)width << 32) | (uint32)height}, [&] {
+                return fmt::format("no staging memory for the depth/stencil upload of format {:04x} {}x{} mip {}", (uint32)textureMtl->format, width, height, mipIndex);
+            });
+            MetalUploadSkipped(textureMtl, MetalGuard::UploadStagingFull, mipIndex);
+            return;
+        }
         
         const uint8* sourceData = static_cast<const uint8*>(pixelData);
         uint8* depthData = depthAllocation.memPtr;
@@ -1064,12 +1414,19 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
     auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
     auto allocation = bufferAllocator.AllocateBufferMemory(compressedImageSize, 1);
     if (!allocation.mtlBuffer)
-        return; // out of staging memory - skip the upload rather than write through null
+    {
+        // out of staging memory - skip the upload rather than write through null
+        MetalGuardNote(MetalGuard::UploadStagingFull, {(uint64)(uint32)textureMtl->format, ((uint64)(uint32)width << 32) | (uint32)height}, [&] {
+            return fmt::format("no staging memory for the upload of format {:04x} {}x{} mip {} ({} bytes)", (uint32)textureMtl->format, width, height, mipIndex, compressedImageSize);
+        });
+        MetalUploadSkipped(textureMtl, MetalGuard::UploadStagingFull, mipIndex);
+        return;
+    }
     memcpy(allocation.memPtr, pixelData, compressedImageSize);
     bufferAllocator.FlushReservation(allocation);
 
     // Copy the data from the temporary buffer to the texture
-    blitCommandEncoder->copyFromBuffer(allocation.mtlBuffer, allocation.bufferOffset, bytesPerRow, 0, MTL::Size(width, height, 1), textureMtl->GetTexture(), sliceIndex, mipIndex, MTL::Origin(0, 0, offsetZ), GetTextureUploadBlitOption(formatInfo.pixelFormat));
+    blitCommandEncoder->copyFromBuffer(allocation.mtlBuffer, allocation.bufferOffset, bytesPerRow, 0, MTL::Size(uploadWidth, uploadHeight, 1), textureMtl->GetTexture(), sliceIndex, mipIndex, MTL::Origin(0, 0, offsetZ), GetTextureUploadBlitOption(formatInfo.pixelFormat));
     //}
 }
 
@@ -1170,41 +1527,106 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
     auto mtlSrc = static_cast<LatteTextureMtl*>(src)->GetTexture();
     auto mtlDst = static_cast<LatteTextureMtl*>(dst)->GetTexture();
 
-    // A blit outside a level or layer of either texture is a GPU fault, so keep the region inside both.
+    // A copy that is skipped here is NOT retried, unlike a skipped upload. The level, start and slice checks depend
+    // only on the two textures and the arguments the core derived from them, so the same call fails the same way every
+    // time, and the core stamps the destination slice as up to date itself after this returns
+    // (LatteTexture_UpdateTextureFromDynamicChanges sets lastDynamicUpdate right after LatteTexture_SyncSlice), so the
+    // renderer cannot roll that back without changing the shared core and the renderer interface. Every skip is in the
+    // guard log and its totals.
+    // A blit outside a level or layer of either texture is a GPU fault, so keep the region inside both. Only what
+    // really lies outside is removed: a region that reaches past a level is cut to the part that fits, a slice
+    // count the textures cannot both supply is cut to the slices they have, and a copy is refused only when nothing
+    // of it would land inside the textures.
     {
+        const bool blockMismatch = srcBlockTexelSize.x != dstBlockTexelSize.x || srcBlockTexelSize.y != dstBlockTexelSize.y;
+        const sint64 srcLevelW = mtlSrc ? std::max<sint64>(1, (sint64)mtlSrc->width() >> std::min(std::max(srcMip, 0), 63)) : 0;
+        const sint64 srcLevelH = mtlSrc ? std::max<sint64>(1, (sint64)mtlSrc->height() >> std::min(std::max(srcMip, 0), 63)) : 0;
+        const sint64 dstLevelW = mtlDst ? std::max<sint64>(1, (sint64)mtlDst->width() >> std::min(std::max(dstMip, 0), 63)) : 0;
+        const sint64 dstLevelH = mtlDst ? std::max<sint64>(1, (sint64)mtlDst->height() >> std::min(std::max(dstMip, 0), 63)) : 0;
+        const uint64 keyFormats = ((uint64)(uint32)src->format << 32) | (uint32)dst->format;
+        const uint64 keyMips = ((uint64)(uint32)srcMip << 32) | (uint32)dstMip;
+        const uint64 keyLevels = ((uint64)(uint32)srcLevelW << 48) ^ ((uint64)(uint32)srcLevelH << 32) ^ ((uint64)(uint32)dstLevelW << 16) ^ (uint64)(uint32)dstLevelH;
+        auto describe = [&](const char* why) {
+            return fmt::format("{} - src format {:04x}{} level {}x{} mip {} slice {} at {},{} ({} block {}x{}), dst format {:04x}{} level {}x{} mip {} slice {} at {},{} ({} block {}x{}), region {}x{}, {} slices",
+                why, (uint32)src->format, src->isDepth ? " depth" : "", srcLevelW, srcLevelH, srcMip, srcSlice, effectiveSrcX, effectiveSrcY,
+                mtlSrc ? (uint64)mtlSrc->pixelFormat() : 0, srcBlockTexelSize.x, srcBlockTexelSize.y,
+                (uint32)dst->format, dst->isDepth ? " depth" : "", dstLevelW, dstLevelH, dstMip, dstSlice, effectiveDstX, effectiveDstY,
+                mtlDst ? (uint64)mtlDst->pixelFormat() : 0, dstBlockTexelSize.x, dstBlockTexelSize.y, effectiveCopyWidth, effectiveCopyHeight, srcDepth_);
+        };
+
         if (!mtlSrc || !mtlDst || srcMip < 0 || dstMip < 0 || (NS::UInteger)srcMip >= mtlSrc->mipmapLevelCount() || (NS::UInteger)dstMip >= mtlDst->mipmapLevelCount())
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture copy names a level that does not exist; skipping it");
+            MetalGuardNote(MetalGuard::CopyBadLevel, {keyFormats, keyMips, keyLevels}, [&] { return describe("a texture has no such mip level"); });
             return;
         }
-        const sint64 srcW = std::max<sint64>(1, (sint64)mtlSrc->width() >> srcMip), srcH = std::max<sint64>(1, (sint64)mtlSrc->height() >> srcMip);
-        const sint64 dstW = std::max<sint64>(1, (sint64)mtlDst->width() >> dstMip), dstH = std::max<sint64>(1, (sint64)mtlDst->height() >> dstMip);
-        if (effectiveSrcX < 0 || effectiveSrcY < 0 || effectiveDstX < 0 || effectiveDstY < 0 || effectiveSrcX >= srcW || effectiveSrcY >= srcH || effectiveDstX >= dstW || effectiveDstY >= dstH)
+        if (effectiveSrcX < 0 || effectiveSrcY < 0 || effectiveDstX < 0 || effectiveDstY < 0 || effectiveSrcX >= srcLevelW || effectiveSrcY >= srcLevelH || effectiveDstX >= dstLevelW || effectiveDstY >= dstLevelH)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture copy starts outside its texture; skipping it");
+            MetalGuardNote(MetalGuard::CopyStartOutside, {keyFormats, keyMips, keyLevels, (uint64)(uint32)effectiveSrcX, (uint64)(uint32)effectiveSrcY, (uint64)(uint32)effectiveDstX, (uint64)(uint32)effectiveDstY}, [&] { return describe("the copy starts outside a level"); });
             return;
         }
-        const sint64 fitW = std::min<sint64>(srcW - effectiveSrcX, dstW - effectiveDstX);
-        const sint64 fitH = std::min<sint64>(srcH - effectiveSrcY, dstH - effectiveDstY);
+        const sint64 srcRoomW = srcLevelW - effectiveSrcX, srcRoomH = srcLevelH - effectiveSrcY;
+        const sint64 dstRoomW = dstLevelW - effectiveDstX, dstRoomH = dstLevelH - effectiveDstY;
+        sint64 fitW, fitH;
+        if (!blockMismatch)
+        {
+            // same block size: the region is in the same units on both sides, so it has to fit both
+            fitW = std::min(srcRoomW, dstRoomW);
+            fitH = std::min(srcRoomH, dstRoomH);
+        }
+        else
+        {
+            // Different block sizes (a compressed texture and an integer alias of it, or a transcoded format next to
+            // an uncompressed one): the size above was already rescaled for the blocks, and a texel of one side is
+            // several texels of the other, so a texel-for-texel fit against both would cut legitimate copies. Only a
+            // region larger than either texture can hold in any unit is out of bounds; say so in the log so a device
+            // run can confirm how these copies behave.
+            fitW = std::max(srcRoomW, dstRoomW);
+            fitH = std::max(srcRoomH, dstRoomH);
+            MetalGuardNote(MetalGuard::CopyBlockMismatch, {keyFormats, keyMips, keyLevels, (uint64)(uint32)effectiveCopyWidth, (uint64)(uint32)effectiveCopyHeight}, [&] { return describe("copy between different block sizes"); });
+        }
         if (effectiveCopyWidth > fitW || effectiveCopyHeight > fitH)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture copy reaches past its texture ({}x{} from {},{} into {}x{} at {},{}); clamping it", effectiveCopyWidth, effectiveCopyHeight, effectiveSrcX, effectiveSrcY, dstW, dstH, effectiveDstX, effectiveDstY);
+            MetalGuardNote(MetalGuard::CopyClampedRegion, {keyFormats, keyMips, keyLevels, (uint64)(uint32)effectiveCopyWidth, (uint64)(uint32)effectiveCopyHeight, (uint64)(uint32)effectiveSrcX, (uint64)(uint32)effectiveSrcY, (uint64)(uint32)effectiveDstX, (uint64)(uint32)effectiveDstY},
+                [&] { return describe(fmt::format("region reaches past a level, cut to {}x{}", std::min<sint64>(effectiveCopyWidth, fitW), std::min<sint64>(effectiveCopyHeight, fitH)).c_str()); });
             effectiveCopyWidth = (sint32)std::min<sint64>(effectiveCopyWidth, fitW);
             effectiveCopyHeight = (sint32)std::min<sint64>(effectiveCopyHeight, fitH);
         }
         if (effectiveCopyWidth <= 0 || effectiveCopyHeight <= 0)
-            return;
-        const bool srcCube = mtlSrc->textureType() == MTL::TextureTypeCubeArray || mtlSrc->textureType() == MTL::TextureTypeCube;
-        const bool dstCube = mtlDst->textureType() == MTL::TextureTypeCubeArray || mtlDst->textureType() == MTL::TextureTypeCube;
-        if (!src->Is3DTexture() && !srcCube && (srcSlice < 0 || srcDepth_ < 1 || (NS::UInteger)(srcSlice + srcDepth_) > std::max<NS::UInteger>(1, mtlSrc->arrayLength())))
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture copy names slices the source does not have; skipping it");
+            MetalGuardNote(MetalGuard::CopyStartOutside, {keyFormats, keyMips, keyLevels, (uint64)(uint32)effectiveCopyWidth, (uint64)(uint32)effectiveCopyHeight}, [&] { return describe("empty region"); });
             return;
         }
-        if (!dst->Is3DTexture() && !dstCube && (dstSlice < 0 || srcDepth_ < 1 || (NS::UInteger)(dstSlice + srcDepth_) > std::max<NS::UInteger>(1, mtlDst->arrayLength())))
+
+        // Slices (2D array layers, cube faces) or depth (3D). A cube array has 6 faces per array element, and the
+        // slice numbers the blit takes count faces. A 3D texture has max(1, depth >> mip) slices at each level.
+        auto slicesFrom = [](MTL::Texture* texture, sint32 level, sint64 firstSlice) -> sint64 {
+            switch (texture->textureType())
+            {
+            case MTL::TextureType3D:
+                return std::max<sint64>(1, (sint64)texture->depth() >> std::min(std::max(level, 0), 63)) - firstSlice;
+            case MTL::TextureTypeCube:
+                return 6 - firstSlice;
+            case MTL::TextureTypeCubeArray:
+                return (sint64)std::max<NS::UInteger>(1, texture->arrayLength()) * 6 - firstSlice;
+            default:
+                return (sint64)std::max<NS::UInteger>(1, texture->arrayLength()) - firstSlice;
+            }
+        };
+        if (srcSlice < 0 || dstSlice < 0 || srcDepth_ < 1)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture copy names slices the destination does not have; skipping it");
+            MetalGuardNote(MetalGuard::CopyNoSlices, {keyFormats, keyMips, keyLevels, (uint64)(uint32)srcSlice, (uint64)(uint32)dstSlice, (uint64)(uint32)srcDepth_}, [&] { return describe("the copy names no valid slice"); });
             return;
+        }
+        const sint64 slicesAvailable = std::min(slicesFrom(mtlSrc, srcMip, srcSlice), slicesFrom(mtlDst, dstMip, dstSlice));
+        if (slicesAvailable < 1)
+        {
+            MetalGuardNote(MetalGuard::CopyNoSlices, {keyFormats, keyMips, keyLevels, (uint64)(uint32)srcSlice, (uint64)(uint32)dstSlice, (uint64)(uint32)srcDepth_}, [&] { return describe("a slice the copy starts at does not exist"); });
+            return;
+        }
+        if (srcDepth_ > slicesAvailable)
+        {
+            MetalGuardNote(MetalGuard::CopyClampedSlices, {keyFormats, keyMips, keyLevels, (uint64)(uint32)srcSlice, (uint64)(uint32)dstSlice, (uint64)(uint32)srcDepth_}, [&] { return describe(fmt::format("more slices than both textures have, cut to {}", slicesAvailable).c_str()); });
+            srcDepth_ = (sint32)slicesAvailable;
         }
     }
 
@@ -1400,7 +1822,14 @@ void MetalRenderer::surfaceCopy_copySurfaceWithFormatConversion(LatteTexture* so
         // the scissor has to stay inside the level that is being rendered to
         const uint64 levelWidth = std::max<uint64>(1, (uint64)destinationMtl->width() >> dstMip);
         const uint64 levelHeight = std::max<uint64>(1, (uint64)destinationMtl->height() >> dstMip);
-        renderCommandEncoder->setScissorRect(MTL::ScissorRect{0, 0, (NS::UInteger)std::min<uint64>((uint32)effectiveCopyWidth, levelWidth), (NS::UInteger)std::min<uint64>((uint32)effectiveCopyHeight, levelHeight)});
+        const uint64 scissorWidth = std::min<uint64>((uint32)effectiveCopyWidth, levelWidth), scissorHeight = std::min<uint64>((uint32)effectiveCopyHeight, levelHeight);
+        if (scissorWidth < (uint32)effectiveCopyWidth || scissorHeight < (uint32)effectiveCopyHeight)
+        {
+            MetalGuardNote(MetalGuard::SurfaceCopyScissorClamped, {(uint64)(uint32)destinationTexture->format, (uint64)(uint32)effectiveCopyWidth, (uint64)(uint32)effectiveCopyHeight, levelWidth, levelHeight}, [&] {
+                return fmt::format("surface copy of {}x{} into format {:04x} mip {} ({}x{} level) cut to {}x{}", effectiveCopyWidth, effectiveCopyHeight, (uint32)destinationTexture->format, dstMip, levelWidth, levelHeight, scissorWidth, scissorHeight);
+            });
+        }
+        renderCommandEncoder->setScissorRect(MTL::ScissorRect{0, 0, (NS::UInteger)scissorWidth, (NS::UInteger)scissorHeight});
     }
     SetTexture(renderCommandEncoder, METAL_SHADER_TYPE_FRAGMENT, sourceView->GetRGBAView(), GET_HELPER_TEXTURE_BINDING(0));
     renderCommandEncoder->drawPrimitives(MTL::PrimitiveTypeTriangle, NS::UInteger(0), NS::UInteger(3));
@@ -1744,7 +2173,9 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         const uint64 capacity = std::min<uint64>(indexAllocationMtl->size, reachable);
         if ((uint64)hostIndexCount * indexBytes > capacity)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: index count {} ({} bytes each) does not fit its {} byte allocation; drawing {} indices instead", hostIndexCount, indexBytes, capacity, capacity / indexBytes);
+            MetalGuardNote(MetalGuard::IndexClamped, {hostIndexCount, indexBytes, capacity}, [&] {
+                return fmt::format("index count {} ({} bytes each) does not fit its {} byte allocation (offset {}, buffer length {}); drawing {} indices instead", hostIndexCount, indexBytes, capacity, (uint64)indexAllocationMtl->bufferOffset, bufferLength, capacity / indexBytes);
+            });
             hostIndexCount = static_cast<uint32>(capacity / indexBytes);
             suspectFlags |= MetalDrawBreadcrumb::SUSPECT_INDEX_BUFFER;
         }
@@ -1979,7 +2410,12 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         const uint64 w = std::min<uint64>(scissorToSend.width, renderAreaWidth - x);
         const uint64 h = std::min<uint64>(scissorToSend.height, renderAreaHeight - y);
         if (x != scissorToSend.x || y != scissorToSend.y || w != scissorToSend.width || h != scissorToSend.height)
+        {
             suspectFlags |= MetalDrawBreadcrumb::SUSPECT_SCISSOR;
+            MetalGuardNote(MetalGuard::ScissorClamped, {(uint64)scissorToSend.x, (uint64)scissorToSend.y, (uint64)scissorToSend.width, (uint64)scissorToSend.height, renderAreaWidth, renderAreaHeight}, [&] {
+                return fmt::format("scissor {},{} {}x{} cut to {},{} {}x{} for a {}x{} render area", (uint64)scissorToSend.x, (uint64)scissorToSend.y, (uint64)scissorToSend.width, (uint64)scissorToSend.height, x, y, w, h, renderAreaWidth, renderAreaHeight);
+            });
+        }
         scissorToSend = MTL::ScissorRect{(NS::UInteger)x, (NS::UInteger)y, (NS::UInteger)w, (NS::UInteger)h};
     }
     if (scissorToSend.x != encoderState.m_scissor.x ||
@@ -2046,25 +2482,53 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
         // Hardware vertex fetch has no bounds check: a slot that is unbound, or bound to less than the draw reads,
         // is a GPU page fault. Manual fetch checks the size in the shader and gets a null buffer below instead.
         bool vertexBuffersUsable = true;
+        const uint64 vertexShaderHash = vertexShader ? vertexShader->baseHash : 0;
         for (const auto& group : fetchShader->bufferGroups)
         {
             const uint32 i = group.attributeBufferIndex;
             if (i >= MAX_MTL_VERTEX_BUFFERS)
             {
                 vertexBuffersUsable = false;
-                break;
+                MetalGuardNote(MetalGuard::DrawVertexBuffer, {vertexShaderHash, i, 1}, [&] { return fmt::format("vertex buffer slot {} is out of range (vs {:016x})", i, vertexShaderHash); });
+                continue;
             }
+            // The pipeline's vertex descriptor leaves out attributes the vertex shader does not read, so the GPU
+            // never fetches from a group made only of those, whatever its registers say.
+            uint32 usedEnd = 0;
+            if (!MetalVertexGroupIsRead(group, vertexShader, usedEnd))
+                continue;
             MTL::Buffer* buffer = m_state.m_vertexBuffers[i];
             const size_t offset = m_state.m_vertexBufferOffsets[i];
-            if (!buffer || offset == INVALID_OFFSET || offset >= buffer->length() || m_state.m_vertexBufferSizes[i] < m_state.m_vertexBufferRequired[i])
+            const size_t bound = m_state.m_vertexBufferSizes[i];
+            // The size the buffer was bound for is a conservative one (a whole stride past the last index, plus the
+            // start offset of the last attribute). What the hardware reads is the last element the draw reaches
+            // plus the end of the furthest attribute it fetches, so that is what has to be in the buffer.
+            const uint64 stride = (LatteGPUState.contextRegister[mmSQ_VTX_ATTRIBUTE_BLOCK_START + i * 7 + 2] >> 11) & 0xFFFF;
+            // maxVertexIndex already includes the base vertex: indexMax + signedBaseVertex for indexed draws (clamped at 0),
+            // baseVertex + count - 1 otherwise. It is also the maxIndex m_vertexBufferRequired was computed from, so
+            // the base vertex is counted in both sizes and must not be added again here.
+            uint64 reach = 0;
+            if (group.hasVtxIndexAccess)
+                reach = stride * (uint64)maxVertexIndex + usedEnd;
+            if (group.hasInstanceIndexAccess)
+                reach = std::max<uint64>(reach, stride * ((uint64)baseInstance + std::max<uint32>(instanceCount, 1) - 1) + usedEnd);
+            if (stride == 0)
+                reach = usedEnd; // constant step: only the first element is read
+            const uint64 needed = std::min<uint64>(m_state.m_vertexBufferRequired[i], reach);
+            if (!buffer || offset == INVALID_OFFSET || offset >= buffer->length() || bound < needed)
             {
                 vertexBuffersUsable = false;
-                break;
+                const uint64 failure = !buffer ? 2 : (offset == INVALID_OFFSET ? 3 : (offset >= buffer->length() ? 4 : 5));
+                MetalGuardNote(MetalGuard::DrawVertexBuffer, {vertexShaderHash, i, failure}, [&] {
+                    return fmt::format("vertex buffer {} {} (vs {:016x}): stride {}, offset {}, buffer length {}, bound {} bytes, conservative size {}, draw reaches {}, max vertex {}, base vertex {}, instances {}+{}",
+                        i, failure == 2 ? "is not bound" : (failure == 3 ? "has no valid offset" : (failure == 4 ? "starts past its buffer" : "is smaller than what the draw reads")),
+                        vertexShaderHash, stride, offset == INVALID_OFFSET ? (sint64)-1 : (sint64)offset, buffer ? (uint64)buffer->length() : (uint64)0, (uint64)bound, (uint64)m_state.m_vertexBufferRequired[i], reach,
+                        maxVertexIndex, signedBaseVertex, baseInstance, instanceCount);
+                });
             }
         }
         if (!vertexBuffersUsable)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: skipping a draw whose vertex buffer is missing or smaller than the range it reads (hardware vertex fetch would fault)");
             if (m_crumb)
                 m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_VERTEX_BUFFER | MetalDrawBreadcrumb::SUSPECT_SKIPPED;
             streamout_rendererFinishDrawcall();
@@ -2246,7 +2710,15 @@ void MetalRenderer::draw_updateVertexBuffersDirectAccess(uint32 minIndex, uint32
         {
             // No real vertex buffer is this large, so the index range is garbage. Unbind the slot so the draw is
             // skipped instead of letting the GPU walk off the end of guest memory.
-            cemuLog_logOnce(LogType::Force, "Metal: vertex buffer {} would need {} bytes (stride {}, max index {}); skipping draws that use it", bufferIndex, bufferSize64, bufferStride, maxIndex);
+            {
+                uint32 usedEnd = 0;
+                LatteDecompilerShader* activeVertexShader = LatteSHRC_GetActiveVertexShader();
+                // a group the vertex shader does not read is unbound too, but no draw depends on it
+                if (fetchVertexManually || !activeVertexShader || MetalVertexGroupIsRead(bufferGroup, activeVertexShader, usedEnd))
+                    MetalGuardNote(MetalGuard::DrawVertexHuge, {activeVertexShader ? activeVertexShader->baseHash : 0, bufferIndex, bufferStride}, [&] {
+                        return fmt::format("vertex buffer {} would need {} bytes (stride {}, max index {}, instances {}+{}); its draws are skipped (vs {:016x})", bufferIndex, bufferSize64, bufferStride, maxIndex, baseInstance, instanceCount, activeVertexShader ? activeVertexShader->baseHash : (uint64)0);
+                    });
+            }
             m_state.m_vertexBuffers[bufferIndex] = nullptr;
             m_state.m_vertexBufferOffsets[bufferIndex] = INVALID_OFFSET;
             m_state.m_vertexBufferSizes[bufferIndex] = 0;
@@ -2886,6 +3358,7 @@ void MetalRenderer::RecordBreadcrumbTexture(LatteConst::ShaderType shaderType, u
 // dozen draws after it is printed, and any draw in the ring that looked wrong when it was recorded.
 void MetalRenderer::DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool haveRange)
 {
+    MetalGuardReport("breadcrumb dump", 24, false);
     const uint32 stored = std::min(m_breadcrumbsWritten, m_breadcrumbCapacity);
     if (stored == 0)
     {
@@ -2898,6 +3371,8 @@ void MetalRenderer::DumpDrawBreadcrumbs(uint32 firstDraw, uint32 lastDraw, bool 
         cemuLog_log(LogType::Force, "Metal: draw breadcrumbs: {} draws kept (draw {} to {}), unfinished encoders start at draws {} to {}", stored, at(0).draw, at(stored - 1).draw, firstDraw, lastDraw);
     else
         cemuLog_log(LogType::Force, "Metal: draw breadcrumbs: {} draws kept (draw {} to {}), the failed command buffer named no encoders", stored, at(0).draw, at(stored - 1).draw);
+    if (haveRange && firstDraw < at(0).draw)
+        cemuLog_log(LogType::Force, "Metal: the failed encoder starts at draw {}, {} draws older than the oldest breadcrumb kept (draw {}); its early draws are not in the ring", firstDraw, at(0).draw - firstDraw, at(0).draw);
 
     auto print = [&](const MetalDrawBreadcrumb& d) {
         cemuLog_log(LogType::Force, "Metal: crumb draw {} frame {} prim {} count {} indexed {} (type {}, offset {}, alloc {}, buffer {}) inst {}+{} baseVertex {} vertices {}..{} flags {:#x} suspect {:#x} vs {:016x} ps {:016x}",
