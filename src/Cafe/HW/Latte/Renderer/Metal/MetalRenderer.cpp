@@ -1164,29 +1164,85 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
 
     const auto& formatInfo = GetMtlPixelFormatInfo(textureMtl->format, textureMtl->isDepth);
     size_t bytesPerRow = GetMtlTextureBytesPerRow(textureMtl->format, textureMtl->isDepth, width);
+    // What is actually copied. Normally the whole slice; the checks below shrink it only when the source cannot
+    // fill it or the level cannot hold it, so a partly wrong slice still shows what it can.
+    sint32 uploadWidth = width;
+    sint32 uploadHeight = height;
     {
         // The blit reads rows * bytesPerRow from the staging copy and writes width x height into the level. If either
-        // does not fit, the GPU reads or writes outside the buffer or the texture.
+        // does not fit, the GPU reads or writes outside the buffer or the texture. The decoders size the data as
+        // exactly ceil(width / block) * ceil(height / block) * bytesPerBlock for ONE slice of ONE mip (BC, ASTC
+        // transcode, RGBA8 fallback and depth alike), and the level is max(1, base >> mip) on both sides, so none
+        // of this fires for a well-formed upload.
         MTL::Texture* target = textureMtl->GetTexture();
         const uint32 blockW = std::max<uint32>(1, formatInfo.blockTexelSize.x);
         const uint32 blockH = std::max<uint32>(1, formatInfo.blockTexelSize.y);
-        const uint64 levelW = target ? std::max<uint64>(1, (uint64)target->width() >> mipIndex) : 0;
-        const uint64 levelH = target ? std::max<uint64>(1, (uint64)target->height() >> mipIndex) : 0;
+        const uint64 levelW = target ? std::max<uint64>(1, (uint64)target->width() >> std::min(mipIndex < 0 ? 0 : mipIndex, 63)) : 0;
+        const uint64 levelH = target ? std::max<uint64>(1, (uint64)target->height() >> std::min(mipIndex < 0 ? 0 : mipIndex, 63)) : 0;
         const uint64 alignedW = (levelW + blockW - 1) / blockW * blockW;
         const uint64 alignedH = (levelH + blockH - 1) / blockH * blockH;
-        if (!target || mipIndex < 0 || (NS::UInteger)mipIndex >= target->mipmapLevelCount() || width <= 0 || height <= 0 || (uint64)width > alignedW || (uint64)height > alignedH)
+        const uint64 levelKey = (levelW << 32) | levelH;
+        const uint64 sizeKey = ((uint64)(uint32)width << 32) | (uint32)height;
+        auto describe = [&](const char* why) {
+            return fmt::format("{} - format {:04x}{} {}x{} mip {} first seen at slice {} ({} data bytes, {} per row; texture {}x{} level {}x{} of {} mips, pixel format {})", why,
+                (uint32)textureMtl->format, textureMtl->isDepth ? " depth" : "", width, height, mipIndex, (sint32)offsetZ + sliceIndex, compressedImageSize, bytesPerRow,
+                target ? (uint64)target->width() : 0, target ? (uint64)target->height() : 0, levelW, levelH, target ? (uint64)target->mipmapLevelCount() : 0,
+                target ? (uint64)target->pixelFormat() : 0);
+        };
+        const uint64 formatKey = ((uint64)(uint32)textureMtl->format << 1) | (textureMtl->isDepth ? 1 : 0);
+        const uint64 mipKey = (uint64)(uint32)mipIndex;
+
+        if (!target)
         {
-            cemuLog_logOnce(LogType::Force, "Metal: texture upload of {}x{} does not fit level {} of its texture; skipping it", width, height, mipIndex);
+            MetalGuardNote(MetalGuard::UploadNoTarget, {formatKey, sizeKey, mipKey}, [&] { return describe("the texture has no Metal texture"); });
             return;
         }
-        if (!(textureMtl->isDepth && formatInfo.hasStencil))
+        if (target == m_nullTexture2D)
         {
-            const uint64 rows = ((uint64)height + blockH - 1) / blockH;
-            const uint64 lastRowBytes = (((uint64)width + blockW - 1) / blockW) * formatInfo.bytesPerBlock;
+            // The real texture could not be allocated and the shared 1x1 placeholder stands in for it. Writing into
+            // it would put this slice into every other texture that failed the same way.
+            MetalGuardNote(MetalGuard::UploadPlaceholder, {formatKey, sizeKey, mipKey}, [&] { return describe("the texture is the shared placeholder"); });
+            return;
+        }
+        if (mipIndex < 0 || (NS::UInteger)mipIndex >= target->mipmapLevelCount())
+        {
+            MetalGuardNote(MetalGuard::UploadBadLevel, {formatKey, sizeKey, mipKey}, [&] { return describe("the texture has no such mip level"); });
+            return;
+        }
+        if (width <= 0 || height <= 0)
+        {
+            MetalGuardNote(MetalGuard::UploadBadSize, {formatKey, sizeKey, mipKey}, [&] { return describe("empty slice"); });
+            return;
+        }
+        const bool packedDepthStencil = textureMtl->isDepth && formatInfo.hasStencil;
+        if ((uint64)width > alignedW || (uint64)height > alignedH)
+        {
+            if (packedDepthStencil)
+            {
+                // the packed depth/stencil path reads the source with the full width as its row length
+                MetalGuardNote(MetalGuard::UploadBadSize, {formatKey, sizeKey, mipKey, levelKey}, [&] { return describe("depth/stencil slice larger than its level"); });
+                return;
+            }
+            // The source rows keep their own length (bytesPerRow above); only the part that fits the level is copied.
+            uploadWidth = (sint32)std::min<uint64>((uint64)width, alignedW);
+            uploadHeight = (sint32)std::min<uint64>((uint64)height, alignedH);
+            MetalGuardNote(MetalGuard::UploadClampedSize, {formatKey, sizeKey, mipKey, levelKey}, [&] { return describe("slice larger than its level, copying the part that fits"); });
+        }
+        if (!packedDepthStencil)
+        {
+            const uint64 rows = ((uint64)uploadHeight + blockH - 1) / blockH;
+            const uint64 lastRowBytes = (((uint64)uploadWidth + blockW - 1) / blockW) * formatInfo.bytesPerBlock;
             if ((rows - 1) * bytesPerRow + lastRowBytes > compressedImageSize)
             {
-                cemuLog_logOnce(LogType::Force, "Metal: texture upload has {} bytes but {}x{} needs more; skipping it", compressedImageSize, width, height);
-                return;
+                if (bytesPerRow == 0 || lastRowBytes > compressedImageSize)
+                {
+                    MetalGuardNote(MetalGuard::UploadTooFewBytes, {formatKey, sizeKey, mipKey}, [&] { return describe("not even one row of data"); });
+                    return;
+                }
+                // copy the rows that are there
+                const uint64 rowsFit = (compressedImageSize - lastRowBytes) / bytesPerRow + 1;
+                uploadHeight = (sint32)std::min<uint64>((uint64)uploadHeight, rowsFit * blockH);
+                MetalGuardNote(MetalGuard::UploadClampedRows, {formatKey, sizeKey, mipKey}, [&] { return describe("less data than the slice needs, copying the rows that are there"); });
             }
         }
     }
@@ -1208,7 +1264,9 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
         const size_t expectedSourceSize = pixelCount * sourceBytesPerTexel;
         if ((sourceBytesPerTexel != 4 && sourceBytesPerTexel != 8) || uploadLayout.stencilOffset >= sourceBytesPerTexel || expectedSourceSize > compressedImageSize)
         {
-            cemuLog_log(LogType::Force, "Invalid packed depth/stencil upload size for format {:04x}", (uint32)textureMtl->format);
+            MetalGuardNote(MetalGuard::UploadDepthStencilBytes, {(uint64)(uint32)textureMtl->format, ((uint64)(uint32)width << 32) | (uint32)height}, [&] {
+                return fmt::format("packed depth/stencil upload of format {:04x} {}x{} mip {} needs {} bytes ({} per texel) but has {}", (uint32)textureMtl->format, width, height, mipIndex, expectedSourceSize, sourceBytesPerTexel, compressedImageSize);
+            });
             return;
         }
         
@@ -1223,7 +1281,13 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
         auto depthAllocation = bufferAllocator.AllocateBufferMemory(depthDataSize, depthBytesPerTexel);
         auto stencilAllocation = bufferAllocator.AllocateBufferMemory(stencilDataSize, stencilBytesPerTexel);
         if (!depthAllocation.mtlBuffer || !stencilAllocation.mtlBuffer)
-            return; // out of staging memory - skip the upload rather than write through null
+        {
+            // out of staging memory - skip the upload rather than write through null
+            MetalGuardNote(MetalGuard::UploadStagingFull, {(uint64)(uint32)textureMtl->format, ((uint64)(uint32)width << 32) | (uint32)height}, [&] {
+                return fmt::format("no staging memory for the depth/stencil upload of format {:04x} {}x{} mip {}", (uint32)textureMtl->format, width, height, mipIndex);
+            });
+            return;
+        }
         
         const uint8* sourceData = static_cast<const uint8*>(pixelData);
         uint8* depthData = depthAllocation.memPtr;
@@ -1253,12 +1317,18 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
     auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
     auto allocation = bufferAllocator.AllocateBufferMemory(compressedImageSize, 1);
     if (!allocation.mtlBuffer)
-        return; // out of staging memory - skip the upload rather than write through null
+    {
+        // out of staging memory - skip the upload rather than write through null
+        MetalGuardNote(MetalGuard::UploadStagingFull, {(uint64)(uint32)textureMtl->format, ((uint64)(uint32)width << 32) | (uint32)height}, [&] {
+            return fmt::format("no staging memory for the upload of format {:04x} {}x{} mip {} ({} bytes)", (uint32)textureMtl->format, width, height, mipIndex, compressedImageSize);
+        });
+        return;
+    }
     memcpy(allocation.memPtr, pixelData, compressedImageSize);
     bufferAllocator.FlushReservation(allocation);
 
     // Copy the data from the temporary buffer to the texture
-    blitCommandEncoder->copyFromBuffer(allocation.mtlBuffer, allocation.bufferOffset, bytesPerRow, 0, MTL::Size(width, height, 1), textureMtl->GetTexture(), sliceIndex, mipIndex, MTL::Origin(0, 0, offsetZ), GetTextureUploadBlitOption(formatInfo.pixelFormat));
+    blitCommandEncoder->copyFromBuffer(allocation.mtlBuffer, allocation.bufferOffset, bytesPerRow, 0, MTL::Size(uploadWidth, uploadHeight, 1), textureMtl->GetTexture(), sliceIndex, mipIndex, MTL::Origin(0, 0, offsetZ), GetTextureUploadBlitOption(formatInfo.pixelFormat));
     //}
 }
 
