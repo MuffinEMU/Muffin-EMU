@@ -170,6 +170,25 @@ void LatteTextureReadback_UpdateFinishedTransfers(bool forceFinish)
 	performanceMonitor.gpuTime_waitForAsync.endMeasuring();
 }
 
+// Called when the GPU thread is shutting down, while the renderer still exists. Transfers that were queued or in
+// flight belong to the title that is stopping: finishing them would copy the old title's pixels into guest memory the
+// next title is using, and the backend objects die with the renderer. They are dropped, not completed.
+void LatteTextureReadback_Reset()
+{
+	sTextureScheduledReadbacks.clear();
+	while (!sTextureActiveReadbackQueue.empty())
+	{
+		delete sTextureActiveReadbackQueue.front();
+		sTextureActiveReadbackQueue.pop();
+	}
+	LatteWait::Get().readbacksPending.store(0, std::memory_order_relaxed);
+}
+
+size_t LatteTextureReadback_GetPendingCount()
+{
+	return sTextureScheduledReadbacks.size() + sTextureActiveReadbackQueue.size();
+}
+
 bool LatteTextureReadback_ReadbackToLinearBlocking(LatteTextureView* sourceView, uint8* dstPtr, uint32 dstWidth, uint32 dstHeight, uint32 dstPitch)
 {
 	LatteTextureReadbackInfo* info = g_renderer->texture_createReadback(sourceView);

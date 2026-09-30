@@ -61,6 +61,14 @@ void LatteIndices_forgetAll()
 	LatteIndexCache.currentUsageCounter = 0;
 }
 
+size_t LatteIndices_GetCachedEntryCount()
+{
+	size_t count = 0;
+	for(auto& entry : LatteIndexCache.entry)
+		count += entry.lastPtr ? 1 : 0;
+	return count;
+}
+
 void LatteIndices_invalidateAll()
 {
 	for(auto& entry : LatteIndexCache.entry)

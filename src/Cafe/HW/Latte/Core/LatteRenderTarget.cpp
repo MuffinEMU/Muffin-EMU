@@ -1103,4 +1103,16 @@ void LatteRenderTarget_unloadAll()
 		LatteMRT::DeleteCachedFBO(g_emptyFBO);
 		g_emptyFBO = nullptr;
 	}
+	// the currently bound targets, the derived sizes and the scissor shadow all describe views that no longer exist.
+	// NotifyTextureDeletion() only clears the colour slots, so the depth view would otherwise survive as a dangling pointer
+	for (sint32 i = 0; i < 8; i++)
+		sLatteCurrentRendertargets.colorBuffer[i].view = nullptr;
+	sLatteCurrentRendertargets.depthBuffer.view = nullptr;
+	sLatteCurrentRendertargets.depthBuffer.hasStencil = false;
+	memset(&sLatteRenderTargetState, 0, sizeof(sLatteRenderTargetState));
+	prevScissorX = prevScissorY = prevScissorWidth = prevScissorHeight = 0;
+	hasValidFramebufferAttached = false;
+	_depthBufferSizeWarningCount = 0;
+	_currentOutputImageWidth = 0;
+	_currentOutputImageHeight = 0;
 }

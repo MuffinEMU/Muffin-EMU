@@ -1859,6 +1859,31 @@ void LatteBufferCache_processDCFlushQueue()
     });
 }
 
+// Host-side bookkeeping that is not owned by any cache node: pages queued for invalidation and the volatility history
+// describe the title that is stopping, and the tracking flag was set by the memory manager of the renderer being destroyed.
+// The next renderer's memory manager enables tracking again if it wants it.
+void LatteBufferCache_ResetHostState()
+{
+    g_spinlockDCFlushQueue.lock();
+    s_DCFlushQueue->Clear();
+    s_DCFlushQueueAlternate->Clear();
+    s_DCFlushQueueEpoch.fetch_add(1, std::memory_order_relaxed); // invalidates the per-thread "already queued" range
+    g_spinlockDCFlushQueue.unlock();
+    s_hostVolTrackingEnabled = false;
+    s_hostVolFrame = 0;
+    for (uint32 i = 0; i < HOSTVOL_FRAME_HISTORY; i++)
+    {
+        std::fill(s_hostVolBits[i].begin(), s_hostVolBits[i].end(), 0u);
+        s_hostVolAny[i] = false;
+    }
+    g_currentCacheChronon = 0;
+}
+
+size_t LatteBufferCache_GetNodeCount()
+{
+    return s_allCacheNodes.size();
+}
+
 void LatteBufferCache_notifyDrawDone()
 {
 
