@@ -38,6 +38,9 @@ struct DeviceCapabilities {
     /// Whether three host threads for the emulated cores are worth offering at all.
     var multicoreViable: Bool { raw.multicoreViable }
     var meshShaders: Bool { raw.meshShaders }
+    /// What Settings says when `multicoreViable` is false. The engine refuses three cores on such a
+    /// device whatever the CPU cores setting says, including Auto (ios_decide_core_count in CemuBridge.mm).
+    static let oneCoreOnlyText = "One core only: this device has too little memory or too few cores to run three at once."
 
     /// Where Resolution starts when the player has not chosen. Balanced everywhere it was tuned;
     /// High on an A17 Pro or later and on every M-series chip with 7 GiB or more, which have

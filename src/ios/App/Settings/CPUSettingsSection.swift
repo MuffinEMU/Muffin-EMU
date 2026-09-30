@@ -75,8 +75,11 @@ struct CPUSettingsSection: View {
                     }
                     .pickerStyle(.menu)
                     .tint(MuffinTheme.pixelBlue)
+                    .disabled(!DeviceCapabilities.current.multicoreViable)
                 }
-                Text((CoreMode(rawValue: coreModeRaw) ?? CoreMode.defaultValue).summary)
+                Text(DeviceCapabilities.current.multicoreViable
+                     ? (CoreMode(rawValue: coreModeRaw) ?? CoreMode.defaultValue).summary
+                     : DeviceCapabilities.oneCoreOnlyText)
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
