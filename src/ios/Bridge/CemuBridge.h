@@ -842,6 +842,11 @@ void cemu_bridge_shutdown(void);
 /// when a real problem was found while stopping a title (the GPU stopped running this app's work, or the post-stop check
 /// found emulator state that could not be reset), never by a normal stop. Stays true until the app restarts.
 bool cemu_bridge_clean_start_required(void);
+
+/// Called on the title-switch thread when the Wii U Menu switches to a game, after the Menu has been shut down and before the
+/// game is prepared. The app applies that title's per-game settings here, the same ones a library launch pushes before boot.
+typedef void (*CemuTitleSwitchCallback)(uint64_t titleId);
+void cemu_bridge_set_title_switch_callback(CemuTitleSwitchCallback callback);
 /// A one-line reason for the log and the message, valid until the next call on the same thread.
 const char* cemu_bridge_clean_start_reason(void);
 
