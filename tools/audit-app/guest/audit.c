@@ -265,7 +265,8 @@ static GX2Sampler gSamplerLinear;
 static Tex gWhite;
 static BOOL gGfxReady = FALSE;
 
-static const float kIdentity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+// Uniform blocks are read by the GPU from this memory, so it is aligned like a real block and invalidated once at start-up.
+static const float kIdentity[16] __attribute__((aligned(0x100))) = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 
 void SetBlend(const BlendState *b)
 {
@@ -815,6 +816,7 @@ static BOOL InitGraphics(void)
       return FALSE;
    }
    GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_BLOCK);
+   GX2Invalidate(GX2_INVALIDATE_MODE_UNIFORM_BLOCK, (void *)kIdentity, sizeof(kIdentity));
 
    gPool = (Vertex *)memalign(GX2_VERTEX_BUFFER_ALIGNMENT, POOL_VERTS * sizeof(Vertex));
    if (!gPool) {

@@ -211,10 +211,13 @@ extension AuditRunner {
         // A checkpoint with no capture section is only held and released (frame pacing, for one, must not be disturbed by readback).
         if let def = def, let spec = def.capture, captureAvailable {
             let views = spec.views ?? ["tv"]
-            let want = max(1, spec.count ?? 1)
-            core.armCapture(tv: views.contains("tv"), pad: views.contains("pad") && request.padSurface, count: want)
+            let wantTV = views.contains("tv")
+            let wantPad = views.contains("pad") && request.padSurface
+            // The core's count is frames in total across the armed views, so a burst of N on both screens is 2N.
+            let want = max(1, spec.count ?? 1) * ((wantTV ? 1 : 0) + (wantPad ? 1 : 0))
+            core.armCapture(tv: wantTV, pad: wantPad, count: want)
             let deadline = Date().addingTimeInterval(3.0 + Double(want) * 0.5)
-            while Date() < deadline && core.capturePending < want * ((views.contains("pad") && request.padSurface) ? 2 : 1) {
+            while Date() < deadline && core.capturePending < want {
                 try? await Task.sleep(nanoseconds: 20_000_000)
                 logs.drain()
             }
@@ -339,6 +342,13 @@ extension AuditRunner {
         var kept = slice
         var truncated = false
         let compact = result == .pass && records.count > 40
+        // A long soak would otherwise write thousands of records in full: once a run is well under way, a test that passed keeps
+        // its verdicts and numbers but not its per-frame detail, snapshots or most of its log.
+        let cps: [CheckpointRecord] = compact ? m.checkpoints.map { cp in
+            var c = cp
+            c.frames = []
+            return c
+        } : m.checkpoints
         let cap = compact ? 30 : 600
         if slice.count > cap {
             truncated = true
@@ -364,7 +374,7 @@ extension AuditRunner {
             token: token, result: result, reason: reason, configuration: configuration(item, params: params),
             stimulus: test.stimulus, expected: test.expected, startedAt: Self.iso(startDate), endedAt: Self.iso(endDate),
             startNs: startNs, endNs: endNs, durationMs: endDate.timeIntervalSince(startDate) * 1000.0,
-            path: path, checkpoints: m.checkpoints, checks: checks, scriptSteps: m.scriptResults, answers: answers, userFlags: flags,
+            path: path, checkpoints: cps, checks: checks, scriptSteps: m.scriptResults, answers: answers, userFlags: flags,
             performance: perf, snapshotBefore: compact ? nil : before, snapshotAfter: compact ? nil : after, snapshotDelta: delta,
             logSlice: LogSlice(startNs: startNs, endNs: endNs, lineCount: slice.count, droppedLines: logs.droppedTotal - startDropped, truncated: truncated, file: fileRel, lines: kept),
             anomalies: anomalies, guestResult: m.lastGuest.resultName, guestChecksum: String(format: "%08x", m.lastGuest.checksum),
