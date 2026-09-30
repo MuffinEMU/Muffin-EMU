@@ -14,7 +14,7 @@ enum RendererAPI: Int, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .metal:  return "Metal"
-        case .vulkan: return "Vulkan (MoltenVK)"
+        case .vulkan: return "Vulkan (Experimental)"
         }
     }
 
@@ -157,7 +157,16 @@ struct GraphicsSettingsSection: View {
                 // Picking Vulkan again is a retry: forget that it failed to start before
                 if newValue == RendererAPI.vulkan.rawValue {
                     UserDefaults.standard.removeObject(forKey: "muffin.render.vulkanFailedBuild")
+                    UserDefaults.standard.removeObject(forKey: "muffin.render.vulkanFailureReason")
                 }
+            }
+            Text("Experimental: Vulkan runs through MoltenVK on top of Metal. Some games may draw wrongly or stop, and if Vulkan fails the next launch switches back to Metal.")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+            if let reason = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailureReason"), !reason.isEmpty {
+                Text("Last Vulkan failure: \(reason)")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
             }
             if let failedBuild = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailedBuild"),
                rendererRaw == RendererAPI.metal.rawValue {
