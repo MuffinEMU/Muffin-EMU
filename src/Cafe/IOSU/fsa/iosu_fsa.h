@@ -6,6 +6,9 @@ namespace iosu
 {
 	namespace fsa
 	{
+		// closes every client, file and directory a stopped title left open (see iosu_fsa.cpp)
+		void ResetClientState();
+		void GetOpenCounts(uint32& clients, uint32& files, uint32& dirs);
 
 		struct FSARequest
 		{
