@@ -30,6 +30,9 @@ public:
 
     CA::MetalDrawable* GetDrawable() const { return m_drawable; }
 
+    // Null when there is no drawable (or it has no texture), so callers can bail out instead of dereferencing.
+    MTL::Texture* GetDrawableTexture() const { return m_drawable ? m_drawable->texture() : nullptr; }
+
 private:
     CA::MetalLayer* m_layer = nullptr;
     float m_layerScaleX = 1.0f;

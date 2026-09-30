@@ -437,7 +437,7 @@ void MetalRenderer::ClearColorbuffer(bool padView)
     if (!AcquireDrawable(!padView))
         return;
 
-    ClearColorTextureInternal(GetLayer(!padView).GetDrawable()->texture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
+    ClearColorTextureInternal(GetLayer(!padView).GetDrawableTexture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
 }
 
 void MetalRenderer::DrawEmptyFrame(bool mainWindow)
@@ -449,6 +449,15 @@ void MetalRenderer::DrawEmptyFrame(bool mainWindow)
 
 void MetalRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 {
+    if (LatteWait::Get().gpuError.load(std::memory_order_relaxed))
+    {
+        // Nothing can be presented any more. Keep retiring command buffers so their memory comes back.
+        CommitCommandBuffer();
+        ProcessFinishedCommandBuffers();
+        UpdateMemoryStatsAndRelievePressure();
+        return;
+    }
+
     if (swapTV)
         SwapBuffer(true);
     if (swapDRC)
@@ -558,6 +567,8 @@ void MetalRenderer::DrawBackbufferQuad(LatteTextureView* texView, RendererOutput
 
     // Create render pass
     auto& layer = GetLayer(!padView);
+    if (!layer.GetDrawableTexture() || !presentTexture)
+        return;
 
     NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
     auto colorAttachment = renderPassDescriptor->colorAttachments()->object(0);
@@ -613,7 +624,7 @@ bool MetalRenderer::BeginFrame(bool mainWindow)
     if (!AcquireDrawable(mainWindow))
         return false;
     
-    ClearColorTextureInternal(GetLayer(mainWindow).GetDrawable()->texture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
+    ClearColorTextureInternal(GetLayer(mainWindow).GetDrawableTexture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
     return true;
 }
 
@@ -679,6 +690,8 @@ bool MetalRenderer::ImguiBegin(bool mainWindow)
         ImGui_ImplMetal_CreateFontsTexture(m_device);
 
     auto& layer = GetLayer(mainWindow);
+    if (!layer.GetDrawableTexture())
+        return false;
 
     // Render pass descriptor
     NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
@@ -1484,6 +1497,13 @@ void MetalRenderer::streamout_rendererFinishDrawcall()
 void MetalRenderer::draw_beginSequence()
 {
     m_state.m_skipDrawSequence = false;
+
+    // After a GPU error iOS ignores this app's GPU work; recording more only grows memory.
+    if (LatteWait::Get().gpuError.load(std::memory_order_relaxed))
+    {
+        m_state.m_skipDrawSequence = true;
+        return;
+    }
 
     bool streamoutEnable = LatteGPUState.contextRegister[mmVGT_STRMOUT_EN] != 0;
 
@@ -3206,6 +3226,8 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
 
 void MetalRenderer::ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a)
 {
+    if (!mtlTexture)
+        return; // no drawable to clear (the layer stopped handing them out)
     NS_STACK_SCOPED MTL::RenderPassDescriptor* renderPassDescriptor = MTL::RenderPassDescriptor::alloc()->init();
     auto colorAttachment = renderPassDescriptor->colorAttachments()->object(0);
     colorAttachment->setTexture(mtlTexture);
@@ -3263,7 +3285,7 @@ void MetalRenderer::SwapBuffer(bool mainWindow)
         return;
     
     if (!drawableAlreadyAcquired)
-        ClearColorTextureInternal(layer.GetDrawable()->texture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
+        ClearColorTextureInternal(layer.GetDrawableTexture(), 0, 0, 0.0f, 0.0f, 0.0f, 1.0f);
 
     auto commandBuffer = GetCommandBuffer();
     layer.PresentDrawable(commandBuffer);
