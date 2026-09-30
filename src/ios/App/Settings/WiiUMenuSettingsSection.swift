@@ -23,6 +23,9 @@ struct WiiUMenuSettingsSection: View {
                             : "Not installed")
             SettingsRow(label: "Shared data (0005001b)", value: status.hasSharedData ? "Found" : "Missing")
             SettingsRow(label: "cafeLibs", value: "\(status.cafeLibsPresent) of \(WiiUMenu.cafeLibNames.count)")
+            if !status.incompleteTitles.isEmpty {
+                SettingsRow(label: "Incomplete system titles", value: "\(status.incompleteTitles.count)")
+            }
             SettingsRow(label: "otp.bin", value: status.hasOTP ? "Found" : "Missing")
             SettingsRow(label: "seeprom.bin", value: status.hasSeeprom ? "Found" : "Missing")
 
@@ -119,6 +122,9 @@ struct WiiUMenuSettingsSection: View {
             lines.append("Everything the Menu needs to start is present.")
         } else {
             lines.append("Still missing: " + missing.joined(separator: ", ") + ".")
+        }
+        if let incomplete = status.incompleteTitlesSummary() {
+            lines.append(incomplete)
         }
         let optional = status.missingOptional
         if !optional.isEmpty {

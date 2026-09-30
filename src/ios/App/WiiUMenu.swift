@@ -60,6 +60,9 @@ struct WiiUMenuStatus: Equatable {
     var hasSystemApps = false
     var hasOTP = false
     var hasSeeprom = false
+    /// System titles whose files are incomplete, as "00050010/10040100: meta/meta.xml".
+    /// The core skips or warns about these ("Title has missing meta .xml files").
+    var incompleteTitles: [String] = []
 
     var menuInstalled: Bool { !installedRegions.isEmpty }
     var cafeLibsComplete: Bool { cafeLibsPresent == WiiUMenu.cafeLibNames.count }
@@ -72,7 +75,18 @@ struct WiiUMenuStatus: Equatable {
         if !cafeLibsComplete {
             missing.append("cafeLibs (\(cafeLibsPresent) of \(WiiUMenu.cafeLibNames.count) files)")
         }
+        if let broken = incompleteTitles.first(where: { $0.hasPrefix("00050010/1004") && WiiUMenu.isMenuFolderName(String($0.dropFirst(9).prefix(8))) }) {
+            missing.append("complete Wii U Menu files (\(broken))")
+        }
         return missing
+    }
+
+    /// The incomplete titles as lines for a message, capped so a bad dump doesn't produce a wall of text.
+    func incompleteTitlesSummary(limit: Int = 8) -> String? {
+        guard !incompleteTitles.isEmpty else { return nil }
+        var lines = incompleteTitles.prefix(limit).map { "  " + $0 }
+        if incompleteTitles.count > limit { lines.append("  and \(incompleteTitles.count - limit) more") }
+        return "\(incompleteTitles.count) system title\(incompleteTitles.count == 1 ? " has" : "s have") missing files (re-dump them, or the Menu may fail to list or start them):\n" + lines.joined(separator: "\n")
     }
 
     /// Optional: only online features need these.
@@ -128,6 +142,7 @@ enum WiiUMenu {
             result.hasSharedData = !children.isEmpty
         }
         result.hasSystemApps = isDir(mlc01URL?.appendingPathComponent("sys/title/00050030"))
+        result.incompleteTitles = incompleteSystemTitles()
         if let libs = cafeLibsURL {
             result.cafeLibsPresent = cafeLibNames.filter {
                 fm.fileExists(atPath: libs.appendingPathComponent("\($0).rpl").path)
@@ -136,6 +151,43 @@ enum WiiUMenu {
         if let root = mlcRootURL {
             result.hasOTP = fm.fileExists(atPath: root.appendingPathComponent("otp.bin").path)
             result.hasSeeprom = fm.fileExists(atPath: root.appendingPathComponent("seeprom.bin").path)
+        }
+        return result
+    }
+
+    static func isMenuFolderName(_ name: String) -> Bool {
+        WiiUMenuRegion.allCases.contains { $0.folderName == name.lowercased() }
+    }
+
+    /// Walks mlc01/sys/title/<group>/<id> and reports titles that have a code, content or meta
+    /// folder but not the files the core needs to read them: code/app.xml, code/cos.xml and
+    /// meta/meta.xml. Titles with none of those folders (data-only titles) are not titles the
+    /// core loads and are not reported.
+    static func incompleteSystemTitles() -> [String] {
+        guard let base = mlc01URL?.appendingPathComponent("sys/title") else { return [] }
+        let fm = FileManager.default
+        var result: [String] = []
+        let groups = ((try? fm.contentsOfDirectory(atPath: base.path)) ?? []).sorted()
+        for group in groups {
+            let groupURL = base.appendingPathComponent(group)
+            let ids = ((try? fm.contentsOfDirectory(atPath: groupURL.path)) ?? []).sorted()
+            for id in ids {
+                let dir = groupURL.appendingPathComponent(id)
+                func isDir(_ name: String) -> Bool {
+                    var directory: ObjCBool = false
+                    return fm.fileExists(atPath: dir.appendingPathComponent(name).path, isDirectory: &directory) && directory.boolValue
+                }
+                func isFile(_ name: String) -> Bool { fm.fileExists(atPath: dir.appendingPathComponent(name).path) }
+                let hasCode = isDir("code"), hasContent = isDir("content"), hasMeta = isDir("meta")
+                guard hasCode || hasContent && hasMeta else { continue }
+                var missing: [String] = []
+                if !hasCode { missing.append("code folder") }
+                if !hasMeta { missing.append("meta folder") }
+                if hasCode && !isFile("code/app.xml") { missing.append("code/app.xml") }
+                if hasCode && !isFile("code/cos.xml") { missing.append("code/cos.xml") }
+                if hasMeta && !isFile("meta/meta.xml") { missing.append("meta/meta.xml") }
+                if !missing.isEmpty { result.append("\(group)/\(id): \(missing.joined(separator: ", "))") }
+            }
         }
         return result
     }

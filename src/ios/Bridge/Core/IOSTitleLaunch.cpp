@@ -150,6 +150,24 @@ static void IOSTitleLaunch_LogMenuPreflight()
 		if (!fs::exists(userData / "cafeLibs" / (std::string(lib) + ".rpl"), ec))
 			missingLibs++;
 	}
+	// Titles in sys/title that have code/content/meta folders but lack the XML files the core reads. The
+	// core only warns ("Title has missing meta .xml files"); naming them here says which dump is bad.
+	int incomplete = 0;
+	for (auto& group : fs::directory_iterator(mlc / "sys/title", ec))
+	{
+		for (auto& title : fs::directory_iterator(group.path(), ec))
+		{
+			const fs::path dir = title.path();
+			if (!fs::is_directory(dir / "code", ec) || !fs::is_directory(dir / "meta", ec))
+				continue;
+			if (fs::exists(dir / "code/app.xml", ec) && fs::exists(dir / "code/cos.xml", ec) && fs::exists(dir / "meta/meta.xml", ec))
+				continue;
+			if (++incomplete <= 8)
+				cemuLog_log(LogType::Force, "iOS: Wii U Menu - system title {} is missing app.xml, cos.xml or meta.xml", _pathToUtf8(dir.lexically_relative(mlc)));
+		}
+	}
+	if (incomplete > 8)
+		cemuLog_log(LogType::Force, "iOS: Wii U Menu - and {} more incomplete system titles", incomplete - 8);
 	if (missingLibs > 0)
 		cemuLog_log(LogType::Force, "iOS: Wii U Menu - {} of {} cafeLibs .rpl files are missing from Documents/mlc/cafeLibs; the Menu will not work without them", missingLibs, (int)std::size(cafeLibs));
 }
