@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- For the IPA a re-signing installer (SideStore, AltStore, LiveContainer) takes over: only what survives re-signing.
+	     get-task-allow is the one a JIT enabler reads to list the app at all; increased-memory-limit is unrestricted and is
+	     simply dropped when a profile does not carry it. See src/ios/Sideload.entitlements in MuffinEMU for the history. -->
+	<key>get-task-allow</key>
+	<true/>
+	<key>com.apple.developer.kernel.increased-memory-limit</key>
+	<true/>
+</dict>
+</plist>
