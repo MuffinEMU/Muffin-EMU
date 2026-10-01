@@ -163,7 +163,12 @@ struct HeatStatusBadge: View {
             Text(HeatStatus.text(for: displayMode))
                 .font(.system(size: 13, weight: .bold, design: .rounded))
         }
-        .foregroundColor(UIStyle.isClassic ? band.color : MuffinTheme.sparkleCream)
+        // The pill's text is picked against the band colour, and Classic's coloured text
+        // against the settings row it sits in: Fair's green, Hot's orange and some themes'
+        // pale accent left cream-on-colour or colour-on-white text unreadable.
+        .foregroundColor(UIStyle.isClassic
+                         ? LegibleInk.ensure(band.color, on: Color(.secondarySystemGroupedBackground))
+                         : LegibleInk.on(band.color, light: MuffinTheme.sparkleCream))
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(

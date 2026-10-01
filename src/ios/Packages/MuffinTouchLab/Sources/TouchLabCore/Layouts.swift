@@ -80,6 +80,10 @@ public enum PadParts {
 /// move inboard of the clusters instead, and if that still collides the whole thing
 /// shrinks - `fit` never returns overlapping controls. The layout checks enforce that on
 /// every target device.
+///
+/// The player's stick spacing is applied on top, once the arrangement and size are chosen
+/// without it, so the setting can never flip the arrangement. When the full amount would
+/// overlap something, the nearest amount that fits is used.
 public enum GamePadArrangement {
     public struct Clusters {
         public static let dpad = 1
@@ -96,21 +100,38 @@ public enum GamePadArrangement {
         for _ in 0..<8 {
             for inboard in [false, true] {
                 let set = arrangement(ctx, u: u, sticksInboard: inboard)
-                if LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty { return set }
+                if LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty {
+                    return withSpacing(ctx, u: u, sticksInboard: inboard) ?? set
+                }
             }
             u *= 0.92
         }
         return arrangement(ctx, u: u, sticksInboard: true)
     }
 
-    static func arrangement(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool) -> [PadControl] {
+    /// The chosen arrangement with as much of the requested stick spacing as fits, stepping
+    /// back toward none a quarter of a button at a time. nil when there is none to apply.
+    static func withSpacing(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool) -> [PadControl]? {
+        let requested = ctx.stickSpacing
+        guard requested != 0 else { return nil }
+        var spacing = requested
+        while abs(spacing) > 0.001 {
+            let set = arrangement(ctx, u: u, sticksInboard: sticksInboard, stickSpacing: spacing)
+            if LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty { return set }
+            spacing = requested > 0 ? max(0, spacing - 0.25) : min(0, spacing + 0.25)
+        }
+        return nil
+    }
+
+    static func arrangement(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool,
+                            stickSpacing: CGFloat = 0) -> [PadControl] {
         let s = ctx.safeBounds
         let cy = s.maxY - (PadParts.clusterRadius + 0.75) * u
         let cl = CGPoint(x: s.minX + (PadParts.clusterRadius + 0.85) * u, y: cy)
         let cr = CGPoint(x: s.maxX - (PadParts.clusterRadius + 0.85) * u, y: cy)
         let stickR = PadParts.stickBaseDiameter / 2 * u
 
-        let sl: CGPoint, sr: CGPoint
+        var sl: CGPoint, sr: CGPoint
         if sticksInboard {
             let dx = PadParts.clusterRadius * u + stickR + 0.55 * u
             sl = CGPoint(x: cl.x + dx, y: cy - 0.9 * u)
@@ -120,6 +141,8 @@ public enum GamePadArrangement {
             sl = CGPoint(x: cl.x + 0.3 * u, y: cy - dy)
             sr = CGPoint(x: cr.x - 0.3 * u, y: cy - dy)
         }
+        sl.x -= stickSpacing * u
+        sr.x += stickSpacing * u
 
         let sh = CGSize(width: 1.9 * u, height: 1.0 * u)
         let top = s.minY + 0.25 * u

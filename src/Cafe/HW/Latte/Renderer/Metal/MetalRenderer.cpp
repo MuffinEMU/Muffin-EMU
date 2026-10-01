@@ -82,6 +82,7 @@ enum class MetalGuard : uint32
     CopyClampedRegion,
     CopyClampedSlices,
     CopyBlockMismatch,
+    CopyTranscodedBlocks,
     DrawVertexBuffer,
     DrawVertexHuge,
     IndexClamped,
@@ -89,6 +90,7 @@ enum class MetalGuard : uint32
     PresentScissorClamped,
     SurfaceCopyScissorClamped,
     UploadRetryStopped,
+    CopyBytesPerBlockMismatch,
     Count
 };
 
@@ -115,6 +117,7 @@ namespace
         {"copy-region-clamped", "clamp"},
         {"copy-slices-clamped", "clamp"},
         {"copy-block-size-mismatch", "note"},
+        {"copy-transcoded-blocks", "skip"},
         {"draw-vertex-buffer", "skip"},
         {"draw-vertex-range-huge", "skip"},
         {"draw-index-count-clamped", "clamp"},
@@ -122,6 +125,7 @@ namespace
         {"present-scissor-clamped", "clamp"},
         {"surface-copy-scissor-clamped", "clamp"},
         {"upload-retry-stopped", "note"},
+        {"copy-bytes-per-block-mismatch", "skip"},
     };
     constexpr uint32 kMetalGuardCount = (uint32)MetalGuard::Count;
     static_assert(std::size(kMetalGuardInfo) == kMetalGuardCount, "MetalGuard names out of step with the enum");
@@ -261,6 +265,28 @@ namespace
             usedEnd = std::max<uint32>(usedEnd, attr.offset + GetMtlVertexFormatSize(attr.format));
         }
         return used;
+    }
+
+    // BC1 to BC5 as the GPU itself stores them. Without BC support the same Latte formats are stored as a transcode (ASTC 4x4, or
+    // RG8 for BC5, see CheckForPixelFormatSupport() in LatteToMtl.cpp), whose bits are not the BC blocks the game wrote.
+    bool MetalPixelFormatIsNativeBC(MTL::PixelFormat pixelFormat)
+    {
+        switch (pixelFormat)
+        {
+        case MTL::PixelFormatBC1_RGBA:
+        case MTL::PixelFormatBC1_RGBA_sRGB:
+        case MTL::PixelFormatBC2_RGBA:
+        case MTL::PixelFormatBC2_RGBA_sRGB:
+        case MTL::PixelFormatBC3_RGBA:
+        case MTL::PixelFormatBC3_RGBA_sRGB:
+        case MTL::PixelFormatBC4_RUnorm:
+        case MTL::PixelFormatBC4_RSnorm:
+        case MTL::PixelFormatBC5_RGUnorm:
+        case MTL::PixelFormatBC5_RGSnorm:
+            return true;
+        default:
+            return false;
+        }
     }
 
     // A skipped upload leaves the texture's data hash as LatteTC_ResetTextureChangeTracker stamped it just before the
@@ -1540,8 +1566,6 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
         effectiveCopyHeight *= multY;
     }
 
-    auto blitCommandEncoder = GetBlitCommandEncoder();
-
     auto mtlSrc = static_cast<LatteTextureMtl*>(src)->GetTexture();
     auto mtlDst = static_cast<LatteTextureMtl*>(dst)->GetTexture();
 
@@ -1577,10 +1601,42 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
             MetalGuardNote(MetalGuard::CopyBadLevel, {keyFormats, keyMips, keyLevels}, [&] { return describe("a texture has no such mip level"); });
             return;
         }
+        // A compressed Latte format and an uncompressed one exchange raw blocks here: the integer alias (RGBA16, RG32 or RGBA32 UINT)
+        // a game writes BC blocks through, and the BC texture that samples them. Without BC support the compressed side is a
+        // transcode of the BC data, not the blocks themselves, so the bits of one mean nothing in the other. Blocks of a different
+        // size fault the GPU; blocks of the same size (BC2 and BC3 against RGBA32 UINT, 16 bytes each) copy without a fault and
+        // fill the destination with garbage. Both are refused and the destination keeps what it had.
+        if (src->IsCompressedFormat() != dst->IsCompressedFormat())
+        {
+            MTL::Texture* compressedSide = src->IsCompressedFormat() ? mtlSrc : mtlDst;
+            if (!MetalPixelFormatIsNativeBC(compressedSide->pixelFormat()))
+            {
+                MetalGuardNote(MetalGuard::CopyTranscodedBlocks, {keyFormats, keyMips, keyLevels}, [&] { return describe("raw blocks cannot be exchanged with a compressed texture this GPU stores as a transcode"); });
+                return;
+            }
+        }
         if (effectiveSrcX < 0 || effectiveSrcY < 0 || effectiveDstX < 0 || effectiveDstY < 0 || effectiveSrcX >= srcLevelW || effectiveSrcY >= srcLevelH || effectiveDstX >= dstLevelW || effectiveDstY >= dstLevelH)
         {
             MetalGuardNote(MetalGuard::CopyStartOutside, {keyFormats, keyMips, keyLevels, (uint64)(uint32)effectiveSrcX, (uint64)(uint32)effectiveSrcY, (uint64)(uint32)effectiveDstX, (uint64)(uint32)effectiveDstY}, [&] { return describe("the copy starts outside a level"); });
             return;
+        }
+        // A raw blit between formats whose blocks hold a different number of bytes is not a valid copy: Metal
+        // copies block for block, so an 8-byte texel of an integer alias (the raw bits of a BC1 surface) written
+        // into a 16-byte ASTC block (what a BC texture becomes on a GPU without BC support) reads and writes past
+        // both textures. That is a GPU address fault, and once the GPU has faulted iOS stops running this app's
+        // GPU work. Seen on an A12Z: the Wii U Menu faulted in the same millisecond as seven such copies (formats
+        // 011f/0122 into 0431/0433, BC transcoded to ASTC 4x4). Skipping it leaves that destination as it was,
+        // which at worst shows one stale texture; issuing it stops the game.
+        {
+            const uint32 srcBytesPerBlock = (uint32)GetMtlPixelFormatInfo(src->format, src->isDepth).bytesPerBlock;
+            const uint32 dstBytesPerBlock = (uint32)GetMtlPixelFormatInfo(dst->format, dst->isDepth).bytesPerBlock;
+            if (srcBytesPerBlock != dstBytesPerBlock)
+            {
+                MetalGuardNote(MetalGuard::CopyBytesPerBlockMismatch, {keyFormats, keyMips, keyLevels, ((uint64)srcBytesPerBlock << 32) | dstBytesPerBlock}, [&] {
+                    return describe(fmt::format("blocks of {} bytes cannot be copied into blocks of {} bytes; skipped", srcBytesPerBlock, dstBytesPerBlock).c_str());
+                });
+                return;
+            }
         }
         const sint64 srcRoomW = srcLevelW - effectiveSrcX, srcRoomH = srcLevelH - effectiveSrcY;
         const sint64 dstRoomW = dstLevelW - effectiveDstX, dstRoomH = dstLevelH - effectiveDstY;
@@ -1647,6 +1703,10 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
             srcDepth_ = (sint32)slicesAvailable;
         }
     }
+
+    // Opened only now: a copy refused above must not end the render pass that is in progress (each switch to a blit encoder
+    // costs a tile flush and a reload of the pass's attachments on this GPU)
+    auto blitCommandEncoder = GetBlitCommandEncoder();
 
     uint32 srcBaseLayer = 0;
     uint32 dstBaseLayer = 0;

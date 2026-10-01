@@ -19,6 +19,9 @@ namespace iosu
 
 		IOS_ERROR IOS_RegisterResourceManager(const char* devicePath, IOSMsgQueueId msgQueueId);
 		IOS_ERROR IOS_DeviceAssociateId(const char* devicePath, uint32 id);
+		// Frees every device handle that is open on the resource manager behind msgQueueId. The handle table is small (96 per
+		// process) and a title that stops does not close its handles, so a resource manager that outlives titles has to do it
+		void IOS_CloseAllHandlesForQueue(IOSMsgQueueId msgQueueId);
 		IOS_ERROR IOS_ResourceReply(IPCCommandBody* cmd, IOS_ERROR result);
 
 		void IPCSubmitFromCOS(uint32 ppcCoreIndex, IPCCommandBody* cmd);

@@ -19,6 +19,22 @@
       "screenshotURLs": [],
       "versions": [
         {
+          "version": "6.4",
+          "date": "2026-10-01T00:42:15Z",
+          "localizedDescription": "## What changed\n\n- New control styles to try in Settings > On-screen Controls > Control style: Zone, Float, Adaptive and Frame. MuffinEMU's own controls stay the default.\n- Switching to another game no longer needs an app restart: stopping a game now fully resets the graphics side of the emulator, which fixes graphical corruption and crashes in the second and later game of a session, and graphic packs are applied fresh to every game.\n- Stopping a game now frees its memory and resets the emulated console's modules, so a second, third or later game starts like the first one and the emulator no longer runs out of system memory after a few games.\n- Save files are closed properly when a game stops, per-game settings no longer leak into the next game, and an account changed between two games takes effect without restarting the app.\n- After a problem that cannot be repaired in place (for example the GPU stopping during a game), MuffinEMU now tells you to close and reopen it instead of starting the next game in a broken state; normal stops never ask for that.\n- Stopping a game while its shaders are still loading no longer risks a crash.\n- Games started from the Wii U Menu now use their own per-game settings (Favour accuracy, background shader compiling, starting controls).\n- If the graphics engine hits an error, the game now stops with a message and a crash log entry instead of freezing.\n- Touching the GamePad screen with the new control styles now lands exactly where your finger is ...",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v6.4/MuffinEMU.ipa",
+          "size": 68847043,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "6.3",
+          "date": "2026-09-30T23:55:37Z",
+          "localizedDescription": "## What changed\n\n- Surfaces that turned black after the device ran low on memory now come back instead of staying black.\n- Fewer black or stale surfaces in heavy scenes when memory is tight.\n- Fixed a freeze when the device runs out of memory for texture uploads.\n- Textures that could not load because the device was low on memory now retry instead of staying black.\n- Fixed a rare crash and texture corruption on Vulkan when memory runs low.\n- Fixed GamePad touchscreen taps landing off-target on iPads at High and Native resolution.\n- DLC and updates you imported now load in the game, and ones imported earlier are moved to the right place.\n- Importing a save from a folder with several games now picks the right game's save.\n- Textures that could not be loaded the first time (out of staging memory, allocation failure) are now loaded again instead of staying black or stale.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit b12737566c32dbabab1d4182e51eb27fbc89acf1.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to symbolicate a crash report.\n\nMuffinEMU is built on Cemu.\n\n**Full changelog**: http...",
+          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/v6.3/MuffinEMU.ipa",
+          "size": 68630362,
+          "minOSVersion": "15.0"
+        },
+        {
           "version": "6.2",
           "date": "2026-09-30T22:27:50Z",
           "localizedDescription": "## What changed\n\n- Motion aiming starts from your real hold instead of drifting into place, keeps steady when you turn the screen or come back to the app, and has a new \"If aim feels backwards\" option for reversing left/right or up/down.\n- Debug logs now list every texture upload, copy or draw the Metal renderer skipped or clamped, so graphics glitches can be traced from one log.\n- Textures that arrive slightly short or oversized now show what they have instead of staying black or stale.\n- Fixes black or stale patches on textures that the game builds on the GPU and copies into compressed textures.\n- Fixes cube map, texture array and 3D texture copies that were skipped or read past the texture.\n- Fixes missing geometry in games whose vertex shaders ignore some of their vertex buffers.\n- Debug logs now show every scissor and index-count clamp the Metal renderer applies.\n- GPU fault reports now include the draws that caused the fault on every device.\n\nMuffinEMU, Wii U emulation for iPhone and iPad, built from commit 7b34c7a9b45143a6b1357e08115aad5f5b253e95.\n\n**`MuffinEMU.ipa`** - SideStore / AltStore / LiveContainer. Unsigned; they re-sign\nwith your own Apple ID at install.\n\n**`MuffinEMU-fakesigned.ipa`** - TrollStore or jailbroken only, with the JIT\nentitlements embedded.\n\nThe recompiler needs a JIT enabler (StikJIT, SideStore, LiveContainer) and the\n\"Use the recompiler (JIT)\" switch in Settings; without both it runs the\ninterpreter. `MuffinEMU.app.dSYM.zip` is only needed to s...",
@@ -443,12 +459,12 @@
   ],
   "news": [
     {
-      "title": "MuffinEMU 6.2",
-      "identifier": "muffinemu-v6.2",
-      "caption": "Motion aiming starts from your real hold instead of drifting into place, keeps steady when you turn the screen or come back to the app, and has a new \"If aim feels backwards\" option for reversing left/right or...",
-      "date": "2026-09-30",
+      "title": "MuffinEMU 6.4",
+      "identifier": "muffinemu-v6.4",
+      "caption": "New control styles to try in Settings > On-screen Controls > Control style: Zone, Float, Adaptive and Frame. MuffinEMU's own controls stay the default. Switching to another game no longer needs an app restart:...",
+      "date": "2026-10-01",
       "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v6.2",
+      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/v6.4",
       "appID": "com.kiddreads.MuffinEMU",
       "notify": false
     }

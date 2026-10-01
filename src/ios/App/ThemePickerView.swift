@@ -42,6 +42,7 @@ struct ThemePickerView: View {
                 }
             }
             .navigationTitle("Theme")
+            .muffinOpaqueNavigationBar()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -74,9 +75,12 @@ private struct ThemeOptionCard: View {
                             )
 
                         if isSelected {
+                            // The selected card is always the current theme, so its readable
+                            // accent is this one. Its raw accent is yellow in some themes,
+                            // which left a cream tick on a cream disc.
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(swatchAccent)
+                                .foregroundColor(MuffinTheme.accentText)
                                 .background(MuffinTheme.sparkleCream, in: Circle())
                                 .offset(x: 6, y: -6)
                         }
