@@ -25,14 +25,6 @@
           "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/auto-d0265b15c5152a0d7ede065ec77aad5954b68c99/MuffinEMU-fakesigned.ipa",
           "size": 68347695,
           "minOSVersion": "15.0"
-        },
-        {
-          "version": "2026.9.30.2128",
-          "date": "2026-09-30T21:28:24Z",
-          "localizedDescription": "Experiment: TouchLab control styles\nBranch: feature/touchlab-controls\nCommit: be1f298\nBased on: main\nPublished: 2026-09-30 21:28 UTC",
-          "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/auto-be1f2980d3329c1796bd3b1660d68bf7e3c9d293/MuffinEMU-fakesigned.ipa",
-          "size": 68520071,
-          "minOSVersion": "15.0"
         }
       ],
       "appPermissions": {
@@ -49,16 +41,6 @@
       "date": "2026-09-30",
       "tintColor": "E5652E",
       "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/auto-d0265b15c5152a0d7ede065ec77aad5954b68c99",
-      "appID": "com.kiddreads.MuffinEMU",
-      "notify": false
-    },
-    {
-      "title": "Experimental: TouchLab control styles",
-      "identifier": "muffinemu-experimental-be1f298",
-      "caption": "feature/touchlab-controls @ be1f298. An unfinished test build; it replaces an installed MuffinEMU.",
-      "date": "2026-09-30",
-      "tintColor": "E5652E",
-      "url": "https://github.com/kiddreads/MuffinEMU/releases/tag/auto-be1f2980d3329c1796bd3b1660d68bf7e3c9d293",
       "appID": "com.kiddreads.MuffinEMU",
       "notify": false
     }
