@@ -25,6 +25,7 @@ IGNORABLE_EXCLUDES=(
   ':(exclude)ci/generate-sidestore-source.py' ':(exclude,glob)*.md'
   ':(exclude).github/workflows/build-bench-ipa.yml' ':(exclude).github/workflows/build-bench-rpx.yml'
   ':(exclude).github/workflows/build-rainbow-rpx.yml' ':(exclude).github/workflows/update-sidestore-source.yml'
+  ':(exclude).github/workflows/community-stats.yml'
 )
 
 # move_tag TAG SHA: point a lightweight tag at SHA, creating it if needed.

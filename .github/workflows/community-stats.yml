@@ -1,0 +1,198 @@
+# Daily snapshot of how much attention MuffinEMU gets: downloads per release, stars, forks,
+# watchers, and the repo's traffic (views, clones, referrers, popular pages).
+#
+# Everything lands on the `stats` branch, never main: history.jsonl (one line per day),
+# traffic-daily.csv (GitHub only keeps 14 days of traffic, so each run merges its 14 days in
+# and the history keeps growing), and STATS.md, the readable summary the README links to.
+#
+# Traffic needs a token that can read the repo's admin data, which the workflow's own
+# GITHUB_TOKEN cannot. Add a fine-grained token as the STATS_TOKEN secret (this repository
+# only; Administration: read, Metadata: read). Without it the snapshot still records
+# downloads, stars and forks, and STATS.md says traffic is missing.
+#
+# This file is in build-ios-app.yml's paths-ignore (and ci/build-id.sh, ci/lib-release.sh), so
+# editing it never builds or publishes anything.
+name: Community stats
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: community-stats
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the stats branch (created on the first run)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git init -q stats && cd stats
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git fetch -q --depth 1 origin stats; then
+            git checkout -q -B stats FETCH_HEAD
+          else
+            git checkout -q --orphan stats
+          fi
+
+      - name: Take the snapshot
+        working-directory: stats
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRAFFIC_TOKEN: ${{ secrets.STATS_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import csv, datetime, json, os, re, urllib.error, urllib.request
+
+          REPO = os.environ["GITHUB_REPOSITORY"]
+          TODAY = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+
+          def api(path, token=None):
+              req = urllib.request.Request(
+                  f"https://api.github.com/repos/{REPO}{path}",
+                  headers={"Authorization": f"Bearer {token or os.environ['GH_TOKEN']}",
+                           "Accept": "application/vnd.github+json",
+                           "X-GitHub-Api-Version": "2022-11-28"})
+              with urllib.request.urlopen(req, timeout=60) as r:
+                  return json.load(r)
+
+          repo = api("")
+          releases, page = [], 1
+          while True:
+              batch = api(f"/releases?per_page=100&page={page}")
+              releases += batch
+              if len(batch) < 100:
+                  break
+              page += 1
+
+          def channel(tag):
+              if re.fullmatch(r"v\d+\.\d+", tag): return "stable"
+              if tag == "nightly": return "nightly"
+              if tag.startswith("experimental"): return "experimental"
+              if tag.startswith("audit"): return "audit"
+              return "other"
+
+          downloads = {r["tag_name"]: sum(a["download_count"] for a in r["assets"]) for r in releases}
+          by_channel = {}
+          for tag, n in downloads.items():
+              by_channel[channel(tag)] = by_channel.get(channel(tag), 0) + n
+
+          traffic, traffic_error = None, None
+          token = os.environ.get("TRAFFIC_TOKEN") or None
+          try:
+              traffic = {
+                  "views": api("/traffic/views", token),
+                  "clones": api("/traffic/clones", token),
+                  "referrers": api("/traffic/popular/referrers", token),
+                  "paths": api("/traffic/popular/paths", token),
+              }
+          except urllib.error.HTTPError as e:
+              traffic_error = f"HTTP {e.code}" + ("" if token else " (no STATS_TOKEN secret)")
+
+          snap = {
+              "date": TODAY,
+              "stars": repo["stargazers_count"],
+              "forks": repo["forks_count"],
+              "watchers": repo["subscribers_count"],
+              "open_issues": repo["open_issues_count"],
+              "downloads_total": sum(downloads.values()),
+              "downloads_by_channel": by_channel,
+              "downloads_by_release": downloads,
+          }
+          if traffic:
+              snap["views_14d"] = {"count": traffic["views"]["count"], "uniques": traffic["views"]["uniques"]}
+              snap["clones_14d"] = {"count": traffic["clones"]["count"], "uniques": traffic["clones"]["uniques"]}
+              snap["referrers"] = traffic["referrers"]
+              snap["paths"] = [{k: p[k] for k in ("path", "count", "uniques")} for p in traffic["paths"]]
+          else:
+              snap["traffic_error"] = traffic_error
+
+          # history.jsonl: one line per day; a second run on the same day replaces it.
+          history = []
+          if os.path.exists("history.jsonl"):
+              history = [json.loads(l) for l in open("history.jsonl") if l.strip()]
+          history = [h for h in history if h["date"] != TODAY] + [snap]
+          history.sort(key=lambda h: h["date"])
+          with open("history.jsonl", "w") as f:
+              for h in history:
+                  f.write(json.dumps(h, sort_keys=True) + "\n")
+
+          # traffic-daily.csv: GitHub's per-day numbers, merged so days older than 14 survive.
+          daily = {}
+          if os.path.exists("traffic-daily.csv"):
+              for row in csv.DictReader(open("traffic-daily.csv")):
+                  daily[row["date"]] = row
+          if traffic:
+              for kind in ("views", "clones"):
+                  for d in traffic[kind][kind]:
+                      day = d["timestamp"][:10]
+                      row = daily.setdefault(day, {"date": day})
+                      row[f"{kind}"] = d["count"]
+                      row[f"{kind}_uniques"] = d["uniques"]
+          fields = ["date", "views", "views_uniques", "clones", "clones_uniques"]
+          with open("traffic-daily.csv", "w", newline="") as f:
+              w = csv.DictWriter(f, fieldnames=fields)
+              w.writeheader()
+              for day in sorted(daily):
+                  w.writerow({k: daily[day].get(k, "") for k in fields})
+
+          # STATS.md
+          def delta(key, days):
+              old = [h for h in history if h["date"] <= (datetime.date.fromisoformat(TODAY) - datetime.timedelta(days=days)).isoformat()]
+              if not old: return ""
+              d = snap[key] - old[-1][key]
+              return f" ({'+' if d >= 0 else ''}{d} in {days} days)"
+
+          def vkey(tag):
+              m = re.fullmatch(r"v(\d+)\.(\d+)", tag)
+              return (int(m.group(1)), int(m.group(2))) if m else (-1, -1)
+
+          out = [f"# MuffinEMU community stats", "",
+                 f"Updated {TODAY} by the Community stats workflow. History: "
+                 "[history.jsonl](history.jsonl) and [traffic-daily.csv](traffic-daily.csv).", "",
+                 "| | |", "|---|---|",
+                 f"| IPA downloads, all releases | **{snap['downloads_total']}**{delta('downloads_total', 7)} |",
+                 f"| Stars | {snap['stars']}{delta('stars', 7)} |",
+                 f"| Forks | {snap['forks']}{delta('forks', 7)} |",
+                 f"| Watchers | {snap['watchers']} |"]
+          if traffic:
+              out += [f"| Repo views, last 14 days | {snap['views_14d']['count']} ({snap['views_14d']['uniques']} unique visitors) |",
+                      f"| Clones, last 14 days | {snap['clones_14d']['count']} ({snap['clones_14d']['uniques']} unique; mostly CI and bots) |"]
+          out += ["", "## Downloads by channel", "", "| Channel | Downloads |", "|---|---|"]
+          out += [f"| {c} | {n} |" for c, n in sorted(by_channel.items(), key=lambda x: -x[1])]
+          stable = sorted((t for t in downloads if channel(t) == "stable"), key=vkey, reverse=True)
+          out += ["", "## Stable releases (newest first)", "", "| Release | Downloads |", "|---|---|"]
+          out += [f"| {t} | {downloads[t]} |" for t in stable[:20]]
+          if traffic:
+              recent = [daily[d] for d in sorted(daily)][-30:]
+              out += ["", "## Repo views per day (last 30 days)", "", "| Date | Views | Unique |", "|---|---|---|"]
+              out += [f"| {r['date']} | {r.get('views', '')} | {r.get('views_uniques', '')} |" for r in reversed(recent)]
+              out += ["", "## Where visitors come from (last 14 days)", "", "| Referrer | Views | Unique |", "|---|---|---|"]
+              out += [f"| {r['referrer']} | {r['count']} | {r['uniques']} |" for r in traffic["referrers"]]
+              out += ["", "## Most viewed repo pages (last 14 days)", "", "| Page | Views | Unique |", "|---|---|---|"]
+              out += [f"| `{p['path']}` | {p['count']} | {p['uniques']} |" for p in snap["paths"]]
+          else:
+              out += ["", f"_Traffic (views, clones, referrers) is missing: {traffic_error}. "
+                      "Add a STATS_TOKEN secret; see the workflow file._"]
+          out += ["", "Website visits are counted separately by GoatCounter: "
+                  "https://muffinemu.goatcounter.com", ""]
+          open("STATS.md", "w").write("\n".join(out))
+          print("\n".join(out[:12]))
+          PY
+
+      - name: Commit to the stats branch
+        working-directory: stats
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add history.jsonl traffic-daily.csv STATS.md
+          if git diff --cached --quiet; then echo "nothing changed"; exit 0; fi
+          git commit -q -m "Stats for $(date -u +%Y-%m-%d)"
+          git push -q origin HEAD:stats
