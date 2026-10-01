@@ -2455,6 +2455,12 @@ public:
 		return allocBase;
 	}
 
+	// forgets every allocation. For the end of a title: the memory the entries describe is gone
+	void reset()
+	{
+		list_allocatedEntries.clear();
+	}
+
 	void free(TAddr addr)
 	{
 		for (sint32 i = 0; i < list_allocatedEntries.size(); i++)
@@ -2520,6 +2526,9 @@ void RPLLoader_UnloadAll()
 	rplSymbolStorage_unloadAll();
 	// free all code imports
 	g_heapTrampolineArea.releaseAll();
+	// graphic pack patch groups take their code cave from here and nothing ever gives it back (RPLLoader_ReleaseCodeCaveMem has no
+	// caller), so without this every title that has patch groups with a code cave takes more of the 4 MiB for good
+	heapCodeCaveArea.reset();
 	list_mappedFunctionImports.clear();
 	g_map_callableExports.clear();
 	rplLoader_applicationHasMemoryControl = false;
