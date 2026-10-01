@@ -1,4 +1,8 @@
-# Release channels
+# CI: release channels, and build speed
+
+Two parts: where a build is distributed (channels), and how builds stay fast without shipping a stale binary (the verified core).
+
+## Release channels
 
 A build is distributed to exactly one place, decided once, by `ci/decide-channel.sh`, and never
 inferred from "the last job that finished". There are three channels and everything else publishes
@@ -82,3 +86,79 @@ re-tagged, because a tag is part of every download URL already shared).
 
 `python3 ci/test-generator.py` exercises all of this offline. `.github/workflows/channel-dryrun.yml`,
 in the pull request that added this, proved the publishing scripts against a dry-run flag.
+
+# Build speed: the verified core and reused builds
+
+The slow part of a MuffinEMU build is compiling the Cemu core into `Cemu.framework`
+(about 20 minutes on a macOS runner). The Swift app, packaging and verification are quick.
+So the core is compiled once, verified, and reused, and the workflow
+(`.github/workflows/build-ios-app.yml`) is built around one rule:
+
+> The core is either compiled whole, fresh, or reused whole while nothing it is built from has
+> changed. Nothing in between. No partial results, no "close enough" cache entries.
+
+## The core fingerprint
+
+`ci/core-cache-key.sh` hashes everything that can change a byte of `Cemu.framework`:
+
+- `src/` except the Swift app (`src/ios/App`, `Emulation`, `Rendering`, `Resources`, the Xcode project files)
+- `CMakeLists.txt`, `cmake/`, `triplets/`, `vcpkg.json`, `.gitmodules`
+- `dependencies/`: every submodule at its pinned commit (vcpkg included), the vcpkg overlay ports,
+  and the vendored MoltenVK builds
+- the toolchain: Xcode version and build, iOS SDK version, build and `SDKSettings.json`, the compiler,
+  linker and CMake versions, the host OS, and every environment variable that changes compiler behaviour
+- every CMake flag and define, and the deployment target
+
+`ci/core-cache-key.sh --manifest` prints exactly what is hashed. The manifest lists its own
+contents, so adding an input changes every fingerprint, which is the safe direction.
+
+## The lifecycle
+
+1. **Change.** Anything above changes the fingerprint. The cached core no longer matches.
+2. **Fresh compile.** A clean build directory, `ci/build-core.sh`, no compiler cache, no partial
+   artifacts. (The only cache a fresh compile touches is vcpkg's own binary cache of third-party
+   libraries, keyed by vcpkg's ABI hash of each port. It predates this workflow and does not hold Cemu code.)
+3. **Verify.** The export gate (`ci/gate-exports.sh`), the stall-detector unit tests, the app link
+   (the app must embed a core with the same `LC_UUID`), and both IPA verifications.
+4. **Cache.** Only after step 3, and only for a build of `main`: the core is stamped with its
+   fingerprint (`core-fingerprint.txt`, `core-manifest.txt`, binary hash and UUID, all inside the cached
+   bundle) and saved as the **current core**: `muffin-core-current-v1-<fingerprint>-<run>`. Older current cores are deleted.
+5. **Reuse.** Every later build restores the newest `muffin-core-current-v1-*` entry, then
+   re-derives the fingerprint from its own tree and runs `ci/core-cache-key.sh --verify`. Equal means
+   reuse. Anything else, including a mismatch, a damaged binary, or a revert to a state an older
+   cache entry would have matched, discards it and goes to step 2.
+
+Pull requests may compile a fresh core (and do, when they change it), but they never change which
+core is current. They upload their fresh core as an artifact (`cemu-core-<fingerprint>`) instead.
+
+## Releases without a second build
+
+A release is normally the same tree a pull request already built. `ci/build-id.sh` fingerprints every
+tracked file that can change the binary, by content. Every run that passes verification uploads an
+artifact `built-<build id>`. When a push to `main` has a build id with a green, same-repository run
+of this workflow behind it, that run's IPAs and dSYM are reused: `ci/package-ipas.sh` re-stamps the
+version and build number (an `Info.plist` edit on a copy) and signs again, because the plist is covered
+by the ad-hoc signature. Verification, release notes and publishing run as usual. If no such run exists
+the workflow builds.
+
+Because that run compiled the core, the run that publishes adopts it: it re-checks the core against
+main's own tree (same fingerprint, manifest, binary hash, export gate, and the same `LC_UUID` as the core
+inside the IPAs being published) and only then promotes it to current, without compiling it again.
+
+## Forcing a fresh build
+
+Put `[fresh-core]` in a commit message (the last commit of a pull request, or the commit pushed to
+main), or run the workflow by hand with `fresh_core` ticked. The cached core and any prebuilt IPA are
+ignored, everything is compiled fresh and verified, and on `main` the result is promoted as the new
+current core.
+
+## Things to know
+
+- The marker is matched literally anywhere in a commit message, including a sentence that merely mentions it. Write it only when you mean it.
+- GitHub deletes cache entries that have not been used for 7 days. A quiet week means the next build
+  compiles a fresh core. That is slow, not wrong.
+- The commit hash the core prints in its log and diagnostics report (`EMULATOR_HASH`) is that of the
+  commit whose build compiled it, which may be older than the commit you are running.
+- Edit the core's flags in `ci/core-cache-key.sh` (`CMAKE_FLAGS`), not in the workflow: `ci/build-core.sh`
+  reads them from there, which is what keeps the fingerprint and the build from drifting apart.
+- Changing the fingerprint script's manifest (adding or removing a line) invalidates every cached core on purpose.
