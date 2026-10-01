@@ -937,6 +937,9 @@ namespace CafeSystem
 		uint32 h = generateHashFromRawRPXData(execData->data(), execData->size());
 		sForegroundTitleId = 0xFFFFFFFF00000000ULL | (uint64)h;
 		cemuLog_log(LogType::Force, "Generated placeholder TitleId: {:016x}", sForegroundTitleId);
+		// a standalone executable has no game profile, and the one the previous title loaded must not carry over (gameProfile_load() is not called here)
+		g_current_game_profile->ResetOptional();
+		ppcThreadQuantum = g_current_game_profile->GetThreadQuantum();
 		// setup memory space and ppc recompiler
         SetupMemorySpace();
         PPCRecompiler_init();
