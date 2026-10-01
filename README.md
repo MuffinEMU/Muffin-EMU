@@ -23,7 +23,8 @@
   <a href="https://kiddreads.github.io/MuffinEMU/docs/installation.html">Install</a> ·
   <a href="https://kiddreads.github.io/MuffinEMU/docs/">Documentation</a> ·
   <a href="https://github.com/kiddreads/MuffinEMU/releases">Releases</a> ·
-  <a href="https://github.com/kiddreads/MuffinEMU/issues/new/choose">Report a bug</a>
+  <a href="https://github.com/kiddreads/MuffinEMU/issues/new/choose">Report a bug</a> ·
+  <a href="https://github.com/kiddreads/MuffinEMU/blob/stats/STATS.md">Community stats</a>
 </p>
 
 ---
