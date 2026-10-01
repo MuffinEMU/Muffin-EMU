@@ -102,6 +102,7 @@ on:
       - '.github/workflows/build-bench-rpx.yml'
       - '.github/workflows/build-rainbow-rpx.yml'
       - '.github/workflows/update-sidestore-source.yml'
+      - '.github/workflows/community-stats.yml'
   # A pull request compiles the whole thing and publishes NOTHING - the three
   # release steps at the end are skipped for this event. Until this existed there
   # was no way to compile-check a change without a push to main taking the next
@@ -123,6 +124,7 @@ on:
       - '.github/workflows/build-bench-rpx.yml'
       - '.github/workflows/build-rainbow-rpx.yml'
       - '.github/workflows/update-sidestore-source.yml'
+      - '.github/workflows/community-stats.yml'
 
 # One build per branch: three pushes in a row should produce the newest IPA, not three. Runs on
 # main are never cancelled - a release that has started finishes, and a newer push waits its turn

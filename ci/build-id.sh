@@ -22,4 +22,5 @@ git ls-files -s -- . \
   ':(exclude).github/workflows/build-bench-rpx.yml' \
   ':(exclude).github/workflows/build-rainbow-rpx.yml' \
   ':(exclude).github/workflows/update-sidestore-source.yml' \
+  ':(exclude).github/workflows/community-stats.yml' \
   | shasum -a 256 | cut -c1-40
