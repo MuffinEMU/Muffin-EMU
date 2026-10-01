@@ -138,12 +138,15 @@ enum MuffinTheme {
     // Blush pink, warmed slightly for dark mode.
     static var blushPink: Color { Color(light: t.blushPinkLight, dark: t.blushPinkDark) }
 
-    // Text and line work: dark browns on cream flip to light creams on umber.
-    static var brownDarkest: Color { Color(light: t.brownDarkestLight, dark: t.brownDarkestDark) }
-    static var brownDark: Color { Color(light: t.brownDarkLight, dark: t.brownDarkDark) }
-    static var brownMid: Color { Color(light: t.brownMidLight, dark: t.brownMidDark) }
+    // Text and line work: dark browns on cream flip to light creams on umber. Each one is held
+    // to 4.5:1 against every surface text sits on (readableInk), so a palette whose mid brown
+    // was a shade too light on white Form rows reads properly without its hex changing.
+    static var brownDarkest: Color { readableInk(light: t.brownDarkestLight, dark: t.brownDarkestDark) }
+    static var brownDark: Color { readableInk(light: t.brownDarkLight, dark: t.brownDarkDark) }
+    static var brownMid: Color { readableInk(light: t.brownMidLight, dark: t.brownMidDark) }
 
-    // Sparkle cream: light in both modes (button text on the muffin-top gradient).
+    // Sparkle cream: light in both modes. Button text on the muffin-top gradient goes through
+    // onMuffinTop, which swaps it for a dark ink on the pale gradients where cream won't read.
     static var sparkleCream: Color { Color(light: t.sparkleCreamLight, dark: t.sparkleCreamDark) }
 
     // Shadow: dark mode uses a colour with more contrast against its ground.
@@ -712,7 +715,8 @@ struct MuffinCard<Content: View>: View {
     }
 }
 
-/// Rounded primary button (muffin-top gradient fill, cream text).
+/// Rounded primary button (muffin-top gradient fill, cream text where cream reads on it -
+/// see MuffinTheme.onMuffinTop).
 ///
 /// Painted, not Liquid Glass: nothing here samples the backdrop, so it is safe over the live
 /// Metal layer. It has a glint along the top edge (`controlSheen`), a rim that is lighter above
@@ -740,7 +744,7 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
             if UIStyle.isClassic {
                 return AnyView(configuration.label
                     .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(MuffinTheme.sparkleCream)
+                    .foregroundColor(MuffinTheme.onMuffinTop)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(MuffinTheme.muffinTopGradient)
@@ -754,7 +758,7 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
                 .overlay(MuffinTheme.controlSheen)
             return AnyView(configuration.label
                 .font(MuffinTheme.Font.primaryButton)
-                .foregroundColor(MuffinTheme.sparkleCream)
+                .foregroundColor(MuffinTheme.onMuffinTop)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(fill)
