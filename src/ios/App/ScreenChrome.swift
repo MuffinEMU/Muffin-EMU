@@ -43,7 +43,8 @@ struct ScreenEmptyState: View {
                     .fill(MuffinTheme.wrapper)
                 Image(systemName: systemImage)
                     .font(.system(size: 26, weight: .semibold))
-                    .foregroundColor(MuffinTheme.pixelBlue)
+                    .foregroundColor(LegibleInk.ensure(MuffinTheme.pixelBlue, on: MuffinTheme.wrapper,
+                                                       minimum: LegibleInk.glyph))
             }
             .frame(width: 64, height: 64)
             .accessibilityHidden(true)
@@ -137,11 +138,11 @@ struct ScreenSlotBadge: View {
             if isFilled {
                 Text(label)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(MuffinTheme.sparkleCream)
+                    .foregroundColor(LegibleInk.on(MuffinTheme.pixelBlue, light: MuffinTheme.sparkleCream))
             } else {
                 Text(label)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(MuffinTheme.brownMid)
+                    .foregroundColor(LegibleInk.ensure(MuffinTheme.brownMid, on: MuffinTheme.wrapper))
             }
         }
         .frame(width: 30, height: 30)
@@ -171,7 +172,9 @@ struct ScreenChip: View {
     private var modernBody: some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .foregroundColor(isMuted ? MuffinTheme.brownMid : MuffinTheme.sparkleCream)
+            .foregroundColor(isMuted
+                             ? LegibleInk.ensure(MuffinTheme.brownMid, on: MuffinTheme.wrapper)
+                             : LegibleInk.on(MuffinTheme.pixelBlue, light: MuffinTheme.sparkleCream))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(
@@ -216,8 +219,9 @@ extension View {
                               isProminent: Bool = false,
                               isPressed: Bool = false) -> some View {
         let foreground: Color = isProminent
-            ? MuffinTheme.sparkleCream
-            : (isDestructive ? MuffinTheme.blushPink : MuffinTheme.pixelBlue)
+            ? LegibleInk.on(MuffinTheme.pixelBlue, light: MuffinTheme.sparkleCream)
+            : LegibleInk.ensure(isDestructive ? MuffinTheme.blushPink : MuffinTheme.pixelBlue,
+                                on: MuffinTheme.wrapper)
 
         return self
             .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -231,6 +235,97 @@ extension View {
             )
             // Makes the whole capsule tappable inside a List row.
             .contentShape(Capsule())
+    }
+}
+
+// MARK: - Contrast
+
+/// Ink that stays readable on the colour it sits on.
+///
+/// Theme palettes are sampled from icon artwork, so a theme's accent can be a pale yellow or
+/// a pastel exactly where text sits on it or inside it, and the controller skins put one
+/// glyph colour on every button colour from navy to lemon. These resolve per appearance,
+/// against the colours the current theme or skin actually produces, so every combination
+/// reads without each preset having to be checked by hand. Both return dynamic colours, so
+/// they follow light and dark mode like the theme tokens they are built from.
+enum LegibleInk {
+    /// WCAG AA: 4.5:1 for text, 3:1 for icons, glyphs and large bold text.
+    static let text: CGFloat = 4.5
+    static let glyph: CGFloat = 3.0
+
+    /// `light` or `dark`, whichever reads better on `fill`. A translucent fill is judged
+    /// over mid grey, which is what a game frame behind it averages out to.
+    static func on(_ fill: Color, light: Color = .white, dark: Color = Color(white: 0.12)) -> Color {
+        let fill = UIColor(fill), light = UIColor(light), dark = UIColor(dark)
+        return Color(uiColor: UIColor { traits in
+            let bg = opaque(fill.resolvedColor(with: traits))
+            let l = light.resolvedColor(with: traits), d = dark.resolvedColor(with: traits)
+            return contrast(l, bg) >= contrast(d, bg) ? l : d
+        })
+    }
+
+    /// `ink` itself when it already reaches `minimum` against `background`. Otherwise `ink`
+    /// moved toward black or white, whichever gets there sooner, and only as far as it
+    /// takes, so the hue a theme or a colour file chose survives wherever it can.
+    static func ensure(_ ink: Color, on background: Color, minimum: CGFloat = text) -> Color {
+        let ink = UIColor(ink), background = UIColor(background)
+        return Color(uiColor: UIColor { traits in
+            adjusted(ink.resolvedColor(with: traits),
+                     on: opaque(background.resolvedColor(with: traits)), minimum: minimum)
+        })
+    }
+
+    static func contrast(_ a: UIColor, _ b: UIColor) -> CGFloat {
+        let la = luminance(a), lb = luminance(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+    }
+
+    private static func adjusted(_ ink: UIColor, on bg: UIColor, minimum: CGFloat) -> UIColor {
+        if contrast(ink, bg) >= minimum { return ink }
+        var best: (step: Int, colour: UIColor)?
+        for target in [UIColor.black, UIColor.white] {
+            for step in 1...20 {
+                let candidate = mix(ink, target, CGFloat(step) / 20)
+                if contrast(candidate, bg) >= minimum {
+                    if step < (best?.step ?? .max) { best = (step, candidate) }
+                    break
+                }
+            }
+        }
+        // Only reachable for a minimum beyond what black or white can do on this background.
+        return best?.colour ?? (contrast(.white, bg) >= contrast(.black, bg) ? .white : .black)
+    }
+
+    private static func components(_ c: UIColor) -> (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat) {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
+        if !c.getRed(&r, green: &g, blue: &b, alpha: &a) {
+            var w: CGFloat = 0
+            if c.getWhite(&w, alpha: &a) { r = w; g = w; b = w }
+        }
+        func unit(_ v: CGFloat) -> CGFloat { min(max(v, 0), 1) }
+        return (unit(r), unit(g), unit(b), unit(a))
+    }
+
+    private static func opaque(_ c: UIColor) -> UIColor {
+        let x = components(c)
+        guard x.a < 1 else { return c }
+        let grey = 0.5 * (1 - x.a)
+        return UIColor(red: x.r * x.a + grey, green: x.g * x.a + grey, blue: x.b * x.a + grey, alpha: 1)
+    }
+
+    private static func mix(_ a: UIColor, _ b: UIColor, _ k: CGFloat) -> UIColor {
+        let x = components(a), y = components(b)
+        return UIColor(red: x.r + (y.r - x.r) * k, green: x.g + (y.g - x.g) * k,
+                       blue: x.b + (y.b - x.b) * k, alpha: x.a)
+    }
+
+    private static func luminance(_ c: UIColor) -> CGFloat {
+        let x = components(c)
+        func linear(_ v: CGFloat) -> Double {
+            let v = Double(v)
+            return v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+        }
+        return CGFloat(0.2126 * linear(x.r) + 0.7152 * linear(x.g) + 0.0722 * linear(x.b))
     }
 }
 
