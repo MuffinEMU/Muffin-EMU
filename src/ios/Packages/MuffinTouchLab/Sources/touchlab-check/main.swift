@@ -134,6 +134,37 @@ for info in SchemeCatalog.all {
     check(bad.isEmpty, "\(info.name): \(bad.count) window sizes fail, e.g. \(bad.prefix(3).joined(separator: " | "))")
 }
 
+// MARK: Stick spacing
+// The hand-size setting moves the sticks apart or together. Every value the app's slider
+// can send must still give a layout with no overlaps, on every target device, and must
+// actually move the sticks where there is room to.
+
+for device in TargetDevice.all {
+    for id in ["zone", "adaptive", "frame"] {
+        let base = device.context(.stacked)
+        let home = SchemeCatalog.make(id) as! ControlScheme
+        home.layout(base)
+        let homeGap = abs(home.controls.first { $0.label == "R" && $0.role == .stickBase }!.shape.center.x
+                          - home.controls.first { $0.label == "L" && $0.role == .stickBase }!.shape.center.x)
+        var gaps: [CGFloat] = []
+        for spacing: CGFloat in [-3, -1.5, 1.5] {
+            var ctx = base
+            ctx.stickSpacing = spacing
+            let scheme = SchemeCatalog.make(id) as! ControlScheme
+            scheme.layout(ctx)
+            let p = LayoutCheck.problems(scheme.controls, in: ctx.safeBounds)
+            check(p.isEmpty, "\(device.name) \(id) spacing \(spacing): \(p.first ?? "")")
+            let gap = abs(scheme.controls.first { $0.label == "R" && $0.role == .stickBase }!.shape.center.x
+                          - scheme.controls.first { $0.label == "L" && $0.role == .stickBase }!.shape.center.x)
+            check(spacing < 0 ? gap <= homeGap + 0.5 : gap >= homeGap - 0.5,
+                  "\(device.name) \(id) spacing \(spacing): moved the wrong way (\(homeGap) -> \(gap))")
+            gaps.append(gap)
+        }
+        // More inward never ends up further apart than less inward.
+        check(gaps[0] <= gaps[1] + 0.5, "\(device.name) \(id): spacing -3 gives a wider gap (\(gaps[0])) than -1.5 (\(gaps[1]))")
+    }
+}
+
 // MARK: Behaviour, through the engine, on the A12Z iPad
 
 let ipad = TargetDevice.all.first { $0.name.contains("A12Z") }!
