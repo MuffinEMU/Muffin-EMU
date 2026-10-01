@@ -27,7 +27,7 @@ struct PremiumSettingsSection: View {
                             .foregroundColor(MuffinTheme.brownDarkest)
                         Text("The pro app icons are yours.")
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.secondaryText)
                     }
 
                     Spacer(minLength: 0)
@@ -81,7 +81,7 @@ struct PremiumSettingsSection: View {
                     if let premiumCodeError {
                         Text(premiumCodeError)
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.secondaryText)
                     }
                 }
                 .padding(.vertical, 4)

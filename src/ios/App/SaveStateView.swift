@@ -183,7 +183,7 @@ struct SaveStateSheet: View {
 
                 Text(subtitle(for: slot))
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
 
             Spacer(minLength: 8)

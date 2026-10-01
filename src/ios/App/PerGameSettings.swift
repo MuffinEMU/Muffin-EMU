@@ -375,7 +375,7 @@ struct GameOptionsView: View {
                         if let saveTransferMessage {
                             Text(saveTransferMessage)
                                 .font(.system(size: 12))
-                                .foregroundColor(saveTransferFailed ? .red : .secondary)
+                                .foregroundColor(saveTransferFailed ? .red : MuffinTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     } header: {

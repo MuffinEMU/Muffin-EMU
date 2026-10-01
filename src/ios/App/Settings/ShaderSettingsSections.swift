@@ -54,7 +54,7 @@ struct ShaderCacheSection: View {
             if let cacheStatusMessage {
                 Text(cacheStatusMessage)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
         } header: {
             SettingsSectionHeader("Shader Cache", icon: "externaldrive", accent: .core)
