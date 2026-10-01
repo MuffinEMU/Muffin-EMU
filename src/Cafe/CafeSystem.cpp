@@ -1385,6 +1385,7 @@ namespace CafeSystem
             delete it.second; // a private copy made by MlcStorageMountTitle(), nothing else refers to it
         }
         m_mlcMountedTitles.clear();
+        iosu::mcpResetTitleMounts();
     }
 
 	uint32 GetRPXHashBase()
