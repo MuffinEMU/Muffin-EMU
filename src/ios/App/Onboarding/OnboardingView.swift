@@ -141,15 +141,17 @@ private struct OnboardingPageScaffold<Content: View>: View {
                 hero.view
                     .frame(maxWidth: .infinity, alignment: .center)
 
+                // Straight on the background gradient, so the gradient's own ink: the
+                // brown inks were dark on dark in the themes with a dark gradient.
                 Text(title)
                     .font(.system(.title, design: .rounded).weight(.bold))
-                    .foregroundColor(MuffinTheme.brownDarkest)
+                    .foregroundColor(MuffinTheme.onBackground)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
 
                 Text(subtitle)
                     .font(.system(.body, design: .rounded))
-                    .foregroundColor(MuffinTheme.brownMid)
+                    .foregroundColor(MuffinTheme.onBackgroundMuted)
                     .fixedSize(horizontal: false, vertical: true)
 
                 content
