@@ -3,7 +3,7 @@ import SwiftUI
 /// Every on-screen control setting except which cluster sits where - moving a
 /// cluster is a thing you can only sensibly do with a game under it, so that lives
 /// in the emulator view. Size and opacity are worth setting from here too, and
-/// "Reset layout" needs to be reachable from somewhere that is not itself on top of
+/// "Reset controls to default" needs to be reachable from somewhere that is not itself on top of
 /// the pad.
 struct OnScreenControlsSection: View {
     // Same keys the on-screen pad reads.
@@ -30,6 +30,8 @@ struct OnScreenControlsSection: View {
     private var useMeloControls = MeloControlsSetting.defaultValue
     @AppStorage(TouchLabSettings.schemeKey)
     private var touchLabScheme = TouchLabSettings.defaultScheme
+    @AppStorage(ControllerLayoutSettings.stickSpacingKey)
+    private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     @State private var showingResetLayoutConfirmation = false
     @State private var showingResetBindingsConfirmation = false
     /// Shows the binding count so a reset can be confirmed.
@@ -116,13 +118,13 @@ struct OnScreenControlsSection: View {
             }
             .tint(MuffinTheme.pixelBlue)
 
-            // Resets MuffinEMU's own pad (size, opacity, dragged clusters), which is also what
-            // the TouchLab styles read for size and opacity.
+            // Resets MuffinEMU's own pad (size, opacity, stick spacing, moved buttons), which is
+            // also what the TouchLab styles read for size, opacity and stick spacing.
             Button(role: .destructive, action: { showingResetLayoutConfirmation = true }) {
-                DestructiveSettingsLabel(title: "Reset layout", systemImage: "arrow.uturn.backward")
+                DestructiveSettingsLabel(title: "Reset controls to default", systemImage: "arrow.uturn.backward")
             }
 
-            // Separate from "Reset layout": that moves buttons on screen, this repairs what
+            // Separate from the reset above: that moves buttons on screen, this repairs what
             // a press is wired to.
             Button(role: .destructive, action: { showingResetBindingsConfirmation = true }) {
                 DestructiveSettingsLabel(title: "Reset controller bindings", systemImage: "gamecontroller.fill")
@@ -142,13 +144,13 @@ struct OnScreenControlsSection: View {
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
-        .confirmationDialog("Reset layout?", isPresented: $showingResetLayoutConfirmation, titleVisibility: .visible) {
-            Button("Reset layout", role: .destructive) {
+        .confirmationDialog("Reset controls to default?", isPresented: $showingResetLayoutConfirmation, titleVisibility: .visible) {
+            Button("Reset to default", role: .destructive) {
                 ControllerLayoutSettings.reset()
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Button size, opacity and any clusters you've dragged go back to how MuffinEMU ships.")
+            Text("Button size, opacity, stick spacing and every button you've moved go back to how MuffinEMU ships.")
         }
         .confirmationDialog("Reset controller bindings?", isPresented: $showingResetBindingsConfirmation, titleVisibility: .visible) {
             Button("Reset bindings", role: .destructive) {
@@ -181,6 +183,38 @@ struct OnScreenControlsSection: View {
                 }
             }
             .tint(MuffinTheme.pixelBlue)
+        }
+
+        // Hand size. Only where the sticks sit in fixed places: MuffinEMU's pad, Zone
+        // and Adaptive.
+        if !usingTouchLab || TouchLabSettings.hasFixedSticks(touchLabScheme) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Stick spacing")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Spacer()
+                    Text(ControllerLayoutSettings.stickSpacingLabel(stickSpacing))
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
+                        .accessibilityHidden(true)
+                    Slider(
+                        value: $stickSpacing,
+                        in: ControllerLayoutSettings.minStickSpacing...ControllerLayoutSettings.maxStickSpacing,
+                        step: ControllerLayoutSettings.stickSpacingStep
+                    )
+                    .accessibilityLabel("Stick spacing")
+                    .accessibilityValue(ControllerLayoutSettings.stickSpacingLabel(stickSpacing))
+                    Image(systemName: "arrow.left.and.line.vertical.and.arrow.right")
+                        .accessibilityHidden(true)
+                }
+                Text("Moves both sticks closer together or further apart, to fit your hands.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
 
         // Above the two sliders because it is a different kind of question: the
@@ -238,6 +272,6 @@ struct OnScreenControlsSection: View {
     }
 
     private var fullText: String {
-        "Add analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nTo move a cluster, start a game and tap the move button in the top bar."
+        "Add analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nStick spacing moves both sticks closer together or further apart, for smaller or bigger hands. On a narrow screen it stops before the sticks would touch.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nTo move a cluster, start a game and tap the move button in the top bar."
     }
 }

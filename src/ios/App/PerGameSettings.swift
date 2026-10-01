@@ -282,6 +282,8 @@ struct GameOptionsView: View {
                                 }
                             }
                             .pickerStyle(.menu)
+                            // The row's own Text is the label; a menu picker in a Form row prints its label as well.
+                            .labelsHidden()
                             .tint(MuffinTheme.accentText)
                         }
                         HStack {
@@ -294,6 +296,7 @@ struct GameOptionsView: View {
                                 }
                             }
                             .pickerStyle(.menu)
+                            .labelsHidden()
                             .tint(MuffinTheme.accentText)
                         }
                         HStack {
@@ -307,6 +310,7 @@ struct GameOptionsView: View {
                                 }
                             }
                             .pickerStyle(.menu)
+                            .labelsHidden()
                             .tint(MuffinTheme.accentText)
                             .disabled(!DeviceCapabilities.current.multicoreViable)
                         }
