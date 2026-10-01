@@ -24,6 +24,14 @@ namespace iosu
 
 	bool sHasAllTitlesMounted = false;
 
+	// CafeSystem::MlcStorageUnmountAllTitles() drops the virtual mounts that the first title list request made when a title stops. Without this
+	// the next title (the Wii U Menu, mainly) asks, is told they exist, and cannot read the meta or icons of the games it lists
+	void mcpResetTitleMounts()
+	{
+		std::unique_lock _lock(sTitleInfoMutex);
+		sHasAllTitlesMounted = false;
+	}
+
 	uint32 mcpBuildTitleList(MCPTitleInfo* titleList, uint32 maxTitlesToCopy, std::function<bool(const TitleInfo&)> filterFunc)
 	{
 		CafeTitleList::WaitForMandatoryScan();
