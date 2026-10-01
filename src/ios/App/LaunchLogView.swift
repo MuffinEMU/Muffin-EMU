@@ -116,7 +116,11 @@ struct LaunchLogView: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(.white.opacity(0.6))
+                            // 11pt glyph, 44pt target.
+                            .frame(width: 44, height: 28)
+                            .contentShape(Rectangle())
                     }
+                    .accessibilityLabel("Close launch log")
                 }
             }
             .padding(.horizontal, 12)
