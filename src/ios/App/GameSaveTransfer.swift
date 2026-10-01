@@ -70,6 +70,13 @@ enum GameSaveTransfer {
         }
     }()
 
+    /// Moves saves that earlier versions imported into the wrong folder, if there are any. Called
+    /// once at launch, so a game started straight from the library already finds them; without it
+    /// the move waited for the first time a game's save was looked up.
+    static func migrateMisplacedSavesIfNeeded() {
+        _ = migratedMisplacedSaves
+    }
+
     /// `mlc/mlc01/usr/save/<HIGH>/<LOW>` for this game, whether or not it exists yet.
     ///
     /// Returns nil only when the title ID is unknown, which happens for a game whose
