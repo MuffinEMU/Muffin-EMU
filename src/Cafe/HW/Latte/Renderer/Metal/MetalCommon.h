@@ -132,10 +132,19 @@ inline bool CommandBufferCompleted(MTL::CommandBuffer* commandBuffer)
 // lost and later waits only poll briefly, until a wait succeeds again.
 inline bool WaitForCommandBuffer(MTL::CommandBuffer* commandBuffer, const char* what)
 {
-    if (!commandBuffer || CommandBufferCompleted(commandBuffer))
+    if (!commandBuffer)
         return true;
 
     auto& state = LatteWait::Get();
+    if (CommandBufferCompleted(commandBuffer))
+    {
+        // A command buffer that finished cleanly shows the GPU is running this process's work, so an earlier give-up no longer stands. The flag
+        // used to clear only on a wait that really blocked: after one slow moment and CPU-bound play it stayed set, and the stop that ended
+        // the game read it as a lost GPU and refused every later launch
+        if (commandBuffer->status() == MTL::CommandBufferStatusCompleted && state.gpuPresumedLost.load(std::memory_order_relaxed))
+            state.gpuPresumedLost.store(false, std::memory_order_relaxed);
+        return true;
+    }
     LatteWait::Scope waitScope(what);
     PerfTelemetry::ScopedTimer syncTimer(PerfTelemetry::Get().gpuSyncNs);
 
