@@ -1181,6 +1181,8 @@ struct EmulatorViewOptimized: View {
     private var controlScale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.opacityKey)
     private var controlOpacity = ControllerLayoutSettings.defaultOpacity
+    @AppStorage(ControllerLayoutSettings.stickSpacingKey)
+    private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     /// Same key the pad and SettingsView read. Offered in the move-controls panel as
     /// well as in Settings because switching schemes is a thing you decide with a game
     /// under you, exactly like the two sliders next to it.
@@ -2093,6 +2095,28 @@ struct EmulatorViewOptimized: View {
                                     .foregroundColor(.white.opacity(0.7))
                                     .frame(width: 34, alignment: .trailing)
                             }
+
+                            // Hand size: both sticks move together, apart or closer.
+                            HStack(spacing: 10) {
+                                Text("Sticks")
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.85))
+                                Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .accessibilityHidden(true)
+                                Slider(
+                                    value: $stickSpacing,
+                                    in: ControllerLayoutSettings.minStickSpacing...ControllerLayoutSettings.maxStickSpacing,
+                                    step: ControllerLayoutSettings.stickSpacingStep
+                                )
+                                .accessibilityLabel("Stick spacing")
+                                .accessibilityValue(ControllerLayoutSettings.stickSpacingLabel(stickSpacing))
+                                Image(systemName: "arrow.left.and.line.vertical.and.arrow.right")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .accessibilityHidden(true)
+                            }
                         }
 
                         HStack(spacing: 12) {
@@ -2102,7 +2126,7 @@ struct EmulatorViewOptimized: View {
                                     Button("Reset to default", role: .destructive) { ControllerLayoutSettings.reset() }
                                     Button("Cancel", role: .cancel) { }
                                 } message: {
-                                    Text("Button size, opacity and every button you've moved go back to how MuffinEMU ships.")
+                                    Text("Button size, opacity, stick spacing and every button you've moved go back to how MuffinEMU ships.")
                                 }
 
                             Button("Done") {
