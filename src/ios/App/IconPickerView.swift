@@ -40,6 +40,7 @@ struct IconPickerView: View {
                 }
             }
             .navigationTitle("App Icon")
+            .muffinOpaqueNavigationBar()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
