@@ -59,6 +59,7 @@
 #include "Cafe/OS/libs/nfc/nfc.h"
 #include "Cafe/OS/libs/ntag/ntag.h"
 #include "Cafe/OS/libs/nn_aoc/nn_aoc.h"
+#include "Cafe/OS/libs/nn_act/nn_act.h"
 #include "Cafe/OS/libs/nn_pdm/nn_pdm.h"
 #include "Cafe/OS/libs/nn_cmpt/nn_cmpt.h"
 #include "Cafe/OS/libs/nn_ccr/nn_ccr.h"
@@ -1260,6 +1261,7 @@ namespace CafeSystem
 		for(auto it = s_iosuModules.rbegin(); it != s_iosuModules.rend(); ++it)
 			(*it)->TitleStop();
 		iosuAct_resetAccountCache();
+		nn::act::ResetForNewTitle();
 		coreinit::FSResetMounts();
 		logPhase("resetting IOSU");
         // reset Cemu subsystems
