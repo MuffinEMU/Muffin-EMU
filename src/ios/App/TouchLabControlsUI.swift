@@ -107,6 +107,7 @@ struct TouchLabLayoutPanel: View {
     @AppStorage(TouchLabSettings.floatCameraKey) private var floatCamera = TouchLabSettings.defaultFloatCamera
     @AppStorage(ControllerLayoutSettings.scaleKey) private var controlScale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.opacityKey) private var controlOpacity = ControllerLayoutSettings.defaultOpacity
+    @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     @State private var showingResetConfirmation = false
 
     var body: some View {
@@ -148,6 +149,28 @@ struct TouchLabLayoutPanel: View {
                         .foregroundColor(.white.opacity(0.7))
                 }
 
+                // Hand size: both sticks move together, apart or closer. Only the styles
+                // with sticks in fixed places have anything for it to move.
+                if TouchLabSettings.hasFixedSticks(scheme) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.7))
+                            .accessibilityHidden(true)
+                        Slider(
+                            value: $stickSpacing,
+                            in: ControllerLayoutSettings.minStickSpacing...ControllerLayoutSettings.maxStickSpacing,
+                            step: ControllerLayoutSettings.stickSpacingStep
+                        )
+                        .accessibilityLabel("Stick spacing")
+                        .accessibilityValue(ControllerLayoutSettings.stickSpacingLabel(stickSpacing))
+                        Image(systemName: "arrow.left.and.line.vertical.and.arrow.right")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.7))
+                            .accessibilityHidden(true)
+                    }
+                }
+
                 if scheme == TouchLabSettings.floatStyleID {
                     Picker("Camera", selection: $floatCamera) {
                         ForEach(TouchLabSettings.cameraOptions, id: \.value) { option in
@@ -165,8 +188,8 @@ struct TouchLabLayoutPanel: View {
                             Button("Cancel", role: .cancel) { }
                         } message: {
                             Text(scheme == TouchLabSettings.adaptiveStyleID
-                                 ? "Size and opacity go back to how MuffinEMU ships, and Adaptive forgets where your thumbs land in this game."
-                                 : "Size and opacity go back to how MuffinEMU ships.")
+                                 ? "Size, opacity and stick spacing go back to how MuffinEMU ships, and Adaptive forgets where your thumbs land in this game."
+                                 : "Size, opacity and stick spacing go back to how MuffinEMU ships.")
                         }
 
                     Button("Done", action: onDone)
@@ -184,11 +207,13 @@ struct TouchLabLayoutPanel: View {
         .transition(.opacity)
     }
 
-    /// Size and opacity are the only placement the fixed styles have. Adaptive also moves
-    /// its buttons to where your thumbs land, so for Adaptive this game's learning goes too.
+    /// Size, opacity and stick spacing are the only placement the fixed styles have.
+    /// Adaptive also moves its buttons to where your thumbs land, so for Adaptive this
+    /// game's learning goes too.
     private func resetToDefault() {
         controlScale = ControllerLayoutSettings.defaultScale
         controlOpacity = ControllerLayoutSettings.defaultOpacity
+        stickSpacing = ControllerLayoutSettings.defaultStickSpacing
         if scheme == TouchLabSettings.adaptiveStyleID {
             TouchLabSettings.resetAdaptive(gameID: gameID)
         }
