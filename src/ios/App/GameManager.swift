@@ -1526,8 +1526,8 @@ enum EmulationState {
 }
 
 /// Applies a game's own settings when the Wii U Menu switches to it, exactly as a library launch does before boot:
-/// "Favour accuracy" and "Compile shaders in the background" (the two per-game overrides), and the starting controls and screen
-/// layout for titles that need them (GameControlHints). Settings that are global (renderer, audio, overlays, CPU cores, ...) were
+/// "Favour accuracy", "Compile shaders in the background" and "CPU cores" (the per-game overrides), and the starting controls and
+/// screen layout for titles that need them (GameControlHints). Settings that are global (renderer, audio, overlays, ...) were
 /// already pushed when the Menu itself was launched and stay as they are. Runs on the engine's title-switch thread, so it only
 /// touches thread-safe state.
 final class TitleSwitchSettings {
@@ -1554,6 +1554,11 @@ final class TitleSwitchSettings {
     static func apply(titleId: UInt64) {
         // A title that is not in the library has no overrides, so it gets the global defaults.
         let id = shared.gameID(for: titleId) ?? ""
+        // The core count is decided when the incoming title's threads start, which is after this
+        // call, so the game's own choice (and Auto's memory of a three-core run that went badly)
+        // has to be in place now. Each setter recomputes the CPU mode, so the order does not matter.
+        cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemoted(gameID: id))
+        cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: id).bridgeValue)
         cemu_bridge_set_favour_accuracy(PerGameSettingsStore.shared.effectiveFavourAccuracy(for: id))
         cemu_bridge_set_async_shader_compile(PerGameSettingsStore.shared.effectivePreCompileShaders(for: id))
         #if os(iOS)
