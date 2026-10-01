@@ -1,7 +1,7 @@
 //
 // Everything MuffinEMU needs to offer the TouchLab control styles (Zone, Float, Adaptive,
 // Frame) alongside its own pad and Melo-Controller. Written against kiddreads/MuffinEMU
-// main @ 8de67090; see integration/INTEGRATION.md for the ContentView / Settings /
+// release/v6.4 @ 4e7223af; see integration/INTEGRATION.md for the ContentView / Settings /
 // PadDiagnostics edits that wire it in.
 //
 // This is the only file that imports TouchLabCore / TouchLabUI. Keeping the imports here
@@ -96,31 +96,27 @@ enum TouchLabSettings {
 /// is rendered inside): that rebuilds the pad under the finger and releases every press -
 /// the exact bug that kept the preview pad dead. PadDiagnostics is safe because only its
 /// own overlay observes it.
-final class CemuBridgePadOutput: PadOutput {
+///
+/// Main-actor isolated, like PadDiagnostics and DisplayRouter, which it talks to directly.
+/// `@preconcurrency` lets it satisfy PadOutput, which isn't isolated: every call comes from
+/// TouchPadView's touch handlers and lifecycle observers, all on the main thread.
+@MainActor
+final class CemuBridgePadOutput: @preconcurrency PadOutput {
     static let shared = CemuBridgePadOutput()
 
     /// The GamePad VIEW's size in points - set by TouchLabPadOverlay whenever the screen
     /// layout changes. Touches are sent the way padScreen's own DragGesture sends them:
     /// a position inside that view, times the effective render scale.
     var gamepadViewSize: CGSize = .zero
-    /// `UIScreen.main.effectiveRenderScale`, captured by TouchLabPadOverlay at the same
-    /// moments. Read here instead of asking UIScreen, which is main-actor isolated and this
-    /// class is not (PadOutput isn't).
-    var renderScale: Double = 1
 
-    // PadDiagnostics is main-actor isolated. The bridge calls below are made directly and
-    // synchronously - they are the input - while the diagnostics write hops to the main
-    // actor, so it can never delay or reorder a press.
     func setButton(_ button: PadButton, pressed: Bool) {
-        let label = Self.label(button)
-        Task { @MainActor in PadDiagnostics.shared.recordInput(label, pressed) }
+        PadDiagnostics.shared.recordInput(Self.label(button), pressed)
         cemu_bridge_set_button_state(Self.bridgeButton(button), pressed)
     }
 
     func setStick(_ stick: PadStick, _ value: StickValue) {
         // StickValue is already the console's convention (+y up) - no negation here.
-        let index = stick.rawValue, position = CGPoint(x: value.x, y: value.y)
-        Task { @MainActor in PadDiagnostics.shared.recordStick(index, position) }
+        PadDiagnostics.shared.recordStick(stick.rawValue, CGPoint(x: value.x, y: value.y))
         cemu_bridge_set_stick_axis(stick == .left ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
                                    Float(value.x), Float(value.y))
     }
@@ -130,8 +126,13 @@ final class CemuBridgePadOutput: PadOutput {
             cemu_bridge_set_pad_touch(0, 0, false)
             return
         }
-        cemu_bridge_set_pad_touch(Double(point.x * gamepadViewSize.width) * renderScale,
-                                  Double(point.y * gamepadViewSize.height) * renderScale, true)
+        // The GamePad surface is sized at its own scale (capped, and not the TV's render
+        // scale or the screen's), and the core wants touches in that surface's pixels. Read
+        // live from the same place padScreen's own touch path reads it, every touch: it
+        // changes whenever the surface is re-sized.
+        let scale = DisplayRouter.shared.padSurfaceScale
+        cemu_bridge_set_pad_touch(Double(point.x * gamepadViewSize.width) * scale,
+                                  Double(point.y * gamepadViewSize.height) * scale, true)
     }
 
     func releaseAll() {
@@ -243,7 +244,6 @@ struct TouchLabPadOverlay: View {
 
     private func syncGamepadSize() {
         CemuBridgePadOutput.shared.gamepadViewSize = screens.screens.touchscreenRect?.size ?? .zero
-        CemuBridgePadOutput.shared.renderScale = UIScreen.main.effectiveRenderScale
     }
 
     private func makeScheme(_ id: String) -> TouchScheme {
