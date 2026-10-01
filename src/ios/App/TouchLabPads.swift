@@ -78,6 +78,13 @@ enum TouchLabSettings {
 
     static let floatStyleID = FloatPad.schemeInfo.id
     static let adaptiveStyleID = AdaptivePad.schemeInfo.id
+    static let zoneStyleID = ZonePad.schemeInfo.id
+
+    /// Styles whose sticks sit in fixed places, so the stick-spacing setting can move them.
+    /// Float's sticks appear under the thumb and Frame's live in its side columns.
+    static func hasFixedSticks(_ id: String) -> Bool {
+        id == zoneStyleID || id == adaptiveStyleID
+    }
 
     /// Float's right-hand side options: stored value and label.
     static let cameraOptions: [(value: String, title: String)] = [
@@ -204,6 +211,7 @@ struct TouchLabPadOverlay: View {
     let topInset: CGFloat
 
     @AppStorage(ControllerLayoutSettings.scaleKey) private var scale = ControllerLayoutSettings.defaultScale
+    @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     @AppStorage(ControllerLayoutSettings.opacityKey) private var opacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.hapticsKey) private var haptics = ControllerLayoutSettings.defaultHaptics
     @AppStorage(ControllerLayoutSettings.deadzoneKey) private var deadzone = ControllerLayoutSettings.defaultDeadzone
@@ -218,6 +226,7 @@ struct TouchLabPadOverlay: View {
                  touchscreenRect: screens.screens.touchscreenRect,
                  videoRects: screens.screens.videoRects,
                  scale: scale,
+                 stickSpacing: stickSpacing,
                  opacity: opacity,
                  haptics: haptics,
                  // Rebuild the scheme only when something that shapes it changes - never on

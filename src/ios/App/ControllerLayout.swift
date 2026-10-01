@@ -63,12 +63,28 @@ enum ControllerLayoutSettings {
     static let minScale: Double = 0.6
     static let maxScale: Double = 1.6
 
+    /// How far each stick moves sideways from its starting place, in button widths, so it
+    /// follows the size slider: positive toward its screen edge, negative toward the
+    /// middle. A hand-size setting. The TouchLab styles with fixed sticks (Zone, Adaptive)
+    /// read the same key.
+    static let stickSpacingKey = "muffin.controls.stickSpacing"
+    static let defaultStickSpacing: Double = 0
+    static let minStickSpacing: Double = -3.0
+    static let maxStickSpacing: Double = 1.5
+    /// Quarter-button steps, so the slider can land back on exactly zero.
+    static let stickSpacingStep: Double = 0.25
+
+    /// The readout beside the stick-spacing slider.
+    static func stickSpacingLabel(_ value: Double) -> String {
+        abs(value) < 0.01 ? "default" : (value < 0 ? "closer" : "wider")
+    }
+
     /// Puts every adjustment back to the measured layout by removing the keys, so each
     /// `@AppStorage` falls back to its own declared default. `joystickKey` is not reset:
     /// that is the control scheme, not the layout.
     static func reset() {
         let defaults = UserDefaults.standard
-        for key in [scaleKey, opacityKey, rightStickOffsetXKey, rightStickOffsetYKey,
+        for key in [scaleKey, opacityKey, stickSpacingKey, rightStickOffsetXKey, rightStickOffsetYKey,
                     leftStickOffsetXKey, leftStickOffsetYKey,
                     leftOffsetXKey, leftOffsetYKey,
                     rightOffsetXKey, rightOffsetYKey] {
@@ -333,6 +349,22 @@ enum ControllerGeometry {
     /// than beside them. Everything past that is thumb ergonomics, which is why it is a
     /// starting point with a drag handle rather than a fixed position.
     static let rightStickAnchorOffset = CGPoint(x: -5.0, y: -1.6)
+
+    /// The sideways shift, in units, each stick cluster gets from the stick-spacing
+    /// setting (ControllerLayoutSettings.stickSpacingKey). Positive is toward its own edge.
+    /// Inward stops while the two clusters still have half a button between them, so on a
+    /// narrow screen the setting runs out instead of crossing the sticks over. Outward
+    /// tops out at 1.5, where a stick still clears its d-pad / A-B-X-Y diamond.
+    static func stickShift(spacing: Double, containerWidth: CGFloat, unit: CGFloat,
+                           left: [Control], right: [Control]) -> CGFloat {
+        let requested = CGFloat(min(max(spacing, ControllerLayoutSettings.minStickSpacing),
+                                    ControllerLayoutSettings.maxStickSpacing))
+        guard requested < 0, unit > 0 else { return requested }
+        let fromEdge = centreFromNearEdge + leftStickAnchorOffset.x
+        let centreGap = containerWidth / unit - 2 * fromEdge
+        let needed = bounds(of: left).maxX - bounds(of: right).minX + 0.5
+        return max(requested, -max(0, (centreGap - needed) / 2))
+    }
 
     /// The deflection below which a gesture counts as a tap rather than a push, for the
     /// tap-is-L3 rule.
