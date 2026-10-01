@@ -82,6 +82,7 @@ enum class MetalGuard : uint32
     CopyClampedRegion,
     CopyClampedSlices,
     CopyBlockMismatch,
+    CopyTranscodedBlocks,
     DrawVertexBuffer,
     DrawVertexHuge,
     IndexClamped,
@@ -115,6 +116,7 @@ namespace
         {"copy-region-clamped", "clamp"},
         {"copy-slices-clamped", "clamp"},
         {"copy-block-size-mismatch", "note"},
+        {"copy-transcoded-blocks", "skip"},
         {"draw-vertex-buffer", "skip"},
         {"draw-vertex-range-huge", "skip"},
         {"draw-index-count-clamped", "clamp"},
@@ -261,6 +263,28 @@ namespace
             usedEnd = std::max<uint32>(usedEnd, attr.offset + GetMtlVertexFormatSize(attr.format));
         }
         return used;
+    }
+
+    // BC1 to BC5 as the GPU itself stores them. Without BC support the same Latte formats are stored as a transcode (ASTC 4x4, or
+    // RG8 for BC5, see CheckForPixelFormatSupport() in LatteToMtl.cpp), whose bits are not the BC blocks the game wrote.
+    bool MetalPixelFormatIsNativeBC(MTL::PixelFormat pixelFormat)
+    {
+        switch (pixelFormat)
+        {
+        case MTL::PixelFormatBC1_RGBA:
+        case MTL::PixelFormatBC1_RGBA_sRGB:
+        case MTL::PixelFormatBC2_RGBA:
+        case MTL::PixelFormatBC2_RGBA_sRGB:
+        case MTL::PixelFormatBC3_RGBA:
+        case MTL::PixelFormatBC3_RGBA_sRGB:
+        case MTL::PixelFormatBC4_RUnorm:
+        case MTL::PixelFormatBC4_RSnorm:
+        case MTL::PixelFormatBC5_RGUnorm:
+        case MTL::PixelFormatBC5_RGSnorm:
+            return true;
+        default:
+            return false;
+        }
     }
 
     // A skipped upload leaves the texture's data hash as LatteTC_ResetTextureChangeTracker stamped it just before the
@@ -1576,6 +1600,20 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
         {
             MetalGuardNote(MetalGuard::CopyBadLevel, {keyFormats, keyMips, keyLevels}, [&] { return describe("a texture has no such mip level"); });
             return;
+        }
+        // A compressed Latte format and an uncompressed one exchange raw blocks here: the integer alias (RGBA16, RG32 or RGBA32 UINT)
+        // a game writes BC blocks through, and the BC texture that samples them. Without BC support the compressed side is a
+        // transcode of the BC data, not the blocks themselves, so the bits of one mean nothing in the other. Blocks of a different
+        // size fault the GPU; blocks of the same size (BC2 and BC3 against RGBA32 UINT, 16 bytes each) copy without a fault and
+        // fill the destination with garbage. Both are refused and the destination keeps what it had.
+        if (src->IsCompressedFormat() != dst->IsCompressedFormat())
+        {
+            MTL::Texture* compressedSide = src->IsCompressedFormat() ? mtlSrc : mtlDst;
+            if (!MetalPixelFormatIsNativeBC(compressedSide->pixelFormat()))
+            {
+                MetalGuardNote(MetalGuard::CopyTranscodedBlocks, {keyFormats, keyMips, keyLevels}, [&] { return describe("raw blocks cannot be exchanged with a compressed texture this GPU stores as a transcode"); });
+                return;
+            }
         }
         if (effectiveSrcX < 0 || effectiveSrcY < 0 || effectiveDstX < 0 || effectiveDstY < 0 || effectiveSrcX >= srcLevelW || effectiveSrcY >= srcLevelH || effectiveDstX >= dstLevelW || effectiveDstY >= dstLevelH)
         {
