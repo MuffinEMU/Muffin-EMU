@@ -109,19 +109,25 @@ public struct LayoutContext: Equatable, Sendable {
     public var scale: CGFloat
     /// Stick feel.
     public var stick: StickTuning
+    /// Moves each stick sideways from where the layout puts it, in button widths: positive
+    /// toward its screen edge, negative toward the middle. A hand-size setting. Layouts
+    /// with fixed sticks honour as much of it as fits without overlapping anything.
+    public var stickSpacing: CGFloat
 
     public init(size: CGSize,
                 safeInsets: Insets = .zero,
                 videoRects: [CGRect] = [],
                 touchscreenRect: CGRect? = nil,
                 scale: CGFloat = 1,
-                stick: StickTuning = StickTuning()) {
+                stick: StickTuning = StickTuning(),
+                stickSpacing: CGFloat = 0) {
         self.size = size
         self.safeInsets = safeInsets
         self.videoRects = videoRects
         self.touchscreenRect = touchscreenRect
         self.scale = scale
         self.stick = stick
+        self.stickSpacing = stickSpacing
     }
 
     public var bounds: CGRect { CGRect(origin: .zero, size: size) }
