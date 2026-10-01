@@ -126,22 +126,12 @@
     <p>Or download <code>MuffinEMU-fakesigned.ipa</code> directly from <a href="https://github.com/kiddreads/MuffinEMU/releases/latest">the latest release</a>.</p>
 
     <h3>Nightly builds</h3>
-    <p>The newest build of <code>main</code>, updated with every change and not tested on a device first. It replaces a standard install and keeps your games, saves and settings.</p>
-    <div class="install-row">
-      <a class="btn btn-primary btn-sm" href="sidestore://source?url=https://kiddreads.github.io/MuffinEMU/nightly.json">Add Nightly to SideStore</a>
-      <a class="btn btn-secondary btn-sm" href="altstore://source?url=https://kiddreads.github.io/MuffinEMU/nightly.json">Add Nightly to AltStore</a>
-    </div>
-    <p>Or add it by hand: <span class="url">https://kiddreads.github.io/MuffinEMU/nightly.json</span> (SideStore, AltStore, LiveContainer) or <span class="url">https://kiddreads.github.io/MuffinEMU/nightly-trollstore.json</span> (TrollStore).</p>
+    <p>Want the newest build instead? Nightly sources: <span class="url">https://kiddreads.github.io/MuffinEMU/nightly.json</span> (SideStore, AltStore, LiveContainer) and <span class="url">https://kiddreads.github.io/MuffinEMU/nightly-trollstore.json</span> (TrollStore). Nightly builds are untested and replace a standard install.</p>
 
     <h3>Experimental builds (for testers)</h3>
-    <p>Unfinished test builds of work in progress, published by hand. Every experiment is listed as its own version, newest first. Each one replaces an installed MuffinEMU (same bundle identifier, so your games and saves carry over) and can misbehave. They never appear in the standard or nightly sources; for normal play use the standard source.</p>
-    <div class="install-row">
-      <a class="btn btn-primary btn-sm" href="sidestore://source?url=https://kiddreads.github.io/MuffinEMU/experimental.json">Add Experimental to SideStore</a>
-      <a class="btn btn-secondary btn-sm" href="altstore://source?url=https://kiddreads.github.io/MuffinEMU/experimental.json">Add Experimental to AltStore</a>
-    </div>
-    <p>Or add it by hand: <span class="url">https://kiddreads.github.io/MuffinEMU/experimental.json</span> (SideStore, AltStore, LiveContainer) or <span class="url">https://kiddreads.github.io/MuffinEMU/experimental-trollstore.json</span> (TrollStore).</p>
+    <p>Unfinished test builds of work in progress, published by hand. Experimental sources: <span class="url">https://kiddreads.github.io/MuffinEMU/experimental.json</span> (SideStore, AltStore, LiveContainer) and <span class="url">https://kiddreads.github.io/MuffinEMU/experimental-trollstore.json</span> (TrollStore). Every experiment is listed as its own version, newest first. Each one replaces an installed MuffinEMU (same bundle identifier, so your games and saves carry over) and can misbehave; they never appear in the standard or nightly sources. For normal play use the standard source.</p>
 
-    <p>MuffinEMU uses its own bundle identifier (<code>com.kiddreads.MuffinEMU</code>). Every build of <code>main</code> is published as a numbered release going up by 0.1 — after .9 comes the next whole number: 1.0, 1.1 … 1.9, 2.0.</p>
+    <p>MuffinEMU uses its own bundle identifier (<code>com.kiddreads.MuffinEMU</code>), Every build of <code>main</code> is published as a numbered release going up by 0.1 — after .9 comes the next whole number: 1.0, 1.1 … 1.9, 2.0.</p>
 
     <h2 id="jit">3. Turn on JIT</h2>
     <p class="symptom-answer">The AArch64 recompiler needs two things at once. You need both, or MuffinEMU uses the interpreter.</p>
@@ -192,5 +182,6 @@ xcodebuild -project MuffinEMU.xcodeproj -scheme MuffinEMU -sdk iphoneos -configu
 </footer>
 
 <script src="../theme.js"></script>
+<script data-goatcounter="https://muffinemu.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </body>
 </html>
