@@ -89,6 +89,7 @@ enum class MetalGuard : uint32
     PresentScissorClamped,
     SurfaceCopyScissorClamped,
     UploadRetryStopped,
+    CopyBytesPerBlockMismatch,
     Count
 };
 
@@ -122,6 +123,7 @@ namespace
         {"present-scissor-clamped", "clamp"},
         {"surface-copy-scissor-clamped", "clamp"},
         {"upload-retry-stopped", "note"},
+        {"copy-bytes-per-block-mismatch", "skip"},
     };
     constexpr uint32 kMetalGuardCount = (uint32)MetalGuard::Count;
     static_assert(std::size(kMetalGuardInfo) == kMetalGuardCount, "MetalGuard names out of step with the enum");
@@ -1581,6 +1583,24 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
         {
             MetalGuardNote(MetalGuard::CopyStartOutside, {keyFormats, keyMips, keyLevels, (uint64)(uint32)effectiveSrcX, (uint64)(uint32)effectiveSrcY, (uint64)(uint32)effectiveDstX, (uint64)(uint32)effectiveDstY}, [&] { return describe("the copy starts outside a level"); });
             return;
+        }
+        // A raw blit between formats whose blocks hold a different number of bytes is not a valid copy: Metal
+        // copies block for block, so an 8-byte texel of an integer alias (the raw bits of a BC1 surface) written
+        // into a 16-byte ASTC block (what a BC texture becomes on a GPU without BC support) reads and writes past
+        // both textures. That is a GPU address fault, and once the GPU has faulted iOS stops running this app's
+        // GPU work. Seen on an A12Z: the Wii U Menu faulted in the same millisecond as seven such copies (formats
+        // 011f/0122 into 0431/0433, BC transcoded to ASTC 4x4). Skipping it leaves that destination as it was,
+        // which at worst shows one stale texture; issuing it stops the game.
+        {
+            const uint32 srcBytesPerBlock = (uint32)GetMtlPixelFormatInfo(src->format, src->isDepth).bytesPerBlock;
+            const uint32 dstBytesPerBlock = (uint32)GetMtlPixelFormatInfo(dst->format, dst->isDepth).bytesPerBlock;
+            if (srcBytesPerBlock != dstBytesPerBlock)
+            {
+                MetalGuardNote(MetalGuard::CopyBytesPerBlockMismatch, {keyFormats, keyMips, keyLevels, ((uint64)srcBytesPerBlock << 32) | dstBytesPerBlock}, [&] {
+                    return describe(fmt::format("blocks of {} bytes cannot be copied into blocks of {} bytes; skipped", srcBytesPerBlock, dstBytesPerBlock).c_str());
+                });
+                return;
+            }
         }
         const sint64 srcRoomW = srcLevelW - effectiveSrcX, srcRoomH = srcLevelH - effectiveSrcY;
         const sint64 dstRoomW = dstLevelW - effectiveDstX, dstRoomH = dstLevelH - effectiveDstY;
