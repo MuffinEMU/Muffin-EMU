@@ -214,7 +214,7 @@ private struct EmulatedDeviceSlotsSection: View {
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                             Text(occupied ? name(at: slot) : "Empty")
                                 .font(.system(size: 12))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(MuffinTheme.secondaryText)
                         }
 
                         Spacer(minLength: 0)
@@ -360,7 +360,7 @@ private struct CreateEmulatedFigureView: View {
                     Section {
                         Text("Use figure ID 0 to create a blank vehicle or gadget tag for the game to write.")
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.secondaryText)
                     }
                 }
                 if let errorMessage {
@@ -475,7 +475,7 @@ private struct EmulatedFigurePicker: View {
                                         .foregroundColor(MuffinTheme.brownDarkest)
                                     Text("ID \(figure.figureID)")
                                         .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(MuffinTheme.secondaryText)
                                         .monospacedDigit()
                                 }
                                 Spacer(minLength: 0)

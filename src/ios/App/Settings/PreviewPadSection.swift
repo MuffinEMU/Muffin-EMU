@@ -44,7 +44,7 @@ struct PreviewPadSection: View {
                          ? "Replaces the normal pad. If controls don't respond, turn this off."
                          : "Experimental. Replaces the normal pad while on.")
                         .font(.system(size: 12))
-                        .foregroundColor(previewPadEnabled ? MuffinTheme.cautionText : .secondary)
+                        .foregroundColor(previewPadEnabled ? MuffinTheme.cautionText : MuffinTheme.secondaryText)
                 }
             }
             .tint(MuffinTheme.accentText)
@@ -104,7 +104,7 @@ struct PreviewPadSection: View {
         .tint(MuffinTheme.accentText)
         Text(previewLayoutPreset.summary)
             .font(.system(size: 12))
-            .foregroundColor(.secondary)
+            .foregroundColor(MuffinTheme.secondaryText)
 
         Picker("Colours", selection: previewColourPresetBinding) {
             ForEach(PreviewColourPreset.allCases) { preset in

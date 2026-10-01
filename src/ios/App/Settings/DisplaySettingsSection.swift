@@ -68,7 +68,7 @@ struct DisplaySettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("Off by default. Turn it on before connecting a second display.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
             .tint(MuffinTheme.accentText)
@@ -86,7 +86,7 @@ struct DisplaySettingsSection: View {
                              ? "GamePad screen on the external display, TV screen on this device."
                              : "TV screen on the external display, GamePad screen on this device.")
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.secondaryText)
                     }
                 }
                 .tint(MuffinTheme.accentText)
@@ -101,7 +101,7 @@ struct DisplaySettingsSection: View {
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text("A small on-screen button while playing with an external display connected, so the setting above can be flipped without leaving the game.")
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.secondaryText)
                     }
                 }
                 .tint(MuffinTheme.accentText)

@@ -80,7 +80,7 @@ extension InfoButton {
     private static func footerText(_ short: String) -> some View {
         Text(short)
             .font(.footnote)
-            .foregroundColor(.secondary)
+            .foregroundColor(MuffinTheme.secondaryText)
             .lineSpacing(2.5)
             .fixedSize(horizontal: false, vertical: true)
     }
