@@ -1349,13 +1349,11 @@ void PPCRecompiler_deleteFunction(PPCRecFunction_t* func)
         // (a dual-mapped region outside the arena does not exist: every dual-mapped function is given arena space)
         PerfTelemetry::Get().jitArenaPendingBytes.store(s_jitReclaim.pendingBytes(), std::memory_order_relaxed);
     }
-#if defined(__aarch64__)
-    else if (!s_dualMapJITEnabled && s_jitReclaim.active() && func->x86Code && func->x86Size)
-    {
-        s_jitReclaim.retire(0, 0, func->x86Code, (void*)func->x86Size, 1); // a mapping of its own, freed by size
-        PerfTelemetry::Get().jitArenaPendingBytes.store(s_jitReclaim.pendingBytes(), std::memory_order_relaxed);
-    }
-#endif
+    // Code with a mapping of its own (no dual mapping: iOS 18 and earlier, W^X) is deliberately NOT retired here. The
+    // pin that protects a thread parked in a blocking HLE call (PPCRecompiler_jitHleEnter) is keyed on the arena
+    // block of the call's return address, and this code is not in the arena, so nothing would stop the munmap in
+    // PPCRecompiler_freeRawCode from unmapping the function a parked thread is going to return into. Until that code
+    // can be pinned too it keeps the pre-reclaim behaviour (the mapping stays; it is only unreachable from the jump table).
     func->dualMapRegion = {};
     func->x86Code = nullptr;
     func->x86CodeWritable = nullptr;
@@ -1765,7 +1763,12 @@ void PPCRecompiler_Shutdown()
             if (p.kind == 1)
                 PPCRecompiler_freeRawCode(p.a, (size_t)(uintptr_t)p.b);
         });
-    s_jitReclaim.reset();
+    // A still-active scheduler means host threads may still hold their slots and pins: forgetting them would make
+    // anything retired from now on look immediately free, so stop releasing instead.
+    if (schedulerStopped)
+        s_jitReclaim.reset();
+    else
+        s_jitReclaim.poison();
     PerfTelemetry::Get().jitArenaPendingBytes.store(0, std::memory_order_relaxed);
     s_jitArena.reset(schedulerStopped);
     ppcRecompilerEnabled = false;
