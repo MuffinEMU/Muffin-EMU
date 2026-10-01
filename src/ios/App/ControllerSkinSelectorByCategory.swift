@@ -52,17 +52,22 @@ struct OrganizedControllerSkinSelector: View {
     @Binding var selectedSkin: WiiUControllerSkin
     @State private var expandedCategory: ControllerCategory? = .wiiU
     @State private var showingSelector = false
+    /// Compact on a landscape iPhone, where a 400-point list ran off the bottom of the
+    /// screen under the top bar and its last skins could not be reached.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Controller Skin")
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    .foregroundColor(MuffinTheme.brownDarkest)
+            // The whole row opens the list. Only the skin name used to, a target about
+            // fifteen points tall.
+            Button(action: { showingSelector.toggle() }) {
+                HStack {
+                    Text("Controller Skin")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownDarkest)
 
-                Spacer()
+                    Spacer()
 
-                Button(action: { showingSelector.toggle() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "gamecontroller.fill")
                             .font(.system(size: 12))
@@ -71,9 +76,14 @@ struct OrganizedControllerSkinSelector: View {
                     }
                     .foregroundColor(LegibleInk.ensure(MuffinTheme.pixelBlue, on: MuffinTheme.cream))
                 }
+                .padding(12)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
-            .padding(12)
+            .buttonStyle(.plain)
             .background(MuffinTheme.cream)
+            .accessibilityValue(selectedSkin.name)
+            .accessibilityHint(showingSelector ? "Hides the list of skins" : "Shows the list of skins")
 
             if showingSelector {
                 Divider()
@@ -103,7 +113,7 @@ struct OrganizedControllerSkinSelector: View {
                     }
                     .padding(12)
                 }
-                .frame(maxHeight: 400)
+                .frame(maxHeight: verticalSizeClass == .compact ? 180 : 400)
             }
         }
         .background(MuffinTheme.cream)
@@ -144,7 +154,10 @@ struct ControllerCategoryDropdown: View {
                 .padding(12)
                 .background(MuffinTheme.wrapper.opacity(0.4))
                 .cornerRadius(8)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
 
             if isExpanded {
                 VStack(spacing: 6) {
@@ -222,9 +235,14 @@ struct SkinOptionCompact: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
+            .frame(minHeight: 44)
             .background(isSelected ? MuffinTheme.wrapper : MuffinTheme.cream)
             .cornerRadius(6)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(skin.name) skin")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
