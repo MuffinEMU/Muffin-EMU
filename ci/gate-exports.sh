@@ -37,3 +37,14 @@ case "$PLATFORM" in
   "")    echo "::warning::could not read the platform of Cemu.framework; arm64 was checked" ;;
   *)     echo "::error::Cemu.framework targets platform '$PLATFORM', not iOS"; exit 1 ;;
 esac
+
+# The Audit hooks (src/ios/Bridge/IOSAudit*, tools/audit-app) belong to the audit workflow's own core, built
+# with -DMUFFIN_AUDIT_HOOKS=ON, and nowhere else. Nothing in a shipping build sets that flag, so this
+# should never fire; it is here because a core that carried them would be shipped, cached and reused
+# without anything else noticing (the flag is not part of what the declared-function check above reads).
+# A plain byte search, so it catches symbol names, log strings and a renamed symbol table alike.
+if LC_ALL=C grep -aqE 'cemu_audit_|IOSAudit|MUFFIN_AUDIT' "$BIN"; then
+  echo "::error::Cemu.framework contains the Audit hooks (cemu_audit_*, MUFFIN_AUDIT_HOOKS). A shipping core must not."
+  exit 1
+fi
+echo "Cemu.framework carries no Audit hooks"
