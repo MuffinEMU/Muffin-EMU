@@ -282,7 +282,7 @@ struct GameOptionsView: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                            .tint(MuffinTheme.pixelBlue)
+                            .tint(MuffinTheme.accentText)
                         }
                         HStack {
                             Text("Favour Accuracy")
@@ -294,7 +294,7 @@ struct GameOptionsView: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                            .tint(MuffinTheme.pixelBlue)
+                            .tint(MuffinTheme.accentText)
                         }
                         HStack {
                             Text("CPU Cores")
@@ -307,7 +307,7 @@ struct GameOptionsView: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                            .tint(MuffinTheme.pixelBlue)
+                            .tint(MuffinTheme.accentText)
                             .disabled(!DeviceCapabilities.current.multicoreViable)
                         }
                         if !DeviceCapabilities.current.multicoreViable {

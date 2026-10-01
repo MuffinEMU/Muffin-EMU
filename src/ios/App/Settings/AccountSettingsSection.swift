@@ -29,7 +29,7 @@ struct AccountSettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .disabled(locked || accounts.isEmpty)
 
             HStack {

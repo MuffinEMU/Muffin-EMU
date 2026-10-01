@@ -117,7 +117,7 @@ private enum OnboardingHero {
                 Circle().fill(MuffinTheme.cream)
                 Image(systemName: name)
                     .font(.system(size: 30, weight: .semibold))
-                    .foregroundColor(MuffinTheme.pixelBlue)
+                    .foregroundColor(MuffinTheme.accentText)
             }
             .frame(width: 72, height: 72)
             .shadow(color: MuffinTheme.shadow.opacity(0.18), radius: 10, x: 0, y: 4)
@@ -174,7 +174,7 @@ private struct OnboardingFactRow: View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: systemImage)
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundColor(MuffinTheme.pixelBlue)
+                .foregroundColor(MuffinTheme.accentText)
                 .frame(width: 22)
                 .accessibilityHidden(true)
             Text(text)
@@ -232,7 +232,7 @@ private struct OnboardingKeysPage: View {
                     if let errorMessage {
                         Text(errorMessage)
                             .font(.system(.footnote, design: .rounded))
-                            .foregroundColor(MuffinTheme.blushPink)
+                            .foregroundColor(MuffinTheme.alertText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -314,7 +314,7 @@ private struct OnboardingGamesPage: View {
                     if let errorMessage {
                         Text(errorMessage)
                             .font(.system(.footnote, design: .rounded))
-                            .foregroundColor(MuffinTheme.blushPink)
+                            .foregroundColor(MuffinTheme.alertText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

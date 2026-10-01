@@ -451,15 +451,16 @@ struct GameBrowserView: View {
 
                     Button(action: { showingFavorites.toggle() }) {
                         // Same fix as the gear above, with one difference: the ACTIVE
-                        // state keeps its explicit blushPink. That is a real state colour
-                        // carrying information ("favourites only is on"), it reads clearly
-                        // against cream, and it is the one case here where overriding the
-                        // style's ink is deliberate rather than accidental. Only the
+                        // state keeps an explicit pink. That is a real state colour
+                        // carrying information ("favourites only is on"), and it is the
+                        // one case here where overriding the style's ink is deliberate
+                        // rather than accidental. alertText rather than raw blushPink,
+                        // which was under 2:1 on cream in half the themes. Only the
                         // inactive branch - the invisible one - gives its colour back to
                         // the button style.
                         Image(systemName: showingFavorites ? "heart.fill" : "heart")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(showingFavorites ? MuffinTheme.blushPink : MuffinTheme.brownDark)
+                            .foregroundColor(showingFavorites ? MuffinTheme.alertText : MuffinTheme.brownDark)
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)

@@ -82,7 +82,7 @@ struct MotionSettingsSection: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: motionEnabled) { _ in MotionSettings.applyToBridge() }
 
             if motionEnabled {

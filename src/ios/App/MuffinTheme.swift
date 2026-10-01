@@ -182,6 +182,23 @@ enum MuffinTheme {
     /// itself stays for fills.
     static var alertText: Color { readableInk(light: t.blushPinkLight, dark: t.blushPinkDark) }
 
+    /// Any palette pair as text or a glyph on a row or card, held to 4.5:1 like the inks.
+    static func readable(_ light: KeyPath<MuffinThemeDefinition, String>,
+                         _ dark: KeyPath<MuffinThemeDefinition, String>) -> Color {
+        readableInk(light: t[keyPath: light], dark: t[keyPath: dark])
+    }
+
+    /// Text on a pixelBlue fill (status chips): cream or the dark ink, whichever reads on that
+    /// theme's accent. Cream on ADHD Awareness' yellow accent was 1.2:1.
+    static var onAccent: Color {
+        Color(light: inkOn(t.pixelBlueLight, cream: t.sparkleCreamLight),
+              dark: inkOn(t.pixelBlueDark, cream: t.sparkleCreamDark))
+    }
+
+    private static func inkOn(_ fill: String, cream: String) -> String {
+        muffinContrast(cream, fill) >= muffinContrast(t.brownDarkestLight, fill) ? cream : t.brownDarkestLight
+    }
+
     /// Orange status text ("Experimental", the preview warnings). System orange is about 2:1
     /// on cream, so it is darkened to an amber in light mode.
     static var cautionText: Color { readableInk(light: "#FF9500", dark: "#FF9F0A") }

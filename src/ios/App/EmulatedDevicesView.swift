@@ -155,12 +155,12 @@ struct EmulatedDevicesView: View {
                             }
                         }
                         .pickerStyle(.menu)
-                        .tint(MuffinTheme.pixelBlue)
+                        .tint(MuffinTheme.accentText)
                         Toggle(isOn: deviceEnabled) {
                             Text("Emulate Device")
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                         }
-                        .tint(MuffinTheme.pixelBlue)
+                        .tint(MuffinTheme.accentText)
                     }
 
                     EmulatedDeviceSlotsSection(device: device)

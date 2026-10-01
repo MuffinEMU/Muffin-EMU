@@ -23,7 +23,7 @@ struct CPUSettingsSection: View {
                 Text("Use the recompiler (JIT)")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: recompilerEnabled) { newValue in
                 cemu_bridge_set_recompiler_enabled(newValue)
             }
@@ -39,7 +39,7 @@ struct CPUSettingsSection: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: favourAccuracy) { newValue in
                 cemu_bridge_set_favour_accuracy(newValue)
             }
@@ -56,7 +56,7 @@ struct CPUSettingsSection: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: lowPowerMode) { newValue in
                 cemu_bridge_set_low_power_mode(newValue)
             }
@@ -74,7 +74,7 @@ struct CPUSettingsSection: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .tint(MuffinTheme.pixelBlue)
+                    .tint(MuffinTheme.accentText)
                     .disabled(!DeviceCapabilities.current.multicoreViable)
                 }
                 Text(DeviceCapabilities.current.multicoreViable
@@ -99,7 +99,7 @@ struct CPUSettingsSection: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
 
             // Memory headroom. If the JIT's memory reservation fails, the recompiler is switched
             // off and the interpreter runs, so the arena size shows whether the memory
@@ -170,8 +170,8 @@ private struct CPUModeRow: View {
     private var tint: Color {
         // Amber rather than red for the interpreter: it is slow, but it works.
         switch mode {
-        case 2:  return MuffinTheme.pixelBlue
-        case 1:  return .orange
+        case 2:  return MuffinTheme.accentText
+        case 1:  return MuffinTheme.cautionText
         default: return MuffinTheme.brownMid
         }
     }

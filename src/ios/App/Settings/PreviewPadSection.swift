@@ -44,10 +44,10 @@ struct PreviewPadSection: View {
                          ? "Replaces the normal pad. If controls don't respond, turn this off."
                          : "Experimental. Replaces the normal pad while on.")
                         .font(.system(size: 12))
-                        .foregroundColor(previewPadEnabled ? .orange : .secondary)
+                        .foregroundColor(previewPadEnabled ? MuffinTheme.cautionText : .secondary)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
 
             if previewPadEnabled {
                 previewControls
@@ -101,7 +101,7 @@ struct PreviewPadSection: View {
             }
         }
         .pickerStyle(.menu)
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         Text(previewLayoutPreset.summary)
             .font(.system(size: 12))
             .foregroundColor(.secondary)
@@ -112,7 +112,7 @@ struct PreviewPadSection: View {
             }
         }
         .pickerStyle(.menu)
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
 
         Picker("Picture", selection: previewDisplayModeBinding) {
             Text("Fit").tag(PadLayout.DisplayMode.fit.rawValue)

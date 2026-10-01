@@ -75,7 +75,7 @@ struct NotificationSettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
         }
         .onChange(of: positionRaw) { newValue in
             cemu_bridge_set_notification_position(Int32(newValue))
@@ -123,7 +123,7 @@ struct NotificationSettingsSection: View {
             Text("Controller Profiles")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: controllerProfilesEnabled) { newValue in
             cemu_bridge_set_notification_controller_profiles(newValue)
@@ -135,7 +135,7 @@ struct NotificationSettingsSection: View {
             Text("Low Battery")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: controllerBatteryEnabled) { newValue in
             cemu_bridge_set_notification_controller_battery(newValue)
@@ -147,7 +147,7 @@ struct NotificationSettingsSection: View {
             Text("Shader Compiling")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: shaderCompilingEnabled) { newValue in
             cemu_bridge_set_notification_shader_compiling(newValue)
@@ -159,7 +159,7 @@ struct NotificationSettingsSection: View {
             Text("Friends")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: friendsEnabled) { newValue in
             cemu_bridge_set_notification_friends(newValue)
