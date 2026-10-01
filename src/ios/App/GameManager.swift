@@ -117,6 +117,9 @@ class GameManager: ObservableObject {
     /// running the app's work, or the engine could not fully reset). Only closing and reopening the app clears it, so the
     /// launch is refused with a message and a button that closes the app. Never set by a normal stop.
     @Published private(set) var needsCleanRestart = false
+    /// True when the engine ended the running title itself (the game quit, the GPU thread hit an exception, a fatal error such as
+    /// running out of address space, or a Wii U Menu switch that could not start the next title). `lastStatusMessage` then says why.
+    @Published private(set) var titleEndedByEngine = false
     /// Real emulator frame rate, polled from the bridge once a second while a title
     /// is running (see startFrameRateMonitor()). 0 whenever nothing is rendering.
     @Published private(set) var frameRate: Int = 0
@@ -1048,6 +1051,7 @@ class GameManager: ObservableObject {
             return
         }
         needsCleanRestart = false
+        titleEndedByEngine = false
         emulationState = .loading
 
         guard let engine = emulationEngine else {
@@ -1433,6 +1437,14 @@ class GameManager: ObservableObject {
         frameRateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                // The engine can end a title by itself and only raises a flag for it (coreinit exit(), the GPU thread's catch-all, the
+                // out-of-address-space handler, a failed Wii U Menu switch). Nothing else reads that flag, so check here and stop the title
+                // the way the Back button does. cemu_bridge_is_title_running() stays true for the whole of a Wii U Menu switch, so a switch
+                // in progress is not mistaken for an end.
+                if self.emulationState == .running && !cemu_bridge_is_title_running() {
+                    self.stopTitleEndedByEngine()
+                    return
+                }
                 let fps = Int(cemu_bridge_get_fps().rounded())
                 if fps != self.frameRate {
                     self.frameRate = fps
@@ -1460,6 +1472,19 @@ class GameManager: ObservableObject {
         videoStalled = false
         videoStallKind = 0
         progress = EmulatorProgress()
+    }
+
+    /// Runs the normal stop for a title the engine has already ended, and keeps the reason on screen. The reason is read before
+    /// the stop because the stop path overwrites the bridge's status line.
+    private func stopTitleEndedByEngine() {
+        let reason = String(cString: cemu_bridge_status_text())
+        let game = currentGame
+        stopEmulation()
+        guard let game else { return }
+        currentGame = game
+        lastStatusMessage = reason
+        titleEndedByEngine = true
+        emulationState = .error
     }
 }
 
