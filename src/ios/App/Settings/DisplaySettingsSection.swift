@@ -35,6 +35,7 @@ struct DisplaySettingsSection: View {
                 }
                 .foregroundColor(.secondary)
                 .buttonStyle(.plain)
+                .accessibilityLabel("About Screen Layout")
 
                 Spacer()
 
