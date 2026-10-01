@@ -1,0 +1,515 @@
+{
+ "$schema": "http://json-schema.org/draft-07/schema#",
+ "title": "MuffinEMU Audit test suite (muffinaudit.suite/1)",
+ "type": "object",
+ "required": [
+  "schema",
+  "suite",
+  "title",
+  "tests"
+ ],
+ "additionalProperties": false,
+ "properties": {
+  "schema": {
+   "const": "muffinaudit.suite/1"
+  },
+  "suite": {
+   "type": "string",
+   "pattern": "^[a-z0-9-]+$"
+  },
+  "title": {
+   "type": "string"
+  },
+  "description": {
+   "type": "string"
+  },
+  "order": {
+   "type": "integer"
+  },
+  "tests": {
+   "type": "array",
+   "items": {
+    "type": "object",
+    "required": [
+     "id",
+     "title",
+     "subsystems",
+     "kind",
+     "stimulus",
+     "expected"
+    ],
+    "additionalProperties": false,
+    "properties": {
+     "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_.]+$"
+     },
+     "title": {
+      "type": "string"
+     },
+     "subsystems": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "minItems": 1
+     },
+     "kind": {
+      "enum": [
+       "guest",
+       "host"
+      ]
+     },
+     "guest": {
+      "type": "object",
+      "required": [
+       "test"
+      ],
+      "additionalProperties": false,
+      "properties": {
+       "test": {
+        "type": "string"
+       },
+       "params": {
+        "type": "object",
+        "additionalProperties": {
+         "type": "string"
+        }
+       },
+       "durationMs": {
+        "type": "integer"
+       },
+       "seedMode": {
+        "enum": [
+         "fixed",
+         "random"
+        ]
+       },
+       "seed": {
+        "type": "integer"
+       }
+      }
+     },
+     "host": {
+      "type": "object",
+      "required": [
+       "action"
+      ],
+      "additionalProperties": false,
+      "properties": {
+       "action": {
+        "type": "string"
+       },
+       "params": {
+        "type": "object",
+        "additionalProperties": {
+         "type": "string"
+        }
+       }
+      }
+     },
+     "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "capture": {
+        "type": "boolean"
+       },
+       "minTier": {
+        "type": "integer"
+       },
+       "apis": {
+        "type": "array",
+        "items": {
+         "enum": [
+          "metal",
+          "vulkan"
+         ]
+        }
+       },
+       "pad": {
+        "type": "boolean"
+       },
+       "attended": {
+        "type": "boolean"
+       }
+      }
+     },
+     "estimatedSec": {
+      "type": "integer"
+     },
+     "timeoutSec": {
+      "type": "integer"
+     },
+     "stimulus": {
+      "type": "string"
+     },
+     "expected": {
+      "type": "string"
+     },
+     "reproduce": {
+      "type": "string"
+     },
+     "checkpoints": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "name"
+       ],
+       "additionalProperties": false,
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "capture": {
+         "type": "object",
+         "additionalProperties": false,
+         "properties": {
+          "views": {
+           "type": "array",
+           "items": {
+            "enum": [
+             "tv",
+             "pad"
+            ]
+           }
+          },
+          "count": {
+           "type": "integer",
+           "minimum": 1,
+           "maximum": 4096
+          }
+         }
+        },
+        "expect": {
+         "type": "array",
+         "items": {
+          "type": "object",
+          "required": [
+           "type"
+          ],
+          "additionalProperties": false,
+          "properties": {
+           "type": {
+            "enum": [
+             "region_color",
+             "quadrants",
+             "not_black",
+             "mean_color",
+             "orientation",
+             "frames_identical",
+             "frame_counter"
+            ]
+           },
+           "name": {
+            "type": "string"
+           },
+           "rect": {
+            "type": "array",
+            "items": {
+             "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4
+           },
+           "rgb": {
+            "type": "array",
+            "items": {
+             "type": "integer",
+             "minimum": 0,
+             "maximum": 255
+            },
+            "minItems": 3,
+            "maxItems": 3
+           },
+           "tl": {
+            "type": "array",
+            "items": {
+             "type": "integer",
+             "minimum": 0,
+             "maximum": 255
+            },
+            "minItems": 3,
+            "maxItems": 3
+           },
+           "tr": {
+            "type": "array",
+            "items": {
+             "type": "integer",
+             "minimum": 0,
+             "maximum": 255
+            },
+            "minItems": 3,
+            "maxItems": 3
+           },
+           "bl": {
+            "type": "array",
+            "items": {
+             "type": "integer",
+             "minimum": 0,
+             "maximum": 255
+            },
+            "minItems": 3,
+            "maxItems": 3
+           },
+           "br": {
+            "type": "array",
+            "items": {
+             "type": "integer",
+             "minimum": 0,
+             "maximum": 255
+            },
+            "minItems": 3,
+            "maxItems": 3
+           },
+           "tol": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+           },
+           "view": {
+            "enum": [
+             "tv",
+             "pad"
+            ]
+           },
+           "maxBlackFraction": {
+            "type": "number"
+           },
+           "maxDistinct": {
+            "type": "integer"
+           },
+           "maxTornFraction": {
+            "type": "number"
+           },
+           "maxBackwards": {
+            "type": "integer"
+           },
+           "severity": {
+            "enum": [
+             "fail",
+             "warn",
+             "info"
+            ]
+           },
+           "note": {
+            "type": "string"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "script": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "action"
+       ],
+       "additionalProperties": false,
+       "properties": {
+        "action": {
+         "enum": [
+          "press",
+          "stick",
+          "touch",
+          "release",
+          "await_physical",
+          "wait"
+         ]
+        },
+        "label": {
+         "type": "string"
+        },
+        "button": {
+         "type": "string"
+        },
+        "stick": {
+         "enum": [
+          "left",
+          "right"
+         ]
+        },
+        "x": {
+         "type": "number"
+        },
+        "y": {
+         "type": "number"
+        },
+        "holdMs": {
+         "type": "integer"
+        },
+        "settleMs": {
+         "type": "integer"
+        },
+        "expectHold": {
+         "type": "integer"
+        },
+        "tolerance": {
+         "type": "number"
+        },
+        "severity": {
+         "enum": [
+          "fail",
+          "warn",
+          "info"
+         ]
+        }
+       }
+      }
+     },
+     "checks": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "type"
+       ],
+       "additionalProperties": false,
+       "properties": {
+        "type": {
+         "enum": [
+          "audio_window",
+          "memory_growth",
+          "frame_pacing",
+          "guest_clean"
+         ]
+        },
+        "name": {
+         "type": "string"
+        },
+        "step": {
+         "type": "integer"
+        },
+        "minRms": {
+         "type": "number"
+        },
+        "maxUnderrunFrames": {
+         "type": "integer"
+        },
+        "maxDiscontinuities": {
+         "type": "integer"
+        },
+        "minPeak": {
+         "type": "integer"
+        },
+        "maxPeak": {
+         "type": "integer"
+        },
+        "maxGrowthMB": {
+         "type": "number"
+        },
+        "minFps": {
+         "type": "number"
+        },
+        "maxP99Ms": {
+         "type": "number"
+        },
+        "maxLongFraction": {
+         "type": "number"
+        },
+        "severity": {
+         "enum": [
+          "fail",
+          "warn",
+          "info"
+         ]
+        }
+       }
+      }
+     },
+     "questionnaire": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "required": [
+        "id",
+        "text",
+        "type"
+       ],
+       "additionalProperties": false,
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "text": {
+         "type": "string"
+        },
+        "type": {
+         "enum": [
+          "yesno",
+          "scale",
+          "choice",
+          "text"
+         ]
+        },
+        "bad": {
+         "enum": [
+          "yes",
+          "no"
+         ]
+        },
+        "badBelow": {
+         "type": "integer"
+        },
+        "options": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        },
+        "badOptions": {
+         "type": "array",
+         "items": {
+          "type": "string"
+         }
+        },
+        "severity": {
+         "enum": [
+          "fail",
+          "warn",
+          "info"
+         ]
+        },
+        "subsystem": {
+         "type": "string"
+        },
+        "optional": {
+         "type": "boolean"
+        }
+       }
+      }
+     },
+     "soak": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+       "weight": {
+        "type": "integer"
+       },
+       "paramVariants": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "additionalProperties": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     },
+     "tags": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "minItems": 1
+  }
+ }
+}

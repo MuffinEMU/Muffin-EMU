@@ -977,6 +977,14 @@ namespace nsyshid
 			}
 			else if (reason == coreinit::RplEntryReason::Unloaded)
 			{
+				// The clients are structs in the stopped title's memory (attach callbacks would read them after the
+				// memory is unmapped), and the next load attaches the default backends again, so the old ones have to go
+				// or every title adds another copy of each
+				{
+					std::lock_guard<std::recursive_mutex> lock(hidMutex);
+					HIDClientList.clear();
+				}
+				DetachAllBackends();
 			}
 		}
 	}s_COSnsyshidModule;

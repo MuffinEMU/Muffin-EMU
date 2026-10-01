@@ -291,11 +291,8 @@ namespace coreinit
 	void OSAlarm_Shutdown()
 	{
         __OSLockScheduler();
-        if(g_activeAlarms.empty())
-        {
-            __OSUnlockScheduler();
-            return;
-        }
+        // no early return for an empty list: OSHostAlarm::Reset() also clears the "soonest alarm" timestamp, which
+        // otherwise stays at the last value the stopped title had
         for(auto& itr : g_activeAlarms)
         {
             OSHostAlarmDestroy(itr.second);

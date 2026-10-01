@@ -64,6 +64,15 @@ struct
 	}streamoutBufferWrite[LATTE_NUM_STREAMOUT_BUFFER];
 }activeStreamoutOperation;
 
+// Back to launch state. The ring buffer itself belongs to the renderer, this is only the host-side bookkeeping
+// (where in the ring the next reservation goes and the draw that was in progress when the title stopped).
+void LatteStreamout_Reset()
+{
+	LatteStreamout_InitCache();
+	_transformFeedbackIsActive = false;
+	memset(&activeStreamoutOperation, 0, sizeof(activeStreamoutOperation));
+}
+
 uint64 LatteStreamout_getNumberOfWrittenVertices()
 {
 	// todo: Currently we only handle GX2_POINTS

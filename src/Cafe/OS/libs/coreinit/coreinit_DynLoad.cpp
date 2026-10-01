@@ -287,6 +287,14 @@ namespace coreinit
 
 	void InitializeDynLoad()
 	{
+		// allocators and notify callbacks are guest function pointers that the title registered; the next title
+		// must not get them called
+		_osDynLoadFuncAlloc = MPTR_NULL;
+		_osDynLoadFuncFree = MPTR_NULL;
+		_osDynLoadTLSFuncAlloc = MPTR_NULL;
+		_osDynLoadTLSFuncFree = MPTR_NULL;
+		notifyCallbacks.clear();
+
 		cafeExportRegister("coreinit", OSDynLoad_SetAllocator, LogType::Placeholder);
 		cafeExportRegister("coreinit", OSDynLoad_SetTLSAllocator, LogType::Placeholder);
 		cafeExportRegister("coreinit", OSDynLoad_GetAllocator, LogType::Placeholder);

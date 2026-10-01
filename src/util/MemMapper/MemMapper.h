@@ -21,4 +21,7 @@ namespace MemMapper
 
 	void* AllocateMemory(void* baseAddr, size_t size, PAGE_PERMISSION permissionFlags, bool fromReservation = false);
 	void FreeMemory(void* baseAddr, size_t size, bool fromReservation = false);
+	// Returns a range to the reservation without touching its pages: access is removed, the contents stay (and stay resident).
+	// Used instead of FreeMemory(fromReservation) for ranges that something else may still map (a GPU buffer).
+	void FreeMemoryKeepPages(void* baseAddr, size_t size);
 };
