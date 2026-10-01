@@ -360,8 +360,21 @@ void CemuUIKit_UpdatePadWindowSize()
         g_windowInfo.pad_width = size.width;
         g_windowInfo.pad_height = size.height;
 
-        g_windowInfo.phys_pad_width = layer.drawableSize.width;
-        g_windowInfo.phys_pad_height = layer.drawableSize.height;
+        if (metal)
+        {
+            // ResizeLayer() above has just set drawableSize, so it is the size of the surface
+            g_windowInfo.phys_pad_width = layer.drawableSize.width;
+            g_windowInfo.phys_pad_height = layer.drawableSize.height;
+        }
+        else
+        {
+            // With Vulkan the layer's drawableSize belongs to MoltenVK, which sets it when the swapchain is created and rebuilds
+            // the swapchain on the GPU thread after this call, so here it still holds the previous size. The output area of the
+            // GamePad is laid out from this value (LatteRenderTarget_getScreenImageArea) and drawn into the swapchain, so use the
+            // extent the swapchain will be built with: the layer's bounds times its contentsScale, as the TV does.
+            g_windowInfo.phys_pad_width = size.width * scale;
+            g_windowInfo.phys_pad_height = size.height * scale;
+        }
 
         g_windowInfo.pad_dpi_scale = scale;
     };
