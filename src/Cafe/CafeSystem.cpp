@@ -1251,6 +1251,7 @@ namespace CafeSystem
 		logPhase("ending the PPC scheduler");
         Latte_Stop();
 		logPhase("stopping the GPU thread and renderer");
+		TCL::TCLResetRing();
         // reset Cafe OS userspace modules
         snd_core::reset();
         coreinit::OSAlarm_Shutdown();
