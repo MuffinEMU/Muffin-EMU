@@ -14,6 +14,7 @@ namespace nn
 namespace act
 {
 	uint32 Initialize();
+	void ResetForNewTitle(); // forgets how often Initialize() was called, for the end of a title
 
 	uint32 GetPersistentIdEx(uint8 slot);
 	uint32 GetUuidEx(uint8* uuid, uint8 slot, sint32 name = -2);

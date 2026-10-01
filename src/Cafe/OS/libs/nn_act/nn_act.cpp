@@ -167,6 +167,14 @@ namespace act
 			return 0;
 		}
 
+		// Only an Initialize() that finds the count at zero sends IOSU_ARC_INIT, which is the one request that loads the account data. The IOSU side
+		// forgets its data when a title stops (iosuAct_resetAccountCache), so the count has to start again with it: left at its old value the next
+		// title never asks, the data stays unloaded, and the NIM background thread waits for it forever
+		void ResetForNewTitle()
+		{
+			g_initializeCount = 0;
+		}
+
 		NN_ERROR_CODE GetErrorCode(betype<nnResult>* nnResult)
 		{
 			NN_ERROR_CODE errCode = NNResultToErrorCode(*nnResult, NN_RESULT_MODULE_NN_ACT);
