@@ -5,7 +5,7 @@ struct FilesSettingsSection: View {
         Section {
             Text(Self.documentsPathHint)
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.secondary)
+                .foregroundColor(MuffinTheme.secondaryText)
                 .textSelection(.enabled)
         } header: {
             SettingsSectionHeader("Your Files", icon: "folder", accent: .system)

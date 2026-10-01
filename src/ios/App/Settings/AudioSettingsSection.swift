@@ -197,7 +197,7 @@ struct AudioSettingsSection: View {
                 Spacer()
                 Text("\(volume.wrappedValue)%")
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
             Slider(
                 value: Binding<Double>(

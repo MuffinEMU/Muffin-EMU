@@ -254,7 +254,7 @@ struct GraphicPackSourceSection: View {
             HStack(spacing: 10) {
                 ProgressView()
                 Text("Checking for updates\u{2026}")
-                    .font(.system(size: 13, design: .rounded)).foregroundColor(.secondary)
+                    .font(.system(size: 13, design: .rounded)).foregroundColor(MuffinTheme.secondaryText)
             }
         case .downloading(let fraction):
             progressRow(title: "Downloading", fraction: fraction)
@@ -274,7 +274,7 @@ struct GraphicPackSourceSection: View {
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 Spacer()
                 Text("\(Int((fraction * 100).rounded()))%")
-                    .font(.system(size: 13, design: .monospaced)).foregroundColor(.secondary)
+                    .font(.system(size: 13, design: .monospaced)).foregroundColor(MuffinTheme.secondaryText)
             }
             ProgressView(value: fraction).tint(MuffinTheme.accentText)
             Button(role: .cancel) { store.cancel() } label: {
@@ -545,7 +545,7 @@ struct GraphicPackRow: View {
             if !pack.brief.isEmpty {
                 Text(pack.brief)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }

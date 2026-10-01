@@ -509,7 +509,7 @@ enum MuffinTheme {
     // MARK: - Type scale
 
     /// The app's type ramp: a row label is 15 semibold rounded, an empty-state caption is 13
-    /// rounded, and a Settings sub-caption is 12 and not rounded (it pairs with `.secondary`).
+    /// rounded, and a Settings sub-caption is 12 and not rounded (it pairs with secondaryText).
     /// `.rounded` is the app's voice. Sizes are fixed rather than Dynamic Type because the pad
     /// editor and in-game overlay are laid out against measured geometry.
     enum Font {
@@ -707,10 +707,10 @@ extension View {
         font(MuffinTheme.Font.caption).foregroundColor(MuffinTheme.brownMid)
     }
 
-    /// 12 plain, `.secondary`. The explanatory line under a settings row, matching the system
-    /// chrome around it in a stock `Form`.
+    /// 12 plain, secondaryText. The explanatory line under a settings row: the system grey,
+    /// held to 4.5:1 (`.secondary` is about 3.4:1 on a white row).
     func muffinSubCaption() -> some View {
-        font(MuffinTheme.Font.subCaption).foregroundColor(.secondary)
+        font(MuffinTheme.Font.subCaption).foregroundColor(MuffinTheme.secondaryText)
     }
 }
 

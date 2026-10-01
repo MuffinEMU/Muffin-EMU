@@ -139,7 +139,7 @@ struct OverlaySettingsSection: View {
                 Spacer()
                 Text("\(textScale)%")
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
             Slider(
                 value: Binding(get: { Double(textScale) }, set: { textScale = Int($0) }),

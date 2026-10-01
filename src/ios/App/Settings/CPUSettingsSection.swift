@@ -36,7 +36,7 @@ struct CPUSettingsSection: View {
                          ? "Slower but more accurate: one CPU core and stricter GPU syncing."
                          : "Faster, with some accuracy shortcuts.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
             .tint(MuffinTheme.accentText)
@@ -53,7 +53,7 @@ struct CPUSettingsSection: View {
                          ? "One CPU core, and holds it there even if the switch below is on."
                          : "Follows the core setting below.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
             .tint(MuffinTheme.accentText)
@@ -96,7 +96,7 @@ struct CPUSettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("When iOS reports the device is overheating, lowers resolution and CPU load until it cools.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
             .tint(MuffinTheme.accentText)
@@ -114,7 +114,7 @@ struct CPUSettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(String(cString: cemu_bridge_memory_headroom_summary()))
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
