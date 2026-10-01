@@ -170,6 +170,10 @@ class BootSoundPlayer
 	~BootSoundPlayer()
 	{
 		m_stopRequested = true;
+		// Destroying a joinable std::thread calls std::terminate. This object is static, so exit() destroys it, and the app calls exit() from
+		// "Close MuffinEMU". The thread watches m_stopRequested and ends by itself
+		if (m_bootSndPlayThread.joinable())
+			m_bootSndPlayThread.detach();
 	}
 
 	void StartSound()
