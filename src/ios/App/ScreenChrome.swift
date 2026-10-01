@@ -43,7 +43,8 @@ struct ScreenEmptyState: View {
                     .fill(MuffinTheme.wrapper)
                 Image(systemName: systemImage)
                     .font(.system(size: 26, weight: .semibold))
-                    .foregroundColor(MuffinTheme.pixelBlue)
+                    .foregroundColor(LegibleInk.ensure(MuffinTheme.pixelBlue, on: MuffinTheme.wrapper,
+                                                       minimum: LegibleInk.glyph))
             }
             .frame(width: 64, height: 64)
             .accessibilityHidden(true)
@@ -137,11 +138,11 @@ struct ScreenSlotBadge: View {
             if isFilled {
                 Text(label)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(MuffinTheme.sparkleCream)
+                    .foregroundColor(LegibleInk.on(MuffinTheme.pixelBlue, light: MuffinTheme.sparkleCream))
             } else {
                 Text(label)
                     .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundColor(MuffinTheme.brownMid)
+                    .foregroundColor(LegibleInk.ensure(MuffinTheme.brownMid, on: MuffinTheme.wrapper))
             }
         }
         .frame(width: 30, height: 30)
@@ -171,7 +172,9 @@ struct ScreenChip: View {
     private var modernBody: some View {
         Text(text)
             .font(.system(size: 11, weight: .semibold, design: .rounded))
-            .foregroundColor(isMuted ? MuffinTheme.brownMid : MuffinTheme.sparkleCream)
+            .foregroundColor(isMuted
+                             ? LegibleInk.ensure(MuffinTheme.brownMid, on: MuffinTheme.wrapper)
+                             : LegibleInk.on(MuffinTheme.pixelBlue, light: MuffinTheme.sparkleCream))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(
@@ -216,8 +219,9 @@ extension View {
                               isProminent: Bool = false,
                               isPressed: Bool = false) -> some View {
         let foreground: Color = isProminent
-            ? MuffinTheme.sparkleCream
-            : (isDestructive ? MuffinTheme.blushPink : MuffinTheme.pixelBlue)
+            ? LegibleInk.on(MuffinTheme.pixelBlue, light: MuffinTheme.sparkleCream)
+            : LegibleInk.ensure(isDestructive ? MuffinTheme.blushPink : MuffinTheme.pixelBlue,
+                                on: MuffinTheme.wrapper)
 
         return self
             .font(.system(size: 13, weight: .semibold, design: .rounded))
