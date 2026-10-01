@@ -159,6 +159,9 @@ namespace nn
 
 			void RPLMapped() override
 			{
+				// the list is read from the running title's /vol the first time it is asked for, and every title has its own
+				sAocCache.clear();
+				sAocCacheGenerated = false;
 				cafeExportRegister("nn_aoc", AOC_CalculateWorkBufferSize, LogType::NN_AOC);
 				cafeExportRegister("nn_aoc", AOC_ListTitle, LogType::NN_AOC);
 

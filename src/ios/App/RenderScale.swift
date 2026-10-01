@@ -199,6 +199,12 @@ enum AutoCoreHistory {
         return demoted.contains(gameID)
     }
 
+    /// Whether Auto keeps this title on one core, without settling a pending run. For a launch
+    /// that does not go through `isDemotedAtLaunch` (the Wii U Menu starting a game).
+    static func isDemoted(gameID: String) -> Bool {
+        Set(UserDefaults.standard.stringArray(forKey: demotedKey) ?? []).contains(gameID)
+    }
+
     /// Call once a title that Auto put on three cores has booted.
     static func sessionStarted(gameID: String) {
         UserDefaults.standard.set(gameID, forKey: pendingKey)

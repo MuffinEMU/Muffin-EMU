@@ -241,6 +241,11 @@ void CemuUIKit_InitializeLayer(bool main)
     if (metal) {
 #ifdef ENABLE_METAL
         auto metal_renderer = MetalRenderer::GetInstance();
+        // No renderer between two titles (a Wii U Menu switch destroys the old one and CemuPrepareRenderer() builds the next):
+        // a GamePad surface registered in that window, by a layout change for instance, has nothing to attach to yet.
+        // CemuPrepareRenderer() initializes both layers as soon as the renderer exists.
+        if (!metal_renderer)
+            return;
         metal_renderer->InitializeLayer({
             static_cast<int>(view.bounds.size.width),
             static_cast<int>(view.bounds.size.height)
@@ -251,6 +256,8 @@ void CemuUIKit_InitializeLayer(bool main)
     } else {
 #ifdef ENABLE_VULKAN
         auto vk_renderer = VulkanRenderer::GetInstance();
+        if (!vk_renderer)
+            return; // see above: CemuPrepareRenderer() initializes the layers once the renderer exists
         vk_renderer->InitializeSurface({
             static_cast<int>(view.bounds.size.width),
             static_cast<int>(view.bounds.size.height)
@@ -270,14 +277,15 @@ void CemuUIKit_ShutdownLayer(bool main) {
     if (metal) {
 #ifdef ENABLE_METAL
         auto metal_renderer = MetalRenderer::GetInstance();
-        metal_renderer->ShutdownLayer(main);
+        if (metal_renderer)
+            metal_renderer->ShutdownLayer(main);
 #else
         cemu_assert_debug(false);
 #endif
     } else {
 #ifdef ENABLE_VULKAN
         auto vk_renderer = VulkanRenderer::GetInstance();
-        if (!main)
+        if (!main && vk_renderer)
             vk_renderer->StopUsingPadAndWait();
 #else
         cemu_assert_debug(false);
@@ -352,8 +360,21 @@ void CemuUIKit_UpdatePadWindowSize()
         g_windowInfo.pad_width = size.width;
         g_windowInfo.pad_height = size.height;
 
-        g_windowInfo.phys_pad_width = layer.drawableSize.width;
-        g_windowInfo.phys_pad_height = layer.drawableSize.height;
+        if (metal)
+        {
+            // ResizeLayer() above has just set drawableSize, so it is the size of the surface
+            g_windowInfo.phys_pad_width = layer.drawableSize.width;
+            g_windowInfo.phys_pad_height = layer.drawableSize.height;
+        }
+        else
+        {
+            // With Vulkan the layer's drawableSize belongs to MoltenVK, which sets it when the swapchain is created and rebuilds
+            // the swapchain on the GPU thread after this call, so here it still holds the previous size. The output area of the
+            // GamePad is laid out from this value (LatteRenderTarget_getScreenImageArea) and drawn into the swapchain, so use the
+            // extent the swapchain will be built with: the layer's bounds times its contentsScale, as the TV does.
+            g_windowInfo.phys_pad_width = size.width * scale;
+            g_windowInfo.phys_pad_height = size.height * scale;
+        }
 
         g_windowInfo.pad_dpi_scale = scale;
     };

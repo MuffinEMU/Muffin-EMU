@@ -52,6 +52,7 @@ struct ContentView: View {
                         game: game,
                         message: gameManager.lastStatusMessage,
                         needsCleanRestart: gameManager.needsCleanRestart,
+                        endedWhileRunning: gameManager.titleEndedByEngine,
                         onDismiss: {
                             gameManager.stopEmulation()
                             showingGameBrowser = true
@@ -101,6 +102,8 @@ struct BootFailureView: View {
     let message: String
     /// Set when the launch was refused because the last game left the emulator in a state that only an app restart fixes.
     var needsCleanRestart: Bool = false
+    /// Set when the game was running and the engine ended it (it quit, or something fatal happened), as opposed to never starting.
+    var endedWhileRunning: Bool = false
     let onDismiss: () -> Void
 
     /// Where the diagnostics actually are. Computed from the bridge rather than written
@@ -123,7 +126,7 @@ struct BootFailureView: View {
                     .font(.system(size: 34, weight: .semibold))
                     .foregroundColor(MuffinTheme.alertOnDark)
 
-                Text(needsCleanRestart ? "Restart needed before \(game.title)" : "Couldn't start \(game.title)")
+                Text(needsCleanRestart ? "Restart needed before \(game.title)" : (endedWhileRunning ? "\(game.title) stopped" : "Couldn't start \(game.title)"))
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)

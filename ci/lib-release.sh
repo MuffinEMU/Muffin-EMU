@@ -18,11 +18,14 @@ w() {
 
 # Paths that cannot change the binary (the workflow's paths-ignore list). A push to main that only
 # touches these - the install-source bot commits docs/*.json after every build - does not make an
-# in-flight build stale.
+# in-flight build stale. This list answers "will a newer build follow?", so it must match what the
+# TRIGGER ignores: paths-ignore has '**/*.md' (any Markdown file, at any depth), and a push that only
+# changes src/x/NOTES.md starts no build. (ci/build-id.sh deliberately keeps nested Markdown IN its
+# fingerprint - a different question - and has its own list.)
 IGNORABLE_EXCLUDES=(
   ':(exclude)docs' ':(exclude)bench' ':(exclude)homebrew' ':(exclude)dist'
   ':(exclude).github/ISSUE_TEMPLATE' ':(exclude).gitignore'
-  ':(exclude)ci/generate-sidestore-source.py' ':(exclude,glob)*.md'
+  ':(exclude)ci/generate-sidestore-source.py' ':(exclude,glob)**/*.md'
   ':(exclude).github/workflows/build-bench-ipa.yml' ':(exclude).github/workflows/build-bench-rpx.yml'
   ':(exclude).github/workflows/build-rainbow-rpx.yml' ':(exclude).github/workflows/update-sidestore-source.yml'
   ':(exclude).github/workflows/community-stats.yml'

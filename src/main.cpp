@@ -578,6 +578,13 @@ extern "C" bool CemuTakeRendererFallback(char* reasonOut, size_t capacity)
 
 void CemuPrepareRenderer()
 {
+    // A reason left by a launch that fell back to Metal and then failed before the app took it (CemuRun() threw after
+    // this function) belongs to that launch. Left set it would be reported against the next one, even when that one starts
+    // Vulkan fine, and turn the saved renderer to Metal.
+    {
+        std::lock_guard lock(sRendererFallbackMutex);
+        sRendererFallbackReason.clear();
+    }
     bool usingMetal = false;
 #ifdef ENABLE_METAL
     if (ActiveSettings::GetGraphicsAPI() == kMetal)

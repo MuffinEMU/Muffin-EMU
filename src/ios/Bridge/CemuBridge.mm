@@ -3028,6 +3028,16 @@ int cemu_bridge_reload_and_count_keys(void) {
     return IOSTitleLaunch_ReloadAndCountKeys();
 }
 
+void cemu_bridge_prepare_keys_before_init(const char* mlcPath) {
+    if (!mlcPath || mlcPath[0] == '\0')
+        return;
+    // Once the engine is initialized the key cache uses its own user data path and these names are never consulted.
+    // Same layout IOSTitleLaunch_AdoptDroppedKeys() keeps in step after init: Documents/keys/keys.txt is the copy the
+    // user sees and wins, Documents/mlc/keys.txt is the engine's.
+    const fs::path userDataRoot(mlcPath);
+    KeyCache_SetPreInitKeyFiles(userDataRoot.parent_path() / "keys" / "keys.txt", userDataRoot / "keys.txt");
+}
+
 double cemu_bridge_get_fps(void) {
     return g_framesPerSecond.load();
 }
