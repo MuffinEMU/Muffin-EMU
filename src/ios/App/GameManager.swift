@@ -62,6 +62,19 @@ enum ImportState: Equatable {
 private enum LibraryMetadataCache {
     private static let regionKey = "muffin.library.regionByGameID"
     private static let titleNameKey = "muffin.library.titleNameByGameID"
+    private static let versionKey = "muffin.library.metadataCacheVersion"
+    private static let currentVersion = 2
+
+    /// Before version 2 a disc image that could not be opened (the scan runs before the engine has its keys) was stored as
+    /// "checked, nothing there" and never asked again, so it kept its file name and no region for good. Those entries cannot be
+    /// told apart from a real "nothing there", so they are dropped once and derived again.
+    static func discardEntriesFromBeforeVersion2() {
+        let defaults = UserDefaults.standard
+        guard defaults.integer(forKey: versionKey) < currentVersion else { return }
+        defaults.removeObject(forKey: regionKey)
+        defaults.removeObject(forKey: titleNameKey)
+        defaults.set(currentVersion, forKey: versionKey)
+    }
 
     /// nil means "never checked yet." "" means "checked - meta.xml genuinely has
     /// nothing here." Both are real, distinct answers, and the difference is the
@@ -104,6 +117,9 @@ class GameManager: ObservableObject {
     /// running the app's work, or the engine could not fully reset). Only closing and reopening the app clears it, so the
     /// launch is refused with a message and a button that closes the app. Never set by a normal stop.
     @Published private(set) var needsCleanRestart = false
+    /// True when the engine ended the running title itself (the game quit, the GPU thread hit an exception, a fatal error such as
+    /// running out of address space, or a Wii U Menu switch that could not start the next title). `lastStatusMessage` then says why.
+    @Published private(set) var titleEndedByEngine = false
     /// Real emulator frame rate, polled from the bridge once a second while a title
     /// is running (see startFrameRateMonitor()). 0 whenever nothing is rendering.
     @Published private(set) var frameRate: Int = 0
@@ -185,6 +201,7 @@ class GameManager: ObservableObject {
     /// safe to run detached. Returns nil if the directory can't be read.
     private nonisolated static func scanRoms(romsPath: URL, sweepStaging: Bool) -> [GameMetadata]? {
         let fileManager = FileManager.default
+        LibraryMetadataCache.discardEntriesFromBeforeVersion2()
 
         // Staging folders hold partial copies from an import that was killed or ran out of
         // space. Nothing else can be importing at launch, so clear them once per launch.
@@ -195,12 +212,24 @@ class GameManager: ObservableObject {
             try? fileManager.removeItem(at: dlcStaging)
         }
 
+        // Imports from earlier versions that went one folder too high never reached the engine.
+        // Moved here, before any game can start, rather than the first time a screen looks.
+        DlcUpdateImport.migrateMisplacedContentIfNeeded()
+        GameSaveTransfer.migrateMisplacedSavesIfNeeded()
+
         guard let contents = try? fileManager.contentsOfDirectory(at: romsPath, includingPropertiesForKeys: nil) else {
             return nil
         }
         // Encrypted disc images need the key cache loaded before TitleInfo can open them
         // (DLC/update matching and cover derivation both do); loading it here keeps it
         // off the main thread.
+        //
+        // This scan runs at app start, before the engine is initialized (that happens at the first launch), when the
+        // core still has no user data folder to find keys.txt in. Tell the key cache where the files are, or every
+        // .wux/.wud below fails to open ("no key in keys.txt decrypts this disc image"), is listed without a title id,
+        // region, name or box art, and the result is remembered (see deriveAndApplyRegionAndTitleName).
+        let mlcFolder = romsPath.deletingLastPathComponent().appendingPathComponent("mlc").path
+        mlcFolder.withCString { cemu_bridge_prepare_keys_before_init($0) }
         _ = cemu_bridge_reload_and_count_keys()
 
         // Stable order so duplicate-id resolution below is deterministic.
@@ -624,6 +653,12 @@ class GameManager: ObservableObject {
         let inspected = game.romPath.withCString { cPath in
             cemu_bridge_inspect_title(cPath, nil, &version, &regionBitmask, &invalidReason)
         }
+        // A title that could not be opened for want of a key (3 no disc key, 4 no ticket, 8 key invalid) says nothing
+        // about its meta.xml: the answer changes the moment keys.txt does. Remembering it as "nothing there" would keep
+        // the card on its file name with no region for good, so it is left unanswered and asked again next scan.
+        if !inspected && (invalidReason == 3 || invalidReason == 4 || invalidReason == 8) {
+            return
+        }
         let region = inspected ? Self.regionLabel(forBitmask: regionBitmask) : nil
         LibraryMetadataCache.setCachedRegion(region, for: game.id)
 
@@ -1016,6 +1051,7 @@ class GameManager: ObservableObject {
             return
         }
         needsCleanRestart = false
+        titleEndedByEngine = false
         emulationState = .loading
 
         guard let engine = emulationEngine else {
@@ -1401,6 +1437,14 @@ class GameManager: ObservableObject {
         frameRateTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
+                // The engine can end a title by itself and only raises a flag for it (coreinit exit(), the GPU thread's catch-all, the
+                // out-of-address-space handler, a failed Wii U Menu switch). Nothing else reads that flag, so check here and stop the title
+                // the way the Back button does. cemu_bridge_is_title_running() stays true for the whole of a Wii U Menu switch, so a switch
+                // in progress is not mistaken for an end.
+                if self.emulationState == .running && !cemu_bridge_is_title_running() {
+                    self.stopTitleEndedByEngine()
+                    return
+                }
                 let fps = Int(cemu_bridge_get_fps().rounded())
                 if fps != self.frameRate {
                     self.frameRate = fps
@@ -1428,6 +1472,19 @@ class GameManager: ObservableObject {
         videoStalled = false
         videoStallKind = 0
         progress = EmulatorProgress()
+    }
+
+    /// Runs the normal stop for a title the engine has already ended, and keeps the reason on screen. The reason is read before
+    /// the stop because the stop path overwrites the bridge's status line.
+    private func stopTitleEndedByEngine() {
+        let reason = String(cString: cemu_bridge_status_text())
+        let game = currentGame
+        stopEmulation()
+        guard let game else { return }
+        currentGame = game
+        lastStatusMessage = reason
+        titleEndedByEngine = true
+        emulationState = .error
     }
 }
 
@@ -1499,8 +1556,8 @@ enum EmulationState {
 }
 
 /// Applies a game's own settings when the Wii U Menu switches to it, exactly as a library launch does before boot:
-/// "Favour accuracy" and "Compile shaders in the background" (the two per-game overrides), and the starting controls and screen
-/// layout for titles that need them (GameControlHints). Settings that are global (renderer, audio, overlays, CPU cores, ...) were
+/// "Favour accuracy", "Compile shaders in the background" and "CPU cores" (the per-game overrides), and the starting controls and
+/// screen layout for titles that need them (GameControlHints). Settings that are global (renderer, audio, overlays, ...) were
 /// already pushed when the Menu itself was launched and stay as they are. Runs on the engine's title-switch thread, so it only
 /// touches thread-safe state.
 final class TitleSwitchSettings {
@@ -1527,6 +1584,11 @@ final class TitleSwitchSettings {
     static func apply(titleId: UInt64) {
         // A title that is not in the library has no overrides, so it gets the global defaults.
         let id = shared.gameID(for: titleId) ?? ""
+        // The core count is decided when the incoming title's threads start, which is after this
+        // call, so the game's own choice (and Auto's memory of a three-core run that went badly)
+        // has to be in place now. Each setter recomputes the CPU mode, so the order does not matter.
+        cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemoted(gameID: id))
+        cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: id).bridgeValue)
         cemu_bridge_set_favour_accuracy(PerGameSettingsStore.shared.effectiveFavourAccuracy(for: id))
         cemu_bridge_set_async_shader_compile(PerGameSettingsStore.shared.effectivePreCompileShaders(for: id))
         #if os(iOS)

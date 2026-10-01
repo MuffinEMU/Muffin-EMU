@@ -68,6 +68,15 @@ bool ActiveSettings::DisplayDRCEnabled()
 CPUMode ActiveSettings::GetCPUMode()
 {
 #if BOOST_OS_IOS
+    // The app picks the mode (recompiler or interpreter, one or three cores) from its own settings and always writes an
+    // explicit one. A game profile that asks for the interpreter is the one request that has to win over it: those
+    // titles (Master Reboot, Nihilumbra, 8Bit Hero) are listed that way because the recompiler breaks them.
+    if (g_current_game_profile)
+    {
+        const auto& profileMode = g_current_game_profile->GetCPUMode();
+        if (profileMode && (*profileMode == CPUMode::SinglecoreInterpreter || *profileMode == CPUMode::MulticoreInterpreter))
+            return *profileMode;
+    }
     return GetConfig().cpu_mode.GetValue();
 #else
 

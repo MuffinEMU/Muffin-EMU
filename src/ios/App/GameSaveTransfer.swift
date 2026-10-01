@@ -70,6 +70,13 @@ enum GameSaveTransfer {
         }
     }()
 
+    /// Moves saves that earlier versions imported into the wrong folder, if there are any. Called
+    /// once at launch, so a game started straight from the library already finds them; without it
+    /// the move waited for the first time a game's save was looked up.
+    static func migrateMisplacedSavesIfNeeded() {
+        _ = migratedMisplacedSaves
+    }
+
     /// `mlc/mlc01/usr/save/<HIGH>/<LOW>` for this game, whether or not it exists yet.
     ///
     /// Returns nil only when the title ID is unknown, which happens for a game whose
@@ -238,6 +245,7 @@ enum GameSaveTransfer {
 
         let fm = FileManager.default
         var backupNote = ""
+        var movedAside: URL?
         if fm.fileExists(atPath: destination.path) {
             let stamp = ISO8601DateFormatter().string(from: Date())
                 .replacingOccurrences(of: ":", with: "-")
@@ -247,20 +255,33 @@ enum GameSaveTransfer {
             let backups = docs.appendingPathComponent("save-backups/\(game.id)/\(stamp)", isDirectory: true)
             try fm.createDirectory(at: backups.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: destination, to: backups)
+            movedAside = backups
             backupNote = " Your previous save was backed up first."
         }
-        try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
 
-        switch shape {
-        case .titleFolder:
-            try fm.copyItem(at: picked, to: destination)
-        case .highFolder(let titleFolder):
-            try fm.copyItem(at: titleFolder, to: destination)
-        case .userFolder:
-            // Re-nest it: the folder is the contents of user/, so it has to land there
-            // rather than at the title level, or the engine finds an empty save.
-            try fm.createDirectory(at: destination, withIntermediateDirectories: true)
-            try fm.copyItem(at: picked, to: destination.appendingPathComponent("user", isDirectory: true))
+        do {
+            try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+            switch shape {
+            case .titleFolder:
+                try fm.copyItem(at: picked, to: destination)
+            case .highFolder(let titleFolder):
+                try fm.copyItem(at: titleFolder, to: destination)
+            case .userFolder:
+                // Re-nest it: the folder is the contents of user/, so it has to land there
+                // rather than at the title level, or the engine finds an empty save.
+                try fm.createDirectory(at: destination, withIntermediateDirectories: true)
+                try fm.copyItem(at: picked, to: destination.appendingPathComponent("user", isDirectory: true))
+            }
+        } catch {
+            // A copy that stops half way (the device is nearly full, the picked folder went away) leaves a
+            // partial save in the game's own folder and the real one in save-backups, and the game would
+            // start from the partial one. Put things back the way they were.
+            try? fm.removeItem(at: destination)
+            if let movedAside {
+                try? fm.moveItem(at: movedAside, to: destination)
+            }
+            throw error
         }
         return "Save imported.\(backupNote) Start the game to check it."
     }

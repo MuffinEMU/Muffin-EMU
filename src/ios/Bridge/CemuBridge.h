@@ -86,6 +86,15 @@ CemuBridgeStatus cemu_bridge_boot_rpx(const char* rpxPath);
 /// real answer about a real file.
 int cemu_bridge_reload_and_count_keys(void);
 
+/// Tells the core's key cache where keys.txt will be, so that a disc image (.wux/.wud) can be opened BEFORE
+/// cemu_bridge_initialize() has run. The library scan (title id, region, name, box art), DLC/update inspection and
+/// Decrypt to Files all open disc images at app start, and until the core's user data path exists the key cache has no
+/// file to read, so every one of them failed with "no key in keys.txt decrypts this disc image" even with keys installed.
+/// mlcPath is the same folder cemu_bridge_initialize() is given (Documents/mlc). The keys are read from
+/// Documents/keys/keys.txt (the copy the user sees) or else Documents/mlc/keys.txt, read-only, nothing is created. Cheap
+/// and safe to call repeatedly; ignored once the core is initialized.
+void cemu_bridge_prepare_keys_before_init(const char* mlcPath);
+
 /// Wires the real native Metal renderer to an actual on-screen
 /// surface. `uiView` must be a UIView* (bridged as void*); `width`/`height` are its
 /// client size in LOGICAL POINTS (not physical pixels - the points -> pixels

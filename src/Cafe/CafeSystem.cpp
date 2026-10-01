@@ -59,6 +59,7 @@
 #include "Cafe/OS/libs/nfc/nfc.h"
 #include "Cafe/OS/libs/ntag/ntag.h"
 #include "Cafe/OS/libs/nn_aoc/nn_aoc.h"
+#include "Cafe/OS/libs/nn_act/nn_act.h"
 #include "Cafe/OS/libs/nn_pdm/nn_pdm.h"
 #include "Cafe/OS/libs/nn_cmpt/nn_cmpt.h"
 #include "Cafe/OS/libs/nn_ccr/nn_ccr.h"
@@ -936,6 +937,9 @@ namespace CafeSystem
 		uint32 h = generateHashFromRawRPXData(execData->data(), execData->size());
 		sForegroundTitleId = 0xFFFFFFFF00000000ULL | (uint64)h;
 		cemuLog_log(LogType::Force, "Generated placeholder TitleId: {:016x}", sForegroundTitleId);
+		// a standalone executable has no game profile, and the one the previous title loaded must not carry over (gameProfile_load() is not called here)
+		g_current_game_profile->ResetOptional();
+		ppcThreadQuantum = g_current_game_profile->GetThreadQuantum();
 		// setup memory space and ppc recompiler
         SetupMemorySpace();
         PPCRecompiler_init();
@@ -1226,8 +1230,13 @@ namespace CafeSystem
 		return sCleanSlateLeftovers;
 	}
 
+	// ShutdownTitle() has three callers that can arrive together: the app's stop, a game that calls exit() (OSShutdownThread) and a Wii U Menu
+	// title switch (OSLauncherThread). The second one waits for the first and then finds nothing left to stop
+	static std::mutex sShutdownTitleMutex;
+
 	void ShutdownTitle()
 	{
+		std::lock_guard<std::mutex> shutdownLock(sShutdownTitleMutex);
 		if(!sSystemRunning)
 			return;
 		const auto shutdownStart = std::chrono::steady_clock::now();
@@ -1245,6 +1254,7 @@ namespace CafeSystem
 		logPhase("ending the PPC scheduler");
         Latte_Stop();
 		logPhase("stopping the GPU thread and renderer");
+		TCL::TCLResetRing();
         // reset Cafe OS userspace modules
         snd_core::reset();
         coreinit::OSAlarm_Shutdown();
@@ -1260,6 +1270,7 @@ namespace CafeSystem
 		for(auto it = s_iosuModules.rbegin(); it != s_iosuModules.rend(); ++it)
 			(*it)->TitleStop();
 		iosuAct_resetAccountCache();
+		nn::act::ResetForNewTitle();
 		coreinit::FSResetMounts();
 		logPhase("resetting IOSU");
         // reset Cemu subsystems
@@ -1378,6 +1389,7 @@ namespace CafeSystem
             delete it.second; // a private copy made by MlcStorageMountTitle(), nothing else refers to it
         }
         m_mlcMountedTitles.clear();
+        iosu::mcpResetTitleMounts();
     }
 
 	uint32 GetRPXHashBase()

@@ -18,18 +18,27 @@ on:
 permissions:
   contents: write
 
+# Never cancel a run that is already regenerating: every completion of the build workflow (a pull
+# request's, a cancelled one, one whose job below is skipped) starts a run of THIS workflow that joins
+# the group before `if:` is evaluated, so with cancel-in-progress a pull request build finishing
+# seconds after main's would cancel the run that was about to commit main's new release, and its own
+# job would be skipped: no update at all. The generator is idempotent, so running in turn is safe.
 concurrency:
   group: sidestore-source
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   regenerate:
     runs-on: ubuntu-latest
-    # A failed or cancelled build published nothing, so there is nothing new to point at
-    # and regenerating would only rewrite the file with what it already says.
+    # A cancelled build published nothing, so there is nothing new to point at and regenerating
+    # would only rewrite the file with what it already says. A FAILED run of main or of a dispatch
+    # may still have published its numbered release (the build job succeeded, a later job such as
+    # publish-nightly failed), and the run's overall conclusion is then "failure": regenerating is
+    # idempotent, so it is done for those too. A failed pull request run published nothing.
     if: >-
       github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success'
+      github.event.workflow_run.conclusion == 'success' ||
+      (github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event != 'pull_request')
     steps:
       - uses: actions/checkout@v4
         with:

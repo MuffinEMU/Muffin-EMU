@@ -601,7 +601,12 @@ LatteCMDPtr LatteCP_itMemSemaphore(LatteCMDPtr cmd, uint32 nWords)
 			{
 				loopCount++;
 				if (loopCount > 2000)
+				{
 					std::this_thread::yield();
+					// the guest that would signal is stopped once the title is stopping, and Latte_Stop() joins this thread
+					if ((loopCount & 0x3FF) == 0 && Latte_GetStopSignal())
+						LatteThread_Exit();
+				}
 				continue;
 			}
 			if (semaphoreData->compare_exchange_strong(oldVal, oldVal - 1))

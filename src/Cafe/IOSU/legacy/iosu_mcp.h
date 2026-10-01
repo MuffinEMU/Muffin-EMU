@@ -71,6 +71,7 @@ namespace iosu
 {
 	sint32 mcpGetTitleCount();
 	sint32 mcpGetTitleList(MCPTitleInfo* titleList, uint32 titleListBufferSize, uint32be* titleCount);
+	void mcpResetTitleMounts(); // the next title list request mounts every known title again
 
 	void iosuMcp_init();
 

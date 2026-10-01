@@ -157,13 +157,15 @@ jobs:
     timeout-minutes: 330
     permissions:
       contents: write
+      # Deleting the superseded current-core cache entries when a new core is promoted ("Retire the
+      # superseded cores"); it was listed under `outputs:` below, so the token had no such scope and
+      # `gh cache delete` answered HTTP 403. Also what reading artifacts needs if the repository is private.
+      actions: write
     outputs:
       channel: ${{ steps.channel.outputs.channel }}
       tag: ${{ steps.channel.outputs.tag }}
       title: ${{ steps.channel.outputs.title }}
       short_name: ${{ steps.channel.outputs.short_name }}
-      # Deleting the superseded current-core cache entry when a new core is promoted.
-      actions: write
     steps:
       # No submodules here: the fingerprint and the reuse lookup read only git's own records (a
       # submodule counts by the commit it pins), so a run that reuses a build never downloads
@@ -625,14 +627,22 @@ jobs:
               VER="$MAJ.$MIN"
               # A numbered release must strictly contain the latest one. A re-run of an old build of
               # main would otherwise ship old code as the newest version.
-              if ! ./ci/check-stable.sh "$PREV"; then PUBLISH=false; fi
+              if ! ./ci/check-stable.sh "$PREV"; then
+                PUBLISH=false
+                # Not a release, so it must not claim the next number: this IPA can still be picked up
+                # by the rolling build job (it decides that on its own), and an app saying "6.5" would
+                # name a version no release has, one the next real build then reuses for different code.
+                # Name the release it sits on instead, plus the commit in the display name.
+                VER="${PREV#v}"
+              fi
             fi
             TAG="v$VER"
-            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            if [ "$PUBLISH" = true ] && git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
               echo "::error::$TAG already exists"
               exit 1
             fi
             LABEL="$VER"; RELEASE=true
+            [ "$PUBLISH" = true ] || LABEL="$VER+$(echo "$GITHUB_SHA" | cut -c1-7)"
           else
             VER=$(./ci/version.sh)
             TAG="auto-${GITHUB_SHA}"
