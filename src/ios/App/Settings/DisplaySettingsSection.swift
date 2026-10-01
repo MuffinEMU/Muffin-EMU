@@ -44,6 +44,8 @@ struct DisplaySettingsSection: View {
                     }
                 }
                 .pickerStyle(.menu)
+                // The row's own Text is the label; a menu picker in a Form row prints its label as well.
+                .labelsHidden()
                 .tint(MuffinTheme.pixelBlue)
             }
             .alert("Screen Layout", isPresented: $screenLayoutInfoShown) {
