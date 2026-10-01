@@ -21,7 +21,7 @@ struct DeviceReportSection: View {
         Section {
             Text(deviceReport)
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.secondary)
+                .foregroundColor(MuffinTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
 
             Button {
@@ -60,7 +60,7 @@ struct DiagnosticsSection: View {
                     Image(systemName: "sparkles")
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
 
             Toggle(isOn: $showLaunchLog) {
                 Label {
@@ -70,7 +70,7 @@ struct DiagnosticsSection: View {
                     Image(systemName: "text.alignleft")
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
 
             Toggle(isOn: $padOverlayEnabled) {
                 Label {
@@ -79,13 +79,13 @@ struct DiagnosticsSection: View {
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text("A small readout over the game showing whether your button presses are reaching the game, and why not if they aren't.")
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.secondaryText)
                     }
                 } icon: {
                     Image(systemName: "gamecontroller.badge.exclamationmark")
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
         } header: {
             SettingsSectionHeader("Diagnostics", icon: "stethoscope", accent: .system)
         } footer: {

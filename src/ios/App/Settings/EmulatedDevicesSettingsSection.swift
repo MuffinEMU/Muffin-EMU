@@ -23,7 +23,7 @@ struct EmulatedDevicesSettingsSection: View {
                 Text("Skylanders Portal")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: skylanderPortalEnabled) { newValue in
                 cemu_bridge_set_emulate_skylander_portal(newValue)
             }
@@ -31,7 +31,7 @@ struct EmulatedDevicesSettingsSection: View {
                 Text("Disney Infinity Base")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: infinityBaseEnabled) { newValue in
                 cemu_bridge_set_emulate_infinity_base(newValue)
             }
@@ -39,7 +39,7 @@ struct EmulatedDevicesSettingsSection: View {
                 Text("LEGO Dimensions Toypad")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: dimensionsToypadEnabled) { newValue in
                 cemu_bridge_set_emulate_dimensions_toypad(newValue)
             }

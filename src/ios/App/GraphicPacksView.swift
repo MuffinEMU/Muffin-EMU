@@ -42,6 +42,7 @@ struct GraphicPacksView: View {
             attributionSection
         }
         .navigationTitle("Graphic Packs")
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -180,7 +181,7 @@ struct GraphicPacksView: View {
                 Label("Cemu graphic packs on GitHub", systemImage: "link")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
         } header: {
             SettingsSectionHeader("Credits", icon: "heart", accent: .identity)
         } footer: {
@@ -253,7 +254,7 @@ struct GraphicPackSourceSection: View {
             HStack(spacing: 10) {
                 ProgressView()
                 Text("Checking for updates\u{2026}")
-                    .font(.system(size: 13, design: .rounded)).foregroundColor(.secondary)
+                    .font(.system(size: 13, design: .rounded)).foregroundColor(MuffinTheme.secondaryText)
             }
         case .downloading(let fraction):
             progressRow(title: "Downloading", fraction: fraction)
@@ -273,9 +274,9 @@ struct GraphicPackSourceSection: View {
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 Spacer()
                 Text("\(Int((fraction * 100).rounded()))%")
-                    .font(.system(size: 13, design: .monospaced)).foregroundColor(.secondary)
+                    .font(.system(size: 13, design: .monospaced)).foregroundColor(MuffinTheme.secondaryText)
             }
-            ProgressView(value: fraction).tint(MuffinTheme.pixelBlue)
+            ProgressView(value: fraction).tint(MuffinTheme.accentText)
             Button(role: .cancel) { store.cancel() } label: {
                 Text("Cancel").font(.system(size: 13, weight: .semibold, design: .rounded))
             }
@@ -377,6 +378,7 @@ struct GraphicPackGameListView: View {
         }
         .searchable(text: $search, prompt: "Search games and packs")
         .navigationTitle("All Packs")
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -405,6 +407,7 @@ struct GraphicPackGameView: View {
             GraphicPackCategorySections(packs: livePacks, store: store, profile: .current, suggestWorkarounds: false)
         }
         .navigationTitle(game)
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -536,13 +539,13 @@ struct GraphicPackRow: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .disabled(locked)
 
             if !pack.brief.isEmpty {
                 Text(pack.brief)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -552,7 +555,7 @@ struct GraphicPackRow: View {
             Button(action: onDetails) {
                 Text(pack.presetCount > 0 ? "Options and details" : "Details")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundColor(MuffinTheme.pixelBlue)
+                    .foregroundColor(MuffinTheme.accentText)
             }
             .buttonStyle(.borderless)
         }
@@ -593,7 +596,7 @@ struct PackChip: View {
     private var foreground: Color {
         switch style {
         case .neutral: return MuffinTheme.brownMid
-        case .good: return MuffinTheme.sparkleCream
+        case .good: return MuffinTheme.onAccent
         case .warning: return MuffinTheme.brownDarkest
         }
     }
@@ -632,6 +635,7 @@ struct GraphicPackDetailView: View {
                 content
             }
             .navigationTitle(pack?.displayName ?? "Pack")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -658,7 +662,7 @@ struct GraphicPackDetailView: View {
                         Text("Use this pack")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                     }
-                    .tint(MuffinTheme.pixelBlue)
+                    .tint(MuffinTheme.accentText)
                     .disabled(store.gameRunning)
 
                     switch pack.support(on: api) {
@@ -754,7 +758,7 @@ struct GraphicPackDetailView: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .tint(MuffinTheme.pixelBlue)
+                .tint(MuffinTheme.accentText)
                 .disabled(store.gameRunning)
 
                 if isResolution, let suggestion, suggestion.name != selected {

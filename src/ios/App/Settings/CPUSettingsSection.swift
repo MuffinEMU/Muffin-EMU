@@ -23,7 +23,7 @@ struct CPUSettingsSection: View {
                 Text("Use the recompiler (JIT)")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: recompilerEnabled) { newValue in
                 cemu_bridge_set_recompiler_enabled(newValue)
             }
@@ -36,10 +36,10 @@ struct CPUSettingsSection: View {
                          ? "Slower but more accurate: one CPU core and stricter GPU syncing."
                          : "Faster, with some accuracy shortcuts.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: favourAccuracy) { newValue in
                 cemu_bridge_set_favour_accuracy(newValue)
             }
@@ -53,10 +53,10 @@ struct CPUSettingsSection: View {
                          ? "One CPU core, and holds it there even if the switch below is on."
                          : "Follows the core setting below.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: lowPowerMode) { newValue in
                 cemu_bridge_set_low_power_mode(newValue)
             }
@@ -74,7 +74,7 @@ struct CPUSettingsSection: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .tint(MuffinTheme.pixelBlue)
+                    .tint(MuffinTheme.accentText)
                     .disabled(!DeviceCapabilities.current.multicoreViable)
                 }
                 Text(DeviceCapabilities.current.multicoreViable
@@ -96,10 +96,10 @@ struct CPUSettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("When iOS reports the device is overheating, lowers resolution and CPU load until it cools.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
 
             // Memory headroom. If the JIT's memory reservation fails, the recompiler is switched
             // off and the interpreter runs, so the arena size shows whether the memory
@@ -114,7 +114,7 @@ struct CPUSettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(String(cString: cemu_bridge_memory_headroom_summary()))
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -170,8 +170,8 @@ private struct CPUModeRow: View {
     private var tint: Color {
         // Amber rather than red for the interpreter: it is slow, but it works.
         switch mode {
-        case 2:  return MuffinTheme.pixelBlue
-        case 1:  return .orange
+        case 2:  return MuffinTheme.accentText
+        case 1:  return MuffinTheme.cautionText
         default: return MuffinTheme.brownMid
         }
     }

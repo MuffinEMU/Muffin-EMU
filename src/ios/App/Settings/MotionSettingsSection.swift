@@ -79,10 +79,10 @@ struct MotionSettingsSection: View {
                          ? "Tilt and turn the device to aim, like the GamePad."
                          : "Stick only. The GamePad never moves.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: motionEnabled) { _ in MotionSettings.applyToBridge() }
 
             if motionEnabled {
@@ -109,7 +109,7 @@ struct MotionSettingsSection: View {
             .onChange(of: source) { _ in MotionSettings.applyToBridge() }
             Text(statusText)
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundColor(MuffinTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
 
@@ -120,7 +120,7 @@ struct MotionSettingsSection: View {
                 Spacer()
                 Text(String(format: "%.2fx", sensitivity))
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
             Slider(value: $sensitivity, in: MotionSettings.minSensitivity...MotionSettings.maxSensitivity)
                 .onChange(of: sensitivity) { _ in MotionSettings.applyToBridge() }
@@ -135,7 +135,7 @@ struct MotionSettingsSection: View {
                 .onChange(of: logValues) { _ in MotionSettings.applyToBridge() }
             Text("Leave these off unless aiming turns the wrong way. The log writes one line a second to the engine log, to report when something looks off.")
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundColor(MuffinTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .font(.system(size: 13, weight: .semibold, design: .rounded))

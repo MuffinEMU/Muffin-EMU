@@ -282,7 +282,7 @@ struct GameOptionsView: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                            .tint(MuffinTheme.pixelBlue)
+                            .tint(MuffinTheme.accentText)
                         }
                         HStack {
                             Text("Favour Accuracy")
@@ -294,7 +294,7 @@ struct GameOptionsView: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                            .tint(MuffinTheme.pixelBlue)
+                            .tint(MuffinTheme.accentText)
                         }
                         HStack {
                             Text("CPU Cores")
@@ -307,7 +307,7 @@ struct GameOptionsView: View {
                                 }
                             }
                             .pickerStyle(.menu)
-                            .tint(MuffinTheme.pixelBlue)
+                            .tint(MuffinTheme.accentText)
                             .disabled(!DeviceCapabilities.current.multicoreViable)
                         }
                         if !DeviceCapabilities.current.multicoreViable {
@@ -375,7 +375,7 @@ struct GameOptionsView: View {
                         if let saveTransferMessage {
                             Text(saveTransferMessage)
                                 .font(.system(size: 12))
-                                .foregroundColor(saveTransferFailed ? .red : .secondary)
+                                .foregroundColor(saveTransferFailed ? .red : MuffinTheme.secondaryText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     } header: {
@@ -413,6 +413,7 @@ struct GameOptionsView: View {
                 Text("This replaces \(game.title)\'s current save. The one you have now is backed up first, and the game should be closed before you do this.")
             }
             .navigationTitle(game.title)
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
