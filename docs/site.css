@@ -788,3 +788,9 @@ tr:last-child td { border-bottom: none; }
 
 /* Icons inside a .btn. Sized here so no button needs inline width/height. */
 .btn svg { width: 1.05em; height: 1.05em; flex: none; }
+
+/* Home > About MuffinEMU: the official links. Source URLs are long, so they wrap
+   rather than push the card wider than a phone. */
+.section-about { padding-bottom: clamp(2rem, 5vw, 3.5rem); }
+.official-links { margin: 0; }
+.official-links li { margin: .35rem 0; overflow-wrap: anywhere; }
