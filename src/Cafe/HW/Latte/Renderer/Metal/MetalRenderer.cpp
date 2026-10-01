@@ -1564,8 +1564,6 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
         effectiveCopyHeight *= multY;
     }
 
-    auto blitCommandEncoder = GetBlitCommandEncoder();
-
     auto mtlSrc = static_cast<LatteTextureMtl*>(src)->GetTexture();
     auto mtlDst = static_cast<LatteTextureMtl*>(dst)->GetTexture();
 
@@ -1685,6 +1683,10 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
             srcDepth_ = (sint32)slicesAvailable;
         }
     }
+
+    // Opened only now: a copy refused above must not end the render pass that is in progress (each switch to a blit encoder
+    // costs a tile flush and a reload of the pass's attachments on this GPU)
+    auto blitCommandEncoder = GetBlitCommandEncoder();
 
     uint32 srcBaseLayer = 0;
     uint32 dstBaseLayer = 0;
