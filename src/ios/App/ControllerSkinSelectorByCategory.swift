@@ -69,7 +69,7 @@ struct OrganizedControllerSkinSelector: View {
                         Text(selectedSkin.name)
                             .font(.system(size: 12, weight: .semibold, design: .rounded))
                     }
-                    .foregroundColor(MuffinTheme.pixelBlue)
+                    .foregroundColor(LegibleInk.ensure(MuffinTheme.pixelBlue, on: MuffinTheme.cream))
                 }
             }
             .padding(12)
@@ -128,7 +128,8 @@ struct ControllerCategoryDropdown: View {
                 HStack {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(MuffinTheme.pixelBlue)
+                        .foregroundColor(LegibleInk.ensure(MuffinTheme.pixelBlue, on: MuffinTheme.wrapper,
+                                                           minimum: LegibleInk.glyph))
 
                     Text(category.displayName)
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
@@ -138,7 +139,7 @@ struct ControllerCategoryDropdown: View {
 
                     Text("(\(category.skins.count))")
                         .font(.system(size: 11, weight: .regular, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownMid)
+                        .foregroundColor(LegibleInk.ensure(MuffinTheme.brownMid, on: MuffinTheme.wrapper))
                 }
                 .padding(12)
                 .background(MuffinTheme.wrapper.opacity(0.4))
@@ -180,26 +181,33 @@ struct SkinOptionCompact: View {
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .foregroundColor(MuffinTheme.brownDarkest)
 
+                    // Outlined, so the white and glass skins' swatches don't vanish into
+                    // the cream behind them.
                     HStack(spacing: 4) {
                         Circle()
                             .fill(skin.dpadColor)
                             .frame(width: 10, height: 10)
+                            .overlay(Circle().strokeBorder(MuffinTheme.brownDarkest.opacity(0.35), lineWidth: 0.75))
 
                         Circle()
                             .fill(skin.buttonColors["A"] ?? Color.gray)
                             .frame(width: 10, height: 10)
+                            .overlay(Circle().strokeBorder(MuffinTheme.brownDarkest.opacity(0.35), lineWidth: 0.75))
 
                         Circle()
                             .fill(skin.buttonColors["B"] ?? Color.gray)
                             .frame(width: 10, height: 10)
+                            .overlay(Circle().strokeBorder(MuffinTheme.brownDarkest.opacity(0.35), lineWidth: 0.75))
 
                         Circle()
                             .fill(skin.buttonColors["X"] ?? Color.gray)
                             .frame(width: 10, height: 10)
+                            .overlay(Circle().strokeBorder(MuffinTheme.brownDarkest.opacity(0.35), lineWidth: 0.75))
 
                         Circle()
                             .fill(skin.buttonColors["Y"] ?? Color.gray)
                             .frame(width: 10, height: 10)
+                            .overlay(Circle().strokeBorder(MuffinTheme.brownDarkest.opacity(0.35), lineWidth: 0.75))
                     }
                 }
 
@@ -208,7 +216,8 @@ struct SkinOptionCompact: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(MuffinTheme.pixelBlue)
+                        .foregroundColor(LegibleInk.ensure(MuffinTheme.pixelBlue, on: MuffinTheme.wrapper,
+                                                           minimum: LegibleInk.glyph))
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
