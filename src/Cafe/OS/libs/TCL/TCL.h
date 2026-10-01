@@ -20,6 +20,7 @@ namespace TCL
 
 	// called from Latte code
 	bool TCLGPUReadRBWord(uint32& cmdWord);
+	void TCLResetRing(); // drops commands nobody read; only for the end of a title, when neither the PPC nor the GPU thread is running
 	void TCLGPUNotifyNewRetirementTimestamp();
 
 	COSModule* GetModule();

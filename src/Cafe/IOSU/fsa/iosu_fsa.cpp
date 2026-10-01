@@ -889,7 +889,14 @@ namespace iosu
 			for (int i = 0; i < 500 && !sFSAResetDone.load(); i++)
 				std::this_thread::sleep_for(std::chrono::milliseconds(2));
 			if (!sFSAResetDone.load())
+			{
 				cemuLog_log(LogType::Force, "IOSU-FSA: the FSA thread did not answer the reset request in time");
+				return;
+			}
+			// The clients above are gone, but the kernel's IOS_Open handle for each of them (one per FSAddClient, 96 slots for
+			// the whole process) is still set: the stopped title never closed it. Left alone they fill up over a session and
+			// the Nth title's FSAddClient fails with "Exhausted device handles"
+			iosu::kernel::IOS_CloseAllHandlesForQueue(sFSAIoMsgQueue);
 		}
 
 		void GetOpenCounts(uint32& clients, uint32& files, uint32& dirs)

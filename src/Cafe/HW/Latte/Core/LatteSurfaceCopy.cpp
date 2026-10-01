@@ -63,6 +63,10 @@ void LatteSurfaceCopy_copySurfaceNew(const LatteSurfaceCopyParam& src, const Lat
 	}
 	LatteTexture_UpdateDataToLatest(sourceView->baseTexture);
 	sourceTexture = sourceView->baseTexture;
+	// The destination may be created below. On the iOS Vulkan renderer that allocation can evict textures that have been idle
+	// for a few frames, and the source (found in the cache, not created here) may be one of them. It is used again after that
+	// call, so it must not be eligible; it was only marked in use further down, after the destination exists.
+	LatteTC_MarkTextureStillInUse(sourceTexture);
 	if (sourceTexture->reloadFromDynamicTextures)
 	{
 		LatteTexture_UpdateCacheFromDynamicTextures(sourceTexture);

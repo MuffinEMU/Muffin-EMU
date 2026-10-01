@@ -170,6 +170,19 @@ class BootSoundPlayer
 	~BootSoundPlayer()
 	{
 		m_stopRequested = true;
+		// Destroying a joinable std::thread calls std::terminate. This object is static, so exit() destroys it, and the app calls exit() from
+		// "Close MuffinEMU". A detached thread would keep using the audio device, fsc and logging while exit() destroys their statics, so
+		// wait for it: it checks m_stopRequested once per block (100 ms). Only a thread stuck outside that loop (opening the audio device)
+		// is left detached, after half a second.
+		if (m_bootSndPlayThread.joinable())
+		{
+			for (int i = 0; i < 50 && !m_threadFinished; i++)
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			if (m_threadFinished)
+				m_bootSndPlayThread.join();
+			else
+				m_bootSndPlayThread.detach();
+		}
 	}
 
 	void StartSound()
@@ -178,8 +191,10 @@ class BootSoundPlayer
 		{
 			m_fadeOutRequested = false;
 			m_stopRequested = false;
+			m_threadFinished = false;
 			m_bootSndPlayThread = std::thread{[this]() {
 				StreamBootSound();
+				m_threadFinished = true;
 			}};
 		}
 	}
@@ -272,6 +287,7 @@ class BootSoundPlayer
 	std::thread m_bootSndPlayThread;
 	std::atomic_bool m_fadeOutRequested = false;
 	std::atomic_bool m_stopRequested = false;
+	std::atomic_bool m_threadFinished = false;
 };
 static BootSoundPlayer g_bootSndPlayer;
 
