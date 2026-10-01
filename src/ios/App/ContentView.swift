@@ -1137,6 +1137,9 @@ struct EmulatorViewOptimized: View {
     /// state, not AppStorage: nobody wants to come back to a game and find the controls
     /// still in edit mode because that is how they last left them.
     @State private var isEditingControlLayout = false
+    /// Asks before "Reset to default" in the move-controls panel throws away a layout
+    /// someone may have spent a while getting right.
+    @State private var showingResetControlsConfirmation = false
     /// Local, not AppStorage - the same reasoning as isEditingControlLayout above:
     /// nobody wants to come back to a game and find the pad missing because that was
     /// how they last left it. For touching the GamePad screen's own touchscreen
@@ -1954,8 +1957,16 @@ struct EmulatorViewOptimized: View {
                         }
 
                         HStack(spacing: 12) {
-                            Button("Reset size") { meloControlsScale = MeloControlsSetting.defaultScale }
+                            Button("Reset to default") { showingResetControlsConfirmation = true }
                                 .buttonStyle(MuffinSecondaryButtonStyle())
+                                .confirmationDialog("Reset controls to default?", isPresented: $showingResetControlsConfirmation, titleVisibility: .visible) {
+                                    Button("Reset to default", role: .destructive) {
+                                        MeloControlsSetting.resetLayout(gameID: gameManager.currentGame?.id)
+                                    }
+                                    Button("Cancel", role: .cancel) { }
+                                } message: {
+                                    Text("Melo-Controller's size and the buttons you've moved in this game go back to how it ships.")
+                                }
 
                             Button("Done") {
                                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -2085,8 +2096,14 @@ struct EmulatorViewOptimized: View {
                         }
 
                         HStack(spacing: 12) {
-                            Button("Reset layout") { ControllerLayoutSettings.reset() }
+                            Button("Reset to default") { showingResetControlsConfirmation = true }
                                 .buttonStyle(MuffinSecondaryButtonStyle())
+                                .confirmationDialog("Reset controls to default?", isPresented: $showingResetControlsConfirmation, titleVisibility: .visible) {
+                                    Button("Reset to default", role: .destructive) { ControllerLayoutSettings.reset() }
+                                    Button("Cancel", role: .cancel) { }
+                                } message: {
+                                    Text("Button size, opacity and every button you've moved go back to how MuffinEMU ships.")
+                                }
 
                             Button("Done") {
                                 withAnimation(.easeInOut(duration: 0.2)) {

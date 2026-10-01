@@ -140,7 +140,7 @@ private struct ControlCluster: View {
     /// Shifts this cluster's unmoved position, in units, away from the standard anchor -
     /// for a cluster the measured layout has no anchor for. Applied before the user's
     /// drag and before the clamp, so it is genuinely a different starting point rather
-    /// than a drag nobody made: "Reset layout" returns here, not to the shared anchor.
+    /// than a drag nobody made: "Reset to default" returns here, not to the shared anchor.
     var anchorOffset: CGPoint = .zero
     let skin: WiiUControllerSkin
     let unit: CGFloat
