@@ -976,7 +976,12 @@ void* PPCRecompiler_virtualHLE(PPCInterpreter_t* ppcInterpreter, uint32 hleFuncI
 	{
 		auto hleCall = PPCInterpreter_getHLECall(hleFuncId);
 		cemu_assert(hleCall != nullptr);
+		// The call can block, and the thread then sits parked with its return address in the code that made
+		// the call; see JitReclaim.h. Both calls are on the same stack, so the token follows the thread even
+		// if it resumes on another host thread.
+		const uint32 jitPin = PPCRecompiler_jitHleEnter(PPCREC_RETURN_ADDRESS());
 		hleCall(ppcInterpreter);
+		PPCRecompiler_jitHleLeave(jitPin);
 	}
 	ppcInterpreter->rspTemp = prevRSPTemp;
 	return PPCInterpreter_getCurrentInstance();

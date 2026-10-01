@@ -1,6 +1,7 @@
 #include "Cafe/HW/Espresso/Interpreter/PPCInterpreterInternal.h"
 #include "PPCFunctionBoundaryTracker.h"
 #include "PPCRecompiler.h"
+#include "JitReclaim.h"
 #include "PPCRecompilerIml.h"
 #include "Common/DeviceCapabilities.h"
 #include "PPCRecompilerThreadPool.h"
@@ -280,11 +281,25 @@ void PPCRecompiler_flushInstructionCache(void* codePtr, size_t codeSize)
 #endif
 }
 
+uint64 PPCRecompiler_getJitArenaPendingBytes();
+static void PPCRecompiler_freeRawCode(void* code, size_t size);
+
+// The host-thread calls below read a thread_local, and a guest thread can change host threads inside an HLE call
+// (fibers). They must stay real calls so that the thread-local is looked up again after the switch instead of the
+// address from before it being reused by the optimizer.
+#if defined(_MSC_VER) && !defined(__clang__)
+	#define PPCREC_JIT_TRACKING_CALL __declspec(noinline)
+#else
+	#define PPCREC_JIT_TRACKING_CALL __attribute__((noinline))
+#endif
+
 struct DualMapArena
 {
     DualMapRegion region;
     std::mutex mutex;
     std::map<size_t, size_t> freeRanges;
+    std::atomic<size_t> usedAtomic{0};   // bytes handed out and not yet returned
+    std::atomic<bool> warnedNearlyFull{false};
 
     bool init(size_t size)
     {
@@ -296,13 +311,15 @@ struct DualMapArena
             region = {}; // don't keep a size with null aliases; reset() would publish a range at nullptr
             return false;
         }
+        warnedNearlyFull = false;
         reset();
         cemuLog_log(LogType::Force, "JIT arena: rw={:p} rx={:p} size={}MB",
             region.rwAlias, region.rxAlias, size / 1024 / 1024);
         return true;
     }
 
-    DualMapRegion alloc(size_t size)
+    // No logging and no failure accounting: the caller may still make room and try again.
+    DualMapRegion tryAlloc(size_t size)
     {
         if (!size || size > std::numeric_limits<size_t>::max() - 15)
             return {};
@@ -321,11 +338,42 @@ struct DualMapArena
                 range.mapped() -= size;
                 freeRanges.insert(std::move(range));
             }
+            usedAtomic.fetch_add(size, std::memory_order_relaxed);
             return {(uint8*)region.rwAlias + pos, (uint8*)region.rxAlias + pos, size};
         }
-        PerfTelemetry::Get().jitArenaAllocFails.fetch_add(1, std::memory_order_relaxed);
-        cemuLog_log(LogType::Force, "JIT arena: no free range for {} bytes", size);
         return {};
+    }
+
+    void noteAllocFailure(size_t size)
+    {
+        PerfTelemetry::Get().jitArenaAllocFails.fetch_add(1, std::memory_order_relaxed);
+        cemuLog_log(LogType::Force, "JIT arena: no free range for {} bytes ({} of {} MB in use, {} MB waiting to be released)",
+            size, usedBytes() / 1024 / 1024, region.size / 1024 / 1024, PPCRecompiler_getJitArenaPendingBytes() / 1024 / 1024);
+    }
+
+    // One line, once per arena, when four fifths of it are in use: long sessions used to fill it without a word.
+    void noteUsageAfterAlloc()
+    {
+        if (!region.size || warnedNearlyFull.load(std::memory_order_relaxed))
+            return;
+        const size_t used = usedAtomic.load(std::memory_order_relaxed);
+        if (used * 5 < region.size * 4)
+            return;
+        if (!warnedNearlyFull.exchange(true))
+            cemuLog_log(LogType::Force, "JIT arena: {} of {} MB in use ({}%), {} MB of invalidated code waiting to be released. "
+                "When it is full the recompiler stops translating new code and the interpreter takes over.",
+                used / 1024 / 1024, region.size / 1024 / 1024, (uint64)(used * 100 / region.size),
+                PPCRecompiler_getJitArenaPendingBytes() / 1024 / 1024);
+    }
+
+    DualMapRegion alloc(size_t size)
+    {
+        DualMapRegion r = tryAlloc(size);
+        if (r.rwAlias)
+            noteUsageAfterAlloc();
+        else if (size)
+            noteAllocFailure(size);
+        return r;
     }
 
     void release(const DualMapRegion& allocation)
@@ -335,6 +383,7 @@ struct DualMapArena
         PerfTelemetry::Get().jitArenaReleases.fetch_add(1, std::memory_order_relaxed);
         const size_t pos = (uint8*)allocation.rwAlias - (uint8*)region.rwAlias;
         cemu_assert(pos <= region.size && allocation.size <= region.size - pos);
+        usedAtomic.fetch_sub(allocation.size, std::memory_order_relaxed);
         std::lock_guard lock(mutex);
         auto next = freeRanges.lower_bound(pos);
         cemu_assert(next == freeRanges.end() || pos + allocation.size <= next->first);
@@ -370,6 +419,7 @@ struct DualMapArena
     {
         std::lock_guard lock(mutex);
         freeRanges.clear();
+        usedAtomic.store(0, std::memory_order_relaxed);
         if (region.size)
             freeRanges.emplace(0, region.size);
 
@@ -390,19 +440,109 @@ struct DualMapArena
     /// runs.
     size_t usedBytes()
     {
-        std::lock_guard lock(mutex);
-        size_t free = 0;
-        for (const auto& r : freeRanges)
-            free += r.second;
-        return region.size > free ? region.size - free : 0;
+        return usedAtomic.load(std::memory_order_relaxed);
     }
 };
 
 static DualMapArena s_jitArena;
 
+// Invalidated code waiting until no thread can be in it (JitReclaim.h).
+static jitreclaim::Reclaimer s_jitReclaim;
+static thread_local int t_jitHost = -1; // this host thread's slot, -1 until PPCRecompiler_jitHostRegister()
+
+uint64 PPCRecompiler_getJitArenaPendingBytes()
+{
+    return s_jitReclaim.pendingBytes();
+}
+
+void PPCRecompiler_jitReclaimPending()
+{
+    if (s_jitReclaim.pendingCount() == 0)
+        return;
+    const size_t freed = s_jitReclaim.reclaim([](const jitreclaim::Pending& p) {
+        const DualMapRegion region{p.a, p.b, p.size};
+        switch (p.kind)
+        {
+        case 0: s_jitArena.release(region); break;
+        case 1: PPCRecompiler_freeRawCode(p.a, (size_t)(uintptr_t)p.b); break; // a = code, b = its size
+        default: break;
+        }
+    });
+    auto& telemetry = PerfTelemetry::Get();
+    telemetry.jitArenaFreedBytes.fetch_add(freed, std::memory_order_relaxed);
+    telemetry.jitArenaPendingBytes.store(s_jitReclaim.pendingBytes(), std::memory_order_relaxed);
+}
+
+// Allocation for new code: if the arena is full, first give back what invalidation has already retired.
+static DualMapRegion PPCRecompiler_allocFromArena(size_t size)
+{
+    DualMapRegion region = s_jitArena.tryAlloc(size);
+    if (!region.rwAlias && s_jitReclaim.pendingCount() != 0)
+    {
+        PPCRecompiler_jitReclaimPending();
+        region = s_jitArena.tryAlloc(size);
+    }
+    if (region.rwAlias)
+        s_jitArena.noteUsageAfterAlloc();
+    else if (size)
+        s_jitArena.noteAllocFailure(size);
+    return region;
+}
+
+PPCREC_JIT_TRACKING_CALL void PPCRecompiler_jitHostRegister()
+{
+    if (!s_jitReclaim.active() || t_jitHost >= 0)
+        return;
+    t_jitHost = s_jitReclaim.registerHost();
+    if (t_jitHost < 0 && s_jitReclaim.poison())
+        cemuLog_log(LogType::Force, "JIT arena: more PPC host threads than the release tracking has room for, invalidated code will not be released");
+}
+
+PPCREC_JIT_TRACKING_CALL void PPCRecompiler_jitHostQuiescent()
+{
+    if (t_jitHost >= 0)
+        s_jitReclaim.quiescent(t_jitHost);
+}
+
+PPCREC_JIT_TRACKING_CALL void PPCRecompiler_jitHostIdle(bool idle)
+{
+    if (t_jitHost >= 0)
+        s_jitReclaim.setIdle(t_jitHost, idle);
+}
+
+// Something that can run recompiled code without being registered cannot be tracked, so stop releasing.
+PPCREC_JIT_TRACKING_CALL static void PPCRecompiler_jitUnregisteredHost()
+{
+    if (s_jitReclaim.active() && s_jitReclaim.poison())
+        cemuLog_log(LogType::Force, "JIT arena: recompiled code ran on a thread the release tracking does not know, invalidated code will not be released");
+}
+
+PPCREC_JIT_TRACKING_CALL uint32 PPCRecompiler_jitHleEnter(const void* returnAddress)
+{
+    if (!s_jitReclaim.active())
+        return jitreclaim::Reclaimer::kNoPin;
+    if (t_jitHost < 0)
+        PPCRecompiler_jitUnregisteredHost();
+    const uintptr_t ra = (uintptr_t)returnAddress;
+    const uintptr_t rxBase = (uintptr_t)s_jitArena.region.rxAlias;
+    if (ra < rxBase || ra >= rxBase + s_jitArena.region.size)
+        return jitreclaim::Reclaimer::kNoPin;
+    return s_jitReclaim.pin(ra - rxBase);
+}
+
+PPCREC_JIT_TRACKING_CALL void PPCRecompiler_jitHleLeave(uint32 token)
+{
+    if (token == jitreclaim::Reclaimer::kNoPin)
+        return;
+    // Runs on whatever host thread the guest thread resumed on. A host thread that is not registered cannot
+    // defer the unpin, so the pin stays: that block is never reused, which is safe.
+    if (t_jitHost >= 0)
+        s_jitReclaim.unpinLater(t_jitHost, token);
+}
+
 DualMapRegion PPCRecompiler_allocateJitArena(size_t size)
 {
-    return s_jitArena.alloc(size);
+    return PPCRecompiler_allocFromArena(size);
 }
 
 void PPCRecompiler_releaseJitArena(const DualMapRegion& region)
@@ -529,7 +669,32 @@ void PPCRecompiler_recompileIfUnvisited(uint32 enterAddress)
     PPCRecompiler_visitAddressNoBlock(enterAddress);
 }
 
+// Code that was given its own mapping rather than a range of the arena (no dual mapping, AArch64 only: the
+// x86-64 backend carves its code out of shared 4 MB blocks that cannot be given back one function at a time).
+static void PPCRecompiler_freeRawCode(void* code, size_t size)
+{
+#if defined(__aarch64__)
+    if (!code || !size)
+        return;
+#if defined(_WIN32)
+    VirtualFree(code, 0, MEM_RELEASE);
+#else
+    munmap(code, size);
+#endif
+#else
+    (void)code;
+    (void)size;
+#endif
+}
+
 static std::atomic<int> s_enterLogCount{0};
+
+static bool PPCRecompiler_isInArenaRx(const void* ptr)
+{
+    const uintptr_t p = (uintptr_t)ptr;
+    const uintptr_t rxBase = (uintptr_t)s_jitArena.region.rxAlias;
+    return rxBase && p >= rxBase && p < rxBase + s_jitArena.region.size;
+}
 
 static bool isInArena(void* ptr)
 {
@@ -547,6 +712,8 @@ static bool isInterfaceFunc(PPCREC_JUMP_ENTRY funcPtr)
 
 void PPCRecompiler_enter(PPCInterpreter_t* hCPU, PPCREC_JUMP_ENTRY funcPtr)
 {
+    if (t_jitHost < 0)
+        PPCRecompiler_jitUnregisteredHost(); // recompiled code is about to run on a host thread nobody is tracking
 #if BOOST_OS_WINDOWS
 	uint32 prevState = _controlfp(0, 0);
 	_controlfp(_RC_NEAR, _MCW_RC);
@@ -766,7 +933,7 @@ PPCRecFunction_t* PPCRecompiler_recompileFunction(PPCFunctionBoundaryTracker::PP
 
     if (s_dualMapJITEnabled && ppcRecFunc->x86Code && ppcRecFunc->x86Size > 0)
     {
-        DualMapRegion region = s_jitArena.alloc(ppcRecFunc->x86Size);
+        DualMapRegion region = PPCRecompiler_allocFromArena(ppcRecFunc->x86Size);
         if (region.rwAlias && region.rxAlias)
         {
             memcpy(region.rwAlias, ppcRecFunc->x86Code, ppcRecFunc->x86Size);
@@ -894,6 +1061,26 @@ bool PPCRecompiler_ApplyIMLPasses(ppcImlGenContext_t& ppcImlGenContext)
 	return true;
 }
 
+// A function that was translated but never made reachable (invalidated while it was being compiled): nothing
+// can be running it, so its code goes straight back. Before this, these ranges were never returned at all.
+static void PPCRecompiler_discardUnpublished(PPCRecFunction_t* func)
+{
+    if (s_dualMapJITEnabled && func->dualMapRegion.rwAlias && func->dualMapRegion.size)
+    {
+        if (PPCRecompiler_isInArenaRx(func->dualMapRegion.rxAlias))
+            s_jitArena.release(func->dualMapRegion);
+        else
+            PPCRecompiler_freeDualMap(func->dualMapRegion);
+        func->dualMapRegion = {};
+    }
+#if defined(__aarch64__)
+    else if (!s_dualMapJITEnabled && func->x86Code && func->x86Size)
+        PPCRecompiler_freeRawCode(func->x86Code, func->x86Size);
+#endif
+    func->x86Code = nullptr;
+    func->x86CodeWritable = nullptr;
+}
+
 bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFunctionBoundaryTracker::PPCRange_t& range, PPCRecFunction_t* ppcRecFunc, std::vector<std::pair<MPTR, uint32>>& entryPoints)
 {
     // update jump table
@@ -904,6 +1091,7 @@ bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFun
     if (ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[initialEntryPoint / 4] != PPCRecompiler_leaveRecompilerCode_visited)
     {
         PPCRecompilerState.recompilerSpinlock.unlock();
+        PPCRecompiler_discardUnpublished(ppcRecFunc);
         delete ppcRecFunc;
         return false;
     }
@@ -928,6 +1116,7 @@ bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFun
     {
         PPCRecompiler_resetVisitedMarkersForFunction(ppcRecFunc);
         PPCRecompilerState.recompilerSpinlock.unlock();
+        PPCRecompiler_discardUnpublished(ppcRecFunc);
         delete ppcRecFunc;
         return false;
     }
@@ -963,6 +1152,9 @@ bool PPCRecompiler_makeRecompiledFunctionActive(uint32 initialEntryPoint, PPCFun
 void PPCRecompiler_recompileAtAddress(uint32 address)
 {
 	cemu_assert_debug(ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[address / 4] == PPCRecompiler_leaveRecompilerCode_visited);
+
+	// a compile thread, no locks held: a good place to hand back invalidated code that has become safe to release
+	PPCRecompiler_jitReclaimPending();
 
 	// get size
 	PPCFunctionBoundaryTracker funcBoundaries;
@@ -1146,12 +1338,25 @@ void PPCRecompiler_deleteFunction(PPCRecFunction_t* func)
         r.storedRange = nullptr;
     }
 
-    if (s_dualMapJITEnabled && func->dualMapRegion.rwAlias)
+    // The table entries and ranges above already stop new entries into the code. A thread can still be inside it
+    // (running, or parked in an HLE call made from it), so the memory is only queued here and goes back once
+    // no thread can be (JitReclaim.h). Until then it stays exactly as it is.
+    if (s_dualMapJITEnabled && func->dualMapRegion.rwAlias && func->dualMapRegion.size)
     {
-        func->dualMapRegion.size  = 0;
-        func->x86Code             = nullptr;
-        func->x86CodeWritable     = nullptr;
+        const DualMapRegion region = func->dualMapRegion;
+        if (PPCRecompiler_isInArenaRx(region.rxAlias))
+            s_jitReclaim.retire((size_t)((uint8*)region.rwAlias - (uint8*)s_jitArena.region.rwAlias), region.size, region.rwAlias, region.rxAlias, 0);
+        // (a dual-mapped region outside the arena does not exist: every dual-mapped function is given arena space)
+        PerfTelemetry::Get().jitArenaPendingBytes.store(s_jitReclaim.pendingBytes(), std::memory_order_relaxed);
     }
+    // Code with a mapping of its own (no dual mapping: iOS 18 and earlier, W^X) is deliberately NOT retired here. The
+    // pin that protects a thread parked in a blocking HLE call (PPCRecompiler_jitHleEnter) is keyed on the arena
+    // block of the call's return address, and this code is not in the arena, so nothing would stop the munmap in
+    // PPCRecompiler_freeRawCode from unmapping the function a parked thread is going to return into. Until that code
+    // can be pinned too it keeps the pre-reclaim behaviour (the mapping stays; it is only unreachable from the jump table).
+    func->dualMapRegion = {};
+    func->x86Code = nullptr;
+    func->x86CodeWritable = nullptr;
 }
 
 namespace
@@ -1365,6 +1570,7 @@ bool PPCRecompiler_Init26() {
             g_jitArenaRxBase = s_jitArena.region.rxAlias;
             g_jitArenaRxEnd  = (uint8*)s_jitArena.region.rxAlias + s_jitArena.region.size;
             g_jitArenaRwBase = s_jitArena.region.rwAlias;
+            s_jitReclaim.init(s_jitArena.region.size);
             ppcRecompilerInited = true;
             
             // Allocated once for the life of the process, not on every call: the AArch64
@@ -1395,6 +1601,10 @@ bool PPCRecompiler_Init26() {
 
 void PPCRecompiler_init()
 {
+    // The release tracking has to exist before any PPC core thread starts (Init26 re-sizes it once the arena is
+    // known). Not having it running is never unsafe: nothing is queued for release until it is.
+    if (!s_jitReclaim.active())
+        s_jitReclaim.init(0);
     s_recompilerEnableCount = 0;
     // PPCRecompiler_notifyWorkers();
     if (ActiveSettings::GetCPUMode() == CPUMode::SinglecoreInterpreter || ActiveSettings::GetCPUMode() == CPUMode::MulticoreInterpreter)
@@ -1546,6 +1756,20 @@ void PPCRecompiler_Shutdown()
     const bool schedulerStopped = !coreinit::OSIsSchedulerActive();
     if (!schedulerStopped)
         cemuLog_log(LogType::Force, "JIT arena: PPC scheduler still active at shutdown, not releasing arena pages");
+    // Code that was invalidated but not yet released. With the scheduler joined nothing can be in it: give back
+    // the separately mapped kind (the arena ranges are all returned by the reset that follows) and start over.
+    if (schedulerStopped)
+        s_jitReclaim.drainAll([](const jitreclaim::Pending& p) {
+            if (p.kind == 1)
+                PPCRecompiler_freeRawCode(p.a, (size_t)(uintptr_t)p.b);
+        });
+    // A still-active scheduler means host threads may still hold their slots and pins: forgetting them would make
+    // anything retired from now on look immediately free, so stop releasing instead.
+    if (schedulerStopped)
+        s_jitReclaim.reset();
+    else
+        s_jitReclaim.poison();
+    PerfTelemetry::Get().jitArenaPendingBytes.store(0, std::memory_order_relaxed);
     s_jitArena.reset(schedulerStopped);
     ppcRecompilerEnabled = false;
     ppcRecompilerInited = false;
