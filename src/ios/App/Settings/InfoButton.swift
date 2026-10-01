@@ -15,8 +15,8 @@ struct InfoButton: View {
         } label: {
             Image(systemName: "info.circle")
                 .font(.system(size: 15, weight: .semibold))
-                // pixelBlue so it stands out from the grey footer text.
-                .foregroundColor(MuffinTheme.pixelBlue)
+                // The accent so it stands out from the grey footer text.
+                .foregroundColor(MuffinTheme.accentText)
                 // 30pt tap target around a 15pt glyph.
                 .frame(width: 30, height: 30)
                 .contentShape(Rectangle())

@@ -71,7 +71,7 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundColor(MuffinTheme.pixelBlue)
+                        .foregroundColor(MuffinTheme.accentText)
                 }
             }
             .sheet(isPresented: $showingIconPicker) {

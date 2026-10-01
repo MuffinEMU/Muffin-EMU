@@ -60,7 +60,7 @@ struct DiagnosticsSection: View {
                     Image(systemName: "sparkles")
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
 
             Toggle(isOn: $showLaunchLog) {
                 Label {
@@ -70,7 +70,7 @@ struct DiagnosticsSection: View {
                     Image(systemName: "text.alignleft")
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
 
             Toggle(isOn: $padOverlayEnabled) {
                 Label {
@@ -85,7 +85,7 @@ struct DiagnosticsSection: View {
                     Image(systemName: "gamecontroller.badge.exclamationmark")
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
         } header: {
             SettingsSectionHeader("Diagnostics", icon: "stethoscope", accent: .system)
         } footer: {

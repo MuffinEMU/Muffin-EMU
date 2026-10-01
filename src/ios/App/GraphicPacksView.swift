@@ -180,7 +180,7 @@ struct GraphicPacksView: View {
                 Label("Cemu graphic packs on GitHub", systemImage: "link")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
         } header: {
             SettingsSectionHeader("Credits", icon: "heart", accent: .identity)
         } footer: {
@@ -275,7 +275,7 @@ struct GraphicPackSourceSection: View {
                 Text("\(Int((fraction * 100).rounded()))%")
                     .font(.system(size: 13, design: .monospaced)).foregroundColor(.secondary)
             }
-            ProgressView(value: fraction).tint(MuffinTheme.pixelBlue)
+            ProgressView(value: fraction).tint(MuffinTheme.accentText)
             Button(role: .cancel) { store.cancel() } label: {
                 Text("Cancel").font(.system(size: 13, weight: .semibold, design: .rounded))
             }
@@ -536,7 +536,7 @@ struct GraphicPackRow: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .disabled(locked)
 
             if !pack.brief.isEmpty {
@@ -552,7 +552,7 @@ struct GraphicPackRow: View {
             Button(action: onDetails) {
                 Text(pack.presetCount > 0 ? "Options and details" : "Details")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundColor(MuffinTheme.pixelBlue)
+                    .foregroundColor(MuffinTheme.accentText)
             }
             .buttonStyle(.borderless)
         }
@@ -593,7 +593,7 @@ struct PackChip: View {
     private var foreground: Color {
         switch style {
         case .neutral: return MuffinTheme.brownMid
-        case .good: return MuffinTheme.sparkleCream
+        case .good: return MuffinTheme.onAccent
         case .warning: return MuffinTheme.brownDarkest
         }
     }
@@ -658,7 +658,7 @@ struct GraphicPackDetailView: View {
                         Text("Use this pack")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                     }
-                    .tint(MuffinTheme.pixelBlue)
+                    .tint(MuffinTheme.accentText)
                     .disabled(store.gameRunning)
 
                     switch pack.support(on: api) {
@@ -754,7 +754,7 @@ struct GraphicPackDetailView: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .tint(MuffinTheme.pixelBlue)
+                .tint(MuffinTheme.accentText)
                 .disabled(store.gameRunning)
 
                 if isResolution, let suggestion, suggestion.name != selected {

@@ -209,7 +209,7 @@ struct GraphicsSettingsSection: View {
             }
         }
         .pickerStyle(.menu)
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
@@ -220,7 +220,7 @@ struct GraphicsSettingsSection: View {
             }
         }
         .pickerStyle(.menu)
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
@@ -231,7 +231,7 @@ struct GraphicsSettingsSection: View {
             }
         }
         .pickerStyle(.menu)
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
@@ -240,7 +240,7 @@ struct GraphicsSettingsSection: View {
             Text("Enable Frame Stretching")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: frameStretchEnabled) { newValue in
             cemu_bridge_set_stretch_to_fill(newValue)
         }
@@ -251,7 +251,7 @@ struct GraphicsSettingsSection: View {
             Text("VSync")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: vsyncEnabled) { newValue in
             cemu_bridge_set_vsync_enabled(newValue)
         }
@@ -262,7 +262,7 @@ struct GraphicsSettingsSection: View {
             Text("Flip Screen Upside Down")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: upsideDownEnabled) { newValue in
             cemu_bridge_set_render_upside_down(newValue)
         }
@@ -294,7 +294,7 @@ struct GraphicsSettingsSection: View {
             Text("Framebuffer Fetch")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: framebufferFetchEnabled) { newValue in
             cemu_bridge_set_framebuffer_fetch(newValue)
         }
@@ -305,7 +305,7 @@ struct GraphicsSettingsSection: View {
             Text("Override App Gamma")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: overrideAppGammaEnabled) { newValue in
             cemu_bridge_set_override_app_gamma(newValue)
         }

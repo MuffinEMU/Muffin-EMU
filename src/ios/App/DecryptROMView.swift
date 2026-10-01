@@ -130,7 +130,7 @@ struct DecryptROMView: View {
                 HStack(spacing: 12) {
                     Image(systemName: systemImage)
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(MuffinTheme.pixelBlue)
+                        .foregroundColor(MuffinTheme.accentText)
                         .frame(width: 26)
                         .accessibilityHidden(true)
 
