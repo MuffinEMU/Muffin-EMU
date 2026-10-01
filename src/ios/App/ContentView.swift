@@ -121,7 +121,7 @@ struct BootFailureView: View {
             VStack(spacing: 16) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 34, weight: .semibold))
-                    .foregroundColor(MuffinTheme.blushPink)
+                    .foregroundColor(MuffinTheme.alertOnDark)
 
                 Text(needsCleanRestart ? "Restart needed before \(game.title)" : "Couldn't start \(game.title)")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
@@ -147,7 +147,7 @@ struct BootFailureView: View {
                 // path is copy it.
                 Text(Self.crashLogHint)
                     .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
                     .frame(maxWidth: 480)
@@ -939,7 +939,7 @@ struct GameCardOptimized: View {
                     VStack {
                         Image(systemName: "gamecontroller.fill")
                             .font(.system(size: 28))
-                            .foregroundColor(MuffinTheme.sparkleCream)
+                            .foregroundColor(MuffinTheme.onMuffinTop)
                     }
                 }
 
@@ -949,9 +949,11 @@ struct GameCardOptimized: View {
                         Button(action: onFavoriteTap) {
                             Image(systemName: game.isFavorite ? "heart.fill" : "heart")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(game.isFavorite ? MuffinTheme.blushPink : MuffinTheme.sparkleCream)
+                                .foregroundColor(game.isFavorite ? MuffinTheme.alertOnDark : MuffinTheme.sparkleCream)
                                 .frame(width: 32, height: 32)
-                                .background(MuffinTheme.brownDarkest.opacity(0.35))
+                                // Black, not brownDarkest: brownDarkest turns cream in dark
+                                // mode, which put a cream heart on a cream patch.
+                                .background(Color.black.opacity(0.4))
                                 .cornerRadius(10)
                                 // The visible circle stays 32x32 - the tappable area
                                 // around it grows to the standard 44x44 minimum without
@@ -1515,9 +1517,11 @@ struct EmulatorViewOptimized: View {
                             .foregroundColor(.white)
                             .lineLimit(1)
 
+                        // accentOnDark: the bar is always dark, and several light-mode
+                        // accents (Blueberry, Equality, Galaxy, Neon) were navy on it.
                         Text(controllerSkin.name)
                             .font(.system(size: 9, weight: .regular, design: .rounded))
-                            .foregroundColor(MuffinTheme.pixelBlue)
+                            .foregroundColor(MuffinTheme.accentOnDark)
                     }
                     .frame(maxWidth: .infinity)
 
@@ -1698,7 +1702,7 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                                 .lineLimit(1)
                         }
-                        .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.blushPink)
+                        .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.alertOnDark)
                         .frame(height: 40)
                         .padding(.horizontal, 12)
                         .background(Color.white.opacity(0.08))
