@@ -88,9 +88,15 @@ private struct PreviewGroupView: View {
                 }
             }
             if let caption = group.caption, let anchor = resolved.controls[group.anchorControl]?.centre {
+                // Printed on the game picture itself, with no button behind it, so it carries
+                // its own halo: a grey caption on its own vanished over every dark scene.
+                let ink = Color(colours.glyph(group.anchorControl))
+                let halo = LegibleInk.on(ink, light: .white, dark: .black).opacity(0.75)
                 Text(caption)
-                    .font(.system(size: 9, weight: .bold, design: .rounded))
-                    .foregroundColor(Color(colours.glyph(group.anchorControl)))
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(ink)
+                    .shadow(color: halo, radius: 1)
+                    .shadow(color: halo, radius: 1)
                     .position(x: anchor.x, y: anchor.y + captionOffset(for: group))
                     .allowsHitTesting(false)
             }
@@ -158,6 +164,13 @@ private struct PreviewControlView: View {
     let onInput: (String, Bool) -> Void
     let onStick: (Int, CGPoint) -> Void
 
+    /// The colour file's glyph, kept wherever it reads on the button: moved toward black or
+    /// white only when it doesn't, as the Super Famicom preset's white letters do on its
+    /// yellow and green buttons.
+    private var glyphInk: Color {
+        LegibleInk.ensure(Color(colours.glyph(id)), on: Color(colours.fill(id)), minimum: LegibleInk.glyph)
+    }
+
     var body: some View {
         switch placement {
         case .circle(let centre, let diameter):
@@ -177,16 +190,16 @@ private struct PreviewControlView: View {
                         if ["X", "Y", "A", "B"].contains(id) {
                             Text(id)
                                 .font(.system(size: diameter * 0.42, weight: .bold, design: .rounded))
-                                .foregroundColor(Color(colours.glyph(id)))
+                                .foregroundColor(glyphInk)
                         } else if id == "plus" {
                             Image(systemName: "plus").font(.system(size: diameter * 0.5, weight: .bold))
-                                .foregroundColor(Color(colours.glyph(id)))
+                                .foregroundColor(glyphInk)
                         } else if id == "minus" {
                             Image(systemName: "minus").font(.system(size: diameter * 0.5, weight: .bold))
-                                .foregroundColor(Color(colours.glyph(id)))
+                                .foregroundColor(glyphInk)
                         } else if id == "HOME" {
                             Image(systemName: "house.fill").font(.system(size: diameter * 0.4))
-                                .foregroundColor(Color(colours.glyph(id)))
+                                .foregroundColor(glyphInk)
                         }
                     }
                 }
@@ -203,7 +216,7 @@ private struct PreviewControlView: View {
                         .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
                             .strokeBorder(Color(colours.outline), lineWidth: max(1, size.height * 0.06)))
                     Text(id).font(.system(size: size.height * 0.38, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(colours.glyph(id)))
+                        .foregroundColor(glyphInk)
                 }
             }
             .frame(width: size.width, height: size.height)
