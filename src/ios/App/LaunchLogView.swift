@@ -93,7 +93,7 @@ struct LaunchLogView: View {
             HStack(spacing: 8) {
                 Image(systemName: "text.alignleft")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(MuffinTheme.pixelBlue)
+                    .foregroundColor(MuffinTheme.accentOnDark)
 
                 Text("Launch log")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -102,14 +102,14 @@ struct LaunchLogView: View {
                 if store.droppedLines > 0 {
                     Text("\(store.droppedLines) earlier lines dropped")
                         .font(.system(size: 10, weight: .regular, design: .rounded))
-                        .foregroundColor(MuffinTheme.blushPink)
+                        .foregroundColor(MuffinTheme.alertOnDark)
                 }
 
                 Spacer()
 
                 Text("\(store.lines.count) lines")
                     .font(.system(size: 10, weight: .regular, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(.white.opacity(0.6))
 
                 if let onDismiss {
                     Button(action: onDismiss) {
@@ -161,7 +161,8 @@ struct LaunchLogView: View {
     /// LogType::Force (that is what survives a build with no log-category UI), so the
     /// level carries no signal and the text is all there is. Kept deliberately narrow -
     /// the point is to make the handful of lines that decide a boot findable in a wall
-    /// of scrolling text, not to colour it in.
+    /// of scrolling text, not to colour it in. The *OnDark colours because this panel is
+    /// always dark: in light mode several themes' accent is a navy that vanished on it.
     private func colour(for line: String) -> Color {
         let lower = line.lowercased()
         if lower.contains("crash") || lower.contains("failed") || lower.contains("error")
@@ -169,7 +170,7 @@ struct LaunchLogView: View {
             // The decryption failure. Red because it is the line that explains why an
             // encrypted game did not start, and it is the one the user can act on.
             || lower.contains("no key in keys.txt decrypts it") {
-            return MuffinTheme.blushPink
+            return MuffinTheme.alertOnDark
         }
         if lower.contains("presented the first frame") || lower.contains("run title")
             || lower.contains("first swap request") || lower.contains("cleared the empty frame")
@@ -184,7 +185,7 @@ struct LaunchLogView: View {
         }
         if lower.contains("ios display:") || lower.contains("ios data path")
             || lower.contains("keys.txt reloaded") || lower.contains("title list initialized") {
-            return MuffinTheme.pixelBlue
+            return MuffinTheme.accentOnDark
         }
         return .white.opacity(0.72)
     }
