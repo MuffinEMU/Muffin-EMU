@@ -47,7 +47,7 @@ struct CreateAccountView: View {
                             // Names are limited to ten characters.
                             Text("\(miiName.count)/10")
                                 .font(.system(size: 11, weight: .semibold, design: .rounded))
-                                .foregroundColor(miiName.count >= 10 ? MuffinTheme.blushPink : MuffinTheme.brownMid)
+                                .foregroundColor(miiName.count >= 10 ? MuffinTheme.alertText : MuffinTheme.brownMid)
                                 .monospacedDigit()
                                 .accessibilityLabel("\(miiName.count) of 10 characters used")
                         }
@@ -83,7 +83,7 @@ struct CreateAccountView: View {
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                         }
                         .pickerStyle(.menu)
-                        .tint(MuffinTheme.pixelBlue)
+                        .tint(MuffinTheme.accentText)
                     }
 
                     Section {
@@ -97,6 +97,7 @@ struct CreateAccountView: View {
                 }
             }
             .navigationTitle("New Account")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

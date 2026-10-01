@@ -43,6 +43,7 @@ struct CoverArtPickerView: View {
                 }
             }
             .navigationTitle("Change Cover Art")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -126,7 +127,7 @@ struct CoverArtPickerView: View {
                     .padding(4)
             } else {
                 Image(systemName: "gamecontroller.fill")
-                    .foregroundColor(MuffinTheme.sparkleCream)
+                    .foregroundColor(MuffinTheme.onMuffinTop)
             }
         }
         .frame(width: 48, height: 64)

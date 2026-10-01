@@ -88,7 +88,7 @@ struct AudioSettingsSection: View {
             Text("TV Audio")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: tvEnabled) { newValue in
             cemu_bridge_set_tv_audio_enabled(newValue)
         }
@@ -103,7 +103,7 @@ struct AudioSettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .foregroundColor(MuffinTheme.brownDarkest)
             .onChange(of: tvChannelsRaw) { newValue in
                 cemu_bridge_set_tv_channels(Int32(newValue))
@@ -116,7 +116,7 @@ struct AudioSettingsSection: View {
             Text("GamePad Audio")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: padEnabled) { newValue in
             cemu_bridge_set_pad_audio_enabled(newValue)
         }
@@ -131,7 +131,7 @@ struct AudioSettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .foregroundColor(MuffinTheme.brownDarkest)
             .onChange(of: padChannelsRaw) { newValue in
                 cemu_bridge_set_pad_channels(Int32(newValue))
@@ -149,7 +149,7 @@ struct AudioSettingsSection: View {
             Text("Use \(deviceName) Microphone")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: microphoneEnabled) { newValue in
             guard newValue else {
                 cemu_bridge_set_microphone_enabled(false)
@@ -197,7 +197,7 @@ struct AudioSettingsSection: View {
                 Spacer()
                 Text("\(volume.wrappedValue)%")
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
             Slider(
                 value: Binding<Double>(

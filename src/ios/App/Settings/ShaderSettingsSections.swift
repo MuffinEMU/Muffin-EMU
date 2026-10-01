@@ -11,7 +11,7 @@ struct ShaderCompilationSection: View {
                 Text("Compile shaders in the background")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .onChange(of: asyncShaderCompile) { newValue in
                 cemu_bridge_set_async_shader_compile(newValue)
             }
@@ -54,7 +54,7 @@ struct ShaderCacheSection: View {
             if let cacheStatusMessage {
                 Text(cacheStatusMessage)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
         } header: {
             SettingsSectionHeader("Shader Cache", icon: "externaldrive", accent: .core)

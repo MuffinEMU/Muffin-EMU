@@ -66,12 +66,13 @@ struct SettingsView: View {
                 settingsForm
             }
             .navigationTitle("Settings")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                         .font(.system(size: 15, weight: .bold, design: .rounded))
-                        .foregroundColor(MuffinTheme.pixelBlue)
+                        .foregroundColor(MuffinTheme.accentText)
                 }
             }
             .sheet(isPresented: $showingIconPicker) {

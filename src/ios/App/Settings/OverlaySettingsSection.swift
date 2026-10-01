@@ -108,7 +108,7 @@ struct OverlaySettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
         }
         .onChange(of: positionRaw) { newValue in
             cemu_bridge_set_overlay_position(Int32(newValue))
@@ -139,7 +139,7 @@ struct OverlaySettingsSection: View {
                 Spacer()
                 Text("\(textScale)%")
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
             Slider(
                 value: Binding(get: { Double(textScale) }, set: { textScale = Int($0) }),
@@ -156,7 +156,7 @@ struct OverlaySettingsSection: View {
             Text("Show FPS")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: fpsEnabled) { newValue in
             cemu_bridge_set_overlay_fps(newValue)
@@ -168,7 +168,7 @@ struct OverlaySettingsSection: View {
             Text("Draw Calls")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: drawcallsEnabled) { newValue in
             cemu_bridge_set_overlay_drawcalls(newValue)
@@ -180,7 +180,7 @@ struct OverlaySettingsSection: View {
             Text("Show CPU Usage")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: cpuUsageEnabled) { newValue in
             cemu_bridge_set_overlay_cpu_usage(newValue)
@@ -192,7 +192,7 @@ struct OverlaySettingsSection: View {
             Text("CPU Per Core Usage")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: cpuPerCoreUsageEnabled) { newValue in
             cemu_bridge_set_overlay_cpu_per_core_usage(newValue)
@@ -204,7 +204,7 @@ struct OverlaySettingsSection: View {
             Text("Show RAM Usage")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: ramUsageEnabled) { newValue in
             cemu_bridge_set_overlay_ram_usage(newValue)
@@ -216,7 +216,7 @@ struct OverlaySettingsSection: View {
             Text("VRAM Usage")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: vramUsageEnabled) { newValue in
             cemu_bridge_set_overlay_vram_usage(newValue)
@@ -228,7 +228,7 @@ struct OverlaySettingsSection: View {
             Text("Debug")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .disabled(isOff)
         .onChange(of: debugEnabled) { newValue in
             cemu_bridge_set_overlay_debug(newValue)

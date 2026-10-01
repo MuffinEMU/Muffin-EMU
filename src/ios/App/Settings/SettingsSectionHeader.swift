@@ -19,12 +19,15 @@ enum SettingsSectionAccent {
 
     var color: Color {
         switch self {
-        case .core: return MuffinTheme.pixelBlue
-        case .io: return MuffinTheme.blueberryNavy
-        case .content: return MuffinTheme.muffinTopDark
-        case .identity: return MuffinTheme.blushPink
+        // Readable versions: these are glyphs on the grouped background, and several
+        // themes' raw accents (a yellow pixelBlue, Galaxy's near-black muffin-top in dark
+        // mode) didn't show against it.
+        case .core: return MuffinTheme.accentText
+        case .io: return MuffinTheme.readable(\.blueberryNavyLight, \.blueberryNavyDark)
+        case .content: return MuffinTheme.readable(\.muffinTopDarkLight, \.muffinTopDarkDark)
+        case .identity: return MuffinTheme.alertText
         case .system: return MuffinTheme.brownMid
-        case .preview: return .orange
+        case .preview: return MuffinTheme.cautionText
         }
     }
 }

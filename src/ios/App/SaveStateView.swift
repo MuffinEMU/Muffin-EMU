@@ -122,6 +122,7 @@ struct SaveStateSheet: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Save States")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -182,7 +183,7 @@ struct SaveStateSheet: View {
 
                 Text(subtitle(for: slot))
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
 
             Spacer(minLength: 8)

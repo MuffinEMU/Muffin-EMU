@@ -162,17 +162,17 @@ struct GraphicsSettingsSection: View {
             }
             Text("Experimental: Vulkan runs through MoltenVK on top of Metal. Some games may draw wrongly or stop, and if Vulkan fails the next launch switches back to Metal.")
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundColor(MuffinTheme.secondaryText)
             if let reason = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailureReason"), !reason.isEmpty {
                 Text("Last Vulkan failure: \(reason)")
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
             if let failedBuild = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailedBuild"),
                rendererRaw == RendererAPI.metal.rawValue {
                 Text("Vulkan didn't start on this device with MoltenVK \(failedBuild). Metal is in use. Choosing Vulkan again tries it again.")
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
         }
     }
@@ -189,7 +189,7 @@ struct GraphicsSettingsSection: View {
             .pickerStyle(.segmented)
             Text(moltenVKCaption)
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundColor(MuffinTheme.secondaryText)
         }
     }
 
@@ -209,7 +209,7 @@ struct GraphicsSettingsSection: View {
             }
         }
         .pickerStyle(.menu)
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
@@ -220,7 +220,7 @@ struct GraphicsSettingsSection: View {
             }
         }
         .pickerStyle(.menu)
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
@@ -231,7 +231,7 @@ struct GraphicsSettingsSection: View {
             }
         }
         .pickerStyle(.menu)
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
@@ -240,7 +240,7 @@ struct GraphicsSettingsSection: View {
             Text("Enable Frame Stretching")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: frameStretchEnabled) { newValue in
             cemu_bridge_set_stretch_to_fill(newValue)
         }
@@ -251,7 +251,7 @@ struct GraphicsSettingsSection: View {
             Text("VSync")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: vsyncEnabled) { newValue in
             cemu_bridge_set_vsync_enabled(newValue)
         }
@@ -262,7 +262,7 @@ struct GraphicsSettingsSection: View {
             Text("Flip Screen Upside Down")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: upsideDownEnabled) { newValue in
             cemu_bridge_set_render_upside_down(newValue)
         }
@@ -276,7 +276,7 @@ struct GraphicsSettingsSection: View {
                 Spacer()
                 Text(String(format: "%.1f", displayGamma))
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
             Slider(
                 value: $displayGamma,
@@ -294,7 +294,7 @@ struct GraphicsSettingsSection: View {
             Text("Framebuffer Fetch")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: framebufferFetchEnabled) { newValue in
             cemu_bridge_set_framebuffer_fetch(newValue)
         }
@@ -305,7 +305,7 @@ struct GraphicsSettingsSection: View {
             Text("Override App Gamma")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
-        .tint(MuffinTheme.pixelBlue)
+        .tint(MuffinTheme.accentText)
         .onChange(of: overrideAppGammaEnabled) { newValue in
             cemu_bridge_set_override_app_gamma(newValue)
         }
@@ -319,7 +319,7 @@ struct GraphicsSettingsSection: View {
                 Spacer()
                 Text(String(format: "%.1f", overrideGammaValue))
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
             Slider(
                 value: $overrideGammaValue,
@@ -341,7 +341,7 @@ struct GraphicsSettingsSection: View {
         if meshShadersUnsupported {
             Text("This device doesn't support mesh shaders, so some graphic packs may not render correctly. See Graphic Packs under Library.")
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundColor(MuffinTheme.secondaryText)
         }
     }
 

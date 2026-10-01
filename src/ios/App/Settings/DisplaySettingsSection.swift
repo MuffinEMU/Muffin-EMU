@@ -35,6 +35,7 @@ struct DisplaySettingsSection: View {
                 }
                 .foregroundColor(.secondary)
                 .buttonStyle(.plain)
+                .accessibilityLabel("About Screen Layout")
 
                 Spacer()
 
@@ -44,7 +45,7 @@ struct DisplaySettingsSection: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .tint(MuffinTheme.pixelBlue)
+                .tint(MuffinTheme.accentText)
             }
             .alert("Screen Layout", isPresented: $screenLayoutInfoShown) {
                 Button("OK", role: .cancel) { }
@@ -57,7 +58,7 @@ struct DisplaySettingsSection: View {
                     Text("Show Swap Button (TV ⇄ Pad)")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
-                .tint(MuffinTheme.pixelBlue)
+                .tint(MuffinTheme.accentText)
             }
 
             Divider()
@@ -68,10 +69,10 @@ struct DisplaySettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("Off by default. Turn it on before connecting a second display.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             // Re-routes immediately, both when turned on and when turned off.
             .onChange(of: externalDisplaySystemEnabled) { _ in
                 DisplayRouter.shared.reapplyForExternalDisplaySystemToggle()
@@ -86,10 +87,10 @@ struct DisplaySettingsSection: View {
                              ? "GamePad screen on the external display, TV screen on this device."
                              : "TV screen on the external display, GamePad screen on this device.")
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.secondaryText)
                     }
                 }
-                .tint(MuffinTheme.pixelBlue)
+                .tint(MuffinTheme.accentText)
                 // Re-routes immediately if a title is already running in .dualScreen.
                 .onChange(of: swapScreens) { _ in
                     DisplayRouter.shared.rerouteForScreenLayoutChange()
@@ -101,10 +102,10 @@ struct DisplaySettingsSection: View {
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text("A small on-screen button while playing with an external display connected, so the setting above can be flipped without leaving the game.")
                             .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(MuffinTheme.secondaryText)
                     }
                 }
-                .tint(MuffinTheme.pixelBlue)
+                .tint(MuffinTheme.accentText)
             }
         } header: {
             SettingsSectionHeader("Display", icon: "rectangle.on.rectangle", accent: .io)

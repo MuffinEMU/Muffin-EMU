@@ -40,6 +40,7 @@ struct IconPickerView: View {
                 }
             }
             .navigationTitle("App Icon")
+            .muffinOpaqueNavigationBar()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -113,7 +114,7 @@ private struct IconOptionCard: View {
                         } else if isSelected {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(MuffinTheme.pixelBlue)
+                                .foregroundColor(MuffinTheme.accentText)
                                 .background(MuffinTheme.sparkleCream, in: Circle())
                                 .offset(x: 6, y: -6)
                         }

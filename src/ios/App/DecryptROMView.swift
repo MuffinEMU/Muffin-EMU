@@ -80,16 +80,17 @@ struct DecryptROMView: View {
             VStack(spacing: 20) {
                 Spacer()
 
+                // Straight on the gradient, so the gradient's own inks.
                 Image(systemName: "lock.open.fill")
                     .font(.system(size: 40))
-                    .foregroundColor(MuffinTheme.pixelBlue)
+                    .foregroundColor(MuffinTheme.onBackgroundAccent)
                 Text("Decrypt \(game.title)")
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
-                    .foregroundColor(MuffinTheme.brownDarkest)
+                    .foregroundColor(MuffinTheme.onBackground)
                     .multilineTextAlignment(.center)
                 Text("Your original file isn't changed.")
-                    .font(.system(size: 12, design: .rounded))
-                    .foregroundColor(MuffinTheme.brownMid)
+                    .font(.system(size: 13, design: .rounded))
+                    .foregroundColor(MuffinTheme.onBackgroundMuted)
 
                 // Cards rather than capsule buttons: each choice has a title and a description.
                 VStack(spacing: 12) {
@@ -113,9 +114,12 @@ struct DecryptROMView: View {
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .padding(.bottom, 8)
             }
+            // Inside the ZStack: padding the ZStack itself pulled the gradient in from the
+            // screen edges, leaving a band of plain background around it.
+            .padding()
         }
-        .padding()
         .navigationTitle("Decrypt")
+        .muffinOpaqueNavigationBar()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -130,7 +134,7 @@ struct DecryptROMView: View {
                 HStack(spacing: 12) {
                     Image(systemName: systemImage)
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundColor(MuffinTheme.pixelBlue)
+                        .foregroundColor(MuffinTheme.accentText)
                         .frame(width: 26)
                         .accessibilityHidden(true)
 
@@ -164,45 +168,54 @@ struct DecryptROMView: View {
             VStack(spacing: 20) {
                 Spacer()
 
-                if progress.completed {
-                    Image(systemName: progress.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .font(.system(size: 44))
-                        .foregroundColor(progress.isSuccess ? .green : MuffinTheme.blushPink)
-                    Text(progress.isSuccess ? "Decrypted" : "Couldn't Finish")
-                        .font(.system(size: 18, weight: .semibold, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownDarkest)
-                    if progress.isSuccess {
-                        Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten))")
-                            .font(.system(size: 13, design: .rounded))
-                            .foregroundColor(MuffinTheme.brownMid)
-                        Text(chosenFormat.toWua
-                            ? "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} \(game.id).wua"
-                            : "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} \(game.title)")
-                            .font(.system(size: 12, design: .rounded))
-                            .foregroundColor(MuffinTheme.brownMid)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                    } else {
-                        Text(failureReason(for: progress.resultStatus))
-                            .font(.system(size: 13, design: .rounded))
-                            .foregroundColor(MuffinTheme.brownMid)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
+                // The result on a card, not the bare gradient: it's the part that has to be
+                // read (where the file went, or why it failed), and no single text colour
+                // reads across every theme's gradient.
+                MuffinCard {
+                    VStack(spacing: 14) {
+                        if progress.completed {
+                            Image(systemName: progress.isSuccess ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .font(.system(size: 44))
+                                .foregroundColor(progress.isSuccess ? .green : MuffinTheme.alertText)
+                            Text(progress.isSuccess ? "Decrypted" : "Couldn't Finish")
+                                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                                .foregroundColor(MuffinTheme.brownDarkest)
+                            if progress.isSuccess {
+                                Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten))")
+                                    .font(.system(size: 13, design: .rounded))
+                                    .foregroundColor(MuffinTheme.brownMid)
+                                Text(chosenFormat.toWua
+                                    ? "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} \(game.id).wua"
+                                    : "Saved to Files \u{2192} On My iPad/iPhone \u{2192} MuffinEMU \u{2192} Decrypted \u{2192} \(game.title)")
+                                    .font(.system(size: 12, design: .rounded))
+                                    .foregroundColor(MuffinTheme.brownMid)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 24)
+                            } else {
+                                Text(failureReason(for: progress.resultStatus))
+                                    .font(.system(size: 13, design: .rounded))
+                                    .foregroundColor(MuffinTheme.brownMid)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 24)
+                            }
+                        } else {
+                            ProgressView()
+                                .scaleEffect(1.3)
+                            Text("Decrypting \(game.title)\u{2026}")
+                                .font(.system(size: 16, weight: .medium, design: .rounded))
+                                .foregroundColor(MuffinTheme.brownDarkest)
+                                .multilineTextAlignment(.center)
+                            Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten)) written")
+                                .font(.system(size: 13, design: .rounded))
+                                .foregroundColor(MuffinTheme.brownMid)
+                                .monospacedDigit()
+                            Text("Your original file isn't changed.")
+                                .font(.system(size: 12, design: .rounded))
+                                .foregroundColor(MuffinTheme.brownMid)
+                        }
                     }
-                } else {
-                    ProgressView()
-                        .scaleEffect(1.3)
-                    Text("Decrypting \(game.title)\u{2026}")
-                        .font(.system(size: 16, weight: .medium, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownDarkest)
-                        .multilineTextAlignment(.center)
-                    Text("\(progress.filesWritten) files, \(byteCountFormatted(progress.bytesWritten)) written")
-                        .font(.system(size: 13, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownMid)
-                        .monospacedDigit()
-                    Text("Your original file isn't changed.")
-                        .font(.system(size: 12, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownMid)
+                    .padding(20)
+                    .frame(maxWidth: 520)
                 }
 
                 Spacer()
@@ -217,9 +230,10 @@ struct DecryptROMView: View {
                     .padding(.bottom, 8)
                 }
             }
+            .padding()
         }
-        .padding()
         .navigationTitle(chosenFormat.navigationTitle)
+        .muffinOpaqueNavigationBar()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
