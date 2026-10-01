@@ -244,6 +244,9 @@ enum MuffinTheme {
         return muffinWorstContrast(ink, on: grounds) > creamWorst ? ink : cream
     }
 
+    /// The grouped background a Form or List draws, for a navigation bar that should match it.
+    static var formGround: Color { Color(UIColor.systemGroupedBackground) }
+
     /// The background gradient's colours, top to bottom, for the tokens below.
     private static func backgroundSamples(dark: Bool) -> [String] {
         let lightStops = t.backgroundStopsLight
@@ -655,14 +658,16 @@ private struct MuffinElevationModifier: ViewModifier {
 }
 
 extension View {
-    /// A solid cream navigation bar, for sheets that put their content straight on the
-    /// background gradient. Without it the bar is see-through at the top of the scroll, so
-    /// the title and Done sat on the gradient (black on Neon Cyber's navy, system blue on
-    /// Bakery's orange), and on iOS 26 and later, with the scroll edge blur turned off, they
-    /// sat on whatever card scrolled under them. iOS 15 keeps the system bar.
-    @ViewBuilder func muffinOpaqueNavigationBar() -> some View {
+    /// A solid navigation bar. On iOS 26 and later the bar has no background of its own and
+    /// relies on the scroll edge blur, which CemuApp turns off app-wide, so titles and Done
+    /// sat directly on whatever row or card scrolled under them. On earlier versions the bar
+    /// is see-through at the top of the scroll, so on the gradient sheets the title and Done
+    /// sat on the gradient (black on Neon Cyber's navy, system blue on Bakery's orange).
+    /// Painted, not a material, so it adds no blur. Pass `MuffinTheme.formGround` on Form and
+    /// List screens so the bar matches the rows' ground. iOS 15 keeps the system bar.
+    @ViewBuilder func muffinOpaqueNavigationBar(_ fill: Color = MuffinTheme.cream) -> some View {
         if #available(iOS 16.0, *) {
-            self.toolbarBackground(MuffinTheme.cream, for: .navigationBar)
+            self.toolbarBackground(fill, for: .navigationBar)
                 .toolbarBackground(.visible, for: .navigationBar)
         } else {
             self

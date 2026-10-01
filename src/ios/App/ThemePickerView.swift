@@ -42,6 +42,7 @@ struct ThemePickerView: View {
                 }
             }
             .navigationTitle("Theme")
+            .muffinOpaqueNavigationBar()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

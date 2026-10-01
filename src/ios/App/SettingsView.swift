@@ -66,6 +66,7 @@ struct SettingsView: View {
                 settingsForm
             }
             .navigationTitle("Settings")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

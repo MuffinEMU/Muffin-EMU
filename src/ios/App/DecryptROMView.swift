@@ -119,6 +119,7 @@ struct DecryptROMView: View {
             .padding()
         }
         .navigationTitle("Decrypt")
+        .muffinOpaqueNavigationBar()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -232,6 +233,7 @@ struct DecryptROMView: View {
             .padding()
         }
         .navigationTitle(chosenFormat.navigationTitle)
+        .muffinOpaqueNavigationBar()
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

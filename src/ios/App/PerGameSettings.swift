@@ -413,6 +413,7 @@ struct GameOptionsView: View {
                 Text("This replaces \(game.title)\'s current save. The one you have now is backed up first, and the game should be closed before you do this.")
             }
             .navigationTitle(game.title)
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

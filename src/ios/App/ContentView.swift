@@ -889,6 +889,7 @@ struct DlcUpdateGamePickerSheet: View {
                 }
             }
             .navigationTitle("Add \(kind.displayName) to which game?")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
