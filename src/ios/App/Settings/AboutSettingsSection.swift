@@ -26,7 +26,7 @@ struct AboutSettingsSection: View {
 
             Text("MuffinEMU is built on Cemu. The optional melo-controls pad is Melo-Controller by stossy11.")
                 .font(.system(size: 12))
-                .foregroundColor(.secondary)
+                .foregroundColor(MuffinTheme.secondaryText)
 
             // Resets the completion flag, which ContentView watches, so the guide reopens.
             SettingsOnboardingRow(onRequestReopen: {
@@ -42,7 +42,7 @@ struct AboutSettingsSection: View {
             if let resetMessage {
                 Text(resetMessage)
                     .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(MuffinTheme.secondaryText)
             }
         } header: {
             SettingsSectionHeader("About", icon: "info.circle", accent: .system)

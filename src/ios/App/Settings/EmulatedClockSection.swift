@@ -21,7 +21,7 @@ struct EmulatedClockSection: View {
                 }
             }
             .pickerStyle(.menu)
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             .foregroundColor(MuffinTheme.brownDarkest)
             // Applied immediately: the shift is read per call inside PPCTimer, so changing it
             // mid-title is safe.

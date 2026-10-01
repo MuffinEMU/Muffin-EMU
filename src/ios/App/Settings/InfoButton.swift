@@ -15,8 +15,8 @@ struct InfoButton: View {
         } label: {
             Image(systemName: "info.circle")
                 .font(.system(size: 15, weight: .semibold))
-                // pixelBlue so it stands out from the grey footer text.
-                .foregroundColor(MuffinTheme.pixelBlue)
+                // The accent so it stands out from the grey footer text.
+                .foregroundColor(MuffinTheme.accentText)
                 // 30pt tap target around a 15pt glyph.
                 .frame(width: 30, height: 30)
                 .contentShape(Rectangle())
@@ -30,16 +30,22 @@ struct InfoButton: View {
                     MuffinTheme.backgroundGradient
                         .ignoresSafeArea()
 
+                    // On a card: straight on the gradient, brown text was dark on dark
+                    // in the themes with a dark gradient.
                     ScrollView {
-                        Text(text)
-                            .font(.system(size: 15))
-                            .lineSpacing(3)
-                            .foregroundColor(MuffinTheme.brownDarkest)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(18)
+                        MuffinCard {
+                            Text(text)
+                                .font(.system(size: 15))
+                                .lineSpacing(3)
+                                .foregroundColor(MuffinTheme.brownDarkest)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(18)
+                        }
+                        .padding(16)
                     }
                 }
                 .navigationTitle(title)
+                .muffinOpaqueNavigationBar()
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
@@ -74,7 +80,7 @@ extension InfoButton {
     private static func footerText(_ short: String) -> some View {
         Text(short)
             .font(.footnote)
-            .foregroundColor(.secondary)
+            .foregroundColor(MuffinTheme.secondaryText)
             .lineSpacing(2.5)
             .fixedSize(horizontal: false, vertical: true)
     }
