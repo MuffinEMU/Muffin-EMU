@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "config/CemuConfig.h"
 #include "config/NetworkSettings.h"
 
@@ -42,6 +43,10 @@ public:
 		   std::set<fs::path>& failedWriteAccess);
 
 	static void Init();
+
+	// True once SetPaths() has finished. Safe to call from any thread: the paths themselves are plain fs::path objects with no
+	// synchronisation, so a thread that may run before SetPaths() (the iOS library scan) must check this before reading one.
+	[[nodiscard]] static bool ArePathsSet() { return s_setPathsCalled.load(std::memory_order_acquire); }
 
 	[[nodiscard]] static fs::path GetExecutablePath() { return s_executable_path; }
 	[[nodiscard]] static fs::path GetExecutableFilename() { return s_executable_filename; }
@@ -124,7 +129,7 @@ public:
 	[[nodiscard]] static bool ForceSamplerRoundToPrecision();
 
 private:
-	inline static bool s_setPathsCalled = false;
+	inline static std::atomic<bool> s_setPathsCalled{false};
 	// dump options
 	inline static bool s_dump_shaders = false;
 	inline static bool s_dump_textures = false;

@@ -116,7 +116,10 @@ void KeyCache_Prepare()
 	// The app can name the file(s) that will become keys.txt (KeyCache_SetPreInitKeyFiles), so that a disc image can
 	// be opened before the engine starts: the library scan, DLC/update inspection and Decrypt to Files all do that,
 	// and without keys they could not read a .wux/.wud at all.
-	if (ActiveSettings::GetUserDataPath().empty())
+	// ArePathsSet() rather than reading the path: SetPaths() assigns it on another thread, and an unsynchronised read of a
+	// std::filesystem::path that is being assigned can see it half written. Every call used to read it, and the library scan
+	// calls this while CemuInitialize() runs.
+	if (!ActiveSettings::ArePathsSet())
 	{
 		for (const fs::path& candidate : sPreInitKeysPaths)
 		{
