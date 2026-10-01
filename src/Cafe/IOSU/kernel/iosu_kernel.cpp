@@ -371,6 +371,12 @@ namespace iosu
 			}
 		}
 
+		void IOS_CloseAllHandlesForQueue(IOSMsgQueueId msgQueueId)
+		{
+			std::unique_lock _lock(sInternalMutex);
+			_IPCDestroyAllHandlesForMsgQueue(msgQueueId);
+		}
+
 		IOS_ERROR IOS_DeviceAssociateId(const char* devicePath, uint32 id)
 		{
 			// not yet implemented
