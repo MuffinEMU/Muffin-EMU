@@ -81,6 +81,14 @@ namespace TCL
 		return true;
 	}
 
+	// A title that ends while the GPU thread is parked or has stopped reading (an exception on the GPU thread, a lost device) leaves what the
+	// guest had already written. The next title's GPU thread would run those packets against memory that is no longer theirs
+	void TCLResetRing()
+	{
+		tclRingBufferA_readIndex.store(0);
+		tclRingBufferA_writeIndex.store(0);
+	}
+
 	void TCLWaitForRBSpace(uint32be numU32s)
 	{
 		uint32 writeIndex = tclRingBufferA_writeIndex.load(std::memory_order::relaxed);
