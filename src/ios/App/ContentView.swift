@@ -410,13 +410,15 @@ struct GameBrowserView: View {
         HStack(alignment: .center, spacing: 16) {
             Button(action: { showingIconPicker = true }) {
                 VStack(alignment: .leading, spacing: 4) {
+                    // onBackground rather than fixed cream and accent: cream was 1.9:1 on
+                    // Bakery's light orange, and the accent was dark on the dark gradients.
                     Text("Muffin")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(MuffinTheme.sparkleCream)
+                        .foregroundColor(MuffinTheme.onBackground)
 
                     Text("EMU")
                         .font(.system(size: 18, weight: .semibold, design: .rounded))
-                        .foregroundColor(MuffinTheme.pixelBlue)
+                        .foregroundColor(MuffinTheme.onBackgroundAccent)
                 }
             }
             .buttonStyle(.plain)
@@ -511,14 +513,21 @@ struct GameBrowserView: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel("Import")
 
+                    // On a cream chip like the buttons beside it. Bare, it was cream at 70%
+                    // and 10pt straight on the gradient, which no theme could keep readable
+                    // across the whole width of an iPad.
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("\(filteredGames.count)")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(MuffinTheme.sparkleCream)
+                            .foregroundColor(MuffinTheme.brownDarkest)
                         Text("games")
-                            .font(.system(size: 10, weight: .regular, design: .rounded))
-                            .foregroundColor(MuffinTheme.sparkleCream.opacity(0.7))
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundColor(MuffinTheme.brownMid)
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(MuffinTheme.cream, in: RoundedRectangle(cornerRadius: MuffinTheme.Radius.chip, style: .continuous))
+                    .accessibilityElement(children: .combine)
                 }
             }
         }

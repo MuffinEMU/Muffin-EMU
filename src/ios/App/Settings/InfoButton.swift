@@ -30,13 +30,18 @@ struct InfoButton: View {
                     MuffinTheme.backgroundGradient
                         .ignoresSafeArea()
 
+                    // On a card: straight on the gradient, brown text was dark on dark
+                    // in the themes with a dark gradient.
                     ScrollView {
-                        Text(text)
-                            .font(.system(size: 15))
-                            .lineSpacing(3)
-                            .foregroundColor(MuffinTheme.brownDarkest)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(18)
+                        MuffinCard {
+                            Text(text)
+                                .font(.system(size: 15))
+                                .lineSpacing(3)
+                                .foregroundColor(MuffinTheme.brownDarkest)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(18)
+                        }
+                        .padding(16)
                     }
                 }
                 .navigationTitle(title)
