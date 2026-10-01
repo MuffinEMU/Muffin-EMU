@@ -3,7 +3,7 @@ import SwiftUI
 /// Every on-screen control setting except which cluster sits where - moving a
 /// cluster is a thing you can only sensibly do with a game under it, so that lives
 /// in the emulator view. Size and opacity are worth setting from here too, and
-/// "Reset layout" needs to be reachable from somewhere that is not itself on top of
+/// "Reset controls to default" needs to be reachable from somewhere that is not itself on top of
 /// the pad.
 struct OnScreenControlsSection: View {
     // Same keys the on-screen pad reads.
@@ -116,13 +116,13 @@ struct OnScreenControlsSection: View {
             }
             .tint(MuffinTheme.pixelBlue)
 
-            // Resets MuffinEMU's own pad (size, opacity, dragged clusters), which is also what
+            // Resets MuffinEMU's own pad (size, opacity, moved buttons), which is also what
             // the TouchLab styles read for size and opacity.
             Button(role: .destructive, action: { showingResetLayoutConfirmation = true }) {
-                DestructiveSettingsLabel(title: "Reset layout", systemImage: "arrow.uturn.backward")
+                DestructiveSettingsLabel(title: "Reset controls to default", systemImage: "arrow.uturn.backward")
             }
 
-            // Separate from "Reset layout": that moves buttons on screen, this repairs what
+            // Separate from the reset above: that moves buttons on screen, this repairs what
             // a press is wired to.
             Button(role: .destructive, action: { showingResetBindingsConfirmation = true }) {
                 DestructiveSettingsLabel(title: "Reset controller bindings", systemImage: "gamecontroller.fill")
@@ -142,13 +142,13 @@ struct OnScreenControlsSection: View {
                 text: fullText)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
-        .confirmationDialog("Reset layout?", isPresented: $showingResetLayoutConfirmation, titleVisibility: .visible) {
-            Button("Reset layout", role: .destructive) {
+        .confirmationDialog("Reset controls to default?", isPresented: $showingResetLayoutConfirmation, titleVisibility: .visible) {
+            Button("Reset to default", role: .destructive) {
                 ControllerLayoutSettings.reset()
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Button size, opacity and any clusters you've dragged go back to how MuffinEMU ships.")
+            Text("Button size, opacity and every button you've moved go back to how MuffinEMU ships.")
         }
         .confirmationDialog("Reset controller bindings?", isPresented: $showingResetBindingsConfirmation, titleVisibility: .visible) {
             Button("Reset bindings", role: .destructive) {

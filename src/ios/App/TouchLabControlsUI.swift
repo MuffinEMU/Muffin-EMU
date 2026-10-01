@@ -107,6 +107,7 @@ struct TouchLabLayoutPanel: View {
     @AppStorage(TouchLabSettings.floatCameraKey) private var floatCamera = TouchLabSettings.defaultFloatCamera
     @AppStorage(ControllerLayoutSettings.scaleKey) private var controlScale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.opacityKey) private var controlOpacity = ControllerLayoutSettings.defaultOpacity
+    @State private var showingResetConfirmation = false
 
     var body: some View {
         VStack {
@@ -157,12 +158,16 @@ struct TouchLabLayoutPanel: View {
                 }
 
                 HStack(spacing: 12) {
-                    if scheme == TouchLabSettings.adaptiveStyleID {
-                        Button("Reset learned layout for this game") {
-                            TouchLabSettings.resetAdaptive(gameID: gameID)
-                        }
+                    Button("Reset to default") { showingResetConfirmation = true }
                         .buttonStyle(MuffinSecondaryButtonStyle())
-                    }
+                        .confirmationDialog("Reset controls to default?", isPresented: $showingResetConfirmation, titleVisibility: .visible) {
+                            Button("Reset to default", role: .destructive, action: resetToDefault)
+                            Button("Cancel", role: .cancel) { }
+                        } message: {
+                            Text(scheme == TouchLabSettings.adaptiveStyleID
+                                 ? "Size and opacity go back to how MuffinEMU ships, and Adaptive forgets where your thumbs land in this game."
+                                 : "Size and opacity go back to how MuffinEMU ships.")
+                        }
 
                     Button("Done", action: onDone)
                         .buttonStyle(MuffinSecondaryButtonStyle())
@@ -177,5 +182,15 @@ struct TouchLabLayoutPanel: View {
             Spacer()
         }
         .transition(.opacity)
+    }
+
+    /// Size and opacity are the only placement the fixed styles have. Adaptive also moves
+    /// its buttons to where your thumbs land, so for Adaptive this game's learning goes too.
+    private func resetToDefault() {
+        controlScale = ControllerLayoutSettings.defaultScale
+        controlOpacity = ControllerLayoutSettings.defaultOpacity
+        if scheme == TouchLabSettings.adaptiveStyleID {
+            TouchLabSettings.resetAdaptive(gameID: gameID)
+        }
     }
 }
