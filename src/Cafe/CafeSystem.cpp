@@ -1227,8 +1227,13 @@ namespace CafeSystem
 		return sCleanSlateLeftovers;
 	}
 
+	// ShutdownTitle() has three callers that can arrive together: the app's stop, a game that calls exit() (OSShutdownThread) and a Wii U Menu
+	// title switch (OSLauncherThread). The second one waits for the first and then finds nothing left to stop
+	static std::mutex sShutdownTitleMutex;
+
 	void ShutdownTitle()
 	{
+		std::lock_guard<std::mutex> shutdownLock(sShutdownTitleMutex);
 		if(!sSystemRunning)
 			return;
 		const auto shutdownStart = std::chrono::steady_clock::now();
