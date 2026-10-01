@@ -529,6 +529,16 @@ namespace GX2
 
     void GX2CommandResetToDefaultState()
     {
+		// the write pointers are host pointers into the stopped title's command buffers, and gx2WriteGather_submit*
+		// writes through currentWritePtr whenever it is not null
+		for (auto& coreState : s_perCoreCBState)
+		{
+			coreState.bufferPtr = nullptr;
+			coreState.bufferSizeInU32s = 0;
+			coreState.currentWritePtr = nullptr;
+			coreState.isDisplayList = false;
+		}
+		s_mainCoreLastCommandState = GX2PerCoreCBState{};
 		s_commandState->commandPoolBase = nullptr;
 		s_commandState->commandPoolSizeInU32s = 0;
 		s_commandState->gpuCommandReadPtr = nullptr;

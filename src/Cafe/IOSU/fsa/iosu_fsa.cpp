@@ -216,6 +216,32 @@ namespace iosu
 				return FSA_RESULT::OK;
 			}
 
+			// closes everything that is still open and returns how many handles that was
+			size_t CloseAll()
+			{
+				size_t closed = 0;
+				for (auto& it : m_handleTable)
+				{
+					if (!it.isAllocated)
+						continue;
+					FSCVirtualFile* fscFile = it.fscFile;
+					it.fscFile = nullptr;
+					it.isAllocated = false;
+					if (fscFile)
+						fsc_close(fscFile);
+					closed++;
+				}
+				return closed;
+			}
+
+			size_t CountAllocated() const
+			{
+				size_t count = 0;
+				for (auto& it : m_handleTable)
+					count += it.isAllocated ? 1 : 0;
+				return count;
+			}
+
 			FSCVirtualFile* GetByHandle(FSResHandle handle)
 			{
 				uint16 index = (uint16)((uint32)handle >> 16);
@@ -833,6 +859,48 @@ namespace iosu
 			IOS_ResourceReply(cmd, (IOS_ERROR)fsaResult);
 		}
 
+		// A title that stops leaves its FSA clients, open files and open directories behind: nothing closes them, the files
+		// keep their host file descriptors (and any unflushed write), and the client slots are never handed out again.
+		// Runs on the FSA thread so it cannot overlap a request that is still being served.
+		static std::atomic<bool> sFSAResetDone{true};
+
+		static void FSAResetAllClientState()
+		{
+			size_t files = sFileHandleTable.CloseAll();
+			size_t dirs = sDirHandleTable.CloseAll();
+			size_t clients = 0;
+			for (auto& it : sFSAClientArray)
+			{
+				if (it.isAllocated)
+					clients++;
+				it.ReleaseAndCleanup();
+			}
+			if (files || dirs || clients)
+				cemuLog_log(LogType::Force, "IOSU-FSA: released {} client(s), {} open file(s) and {} open directorie(s) left by the stopped title", clients, files, dirs);
+		}
+
+		void ResetClientState()
+		{
+			if (!sFSAIoThread.joinable())
+				return;
+			sFSAResetDone.store(false);
+			IOS_SendMessage(sFSAIoMsgQueue, 1, 0); // 0 means "shut down", real requests are guest pointers
+			// the thread answers within a request or two; bounded so a wedged thread cannot hold up the title stop
+			for (int i = 0; i < 500 && !sFSAResetDone.load(); i++)
+				std::this_thread::sleep_for(std::chrono::milliseconds(2));
+			if (!sFSAResetDone.load())
+				cemuLog_log(LogType::Force, "IOSU-FSA: the FSA thread did not answer the reset request in time");
+		}
+
+		void GetOpenCounts(uint32& clients, uint32& files, uint32& dirs)
+		{
+			clients = 0;
+			for (auto& it : sFSAClientArray)
+				clients += it.isAllocated ? 1 : 0;
+			files = (uint32)sFileHandleTable.CountAllocated();
+			dirs = (uint32)sDirHandleTable.CountAllocated();
+		}
+
 		void FSAIoThread()
 		{
 			SetThreadName("IOSU-FSA");
@@ -843,6 +911,12 @@ namespace iosu
 				cemu_assert(!IOS_ResultIsError(r));
 				if (msg == 0)
 					return; // shutdown signaled
+				if (msg == 1)
+				{
+					FSAResetAllClientState();
+					sFSAResetDone.store(true);
+					continue;
+				}
 				IPCCommandBody* cmd = MEMPTR<IPCCommandBody>(msg).GetPtr();
 				uint32 clientHandle = (uint32)cmd->devHandle;
 				if (cmd->cmdId == IPCCommandId::IOS_OPEN)

@@ -54,6 +54,19 @@ public:
 
 bool _redirectMapped = false;
 
+// Graphic packs that replace game files register them here for as long as the title runs. The redirect device stays
+// mounted (it answers nothing when the tree is empty and lookups fall through to the real files), but the entries
+// belong to the stopped title and would otherwise replace the next title's files at the same virtual path.
+void fscDeviceRedirect_reset()
+{
+	redirectTree.clear([](RedirectEntry* entry) { delete entry; });
+}
+
+size_t fscDeviceRedirect_getEntryCount()
+{
+	return redirectTree.countFiles();
+}
+
 void fscDeviceRedirect_map()
 {
 	if (_redirectMapped)

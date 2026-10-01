@@ -234,8 +234,36 @@ void GraphicPack2::ActivateForCurrentTitle()
 
 void GraphicPack2::Reset()
 {
+	// A pack stays marked as activated for as long as nothing deactivates it, and Activate() returns early for an
+	// activated pack: the next title would get no presets, patches, shaders or replaced files re-evaluated, only the
+	// previous title's leftovers. Deactivating also releases its shaders and ends its custom vsync frequency.
+	for (auto& gp : s_active_graphic_packs)
+		gp->Deactivate();
 	s_active_graphic_packs.clear();
+	// the packs that were never activated for this title hold nothing, but the redirect device does
+	fscDeviceRedirect_reset();
 	s_isReady = false;
+}
+
+void GraphicPack2::ReleaseRendererObjects()
+{
+	for (auto& gp : s_graphic_packs)
+	{
+		gp->m_output_shader.reset();
+		gp->m_upscaling_shader.reset();
+		gp->m_downscaling_shader.reset();
+		gp->m_output_shader_ud.reset();
+		gp->m_upscaling_shader_ud.reset();
+		gp->m_downscaling_shader_ud.reset();
+	}
+}
+
+size_t GraphicPack2::CountActivated()
+{
+	size_t count = 0;
+	for (auto& gp : s_graphic_packs)
+		count += gp->IsActivated() ? 1 : 0;
+	return count;
 }
 
 void GraphicPack2::ClearGraphicPacks()
@@ -1106,6 +1134,7 @@ bool GraphicPack2::Deactivate()
 	UnloadPatches();
 
 	m_activated = false;
+	m_patchedFilesLoaded = false; // the replaced files are registered again by the next activation
 	m_custom_shaders.clear();
 	m_texture_rules.clear();
 

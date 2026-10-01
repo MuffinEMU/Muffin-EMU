@@ -71,6 +71,8 @@ struct LatteFetchShader
 	static CacheHash CalculateCacheHash(void* programCode, uint32 programSize);
 	static LatteFetchShader* FindInCacheByHash(CacheHash fsHash);
 	static LatteFetchShader* FindByGPUState();
+	// forgets which fetch shader belongs to which guest address (the content-hash cache above is kept)
+	static void ResetLookupCache();
 
 	static std::unordered_map<CacheHash, LatteFetchShader*> s_fetchShaderByHash;
 };

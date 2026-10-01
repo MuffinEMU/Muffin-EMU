@@ -1583,6 +1583,11 @@ namespace coreinit
 			delete hostThread;
 		}
 		s_threadToFiber.clear();
+		// every scheduler thread is joined, so nothing is waiting on these. They count threads queued to run, the threads
+		// are about to be deleted without being dequeued, and a count that stays above zero makes the next title's idle
+		// loop poll the scheduler lock instead of sleeping
+		for (size_t i = 0; i < Espresso::CORE_COUNT; i++)
+			g_coreRunQueueThreadCount[i].reset();
 	}
 
 	bool OSIsSchedulerActive()

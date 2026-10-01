@@ -22,12 +22,43 @@ name: Build MuffinEMU (iOS)
 # Every publishing step checks the ref and the event itself as well as the channel, so a bug in the
 # channel cannot publish a build to the wrong place.
 
+#
+# HOW THIS WORKFLOW KEEPS ITS SPEED WITHOUT EVER SHIPPING A STALE BINARY
+# (the same explanation, with the reasoning, is in docs/CI.md)
+#
+# The expensive part of a build is compiling the Cemu core into Cemu.framework, about twenty
+# minutes. So it is compiled once, verified, and then reused - but only ever whole, and only ever
+# while nothing it is built from has changed:
+#
+#   * FINGERPRINT. ci/core-cache-key.sh hashes everything that can change a byte of Cemu.framework:
+#     src/ minus the Swift app, the CMake files, every dependency and submodule at its pinned
+#     commit, MoltenVK, the Xcode, SDK, compiler, linker and CMake versions, and every build flag.
+#   * ONE CURRENT CORE. The cache holds the core built fresh and verified on main, stamped with its
+#     fingerprint, as the "current core" (muffin-core-current-v1-<fingerprint>-<run>; the newest
+#     such entry is the current one). A build restores it and then re-derives the fingerprint from
+#     its own tree: equal means reuse, anything else means the cached core is discarded.
+#   * ANYTHING ELSE IS A FULL FRESH COMPILE. A changed core, a reverted core (an older cache entry
+#     that happens to match is NOT used), a new Xcode, a missing cache: clean build directory, no
+#     compiler cache, no partial results. Nothing half-old is ever mixed into a binary.
+#   * VERIFIED BEFORE IT COUNTS. A core only becomes current after the export gate, the stall-detector
+#     tests, the app link and both IPA verifications have passed. Only a build of main promotes; a
+#     pull request may compile a fresh core but never changes what is current.
+#   * ESCAPE HATCH. Put [fresh-core] in a commit message, or run this workflow by hand with
+#     "fresh_core" ticked: the cached core and any prebuilt IPA are ignored, everything is compiled
+#     fresh, and (on main) the result is promoted as the new current core.
+#
+# A second, separate saving: a release is the same tree a pull request already built. When main gets
+# a tree whose build id (ci/build-id.sh) matches a green run of this workflow, that run's IPAs are
+# reused and only the version stamp and signature are redone (ci/package-ipas.sh), then the release
+# is published as usual. No match, no reuse: it builds.
+#
 # The whole build, in order:
 #   1. The Cemu core for arm64-ios as Cemu.framework (CMake + vcpkg), with the Swift
-#      bridge and its glue compiled into it (src/CMakeLists.txt, IOS block).
+#      bridge and its glue compiled into it (src/CMakeLists.txt, IOS block) - or the verified
+#      current core, as above.
 #   2. A gate that fails the build if any function Swift can call is missing from that
 #      binary - a declared-but-undefined bridge function otherwise only shows up as a
-#      linker error deep inside xcodebuild.
+#      linker error deep inside xcodebuild. It runs on a reused core exactly as on a fresh one.
 #   3. The SwiftUI app around the framework (XcodeGen + xcodebuild).
 #   4. An unsigned IPA (SideStore / AltStore / LiveContainer) and an ad-hoc signed one with
 #      the JIT entitlements embedded (TrollStore / jailbroken), both verified, then
@@ -50,9 +81,14 @@ on:
         description: 'Experimental builds: a short name for the release title (defaults to the branch name)'
         type: string
         default: ''
+      fresh_core:
+        description: 'Ignore the cached core and any prebuilt IPA: compile everything fresh and, on main, promote the result as the new current core'
+        type: boolean
+        default: false
   push:
     branches: [ main, ios27-sdk ]
-    # Documentation, issue templates, bench tooling and the install-source generator cannot change the binary.
+    # Documentation, issue templates, bench tooling, the install-source generator and the other
+    # workflows cannot change the binary. (ci/build-id.sh excludes the same set.)
     paths-ignore:
       - '**/*.md'
       - 'docs/**'
@@ -62,6 +98,10 @@ on:
       - 'homebrew/**'
       - 'dist/**'
       - 'ci/generate-sidestore-source.py'
+      - '.github/workflows/build-bench-ipa.yml'
+      - '.github/workflows/build-bench-rpx.yml'
+      - '.github/workflows/build-rainbow-rpx.yml'
+      - '.github/workflows/update-sidestore-source.yml'
   # A pull request compiles the whole thing and publishes NOTHING - the three
   # release steps at the end are skipped for this event. Until this existed there
   # was no way to compile-check a change without a push to main taking the next
@@ -79,11 +119,17 @@ on:
       - 'homebrew/**'
       - 'dist/**'
       - 'ci/generate-sidestore-source.py'
+      - '.github/workflows/build-bench-ipa.yml'
+      - '.github/workflows/build-bench-rpx.yml'
+      - '.github/workflows/build-rainbow-rpx.yml'
+      - '.github/workflows/update-sidestore-source.yml'
 
-# One build per branch: three pushes in a row should produce the newest IPA, not three.
+# One build per branch: three pushes in a row should produce the newest IPA, not three. Runs on
+# main are never cancelled - a release that has started finishes, and a newer push waits its turn
+# (GitHub keeps one waiting run per group, and its notes cover every commit since the last release).
 concurrency:
   group: ios-app-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg-archives,readwrite"
@@ -114,10 +160,15 @@ jobs:
       tag: ${{ steps.channel.outputs.tag }}
       title: ${{ steps.channel.outputs.title }}
       short_name: ${{ steps.channel.outputs.short_name }}
+      # Deleting the superseded current-core cache entry when a new core is promoted.
+      actions: write
     steps:
+      # No submodules here: the fingerprint and the reuse lookup read only git's own records (a
+      # submodule counts by the commit it pins), so a run that reuses a build never downloads
+      # vcpkg. They are checked out below, by the steps that compile the core.
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
           fetch-depth: 0
 
       - name: Decide distribution channel
@@ -138,23 +189,235 @@ jobs:
           clang++ -std=c++17 -Wall -Wextra -I src/ios/Bridge ci/stall-detector-test.cpp -o "$RUNNER_TEMP/stall-detector-test"
           "$RUNNER_TEMP/stall-detector-test"
 
-      - name: Select full Xcode and install build tools
+      - name: Select full Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-path
-          # ninja and cmake are preinstalled on this image; xcodegen is not. Asking for
-          # all of them is idempotent and keeps one command working on either image.
-          brew install xcodegen ninja
+
+      - name: Plan - is there an earlier build of this exact tree to reuse?
+        # Looks for a green run of this workflow that built a tree with the same build id
+        # (ci/build-id.sh: every tracked file that can change the binary, by content). If there is
+        # one, its IPAs and dSYM are downloaded and everything from here to the version stamp is
+        # skipped. Any doubt - no such run, expired artifacts, a build id that does not match the
+        # run's own record, [fresh-core] - and this run builds.
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE_DISPATCH: ${{ github.event_name == 'workflow_dispatch' && inputs.fresh_core }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -eo pipefail
+          BID=$(./ci/build-id.sh)
+          echo "bid=$BID" >> "$GITHUB_OUTPUT"
+          echo "candidate=false" >> "$GITHUB_OUTPUT"
+          echo "build id: $BID"
+          FRESH=false
+          [ "$FORCE_DISPATCH" = "true" ] && FRESH=true
+          MSGS=$(git log -1 --format=%B HEAD)
+          if [ -n "$PR_HEAD_SHA" ] && git cat-file -e "$PR_HEAD_SHA^{commit}" 2>/dev/null; then
+            MSGS="$MSGS $(git log -1 --format=%B "$PR_HEAD_SHA")"
+          fi
+          case "$MSGS" in *'[fresh-core]'*) FRESH=true ;; esac
+          echo "fresh=$FRESH" >> "$GITHUB_OUTPUT"
+          if [ "$FRESH" = true ]; then
+            echo "fresh core requested: nothing is reused, everything is compiled fresh"
+            exit 0
+          fi
+          RID=$(./ci/find-reusable-run.sh "$BID")
+          if [ -z "$RID" ]; then echo "no green build of this tree: building"; exit 0; fi
+          echo "candidate: run $RID"
+          rm -rf prebuilt; mkdir -p prebuilt
+          if ! gh run download "$RID" -R "$GITHUB_REPOSITORY" -n MuffinEMU-ipa -n MuffinEMU-dSYM -n "built-$BID" -D prebuilt; then
+            echo "could not download that run's artifacts: building"; exit 0
+          fi
+          IPA=$(find prebuilt -name MuffinEMU.ipa | head -n1)
+          DSYM=$(find prebuilt -name MuffinEMU.app.dSYM.zip | head -n1)
+          META=$(find prebuilt -name meta.json | head -n1)
+          if [ -z "$IPA" ] || [ -z "$DSYM" ] || [ -z "$META" ]; then echo "that run's artifacts are incomplete: building"; exit 0; fi
+          if [ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['build_id'])" "$META")" != "$BID" ]; then
+            echo "that run's own record names a different build id: building"; exit 0
+          fi
+          mkdir -p prebuilt/ipa
+          unzip -q "$IPA" -d prebuilt/ipa
+          if [ ! -d prebuilt/ipa/Payload/MuffinEMU.app ]; then echo "no app inside that IPA: building"; exit 0; fi
+          {
+            echo "candidate=true"
+            echo "rid=$RID"
+            echo "meta=$META"
+            echo "dsym=$DSYM"
+            echo "app=prebuilt/ipa/Payload/MuffinEMU.app"
+          } >> "$GITHUB_OUTPUT"
+          echo "run $RID is a candidate for reuse (see the decision below)"
+
+      - name: Fingerprint the core
+        id: fp
+        run: |
+          set -eo pipefail
+          ./ci/core-cache-key.sh --manifest > core-manifest-now.txt
+          echo "fingerprint=$(./ci/core-cache-key.sh)" >> "$GITHUB_OUTPUT"
+          echo "core fingerprint: $(./ci/core-cache-key.sh)"
+          cat core-manifest-now.txt | grep -v '^[0-9]\{6\} ' || true
+
+      - name: Look up the current core
+        if: steps.plan.outputs.candidate == 'true'
+        id: pointer
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: build-ios/out
+          key: muffin-core-current-v1-none
+          restore-keys: |
+            muffin-core-current-v1-
+          lookup-only: true
+
+      - name: Check that the core of the candidate build can be adopted
+        # A reused build compiled nothing on this run, so on main it could not promote the core it
+        # brings. If the candidate run compiled a fresh core that is not yet current (a merged pull
+        # request), this run adopts it - promotion without a second compile, held to the same standard:
+        #  - the candidate's own record must name the fingerprint this tree has NOW: same core inputs,
+        #    same toolchain. Any core input differing, or a newer Xcode since, refuses adoption;
+        #  - the core's artifact must still exist (they expire after 14 days);
+        #  - it is re-checked here: stamped fingerprint vs this tree, manifest, binary hash, the
+        #    export gate;
+        #  - it must be the very core inside the IPAs about to be published (LC_UUID equal).
+        # On main a refusal means the next step decides to build instead of reuse. A pull request
+        # never promotes, so it reuses regardless, but runs every check so the path is exercised early.
+        if: steps.plan.outputs.candidate == 'true'
+        id: adopt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FP: ${{ steps.fp.outputs.fingerprint }}
+          MATCHED: ${{ steps.pointer.outputs.cache-matched-key }}
+          META: ${{ steps.plan.outputs.meta }}
+          REUSED_APP: ${{ steps.plan.outputs.app }}
+        run: |
+          set -o pipefail
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+          echo "adopted=false" >> "$GITHUB_OUTPUT"
+          refuse() { echo "::warning::core not adoptable: $1"; echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0; }
+          CURRENT="${MATCHED#muffin-core-current-v1-}"; CURRENT="${CURRENT%%-*}"
+          if [ -n "$MATCHED" ] && [ "$CURRENT" = "$FP" ]; then echo "the current core is already $FP: nothing to adopt"; exit 0; fi
+          FRESH_CORE=$(python3 -c "import json,sys; m=json.load(open(sys.argv[1])); print(m['core_fresh'] and m['core_fingerprint'])" "$META")
+          if [ "$FRESH_CORE" = "False" ]; then echo "the candidate reused the current core rather than compiling one: nothing to adopt"; exit 0; fi
+          [ "$FRESH_CORE" = "$FP" ] || refuse "the candidate compiled core $FRESH_CORE, this tree is $FP"
+          ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=cemu-core-$FP&per_page=30" \
+                 --jq '[.artifacts[] | select(.expired == false)] | sort_by(.created_at) | last | .id // empty') || true
+          [ -n "$ID" ] || refuse "no unexpired artifact cemu-core-$FP"
+          rm -rf build-ios/out; mkdir -p build-ios/out
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ID/zip" > core.zip || refuse "could not download the core artifact"
+          unzip -q core.zip -d build-ios/out || refuse "the core artifact is not a zip"
+          ./ci/core-cache-key.sh --verify build-ios/out || refuse "the core failed its fingerprint self-check"
+          ./ci/gate-exports.sh build-ios/out/Cemu.framework || refuse "the core failed the export gate"
+          uuid() { otool -l "$1" | awk '/LC_UUID/{getline; getline; print $2; exit}'; }
+          [ "$(uuid build-ios/out/Cemu.framework/Cemu)" = "$(uuid "$REUSED_APP/Frameworks/Cemu.framework/Cemu")" ] \
+            || refuse "the core is not the one inside the candidate's IPAs"
+          echo "adopted=true" >> "$GITHUB_OUTPUT"
+          echo "core $FP is verified and is the core inside the IPAs being published"
+
+      - name: Decide - reuse the candidate build, or build
+        id: go
+        env:
+          CANDIDATE: ${{ steps.plan.outputs.candidate }}
+          ADOPT_OK: ${{ steps.adopt.outputs.ok }}
+          DSYM: ${{ steps.plan.outputs.dsym }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -eo pipefail
+          REUSE=false
+          if [ "$CANDIDATE" = true ]; then
+            if [ "$ADOPT_OK" = true ] || [ "$EVENT" = pull_request ]; then
+              REUSE=true
+            else
+              echo "the candidate's core cannot be adopted on main: building instead"
+            fi
+          fi
+          echo "reuse=$REUSE" >> "$GITHUB_OUTPUT"
+          if [ "$REUSE" = true ]; then
+            cp "$DSYM" MuffinEMU.app.dSYM.zip
+            echo "app=${{ steps.plan.outputs.app }}" >> "$GITHUB_OUTPUT"
+            echo "REUSING the IPAs and dSYM of run ${{ steps.plan.outputs.rid }}: nothing is compiled"
+          else
+            # A discarded candidate leaves nothing behind for the build to trip over.
+            rm -rf prebuilt build-ios MuffinEMU.app.dSYM.zip
+          fi
+
+      - name: Restore the current core
+        if: steps.go.outputs.reuse != 'true' && steps.plan.outputs.fresh != 'true'
+        id: corecache
+        uses: actions/cache/restore@v4
+        with:
+          path: build-ios/out
+          # No entry is ever saved under this key. Only the prefix below matches, and a prefix
+          # match returns the NEWEST entry: the current core, whichever fingerprint it carries.
+          key: muffin-core-current-v1-none
+          restore-keys: |
+            muffin-core-current-v1-
+
+      - name: Decide - reuse the current core, or compile a fresh one
+        # The restored core is used only if it passes its own self-check: its stamped fingerprint
+        # must equal the one just derived from this tree, its manifest must hash to that, and its
+        # binary must be the one that was stamped. Anything else is thrown away here.
+        id: core
+        if: steps.go.outputs.reuse != 'true'
+        env:
+          FRESH: ${{ steps.plan.outputs.fresh }}
+          MATCHED: ${{ steps.corecache.outputs.cache-matched-key }}
+        run: |
+          set -eo pipefail
+          BUILD=true
+          if [ "$FRESH" = true ]; then
+            echo "[fresh-core]: compiling a fresh core"
+          elif [ -z "$MATCHED" ]; then
+            echo "no current core in the cache: compiling a fresh core"
+          else
+            echo "restored $MATCHED"
+            if ./ci/core-cache-key.sh --verify build-ios/out; then
+              BUILD=false
+              echo "the current core matches this tree: REUSING it"
+            else
+              echo "the current core does not match this tree: discarding it, compiling a fresh core"
+              rm -rf build-ios
+            fi
+          fi
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+
+      # ---- a fresh core: everything below runs only when the core is compiled ----
+      - name: Check out the submodules
+        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true'
+        run: |
+          set -eo pipefail
+          git submodule sync --recursive
+          git -c protocol.version=2 submodule update --init --force --recursive
+
+      - name: Install the core's build tools
+        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true'
+        # ninja and cmake are preinstalled on this image. Asking for ninja anyway is idempotent and
+        # keeps this working on an image that lacks it.
+        run: brew install ninja
+
+      # The control styles under Settings > On-screen Controls > Control style are a vendored
+      # Swift package. Its behaviour and layout checks are plain Swift with no UIKit, so they run
+      # here in seconds and fail the build before the long part on any input or layout regression.
+      # The scratch path keeps the package directory free of build output for xcodegen.
+      - name: TouchLab behaviour and layout checks
+        run: |
+          swift run --package-path src/ios/Packages/MuffinTouchLab \
+            --scratch-path "$RUNNER_TEMP/touchlab-build" touchlab-check
 
       - name: Identify the pinned vcpkg
+        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true'
         id: vcpkg
         run: echo "rev=$(git -C dependencies/vcpkg rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       # Restore and save are separate so the cache is saved even when a later step fails:
       # the dependency build is the slow part, and a compile error in the core should not
-      # throw it away.
+      # throw it away. This is vcpkg's own binary cache of the third-party libraries - built from
+      # vcpkg's ABI hash of each port, compiler and triplet, and not Cemu's code. It is the only
+      # cache a fresh core compile touches, and it already existed before this workflow.
       - name: Restore vcpkg binary cache
+        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true'
+        id: vcpkgcache
         uses: actions/cache/restore@v4
         with:
           path: .vcpkg-archives
@@ -162,84 +425,51 @@ jobs:
           restore-keys: |
             vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-
 
-      - name: Configure the core for iOS
-        # CMAKE_MACOSX_BUNDLE=OFF: for an iOS target CMake makes every executable an app
-        # bundle by default, and the ZArchive submodule's zarchiveTool install rule has no
-        # bundle destination, which stops configure. Cemu.framework is a library and is
-        # unaffected.
-        #
-        # Retried for the same reason the Metal Toolchain step is: vcpkg downloads its
-        # ports from third-party hosts during configure, and a build died here on
-        # "curl operation failed with error code 6 (Couldn't resolve host name)" for
-        # libtiff. vcpkg classifies a DNS failure as NON-transient and refuses to retry
-        # it itself, which is exactly backwards - name resolution is the most transient
-        # failure there is. Re-running is safe: everything vcpkg already built stays in
-        # the binary cache, so a retry resumes rather than starting over.
-        run: |
-          set -eo pipefail
-          mkdir -p .vcpkg-archives
-          configure() {
-          cmake -S . -B build-ios -G Ninja \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=iphoneos \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
-            -DVCPKG_TARGET_TRIPLET=arm64-ios \
-            -DBUILD_HEADLESS_DYLIB=ON \
-            -DCMAKE_MACOSX_BUNDLE=OFF \
-            -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure.log
-          }
-          for attempt in 1 2 3; do
-            if configure; then exit 0; fi
-            if [ "$attempt" = 3 ]; then
-              echo "::error::configure failed three times - see configure.log"
-              exit 1
-            fi
-            echo "configure attempt $attempt failed; waiting $((attempt * 30))s"
-            sleep $((attempt * 30))
-          done
+      - name: Build Cemu.framework (core + bridge) from scratch
+        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true'
+        run: ./ci/build-core.sh
 
       - name: Save vcpkg binary cache
-        if: always()
+        # Only when this run had to add something: the exact entry already exists otherwise, and
+        # saving it again under every pull request's ref just stored the same 130 MB dozens of times.
+        if: always() && steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true' && steps.vcpkgcache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .vcpkg-archives
           key: vcpkg-arm64-ios-${{ steps.vcpkg.outputs.rev }}-${{ hashFiles('vcpkg.json', 'triplets/**', 'dependencies/vcpkg_overlay_ports/**', 'dependencies/vcpkg_overlay_ports_mac/**') }}
 
-      - name: Build Cemu.framework (core + bridge)
-        run: |
-          set -eo pipefail
-          cmake --build build-ios --target CemuBin 2>&1 | tee build.log
-          FW=$(find build-ios bin -type d -name Cemu.framework -not -path '*/CMakeFiles/*' 2>/dev/null | head -n1)
-          if [ -z "$FW" ]; then echo "::error::the build finished but produced no Cemu.framework"; exit 1; fi
-          rm -rf build-ios/out && mkdir -p build-ios/out
-          cp -R "$FW" build-ios/out/
-          file build-ios/out/Cemu.framework/Cemu
-
+      # ---- fresh or reused, the core is held to the same standard ----
       - name: Gate - every function Swift can call is in the framework
-        run: |
-          set -eo pipefail
-          # POSIX classes, not \s: the runner's BSD sed reads \s as a literal "s", which
-          # stripped the last letter off every name ending in s (get_fps -> get_fp) and
-          # reported ten exported functions as missing.
-          grep -hoE '(cemu_bridge|ios_live_log)_[a-z0-9_]+[[:space:]]*\(' src/ios/Bridge/CemuBridge.h src/ios/Bridge/IOSLiveLog.h \
-            | sed -E 's/[[:space:]]*\($//' | sort -u > declared.txt
-          nm -gU build-ios/out/Cemu.framework/Cemu | grep -oE '_(cemu_bridge|ios_live_log)_[a-z0-9_]+$' \
-            | sed 's/^_//' | sort -u > defined.txt
-          MISSING=$(comm -23 declared.txt defined.txt)
-          if [ -n "$MISSING" ]; then
-            echo "::error::declared in the bridge headers but not exported by Cemu.framework:"
-            echo "$MISSING"
-            exit 1
-          fi
-          echo "all $(wc -l < declared.txt | tr -d ' ') bridge functions are exported"
+        if: steps.go.outputs.reuse != 'true'
+        run: ./ci/gate-exports.sh
 
+      - name: Stamp a fresh core with its fingerprint
+        # Written next to the framework, so that it travels with it into the cache and is
+        # re-checked against the tree of whoever restores it.
+        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true'
+        run: ./ci/core-cache-key.sh --stamp build-ios/out
+
+      - name: Upload the fresh core (so main can promote it without recompiling)
+        # A pull request never changes what is current. When it merges, the run that publishes the
+        # release adopts this exact core - after re-checking it against main's own tree - instead
+        # of compiling it a second time.
+        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true' && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cemu-core-${{ steps.fp.outputs.fingerprint }}
+          path: build-ios/out
+          retention-days: 14
+
+      # ---- the Swift app ----
       - name: xcodegen generate
+        if: steps.go.outputs.reuse != 'true'
         run: |
+          brew install xcodegen
           cd src/ios
           xcodegen generate
 
       - name: Select the newest Xcode for the app
+        if: steps.go.outputs.reuse != 'true'
         # The Swift side needs at least Swift 6.2: Melo-Controller uses the optional
         # default in string interpolation ("\(gameId, default: "global")"), which Xcode
         # 16.4 rejects as an extra argument. Cemu.framework above reaches the app only
@@ -279,7 +509,18 @@ jobs:
           # do not appear in the binary.
           xcrun --sdk iphoneos --show-sdk-version
 
+      # The Swift package (Melo-Controller) is pinned to a revision in project.yml, so its checkout is
+      # keyed on that file. SwiftPM verifies the revision itself; this only saves the clone.
+      - name: Restore the Swift package checkouts
+        if: steps.go.outputs.reuse != 'true'
+        id: spm
+        uses: actions/cache/restore@v4
+        with:
+          path: .spm
+          key: muffin-spm-v1-${{ hashFiles('src/ios/project.yml') }}
+
       - name: Download the Metal Toolchain
+        if: steps.go.outputs.reuse != 'true'
         # Xcode 26 and later ship the Metal compiler as a downloadable component rather
         # than in the base install, and the xcode-27 runner image does not include it.
         # Without this the app build reaches the Metal shader step and dies with
@@ -330,12 +571,35 @@ jobs:
           done
 
       - name: Build the MuffinEMU app
+        if: steps.go.outputs.reuse != 'true'
         run: |
           set -eo pipefail
           cd src/ios
           xcodebuild -project MuffinEMU.xcodeproj -scheme MuffinEMU -sdk iphoneos \
-            -configuration Release CODE_SIGNING_ALLOWED=NO build \
+            -configuration Release -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/.spm" \
+            CODE_SIGNING_ALLOWED=NO build \
             2>&1 | tee ../../xcodebuild.log
+          # The app must embed the core that was built or restored above, not some other one. LC_UUID
+          # is derived from the binary's content and survives Xcode's debug-symbol strip, so two
+          # different cores cannot share one.
+          cd ../..
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinEMU.app" -path "*Release-iphoneos*" | head -n1)
+          uuid() { otool -l "$1" | awk '/LC_UUID/{getline; getline; print $2; exit}'; }
+          EMBEDDED=$(uuid "$APP_PATH/Frameworks/Cemu.framework/Cemu")
+          EXPECTED=$(uuid build-ios/out/Cemu.framework/Cemu)
+          if [ -z "$EXPECTED" ] || [ "$EMBEDDED" != "$EXPECTED" ]; then
+            echo "::error::the app embeds a core with UUID '$EMBEDDED', but the core built or restored for this run is '$EXPECTED'"
+            exit 1
+          fi
+          echo "the app embeds the core of this run (UUID $EXPECTED)"
+
+      - name: Save the Swift package checkouts
+        if: steps.go.outputs.reuse != 'true' && steps.spm.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: .spm
+          key: muffin-spm-v1-${{ hashFiles('src/ios/project.yml') }}
 
       - name: Choose the version
         # Every build of main is the next release: the highest vX.Y tag plus 0.1, with .9
@@ -382,125 +646,35 @@ jobs:
             echo "MUFFIN_PREV_TAG=${PREV:-}"
           } >> "$GITHUB_ENV"
 
-      - name: Stamp the build name and version
-        # LiveContainer and SideStore tell builds apart by name and version.
-        # CFBundleIdentifier is not touched: it keys the app's data container.
+      - name: Package the IPAs (stamp, sign, zip)
+        # From a fresh build, or from the app inside a reused IPA: the same script either way.
+        # Stamping is an Info.plist edit on a copy, and the plist is covered by the code signature,
+        # so the app is ad-hoc signed again afterwards - that is the whole difference between a
+        # build and a reuse. The compiled code is never touched.
+        env:
+          REUSED_APP: ${{ steps.go.outputs.app }}
+          REUSED_META: ${{ steps.plan.outputs.meta }}
         run: |
           set -eo pipefail
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinEMU.app" -path "*Release-iphoneos*" | head -n1)
-          PL="$APP_PATH/Info.plist"
-          pb() { /usr/libexec/PlistBuddy "$@"; }
-          pb -c "Set :CFBundleDisplayName MuffinEMU $MUFFIN_LABEL" "$PL" 2>/dev/null \
-            || pb -c "Add :CFBundleDisplayName string MuffinEMU $MUFFIN_LABEL" "$PL"
-          pb -c "Set :CFBundleShortVersionString $MUFFIN_VERSION" "$PL" 2>/dev/null \
-            || pb -c "Add :CFBundleShortVersionString string $MUFFIN_VERSION" "$PL"
-          pb -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$PL" 2>/dev/null \
-            || pb -c "Add :CFBundleVersion string ${GITHUB_RUN_NUMBER}" "$PL"
-          echo "stamped display name: $(pb -c 'Print :CFBundleDisplayName' "$PL")"
-          echo "stamped version:      $(pb -c 'Print :CFBundleShortVersionString' "$PL")"
-          ls "$APP_PATH/Frameworks"
-
-      - name: Package IPA for re-signing installers
-        # Ad-hoc signed with a minimal entitlements file (get-task-allow only). Without an
-        # entitlements dict, JIT enablers cannot list the app.
-        #
-        # Only get-task-allow - see src/ios/Sideload.entitlements for why reusing
-        # Cemu.entitlements here would make things worse rather than better.
-        #
-        # Payload/ is left unsigned for the TrollStore step below, which copies it and
-        # applies the full entitlements itself; this signs a separate copy.
-        run: |
-          set -eo pipefail
-          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinEMU.app" -path "*Release-iphoneos*" | head -n1)
-          rm -rf Payload PayloadSideload iparoot-sideload MuffinEMU.ipa
-          mkdir -p Payload
-          cp -R "$APP_PATH" Payload/
-          cp -R Payload PayloadSideload
-          # Frameworks first: a signed app containing unsigned frameworks does not load.
-          for fw in PayloadSideload/MuffinEMU.app/Frameworks/*.framework; do
-            codesign -f -s - "$fw"
-          done
-          codesign -f -s - \
-            --entitlements src/ios/Sideload.entitlements \
-            --generate-entitlement-der \
-            PayloadSideload/MuffinEMU.app
-          # Verified, not assumed. Shipping this without get-task-allow would reproduce
-          # exactly the bug it exists to fix, and it would look identical from outside.
-          # Prints what was embedded, then requires get-task-allow specifically.
-          # increased-memory-limit is carried deliberately but is allowed to be dropped by
-          # a re-signer, so it is reported rather than required - only get-task-allow
-          # decides whether a JIT enabler can see the app.
-          codesign -d --entitlements - --xml PayloadSideload/MuffinEMU.app 2>/dev/null \
-            | python3 -c "import sys,plistlib; d=sys.stdin.buffer.read(); i=d.find(b'<?xml'); print('embedded entitlements:', ', '.join(sorted(plistlib.loads(d[i:]))) if i>=0 else '(none)')"
-          if ! codesign -d --entitlements - --xml PayloadSideload/MuffinEMU.app 2>/dev/null \
-               | python3 -c "import sys,plistlib; d=sys.stdin.buffer.read(); i=d.find(b'<?xml'); sys.exit(0 if i>=0 and plistlib.loads(d[i:]).get('get-task-allow') is True else 1)"; then
-            echo "::error::MuffinEMU.ipa was signed without get-task-allow - JIT enablers would not see it"
-            exit 1
+          # The launch log line (src/ios/App/CemuApp.swift) names the release and the core.
+          export MUFFIN_RELEASE_COMMIT=$(printf '%s' "$GITHUB_SHA" | cut -c1-7)
+          if [ -n "$REUSED_APP" ]; then
+            export MUFFIN_CORE_FP=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['core_fingerprint'][:7])" "$REUSED_META")
+          else
+            export MUFFIN_CORE_FP=$(sed -n 's/^fingerprint: //p' build-ios/out/core-fingerprint.txt | cut -c1-7)
           fi
-          # Assembled through iparoot/Payload/, the same shape the TrollStore step below
-          # uses. An IPA is a zip whose top-level entry is Payload/ - zipping the app
-          # directly produces an archive every installer rejects.
-          rm -rf iparoot-sideload
-          mkdir -p iparoot-sideload/Payload
-          cp -R PayloadSideload/MuffinEMU.app iparoot-sideload/Payload/
-          ( cd iparoot-sideload && zip -qry ../MuffinEMU.ipa Payload )
-          echo "IPA size: $(du -h MuffinEMU.ipa | cut -f1)"
-
-      - name: Package ad-hoc signed IPA (TrollStore / jailbroken)
-        # The plain IPA carries no entitlements at all; entitlements only exist inside a
-        # signature. This variant embeds them for install paths that do not re-sign.
-        # Frameworks are signed first: a signed app with unsigned embedded frameworks does
-        # not load on those install paths.
-        run: |
-          set -eo pipefail
-          rm -rf PayloadSigned MuffinEMU-fakesigned.ipa iparoot
-          cp -R Payload PayloadSigned
-          for fw in PayloadSigned/MuffinEMU.app/Frameworks/*.framework; do
-            codesign -f -s - "$fw"
-          done
-          codesign -f -s - \
-            --entitlements src/ios/Cemu.entitlements \
-            --generate-entitlement-der \
-            PayloadSigned/MuffinEMU.app
-          COUNT=$(codesign -d --entitlements - --xml PayloadSigned/MuffinEMU.app 2>/dev/null \
-            | python3 -c "import sys,plistlib; d=sys.stdin.buffer.read(); i=d.find(b'<?xml'); print(0 if i<0 else len(plistlib.loads(d[i:])))")
-          echo "embedded entitlements: $COUNT"
-          if [ "$COUNT" -lt 4 ]; then
-            echo "::error::ad-hoc signing embedded $COUNT entitlements, expected at least 4"
-            exit 1
+          if [ -n "$REUSED_APP" ]; then
+            BASE_APP="$REUSED_APP"
+          else
+            BASE_APP=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinEMU.app" -path "*Release-iphoneos*" | head -n1)
           fi
-          mkdir -p iparoot/Payload
-          cp -R PayloadSigned/MuffinEMU.app iparoot/Payload/
-          ( cd iparoot && zip -qry ../MuffinEMU-fakesigned.ipa Payload )
-          echo "fake-signed IPA size: $(du -h MuffinEMU-fakesigned.ipa | cut -f1)"
+          ./ci/package-ipas.sh "$BASE_APP"
 
       - name: Verify the IPA is structurally sound
         run: ./ci/verify-ipa.sh MuffinEMU.ipa
 
       - name: Verify the ad-hoc signed IPA is structurally sound
         run: ./ci/verify-ipa.sh MuffinEMU-fakesigned.ipa
-
-      # Seeds the core cache (docs/CI.md, ci/core-cache-key.sh). Nothing here changes how the build
-      # runs: it compiled everything from scratch above, and it still does. Only after the framework
-      # has built, passed the export gate and both IPAs have passed verification is that framework
-      # stamped with the fingerprint of everything it was built from and saved as the current core.
-      # The save is push-to-main only. A pull request never promotes a core, and a failure in either
-      # step cannot fail the release.
-      - name: Fingerprint the verified core
-        id: corefp
-        continue-on-error: true
-        run: |
-          set -eo pipefail
-          ./ci/core-cache-key.sh --stamp build-ios/out
-          echo "fingerprint=$(./ci/core-cache-key.sh)" >> "$GITHUB_OUTPUT"
-
-      - name: Save the verified core as the current core
-        if: steps.corefp.outcome == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: build-ios/out
-          key: muffin-core-current-v1-${{ steps.corefp.outputs.fingerprint }}-${{ github.run_id }}
 
       - name: Upload IPAs
         uses: actions/upload-artifact@v4
@@ -512,9 +686,11 @@ jobs:
           retention-days: 30
 
       - name: Upload dSYMs
+        if: steps.go.outputs.reuse != 'true'
         run: |
           set -eo pipefail
           DSYM_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -name "MuffinEMU.app.dSYM" -path "*Release-iphoneos*" | head -n1)
+          rm -f MuffinEMU.app.dSYM.zip
           zip -qr MuffinEMU.app.dSYM.zip "$DSYM_PATH"
 
       - uses: actions/upload-artifact@v4
@@ -522,6 +698,85 @@ jobs:
           name: MuffinEMU-dSYM
           path: MuffinEMU.app.dSYM.zip
           retention-days: 30
+
+      - name: Record this build so a later run of the same tree can reuse it
+        # Uploaded only after everything above passed, so its existence means "built and verified".
+        # find-reusable-run.sh still re-checks that the run ended green.
+        if: steps.go.outputs.reuse != 'true'
+        env:
+          BID: ${{ steps.plan.outputs.bid }}
+          FP: ${{ steps.fp.outputs.fingerprint }}
+          CORE_FRESH: ${{ steps.core.outputs.build }}
+        run: |
+          set -eo pipefail
+          mkdir -p built-meta
+          python3 - <<'PY'
+          import json, os, re
+          stamp = dict(l.split(": ", 1) for l in open("build-ios/out/core-fingerprint.txt").read().splitlines() if ": " in l)
+          json.dump({
+              "build_id": os.environ["BID"],
+              "commit": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "core_fingerprint": os.environ["FP"],
+              "core_fresh": os.environ["CORE_FRESH"] == "true",
+              "core_binary_sha256": stamp.get("binary-sha256"),
+              "core_uuid": stamp.get("binary-uuid"),
+          }, open("built-meta/meta.json", "w"), indent=2)
+          PY
+          cat built-meta/meta.json
+
+      - name: Upload the build record
+        if: steps.go.outputs.reuse != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: built-${{ steps.plan.outputs.bid }}
+          path: built-meta/meta.json
+          retention-days: 30
+
+      # ---- promotion: only a build of main changes which core is current ----
+      - name: Promote the verified core to be the current core
+        # Reached only if everything above passed: the export gate, the stall-detector tests, the
+        # app link, both IPA verifications. A failure anywhere earlier means this is never run.
+        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        id: promote
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: build-ios/out
+          key: muffin-core-current-v1-${{ steps.fp.outputs.fingerprint }}-${{ github.run_id }}
+
+      - name: Retire the superseded cores
+        if: steps.promote.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_KEY: muffin-core-current-v1-${{ steps.fp.outputs.fingerprint }}-${{ github.run_id }}
+        run: |
+          set -eo pipefail
+          gh cache list -R "$GITHUB_REPOSITORY" --ref refs/heads/main --key muffin-core-current-v1- --limit 100 --json id,key \
+            --jq ".[] | select(.key != \"$NEW_KEY\") | .id" \
+            | while read -r id; do gh cache delete "$id" -R "$GITHUB_REPOSITORY" || true; done
+
+      - name: Promote the adopted core to be the current core
+        if: steps.go.outputs.reuse == 'true' && steps.adopt.outputs.adopted == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        id: promote_adopted
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: build-ios/out
+          key: muffin-core-current-v1-${{ steps.fp.outputs.fingerprint }}-${{ github.run_id }}
+
+      - name: Retire the superseded cores (after adoption)
+        if: steps.promote_adopted.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW_KEY: muffin-core-current-v1-${{ steps.fp.outputs.fingerprint }}-${{ github.run_id }}
+        run: |
+          set -eo pipefail
+          gh cache list -R "$GITHUB_REPOSITORY" --ref refs/heads/main --key muffin-core-current-v1- --limit 100 --json id,key \
+            --jq ".[] | select(.key != \"$NEW_KEY\") | .id" \
+            | while read -r id; do gh cache delete "$id" -R "$GITHUB_REPOSITORY" || true; done
 
       - name: Write the release notes
         # Notes are built from the commits in the range, so a release describes what is
@@ -627,6 +882,7 @@ jobs:
             xcodebuild.log
             build-ios/vcpkg-manifest-install.log
             build-ios/**/*.log
+            core-manifest-now.txt
           if-no-files-found: warn
           retention-days: 30
 

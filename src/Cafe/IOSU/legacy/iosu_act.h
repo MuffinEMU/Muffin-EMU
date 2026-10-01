@@ -2,6 +2,7 @@
 
 void iosuAct_init_depr();
 bool iosuAct_isInitialized();
+void iosuAct_resetAccountCache();
 
 #define ACT_ACCOUNTID_LENGTH 	(17) // includes '\0'
 

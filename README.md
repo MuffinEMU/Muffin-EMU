@@ -32,7 +32,7 @@ MuffinEMU is a native iOS and iPadOS Wii U emulator: a SwiftUI app on its own Ce
 - **Game formats** — WUA, decrypted games, encrypted disc images with your own `keys.txt`, and encrypted game folders (`title.tmd`, `title.tik` and `.app` files, with optional update and DLC subfolders). DLC and updates install from the app.
 - **Renderers** — Metal by default. Vulkan through MoltenVK, with a choice of MoltenVK 1.4.3 or 1.2.8.
 - **CPU** — a multi-core interpreter out of the box, and the AArch64 recompiler when a JIT enabler is attached.
-- **On-screen GamePad** — laid out from measurements of a real Wii U GamePad, with an optional analog stick, comfort controls, skins and a per-control layout editor. MFi and Bluetooth controllers work alongside it.
+- **On-screen GamePad** — laid out from measurements of a real Wii U GamePad, with an optional analog stick, comfort controls, skins and a per-control layout editor. Four more control styles (Zone, Float, Adaptive and Frame) can be chosen in Settings, and the original stays the default. MFi and Bluetooth controllers work alongside it.
 - **Displays** — single screen, both screens, or the TV image on an external display.
 - **Graphic packs**, save transfer, a persistent shader cache, and an in-app launch log for troubleshooting.
 - **Themes** — 31 app icons, each with a matching theme.

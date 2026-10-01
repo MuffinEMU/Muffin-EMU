@@ -759,6 +759,15 @@ namespace padscore
 	}
 	void start()
 	{
+		// once per title: the callbacks of the previous title are guest function pointers the tick would call
+		for (auto& controller : g_padscore.controller_data)
+		{
+			controller.extension_callback = nullptr;
+			controller.connectCallback = nullptr;
+			controller.sampling_callback = nullptr;
+			controller.dpd_callback = nullptr;
+			controller.disconnectCalled = false;
+		}
 		OSCreateAlarm(&g_padscore.alarm);
 		const uint64 start_tick = coreinit::OSGetTime();
 		const uint64 period_tick = coreinit::EspressoTime::GetTimerClock() / 200; // every 5ms

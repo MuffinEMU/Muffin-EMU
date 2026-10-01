@@ -16,6 +16,7 @@ final class PadDiagnostics: ObservableObject {
         case none = "none mounted"
         case muffin = "MuffinEMU pad"
         case melo = "Melo-Controller"
+        case touchLab = "TouchLab pad"
         case preview = "Preview pad (untested)"
     }
 
@@ -88,6 +89,8 @@ struct PadDiagnosticsOverlay: View {
     let padControlsHidden: Bool
     let useMeloControls: Bool
     let previewPadEnabled: Bool
+    /// The stored TouchLab control style id; "" means MuffinEMU's own pad.
+    var touchLabScheme: String = ""
     let isEditingLayout: Bool
     let isPaused: Bool
 
@@ -126,6 +129,7 @@ struct PadDiagnosticsOverlay: View {
             row("padHidden", padControlsHidden ? "YES" : "no", warn: padControlsHidden)
             row("melo", useMeloControls ? "ON" : "off", warn: false)
             row("previewPad", previewPadEnabled ? "ON" : "off", warn: previewPadEnabled)
+            row("touchLab", touchLabScheme.isEmpty ? "off" : touchLabScheme, warn: false)
             row("editing", isEditingLayout ? "YES" : "no", warn: isEditingLayout)
             row("paused", isPaused ? "YES" : "no", warn: isPaused)
 

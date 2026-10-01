@@ -208,6 +208,26 @@ bool fsc_unmount(std::string_view mountPath, sint32 priority)
 	return true;
 }
 
+static size_t fsc_countDeviceNodes(const FSCMountPathNode* node)
+{
+	size_t count = node->device ? 1 : 0;
+	for (const FSCMountPathNode* sub : node->subnodes)
+		count += fsc_countDeviceNodes(sub);
+	return count;
+}
+
+// number of device mounts at the given priority (the redirect priority holds one permanent mount, callers that
+// compare against a baseline can ignore it)
+size_t fsc_getMountCount(sint32 priority)
+{
+	if (priority < 0 || priority >= FSC_PRIORITY_COUNT)
+		return 0;
+	fscEnter();
+	size_t count = s_fscRootNodePerPrio[priority] ? fsc_countDeviceNodes(s_fscRootNodePerPrio[priority]) : 0;
+	fscLeave();
+	return count;
+}
+
 void fsc_unmountAll()
 {
 	fscEnter();

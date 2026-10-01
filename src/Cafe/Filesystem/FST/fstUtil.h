@@ -320,7 +320,40 @@ public:
 		return true;
 	}
 
+	// removes every node. customDeleter is called with the custom pointer of each file node
+	template<typename TFunc>
+	void clear(TFunc customDeleter)
+	{
+		clearNode(&rootNode, customDeleter);
+	}
+
+	size_t countFiles()
+	{
+		return countFilesInNode(&rootNode);
+	}
+
 private:
+	template<typename TFunc>
+	static void clearNode(node_t* node, TFunc& customDeleter)
+	{
+		for (node_t* sub : node->subnodes)
+		{
+			clearNode(sub, customDeleter);
+			if (sub->type == NODETYPE_FILE && sub->custom)
+				customDeleter(sub->custom);
+			delete sub;
+		}
+		node->subnodes.clear();
+	}
+
+	static size_t countFilesInNode(node_t* node)
+	{
+		size_t count = node->type == NODETYPE_FILE ? 1 : 0;
+		for (node_t* sub : node->subnodes)
+			count += countFilesInNode(sub);
+		return count;
+	}
+
 	node_t rootNode;
 };
 

@@ -10,8 +10,10 @@
 #include "WindowSystem.h"
 
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
+#include "Cafe/HW/Latte/Core/LatteTiming.h"
 
 #include "Cafe/HW/Latte/Renderer/Renderer.h"
+#include "Cafe/HW/Latte/Core/LatteIndices.h" // needs Renderer.h first
 #include "Cafe/HW/Latte/Core/LatteTexture.h"
 #include "util/helpers/helpers.h"
 
@@ -19,11 +21,18 @@
 #include "config/ActiveSettings.h"
 
 #include "Cafe/CafeSystem.h"
+#include <typeinfo>
+#ifdef ENABLE_METAL
+#include "Cafe/HW/Latte/Renderer/Metal/MetalPipelineCache.h"
+#endif
 
 LatteGPUState_t LatteGPUState = {};
 
 std::atomic_bool sLatteThreadRunning = false;
 std::atomic_bool sLatteThreadFinishedInit = false;
+// set by Latte_Start(), consumed by Latte_CollectLeftovers(): whether the GPU thread (and with it the renderer's teardown) ran for
+// the title that just stopped. A launch can fail before the GPU thread starts, and then the renderer is still the caller's to delete
+static std::atomic_bool sLatteThreadStartedForTitle = false;
 
 void LatteThread_Exit();
 
@@ -226,6 +235,8 @@ static int Latte_ThreadEntryImpl()
 #if BOOST_OS_IOS
 // Defined in CemuBridge.mm: stops the title with a message and remembers that Vulkan failed on this MoltenVK build.
 void IOSBridge_VulkanDeviceLost(const char* why);
+// Defined in CemuBridge.mm: writes the exception and this thread's backtrace to the crash log and flags the title to be stopped by the app.
+void IOSBridge_GPUThreadException(const char* type, const char* what);
 #endif
 
 // An exception escaping this thread is std::terminate and ends the app. The renderers throw on failures they can't continue from (Vulkan device
@@ -239,10 +250,16 @@ int Latte_ThreadEntry()
 	catch (const std::exception& ex)
 	{
 		cemuLog_log(LogType::Force, "GPU thread: uncaught exception: {}. Stopping the title.", ex.what());
+#if BOOST_OS_IOS
+		IOSBridge_GPUThreadException(typeid(ex).name(), ex.what());
+#endif
 	}
 	catch (...)
 	{
 		cemuLog_log(LogType::Force, "GPU thread: uncaught unknown exception. Stopping the title.");
+#if BOOST_OS_IOS
+		IOSBridge_GPUThreadException("non-standard exception", "");
+#endif
 	}
 	sLatteThreadFinishedInit = true;
 	g_isGPUInitFinished = true;
@@ -274,6 +291,11 @@ void Latte_Start()
 	cemu_assert_debug(!sLatteThreadRunning);
 	sLatteThreadRunning = true;
 	sLatteThreadFinishedInit = false;
+	sLatteThreadStartedForTitle = true;
+	// cemu_initForGame() waits for this before running the title. It is only ever set, so from the second title of a
+	// process on the wait returned at once and the title started while the GPU thread was still loading graphic packs
+	// and the shader cache.
+	g_isGPUInitFinished = false;
 	sLatteThread = std::thread(Latte_ThreadEntry);
 	// wait until initialized
 	while (!sLatteThreadFinishedInit)
@@ -297,8 +319,61 @@ bool Latte_GetStopSignal()
 	return !sLatteThreadRunning;
 }
 
+// Puts every piece of Latte state that lives in a global, rather than in the renderer, back to what a fresh launch
+// has. The renderer itself (caches, allocators, command queue, pipelines) is destroyed and rebuilt by
+// LatteThread_Exit() and CemuPrepareRenderer(); this covers what outlives it. Host-side only: it never calls into
+// the renderer, so it is safe to run after the renderer is gone. Runs once per title, on the GPU thread, after the
+// caches were emptied and the renderer deleted.
+void Latte_ResetHostState()
+{
+	LatteIndices_forgetAll();
+	LatteStreamout_Reset();
+	LatteTiming_Reset();
+	LatteCP_ResetState();
+	LatteBufferCache_ResetHostState();
+	osScreenTVTex[0] = osScreenTVTex[1] = nullptr;
+	osScreenDRCTex[0] = osScreenDRCTex[1] = nullptr;
+}
+
+// Names everything that should be empty after a title stopped and is not. Read-only, cheap (a few counters), safe to
+// call from any thread once the GPU thread has exited.
+void Latte_CollectLeftovers(std::vector<std::string>& leftovers)
+{
+	if (sLatteThreadStartedForTitle.exchange(false) && g_renderer)
+		leftovers.emplace_back("Latte: renderer object still exists");
+	if (sLatteThreadRunning)
+		leftovers.emplace_back("Latte: GPU thread still running");
+	auto check = [&](const char* what, size_t count)
+	{
+		if (count != 0)
+			leftovers.emplace_back(fmt::format("Latte: {} {}", count, what));
+	};
+	check("texture(s) alive", LatteTexture_GetLiveTextureCount());
+	check("texture(s) registered in the texture cache", LatteTC_GetRegisteredTextureCount());
+	check("texture view lookup entries", LatteTextureViewLookupCache::GetEntryCount());
+	check("buffer cache node(s)", LatteBufferCache_GetNodeCount());
+	check("shader(s) in the runtime shader cache", LatteSHRC_GetCachedShaderCount());
+	check("cached index buffer reservation(s)", LatteIndices_GetCachedEntryCount());
+	check("occlusion queries tracked", LatteQuery_GetTrackedCount());
+	check("texture readback(s) pending", LatteTextureReadback_GetPendingCount());
+	check("async GPU command(s) pending", LatteAsyncCommands_GetPendingCount());
+#ifdef ENABLE_METAL
+	if (MetalPipelineCache_LoaderAbandoned())
+		leftovers.emplace_back("Metal: a pipeline cache loader thread did not stop and still uses the renderer");
+	check("async Metal pipeline compile(s) in flight", MetalPipelineCache_GetAsyncCompileCount());
+#endif
+	if (LatteGPUState.gx2InitCalled != 0 || LatteGPUState.sharedArea != nullptr || LatteGPUState.frameCounter != 0)
+		leftovers.emplace_back("Latte: LatteGPUState not cleared");
+	if (LatteTiming_IsUsingHostDrivenVSync())
+		leftovers.emplace_back("Latte: host-driven vsync still enabled");
+}
+
 void LatteThread_Exit()
 {
+	// Work that belongs to the stopping title is dropped first, while the renderer that created it still exists.
+	LatteQuery_Reset();
+	LatteTextureReadback_Reset();
+	LatteAsyncCommands_Reset();
 	if (g_renderer)
 		g_renderer->Shutdown();
     // clean up vertex/uniform cache
@@ -309,6 +384,7 @@ void LatteThread_Exit()
     LatteSHRC_UnloadAll();
     // close disk cache
     LatteShaderCache_Close();
+	GraphicPack2::ReleaseRendererObjects();
 	RendererOutputShader::ShutdownStatic();
     // destroy renderer but make sure that g_renderer remains valid until the destructor has finished
 	if (g_renderer)
@@ -317,6 +393,7 @@ void LatteThread_Exit()
 		delete renderer;
 		g_renderer.release();
 	}
+	Latte_ResetHostState();
 	// reset GPU7 state
 	std::memset(&LatteGPUState, 0, sizeof(LatteGPUState));
 	#if BOOST_OS_WINDOWS

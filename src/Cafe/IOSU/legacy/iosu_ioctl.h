@@ -53,6 +53,8 @@ typedef struct
 #define IOS_DEVICE_COUNT	10
 
 void iosuIoctl_init();
+void iosuIoctl_reset();
+uint32 iosuIoctl_getPendingCount(); // number of devices with a request queued
 
 
 // for use by IOSU

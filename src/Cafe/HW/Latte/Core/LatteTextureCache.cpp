@@ -439,4 +439,12 @@ void LatteTC_UnloadAllTextures()
 			LatteTexture_Delete(itr);
 	}
 	LatteRenderTarget_unloadAll();
+	LatteTexture_ResetGlobalState();
+	g_allTextures.clear();
+	_botwLargeTexHax = 0;
+}
+
+size_t LatteTC_GetRegisteredTextureCount()
+{
+	return g_allTextures.size();
 }
