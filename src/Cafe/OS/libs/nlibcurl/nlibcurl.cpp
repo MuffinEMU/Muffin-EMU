@@ -1549,7 +1549,9 @@ CURLcode curl_global_init_mem(uint32 flags, MEMPTR<curl_malloc_callback> malloc_
 		{
 			if (reason == coreinit::RplEntryReason::Loaded)
 			{
-				// todo
+				// The state is process-wide. The previous title's init count would make curl_global_init() return early, and its allocators
+				// are guest function addresses that mean nothing in this title
+				g_nlibcurl = {};
 			}
 			else if (reason == coreinit::RplEntryReason::Unloaded)
 			{
