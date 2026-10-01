@@ -623,14 +623,22 @@ jobs:
               VER="$MAJ.$MIN"
               # A numbered release must strictly contain the latest one. A re-run of an old build of
               # main would otherwise ship old code as the newest version.
-              if ! ./ci/check-stable.sh "$PREV"; then PUBLISH=false; fi
+              if ! ./ci/check-stable.sh "$PREV"; then
+                PUBLISH=false
+                # Not a release, so it must not claim the next number: this IPA can still be picked up
+                # by the rolling build job (it decides that on its own), and an app saying "6.5" would
+                # name a version no release has, one the next real build then reuses for different code.
+                # Name the release it sits on instead, plus the commit in the display name.
+                VER="${PREV#v}"
+              fi
             fi
             TAG="v$VER"
-            if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            if [ "$PUBLISH" = true ] && git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
               echo "::error::$TAG already exists"
               exit 1
             fi
             LABEL="$VER"; RELEASE=true
+            [ "$PUBLISH" = true ] || LABEL="$VER+$(echo "$GITHUB_SHA" | cut -c1-7)"
           else
             VER=$(./ci/version.sh)
             TAG="auto-${GITHUB_SHA}"
