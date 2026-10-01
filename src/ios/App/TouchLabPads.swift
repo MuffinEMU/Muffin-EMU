@@ -121,9 +121,21 @@ final class CemuBridgePadOutput: @preconcurrency PadOutput {
                                    Float(value.x), Float(value.y))
     }
 
+    /// Where the last touch was, in the GamePad surface's pixels. The lift is reported at this spot
+    /// rather than at (0, 0): the core keeps a touch that began and ended between two reads of the
+    /// GamePad (a tap) and answers it with the position of the LAST report, so a lift at (0, 0) turned
+    /// such a tap into one on the top-left corner of the GamePad screen. padScreen's own touch path
+    /// sends the lift at the finger's position for the same reason.
+    private var lastTouchPixel: (x: Double, y: Double)?
+
     func setTouchscreen(_ point: CGPoint?) {
         guard let point, gamepadViewSize.width > 0, gamepadViewSize.height > 0 else {
-            cemu_bridge_set_pad_touch(0, 0, false)
+            if let last = lastTouchPixel {
+                cemu_bridge_set_pad_touch(last.x, last.y, false)
+                lastTouchPixel = nil
+            } else {
+                cemu_bridge_set_pad_touch(0, 0, false)
+            }
             return
         }
         // The GamePad surface is sized at its own scale (capped, and not the TV's render
@@ -131,12 +143,15 @@ final class CemuBridgePadOutput: @preconcurrency PadOutput {
         // live from the same place padScreen's own touch path reads it, every touch: it
         // changes whenever the surface is re-sized.
         let scale = DisplayRouter.shared.padSurfaceScale
-        cemu_bridge_set_pad_touch(Double(point.x * gamepadViewSize.width) * scale,
-                                  Double(point.y * gamepadViewSize.height) * scale, true)
+        let x = Double(point.x * gamepadViewSize.width) * scale
+        let y = Double(point.y * gamepadViewSize.height) * scale
+        lastTouchPixel = (x, y)
+        cemu_bridge_set_pad_touch(x, y, true)
     }
 
     func releaseAll() {
         cemu_bridge_release_all_buttons()
+        lastTouchPixel = nil
         cemu_bridge_set_pad_touch(0, 0, false)
     }
 
