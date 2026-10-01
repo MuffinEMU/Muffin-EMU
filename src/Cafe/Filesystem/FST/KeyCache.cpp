@@ -80,6 +80,16 @@ void KeyCache_ResetForNewPaths()
 	sKeyCachePrepared = false;
 }
 
+// The key files the app named for use before ActiveSettings::SetPaths() has run (see KeyCache.h), in order of preference.
+static fs::path sPreInitKeysPaths[2];
+
+void KeyCache_SetPreInitKeyFiles(const fs::path& preferred, const fs::path& fallback)
+{
+	std::lock_guard lock(mtxKeyCache);
+	sPreInitKeysPaths[0] = preferred;
+	sPreInitKeysPaths[1] = fallback;
+}
+
 static bool KeyCache_StatKeysFile(const fs::path& keysPath, uint64& sizeOut, sint64& timeOut)
 {
 	std::error_code ec;
@@ -97,12 +107,32 @@ static bool KeyCache_StatKeysFile(const fs::path& keysPath, uint64& sizeOut, sin
 void KeyCache_Prepare()
 {
 	std::lock_guard lock(mtxKeyCache);
+	fs::path keysPath;
+	// True while reading one of the files named by KeyCache_SetPreInitKeyFiles(): nothing is created or latched then.
+	bool readingPreInitFile = false;
 	// Before ActiveSettings::SetPaths() there is no real keys.txt location, and a read against the empty path finds
 	// nothing. That result must not stick: a library scan that runs ahead of CemuInitialize() would otherwise leave
 	// the session believing there are no keys. Nothing is latched and the next call tries again.
+	// The app can name the file(s) that will become keys.txt (KeyCache_SetPreInitKeyFiles), so that a disc image can
+	// be opened before the engine starts: the library scan, DLC/update inspection and Decrypt to Files all do that,
+	// and without keys they could not read a .wux/.wud at all.
 	if (ActiveSettings::GetUserDataPath().empty())
-		return;
-	auto keysPath = ActiveSettings::GetUserDataPath("keys.txt");
+	{
+		for (const fs::path& candidate : sPreInitKeysPaths)
+		{
+			std::error_code candidateEc;
+			if (!candidate.empty() && fs::is_regular_file(candidate, candidateEc))
+			{
+				keysPath = candidate;
+				readingPreInitFile = true;
+				break;
+			}
+		}
+		if (!readingPreInitFile)
+			return;
+	}
+	else
+		keysPath = ActiveSettings::GetUserDataPath("keys.txt");
 	uint64 fileSize = 0;
 	sint64 fileTime = 0;
 	const bool haveFile = KeyCache_StatKeysFile(keysPath, fileSize, fileTime);
@@ -111,6 +141,8 @@ void KeyCache_Prepare()
 	FileStream* fs_keys = FileStream::openFile2(keysPath);
 	if( !fs_keys )
 	{
+		if (readingPreInitFile)
+			return; // unreadable for now: not latched, not created (there is no user data folder yet), tried again next call
 		if (sKeyCachePrepared && keysPath == sLoadedKeysPath && !haveFile)
 			return; // still missing, already handled
 		sKeyCachePrepared = true;

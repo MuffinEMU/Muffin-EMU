@@ -62,6 +62,19 @@ enum ImportState: Equatable {
 private enum LibraryMetadataCache {
     private static let regionKey = "muffin.library.regionByGameID"
     private static let titleNameKey = "muffin.library.titleNameByGameID"
+    private static let versionKey = "muffin.library.metadataCacheVersion"
+    private static let currentVersion = 2
+
+    /// Before version 2 a disc image that could not be opened (the scan runs before the engine has its keys) was stored as
+    /// "checked, nothing there" and never asked again, so it kept its file name and no region for good. Those entries cannot be
+    /// told apart from a real "nothing there", so they are dropped once and derived again.
+    static func discardEntriesFromBeforeVersion2() {
+        let defaults = UserDefaults.standard
+        guard defaults.integer(forKey: versionKey) < currentVersion else { return }
+        defaults.removeObject(forKey: regionKey)
+        defaults.removeObject(forKey: titleNameKey)
+        defaults.set(currentVersion, forKey: versionKey)
+    }
 
     /// nil means "never checked yet." "" means "checked - meta.xml genuinely has
     /// nothing here." Both are real, distinct answers, and the difference is the
@@ -185,6 +198,7 @@ class GameManager: ObservableObject {
     /// safe to run detached. Returns nil if the directory can't be read.
     private nonisolated static func scanRoms(romsPath: URL, sweepStaging: Bool) -> [GameMetadata]? {
         let fileManager = FileManager.default
+        LibraryMetadataCache.discardEntriesFromBeforeVersion2()
 
         // Staging folders hold partial copies from an import that was killed or ran out of
         // space. Nothing else can be importing at launch, so clear them once per launch.
@@ -201,6 +215,13 @@ class GameManager: ObservableObject {
         // Encrypted disc images need the key cache loaded before TitleInfo can open them
         // (DLC/update matching and cover derivation both do); loading it here keeps it
         // off the main thread.
+        //
+        // This scan runs at app start, before the engine is initialized (that happens at the first launch), when the
+        // core still has no user data folder to find keys.txt in. Tell the key cache where the files are, or every
+        // .wux/.wud below fails to open ("no key in keys.txt decrypts this disc image"), is listed without a title id,
+        // region, name or box art, and the result is remembered (see deriveAndApplyRegionAndTitleName).
+        let mlcFolder = romsPath.deletingLastPathComponent().appendingPathComponent("mlc").path
+        mlcFolder.withCString { cemu_bridge_prepare_keys_before_init($0) }
         _ = cemu_bridge_reload_and_count_keys()
 
         // Stable order so duplicate-id resolution below is deterministic.
@@ -623,6 +644,12 @@ class GameManager: ObservableObject {
         var invalidReason: Int32 = 0
         let inspected = game.romPath.withCString { cPath in
             cemu_bridge_inspect_title(cPath, nil, &version, &regionBitmask, &invalidReason)
+        }
+        // A title that could not be opened for want of a key (3 no disc key, 4 no ticket, 8 key invalid) says nothing
+        // about its meta.xml: the answer changes the moment keys.txt does. Remembering it as "nothing there" would keep
+        // the card on its file name with no region for good, so it is left unanswered and asked again next scan.
+        if !inspected && (invalidReason == 3 || invalidReason == 4 || invalidReason == 8) {
+            return
         }
         let region = inspected ? Self.regionLabel(forBitmask: regionBitmask) : nil
         LibraryMetadataCache.setCachedRegion(region, for: game.id)
