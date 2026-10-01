@@ -241,6 +241,11 @@ void CemuUIKit_InitializeLayer(bool main)
     if (metal) {
 #ifdef ENABLE_METAL
         auto metal_renderer = MetalRenderer::GetInstance();
+        // No renderer between two titles (a Wii U Menu switch destroys the old one and CemuPrepareRenderer() builds the next):
+        // a GamePad surface registered in that window, by a layout change for instance, has nothing to attach to yet.
+        // CemuPrepareRenderer() initializes both layers as soon as the renderer exists.
+        if (!metal_renderer)
+            return;
         metal_renderer->InitializeLayer({
             static_cast<int>(view.bounds.size.width),
             static_cast<int>(view.bounds.size.height)
@@ -251,6 +256,8 @@ void CemuUIKit_InitializeLayer(bool main)
     } else {
 #ifdef ENABLE_VULKAN
         auto vk_renderer = VulkanRenderer::GetInstance();
+        if (!vk_renderer)
+            return; // see above: CemuPrepareRenderer() initializes the layers once the renderer exists
         vk_renderer->InitializeSurface({
             static_cast<int>(view.bounds.size.width),
             static_cast<int>(view.bounds.size.height)
@@ -270,14 +277,15 @@ void CemuUIKit_ShutdownLayer(bool main) {
     if (metal) {
 #ifdef ENABLE_METAL
         auto metal_renderer = MetalRenderer::GetInstance();
-        metal_renderer->ShutdownLayer(main);
+        if (metal_renderer)
+            metal_renderer->ShutdownLayer(main);
 #else
         cemu_assert_debug(false);
 #endif
     } else {
 #ifdef ENABLE_VULKAN
         auto vk_renderer = VulkanRenderer::GetInstance();
-        if (!main)
+        if (!main && vk_renderer)
             vk_renderer->StopUsingPadAndWait();
 #else
         cemu_assert_debug(false);
