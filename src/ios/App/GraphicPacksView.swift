@@ -42,6 +42,7 @@ struct GraphicPacksView: View {
             attributionSection
         }
         .navigationTitle("Graphic Packs")
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -377,6 +378,7 @@ struct GraphicPackGameListView: View {
         }
         .searchable(text: $search, prompt: "Search games and packs")
         .navigationTitle("All Packs")
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -405,6 +407,7 @@ struct GraphicPackGameView: View {
             GraphicPackCategorySections(packs: livePacks, store: store, profile: .current, suggestWorkarounds: false)
         }
         .navigationTitle(game)
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
@@ -632,6 +635,7 @@ struct GraphicPackDetailView: View {
                 content
             }
             .navigationTitle(pack?.displayName ?? "Pack")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

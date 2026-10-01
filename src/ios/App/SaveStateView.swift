@@ -122,6 +122,7 @@ struct SaveStateSheet: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Save States")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

@@ -45,6 +45,7 @@ struct InfoButton: View {
                     }
                 }
                 .navigationTitle(title)
+                .muffinOpaqueNavigationBar()
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {

@@ -43,6 +43,7 @@ struct CoverArtPickerView: View {
                 }
             }
             .navigationTitle("Change Cover Art")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

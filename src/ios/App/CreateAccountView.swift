@@ -97,6 +97,7 @@ struct CreateAccountView: View {
                 }
             }
             .navigationTitle("New Account")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

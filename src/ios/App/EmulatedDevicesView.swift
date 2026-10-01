@@ -168,6 +168,7 @@ struct EmulatedDevicesView: View {
                 }
             }
             .navigationTitle("Emulated Devices")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -369,6 +370,7 @@ private struct CreateEmulatedFigureView: View {
                 }
             }
             .navigationTitle("Create Figure")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
@@ -489,6 +491,7 @@ private struct EmulatedFigurePicker: View {
             }
         }
         .navigationTitle("Choose a Figure")
+        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
