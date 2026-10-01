@@ -19,11 +19,11 @@
       "screenshotURLs": [],
       "versions": [
         {
-          "version": "2026.9.30",
-          "date": "2026-09-30T23:56:00Z",
-          "localizedDescription": "The newest build of MuffinEMU, from commit b12737566c32dbabab1d4182e51eb27fbc89acf1 on `main`.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\nThis tag moves. Every eligible build of main replaces it, so the download here is\nalways the newest code, never a version you can come back to. For that, use a\nnumbered release.\n\nThis build has not been tested. If you want the version that is known to\nwork, install the latest numbered release instead.",
+          "version": "2026.10.1",
+          "date": "2026-10-01T00:42:40Z",
+          "localizedDescription": "The newest build of MuffinEMU, from commit f143656e6d8474b64cff3b4dd6c4ba5351046227 on `main`.\n\n**Known issue:** the on-screen controls don't respond reliably yet. A fix is on the way.\n\nThis tag moves. Every eligible build of main replaces it, so the download here is\nalways the newest code, never a version you can come back to. For that, use a\nnumbered release.\n\nThis build has not been tested. If you want the version that is known to\nwork, install the latest numbered release instead.",
           "downloadURL": "https://github.com/kiddreads/MuffinEMU/releases/download/nightly/MuffinEMU.ipa",
-          "size": 68630362,
+          "size": 68847043,
           "minOSVersion": "15.0"
         }
       ],
