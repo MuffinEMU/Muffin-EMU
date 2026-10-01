@@ -32,6 +32,8 @@ struct OptimizedControlPanel: View {
     @AppStorage(ControllerLayoutSettings.rightStickOffsetYKey) private var rightStickOffsetY = 0.0
     @AppStorage(ControllerLayoutSettings.leftStickOffsetXKey) private var leftStickOffsetX = 0.0
     @AppStorage(ControllerLayoutSettings.leftStickOffsetYKey) private var leftStickOffsetY = 0.0
+    @AppStorage(ControllerLayoutSettings.stickSpacingKey)
+    private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     // The default must match SettingsView's declaration of the same key.
     @AppStorage(ControllerLayoutSettings.comfortControlsKey)
     private var comfortControls = ControllerLayoutSettings.defaultComfortControls
@@ -49,6 +51,13 @@ struct OptimizedControlPanel: View {
             // Comfort controls move the shoulder buttons onto the sticks, so it only
             // applies while joystick mode is on.
             let comfortActive = comfortControls && joystickMode
+            let leftStickControls = comfortActive ? ControllerGeometry.leftStickClusterComfort : ControllerGeometry.leftStickCluster
+            let rightStickControls = comfortActive ? ControllerGeometry.rightStickClusterComfort : ControllerGeometry.rightStickCluster
+            // The stick-spacing setting, applied to both sticks' starting places (before any
+            // drag), so a reset of the drags keeps it and the two sticks always move together.
+            let stickShift = ControllerGeometry.stickShift(
+                spacing: stickSpacing, containerWidth: proxy.size.width, unit: unit,
+                left: leftStickControls, right: rightStickControls)
 
             ZStack(alignment: .topLeading) {
                 ControlCluster(
@@ -70,9 +79,10 @@ struct OptimizedControlPanel: View {
                 // drag handle and stored position.
                 if joystickMode {
                     ControlCluster(
-                        controls: comfortActive ? ControllerGeometry.leftStickClusterComfort : ControllerGeometry.leftStickCluster,
+                        controls: leftStickControls,
                         edge: .leading,
-                        anchorOffset: ControllerGeometry.leftStickAnchorOffset,
+                        anchorOffset: CGPoint(x: ControllerGeometry.leftStickAnchorOffset.x - stickShift,
+                                              y: ControllerGeometry.leftStickAnchorOffset.y),
                         skin: skin,
                         unit: unit,
                         container: proxy.size,
@@ -103,9 +113,10 @@ struct OptimizedControlPanel: View {
                 // The camera stick, in joystick mode only. Its own cluster, like the left stick.
                 if joystickMode {
                     ControlCluster(
-                        controls: comfortActive ? ControllerGeometry.rightStickClusterComfort : ControllerGeometry.rightStickCluster,
+                        controls: rightStickControls,
                         edge: .trailing,
-                        anchorOffset: ControllerGeometry.rightStickAnchorOffset,
+                        anchorOffset: CGPoint(x: ControllerGeometry.rightStickAnchorOffset.x + stickShift,
+                                              y: ControllerGeometry.rightStickAnchorOffset.y),
                         skin: skin,
                         unit: unit,
                         container: proxy.size,
@@ -140,7 +151,7 @@ private struct ControlCluster: View {
     /// Shifts this cluster's unmoved position, in units, away from the standard anchor -
     /// for a cluster the measured layout has no anchor for. Applied before the user's
     /// drag and before the clamp, so it is genuinely a different starting point rather
-    /// than a drag nobody made: "Reset layout" returns here, not to the shared anchor.
+    /// than a drag nobody made: "Reset to default" returns here, not to the shared anchor.
     var anchorOffset: CGPoint = .zero
     let skin: WiiUControllerSkin
     let unit: CGFloat

@@ -52,6 +52,7 @@ struct ContentView: View {
                         game: game,
                         message: gameManager.lastStatusMessage,
                         needsCleanRestart: gameManager.needsCleanRestart,
+                        endedWhileRunning: gameManager.titleEndedByEngine,
                         onDismiss: {
                             gameManager.stopEmulation()
                             showingGameBrowser = true
@@ -101,6 +102,8 @@ struct BootFailureView: View {
     let message: String
     /// Set when the launch was refused because the last game left the emulator in a state that only an app restart fixes.
     var needsCleanRestart: Bool = false
+    /// Set when the game was running and the engine ended it (it quit, or something fatal happened), as opposed to never starting.
+    var endedWhileRunning: Bool = false
     let onDismiss: () -> Void
 
     /// Where the diagnostics actually are. Computed from the bridge rather than written
@@ -121,9 +124,9 @@ struct BootFailureView: View {
             VStack(spacing: 16) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 34, weight: .semibold))
-                    .foregroundColor(MuffinTheme.blushPink)
+                    .foregroundColor(MuffinTheme.alertOnDark)
 
-                Text(needsCleanRestart ? "Restart needed before \(game.title)" : "Couldn't start \(game.title)")
+                Text(needsCleanRestart ? "Restart needed before \(game.title)" : (endedWhileRunning ? "\(game.title) stopped" : "Couldn't start \(game.title)"))
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
@@ -147,7 +150,7 @@ struct BootFailureView: View {
                 // path is copy it.
                 Text(Self.crashLogHint)
                     .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
                     .frame(maxWidth: 480)
@@ -410,16 +413,27 @@ struct GameBrowserView: View {
         HStack(alignment: .center, spacing: 16) {
             Button(action: { showingIconPicker = true }) {
                 VStack(alignment: .leading, spacing: 4) {
+                    // onBackground rather than fixed cream and accent: cream was 1.9:1 on
+                    // Bakery's light orange, and the accent was dark on the dark gradients.
                     Text("Muffin")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundColor(MuffinTheme.sparkleCream)
+                        .foregroundColor(MuffinTheme.onBackground)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
 
                     Text("EMU")
                         .font(.system(size: 18, weight: .semibold, design: .rounded))
-                        .foregroundColor(MuffinTheme.pixelBlue)
+                        .foregroundColor(MuffinTheme.onBackgroundAccent)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
+                // Four 44pt buttons share the row; on a 320pt-wide phone the wordmark
+                // shrinks a little instead of truncating to "Muf...".
             }
             .buttonStyle(.plain)
+            // VoiceOver read only "Muffin, EMU" with nothing saying what a tap does.
+            .accessibilityLabel("MuffinEMU")
+            .accessibilityHint("Changes the app icon.")
 
             Spacer()
 
@@ -451,15 +465,16 @@ struct GameBrowserView: View {
 
                     Button(action: { showingFavorites.toggle() }) {
                         // Same fix as the gear above, with one difference: the ACTIVE
-                        // state keeps its explicit blushPink. That is a real state colour
-                        // carrying information ("favourites only is on"), it reads clearly
-                        // against cream, and it is the one case here where overriding the
-                        // style's ink is deliberate rather than accidental. Only the
+                        // state keeps an explicit pink. That is a real state colour
+                        // carrying information ("favourites only is on"), and it is the
+                        // one case here where overriding the style's ink is deliberate
+                        // rather than accidental. alertText rather than raw blushPink,
+                        // which was under 2:1 on cream in half the themes. Only the
                         // inactive branch - the invisible one - gives its colour back to
                         // the button style.
                         Image(systemName: showingFavorites ? "heart.fill" : "heart")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(showingFavorites ? MuffinTheme.blushPink : MuffinTheme.brownDark)
+                            .foregroundColor(showingFavorites ? MuffinTheme.alertText : MuffinTheme.brownDark)
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
@@ -510,14 +525,21 @@ struct GameBrowserView: View {
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel("Import")
 
+                    // On a cream chip like the buttons beside it. Bare, it was cream at 70%
+                    // and 10pt straight on the gradient, which no theme could keep readable
+                    // across the whole width of an iPad.
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("\(filteredGames.count)")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundColor(MuffinTheme.sparkleCream)
+                            .foregroundColor(MuffinTheme.brownDarkest)
                         Text("games")
-                            .font(.system(size: 10, weight: .regular, design: .rounded))
-                            .foregroundColor(MuffinTheme.sparkleCream.opacity(0.7))
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundColor(MuffinTheme.brownMid)
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(MuffinTheme.cream, in: RoundedRectangle(cornerRadius: MuffinTheme.Radius.chip, style: .continuous))
+                    .accessibilityElement(children: .combine)
                 }
             }
         }
@@ -879,6 +901,7 @@ struct DlcUpdateGamePickerSheet: View {
                 }
             }
             .navigationTitle("Add \(kind.displayName) to which game?")
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -928,7 +951,7 @@ struct GameCardOptimized: View {
                     VStack {
                         Image(systemName: "gamecontroller.fill")
                             .font(.system(size: 28))
-                            .foregroundColor(MuffinTheme.sparkleCream)
+                            .foregroundColor(MuffinTheme.onMuffinTop)
                     }
                 }
 
@@ -938,9 +961,11 @@ struct GameCardOptimized: View {
                         Button(action: onFavoriteTap) {
                             Image(systemName: game.isFavorite ? "heart.fill" : "heart")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(game.isFavorite ? MuffinTheme.blushPink : MuffinTheme.sparkleCream)
+                                .foregroundColor(game.isFavorite ? MuffinTheme.alertOnDark : MuffinTheme.sparkleCream)
                                 .frame(width: 32, height: 32)
-                                .background(MuffinTheme.brownDarkest.opacity(0.35))
+                                // Black, not brownDarkest: brownDarkest turns cream in dark
+                                // mode, which put a cream heart on a cream patch.
+                                .background(Color.black.opacity(0.4))
                                 .cornerRadius(10)
                                 // The visible circle stays 32x32 - the tappable area
                                 // around it grows to the standard 44x44 minimum without
@@ -1137,6 +1162,9 @@ struct EmulatorViewOptimized: View {
     /// state, not AppStorage: nobody wants to come back to a game and find the controls
     /// still in edit mode because that is how they last left them.
     @State private var isEditingControlLayout = false
+    /// Asks before "Reset to default" in the move-controls panel throws away a layout
+    /// someone may have spent a while getting right.
+    @State private var showingResetControlsConfirmation = false
     /// Local, not AppStorage - the same reasoning as isEditingControlLayout above:
     /// nobody wants to come back to a game and find the pad missing because that was
     /// how they last left it. For touching the GamePad screen's own touchscreen
@@ -1178,6 +1206,8 @@ struct EmulatorViewOptimized: View {
     private var controlScale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.opacityKey)
     private var controlOpacity = ControllerLayoutSettings.defaultOpacity
+    @AppStorage(ControllerLayoutSettings.stickSpacingKey)
+    private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     /// Same key the pad and SettingsView read. Offered in the move-controls panel as
     /// well as in Settings because switching schemes is a thing you decide with a game
     /// under you, exactly like the two sliders next to it.
@@ -1504,9 +1534,11 @@ struct EmulatorViewOptimized: View {
                             .foregroundColor(.white)
                             .lineLimit(1)
 
+                        // accentOnDark: the bar is always dark, and several light-mode
+                        // accents (Blueberry, Equality, Galaxy, Neon) were navy on it.
                         Text(controllerSkin.name)
                             .font(.system(size: 9, weight: .regular, design: .rounded))
-                            .foregroundColor(MuffinTheme.pixelBlue)
+                            .foregroundColor(MuffinTheme.accentOnDark)
                     }
                     .frame(maxWidth: .infinity)
 
@@ -1687,7 +1719,7 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                                 .lineLimit(1)
                         }
-                        .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.blushPink)
+                        .foregroundColor(gameManager.frameRate >= 20 ? Color.green : MuffinTheme.alertOnDark)
                         .frame(height: 40)
                         .padding(.horizontal, 12)
                         .background(Color.white.opacity(0.08))
@@ -1954,8 +1986,16 @@ struct EmulatorViewOptimized: View {
                         }
 
                         HStack(spacing: 12) {
-                            Button("Reset size") { meloControlsScale = MeloControlsSetting.defaultScale }
+                            Button("Reset to default") { showingResetControlsConfirmation = true }
                                 .buttonStyle(MuffinSecondaryButtonStyle())
+                                .confirmationDialog("Reset controls to default?", isPresented: $showingResetControlsConfirmation, titleVisibility: .visible) {
+                                    Button("Reset to default", role: .destructive) {
+                                        MeloControlsSetting.resetLayout(gameID: gameManager.currentGame?.id)
+                                    }
+                                    Button("Cancel", role: .cancel) { }
+                                } message: {
+                                    Text("Melo-Controller's size and the buttons you've moved in this game go back to how it ships.")
+                                }
 
                             Button("Done") {
                                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -2082,11 +2122,39 @@ struct EmulatorViewOptimized: View {
                                     .foregroundColor(.white.opacity(0.7))
                                     .frame(width: 34, alignment: .trailing)
                             }
+
+                            // Hand size: both sticks move together, apart or closer.
+                            HStack(spacing: 10) {
+                                Text("Sticks")
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.85))
+                                Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .accessibilityHidden(true)
+                                Slider(
+                                    value: $stickSpacing,
+                                    in: ControllerLayoutSettings.minStickSpacing...ControllerLayoutSettings.maxStickSpacing,
+                                    step: ControllerLayoutSettings.stickSpacingStep
+                                )
+                                .accessibilityLabel("Stick spacing")
+                                .accessibilityValue(ControllerLayoutSettings.stickSpacingLabel(stickSpacing))
+                                Image(systemName: "arrow.left.and.line.vertical.and.arrow.right")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .accessibilityHidden(true)
+                            }
                         }
 
                         HStack(spacing: 12) {
-                            Button("Reset layout") { ControllerLayoutSettings.reset() }
+                            Button("Reset to default") { showingResetControlsConfirmation = true }
                                 .buttonStyle(MuffinSecondaryButtonStyle())
+                                .confirmationDialog("Reset controls to default?", isPresented: $showingResetControlsConfirmation, titleVisibility: .visible) {
+                                    Button("Reset to default", role: .destructive) { ControllerLayoutSettings.reset() }
+                                    Button("Cancel", role: .cancel) { }
+                                } message: {
+                                    Text("Button size, opacity, stick spacing and every button you've moved go back to how MuffinEMU ships.")
+                                }
 
                             Button("Done") {
                                 withAnimation(.easeInOut(duration: 0.2)) {

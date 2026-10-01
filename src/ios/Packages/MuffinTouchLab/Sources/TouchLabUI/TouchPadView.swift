@@ -25,6 +25,8 @@ public final class TouchPadView: UIView {
     public var touchscreenRect: CGRect? { didSet { relayout() } }
     public var videoRects: [CGRect] = [] { didSet { relayout() } }
     public var scale: CGFloat = 1 { didSet { relayout() } }
+    /// See LayoutContext.stickSpacing.
+    public var stickSpacing: CGFloat = 0 { didSet { relayout() } }
     public var stickTuning = StickTuning() { didSet { relayout() } }
     /// Which coordinate space `touchscreenRect` / `videoRects` are given in. `.window`
     /// takes SwiftUI `.global` frames (window coordinates) and converts them into this
@@ -102,7 +104,7 @@ public final class TouchPadView: UIView {
                                 safeInsets: Insets(top: i.top + e.top, left: i.left + e.left,
                                                    bottom: i.bottom + e.bottom, right: i.right + e.right),
                                 videoRects: videoRects.map(toLocal), touchscreenRect: touchscreenRect.map(toLocal),
-                                scale: scale, stick: stickTuning)
+                                scale: scale, stick: stickTuning, stickSpacing: stickSpacing)
         if force || ctx != engine.context {
             engine.setContext(ctx)
             if force { engine.scheme.layout(ctx) }
@@ -224,9 +226,20 @@ enum PadDrawing {
         guard !e.label.isEmpty, e.role != .zone, e.role != .stickBase else { return }
         let box = e.shape.boundingBox
         let size = max(min(box.height * 0.42, 26), 10)
+        // A halo in the opposite tone. The button behind a label is drawn at about half
+        // opacity, so what the label actually sits on is mostly the game: the dark
+        // shoulder labels disappeared over dark scenes and the white system labels over
+        // bright ones.
+        var white: CGFloat = 0, textAlpha: CGFloat = 0
+        text.getWhite(&white, alpha: &textAlpha)
+        let halo = NSShadow()
+        halo.shadowColor = (white < 0.5 ? UIColor.white : UIColor.black).withAlphaComponent(alpha * 0.7)
+        halo.shadowBlurRadius = max(1.5, size * 0.12)
+        halo.shadowOffset = .zero
         let attrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: size, weight: .semibold),
             .foregroundColor: text.withAlphaComponent(alpha),
+            .shadow: halo,
         ]
         let str = NSAttributedString(string: e.label, attributes: attrs)
         let s = str.size()
@@ -263,6 +276,7 @@ public struct TouchPad: UIViewRepresentable {
     public var touchscreenRect: CGRect?
     public var videoRects: [CGRect]
     public var scale: CGFloat
+    public var stickSpacing: CGFloat
     public var opacity: CGFloat
     public var haptics: Bool
     public var enabled: Bool
@@ -272,7 +286,7 @@ public struct TouchPad: UIViewRepresentable {
     public var onChange: ((PadEngine) -> Void)?
 
     public init(schemeID: String, output: PadOutput, touchscreenRect: CGRect? = nil, videoRects: [CGRect] = [],
-                scale: CGFloat = 1, opacity: CGFloat = 0.85, haptics: Bool = true, revision: Int = 0,
+                scale: CGFloat = 1, stickSpacing: CGFloat = 0, opacity: CGFloat = 0.85, haptics: Bool = true, revision: Int = 0,
                 enabled: Bool = true, stickTuning: StickTuning = StickTuning(),
                 rectSpace: TouchPadView.RectSpace = .local, extraInsets: Insets = Insets(),
                 makeScheme: @escaping (String) -> TouchScheme = SchemeCatalog.make,
@@ -288,6 +302,7 @@ public struct TouchPad: UIViewRepresentable {
         self.touchscreenRect = touchscreenRect
         self.videoRects = videoRects
         self.scale = scale
+        self.stickSpacing = stickSpacing
         self.opacity = opacity
         self.haptics = haptics
         self.onChange = onChange
@@ -322,6 +337,7 @@ public struct TouchPad: UIViewRepresentable {
         if view.touchscreenRect != touchscreenRect { view.touchscreenRect = touchscreenRect }
         if view.videoRects != videoRects { view.videoRects = videoRects }
         if view.scale != scale { view.scale = scale }
+        if view.stickSpacing != stickSpacing { view.stickSpacing = stickSpacing }
         if view.controlOpacity != opacity { view.controlOpacity = opacity }
         view.hapticsEnabled = haptics
         let engine = view.engine

@@ -70,7 +70,11 @@ struct BlowButton: View {
         Button(action: {}) {
             Image(systemName: "wind")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(active ? MuffinTheme.pixelBlue : MuffinTheme.brownDark)
+                // Against the button's cream at text strength, so the icon still reads
+                // once the on-state tint below darkens or lightens what is behind it.
+                .foregroundColor(active
+                                 ? LegibleInk.ensure(MuffinTheme.pixelBlue, on: MuffinTheme.cream)
+                                 : MuffinTheme.brownDark)
         }
         .buttonStyle(MuffinSecondaryButtonStyle())
         // The on state: a tint over the button's own fill, so it still follows the theme and

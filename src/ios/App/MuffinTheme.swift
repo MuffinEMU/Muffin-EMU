@@ -68,6 +68,43 @@ private func muffinDeepen(_ hex: String, _ amount: Double) -> String {
     muffinMixHex(hex, "#000000", amount)
 }
 
+// MARK: - Contrast
+
+/// WCAG 2 relative luminance of a "#RRGGBB" string.
+private func muffinLuminance(_ hex: String) -> Double {
+    let (r, g, b) = muffinHexChannels(hex)
+    func linear(_ v: Double) -> Double {
+        let c = v / 255
+        return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+}
+
+/// WCAG 2 contrast ratio between two "#RRGGBB" strings, 1 to 21.
+private func muffinContrast(_ a: String, _ b: String) -> Double {
+    let la = muffinLuminance(a)
+    let lb = muffinLuminance(b)
+    return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+}
+
+/// The lowest contrast `hex` has against any of `grounds`.
+private func muffinWorstContrast(_ hex: String, on grounds: [String]) -> Double {
+    grounds.map { muffinContrast(hex, $0) }.min() ?? 21
+}
+
+/// `hex` moved toward `toward` (black or white) only as far as it takes to reach `minimum`
+/// contrast against every colour in `grounds`. A colour that already passes comes back
+/// unchanged, so a theme that was already readable looks exactly as it did.
+private func muffinReadable(_ hex: String, on grounds: [String], minimum: Double, toward: String) -> String {
+    var amount = 0.0
+    while amount < 1.0 {
+        let candidate = muffinMixHex(hex, toward, amount)
+        if muffinWorstContrast(candidate, on: grounds) >= minimum { return candidate }
+        amount += 0.05
+    }
+    return toward
+}
+
 /// Brand palette from the app icon: warm cream cards, soft rounded corners, gentle shadows.
 /// Every token is light/dark adaptive (see Color(light:dark:)); the dark set is a warm
 /// umber palette rather than an inversion.
@@ -101,16 +138,174 @@ enum MuffinTheme {
     // Blush pink, warmed slightly for dark mode.
     static var blushPink: Color { Color(light: t.blushPinkLight, dark: t.blushPinkDark) }
 
-    // Text and line work: dark browns on cream flip to light creams on umber.
-    static var brownDarkest: Color { Color(light: t.brownDarkestLight, dark: t.brownDarkestDark) }
-    static var brownDark: Color { Color(light: t.brownDarkLight, dark: t.brownDarkDark) }
-    static var brownMid: Color { Color(light: t.brownMidLight, dark: t.brownMidDark) }
+    // Text and line work: dark browns on cream flip to light creams on umber. Each one is held
+    // to 4.5:1 against every surface text sits on (readableInk), so a palette whose mid brown
+    // was a shade too light on white Form rows reads properly without its hex changing.
+    static var brownDarkest: Color { readableInk(light: t.brownDarkestLight, dark: t.brownDarkestDark) }
+    static var brownDark: Color { readableInk(light: t.brownDarkLight, dark: t.brownDarkDark) }
+    static var brownMid: Color { readableInk(light: t.brownMidLight, dark: t.brownMidDark) }
 
-    // Sparkle cream: light in both modes (button text on the muffin-top gradient).
+    // Sparkle cream: light in both modes. Button text on the muffin-top gradient goes through
+    // onMuffinTop, which swaps it for a dark ink on the pale gradients where cream won't read.
     static var sparkleCream: Color { Color(light: t.sparkleCreamLight, dark: t.sparkleCreamDark) }
 
     // Shadow: dark mode uses a colour with more contrast against its ground.
     static var shadow: Color { Color(light: t.shadowLight, dark: t.shadowDark) }
+
+    // MARK: - Readable text tokens
+
+    /// Every surface text sits on in light mode: the system Form row and its grouped ground
+    /// (Settings and most sheets), and the theme's cream, wrapper and sunken surfaces.
+    private static var lightTextGrounds: [String] {
+        ["#FFFFFF", "#F2F2F7", t.creamLight, t.wrapperLight,
+         muffinDeepen(muffinMixHex(t.creamLight, t.wrapperLight, 0.8), 0.04)]
+    }
+
+    /// The same in dark mode, including the lifted row colour a Form gets inside a sheet.
+    private static var darkTextGrounds: [String] {
+        ["#000000", "#1C1C1E", "#2C2C2E", t.creamDark, t.wrapperDark]
+    }
+
+    /// A light/dark pair held to 4.5:1 on every text surface: darkened in light mode,
+    /// lightened in dark mode, and only as far as it takes.
+    private static func readableInk(light: String, dark: String) -> Color {
+        Color(light: muffinReadable(light, on: lightTextGrounds, minimum: 4.5, toward: "#000000"),
+              dark: muffinReadable(dark, on: darkTextGrounds, minimum: 4.5, toward: "#FFFFFF"))
+    }
+
+    /// pixelBlue for text, glyphs and control tints (menu picker values, links, toggles).
+    /// Several themes use a pale accent - ADHD Awareness' is yellow - which vanished as text
+    /// on a white row. pixelBlue itself stays for fills and strokes.
+    static var accentText: Color { readableInk(light: t.pixelBlueLight, dark: t.pixelBlueDark) }
+
+    /// blushPink for warning text and status glyphs on a light or dark surface. blushPink
+    /// itself stays for fills.
+    static var alertText: Color { readableInk(light: t.blushPinkLight, dark: t.blushPinkDark) }
+
+    /// Any palette pair as text or a glyph on a row or card, held to 4.5:1 like the inks.
+    static func readable(_ light: KeyPath<MuffinThemeDefinition, String>,
+                         _ dark: KeyPath<MuffinThemeDefinition, String>) -> Color {
+        readableInk(light: t[keyPath: light], dark: t[keyPath: dark])
+    }
+
+    /// Text on a pixelBlue fill (status chips): cream or the dark ink, whichever reads on that
+    /// theme's accent. Cream on ADHD Awareness' yellow accent was 1.2:1.
+    static var onAccent: Color {
+        Color(light: inkOn(t.pixelBlueLight, cream: t.sparkleCreamLight),
+              dark: inkOn(t.pixelBlueDark, cream: t.sparkleCreamDark))
+    }
+
+    private static func inkOn(_ fill: String, cream: String) -> String {
+        muffinContrast(cream, fill) >= muffinContrast(t.brownDarkestLight, fill) ? cream : t.brownDarkestLight
+    }
+
+    /// Orange status text ("Experimental", the preview warnings). System orange is about 2:1
+    /// on cream, so it is darkened to an amber in light mode.
+    static var cautionText: Color { readableInk(light: "#FF9500", dark: "#FF9F0A") }
+
+    /// Secondary text and captions. The system's `.secondary` grey is about 3.4:1 on a white
+    /// row and under 3:1 on some wrappers, too faint for 12pt captions; this is the same
+    /// neutral grey held to 4.5:1.
+    static var secondaryText: Color { readableInk(light: "#8A8A8E", dark: "#9C9CA3") }
+
+    /// The accent on the always-dark panels (launch log, in-game top bar, error screen),
+    /// whatever the appearance. Several light-mode accents are deep navies and reds that
+    /// were dark on dark there.
+    static var accentOnDark: Color {
+        Color(hex: muffinReadable(t.pixelBlueDark, on: darkPanelGrounds, minimum: 4.5, toward: "#FFFFFF"))
+    }
+
+    /// blushPink on those same dark panels.
+    static var alertOnDark: Color {
+        Color(hex: muffinReadable(t.blushPinkDark, on: darkPanelGrounds, minimum: 4.5, toward: "#FFFFFF"))
+    }
+
+    /// The dark panels: black at 50 to 85% over a game frame or the gradient. The lightest
+    /// of them over a bright frame is about #404040.
+    private static var darkPanelGrounds: [String] { ["#000000", "#262626", "#404040"] }
+
+    /// Text and glyphs painted on the muffin-top gradient (primary buttons, the placeholder
+    /// cover). sparkleCream where it reads on that gradient; otherwise a deep ink in the
+    /// gradient's own hue. Pale gradients (Lemon Zest, Strawberry, Mint Matcha) made cream
+    /// button labels all but disappear.
+    static var onMuffinTop: Color {
+        Color(light: onMuffinTopHex(dark: false), dark: onMuffinTopHex(dark: true))
+    }
+
+    private static func onMuffinTopHex(dark: Bool) -> String {
+        let top = dark ? t.muffinTopLightDark : t.muffinTopLightLight
+        let bottom = dark ? t.muffinTopDarkDark : t.muffinTopDarkLight
+        // Where a label actually sits on a diagonal gradient: the middle half of it.
+        let grounds = [0.25, 0.5, 0.75].map { muffinMixHex(top, bottom, $0) }
+        let cream = dark ? t.sparkleCreamDark : t.sparkleCreamLight
+        let creamWorst = muffinWorstContrast(cream, on: grounds)
+        if creamWorst >= 3.0 { return cream }
+        let ink = muffinDeepen(t.muffinTopDarkLight, 0.78)
+        return muffinWorstContrast(ink, on: grounds) > creamWorst ? ink : cream
+    }
+
+    /// The grouped background a Form or List draws, for a navigation bar that should match it.
+    static var formGround: Color { Color(UIColor.systemGroupedBackground) }
+
+    /// The background gradient's colours, top to bottom, for the tokens below.
+    private static func backgroundSamples(dark: Bool) -> [String] {
+        let lightStops = t.backgroundStopsLight
+        let darkStops = t.backgroundStopsDark
+        if lightStops.count >= 2 && lightStops.count == darkStops.count {
+            return dark ? darkStops : lightStops
+        }
+        let top = dark ? t.backgroundTopDark : t.backgroundTopLight
+        let bottom = dark ? t.backgroundBottomDark : t.backgroundBottomLight
+        return [0.0, 0.25, 0.5, 0.75, 1.0].map { muffinMixHex(top, bottom, $0) }
+    }
+
+    /// Text drawn straight onto the background gradient (the library header, the decrypt
+    /// screen): whichever of the theme's dark ink and sparkleCream reads better against
+    /// the whole gradient, pushed further if it still falls short. Several themes - Neon
+    /// Cyber, Spooky, Double Chocolate, the flags - have a dark gradient in light mode, where
+    /// the usual dark ink was dark on dark; the orange ones made cream text light on light.
+    static var onBackground: Color {
+        Color(light: onBackgroundHex(dark: false), dark: onBackgroundHex(dark: true))
+    }
+
+    /// Secondary text on the background gradient: a step softer than onBackground, still 4.5:1.
+    static var onBackgroundMuted: Color {
+        Color(light: onBackgroundMutedHex(dark: false), dark: onBackgroundMutedHex(dark: true))
+    }
+
+    /// The accent (pixelBlue) on the background gradient, for large text and glyphs (3:1).
+    static var onBackgroundAccent: Color {
+        Color(light: onBackgroundAccentHex(dark: false), dark: onBackgroundAccentHex(dark: true))
+    }
+
+    private static func onBackgroundHex(dark: Bool) -> String {
+        let samples = backgroundSamples(dark: dark)
+        // The light-mode ink in both appearances: some dark-mode gradients (Lemon Zest's
+        // mustard) are light enough that dark text is the one that reads.
+        let ink = t.brownDarkestLight
+        let cream = dark ? t.sparkleCreamDark : t.sparkleCreamLight
+        let chosen = muffinWorstContrast(ink, on: samples) >= muffinWorstContrast(cream, on: samples) ? ink : cream
+        return muffinReadable(chosen, on: samples, minimum: 4.5, toward: onBackgroundPole(chosen))
+    }
+
+    private static func onBackgroundMutedHex(dark: Bool) -> String {
+        let samples = backgroundSamples(dark: dark)
+        let primary = onBackgroundHex(dark: dark)
+        let softened = muffinMixHex(primary, samples[samples.count / 2], 0.3)
+        return muffinReadable(softened, on: samples, minimum: 4.5, toward: onBackgroundPole(primary))
+    }
+
+    private static func onBackgroundAccentHex(dark: Bool) -> String {
+        let samples = backgroundSamples(dark: dark)
+        let accent = dark ? t.pixelBlueDark : t.pixelBlueLight
+        return muffinReadable(accent, on: samples, minimum: 3.0, toward: onBackgroundPole(onBackgroundHex(dark: dark)))
+    }
+
+    /// Which way to push a colour that sits on the gradient: toward black for dark ink,
+    /// toward white for light ink.
+    private static func onBackgroundPole(_ ink: String) -> String {
+        muffinLuminance(ink) < 0.18 ? "#000000" : "#FFFFFF"
+    }
 
     static var backgroundGradient: LinearGradient {
         // A theme may define more than two stops (backgroundStopsLight); each index is a
@@ -314,7 +509,7 @@ enum MuffinTheme {
     // MARK: - Type scale
 
     /// The app's type ramp: a row label is 15 semibold rounded, an empty-state caption is 13
-    /// rounded, and a Settings sub-caption is 12 and not rounded (it pairs with `.secondary`).
+    /// rounded, and a Settings sub-caption is 12 and not rounded (it pairs with secondaryText).
     /// `.rounded` is the app's voice. Sizes are fixed rather than Dynamic Type because the pad
     /// editor and in-game overlay are laid out against measured geometry.
     enum Font {
@@ -463,6 +658,22 @@ private struct MuffinElevationModifier: ViewModifier {
 }
 
 extension View {
+    /// A solid navigation bar. On iOS 26 and later the bar has no background of its own and
+    /// relies on the scroll edge blur, which CemuApp turns off app-wide, so titles and Done
+    /// sat directly on whatever row or card scrolled under them. On earlier versions the bar
+    /// is see-through at the top of the scroll, so on the gradient sheets the title and Done
+    /// sat on the gradient (black on Neon Cyber's navy, system blue on Bakery's orange).
+    /// Painted, not a material, so it adds no blur. Pass `MuffinTheme.formGround` on Form and
+    /// List screens so the bar matches the rows' ground. iOS 15 keeps the system bar.
+    @ViewBuilder func muffinOpaqueNavigationBar(_ fill: Color = MuffinTheme.cream) -> some View {
+        if #available(iOS 16.0, *) {
+            self.toolbarBackground(fill, for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
+        } else {
+            self
+        }
+    }
+
     /// Two-layer depth at the given level. See MuffinTheme.Elevation for why two.
     func muffinElevation(_ level: MuffinTheme.Elevation) -> some View {
         modifier(MuffinElevationModifier(level: level))
@@ -496,10 +707,10 @@ extension View {
         font(MuffinTheme.Font.caption).foregroundColor(MuffinTheme.brownMid)
     }
 
-    /// 12 plain, `.secondary`. The explanatory line under a settings row, matching the system
-    /// chrome around it in a stock `Form`.
+    /// 12 plain, secondaryText. The explanatory line under a settings row: the system grey,
+    /// held to 4.5:1 (`.secondary` is about 3.4:1 on a white row).
     func muffinSubCaption() -> some View {
-        font(MuffinTheme.Font.subCaption).foregroundColor(.secondary)
+        font(MuffinTheme.Font.subCaption).foregroundColor(MuffinTheme.secondaryText)
     }
 }
 
@@ -526,7 +737,8 @@ struct MuffinCard<Content: View>: View {
     }
 }
 
-/// Rounded primary button (muffin-top gradient fill, cream text).
+/// Rounded primary button (muffin-top gradient fill, cream text where cream reads on it -
+/// see MuffinTheme.onMuffinTop).
 ///
 /// Painted, not Liquid Glass: nothing here samples the backdrop, so it is safe over the live
 /// Metal layer. It has a glint along the top edge (`controlSheen`), a rim that is lighter above
@@ -554,7 +766,7 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
             if UIStyle.isClassic {
                 return AnyView(configuration.label
                     .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(MuffinTheme.sparkleCream)
+                    .foregroundColor(MuffinTheme.onMuffinTop)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(MuffinTheme.muffinTopGradient)
@@ -568,7 +780,7 @@ struct MuffinPrimaryButtonStyle: ButtonStyle {
                 .overlay(MuffinTheme.controlSheen)
             return AnyView(configuration.label
                 .font(MuffinTheme.Font.primaryButton)
-                .foregroundColor(MuffinTheme.sparkleCream)
+                .foregroundColor(MuffinTheme.onMuffinTop)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(fill)

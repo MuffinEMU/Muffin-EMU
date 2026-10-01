@@ -1,7 +1,7 @@
 //
 // Everything MuffinEMU needs to offer the TouchLab control styles (Zone, Float, Adaptive,
 // Frame) alongside its own pad and Melo-Controller. Written against kiddreads/MuffinEMU
-// main @ 8de67090; see integration/INTEGRATION.md for the ContentView / Settings /
+// release/v6.4 @ 4e7223af; see integration/INTEGRATION.md for the ContentView / Settings /
 // PadDiagnostics edits that wire it in.
 //
 // This is the only file that imports TouchLabCore / TouchLabUI. Keeping the imports here
@@ -78,6 +78,13 @@ enum TouchLabSettings {
 
     static let floatStyleID = FloatPad.schemeInfo.id
     static let adaptiveStyleID = AdaptivePad.schemeInfo.id
+    static let zoneStyleID = ZonePad.schemeInfo.id
+
+    /// Styles whose sticks sit in fixed places, so the stick-spacing setting can move them.
+    /// Float's sticks appear under the thumb and Frame's live in its side columns.
+    static func hasFixedSticks(_ id: String) -> Bool {
+        id == zoneStyleID || id == adaptiveStyleID
+    }
 
     /// Float's right-hand side options: stored value and label.
     static let cameraOptions: [(value: String, title: String)] = [
@@ -96,46 +103,62 @@ enum TouchLabSettings {
 /// is rendered inside): that rebuilds the pad under the finger and releases every press -
 /// the exact bug that kept the preview pad dead. PadDiagnostics is safe because only its
 /// own overlay observes it.
-final class CemuBridgePadOutput: PadOutput {
+///
+/// Main-actor isolated, like PadDiagnostics and DisplayRouter, which it talks to directly.
+/// `@preconcurrency` lets it satisfy PadOutput, which isn't isolated: every call comes from
+/// TouchPadView's touch handlers and lifecycle observers, all on the main thread.
+@MainActor
+final class CemuBridgePadOutput: @preconcurrency PadOutput {
     static let shared = CemuBridgePadOutput()
 
     /// The GamePad VIEW's size in points - set by TouchLabPadOverlay whenever the screen
     /// layout changes. Touches are sent the way padScreen's own DragGesture sends them:
     /// a position inside that view, times the effective render scale.
     var gamepadViewSize: CGSize = .zero
-    /// `UIScreen.main.effectiveRenderScale`, captured by TouchLabPadOverlay at the same
-    /// moments. Read here instead of asking UIScreen, which is main-actor isolated and this
-    /// class is not (PadOutput isn't).
-    var renderScale: Double = 1
 
-    // PadDiagnostics is main-actor isolated. The bridge calls below are made directly and
-    // synchronously - they are the input - while the diagnostics write hops to the main
-    // actor, so it can never delay or reorder a press.
     func setButton(_ button: PadButton, pressed: Bool) {
-        let label = Self.label(button)
-        Task { @MainActor in PadDiagnostics.shared.recordInput(label, pressed) }
+        PadDiagnostics.shared.recordInput(Self.label(button), pressed)
         cemu_bridge_set_button_state(Self.bridgeButton(button), pressed)
     }
 
     func setStick(_ stick: PadStick, _ value: StickValue) {
         // StickValue is already the console's convention (+y up) - no negation here.
-        let index = stick.rawValue, position = CGPoint(x: value.x, y: value.y)
-        Task { @MainActor in PadDiagnostics.shared.recordStick(index, position) }
+        PadDiagnostics.shared.recordStick(stick.rawValue, CGPoint(x: value.x, y: value.y))
         cemu_bridge_set_stick_axis(stick == .left ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
                                    Float(value.x), Float(value.y))
     }
 
+    /// Where the last touch was, in the GamePad surface's pixels. The lift is reported at this spot
+    /// rather than at (0, 0): the core keeps a touch that began and ended between two reads of the
+    /// GamePad (a tap) and answers it with the position of the LAST report, so a lift at (0, 0) turned
+    /// such a tap into one on the top-left corner of the GamePad screen. padScreen's own touch path
+    /// sends the lift at the finger's position for the same reason.
+    private var lastTouchPixel: (x: Double, y: Double)?
+
     func setTouchscreen(_ point: CGPoint?) {
         guard let point, gamepadViewSize.width > 0, gamepadViewSize.height > 0 else {
-            cemu_bridge_set_pad_touch(0, 0, false)
+            if let last = lastTouchPixel {
+                cemu_bridge_set_pad_touch(last.x, last.y, false)
+                lastTouchPixel = nil
+            } else {
+                cemu_bridge_set_pad_touch(0, 0, false)
+            }
             return
         }
-        cemu_bridge_set_pad_touch(Double(point.x * gamepadViewSize.width) * renderScale,
-                                  Double(point.y * gamepadViewSize.height) * renderScale, true)
+        // The GamePad surface is sized at its own scale (capped, and not the TV's render
+        // scale or the screen's), and the core wants touches in that surface's pixels. Read
+        // live from the same place padScreen's own touch path reads it, every touch: it
+        // changes whenever the surface is re-sized.
+        let scale = DisplayRouter.shared.padSurfaceScale
+        let x = Double(point.x * gamepadViewSize.width) * scale
+        let y = Double(point.y * gamepadViewSize.height) * scale
+        lastTouchPixel = (x, y)
+        cemu_bridge_set_pad_touch(x, y, true)
     }
 
     func releaseAll() {
         cemu_bridge_release_all_buttons()
+        lastTouchPixel = nil
         cemu_bridge_set_pad_touch(0, 0, false)
     }
 
@@ -203,6 +226,7 @@ struct TouchLabPadOverlay: View {
     let topInset: CGFloat
 
     @AppStorage(ControllerLayoutSettings.scaleKey) private var scale = ControllerLayoutSettings.defaultScale
+    @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     @AppStorage(ControllerLayoutSettings.opacityKey) private var opacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.hapticsKey) private var haptics = ControllerLayoutSettings.defaultHaptics
     @AppStorage(ControllerLayoutSettings.deadzoneKey) private var deadzone = ControllerLayoutSettings.defaultDeadzone
@@ -217,6 +241,7 @@ struct TouchLabPadOverlay: View {
                  touchscreenRect: screens.screens.touchscreenRect,
                  videoRects: screens.screens.videoRects,
                  scale: scale,
+                 stickSpacing: stickSpacing,
                  opacity: opacity,
                  haptics: haptics,
                  // Rebuild the scheme only when something that shapes it changes - never on
@@ -243,7 +268,6 @@ struct TouchLabPadOverlay: View {
 
     private func syncGamepadSize() {
         CemuBridgePadOutput.shared.gamepadViewSize = screens.screens.touchscreenRect?.size ?? .zero
-        CemuBridgePadOutput.shared.renderScale = UIScreen.main.effectiveRenderScale
     }
 
     private func makeScheme(_ id: String) -> TouchScheme {

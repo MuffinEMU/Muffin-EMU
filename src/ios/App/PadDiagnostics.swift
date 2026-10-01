@@ -154,7 +154,7 @@ struct PadDiagnosticsOverlay: View {
             }
         }
         .padding(8)
-        .background(Color.black.opacity(0.72))
+        .background(Color.black.opacity(0.8))
         .cornerRadius(8)
         .padding(.leading, 8)
         .padding(.top, 8)
@@ -166,7 +166,7 @@ struct PadDiagnosticsOverlay: View {
         HStack(spacing: 6) {
             Text(name)
                 .font(.system(size: 10, weight: .regular, design: .monospaced))
-                .foregroundColor(.white.opacity(0.55))
+                .foregroundColor(.white.opacity(0.7))
                 .frame(width: 66, alignment: .leading)
             Text(value)
                 .font(.system(size: 10, weight: .bold, design: .monospaced))

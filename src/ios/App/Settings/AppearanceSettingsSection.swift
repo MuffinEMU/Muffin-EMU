@@ -38,10 +38,10 @@ struct AppearanceSettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("Removes the highlights and shading on cards and buttons.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
             // Redundant while Classic UI is on, and saying so beats leaving someone to
             // wonder why flipping it changes nothing: UIStyle.glassDisabled is already
             // true in that mode, because v2.0 had no glassy material to begin with.
@@ -53,10 +53,10 @@ struct AppearanceSettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("The v2.0 look: flat cards, plain headers, system-font rows.")
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
-            .tint(MuffinTheme.pixelBlue)
+            .tint(MuffinTheme.accentText)
         } header: {
             SettingsSectionHeader("Appearance", icon: "paintpalette", accent: .identity)
         } footer: {

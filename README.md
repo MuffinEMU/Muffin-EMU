@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <strong>Official website: <a href="https://kiddreads.github.io/MuffinEMU/">kiddreads.github.io/MuffinEMU</a></strong>
+</p>
+
+<p align="center">
   <a href="https://github.com/kiddreads/MuffinEMU/releases/latest"><img src="https://img.shields.io/github/v/release/kiddreads/MuffinEMU?label=release&color=c8894d" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/iOS-15%2B-555" alt="iOS 15+">
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-MPL--2.0-555" alt="License: MPL-2.0"></a>
@@ -19,12 +23,13 @@
   <a href="https://kiddreads.github.io/MuffinEMU/docs/installation.html">Install</a> ·
   <a href="https://kiddreads.github.io/MuffinEMU/docs/">Documentation</a> ·
   <a href="https://github.com/kiddreads/MuffinEMU/releases">Releases</a> ·
-  <a href="https://github.com/kiddreads/MuffinEMU/issues/new/choose">Report a bug</a>
+  <a href="https://github.com/kiddreads/MuffinEMU/issues/new/choose">Report a bug</a> ·
+  <a href="https://github.com/kiddreads/MuffinEMU/blob/stats/STATS.md">Community stats</a>
 </p>
 
 ---
 
-MuffinEMU is a native iOS and iPadOS Wii U emulator: a SwiftUI app on its own Cemu-based core, with a Metal renderer, an on-screen GamePad measured from the real hardware, and JIT where iOS allows it.
+MuffinEMU (also written Muffin EMU or Muffin-EMU) is a free, open-source Wii U emulator for iPhone and iPad: a native SwiftUI app on its own Cemu-based core, with a Metal renderer, an on-screen GamePad measured from the real hardware, and JIT where iOS allows it. The official website is [kiddreads.github.io/MuffinEMU](https://kiddreads.github.io/MuffinEMU/), and this repository is its official source code and release page.
 
 ## Features
 
