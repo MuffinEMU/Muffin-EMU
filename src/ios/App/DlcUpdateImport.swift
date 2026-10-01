@@ -113,6 +113,13 @@ enum DlcUpdateImport {
         }
     }()
 
+    /// Moves content that earlier versions installed in the wrong folder, if there is any. Called
+    /// once at launch, so a game started straight from the library already sees its update and DLC;
+    /// without it the move waited for the first import or the first long-press on a game.
+    static func migrateMisplacedContentIfNeeded() {
+        _ = migratedMisplacedContent
+    }
+
     private static func titleTypeName(forByte byte: Int32) -> String {
         switch byte {
         case 0x00: return "a base game"
