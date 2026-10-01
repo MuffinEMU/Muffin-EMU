@@ -155,13 +155,15 @@ jobs:
     timeout-minutes: 330
     permissions:
       contents: write
+      # Deleting the superseded current-core cache entries when a new core is promoted ("Retire the
+      # superseded cores"); it was listed under `outputs:` below, so the token had no such scope and
+      # `gh cache delete` answered HTTP 403. Also what reading artifacts needs if the repository is private.
+      actions: write
     outputs:
       channel: ${{ steps.channel.outputs.channel }}
       tag: ${{ steps.channel.outputs.tag }}
       title: ${{ steps.channel.outputs.title }}
       short_name: ${{ steps.channel.outputs.short_name }}
-      # Deleting the superseded current-core cache entry when a new core is promoted.
-      actions: write
     steps:
       # No submodules here: the fingerprint and the reuse lookup read only git's own records (a
       # submodule counts by the commit it pins), so a run that reuses a build never downloads
