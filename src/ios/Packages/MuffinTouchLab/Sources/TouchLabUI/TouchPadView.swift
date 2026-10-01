@@ -224,9 +224,20 @@ enum PadDrawing {
         guard !e.label.isEmpty, e.role != .zone, e.role != .stickBase else { return }
         let box = e.shape.boundingBox
         let size = max(min(box.height * 0.42, 26), 10)
+        // A halo in the opposite tone. The button behind a label is drawn at about half
+        // opacity, so what the label actually sits on is mostly the game: the dark
+        // shoulder labels disappeared over dark scenes and the white system labels over
+        // bright ones.
+        var white: CGFloat = 0, textAlpha: CGFloat = 0
+        text.getWhite(&white, alpha: &textAlpha)
+        let halo = NSShadow()
+        halo.shadowColor = (white < 0.5 ? UIColor.white : UIColor.black).withAlphaComponent(alpha * 0.7)
+        halo.shadowBlurRadius = max(1.5, size * 0.12)
+        halo.shadowOffset = .zero
         let attrs: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: size, weight: .semibold),
             .foregroundColor: text.withAlphaComponent(alpha),
+            .shadow: halo,
         ]
         let str = NSAttributedString(string: e.label, attributes: attrs)
         let s = str.size()
