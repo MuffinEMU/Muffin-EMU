@@ -209,6 +209,11 @@ class GameManager: ObservableObject {
             try? fileManager.removeItem(at: dlcStaging)
         }
 
+        // Imports from earlier versions that went one folder too high never reached the engine.
+        // Moved here, before any game can start, rather than the first time a screen looks.
+        DlcUpdateImport.migrateMisplacedContentIfNeeded()
+        GameSaveTransfer.migrateMisplacedSavesIfNeeded()
+
         guard let contents = try? fileManager.contentsOfDirectory(at: romsPath, includingPropertiesForKeys: nil) else {
             return nil
         }
