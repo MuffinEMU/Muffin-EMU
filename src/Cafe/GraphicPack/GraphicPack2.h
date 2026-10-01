@@ -182,6 +182,10 @@ public:
 
 	static void ActivateForCurrentTitle();
 	static void Reset();
+	// drops the output/upscaling/downscaling shaders of every pack. They were created for the renderer that is being
+	// destroyed, so this has to run while that renderer still exists
+	static void ReleaseRendererObjects();
+	static size_t CountActivated(); // number of packs still marked activated (for the post-teardown check)
 
 private:
 	bool Activate();

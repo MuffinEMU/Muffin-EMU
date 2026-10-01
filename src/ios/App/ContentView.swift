@@ -51,6 +51,7 @@ struct ContentView: View {
                     BootFailureView(
                         game: game,
                         message: gameManager.lastStatusMessage,
+                        needsCleanRestart: gameManager.needsCleanRestart,
                         onDismiss: {
                             gameManager.stopEmulation()
                             showingGameBrowser = true
@@ -98,6 +99,8 @@ struct ContentView: View {
 struct BootFailureView: View {
     let game: GameMetadata
     let message: String
+    /// Set when the launch was refused because the last game left the emulator in a state that only an app restart fixes.
+    var needsCleanRestart: Bool = false
     let onDismiss: () -> Void
 
     /// Where the diagnostics actually are. Computed from the bridge rather than written
@@ -120,7 +123,7 @@ struct BootFailureView: View {
                     .font(.system(size: 34, weight: .semibold))
                     .foregroundColor(MuffinTheme.blushPink)
 
-                Text("Couldn't start \(game.title)")
+                Text(needsCleanRestart ? "Restart needed before \(game.title)" : "Couldn't start \(game.title)")
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
@@ -148,6 +151,17 @@ struct BootFailureView: View {
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)
                     .frame(maxWidth: 480)
+
+                if needsCleanRestart {
+                    // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
+                    // exit(0) after a tap is accepted for a sideloaded app.
+                    Button(action: { exit(0) }) {
+                        Text("Close MuffinEMU")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    }
+                    .buttonStyle(MuffinPrimaryButtonStyle())
+                    .padding(.top, 4)
+                }
 
                 Button(action: onDismiss) {
                     HStack(spacing: 6) {
@@ -1184,6 +1198,13 @@ struct EmulatorViewOptimized: View {
     /// it swaps in and why the shipping path is otherwise untouched.
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
     @AppStorage(MeloControlsSetting.storageKey) private var useMeloControls = MeloControlsSetting.defaultValue
+    /// The optional TouchLab control style ("" = MuffinEMU's own pad). See TouchLabPads.swift.
+    @AppStorage(TouchLabSettings.schemeKey) private var touchLabScheme = TouchLabSettings.defaultScheme
+    /// Where the TV / GamePad views are on screen, reported by the screen views themselves.
+    /// Written only when the screen layout changes - never from the input path.
+    @State private var touchLabScreens = TouchLabScreenState()
+    /// Bottom edge of the top bar, so TouchLab's controls stay clear of Back / pause.
+    @State private var topBarHeight: CGFloat = 0
     /// The slider in this view's own edit-layout panel writes here directly, the same
     /// "declared where it's edited, read where it's drawn" pattern controlScale already
     /// uses for MuffinEMU's own pad - MeloControlsOverlay reads the same key itself.
@@ -1319,6 +1340,7 @@ struct EmulatorViewOptimized: View {
     /// the view tree entirely rather than merely not selected.
     private enum PadSystem {
         case melo
+        case touchLab
         case preview
         case muffin
     }
@@ -1327,6 +1349,10 @@ struct EmulatorViewOptimized: View {
         // Melo-Controller wins outright when chosen - it replaces both of MuffinEMU's own
         // pads, exactly as it did before this enum existed.
         if useMeloControls { return .melo }
+        // A TouchLab style is an explicit choice, so it beats the experimental preview pad.
+        // An empty or unknown stored id is not a TouchLab style and falls through, so a bad
+        // value can never leave the player without a pad.
+        if TouchLabSettings.isTouchLab(touchLabScheme) { return .touchLab }
         // Off by default, but it works now, and the reason it did not is worth recording
         // because this comment used to give the wrong one.
         //
@@ -1672,6 +1698,7 @@ struct EmulatorViewOptimized: View {
                 .padding(12)
                 .background(Color.black.opacity(0.5))
                 .borderBottom(width: 0.5, color: Color.white.opacity(0.1))
+                .reportTopBarBottom()
 
                 if showSkinSelector {
                     OrganizedControllerSkinSelector(selectedSkin: $controllerSkin)
@@ -1685,6 +1712,9 @@ struct EmulatorViewOptimized: View {
             // screen now (see the top of this ZStack), and this is only the bar and
             // whatever drops down from it, sized to its own content and nothing more.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .onPreferenceChange(TopBarBottomKey.self) { bottom in
+                if bottom != topBarHeight { topBarHeight = bottom }
+            }
 
             // Unconditional: no showControls state, no tap-to-toggle, no transition.
             // The pad is on screen for as long as the emulator view is, and floating
@@ -1718,6 +1748,15 @@ struct EmulatorViewOptimized: View {
                         isEditing: isEditingControlLayout
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .melo) }
+                } else if padSystem == .touchLab {
+                    TouchLabPadOverlay(
+                        schemeID: touchLabScheme,
+                        gameID: gameManager.currentGame?.id,
+                        screens: touchLabScreens,
+                        enabled: !isPaused && !isEditingControlLayout,
+                        topInset: topBarHeight
+                    )
+                    .onAppear { PadDiagnostics.shared.report(activePad: .touchLab) }
                 } else if padSystem == .muffin {
                     OptimizedControlPanel(
                         skin: controllerSkin,
@@ -1759,6 +1798,7 @@ struct EmulatorViewOptimized: View {
                             padControlsHidden: padControlsHidden,
                             useMeloControls: useMeloControls,
                             previewPadEnabled: previewPadEnabled,
+                            touchLabScheme: touchLabScheme,
                             isEditingLayout: isEditingControlLayout,
                             isPaused: isPaused
                         )
@@ -1934,6 +1974,13 @@ struct EmulatorViewOptimized: View {
                     Spacer()
                 }
                 .transition(.opacity)
+            } else if isEditingControlLayout, padSystem == .touchLab {
+                // TouchLab styles: size, opacity and style only - no per-button dragging.
+                TouchLabLayoutPanel(gameID: gameManager.currentGame?.id) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isEditingControlLayout = false
+                    }
+                }
             } else if isEditingControlLayout {
                 VStack {
                     VStack(spacing: 10) {
@@ -2325,6 +2372,7 @@ struct EmulatorViewOptimized: View {
                 HStack(alignment: .top, spacing: 0) {
                     MetalViewIOS(gameManager: gameManager)
                         .frame(width: geometry.size.width - padWidth, height: geometry.size.height)
+                        .touchLabTVScreen()
 
                     padScreen
                         .frame(width: padWidth, height: padHeight)
@@ -2336,6 +2384,8 @@ struct EmulatorViewOptimized: View {
             }
         }
         .ignoresSafeArea(.all, edges: verticalSizeClass == .regular ? .horizontal : .all)
+        // The picture is letterboxed unless "Frame stretching" is on.
+        .trackTouchLabScreens($touchLabScreens, imageIsAspectFit: { !FrameStretch.isEnabled })
         .onAppear { updateVisibleOutputs() }
         .onChange(of: screenLayout) { _ in updateVisibleOutputs() }
         .onChange(of: localSwapped) { _ in updateVisibleOutputs() }
@@ -2418,6 +2468,7 @@ struct EmulatorViewOptimized: View {
                             if padIsOnDeviceInDualScreen { sendPadTouch(value.location, down: false) }
                         }
                 )
+                .touchLabTVScreen()
         } else {
             padScreen
         }
@@ -2446,6 +2497,8 @@ struct EmulatorViewOptimized: View {
                     .onChanged { value in sendPadTouch(value.location, down: true) }
                     .onEnded { value in sendPadTouch(value.location, down: false) }
             )
+            // After the gesture, so it reports the same frame the gesture measures in.
+            .touchLabGamePadScreen()
     }
 
     private func sendPadTouch(_ location: CGPoint, down: Bool) {

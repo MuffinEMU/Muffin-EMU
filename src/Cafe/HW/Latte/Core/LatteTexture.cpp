@@ -1232,6 +1232,28 @@ std::vector<LatteTexture*>& LatteTexture::GetAllTextures()
 	return sAllTextures;
 }
 
+// Called after every texture has been deleted (LatteTC_UnloadAllTextures). The per-address occupancy buckets, the global
+// list with its free slots and the cache info snapshot are then all logically empty; dropping them outright means a
+// miscounted delete cannot leave an entry that points at a texture of the stopped title.
+void LatteTexture_ResetGlobalState()
+{
+	for (auto& bucket : list_texMemOccupancyBucket)
+		bucket.clear();
+	sAllTextures.clear();
+	sAllTextureFreeIndices.clear();
+	s_cacheInfoList.clear();
+	s_refreshTextureQueryList = false;
+	LatteTextureViewLookupCache::ResetAll();
+}
+
+size_t LatteTexture_GetLiveTextureCount()
+{
+	size_t count = 0;
+	for (LatteTexture* tex : sAllTextures)
+		count += tex ? 1 : 0;
+	return count;
+}
+
 bool LatteTexture_GX2FormatHasStencil(bool isDepth, Latte::E_GX2SURFFMT format)
 {
 	if (!isDepth)

@@ -13,6 +13,8 @@
 #include "GX2_Memory.h"
 #include "GX2_Texture.h"
 
+void gx2ContextState_resetToDefaultState(); // GX2_ContextState.cpp
+
 void gx2Export_GX2SetSwapInterval(PPCInterpreter_t* hCPU)
 {
 	cemuLog_log(LogType::GX2, "GX2SetSwapInterval({})", hCPU->gpr[3]);
@@ -184,6 +186,7 @@ namespace GX2
 
 	void _GX2DriverReset()
 	{
+		::gx2ContextState_resetToDefaultState();
 		LatteGPUState.gx2InitCalled = 0;
         sGX2MainCoreIndex = 0;
         GX2CommandResetToDefaultState();

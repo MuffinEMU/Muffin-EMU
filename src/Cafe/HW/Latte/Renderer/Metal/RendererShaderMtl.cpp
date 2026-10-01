@@ -64,6 +64,9 @@ public:
 		for (auto& it : s_threads)
 			it.join();
 		s_threads.clear();
+		// the wake-ups that were counted for shaders still queued are meaningless once the threads are gone, and a count
+		// left above zero makes the next set of threads spin on an empty queue
+		s_compilationQueueCount.reset();
 
 		/*
 		if (s_airCacheThread)
@@ -215,6 +218,8 @@ void RendererShaderMtl::Initialize()
 void RendererShaderMtl::Shutdown()
 {
     shaderMtlThreadPool.StopThreads();
+    // a title stopped while its shader cache was still loading never got to ShaderCacheLoading_end()
+    s_isLoadingShadersMtl = false;
 }
 
 RendererShaderMtl::RendererShaderMtl(MetalRenderer* mtlRenderer, ShaderType type, uint64 baseHash, uint64 auxHash, bool isGameShader, bool isGfxPackShader, const std::string& mslCode)
@@ -231,6 +236,14 @@ RendererShaderMtl::RendererShaderMtl(MetalRenderer* mtlRenderer, ShaderType type
 
 RendererShaderMtl::~RendererShaderMtl()
 {
+	// A shader deleted while it is still queued for compilation (every queued shader is deleted when a title stops, after
+	// the compile threads have been joined) would stay in the queue as a dangling pointer, and the threads of the next
+	// title would pop it.
+	{
+		std::lock_guard<std::mutex> lock(shaderMtlThreadPool.s_compilationQueueMutex);
+		auto& queue = shaderMtlThreadPool.s_compilationQueue;
+		queue.erase(std::remove(queue.begin(), queue.end(), this), queue.end());
+	}
 	if (m_argumentEncoder)
 		m_argumentEncoder->release();
     if (m_function)

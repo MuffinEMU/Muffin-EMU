@@ -5,3 +5,4 @@ void LatteTiming_disableCustomVsyncFrequency();
 bool LatteTiming_getCustomVsyncFrequency(sint32& customFrequency);
 
 void LatteTiming_EnableHostDrivenVSync();
+bool LatteTiming_IsUsingHostDrivenVSync();
