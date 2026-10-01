@@ -14,7 +14,7 @@ struct PremiumSettingsSection: View {
                 HStack(spacing: 12) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(MuffinTheme.sparkleCream)
+                        .foregroundColor(MuffinTheme.onMuffinTop)
                         .frame(width: 32, height: 32)
                         .background(
                             Circle().fill(MuffinTheme.muffinTopGradient)
@@ -74,14 +74,15 @@ struct PremiumSettingsSection: View {
                             Text("Unlock")
                         }
                     }
+                    // No extra opacity here: the button style already dims itself when
+                    // disabled, and the two together took the label down to about 22%.
                     .buttonStyle(MuffinPrimaryButtonStyle())
                     .disabled(premiumCodeInput.isEmpty || isCheckingCode)
-                    .opacity(premiumCodeInput.isEmpty ? 0.5 : 1.0)
 
                     if let premiumCodeError {
                         Text(premiumCodeError)
                             .font(.system(size: 12))
-                            .foregroundColor(MuffinTheme.secondaryText)
+                            .foregroundColor(MuffinTheme.alertText)
                     }
                 }
                 .padding(.vertical, 4)

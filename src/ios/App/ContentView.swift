@@ -415,13 +415,22 @@ struct GameBrowserView: View {
                     Text("Muffin")
                         .font(.system(size: 28, weight: .bold, design: .rounded))
                         .foregroundColor(MuffinTheme.onBackground)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
 
                     Text("EMU")
                         .font(.system(size: 18, weight: .semibold, design: .rounded))
                         .foregroundColor(MuffinTheme.onBackgroundAccent)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
+                // Four 44pt buttons share the row; on a 320pt-wide phone the wordmark
+                // shrinks a little instead of truncating to "Muf...".
             }
             .buttonStyle(.plain)
+            // VoiceOver read only "Muffin, EMU" with nothing saying what a tap does.
+            .accessibilityLabel("MuffinEMU")
+            .accessibilityHint("Changes the app icon.")
 
             Spacer()
 
