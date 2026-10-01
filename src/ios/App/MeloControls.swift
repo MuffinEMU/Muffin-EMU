@@ -21,12 +21,31 @@ enum MeloControlsSetting {
     static let defaultScale: Double = 1.0
     static let minScale: Double = 0.5
     static let maxScale: Double = 1.75
+
+    /// Bumped by "Reset to default" so a live pad rebuilds from the cleared layout.
+    static let layoutResetKey = "muffin.melo.layoutResetCount"
+
+    /// Puts this game's button positions back to how Melo-Controller ships them, and the
+    /// size with them. The package keeps positions in Documents/controller_layouts/<game
+    /// id>.json (default.json with no game) and its LayoutManager isn't public, so this
+    /// removes the file it would read.
+    static func resetLayout(gameID: String?) {
+        let name = gameID.map { $0.isEmpty ? "default.json" : "\($0).json" } ?? "default.json"
+        if let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let file = documents.appendingPathComponent("controller_layouts").appendingPathComponent(name)
+            try? FileManager.default.removeItem(at: file)
+        }
+        let defaults = UserDefaults.standard
+        defaults.set(defaultScale, forKey: scaleKey)
+        defaults.set(defaults.integer(forKey: layoutResetKey) &+ 1, forKey: layoutResetKey)
+    }
 }
 
 /// Melo-Controller's pad, drawn over the game in place of MuffinEMU's own.
 struct MeloControlsOverlay: View {
     let gameID: String?
     let isEditing: Bool
+    @AppStorage(MeloControlsSetting.layoutResetKey) private var layoutResetCount = 0
 
     var body: some View {
         Melo_Controller.ControllerView(
@@ -34,9 +53,9 @@ struct MeloControlsOverlay: View {
             isEditing: isEditing,
             gameId: gameID
         )
-        // ControllerView reads isEditing once, into its own @State, so a change has to
-        // rebuild it rather than update it.
-        .id(isEditing)
+        // ControllerView reads isEditing and its layout once, into its own @State, so a
+        // change to either (including a reset) has to rebuild it rather than update it.
+        .id("\(isEditing)-\(layoutResetCount)")
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onDisappear {
             // A press in flight when the pad goes away would otherwise stay held.
