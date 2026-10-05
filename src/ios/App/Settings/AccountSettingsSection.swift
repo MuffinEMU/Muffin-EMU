@@ -15,6 +15,18 @@ struct AccountSettingsSection: View {
         accounts.first { $0.persistentId == activePersistentId }
     }
 
+    /// Says why the controls are dimmed while a game runs; otherwise flags an account that can't go online.
+    @ViewBuilder private var accountFooter: some View {
+        if locked {
+            InfoButton.footer("Accounts can't be changed while a game is running. Close the game first.")
+        } else if let activeAccount, !activeAccount.isValidOnline {
+            InfoButton.footer(
+                "This account has no cached NNID/PNID login, so it can't play online yet.",
+                title: "Account",
+                text: "Online play needs an account with a saved NNID or PNID login. Sign in on a real console and copy its account.dat here; MuffinEMU can't create one.")
+        }
+    }
+
     var body: some View {
         Section {
             Picker("Active account", selection: Binding(
@@ -43,12 +55,7 @@ struct AccountSettingsSection: View {
         } header: {
             SettingsSectionHeader("Account", icon: "person.crop.circle", accent: .content)
         } footer: {
-            if let activeAccount, !activeAccount.isValidOnline {
-                InfoButton.footer(
-                    "This account has no cached NNID/PNID login, so it can't play online yet.",
-                    title: "Account",
-                    text: "Online play needs an account with a saved NNID or PNID login. Sign in on a real console and copy its account.dat here; MuffinEMU can't create one.")
-            }
+            accountFooter
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: reload)
@@ -129,7 +136,7 @@ struct NetworkServiceSettingsSection: View {
                                   icon: "network", accent: .content)
         } footer: {
             InfoButton.footer(
-                selectedService.accountHelp,
+                locked ? "The Network Service can't be changed while a game is running. Close the game first." : selectedService.accountHelp,
                 title: "Network Service",
                 text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there's nothing to configure.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom is only available if you've put a network_services.xml (the same file desktop Cemu reads) in the mlc folder.")
         }
