@@ -155,6 +155,11 @@ class GameManager: ObservableObject {
             TitleSwitchSettings.apply(titleId: titleId)
         }
         emulationEngine = EmulationEngine()
+        // Thermal throttling lowers the picture quality on its own; say so over the game.
+        ThermalMonitor.shared.onNotice = { [weak self] text in
+            guard let self, self.emulationState == .running else { return }
+            self.showLaunchNotice(text)
+        }
         Task {
             await loadGames()
         }
