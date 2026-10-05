@@ -28,7 +28,7 @@ Reads GITHUB_TOKEN from the environment when present (raises the API rate limit)
 """
 import json, os, re, sys, urllib.request, urllib.error, urllib.parse, argparse
 
-PAGES = "https://kiddreads.github.io/MuffinEMU"
+PAGES = "https://muffinemu.github.io/MuffinEMU"
 BUNDLE_ID = "com.kiddreads.MuffinEMU"
 VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)$")
 NIGHTLY_NOTE = (
@@ -243,7 +243,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
         "apps": [{
             "name": "MuffinEMU",
             "bundleIdentifier": BUNDLE_ID,
-            "developerName": "kiddreads",
+            "developerName": "MuffinEMU",
             "subtitle": app_subtitle,
             "localizedDescription": (
                 "MuffinEMU is a Wii U emulator for iPhone and iPad (iOS 15 and later), built on Cemu.\n\n"
@@ -391,7 +391,7 @@ def check_guards(feeds, rels):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--repo", default="kiddreads/MuffinEMU")
+    ap.add_argument("--repo", default="MuffinEMU/MuffinEMU")
     ap.add_argument("--out-dir", default="docs")
     a = ap.parse_args()
     token = os.environ.get("GITHUB_TOKEN")
