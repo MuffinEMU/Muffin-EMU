@@ -64,7 +64,7 @@ struct IconPickerView: View {
         guard !(icon.isPro && !Entitlements.hasProPlan) else {
             ScreenHaptics.rejected()
             withAnimation(.easeOut(duration: 0.18)) {
-                lockedMessage = "\(icon.name) is a Pro icon. Unlock Pro in Settings to use it."
+                lockedMessage = "\(icon.name) is a pro icon. Enter an unlock code under Settings > Premium to use it."
             }
             return
         }
