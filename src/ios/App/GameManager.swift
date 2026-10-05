@@ -1334,7 +1334,11 @@ class GameManager: ObservableObject {
                 }
                 engine.refreshStatus()
                 self.lastStatusMessage = engine.statusText
-                let notice = String(cString: cemu_bridge_take_launch_notice())
+                var notice = String(cString: cemu_bridge_take_launch_notice())
+                // iOS slows the CPU and GPU in Low Power Mode, which no setting here can undo. Say so, but never over a more specific note.
+                if notice.isEmpty && status == CEMU_BRIDGE_OK && ProcessInfo.processInfo.isLowPowerModeEnabled {
+                    notice = "Low Power Mode is on, so games may run slowly. Turn it off in Control Center for full speed."
+                }
                 if !notice.isEmpty {
                     self.showLaunchNotice(notice)
                 }
