@@ -165,6 +165,60 @@ for device in TargetDevice.all {
     }
 }
 
+// MARK: Shoulder offset
+// The iPad-only slider drops L, R, ZL and ZR together. Every value the slider can send must
+// give a layout with no overlaps, keep the four shoulders level and in the same shape as
+// each other, never move them up, and never leave them above their home position.
+
+func shoulderRects(_ scheme: ControlScheme) -> [PadButton: CGRect] {
+    var out: [PadButton: CGRect] = [:]
+    for c in scheme.controls where c.role == .shoulder {
+        if let b = c.button { out[b] = c.shape.boundingBox }
+    }
+    return out
+}
+
+for device in TargetDevice.all {
+    for id in ["zone", "adaptive"] {
+        let base = device.context(.stacked)
+        let home = SchemeCatalog.make(id) as! ControlScheme
+        home.layout(base)
+        let homeRects = shoulderRects(home)
+        check(homeRects.count == 4, "\(device.name) \(id): \(homeRects.count) shoulders at home")
+        var drops: [CGFloat] = []
+        for offset: CGFloat in [-2, 0.5, 1, 1.5, 3] {
+            var ctx = base
+            ctx.shoulderOffset = offset
+            let scheme = SchemeCatalog.make(id) as! ControlScheme
+            scheme.layout(ctx)
+            let p = LayoutCheck.problems(scheme.controls, in: ctx.safeBounds)
+            check(p.isEmpty, "\(device.name) \(id) shoulder offset \(offset): \(p.first ?? "")")
+            let rects = shoulderRects(scheme)
+            guard rects.count == 4, homeRects.count == 4 else { continue }
+            let drop = rects[.zl]!.minY - homeRects[.zl]!.minY
+            drops.append(drop)
+            for (b, r) in rects {
+                check(abs((r.minY - homeRects[b]!.minY) - drop) < 0.5,
+                      "\(device.name) \(id) shoulder offset \(offset): \(b) not level with ZL")
+                check(abs(r.minX - homeRects[b]!.minX) < 0.5 && abs(r.width - homeRects[b]!.width) < 0.5,
+                      "\(device.name) \(id) shoulder offset \(offset): \(b) moved sideways or resized")
+            }
+            check(drop >= -0.5, "\(device.name) \(id) shoulder offset \(offset): moved up (\(drop))")
+            if offset <= 0 { check(abs(drop) < 0.5, "\(device.name) \(id) shoulder offset \(offset): moved (\(drop))") }
+        }
+        // The mini's pad is already squeezed to fit (its sticks leave under a point of room
+        // below the shoulders), so there it correctly stays put.
+        if device.name.contains("iPad") && !device.name.contains("mini") {
+            check((drops.last ?? 0) > 4, "\(device.name) \(id): the shoulders have no room to move down (\(drops))")
+        }
+        // More requested never ends up lower than less requested.
+        if drops.count == 5 {
+            check(drops[1] <= drops[2] + 0.5 && drops[2] <= drops[3] + 0.5 && drops[3] <= drops[4] + 0.5,
+                  "\(device.name) \(id): shoulder drop not monotonic \(drops)")
+        }
+    }
+}
+
 // MARK: Behaviour, through the engine, on the A12Z iPad
 
 let ipad = TargetDevice.all.first { $0.name.contains("A12Z") }!

@@ -86,6 +86,12 @@ enum TouchLabSettings {
         id == zoneStyleID || id == adaptiveStyleID
     }
 
+    /// Styles whose shoulders sit in a fixed place the shoulder-offset setting can move.
+    /// Float's are bands whose height is part of its design, and Frame's live in its columns.
+    static func hasMovableShoulders(_ id: String) -> Bool {
+        id == zoneStyleID || id == adaptiveStyleID
+    }
+
     /// Float's right-hand side options: stored value and label.
     static let cameraOptions: [(value: String, title: String)] = [
         (FloatPad.Camera.stick.rawValue, "Floating stick"),
@@ -227,6 +233,7 @@ struct TouchLabPadOverlay: View {
 
     @AppStorage(ControllerLayoutSettings.scaleKey) private var scale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey) private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
     @AppStorage(ControllerLayoutSettings.opacityKey) private var opacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.hapticsKey) private var haptics = ControllerLayoutSettings.defaultHaptics
     @AppStorage(ControllerLayoutSettings.deadzoneKey) private var deadzone = ControllerLayoutSettings.defaultDeadzone
@@ -242,6 +249,9 @@ struct TouchLabPadOverlay: View {
                  videoRects: screens.screens.videoRects,
                  scale: scale,
                  stickSpacing: stickSpacing,
+                 // iPad only: the stored value is ignored on iPhone. The layouts ignore a
+                 // negative value (the shoulders already start at the top edge).
+                 shoulderOffset: CGFloat(ControllerLayoutSettings.effectiveShoulderOffset(shoulderOffset)),
                  opacity: opacity,
                  haptics: haptics,
                  // Rebuild the scheme only when something that shapes it changes - never on
