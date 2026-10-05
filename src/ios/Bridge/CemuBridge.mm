@@ -15,6 +15,7 @@
 //  CemuBridge.h, which is plain C.
 //
 #include "Common/precompiled.h"
+#include "audio/IAudioAPI.h"
 #include <cxxabi.h>
 #include <typeinfo>
 #import "CemuBridge.h"
@@ -2364,6 +2365,10 @@ bool cemu_bridge_tv_audio_enabled(void) {
 
 void cemu_bridge_set_tv_volume(int volume) {
     GetConfig().tv_volume = std::clamp(volume, 0, 100);
+    // apply to a running title too; the device reads it on every render callback
+    std::shared_lock lock(g_audioMutex);
+    if (g_tvAudio)
+        g_tvAudio->SetVolume(GetConfig().tv_volume);
 }
 
 int cemu_bridge_tv_volume(void) {
@@ -2389,6 +2394,10 @@ bool cemu_bridge_pad_audio_enabled(void) {
 
 void cemu_bridge_set_pad_volume(int volume) {
     GetConfig().pad_volume = std::clamp(volume, 0, 100);
+    // apply to a running title too; the device reads it on every render callback
+    std::shared_lock lock(g_audioMutex);
+    if (g_padAudio)
+        g_padAudio->SetVolume(GetConfig().pad_volume);
 }
 
 int cemu_bridge_pad_volume(void) {

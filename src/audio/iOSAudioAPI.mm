@@ -14,6 +14,7 @@
 #include "config/CemuConfig.h"
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #import <AVFoundation/AVFoundation.h>
 
 #if MUFFIN_AUDIT_HOOKS
@@ -180,6 +181,20 @@ OSStatus IOSAudioAPI::RenderCallback(
     const auto copied = self->m_buffer.read(static_cast<std::uint8_t*>(outputBuffer.mData), bytesNeeded);
     if (copied < bytesNeeded)
         std::memset(static_cast<std::uint8_t*>(outputBuffer.mData) + copied, 0, bytesNeeded - copied);
+    // TV / GamePad volume. iOS used to ignore it and always played at full level, so 50 (the default) keeps
+    // exactly that level; 0 is silent and 100 doubles it, clipped. The desktop backends use volume/100.
+    const sint32 volume = std::clamp<sint32>(self->m_volume, 0, 100);
+    if (volume != 50 && self->m_bitsPerSample == 16 && copied >= 2)
+    {
+        const float gain = (float)volume / 50.0f;
+        auto* samples = static_cast<int16_t*>(outputBuffer.mData);
+        const size_t count = copied / 2;
+        for (size_t k = 0; k < count; ++k)
+        {
+            const int v = (int)lrintf((float)samples[k] * gain);
+            samples[k] = (int16_t)std::clamp(v, -32768, 32767);
+        }
+    }
 #if MUFFIN_AUDIT_HOOKS
     cemu_audit_audio_note_render(self, static_cast<const int16_t*>(outputBuffer.mData), (uint32_t)copied,
                                  (uint32_t)bytesNeeded, (uint32_t)self->m_channels, (uint32_t)self->m_bitsPerSample);
