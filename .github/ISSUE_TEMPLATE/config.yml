@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Installation and troubleshooting
-    url: https://kiddreads.github.io/MuffinEMU/docs/troubleshooting.html
+    url: https://muffinemu.github.io/MuffinEMU/docs/troubleshooting.html
     about: Install problems, JIT, keys.txt and common crashes are covered here.
   - name: FAQ
-    url: https://kiddreads.github.io/MuffinEMU/docs/faq.html
+    url: https://muffinemu.github.io/MuffinEMU/docs/faq.html
     about: Answers to the most common questions about MuffinEMU.
