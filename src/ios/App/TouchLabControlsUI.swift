@@ -61,6 +61,27 @@ struct TouchLabStyleSettingsRows: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare
+                // height for it. Only the styles with fixed shoulders have anything to move.
+                if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
+                    HStack(spacing: 10) {
+                        Text("L/R")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.85))
+                        Image(systemName: "arrow.up.and.down")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.7))
+                            .accessibilityHidden(true)
+                        Slider(
+                            value: $shoulderOffset,
+                            in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true),
+                            step: ControllerLayoutSettings.shoulderOffsetStep
+                        )
+                        .accessibilityLabel("Shoulder button height")
+                        .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(shoulderOffset))
+                    }
+                }
+
                 if scheme == TouchLabSettings.floatStyleID {
                     Picker("Camera", selection: $floatCamera) {
                         ForEach(TouchLabSettings.cameraOptions, id: \.value) { option in
@@ -108,6 +129,7 @@ struct TouchLabLayoutPanel: View {
     @AppStorage(ControllerLayoutSettings.scaleKey) private var controlScale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.opacityKey) private var controlOpacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey) private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
     @State private var showingResetConfirmation = false
 
     var body: some View {
@@ -188,8 +210,8 @@ struct TouchLabLayoutPanel: View {
                             Button("Cancel", role: .cancel) { }
                         } message: {
                             Text(scheme == TouchLabSettings.adaptiveStyleID
-                                 ? "Size, opacity and stick spacing go back to how MuffinEMU ships, and Adaptive forgets where your thumbs land in this game."
-                                 : "Size, opacity and stick spacing go back to how MuffinEMU ships.")
+                                 ? "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships, and Adaptive forgets where your thumbs land in this game."
+                                 : "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships.")
                         }
 
                     Button("Done", action: onDone)
@@ -207,13 +229,14 @@ struct TouchLabLayoutPanel: View {
         .transition(.opacity)
     }
 
-    /// Size, opacity and stick spacing are the only placement the fixed styles have.
+    /// Size, opacity, stick spacing and shoulder height are the only placement the fixed styles have.
     /// Adaptive also moves its buttons to where your thumbs land, so for Adaptive this
     /// game's learning goes too.
     private func resetToDefault() {
         controlScale = ControllerLayoutSettings.defaultScale
         controlOpacity = ControllerLayoutSettings.defaultOpacity
         stickSpacing = ControllerLayoutSettings.defaultStickSpacing
+        shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
         if scheme == TouchLabSettings.adaptiveStyleID {
             TouchLabSettings.resetAdaptive(gameID: gameID)
         }

@@ -84,6 +84,11 @@ public enum PadParts {
 /// The player's stick spacing is applied on top, once the arrangement and size are chosen
 /// without it, so the setting can never flip the arrangement. When the full amount would
 /// overlap something, the nearest amount that fits is used.
+///
+/// The shoulder offset works the same way: the four shoulder buttons move down together
+/// (their layout relative to each other is untouched) by as much of the requested amount
+/// as keeps every control inside the safe area and clear of the sticks, d-pad and face
+/// buttons. It is resolved after the stick spacing, against the spacing that was kept.
 public enum GamePadArrangement {
     public struct Clusters {
         public static let dpad = 1
@@ -101,7 +106,11 @@ public enum GamePadArrangement {
             for inboard in [false, true] {
                 let set = arrangement(ctx, u: u, sticksInboard: inboard)
                 if LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty {
-                    return withSpacing(ctx, u: u, sticksInboard: inboard) ?? set
+                    let spacing = fittingSpacing(ctx, u: u, sticksInboard: inboard)
+                    let shoulder = fittingShoulderOffset(ctx, u: u, sticksInboard: inboard, stickSpacing: spacing)
+                    if spacing == 0 && shoulder == 0 { return set }
+                    return arrangement(ctx, u: u, sticksInboard: inboard,
+                                       stickSpacing: spacing, shoulderOffset: shoulder)
                 }
             }
             u *= 0.92
@@ -109,22 +118,46 @@ public enum GamePadArrangement {
         return arrangement(ctx, u: u, sticksInboard: true)
     }
 
-    /// The chosen arrangement with as much of the requested stick spacing as fits, stepping
-    /// back toward none a quarter of a button at a time. nil when there is none to apply.
-    static func withSpacing(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool) -> [PadControl]? {
+    /// As much of the requested stick spacing as fits, stepping back toward none a quarter
+    /// of a button at a time. Zero when there is none to apply or none fits.
+    static func fittingSpacing(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool) -> CGFloat {
         let requested = ctx.stickSpacing
-        guard requested != 0 else { return nil }
+        guard requested != 0 else { return 0 }
         var spacing = requested
         while abs(spacing) > 0.001 {
             let set = arrangement(ctx, u: u, sticksInboard: sticksInboard, stickSpacing: spacing)
-            if LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty { return set }
+            if LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty { return spacing }
             spacing = requested > 0 ? max(0, spacing - 0.25) : min(0, spacing + 0.25)
         }
-        return nil
+        return 0
+    }
+
+    /// As much of the requested shoulder drop as fits, given the stick spacing already
+    /// chosen. Only downward: the shoulders start against the top of the safe area, so a
+    /// negative request is ignored. When the full drop would hit a stick or leave the safe
+    /// area, the largest one that doesn't is found by halving, so the shoulders go right
+    /// up to the limit rather than stopping a quarter-button short of it. Zero always
+    /// fits (the caller has already checked that arrangement), so the search has a floor.
+    static func fittingShoulderOffset(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool,
+                                      stickSpacing: CGFloat) -> CGFloat {
+        let requested = max(0, ctx.shoulderOffset)
+        guard requested > 0.001 else { return 0 }
+        func fits(_ drop: CGFloat) -> Bool {
+            let set = arrangement(ctx, u: u, sticksInboard: sticksInboard,
+                                  stickSpacing: stickSpacing, shoulderOffset: drop)
+            return LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty
+        }
+        if fits(requested) { return requested }
+        var low: CGFloat = 0, high = requested
+        for _ in 0..<12 {
+            let mid = (low + high) / 2
+            if fits(mid) { low = mid } else { high = mid }
+        }
+        return low
     }
 
     static func arrangement(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool,
-                            stickSpacing: CGFloat = 0) -> [PadControl] {
+                            stickSpacing: CGFloat = 0, shoulderOffset: CGFloat = 0) -> [PadControl] {
         let s = ctx.safeBounds
         let cy = s.maxY - (PadParts.clusterRadius + 0.75) * u
         let cl = CGPoint(x: s.minX + (PadParts.clusterRadius + 0.85) * u, y: cy)
@@ -145,7 +178,8 @@ public enum GamePadArrangement {
         sr.x += stickSpacing * u
 
         let sh = CGSize(width: 1.9 * u, height: 1.0 * u)
-        let top = s.minY + 0.25 * u
+        // One shared top edge, so ZL, L, R and ZR stay level with each other at any drop.
+        let top = s.minY + 0.25 * u + shoulderOffset * u
         let zl = CGRect(x: s.minX + 0.25 * u, y: top, width: sh.width, height: sh.height)
         let l = zl.offsetBy(dx: sh.width + 0.3 * u, dy: 0)
         let zr = CGRect(x: s.maxX - 0.25 * u - sh.width, y: top, width: sh.width, height: sh.height)
