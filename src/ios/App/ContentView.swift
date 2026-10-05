@@ -166,8 +166,10 @@ struct BootFailureView: View {
 
                 if needsCleanRestart {
                     // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
-                    // exit(0) after a tap is accepted for a sideloaded app.
-                    Button(action: { exit(0) }) {
+                    // exit(0) after a tap is accepted for a sideloaded app. _exit, not exit: exit() runs the core's
+                    // static destructors while its threads are still alive, and one of them then locks a destroyed
+                    // mutex ("mutex lock failed: Invalid argument" in the crash log). Flush, then leave without them.
+                    Button(action: { fflush(nil); _exit(0) }) {
                         Text("Close MuffinEMU")
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                     }
