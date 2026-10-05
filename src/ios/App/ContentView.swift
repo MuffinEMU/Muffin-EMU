@@ -410,6 +410,11 @@ struct GameBrowserView: View {
         withAlerts(withSheets(
             libraryScreen
             .onAppear {
+                #if os(iOS)
+                // Back at the library with nothing running: take back any starting controls or screen
+                // layout a game's hints turned on, so Settings shows what the person chose (GameControlHints).
+                if gameManager.emulationState == .idle { GameControlHints.restoreGlobals() }
+                #endif
                 // Answers "a game/dump named `name` already exists - replace it?" for
                 // GameManager.importROM. Set here rather than left nil so declining to
                 // wire this up was never an option - importROM treats a nil closure as an
@@ -2041,7 +2046,7 @@ struct EmulatorViewOptimized: View {
                                     }
                                     Button("Cancel", role: .cancel) { }
                                 } message: {
-                                    Text("Melo-Controller's size and the buttons you've moved in this game go back to how it ships.")
+                                    Text("Melo-Controller's size goes back to how it ships in every game, and so do the buttons you've moved in this game.")
                                 }
 
                             Button("Done") {
@@ -2220,7 +2225,7 @@ struct EmulatorViewOptimized: View {
                                     Button("Reset to default", role: .destructive) { ControllerLayoutSettings.reset() }
                                     Button("Cancel", role: .cancel) { }
                                 } message: {
-                                    Text("Button size, opacity, stick spacing, shoulder height and every button you've moved go back to how MuffinEMU ships.")
+                                    Text("Button size, opacity, stick spacing, shoulder height and every button you've moved go back to how MuffinEMU ships, in every game.")
                                 }
 
                             Button("Done") {
