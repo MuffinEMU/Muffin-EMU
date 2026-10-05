@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Keys and defaults for the on-screen pad's adjustable values, shared by the settings
 /// sheet, the emulator view and the pad.
@@ -79,12 +80,49 @@ enum ControllerLayoutSettings {
         abs(value) < 0.01 ? "default" : (value < 0 ? "closer" : "wider")
     }
 
+    /// How far the whole shoulder cluster (L, R, ZL, ZR) moves up or down, in button widths
+    /// so it follows the size slider: positive is down, negative is up, zero is where the
+    /// layout puts them. A hand-size setting for iPad only - an iPhone has no spare height
+    /// to move them in, so there the stored value is never read (see `effectiveShoulderOffset`).
+    /// MuffinEMU's own pad and the TouchLab styles with fixed shoulders (Zone, Adaptive) read
+    /// the same key. Those TouchLab styles start with the shoulders against the top edge, so
+    /// for them only the downward half does anything.
+    static let shoulderOffsetKey = "muffin.controls.shoulderOffset"
+    static let defaultShoulderOffset: Double = 0
+    static let minShoulderOffset: Double = -4.0
+    static let maxShoulderOffset: Double = 1.5
+    /// Quarter-button steps, like the stick spacing, so the slider lands back on exactly zero.
+    static let shoulderOffsetStep: Double = 0.25
+
+    /// The slider's range: the TouchLab styles can only move the shoulders down from the
+    /// top edge, so their slider starts at the default instead of offering a dead half.
+    static func shoulderOffsetRange(touchLab: Bool) -> ClosedRange<Double> {
+        (touchLab ? defaultShoulderOffset : minShoulderOffset)...maxShoulderOffset
+    }
+
+    /// The readout beside the shoulder slider.
+    static func shoulderOffsetLabel(_ value: Double) -> String {
+        abs(value) < 0.01 ? "default" : (value < 0 ? "higher" : "lower")
+    }
+
+    /// Whether this device gets the shoulder slider at all: iPad only.
+    static var supportsShoulderOffset: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
+    /// The stored shoulder offset as the layouts should see it: the stored value on iPad,
+    /// always zero on iPhone, so a value that arrives some other way (an iCloud-synced
+    /// default, a backup restored from an iPad) can't move an iPhone's shoulders.
+    static func effectiveShoulderOffset(_ stored: Double) -> Double {
+        supportsShoulderOffset ? stored : defaultShoulderOffset
+    }
+
     /// Puts every adjustment back to the measured layout by removing the keys, so each
     /// `@AppStorage` falls back to its own declared default. `joystickKey` is not reset:
     /// that is the control scheme, not the layout.
     static func reset() {
         let defaults = UserDefaults.standard
-        for key in [scaleKey, opacityKey, stickSpacingKey, rightStickOffsetXKey, rightStickOffsetYKey,
+        for key in [scaleKey, opacityKey, stickSpacingKey, shoulderOffsetKey, rightStickOffsetXKey, rightStickOffsetYKey,
                     leftStickOffsetXKey, leftStickOffsetYKey,
                     leftOffsetXKey, leftOffsetYKey,
                     rightOffsetXKey, rightOffsetYKey] {
@@ -364,6 +402,57 @@ enum ControllerGeometry {
         let centreGap = containerWidth / unit - 2 * fromEdge
         let needed = bounds(of: left).maxX - bounds(of: right).minX + 0.5
         return max(requested, -max(0, (centreGap - needed) / 2))
+    }
+
+    /// The vertical shift, in units, a cluster's shoulder buttons (L/ZL or R/ZR) get from
+    /// the shoulder-offset setting (ControllerLayoutSettings.shoulderOffsetKey). Positive is
+    /// down. Every shoulder in the cluster gets the same shift, so they keep their layout
+    /// relative to each other; the cluster's other controls do not move at all.
+    ///
+    /// Held to the room there actually is: up, the shoulders stop a quarter-button short of
+    /// the top of the container; down, they stop a fifth of a button above the highest
+    /// control in the same cluster that sits under them (the d-pad's up arrow, or the stick
+    /// in comfort mode), so they never end up on top of it. `centreY` is where the cluster's
+    /// centre actually is on screen, in points, after its own clamp.
+    ///
+    /// The shift is applied to where each shoulder is POSITIONED, not by padding or offsetting
+    /// the control's view, so its hit area moves with it (see muffin-pad-hit-testing-trap).
+    static func shoulderShift(offset: Double, centreY: CGFloat, containerHeight: CGFloat, unit: CGFloat,
+                              controls: [Control]) -> CGFloat {
+        let requested = CGFloat(min(max(offset, ControllerLayoutSettings.minShoulderOffset),
+                                    ControllerLayoutSettings.maxShoulderOffset))
+        guard requested != 0, unit > 0 else { return 0 }
+        let shoulders = controls.filter { $0.style == .shoulder }
+        guard !shoulders.isEmpty else { return 0 }
+
+        func extent(_ c: Control) -> (minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat) {
+            let size: CGSize
+            switch c.shape {
+            case .circle(let diameter):    size = CGSize(width: diameter, height: diameter)
+            case .roundedRect(let box, _): size = box
+            }
+            return (c.offset.x - size.width / 2, c.offset.x + size.width / 2,
+                    c.offset.y - size.height / 2, c.offset.y + size.height / 2)
+        }
+        let shoulderBox = shoulders.map(extent)
+        let top = shoulderBox.map { $0.minY }.min() ?? 0
+        let bottom = shoulderBox.map { $0.maxY }.max() ?? 0
+        let left = shoulderBox.map { $0.minX }.min() ?? 0
+        let right = shoulderBox.map { $0.maxX }.max() ?? 0
+
+        // Most the shoulders can move up: their top edge to a quarter-button below the top.
+        let up = -(centreY / unit + top - 0.25)
+        // Most they can move down: until their bottom edge is a fifth of a button above the
+        // nearest control beneath them, if there is one.
+        let gap: CGFloat = 0.2
+        var down = (containerHeight - centreY) / unit - bottom
+        for other in controls where other.style != .shoulder {
+            let e = extent(other)
+            guard e.maxX > left - gap, e.minX < right + gap, e.minY >= top else { continue }
+            down = min(down, e.minY - gap - bottom)
+        }
+        // A cluster with less room than that (a very short container) simply stays put.
+        return min(max(requested, min(up, 0)), max(down, 0))
     }
 
     /// The deflection below which a gesture counts as a tap rather than a push, for the

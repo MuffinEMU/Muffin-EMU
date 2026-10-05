@@ -1,7 +1,10 @@
 #pragma once
 #include <algorithm>
+#include <atomic>
+#include <thread>
 #include <vector>
 #include "LatteTextureLoader.h"
+#include "Common/DeviceCapabilities.h"
 #include "astcenc.h"
 
 static inline uint8 astcFloatToUNorm8(float v)
@@ -21,26 +24,54 @@ static inline size_t astcCompressedImageSize(sint32 width, sint32 height)
     return (size_t)((width + 3) / 4) * (size_t)((height + 3) / 4) * 16u;
 }
 
+// How many threads one encode may use, the calling (Latte) thread included. Derived from the device,
+// never from one model: the emulated PPC thread and the Latte thread each keep a performance core, an
+// efficiency core counts as half a core, and the ceiling is four. A device with fewer than three such
+// cores gets 1, which is the single-threaded encode this file always did.
+static uint32 astcEncodeThreadCount()
+{
+    static const uint32 count = []() -> uint32 {
+        const DeviceCaps::Info& info = DeviceCaps::Get();
+        if (info.perfCores == 0)
+            return 1; // not reported: do not guess
+        const uint32 usable = info.perfCores + info.effCores / 2;
+        if (usable <= 2)
+            return 1;
+        return std::min<uint32>(usable - 2, 3) + 1;
+    }();
+    return count;
+}
+
+// Images smaller than this (in texels) are encoded on the calling thread alone: a thread costs tens of
+// microseconds to start, and a 256x256 encode already takes longer than three of them.
+static constexpr size_t kAstcThreadedMinTexels = 256 * 256;
+
+struct ASTCEncoderContext
+{
+    astcenc_context* ctx = nullptr;
+    uint32 threads = 1; // the thread count the context was allocated for
+};
+
 struct ASTCEncoderContextSet
 {
-    astcenc_context* ldr = nullptr;
-    astcenc_context* ldrSrgb = nullptr;
+    ASTCEncoderContext ldr;
+    ASTCEncoderContext ldrSrgb;
 
     ~ASTCEncoderContextSet()
     {
-        if (ldr)
-            astcenc_context_free(ldr);
-        if (ldrSrgb)
-            astcenc_context_free(ldrSrgb);
+        if (ldr.ctx)
+            astcenc_context_free(ldr.ctx);
+        if (ldrSrgb.ctx)
+            astcenc_context_free(ldrSrgb.ctx);
     }
 };
 
-static astcenc_context* astcGetContext(astcenc_profile profile)
+static ASTCEncoderContext* astcGetContext(astcenc_profile profile)
 {
     thread_local ASTCEncoderContextSet contexts;
-    astcenc_context*& ctx = (profile == ASTCENC_PRF_LDR_SRGB) ? contexts.ldrSrgb : contexts.ldr;
-    if (ctx)
-        return ctx;
+    ASTCEncoderContext& enc = (profile == ASTCENC_PRF_LDR_SRGB) ? contexts.ldrSrgb : contexts.ldr;
+    if (enc.ctx)
+        return &enc;
 
     astcenc_config config;
     astcenc_error status = astcenc_config_init(
@@ -52,22 +83,72 @@ static astcenc_context* astcGetContext(astcenc_profile profile)
     if (status != ASTCENC_SUCCESS)
         return nullptr;
 
-    status = astcenc_context_alloc(&config, 1, &ctx, nullptr);
-    if (status != ASTCENC_SUCCESS) {
+    uint32 threads = astcEncodeThreadCount();
+    astcenc_context* ctx = nullptr;
+    status = astcenc_context_alloc(&config, threads, &ctx, nullptr);
+    if (status != ASTCENC_SUCCESS && threads > 1)
+    {
+        // The per-thread working buffers did not fit: take the single-threaded context instead.
+        threads = 1;
         ctx = nullptr;
+        status = astcenc_context_alloc(&config, threads, &ctx, nullptr);
+    }
+    if (status != ASTCENC_SUCCESS)
         return nullptr;
+
+    enc.ctx = ctx;
+    enc.threads = threads;
+    return &enc;
+}
+
+// One image across several threads, the way astcenc documents it: every thread calls
+// astcenc_compress_image() with its own index and the library hands out blocks dynamically, so the
+// output is byte-identical to a single-threaded run. The helpers are joined before this returns, which
+// is what makes the astcenc_compress_reset() the caller does next legal. If a helper cannot be started
+// the remaining threads simply do its share.
+static astcenc_error astcCompressImageThreaded(astcenc_context* context, astcenc_image* image, const astcenc_swizzle* swizzle,
+                                               uint8* outputData, size_t outputSize, uint32 threads)
+{
+    std::atomic<int> helperFailure{(int)ASTCENC_SUCCESS};
+    std::vector<std::thread> helpers;
+    helpers.reserve(threads - 1);
+    for (uint32 i = 1; i < threads; i++)
+    {
+        try
+        {
+            helpers.emplace_back([context, image, swizzle, outputData, outputSize, i, &helperFailure]() {
+                const astcenc_error st = astcenc_compress_image(context, image, swizzle, outputData, outputSize, i);
+                if (st != ASTCENC_SUCCESS)
+                {
+                    int expected = (int)ASTCENC_SUCCESS;
+                    helperFailure.compare_exchange_strong(expected, (int)st);
+                }
+            });
+        }
+        catch (...)
+        {
+            break;
+        }
     }
 
-    return ctx;
+    const astcenc_error mainStatus = astcenc_compress_image(context, image, swizzle, outputData, outputSize, 0);
+
+    for (std::thread& helper : helpers)
+        helper.join();
+
+    if (mainStatus != ASTCENC_SUCCESS)
+        return mainStatus;
+    return (astcenc_error)helperFailure.load();
 }
 
 static bool astcCompressRGBA8Image(const uint8* rgba8, sint32 width, sint32 height, astcenc_profile profile, uint8* outputData)
 {
-    astcenc_context* context = astcGetContext(profile);
-    if (!context) {
+    ASTCEncoderContext* enc = astcGetContext(profile);
+    if (!enc) {
         cemuLog_log(LogType::Force, "ASTC Encode Fail: no context");
         return false;
     }
+    astcenc_context* context = enc->ctx;
 
     astcenc_image image;
     image.dim_x = (unsigned int)width;
@@ -83,19 +164,24 @@ static bool astcCompressRGBA8Image(const uint8* rgba8, sint32 width, sint32 heig
     };
 
     size_t outputSize = astcCompressedImageSize(width, height);
-    astcenc_error status = astcenc_compress_image(
-        context,
-        &image,
-        &kIdentitySwizzle,
-        outputData,
-        outputSize,
-        0);
+    uint32 threads = enc->threads;
+    if ((size_t)width * (size_t)height < kAstcThreadedMinTexels)
+        threads = 1;
+
+    astcenc_error status;
+    if (threads > 1)
+        status = astcCompressImageThreaded(context, &image, &kIdentitySwizzle, outputData, outputSize, threads);
+    else
+        status = astcenc_compress_image(context, &image, &kIdentitySwizzle, outputData, outputSize, 0);
+
+    // A context allocated for more than one thread is not reset implicitly, and it must be reset after a
+    // failure as well, or the next image would find the work already marked done.
+    astcenc_compress_reset(context);
+
     if (status != ASTCENC_SUCCESS) {
-        cemuLog_log(LogType::Force, "ASTC Encode Fail: {}", status);
+        cemuLog_log(LogType::Force, "ASTC Encode Fail: {}", (int)status);
         return false;
     }
-
-    astcenc_compress_reset(context);
     return true;
 }
 

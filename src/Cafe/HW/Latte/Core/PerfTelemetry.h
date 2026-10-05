@@ -39,6 +39,11 @@ namespace PerfTelemetry
 		// pipelines the GPU thread had to compile itself instead of handing to a compile thread
 		std::atomic<uint32_t> pipelineSyncCompiles{0};
 
+		// Latte thread: guest texture data turned into host texture contents (untile, decode, and the
+		// BC to ASTC re-encode on a GPU without BC). Wall time on the calling thread, per slice.
+		std::atomic<uint32_t> textureDecodes{0};
+		std::atomic<uint64_t> textureDecodeNs{0};
+
 		// PPC recompiler
 		std::atomic<uint32_t> jitBlocks{0};
 		std::atomic<uint64_t> jitCompileNs{0};
