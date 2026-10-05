@@ -51,6 +51,8 @@ struct HeatNoticeModifier: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
                 let hot = Self.isHot
                 defer { wasHot = hot }
+                // With automatic cool-down on, ThermalMonitor announces what it does itself; one banner, not two.
+                guard !Self.autoCoolDown else { return }
                 if hot && !wasHot {
                     show(Self.hotMessage)
                 } else if !hot && wasHot {
@@ -60,12 +62,12 @@ struct HeatNoticeModifier: ViewModifier {
     }
 
     // ThermalMonitor is main-actor isolated; the closure above runs inside body, which is too.
-    @MainActor private static var hotMessage: String {
-        let auto = UserDefaults.standard.object(forKey: ThermalMonitor.autoThrottleKey) as? Bool
+    @MainActor private static var autoCoolDown: Bool {
+        UserDefaults.standard.object(forKey: ThermalMonitor.autoThrottleKey) as? Bool
             ?? ThermalMonitor.autoThrottleDefault
-        let start = "The device is hot, so iOS is slowing the game down."
-        return auto
-            ? "\(start) MuffinEMU is easing the load until it cools down."
-            : "\(start) Turn on Cool down automatically in Settings, CPU, or lower Resolution in Settings, Graphics."
+    }
+
+    @MainActor private static var hotMessage: String {
+        "The device is hot, so iOS is slowing the game down. Turn on Cool down automatically in Settings, CPU, or lower Resolution in Settings, Graphics."
     }
 }
