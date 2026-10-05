@@ -16,6 +16,15 @@
 #include <cstring>
 #include <cmath>
 #import <AVFoundation/AVFoundation.h>
+#import <UIKit/UIKit.h>
+#include <mutex>
+#include <set>
+#include "Cemu/Logging/CemuLogging.h"
+
+// Devices alive right now. The notification blocks run on the main queue and the device can be
+// destroyed on the audio/emulator thread, so a block checks membership under this lock first.
+static std::mutex s_liveDevicesMutex;
+static std::set<IOSAudioAPI*> s_liveDevices;
 
 #if MUFFIN_AUDIT_HOOKS
 // MuffinEMU Audit (tools/audit-app): measures what reaches the device. Defined in ios/Bridge/IOSAuditHooks.cpp.
@@ -99,10 +108,64 @@ IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
         disposeAudioUnitOnError();
         throw std::runtime_error("can't initialize iOS audio unit");
     }
+
+    {
+        std::lock_guard lock(s_liveDevicesMutex);
+        s_liveDevices.insert(this);
+    }
+    IOSAudioAPI* device = this;
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    id interruption = [center addObserverForName:AVAudioSessionInterruptionNotification object:nil
+                                           queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification* note) {
+        NSNumber* type = note.userInfo[AVAudioSessionInterruptionTypeKey];
+        if (type && type.unsignedIntegerValue == AVAudioSessionInterruptionTypeEnded)
+            device->RestartAfterInterruption("interruption ended");
+    }];
+    // Backstop: an interruption that ends while the app is in the background does not always post
+    // "ended" (iOS documents this), so coming back to the foreground restarts output as well.
+    id becameActive = [center addObserverForName:UIApplicationDidBecomeActiveNotification object:nil
+                                           queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification*) {
+        device->RestartAfterInterruption("app became active", /*onlyIfStopped*/ true);
+    }];
+    m_interruptionObserver = (void*)CFBridgingRetain(interruption);
+    m_becameActiveObserver = (void*)CFBridgingRetain(becameActive);
+}
+
+void IOSAudioAPI::RestartAfterInterruption(const char* why, bool onlyIfStopped)
+{
+    std::lock_guard lock(s_liveDevicesMutex);
+    if (s_liveDevices.find(this) == s_liveDevices.end() || !m_audioUnit || !m_isPlaying)
+        return;
+    if (onlyIfStopped)
+    {
+        UInt32 running = 0;
+        UInt32 size = sizeof(running);
+        if (AudioUnitGetProperty(m_audioUnit, kAudioOutputUnitProperty_IsRunning, kAudioUnitScope_Global, 0, &running, &size) == noErr && running)
+            return; // still playing: an ordinary return to the app, nothing to restart
+    }
+    NSError* error = nil;
+    [[AVAudioSession sharedInstance] setActive:YES error:&error];
+    // Stop then start: after an interruption the unit can report itself running while producing
+    // nothing, so a plain start is not enough.
+    AudioOutputUnitStop(m_audioUnit);
+    const OSStatus status = AudioOutputUnitStart(m_audioUnit);
+    cemuLog_log(LogType::Force, "iOS audio: output restarted ({}): session {}, unit {}", why,
+                error ? "could not be reactivated" : "active", status == noErr ? "running" : "failed to start");
 }
 
 IOSAudioAPI::~IOSAudioAPI()
 {
+    {
+        std::lock_guard lock(s_liveDevicesMutex);
+        s_liveDevices.erase(this);
+    }
+    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+    if (m_interruptionObserver)
+        [center removeObserver:(id)CFBridgingRelease(m_interruptionObserver)];
+    if (m_becameActiveObserver)
+        [center removeObserver:(id)CFBridgingRelease(m_becameActiveObserver)];
+    m_interruptionObserver = nullptr;
+    m_becameActiveObserver = nullptr;
     if (m_audioUnit) {
         m_isPlaying = false;
         AudioOutputUnitStop(m_audioUnit);
