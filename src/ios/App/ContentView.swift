@@ -1546,7 +1546,7 @@ struct EmulatorViewOptimized: View {
             // instead of by ImGui inside the (reduced-scale) game surface. Above the video,
             // below the controls; no layout, no touches. In dual-screen the TV is on another
             // display this layer cannot reach, so it hands back to the core's own drawing.
-            NativeCoreOverlayView(active: nativeOverlayActive)
+            NativeCoreOverlayView(active: nativeOverlayActive, topInset: topBarHeight)
 
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 12) {
