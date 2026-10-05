@@ -88,12 +88,17 @@ final class MeloControllerBridge: Melo_Controller.Controller {
     }
 
     private func send(_ button: VirtualControllerButton, pressed: Bool) {
+        // The gear button is HOME: it opens the HOME menu (HomeMenu.swift) instead of reaching the bridge.
+        if button.id == "guide" {
+            HomeMenuRouter.shared.padHome(pressed: pressed)
+            return
+        }
         guard let mapped = Self.bridgeButtons[button.id] else { return }
         cemu_bridge_set_button_state(mapped, pressed)
     }
 
     // Melo-Controller's button ids, from its VirtualControllerButton, onto the Wii U
-    // GamePad. "guide" is the gear button, which MuffinEMU treats as HOME.
+    // GamePad. "guide" is the gear button, which MuffinEMU treats as HOME (send() above routes it to the HOME menu).
     private static let bridgeButtons: [String: CemuBridgeButton] = [
         "A": CEMU_BRIDGE_BUTTON_A,
         "B": CEMU_BRIDGE_BUTTON_B,
