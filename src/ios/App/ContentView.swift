@@ -346,6 +346,12 @@ struct GameBrowserView: View {
         nonmutating set { sortOrderRaw = newValue.rawValue }
     }
 
+    /// Settings > Wii U Menu. The Menu is a bar above the grid by default; these turn it
+    /// into a card in the grid, or take it out of the library (it stays installed).
+    @AppStorage(WiiUMenuSettings.showAsCardKey) private var menuAsCard = WiiUMenuSettings.defaultShowAsCard
+    @AppStorage(WiiUMenuSettings.hideKey) private var menuHidden = WiiUMenuSettings.defaultHidden
+    @ObservedObject private var menuStore = WiiUMenuStore.shared
+
     @State private var romImportErrorMessage: String?
     /// Answers GameManager.confirmOverwrite - see the .onAppear wiring below. A plain
     /// closure captured from the continuation rather than storing the continuation
@@ -382,6 +388,20 @@ struct GameBrowserView: View {
             ? gamesToShow
             : gamesToShow.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
         return sortOrder.sorted(searched)
+    }
+
+    /// The Menu is offered in the library at all: installed, not hidden, and not being
+    /// searched for or filtered to favourites.
+    private var menuOffered: Bool {
+        !menuHidden && menuStore.status.menuInstalled && searchText.isEmpty && !showingFavorites
+    }
+    private var showsMenuBar: Bool { menuOffered && !menuAsCard }
+    private var showsMenuCard: Bool { menuOffered && menuAsCard }
+
+    private func launchMenu(_ menu: GameMetadata) {
+        selectedGame = menu
+        gameManager.launchGame(menu)
+        showingGameBrowser = false
     }
 
     var body: some View {
@@ -585,18 +605,15 @@ struct GameBrowserView: View {
 
             // The Wii U Menu, when one is installed. Pinned above the grid, not part of it, so
             // sorting never moves it; it is hidden while searching or viewing favourites.
-            if searchText.isEmpty && !showingFavorites {
-                WiiUMenuTile { menu in
-                    selectedGame = menu
-                    gameManager.launchGame(menu)
-                    showingGameBrowser = false
-                }
+            // Settings can instead put it in the grid as a card, or hide it.
+            if showsMenuBar {
+                WiiUMenuTile(onLaunch: launchMenu)
             }
 
             if gameManager.isLoading {
                 LoadingView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if filteredGames.isEmpty {
+            } else if filteredGames.isEmpty && !showsMenuCard {
                 EmptyGamesView(onImportTapped: { beginImport(contentTypes: Self.fileImportTypes) })
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -605,6 +622,9 @@ struct GameBrowserView: View {
                         columns: [GridItem(.adaptive(minimum: 140), spacing: 16)],
                         spacing: 20
                     ) {
+                        if showsMenuCard {
+                            WiiUMenuCard(onLaunch: launchMenu)
+                        }
                         ForEach(filteredGames) { game in
                             GameCardOptimized(
                                 game: game,
