@@ -12,6 +12,10 @@ struct WiiUMenuSettingsSection: View {
     @State private var isImporting = false
     @State private var resultTitle = ""
     @State private var resultMessage: String?
+    @AppStorage(WiiUMenuSettings.showAsCardKey) private var showAsCard = WiiUMenuSettings.defaultShowAsCard
+    @AppStorage(WiiUMenuSettings.hideKey) private var hideMenu = WiiUMenuSettings.defaultHidden
+    @State private var showingUninstallConfirmation = false
+    @State private var isUninstalling = false
 
     private var status: WiiUMenuStatus { store.status }
 
@@ -49,13 +53,15 @@ struct WiiUMenuSettingsSection: View {
                         .foregroundColor(MuffinTheme.brownMid)
                 }
             }
+
+            installedMenuRows
         } header: {
             SettingsSectionHeader("Wii U Menu", icon: "house", accent: .content)
         } footer: {
             InfoButton.footer(
                 "Experimental. Files must be dumped from your own Wii U. Nothing is included.",
                 title: "Wii U Menu",
-                text: "Experimental. The Wii U Menu and its support files must come from your own Wii U, dumped with Dumpling. MuffinEMU includes none of them.\n\nImport Wii U Menu: pick the package folder (the one containing mlc01 and cafeLibs), an mlc01 folder, a sys folder, a cafeLibs folder, or the Menu's own title folder. Files are merged one by one into MuffinEMU's storage; anything replaced is saved first, and your saves are never touched.\n\nImport console files: pick otp.bin and seeprom.bin. Only online features need them; the Menu may start without.\n\nOnce the Menu is installed it appears at the top of the library. Games in your library show up in it.")
+                text: "Experimental. The Wii U Menu and its support files must come from your own Wii U, dumped with Dumpling. MuffinEMU includes none of them.\n\nImport Wii U Menu: pick the package folder (the one containing mlc01 and cafeLibs), an mlc01 folder, a sys folder, a cafeLibs folder, or the Menu's own title folder. Files are merged one by one into MuffinEMU's storage; anything replaced is saved first, and your saves are never touched.\n\nImport console files: pick otp.bin and seeprom.bin. Only online features need them; the Menu may start without.\n\nOnce the Menu is installed it appears at the top of the library. Games in your library show up in it. You can show it as a card in the game grid instead, or hide it from the library; hiding doesn't uninstall it.\n\nUninstall Wii U Menu deletes only the Menu itself. Shared data, system apps, cafeLibs, otp.bin and seeprom.bin stay, since games can use them. Your saves and your games are never touched.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         // One importer for both buttons: two .fileImporter modifiers on the same view only
@@ -73,6 +79,74 @@ struct WiiUMenuSettingsSection: View {
             Text(message)
         }
         .onAppear { store.refresh() }
+    }
+
+    /// Library placement and uninstall: only while a Menu title is installed. A separate
+    /// property so the Section's own builder stays under the 10-child limit.
+    @ViewBuilder private var installedMenuRows: some View {
+        if status.menuInstalled {
+            libraryToggles
+            Button(role: .destructive, action: { showingUninstallConfirmation = true }) {
+                DestructiveSettingsLabel(title: "Uninstall Wii U Menu", systemImage: "trash")
+            }
+            .disabled(isImporting || isUninstalling)
+            .alert("Uninstall the Wii U Menu?", isPresented: $showingUninstallConfirmation) {
+                Button("Uninstall", role: .destructive) { uninstall() }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This deletes the Wii U Menu from MuffinEMU's storage. Shared data, system apps, cafeLibs, otp.bin and seeprom.bin stay, since games can use them. Your saves and your games aren't touched. You can import the Menu again from Settings > Wii U Menu.")
+            }
+        }
+    }
+
+    /// How the installed Menu appears in the library. Hiding wins: a hidden Menu has no
+    /// card to place, so the card toggle is dimmed while it is on.
+    @ViewBuilder private var libraryToggles: some View {
+        Toggle(isOn: $showAsCard) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Show Wii U Menu as a game card")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("Puts the Menu in the game grid instead of a bar above it.")
+                    .font(.system(size: 12))
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
+        }
+        .tint(MuffinTheme.accentText)
+        .disabled(hideMenu)
+
+        Toggle(isOn: $hideMenu) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Hide the installed Wii U Menu")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("Takes it out of the library. It stays installed; turn this off to bring it back.")
+                    .font(.system(size: 12))
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
+        }
+        .tint(MuffinTheme.accentText)
+    }
+
+    private func uninstall() {
+        isUninstalling = true
+        Task {
+            let outcome: Result<Int, Error> = await Task.detached(priority: .userInitiated) {
+                do {
+                    return .success(try WiiUMenu.uninstallMenu())
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            isUninstalling = false
+            store.refresh()
+            switch outcome {
+            case .success:
+                resultTitle = "Uninstalled"
+                resultMessage = "The Wii U Menu was removed. Your saves and games weren't touched."
+            case .failure(let error):
+                resultTitle = "Couldn't uninstall"
+                resultMessage = error.localizedDescription
+            }
+        }
     }
 
     private func handle(_ result: Result<[URL], Error>) {
