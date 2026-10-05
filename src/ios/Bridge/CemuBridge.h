@@ -729,6 +729,22 @@ bool cemu_bridge_notification_shader_compiling(void);
 void cemu_bridge_set_notification_friends(bool enabled);
 bool cemu_bridge_notification_friends(void);
 
+/// Native overlay. By default the core draws the overlay and notifications above with ImGui
+/// into the game's render surface, whose reduced backing scale makes the text soft. When this
+/// is on the core stops drawing them and the app draws the same text itself, at full screen
+/// resolution, from cemu_bridge_native_overlay_text(). Off (the default) is the old ImGui
+/// path. Turn it off again whenever nothing is polling the text.
+void cemu_bridge_set_native_overlay(bool enabled);
+bool cemu_bridge_native_overlay(void);
+
+/// The overlay text the core would have drawn, built from the same settings and timing. One
+/// string: the stats block's lines separated by '\n', then one record separator (0x1E) and
+/// each notification after it, also separated by 0x1E (a notification's own lines are
+/// separated by '\n'). The stats block may be empty. Empty string when the native overlay is
+/// off. Polling consumes the one-shot shader/pipeline counters, so only one caller should
+/// poll. Copy it; the pointer is per-thread. Call from the main thread.
+const char* cemu_bridge_native_overlay_text(void);
+
 // MARK: - Audio
 //
 // Eight of CemuConfig's audio fields, plain (not ConfigValue-wrapped) sint32/bool/enum

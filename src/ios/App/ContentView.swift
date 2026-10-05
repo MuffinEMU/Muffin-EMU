@@ -1430,6 +1430,14 @@ struct EmulatorViewOptimized: View {
         return .muffin
     }
 
+    /// True while a title is booting, running or paused and the TV screen is on this device.
+    private var nativeOverlayActive: Bool {
+        switch gameManager.emulationState {
+        case .loading, .running, .paused: return displayRouter.placement != .dualScreen
+        case .idle, .error: return false
+        }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -1524,6 +1532,12 @@ struct EmulatorViewOptimized: View {
             } else {
                 screenLayoutComposition
             }
+
+            // The core's FPS readout and notifications, drawn here at full screen resolution
+            // instead of by ImGui inside the (reduced-scale) game surface. Above the video,
+            // below the controls; no layout, no touches. In dual-screen the TV is on another
+            // display this layer cannot reach, so it hands back to the core's own drawing.
+            NativeCoreOverlayView(active: nativeOverlayActive)
 
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 12) {
