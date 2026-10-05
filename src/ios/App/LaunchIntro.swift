@@ -1,4 +1,5 @@
 import SwiftUI
+import GameController
 
 // The launch intro: a muffin sketched onto black, which then comes alive, looks
 // around, smiles, and hands over to the game.
@@ -10,6 +11,15 @@ import SwiftUI
 // iOS side, in SwiftUI, on a real GPU with no emulator underneath it. None of those
 // constraints apply here, so this is the one place the "cinematic 3D" idea can actually
 // be honoured rather than approximated.
+//
+// SKIPPING
+//
+// Tap anywhere, or press A, B or Menu on a controller, and it ends. It also ends by
+// itself once the game is running and the intro has played for a couple of seconds, so a
+// fast boot never sits behind theatre it has already outrun. The couple of seconds is so
+// the intro never flashes up and vanishes. The controller is polled, not given a handler:
+// the engine owns the pad's valueChangedHandler, and replacing it would cut the game's
+// own input.
 //
 // WHY IT COSTS NO TIME
 //
@@ -226,9 +236,14 @@ struct MuffinMark: View {
 // MARK: - The intro
 
 struct LaunchIntroView: View {
+    /// True once the engine reports the title running. The intro then ends on its own
+    /// after `minimumPlay`, instead of finishing its full run over a game that is ready.
+    var isGameRunning: Bool = false
     /// Called once the intro is finished and faded out. The caller decides when to
     /// actually show the game - see IntroGate.
     var onFinished: () -> Void
+    /// The least the intro plays before an already-running game may end it.
+    private static let minimumPlay: TimeInterval = 2.0
 
     @State private var sketch: CGFloat = 0        // 0..1, how much of the line work is drawn
     @State private var inked: CGFloat = 0         // 0..1, colour fading in behind the lines
@@ -239,6 +254,11 @@ struct LaunchIntroView: View {
     @State private var grin: CGFloat = 0
     @State private var fade: CGFloat = 0          // final blackout
     @State private var started = false
+    @State private var finished = false          // onFinished is delivered exactly once
+    @State private var vanish = false            // the skip fade, revealing what is underneath
+    @State private var showHint = false
+    @State private var runTask: Task<Void, Never>?
+    @State private var shownAt = Date()
     // The intro is five seconds of 3D tilt and spring motion; with Reduce Motion on it is skipped.
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -269,14 +289,94 @@ struct LaunchIntroView: View {
                             radius: 26 * pop, x: 0, y: 20 * pop)
 
                 Color.black.opacity(Double(fade)).ignoresSafeArea()
+
+                skipHint
             }
             .frame(width: geo.size.width, height: geo.size.height)
         }
-        .allowsHitTesting(false)
+        .opacity(vanish ? 0 : 1)
+        .contentShape(Rectangle())
+        .onTapGesture { finish() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Skip intro")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { finish() }
         .onAppear {
             guard !started else { return }
             started = true
-            if reduceMotion { onFinished() } else { run() }
+            shownAt = Date()
+            if reduceMotion { finish(animated: false) } else { run() }
+        }
+        .onDisappear { runTask?.cancel() }
+        .task(id: isGameRunning) { await endWhenGameIsRunning() }
+        .task { await watchControllerForSkip() }
+    }
+
+    /// "Tap to skip", fading in after the first half second so it is not a flash of text
+    /// over the opening frames. Hidden from VoiceOver: the whole view is already the
+    /// "Skip intro" button.
+    private var skipHint: some View {
+        VStack {
+            Spacer()
+            Text("Tap to skip")
+                .font(.system(.footnote, design: .rounded).weight(.semibold))
+                .foregroundColor(.white.opacity(0.6))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .opacity(showHint ? 1 : 0)
+                .padding(.bottom, 24)
+                .accessibilityHidden(true)
+        }
+        .allowsHitTesting(false)
+    }
+
+    // MARK: Ending
+
+    /// Ends the intro once, whichever way it is asked to: the tap, a controller press, the
+    /// engine being ready, or the run reaching its own end. `animated` false is for Reduce
+    /// Motion, which never shows it.
+    private func finish(animated: Bool = true) {
+        guard !finished else { return }
+        finished = true
+        runTask?.cancel()
+        guard animated else { onFinished(); return }
+        withAnimation(.easeOut(duration: 0.3)) { vanish = true }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 330_000_000)
+            onFinished()
+        }
+    }
+
+    /// Once the game is running, waits out whatever is left of the minimum play time and
+    /// then ends. Re-runs when `isGameRunning` changes; a cancelled wait does nothing.
+    private func endWhenGameIsRunning() async {
+        guard isGameRunning else { return }
+        let remaining = Self.minimumPlay - Date().timeIntervalSince(shownAt)
+        if remaining > 0 {
+            try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+        }
+        guard !Task.isCancelled else { return }
+        finish()
+    }
+
+    /// A, B or Menu on a connected controller skips. Polled about twelve times a second on
+    /// the pressed state, never through a handler (see the note at the top of this file),
+    /// and only on a fresh press so a button already held when the game launched doesn't
+    /// end it at once.
+    private func watchControllerForSkip() async {
+        var wasDown = Self.skipButtonDown()
+        while !Task.isCancelled && !finished {
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            let down = Self.skipButtonDown()
+            if down && !wasDown { finish(); return }
+            wasDown = down
+        }
+    }
+
+    private static func skipButtonDown() -> Bool {
+        GCController.controllers().contains { controller in
+            guard let pad = controller.extendedGamepad else { return false }
+            return pad.buttonA.isPressed || pad.buttonB.isPressed || pad.buttonMenu.isPressed
         }
     }
 
@@ -392,37 +492,44 @@ struct LaunchIntroView: View {
     // iOS 15 and PhaseAnimator is iOS 17. Nanoseconds rather than .seconds for the same
     // reason - Task.sleep(for:) is iOS 16.
     private func run() {
-        Task { @MainActor in
-            withAnimation(.easeOut(duration: 0.5)) { pageOpacity = 0.55 }
-            // 1. Sketched, at a hand's pace rather than a machine's.
-            withAnimation(.easeInOut(duration: 2.1)) { sketch = 1 }
-            try? await Task.sleep(nanoseconds: 2_150_000_000)
+        withAnimation(.easeIn(duration: 0.4).delay(0.5)) { showHint = true }
+        runTask = Task { @MainActor in
+            do {
+                withAnimation(.easeOut(duration: 0.5)) { pageOpacity = 0.55 }
+                // 1. Sketched, at a hand's pace rather than a machine's.
+                withAnimation(.easeInOut(duration: 2.1)) { sketch = 1 }
+                try await Task.sleep(nanoseconds: 2_150_000_000)
 
-            // 2. Colour arrives under the lines.
-            withAnimation(.easeIn(duration: 0.65)) { inked = 1 }
-            try? await Task.sleep(nanoseconds: 620_000_000)
+                // 2. Colour arrives under the lines.
+                withAnimation(.easeIn(duration: 0.65)) { inked = 1 }
+                try await Task.sleep(nanoseconds: 620_000_000)
 
-            // 3. Off the page. A spring, because nothing alive moves on a curve.
-            withAnimation(.interpolatingSpring(stiffness: 120, damping: 11)) { pop = 1 }
-            try? await Task.sleep(nanoseconds: 520_000_000)
+                // 3. Off the page. A spring, because nothing alive moves on a curve.
+                withAnimation(.interpolatingSpring(stiffness: 120, damping: 11)) { pop = 1 }
+                try await Task.sleep(nanoseconds: 520_000_000)
 
-            // 4. Alive: a look left, a look right, a blink, then the grin.
-            withAnimation(.easeInOut(duration: 0.42)) { eyeShift = -1 }
-            try? await Task.sleep(nanoseconds: 470_000_000)
-            withAnimation(.easeInOut(duration: 0.5)) { eyeShift = 1 }
-            try? await Task.sleep(nanoseconds: 540_000_000)
-            withAnimation(.easeInOut(duration: 0.28)) { eyeShift = 0 }
-            withAnimation(.easeInOut(duration: 0.09)) { blink = 0.08 }
-            try? await Task.sleep(nanoseconds: 110_000_000)
-            withAnimation(.easeInOut(duration: 0.12)) { blink = 1 }
-            try? await Task.sleep(nanoseconds: 160_000_000)
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { grin = 1 }
-            try? await Task.sleep(nanoseconds: 620_000_000)
+                // 4. Alive: a look left, a look right, a blink, then the grin.
+                withAnimation(.easeInOut(duration: 0.42)) { eyeShift = -1 }
+                try await Task.sleep(nanoseconds: 470_000_000)
+                withAnimation(.easeInOut(duration: 0.5)) { eyeShift = 1 }
+                try await Task.sleep(nanoseconds: 540_000_000)
+                withAnimation(.easeInOut(duration: 0.28)) { eyeShift = 0 }
+                withAnimation(.easeInOut(duration: 0.09)) { blink = 0.08 }
+                try await Task.sleep(nanoseconds: 110_000_000)
+                withAnimation(.easeInOut(duration: 0.12)) { blink = 1 }
+                try await Task.sleep(nanoseconds: 160_000_000)
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) { grin = 1 }
+                try await Task.sleep(nanoseconds: 620_000_000)
 
-            // 5. Out.
-            withAnimation(.easeIn(duration: 0.55)) { fade = 1 }
-            try? await Task.sleep(nanoseconds: 580_000_000)
-            onFinished()
+                // 5. Out.
+                withAnimation(.easeIn(duration: 0.55)) { fade = 1 }
+                try await Task.sleep(nanoseconds: 580_000_000)
+                guard !finished else { return }
+                finished = true
+                onFinished()
+            } catch {
+                // Cancelled by finish(): it owns the ending.
+            }
         }
     }
 }
