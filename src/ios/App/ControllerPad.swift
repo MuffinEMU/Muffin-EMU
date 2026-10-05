@@ -19,6 +19,10 @@ struct OptimizedControlPanel: View {
     /// True while the title is paused or the app is inactive. The pad stops taking
     /// touches, which cancels and releases anything held.
     var isPaused: Bool = false
+    /// Where the top bar (Back, pause, move controls) ends, in window coordinates. The
+    /// pad is drawn over that bar, so without this a cluster could be dragged on top of it
+    /// and take the buttons that get the player out of edit mode.
+    var topInset: CGFloat = 0
 
     @AppStorage(ControllerLayoutSettings.scaleKey)
     private var userScale = ControllerLayoutSettings.defaultScale
@@ -63,6 +67,8 @@ struct OptimizedControlPanel: View {
 
             // The shoulder slider is iPad only: on iPhone the stored value is never read.
             let shoulderDrop = ControllerLayoutSettings.effectiveShoulderOffset(shoulderOffset)
+            // How much of this view's top the bar covers, in this view's own coordinates.
+            let topReserve = max(0, topInset - proxy.frame(in: .global).minY)
 
             ZStack(alignment: .topLeading) {
                 ControlCluster(
@@ -71,6 +77,7 @@ struct OptimizedControlPanel: View {
                     skin: skin,
                     unit: unit,
                     shoulderOffset: shoulderDrop,
+                    topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
@@ -92,6 +99,7 @@ struct OptimizedControlPanel: View {
                         skin: skin,
                         unit: unit,
                         shoulderOffset: shoulderDrop,
+                        topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
                         individualEditMode: individualEditMode,
@@ -108,6 +116,7 @@ struct OptimizedControlPanel: View {
                     skin: skin,
                     unit: unit,
                     shoulderOffset: shoulderDrop,
+                    topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
@@ -128,6 +137,7 @@ struct OptimizedControlPanel: View {
                         skin: skin,
                         unit: unit,
                         shoulderOffset: shoulderDrop,
+                        topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
                         individualEditMode: individualEditMode,
@@ -167,6 +177,9 @@ private struct ControlCluster: View {
     /// How far this cluster's shoulder buttons (if it has any) move down from their
     /// measured place, in units; already zero on iPhone. See ControllerGeometry.shoulderShift.
     let shoulderOffset: Double
+    /// Height at the top of `container` that the top bar covers, in points. Nothing is
+    /// placed above it.
+    var topReserve: CGFloat = 0
     let container: CGSize
     let isEditingLayout: Bool
     /// See ControllerLayoutSettings.individualEditModeKey. When true, this cluster's
@@ -211,13 +224,14 @@ private struct ControlCluster: View {
     private var shoulderShift: CGFloat {
         ControllerGeometry.shoulderShift(
             offset: shoulderOffset, centreY: centre.y, containerHeight: container.height,
-            unit: unit, controls: controls) * unit
+            unit: unit, controls: controls, topInset: topReserve) * unit
     }
 
     private func clamped(_ point: CGPoint) -> CGPoint {
         let minX = -box.minX * unit
         let maxX = container.width - box.maxX * unit
-        let minY = -box.minY * unit
+        // The top bar's height comes off the top, so a cluster cannot sit under Back / pause.
+        let minY = topReserve - box.minY * unit
         let maxY = container.height - box.maxY * unit
         // A cluster wider or taller than the container has no valid range at all; centre
         // it rather than letting min > max produce a nonsense clamp.
@@ -250,6 +264,8 @@ private struct ControlCluster: View {
                         y: centre.y + control.offset.y * unit
                             + (control.style == .shoulder ? shoulderDrop : 0)
                     ),
+                    container: container,
+                    topReserve: topReserve,
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
                     onStick: onStick,
@@ -310,6 +326,11 @@ private struct EditableControl: View {
     let unit: CGFloat
     /// Where this control sits with no customisation - the measured default.
     let base: CGPoint
+    /// The pad's own size, and the height at its top that the top bar covers. A moved
+    /// control is held inside what is left, so it cannot be dragged off the screen or
+    /// under the bar and lost.
+    let container: CGSize
+    let topReserve: CGFloat
     let isEditingLayout: Bool
     /// See ControllerLayoutSettings.individualEditModeKey. editGesture is only attached
     /// when the cluster's own drag handle is not.
@@ -322,6 +343,25 @@ private struct EditableControl: View {
     @State private var scaleOrigin: Double?
 
     private var settings: ControlOverride { custom.override(for: control.id) }
+
+    /// Where the control is drawn and hit: the default place plus the player's move, kept
+    /// inside the screen. Held at draw time as well as on drag, so a rotation, a bigger
+    /// size or a move saved before this limit existed still lands somewhere reachable.
+    private var placed: CGPoint {
+        held(CGPoint(x: base.x + CGFloat(settings.dx), y: base.y + CGFloat(settings.dy)))
+    }
+
+    private func held(_ point: CGPoint) -> CGPoint {
+        let size = ControllerGeometry.size(of: control)
+        let halfWidth = size.width * unit * CGFloat(settings.scale) / 2
+        let halfHeight = size.height * unit * CGFloat(settings.scale) / 2
+        let minX = halfWidth, maxX = container.width - halfWidth
+        let minY = topReserve + halfHeight, maxY = container.height - halfHeight
+        return CGPoint(
+            x: minX <= maxX ? min(max(point.x, minX), maxX) : (minX + maxX) / 2,
+            y: minY <= maxY ? min(max(point.y, minY), maxY) : (minY + maxY) / 2
+        )
+    }
 
     var body: some View {
         Group {
@@ -343,7 +383,7 @@ private struct EditableControl: View {
                 )
             }
         }
-        .position(x: base.x + CGFloat(settings.dx), y: base.y + CGFloat(settings.dy))
+        .position(placed)
         // A dashed ring shows which controls can be moved individually.
         .overlay(
             Group {
@@ -351,7 +391,7 @@ private struct EditableControl: View {
                     Circle()
                         .strokeBorder(Color.white.opacity(0.5), style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                         .frame(width: unit * CGFloat(settings.scale) * 1.25, height: unit * CGFloat(settings.scale) * 1.25)
-                        .position(x: base.x + CGFloat(settings.dx), y: base.y + CGFloat(settings.dy))
+                        .position(placed)
                         .allowsHitTesting(false)
                 }
             }
@@ -364,7 +404,15 @@ private struct EditableControl: View {
             .onChanged { value in
                 let origin = dragOrigin ?? settings
                 if dragOrigin == nil { dragOrigin = origin }
-                custom.move(control.id, to: value.translation, from: origin)
+                // Stored as the drag is limited to, not as the finger asked: a finger that
+                // goes past the edge would otherwise leave slack the next drag has to undo.
+                let wanted = CGPoint(x: base.x + CGFloat(origin.dx) + value.translation.width,
+                                     y: base.y + CGFloat(origin.dy) + value.translation.height)
+                let limited = held(wanted)
+                custom.move(control.id,
+                            to: CGSize(width: limited.x - base.x - CGFloat(origin.dx),
+                                       height: limited.y - base.y - CGFloat(origin.dy)),
+                            from: origin)
             }
             .onEnded { _ in
                 dragOrigin = nil
@@ -460,7 +508,9 @@ private struct ControlButton: View {
     private var labelColor: Color {
         switch control.style {
         case .dpad, .face:
-            return .white
+            // Skins put one glyph colour on every button colour, from navy to lemon, so keep it
+            // readable on whichever the skin gave this button.
+            return LegibleInk.ensure(.white, on: fillColor, minimum: LegibleInk.glyph)
         case .shoulder, .system, .stick, .joystick:
             return Self.neutralLabel
         }
