@@ -258,7 +258,7 @@ struct OnScreenControlsSection: View {
         // gate is the shape of the stick, and the sliders are how that shape is
         // read.
         VStack(alignment: .leading, spacing: 4) {
-            Picker("Gate", selection: $stickGateRaw) {
+            Picker("Stick gate", selection: $stickGateRaw) {
                 ForEach(ControllerGeometry.StickGate.allCases) { gate in
                     Text(gate.title).tag(gate.rawValue)
                 }
