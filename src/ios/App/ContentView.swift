@@ -121,75 +121,101 @@ struct BootFailureView: View {
     private static var crashLogHint: String {
         let path = String(cString: cemu_bridge_crash_log_path())
         guard !path.isEmpty else {
-            return "Full detail is in log.txt. No crash log could be opened this run, so there is no CemuCrashLog.txt to send."
+            return "If you report this, include log.txt. No crash log could be opened this run, so there is no CemuCrashLog.txt to send."
         }
-        return "Full detail is in log.txt and CemuCrashLog.txt, at:\n\(path)"
+        return "If you report this, include log.txt and CemuCrashLog.txt. They are in:\n\(path)"
+    }
+
+    private var title: String {
+        if needsCleanRestart { return "Restart needed before \(game.title)" }
+        return endedWhileRunning ? "\(game.title) stopped" : "Couldn't start \(game.title)"
     }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 34, weight: .semibold))
-                    .foregroundColor(MuffinTheme.alertOnDark)
+            // Scrolls: on an iPhone in landscape, or at a large text size, the whole card is taller
+            // than the screen, and the buttons are at the bottom.
+            GeometryReader { proxy in
+                ScrollView {
+                    content
+                        .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+                }
+            }
+        }
+    }
 
-                Text(needsCleanRestart ? "Restart needed before \(game.title)" : (endedWhileRunning ? "\(game.title) stopped" : "Couldn't start \(game.title)"))
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white)
-                    .multilineTextAlignment(.center)
+    private var content: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundColor(MuffinTheme.alertOnDark)
+                .accessibilityHidden(true)
 
-                // The engine's own words. Empty only if the bridge never set anything,
-                // which is itself worth seeing rather than papering over.
-                Text(message.isEmpty ? "The engine didn't report a reason." : message)
-                    .font(.system(size: 13, weight: .regular, design: .rounded))
+            Text(title)
+                .font(.system(.headline, design: .rounded))
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+
+            // The engine's own words. Empty only if the bridge never set anything,
+            // which is itself worth seeing rather than papering over.
+            Text(message.isEmpty ? "The engine didn't report a reason." : message)
+                .font(.system(.footnote, design: .rounded))
+                .foregroundColor(.white.opacity(0.75))
+                .multilineTextAlignment(.center)
+                .textSelection(.enabled)
+                .frame(maxWidth: 480)
+
+            if needsCleanRestart {
+                Text("iOS doesn't let an app reopen itself. Tap Close MuffinEMU, then open it again from your Home Screen.")
+                    .font(.system(.footnote, design: .rounded))
                     .foregroundColor(.white.opacity(0.75))
                     .multilineTextAlignment(.center)
-                    .textSelection(.enabled)
                     .frame(maxWidth: 480)
+            }
 
-                // The real path, asked of the bridge, rather than the folder this used to
-                // name. It said "Files > On My iPad > Cemu", which is true for a normally
-                // installed app and false under LiveContainer - LiveContainer redirects
-                // HOME per hosted app, so the file lands under LiveContainer's own
-                // Documents instead. Anyone who followed the old line looked in the right
-                // place for the wrong install, found nothing, and reasonably concluded no
-                // crash log existed. Selectable, because the useful thing to do with a
-                // path is copy it.
-                Text(Self.crashLogHint)
-                    .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.6))
-                    .multilineTextAlignment(.center)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: 480)
+            // The real path, asked of the bridge, rather than the folder this used to
+            // name. It said "Files > On My iPad > Cemu", which is true for a normally
+            // installed app and false under LiveContainer - LiveContainer redirects
+            // HOME per hosted app, so the file lands under LiveContainer's own
+            // Documents instead. Anyone who followed the old line looked in the right
+            // place for the wrong install, found nothing, and reasonably concluded no
+            // crash log existed. Selectable, because the useful thing to do with a
+            // path is copy it.
+            Text(Self.crashLogHint)
+                .font(.system(.caption2, design: .rounded))
+                .foregroundColor(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .textSelection(.enabled)
+                .frame(maxWidth: 480)
 
-                if needsCleanRestart {
-                    // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
-                    // exit(0) after a tap is accepted for a sideloaded app. _exit, not exit: exit() runs the core's
-                    // static destructors while its threads are still alive, and one of them then locks a destroyed
-                    // mutex ("mutex lock failed: Invalid argument" in the crash log). Flush, then leave without them.
-                    Button(action: { fflush(nil); _exit(0) }) {
-                        Text("Close MuffinEMU")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    }
-                    .buttonStyle(MuffinPrimaryButtonStyle())
-                    .padding(.top, 4)
+            if needsCleanRestart {
+                // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
+                // exit(0) after a tap is accepted for a sideloaded app. _exit, not exit: exit() runs the core's
+                // static destructors while its threads are still alive, and one of them then locks a destroyed
+                // mutex ("mutex lock failed: Invalid argument" in the crash log). Flush, then leave without them.
+                Button(action: { fflush(nil); _exit(0) }) {
+                    Text("Close MuffinEMU")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
                 }
-
-                Button(action: onDismiss) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("Back to games")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    }
-                }
-                .buttonStyle(MuffinSecondaryButtonStyle())
+                .buttonStyle(MuffinPrimaryButtonStyle())
                 .padding(.top, 4)
             }
-            .padding(32)
+
+            Button(action: onDismiss) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Back to games")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+            }
+            .buttonStyle(MuffinSecondaryButtonStyle())
+            .padding(.top, 4)
         }
+        .padding(32)
     }
 }
 
@@ -1546,7 +1572,7 @@ struct EmulatorViewOptimized: View {
             // instead of by ImGui inside the (reduced-scale) game surface. Above the video,
             // below the controls; no layout, no touches. In dual-screen the TV is on another
             // display this layer cannot reach, so it hands back to the core's own drawing.
-            NativeCoreOverlayView(active: nativeOverlayActive)
+            NativeCoreOverlayView(active: nativeOverlayActive, topInset: topBarHeight)
 
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 12) {
@@ -1679,6 +1705,19 @@ struct EmulatorViewOptimized: View {
                             .accessibilityLabel("Swap TV and GamePad")
                         }
 
+                        // Dual screen: which Wii U screen is on the external display. Lives
+                        // in the bar with the other in-game buttons. It used to float in the
+                        // top-right corner, which is exactly where the bar's last button and
+                        // the frame rate are, so it sat on top of them.
+                        if showSwapButton, displayRouter.placement == .dualScreen {
+                            Button(action: { DisplayRouter.shared.toggleScreenLayoutFromSwapButton() }) {
+                                Image(systemName: "rectangle.2.swap")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .accessibilityLabel("Swap TV and GamePad screens")
+                        }
+
                         // Only worth showing while the GamePad's own screen is actually
                         // the one on top - hiding the pad to touch a TV that has no
                         // touchscreen of its own would just take the controls away for
@@ -1776,10 +1815,15 @@ struct EmulatorViewOptimized: View {
                         .padding(.horizontal, 12)
                         .background(Color.white.opacity(0.08))
                         .cornerRadius(10)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Frame rate")
+                        .accessibilityValue(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
                     }
                     }
                 }
-                .padding(12)
+                // Sideways it keeps clear of an iPhone's notch side and rounded corners; the
+                // game view ignores the safe area, so the window is asked directly.
+                .padding(WindowSafeArea.padding(minimum: 12))
                 .background(Color.black.opacity(0.5))
                 .borderBottom(width: 0.5, color: Color.white.opacity(0.1))
                 .reportTopBarBottom()
@@ -1893,30 +1937,6 @@ struct EmulatorViewOptimized: View {
                 .allowsHitTesting(false)
             }
 
-            // Settings > External Display > "Show swap button (TV <-> Pad)". Only ever
-            // visible in .dualScreen - the only placement where there are two physical
-            // screens to swap between at all - so it can't appear and do nothing on a
-            // plain iPad. Top-trailing, out of the pad's own footprint regardless of
-            // skin or comfort-controls layout.
-            if showSwapButton, displayRouter.placement == .dualScreen {
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button {
-                            DisplayRouter.shared.toggleScreenLayoutFromSwapButton()
-                        } label: {
-                            Image(systemName: "rectangle.2.swap")
-                                .font(.system(size: 18, weight: .semibold))
-                        }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
-                        .accessibilityLabel("Swap TV and GamePad screens")
-                        .padding(.top, 8)
-                        .padding(.trailing, 12)
-                    }
-                    Spacer()
-                }
-            }
-
             // Above the pad (which stays on screen and interactive-looking underneath
             // it) so there is no ambiguity about whether input is actually reaching a
             // paused title - the label is the whole point, not just the pause itself.
@@ -1924,6 +1944,7 @@ struct EmulatorViewOptimized: View {
                 VStack(spacing: 10) {
                     Image(systemName: "pause.circle.fill")
                         .font(.system(size: 40))
+                        .accessibilityHidden(true)
                     Text("PAUSED")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .tracking(2)
@@ -1944,9 +1965,11 @@ struct EmulatorViewOptimized: View {
                 VStack(spacing: 12) {
                     ProgressView()
                         .tint(.white)
-                    Text("Booting…")
+                    Text("Starting \(game.title)…")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
 
                     if showLaunchLog {
                         LaunchLogView(store: launchLog)
@@ -1975,6 +1998,15 @@ struct EmulatorViewOptimized: View {
                 LaunchIntroView { showLaunchIntro = false }
                     .transition(.opacity)
                     .zIndex(10)
+            }
+
+            // The cover and the intro hide the top bar, so a launch that never finishes needs its own way out.
+            if gameManager.emulationState == .loading {
+                BootBackButton {
+                    gameManager.stopEmulation()
+                    isRunning = true
+                }
+                .zIndex(11)
             }
 
             // Deliberately outlives .loading. emulationState flips to .running the
@@ -2325,10 +2357,12 @@ struct EmulatorViewOptimized: View {
         // popping up mid-game - a stray swipe near the bottom edge no longer competes
         // with on-screen controls sitting right where it appears.
         .hidingSystemOverlaysDuringPlay()
+        .modifier(HeatNoticeModifier { gameManager.showLaunchNotice($0) })
         .overlay(alignment: .top) {
-            if (gameManager.videoStalled || (stallSaveRequested && saveStateBusySlot != nil)) && !stallCardDismissed && gameManager.emulationState == .running {
+            if showsStallCard {
                 videoStalledCard
-                    .padding(.top, 12)
+                    // Below the top bar, not on top of Back and the button row.
+                    .padding(.top, topBarHeight + 8)
                     .padding(.horizontal, 16)
                     .transition(.opacity)
             }
@@ -2337,6 +2371,18 @@ struct EmulatorViewOptimized: View {
             // Saving pauses the game, which also clears the flag; keep the card up until the save is done.
             if !stalled && saveStateBusySlot == nil {
                 stallCardDismissed = false
+            }
+        }
+        .onChange(of: gameManager.videoStallKind) { kind in
+            // A new or worse problem is shown even if an earlier card was dismissed.
+            if kind != 0 { stallCardDismissed = false }
+        }
+        .onChange(of: saveStateBusySlot) { slot in
+            // After a save from the card, leave the result up for a few seconds, then let it go
+            // if the picture is fine again.
+            guard slot == nil, stallSaveRequested, !gameManager.videoStalled else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                if saveStateBusySlot == nil && !gameManager.videoStalled { stallSaveRequested = false }
             }
         }
         .sheet(isPresented: $showSaveStates) {
@@ -2398,28 +2444,63 @@ struct EmulatorViewOptimized: View {
         }
     }
 
+    /// Whether the picture-stopped card is up: while the watchdog says the picture has stopped, and
+    /// after a save started from the card, so the result of that save is always seen.
+    private var showsStallCard: Bool {
+        guard gameManager.emulationState == .running, !stallCardDismissed else { return false }
+        return gameManager.videoStalled || stallSaveRequested
+    }
+
+    private var stallTitle: String {
+        switch gameManager.videoStallKind {
+        case 0: return saveStateBusySlot != nil ? "Saving the game" : (saveStateStatus?.isWarning == true ? "Couldn't save" : "Saved")
+        case 2: return "Graphics stopped working"
+        case 3: return "Out of memory for the picture"
+        case 4: return "Memory is running low"
+        case 5: return "The screen stopped updating"
+        default: return "The picture froze"
+        }
+    }
+
+    private var stallAdvice: String {
+        switch gameManager.videoStallKind {
+        case 2: return "iOS stopped running this game's graphics. Tap Save State, then Quit Game. MuffinEMU will then ask you to close and reopen it before the next game."
+        case 3: return "Tap Save State, then Quit Game and reopen MuffinEMU. A lower Resolution (Settings, Graphics) uses less memory."
+        case 4: return "iOS may close MuffinEMU soon. Tap Save State now. A lower Resolution (Settings, Graphics) uses less memory."
+        case 5: return "The game is still running but the screen isn't taking frames. This goes away by itself if it recovers. If it doesn't, tap Save State, then Quit Game and reopen MuffinEMU."
+        default: return "The picture has stopped while the game keeps running. This goes away by itself if the picture comes back."
+        }
+    }
+
+    /// Only a problem that can clear by itself is worth waiting on; the others are a decision to dismiss.
+    private var stallDismissTitle: String {
+        let kind = gameManager.videoStallKind
+        return (kind == 1 || kind == 5) ? "Keep waiting" : "Dismiss"
+    }
+
     /// Small card shown while the picture is stopped. The game's audio and input keep running
     /// in this state, so a save state still works. Only the card itself takes touches; the
     /// rest of the overlay lets them through to the game.
     private var videoStalledCard: some View {
         VStack(spacing: 10) {
-            Text(gameManager.videoStallKind == 2 ? "The GPU stopped" : gameManager.videoStallKind == 3 ? "Out of memory for the screen" : gameManager.videoStallKind == 4 ? "Not enough memory" : gameManager.videoStallKind == 5 ? "The screen stopped updating" : "Video stopped responding")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+            Text(stallTitle)
+                .font(.system(.subheadline, design: .rounded).weight(.semibold))
                 .foregroundColor(.white)
-            if gameManager.videoStallKind >= 2 && !stallSaveRequested {
-                Text(gameManager.videoStallKind == 4
-                     ? "Not enough memory for this game on this device. Save State, then try Render Scale: Battery saver."
-                     : gameManager.videoStallKind == 5
-                     ? "The game is still running but the screen isn't taking frames. This card goes away by itself if it recovers; if it doesn't, Save State and restart the app."
-                     : "Save State, then restart the app.")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+            if gameManager.videoStalled {
+                Text(stallAdvice)
+                    .font(.system(.caption, design: .rounded))
                     .foregroundColor(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if stallSaveRequested {
                 Text(saveStateBusySlot != nil ? "Saving..." : (saveStateStatus?.message ?? ""))
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .font(.system(.caption, design: .rounded))
                     .foregroundColor(.white.opacity(0.85))
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
                 Button("Save State") { saveStalledGame() }
@@ -2428,7 +2509,7 @@ struct EmulatorViewOptimized: View {
                     gameManager.stopEmulation()
                     isRunning = true
                 }
-                Button(gameManager.videoStallKind >= 2 && gameManager.videoStallKind != 5 ? "Dismiss" : "Keep waiting") {
+                Button(stallDismissTitle) {
                     stallCardDismissed = true
                     stallSaveRequested = false
                 }
