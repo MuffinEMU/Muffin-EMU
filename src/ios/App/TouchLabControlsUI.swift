@@ -210,8 +210,8 @@ struct TouchLabLayoutPanel: View {
                             Button("Cancel", role: .cancel) { }
                         } message: {
                             Text(scheme == TouchLabSettings.adaptiveStyleID
-                                 ? "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships, and Adaptive forgets where your thumbs land in this game."
-                                 : "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships.")
+                                 ? "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships in every game, and Adaptive forgets where your thumbs land in this game only."
+                                 : "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships, in every game.")
                         }
 
                     Button("Done", action: onDone)
