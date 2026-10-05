@@ -13,7 +13,16 @@ struct ContentView: View {
     @State private var selectedGame: GameMetadata?
     @State private var showingGameBrowser = true
     @State private var showingFavorites = false
-    @State private var selectedSkin: WiiUControllerSkin = WiiUControllerSkin.standard
+    /// The skin's name, stored so the choice survives relaunch (it used to be @State and reset to Standard).
+    /// A name rather than the skin: ControllerSkinLibrary.getSkin(by:) also resolves renamed skins.
+    @AppStorage(ControllerSkinStorage.key) private var selectedSkinName = WiiUControllerSkin.standard.name
+
+    private var selectedSkin: Binding<WiiUControllerSkin> {
+        Binding(
+            get: { ControllerSkinLibrary.getSkin(by: selectedSkinName) ?? WiiUControllerSkin.standard },
+            set: { selectedSkinName = $0.name }
+        )
+    }
 
     var body: some View {
         ZStack {
@@ -36,7 +45,7 @@ struct ContentView: View {
                         game: game,
                         gameManager: gameManager,
                         isRunning: $showingGameBrowser,
-                        controllerSkin: $selectedSkin
+                        controllerSkin: selectedSkin
                     )
                     .overlay(alignment: .top) {
                         if let notice = gameManager.launchNotice {

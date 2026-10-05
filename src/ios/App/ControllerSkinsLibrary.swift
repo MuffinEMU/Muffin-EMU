@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// Where the chosen on-screen pad skin's name is kept.
+enum ControllerSkinStorage {
+    static let key = "muffin.pad.skin"
+}
+
 struct ControllerSkinLibrary {
     static let allSkins: [WiiUControllerSkin] = [
         .standard,
