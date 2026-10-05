@@ -1965,9 +1965,11 @@ struct EmulatorViewOptimized: View {
                 VStack(spacing: 12) {
                     ProgressView()
                         .tint(.white)
-                    Text("Booting…")
+                    Text("Starting \(game.title)…")
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundColor(.white.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
 
                     if showLaunchLog {
                         LaunchLogView(store: launchLog)
@@ -1996,6 +1998,15 @@ struct EmulatorViewOptimized: View {
                 LaunchIntroView { showLaunchIntro = false }
                     .transition(.opacity)
                     .zIndex(10)
+            }
+
+            // The cover and the intro hide the top bar, so a launch that never finishes needs its own way out.
+            if gameManager.emulationState == .loading {
+                BootBackButton {
+                    gameManager.stopEmulation()
+                    isRunning = true
+                }
+                .zIndex(11)
             }
 
             // Deliberately outlives .loading. emulationState flips to .running the
