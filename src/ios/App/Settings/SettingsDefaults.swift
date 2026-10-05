@@ -1,5 +1,11 @@
 import Foundation
 
+extension Notification.Name {
+    /// Posted after "Reset settings to defaults" has cleared and re-pushed everything, for
+    /// sections that keep their own copy of a value (@State, not @AppStorage) to re-read it.
+    static let muffinSettingsWereReset = Notification.Name("muffin.settings.wereReset")
+}
+
 /// What "Reset settings to defaults" (Settings > About) resets: every UserDefaults key
 /// under the "muffin." prefix that is a setting, plus Resolution ("renderScale") and
 /// Emulated Clock ("timebaseShift"), which predate the prefix.
@@ -63,7 +69,12 @@ enum SettingsDefaults {
         }
         // The style store caches its keys, so it must re-read them after the loop above.
         UIStyleStore.shared.reloadFromDefaults()
+        // Same for these two: they hold their values in memory and would otherwise keep the
+        // old pad layout until the next launch, then silently change back.
+        ControllerCustomLayout.shared.resetAll()
+        PreviewPadStore.shared.reloadFromDefaults()
         pushDefaultsToBridge()
+        NotificationCenter.default.post(name: .muffinSettingsWereReset, object: nil)
     }
 
     /// Tells the running engine the default values. Removing a key reverts its @AppStorage on
