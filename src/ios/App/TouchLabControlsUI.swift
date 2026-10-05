@@ -97,6 +97,22 @@ struct TouchLabStyleSettingsRows: View {
     }
 }
 
+/// The in-game control-style switch, at the top of every layout panel that has one. "" is
+/// MuffinEMU's own pad. Choosing a style here swaps the pad and the panel under it.
+struct TouchLabStylePicker: View {
+    @AppStorage(TouchLabSettings.schemeKey) private var scheme = TouchLabSettings.defaultScheme
+
+    var body: some View {
+        Picker("Control style", selection: $scheme) {
+            ForEach(touchLabStyleIDs, id: \.self) { id in
+                Text(id.isEmpty ? "MuffinEMU" : (TouchLabSettings.styles.first { $0.id == id }?.name ?? id))
+                    .tag(id)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
+}
+
 /// The in-game layout panel while a TouchLab style is live. The pad behind it is drawn
 /// but inert (see TouchLabPadOverlay's `enabled`), so nothing here can press a button.
 struct TouchLabLayoutPanel: View {
@@ -109,124 +125,67 @@ struct TouchLabLayoutPanel: View {
     @AppStorage(ControllerLayoutSettings.opacityKey) private var controlOpacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     @AppStorage(ControllerLayoutSettings.shoulderOffsetKey) private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
-    @State private var showingResetConfirmation = false
+
+    private var isAdaptive: Bool { scheme == TouchLabSettings.adaptiveStyleID }
 
     var body: some View {
-        VStack {
-            VStack(spacing: 10) {
-                Picker("Control style", selection: $scheme) {
-                    ForEach(touchLabStyleIDs, id: \.self) { id in
-                        Text(id.isEmpty ? "MuffinEMU" : (TouchLabSettings.styles.first { $0.id == id }?.name ?? id))
-                            .tag(id)
-                    }
-                }
-                .pickerStyle(.segmented)
+        LayoutPanelCard(rows: { rows }, footer: {
+            LayoutPanelFooter(
+                resetMessage: isAdaptive
+                    ? "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships in every game, and Adaptive forgets where your thumbs land in this game only."
+                    : "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships, in every game.",
+                onReset: resetToDefault,
+                onDone: onDone)
+        })
+    }
 
-                Text("\(TouchLabSettings.summary(scheme)) These styles don't support dragging individual buttons. Nothing here reaches the game.")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
+    @ViewBuilder private var rows: some View {
+        TouchLabStylePicker()
 
-                HStack(spacing: 10) {
-                    Image(systemName: "minus.magnifyingglass")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.7))
-                    Slider(
-                        value: $controlScale,
-                        in: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale
-                    )
-                    Image(systemName: "plus.magnifyingglass")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.7))
-                }
+        PanelCaption(text: "\(TouchLabSettings.summary(scheme)) These styles don't support dragging individual buttons. Nothing here reaches the game.")
 
-                HStack(spacing: 10) {
-                    Image(systemName: "circle.lefthalf.filled")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.7))
-                    Slider(value: $controlOpacity, in: 0.2...1.0)
-                    Image(systemName: "circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.7))
-                }
+        PanelSliderRow("Button size", leadingIcon: "minus.magnifyingglass", trailingIcon: "plus.magnifyingglass",
+                       value: $controlScale,
+                       range: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale)
 
-                // Hand size: both sticks move together, apart or closer. Only the styles
-                // with sticks in fixed places have anything for it to move.
-                if TouchLabSettings.hasFixedSticks(scheme) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
-                            .font(.system(size: 12))
-                            .foregroundColor(.white.opacity(0.7))
-                            .accessibilityHidden(true)
-                        Slider(
-                            value: $stickSpacing,
-                            in: ControllerLayoutSettings.minStickSpacing...ControllerLayoutSettings.maxStickSpacing,
-                            step: ControllerLayoutSettings.stickSpacingStep
-                        )
-                        .accessibilityLabel("Stick spacing")
-                        .accessibilityValue(ControllerLayoutSettings.stickSpacingLabel(stickSpacing))
-                        Image(systemName: "arrow.left.and.line.vertical.and.arrow.right")
-                            .font(.system(size: 12))
-                            .foregroundColor(.white.opacity(0.7))
-                            .accessibilityHidden(true)
-                    }
-                }
+        PanelSliderRow("Opacity", leadingIcon: "circle.lefthalf.filled", trailingIcon: "circle.fill",
+                       value: $controlOpacity, range: 0.2...1.0)
 
-                // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare
-                // height for it. Only the styles with fixed shoulders have anything to move.
-                if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
-                    HStack(spacing: 10) {
-                        Text("L/R")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.85))
-                        Image(systemName: "arrow.up.and.down")
-                            .font(.system(size: 12))
-                            .foregroundColor(.white.opacity(0.7))
-                            .accessibilityHidden(true)
-                        Slider(
-                            value: $shoulderOffset,
-                            in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true),
-                            step: ControllerLayoutSettings.shoulderOffsetStep
-                        )
-                        .accessibilityLabel("Shoulder button height")
-                        .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(shoulderOffset))
-                    }
-                }
+        // Hand size: both sticks move together, apart or closer. Only the styles with sticks
+        // in fixed places have anything for it to move.
+        if TouchLabSettings.hasFixedSticks(scheme) {
+            PanelSliderRow("Stick spacing",
+                           leadingIcon: "arrow.right.and.line.vertical.and.arrow.left",
+                           trailingIcon: "arrow.left.and.line.vertical.and.arrow.right",
+                           value: $stickSpacing,
+                           range: ControllerLayoutSettings.minStickSpacing...ControllerLayoutSettings.maxStickSpacing,
+                           step: ControllerLayoutSettings.stickSpacingStep,
+                           spokenValue: ControllerLayoutSettings.stickSpacingLabel(stickSpacing))
+        }
 
-                if scheme == TouchLabSettings.floatStyleID {
-                    Picker("Camera", selection: $floatCamera) {
-                        ForEach(TouchLabSettings.cameraOptions, id: \.value) { option in
-                            Text(option.title).tag(option.value)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                }
+        // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare height
+        // for it. Only the styles with fixed shoulders have anything to move.
+        if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
+            PanelSliderRow("Shoulder button height", title: "L/R", leadingIcon: "arrow.up.and.down",
+                           value: $shoulderOffset,
+                           range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true),
+                           step: ControllerLayoutSettings.shoulderOffsetStep,
+                           spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(max(0, shoulderOffset)))
+        }
 
-                HStack(spacing: 12) {
-                    Button("Reset to default") { showingResetConfirmation = true }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
-                        .confirmationDialog("Reset controls to default?", isPresented: $showingResetConfirmation, titleVisibility: .visible) {
-                            Button("Reset to default", role: .destructive, action: resetToDefault)
-                            Button("Cancel", role: .cancel) { }
-                        } message: {
-                            Text(scheme == TouchLabSettings.adaptiveStyleID
-                                 ? "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships in every game, and Adaptive forgets where your thumbs land in this game only."
-                                 : "Size, opacity, stick spacing and shoulder height go back to how MuffinEMU ships, in every game.")
-                        }
-
-                    Button("Done", action: onDone)
-                        .buttonStyle(MuffinSecondaryButtonStyle())
+        if scheme == TouchLabSettings.floatStyleID {
+            Picker("Camera", selection: $floatCamera) {
+                ForEach(TouchLabSettings.cameraOptions, id: \.value) { option in
+                    Text(option.title).tag(option.value)
                 }
             }
-            .padding(14)
-            .frame(maxWidth: 420)
-            .background(Color.black.opacity(0.82))
-            .cornerRadius(14)
-            .padding(.top, 12)
-
-            Spacer()
+            .pickerStyle(.segmented)
         }
-        .transition(.opacity)
+
+        PanelCaption(text: isAdaptive
+                     ? "These settings apply to every game, except that Adaptive remembers where your thumbs land separately for each game."
+                     : "These settings apply to every game.",
+                     prominent: false)
     }
 
     /// Size, opacity, stick spacing and shoulder height are the only placement the fixed styles have.
@@ -237,7 +196,7 @@ struct TouchLabLayoutPanel: View {
         controlOpacity = ControllerLayoutSettings.defaultOpacity
         stickSpacing = ControllerLayoutSettings.defaultStickSpacing
         shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
-        if scheme == TouchLabSettings.adaptiveStyleID {
+        if isAdaptive {
             TouchLabSettings.resetAdaptive(gameID: gameID)
         }
     }
