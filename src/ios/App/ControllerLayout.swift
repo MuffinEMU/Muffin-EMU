@@ -418,7 +418,7 @@ enum ControllerGeometry {
     /// The shift is applied to where each shoulder is POSITIONED, not by padding or offsetting
     /// the control's view, so its hit area moves with it (see muffin-pad-hit-testing-trap).
     static func shoulderShift(offset: Double, centreY: CGFloat, containerHeight: CGFloat, unit: CGFloat,
-                              controls: [Control]) -> CGFloat {
+                              controls: [Control], topInset: CGFloat = 0) -> CGFloat {
         let requested = CGFloat(min(max(offset, ControllerLayoutSettings.minShoulderOffset),
                                     ControllerLayoutSettings.maxShoulderOffset))
         guard requested != 0, unit > 0 else { return 0 }
@@ -440,8 +440,9 @@ enum ControllerGeometry {
         let left = shoulderBox.map { $0.minX }.min() ?? 0
         let right = shoulderBox.map { $0.maxX }.max() ?? 0
 
-        // Most the shoulders can move up: their top edge to a quarter-button below the top.
-        let up = -(centreY / unit + top - 0.25)
+        // Most the shoulders can move up: their top edge to a quarter-button below the top
+        // (below the top bar, when the caller says one covers it).
+        let up = -((centreY - topInset) / unit + top - 0.25)
         // Most they can move down: until their bottom edge is a fifth of a button above the
         // nearest control beneath them, if there is one.
         let gap: CGFloat = 0.2
@@ -488,6 +489,14 @@ enum ControllerGeometry {
         Control(id: "B", glyph: "B", offset: CGPoint(x: 0, y: crossY),  shape: button, style: .face),
         Control(id: "R3", glyph: "", offset: .zero, shape: stick, style: .stick)
     ]
+
+    /// One control's width and height, in layout units.
+    static func size(of control: Control) -> CGSize {
+        switch control.shape {
+        case .circle(let diameter):    return CGSize(width: diameter, height: diameter)
+        case .roundedRect(let box, _): return box
+        }
+    }
 
     /// The rectangle a cluster actually covers, in layout units, relative to its centre
     /// dot. Derived from the control list rather than written down, so it cannot drift out

@@ -1234,9 +1234,6 @@ struct EmulatorViewOptimized: View {
     /// state, not AppStorage: nobody wants to come back to a game and find the controls
     /// still in edit mode because that is how they last left them.
     @State private var isEditingControlLayout = false
-    /// Asks before "Reset to default" in the move-controls panel throws away a layout
-    /// someone may have spent a while getting right.
-    @State private var showingResetControlsConfirmation = false
     /// Local, not AppStorage - the same reasoning as isEditingControlLayout above:
     /// nobody wants to come back to a game and find the pad missing because that was
     /// how they last left it. For touching the GamePad screen's own touchscreen
@@ -1266,38 +1263,6 @@ struct EmulatorViewOptimized: View {
     /// runs - a serial queue, not a concurrent one, so a resume dispatched right behind a
     /// pause can never run first and unpause a title the pause never reached.
     private static let titlePauseQueue = DispatchQueue(label: "muffin.title.pause", qos: .userInitiated)
-    /// Visible only while the preview pad is on. Exists purely to answer one question
-    /// with certainty and without needing log.txt: does a tap on the preview pad even
-    /// reach this closure at all. If this counter never moves when you tap a button,
-    /// the break is in the SwiftUI gesture layer (PreviewControllerPad/HeldControl); if
-    /// it does move but the game still doesn't react, the break is further down, in the
-    /// bridge or the engine's input override path.
-    /// The same two keys the pad itself reads. Declared here as well so the in-game
-    /// sliders write to the thing being dragged, with no plumbing between them.
-    @AppStorage(ControllerLayoutSettings.scaleKey)
-    private var controlScale = ControllerLayoutSettings.defaultScale
-    @AppStorage(ControllerLayoutSettings.opacityKey)
-    private var controlOpacity = ControllerLayoutSettings.defaultOpacity
-    @AppStorage(ControllerLayoutSettings.stickSpacingKey)
-    private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
-    private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
-    /// Same key the pad and SettingsView read. Offered in the move-controls panel as
-    /// well as in Settings because switching schemes is a thing you decide with a game
-    /// under you, exactly like the two sliders next to it.
-    @AppStorage(ControllerLayoutSettings.joystickKey)
-    private var joystickMode = ControllerLayoutSettings.defaultJoystick
-    /// Same key ControllerPad.swift reads to decide whether L/ZL/minus and R/ZR/plus are
-    /// drawn on the sticks or on the d-pad/A-B-X-Y clusters. Declared here for the same
-    /// reason joystickMode is: this is the panel you have a game under you to judge it
-    /// from.
-    @AppStorage(ControllerLayoutSettings.comfortControlsKey)
-    private var comfortControls = ControllerLayoutSettings.defaultComfortControls
-    /// Same key ControllerPad.swift reads to decide which gesture (if either) a
-    /// button/cluster gets. Declared here too so the segmented control below writes to
-    /// the thing actually being edited, same reasoning as the two sliders above it.
-    @AppStorage(ControllerLayoutSettings.individualEditModeKey)
-    private var individualEditMode = ControllerLayoutSettings.defaultIndividualEditMode
     /// Off by default - see the branch on this flag a few lines below for exactly what
     /// it swaps in and why the shipping path is otherwise untouched.
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
@@ -1309,10 +1274,6 @@ struct EmulatorViewOptimized: View {
     @State private var touchLabScreens = TouchLabScreenState()
     /// Bottom edge of the top bar, so TouchLab's controls stay clear of Back / pause.
     @State private var topBarHeight: CGFloat = 0
-    /// The slider in this view's own edit-layout panel writes here directly, the same
-    /// "declared where it's edited, read where it's drawn" pattern controlScale already
-    /// uses for MuffinEMU's own pad - MeloControlsOverlay reads the same key itself.
-    @AppStorage(MeloControlsSetting.scaleKey) private var meloControlsScale = MeloControlsSetting.defaultScale
     @ObservedObject private var previewPad = PreviewPadStore.shared
     /// Same key Settings > External Display reads. Declared here too, rather than read
     /// once at boot, so turning it off takes effect on the button already on screen
@@ -1336,18 +1297,6 @@ struct EmulatorViewOptimized: View {
     /// two screens Single Screen mode currently shows resets to TV each fresh launch
     /// rather than being remembered, the same way MeloCafe never persisted it either.
     @State private var localSwapped = false
-    // The two feel settings, offered here as well as in Settings for the same reason the
-    // toggle is: a deadzone is not something you can judge from a settings screen with no
-    // game under it. This is the panel you have open while steering.
-    @AppStorage(ControllerLayoutSettings.deadzoneKey)
-    private var stickDeadzone = ControllerLayoutSettings.defaultDeadzone
-    @AppStorage(ControllerLayoutSettings.stickCurveKey)
-    private var stickCurve = ControllerLayoutSettings.defaultStickCurve
-    // The gate belongs here more than either slider does: it is the one setting you
-    // judge by pushing the stick to a corner and seeing whether the game turns as hard
-    // as you meant it to.
-    @AppStorage(ControllerLayoutSettings.stickGateKey)
-    private var stickGateRaw = ControllerLayoutSettings.defaultStickGateRaw
     // Defaults ON, and must keep matching SettingsView's declaration of the same key -
     // two @AppStorage defaults for one key that disagree means the toggle and the
     // emulator disagree about what is on. See SettingsView for why this flipped.
@@ -1427,6 +1376,11 @@ struct EmulatorViewOptimized: View {
     @State private var showEmulatedDevices = false
     private var anyEmulatedDeviceEnabled: Bool {
         skylanderPortalEnabled || infinityBaseEnabled || dimensionsToypadEnabled
+    }
+
+    /// What the pad button switches back to when Melo-Controller is on.
+    private var otherPadName: String {
+        TouchLabSettings.isTouchLab(touchLabScheme) ? "the \(TouchLabSettings.name(touchLabScheme)) controls" : "MuffinEMU's controls"
     }
 
     /// Which control system is live. One decision, made once.
@@ -1511,6 +1465,27 @@ struct EmulatorViewOptimized: View {
             } else {
                 cemu_bridge_resume()
             }
+        }
+    }
+
+    /// The move-controls panel for whichever pad is live (see LayoutPanels.swift).
+    @ViewBuilder private var layoutPanel: some View {
+        let gameID = gameManager.currentGame?.id
+        switch padSystem {
+        case .melo:
+            MeloLayoutPanel(gameID: gameID, onDone: finishEditingLayout)
+        case .touchLab:
+            TouchLabLayoutPanel(gameID: gameID, onDone: finishEditingLayout)
+        case .preview:
+            PreviewLayoutPanel(onDone: finishEditingLayout)
+        case .muffin:
+            MuffinPadLayoutPanel(onDone: finishEditingLayout)
+        }
+    }
+
+    private func finishEditingLayout() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            isEditingControlLayout = false
         }
     }
 
@@ -1655,11 +1630,14 @@ struct EmulatorViewOptimized: View {
                             .foregroundColor(.white)
                             .lineLimit(1)
 
+                        // Skins colour MuffinEMU's own pad only; the other pads draw their own colours.
                         // accentOnDark: the bar is always dark, and several light-mode
                         // accents (Blueberry, Equality, Galaxy, Neon) were navy on it.
-                        Text(controllerSkin.name)
-                            .font(.system(size: 9, weight: .regular, design: .rounded))
-                            .foregroundColor(MuffinTheme.accentOnDark)
+                        if padSystem == .muffin {
+                            Text(controllerSkin.name)
+                                .font(.system(size: 9, weight: .regular, design: .rounded))
+                                .foregroundColor(MuffinTheme.accentOnDark)
+                        }
                     }
                     .frame(maxWidth: .infinity)
 
@@ -1689,7 +1667,7 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
-                        .accessibilityLabel(useMeloControls ? "Switch to MuffinEMU's controls" : "Switch to Melo-Controller")
+                        .accessibilityLabel(useMeloControls ? "Switch to \(otherPadName)" : "Switch to Melo-Controller")
 
                         // Reachable without leaving the game, same reasoning as the
                         // move-controls and pad-hide buttons around it: reachable
@@ -1811,6 +1789,8 @@ struct EmulatorViewOptimized: View {
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 isEditingControlLayout.toggle()
                             }
+                            // There is nothing to move while the pad is hidden.
+                            if isEditingControlLayout { padControlsHidden = false }
                             // Editing disables the buttons, and a button held at the
                             // moment it stops being able to report its own release
                             // would stay held inside the title.
@@ -1867,10 +1847,18 @@ struct EmulatorViewOptimized: View {
                 .reportTopBarBottom()
 
                 if showSkinSelector {
-                    OrganizedControllerSkinSelector(selectedSkin: $controllerSkin)
-                        .padding(12)
-                        .background(Color.black.opacity(0.7))
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                    VStack(spacing: 6) {
+                        OrganizedControllerSkinSelector(selectedSkin: $controllerSkin)
+                        Text(padSystem == .muffin
+                             ? "The skin applies to every game."
+                             : "Skins colour MuffinEMU's own pad, which isn't the one in use right now.")
+                            .font(.system(size: 11, design: .rounded))
+                            .foregroundColor(.white.opacity(0.65))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(12)
+                    .background(Color.black.opacity(0.7))
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             // Pinned to the top rather than left to fill the ZStack the way a VStack's
@@ -1947,7 +1935,8 @@ struct EmulatorViewOptimized: View {
                             )
                         },
                         isEditingLayout: $isEditingControlLayout,
-                        isPaused: isPaused
+                        isPaused: isPaused,
+                        topInset: topBarHeight
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .muffin) }
                 }
@@ -2076,245 +2065,10 @@ struct EmulatorViewOptimized: View {
 
             // Last in the ZStack so it sits above the pad it is adjusting - a size
             // slider you have to hunt for behind a button is not an adjustment anyone
-            // makes twice. Everything here writes to the same AppStorage keys the pad
-            // reads, so the change is under the finger as the slider moves.
-            if isEditingControlLayout, useMeloControls {
-                // Melo-Controller's own layout editor (drag/pinch individual buttons -
-                // see MeloControlsOverlay's isEditing) resizes one button at a time;
-                // this slider resizes all of them at once, by writing the package's own
-                // "On-ScreenControllerScale". That key scales each button's FRAME, not
-                // the coordinate system, so the buttons grow in place: the gaps between
-                // them are fixed stack spacings and do not open up, and the clusters
-                // grow inward from the screen edges they are pinned to rather than off
-                // them. None of the grouped/individual/joystick/comfort/stick-gate
-                // controls below apply to it - those are MuffinEMU's own pad's settings.
-                VStack {
-                    VStack(spacing: 10) {
-                        Text("Melo-Controller size")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.85))
-
-                        HStack(spacing: 10) {
-                            Image(systemName: "minus.magnifyingglass")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                            Slider(
-                                value: $meloControlsScale,
-                                in: MeloControlsSetting.minScale...MeloControlsSetting.maxScale
-                            )
-                            Image(systemName: "plus.magnifyingglass")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-
-                        HStack(spacing: 12) {
-                            Button("Reset to default") { showingResetControlsConfirmation = true }
-                                .buttonStyle(MuffinSecondaryButtonStyle())
-                                .confirmationDialog("Reset controls to default?", isPresented: $showingResetControlsConfirmation, titleVisibility: .visible) {
-                                    Button("Reset to default", role: .destructive) {
-                                        MeloControlsSetting.resetLayout(gameID: gameManager.currentGame?.id)
-                                    }
-                                    Button("Cancel", role: .cancel) { }
-                                } message: {
-                                    Text("Melo-Controller's size goes back to how it ships in every game, and so do the buttons you've moved in this game.")
-                                }
-
-                            Button("Done") {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    isEditingControlLayout = false
-                                }
-                            }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
-                        }
-                    }
-                    .padding(14)
-                    .frame(maxWidth: 420)
-                    .background(Color.black.opacity(0.82))
-                    .cornerRadius(14)
-                    .padding(.top, 12)
-
-                    Spacer()
-                }
-                .transition(.opacity)
-            } else if isEditingControlLayout, padSystem == .touchLab {
-                // TouchLab styles: size, opacity and style only - no per-button dragging.
-                TouchLabLayoutPanel(gameID: gameManager.currentGame?.id) {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isEditingControlLayout = false
-                    }
-                }
-            } else if isEditingControlLayout {
-                VStack {
-                    VStack(spacing: 10) {
-                        Picker("Edit mode", selection: $individualEditMode) {
-                            Text("Grouped").tag(false)
-                            Text("Individual").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-
-                        Text(individualEditMode
-                             ? "Drag any button to move it on its own, or pinch it to resize. L and ZL move together, and so do R and ZR. Nothing here reaches the game."
-                             : "Drag the empty space inside a dashed box to move that whole half - L/ZL and the rest of the left side together, R/ZR and the right side together. Nothing here reaches the game.")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.85))
-                            .multilineTextAlignment(.center)
-
-                        HStack(spacing: 10) {
-                            Image(systemName: "minus.magnifyingglass")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                            Slider(
-                                value: $controlScale,
-                                in: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale
-                            )
-                            Image(systemName: "plus.magnifyingglass")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-
-                        HStack(spacing: 10) {
-                            Image(systemName: "circle.lefthalf.filled")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                            Slider(value: $controlOpacity, in: 0.2...1.0)
-                            Image(systemName: "circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.white.opacity(0.7))
-                        }
-
-                        // L, ZL, R and ZR move up or down together. iPad only.
-                        if ControllerLayoutSettings.supportsShoulderOffset {
-                            HStack(spacing: 10) {
-                                Text("L/R")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.85))
-                                Image(systemName: "arrow.up.and.down")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .accessibilityHidden(true)
-                                Slider(
-                                    value: $shoulderOffset,
-                                    in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: false),
-                                    step: ControllerLayoutSettings.shoulderOffsetStep
-                                )
-                                .accessibilityLabel("Shoulder button height")
-                                .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(shoulderOffset))
-                            }
-                        }
-
-                        Toggle(isOn: $joystickMode) {
-                            Text("Joystick instead of d-pad")
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .foregroundColor(.white.opacity(0.85))
-                        }
-                        .tint(MuffinTheme.pixelBlue)
-
-                        if joystickMode {
-                            Toggle(isOn: $comfortControls) {
-                                Text("Comfort controls")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.85))
-                            }
-                            .tint(MuffinTheme.pixelBlue)
-
-                            Text(comfortControls
-                                 ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick."
-                                 : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.")
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.65))
-
-                            Picker("Gate", selection: $stickGateRaw) {
-                                ForEach(ControllerGeometry.StickGate.allCases) { gate in
-                                    Text(gate.title).tag(gate.rawValue)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-
-                            HStack(spacing: 10) {
-                                Text("Deadzone")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.85))
-                                Slider(
-                                    value: $stickDeadzone,
-                                    in: ControllerLayoutSettings.minDeadzone...ControllerLayoutSettings.maxDeadzone
-                                )
-                                // Fixed width, so dragging the slider does not make the
-                                // slider itself change size under the finger as the
-                                // number beside it gets wider.
-                                Text(stickDeadzone <= 0.0005
-                                     ? "off"
-                                     : "\(Int((stickDeadzone * 100).rounded()))%")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .frame(width: 34, alignment: .trailing)
-                            }
-
-                            HStack(spacing: 10) {
-                                Text("Fine")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.85))
-                                Slider(
-                                    value: $stickCurve,
-                                    in: ControllerLayoutSettings.minStickCurve...ControllerLayoutSettings.maxStickCurve
-                                )
-                                Text(stickCurve <= ControllerLayoutSettings.minStickCurve + 0.005
-                                     ? "lin"
-                                     : String(format: "%.1fx", stickCurve))
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .frame(width: 34, alignment: .trailing)
-                            }
-
-                            // Hand size: both sticks move together, apart or closer.
-                            HStack(spacing: 10) {
-                                Text("Sticks")
-                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                    .foregroundColor(.white.opacity(0.85))
-                                Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .accessibilityHidden(true)
-                                Slider(
-                                    value: $stickSpacing,
-                                    in: ControllerLayoutSettings.minStickSpacing...ControllerLayoutSettings.maxStickSpacing,
-                                    step: ControllerLayoutSettings.stickSpacingStep
-                                )
-                                .accessibilityLabel("Stick spacing")
-                                .accessibilityValue(ControllerLayoutSettings.stickSpacingLabel(stickSpacing))
-                                Image(systemName: "arrow.left.and.line.vertical.and.arrow.right")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .accessibilityHidden(true)
-                            }
-                        }
-
-                        HStack(spacing: 12) {
-                            Button("Reset to default") { showingResetControlsConfirmation = true }
-                                .buttonStyle(MuffinSecondaryButtonStyle())
-                                .confirmationDialog("Reset controls to default?", isPresented: $showingResetControlsConfirmation, titleVisibility: .visible) {
-                                    Button("Reset to default", role: .destructive) { ControllerLayoutSettings.reset() }
-                                    Button("Cancel", role: .cancel) { }
-                                } message: {
-                                    Text("Button size, opacity, stick spacing, shoulder height and every button you've moved go back to how MuffinEMU ships, in every game.")
-                                }
-
-                            Button("Done") {
-                                withAnimation(.easeInOut(duration: 0.2)) {
-                                    isEditingControlLayout = false
-                                }
-                            }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
-                        }
-                    }
-                    .padding(14)
-                    .frame(maxWidth: 420)
-                    .background(Color.black.opacity(0.82))
-                    .cornerRadius(14)
-                    .padding(.top, 12)
-
-                    Spacer()
-                }
-                .transition(.opacity)
+            // makes twice. Everything in these panels writes to the same stored values the
+            // pad reads, so the change is under the finger as the slider moves.
+            if isEditingControlLayout {
+                layoutPanel
             }
         }
         // No full-screen tap gesture. There used to be one here toggling showControls,
