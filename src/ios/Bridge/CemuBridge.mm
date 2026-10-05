@@ -56,6 +56,7 @@
 #include "Cafe/CafeSystem.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
+#include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "StallDetector.h"
 #include "Cafe/HW/Latte/Core/PerfTelemetry.h"
@@ -2307,6 +2308,36 @@ void cemu_bridge_set_notification_friends(bool enabled) {
 
 bool cemu_bridge_notification_friends(void) {
     return GetConfig().notification.friends;
+}
+
+void cemu_bridge_set_native_overlay(bool enabled) {
+    g_overlayNativeOnIOS.store(enabled, std::memory_order_relaxed);
+}
+
+bool cemu_bridge_native_overlay(void) {
+    return g_overlayNativeOnIOS.load(std::memory_order_relaxed);
+}
+
+const char* cemu_bridge_native_overlay_text(void) {
+    static thread_local std::string text;
+    text.clear();
+    if (!g_overlayNativeOnIOS.load(std::memory_order_relaxed))
+        return text.c_str();
+
+    std::vector<std::string> stats;
+    std::vector<std::string> notifications;
+    LatteOverlay_CollectNativeText(stats, notifications);
+
+    for (size_t i = 0; i < stats.size(); ++i) {
+        if (i != 0)
+            text += '\n';
+        text += stats[i];
+    }
+    for (const std::string& notification : notifications) {
+        text += '\x1e';
+        text += notification;
+    }
+    return text.c_str();
 }
 
 // MARK: - Audio
