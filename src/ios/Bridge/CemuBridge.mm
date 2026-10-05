@@ -1756,6 +1756,19 @@ namespace {
     GCController* g_boundController = nil;
     bool g_homeWarned = false;
 
+    // The controller's own HOME / guide button and the app's menus. HOME never reaches the game (the core's GamePad
+    // mapping has no HOME bit); it is reported to the app instead. While menu capture is on, the same controller also
+    // drives the app's menu: the game sees nothing and four more events (up, down, A, B) are reported.
+    std::atomic<CemuMenuInputCallback> g_menuCallback{nullptr};
+    std::atomic<bool> g_menuCapture{false};
+    // Bits held when capture ended (or while it is on), still ignored by the game until let go. Under g_inputMutex.
+    uint32_t g_physicalSuppress = 0;
+    // Main thread only, in ios_update_physical: what was held at the last update, to find the new presses.
+    constexpr uint32_t kMenuUp = 1u << 0, kMenuDown = 1u << 1, kMenuConfirm = 1u << 2, kMenuBack = 1u << 3;
+    constexpr float kMenuStickThreshold = 0.6f;
+    uint32_t g_menuHeld = 0;
+    bool g_homeHeld = false;
+
     int ios_button_bit(CemuBridgeButton button)
     {
         switch (button)
@@ -1867,18 +1880,62 @@ namespace {
         bit(pad.dpad.left.isPressed, kBitLeft);
         bit(pad.dpad.right.isPressed, kBitRight);
 
-        std::lock_guard lock(g_inputMutex);
-        g_physicalButtons = buttons;
-        g_physicalSticks[0] = GCBridgeVec2{pad.leftThumbstick.xAxis.value, pad.leftThumbstick.yAxis.value};
-        g_physicalSticks[1] = GCBridgeVec2{pad.rightThumbstick.xAxis.value, pad.rightThumbstick.yAxis.value};
-        g_physicalTriggers[0] = pad.leftTrigger.value;
-        g_physicalTriggers[1] = pad.rightTrigger.value;
+        // What the app's menus see. Tracked on every update, capture or not, so turning capture on while a button is
+        // held does not report that button as a fresh press.
+        const bool capture = g_menuCapture.load();
+        const float stickY = pad.leftThumbstick.yAxis.value;
+        uint32_t menuNow = 0;
+        if (pad.dpad.up.isPressed || stickY > kMenuStickThreshold) menuNow |= kMenuUp;
+        if (pad.dpad.down.isPressed || stickY < -kMenuStickThreshold) menuNow |= kMenuDown;
+        if (pad.buttonA.isPressed) menuNow |= kMenuConfirm;
+        if (pad.buttonB.isPressed) menuNow |= kMenuBack;
+        const uint32_t menuNew = menuNow & ~g_menuHeld;
+        g_menuHeld = menuNow;
+        const bool homeNow = pad.buttonHome ? pad.buttonHome.isPressed : NO;
+        const bool homeNew = homeNow && !g_homeHeld;
+        g_homeHeld = homeNow;
+
+        {
+            std::lock_guard lock(g_inputMutex);
+            if (capture)
+            {
+                g_physicalSuppress = buttons;
+                g_physicalButtons = 0;
+                g_physicalSticks[0] = g_physicalSticks[1] = GCBridgeVec2{};
+                g_physicalTriggers[0] = g_physicalTriggers[1] = 0.0f;
+            }
+            else
+            {
+                g_physicalSuppress &= buttons;
+                g_physicalButtons = buttons & ~g_physicalSuppress;
+                g_physicalSticks[0] = GCBridgeVec2{pad.leftThumbstick.xAxis.value, pad.leftThumbstick.yAxis.value};
+                g_physicalSticks[1] = GCBridgeVec2{pad.rightThumbstick.xAxis.value, pad.rightThumbstick.yAxis.value};
+                g_physicalTriggers[0] = (g_physicalSuppress & (1u << kBitZL)) ? 0.0f : pad.leftTrigger.value;
+                g_physicalTriggers[1] = (g_physicalSuppress & (1u << kBitZR)) ? 0.0f : pad.rightTrigger.value;
+            }
+        }
+
+        if (CemuMenuInputCallback callback = g_menuCallback.load())
+        {
+            if (homeNew)
+                callback(CEMU_BRIDGE_MENU_HOME);
+            if (capture)
+            {
+                if (menuNew & kMenuUp) callback(CEMU_BRIDGE_MENU_UP);
+                if (menuNew & kMenuDown) callback(CEMU_BRIDGE_MENU_DOWN);
+                if (menuNew & kMenuConfirm) callback(CEMU_BRIDGE_MENU_CONFIRM);
+                if (menuNew & kMenuBack) callback(CEMU_BRIDGE_MENU_BACK);
+            }
+        }
     }
 
     void ios_clear_physical()
     {
+        g_menuHeld = 0;
+        g_homeHeld = false;
         std::lock_guard lock(g_inputMutex);
         g_physicalButtons = 0;
+        g_physicalSuppress = 0;
         g_physicalSticks[0] = g_physicalSticks[1] = GCBridgeVec2{};
         g_physicalTriggers[0] = g_physicalTriggers[1] = 0.0f;
     }
@@ -1894,6 +1951,10 @@ namespace {
             if (!pad)
                 continue;
             g_boundController = controller;
+            // HOME is the app's while a game is up (it opens the in-game menu). Left alone, iOS keeps the button for
+            // itself and the app never hears it.
+            if (pad.buttonHome)
+                pad.buttonHome.preferredSystemGestureState = GCSystemGestureStateDisabled;
             pad.valueChangedHandler = ^(GCExtendedGamepad* gamepad, GCControllerElement* element) {
                 (void)element;
                 ios_update_physical(gamepad);
@@ -3719,6 +3780,20 @@ void cemu_bridge_shutdown(void) {
     setStatus("Cemu core shut down.");
 }
 
+void cemu_bridge_set_menu_input_callback(CemuMenuInputCallback callback) {
+    g_menuCallback.store(callback);
+}
+
+void cemu_bridge_set_menu_capture(bool capture) {
+    g_menuCapture.store(capture);
+    // Applies at once rather than at the controller's next change: the game has to stop seeing what is held now, and on
+    // the way out it has to start ignoring it until it is let go.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (GCExtendedGamepad* pad = g_boundController.extendedGamepad)
+            ios_update_physical(pad);
+    });
+}
+
 void cemu_bridge_refresh_input_devices(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         ios_bind_first_controller();
@@ -3732,7 +3807,7 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
         if (button == CEMU_BRIDGE_BUTTON_HOME && !g_homeWarned)
         {
             g_homeWarned = true;
-            cemuLog_log(LogType::Force, "iOS input: HOME has no binding in the core's GamePad mapping, so it is ignored");
+            cemuLog_log(LogType::Force, "iOS input: HOME has no binding in the core's GamePad mapping, so it is ignored (the app opens its HOME menu from HOME and should not send it here)");
         }
         return;
     }

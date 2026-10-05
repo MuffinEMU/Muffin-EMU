@@ -872,6 +872,26 @@ bool cemu_bridge_clean_start_required(void);
 /// game is prepared. The app applies that title's per-game settings here, the same ones a library launch pushes before boot.
 typedef void (*CemuTitleSwitchCallback)(uint64_t titleId);
 void cemu_bridge_set_title_switch_callback(CemuTitleSwitchCallback callback);
+
+/// What a physical controller's buttons mean to the app's own menus rather than to the game.
+/// HOME is reported whether or not menu capture is on; the other four only while it is.
+typedef enum {
+    CEMU_BRIDGE_MENU_HOME    = 0, // the controller's HOME / guide button went down
+    CEMU_BRIDGE_MENU_UP      = 1, // d-pad up, or the left stick pushed up
+    CEMU_BRIDGE_MENU_DOWN    = 2,
+    CEMU_BRIDGE_MENU_CONFIRM = 3, // A
+    CEMU_BRIDGE_MENU_BACK    = 4, // B
+} CemuBridgeMenuEvent;
+
+/// Called on the main thread, once per press, for the events above.
+typedef void (*CemuMenuInputCallback)(CemuBridgeMenuEvent event);
+void cemu_bridge_set_menu_input_callback(CemuMenuInputCallback callback);
+
+/// While on, the bound physical controller drives the app's menu instead of the game: the game sees none of its
+/// buttons, sticks or triggers, and the menu events above are delivered. Turning it off hands the controller back to
+/// the game, and anything still held at that moment stays ignored until it is let go, so the press that chose a menu
+/// row is never also a press in the game. Touch input is unaffected. Call from the main thread.
+void cemu_bridge_set_menu_capture(bool capture);
 /// A one-line reason for the log and the message, valid until the next call on the same thread.
 const char* cemu_bridge_clean_start_reason(void);
 
