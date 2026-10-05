@@ -1343,7 +1343,8 @@ class GameManager: ObservableObject {
     }
     #endif
 
-    private func showLaunchNotice(_ notice: String) {
+    /// Also used for the in-game heat notice (InGameNotices.swift): same banner, same fade.
+    func showLaunchNotice(_ notice: String) {
         launchNotice = notice
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 8_000_000_000)
