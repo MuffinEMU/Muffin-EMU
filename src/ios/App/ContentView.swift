@@ -2321,9 +2321,10 @@ struct EmulatorViewOptimized: View {
         // with on-screen controls sitting right where it appears.
         .hidingSystemOverlaysDuringPlay()
         .overlay(alignment: .top) {
-            if (gameManager.videoStalled || (stallSaveRequested && saveStateBusySlot != nil)) && !stallCardDismissed && gameManager.emulationState == .running {
+            if showsStallCard {
                 videoStalledCard
-                    .padding(.top, 12)
+                    // Below the top bar, not on top of Back and the button row.
+                    .padding(.top, topBarHeight + 8)
                     .padding(.horizontal, 16)
                     .transition(.opacity)
             }
@@ -2332,6 +2333,18 @@ struct EmulatorViewOptimized: View {
             // Saving pauses the game, which also clears the flag; keep the card up until the save is done.
             if !stalled && saveStateBusySlot == nil {
                 stallCardDismissed = false
+            }
+        }
+        .onChange(of: gameManager.videoStallKind) { kind in
+            // A new or worse problem is shown even if an earlier card was dismissed.
+            if kind != 0 { stallCardDismissed = false }
+        }
+        .onChange(of: saveStateBusySlot) { slot in
+            // After a save from the card, leave the result up for a few seconds, then let it go
+            // if the picture is fine again.
+            guard slot == nil, stallSaveRequested, !gameManager.videoStalled else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                if saveStateBusySlot == nil && !gameManager.videoStalled { stallSaveRequested = false }
             }
         }
         .sheet(isPresented: $showSaveStates) {
@@ -2393,28 +2406,63 @@ struct EmulatorViewOptimized: View {
         }
     }
 
+    /// Whether the picture-stopped card is up: while the watchdog says the picture has stopped, and
+    /// after a save started from the card, so the result of that save is always seen.
+    private var showsStallCard: Bool {
+        guard gameManager.emulationState == .running, !stallCardDismissed else { return false }
+        return gameManager.videoStalled || stallSaveRequested
+    }
+
+    private var stallTitle: String {
+        switch gameManager.videoStallKind {
+        case 0: return saveStateBusySlot != nil ? "Saving the game" : (saveStateStatus?.isWarning == true ? "Couldn't save" : "Saved")
+        case 2: return "Graphics stopped working"
+        case 3: return "Out of memory for the picture"
+        case 4: return "Memory is running low"
+        case 5: return "The screen stopped updating"
+        default: return "The picture froze"
+        }
+    }
+
+    private var stallAdvice: String {
+        switch gameManager.videoStallKind {
+        case 2: return "iOS stopped running this game's graphics. Tap Save State, then Quit Game. MuffinEMU will then ask you to close and reopen it before the next game."
+        case 3: return "Tap Save State, then Quit Game and reopen MuffinEMU. A lower Resolution (Settings, Graphics) uses less memory."
+        case 4: return "iOS may close MuffinEMU soon. Tap Save State now. A lower Resolution (Settings, Graphics) uses less memory."
+        case 5: return "The game is still running but the screen isn't taking frames. This goes away by itself if it recovers. If it doesn't, tap Save State, then Quit Game and reopen MuffinEMU."
+        default: return "The picture has stopped while the game keeps running. This goes away by itself if the picture comes back."
+        }
+    }
+
+    /// Only a problem that can clear by itself is worth waiting on; the others are a decision to dismiss.
+    private var stallDismissTitle: String {
+        let kind = gameManager.videoStallKind
+        return (kind == 1 || kind == 5) ? "Keep waiting" : "Dismiss"
+    }
+
     /// Small card shown while the picture is stopped. The game's audio and input keep running
     /// in this state, so a save state still works. Only the card itself takes touches; the
     /// rest of the overlay lets them through to the game.
     private var videoStalledCard: some View {
         VStack(spacing: 10) {
-            Text(gameManager.videoStallKind == 2 ? "The GPU stopped" : gameManager.videoStallKind == 3 ? "Out of memory for the screen" : gameManager.videoStallKind == 4 ? "Not enough memory" : gameManager.videoStallKind == 5 ? "The screen stopped updating" : "Video stopped responding")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+            Text(stallTitle)
+                .font(.system(.subheadline, design: .rounded).weight(.semibold))
                 .foregroundColor(.white)
-            if gameManager.videoStallKind >= 2 && !stallSaveRequested {
-                Text(gameManager.videoStallKind == 4
-                     ? "Not enough memory for this game on this device. Save State, then try Render Scale: Battery saver."
-                     : gameManager.videoStallKind == 5
-                     ? "The game is still running but the screen isn't taking frames. This card goes away by itself if it recovers; if it doesn't, Save State and restart the app."
-                     : "Save State, then restart the app.")
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+            if gameManager.videoStalled {
+                Text(stallAdvice)
+                    .font(.system(.caption, design: .rounded))
                     .foregroundColor(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if stallSaveRequested {
                 Text(saveStateBusySlot != nil ? "Saving..." : (saveStateStatus?.message ?? ""))
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .font(.system(.caption, design: .rounded))
                     .foregroundColor(.white.opacity(0.85))
                     .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
                 Button("Save State") { saveStalledGame() }
@@ -2423,7 +2471,7 @@ struct EmulatorViewOptimized: View {
                     gameManager.stopEmulation()
                     isRunning = true
                 }
-                Button(gameManager.videoStallKind >= 2 && gameManager.videoStallKind != 5 ? "Dismiss" : "Keep waiting") {
+                Button(stallDismissTitle) {
                     stallCardDismissed = true
                     stallSaveRequested = false
                 }
