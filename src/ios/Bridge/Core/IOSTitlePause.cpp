@@ -23,12 +23,18 @@
 #include "Cemu/Logging/CemuLogging.h"
 
 #include <atomic>
+#include <mutex>
 
 static std::atomic_bool sTitlePaused{false};
+// Pause and Resume each run start to finish under this. sTitlePaused is only set once every thread has been suspended,
+// and only cleared when a resume starts, so IsPaused() == true means "fully paused": a second caller (the app's
+// lifecycle pause racing a save state) can no longer see the flag while the first is still suspending threads.
+static std::mutex sPauseMutex;
 
 bool IOSTitlePause_Pause()
 {
-	if (!CafeSystem::IsTitleRunning() || sTitlePaused.exchange(true))
+	std::lock_guard<std::mutex> lock(sPauseMutex);
+	if (!CafeSystem::IsTitleRunning() || sTitlePaused.load())
 		return false;
 	__OSLockScheduler();
 	for (sint32 i = 0; i < activeThreadCount; i++)
@@ -37,12 +43,14 @@ bool IOSTitlePause_Pause()
 		coreinit::__OSSuspendThreadNolock(thread);
 	}
 	__OSUnlockScheduler();
+	sTitlePaused.store(true);
 	cemuLog_log(LogType::Force, "iOS: title paused ({} guest threads suspended)", activeThreadCount);
 	return true;
 }
 
 bool IOSTitlePause_Resume()
 {
+	std::lock_guard<std::mutex> lock(sPauseMutex);
 	if (!sTitlePaused.exchange(false))
 		return false;
 	if (!CafeSystem::IsTitleRunning())
