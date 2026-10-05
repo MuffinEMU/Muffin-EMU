@@ -2217,21 +2217,22 @@ struct EmulatorViewOptimized: View {
         saveStateBusySlot = slot
         Self.saveStateQueue.async {
             let ok = path.withCString { cemu_bridge_save_state($0) }
+            // Read here, on the queue that made the call and before anything else can: the text belongs to the latest save or load.
+            let reason = ok ? "" : String(cString: cemu_bridge_save_state_last_error())
             DispatchQueue.main.async {
                 saveStateBusySlot = nil
                 saveStateSlots = SaveStateStore.slots(for: gameID)
                 reportSaveState(ok
                     ? SaveStateStatus(message: "Slot \(slot) saved.", isWarning: false)
-                    : SaveStateStatus(message: "Couldn't save Slot \(slot). Try again while the game is running, and check that the device has free storage.", isWarning: true))
+                    : SaveStateStatus(message: Self.saveStateFailureMessage("save", slot: slot, reason: reason), isWarning: true))
             }
         }
     }
 
     /// Loads `slot` back into the CURRENTLY running instance only - see
-    /// cemu_bridge_load_state's doc comment in CemuBridge.h. A refusal here almost
-    /// always means the save is from a different session (the game was quit/relaunched,
-    /// or the app itself restarted, since the save was taken) rather than a real error,
-    /// which is exactly why the failure message below says so instead of just "failed".
+    /// cemu_bridge_load_state's doc comment in CemuBridge.h. A save from another launch
+    /// is not offered for loading at all (the sheet shows it as "From an earlier session");
+    /// a refusal that still gets here carries the bridge's own reason.
     private func performLoadState(slot: Int) {
         guard saveStateBusySlot == nil, gameManager.emulationState == .running else { return }
         let gameID = game.id
@@ -2240,13 +2241,24 @@ struct EmulatorViewOptimized: View {
         saveStateBusySlot = slot
         Self.saveStateQueue.async {
             let ok = path.withCString { cemu_bridge_load_state($0) }
+            let reason = ok ? "" : String(cString: cemu_bridge_save_state_last_error())
             DispatchQueue.main.async {
                 saveStateBusySlot = nil
+                saveStateSlots = SaveStateStore.slots(for: gameID)
                 reportSaveState(ok
                     ? SaveStateStatus(message: "Slot \(slot) loaded. Some textures may look wrong for a moment.", isWarning: false)
-                    : SaveStateStatus(message: "Couldn't load Slot \(slot). A save state only loads in the session it was saved in, so quitting or relaunching the game clears them. If the game looks broken now, quit and start it again.", isWarning: true))
+                    : SaveStateStatus(message: Self.saveStateFailureMessage("load", slot: slot, reason: reason), isWarning: true))
             }
         }
+    }
+
+    /// "Couldn't save Slot 2. <the bridge's own reason>". The reason is a full sentence from the bridge (IOSSaveState.cpp:
+    /// out of storage, the game still loading, a save from an earlier session ...), so what the player reads is what went
+    /// wrong, not a guess that covers every case. A bridge that gave none still gets a plain line.
+    private static func saveStateFailureMessage(_ action: String, slot: Int, reason: String) -> String {
+        let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Couldn't \(action) Slot \(slot)." }
+        return "Couldn't \(action) Slot \(slot). \(trimmed)"
     }
 
     /// Whether the picture-stopped card is up: while the watchdog says the picture has stopped, and
