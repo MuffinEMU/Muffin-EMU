@@ -2013,16 +2013,17 @@ struct EmulatorViewOptimized: View {
             // exactly the pace it always did - the intro adds no wait of its own, it
             // occupies a wait that was already there and was previously a spinner.
             //
-            // It clears itself when finished. It does NOT gate .running: the engine
-            // flips that on its own schedule and the intro fading out reveals whatever
-            // state the emulator has genuinely reached, which keeps the animation
-            // honest about the boot instead of pretending to drive it.
+            // It clears itself when finished, and can be skipped by tap or controller. It
+            // does NOT gate .running: the engine flips that on its own schedule and the
+            // intro fading out reveals whatever state the emulator has genuinely reached.
+            // The one link the other way is that a running game ends the intro early, once
+            // it has played about two seconds, so a fast boot isn't held behind it.
             //
             // Hidden while the launch log is up. Someone who has turned that on is
             // diagnosing a boot, and covering the log with an animation would be
             // exactly the wrong call.
             if showLaunchIntro && launchIntroEnabled && !showLaunchLog && !reduceMotion {
-                LaunchIntroView { showLaunchIntro = false }
+                LaunchIntroView(isGameRunning: gameManager.emulationState == .running) { showLaunchIntro = false }
                     .transition(.opacity)
                     .zIndex(10)
             }
