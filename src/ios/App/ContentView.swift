@@ -121,75 +121,101 @@ struct BootFailureView: View {
     private static var crashLogHint: String {
         let path = String(cString: cemu_bridge_crash_log_path())
         guard !path.isEmpty else {
-            return "Full detail is in log.txt. No crash log could be opened this run, so there is no CemuCrashLog.txt to send."
+            return "If you report this, include log.txt. No crash log could be opened this run, so there is no CemuCrashLog.txt to send."
         }
-        return "Full detail is in log.txt and CemuCrashLog.txt, at:\n\(path)"
+        return "If you report this, include log.txt and CemuCrashLog.txt. They are in:\n\(path)"
+    }
+
+    private var title: String {
+        if needsCleanRestart { return "Restart needed before \(game.title)" }
+        return endedWhileRunning ? "\(game.title) stopped" : "Couldn't start \(game.title)"
     }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 34, weight: .semibold))
-                    .foregroundColor(MuffinTheme.alertOnDark)
+            // Scrolls: on an iPhone in landscape, or at a large text size, the whole card is taller
+            // than the screen, and the buttons are at the bottom.
+            GeometryReader { proxy in
+                ScrollView {
+                    content
+                        .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+                }
+            }
+        }
+    }
 
-                Text(needsCleanRestart ? "Restart needed before \(game.title)" : (endedWhileRunning ? "\(game.title) stopped" : "Couldn't start \(game.title)"))
-                    .font(.system(size: 17, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white)
-                    .multilineTextAlignment(.center)
+    private var content: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundColor(MuffinTheme.alertOnDark)
+                .accessibilityHidden(true)
 
-                // The engine's own words. Empty only if the bridge never set anything,
-                // which is itself worth seeing rather than papering over.
-                Text(message.isEmpty ? "The engine didn't report a reason." : message)
-                    .font(.system(size: 13, weight: .regular, design: .rounded))
+            Text(title)
+                .font(.system(.headline, design: .rounded))
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
+
+            // The engine's own words. Empty only if the bridge never set anything,
+            // which is itself worth seeing rather than papering over.
+            Text(message.isEmpty ? "The engine didn't report a reason." : message)
+                .font(.system(.footnote, design: .rounded))
+                .foregroundColor(.white.opacity(0.75))
+                .multilineTextAlignment(.center)
+                .textSelection(.enabled)
+                .frame(maxWidth: 480)
+
+            if needsCleanRestart {
+                Text("iOS doesn't let an app reopen itself. Tap Close MuffinEMU, then open it again from your Home Screen.")
+                    .font(.system(.footnote, design: .rounded))
                     .foregroundColor(.white.opacity(0.75))
                     .multilineTextAlignment(.center)
-                    .textSelection(.enabled)
                     .frame(maxWidth: 480)
+            }
 
-                // The real path, asked of the bridge, rather than the folder this used to
-                // name. It said "Files > On My iPad > Cemu", which is true for a normally
-                // installed app and false under LiveContainer - LiveContainer redirects
-                // HOME per hosted app, so the file lands under LiveContainer's own
-                // Documents instead. Anyone who followed the old line looked in the right
-                // place for the wrong install, found nothing, and reasonably concluded no
-                // crash log existed. Selectable, because the useful thing to do with a
-                // path is copy it.
-                Text(Self.crashLogHint)
-                    .font(.system(size: 11, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.6))
-                    .multilineTextAlignment(.center)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: 480)
+            // The real path, asked of the bridge, rather than the folder this used to
+            // name. It said "Files > On My iPad > Cemu", which is true for a normally
+            // installed app and false under LiveContainer - LiveContainer redirects
+            // HOME per hosted app, so the file lands under LiveContainer's own
+            // Documents instead. Anyone who followed the old line looked in the right
+            // place for the wrong install, found nothing, and reasonably concluded no
+            // crash log existed. Selectable, because the useful thing to do with a
+            // path is copy it.
+            Text(Self.crashLogHint)
+                .font(.system(.caption2, design: .rounded))
+                .foregroundColor(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .textSelection(.enabled)
+                .frame(maxWidth: 480)
 
-                if needsCleanRestart {
-                    // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
-                    // exit(0) after a tap is accepted for a sideloaded app. _exit, not exit: exit() runs the core's
-                    // static destructors while its threads are still alive, and one of them then locks a destroyed
-                    // mutex ("mutex lock failed: Invalid argument" in the crash log). Flush, then leave without them.
-                    Button(action: { fflush(nil); _exit(0) }) {
-                        Text("Close MuffinEMU")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    }
-                    .buttonStyle(MuffinPrimaryButtonStyle())
-                    .padding(.top, 4)
+            if needsCleanRestart {
+                // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
+                // exit(0) after a tap is accepted for a sideloaded app. _exit, not exit: exit() runs the core's
+                // static destructors while its threads are still alive, and one of them then locks a destroyed
+                // mutex ("mutex lock failed: Invalid argument" in the crash log). Flush, then leave without them.
+                Button(action: { fflush(nil); _exit(0) }) {
+                    Text("Close MuffinEMU")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
                 }
-
-                Button(action: onDismiss) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("Back to games")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    }
-                }
-                .buttonStyle(MuffinSecondaryButtonStyle())
+                .buttonStyle(MuffinPrimaryButtonStyle())
                 .padding(.top, 4)
             }
-            .padding(32)
+
+            Button(action: onDismiss) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Back to games")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                }
+            }
+            .buttonStyle(MuffinSecondaryButtonStyle())
+            .padding(.top, 4)
         }
+        .padding(32)
     }
 }
 

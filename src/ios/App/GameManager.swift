@@ -1045,8 +1045,8 @@ class GameManager: ObservableObject {
         if cemu_bridge_clean_start_required() {
             needsCleanRestart = true
             let reason = String(cString: cemu_bridge_clean_start_reason())
-            lastStatusMessage = "For a clean start, close and reopen MuffinEMU."
-                + (reason.isEmpty ? "" : "\n\n\(reason.prefix(1).uppercased() + reason.dropFirst()).")
+            lastStatusMessage = "MuffinEMU has to be closed and reopened before it can start another game."
+                + (reason.isEmpty ? "" : "\n\nWhat happened: \(reason).")
             emulationState = .error
             return
         }
