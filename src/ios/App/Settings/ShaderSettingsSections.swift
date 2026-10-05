@@ -21,7 +21,7 @@ struct ShaderCompilationSection: View {
             InfoButton.footer(
                 "On keeps the game running while a shader builds; things may flicker the first time they appear. Off waits for each shader and stutters instead.",
                 title: "Shader Compilation",
-                text: "On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead.\n\nNano Assault Neo breaks with this on. Set it off for that game only: long-press it in your library.")
+                text: "On, the game keeps running while new shaders are built, and you may see something flicker or appear late the first time it is drawn. Off, the game waits for each one, which stutters instead.\n\nNano Assault Neo breaks with this on. Set it off for that game only: long-press it in your library.\n\nFavour accuracy (under CPU) always waits for each shader, whatever this is set to. It applies the next time you start a game.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
