@@ -172,6 +172,10 @@ bool IOSTitlePause_IsPaused();
 void IOSTitlePause_Forget();
 bool IOSSaveState_Save(const char* path);
 bool IOSSaveState_Load(const char* path);
+void IOSSaveState_BeginSession();
+int IOSSaveState_LastErrorCode();
+const char* IOSSaveState_LastErrorMessage();
+int IOSSaveState_InspectFile(const char* path);
 void IOSSystemImplementation_Install();
 bool IOSSystemImplementation_TitleExited(int* statusOut);
 bool IOSSystemImplementation_TitleSwitchFailed();
@@ -3116,6 +3120,8 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
     ios_report_renderer_fallback();
     // A new title: judge it from scratch, with the start-up grace period counted from now.
     ios_reset_video_stall_state();
+    // Save states are only valid inside the launch they were taken in.
+    IOSSaveState_BeginSession();
     g_titleRunning.store(true);
     ios_timebase_ladder_start();
     setStatus("Title launched.");
@@ -3727,6 +3733,18 @@ bool cemu_bridge_load_state(const char* path) {
     return IOSSaveState_Load(path);
 }
 
+const char* cemu_bridge_save_state_last_error(void) {
+    return IOSSaveState_LastErrorMessage();
+}
+
+int cemu_bridge_save_state_last_error_code(void) {
+    return IOSSaveState_LastErrorCode();
+}
+
+int cemu_bridge_save_state_inspect(const char* path) {
+    return IOSSaveState_InspectFile(path);
+}
+
 void cemu_bridge_shutdown_title(void) {
     cemu_bridge_memory_note("before title shutdown");
     ios_timebase_ladder_stop();
@@ -3756,6 +3774,8 @@ void cemu_bridge_set_title_switch_callback(CemuTitleSwitchCallback callback) {
 }
 
 void IOSBridge_TitleSwitching(uint64_t titleId) {
+    // The Menu is gone and a different title is about to start: save states taken so far belong to the old one.
+    IOSSaveState_BeginSession();
     if (CemuTitleSwitchCallback callback = g_titleSwitchCallback.load())
         callback(titleId);
 }

@@ -913,12 +913,33 @@ bool cemu_bridge_save_state(const char* path);
 
 /// Restores guest RAM from a file `cemu_bridge_save_state()` wrote, into the SAME
 /// still-running title instance the save was taken from - not "the same game relaunched".
+/// Every launch of a title has its own session token, stored in the save file; a file from
+/// another launch is refused before the game is even paused (see
+/// `cemu_bridge_save_state_inspect()` and IOSSaveState.cpp for why it cannot be made to
+/// work across launches).
 /// Refuses (returns false, touches no memory) unless the currently running title's ID,
 /// active guest thread list, and mapped memory layout all match the save exactly; a
 /// mismatch means the save doesn't line up with the live session and there is no safe way
 /// to reconcile that. On success, forces the recompiler to drop any JIT-compiled code that
 /// may now be stale (safe under the interpreter too - a no-op there).
 bool cemu_bridge_load_state(const char* path);
+
+/// Why the last `cemu_bridge_save_state()` or `cemu_bridge_load_state()` returned false: a sentence meant to be shown to the
+/// player as it is, valid until the next call on the same thread. Empty after a success. Read it on the thread that made
+/// the call (the save queue), right after it returned: the text belongs to the most recent save or load.
+const char* cemu_bridge_save_state_last_error(void);
+
+/// The same failure as a code, for the UI to branch on. 0 none, 1 no path, 2 no game running, 3 couldn't pause, 4 a CPU
+/// core never went idle (a long loading call), 5 the GPU never drained, 6 not enough storage, 7 couldn't create the file,
+/// 8 write failed, 9 file missing, 10 not a save state, 11 older format, 12 a different game, 13 from an earlier session,
+/// 14 the game's thread set changed since the save, 15 its memory layout changed, 16 file damaged, 17 damaged mid-restore
+/// (the game should be restarted).
+int cemu_bridge_save_state_last_error_code(void);
+
+/// What a slot file is, judged from its header alone (nothing is paused, no memory is read). 0 unreadable or not a save
+/// state, 1 loadable now (taken in this launch of the running game), 2 from an earlier session (the game or the app was
+/// relaunched since: kept on disk but can't be loaded), 3 saved by a different game, 4 an older file format.
+int cemu_bridge_save_state_inspect(const char* path);
 
 /// Human-readable one-liner describing engine/bridge state, for display in the UI.
 /// Never NULL. Points to static/thread-local storage; copy if you need to keep it.
