@@ -115,6 +115,9 @@ struct BootFailureView: View {
     var endedWhileRunning: Bool = false
     let onDismiss: () -> Void
 
+    /// The name the library card shows, not the dump's file name.
+    private var name: String { game.displayTitle ?? game.title }
+
     /// Where the diagnostics actually are. Computed from the bridge rather than written
     /// down here, because only the bridge knows what $HOME resolved to when it opened the
     /// file, and that differs between a normal install and a LiveContainer one.
@@ -135,7 +138,7 @@ struct BootFailureView: View {
                     .font(.system(size: 34, weight: .semibold))
                     .foregroundColor(MuffinTheme.alertOnDark)
 
-                Text(needsCleanRestart ? "Restart needed before \(game.title)" : (endedWhileRunning ? "\(game.title) stopped" : "Couldn't start \(game.title)"))
+                Text(needsCleanRestart ? "Restart needed before \(name)" : (endedWhileRunning ? "\(name) stopped" : "Couldn't start \(name)"))
                     .font(.system(size: 17, weight: .semibold, design: .rounded))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
@@ -1447,6 +1450,37 @@ struct EmulatorViewOptimized: View {
         }
     }
 
+    /// The name the library card shows. `title` is the dump's file name, which can be a bare
+    /// product code, and it used to leak into the top bar and the quit prompt.
+    private var gameName: String { game.displayTitle ?? game.title }
+
+    /// Pauses or resumes the title and keeps the screen's idea of "paused" in step with it.
+    /// Also lets go of every held button and stick: touches made while paused (the Melo pad
+    /// stays live) would otherwise arrive at the game the instant it resumes.
+    private func togglePause() {
+        isPaused.toggle()
+        pausedByLifecycle = false
+        cemu_bridge_release_all_buttons()
+        setTitlePaused(isPaused)
+    }
+
+    /// Sends the pause or resume to the bridge off the main thread. While a save state or
+    /// a load is running it goes onto that operation's own queue instead: the operation
+    /// pauses and resumes the title itself, so a resume sent from here would let the game
+    /// run in the middle of the memory dump (a corrupt save), and a pause would be undone
+    /// when the operation finishes and resumes (the game running in the background).
+    /// Queued behind it, either lands afterwards, in the right order.
+    private func setTitlePaused(_ pause: Bool) {
+        let queue = saveStateBusySlot == nil ? Self.titlePauseQueue : Self.saveStateQueue
+        queue.async {
+            if pause {
+                cemu_bridge_pause()
+            } else {
+                cemu_bridge_resume()
+            }
+        }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -1566,8 +1600,10 @@ struct EmulatorViewOptimized: View {
                         }
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
+                    // Quitting while a save state is being written would tear the title down under the write.
+                    .disabled(saveStateBusySlot != nil)
                     .confirmationDialog(
-                        "Quit \(game.title)?",
+                        "Quit \(gameName)?",
                         isPresented: $showingBackConfirmation,
                         titleVisibility: .visible
                     ) {
@@ -1581,7 +1617,7 @@ struct EmulatorViewOptimized: View {
                     }
 
                     VStack(alignment: .center, spacing: 2) {
-                        Text(game.title)
+                        Text(gameName)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .foregroundColor(.white)
                             .lineLimit(1)
@@ -1710,21 +1746,15 @@ struct EmulatorViewOptimized: View {
                         // this button and the .onChange(of: scenePhase) below - so it is
                         // pausedByLifecycle, not isPaused itself, that keeps the two from
                         // fighting over what a return to .active should do.
-                        Button(action: {
-                            isPaused.toggle()
-                            let shouldPause = isPaused
-                            Self.titlePauseQueue.async {
-                                if shouldPause {
-                                    cemu_bridge_pause()
-                                } else {
-                                    cemu_bridge_resume()
-                                }
-                            }
-                        }) {
+                        Button(action: togglePause) {
                             Image(systemName: isPaused ? "play.fill" : "pause.fill")
                                 .font(.system(size: 12, weight: .semibold))
                         }
                         .buttonStyle(MuffinSecondaryButtonStyle())
+                        // There is nothing to pause until the title is running, and a pause sent
+                        // while it boots is dropped, which left the screen saying PAUSED over a game
+                        // that was running.
+                        .disabled(gameManager.emulationState != .running)
                         .accessibilityLabel(isPaused ? "Resume" : "Pause")
 
                         // Reachable without leaving the game, because the only way to
@@ -2297,7 +2327,7 @@ struct EmulatorViewOptimized: View {
                 guard pausedByLifecycle else { return }
                 pausedByLifecycle = false
                 isPaused = false
-                Self.titlePauseQueue.async { cemu_bridge_resume() }
+                setTitlePaused(false)
             } else {
                 // Released on every trip out of .active, paused or not. A touch in
                 // progress when the app resigns active is cancelled by UIKit, which does
@@ -2307,11 +2337,24 @@ struct EmulatorViewOptimized: View {
                 // the guest scheduler lock cemu_bridge_pause/resume take, so it carries
                 // none of the main-thread deadlock risk that sends those two there.
                 cemu_bridge_release_all_buttons()
+                // The GamePad's touchscreen is the same: a cancelled touch never reports its end.
+                cemu_bridge_set_pad_touch(0, 0, false)
                 guard !isPaused else { return }
                 isPaused = true
                 pausedByLifecycle = true
-                Self.titlePauseQueue.async { cemu_bridge_pause() }
+                setTitlePaused(true)
             }
+        }
+        // A title that finishes booting while the app is away (or that was asked to pause
+        // before it existed - there is nothing to suspend while it boots) must still end
+        // up paused, or it runs on in the background.
+        .onChange(of: gameManager.emulationState) { state in
+            guard state == .running else { return }
+            if scenePhase != .active && !isPaused {
+                isPaused = true
+                pausedByLifecycle = true
+            }
+            if isPaused { setTitlePaused(true) }
         }
         // Scoped to actually looking at the GamePad screen, not a standing setting:
         // hiding the controls to touch it and then swapping back to the TV (or to a
@@ -2341,7 +2384,7 @@ struct EmulatorViewOptimized: View {
         }
         .sheet(isPresented: $showSaveStates) {
             SaveStateSheet(
-                gameTitle: game.title,
+                gameTitle: gameName,
                 slots: saveStateSlots,
                 busySlot: saveStateBusySlot,
                 status: saveStateStatus,
@@ -2369,9 +2412,9 @@ struct EmulatorViewOptimized: View {
             DispatchQueue.main.async {
                 saveStateBusySlot = nil
                 saveStateSlots = SaveStateStore.slots(for: gameID)
-                saveStateStatus = ok
+                reportSaveState(ok
                     ? SaveStateStatus(message: "Slot \(slot) saved.", isWarning: false)
-                    : SaveStateStatus(message: "Couldn't save Slot \(slot). Make sure the game is actually running and try again.", isWarning: true)
+                    : SaveStateStatus(message: "Couldn't save Slot \(slot). Try again while the game is running, and check that the device has free storage.", isWarning: true))
             }
         }
     }
@@ -2391,9 +2434,9 @@ struct EmulatorViewOptimized: View {
             let ok = path.withCString { cemu_bridge_load_state($0) }
             DispatchQueue.main.async {
                 saveStateBusySlot = nil
-                saveStateStatus = ok
-                    ? SaveStateStatus(message: "Slot \(slot) loaded. If a texture or effect looks briefly wrong, that clears itself on the next frame the game redraws it.", isWarning: false)
-                    : SaveStateStatus(message: "Couldn't load Slot \(slot) - most likely it doesn't match this game's current run (quitting or relaunching the game breaks that match). That's expected, not a bug.", isWarning: true)
+                reportSaveState(ok
+                    ? SaveStateStatus(message: "Slot \(slot) loaded. Some textures may look wrong for a moment.", isWarning: false)
+                    : SaveStateStatus(message: "Couldn't load Slot \(slot). A save state only loads in the session it was saved in, so quitting or relaunching the game clears them. If the game looks broken now, quit and start it again.", isWarning: true))
             }
         }
     }
@@ -2428,6 +2471,7 @@ struct EmulatorViewOptimized: View {
                     gameManager.stopEmulation()
                     isRunning = true
                 }
+                .disabled(saveStateBusySlot != nil)
                 Button(gameManager.videoStallKind >= 2 && gameManager.videoStallKind != 5 ? "Dismiss" : "Keep waiting") {
                     stallCardDismissed = true
                     stallSaveRequested = false
@@ -2455,7 +2499,16 @@ struct EmulatorViewOptimized: View {
         let gameID = game.id
         SaveStateStore.delete(gameID: gameID, slot: slot)
         saveStateSlots = SaveStateStore.slots(for: gameID)
-        saveStateStatus = SaveStateStatus(message: "Slot \(slot) deleted.", isWarning: false)
+        reportSaveState(SaveStateStatus(message: "Slot \(slot) deleted.", isWarning: false))
+    }
+
+    /// Shows a save, load or delete result and says it aloud for VoiceOver, which would
+    /// otherwise never notice a line appearing at the top of the list.
+    private func reportSaveState(_ status: SaveStateStatus) {
+        saveStateStatus = status
+        #if os(iOS)
+        UIAccessibility.post(notification: .announcement, argument: status.message)
+        #endif
     }
 
     #if os(iOS)
