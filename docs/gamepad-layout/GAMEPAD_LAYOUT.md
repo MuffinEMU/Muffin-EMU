@@ -1,7 +1,7 @@
 # The on-screen pad, taken from the GamePad itself
 
 The measurements behind MuffinEMU's on-screen GamePad. The implementation is `src/ios/App/GamePadGeometry.swift`.
-Browsable version: <https://kiddreads.github.io/MuffinEMU/gamepad-layout/>
+Browsable version: <https://muffinemu.github.io/MuffinEMU/gamepad-layout/>
 
 This is the layout MuffinEMU's on-screen pad uses. It is measured from the Wii U GamePad's
 front illustration at **0.425 mm per pixel**, checked against Nintendo's published
