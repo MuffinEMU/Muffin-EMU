@@ -27,6 +27,8 @@ public final class TouchPadView: UIView {
     public var scale: CGFloat = 1 { didSet { relayout() } }
     /// See LayoutContext.stickSpacing.
     public var stickSpacing: CGFloat = 0 { didSet { relayout() } }
+    /// See LayoutContext.shoulderOffset.
+    public var shoulderOffset: CGFloat = 0 { didSet { relayout() } }
     public var stickTuning = StickTuning() { didSet { relayout() } }
     /// Which coordinate space `touchscreenRect` / `videoRects` are given in. `.window`
     /// takes SwiftUI `.global` frames (window coordinates) and converts them into this
@@ -104,7 +106,8 @@ public final class TouchPadView: UIView {
                                 safeInsets: Insets(top: i.top + e.top, left: i.left + e.left,
                                                    bottom: i.bottom + e.bottom, right: i.right + e.right),
                                 videoRects: videoRects.map(toLocal), touchscreenRect: touchscreenRect.map(toLocal),
-                                scale: scale, stick: stickTuning, stickSpacing: stickSpacing)
+                                scale: scale, stick: stickTuning, stickSpacing: stickSpacing,
+                                shoulderOffset: shoulderOffset)
         if force || ctx != engine.context {
             engine.setContext(ctx)
             if force { engine.scheme.layout(ctx) }
@@ -261,6 +264,7 @@ public struct TouchPad: UIViewRepresentable {
     public var videoRects: [CGRect]
     public var scale: CGFloat
     public var stickSpacing: CGFloat
+    public var shoulderOffset: CGFloat
     public var opacity: CGFloat
     public var haptics: Bool
     public var enabled: Bool
@@ -270,7 +274,7 @@ public struct TouchPad: UIViewRepresentable {
     public var onChange: ((PadEngine) -> Void)?
 
     public init(schemeID: String, output: PadOutput, touchscreenRect: CGRect? = nil, videoRects: [CGRect] = [],
-                scale: CGFloat = 1, stickSpacing: CGFloat = 0, opacity: CGFloat = 0.85, haptics: Bool = true, revision: Int = 0,
+                scale: CGFloat = 1, stickSpacing: CGFloat = 0, shoulderOffset: CGFloat = 0, opacity: CGFloat = 0.85, haptics: Bool = true, revision: Int = 0,
                 enabled: Bool = true, stickTuning: StickTuning = StickTuning(),
                 rectSpace: TouchPadView.RectSpace = .local, extraInsets: Insets = Insets(),
                 makeScheme: @escaping (String) -> TouchScheme = SchemeCatalog.make,
@@ -287,6 +291,7 @@ public struct TouchPad: UIViewRepresentable {
         self.videoRects = videoRects
         self.scale = scale
         self.stickSpacing = stickSpacing
+        self.shoulderOffset = shoulderOffset
         self.opacity = opacity
         self.haptics = haptics
         self.onChange = onChange
@@ -322,6 +327,7 @@ public struct TouchPad: UIViewRepresentable {
         if view.videoRects != videoRects { view.videoRects = videoRects }
         if view.scale != scale { view.scale = scale }
         if view.stickSpacing != stickSpacing { view.stickSpacing = stickSpacing }
+        if view.shoulderOffset != shoulderOffset { view.shoulderOffset = shoulderOffset }
         if view.controlOpacity != opacity { view.controlOpacity = opacity }
         view.hapticsEnabled = haptics
         let engine = view.engine

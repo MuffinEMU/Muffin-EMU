@@ -1208,6 +1208,8 @@ struct EmulatorViewOptimized: View {
     private var controlOpacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.stickSpacingKey)
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
+    private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
     /// Same key the pad and SettingsView read. Offered in the move-controls panel as
     /// well as in Settings because switching schemes is a thing you decide with a game
     /// under you, exactly like the two sliders next to it.
@@ -2060,6 +2062,26 @@ struct EmulatorViewOptimized: View {
                                 .foregroundColor(.white.opacity(0.7))
                         }
 
+                        // L, ZL, R and ZR move up or down together. iPad only.
+                        if ControllerLayoutSettings.supportsShoulderOffset {
+                            HStack(spacing: 10) {
+                                Text("L/R")
+                                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.85))
+                                Image(systemName: "arrow.up.and.down")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .accessibilityHidden(true)
+                                Slider(
+                                    value: $shoulderOffset,
+                                    in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: false),
+                                    step: ControllerLayoutSettings.shoulderOffsetStep
+                                )
+                                .accessibilityLabel("Shoulder button height")
+                                .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(shoulderOffset))
+                            }
+                        }
+
                         Toggle(isOn: $joystickMode) {
                             Text("Joystick instead of d-pad")
                                 .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -2153,7 +2175,7 @@ struct EmulatorViewOptimized: View {
                                     Button("Reset to default", role: .destructive) { ControllerLayoutSettings.reset() }
                                     Button("Cancel", role: .cancel) { }
                                 } message: {
-                                    Text("Button size, opacity, stick spacing and every button you've moved go back to how MuffinEMU ships.")
+                                    Text("Button size, opacity, stick spacing, shoulder height and every button you've moved go back to how MuffinEMU ships.")
                                 }
 
                             Button("Done") {
