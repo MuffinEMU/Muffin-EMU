@@ -404,6 +404,7 @@ struct GameBrowserView: View {
     private var showsMenuCard: Bool { menuOffered && menuAsCard }
 
     private func launchMenu(_ menu: GameMetadata) {
+        guard gameManager.emulationState == .idle else { return }
         selectedGame = menu
         gameManager.launchGame(menu)
         showingGameBrowser = false
@@ -639,6 +640,9 @@ struct GameBrowserView: View {
                             GameCardOptimized(
                                 game: game,
                                 onTap: {
+                                    // A second tap while a launch is under way must not swap the
+                                    // game the screen thinks it is showing.
+                                    guard gameManager.emulationState == .idle else { return }
                                     selectedGame = game
                                     gameManager.launchGame(game)
                                     showingGameBrowser = false
