@@ -2357,6 +2357,7 @@ struct EmulatorViewOptimized: View {
         // popping up mid-game - a stray swipe near the bottom edge no longer competes
         // with on-screen controls sitting right where it appears.
         .hidingSystemOverlaysDuringPlay()
+        .modifier(HeatNoticeModifier { gameManager.showLaunchNotice($0) })
         .overlay(alignment: .top) {
             if showsStallCard {
                 videoStalledCard
