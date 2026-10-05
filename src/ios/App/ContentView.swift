@@ -2838,7 +2838,7 @@ private extension View {
 /// Where MuffinEMU's own pad and the preview pad send a press. HOME is the app's, not the
 /// game's: the core's GamePad mapping has no HOME bit, so it opens the HOME menu instead of
 /// reaching the bridge. The label is recorded first, so the diagnostics overlay still shows it.
-private func sendPadButton(_ label: String, _ pressed: Bool) {
+@MainActor private func sendPadButton(_ label: String, _ pressed: Bool) {
     PadDiagnostics.shared.recordInput(label, pressed)
     if label == "HOME" {
         HomeMenuRouter.shared.padHome(pressed: pressed)
