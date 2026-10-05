@@ -42,10 +42,10 @@ enum NetworkService: Int, CaseIterable, Identifiable {
     /// server hostnames are built into the engine (PretendoURLs in config/NetworkSettings.h).
     var accountHelp: String {
         switch self {
-        case .offline: return "Online functionality disabled for this account"
-        case .nintendo: return "Connect to Nintendo's original Wii U servers (no longer running)."
-        case .pretendo: return "Connect to the Pretendo Network Service, a community-run reimplementation of Nintendo's original Wii U online services"
-        case .custom: return "Connect to a custom Network Service (configured via network_services.xml)"
+        case .offline: return "Online play is off for this account."
+        case .nintendo: return "Connect to Nintendo's original Wii U servers, which are no longer running."
+        case .pretendo: return "Connect to the Pretendo Network Service, a community-run replacement for Nintendo's original Wii U online services."
+        case .custom: return "Connect to a custom Network Service, set up in network_services.xml."
         }
     }
 }

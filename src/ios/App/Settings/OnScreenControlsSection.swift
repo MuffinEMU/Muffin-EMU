@@ -126,6 +126,7 @@ struct OnScreenControlsSection: View {
                         value: $controlScale,
                         in: ControllerLayoutSettings.minScale...ControllerLayoutSettings.maxScale
                     )
+                    .accessibilityLabel("Button size")
                     Image(systemName: "plus.magnifyingglass")
                 }
             }
@@ -136,6 +137,7 @@ struct OnScreenControlsSection: View {
                 HStack(spacing: 10) {
                     Image(systemName: "circle.lefthalf.filled")
                     Slider(value: $controlOpacity, in: 0.2...1.0)
+                        .accessibilityLabel("Opacity")
                     Image(systemName: "circle.fill")
                 }
             }
@@ -284,6 +286,7 @@ struct OnScreenControlsSection: View {
                 value: $stickDeadzone,
                 in: ControllerLayoutSettings.minDeadzone...ControllerLayoutSettings.maxDeadzone
             )
+            .accessibilityLabel("Stick deadzone")
         }
 
         VStack(alignment: .leading, spacing: 4) {
@@ -301,6 +304,7 @@ struct OnScreenControlsSection: View {
                 value: $stickCurve,
                 in: ControllerLayoutSettings.minStickCurve...ControllerLayoutSettings.maxStickCurve
             )
+            .accessibilityLabel("Fine control")
         }
     }
 
