@@ -155,6 +155,11 @@ class GameManager: ObservableObject {
             TitleSwitchSettings.apply(titleId: titleId)
         }
         emulationEngine = EmulationEngine()
+        // Thermal throttling lowers the picture quality on its own; say so over the game.
+        ThermalMonitor.shared.onNotice = { [weak self] text in
+            guard let self, self.emulationState == .running else { return }
+            self.showLaunchNotice(text)
+        }
         Task {
             await loadGames()
         }
@@ -1036,6 +1041,10 @@ class GameManager: ObservableObject {
     private var launchToken = UUID()
 
     func launchGame(_ game: GameMetadata) {
+        // A second tap on a card (or the Wii U Menu tile) before the library has gone away would
+        // restart the launch underneath the one already booting. Every way back to the library
+        // goes through stopEmulation(), which leaves the state at .idle.
+        guard emulationState == .idle else { return }
         launchToken = UUID()
         currentGame = game
         surfaceRegistered = false
@@ -1325,7 +1334,11 @@ class GameManager: ObservableObject {
                 }
                 engine.refreshStatus()
                 self.lastStatusMessage = engine.statusText
-                let notice = String(cString: cemu_bridge_take_launch_notice())
+                var notice = String(cString: cemu_bridge_take_launch_notice())
+                // iOS slows the CPU and GPU in Low Power Mode, which no setting here can undo. Say so, but never over a more specific note.
+                if notice.isEmpty && status == CEMU_BRIDGE_OK && ProcessInfo.processInfo.isLowPowerModeEnabled {
+                    notice = "Low Power Mode is on, so games may run slowly. Turn it off in Control Center for full speed."
+                }
                 if !notice.isEmpty {
                     self.showLaunchNotice(notice)
                 }
