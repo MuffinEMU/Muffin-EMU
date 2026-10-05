@@ -15,6 +15,10 @@
 #include "util/SystemInfo/SystemInfo.h"
 
 #include <cinttypes>
+#if BOOST_OS_IOS
+#include <cstdarg>
+#include <cstdio>
+#endif
 
 struct OverlayStats
 {
@@ -33,6 +37,14 @@ struct OverlayStats
 
 	int vramUsage{}, vramTotal{}; // vram usage in mb
 } g_state{};
+
+#if BOOST_OS_IOS
+// Set by the app bridge: when true the overlay is drawn natively in SwiftUI and the ImGui
+// path (LatteOverlay_render) does nothing. False keeps the original ImGui behaviour.
+std::atomic_bool g_overlayNativeOnIOS{ false };
+// Guards g_state: the native path reads it from the main thread while the GPU thread writes it.
+static std::mutex g_overlayStateMutex;
+#endif
 
 extern std::atomic_int g_compiled_shaders_total;
 extern std::atomic_int g_compiled_shaders_async;
@@ -526,6 +538,12 @@ void LatteOverlay_translateScreenPosition(ScreenPosition pos, const Vector2f& wi
 
 void LatteOverlay_render(bool pad_view)
 {
+#if BOOST_OS_IOS
+	// The app draws the overlay natively (LatteOverlay_CollectNativeText); drawing it here
+	// as well would show it twice and split the shared counters between the two paths.
+	if (g_overlayNativeOnIOS.load(std::memory_order_relaxed))
+		return;
+#endif
 	const auto& config = GetConfig();
 	if(config.overlay.position == ScreenPosition::kDisabled && config.notification.position == ScreenPosition::kDisabled)
 		return;
@@ -626,6 +644,9 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
 	if (GetConfig().overlay.position == ScreenPosition::kDisabled)
 		return;
 
+#if BOOST_OS_IOS
+	std::lock_guard<std::mutex> stateLock(g_overlayStateMutex);
+#endif
 	g_state.fps = fps;
 	g_state.draw_calls_per_frame = drawcalls;
 	g_state.fast_draw_calls_per_frame = fastDrawcalls;
@@ -644,3 +665,320 @@ void LatteOverlay_updateStats(double fps, sint32 drawcalls, sint32 fastDrawcalls
 	if (overlay.vram_usage && g_renderer)
 		g_renderer->GetVRAMInfo(g_state.vramUsage, g_state.vramTotal);
 }
+
+#if BOOST_OS_IOS
+// ---------------------------------------------------------------------------------------
+// Native (non-ImGui) overlay text for iOS.
+//
+// The ImGui overlay above is drawn into the game's CAMetalLayer, whose backing scale is
+// reduced on iOS, so its text is stretched by the compositor and looks soft. The app can
+// instead draw the same text itself at full screen resolution. These functions run the same
+// state and timing logic as LatteOverlay_renderOverlay / LatteOverlay_RenderNotifications
+// but produce plain text. Only one path runs at a time (see g_overlayNativeOnIOS and the
+// early return in LatteOverlay_render): both consume the same one-shot counters.
+// ---------------------------------------------------------------------------------------
+
+static std::string OverlayNativeFormat(const char* fmt, ...)
+{
+	char buffer[320];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(buffer, sizeof(buffer), fmt, args);
+	va_end(args);
+	return std::string(buffer);
+}
+
+static void OverlayNative_CollectStats(std::vector<std::string>& stats)
+{
+	const auto& config = GetConfig();
+	if (config.overlay.position == ScreenPosition::kDisabled)
+		return;
+	if (!(config.overlay.fps || config.overlay.drawcalls || config.overlay.cpu_usage || config.overlay.cpu_per_core_usage || config.overlay.ram_usage))
+		return;
+
+	OverlayStats state;
+	{
+		std::lock_guard<std::mutex> stateLock(g_overlayStateMutex);
+		state = g_state;
+	}
+
+	if (config.overlay.fps)
+	{
+		stats.emplace_back(OverlayNativeFormat("FPS: %.2lf", state.fps));
+		const auto& perf = PerfTelemetry::GetSummary();
+		if (perf.valid.load(std::memory_order_relaxed))
+		{
+			stats.emplace_back(OverlayNativeFormat("Host %.1f / game %.1f fps", perf.hostFps.load(std::memory_order_relaxed), perf.guestFps.load(std::memory_order_relaxed)));
+			stats.emplace_back(OverlayNativeFormat("PPC %.0f%%  GPU thread %.0f%%", perf.ppcExecPct.load(std::memory_order_relaxed), perf.gpuThreadBusyPct.load(std::memory_order_relaxed)));
+			stats.emplace_back(OverlayNativeFormat("GPU %.1f ms/f (%.0f%%)  Limit: %s", perf.mtlGpuMsPerFrame.load(std::memory_order_relaxed), perf.mtlGpuBusyPct.load(std::memory_order_relaxed),
+				PerfTelemetry::BottleneckName(perf.bottleneck.load(std::memory_order_relaxed))));
+		}
+	}
+
+	if (config.overlay.drawcalls)
+		stats.emplace_back(OverlayNativeFormat("Draws/f: %d (fast: %d)", state.draw_calls_per_frame, state.fast_draw_calls_per_frame));
+
+	if (config.overlay.cpu_usage)
+		stats.emplace_back(OverlayNativeFormat("CPU: %.2lf%%", state.cpu_usage));
+
+	if (config.overlay.cpu_per_core_usage)
+	{
+		const size_t cpuCoreCount = std::min<size_t>(state.processor_count, state.cpu_per_core.size());
+		for (size_t i = 0; i < cpuCoreCount; ++i)
+			stats.emplace_back(OverlayNativeFormat("CPU #%zu: %.2lf%%", i + 1, state.cpu_per_core[i]));
+	}
+
+	if (config.overlay.ram_usage)
+		stats.emplace_back(OverlayNativeFormat("RAM: %dMB", state.ram_usage));
+
+	if (config.overlay.vram_usage && state.vramUsage != -1 && state.vramTotal != -1)
+		stats.emplace_back(OverlayNativeFormat("VRAM: %dMB / %dMB", state.vramUsage, state.vramTotal));
+
+	if (config.overlay.debug)
+	{
+		// Renderer-specific lines (g_renderer->AppendOverlayDebugInfo) are ImGui calls and
+		// need an ImGui frame, so only the renderer-independent line is available here.
+		stats.emplace_back("--- Debug info ---");
+		stats.emplace_back(OverlayNativeFormat("IndexUploadPerFrame: %dKB", (performanceMonitor.stats.indexDataUploadPerFrame + 1023) / 1024));
+	}
+}
+
+// Joins lines into one notification card (one card per ImGui window in the old path).
+static std::string OverlayNative_JoinLines(const std::vector<std::string>& lines)
+{
+	std::string joined;
+	for (size_t i = 0; i < lines.size(); ++i)
+	{
+		if (i != 0)
+			joined += '\n';
+		joined += lines[i];
+	}
+	return joined;
+}
+
+static void OverlayNative_CollectNotifications(std::vector<std::string>& notifications)
+{
+	const auto& config = GetConfig();
+	if (config.notification.position == ScreenPosition::kDisabled)
+		return;
+
+	// selected controller profiles in the beginning
+	if (config.notification.controller_profiles)
+	{
+		static bool s_init_overlay = false;
+		if (!s_init_overlay)
+		{
+			static std::chrono::steady_clock::time_point s_started = tick_cached();
+
+			const auto now = tick_cached();
+			if (std::chrono::duration_cast<std::chrono::milliseconds>(now - s_started).count() <= 5000)
+			{
+				// active account
+				static std::string s_mii_name;
+				if (s_mii_name.empty())
+				{
+					auto tmp_view = Account::GetAccount(ActiveSettings::GetPersistentId()).GetMiiName();
+					std::wstring tmp{ tmp_view };
+					s_mii_name = boost::nowide::narrow(tmp);
+				}
+				notifications.emplace_back("Account: " + s_mii_name);
+
+				// controller
+				std::vector<std::string> profileLines;
+				auto& input_manager = InputManager::instance();
+				for (int i = 0; i < InputManager::kMaxController; ++i)
+				{
+					const auto controller = input_manager.get_controller(i);
+					if (!controller)
+						continue;
+
+					const auto& profile_name = controller->get_profile_name();
+					if (profile_name.empty())
+						continue;
+
+					profileLines.emplace_back(OverlayNativeFormat("Player %d: %s", i + 1, profile_name.c_str()));
+				}
+
+				if (!profileLines.empty())
+					notifications.emplace_back(OverlayNative_JoinLines(profileLines));
+				else
+					s_init_overlay = true;
+			}
+			else
+				s_init_overlay = true;
+		}
+	}
+
+	if (config.notification.friends)
+	{
+		static std::vector< std::pair<std::string, std::chrono::steady_clock::time_point> > s_friend_list;
+
+		std::unique_lock lock(g_friend_notification_mutex);
+		if (!g_friend_notifications.empty())
+		{
+			const auto tick = tick_cached();
+
+			for (const auto& entry : g_friend_notifications)
+				s_friend_list.emplace_back(entry.first, tick + std::chrono::milliseconds(entry.second));
+
+			g_friend_notifications.clear();
+		}
+
+		if (!s_friend_list.empty())
+		{
+			std::vector<std::string> lines;
+			const auto tick = tick_cached();
+			for (auto it = s_friend_list.cbegin(); it != s_friend_list.cend();)
+			{
+				lines.emplace_back(it->first);
+				if (tick >= it->second)
+					it = s_friend_list.erase(it);
+				else
+					++it;
+			}
+			notifications.emplace_back(OverlayNative_JoinLines(lines));
+		}
+	}
+
+	// low battery warning
+	if (config.notification.controller_battery)
+	{
+		std::vector<std::string> lines;
+		auto& input_manager = InputManager::instance();
+		for (int i = 0; i < InputManager::kMaxController; ++i)
+		{
+			const auto controller = input_manager.get_controller(i);
+			if (!controller)
+				continue;
+
+			if (controller->is_battery_low())
+				lines.emplace_back(OverlayNativeFormat("Low battery: Player %d", i + 1));
+		}
+
+		if (!lines.empty())
+			notifications.emplace_back(OverlayNative_JoinLines(lines));
+	}
+
+	if (config.notification.shader_compiling)
+	{
+		static int32_t s_shader_count = 0;
+		static int32_t s_shader_count_async = 0;
+		if (s_shader_count > 0 || g_compiled_shaders_total > 0)
+		{
+			const int tmp = g_compiled_shaders_total.exchange(0);
+			const int tmpAsync = g_compiled_shaders_async.exchange(0);
+			s_shader_count += tmp;
+			s_shader_count_async += tmpAsync;
+
+			static std::chrono::steady_clock::time_point s_last_tick = tick_cached();
+			const auto now = tick_cached();
+
+			if (tmp > 0)
+				s_last_tick = now;
+
+			if (std::chrono::duration_cast<std::chrono::milliseconds>(now - s_last_tick).count() >= 2500)
+			{
+				s_shader_count = 0;
+				s_shader_count_async = 0;
+			}
+
+			if (s_shader_count > 0)
+			{
+				if (s_shader_count_async > 0 && GetConfig().async_compile)
+				{
+					if (s_shader_count > 1)
+						notifications.emplace_back(OverlayNativeFormat("Compiled %d new shaders... (%d async)", s_shader_count, s_shader_count_async));
+					else
+						notifications.emplace_back(OverlayNativeFormat("Compiled %d new shader... (%d async)", s_shader_count, s_shader_count_async));
+				}
+				else
+				{
+					if (s_shader_count > 1)
+						notifications.emplace_back(OverlayNativeFormat("Compiled %d new shaders...", s_shader_count));
+					else
+						notifications.emplace_back(OverlayNativeFormat("Compiled %d new shader...", s_shader_count));
+				}
+			}
+		}
+
+		static int32_t s_pipeline_count = 0;
+		static int32_t s_pipeline_count_async = 0;
+		if (s_pipeline_count > 0 || g_compiling_pipelines > 0)
+		{
+			const int tmp = g_compiling_pipelines.exchange(0);
+			const int tmpAsync = g_compiling_pipelines_async.exchange(0);
+			s_pipeline_count += tmp;
+			s_pipeline_count_async += tmpAsync;
+
+			static std::chrono::steady_clock::time_point s_last_tick = tick_cached();
+			const auto now = tick_cached();
+
+			if (tmp > 0)
+				s_last_tick = now;
+
+			if (std::chrono::duration_cast<std::chrono::milliseconds>(now - s_last_tick).count() >= 2500)
+			{
+				s_pipeline_count = 0;
+				s_pipeline_count_async = 0;
+			}
+
+			if (s_pipeline_count > 0)
+			{
+#ifdef CEMU_DEBUG_ASSERT
+				uint64 totalTime = g_compiling_pipelines_syncTimeSum / 1000000ull;
+				if (s_pipeline_count_async > 0)
+					notifications.emplace_back(OverlayNativeFormat("Compiled %d new pipeline%s... (%d async) TotalSync: %" PRIu64 "ms", s_pipeline_count, s_pipeline_count > 1 ? "s" : "", s_pipeline_count_async, totalTime));
+				else
+					notifications.emplace_back(OverlayNativeFormat("Compiled %d new pipeline%s... TotalSync: %" PRIu64 "ms", s_pipeline_count, s_pipeline_count > 1 ? "s" : "", totalTime));
+#else
+				if (s_pipeline_count_async > 0)
+					notifications.emplace_back(OverlayNativeFormat("Compiled %d new pipeline%s... (%d async)", s_pipeline_count, s_pipeline_count > 1 ? "s" : "", s_pipeline_count_async));
+				else
+					notifications.emplace_back(OverlayNativeFormat("Compiled %d new pipeline%s...", s_pipeline_count, s_pipeline_count > 1 ? "s" : ""));
+#endif
+			}
+		}
+	}
+
+	// misc notifications
+	static std::vector< std::pair<std::string, std::chrono::steady_clock::time_point> > s_misc_notifications;
+
+	std::unique_lock misc_lock(g_notification_mutex);
+	if (!g_notifications.empty())
+	{
+		const auto tick = tick_cached();
+
+		for (const auto& entry : g_notifications)
+			s_misc_notifications.emplace_back(entry.first, tick + std::chrono::milliseconds(entry.second));
+
+		g_notifications.clear();
+	}
+	misc_lock.unlock();
+
+	if (!s_misc_notifications.empty())
+	{
+		std::vector<std::string> lines;
+		const auto tick = tick_cached();
+		for (auto it = s_misc_notifications.cbegin(); it != s_misc_notifications.cend();)
+		{
+			lines.emplace_back(it->first);
+			if (tick >= it->second)
+				it = s_misc_notifications.erase(it);
+			else
+				++it;
+		}
+		notifications.emplace_back(OverlayNative_JoinLines(lines));
+	}
+}
+
+void LatteOverlay_CollectNativeText(std::vector<std::string>& stats, std::vector<std::string>& notifications)
+{
+	// Called from the app's main thread. The statics above are only touched here while the
+	// native path is active, but a second caller must still never interleave with the first.
+	static std::mutex s_collectMutex;
+	std::lock_guard<std::mutex> collectLock(s_collectMutex);
+
+	OverlayNative_CollectStats(stats);
+	OverlayNative_CollectNotifications(notifications);
+}
+#endif

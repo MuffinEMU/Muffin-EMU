@@ -2,6 +2,7 @@
 #include "Cafe/HW/Latte/LatteAddrLib/LatteAddrLib.h"
 #include "config/ActiveSettings.h"
 #include "Cafe/CafeSystem.h"
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 
 //#define BENCHMARK_TEXTURE_DECODING		// if defined, time it takes to decode textures will be measured and logged to log.txt
 
@@ -704,6 +705,8 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 
 	if (tex->overwriteInfo.hasFormatOverwrite == false && tex->overwriteInfo.hasResolutionOverwrite == false)
 	{
+		PerfTelemetry::Get().textureDecodes.fetch_add(1, std::memory_order_relaxed);
+		PerfTelemetry::ScopedTimer textureDecodeTimer(PerfTelemetry::Get().textureDecodeNs);
 		texDecoder->decode(&textureLoader, pixelData);
 	}
 

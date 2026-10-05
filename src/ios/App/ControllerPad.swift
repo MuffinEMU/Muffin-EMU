@@ -34,6 +34,8 @@ struct OptimizedControlPanel: View {
     @AppStorage(ControllerLayoutSettings.leftStickOffsetYKey) private var leftStickOffsetY = 0.0
     @AppStorage(ControllerLayoutSettings.stickSpacingKey)
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
+    private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
     // The default must match SettingsView's declaration of the same key.
     @AppStorage(ControllerLayoutSettings.comfortControlsKey)
     private var comfortControls = ControllerLayoutSettings.defaultComfortControls
@@ -59,12 +61,16 @@ struct OptimizedControlPanel: View {
                 spacing: stickSpacing, containerWidth: proxy.size.width, unit: unit,
                 left: leftStickControls, right: rightStickControls)
 
+            // The shoulder slider is iPad only: on iPhone the stored value is never read.
+            let shoulderDrop = ControllerLayoutSettings.effectiveShoulderOffset(shoulderOffset)
+
             ZStack(alignment: .topLeading) {
                 ControlCluster(
                     controls: comfortActive ? ControllerGeometry.leftClusterComfort : ControllerGeometry.leftCluster,
                     edge: .leading,
                     skin: skin,
                     unit: unit,
+                    shoulderOffset: shoulderDrop,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
@@ -85,6 +91,7 @@ struct OptimizedControlPanel: View {
                                               y: ControllerGeometry.leftStickAnchorOffset.y),
                         skin: skin,
                         unit: unit,
+                        shoulderOffset: shoulderDrop,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
                         individualEditMode: individualEditMode,
@@ -100,6 +107,7 @@ struct OptimizedControlPanel: View {
                     edge: .trailing,
                     skin: skin,
                     unit: unit,
+                    shoulderOffset: shoulderDrop,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
@@ -119,6 +127,7 @@ struct OptimizedControlPanel: View {
                                               y: ControllerGeometry.rightStickAnchorOffset.y),
                         skin: skin,
                         unit: unit,
+                        shoulderOffset: shoulderDrop,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
                         individualEditMode: individualEditMode,
@@ -155,6 +164,9 @@ private struct ControlCluster: View {
     var anchorOffset: CGPoint = .zero
     let skin: WiiUControllerSkin
     let unit: CGFloat
+    /// How far this cluster's shoulder buttons (if it has any) move down from their
+    /// measured place, in units; already zero on iPhone. See ControllerGeometry.shoulderShift.
+    let shoulderOffset: Double
     let container: CGSize
     let isEditingLayout: Bool
     /// See ControllerLayoutSettings.individualEditModeKey. When true, this cluster's
@@ -194,6 +206,14 @@ private struct ControlCluster: View {
         clamped(CGPoint(x: anchor.x + CGFloat(offsetX), y: anchor.y + CGFloat(offsetY)))
     }
 
+    /// The shoulders' vertical shift in points, from the setting and the room this
+    /// cluster has. Added to where each shoulder is positioned, so its hit area moves too.
+    private var shoulderShift: CGFloat {
+        ControllerGeometry.shoulderShift(
+            offset: shoulderOffset, centreY: centre.y, containerHeight: container.height,
+            unit: unit, controls: controls) * unit
+    }
+
     private func clamped(_ point: CGPoint) -> CGPoint {
         let minX = -box.minX * unit
         let maxX = container.width - box.maxX * unit
@@ -219,6 +239,7 @@ private struct ControlCluster: View {
             if isEditingLayout && !individualEditMode {
                 dragHandle
             }
+            let shoulderDrop = shoulderShift
             ForEach(controls) { control in
                 EditableControl(
                     control: control,
@@ -227,6 +248,7 @@ private struct ControlCluster: View {
                     base: CGPoint(
                         x: centre.x + control.offset.x * unit,
                         y: centre.y + control.offset.y * unit
+                            + (control.style == .shoulder ? shoulderDrop : 0)
                     ),
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,

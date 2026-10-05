@@ -113,6 +113,13 @@ public struct LayoutContext: Equatable, Sendable {
     /// toward its screen edge, negative toward the middle. A hand-size setting. Layouts
     /// with fixed sticks honour as much of it as fits without overlapping anything.
     public var stickSpacing: CGFloat
+    /// Moves the whole shoulder cluster (L, R, ZL, ZR) down from where the layout puts it,
+    /// in button widths, keeping the four buttons' layout relative to each other. Zero is
+    /// the layout's own place; negative values are ignored, because the shoulders already
+    /// start against the top of the safe area. The layouts that place the shoulders
+    /// themselves honour as much of it as fits without leaving the safe area or touching
+    /// a stick, d-pad or face button. A hand-size setting, meant for iPad.
+    public var shoulderOffset: CGFloat
 
     public init(size: CGSize,
                 safeInsets: Insets = .zero,
@@ -120,7 +127,8 @@ public struct LayoutContext: Equatable, Sendable {
                 touchscreenRect: CGRect? = nil,
                 scale: CGFloat = 1,
                 stick: StickTuning = StickTuning(),
-                stickSpacing: CGFloat = 0) {
+                stickSpacing: CGFloat = 0,
+                shoulderOffset: CGFloat = 0) {
         self.size = size
         self.safeInsets = safeInsets
         self.videoRects = videoRects
@@ -128,6 +136,7 @@ public struct LayoutContext: Equatable, Sendable {
         self.scale = scale
         self.stick = stick
         self.stickSpacing = stickSpacing
+        self.shoulderOffset = shoulderOffset
     }
 
     public var bounds: CGRect { CGRect(origin: .zero, size: size) }
