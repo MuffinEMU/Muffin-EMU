@@ -40,6 +40,11 @@ enum ControllerLayoutSettings {
     static let hapticsKey = "muffin.pad.haptics"
     static let defaultHaptics = true
 
+    /// Hide the on-screen pad while a physical controller is connected, and bring it back when the
+    /// last one goes. Off by default. Not reset by `reset()`: it is a preference, not a layout.
+    static let autoHideWithControllerKey = "muffin.controls.autoHideWithController"
+    static let defaultAutoHideWithController = false
+
     static let defaultJoystick = false
 
     /// Fraction of full travel that reads as centred.

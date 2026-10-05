@@ -1244,6 +1244,10 @@ struct EmulatorViewOptimized: View {
     /// The HOME menu is up (see HomeMenu.swift). The game is paused for as long as it is, through
     /// the same togglePause() as the top bar's button.
     @State private var showHomeMenu = false
+    /// padControlsHidden was set by a connected controller (Settings > On-screen Controls), not by
+    /// the top bar's hide button. Only a controller disconnecting takes the pad back from it, and
+    /// it survives the GamePad screen going off screen, which would otherwise un-hide the pad.
+    @State private var padHiddenByController = false
     /// True only when isPaused was set by leaving the foreground, not by the pause
     /// button below. Read on the way back to .active: the app should resume a title
     /// it paused on the way out, but must not resume one the person playing paused
@@ -1492,6 +1496,32 @@ struct EmulatorViewOptimized: View {
         }
     }
 
+    // MARK: Controller auto-hide
+
+    /// Hides or shows the on-screen pad because a controller came or went (the setting is checked
+    /// by ControllerAutoHideModifier). Reuses padControlsHidden, so only the pad overlay goes: the
+    /// GamePad's picture and its touchscreen are not part of it. Says so with the usual notice
+    /// banner, but only when something actually changed, and not over another notice at launch.
+    private func setPadHiddenByController(_ hide: Bool, atStart: Bool) {
+        if hide {
+            guard !padHiddenByController else { return }
+            padHiddenByController = true
+            if !padControlsHidden {
+                padControlsHidden = true
+                // A button the pad stops drawing cannot report its own release.
+                cemu_bridge_release_all_buttons()
+            }
+        } else {
+            guard padHiddenByController else { return }
+            padHiddenByController = false
+            padControlsHidden = false
+        }
+        if atStart && gameManager.launchNotice != nil { return }
+        gameManager.showLaunchNotice(hide
+            ? "Controller connected, on-screen controls hidden"
+            : "Controller disconnected, on-screen controls shown")
+    }
+
     // MARK: HOME menu
 
     /// Opens the slot sheet. Shared by the top bar's button and the HOME menu.
@@ -1528,6 +1558,7 @@ struct EmulatorViewOptimized: View {
     private func moveControlsFromHomeMenu() {
         closeHomeMenu()
         padControlsHidden = false
+        padHiddenByController = false
         withAnimation(.easeInOut(duration: 0.2)) { isEditingControlLayout = true }
         cemu_bridge_release_all_buttons()
     }
@@ -1613,42 +1644,47 @@ struct EmulatorViewOptimized: View {
                              y: previewPad.displayMode == .native ? resolved.video.midY : proxy.size.height / 2)
                     .clipped()
 
-                    PreviewControllerPad(
-                        store: previewPad,
-                        // Recorded through PadDiagnostics, NOT into @State here, and that
-                        // is the whole reason this pad never worked.
-                        //
-                        // These closures used to bump two @State properties of this view
-                        // on every single input. The preview pad is rendered INSIDE this
-                        // view, so every press rebuilt the pad being pressed - which tore
-                        // the control out from under the finger and released it again
-                        // before the press could mean anything. The same shape as the bug
-                        // in MuffinEMU's own pad, except guaranteed on every event rather
-                        // than occasional, which is why this one never worked at all
-                        // while the other worked intermittently.
-                        //
-                        // PadDiagnostics is an ObservableObject that only its own overlay
-                        // observes, so recording an input invalidates that overlay and
-                        // nothing else. It is also where the real pad already reports, so
-                        // both pads now show up in the same readout.
-                        onInput: { label, pressed in
-                            sendPadButton(label, pressed)
-                        },
-                        onStick: { stick, position in
-                            PadDiagnostics.shared.recordStick(stick, position)
-                            cemu_bridge_set_stick_axis(
-                                stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
-                                Float(position.x), Float(position.y)
-                            )
-                        },
-                        isEditingLayout: $isEditingControlLayout
-                    )
-                    .onAppear { PadDiagnostics.shared.report(activePad: .preview) }
-                    // The stuck-button net, at the level where disappearing is a real
-                    // event. HeldControl no longer releases per control - see its own
-                    // comment for why that had to go - so the pad as a whole owns it,
-                    // exactly as OptimizedControlPanel does.
-                    .onDisappear { cemu_bridge_release_all_buttons() }
+                    // Hidden with the rest of the on-screen pad (the top bar's hide button, or a connected
+                    // controller with Settings > On-screen Controls > Hide on-screen controls on). The video
+                    // above stays.
+                    if !padControlsHidden {
+                        PreviewControllerPad(
+                            store: previewPad,
+                            // Recorded through PadDiagnostics, NOT into @State here, and that
+                            // is the whole reason this pad never worked.
+                            //
+                            // These closures used to bump two @State properties of this view
+                            // on every single input. The preview pad is rendered INSIDE this
+                            // view, so every press rebuilt the pad being pressed - which tore
+                            // the control out from under the finger and released it again
+                            // before the press could mean anything. The same shape as the bug
+                            // in MuffinEMU's own pad, except guaranteed on every event rather
+                            // than occasional, which is why this one never worked at all
+                            // while the other worked intermittently.
+                            //
+                            // PadDiagnostics is an ObservableObject that only its own overlay
+                            // observes, so recording an input invalidates that overlay and
+                            // nothing else. It is also where the real pad already reports, so
+                            // both pads now show up in the same readout.
+                            onInput: { label, pressed in
+                                sendPadButton(label, pressed)
+                            },
+                            onStick: { stick, position in
+                                PadDiagnostics.shared.recordStick(stick, position)
+                                cemu_bridge_set_stick_axis(
+                                    stick == 0 ? CEMU_BRIDGE_STICK_LEFT : CEMU_BRIDGE_STICK_RIGHT,
+                                    Float(position.x), Float(position.y)
+                                )
+                            },
+                            isEditingLayout: $isEditingControlLayout
+                        )
+                        .onAppear { PadDiagnostics.shared.report(activePad: .preview) }
+                        // The stuck-button net, at the level where disappearing is a real
+                        // event. HeldControl no longer releases per control - see its own
+                        // comment for why that had to go - so the pad as a whole owns it,
+                        // exactly as OptimizedControlPanel does.
+                        .onDisappear { cemu_bridge_release_all_buttons() }
+                    }
 
                     #if DEBUG
                     // Debug HUD: proves whether SwiftUI ever calls onInput/onStick at
@@ -1835,6 +1871,8 @@ struct EmulatorViewOptimized: View {
                         if isPadViewVisible {
                             Button(action: {
                                 padControlsHidden.toggle()
+                                // The player's own choice now, whatever a controller did before.
+                                padHiddenByController = false
                                 if padControlsHidden {
                                     cemu_bridge_release_all_buttons()
                                 }
@@ -1884,7 +1922,10 @@ struct EmulatorViewOptimized: View {
                                 isEditingControlLayout.toggle()
                             }
                             // There is nothing to move while the pad is hidden.
-                            if isEditingControlLayout { padControlsHidden = false }
+                            if isEditingControlLayout {
+                                padControlsHidden = false
+                                padHiddenByController = false
+                            }
                             // Editing disables the buttons, and a button held at the
                             // moment it stops being able to report its own release
                             // would stay held inside the title.
@@ -2255,7 +2296,7 @@ struct EmulatorViewOptimized: View {
         // or a player who forgot the button exists would have no way to control the
         // TV-side game at all until they remembered to look for it again.
         .onChange(of: isPadViewVisible) { visible in
-            if !visible { padControlsHidden = false }
+            if !visible && !padHiddenByController { padControlsHidden = false }
         }
         // Keeps the home indicator (and the system's own edge-swipe gestures) from
         // popping up mid-game - a stray swipe near the bottom edge no longer competes
@@ -2263,6 +2304,7 @@ struct EmulatorViewOptimized: View {
         .hidingSystemOverlaysDuringPlay()
         .modifier(HeatNoticeModifier { gameManager.showLaunchNotice($0) })
         .modifier(HomeMenuEventsModifier(isOpen: showHomeMenu, onEvent: handleHomeMenuEvent))
+        .modifier(ControllerAutoHideModifier(apply: setPadHiddenByController))
         .overlay(alignment: .top) {
             if showsStallCard {
                 videoStalledCard
