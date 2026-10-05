@@ -15,11 +15,11 @@ struct AboutSettingsSection: View {
     var body: some View {
         Section {
             SettingsRow(label: "Version", value: Bundle.main.appVersionString, icon: "number")
-            Link(destination: URL(string: "https://github.com/kiddreads/MuffinEMU")!) {
+            Link(destination: URL(string: "https://github.com/MuffinEMU/MuffinEMU")!) {
                 Label("View on GitHub", systemImage: "arrow.up.right.square")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            Link(destination: URL(string: "https://kiddreads.github.io/MuffinEMU/docs/licenses.html")!) {
+            Link(destination: URL(string: "https://muffinemu.github.io/MuffinEMU/docs/licenses.html")!) {
                 Label("Open-source licences", systemImage: "doc.text")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
