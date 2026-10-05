@@ -14,6 +14,8 @@ struct AppearanceSettingsSection: View {
     // instead of at the next launch - the same reasoning PreviewPadSection's own doc
     // comment already spells out for PreviewPadStore.
     @ObservedObject private var style = UIStyleStore.shared
+    // Observed so the row's value follows a change made in the picker sheet.
+    @ObservedObject private var themeStore = MuffinThemeStore.shared
 
     var body: some View {
         Section {
@@ -27,8 +29,14 @@ struct AppearanceSettingsSection: View {
             // icon are picked independently (see ThemePickerView's header) - someone
             // can love the Strawberry icon and the Galaxy Space theme together.
             Button(action: { showingThemePicker = true }) {
-                Label("Theme", systemImage: "paintpalette")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                HStack {
+                    Label("Theme", systemImage: "paintpalette")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Spacer(minLength: 12)
+                    Text(themeStore.current.name)
+                        .font(.system(size: 15, design: .rounded))
+                        .foregroundColor(MuffinTheme.brownMid)
+                }
             }
             .foregroundColor(MuffinTheme.brownDarkest)
 
@@ -36,7 +44,9 @@ struct AppearanceSettingsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Flat surfaces")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("Removes the highlights and shading on cards and buttons.")
+                    Text(style.useClassicUI
+                         ? "Already on while Classic UI is on."
+                         : "Removes the highlights and shading on cards and buttons.")
                         .font(.system(size: 12))
                         .foregroundColor(MuffinTheme.secondaryText)
                 }
