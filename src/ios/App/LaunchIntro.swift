@@ -239,6 +239,8 @@ struct LaunchIntroView: View {
     @State private var grin: CGFloat = 0
     @State private var fade: CGFloat = 0          // final blackout
     @State private var started = false
+    // The intro is five seconds of 3D tilt and spring motion; with Reduce Motion on it is skipped.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let chalk = Color(red: 0.98, green: 0.95, blue: 0.90)
 
@@ -271,7 +273,11 @@ struct LaunchIntroView: View {
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .allowsHitTesting(false)
-        .onAppear { if !started { started = true; run() } }
+        .onAppear {
+            guard !started else { return }
+            started = true
+            if reduceMotion { onFinished() } else { run() }
+        }
     }
 
     @ViewBuilder
