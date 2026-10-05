@@ -61,27 +61,6 @@ struct TouchLabStyleSettingsRows: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare
-                // height for it. Only the styles with fixed shoulders have anything to move.
-                if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
-                    HStack(spacing: 10) {
-                        Text("L/R")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.85))
-                        Image(systemName: "arrow.up.and.down")
-                            .font(.system(size: 12))
-                            .foregroundColor(.white.opacity(0.7))
-                            .accessibilityHidden(true)
-                        Slider(
-                            value: $shoulderOffset,
-                            in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true),
-                            step: ControllerLayoutSettings.shoulderOffsetStep
-                        )
-                        .accessibilityLabel("Shoulder button height")
-                        .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(shoulderOffset))
-                    }
-                }
-
                 if scheme == TouchLabSettings.floatStyleID {
                     Picker("Camera", selection: $floatCamera) {
                         ForEach(TouchLabSettings.cameraOptions, id: \.value) { option in
@@ -190,6 +169,27 @@ struct TouchLabLayoutPanel: View {
                             .font(.system(size: 12))
                             .foregroundColor(.white.opacity(0.7))
                             .accessibilityHidden(true)
+                    }
+                }
+
+                // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare
+                // height for it. Only the styles with fixed shoulders have anything to move.
+                if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
+                    HStack(spacing: 10) {
+                        Text("L/R")
+                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.85))
+                        Image(systemName: "arrow.up.and.down")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.7))
+                            .accessibilityHidden(true)
+                        Slider(
+                            value: $shoulderOffset,
+                            in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true),
+                            step: ControllerLayoutSettings.shoulderOffsetStep
+                        )
+                        .accessibilityLabel("Shoulder button height")
+                        .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(shoulderOffset))
                     }
                 }
 
