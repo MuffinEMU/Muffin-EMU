@@ -1196,6 +1196,9 @@ struct EmulatorViewOptimized: View {
     // backgrounded, so this is not a nicety; see cemu_bridge_pause() in CemuBridge.mm
     // for the other half of what actually stops that.
     @Environment(\.scenePhase) private var scenePhase
+    // The launch intro is several seconds of animation; someone who asked the system to reduce motion gets the
+    // plain boot screen instead.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // MeloCafe's EmulationView reads this to pick its phone-portrait-only stacked
     // layout (screensSizeLayout) apart from the ordinary tablet/landscape composition -
     // see screenLayoutComposition below, which is the direct port of that view's body.
@@ -1717,6 +1720,7 @@ struct EmulatorViewOptimized: View {
                             }
                             .buttonStyle(MuffinSecondaryButtonStyle())
                             .accessibilityLabel("Swap TV and GamePad")
+                        .accessibilityValue(localSwapped ? "Showing the GamePad screen" : "Showing the TV screen")
                         }
 
                         // Only worth showing while the GamePad's own screen is actually
@@ -2005,7 +2009,7 @@ struct EmulatorViewOptimized: View {
             // Hidden while the launch log is up. Someone who has turned that on is
             // diagnosing a boot, and covering the log with an animation would be
             // exactly the wrong call.
-            if showLaunchIntro && launchIntroEnabled && !showLaunchLog {
+            if showLaunchIntro && launchIntroEnabled && !showLaunchLog && !reduceMotion {
                 LaunchIntroView { showLaunchIntro = false }
                     .transition(.opacity)
                     .zIndex(10)
