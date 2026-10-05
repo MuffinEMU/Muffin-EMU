@@ -1041,6 +1041,10 @@ class GameManager: ObservableObject {
     private var launchToken = UUID()
 
     func launchGame(_ game: GameMetadata) {
+        // A second tap on a card (or the Wii U Menu tile) before the library has gone away would
+        // restart the launch underneath the one already booting. Every way back to the library
+        // goes through stopEmulation(), which leaves the state at .idle.
+        guard emulationState == .idle else { return }
         launchToken = UUID()
         currentGame = game
         surfaceRegistered = false
