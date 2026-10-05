@@ -217,6 +217,9 @@ uint32_t IOSAccounts_ActivePersistentId()
 void IOSAccounts_SetActivePersistentId(uint32_t persistentId)
 {
 	GetConfig().account.m_persistent_id = persistentId;
+	// Written now: nothing on iOS saves config.xml when the app closes, so a value left in memory is lost at the next launch.
+	// Save() is a no-op until the engine (or the graphic pack screens) has set the config file's path.
+	GetConfigHandle().Save();
 }
 
 bool IOSAccounts_IsOnlineValid(uint32_t persistentId)
@@ -252,6 +255,8 @@ void IOSAccounts_SetNetworkService(uint32_t persistentId, int service)
 	if (service < (int)NetworkService::Offline || service > (int)NetworkService::Custom)
 		return;
 	GetConfig().SetAccountSelectedService(persistentId, (NetworkService)service);
+	// Same reason as the active account above: config.xml is the only place this choice lives.
+	GetConfigHandle().Save();
 }
 
 bool IOSAccounts_CustomNetworkServiceAvailable()

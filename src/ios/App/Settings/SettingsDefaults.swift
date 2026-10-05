@@ -6,7 +6,11 @@ import Foundation
 ///
 /// Never touched: the premium unlock, the selected theme, the onboarding-completed flag,
 /// and per-game overrides (only removed if the person picks "Reset Settings and Per-Game
-/// Options"). The library, favorites and Wii U keys aren't "muffin." keys at all.
+/// Options"). Also never touched: the library's own records (favorites, the region and
+/// title-name cache, graphic pack release info) and results the app worked out by itself
+/// (cores Auto keeps on one, a Vulkan start failure, the one-time clock repair flag). They
+/// share the "muffin." prefix but are data, not settings, and the confirmation says the
+/// library and favorites are not affected.
 enum SettingsDefaults {
     /// muffin.*-prefixed keys this reset always leaves alone, regardless of which
     /// choice is picked.
@@ -15,7 +19,22 @@ enum SettingsDefaults {
         "muffin.premium.ik",
         "muffin.theme.selectedId",
         OnboardingState.completedKey,
+        // Recorded results. Resetting them would forget what the app learned (and re-run the
+        // one-time repair, which would then erase a clock speed chosen after this reset).
+        "muffin.cpu.autoDemoted",
+        "muffin.cpu.autoMultiPending",
+        "muffin.render.vulkanFailedBuild",
+        "muffin.render.vulkanFailureReason",
+        "muffin.timebase.clearedAccidentalChoice",
     ]
+
+    /// Key prefixes this reset always leaves alone: favorites and the region/title-name cache
+    /// ("muffin.library.") and the installed/latest graphic pack release ("muffin.graphicPacks.").
+    private static let alwaysExcludedPrefixes = ["muffin.library.", "muffin.graphicPacks."]
+
+    /// Per-game, like the overrides in PerGameSettingsStore: Adaptive's learned layout for each
+    /// game. Kept unless the person picks "Reset Settings and Per-Game Options".
+    private static let perGamePrefix = "muffin.touchlab.adaptive."
 
     /// @MainActor: touches UIStyleStore and ThermalMonitor, which are main-actor isolated.
     @MainActor
@@ -33,8 +52,10 @@ enum SettingsDefaults {
         defaults.removeObject(forKey: RenderScale.storageKey)
         DisplayRouter.shared.reapplyRenderScale(reason: "settings reset")
         TimebaseScale.clearChoice()
-        for key in defaults.dictionaryRepresentation().keys
-            where key.hasPrefix("muffin.") && !excluded.contains(key) {
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("muffin.") {
+            if excluded.contains(key) { continue }
+            if alwaysExcludedPrefixes.contains(where: { key.hasPrefix($0) }) { continue }
+            if !includingPerGameOverrides && key.hasPrefix(perGamePrefix) { continue }
             defaults.removeObject(forKey: key)
         }
         if includingPerGameOverrides {
