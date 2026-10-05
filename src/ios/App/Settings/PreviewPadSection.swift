@@ -9,6 +9,9 @@ struct PreviewPadSection: View {
     // only reads UserDefaults at launch and the live pad reads its @Published values.
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
     @ObservedObject private var previewPad = PreviewPadStore.shared
+    // Either of these wins over the Preview pad (ContentView's padSystem), so say so here.
+    @AppStorage(MeloControlsSetting.storageKey) private var useMeloControls = MeloControlsSetting.defaultValue
+    @AppStorage(TouchLabSettings.schemeKey) private var touchLabScheme = TouchLabSettings.defaultScheme
     @State private var showingLayoutExporter = false
     /// Filled by the Export button, so the layout is captured once on tap, not on every render.
     @State private var layoutDocument = LazyLayoutDocument(file: nil)
@@ -34,17 +37,28 @@ struct PreviewPadSection: View {
     private var previewLayoutPreset: PreviewLayoutPreset { previewPad.layoutPreset }
     private var previewColourPreset: PreviewColourPreset { previewPad.colourPreset }
 
+    private var otherPadChosen: Bool {
+        useMeloControls || TouchLabSettings.isTouchLab(touchLabScheme)
+    }
+
+    private var toggleCaption: String {
+        if previewPadEnabled && otherPadChosen {
+            return "Not showing: melo-controls or a control style is chosen under On-screen Controls, and wins over this."
+        }
+        return previewPadEnabled
+            ? "Replaces the normal pad. If controls don't respond, turn this off."
+            : "Experimental. Replaces the normal pad while on."
+    }
+
     var body: some View {
         Section {
             Toggle(isOn: $previewPadEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Use the new pad system")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(previewPadEnabled
-                         ? "Replaces the normal pad. If controls don't respond, turn this off."
-                         : "Experimental. Replaces the normal pad while on.")
+                    Text(toggleCaption)
                         .font(.system(size: 12))
-                        .foregroundColor(previewPadEnabled ? MuffinTheme.cautionText : MuffinTheme.secondaryText)
+                        .foregroundColor(previewPadEnabled && !otherPadChosen ? MuffinTheme.cautionText : MuffinTheme.secondaryText)
                 }
             }
             .tint(MuffinTheme.accentText)

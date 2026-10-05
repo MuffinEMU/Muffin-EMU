@@ -36,7 +36,9 @@ struct AppearanceSettingsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Flat surfaces")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("Removes the highlights and shading on cards and buttons.")
+                    Text(style.useClassicUI
+                         ? "Already on while Classic UI is on."
+                         : "Removes the highlights and shading on cards and buttons.")
                         .font(.system(size: 12))
                         .foregroundColor(MuffinTheme.secondaryText)
                 }
