@@ -1679,6 +1679,19 @@ struct EmulatorViewOptimized: View {
                             .accessibilityLabel("Swap TV and GamePad")
                         }
 
+                        // Dual screen: which Wii U screen is on the external display. Lives
+                        // in the bar with the other in-game buttons. It used to float in the
+                        // top-right corner, which is exactly where the bar's last button and
+                        // the frame rate are, so it sat on top of them.
+                        if showSwapButton, displayRouter.placement == .dualScreen {
+                            Button(action: { DisplayRouter.shared.toggleScreenLayoutFromSwapButton() }) {
+                                Image(systemName: "rectangle.2.swap")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .accessibilityLabel("Swap TV and GamePad screens")
+                        }
+
                         // Only worth showing while the GamePad's own screen is actually
                         // the one on top - hiding the pad to touch a TV that has no
                         // touchscreen of its own would just take the controls away for
@@ -1776,10 +1789,15 @@ struct EmulatorViewOptimized: View {
                         .padding(.horizontal, 12)
                         .background(Color.white.opacity(0.08))
                         .cornerRadius(10)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Frame rate")
+                        .accessibilityValue(gameManager.progress.hudText(wholeFramesPerSecond: gameManager.frameRate))
                     }
                     }
                 }
-                .padding(12)
+                // Sideways it keeps clear of an iPhone's notch side and rounded corners; the
+                // game view ignores the safe area, so the window is asked directly.
+                .padding(WindowSafeArea.padding(minimum: 12))
                 .background(Color.black.opacity(0.5))
                 .borderBottom(width: 0.5, color: Color.white.opacity(0.1))
                 .reportTopBarBottom()
@@ -1893,30 +1911,6 @@ struct EmulatorViewOptimized: View {
                 .allowsHitTesting(false)
             }
 
-            // Settings > External Display > "Show swap button (TV <-> Pad)". Only ever
-            // visible in .dualScreen - the only placement where there are two physical
-            // screens to swap between at all - so it can't appear and do nothing on a
-            // plain iPad. Top-trailing, out of the pad's own footprint regardless of
-            // skin or comfort-controls layout.
-            if showSwapButton, displayRouter.placement == .dualScreen {
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button {
-                            DisplayRouter.shared.toggleScreenLayoutFromSwapButton()
-                        } label: {
-                            Image(systemName: "rectangle.2.swap")
-                                .font(.system(size: 18, weight: .semibold))
-                        }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
-                        .accessibilityLabel("Swap TV and GamePad screens")
-                        .padding(.top, 8)
-                        .padding(.trailing, 12)
-                    }
-                    Spacer()
-                }
-            }
-
             // Above the pad (which stays on screen and interactive-looking underneath
             // it) so there is no ambiguity about whether input is actually reaching a
             // paused title - the label is the whole point, not just the pause itself.
@@ -1924,6 +1918,7 @@ struct EmulatorViewOptimized: View {
                 VStack(spacing: 10) {
                     Image(systemName: "pause.circle.fill")
                         .font(.system(size: 40))
+                        .accessibilityHidden(true)
                     Text("PAUSED")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .tracking(2)
