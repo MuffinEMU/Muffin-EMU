@@ -1865,7 +1865,8 @@ struct EmulatorViewOptimized: View {
                             )
                         },
                         isEditingLayout: $isEditingControlLayout,
-                        isPaused: isPaused
+                        isPaused: isPaused,
+                        topInset: topBarHeight
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .muffin) }
                 }
