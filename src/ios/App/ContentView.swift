@@ -1274,6 +1274,16 @@ struct EmulatorViewOptimized: View {
     @State private var touchLabScreens = TouchLabScreenState()
     /// Bottom edge of the top bar, so TouchLab's controls stay clear of Back / pause.
     @State private var topBarHeight: CGFloat = 0
+    /// Settings > On-screen Controls > "Hide the top bar while playing". 0 follows the
+    /// device (on for iPhone, off for iPad); see TopBarAutoHide.
+    @AppStorage(TopBarAutoHide.overrideKey) private var topBarAutoHideOverride = TopBarAutoHide.followDevice
+    /// The bar is faded out and slid away. `topBarHeight` deliberately keeps its last
+    /// measured value while this is true, so the pads, which reserve that band, never move.
+    @State private var topBarHidden = false
+    /// True while a finger is on the bar. A GestureState, so it also resets if the touch is
+    /// cancelled (a scroll takeover, an app switch) and can never leave the bar pinned.
+    @GestureState private var topBarTouched = false
+    @State private var voiceOverRunning = UIAccessibility.isVoiceOverRunning
     @ObservedObject private var previewPad = PreviewPadStore.shared
     /// Same key Settings > External Display reads. Declared here too, rather than read
     /// once at boot, so turning it off takes effect on the button already on screen
@@ -1588,7 +1598,7 @@ struct EmulatorViewOptimized: View {
             // instead of by ImGui inside the (reduced-scale) game surface. Above the video,
             // below the controls; no layout, no touches. In dual-screen the TV is on another
             // display this layer cannot reach, so it hands back to the core's own drawing.
-            NativeCoreOverlayView(active: nativeOverlayActive, topInset: topBarHeight)
+            NativeCoreOverlayView(active: nativeOverlayActive, topInset: overlayTopInset)
 
             VStack(spacing: 0) {
                 HStack(alignment: .center, spacing: 12) {
@@ -1607,7 +1617,7 @@ struct EmulatorViewOptimized: View {
                                 .font(.system(size: 14, weight: .semibold, design: .rounded))
                         }
                     }
-                    .buttonStyle(MuffinSecondaryButtonStyle())
+                    .buttonStyle(MuffinBarButtonStyle())
                     // Quitting while a save state is being written would tear the title down under the write.
                     .disabled(saveStateBusySlot != nil)
                     .confirmationDialog(
@@ -1642,12 +1652,13 @@ struct EmulatorViewOptimized: View {
                     .frame(maxWidth: .infinity)
 
                     TopBarOverflowScroll {
-                    HStack(spacing: 8) {
+                    // 2 point gaps: each button is a 44 point target around a smaller visible one.
+                    HStack(spacing: 2) {
                         Button(action: { showSkinSelector.toggle() }) {
                             Image(systemName: "gamecontroller.fill")
                                 .font(.system(size: 12, weight: .semibold))
                         }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
+                        .buttonStyle(MuffinBarButtonStyle())
                         .accessibilityLabel("Choose Controller Skin")
 
                         // Settings > On-Screen Controls already has this toggle;
@@ -1666,7 +1677,7 @@ struct EmulatorViewOptimized: View {
                             Image(systemName: useMeloControls ? "checkmark.rectangle.stack.fill" : "rectangle.stack")
                                 .font(.system(size: 12, weight: .semibold))
                         }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
+                        .buttonStyle(MuffinBarButtonStyle())
                         .accessibilityLabel(useMeloControls ? "Switch to \(otherPadName)" : "Switch to Melo-Controller")
 
                         // Reachable without leaving the game, same reasoning as the
@@ -1683,7 +1694,7 @@ struct EmulatorViewOptimized: View {
                                 Image(systemName: "bookmark.fill")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .buttonStyle(MuffinBarButtonStyle())
                             .accessibilityLabel("Save States")
                         }
 
@@ -1705,7 +1716,7 @@ struct EmulatorViewOptimized: View {
                                 Image(systemName: "externaldrive.connected.to.line.below")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .buttonStyle(MuffinBarButtonStyle())
                             .accessibilityLabel("Emulated Devices")
                         }
 
@@ -1722,7 +1733,7 @@ struct EmulatorViewOptimized: View {
                                 Image(systemName: "rectangle.2.swap")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .buttonStyle(MuffinBarButtonStyle())
                             .accessibilityLabel("Swap TV and GamePad")
                         .accessibilityValue(localSwapped ? "Showing the GamePad screen" : "Showing the TV screen")
                         }
@@ -1736,7 +1747,7 @@ struct EmulatorViewOptimized: View {
                                 Image(systemName: "rectangle.2.swap")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .buttonStyle(MuffinBarButtonStyle())
                             .accessibilityLabel("Swap TV and GamePad screens")
                         }
 
@@ -1758,7 +1769,7 @@ struct EmulatorViewOptimized: View {
                                 Image(systemName: padControlsHidden ? "hand.raised.slash.fill" : "hand.raised.fill")
                                     .font(.system(size: 12, weight: .semibold))
                             }
-                            .buttonStyle(MuffinSecondaryButtonStyle())
+                            .buttonStyle(MuffinBarButtonStyle())
                             .accessibilityLabel(padControlsHidden ? "Show controls" : "Hide controls to touch the GamePad screen")
                         }
                         #endif
@@ -1775,7 +1786,7 @@ struct EmulatorViewOptimized: View {
                             Image(systemName: isPaused ? "play.fill" : "pause.fill")
                                 .font(.system(size: 12, weight: .semibold))
                         }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
+                        .buttonStyle(MuffinBarButtonStyle())
                         // There is nothing to pause until the title is running, and a pause sent
                         // while it boots is dropped, which left the screen saying PAUSED over a game
                         // that was running.
@@ -1801,7 +1812,7 @@ struct EmulatorViewOptimized: View {
                                   : "arrow.up.and.down.and.arrow.left.and.right")
                                 .font(.system(size: 12, weight: .semibold))
                         }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
+                        .buttonStyle(MuffinBarButtonStyle())
                         .accessibilityLabel(isEditingControlLayout ? "Done moving controls" : "Move controls")
 
                         // Reads the @Published frameRate directly rather than calling
@@ -1844,6 +1855,11 @@ struct EmulatorViewOptimized: View {
                 .padding(WindowSafeArea.padding(minimum: 12))
                 .background(Color.black.opacity(0.5))
                 .borderBottom(width: 0.5, color: Color.white.opacity(0.1))
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0).updating($topBarTouched) { _, touched, _ in touched = true }
+                )
+                // Before the measurement, never after it: see TopBarHidingEffect.
+                .topBarAutoHideEffect(hidden: topBarHidden, slideDistance: topBarHeight, slides: !reduceMotion)
                 .reportTopBarBottom()
 
                 if showSkinSelector {
@@ -1867,7 +1883,14 @@ struct EmulatorViewOptimized: View {
             // whatever drops down from it, sized to its own content and nothing more.
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onPreferenceChange(TopBarBottomKey.self) { bottom in
-                if bottom != topBarHeight { topBarHeight = bottom }
+                // Not while hidden: the bar's height is what the pads reserve, and it is
+                // only worth re-measuring when the bar is actually there.
+                if !topBarHidden, bottom != topBarHeight { topBarHeight = bottom }
+            }
+            .overlay(alignment: .top) { topBarRevealHandle }
+            .task(id: topBarHideKey) { await runTopBarAutoHide(topBarHideKey) }
+            .onReceive(NotificationCenter.default.publisher(for: UIAccessibility.voiceOverStatusDidChangeNotification)) { _ in
+                voiceOverRunning = UIAccessibility.isVoiceOverRunning
             }
 
             // Unconditional: no showControls state, no tap-to-toggle, no transition.
@@ -2022,7 +2045,7 @@ struct EmulatorViewOptimized: View {
             // Hidden while the launch log is up. Someone who has turned that on is
             // diagnosing a boot, and covering the log with an animation would be
             // exactly the wrong call.
-            if showLaunchIntro && launchIntroEnabled && !showLaunchLog && !reduceMotion {
+            if launchIntroVisible {
                 LaunchIntroView(isGameRunning: gameManager.emulationState == .running) { showLaunchIntro = false }
                     .transition(.opacity)
                     .zIndex(10)
@@ -2168,7 +2191,7 @@ struct EmulatorViewOptimized: View {
             if showsStallCard {
                 videoStalledCard
                     // Below the top bar, not on top of Back and the button row.
-                    .padding(.top, topBarHeight + 8)
+                    .padding(.top, overlayTopInset + 8)
                     .padding(.horizontal, 16)
                     .transition(.opacity)
             }
@@ -2247,6 +2270,70 @@ struct EmulatorViewOptimized: View {
                     ? SaveStateStatus(message: "Slot \(slot) loaded. Some textures may look wrong for a moment.", isWarning: false)
                     : SaveStateStatus(message: "Couldn't load Slot \(slot). A save state only loads in the session it was saved in, so quitting or relaunching the game clears them. If the game looks broken now, quit and start it again.", isWarning: true))
             }
+        }
+    }
+
+    // MARK: Top bar auto-hide
+
+    private var launchIntroVisible: Bool {
+        showLaunchIntro && launchIntroEnabled && !showLaunchLog && !reduceMotion
+    }
+
+    /// Where the core's FPS readout and notifications, and the picture-stopped card, start.
+    /// They are informational and don't touch input, so they take the freed space. The pads
+    /// do not use this: they keep reserving the bar's full height (see TopBarAutoHide.swift).
+    private var overlayTopInset: CGFloat { topBarHidden ? 0 : topBarHeight }
+
+    /// The bar may go away only while nothing needs it and nothing is covering it: the game
+    /// is running and not paused, no menu, sheet, dialog or card is up, the layout isn't
+    /// being edited, no finger is on the bar, and VoiceOver is off (it can't find a handle
+    /// that isn't there to be found).
+    private var topBarMayHide: Bool {
+        TopBarAutoHide.isOn(override: topBarAutoHideOverride)
+            && !voiceOverRunning
+            && gameManager.emulationState == .running
+            && !launchIntroVisible
+            && !isPaused
+            && !isEditingControlLayout
+            && !showSkinSelector
+            && !showSaveStates
+            && !showEmulatedDevices
+            && !showingBackConfirmation
+            && !showsStallCard
+            && saveStateBusySlot == nil
+            && !topBarTouched
+    }
+
+    private struct TopBarHideKey: Equatable {
+        var mayHide: Bool
+        var hidden: Bool
+    }
+
+    private var topBarHideKey: TopBarHideKey {
+        TopBarHideKey(mayHide: topBarMayHide, hidden: topBarHidden)
+    }
+
+    /// Re-run whenever the key changes, and cancelled when it does, which is what restarts
+    /// the four-second wait after a touch, a reveal or a dialog closing.
+    private func runTopBarAutoHide(_ key: TopBarHideKey) async {
+        guard key.mayHide else {
+            if key.hidden { setTopBarHidden(false) }
+            return
+        }
+        guard !key.hidden else { return }
+        try? await Task.sleep(nanoseconds: TopBarAutoHide.hideDelayNanoseconds)
+        guard !Task.isCancelled else { return }
+        setTopBarHidden(true)
+    }
+
+    private func setTopBarHidden(_ hidden: Bool) {
+        withAnimation(.easeInOut(duration: 0.25)) { topBarHidden = hidden }
+    }
+
+    @ViewBuilder private var topBarRevealHandle: some View {
+        if topBarHidden {
+            TopBarRevealHandle { setTopBarHidden(false) }
+                .transition(.opacity)
         }
     }
 
