@@ -1011,10 +1011,16 @@ void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uin
 
 	bool showDRC = swkbd_hasKeyboardInputHook() == false && (isDRCPrimary ^ altScreenRequested);
 #if BOOST_OS_IOS
-	const auto visibleOutputs = WindowSystem::GetWindowInfo().visible_outputs.load();
-	if ((visibleOutputs & 2u) && (renderTarget & RENDER_TARGET_DRC) && g_renderer->IsPadWindowActive())
+	const auto& windowInfo = WindowSystem::GetWindowInfo();
+	const auto visibleOutputs = windowInfo.visible_outputs.load();
+	// Each output window normally shows its own screen (main = TV, pad = GamePad); output_sources lets either one show
+	// the other screen's picture, which is how a second display can repeat the first.
+	const auto outputSources = windowInfo.output_sources.load();
+	const bool isTV = (renderTarget & RENDER_TARGET_TV) != 0;
+	const bool isDRC = (renderTarget & RENDER_TARGET_DRC) != 0;
+	if ((visibleOutputs & 2u) && ((outputSources & 2u) ? isTV : isDRC) && g_renderer->IsPadWindowActive())
 		LatteRenderTarget_copyToBackbuffer(texView, true);
-	if ((visibleOutputs & 1u) && (renderTarget & RENDER_TARGET_TV))
+	if ((visibleOutputs & 1u) && ((outputSources & 1u) ? isDRC : isTV))
 		LatteRenderTarget_copyToBackbuffer(texView, false);
 	return;
 #endif

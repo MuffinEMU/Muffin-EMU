@@ -459,6 +459,11 @@ void CemuUIKit_SetVisibleOutputs(bool tv, bool pad)
     g_windowInfo.visible_outputs.store((tv ? 1u : 0u) | (pad ? 2u : 0u));
 }
 
+void CemuUIKit_SetOutputSources(bool mainShowsGamePad, bool padShowsTV)
+{
+    g_windowInfo.output_sources.store((mainShowsGamePad ? 1u : 0u) | (padShowsTV ? 2u : 0u));
+}
+
 void CemuUIKit_SetDRCPrimary(bool enabled)
 {
     LatteGPUState.isDRCPrimary = enabled;
