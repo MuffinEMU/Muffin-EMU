@@ -27,15 +27,16 @@ struct PreviewPadSection: View {
                set: { previewPad.layoutPreset = PreviewLayoutPreset(rawValue: $0) ?? .iPadPro2020 })
     }
     private var previewColourPresetBinding: Binding<String> {
-        Binding(get: { previewPad.colourPreset.rawValue },
-               set: { previewPad.colourPreset = PreviewColourPreset(rawValue: $0) ?? .wiiUWhite })
+        Binding(get: { previewPad.customColours == nil ? previewPad.colourPreset.rawValue : Self.customColourTag },
+               set: { if $0 != Self.customColourTag { previewPad.colourPreset = PreviewColourPreset(rawValue: $0) ?? .wiiUWhite } })
     }
     private var previewDisplayModeBinding: Binding<String> {
         Binding(get: { previewPad.displayMode.rawValue },
                set: { previewPad.displayMode = PadLayout.DisplayMode(rawValue: $0) ?? .fit })
     }
     private var previewLayoutPreset: PreviewLayoutPreset { previewPad.layoutPreset }
-    private var previewColourPreset: PreviewColourPreset { previewPad.colourPreset }
+    /// The picker's extra row while imported colours are in effect.
+    private static let customColourTag = "custom"
 
     private var otherPadChosen: Bool {
         useMeloControls || TouchLabSettings.isTouchLab(touchLabScheme)
@@ -84,9 +85,9 @@ struct PreviewPadSection: View {
             importLayout(result)
         }
         .fileExporter(isPresented: $showingColourExporter,
-                     document: MuffinColourDocument(previewColourPreset.file),
+                     document: MuffinColourDocument(previewPad.colourFile),
                      contentType: .muffinColour,
-                     defaultFilename: previewColourPreset.file.name) { _ in }
+                     defaultFilename: previewPad.colourFile.name) { _ in }
         .fileImporter(isPresented: $showingColourImporter, allowedContentTypes: [.muffinColour]) { result in
             importColour(result)
         }
@@ -123,6 +124,9 @@ struct PreviewPadSection: View {
         Picker("Colours", selection: previewColourPresetBinding) {
             ForEach(PreviewColourPreset.allCases) { preset in
                 Text(preset.file.name).tag(preset.rawValue)
+            }
+            if let custom = previewPad.customColours {
+                Text(custom.name).tag(Self.customColourTag)
             }
         }
         .pickerStyle(.menu)
@@ -201,10 +205,8 @@ struct PreviewPadSection: View {
             }
             defer { url.stopAccessingSecurityScopedResource() }
             let data = try Data(contentsOf: url)
-            _ = try MuffinColourFile.decode(data)
-            // Custom colours aren't supported by the 3-preset picker; the file is only checked.
-            previewFileAlertTitle = "Colours"
-            previewFileErrorMessage = "Colours file is valid, but custom colours aren't supported yet."
+            let file = try MuffinColourFile.decode(data)
+            PreviewPadStore.shared.applyImportedColours(file)
         } catch {
             previewFileAlertTitle = "Error"
             previewFileErrorMessage = "Couldn't import that .muffinclr file: \(error.localizedDescription)"
