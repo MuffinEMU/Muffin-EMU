@@ -67,8 +67,9 @@ struct TopBarHidingEffect: ViewModifier {
     }
 }
 
-/// The pill that brings the bar back: a tap, or a swipe down. A 96 by 44 point target
-/// around a small, faint pill, so it is easy to hit and easy to ignore.
+/// The pill that brings the bar back: a tap, or a swipe down. A 220 by 72 point target
+/// around a small, faint pill, so it is easy to hit without looking and easy to ignore.
+/// The frame itself is what grows (never negative padding: hit testing clips to the frame).
 struct TopBarRevealHandle: View {
     let onReveal: () -> Void
 
@@ -79,7 +80,7 @@ struct TopBarRevealHandle: View {
             .shadow(color: Color.black.opacity(0.4), radius: 1, x: 0, y: 0.5)
             .frame(width: 40, height: 5)
             .padding(.top, 6)
-            .frame(width: 96, height: 44, alignment: .top)
+            .frame(width: 220, height: 72, alignment: .top)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0).onEnded { value in
