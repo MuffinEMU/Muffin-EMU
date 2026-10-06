@@ -306,6 +306,9 @@ struct
 	std::atomic_uint32_t pipelinesLoaded;
 } g_mtlCacheState;
 
+// Entries whose shader hashes were translated while loading; rewritten under their new names once loading is done
+static std::vector<LatteShaderCachePipelineRekey> s_pendingRekeys;
+
 uint32 MetalPipelineCache::BeginLoading(uint64 cacheTitleId)
 {
 	std::error_code ec;
@@ -317,6 +320,7 @@ uint32 MetalPipelineCache::BeginLoading(uint64 cacheTitleId)
 	g_mtlCacheState.pipelineMaxFileIndex = 0;
 	g_mtlCacheState.pipelinesLoaded = 0;
 	g_mtlCacheState.pipelinesQueued = 0;
+	s_pendingRekeys.clear();
 
 	// start async compilation threads
 	m_compilationCount.store(0);
@@ -368,6 +372,8 @@ bool MetalPipelineCache::UpdateLoading(uint32& pipelinesLoadedTotal, uint32& pip
 		std::vector<uint8> fileData;
 		if (s_cache->GetFileByIndex(g_mtlCacheState.pipelineLoadIndex, &fileNameA, &fileNameB, fileData))
 		{
+			// the entry names its shaders by the hash they were stored with; the shader loader may have re-keyed them
+			LatteShaderCache_TranslatePipelineEntry(fileNameA, fileNameB, fileData, s_pendingRekeys);
 			// queue for async compilation
 			g_mtlCacheState.pipelinesQueued++;
 			m_compilationQueue.push(std::move(fileData));
@@ -381,6 +387,7 @@ bool MetalPipelineCache::UpdateLoading(uint32& pipelinesLoadedTotal, uint32& pip
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		return true; // pipelines still compiling
 	}
+	LatteShaderCache_ApplyPipelineRekeys(s_cache, s_pendingRekeys);
 	return false; // done
 }
 
