@@ -22,6 +22,9 @@
 
 #include "Cafe/CafeSystem.h"
 #include <typeinfo>
+#if BOOST_OS_IOS
+#include <pthread/qos.h>
+#endif
 #ifdef ENABLE_METAL
 #include "Cafe/HW/Latte/Renderer/Metal/MetalPipelineCache.h"
 #endif
@@ -125,6 +128,12 @@ void LatteThread_HandleOSScreen()
 static int Latte_ThreadEntryImpl()
 {
 	SetThreadName("LatteThread");
+#if BOOST_OS_IOS
+	// Full speed renders: put the GPU thread in the class the system reserves for work that has
+	// to land on the next frame, so it wins the performance cores over everything else the app runs.
+	if (g_latteFullSpeedRenders.load(std::memory_order_relaxed))
+		pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
 
 	// g_renderer is null if the renderer's constructor threw. Callers wait on both completion
 	// flags below, so signal them and return instead of dereferencing it.
@@ -281,6 +290,7 @@ int Latte_ThreadEntry()
 }
 
 std::thread sLatteThread;
+std::atomic<bool> g_latteFullSpeedRenders{false};
 std::mutex sLatteThreadStateMutex;
 
 // initializes GPU thread which in turn also activates graphic packs

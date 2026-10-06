@@ -494,6 +494,16 @@ void cemu_bridge_set_favour_accuracy(bool enabled);
 void cemu_bridge_set_favour_performance(bool enabled);
 bool cemu_bridge_favour_performance(void);
 
+/// "Full speed renders!": everything for smooth, complete frames at the game's own Wii U frame
+/// rate. On, the GPU thread runs at the highest scheduling class, each frame is presented no
+/// sooner than the game's own frame interval (steady pacing, never faster than the console), and
+/// per-draw crash breadcrumbs are skipped. `shaderMode` decides the first time a never-seen shader
+/// is needed: 0 waits for it (a short hitch, never a missing or flickering object), 1 keeps going
+/// (never a hitch, the object can be missing for a moment). This choice wins over Favour accuracy,
+/// Favour performance and Compile shaders in the background. Read when a title starts.
+void cemu_bridge_set_full_speed_renders(bool enabled, int shaderMode);
+bool cemu_bridge_full_speed_renders(void);
+
 /// Best-effort real device temperature in Celsius, or NaN when it cannot be read.
 ///
 /// iOS publishes NO device temperature to apps - ProcessInfo.thermalState's four levels
