@@ -59,6 +59,8 @@
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
+#include "Cafe/HW/Latte/Core/LatteShaderCache.h"
+#include "Cemu/FileCache/FileCache.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "StallDetector.h"
 #include "Cafe/HW/Latte/Core/PerfTelemetry.h"
@@ -2116,6 +2118,171 @@ int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLea
     if (outCompiledBytes)
         *outCompiledBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, false);
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Importing learned-shader and pipeline cache files
+namespace {
+
+constexpr uint32_t kLegacyShaderCacheStamp = 2; // SHADER_CACHE_GENERIC_EXTRA_VERSION, used by caches before the title-derived stamp
+
+// A learned-shader entry starts with one byte holding the entry version (1) and the shader type (0 vertex,
+// 1 geometry, 2 pixel) in the high nibble, then the base hash and aux hash (see LatteShaderCache.cpp). Desktop
+// Cemu's pre-1.16 caches (keyed by the RPX hash) start with 0x08 instead.
+bool IOSCacheEntryIsShader(const std::vector<uint8>& data)
+{
+    return data.size() >= 17 && (data[0] & 0xF) == 1 && (data[0] >> 4) <= 2;
+}
+
+void IOSCacheInspect(unsigned long long titleId, const char* path, CemuCacheFileInfo* info)
+{
+    *info = CemuCacheFileInfo{};
+    info->status = CEMU_CACHE_STATUS_NOT_A_CACHE;
+    if (!path)
+        return;
+    // FileCache reads the V3 format and the older V2 header, and skips the checksum bit when an entry has none
+    FileCache* cache = FileCache::Open(std::filesystem::path(path));
+    if (!cache)
+        return;
+    info->stamp = cache->GetExtraVersion();
+    const uint32_t shaderStamp = LatteShaderCache_getShaderCacheExtraVersion(titleId);
+    const uint32_t pipelineStamp = LatteShaderCache_getPipelineCacheExtraVersion(titleId);
+    if (info->stamp == shaderStamp || info->stamp == kLegacyShaderCacheStamp)
+        info->kind = CEMU_CACHE_FILE_SHADERS;
+    else if (info->stamp == pipelineStamp)
+        info->kind = CEMU_CACHE_FILE_PIPELINE;
+    else
+    {
+        info->status = CEMU_CACHE_STATUS_OTHER_GAME;
+        delete cache;
+        return;
+    }
+    int legacyFormat = 0;
+    std::vector<uint8> data;
+    const int maxIndex = cache->GetMaximumFileIndex();
+    for (int i = 0; i < maxIndex; i++)
+    {
+        uint64 name1 = 0, name2 = 0;
+        if (!cache->GetFileByIndex(i, &name1, &name2, data))
+            continue;
+        info->entryCount++;
+        if (info->kind == CEMU_CACHE_FILE_PIPELINE)
+            info->usableCount++;
+        else if (IOSCacheEntryIsShader(data))
+            info->usableCount++;
+        else if (!data.empty() && data[0] == 0x08)
+            legacyFormat++;
+    }
+    // GetFileByIndex only hands back good entries; ones that failed their check are counted here
+    info->damagedCount = (int)cache->GetDamagedEntryCount();
+    if (info->usableCount > 0)
+        info->status = CEMU_CACHE_STATUS_OK;
+    else
+        info->status = legacyFormat > 0 ? CEMU_CACHE_STATUS_OLD_FORMAT : CEMU_CACHE_STATUS_NOTHING_USABLE;
+    delete cache;
+}
+
+} // namespace
+
+void cemu_bridge_cache_file_inspect(unsigned long long titleId, const char* path, CemuCacheFileInfo* outInfo) {
+    if (!outInfo)
+        return;
+    IOSCacheInspect(titleId, path, outInfo);
+}
+
+int cemu_bridge_cache_stamp_kind(unsigned long long titleId, unsigned int stamp) {
+    if (stamp == LatteShaderCache_getShaderCacheExtraVersion(titleId))
+        return CEMU_CACHE_FILE_SHADERS;
+    if (stamp == LatteShaderCache_getPipelineCacheExtraVersion(titleId))
+        return CEMU_CACHE_FILE_PIPELINE;
+    return CEMU_CACHE_FILE_UNKNOWN;
+}
+
+int cemu_bridge_cache_file_import(unsigned long long titleId, const char* path, int kind, int renderer, bool pipelineIsVulkan,
+                                  int* outAdded, int* outAlreadyThere, int* outSkipped) {
+    if (outAdded) *outAdded = 0;
+    if (outAlreadyThere) *outAlreadyThere = 0;
+    if (outSkipped) *outSkipped = 0;
+    // Both files are open in the running game and would be rewritten on close.
+    if (cemu_bridge_is_title_running()) {
+        cemuLog_log(LogType::Force, "Cache import: refusing while a title is running");
+        return CEMU_CACHE_STATUS_TITLE_RUNNING;
+    }
+    CemuCacheFileInfo info;
+    IOSCacheInspect(titleId, path, &info);
+    if (info.status != CEMU_CACHE_STATUS_OK)
+        return info.status;
+    if (info.kind != kind)
+        return CEMU_CACHE_STATUS_NOT_A_CACHE;
+
+    // where it goes
+    std::filesystem::path destPath;
+    uint32_t destStamp;
+    if (kind == CEMU_CACHE_FILE_SHADERS) {
+        destPath = renderer == 1 ? ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_shaders.bin", titleId)
+                                 : ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_mtlshaders.bin", titleId);
+        destStamp = LatteShaderCache_getShaderCacheExtraVersion(titleId);
+    } else {
+        destPath = pipelineIsVulkan ? ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_vkpipeline.bin", titleId)
+                                    : ActiveSettings::GetCachePath("shaderCache/transferable/{:016x}_mtlpipeline.bin", titleId);
+        destStamp = LatteShaderCache_getPipelineCacheExtraVersion(titleId);
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(destPath.parent_path(), ec);
+
+    // The title's own file is opened as it is, or created when there is none; a file that exists but won't
+    // open is left alone (opening it with the create option would move it aside).
+    FileCache* dest = nullptr;
+    if (std::filesystem::exists(destPath, ec)) {
+        dest = FileCache::Open(destPath);
+        if (!dest) {
+            cemuLog_log(LogType::Force, "Cache import: \"{}\" can't be opened, leaving it as it is", destPath.filename().string());
+            return -1;
+        }
+        const uint32_t have = dest->GetExtraVersion();
+        const bool ok = have == destStamp || (kind == CEMU_CACHE_FILE_SHADERS && have == kLegacyShaderCacheStamp);
+        if (!ok) {
+            delete dest;
+            return -2;
+        }
+    } else {
+        dest = FileCache::Create(destPath, destStamp);
+        if (!dest)
+            return -1;
+    }
+    dest->UseCompression(false);
+
+    FileCache* source = FileCache::Open(std::filesystem::path(path));
+    if (!source) {
+        delete dest;
+        return CEMU_CACHE_STATUS_NOT_A_CACHE;
+    }
+    int added = 0, already = 0, skipped = 0;
+    std::vector<uint8> data;
+    const int maxIndex = source->GetMaximumFileIndex();
+    for (int i = 0; i < maxIndex; i++) {
+        uint64 name1 = 0, name2 = 0;
+        if (!source->GetFileByIndex(i, &name1, &name2, data))
+            continue;
+        if (kind == CEMU_CACHE_FILE_SHADERS && !IOSCacheEntryIsShader(data)) {
+            skipped++;
+            continue;
+        }
+        if (dest->HasFile({ name1, name2 })) {
+            already++; // the title's own entry wins
+            continue;
+        }
+        dest->AddFile({ name1, name2 }, data.data(), (sint32)data.size());
+        added++;
+    }
+    skipped += (int)source->GetDamagedEntryCount() + info.damagedCount;
+    delete source;
+    delete dest; // closes and flushes
+    cemuLog_log(LogType::Force, "Cache import: {} added, {} already there, {} skipped ({})", added, already, skipped, destPath.filename().string());
+    if (outAdded) *outAdded = added;
+    if (outAlreadyThere) *outAlreadyThere = already;
+    if (outSkipped) *outSkipped = skipped;
+    return CEMU_CACHE_STATUS_OK;
 }
 
 // ---------------------------------------------------------------------------

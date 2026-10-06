@@ -46,6 +46,8 @@ public:
 	static void SetBackupDirectory(const fs::path& dir);
 	// Damaged entries found (and repaired or deleted) since this file was opened.
 	uint32 GetDamagedEntryCount() const { return damagedEntryCount; }
+	// The version stamp from the header (for the caches here: derived from the title, or a legacy constant).
+	uint32 GetExtraVersion() const { return extraVersion; }
 
 	void UseCompression(bool enable) { enableCompression = enable; };
 

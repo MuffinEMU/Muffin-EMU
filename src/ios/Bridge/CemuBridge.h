@@ -863,6 +863,54 @@ long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includ
 /// Returns 0 on success. Either out pointer may be null.
 int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLearnedBytes, long long* outCompiledBytes);
 
+/// Importing a learned-shader or pipeline cache file for one title (per-game options screen). Both read the
+/// file with the engine's own cache reader (FileCache), so desktop Cemu files (V3, or the older V2 header) and
+/// MuffinEMU files (including ones with the entry checksums) are handled alike. Desktop shader entries are
+/// converted by the loader the first time the game starts; nothing is converted here.
+///
+/// Which kind of file it is and which game it belongs to come from the version stamp in the file header, never
+/// from the file name. Only call these with no title running.
+typedef enum {
+    CEMU_CACHE_FILE_UNKNOWN  = 0, // not a cache this title can use; see the status
+    CEMU_CACHE_FILE_SHADERS  = 1, // learned shaders (<titleid>_mtlshaders.bin / <titleid>_shaders.bin)
+    CEMU_CACHE_FILE_PIPELINE = 2, // shader pipelines (<titleid>_mtlpipeline.bin / <titleid>_vkpipeline.bin)
+} CemuCacheFileKind;
+
+typedef enum {
+    CEMU_CACHE_STATUS_OK            = 0,
+    CEMU_CACHE_STATUS_NOT_A_CACHE   = 1, // not a FileCache file, or its header/file table is damaged
+    CEMU_CACHE_STATUS_OTHER_GAME    = 2, // version stamp belongs to a different title
+    CEMU_CACHE_STATUS_OLD_FORMAT    = 3, // learned shaders from desktop Cemu before 1.16 (keyed by the RPX hash): can't be converted
+    CEMU_CACHE_STATUS_NOTHING_USABLE = 4, // a cache for this title, but none of its entries is usable
+    CEMU_CACHE_STATUS_TITLE_RUNNING = 5,
+} CemuCacheStatus;
+
+typedef struct {
+    int kind;               // CemuCacheFileKind
+    int status;             // CemuCacheStatus
+    unsigned int stamp;     // the file's version stamp
+    int entryCount;         // entries in the file
+    int usableCount;        // entries that look like valid shader entries (learned shaders only; pipelines: = entryCount)
+    int damagedCount;       // entries that failed their checksum and were dropped from the copy being read
+} CemuCacheFileInfo;
+
+/// Looks at `path` without changing anything and says what it is and whether `titleId` can use it.
+void cemu_bridge_cache_file_inspect(unsigned long long titleId, const char* path, CemuCacheFileInfo* outInfo);
+
+/// What a version stamp stands for when it isn't the title's own: returns the CemuCacheFileKind that `stamp` is
+/// for `titleId` (SHADERS or PIPELINE), or UNKNOWN. Lets the app name the game a wrong file belongs to by trying
+/// the stamp against each title in the library.
+int cemu_bridge_cache_stamp_kind(unsigned long long titleId, unsigned int stamp);
+
+/// Merges the entries of `path` into the title's cache file. Entries already in the title's file win; the file
+/// itself is never replaced. Learned shaders go to `<titleid>_mtlshaders.bin` when `renderer` is 2 (Metal) or
+/// `<titleid>_shaders.bin` when it is 1 (Vulkan). A pipeline cache goes to `<titleid>_vkpipeline.bin` when
+/// `pipelineIsVulkan`, else `<titleid>_mtlpipeline.bin`, whatever the current renderer is. Returns a
+/// CemuCacheStatus (the file is checked again here), or a negative number if the title's own file could not be
+/// opened or has another title's stamp (nothing is changed then). Counts may be null.
+int cemu_bridge_cache_file_import(unsigned long long titleId, const char* path, int kind, int renderer, bool pipelineIsVulkan,
+                                  int* outAdded, int* outAlreadyThere, int* outSkipped);
+
 
 /// The reason behind cemu_bridge_cpu_mode(), in a sentence the person holding the iPad
 /// can act on - which is the point: the answer used to be obtainable only by reading a
