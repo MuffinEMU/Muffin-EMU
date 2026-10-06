@@ -358,6 +358,7 @@ namespace LatteDecompiler
 		auto* src = shaderContext->shaderSource;
 		LatteShaderPSInputTable* psInputTable = LatteSHRC_GetPSInputTable();
 		auto parameterMask = shaderContext->shader->outputParameterMask;
+		std::vector<bool> psInputWritten(psInputTable->count > 0 ? psInputTable->count : 0, false);
 		for (uint32 i = 0; i < 32; i++)
 		{
 			if ((parameterMask&(1 << i)) == 0)
@@ -377,6 +378,9 @@ namespace LatteDecompiler
 			}
 			if (psInputIndex == -1)
 				continue; // no ps input
+			if (psInputWritten[psInputIndex])
+				continue; // already declared
+			psInputWritten[psInputIndex] = true;
 
 			src->addFmt("layout(location = {}) ", psInputIndex);
 			if (psInputTable->import[psInputIndex].isFlat)
@@ -385,6 +389,22 @@ namespace LatteDecompiler
 				src->add("noperspective ");
 			src->add("out");
 			src->addFmt(" vec4 passParameterSem{};" _CRLF, psInputTable->import[psInputIndex].semanticId);
+		}
+		// Every input the pixel shader reads must be written by this vertex shader with the same type and qualifiers.
+		// Vulkan tolerates a missing output, Metal (through MoltenVK) refuses to compile the pipeline, so declare the rest
+		// and give it a zero default.
+		for (sint32 f = 0; f < psInputTable->count; f++)
+		{
+			if (psInputWritten[f])
+				continue;
+			if (psInputTable->import[f].semanticId > LATTE_ANALYZER_IMPORT_INDEX_PARAM_MAX)
+				continue;
+			src->addFmt("layout(location = {}) ", f);
+			if (psInputTable->import[f].isFlat)
+				src->add("flat ");
+			if (psInputTable->import[f].isNoPerspective)
+				src->add("noperspective ");
+			src->addFmt("out vec4 passParameterSem{} = vec4(0.0);" _CRLF, psInputTable->import[f].semanticId);
 		}
 	}
 
