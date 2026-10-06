@@ -40,6 +40,10 @@ struct GameMetadata: Codable, Identifiable {
 
     /// What per-game settings are stored under: the base title ID as 16 hex digits, so they follow the game through a
     /// rename or a re-import. Only a title with no derivable ID falls back to the file-name `id`.
+    /// What Title sort and the A to Z groups order by: the player's own name for the game when
+    /// they set one, otherwise the file-name title.
+    var sortTitle: String { LibraryCustomNames.shared.name(for: settingsKey) ?? title }
+
     var settingsKey: String {
         titleId.map(Self.settingsKey(forTitleId:)) ?? id
     }
@@ -52,7 +56,7 @@ struct GameMetadata: Codable, Identifiable {
     /// "0005000010145D00 - Mario Kart 8", the bare hex anywhere), and the ID as text for the card's small caption. The
     /// caption is nil when the ID is unknown or was not in the name. Nothing on disk is renamed.
     var cardName: (name: String, titleIdText: String?) {
-        let name = displayTitle ?? title
+        let name = LibraryCustomNames.shared.name(for: settingsKey) ?? displayTitle ?? title
         guard let titleId else { return (name, nil) }
         let hex = Self.settingsKey(forTitleId: titleId)
         let pattern = "[\\[({]?\\s*(?<![0-9A-Fa-f])" + String(hex.prefix(8)) + "[-_ ]?" + String(hex.suffix(8)) + "(?![0-9A-Fa-f])\\s*[\\])}]?"
