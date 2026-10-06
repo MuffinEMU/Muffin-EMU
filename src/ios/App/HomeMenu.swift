@@ -32,6 +32,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     case saveStates
     case screenLayout
     case moveControls
+    case recentreAim
     case quit
     // case wiiUMenu   // see EXTENSION POINT above
 
@@ -43,7 +44,10 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     /// The rows shown, in order.
     static var visible: [HomeMenuDestination] {
         // if canOfferWiiUMenu() { insert .wiiUMenu before .quit }
-        allCases
+        // Recentre aim only means something while motion aiming is on (Settings > Motion & Aiming).
+        let motionOn = UserDefaults.standard.object(forKey: MotionSettings.enabledKey) as? Bool
+            ?? MotionSettings.defaultEnabled
+        return allCases.filter { $0 != .recentreAim || motionOn }
     }
 
     var title: String {
@@ -52,6 +56,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .saveStates: return "Save States"
         case .screenLayout: return "Screen layout"
         case .moveControls: return "Move controls"
+        case .recentreAim: return "Recentre aim"
         case .quit: return "Quit game"
         }
     }
@@ -62,6 +67,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .saveStates: return "bookmark.fill"
         case .screenLayout: return "rectangle.split.2x1"
         case .moveControls: return "arrow.up.and.down.and.arrow.left.and.right"
+        case .recentreAim: return "scope"
         case .quit: return "xmark.circle"
         }
     }
@@ -72,6 +78,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .saveStates: return "Opens the save state slots."
         case .screenLayout: return "Opens the screen layout choices."
         case .moveControls: return "Closes the menu and lets you drag the on-screen controls."
+        case .recentreAim: return "Takes the way you are holding the device now as straight ahead, then goes back to the game."
         case .quit: return "Asks before leaving the game."
         }
     }
@@ -260,6 +267,13 @@ struct HomeMenuOverlay: View {
         case .saveStates: return make(actions.saveStates)
         case .screenLayout: return make(chevron: true, { show(.layout) })
         case .moveControls: return make(actions.moveControls)
+        case .recentreAim:
+            // Same call as Settings > Motion & Aiming > Recentre aim. The pose at the tap is the new
+            // straight ahead, so the player is already holding the device the way they play.
+            return make {
+                cemu_bridge_motion_recenter()
+                actions.resume()
+            }
         case .quit:
             // Dropped, not disabled, while a save is being written: quitting tears the title down under it.
             return canQuit ? make(destructive: true, actions.quit) : nil
