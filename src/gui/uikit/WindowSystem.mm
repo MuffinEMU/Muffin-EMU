@@ -309,7 +309,14 @@ void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale
 
         // Keep the Metal layer's drawableSize in step with the window; nothing else on iOS resizes it
         // after the initial InitializeLayer(). Vulkan/MoltenVK reads the layer size itself on the next
-        // swapchain rebuild.
+        // swapchain rebuild, from bounds * contentsScale, so the scale has to be on the layer by then
+        // (a mid-game render-scale change, e.g. the thermal cool-down, would otherwise keep the old size).
+        if (!metal && g_mainView)
+        {
+            CAMetalLayer* layer = (CAMetalLayer*)g_mainView.layer;
+            if (layer.contentsScale != resolvedScale)
+                layer.contentsScale = resolvedScale;
+        }
 #ifdef ENABLE_METAL
         if (metal)
         {
