@@ -998,6 +998,8 @@ struct GameCardOptimized: View {
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
 
+    private var cardName: (name: String, titleIdText: String?) { game.cardName }
+
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
@@ -1051,7 +1053,7 @@ struct GameCardOptimized: View {
             .aspectRatio(3 / 4, contentMode: .fit)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(game.displayTitle ?? game.title)
+                Text(cardName.name)
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                     .lineLimit(2)
                     .foregroundColor(MuffinTheme.brownDarkest)
@@ -1079,6 +1081,15 @@ struct GameCardOptimized: View {
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(MuffinPrimaryButtonStyle())
+
+                // The title ID, when the game's name had it in it (kept out of the name above).
+                if let titleIdText = cardName.titleIdText {
+                    Text(titleIdText)
+                        .font(.system(size: 10, weight: .regular, design: .monospaced))
+                        .foregroundColor(MuffinTheme.brownMid)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
             }
             .padding(12)
             .background(MuffinTheme.cream)
@@ -1487,7 +1498,7 @@ struct EmulatorViewOptimized: View {
 
     /// The move-controls panel for whichever pad is live (see LayoutPanels.swift).
     @ViewBuilder private var layoutPanel: some View {
-        let gameID = gameManager.currentGame?.id
+        let gameID = gameManager.currentGame?.settingsKey
         switch padSystem {
         case .melo:
             MeloLayoutPanel(gameID: gameID, onDone: finishEditingLayout)
@@ -2056,14 +2067,14 @@ struct EmulatorViewOptimized: View {
             if !padControlsHidden {
                 if useMeloControls {
                     MeloControlsOverlay(
-                        gameID: gameManager.currentGame?.id,
+                        gameID: gameManager.currentGame?.settingsKey,
                         isEditing: isEditingControlLayout
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .melo) }
                 } else if padSystem == .touchLab {
                     TouchLabPadOverlay(
                         schemeID: touchLabScheme,
-                        gameID: gameManager.currentGame?.id,
+                        gameID: gameManager.currentGame?.settingsKey,
                         screens: touchLabScreens,
                         enabled: !isPaused && !isEditingControlLayout,
                         topInset: topBarHeight
