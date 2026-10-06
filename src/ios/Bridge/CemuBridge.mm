@@ -753,11 +753,11 @@ namespace {
     // Applied in ios_apply_render_profile(), after both Favour switches, so it has the last word.
     std::atomic<bool> g_fullSpeedRenders{false};
     std::atomic<int> g_fullSpeedShaderMode{0};
-    // Low Power Mode. Separate from Favour accuracy on purpose: both end up asking for
+    // One-core mode. Separate from Favour accuracy on purpose: both end up asking for
     // one emulated CPU core, but for opposite reasons and with different side effects.
     // Favour accuracy also forces synchronous shader compilation, accurate Vulkan
     // barriers and GX2DrawDone sync - all of which cost MORE work, not less, and are the
-    // last thing a device that is already too hot needs. Low power wants the core count
+    // last thing a device that is already too hot needs. One-core mode wants the core count
     // down and nothing else changed.
     std::atomic<bool> g_lowPowerMode{false};
     // Core count choice from Settings (or this game's override): 0 Auto, 1 one core, 2 three
@@ -993,7 +993,7 @@ namespace {
         }
         if (g_lowPowerMode.load())
         {
-            d.reason = "one core because Low Power Mode is on";
+            d.reason = "one core because One-core mode is on";
             return d;
         }
         if (setting == kCoreModeSingle)
