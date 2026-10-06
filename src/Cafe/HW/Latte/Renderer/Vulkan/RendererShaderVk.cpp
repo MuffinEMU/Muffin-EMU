@@ -2,6 +2,8 @@
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanAPI.h"
 #include "Cafe/HW/Latte/Renderer/Vulkan/VulkanRenderer.h"
 #include "config/ActiveSettings.h"
+#include "Cafe/GameProfile/GameProfile.h"
+#include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "config/CemuConfig.h"
 #include "util/helpers/ConcurrentQueue.h"
 #include "Cemu/FileCache/FileCache.h"
@@ -450,7 +452,10 @@ void RendererShaderVk::ShaderCacheLoading_begin(uint64 cacheTitleId)
 		s_spirvCache = nullptr;
 	}
 	uint32 spirvCacheMagic = GeneratePrecompiledCacheId();
-	const std::string cacheFilename = fmt::format("{:016x}_spirv.bin", cacheTitleId);
+	// Favour performance compiles without the console's 0*x=0 rule (LatteShader_GetDecompilerOptions), which changes the SPIR-V. The cache id above only
+	// knows the per-game setting, so those shaders get a file of their own instead of being served to, or from, a strict session.
+	const bool relaxedMul = g_latteRelaxShaderMul.load(std::memory_order_relaxed) && g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;
+	const std::string cacheFilename = fmt::format("{:016x}{}.bin", cacheTitleId, relaxedMul ? "_spirv_relaxed" : "_spirv");
 	const fs::path cachePath = ActiveSettings::GetCachePath("shaderCache/precompiled/{}", cacheFilename);
 	s_spirvCache = FileCache::Open(cachePath, true, spirvCacheMagic);
 	if (s_spirvCache == nullptr)

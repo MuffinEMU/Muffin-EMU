@@ -20,6 +20,13 @@
 #include <cstdio>
 #endif
 
+// Only the Metal renderer reports what the GPU itself spent on a frame (PerfTelemetry::mtlGpuNs); on Vulkan the figure would read 0.0 ms and
+// the bottleneck verdict can never be GPU-bound, so the line is left out there.
+static bool OverlayHasGpuTime()
+{
+	return g_renderer && g_renderer->GetType() == RendererAPI::Metal;
+}
+
 struct OverlayStats
 {
 	OverlayStats() {};
@@ -104,8 +111,11 @@ void LatteOverlay_renderOverlay(ImVec2& position, ImVec2& pivot, sint32 directio
 				{
 					ImGui::Text("Host %.1f / game %.1f fps", perf.hostFps.load(std::memory_order_relaxed), perf.guestFps.load(std::memory_order_relaxed));
 					ImGui::Text("PPC %.0f%%  GPU thread %.0f%%", perf.ppcExecPct.load(std::memory_order_relaxed), perf.gpuThreadBusyPct.load(std::memory_order_relaxed));
-					ImGui::Text("GPU %.1f ms/f (%.0f%%)  Limit: %s", perf.mtlGpuMsPerFrame.load(std::memory_order_relaxed), perf.mtlGpuBusyPct.load(std::memory_order_relaxed),
-						PerfTelemetry::BottleneckName(perf.bottleneck.load(std::memory_order_relaxed)));
+					if (OverlayHasGpuTime())
+						ImGui::Text("GPU %.1f ms/f (%.0f%%)  Limit: %s", perf.mtlGpuMsPerFrame.load(std::memory_order_relaxed), perf.mtlGpuBusyPct.load(std::memory_order_relaxed),
+							PerfTelemetry::BottleneckName(perf.bottleneck.load(std::memory_order_relaxed)));
+					else
+						ImGui::Text("Limit: %s", PerfTelemetry::BottleneckName(perf.bottleneck.load(std::memory_order_relaxed)));
 				}
 			}
 
@@ -710,8 +720,11 @@ static void OverlayNative_CollectStats(std::vector<std::string>& stats)
 		{
 			stats.emplace_back(OverlayNativeFormat("Host %.1f / game %.1f fps", perf.hostFps.load(std::memory_order_relaxed), perf.guestFps.load(std::memory_order_relaxed)));
 			stats.emplace_back(OverlayNativeFormat("PPC %.0f%%  GPU thread %.0f%%", perf.ppcExecPct.load(std::memory_order_relaxed), perf.gpuThreadBusyPct.load(std::memory_order_relaxed)));
-			stats.emplace_back(OverlayNativeFormat("GPU %.1f ms/f (%.0f%%)  Limit: %s", perf.mtlGpuMsPerFrame.load(std::memory_order_relaxed), perf.mtlGpuBusyPct.load(std::memory_order_relaxed),
-				PerfTelemetry::BottleneckName(perf.bottleneck.load(std::memory_order_relaxed))));
+			if (OverlayHasGpuTime())
+				stats.emplace_back(OverlayNativeFormat("GPU %.1f ms/f (%.0f%%)  Limit: %s", perf.mtlGpuMsPerFrame.load(std::memory_order_relaxed), perf.mtlGpuBusyPct.load(std::memory_order_relaxed),
+					PerfTelemetry::BottleneckName(perf.bottleneck.load(std::memory_order_relaxed))));
+			else
+				stats.emplace_back(OverlayNativeFormat("Limit: %s", PerfTelemetry::BottleneckName(perf.bottleneck.load(std::memory_order_relaxed))));
 		}
 	}
 

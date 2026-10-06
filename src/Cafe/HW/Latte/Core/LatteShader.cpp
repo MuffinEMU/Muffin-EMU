@@ -700,6 +700,10 @@ uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* conte
 #ifdef ENABLE_VULKAN
 	if (g_renderer->GetType() == RendererAPI::Vulkan)
 	{
+		// Integer render targets need a different shader on Vulkan, so they are part of the hash. Float-only states keep the hash desktop Cemu
+		// computes (this term used to be applied unconditionally, which made every Muffin PS hash differ from desktop and so desktop shader caches miss)
+		const uint64 auxHashWithoutTargets = auxHash;
+		bool hasIntegerTarget = false;
 		for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
 		{
 			const uint32 format = (uint32)LatteMRT::GetColorBufferFormat(i, lcr);
@@ -709,7 +713,10 @@ uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* conte
             
 			auxHash = std::rotl<uint64>(auxHash, 7);
 			auxHash += dataType;
+			hasIntegerTarget |= isInteger;
 		}
+		if (!hasIntegerTarget)
+			auxHash = auxHashWithoutTargets;
 	}
 #endif
 

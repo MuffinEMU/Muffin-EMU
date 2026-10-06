@@ -28,6 +28,7 @@
 #include "Cafe/TitleList/GameInfo.h"
 
 #include "Cafe/HW/Latte/Core/LatteTiming.h" // vsync control
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h" // GPU-thread breadcrumbs read by the iOS stall watchdog
 
 #include <cstdint>
@@ -1123,7 +1124,9 @@ VulkanRenderer::~VulkanRenderer()
 	vkDestroyDescriptorSetLayout(m_logicalDevice, m_swapchainDescriptorSetLayout, nullptr);
 
 	// shut down imgui
-	ImGui_ImplVulkan_Shutdown();
+	if (m_imguiBackendInitialized)
+		ImGui_ImplVulkan_Shutdown();
+	m_imguiBackendInitialized = false;
 
 	// delete null objects
 	DeleteNullObjects();
@@ -1214,11 +1217,19 @@ void VulkanRenderer::InitializeSurface(const Vector2i& size, bool mainWindow)
 		m_mainSwapchainInfo = std::make_unique<SwapchainInfoVk>(mainWindow, size);
 		m_mainSwapchainInfo->Create();
 	}
+	else if (!m_initializeCalled.load())
+	{
+		// Boot: the GPU thread isn't running yet, so nothing can be using a pad chain. Throwing here still lets the launch fall back to Metal.
+		m_padSwapchainInfo = std::make_unique<SwapchainInfoVk>(mainWindow, size);
+		m_padSwapchainInfo->Create();
+	}
 	else
 	{
-		m_padSwapchainInfo = std::make_unique<SwapchainInfoVk>(mainWindow, size);
-		// todo: figure out a way to exclusively create swapchain on main LatteThread
-		m_padSwapchainInfo->Create();
+		// A running title (the GamePad display was plugged in or re-registered): the GPU thread may be presenting on the old chain right now,
+		// so it makes the swap itself, after a device idle (ApplyPendingPadSurface)
+		m_padSurfaceWidth.store(size.x, std::memory_order_relaxed);
+		m_padSurfaceHeight.store(size.y, std::memory_order_relaxed);
+		m_padSurfaceChanged.store(true, std::memory_order_release);
 	}
 }
 
@@ -1241,6 +1252,31 @@ void VulkanRenderer::StopUsingPadAndWait()
 bool VulkanRenderer::IsPadWindowActive()
 {
 	return IsSwapchainInfoValid(false);
+}
+
+// Called by the overlay's update thread. Unified memory on Apple: the device-local heaps are the working set the OS grants this process.
+bool VulkanRenderer::GetVRAMInfo(int& usageInMB, int& totalInMB) const
+{
+	usageInMB = totalInMB = -1;
+	if (!m_featureControl.deviceExtensions.memory_budget || !vkGetPhysicalDeviceMemoryProperties2)
+		return false;
+	VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT };
+	VkPhysicalDeviceMemoryProperties2 props2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2 };
+	props2.pNext = &budget;
+	vkGetPhysicalDeviceMemoryProperties2(m_physicalDevice, &props2);
+	uint64 usage = 0, total = 0;
+	for (uint32 i = 0; i < props2.memoryProperties.memoryHeapCount; i++)
+	{
+		if (!(props2.memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT))
+			continue;
+		usage += budget.heapUsage[i];
+		total += budget.heapBudget[i];
+	}
+	if (total == 0)
+		return false;
+	usageInMB = (int)(usage / (1024 * 1024));
+	totalInMB = (int)(total / (1024 * 1024));
+	return true;
 }
 
 void VulkanRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool padView)
@@ -2152,6 +2188,7 @@ void VulkanRenderer::ImguiInit()
 	info.ImageCount = info.MinImageCount;
 
 	ImGui_ImplVulkan_Init(&info, m_imguiRenderPass);
+	m_imguiBackendInitialized = true;
 
 	if (prevRenderPass != VK_NULL_HANDLE)
 		vkDestroyRenderPass(GetLogicalDevice(), prevRenderPass, nullptr);
@@ -2759,6 +2796,13 @@ void VulkanRenderer::WaitCommandBufferFinished(uint64 commandBufferId)
 	}
 }
 
+// The driver's cache blob only means something to the driver that wrote it. MoltenVK 1.2.8 and 1.4.3 are both embedded and one is chosen per launch, so
+// the file carries the driver version: switching builds then keeps both caches instead of each launch throwing the other's away.
+static fs::path GetDriverPipelineCacheFilename(const fs::path& dir, uint32 driverVersion)
+{
+	return dir / fmt::format(L"{:016x}_{:08x}.bin", CafeSystem::GetForegroundTitleId(), driverVersion);
+}
+
 void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 {
 	SetThreadName("vkDriverPlCache");
@@ -2776,7 +2820,9 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 		}
 	}
 
-	const auto filename = dir / fmt::format(L"{:016x}.bin", CafeSystem::GetForegroundTitleId());
+	VkPhysicalDeviceProperties deviceProps{};
+	vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProps);
+	const auto filename = GetDriverPipelineCacheFilename(dir, deviceProps.driverVersion);
 
 	while (true)
 	{
@@ -2809,17 +2855,32 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 			if (res == VK_SUCCESS)
 			{
 
-				auto file = std::ofstream(fs::resolvePathCI(filename), std::ios::out | std::ios::binary);
-				if (file.is_open())
+				// Written beside the real file and renamed over it: a kill or a full disk mid-write must not leave a truncated blob behind
+				const auto finalPath = fs::resolvePathCI(filename);
+				auto tempPath = finalPath;
+				tempPath += L".tmp";
+				bool written = false;
 				{
-					file.write((char*)cacheData.data(), cacheData.size());
-					file.close();
-
+					auto file = std::ofstream(tempPath, std::ios::out | std::ios::binary | std::ios::trunc);
+					if (file.is_open())
+					{
+						file.write((char*)cacheData.data(), cacheData.size());
+						file.close();
+						written = !file.fail();
+					}
+				}
+				std::error_code renameEc;
+				if (written)
+					fs::rename(tempPath, finalPath, renameEc);
+				if (written && !renameEc)
+				{
 					cache_size = size;
 					cemuLog_logDebug(LogType::Force, "pipeline cache saved");
 				}
 				else
 				{
+					std::error_code removeEc;
+					fs::remove(tempPath, removeEc);
 					cemuLog_log(LogType::Force, "can't write pipeline cache to disk");
 				}
 			}
@@ -2842,7 +2903,9 @@ void VulkanRenderer::CreatePipelineCache()
 	const auto dir = ActiveSettings::GetCachePath("shaderCache/driver/vk");
 	if (fs::exists(dir))
 	{
-		const auto filename = dir / fmt::format("{:016x}.bin", CafeSystem::GetForegroundTitleId());
+		VkPhysicalDeviceProperties deviceProps{};
+		vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProps);
+		const auto filename = GetDriverPipelineCacheFilename(dir, deviceProps.driverVersion);
 		auto file = std::ifstream(fs::resolvePathCI(filename), std::ios::in | std::ios::binary | std::ios::ate);
 		if (file.is_open())
 		{
@@ -3481,6 +3544,7 @@ bool VulkanRenderer::AcquireNextSwapchainImage(bool mainWindow)
 	if(!mainWindow && m_destroyPadSwapchainNextAcquire.test())
 	{
 		RecreateSwapchain(mainWindow, true);
+		m_padSwapchainInfo.reset(); // gone for good: RetryDeadSwapchain() must not revive a chain that was taken down on purpose
 		m_destroyPadSwapchainNextAcquire.clear();
 		m_destroyPadSwapchainNextAcquire.notify_all();
 		return false;
@@ -3523,7 +3587,12 @@ void VulkanRenderer::RecreateSwapchain(bool mainWindow, bool skipCreate)
 	Vector2i size;
 	if (mainWindow)
 	{
-		ImGui_ImplVulkan_Shutdown();
+		// not initialized if the previous rebuild failed half way
+		if (m_imguiBackendInitialized)
+		{
+			ImGui_ImplVulkan_Shutdown();
+			m_imguiBackendInitialized = false;
+		}
 		WindowSystem::GetWindowPhysSize(size.x, size.y);
 	}
 	else
@@ -3532,7 +3601,8 @@ void VulkanRenderer::RecreateSwapchain(bool mainWindow, bool skipCreate)
 	}
 
 	chainInfo.swapchainImageIndex = -1;
-	chainInfo.Cleanup();
+	// the old VkSwapchainKHR stays until Create() has made its replacement, so a failed rebuild doesn't take it down with it
+	chainInfo.Cleanup(!skipCreate);
 	chainInfo.m_desiredExtent = size;
 	if(!skipCreate)
 	{
@@ -3541,6 +3611,70 @@ void VulkanRenderer::RecreateSwapchain(bool mainWindow, bool skipCreate)
 
 	if (mainWindow)
 		ImguiInit();
+}
+
+void VulkanRenderer::NoteSwapchainFailure(bool mainWindow, const char* what)
+{
+	auto& retry = m_swapchainRetry[mainWindow ? 0 : 1];
+	retry.delayMs = retry.delayMs == 0 ? 100 : std::min<uint32>(retry.delayMs * 2, 2000);
+	retry.notBefore = std::chrono::steady_clock::now() + std::chrono::milliseconds(retry.delayMs);
+	cemuLog_log(LogType::Force, "Vulkan: {} swapchain: {}. Trying again in {} ms", mainWindow ? "TV" : "GamePad", what, retry.delayMs);
+}
+
+// A chain object that exists but isn't valid is one whose rebuild failed (a lost surface, an allocation failure). Without this nothing would
+// ever try again and the screen stays black while the game keeps running. GPU thread only.
+void VulkanRenderer::RetryDeadSwapchain(bool mainWindow)
+{
+	auto& chain = GetChainInfoPtr(mainWindow);
+	if (!chain || chain->IsValid())
+		return;
+	auto& retry = m_swapchainRetry[mainWindow ? 0 : 1];
+	if (std::chrono::steady_clock::now() < retry.notBefore)
+		return;
+	try
+	{
+		RecreateSwapchain(mainWindow);
+		chain->m_shouldRecreate = false;
+		chain->m_vsyncState = (SwapchainInfoVk::VSync)GetConfig().vsync.GetValue();
+		retry.delayMs = 0;
+		cemuLog_log(LogType::Force, "Vulkan: {} swapchain recovered", mainWindow ? "TV" : "GamePad");
+	}
+	catch (const std::exception& ex)
+	{
+		NoteSwapchainFailure(mainWindow, ex.what());
+	}
+}
+
+// The UI thread hands the GamePad surface over by recording its size (InitializeSurface); the chain itself is replaced here, on the GPU thread,
+// once nothing in flight can still use the old one.
+void VulkanRenderer::ApplyPendingPadSurface()
+{
+	if (!m_padSurfaceChanged.load(std::memory_order_acquire))
+		return;
+	auto& retry = m_swapchainRetry[1];
+	if (std::chrono::steady_clock::now() < retry.notBefore)
+		return;
+	// cleared before the work so that a registration arriving meanwhile sets it again
+	m_padSurfaceChanged.store(false, std::memory_order_relaxed);
+	const Vector2i size{m_padSurfaceWidth.load(std::memory_order_relaxed), m_padSurfaceHeight.load(std::memory_order_relaxed)};
+	try
+	{
+		SubmitCommandBuffer();
+		WaitDeviceIdle(); // also drains the render worker, whose present job holds a reference to the old chain
+		// the old chain goes first: a second chain on the same CAMetalLayer would fight it for the layer
+		m_padSwapchainInfo.reset();
+		m_swapchainPresentPending[1].store(false, std::memory_order_release);
+		auto chain = std::make_unique<SwapchainInfoVk>(false, size);
+		chain->Create();
+		m_padSwapchainInfo = std::move(chain);
+		retry.delayMs = 0;
+	}
+	catch (const std::exception& ex)
+	{
+		// no pad output until a later attempt works; the TV is unaffected
+		m_padSurfaceChanged.store(true, std::memory_order_release);
+		NoteSwapchainFailure(false, ex.what());
+	}
 }
 
 bool VulkanRenderer::UpdateSwapchainProperties(bool mainWindow)
@@ -3593,9 +3727,10 @@ bool VulkanRenderer::UpdateSwapchainProperties(bool mainWindow)
 		{
 			RecreateSwapchain(mainWindow);
 		}
-		catch (std::exception&)
+		catch (const std::exception& ex)
 		{
-			cemu_assert_debug(false);
+			// the chain stays invalid and RetryDeadSwapchain() picks it up again
+			NoteSwapchainFailure(mainWindow, ex.what());
 			return false;
 		}
 	}
@@ -3678,6 +3813,8 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
             chainInfo.m_queueDepth++;
             chainInfo.m_presentId++;
             LatteWait::Get().presentedFrames.fetch_add(1, std::memory_order_relaxed);
+            // the overlay's "host fps" counts these; the Metal renderer bumps the same counters at its present
+            (chainInfo.mainWindow ? PerfTelemetry::Get().tvPresents : PerfTelemetry::Get().padPresents).fetch_add(1, std::memory_order_relaxed);
         }
         
         chainInfo.hasDefinedSwapchainImage = false;
@@ -3725,6 +3862,10 @@ void VulkanRenderer::SwapBuffers(bool swapTV, bool swapDRC)
 	try
 	{
 		SubmitCommandBuffer();
+
+		ApplyPendingPadSurface();
+		RetryDeadSwapchain(true);
+		RetryDeadSwapchain(false);
 
 		if (swapTV && IsSwapchainInfoValid(true))
 			SwapBuffer(true);
@@ -4029,6 +4170,30 @@ void VulkanRenderer::rendertarget_bindFramebufferObject(LatteCachedFBO* cfbo)
 void* VulkanRenderer::texture_acquireTextureUploadBuffer(uint32 size)
 {
 	return memoryManager->TextureUploadBufferAcquire(size);
+}
+
+// The loader found no upload buffer for this texture. The texture cache considers the data current once the load returns, so flag the
+// texture to be loaded again by inverting its data hash (the next change check sees a difference), as the Metal renderer does. A texture
+// whose uploads keep failing is flagged a bounded number of times, so it doesn't reload every frame.
+void VulkanRenderer::texture_uploadBufferUnavailable(LatteTexture* texture)
+{
+	constexpr uint32 kMaxFlags = 8;
+	constexpr uint32 kQuietFrames = 600;
+	if (!texture)
+		return;
+	auto* vkTexture = static_cast<LatteTextureVk*>(texture);
+	const uint32 frame = (uint32)LatteGPUState.frameCounter;
+	if (vkTexture->m_uploadRetryCount != 0 && (uint32)(frame - vkTexture->m_uploadRetryFrame) > kQuietFrames)
+		vkTexture->m_uploadRetryCount = 0;
+	if (vkTexture->m_uploadRetryInverted && vkTexture->texDataHash2 == vkTexture->m_uploadRetryHash)
+		return; // already flagged and nothing restamped it since
+	if (vkTexture->m_uploadRetryCount >= kMaxFlags)
+		return;
+	vkTexture->m_uploadRetryCount++;
+	vkTexture->m_uploadRetryFrame = frame;
+	vkTexture->texDataHash2 = ~vkTexture->texDataHash2;
+	vkTexture->m_uploadRetryHash = vkTexture->texDataHash2;
+	vkTexture->m_uploadRetryInverted = true;
 }
 
 void VulkanRenderer::texture_releaseTextureUploadBuffer(uint8* mem)

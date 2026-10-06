@@ -85,6 +85,12 @@ public:
 
 	uint32 m_collisionCheckIndex{}; // used to track if texture is being both sampled and output to during drawcall
 
+	// bookkeeping for VulkanRenderer::texture_uploadBufferUnavailable() (flags a texture whose upload was skipped to be loaded again)
+	uint32 m_uploadRetryHash{};
+	uint32 m_uploadRetryFrame{};
+	uint8 m_uploadRetryCount{};
+	bool m_uploadRetryInverted{};
+
 private:
 	class VulkanRenderer* m_vkr;
 
