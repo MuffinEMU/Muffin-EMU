@@ -2387,7 +2387,15 @@ struct EmulatorViewOptimized: View {
     /// captured as a plain String before hopping to saveStateQueue - URL itself is not
     /// guaranteed Sendable-safe to touch off the main actor the way its `.path` string is.
     private func performSaveState(slot: Int) {
-        guard saveStateBusySlot == nil, gameManager.emulationState == .running else { return }
+        // A tap that can't start says why instead of doing nothing.
+        guard saveStateBusySlot == nil else {
+            reportSaveState(SaveStateStatus(message: "Another save or load is still working. Wait for it to finish.", isWarning: true))
+            return
+        }
+        guard gameManager.emulationState == .running else {
+            reportSaveState(SaveStateStatus(message: "Couldn't save Slot \(slot). The game isn't running.", isWarning: true))
+            return
+        }
         let gameID = game.id
         SaveStateStore.ensureDirectoryExists(for: gameID)
         let path = SaveStateStore.fileURL(for: gameID, slot: slot).path
@@ -2395,13 +2403,14 @@ struct EmulatorViewOptimized: View {
         Self.saveStateQueue.async {
             let ok = path.withCString { cemu_bridge_save_state($0) }
             // Read here, on the queue that made the call and before anything else can: the text belongs to the latest save or load.
+            let code = ok ? 0 : Int(cemu_bridge_save_state_last_error_code())
             let reason = ok ? "" : String(cString: cemu_bridge_save_state_last_error())
             DispatchQueue.main.async {
                 saveStateBusySlot = nil
                 saveStateSlots = SaveStateStore.slots(for: gameID)
                 reportSaveState(ok
                     ? SaveStateStatus(message: "Slot \(slot) saved.", isWarning: false)
-                    : SaveStateStatus(message: Self.saveStateFailureMessage("save", slot: slot, reason: reason), isWarning: true))
+                    : SaveStateStatus(message: Self.saveStateFailureMessage("save", slot: slot, reason: reason, code: code), isWarning: true))
             }
         }
     }
@@ -2411,23 +2420,69 @@ struct EmulatorViewOptimized: View {
     /// is not offered for loading at all (the sheet shows it as "From an earlier session");
     /// a refusal that still gets here carries the bridge's own reason.
     private func performLoadState(slot: Int) {
-        guard saveStateBusySlot == nil, gameManager.emulationState == .running else { return }
+        // Every tap that can't start says why. A silent return looked the same as a load that worked.
+        guard saveStateBusySlot == nil else {
+            reportSaveState(SaveStateStatus(message: "Another save or load is still working. Wait for it to finish.", isWarning: true))
+            return
+        }
+        guard gameManager.emulationState == .running else {
+            reportSaveState(SaveStateStatus(message: "Couldn't load Slot \(slot). The game isn't running.", isWarning: true))
+            return
+        }
         let gameID = game.id
         let path = SaveStateStore.fileURL(for: gameID, slot: slot).path
-        guard FileManager.default.fileExists(atPath: path) else { return }
+        guard FileManager.default.fileExists(atPath: path) else {
+            saveStateSlots = SaveStateStore.slots(for: gameID)
+            reportSaveState(SaveStateStatus(message: Self.saveStateFailureMessage("load", slot: slot, reason: "That slot's save file is missing.", code: 9), isWarning: true))
+            return
+        }
         saveStateBusySlot = slot
+        // A game the player (or the HOME menu) paused stays paused after the load, so no frame is expected until they resume.
+        let gameWasPaused = isPaused
         Self.saveStateQueue.async {
+            // The engine counts frames on its own, whatever the guest's memory says, so this baseline survives the load.
+            var before = CemuBridgeProgress()
+            cemu_bridge_get_progress(&before)
             let ok = path.withCString { cemu_bridge_load_state($0) }
+            let code = ok ? 0 : Int(cemu_bridge_save_state_last_error_code())
             let reason = ok ? "" : String(cString: cemu_bridge_save_state_last_error())
+            // "Loaded" means the game is running again, not that the file was read: wait for new frames. A game that has gone
+            // quiet shows a different message, so a load that restored memory but left the game dead is never reported as a success.
+            var framesResumed = false
+            if ok && !gameWasPaused {
+                let deadline = Date().addingTimeInterval(Self.saveStateResumeWaitSeconds)
+                var progress = CemuBridgeProgress()
+                while Date() < deadline {
+                    cemu_bridge_get_progress(&progress)
+                    if progress.gx2_frame_count >= before.gx2_frame_count + Self.saveStateResumeFrames {
+                        framesResumed = true
+                        break
+                    }
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+            }
             DispatchQueue.main.async {
                 saveStateBusySlot = nil
                 saveStateSlots = SaveStateStore.slots(for: gameID)
-                reportSaveState(ok
-                    ? SaveStateStatus(message: "Slot \(slot) loaded. Some textures may look wrong for a moment.", isWarning: false)
-                    : SaveStateStatus(message: Self.saveStateFailureMessage("load", slot: slot, reason: reason), isWarning: true))
+                if !ok {
+                    reportSaveState(SaveStateStatus(message: Self.saveStateFailureMessage("load", slot: slot, reason: reason, code: code), isWarning: true))
+                } else if gameWasPaused {
+                    reportSaveState(SaveStateStatus(message: "Slot \(slot) loaded. The game is paused: resume it to carry on from the save.", isWarning: false))
+                } else if framesResumed {
+                    reportSaveState(SaveStateStatus(message: "Slot \(slot) loaded. Some textures may look wrong for a moment.", isWarning: false))
+                } else {
+                    reportSaveState(SaveStateStatus(
+                        message: "Slot \(slot) was restored, but the game hasn't drawn a new frame in \(Int(Self.saveStateResumeWaitSeconds)) seconds. It may still be catching up. If the picture stays frozen, quit and relaunch the game, then send the log.",
+                        isWarning: true))
+                }
             }
         }
     }
+
+    /// How long a successful load waits for the game to draw again before it says the picture hasn't come back, and how many
+    /// new frames count as "running again".
+    private static let saveStateResumeWaitSeconds: TimeInterval = 4
+    private static let saveStateResumeFrames: UInt64 = 3
 
     // MARK: Top bar auto-hide
 
@@ -2496,13 +2551,15 @@ struct EmulatorViewOptimized: View {
         }
     }
 
-    /// "Couldn't save Slot 2. <the bridge's own reason>". The reason is a full sentence from the bridge (IOSSaveState.cpp:
+    /// "Couldn't save Slot 2. <the bridge's own reason> (code 14)". The reason is a full sentence from the bridge (IOSSaveState.cpp:
     /// out of storage, the game still loading, a save from an earlier session ...), so what the player reads is what went
-    /// wrong, not a guess that covers every case. A bridge that gave none still gets a plain line.
-    private static func saveStateFailureMessage(_ action: String, slot: Int, reason: String) -> String {
+    /// wrong, not a guess that covers every case. The code is the same failure as a number (cemu_bridge_save_state_last_error_code),
+    /// so a screenshot of the message is enough to find the line in the log. A bridge that gave none still gets a plain line.
+    private static func saveStateFailureMessage(_ action: String, slot: Int, reason: String, code: Int) -> String {
         let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "Couldn't \(action) Slot \(slot)." }
-        return "Couldn't \(action) Slot \(slot). \(trimmed)"
+        let suffix = code > 0 ? " (code \(code))" : ""
+        guard !trimmed.isEmpty else { return "Couldn't \(action) Slot \(slot).\(suffix)" }
+        return "Couldn't \(action) Slot \(slot). \(trimmed)\(suffix)"
     }
 
     /// Whether the picture-stopped card is up: while the watchdog says the picture has stopped, and

@@ -35,6 +35,7 @@
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Scheduler.h"
 #include "Cafe/OS/libs/gx2/GX2_Command.h"
 #include "Cemu/Logging/CemuLogging.h"
 
@@ -49,6 +50,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <fmt/format.h>
 
 #include <sys/stat.h>
 #include <sys/statvfs.h>
@@ -135,6 +138,100 @@ namespace
 	std::string Megabytes(uint64 bytes)
 	{
 		return std::to_string((bytes + (1024 * 1024) - 1) / (1024 * 1024)) + " MB";
+	}
+
+	// ---- diagnostics ------------------------------------------------------------------------------------------------
+	//
+	// Nothing here can be tested away from a device, so a save or load narrates itself: every step of an operation is one
+	// numbered log line with the time since the operation began, and the guest thread table is dumped before and after, so
+	// a log sent back shows what the game was doing and exactly which step went wrong.
+
+	std::atomic<int> sStepNumber{0};
+	std::atomic<int64_t> sOpStartMs{0};
+
+	int64_t SteadyNowMs()
+	{
+		return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
+	}
+
+	void BeginOperationLog()
+	{
+		sStepNumber.store(0);
+		sOpStartMs.store(SteadyNowMs());
+	}
+
+	void LogStep(const char* op, const std::string& text)
+	{
+		const int n = sStepNumber.fetch_add(1) + 1;
+		cemuLog_log(LogType::Force, "IOSSaveState: {} step {} (+{} ms): {}", op, n, (long long)(SteadyNowMs() - sOpStartMs.load()), text);
+	}
+
+	// Guest strings can be anything, so this copies at most `maxLen` printable bytes and never reads outside mapped memory.
+	std::string SafeGuestString(MPTR address, size_t maxLen = 40)
+	{
+		std::string out;
+		if (address == 0)
+			return out;
+		for (size_t i = 0; i < maxLen; i++)
+		{
+			if (!memory_isAddressRangeAccessible(address + (uint32)i, 1))
+				break;
+			const char c = (char)*memory_getPointerFromVirtualOffset(address + (uint32)i);
+			if (c == 0)
+				break;
+			out.push_back(c >= 32 && c < 127 ? c : '?');
+		}
+		return out;
+	}
+
+	const char* ThreadStateName(OSThread_t::THREAD_STATE state)
+	{
+		switch (state)
+		{
+		case OSThread_t::THREAD_STATE::STATE_NONE: return "none";
+		case OSThread_t::THREAD_STATE::STATE_READY: return "ready";
+		case OSThread_t::THREAD_STATE::STATE_RUNNING: return "running";
+		case OSThread_t::THREAD_STATE::STATE_WAITING: return "waiting";
+		case OSThread_t::THREAD_STATE::STATE_MORIBUND: return "moribund";
+		}
+		return "?";
+	}
+
+	// One line per active guest thread. `tag` says when (for example "save: before writing").
+	void LogThreadTable(const char* tag)
+	{
+		__OSLockScheduler();
+		cemuLog_log(LogType::Force, "IOSSaveState: {}: {} active guest threads", tag, (int)activeThreadCount);
+		for (sint32 i = 0; i < activeThreadCount; i++)
+		{
+			const MPTR threadAddress = activeThread[i];
+			if (!memory_isAddressRangeAccessible(threadAddress, sizeof(OSThread_t)))
+			{
+				cemuLog_log(LogType::Force, "IOSSaveState:   [{}] {:08x} is not readable guest memory", i, threadAddress);
+				continue;
+			}
+			const OSThread_t* t = (const OSThread_t*)memory_getPointerFromVirtualOffset(threadAddress);
+			const OSThread_t::THREAD_STATE state = t->state;
+			const sint32 suspend = t->suspendCounter;
+			const sint32 priority = t->effectivePriority;
+			const uint32 ip = t->context.srr0;
+			const uint32 lr = _swapEndianU32(t->context.lr); // stored big-endian, unlike srr0
+			const MPTR waitQueue = t->currentWaitQueue.GetMPTR();
+			cemuLog_log(LogType::Force, "IOSSaveState:   [{}] {:08x} '{}' {} suspend={} prio={} affinity={:x} ip={:08x} lr={:08x} waitQueue={:08x}",
+				i, threadAddress, SafeGuestString(t->threadName.GetMPTR()), ThreadStateName(state), suspend, priority, t->context.getAffinity(), ip, lr, waitQueue);
+		}
+		__OSUnlockScheduler();
+	}
+
+	void LogMemoryRanges(const char* tag)
+	{
+		std::string line;
+		for (auto* r : memory_getMMURanges())
+		{
+			if (r->isMapped())
+				line += fmt::format(" {}@{:08x}+{:x}", r->getName(), r->getBase(), r->getSize());
+		}
+		cemuLog_log(LogType::Force, "IOSSaveState: {}: mapped ranges:{}", tag, line);
 	}
 
 	// ---- session ----------------------------------------------------------------------------------------------------
@@ -688,6 +785,7 @@ namespace
 				return refuse(SSE_FileDamaged, "The save file couldn't be read.", "could not seek within file");
 		}
 		cemuLog_log(LogType::Force, "IOSSaveState: load checks passed in {} ms ({} to restore)", ElapsedMs(start), Megabytes(totalBytes));
+		LogStep("load", fmt::format("file checks passed: {} guest threads and {} memory ranges in the save, {} to restore", threadCount, rangeCount, Megabytes(totalBytes)));
 
 		// Past this point every header check has passed. A short read from here on means
 		// the file changed under us or an I/O error occurred, and guest memory may already
@@ -712,6 +810,7 @@ namespace
 		// PPCRecompiler_invalidateRange() is a no-op when the recompiler isn't active.
 		PPCRecompiler_invalidateRange(PPC_REC_CODE_AREA_START, PPC_REC_CODE_AREA_END);
 		cemuLog_log(LogType::Force, "IOSSaveState: restored {} in {} ms", Megabytes(totalBytes), ElapsedMs(restoreStart));
+		LogStep("load", fmt::format("guest memory restored ({}) and recompiled code dropped", Megabytes(totalBytes)));
 		return true;
 	}
 
@@ -808,30 +907,41 @@ int IOSSaveState_InspectFile(const char* path)
 bool IOSSaveState_Save(const char* path)
 {
 	ClearError();
+	BeginOperationLog();
 	const auto total = Clock::now();
 	if (!path || !*path)
 		return Fail(SSE_InvalidPath, "No save location was given.");
 	if (!CafeSystem::IsTitleRunning())
 		return Fail(SSE_NoTitle, "The game isn't running.");
-	cemuLog_log(LogType::Force, "IOSSaveState: save to '{}' starting", path);
+	LogStep("save", fmt::format("starting, file '{}'", path));
 
 	// Cheap failures first, before the game is paused: nothing to undo.
 	EnsureParentDirectory(path);
 	if (!CheckDiskSpace(path, EstimateSaveBytes()))
 		return false;
+	LogStep("save", "disk space is enough");
 
 	const bool videoStalled = cemu_bridge_video_stalled();
 	bool pausedByUs = false;
 	if (!PauseForOperation("save", pausedByUs))
 		return false;
+	LogStep("save", fmt::format("paused (by this save: {}, picture stalled: {})", pausedByUs, videoStalled));
 
 	const auto quiesceStart = Clock::now();
 	bool ok = Quiesce("save", videoStalled);
 	if (ok)
+	{
 		cemuLog_log(LogType::Force, "IOSSaveState: save: quiescent after {} ms", ElapsedMs(quiesceStart));
+		LogStep("save", "cores idle and GPU settled");
+		LogMemoryRanges("save");
+		LogThreadTable("save: guest threads at the moment of the save");
+	}
 	ok = ok && WriteSaveFile(path, EnsureSessionToken());
+	if (ok)
+		LogStep("save", "file written");
 
 	RestorePauseState("save", pausedByUs);
+	LogStep("save", "pause state put back");
 
 	cemuLog_log(LogType::Force, "IOSSaveState: save to '{}' {} (total {} ms)", path, ok ? "succeeded" : "failed", ElapsedMs(total));
 	return ok;
@@ -842,27 +952,38 @@ bool IOSSaveState_Save(const char* path)
 bool IOSSaveState_Load(const char* path)
 {
 	ClearError();
+	BeginOperationLog();
 	const auto total = Clock::now();
 	if (!path || !*path)
 		return Fail(SSE_InvalidPath, "No save location was given.");
 	if (!CafeSystem::IsTitleRunning())
 		return Fail(SSE_NoTitle, "The game isn't running.");
-	cemuLog_log(LogType::Force, "IOSSaveState: load from '{}' starting", path);
+	LogStep("load", fmt::format("starting, file '{}'", path));
 
 	if (!PrecheckLoad(path))
 		return false;
+	LogStep("load", "file header is a loadable save from this launch of this game");
 
 	bool pausedByUs = false;
 	if (!PauseForOperation("load", pausedByUs))
 		return false;
+	LogStep("load", fmt::format("paused (by this load: {})", pausedByUs));
 
 	const auto quiesceStart = Clock::now();
 	bool ok = Quiesce("load", false);
 	if (ok)
+	{
 		cemuLog_log(LogType::Force, "IOSSaveState: load: quiescent after {} ms", ElapsedMs(quiesceStart));
+		LogStep("load", "cores idle and GPU settled");
+		LogMemoryRanges("load: live memory before the restore");
+		LogThreadTable("load: live guest threads before the restore");
+	}
 	ok = ok && ReadSaveFile(path);
+	if (ok)
+		LogThreadTable("load: guest threads after the restore");
 
 	RestorePauseState("load", pausedByUs);
+	LogStep("load", fmt::format("pause state put back, result: {}", ok ? "loaded" : "failed"));
 
 	cemuLog_log(LogType::Force, "IOSSaveState: load from '{}' {} (total {} ms)", path, ok ? "succeeded" : "failed", ElapsedMs(total));
 	return ok;
