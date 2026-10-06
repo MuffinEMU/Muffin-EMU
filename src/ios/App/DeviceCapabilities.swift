@@ -8,7 +8,7 @@ import UIKit
 /// dependent default in the app reads it from here instead of carrying a number that was
 /// measured on one device.
 ///
-/// The standard tier (4.5 to 7 GiB of RAM: the 6 GB A12Z iPad Pro, iPhone 14 to 16) gets the
+/// The standard tier (4.5 to 7 GiB of RAM: 6 GB iPads and iPhone 14 to 16) gets the
 /// values the app shipped with, so nothing that works on those devices changes. Devices with
 /// less memory get conservative defaults; devices with more, and the newest chips, get more.
 struct DeviceCapabilities {

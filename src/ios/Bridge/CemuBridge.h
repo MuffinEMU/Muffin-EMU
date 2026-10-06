@@ -548,11 +548,10 @@ void cemu_bridge_set_thermal_throttle_micros(uint32_t micros);
 
 /// Run the three emulated Espresso cores on three host threads instead of one.
 ///
-/// Off by default, and that default is measured rather than assumed: on an A12Z iPad Pro
-/// running Wind Waker HD, one core holds 40-60fps and three managed 4-20. A fanless part
-/// does not get three times the work out of three times the power draw - it heats up
-/// within a minute and the SoC takes the clocks back. Worth trying on a device with more
-/// thermal headroom; not worth being the default on this one.
+/// Off by default. Three host threads draw about three times the power of one, and a part
+/// that runs out of thermal headroom heats up and has its clocks taken back, which can
+/// leave it slower than one core. Auto only picks three on a device that qualifies from
+/// its own performance-core count, memory tier and thermal state (ios_decide_core_count).
 void cemu_bridge_set_multicore_enabled(bool enabled);
 
 /// How many host threads run the three emulated cores: 0 = Auto, 1 = one core, 2 = three
@@ -579,7 +578,7 @@ void cemu_bridge_set_draw_breadcrumbs(bool enabled);
 /// runs), or an empty string before the first one. Copy it; the pointer is per-thread.
 const char* cemu_bridge_perf_line(void);
 
-/// "iPad8,11, Apple A12Z GPU, 4 performance + 4 efficiency cores, 5664 MB RAM": what the
+/// "iPad14,3, Apple M1 GPU, 4 performance + 4 efficiency cores, 7500 MB RAM": what the
 /// performance log and reports use to tell devices apart.
 const char* cemu_bridge_device_summary(void);
 

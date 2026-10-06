@@ -1624,7 +1624,7 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
         // copies block for block, so an 8-byte texel of an integer alias (the raw bits of a BC1 surface) written
         // into a 16-byte ASTC block (what a BC texture becomes on a GPU without BC support) reads and writes past
         // both textures. That is a GPU address fault, and once the GPU has faulted iOS stops running this app's
-        // GPU work. Seen on an A12Z: the Wii U Menu faulted in the same millisecond as seven such copies (formats
+        // GPU work. Seen on a device without BC support: the Wii U Menu faulted in the same millisecond as seven such copies (formats
         // 011f/0122 into 0431/0433, BC transcoded to ASTC 4x4). Skipping it leaves that destination as it was,
         // which at worst shows one stale texture; issuing it stops the game.
         {
@@ -3331,8 +3331,8 @@ void MetalRenderer::CommitCommandBuffer()
     {
         // Do not let the emulated GPU run arbitrarily far ahead of the real one. Every command buffer in
         // flight keeps its staging chunks, snapshot and index allocations and the textures it used alive, and
-        // with nothing limiting it a game that is heavier on the GPU than the CPU (Super Mario 3D World on an
-        // A12Z) allocated tens of megabytes of new chunks per frame until the app was killed. Waiting on the
+        // with nothing limiting it a game that is heavier on the GPU than the CPU (Super Mario 3D World on a
+        // 6 GB device) allocated tens of megabytes of new chunks per frame until the app was killed. Waiting on the
         // oldest one is bounded, and once the GPU is presumed lost it only polls briefly.
         constexpr size_t MAX_COMMAND_BUFFERS_IN_FLIGHT = 10;
         for (int guard = 0; guard < 4 && m_executingCommandBuffers.size() >= MAX_COMMAND_BUFFERS_IN_FLIGHT; ++guard)
@@ -3625,7 +3625,7 @@ void MetalRenderer::UpdateMemoryStatsAndRelievePressure()
 #if BOOST_OS_IOS
     // The limit differs per device, so the marks are fractions of what the process had free when the first
     // frame was presented: evict what is cheap to bring back below the low mark, and anything unused for ten
-    // seconds below the critical mark. The 3D World run on an A12Z climbed to the 4.5 GB limit with no eviction
+    // seconds below the critical mark. A 3D World run on a 6 GB device climbed to the 4.5 GB limit with no eviction
     // at all.
     //
     // The fractions follow the headroom this device actually gave the process. A small phone starts with

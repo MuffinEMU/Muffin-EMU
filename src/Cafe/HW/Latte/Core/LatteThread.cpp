@@ -154,7 +154,7 @@ static int Latte_ThreadEntryImpl()
 	LatteTiming_Init();
 	LatteTexture_init();
 	LatteTC_Init();
-	LatteBufferCache_init((size_t)DeviceCaps::GetBudgets().bufferCacheBytes); // 164 MB on a standard device, see DeviceCapabilities.h
+	LatteBufferCache_init((size_t)DeviceCaps::GetBudgets().bufferCacheBytes); // sized from the device, see DeviceCapabilities.h
 	LatteQuery_Init();
 	LatteSHRC_Init();
 	LatteStreamout_InitCache();
