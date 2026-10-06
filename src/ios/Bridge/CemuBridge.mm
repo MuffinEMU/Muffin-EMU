@@ -2103,6 +2103,8 @@ long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includ
         return -1;
     }
     long long freed = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, true);
+    // the Vulkan driver's own pipeline cache is compiled output too (VulkanRenderer::PipelineCacheSaveThread)
+    freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/driver/vk"), titleId, true);
     if (includeLearned)
     {
         freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId, true);
@@ -2117,7 +2119,8 @@ int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLea
     if (outLearnedBytes)
         *outLearnedBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId, false);
     if (outCompiledBytes)
-        *outCompiledBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, false);
+        *outCompiledBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, false)
+            + IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/driver/vk"), titleId, false);
     return 0;
 }
 
@@ -3117,7 +3120,19 @@ void cemu_bridge_register_pad_render_surface(void* uiView, int width, int height
     // CemuPrepareRenderer() then picks the surface up). This used to wait for g_titleRunning, which is only set
     // after CemuRun() returns: a surface registered between the renderer being built and that flag - an external
     // display connecting while the title boots - was registered and sized but never got a layer, so nothing drew to it.
-    CemuUIKit_InitializeLayer(false);
+    // Called from Swift: nothing may throw out of here (Vulkan's swapchain code throws on failure).
+    try
+    {
+        CemuUIKit_InitializeLayer(false);
+    }
+    catch (const std::exception& ex)
+    {
+        cemuLog_log(LogType::Force, "iOS: GamePad surface could not be initialized: {}", ex.what());
+    }
+    catch (...)
+    {
+        cemuLog_log(LogType::Force, "iOS: GamePad surface could not be initialized (unknown error)");
+    }
     CemuUIKit_SetVisibleOutputs(true, true);
     cemuLog_log(LogType::Force, "iOS: GamePad (DRC) screen surface registered, {}x{} points at {}x scale", width, height, dpiScale);
 }

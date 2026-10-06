@@ -21,7 +21,8 @@ struct SwapchainInfoVk
 		std::vector<VkPresentModeKHR> presentModes;
 	};
 
-	void Cleanup();
+	// keepSwapchain: leave the VkSwapchainKHR itself alone so that Create() can hand it over as oldSwapchain
+	void Cleanup(bool keepSwapchain = false);
 	void Create();
 
 	bool IsValid() const;

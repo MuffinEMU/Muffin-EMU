@@ -226,8 +226,9 @@ void CemuUIKit_SetMainView(UIView* view)
         ? view.window.screen.nativeScale
         : UIScreen.mainScreen.nativeScale;
 
+    // __bridge, not __bridge_retained: nothing ever released the extra retain, so every title launch leaked a layer. g_mainView keeps it alive.
     WindowHandleInfo info { WindowHandleInfo::Backend::UIKit, view,
-                            (__bridge_retained CAMetalLayer*)view.layer };
+                            (__bridge void*)view.layer };
     g_windowInfo.window_main = info;
     g_windowInfo.canvas_main = info;
 }
@@ -309,7 +310,14 @@ void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale
 
         // Keep the Metal layer's drawableSize in step with the window; nothing else on iOS resizes it
         // after the initial InitializeLayer(). Vulkan/MoltenVK reads the layer size itself on the next
-        // swapchain rebuild.
+        // swapchain rebuild, from bounds * contentsScale, so the scale has to be on the layer by then
+        // (a mid-game render-scale change, e.g. the thermal cool-down, would otherwise keep the old size).
+        if (!metal && g_mainView)
+        {
+            CAMetalLayer* layer = (CAMetalLayer*)g_mainView.layer;
+            if (layer.contentsScale != resolvedScale)
+                layer.contentsScale = resolvedScale;
+        }
 #ifdef ENABLE_METAL
         if (metal)
         {
@@ -329,7 +337,8 @@ void CemuUIKit_SetPadView(UIView* view)
 {
     g_padView = view;
 
-    WindowHandleInfo info { WindowHandleInfo::Backend::UIKit, view, (__bridge_retained CAMetalLayer*)view.layer };
+    // __bridge: g_padView keeps the layer alive (see CemuUIKit_SetMainView)
+    WindowHandleInfo info { WindowHandleInfo::Backend::UIKit, view, (__bridge void*)view.layer };
 
     g_windowInfo.window_pad = info;
     g_windowInfo.canvas_pad = info;
