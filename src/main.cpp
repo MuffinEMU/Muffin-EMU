@@ -399,8 +399,8 @@ void CemuInitialize(const char* execPath, const char* user_data_path, const char
     // read config
     GetConfigHandle().SetFilename(ActiveSettings::GetConfigPath("config.xml").generic_wstring());
     GetConfigHandle().Load();
-    if (NetworkConfig::XMLExists())
-        n_config.Load();
+    // Sets the file's path (it defaults to a bare filename, which is never found) and loads it.
+    NetworkConfig::LoadOnce();
     
     ActiveSettings::Init();
     

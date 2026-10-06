@@ -1253,8 +1253,8 @@ typedef enum {
 /// and Pretendo's server hostnames are already baked into the engine (NintendoURLs/
 /// PretendoURLs in config/NetworkSettings.h) - selecting either needs no address from the
 /// user. Custom is the one exception: the engine replays whatever account/ECS/NUS/etc URLs
-/// are already in Documents/mlc/network_services.xml, which this bridge does not create or
-/// edit - see cemu_bridge_custom_network_service_available(). Setting Custom while that file
+/// are already in Documents/mlc/network_services.xml, which the app writes
+/// (CustomServers.swift) - see cemu_bridge_custom_network_service_available(). Setting Custom while that file
 /// doesn't exist is accepted here but the engine itself falls back to Offline at the point it
 /// would actually connect (CemuConfig::GetAccountNetworkService() enforces this), so the UI
 /// should disable Custom rather than let it look chosen and silently do nothing.
@@ -1262,10 +1262,18 @@ CemuBridgeNetworkService cemu_bridge_network_service(uint32_t persistentId);
 void cemu_bridge_set_network_service(uint32_t persistentId, CemuBridgeNetworkService service);
 
 /// Whether NetworkService::Custom is actually usable right now (NetworkConfig::XMLExists()).
-/// Custom has no in-app configuration UI on any Cemu port, including this one: it only
-/// works once the user has placed a hand-written network_services.xml in the mlc folder
-/// themselves, so there is no server URL to prompt for here - see the type comment above.
+/// True only for a file that parses and lists at least one http(s) address. The app's
+/// Network Service > Custom servers section (CustomServers.swift) writes and swaps that file.
 bool cemu_bridge_custom_network_service_available(void);
+
+/// Reads Documents/mlc/network_services.xml again after the app replaced or removed it, and
+/// returns whether it's now a usable Custom Network Service. Without this the engine keeps
+/// the file as it was when the app started.
+bool cemu_bridge_reload_custom_network_service(void);
+
+/// Whether the file at path is a usable network_services.xml (parses, has <content> and at
+/// least one http(s) address under <urls>). Doesn't touch the active file.
+bool cemu_bridge_network_services_xml_is_valid(const char* path);
 
 /// What network the device is on, as reported by the app's path monitor.
 typedef enum {

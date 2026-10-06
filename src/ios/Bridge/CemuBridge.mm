@@ -173,6 +173,8 @@ std::string IOSAccounts_CountriesList();
 int IOSAccounts_NetworkService(uint32_t persistentId);
 void IOSAccounts_SetNetworkService(uint32_t persistentId, int service);
 bool IOSAccounts_CustomNetworkServiceAvailable();
+bool IOSAccounts_ReloadCustomNetworkService();
+bool IOSAccounts_IsValidNetworkServicesXML(const char* path);
 bool IOSTitlePause_Pause();
 bool IOSTitlePause_Resume();
 bool IOSTitlePause_IsPaused();
@@ -3657,6 +3659,14 @@ void cemu_bridge_set_network_service(uint32_t persistentId, CemuBridgeNetworkSer
 
 bool cemu_bridge_custom_network_service_available(void) {
     return IOSAccounts_CustomNetworkServiceAvailable();
+}
+
+bool cemu_bridge_reload_custom_network_service(void) {
+    return IOSAccounts_ReloadCustomNetworkService();
+}
+
+bool cemu_bridge_network_services_xml_is_valid(const char* path) {
+    return IOSAccounts_IsValidNetworkServicesXML(path);
 }
 
 void cemu_bridge_set_device_network(CemuBridgeDeviceNetwork kind) {

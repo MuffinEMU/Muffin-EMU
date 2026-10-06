@@ -43,6 +43,7 @@ struct SettingsView: View {
         WiiUMenuSettingsSection()
         AccountSettingsSection()
         NetworkServiceSettingsSection()
+        CustomServersSettingsSection()
         EmulatedDevicesSettingsSection()
     }
 
