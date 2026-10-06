@@ -38,6 +38,34 @@ struct GameMetadata: Codable, Identifiable {
     /// cheap enough to just re-read from the filesystem on every loadGames().
     var addedDate: Date? = nil
 
+    /// What per-game settings are stored under: the base title ID as 16 hex digits, so they follow the game through a
+    /// rename or a re-import. Only a title with no derivable ID falls back to the file-name `id`.
+    var settingsKey: String {
+        titleId.map(Self.settingsKey(forTitleId:)) ?? id
+    }
+
+    static func settingsKey(forTitleId titleId: UInt64) -> String {
+        String(format: "%016llX", titleId)
+    }
+
+    /// The name for the library card, with the game's own title ID taken out of it ("Mario Kart 8 [0005000010145D00]",
+    /// "0005000010145D00 - Mario Kart 8", the bare hex anywhere), and the ID as text for the card's small caption. The
+    /// caption is nil when the ID is unknown or was not in the name. Nothing on disk is renamed.
+    var cardName: (name: String, titleIdText: String?) {
+        let name = displayTitle ?? title
+        guard let titleId else { return (name, nil) }
+        let hex = Self.settingsKey(forTitleId: titleId)
+        let pattern = "[\\[({]?\\s*(?<![0-9A-Fa-f])" + String(hex.prefix(8)) + "[-_ ]?" + String(hex.suffix(8)) + "(?![0-9A-Fa-f])\\s*[\\])}]?"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+              let range = Range(match.range, in: name) else { return (name, nil) }
+        var cleaned = name.replacingCharacters(in: range, with: " ")
+        while cleaned.contains("  ") { cleaned = cleaned.replacingOccurrences(of: "  ", with: " ") }
+        cleaned = cleaned.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: "-\u{2013}\u{2014}_.,:;|")))
+        // A name that was nothing but the ID keeps showing it rather than going blank.
+        return cleaned.isEmpty ? (name, nil) : (cleaned, hex)
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, title, romPath, coverPath, region, releaseDate, genre, titleId, dumpDirectoryPath, displayTitle
     }
@@ -63,6 +91,7 @@ private enum LibraryMetadataCache {
     private static let regionKey = "muffin.library.regionByGameID"
     private static let titleNameKey = "muffin.library.titleNameByGameID"
     private static let versionKey = "muffin.library.metadataCacheVersion"
+    private static let titleIdKey = "muffin.library.titleIdByGameID"
     private static let currentVersion = 2
 
     /// Before version 2 a disc image that could not be opened (the scan runs before the engine has its keys) was stored as
@@ -88,6 +117,20 @@ private enum LibraryMetadataCache {
         var stored = (UserDefaults.standard.dictionary(forKey: regionKey) as? [String: String]) ?? [:]
         stored[gameID] = region ?? ""
         UserDefaults.standard.set(stored, forKey: regionKey)
+    }
+
+    /// The base title ID found for a game the last time its files could be read, as 16 hex digits. Kept so the game's
+    /// settings stay attached on a scan where the dump can't be opened (a disc image whose key is missing for now).
+    static func cachedTitleId(for gameID: String) -> UInt64? {
+        ((UserDefaults.standard.dictionary(forKey: titleIdKey) as? [String: String])?[gameID]).flatMap { UInt64($0, radix: 16) }
+    }
+
+    static func setCachedTitleId(_ titleId: UInt64, for gameID: String) {
+        var stored = (UserDefaults.standard.dictionary(forKey: titleIdKey) as? [String: String]) ?? [:]
+        let text = GameMetadata.settingsKey(forTitleId: titleId)
+        guard stored[gameID] != text else { return }
+        stored[gameID] = text
+        UserDefaults.standard.set(stored, forKey: titleIdKey)
     }
 
     static func cachedTitleName(for gameID: String) -> String? {
@@ -197,7 +240,7 @@ class GameManager: ObservableObject {
             return
         }
         self.games = discovered.sorted { $0.title < $1.title }
-        TitleSwitchSettings.shared.update(games: self.games)
+        PerGameKeyMigration.run(games: self.games)
         self.favorites = self.games.filter { $0.isFavorite }
         enrichMissingCoverArt()
     }
@@ -293,6 +336,11 @@ class GameManager: ObservableObject {
 
             let addedDate = (try? fileManager.attributesOfItem(atPath: item.path))?[.creationDate] as? Date
 
+            // Read from the game's own files once and remembered: that is what attaches a title ID to a game, and
+            // what its per-game settings are keyed by (GameMetadata.settingsKey).
+            let derivedTitleId = Self.deriveBaseTitleId(romPath: bootPath)
+            if let derivedTitleId { LibraryMetadataCache.setCachedTitleId(derivedTitleId, for: gameID) }
+
             let gameMetadata = GameMetadata(
                 id: gameID,
                 title: gameID,
@@ -301,7 +349,7 @@ class GameManager: ObservableObject {
                 region: Self.nonEmptyOrNil(LibraryMetadataCache.cachedRegion(for: gameID)),
                 releaseDate: "Unknown",
                 genre: "Game",
-                titleId: Self.deriveBaseTitleId(romPath: bootPath),
+                titleId: derivedTitleId ?? LibraryMetadataCache.cachedTitleId(for: gameID),
                 dumpDirectoryPath: dumpDirectory?.path,
                 displayTitle: Self.nonEmptyOrNil(LibraryMetadataCache.cachedTitleName(for: gameID)),
                 addedDate: addedDate
@@ -1127,7 +1175,7 @@ class GameManager: ObservableObject {
         GameControlHints.applyBeforeLaunch(titleId: game.titleId)
 
         let romPath = game.romPath
-        let gameID = game.id
+        let gameID = game.settingsKey
         let token = launchToken
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
@@ -1155,7 +1203,7 @@ class GameManager: ObservableObject {
                 UserDefaults.standard.object(forKey: "muffin.cpu.recompiler") as? Bool ?? true)
             // Per-game override first, the global switch underneath it.
             cemu_bridge_set_favour_accuracy(
-                PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.id))
+                PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.settingsKey))
             // Global. The bridge ignores it when Favour accuracy is on for this game.
             cemu_bridge_set_favour_performance(FavourPerformance.isEnabled)
             FullSpeedRenders.applyToBridge()
@@ -1164,7 +1212,7 @@ class GameManager: ObservableObject {
             // override that only lived in a @Published property would revert the moment
             // this background task started fresh on a relaunch.
             cemu_bridge_set_async_shader_compile(
-                PerGameSettingsStore.shared.effectivePreCompileShaders(for: game.id))
+                PerGameSettingsStore.shared.effectivePreCompileShaders(for: game.settingsKey))
             // Global, and read here for the same reason as the calls above: the core
             // count is fixed the moment _LaunchTitleThread() starts its host threads, so
             // a Settings change only takes effect on the next launch and has to be pushed
@@ -1178,8 +1226,8 @@ class GameManager: ObservableObject {
             // Per-game choice first, Settings underneath; Auto then decides in the bridge from the
             // game's profile, this device and its thermal state. The second call tells Auto whether
             // an earlier three-core run of this title went badly.
-            cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: game.id).bridgeValue)
-            cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemotedAtLaunch(gameID: game.id))
+            cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: game.settingsKey).bridgeValue)
+            cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemotedAtLaunch(gameID: game.settingsKey))
             // Global, not per-game - see CemuBridge.h's cemu_bridge_set_vsync_enabled().
             // Applied once per layer (re)init, so reading it here before boot is what
             // makes a mid-session Settings change take effect on the next launch.
@@ -1203,7 +1251,7 @@ class GameManager: ObservableObject {
             // Favour performance swaps both for linear, the cheapest blend, unless this game favours
             // accuracy (which wins, as in the bridge).
             let cheapFilters = FavourPerformance.isEnabled
-                && !PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.id)
+                && !PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.settingsKey)
             cemu_bridge_set_upscale_filter(cheapFilters ? Int32(ScaleFilter.linear.rawValue) :
                 Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.upscaleFilter") as? Int ?? 1))
             cemu_bridge_set_downscale_filter(cheapFilters ? Int32(ScaleFilter.linear.rawValue) :
@@ -1376,7 +1424,7 @@ class GameManager: ObservableObject {
 
     func stopEmulation() {
         launchToken = UUID()
-        if let gameID = currentGame?.id {
+        if let gameID = currentGame?.settingsKey {
             // A three-core run that Auto chose and that ended with the picture stopped is not retried.
             AutoCoreHistory.sessionEnded(gameID: gameID, stalled: videoStalled && videoStallKind == 1)
         }
@@ -1582,29 +1630,10 @@ enum EmulationState {
 /// already pushed when the Menu itself was launched and stay as they are. Runs on the engine's title-switch thread, so it only
 /// touches thread-safe state.
 final class TitleSwitchSettings {
-    static let shared = TitleSwitchSettings()
-    private let lock = NSLock()
-    private var gameIDByTitleId: [UInt64: String] = [:]
-
-    func update(games: [GameMetadata]) {
-        var map: [UInt64: String] = [:]
-        for game in games {
-            if let titleId = game.titleId { map[titleId] = game.id }
-        }
-        lock.lock()
-        gameIDByTitleId = map
-        lock.unlock()
-    }
-
-    private func gameID(for titleId: UInt64) -> String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return gameIDByTitleId[titleId]
-    }
-
     static func apply(titleId: UInt64) {
-        // A title that is not in the library has no overrides, so it gets the global defaults.
-        let id = shared.gameID(for: titleId) ?? ""
+        // The same key a library launch of this game uses (GameMetadata.settingsKey). A title that is not in the
+        // library has no overrides stored under its ID, so it gets the global defaults.
+        let id = GameMetadata.settingsKey(forTitleId: cemu_bridge_derive_base_title_id(titleId))
         // The core count is decided when the incoming title's threads start, which is after this
         // call, so the game's own choice (and Auto's memory of a three-core run that went badly)
         // has to be in place now. Each setter recomputes the CPU mode, so the order does not matter.
