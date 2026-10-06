@@ -63,17 +63,15 @@ struct DeviceConnectionStatusRow: View {
     private var consoleText: String {
         // Read here so it refreshes whenever the device connection changes.
         _ = connection.kind
-        let status = cemu_bridge_console_appears_connected()
+        // Only the device's connection. Whether online play is ready is the separate line above.
+        return cemu_bridge_console_appears_connected()
             ? "The console will appear connected."
             : "The console will appear offline."
-        return cemu_bridge_online_play_enabled()
-            ? status
-            : status + " Online play still needs a linked account and Pretendo."
     }
 
     var body: some View {
         HStack {
-            Text("This device")
+            Text("Device connection")
             Spacer()
             Text("\(deviceText). \(consoleText)")
                 .font(.footnote)

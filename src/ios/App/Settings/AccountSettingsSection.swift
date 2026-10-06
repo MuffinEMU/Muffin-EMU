@@ -135,6 +135,8 @@ struct NetworkServiceSettingsSection: View {
             Text(readinessLine)
                 .font(.system(size: 14, weight: .semibold, design: .rounded))
 
+            DeviceConnectionStatusRow()
+
             Picker("Active account", selection: Binding(
                 get: { activePersistentId },
                 set: { newValue in
@@ -180,7 +182,6 @@ struct NetworkServiceSettingsSection: View {
                           // Nintendo's servers are shut down; only keep it selectable if it's already chosen.
                           || (service == .nintendo && selectedService != .nintendo))
             }
-            DeviceConnectionStatusRow()
         } header: {
             SettingsSectionHeader("Network Service\(activeAccountName.map { " (\($0))" } ?? "")",
                                   icon: "network", accent: .content)

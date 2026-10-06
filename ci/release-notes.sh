@@ -56,7 +56,9 @@ BODY=$(git log --no-merges --reverse --format='%H' "$FROM..$TO" | while read -r 
   else
     printf -- '- %s\n' "$subj"
   fi
-done)
+# An identical note from two commits (say a fix-up repeating the original's
+# note) is one change, so it gets one bullet. First occurrence wins.
+done | awk '!seen[$0]++')
 if [ -n "$BODY" ]; then
   printf '## What changed\n\n%s\n\n' "$BODY"
 fi
