@@ -55,6 +55,7 @@
 #include <sys/ucontext.h>
 
 #include "Cafe/CafeSystem.h"
+#include "Cafe/OS/libs/nn_ac/nn_ac_reachability.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
@@ -3643,6 +3644,14 @@ void cemu_bridge_set_network_service(uint32_t persistentId, CemuBridgeNetworkSer
 
 bool cemu_bridge_custom_network_service_available(void) {
     return IOSAccounts_CustomNetworkServiceAvailable();
+}
+
+void cemu_bridge_set_device_network(CemuBridgeDeviceNetwork kind) {
+    nn_ac::SetDeviceReachable(kind != CEMU_BRIDGE_DEVICE_NETWORK_OFFLINE);
+}
+
+bool cemu_bridge_console_appears_connected(void) {
+    return nn_ac::IsConsoleConnected();
 }
 
 // ---------------------------------------------------------------------------
