@@ -836,7 +836,7 @@ bool ios_has_txm_classic()
     return false;
 }
 
-// "Apple M2" -> ('M', 2), "Apple A12Z GPU" -> ('A', 12).
+// "Apple M2" -> ('M', 2), "Apple A17 Pro GPU" -> ('A', 17).
 bool ios_chip(char& series, int& number)
 {
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
@@ -954,14 +954,15 @@ namespace {
         }
     }
 
-    // Titles recorded as running well on three host threads, per device class. Empty on purpose:
-    // nothing measured so far says three threads help (see ios_decide_core_count). Add a title
-    // here only with a before/after from a real device, and say which device.
-    bool ios_multicore_known_good(uint64_t titleId, const IosDeviceFacts& device)
+    // Auto may use three host threads only on a device with the cores, the memory tier and the
+    // thermal room for them: at least four performance cores, Tier High or above, and a nominal
+    // thermal state right now. Every input is read from the running device. Parts that fall short
+    // (fewer performance cores, less memory, already warm) stay on one core.
+    bool ios_auto_multicore_viable(const IosDeviceFacts& device, int thermalState)
     {
-        (void)titleId;
-        (void)device;
-        return false;
+        return device.perfCores >= 4
+            && DeviceCaps::Get().tier() >= DeviceCaps::Tier::High
+            && thermalState == 0;
     }
 
     struct CoreDecision
@@ -972,21 +973,21 @@ namespace {
     };
 
     // The emulated console has three cores. Running them on three host threads only pays off
-    // when the device has spare performance cores AND the thermal room to power them: on a
-    // fanless iPad Pro (A12Z, 4 performance cores) three threads drew about three times the power,
-    // the SoC throttled within a minute, and Wind Waker HD ran 4-20 fps against 40-60 on one
-    // thread. No shipped Cemu game profile asks for multi-core either (every cpuMode entry is
-    // single-core), so Auto leans to one core and uses three only when the title's profile asks for
-    // it or it is on the known-good list, on a device with at least three performance cores that is
-    // not already hot, and never after an earlier three-core run of the same title crashed or hung.
+    // when the device has spare performance cores AND the thermal room to power them: three
+    // threads draw about three times the power of one, and a part that throttles loses more than
+    // it gains. Auto therefore picks three only when the title's game profile asks for it, or when
+    // the device itself qualifies (ios_auto_multicore_viable: four or more performance cores, Tier
+    // High or above, nominal thermal state), and never after an earlier three-core run of the same
+    // title crashed or hung. The thermal and stall fallbacks (ThermalMonitor, StallDetector) drop a
+    // running three-core session back to one core. Every other device stays on one core.
     CoreDecision ios_decide_core_count(uint64_t titleId)
     {
         const IosDeviceFacts& device = ios_device_facts();
         const int setting = g_coreModeSetting.load();
         const int thermal = ios_thermal_state();
         char deviceText[96];
-        snprintf(deviceText, sizeof(deviceText), "%llu performance core(s), thermal %s",
-            (unsigned long long)device.perfCores, ios_thermal_name(thermal));
+        snprintf(deviceText, sizeof(deviceText), "%llu performance core(s), tier %s, thermal %s",
+            (unsigned long long)device.perfCores, DeviceCaps::TierName(DeviceCaps::Get().tier()), ios_thermal_name(thermal));
         CoreDecision d;
 
         if (g_favourAccuracy.load())
@@ -1057,14 +1058,14 @@ namespace {
             d.reason = std::string("Auto picked three cores: this title's game profile asks for multi-core (") + deviceText + ")";
             return d;
         }
-        if (titleId != 0 && ios_multicore_known_good(titleId, device))
+        if (ios_auto_multicore_viable(device, thermal))
         {
             d.singleCore = false;
             d.autoPickedMulti = true;
-            d.reason = std::string("Auto picked three cores: this title is recorded as faster on three (") + deviceText + ")";
+            d.reason = std::string("Auto picked three cores: this device has the performance cores, memory and thermal room (") + deviceText + ")";
             return d;
         }
-        d.reason = std::string("Auto picked one core: no game profile or recorded result says three help this title (") + deviceText + ")";
+        d.reason = std::string("Auto picked one core: this device does not meet the cores, memory tier and thermal state needed for three (") + deviceText + ")";
         return d;
     }
 }
@@ -1545,7 +1546,7 @@ namespace {
         g_stallResetGen.fetch_add(1);
     }
 
-    // Windows get longer when iOS is throttling the device: a hot A12Z legitimately runs slowly.
+    // Windows get longer when iOS is throttling the device: a hot device legitimately runs slowly.
     double ios_stall_thermal_scale(int* stateOut)
     {
         const NSInteger state = [[NSProcessInfo processInfo] thermalState];

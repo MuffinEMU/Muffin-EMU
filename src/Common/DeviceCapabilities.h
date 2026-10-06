@@ -6,7 +6,7 @@
 // engine or the app should carry a number that was measured on one of them: each budget below
 // is derived from the capabilities the OS reports at launch, and every consumer reads it from
 // here. The numbers for the middle tier are the ones that shipped before this existed (and were
-// proven on a 6 GB A12Z iPad Pro), so a device in that tier behaves exactly as it always did.
+// proven on 6 GB devices), so a device in that tier behaves exactly as it always did.
 //
 // Header only, so the Metal renderer, the recompiler and the bridge can all use it without a
 // link dependency on each other. The bridge publishes the full picture (GPU, screen) once at
@@ -35,7 +35,7 @@
 namespace DeviceCaps
 {
 	// Low: under 4.5 GiB of RAM (2, 3 and 4 GB devices; hw.memsize reads about 10% under the
-	// marketing number). Standard: 4.5 to 7 GiB (6 GB: A12Z iPad Pro, iPhone 14 to 16).
+	// marketing number). Standard: 4.5 to 7 GiB (6 GB iPads and iPhone 14 to 16).
 	// High: 7 GiB and up (8 and 16 GB M-series iPads, 8 GB iPhones).
 	enum class Tier : uint8_t { Low = 0, Standard = 1, High = 2 };
 
@@ -53,7 +53,7 @@ namespace DeviceCaps
 		char machine[32] = {};     // hw.machine, e.g. "iPad8,11"
 		char chipFamily[24] = {};  // from the GPU name, e.g. "A12Z", "A17 Pro", "M2"; empty if unknown
 		char chipSeries = 0;       // 'A' or 'M', 0 if unknown
-		int chipNumber = 0;        // 12 for A12Z, 2 for M2
+		int chipNumber = 0;        // 17 for A17 Pro, 2 for M2
 
 		bool gpuKnown = false;
 		int appleGpuFamily = 0;    // highest MTLGPUFamilyAppleN supported (1 to 9), 0 if none or unknown
@@ -128,6 +128,28 @@ namespace DeviceCaps
 		bool multicoreViable = true;                          // three host threads for the emulated cores
 	};
 
+	// How far a tier's budgets may grow from the memory the process really has. The tier's own
+	// values are the floor (scale 1, nothing ever drops below them); the scale rises as the
+	// process's free memory at launch (os_proc_available_memory) passes the amount the tier's
+	// values were sized for, up to a ceiling per tier. Returned in 1/100ths. Low does not grow:
+	// a small device has no spare memory to hand out.
+	inline uint32_t BudgetScalePercent(Tier tier, uint64_t availableAtLaunch)
+	{
+		constexpr uint64_t MB = 1024ull * 1024ull;
+		uint64_t referenceMB = 0; // free memory the tier's base values were sized for
+		uint32_t maxPercent = 100;
+		switch (tier)
+		{
+		case Tier::Low: return 100;
+		case Tier::Standard: referenceMB = 4608; maxPercent = 150; break;
+		case Tier::High: referenceMB = 4096; maxPercent = 200; break;
+		}
+		if (availableAtLaunch == 0)
+			return 100; // unreadable: keep the tier's values
+		const uint64_t percent = availableAtLaunch / MB * 100 / referenceMB;
+		return (uint32_t)std::min<uint64_t>(maxPercent, std::max<uint64_t>(100, percent));
+	}
+
 	inline Budgets ComputeBudgets(const Info& info)
 	{
 		Budgets b;
@@ -149,14 +171,34 @@ namespace DeviceCaps
 			b.textureReadbackBytes = 64 * MB;
 			break;
 		}
+		// The tier's values above are the floor. Scale them from the memory this process really has
+		// free, so a device with more room than its tier assumes gets more of it.
+		const uint64_t floorCache = b.bufferCacheBytes;
+		const uint64_t floorStaging = b.stagingChunkBytes;
+		const uint32_t pct = BudgetScalePercent(info.tier(), info.availableAtLaunch);
+		if (pct > 100)
+		{
+			auto scaled = [&](uint64_t v, uint64_t quantum) { return std::max<uint64_t>(v, v * pct / 100 / quantum * quantum); };
+			uint64_t cache = scaled(b.bufferCacheBytes, 16 * MB);
+			// The cache is one MTLBuffer: it may grow only to an eighth of the device's maximum buffer.
+			if (info.maxBufferLength != 0)
+				cache = std::min<uint64_t>(cache, std::max<uint64_t>(floorCache, info.maxBufferLength / 8));
+			b.bufferCacheBytes = cache;
+			b.stagingChunkBytes = scaled(b.stagingChunkBytes, 8 * MB);
+			b.textureReadbackBytes = scaled(b.textureReadbackBytes, 8 * MB);
+			b.jitArenaStartMB = (uint32_t)scaled((uint64_t)b.jitArenaStartMB, 128);
+			b.evictLowFloorBytes = scaled(b.evictLowFloorBytes, 50 * MB);
+			b.evictCriticalFloorBytes = scaled(b.evictCriticalFloorBytes, 50 * MB);
+		}
 		// The cache is one MTLBuffer, so it cannot be larger than the device's maximum buffer.
 		if (info.maxBufferLength != 0)
 			b.bufferCacheBytes = std::min<uint64_t>(b.bufferCacheBytes, std::max<uint64_t>(64 * MB, info.maxBufferLength));
 		// The emulated console has three cores; fewer host cores than that cannot run them in parallel.
 		if (info.logicalCores != 0 && info.logicalCores < 3)
 			b.multicoreViable = false;
-		// The cache, the first staging chunk and room for the guest's own working set.
-		b.minBootHeadroomBytes = b.bufferCacheBytes + b.stagingChunkBytes + 192 * MB;
+		// The cache, the first staging chunk and room for the guest's own working set. Sized from the
+		// floor values, so scaling up never makes a game refuse to start where it started before.
+		b.minBootHeadroomBytes = std::min<uint64_t>(b.bufferCacheBytes, floorCache) + floorStaging + 192 * MB;
 #endif
 		return b;
 	}
