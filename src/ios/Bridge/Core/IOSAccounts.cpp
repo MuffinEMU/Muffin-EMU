@@ -9,6 +9,7 @@
 #include "Cafe/Account/Account.h"
 #include "Cafe/CafeSystem.h"
 #include "Cemu/ncrypto/ncrypto.h"
+#include "config/ActiveSettings.h"
 #include "config/CemuConfig.h"
 #include "config/NetworkSettings.h"
 
@@ -226,6 +227,18 @@ bool IOSAccounts_IsOnlineValid(uint32_t persistentId)
 {
 	const Account* account = FindAccount(persistentId);
 	return account && account->IsValidOnlineAccount();
+}
+
+std::string IOSAccounts_OnlineHint()
+{
+	const uint32_t persistentId = GetConfig().account.m_persistent_id.GetValue();
+	const NetworkService service = (NetworkService)GetConfig().GetAccountNetworkService(persistentId);
+	if (service != NetworkService::Pretendo && service != NetworkService::Nintendo)
+		return {};
+	const Account* account = FindAccount(persistentId);
+	if (account && account->IsValidOnlineAccount() && ActiveSettings::HasRequiredOnlineFiles())
+		return {};
+	return "A Pretendo ID can't be created or linked inside MuffinEMU. Link it on a real Wii U, then import that console's account.dat, otp.bin and seeprom.bin in Settings > Network Service.";
 }
 
 int IOSAccounts_OnlineError(uint32_t persistentId)

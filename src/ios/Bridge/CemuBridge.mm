@@ -167,6 +167,7 @@ uint32_t IOSAccounts_ActivePersistentId();
 void IOSAccounts_SetActivePersistentId(uint32_t persistentId);
 bool IOSAccounts_IsOnlineValid(uint32_t persistentId);
 int IOSAccounts_OnlineError(uint32_t persistentId);
+std::string IOSAccounts_OnlineHint();
 std::string IOSAccounts_CountriesList();
 int IOSAccounts_NetworkService(uint32_t persistentId);
 void IOSAccounts_SetNetworkService(uint32_t persistentId, int service);
@@ -184,6 +185,7 @@ int IOSSaveState_InspectFile(const char* path);
 void IOSSystemImplementation_Install();
 bool IOSSystemImplementation_TitleExited(int* statusOut);
 bool IOSSystemImplementation_TitleSwitchFailed();
+bool IOSSystemImplementation_SystemAppletRequested();
 void IOSSystemImplementation_ReportFatal(const char* reason);
 const char* IOSSystemImplementation_FatalReason();
 void IOSSystemImplementation_ResetExit();
@@ -4227,9 +4229,12 @@ const char* cemu_bridge_status_text(void) {
     {
         char line[96];
         snprintf(line, sizeof(line), "The game closed itself (exit status %d).", exitStatus);
-        setStatus(line);
+        const std::string hint = IOSAccounts_OnlineHint();
+        setStatus((hint.empty() ? std::string(line) : std::string(line) + " If it closed after an online account prompt: " + hint).c_str());
     }
-    if (g_titleRunning.load() && IOSSystemImplementation_TitleSwitchFailed())
+    if (g_titleRunning.load() && IOSSystemImplementation_TitleSwitchFailed() && IOSSystemImplementation_SystemAppletRequested())
+        setStatus("The game tried to open the Wii U's account or system settings, which MuffinEMU can't run. A Pretendo ID can't be created or linked inside MuffinEMU: link it on a real Wii U, then import that console's account.dat, otp.bin and seeprom.bin in Settings > Network Service.");
+    else if (g_titleRunning.load() && IOSSystemImplementation_TitleSwitchFailed())
         setStatus("The Wii U Menu tried to open another title and it couldn't be started. Check that game is in your library and its keys are installed, then launch it from the library instead.");
     // Only fall back to a computed default when nothing specific has been set, so a boot
     // failure's reason is not overwritten by a generic line on the next read.

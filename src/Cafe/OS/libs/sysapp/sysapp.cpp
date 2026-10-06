@@ -412,6 +412,16 @@ uint64 _SYSGetSystemApplicationTitleIdByProdArea(uint32 systemApplicationId, uin
 	return systemApplicationTitleId[systemApplicationId].t1;
 }
 
+bool _SYSIsSystemApplicationTitleId(uint64 titleId)
+{
+	for (const auto& entry : systemApplicationTitleId)
+	{
+		if (titleId == entry.t0 || titleId == entry.t1 || titleId == entry.t2)
+			return true;
+	}
+	return false;
+}
+
 uint64 _SYSGetSystemApplicationTitleId(sint32 index)
 {
 	uint32 region = (uint32)CafeSystem::GetPlatformRegion();
