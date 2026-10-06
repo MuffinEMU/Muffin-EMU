@@ -6,10 +6,11 @@ import Foundation
 struct ContentView: View {
     @StateObject var gameManager = GameManager()
     @AppStorage(OnboardingState.completedKey) private var onboardingCompleted = false
-    // Set by SettingsOnboardingRow's "Show welcome guide again" (AboutSettingsSection),
-    // which resets onboardingCompleted but has no view of ContentView's own
-    // fullScreenCover binding to force it to present again if it's already false.
-    @State private var showOnboardingRequested = false
+    // What the welcome guide's full-screen cover follows. Its own state rather than a binding computed from
+    // onboardingCompleted: Settings > About > "Show welcome guide again" clears that flag and posts a notification, and a
+    // cover bound to the flag tried to present while the Settings sheet was still up (SwiftUI drops that), and once
+    // shown could not be closed because only the flag was reset on Finish.
+    @State private var showOnboarding = OnboardingState.shouldPresentOnFirstLaunch
     @State private var selectedGame: GameMetadata?
     @State private var showingGameBrowser = true
     @State private var showingFavorites = false
@@ -76,20 +77,16 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
-        // First launch, and again whenever Settings > About resets the flag.
+        // First launch, and again whenever Settings > About resets the flag. The library closes Settings first
+        // (GameBrowserView), so the guide waits for that sheet to finish going away.
         .onReceive(NotificationCenter.default.publisher(for: .muffinReopenOnboarding)) { _ in
-            showOnboardingRequested = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { showOnboarding = true }
         }
-        .fullScreenCover(isPresented: Binding(
-            get: { !onboardingCompleted || showOnboardingRequested },
-            set: { presented in
-                if !presented {
-                    onboardingCompleted = true
-                    showOnboardingRequested = false
-                }
+        .fullScreenCover(isPresented: $showOnboarding, onDismiss: { onboardingCompleted = true }) {
+            OnboardingView(gameManager: gameManager) {
+                onboardingCompleted = true
+                showOnboarding = false
             }
-        )) {
-            OnboardingView(gameManager: gameManager) { onboardingCompleted = true }
         }
     }
 }
@@ -134,6 +131,26 @@ struct BootFailureView: View {
         return endedWhileRunning ? "\(name) stopped" : "Couldn't start \(name)"
     }
 
+    /// Keys the player added from this screen. Nil until they do.
+    @State private var keysAdded: Int?
+    @State private var keysError: String?
+
+    /// An encrypted disc image or game folder, with no keys.txt installed: the likely reason it didn't start. Homebrew
+    /// (.rpx, .elf, .wuhb), decrypted dumps and .wua archives don't need keys.
+    private var needsKeys: Bool {
+        guard !needsCleanRestart, !endedWhileRunning, keysAdded == nil, !WiiUKeys.keysFileExists() else { return false }
+        return ["wux", "wud", "iso", "tmd"].contains(URL(fileURLWithPath: game.romPath).pathExtension.lowercased())
+    }
+
+    /// What to do next, in plain words. The engine's own message and the log paths are under Details.
+    private var plainLine: String {
+        if needsCleanRestart { return "Close MuffinEMU and open it again from your Home Screen, then start a game." }
+        if endedWhileRunning { return "The game stopped. Go back and try it again. If it keeps happening, close and reopen MuffinEMU." }
+        if needsKeys { return "This game is encrypted, so it needs a keys.txt file to start." }
+        if let keysAdded { return "Added \(keysAdded) key\(keysAdded == 1 ? "" : "s"). Go back and start the game again. If it still won't start, close and reopen MuffinEMU." }
+        return "This game didn't start. Try again. If it keeps happening, close and reopen MuffinEMU."
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -145,6 +162,23 @@ struct BootFailureView: View {
                     content
                         .frame(maxWidth: .infinity, minHeight: proxy.size.height)
                 }
+            }
+        }
+    }
+
+    private func importKeys() {
+        DocumentImport.present(contentTypes: [.item]) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                do {
+                    keysAdded = try WiiUKeys.importKeys(from: url)
+                    keysError = nil
+                } catch {
+                    keysError = error.localizedDescription
+                }
+            case .failure(let error):
+                keysError = error.localizedDescription
             }
         }
     }
@@ -162,37 +196,55 @@ struct BootFailureView: View {
                 .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
 
-            // The engine's own words. Empty only if the bridge never set anything,
-            // which is itself worth seeing rather than papering over.
-            Text(message.isEmpty ? "The engine didn't report a reason." : message)
+            Text(plainLine)
                 .font(.system(.footnote, design: .rounded))
-                .foregroundColor(.white.opacity(0.75))
+                .foregroundColor(.white.opacity(0.85))
                 .multilineTextAlignment(.center)
-                .textSelection(.enabled)
                 .frame(maxWidth: 480)
 
-            if needsCleanRestart {
-                Text("iOS doesn't let an app reopen itself. Tap Close MuffinEMU, then open it again from your Home Screen.")
+            if let keysError {
+                Text(keysError)
                     .font(.system(.footnote, design: .rounded))
-                    .foregroundColor(.white.opacity(0.75))
+                    .foregroundColor(MuffinTheme.alertOnDark)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 480)
             }
 
-            // The real path, asked of the bridge, rather than the folder this used to
-            // name. It said "Files > On My iPad > Cemu", which is true for a normally
-            // installed app and false under LiveContainer - LiveContainer redirects
-            // HOME per hosted app, so the file lands under LiveContainer's own
-            // Documents instead. Anyone who followed the old line looked in the right
-            // place for the wrong install, found nothing, and reasonably concluded no
-            // crash log existed. Selectable, because the useful thing to do with a
-            // path is copy it.
-            Text(Self.crashLogHint)
-                .font(.system(.caption2, design: .rounded))
-                .foregroundColor(.white.opacity(0.6))
-                .multilineTextAlignment(.center)
-                .textSelection(.enabled)
-                .frame(maxWidth: 480)
+            if needsKeys {
+                Button(action: importKeys) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "key.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Import keys.txt")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    }
+                }
+                .buttonStyle(MuffinPrimaryButtonStyle())
+            }
+
+            // The engine's own words and where the logs are, for anyone reporting the problem. Empty message only if
+            // the bridge never set anything, which is itself worth seeing rather than papering over. The path is
+            // asked of the bridge: LiveContainer redirects HOME per hosted app, so a written-down folder is wrong there.
+            DisclosureGroup("Details") {
+                VStack(spacing: 10) {
+                    Text(message.isEmpty ? "The engine didn't report a reason." : message)
+                        .font(.system(.footnote, design: .rounded))
+                        .foregroundColor(.white.opacity(0.75))
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+                    Text(Self.crashLogHint)
+                        .font(.system(.caption2, design: .rounded))
+                        .foregroundColor(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 8)
+            }
+            .font(.system(.footnote, design: .rounded))
+            .foregroundColor(.white.opacity(0.75))
+            .accentColor(.white.opacity(0.75))
+            .frame(maxWidth: 480)
 
             if needsCleanRestart {
                 // Closing is the player's own tap, never automatic. iOS gives an app no way to relaunch itself, and
@@ -215,7 +267,7 @@ struct BootFailureView: View {
                         .font(.system(size: 14, weight: .semibold, design: .rounded))
                 }
             }
-            .buttonStyle(MuffinSecondaryButtonStyle())
+            .buttonStyle(MuffinBarButtonStyle())
             .padding(.top, 4)
         }
         .padding(32)
@@ -229,12 +281,16 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
     case title
     case recentlyAdded
     case favoritesFirst
+    case lastPlayed
+    case mostPlayed
 
     var title: String {
         switch self {
         case .title: return "Title"
         case .recentlyAdded: return "Recently added"
-        case .favoritesFirst: return "Favorites first"
+        case .favoritesFirst: return "Favourites first"
+        case .lastPlayed: return "Last played"
+        case .mostPlayed: return "Most played"
         }
     }
 
@@ -243,6 +299,8 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
         case .title: return "textformat"
         case .recentlyAdded: return "clock"
         case .favoritesFirst: return "heart"
+        case .lastPlayed: return "clock.arrow.circlepath"
+        case .mostPlayed: return "flame"
         }
     }
 
@@ -256,15 +314,34 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
     /// `favoritesFirst` groups favorites first and sorts by title WITHIN each group -
     /// not a stable no-op, since "grouped, but otherwise still alphabetical" is what
     /// actually makes the option useful once there's more than a couple of favorites.
-    func sorted(_ games: [GameMetadata]) -> [GameMetadata] {
+    func sorted(_ games: [GameMetadata], stats: LibraryPlayStats = .shared) -> [GameMetadata] {
+        let byTitle: (GameMetadata, GameMetadata) -> Bool = {
+            $0.sortTitle.localizedCaseInsensitiveCompare($1.sortTitle) == .orderedAscending
+        }
         switch self {
+        case .lastPlayed:
+            // Never-played games go after the played ones, in title order.
+            return games.sorted { lhs, rhs in
+                switch (stats.entry(for: lhs.id)?.last, stats.entry(for: rhs.id)?.last) {
+                case let (l?, r?): return l > r
+                case (nil, nil): return byTitle(lhs, rhs)
+                case (nil, _): return false
+                case (_, nil): return true
+                }
+            }
+        case .mostPlayed:
+            return games.sorted { lhs, rhs in
+                let l = stats.entry(for: lhs.id)?.count ?? 0
+                let r = stats.entry(for: rhs.id)?.count ?? 0
+                return l != r ? l > r : byTitle(lhs, rhs)
+            }
         case .title:
-            return games.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            return games.sorted { $0.sortTitle.localizedCaseInsensitiveCompare($1.sortTitle) == .orderedAscending }
         case .recentlyAdded:
             return games.sorted { lhs, rhs in
                 switch (lhs.addedDate, rhs.addedDate) {
                 case let (l?, r?): return l > r
-                case (nil, nil): return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                case (nil, nil): return lhs.sortTitle.localizedCaseInsensitiveCompare(rhs.sortTitle) == .orderedAscending
                 case (nil, _): return false
                 case (_, nil): return true
                 }
@@ -272,7 +349,7 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
         case .favoritesFirst:
             return games.sorted { lhs, rhs in
                 if lhs.isFavorite != rhs.isFavorite { return lhs.isFavorite && !rhs.isFavorite }
-                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                return lhs.sortTitle.localizedCaseInsensitiveCompare(rhs.sortTitle) == .orderedAscending
             }
         }
     }
@@ -345,6 +422,15 @@ struct GameBrowserView: View {
     /// Same pattern again, for "Change Cover Art…" (CoverArtPickerView.swift).
     @State private var coverArtTarget: GameMetadata?
     @ObservedObject private var perGameSettings = PerGameSettingsStore.shared
+    @ObservedObject private var playStats = LibraryPlayStats.shared
+    @ObservedObject private var customNames = LibraryCustomNames.shared
+    @State private var renameTarget: GameMetadata?
+    @AppStorage(LibraryCardStyle.storageKey) private var cardStyleRaw = LibraryCardStyle.defaultValue.rawValue
+    @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
+    @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
+    @Environment(\.scenePhase) private var scenePhase
+    /// Set by "Remove game...". Deleting waits for the confirmation below.
+    @State private var pendingGameRemoval: GameMetadata?
     /// What the picker is being opened for.
     ///
     /// A document picker only lets you SELECT a directory when UTType.folder is among
@@ -366,6 +452,7 @@ struct GameBrowserView: View {
     /// that file for why the button did nothing when it was a SwiftUI modifier.
     private static let fileImportTypes: [UTType] = [.item]
     private static let folderImportTypes: [UTType] = [.folder]
+    private static let helpURL = URL(string: "https://muffinemu.github.io/MuffinEMU/docs/")!
 
     /// Persisted so the chosen order survives a relaunch, same reasoning as favorites.
     @AppStorage("muffin.library.sortOrder") private var sortOrderRaw = LibrarySortOrder.title.rawValue
@@ -417,8 +504,21 @@ struct GameBrowserView: View {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
         let searched = searchText.isEmpty
             ? gamesToShow
-            : gamesToShow.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-        return sortOrder.sorted(searched)
+            : gamesToShow.filter {
+                $0.title.localizedCaseInsensitiveContains(searchText)
+                    || ($0.displayTitle?.localizedCaseInsensitiveContains(searchText) ?? false)
+                    || (customNames.name(for: $0.settingsKey)?.localizedCaseInsensitiveContains(searchText) ?? false)
+            }
+        let filtered = (LibraryFilter(rawValue: filterRaw) ?? .all).apply(searched, stats: playStats)
+        return sortOrder.sorted(filtered, stats: playStats)
+    }
+
+    private var libraryCardStyle: LibraryCardStyle {
+        LibraryCardStyle(rawValue: cardStyleRaw) ?? .standard
+    }
+
+    private var librarySections: [LibrarySection] {
+        (LibraryGrouping(rawValue: groupingRaw) ?? .none).sections(for: filteredGames, stats: playStats)
     }
 
     /// The Menu is offered in the library at all: installed, not hidden, and not being
@@ -439,6 +539,14 @@ struct GameBrowserView: View {
     var body: some View {
         withAlerts(withSheets(
             libraryScreen
+            // Games dropped into Files > On My iPad > MuffinEMU > Roms while the app was in the background show up on return.
+            .onChange(of: scenePhase) { phase in
+                if phase == .active { Task { await gameManager.rescanIfIdle() } }
+            }
+            // The welcome guide (ContentView) can't present over the Settings sheet, so close it first.
+            .onReceive(NotificationCenter.default.publisher(for: .muffinReopenOnboarding)) { _ in
+                showingSettings = false
+            }
             .onAppear {
                 #if os(iOS)
                 // Back at the library with nothing running: take back any starting controls or screen
@@ -544,13 +652,13 @@ struct GameBrowserView: View {
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
-                    .accessibilityLabel(showingFavorites ? "Show all games" : "Show favorites only")
+                    .accessibilityLabel(showingFavorites ? "Show all games" : "Show favourites only")
 
                     Menu {
                         Button {
                             beginImport(contentTypes: Self.fileImportTypes)
                         } label: {
-                            Label("Game file (.wux, .wud, .wua, .iso, .rpx, .elf, .wuhb)", systemImage: "doc")
+                            Label("Game file", systemImage: "doc")
                         }
                         Button {
                             beginImport(contentTypes: Self.folderImportTypes)
@@ -561,7 +669,12 @@ struct GameBrowserView: View {
                             // layouts apart on its own regardless of which button was
                             // tapped), so there was nothing for a second entry to actually
                             // distinguish. This label just says what the one picker accepts.
-                            Label("Game folder (code/content/meta, or title.tmd + .app files)", systemImage: "folder")
+                            Label("Game folder", systemImage: "folder")
+                        }
+                        Button {
+                            beginKeysImport()
+                        } label: {
+                            Label("Keys (keys.txt)", systemImage: "key")
                         }
                         Divider()
                         Button {
@@ -573,6 +686,10 @@ struct GameBrowserView: View {
                             beginGeneralDlcUpdateImport(kind: .update)
                         } label: {
                             Label("Import Update\u{2026}", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        Divider()
+                        Link(destination: Self.helpURL) {
+                            Label("Help & troubleshooting", systemImage: "questionmark.circle")
                         }
                     } label: {
                         // Same bug and same colour as the two buttons above, but stated
@@ -636,6 +753,8 @@ struct GameBrowserView: View {
                         .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Sort games")
+
+                LibraryViewMenu()
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -651,20 +770,24 @@ struct GameBrowserView: View {
                 LoadingView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if filteredGames.isEmpty && !showsMenuCard {
-                EmptyGamesView(onImportTapped: { beginImport(contentTypes: Self.fileImportTypes) })
+                EmptyGamesView(
+                    kind: !searchText.isEmpty ? .noSearchMatch(searchText) : (showingFavorites ? .noFavourites : .emptyLibrary),
+                    onImportTapped: { beginImport(contentTypes: Self.fileImportTypes) }
+                )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 140), spacing: 16)],
-                        spacing: 20
-                    ) {
+                LibraryGameCollection(
+                    sections: librarySections,
+                    style: libraryCardStyle,
+                    lead: {
                         if showsMenuCard {
                             WiiUMenuCard(onLaunch: launchMenu)
                         }
-                        ForEach(filteredGames) { game in
-                            GameCardOptimized(
+                    },
+                    card: { game in
+                            LibraryCard(
                                 game: game,
+                                style: libraryCardStyle,
                                 onTap: {
                                     // A second tap while a launch is under way must not swap the
                                     // game the screen thinks it is showing.
@@ -675,30 +798,17 @@ struct GameBrowserView: View {
                                 },
                                 onFavoriteTap: {
                                     gameManager.toggleFavorite(game)
-                                }
+                                },
+                                options: { gameMenu(for: game) }
                             )
                             // Same pattern as Manic: a long-press on the card
                             // offers a couple of fast toggles plus a way into the
                             // full screen, rather than making every per-game
-                            // setting a trip through Settings for one game.
-                            .contextMenu {
-                                GameContextMenu(
-                                    game: game,
-                                    store: perGameSettings,
-                                    gameManager: gameManager,
-                                    onViewOptions: { gameOptionsTarget = game },
-                                    onDecryptToFiles: { decryptTarget = game },
-                                    onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
-                                    onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
-                                    onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
-                                    onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) },
-                                    onChangeCoverArt: { coverArtTarget = game }
-                                )
-                            }
-                        }
+                            // setting a trip through Settings for one game. The
+                            // "..." button on the card opens the same menu.
+                            .contextMenu { gameMenu(for: game) }
                     }
-                    .padding(16)
-                }
+                )
             }
         }
         .frame(maxHeight: .infinity)
@@ -723,6 +833,29 @@ struct GameBrowserView: View {
         }
     }
 
+    /// The per-game menu: the long-press menu, and the "..." button on each card.
+    @ViewBuilder private func gameMenu(for game: GameMetadata) -> some View {
+        GameContextMenu(
+            game: game,
+            store: perGameSettings,
+            gameManager: gameManager,
+            onViewOptions: { gameOptionsTarget = game },
+            onDecryptToFiles: { decryptTarget = game },
+            onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
+            onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
+            onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
+            onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) },
+            onChangeCoverArt: { coverArtTarget = game },
+            onRename: { renameTarget = game }
+        )
+        Divider()
+        Button(role: .destructive) {
+            pendingGameRemoval = game
+        } label: {
+            DestructiveSettingsLabel(title: "Remove game\u{2026}", systemImage: "trash")
+        }
+    }
+
     private func withSheets<Content: View>(_ content: Content) -> some View {
         content
             .sheet(isPresented: $showingIconPicker) {
@@ -730,6 +863,9 @@ struct GameBrowserView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView(gameManager: gameManager)
+            }
+            .sheet(item: $renameTarget) { game in
+                LibraryRenameSheet(game: game)
             }
             .sheet(item: $gameOptionsTarget) { game in
                 GameOptionsView(game: game, store: perGameSettings, libraryGames: gameManager.games)
@@ -759,7 +895,7 @@ struct GameBrowserView: View {
             } message: { message in
                 Text(message)
             }
-            .alert("Couldn't import ROM", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
+            .alert("Couldn't add that game", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
                 Button("OK") { romImportErrorMessage = nil }
             } message: { message in
                 Text(message)
@@ -812,6 +948,28 @@ struct GameBrowserView: View {
                 Text("Remove the \(pending.kind.displayName) installed for \"\(pending.game.title)\"? This can't be undone - you'll need to import it again.")
             }
             .confirmationDialog(
+                "Remove this game?",
+                isPresented: .constant(pendingGameRemoval != nil),
+                titleVisibility: .visible,
+                presenting: pendingGameRemoval
+            ) { pending in
+                Button("Remove game", role: .destructive) {
+                    pendingGameRemoval = nil
+                    removingContentMessage = "Removing \"\(pending.cardName.name)\"\u{2026}"
+                    Task {
+                        do {
+                            try await gameManager.removeGame(pending)
+                        } catch {
+                            dlcImportErrorMessage = error.localizedDescription
+                        }
+                        removingContentMessage = nil
+                    }
+                }
+                Button("Cancel", role: .cancel) { pendingGameRemoval = nil }
+            } message: { pending in
+                Text("This deletes \"\(pending.cardName.name)\" from MuffinEMU to free up space. Your saves and options are kept. To play it again, add the game back.")
+            }
+            .confirmationDialog(
                 "Replace existing file?",
                 isPresented: .constant(pendingOverwriteConfirmation != nil),
                 titleVisibility: .visible,
@@ -830,6 +988,25 @@ struct GameBrowserView: View {
             } message: { pending in
                 Text("\"\(pending.name)\" already exists in your library. Replacing it can't be undone.")
             }
+    }
+
+    /// keys.txt from the same menu as games. .item for the same reason as the game picker: a keys.txt can carry no useful
+    /// type, and WiiUKeys.importKeys checks the contents.
+    private func beginKeysImport() {
+        DocumentImport.present(contentTypes: Self.fileImportTypes) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                do {
+                    let count = try WiiUKeys.importKeys(from: url)
+                    dlcUpdateSuccessMessage = "Added \(count) key\(count == 1 ? "" : "s"). Games use them the next time you start one. If you've already started a game since opening MuffinEMU, close and reopen MuffinEMU first."
+                } catch {
+                    dlcImportErrorMessage = error.localizedDescription
+                }
+            case .failure(let error):
+                dlcImportErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     private func beginImport(contentTypes: [UTType]) {
@@ -993,10 +1170,20 @@ struct RoundedCorner: Shape {
     }
 }
 
-struct GameCardOptimized: View {
+struct GameCardOptimized<Options: View>: View {
     let game: GameMetadata
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
+    /// The per-game menu behind the "..." button (the same one a long-press opens).
+    let options: Options
+
+    init(game: GameMetadata, onTap: @escaping () -> Void, onFavoriteTap: @escaping () -> Void,
+         @ViewBuilder options: () -> Options) {
+        self.game = game
+        self.onTap = onTap
+        self.onFavoriteTap = onFavoriteTap
+        self.options = options()
+    }
 
     private var cardName: (name: String, titleIdText: String?) { game.cardName }
 
@@ -1028,6 +1215,21 @@ struct GameCardOptimized: View {
 
                 VStack {
                     HStack {
+                        // Everything long-press offers, where it can be found without knowing to long-press.
+                        Menu {
+                            options
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(MuffinTheme.sparkleCream)
+                                .frame(width: 32, height: 32)
+                                .background(Color.black.opacity(0.4))
+                                .cornerRadius(10)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityLabel("More options for \(cardName.name)")
+                        .padding(8)
                         Spacer()
                         Button(action: onFavoriteTap) {
                             Image(systemName: game.isFavorite ? "heart.fill" : "heart")
@@ -1044,7 +1246,7 @@ struct GameCardOptimized: View {
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .accessibilityLabel(game.isFavorite ? "Remove from favorites" : "Add to favorites")
+                        .accessibilityLabel(game.isFavorite ? "Remove from favourites" : "Add to favourites")
                         .padding(8)
                     }
                     Spacer()
@@ -1101,6 +1303,10 @@ struct GameCardOptimized: View {
                 .stroke(MuffinTheme.wrapper, lineWidth: 1)
         )
         .shadow(color: MuffinTheme.shadow.opacity(0.15), radius: 8, x: 0, y: 4)
+        // The whole card starts the game, not only the Play button. The heart, the "..." button and Play keep
+        // their own taps (a child's gesture wins over this one), and VoiceOver still finds Play as a button.
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture(perform: onTap)
     }
 }
 
@@ -1166,44 +1372,83 @@ struct LoadingView: View {
 }
 
 struct EmptyGamesView: View {
+    enum Kind: Equatable {
+        case emptyLibrary
+        case noFavourites
+        case noSearchMatch(String)
+    }
+
+    let kind: Kind
     let onImportTapped: () -> Void
+
+    private var symbol: String {
+        switch kind {
+        case .emptyLibrary: return "doc.questionmark"
+        case .noFavourites: return "heart"
+        case .noSearchMatch: return "magnifyingglass"
+        }
+    }
+
+    private var heading: String {
+        switch kind {
+        case .emptyLibrary: return "No Games Yet"
+        case .noFavourites: return "No Favourites Yet"
+        case .noSearchMatch: return "No Matches"
+        }
+    }
+
+    private var lines: [String] {
+        switch kind {
+        case .emptyLibrary:
+            return ["Tap Import a Game, or put game files in Files > On My iPad > MuffinEMU > Roms.",
+                    "Games you add there show up when you come back to MuffinEMU."]
+        case .noFavourites:
+            return ["Tap the heart on a game to add it here."]
+        case .noSearchMatch(let text):
+            return ["Nothing matches \"\(text)\"."]
+        }
+    }
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "doc.questionmark")
+            Image(systemName: symbol)
                 .font(.system(size: 56, weight: .regular))
                 .foregroundColor(MuffinTheme.muffinTopDark.opacity(0.5))
+                .accessibilityHidden(true)
 
             VStack(spacing: 8) {
-                Text("No Games Found")
+                Text(heading)
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .foregroundColor(MuffinTheme.brownDarkest)
+                    .accessibilityAddTraits(.isHeader)
 
                 VStack(alignment: .center, spacing: 4) {
-                    Text("Add .wux, .wud, .wua, .rpx, .elf, .wuhb, or .iso files")
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownMid)
-
-                    Text("to Documents/Roms/ on your device")
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
-                        .foregroundColor(MuffinTheme.brownMid)
+                    ForEach(lines, id: \.self) { line in
+                        Text(line)
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                            .foregroundColor(MuffinTheme.brownMid)
+                            .multilineTextAlignment(.center)
+                    }
                 }
+                .padding(.horizontal, 24)
             }
 
             // Same import flow as the toolbar's menu (GameBrowserView.beginImport) -
             // an empty library used to have no way to start an import except that
             // small menu button up top, which is easy to miss on a screen whose whole
             // point is "there's nothing here yet."
-            Button(action: onImportTapped) {
-                HStack(spacing: 6) {
-                    Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text("Import a Game")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+            if kind == .emptyLibrary {
+                Button(action: onImportTapped) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.badge.plus")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Import a Game")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    }
                 }
+                .buttonStyle(MuffinPrimaryButtonStyle())
+                .padding(.top, 4)
             }
-            .buttonStyle(MuffinPrimaryButtonStyle())
-            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1574,8 +1819,8 @@ struct EmulatorViewOptimized: View {
         }
         if atStart && gameManager.launchNotice != nil { return }
         gameManager.showLaunchNotice(hide
-            ? "Controller connected, on-screen controls hidden"
-            : "Controller disconnected, on-screen controls shown")
+            ? "Controller connected. On-screen controls hidden. Press HOME for the menu."
+            : "Controller disconnected. On-screen controls shown.")
     }
 
     // MARK: HOME menu
@@ -1628,8 +1873,13 @@ struct EmulatorViewOptimized: View {
     }
 
     /// HOME toggles the menu; B (a controller) backs out of the save-state sheet. Up, down, A and
-    /// B inside the menu itself are handled by HomeMenuOverlay.
+    /// B inside the menu itself are handled by HomeMenuOverlay. While the controls are being moved,
+    /// HOME and B both finish that (a controller has no way to tap Done).
     private func handleHomeMenuEvent(_ event: HomeMenuEvent) {
+        if isEditingControlLayout {
+            if event == .homeButton || event == .back { finishEditingLayout() }
+            return
+        }
         switch event {
         case .homeButton:
             if showSaveStates {
@@ -1659,7 +1909,11 @@ struct EmulatorViewOptimized: View {
                 resume: closeHomeMenu,
                 saveStates: openSaveStates,
                 moveControls: moveControlsFromHomeMenu,
-                quit: { showingBackConfirmation = true },
+                // Already confirmed, on the menu's own "Quit game?" page.
+                quit: {
+                    gameManager.stopEmulation()
+                    isRunning = true
+                },
                 swapScreens: swapScreensFromHomeMenu
             )
         )
@@ -1803,27 +2057,17 @@ struct EmulatorViewOptimized: View {
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("Any progress the game itself hasn't saved will be lost.")
+                        Text("Any progress the game itself hasn't saved will be lost. Save states can't be loaded after you quit.")
                     }
 
                     // Upright there is no room for the name beside the buttons.
+                    // The skin's name used to sit under this at 9pt, too small to read; the skin picker shows it.
                     if !isPhonePortrait {
-                    VStack(alignment: .center, spacing: 2) {
-                        Text(gameName)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-
-                        // Skins colour MuffinEMU's own pad only; the other pads draw their own colours.
-                        // accentOnDark: the bar is always dark, and several light-mode
-                        // accents (Blueberry, Equality, Galaxy, Neon) were navy on it.
-                        if padSystem == .muffin {
-                            Text(controllerSkin.name)
-                                .font(.system(size: 9, weight: .regular, design: .rounded))
-                                .foregroundColor(MuffinTheme.accentOnDark)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
+                    Text(gameName)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity)
                     }
 
                     TopBarOverflowScroll {
@@ -1953,7 +2197,7 @@ struct EmulatorViewOptimized: View {
                             Image(systemName: "house.fill")
                                 .font(.system(size: 12, weight: .semibold))
                         }
-                        .buttonStyle(MuffinSecondaryButtonStyle())
+                        .buttonStyle(MuffinBarButtonStyle())
                         .disabled(gameManager.emulationState != .running || showHomeMenu || isEditingControlLayout)
                         .accessibilityLabel("HOME menu")
 
@@ -2047,6 +2291,8 @@ struct EmulatorViewOptimized: View {
                 // Before the measurement, never after it: see TopBarHidingEffect.
                 .topBarAutoHideEffect(hidden: topBarHidden, slideDistance: topBarHeight, slides: !reduceMotion)
                 .reportTopBarBottom()
+                // The bar and the pads are laid out against measured sizes, so they stop growing at Extra Large.
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
 
                 if showSkinSelector {
                     VStack(spacing: 6) {
@@ -2105,6 +2351,7 @@ struct EmulatorViewOptimized: View {
             // renders when that flag is off, which is also its default.
             // Melo-Controller's pad, when chosen, takes the place of both of MuffinEMU's.
             if !padControlsHidden {
+                Group {
                 if useMeloControls {
                     // Upright, Melo-Controller gets only the area under the picture; it lays its
                     // buttons out itself, so that is all that can be done for it.
@@ -2157,6 +2404,8 @@ struct EmulatorViewOptimized: View {
                     .onAppear { PadDiagnostics.shared.report(activePad: .muffin) }
                     }
                 }
+                }
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
             }
 
             // Last thing added to this ZStack, so it draws over every control and over the
@@ -2373,6 +2622,8 @@ struct EmulatorViewOptimized: View {
         // up paused, or it runs on in the background.
         .onChange(of: gameManager.emulationState) { state in
             guard state == .running else { return }
+            // After the launch intro has had its moment.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { showGamePadHintIfNeeded() }
             if scenePhase != .active && !isPaused {
                 isPaused = true
                 pausedByLifecycle = true
@@ -2386,13 +2637,15 @@ struct EmulatorViewOptimized: View {
         // TV-side game at all until they remembered to look for it again.
         .onChange(of: isPadViewVisible) { visible in
             if !visible && !padHiddenByController { padControlsHidden = false }
+            if visible { showGamePadHintIfNeeded() }
         }
         // Keeps the home indicator (and the system's own edge-swipe gestures) from
         // popping up mid-game - a stray swipe near the bottom edge no longer competes
         // with on-screen controls sitting right where it appears.
         .hidingSystemOverlaysDuringPlay()
         .modifier(HeatNoticeModifier { gameManager.showLaunchNotice($0) })
-        .modifier(HomeMenuEventsModifier(isOpen: showHomeMenu, onEvent: handleHomeMenuEvent))
+        // Also on while the controls are being moved: a controller's B only reaches the app while it is captured.
+        .modifier(HomeMenuEventsModifier(isOpen: showHomeMenu || isEditingControlLayout, onEvent: handleHomeMenuEvent))
         .modifier(ControllerAutoHideModifier(apply: setPadHiddenByController))
         .overlay(alignment: .top) {
             if showsStallCard {
@@ -2537,6 +2790,37 @@ struct EmulatorViewOptimized: View {
         try? await Task.sleep(nanoseconds: TopBarAutoHide.hideDelayNanoseconds)
         guard !Task.isCancelled else { return }
         setTopBarHidden(true)
+        showHintOnce(Self.topBarHintKey, "Tap the top edge to bring the bar back.")
+    }
+
+    // MARK: One-time hints
+
+    private static let topBarHintKey = "muffin.hint.topBarReveal"
+    private static let gamePadHintKey = "muffin.hint.gamePadTouch"
+
+    /// Says `text` as a notice the first time only (the key is remembered), and not on top of another notice: if one is
+    /// up, it tries again a few seconds later, a few times. `ready` is checked again then.
+    private func showHintOnce(_ key: String, _ text: String, attempts: Int = 3, ready: @escaping () -> Bool = { true }) {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: key), ready() else { return }
+        if gameManager.launchNotice != nil {
+            guard attempts > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                showHintOnce(key, text, attempts: attempts - 1, ready: ready)
+            }
+            return
+        }
+        defaults.set(true, forKey: key)
+        gameManager.showLaunchNotice(text)
+    }
+
+    /// The first time a GamePad screen is on this device during a running game.
+    private func showGamePadHintIfNeeded() {
+        #if os(iOS)
+        showHintOnce(Self.gamePadHintKey, "Tap the GamePad screen to use it in the game.", ready: {
+            gameManager.emulationState == .running && (isPadViewVisible || padIsOnDeviceInDualScreen)
+        })
+        #endif
     }
 
     private func setTopBarHidden(_ hidden: Bool) {
@@ -2545,8 +2829,20 @@ struct EmulatorViewOptimized: View {
 
     @ViewBuilder private var topBarRevealHandle: some View {
         if topBarHidden {
+            // Over a visible GamePad screen the big handle would sit on the part of the touchscreen a game may use,
+            // so a compact one takes its place there.
+            #if os(iOS)
+            if isPadViewVisible || padIsOnDeviceInDualScreen {
+                CompactTopBarRevealHandle { setTopBarHidden(false) }
+                    .transition(.opacity)
+            } else {
+                TopBarRevealHandle { setTopBarHidden(false) }
+                    .transition(.opacity)
+            }
+            #else
             TopBarRevealHandle { setTopBarHidden(false) }
                 .transition(.opacity)
+            #endif
         }
     }
 
@@ -2580,8 +2876,8 @@ struct EmulatorViewOptimized: View {
     private var stallAdvice: String {
         switch gameManager.videoStallKind {
         case 2: return "iOS stopped running this game's graphics. Tap Save State, then Quit Game. MuffinEMU will then ask you to close and reopen it before the next game."
-        case 3: return "Tap Save State, then Quit Game and reopen MuffinEMU. A lower Resolution (Settings, Graphics) uses less memory."
-        case 4: return "iOS may close MuffinEMU soon. Tap Save State now. A lower Resolution (Settings, Graphics) uses less memory."
+        case 3: return "Tap Save State, then Quit Game and reopen MuffinEMU. After you quit, a lower Resolution (in Settings, Graphics) uses less memory."
+        case 4: return "iOS may close MuffinEMU soon. Tap Save State now. After you quit, a lower Resolution (in Settings, Graphics) uses less memory."
         case 5: return "The game is still running but the screen isn't taking frames. This goes away by itself if it recovers. If it doesn't, tap Save State, then Quit Game and reopen MuffinEMU."
         default: return "The picture has stopped while the game keeps running. This goes away by itself if the picture comes back."
         }
@@ -2630,7 +2926,7 @@ struct EmulatorViewOptimized: View {
                     stallSaveRequested = false
                 }
             }
-            .buttonStyle(MuffinSecondaryButtonStyle())
+            .buttonStyle(MuffinBarButtonStyle())
         }
         .padding(14)
         .background(Color.black.opacity(0.78), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -2722,6 +3018,10 @@ struct EmulatorViewOptimized: View {
 
                     padScreen
                         .frame(width: padWidth, height: padHeight)
+                        // Below the top bar while it is showing, so the bar's buttons don't sit on the GamePad
+                        // screen and eat its taps.
+                        .padding(.top, topBarHidden ? 0 : max(0, topBarHeight - geometry.frame(in: .global).minY))
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: topBarHidden)
                 }
             } else if portrait {
                 VStack(spacing: 0) { screens }
