@@ -339,6 +339,29 @@ void RendererShaderVk::CompileInternal(bool isRenderThread)
 	if (!Shader.parse(&Resources, 100, false, messagesParseLink))
 	{
 		cemuLog_log(LogType::Force, fmt::format("GLSL parsing failed for {:016x}_{:016x}: \"{}\"", m_baseHash, m_auxHash, Shader.getInfoLog()));
+		{
+			// the error line numbers refer to the preprocessed text: log the lines around the first error so a bad emitter path can be found from a device log
+			const std::string infoLog = Shader.getInfoLog();
+			const size_t errPos = infoLog.find("ERROR: 0:");
+			if (errPos != std::string::npos)
+			{
+				const int errLine = atoi(infoLog.c_str() + errPos + 9);
+				int lineNo = 1;
+				size_t begin = 0;
+				std::string excerpt;
+				while (begin < PreprocessedGLSL.size() && lineNo <= errLine + 1)
+				{
+					size_t end = PreprocessedGLSL.find('\n', begin);
+					if (end == std::string::npos)
+						end = PreprocessedGLSL.size();
+					if (lineNo >= errLine - 3)
+						excerpt += fmt::format("{:4}| {}\n", lineNo, PreprocessedGLSL.substr(begin, end - begin));
+					begin = end + 1;
+					lineNo++;
+				}
+				cemuLog_log(LogType::Force, "GLSL source around line {} of {:016x}_{:016x}:\n{}", errLine, m_baseHash, m_auxHash, excerpt);
+			}
+		}
 		cemuLog_logDebug(LogType::Force, "GLSL source:\n{}", m_glslCode);
 		cemu_assert_debug(false);
 		FinishCompilation();
