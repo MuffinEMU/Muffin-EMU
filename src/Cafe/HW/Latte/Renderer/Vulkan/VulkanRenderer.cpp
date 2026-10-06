@@ -28,6 +28,7 @@
 #include "Cafe/TitleList/GameInfo.h"
 
 #include "Cafe/HW/Latte/Core/LatteTiming.h" // vsync control
+#include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h" // GPU-thread breadcrumbs read by the iOS stall watchdog
 
 #include <cstdint>
@@ -1251,6 +1252,31 @@ void VulkanRenderer::StopUsingPadAndWait()
 bool VulkanRenderer::IsPadWindowActive()
 {
 	return IsSwapchainInfoValid(false);
+}
+
+// Called by the overlay's update thread. Unified memory on Apple: the device-local heaps are the working set the OS grants this process.
+bool VulkanRenderer::GetVRAMInfo(int& usageInMB, int& totalInMB) const
+{
+	usageInMB = totalInMB = -1;
+	if (!m_featureControl.deviceExtensions.memory_budget || !vkGetPhysicalDeviceMemoryProperties2)
+		return false;
+	VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT };
+	VkPhysicalDeviceMemoryProperties2 props2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2 };
+	props2.pNext = &budget;
+	vkGetPhysicalDeviceMemoryProperties2(m_physicalDevice, &props2);
+	uint64 usage = 0, total = 0;
+	for (uint32 i = 0; i < props2.memoryProperties.memoryHeapCount; i++)
+	{
+		if (!(props2.memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT))
+			continue;
+		usage += budget.heapUsage[i];
+		total += budget.heapBudget[i];
+	}
+	if (total == 0)
+		return false;
+	usageInMB = (int)(usage / (1024 * 1024));
+	totalInMB = (int)(total / (1024 * 1024));
+	return true;
 }
 
 void VulkanRenderer::HandleScreenshotRequest(LatteTextureView* texView, bool padView)
@@ -3761,6 +3787,8 @@ void VulkanRenderer::SwapBuffer(bool mainWindow)
             chainInfo.m_queueDepth++;
             chainInfo.m_presentId++;
             LatteWait::Get().presentedFrames.fetch_add(1, std::memory_order_relaxed);
+            // the overlay's "host fps" counts these; the Metal renderer bumps the same counters at its present
+            (chainInfo.mainWindow ? PerfTelemetry::Get().tvPresents : PerfTelemetry::Get().padPresents).fetch_add(1, std::memory_order_relaxed);
         }
         
         chainInfo.hasDefinedSwapchainImage = false;

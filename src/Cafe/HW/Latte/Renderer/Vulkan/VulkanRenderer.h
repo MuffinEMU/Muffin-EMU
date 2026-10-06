@@ -202,6 +202,7 @@ public:
 
 	void StopUsingPadAndWait();
 	bool IsPadWindowActive() override;
+	bool GetVRAMInfo(int& usageInMB, int& totalInMB) const override;
 
 	void HandleScreenshotRequest(LatteTextureView* texView, bool padView) override;
 
