@@ -1,0 +1,57 @@
+import Foundation
+
+/// Whether online play can work for an account, and plain words for what is missing. The engine's own
+/// rule is ActiveSettings::IsOnlineEnabled(): the account needs a linked NNID/PNID login
+/// (Account::GetOnlineAccountError()) and otp.bin and seeprom.bin must be in place. Nothing here
+/// invents or fills in account data; all of it has to come from the user's own Wii U.
+enum OnlineReadiness {
+    /// What is missing, as short phrases. Empty means online play is ready.
+    static func missingItems(accountId: UInt32) -> [String] {
+        var missing: [String] = []
+        switch cemu_bridge_account_online_error(accountId) {
+        case 0: break
+        case 2, 3: missing.append("a saved password for the linked Pretendo or Nintendo Network ID on this account")
+        case 4: missing.append("a principal ID in this account")
+        default: missing.append("a linked Pretendo or Nintendo Network ID on this account")
+        }
+        let fm = FileManager.default
+        if let root = WiiUMenu.mlcRootURL {
+            if !fm.fileExists(atPath: root.appendingPathComponent("otp.bin").path) { missing.append("otp.bin") }
+            if !fm.fileExists(atPath: root.appendingPathComponent("seeprom.bin").path) { missing.append("seeprom.bin") }
+        }
+        return missing
+    }
+
+    static let howToFix = "A linked account has to come from a real Wii U. Link a Pretendo Network ID (PNID) on the console, then dump account.dat, otp.bin and seeprom.bin from it and import them with Import from Wii U in Settings > Account."
+
+    private static func list(_ items: [String]) -> String {
+        switch items.count {
+        case 0: return ""
+        case 1: return items[0]
+        case 2: return "\(items[0]) and \(items[1])"
+        default: return items.dropLast().joined(separator: ", ") + ", and " + items[items.count - 1]
+        }
+    }
+
+    /// A note for Settings when the selected service is Pretendo or Nintendo and online play can't work.
+    static func note(accountId: UInt32, service: NetworkService) -> String? {
+        guard service == .pretendo || service == .nintendo else { return nil }
+        let missing = missingItems(accountId: accountId)
+        guard !missing.isEmpty else { return nil }
+        return "Online play can't work yet. Missing: \(list(missing)). \(howToFix)"
+    }
+
+    private static var noticeShown = false
+
+    /// A short line for the banner at game launch, once per app session; nil when online play is fine or
+    /// Pretendo isn't the selected service.
+    static func launchNotice() -> String? {
+        guard !noticeShown else { return nil }
+        let accountId = cemu_bridge_active_account_persistent_id()
+        guard NetworkService(cemu_bridge_network_service(accountId)) == .pretendo else { return nil }
+        let missing = missingItems(accountId: accountId)
+        guard !missing.isEmpty else { return nil }
+        noticeShown = true
+        return "Pretendo online play won't work yet. Missing: \(list(missing)). See Settings > Account."
+    }
+}
