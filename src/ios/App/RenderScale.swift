@@ -261,6 +261,17 @@ enum AutoCoreHistory {
         Set(UserDefaults.standard.stringArray(forKey: demotedKey) ?? []).contains(gameID)
     }
 
+    /// Carries a title's entry over when its settings key changes from the file-name id to the title ID. Its pending run is
+    /// left alone: that is a live session, settled by the key it started under.
+    static func adoptTitleIDKey(from oldID: String, to newID: String) {
+        let defaults = UserDefaults.standard
+        var demoted = Set(defaults.stringArray(forKey: demotedKey) ?? [])
+        guard demoted.contains(oldID) else { return }
+        demoted.remove(oldID)
+        demoted.insert(newID)
+        defaults.set(demoted.sorted(), forKey: demotedKey)
+    }
+
     /// Call once a title that Auto put on three cores has booted.
     static func sessionStarted(gameID: String) {
         UserDefaults.standard.set(gameID, forKey: pendingKey)

@@ -45,6 +45,15 @@ enum TouchLabSettings {
         schemes.first { $0.id == id }?.name ?? "MuffinEMU"
     }
 
+    /// Moves what Adaptive learned for a game from its file-name key to its title-ID key, unless the title-ID key already has data.
+    static func adoptAdaptiveKey(from oldID: String, to newID: String) {
+        let d = UserDefaults.standard
+        let old = adaptiveKey(gameID: oldID), new = adaptiveKey(gameID: newID)
+        guard let learned = d.string(forKey: old), d.object(forKey: new) == nil else { return }
+        d.set(learned, forKey: new)
+        d.removeObject(forKey: old)
+    }
+
     /// Clears Adaptive's learning for one game and tells a live pad to rebuild.
     static func resetAdaptive(gameID: String?) {
         let d = UserDefaults.standard
