@@ -143,7 +143,7 @@ private struct NativeOverlayStackView: View {
     private var edgeInsets: EdgeInsets {
         let margin = Self.margin
         return EdgeInsets(
-            top: max(margin, topInset > 0 ? topInset + 6 : safeArea.top + margin),
+            top: max(margin, topInset > 0 ? topInset + 16 : safeArea.top + margin),
             leading: max(margin, safeArea.left),
             bottom: max(margin, safeArea.bottom),
             trailing: max(margin, safeArea.right))
