@@ -60,7 +60,7 @@ struct AboutSettingsSection: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Puts every option in Settings back to its default, including controls, graphics, audio, overlay and appearance. Your library, favorites, keys.txt, accounts, theme, app icon and premium unlock are not affected. Per-game options stay unless you pick the second button.")
+            Text("Puts every option in Settings back to its default, including controls, graphics, audio, overlay and appearance. Your library, favourites, keys.txt, accounts, theme, app icon and premium unlock are not affected. Per-game options stay unless you pick the second button.")
         }
     }
 }
