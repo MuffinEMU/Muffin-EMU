@@ -4118,6 +4118,30 @@ void* VulkanRenderer::texture_acquireTextureUploadBuffer(uint32 size)
 	return memoryManager->TextureUploadBufferAcquire(size);
 }
 
+// The loader found no upload buffer for this texture. The texture cache considers the data current once the load returns, so flag the
+// texture to be loaded again by inverting its data hash (the next change check sees a difference), as the Metal renderer does. A texture
+// whose uploads keep failing is flagged a bounded number of times, so it doesn't reload every frame.
+void VulkanRenderer::texture_uploadBufferUnavailable(LatteTexture* texture)
+{
+	constexpr uint32 kMaxFlags = 8;
+	constexpr uint32 kQuietFrames = 600;
+	if (!texture)
+		return;
+	auto* vkTexture = static_cast<LatteTextureVk*>(texture);
+	const uint32 frame = (uint32)LatteGPUState.frameCounter;
+	if (vkTexture->m_uploadRetryCount != 0 && (uint32)(frame - vkTexture->m_uploadRetryFrame) > kQuietFrames)
+		vkTexture->m_uploadRetryCount = 0;
+	if (vkTexture->m_uploadRetryInverted && vkTexture->texDataHash2 == vkTexture->m_uploadRetryHash)
+		return; // already flagged and nothing restamped it since
+	if (vkTexture->m_uploadRetryCount >= kMaxFlags)
+		return;
+	vkTexture->m_uploadRetryCount++;
+	vkTexture->m_uploadRetryFrame = frame;
+	vkTexture->texDataHash2 = ~vkTexture->texDataHash2;
+	vkTexture->m_uploadRetryHash = vkTexture->texDataHash2;
+	vkTexture->m_uploadRetryInverted = true;
+}
+
 void VulkanRenderer::texture_releaseTextureUploadBuffer(uint8* mem)
 {
 	memoryManager->TextureUploadBufferRelease(mem);
