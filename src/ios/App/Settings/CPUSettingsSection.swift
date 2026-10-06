@@ -12,6 +12,7 @@ struct CPUSettingsSection: View {
     @AppStorage(OneCoreMode.storageKey) private var oneCoreMode = OneCoreMode.defaultValue
     @AppStorage(CoreMode.storageKey) private var coreModeRaw = CoreMode.current.rawValue
     @AppStorage(ThermalMonitor.autoThrottleKey) private var autoReduceWhenHot = ThermalMonitor.autoThrottleDefault
+    @AppStorage(ThermalSettings.thresholdKey) private var coolDownThresholdRaw = ThermalSettings.defaultThreshold.rawValue
     @ObservedObject private var thermal = ThermalMonitor.shared
     @AppStorage(HeatDisplayMode.storageKey) private var heatDisplayMode = HeatDisplayMode.word.rawValue
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
@@ -134,6 +135,27 @@ struct CPUSettingsSection: View {
             }
             .tint(MuffinTheme.accentText)
 
+            // When the cool-down starts: Advanced mode only (see AdvancedSettings).
+            if advanced && autoReduceWhenHot {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Cool down starts at")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Picker("Cool down starts at", selection: $coolDownThresholdRaw) {
+                        ForEach(ThermalSettings.Threshold.allCases) { threshold in
+                            Text(threshold.title).tag(threshold.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: coolDownThresholdRaw) { _ in
+                        thermal.thresholdChanged()
+                    }
+                    Text((ThermalSettings.Threshold(rawValue: coolDownThresholdRaw) ?? ThermalSettings.defaultThreshold).summary)
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
             // Memory headroom. If the JIT's memory reservation fails, the recompiler is switched
             // off and the interpreter runs, so the arena size shows whether the memory
             // entitlements were honoured on this device.
@@ -180,7 +202,7 @@ struct CPUSettingsSection: View {
             InfoButton.footer(
                 "Changes to the CPU switches apply the next time you start a game. Cool down automatically only acts when the device overheats; One-core mode is the always-on version.",
                 title: "CPU",
-                text: "The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer). Without one the interpreter runs instead, which is much slower; the CPU line above shows which you got.\n\nFavour accuracy is slower but can fix a game that glitches, desyncs or crashes. It also builds every shader before it is needed, whatever Compile shaders in the background is set to.\n\nFavour performance is the opposite trade: everything runs as fast as MuffinEMU can make it, and some quality goes. The picture is drawn at Balanced at most with linear scaling, so it's softer. Shaders skip the Wii U's exact multiply rule, which is faster but can make lighting or shadows look wrong in some games. Shaders always compile in the background, so things can pop in for a moment instead of the game pausing. Crash reports carry less detail. Favour accuracy and Favour performance turn each other off, and a game set to favour accuracy in its own options still does.\n\nCool down automatically acts when iOS reports the device is overheating, and Device heat shows that same state.\n\nThe recompiler, Favour accuracy, Favour performance, One-core mode and CPU cores apply the next time you start a game.")
+                text: "The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer). Without one the interpreter runs instead, which is much slower; the CPU line above shows which you got.\n\nFavour accuracy is slower but can fix a game that glitches, desyncs or crashes. It also builds every shader before it is needed, whatever Compile shaders in the background is set to.\n\nFavour performance is the opposite trade: everything runs as fast as MuffinEMU can make it, and some quality goes. The picture is drawn at Balanced at most with linear scaling, so it's softer. Shaders skip the Wii U's exact multiply rule, which is faster but can make lighting or shadows look wrong in some games. Shaders always compile in the background, so things can pop in for a moment instead of the game pausing. Crash reports carry less detail. Favour accuracy and Favour performance turn each other off, and a game set to favour accuracy in its own options still does.\n\nCool down automatically acts when iOS reports the device is overheating, and Device heat shows that same state. In Advanced mode, Cool down starts at picks the point: Serious (the default) acts as soon as iOS starts throttling, Critical waits until iOS is throttling hard.\n\nThe recompiler, Favour accuracy, Favour performance, One-core mode and CPU cores apply the next time you start a game.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

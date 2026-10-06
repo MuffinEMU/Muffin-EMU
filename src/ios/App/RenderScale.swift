@@ -67,7 +67,7 @@ enum RenderScale: String, CaseIterable, Identifiable {
     /// see ActiveGameSettings), otherwise `storedChoice`. While the thermal governor is holding Resolution at
     /// battery saver, that wins over the game's own.
     static var current: RenderScale {
-        if !ThermalHold.isHoldingScale,
+        if !ThermalSettings.isHoldingScale,
            let own = ActiveGameSettings.overrides.renderScale.flatMap(RenderScale.init(rawValue:)) {
             return own
         }
