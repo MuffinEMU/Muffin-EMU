@@ -521,7 +521,7 @@ enum WiiUMenu {
         return report
     }
 
-    private static func timestamp() -> String {
+    static func timestamp() -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMdd-HHmmss"

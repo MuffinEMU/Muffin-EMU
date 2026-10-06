@@ -1397,6 +1397,9 @@ class GameManager: ObservableObject {
                 if notice.isEmpty && status == CEMU_BRIDGE_OK && ProcessInfo.processInfo.isLowPowerModeEnabled {
                     notice = "Low Power Mode is on, so games may run slowly. Turn it off in Control Center for full speed."
                 }
+                if notice.isEmpty && status == CEMU_BRIDGE_OK, let onlineNotice = OnlineReadiness.launchNotice() {
+                    notice = onlineNotice
+                }
                 if !notice.isEmpty {
                     self.showLaunchNotice(notice)
                 }

@@ -166,6 +166,7 @@ bool IOSAccounts_SetBirthdate(uint32_t persistentId, uint16_t year, uint8_t mont
 uint32_t IOSAccounts_ActivePersistentId();
 void IOSAccounts_SetActivePersistentId(uint32_t persistentId);
 bool IOSAccounts_IsOnlineValid(uint32_t persistentId);
+int IOSAccounts_OnlineError(uint32_t persistentId);
 std::string IOSAccounts_CountriesList();
 int IOSAccounts_NetworkService(uint32_t persistentId);
 void IOSAccounts_SetNetworkService(uint32_t persistentId, int service);
@@ -3621,6 +3622,10 @@ uint32_t cemu_bridge_active_account_persistent_id(void) {
 
 void cemu_bridge_set_active_account_persistent_id(uint32_t persistentId) {
     IOSAccounts_SetActivePersistentId(persistentId);
+}
+
+int cemu_bridge_account_online_error(uint32_t persistentId) {
+    return IOSAccounts_OnlineError(persistentId);
 }
 
 bool cemu_bridge_account_is_online_valid(uint32_t persistentId) {
