@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/MuffinEMU/MuffinEMU/releases/latest"><img src="https://img.shields.io/github/v/release/MuffinEMU/MuffinEMU?label=release&color=c8894d" alt="Latest release"></a>
+  <a href="https://github.com/MuffinEMU/Muffin-EMU/releases/latest"><img src="https://img.shields.io/github/v/release/MuffinEMU/Muffin-EMU?label=release&color=c8894d" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/iOS-15%2B-555" alt="iOS 15+">
   <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-MPL--2.0-555" alt="License: MPL-2.0"></a>
   <a href="https://muffinemu.github.io/MuffinEMU/"><img src="https://img.shields.io/badge/docs-muffinemu.github.io-555" alt="Documentation"></a>
@@ -22,9 +22,9 @@
 <p align="center">
   <a href="https://muffinemu.github.io/MuffinEMU/docs/installation.html">Install</a> ·
   <a href="https://muffinemu.github.io/MuffinEMU/docs/">Documentation</a> ·
-  <a href="https://github.com/MuffinEMU/MuffinEMU/releases">Releases</a> ·
-  <a href="https://github.com/MuffinEMU/MuffinEMU/issues/new/choose">Report a bug</a> ·
-  <a href="https://github.com/MuffinEMU/MuffinEMU/blob/stats/STATS.md">Community stats</a>
+  <a href="https://github.com/MuffinEMU/Muffin-EMU/releases">Releases</a> ·
+  <a href="https://github.com/MuffinEMU/Muffin-EMU/issues/new/choose">Report a bug</a> ·
+  <a href="https://github.com/MuffinEMU/Muffin-EMU/blob/stats/STATS.md">Community stats</a>
 </p>
 
 ---
@@ -62,7 +62,7 @@ Other sources, for people who want something other than the release known to wor
 
 Nightly and Experimental builds replace an installed MuffinEMU (same bundle identifier, so games and saves carry over) and can misbehave. Experimental builds never appear in the Stable or Nightly sources. For normal play use the first two.
 
-Both IPAs are attached to every [release](https://github.com/MuffinEMU/MuffinEMU/releases). The [installation guide](https://muffinemu.github.io/MuffinEMU/docs/installation.html) explains which one to pick, how to turn on JIT, and where `keys.txt` goes.
+Both IPAs are attached to every [release](https://github.com/MuffinEMU/Muffin-EMU/releases). The [installation guide](https://muffinemu.github.io/MuffinEMU/docs/installation.html) explains which one to pick, how to turn on JIT, and where `keys.txt` goes.
 
 **Games and keys are not included.** MuffinEMU plays games you have dumped from your own Wii U, and encrypted games need the `keys.txt` from that console.
 
@@ -83,7 +83,7 @@ Known issues:
 The CI workflow ([`build-ios-app.yml`](.github/workflows/build-ios-app.yml)) is the reference build and publishes every release. To build by hand on a Mac with Xcode, CMake, Ninja and XcodeGen:
 
 ```sh
-git clone --recursive [https://github.com/MuffinEMU/MuffinEMU.git](https://github.com/MuffinEMU/MuffinEMU.git)
+git clone --recursive [https://github.com/MuffinEMU/Muffin-EMU.git](https://github.com/MuffinEMU/Muffin-EMU.git)
 cd MuffinEMU
 cmake -S . -B build-ios -G Ninja \
   -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_OSX_ARCHITECTURES=arm64 \
