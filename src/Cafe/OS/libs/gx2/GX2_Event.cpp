@@ -184,6 +184,18 @@ namespace GX2
 		}
 	}
 
+	// The semaphore that counts these entries is guest memory and goes back with a save state's restore, but the queue is on the host
+	// and keeps filling with every vsync while the game is paused. Left alone, the callback thread would stay that many events behind
+	// for good. An empty queue is safe: the thread below treats a wake-up with nothing queued as spurious.
+	size_t GX2ClearEventCallbackQueue()
+	{
+		size_t dropped = 0;
+		GX2EventQueueEntry entry;
+		while (s_eventCbQueue.peek2(entry))
+			dropped++;
+		return dropped;
+	}
+
 	void __GX2CallbackThread(PPCInterpreter_t* hCPU)
 	{
 		while (coreinit::OSWaitSemaphore(s_eventCbQueueSemaphore))

@@ -33,10 +33,13 @@
 #include "Cafe/CafeSystem.h"
 #include "Cafe/HW/MMU/MMU.h"
 #include "Cafe/HW/Espresso/Recompiler/PPCRecompiler.h"
+#include "Cafe/HW/Espresso/PPCState.h"
+#include "Cafe/HW/Latte/Core/LatteBufferCache.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Scheduler.h"
 #include "Cafe/OS/libs/gx2/GX2_Command.h"
+#include "Cafe/OS/libs/gx2/GX2_Event.h"
 #include "Cemu/Logging/CemuLogging.h"
 
 #include <algorithm>
@@ -92,7 +95,9 @@ namespace
 	constexpr char kSaveStateMagic[8] = {'M', 'F', 'N', 'S', 'T', 'A', 'T', '1'};
 	// 2: adds the session token after the title ID. Version 1 files (saving always failed on the device that
 	// produced them, so there are almost none) are reported as "from an earlier session".
-	constexpr uint32 kSaveStateFormatVersion = 2;
+	// 3: adds tagged chunks of host-side state between the range table and the memory data (GPU command buffer
+	// positions, the guest clock; see the chunk tags below). A load needs every chunk its build knows about.
+	constexpr uint32 kSaveStateFormatVersion = 3;
 
 	// Bounded waits: this must never hang the UI forever on a title stuck in a long HLE
 	// call. Timing out means "refuse the operation", never "proceed anyway".
@@ -336,15 +341,47 @@ namespace
 		}
 	}
 
+	// How long the GPU thread must have been parked on something the paused guest or the display decides before a load stops
+	// waiting for it.
+	constexpr int kGpuParkedGivesUpMs = 700;
+
+	// The GPU thread can be parked on a flip (vsync) or a semaphore only a running guest can release, or on a screen that has no
+	// drawable to give. While the guest is paused none of those end, and a command buffer that is half-processed cannot drain.
+	// True once that has lasted long enough and no Metal work is still in flight.
+	bool GpuIsParkedOnPacing(std::string& why)
+	{
+		auto& w = LatteWait::Get();
+		const char* reason = w.reason.load();
+		if (!reason)
+			return false;
+		const auto kind = (LatteWait::Kind)w.reasonKind.load();
+		if (kind != LatteWait::Kind::GuestWait && kind != LatteWait::Kind::Display)
+			return false;
+		const int64_t since = w.reasonSinceMs.load();
+		const int64_t parkedMs = since ? LatteWait::NowMs() - since : 0;
+		if (parkedMs < kGpuParkedGivesUpMs || w.executingCommandBuffers.load() != 0)
+			return false;
+		why = fmt::format("GPU thread parked on '{}' (kind {}) for {} ms with no Metal work in flight", reason, (int)kind, (long long)parkedMs);
+		return true;
+	}
+
 	// True while the title is genuinely quiescent: no core mid-timeslice, no GPU command
 	// still in flight. Everything IOSSaveState touches assumes this already holds. The caller has paused the title.
 	//
 	// skipGpuDrain: a save may go ahead without waiting for the GPU when the bridge's watchdog
 	// had flagged the picture as stopped (sampled before pausing: pausing clears the flag), or when the GPU is known
 	// to be dead. The GPU thread is not going to drain, so waiting would only turn "the picture froze" into "and
-	// saving failed too"; the guest CPU state, which is what a save captures, is still complete. Never used for a load.
-	bool Quiesce(const char* op, bool skipGpuDrain)
+	// saving failed too"; the guest CPU state, which is what a save captures, is still complete. Never used for a load,
+	// except through the parked-on-pacing rule below.
+	//
+	// A load gives up on the drain the same way when the GPU thread has sat on a flip or semaphore for a long time with no GPU
+	// work in flight (a save would have been taken in that state too). Anything the GPU had not read yet is then dropped after
+	// the restore, because the memory it points into is about to change.
+	//
+	// gpuDrainedOut is false when the GPU was NOT confirmed idle.
+	bool Quiesce(const char* op, bool skipGpuDrain, bool& gpuDrainedOut)
 	{
+		gpuDrainedOut = true;
 		for (int attempt = 1; attempt <= kGpuDrainAttempts; attempt++)
 		{
 			int coreWaitMs = 0;
@@ -359,11 +396,13 @@ namespace
 			if (skipGpuDrain)
 			{
 				cemuLog_log(LogType::Force, "IOSSaveState: {}: the picture has stalled, not waiting for the GPU command queue to drain", op);
+				gpuDrainedOut = false;
 				return true;
 			}
 			if (std::string(op) == "save" && (LatteWait::Get().gpuPresumedLost.load() || LatteWait::Get().gpuError.load()))
 			{
 				cemuLog_log(LogType::Force, "IOSSaveState: {}: the GPU is lost or errored, not waiting for it to drain ({})", op, DescribeGpu());
+				gpuDrainedOut = false;
 				return true;
 			}
 
@@ -375,6 +414,14 @@ namespace
 				return true;
 			}
 			cemuLog_log(LogType::Force, "IOSSaveState: {}: GPU did not drain in {} ms (retired {} / submitted {}, attempt {}/{}) - {}", op, gpuWaitMs, retired, target, attempt, kGpuDrainAttempts, DescribeGpu());
+
+			std::string parkedWhy;
+			if (std::string(op) == "load" && attempt >= 2 && GpuIsParkedOnPacing(parkedWhy))
+			{
+				cemuLog_log(LogType::Force, "IOSSaveState: {}: treating the GPU as drained: {}. Commands it has not read will be dropped after the restore.", op, parkedWhy);
+				gpuDrainedOut = false;
+				return true;
+			}
 			if (attempt == kGpuDrainAttempts)
 			{
 				return Fail(SSE_GpuBusy,
@@ -405,7 +452,7 @@ namespace
 
 	uint64 EstimateSaveBytes()
 	{
-		uint64 total = 4096; // header, thread list, range table
+		uint64 total = 4096 + 64 * 1024; // header, thread list, range table, chunks
 		for (auto* r : memory_getMMURanges())
 		{
 			if (r->isMapped())
@@ -489,10 +536,118 @@ namespace
 		return true;
 	}
 
+	// ---- host-side state that travels with the memory dump -------------------------------------------------------------
+	//
+	// A chunk is {tag, size, bytes}. Everything that lives on the host rather than in guest memory, and that a restore has to put back
+	// in step with the memory it restores, is carried in one. All fields are host-endian: a file never leaves the device it was made
+	// on, and never outlives the launch that made it.
+
+	constexpr uint32 MakeTag(char a, char b, char c, char d)
+	{
+		return (uint32)(uint8)a | ((uint32)(uint8)b << 8) | ((uint32)(uint8)c << 16) | ((uint32)(uint8)d << 24);
+	}
+
+	constexpr uint32 kTagMeta = MakeTag('M', 'E', 'T', 'A');	// flags and the guest clock at the moment of the save
+	constexpr uint32 kTagGx2 = MakeTag('G', 'X', '2', 'S');		// where each core was in its GX2 command buffer
+
+	constexpr uint32 kMaxChunks = 32;
+	constexpr uint32 kMaxChunkBytes = 4u * 1024 * 1024;
+	constexpr uint32 kMetaFlagGpuDrained = 1u << 0;
+
+	struct Chunk
+	{
+		uint32 tag = 0;
+		std::vector<uint8> data;
+	};
+
+	struct ByteWriter
+	{
+		std::vector<uint8>& out;
+		void U32(uint32 v) { const uint8* p = (const uint8*)&v; out.insert(out.end(), p, p + sizeof(v)); }
+		void U64(uint64 v) { const uint8* p = (const uint8*)&v; out.insert(out.end(), p, p + sizeof(v)); }
+	};
+
+	struct ByteReader
+	{
+		const std::vector<uint8>& in;
+		size_t pos = 0;
+		bool ok = true;
+		uint32 U32()
+		{
+			uint32 v = 0;
+			if (pos + sizeof(v) > in.size()) { ok = false; return 0; }
+			memcpy(&v, in.data() + pos, sizeof(v));
+			pos += sizeof(v);
+			return v;
+		}
+		uint64 U64()
+		{
+			uint64 v = 0;
+			if (pos + sizeof(v) > in.size()) { ok = false; return 0; }
+			memcpy(&v, in.data() + pos, sizeof(v));
+			pos += sizeof(v);
+			return v;
+		}
+		bool Finished() const { return ok && pos == in.size(); }
+	};
+
+	std::string TagName(uint32 tag)
+	{
+		std::string s;
+		for (int i = 0; i < 4; i++)
+		{
+			const char c = (char)((tag >> (8 * i)) & 0xFF);
+			s.push_back(c >= 32 && c < 127 ? c : '?');
+		}
+		return s;
+	}
+
+	// ---- what a save collects ---------------------------------------------------------------------------------------
+
+	Chunk MakeMetaChunk(bool gpuDrained)
+	{
+		Chunk c;
+		c.tag = kTagMeta;
+		ByteWriter w{c.data};
+		w.U32(gpuDrained ? kMetaFlagGpuDrained : 0);
+		w.U32(0); // reserved
+		w.U64(PPCInterpreter_getMainCoreCycleCounter());
+		return c;
+	}
+
+	Chunk MakeGx2Chunk()
+	{
+		GX2::GX2CommandStateSnapshot snap{};
+		GX2::GX2CaptureCommandState(snap);
+		Chunk c;
+		c.tag = kTagGx2;
+		ByteWriter w{c.data};
+		w.U32((uint32)Espresso::CORE_COUNT);
+		for (uint32 i = 0; i < Espresso::CORE_COUNT; i++)
+		{
+			w.U32(snap.core[i].bufferPtr);
+			w.U32(snap.core[i].bufferSizeInU32s);
+			w.U32(snap.core[i].currentWritePtr);
+			w.U32(snap.core[i].isDisplayList);
+		}
+		return c;
+	}
+
+	// Called with the title paused and quiescent, right before the file is written.
+	std::vector<Chunk> CollectExtras(bool gpuDrained)
+	{
+		std::vector<Chunk> chunks;
+		chunks.push_back(MakeMetaChunk(gpuDrained));
+		chunks.push_back(MakeGx2Chunk());
+		for (const auto& c : chunks)
+			cemuLog_log(LogType::Force, "IOSSaveState: save: chunk {} is {} bytes", TagName(c.tag), c.data.size());
+		return chunks;
+	}
+
 	// Writes to "<path>.tmp" and renames it over the slot only after every byte was
 	// written, flushed and closed successfully, so a failed save (for example a full
 	// disk) leaves the slot's previous save untouched.
-	bool WriteSaveFile(const char* path, uint64 sessionToken)
+	bool WriteSaveFile(const char* path, uint64 sessionToken, const std::vector<Chunk>& chunks)
 	{
 		const auto start = Clock::now();
 		const std::string tmpPath = std::string(path) + ".tmp";
@@ -518,6 +673,7 @@ namespace
 			}
 		}
 		const uint32 rangeCount = (uint32)mapped.size();
+		const uint32 chunkCount = (uint32)chunks.size();
 
 		int failErrno = 0;
 		auto noteFail = [&]() { if (failErrno == 0) failErrno = errno ? errno : EIO; };
@@ -538,6 +694,25 @@ namespace
 			{
 				SavedRange sr{r->getBase(), r->getSize(), (uint32)r->areaId};
 				if (!WriteAll(f, &sr, sizeof(sr)))
+				{
+					ok = false;
+					noteFail();
+					break;
+				}
+			}
+		}
+
+		if (ok && !WriteAll(f, &chunkCount, sizeof(chunkCount)))
+		{
+			ok = false;
+			noteFail();
+		}
+		if (ok)
+		{
+			for (const auto& c : chunks)
+			{
+				const uint32 size = (uint32)c.data.size();
+				if (!WriteAll(f, &c.tag, sizeof(c.tag)) || !WriteAll(f, &size, sizeof(size)) || !WriteAll(f, c.data.data(), c.data.size()))
 				{
 					ok = false;
 					noteFail();
@@ -667,27 +842,46 @@ namespace
 		return true;
 	}
 
-	// Every check here runs BEFORE a single byte of guest memory is touched. Once restore
-	// starts, a truncated/corrupt file can no longer be refused cleanly - see the comment
-	// at that call site.
-	bool ReadSaveFile(const char* path)
+	// ---- a save file, parsed ----------------------------------------------------------------------------------------
+
+	// Everything in a file up to the memory data. Parsing reads and checks the whole of it and changes nothing in the game.
+	struct SaveImage
 	{
-		const auto start = Clock::now();
+		HeaderPrefix header;
+		std::vector<MPTR> threads;
+		std::vector<SavedRange> ranges;
+		std::vector<Chunk> chunks;
+		uint64 totalBytes = 0; // memory data that follows
+		const Chunk* Find(uint32 tag) const
+		{
+			for (const auto& c : chunks)
+			{
+				if (c.tag == tag)
+					return &c;
+			}
+			return nullptr;
+		}
+	};
+
+	// Opens the file, parses its header, thread list, range table and chunks, and checks that the file is exactly as long as they say.
+	// Returns the file positioned on the first byte of memory data, or nullptr with the error set.
+	FILE* OpenAndParse(const char* path, SaveImage& img)
+	{
 		FILE* f = fopen(path, "rb");
 		if (!f)
 		{
 			const int e = errno;
-			return Fail(SSE_FileMissing, std::string("Couldn't open the save file (") + strerror(e) + ").", std::string("fopen('") + path + "') errno " + std::to_string(e));
+			Fail(SSE_FileMissing, std::string("Couldn't open the save file (") + strerror(e) + ").", std::string("fopen('") + path + "') errno " + std::to_string(e));
+			return nullptr;
 		}
-
-		auto refuse = [&](IOSSaveStateError code, const char* message, const char* detail)
+		auto refuse = [&](IOSSaveStateError code, const char* message, const char* detail) -> FILE*
 		{
 			fclose(f);
-			return Fail(code, message, detail);
+			Fail(code, message, detail);
+			return nullptr;
 		};
 
-		HeaderPrefix header;
-		switch (ReadHeaderPrefix(f, header))
+		switch (ReadHeaderPrefix(f, img.header))
 		{
 		case PrefixResult::NotASave:
 			return refuse(SSE_NotASaveFile, "That file isn't a MuffinEMU save state.", "bad magic");
@@ -698,62 +892,114 @@ namespace
 		case PrefixResult::Ok:
 			break;
 		}
-		if (!CafeSystem::IsTitleRunning() || CafeSystem::GetForegroundTitleId() != header.titleId)
-			return refuse(SSE_OtherTitle, "This save belongs to a different game.", "title id differs from the running title");
-		if (header.sessionToken != EnsureSessionToken())
-			return refuse(SSE_EarlierSession, "This save is from an earlier session of the game and can't be loaded.", "session token differs");
 
 		uint32 threadCount;
 		if (!ReadAll(f, &threadCount, sizeof(threadCount)))
 			return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "truncated header");
 		if (threadCount > 256) // coreinit's own activeThread[] ceiling - anything above is a corrupt/hostile file, not a real save
 			return refuse(SSE_FileDamaged, "The save file is damaged.", "thread count in file is not plausible");
-
-		std::vector<MPTR> savedThreads(threadCount);
-		if (!ReadAll(f, savedThreads.data(), sizeof(MPTR) * threadCount))
+		img.threads.resize(threadCount);
+		if (!ReadAll(f, img.threads.data(), sizeof(MPTR) * threadCount))
 			return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "truncated thread list");
-
-		// The set of active guest threads must match exactly - this can only be trusted
-		// because the caller has already forced quiescence (Quiesce()) before
-		// calling this, so activeThread[]/activeThreadCount cannot be mid-change.
-		const char* kThreadsChanged = "The game has started or stopped background tasks since this save was taken, so it can't be put back safely. Saves load best soon after they're made, in the same part of the game.";
-		if ((sint32)threadCount != activeThreadCount)
-			return refuse(SSE_ThreadsChanged, kThreadsChanged, "active guest thread count differs from the save");
-		for (MPTR t : savedThreads)
-		{
-			bool found = false;
-			for (sint32 i = 0; i < activeThreadCount; i++)
-			{
-				if (activeThread[i] == t)
-				{
-					found = true;
-					break;
-				}
-			}
-			if (!found)
-				return refuse(SSE_ThreadsChanged, kThreadsChanged, "a saved guest thread no longer exists");
-		}
 
 		uint32 rangeCount;
 		if (!ReadAll(f, &rangeCount, sizeof(rangeCount)))
 			return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "truncated range table");
 		if (rangeCount > 64) // generous ceiling above the real MMU range table - guards against a corrupt/hostile file forcing a huge allocation
 			return refuse(SSE_FileDamaged, "The save file is damaged.", "range count in file is not plausible");
-		std::vector<SavedRange> savedRanges(rangeCount);
-		for (auto& sr : savedRanges)
+		img.ranges.resize(rangeCount);
+		for (auto& sr : img.ranges)
 		{
 			if (!ReadAll(f, &sr, sizeof(sr)))
 				return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "truncated range table");
 		}
 
-		// Every saved range must currently be mapped at the same base with the same size.
-		// A mismatch (different overlay/tiling-aperture allocation state, a range that
-		// isn't mapped right now, etc.) means the live memory layout no longer lines up
-		// with the save, and there is no safe way to reconcile that here.
+		uint32 chunkCount;
+		if (!ReadAll(f, &chunkCount, sizeof(chunkCount)))
+			return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "truncated chunk table");
+		if (chunkCount > kMaxChunks)
+			return refuse(SSE_FileDamaged, "The save file is damaged.", "chunk count in file is not plausible");
+		uint64 chunkBytes = 0;
+		for (uint32 i = 0; i < chunkCount; i++)
+		{
+			Chunk c;
+			uint32 size = 0;
+			if (!ReadAll(f, &c.tag, sizeof(c.tag)) || !ReadAll(f, &size, sizeof(size)))
+				return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "truncated chunk header");
+			chunkBytes += size;
+			if (size > kMaxChunkBytes || chunkBytes > 4ull * kMaxChunkBytes)
+				return refuse(SSE_FileDamaged, "The save file is damaged.", "chunk size in file is not plausible");
+			c.data.resize(size);
+			if (!ReadAll(f, c.data.data(), size))
+				return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "truncated chunk");
+			img.chunks.push_back(std::move(c));
+		}
+
+		// The file must be exactly as long as the header says. Checking now, before any
+		// memory is touched, means a truncated or damaged slot is refused cleanly.
+		for (const auto& sr : img.ranges)
+			img.totalBytes += sr.size;
+		const off_t dataStart = ftello(f);
+		if (dataStart < 0 || fseeko(f, 0, SEEK_END) != 0)
+			return refuse(SSE_FileDamaged, "The save file couldn't be read.", "could not determine file size");
+		const off_t fileEnd = ftello(f);
+		if (fileEnd < 0 || (uint64)fileEnd != (uint64)dataStart + img.totalBytes)
+			return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "file size does not match its header (truncated or damaged)");
+		if (fseeko(f, dataStart, SEEK_SET) != 0)
+			return refuse(SSE_FileDamaged, "The save file couldn't be read.", "could not seek within file");
+		return f;
+	}
+
+	// ---- load: the thread set --------------------------------------------------------------------------------------
+
+	// Compares the threads the save had with the ones that are alive now. True when they are the same set. Until the host side
+	// of a thread can be rebuilt from the file, a different set is refused; the difference is logged either way.
+	bool CompareThreadSets(const std::vector<MPTR>& saved, std::string& difference)
+	{
+		std::string added, gone;
+		int addedCount = 0, goneCount = 0;
+		for (sint32 i = 0; i < activeThreadCount; i++)
+		{
+			if (std::find(saved.begin(), saved.end(), (MPTR)activeThread[i]) == saved.end())
+			{
+				addedCount++;
+				const OSThread_t* t = (const OSThread_t*)memory_getPointerFromVirtualOffset(activeThread[i]);
+				added += fmt::format(" {:08x}('{}')", (uint32)activeThread[i], SafeGuestString(t->threadName.GetMPTR()));
+			}
+		}
+		for (MPTR t : saved)
+		{
+			bool alive = false;
+			for (sint32 i = 0; i < activeThreadCount; i++)
+			{
+				if (activeThread[i] == t)
+				{
+					alive = true;
+					break;
+				}
+			}
+			if (!alive)
+			{
+				goneCount++;
+				gone += fmt::format(" {:08x}", (uint32)t);
+			}
+		}
+		difference = fmt::format("{} thread(s) started since the save:{}; {} thread(s) from the save are gone:{}", addedCount, added, goneCount, gone);
+		return addedCount == 0 && goneCount == 0;
+	}
+
+	// ---- load: the memory layout -----------------------------------------------------------------------------------
+
+	// Every saved range has to exist live with the same base and size. A range that is optional (the overlay area, which a game
+	// asks for) and not mapped right now is mapped to match, since the restore then has somewhere to put it. A range that is mapped
+	// live but absent from the save is left alone. Anything else cannot be reconciled and is refused, naming the range.
+	// Nothing is mapped unless every range checks out.
+	bool PrepareMemoryLayout(const SaveImage& img, std::vector<MMURange*>& targets, std::string& problem)
+	{
 		const std::vector<MMURange*> liveRanges = memory_getMMURanges();
-		std::vector<MMURange*> targets;
-		targets.reserve(savedRanges.size());
-		for (const auto& sr : savedRanges)
+		std::vector<MMURange*> toMap;
+		targets.clear();
+		for (const auto& sr : img.ranges)
 		{
 			MMURange* match = nullptr;
 			for (auto* lr : liveRanges)
@@ -764,44 +1010,215 @@ namespace
 					break;
 				}
 			}
-			if (!match || !match->isMapped() || match->getSize() != sr.size)
-				return refuse(SSE_MemoryLayoutChanged, "The game's memory layout has changed since this save was taken (an area was loaded or unloaded), so it can't be put back safely.", "guest memory layout no longer matches the save");
+			if (!match)
+			{
+				problem = fmt::format("the save has memory at {:08x} (+{:x}) that this game does not have", sr.base, sr.size);
+				return false;
+			}
+			if (match->isMapped())
+			{
+				if (match->getSize() != sr.size)
+				{
+					problem = fmt::format("{} is {:x} bytes now and {:x} in the save", match->getName(), match->getSize(), sr.size);
+					return false;
+				}
+			}
+			else if (match->isOptional() && match->getSize() == sr.size)
+			{
+				toMap.push_back(match);
+			}
+			else
+			{
+				problem = fmt::format("{} is not mapped now and the save has it ({:x} bytes)", match->getName(), sr.size);
+				return false;
+			}
 			targets.push_back(match);
 		}
-
-		// The file must be exactly as long as the header says. Checking now, before any
-		// memory is touched, means a truncated or damaged slot is refused cleanly.
-		uint64 totalBytes = 0;
+		for (auto* lr : liveRanges)
 		{
-			const off_t dataStart = ftello(f);
-			for (const auto& sr : savedRanges)
-				totalBytes += sr.size;
-			if (dataStart < 0 || fseeko(f, 0, SEEK_END) != 0)
-				return refuse(SSE_FileDamaged, "The save file couldn't be read.", "could not determine file size");
-			const off_t fileEnd = ftello(f);
-			if (fileEnd < 0 || (uint64)fileEnd != (uint64)dataStart + totalBytes)
-				return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "file size does not match its header (truncated or damaged)");
-			if (fseeko(f, dataStart, SEEK_SET) != 0)
-				return refuse(SSE_FileDamaged, "The save file couldn't be read.", "could not seek within file");
+			if (!lr->isMapped())
+				continue;
+			bool inSave = false;
+			for (const auto& sr : img.ranges)
+				inSave = inSave || sr.base == lr->getBase();
+			if (!inSave)
+				cemuLog_log(LogType::Force, "IOSSaveState: load: {} is mapped now but is not in the save; left as it is", lr->getName());
 		}
-		cemuLog_log(LogType::Force, "IOSSaveState: load checks passed in {} ms ({} to restore)", ElapsedMs(start), Megabytes(totalBytes));
-		LogStep("load", fmt::format("file checks passed: {} guest threads and {} memory ranges in the save, {} to restore", threadCount, rangeCount, Megabytes(totalBytes)));
+		for (auto* r : toMap)
+		{
+			cemuLog_log(LogType::Force, "IOSSaveState: load: mapping optional range {} ({}) to match the save", r->getName(), Megabytes(r->getSize()));
+			r->mapMem();
+		}
+		return true;
+	}
+
+	// ---- load: putting the memory back ------------------------------------------------------------------------------
+
+	constexpr uint32 kGpuCachePageSize = 0x400; // the buffer cache's page size; a restore compares and invalidates in pages of this size
+
+	bool IsGpuVisibleRange(const MMURange* r)
+	{
+		return r->areaId == MMU_MEM_AREA_ID::MEM2_DATA || r->areaId == MMU_MEM_AREA_ID::MEM1 || r->areaId == MMU_MEM_AREA_ID::OVERLAY;
+	}
+
+	struct RestoreStats
+	{
+		uint64 pagesCompared = 0;
+		uint64 pagesChanged = 0;
+	};
+
+	// Reads `size` bytes from the file over the live range. For a range the GPU reads, the incoming data is compared with what is
+	// there page by page and every page that differs is queued through the same notification the guest's own cache flushes use,
+	// so cached buffers and textures built from the old contents are refreshed. Only pages that really change are queued: a
+	// restore of a gigabyte that differs in a few megabytes does not make the GPU thread walk a million pages.
+	bool RestoreMemoryRange(FILE* f, MMURange* range, uint32 size, std::vector<uint8>& scratch, RestoreStats& stats)
+	{
+		uint8* dst = range->getPtr();
+		if (!IsGpuVisibleRange(range))
+			return ReadMemoryRange(f, dst, size);
+
+		scratch.resize(kIoChunkSize);
+		const uint32 base = range->getBase();
+		uint32 done = 0;
+		bool inRun = false;
+		uint32 runStart = 0;
+		auto closeRun = [&](uint32 runEnd)
+		{
+			LatteBufferCache_notifyDCFlush(memory_virtualToPhysical(base + runStart), runEnd - runStart);
+			inRun = false;
+		};
+		while (done < size)
+		{
+			const uint32 n = (uint32)std::min<size_t>(kIoChunkSize, size - done);
+			if (fread(scratch.data(), 1, n, f) != n)
+				return false;
+			for (uint32 off = 0; off < n; off += kGpuCachePageSize)
+			{
+				const uint32 len = std::min<uint32>(kGpuCachePageSize, n - off);
+				stats.pagesCompared++;
+				if (memcmp(dst + done + off, scratch.data() + off, len) != 0)
+				{
+					stats.pagesChanged++;
+					if (!inRun)
+					{
+						inRun = true;
+						runStart = done + off;
+					}
+				}
+				else if (inRun)
+				{
+					closeRun(done + off);
+				}
+			}
+			memcpy(dst + done, scratch.data(), n);
+			done += n;
+		}
+		if (inRun)
+			closeRun(size);
+		return true;
+	}
+
+	// Every check here runs BEFORE a single byte of guest memory is touched. Once restore
+	// starts, a truncated/corrupt file can no longer be refused cleanly - see the comment
+	// at that call site.
+	bool ReadSaveFile(const char* path, bool& gpuDrained)
+	{
+		const auto start = Clock::now();
+		SaveImage img;
+		FILE* f = OpenAndParse(path, img);
+		if (!f)
+			return false;
+
+		auto refuse = [&](IOSSaveStateError code, const char* message, const std::string& detail)
+		{
+			fclose(f);
+			return Fail(code, message, detail);
+		};
+
+		if (!CafeSystem::IsTitleRunning() || CafeSystem::GetForegroundTitleId() != img.header.titleId)
+			return refuse(SSE_OtherTitle, "This save belongs to a different game.", "title id differs from the running title");
+		if (img.header.sessionToken != EnsureSessionToken())
+			return refuse(SSE_EarlierSession, "This save is from an earlier session of the game and can't be loaded.", "session token differs");
+
+		// the host-side state this build knows how to put back
+		const Chunk* metaChunk = img.Find(kTagMeta);
+		const Chunk* gx2Chunk = img.Find(kTagGx2);
+		if (!metaChunk || !gx2Chunk)
+			return refuse(SSE_UnsupportedFormat, "This save was made by an older version of MuffinEMU and can't be loaded.", fmt::format("missing chunk (META {}, GX2S {})", metaChunk != nullptr, gx2Chunk != nullptr));
+
+		uint32 metaFlags = 0;
+		uint64 savedGuestCycles = 0;
+		{
+			ByteReader r{metaChunk->data};
+			metaFlags = r.U32();
+			r.U32();
+			savedGuestCycles = r.U64();
+			if (!r.Finished())
+				return refuse(SSE_FileDamaged, "The save file is damaged.", "META chunk has the wrong size");
+		}
+		GX2::GX2CommandStateSnapshot gx2Snapshot{};
+		{
+			ByteReader r{gx2Chunk->data};
+			if (r.U32() != (uint32)Espresso::CORE_COUNT)
+				return refuse(SSE_FileDamaged, "The save file is damaged.", "GX2S chunk has the wrong core count");
+			for (uint32 i = 0; i < Espresso::CORE_COUNT; i++)
+			{
+				gx2Snapshot.core[i].bufferPtr = r.U32();
+				gx2Snapshot.core[i].bufferSizeInU32s = r.U32();
+				gx2Snapshot.core[i].currentWritePtr = r.U32();
+				gx2Snapshot.core[i].isDisplayList = r.U32();
+			}
+			if (!r.Finished())
+				return refuse(SSE_FileDamaged, "The save file is damaged.", "GX2S chunk has the wrong size");
+		}
+		LogStep("load", fmt::format("file parsed: {} guest threads, {} memory ranges, {} chunks, {} of memory; GPU idle when saved: {}, guest clock {}",
+			img.threads.size(), img.ranges.size(), img.chunks.size(), Megabytes(img.totalBytes), (metaFlags & kMetaFlagGpuDrained) != 0, savedGuestCycles));
+
+		// The set of active guest threads: this can only be trusted because the caller has already forced quiescence (Quiesce()).
+		std::string threadDifference;
+		const bool sameThreads = CompareThreadSets(img.threads, threadDifference);
+		cemuLog_log(LogType::Force, "IOSSaveState: load: guest threads in the save {} the live ones{}", sameThreads ? "match" : "DIFFER from", sameThreads ? "" : " - " + threadDifference);
+		if (!sameThreads)
+		{
+			return refuse(SSE_ThreadsChanged,
+				"The game has started or stopped background tasks since this save was taken, so it can't be put back safely. Saves load best soon after they're made, in the same part of the game.",
+				threadDifference);
+		}
+
+		std::vector<MMURange*> targets;
+		std::string layoutProblem;
+		if (!PrepareMemoryLayout(img, targets, layoutProblem))
+		{
+			return refuse(SSE_MemoryLayoutChanged,
+				"The game's memory layout has changed since this save was taken (an area was loaded or unloaded), so it can't be put back safely.", layoutProblem);
+		}
+		LogStep("load", "memory layout matches the save");
+
+		std::string gx2Problem;
+		if (!GX2::GX2RestoreCommandState(gx2Snapshot, gx2Problem))
+			return refuse(SSE_FileDamaged, "The save file is damaged.", "GX2S chunk: " + gx2Problem);
+		LogStep("load", "GX2 command buffer positions restored");
+		cemuLog_log(LogType::Force, "IOSSaveState: load checks passed in {} ms ({} to restore)", ElapsedMs(start), Megabytes(img.totalBytes));
 
 		// Past this point every header check has passed. A short read from here on means
 		// the file changed under us or an I/O error occurred, and guest memory may already
 		// be partially overwritten with no way back to a consistent pre-load state - the
 		// title must be treated as no longer trustworthy if that happens.
 		const auto restoreStart = Clock::now();
+		RestoreStats stats;
+		std::vector<uint8> scratch;
 		for (size_t i = 0; i < targets.size(); i++)
 		{
 			const auto rangeStart = Clock::now();
-			if (!ReadMemoryRange(f, targets[i]->getPtr(), savedRanges[i].size))
+			const uint64 changedBefore = stats.pagesChanged;
+			if (!RestoreMemoryRange(f, targets[i], img.ranges[i].size, scratch, stats))
 			{
 				fclose(f);
 				return Fail(SSE_DamagedMidRestore, "The save file couldn't be read all the way through and the game's memory is now half-restored. Quit and restart the game.",
 					"save file truncated mid-restore - guest memory is inconsistent");
 			}
-			cemuLog_log(LogType::Force, "IOSSaveState: restored range {:08x} ({}) in {} ms", savedRanges[i].base, Megabytes(savedRanges[i].size), ElapsedMs(rangeStart));
+			cemuLog_log(LogType::Force, "IOSSaveState: restored range {:08x} ({}) in {} ms{}", img.ranges[i].base, Megabytes(img.ranges[i].size), ElapsedMs(rangeStart),
+				IsGpuVisibleRange(targets[i]) ? fmt::format(", {} pages changed", stats.pagesChanged - changedBefore) : std::string());
 		}
 		fclose(f);
 
@@ -809,8 +1226,16 @@ namespace
 		// for the pre-load state. Safe under both the interpreter and the recompiler:
 		// PPCRecompiler_invalidateRange() is a no-op when the recompiler isn't active.
 		PPCRecompiler_invalidateRange(PPC_REC_CODE_AREA_START, PPC_REC_CODE_AREA_END);
-		cemuLog_log(LogType::Force, "IOSSaveState: restored {} in {} ms", Megabytes(totalBytes), ElapsedMs(restoreStart));
-		LogStep("load", fmt::format("guest memory restored ({}) and recompiled code dropped", Megabytes(totalBytes)));
+		cemuLog_log(LogType::Force, "IOSSaveState: restored {} in {} ms", Megabytes(img.totalBytes), ElapsedMs(restoreStart));
+		LogStep("load", fmt::format("guest memory restored ({}), recompiled code dropped, {} of {} GPU-visible pages differed and were queued for the GPU caches",
+			Megabytes(img.totalBytes), stats.pagesChanged, stats.pagesCompared));
+
+		// Guest memory now says what the GPU had been given when the state was saved; the GPU itself did not move.
+		std::string gx2Report;
+		GX2::GX2ResyncAfterStateLoad(!gpuDrained, gx2Report);
+		LogStep("load", "GX2 resynced with the live GPU: " + gx2Report);
+		const size_t droppedEvents = GX2::GX2ClearEventCallbackQueue();
+		LogStep("load", fmt::format("GX2 event callback queue emptied ({} stale entries dropped)", droppedEvents));
 		return true;
 	}
 
@@ -928,7 +1353,8 @@ bool IOSSaveState_Save(const char* path)
 	LogStep("save", fmt::format("paused (by this save: {}, picture stalled: {})", pausedByUs, videoStalled));
 
 	const auto quiesceStart = Clock::now();
-	bool ok = Quiesce("save", videoStalled);
+	bool gpuDrained = true;
+	bool ok = Quiesce("save", videoStalled, gpuDrained);
 	if (ok)
 	{
 		cemuLog_log(LogType::Force, "IOSSaveState: save: quiescent after {} ms", ElapsedMs(quiesceStart));
@@ -936,7 +1362,7 @@ bool IOSSaveState_Save(const char* path)
 		LogMemoryRanges("save");
 		LogThreadTable("save: guest threads at the moment of the save");
 	}
-	ok = ok && WriteSaveFile(path, EnsureSessionToken());
+	ok = ok && WriteSaveFile(path, EnsureSessionToken(), CollectExtras(gpuDrained));
 	if (ok)
 		LogStep("save", "file written");
 
@@ -970,7 +1396,8 @@ bool IOSSaveState_Load(const char* path)
 	LogStep("load", fmt::format("paused (by this load: {})", pausedByUs));
 
 	const auto quiesceStart = Clock::now();
-	bool ok = Quiesce("load", false);
+	bool gpuDrained = true;
+	bool ok = Quiesce("load", false, gpuDrained);
 	if (ok)
 	{
 		cemuLog_log(LogType::Force, "IOSSaveState: load: quiescent after {} ms", ElapsedMs(quiesceStart));
@@ -978,7 +1405,7 @@ bool IOSSaveState_Load(const char* path)
 		LogMemoryRanges("load: live memory before the restore");
 		LogThreadTable("load: live guest threads before the restore");
 	}
-	ok = ok && ReadSaveFile(path);
+	ok = ok && ReadSaveFile(path, gpuDrained);
 	if (ok)
 		LogThreadTable("load: guest threads after the restore");
 

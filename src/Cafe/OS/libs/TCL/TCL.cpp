@@ -25,6 +25,17 @@ namespace TCL
 		__OSUnlockScheduler();
 	}
 
+	// The marker the GPU writes lives in guest memory, so a save state's restore sets it back to the value it had when the
+	// state was saved while the host counter that feeds it kept counting. Callers that wait on a timestamp compare against that
+	// guest copy; putting the live value back keeps it from going backwards relative to what the GPU will write next.
+	// Only valid while the GPU is idle and nothing is submitting.
+	uint64 TCLResyncRetireMarker()
+	{
+		stdx::atomic_ref<uint64be> retireTimestamp(s_tclStatePPC->gpuRetireMarker);
+		retireTimestamp.store(uint64be(s_currentRetireMarker));
+		return s_currentRetireMarker;
+	}
+
 	int TCLTimestamp(TCLTimestampId id, uint64be* timestampOut)
 	{
 		if (id == TCLTimestampId::TIMESTAMP_LAST_BUFFER_RETIRED)

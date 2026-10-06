@@ -24,4 +24,7 @@ namespace GX2
 	void __GX2NotifyNewRetirementTimestamp(uint64 tsRetire);
 	void __GX2NotifyEvent(GX2CallbackEventType eventType);
 
+	// save states: empties the host-side queue behind the event callback thread, returns how many entries it dropped
+	size_t GX2ClearEventCallbackQueue();
+
 }

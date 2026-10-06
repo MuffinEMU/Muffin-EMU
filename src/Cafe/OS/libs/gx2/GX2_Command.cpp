@@ -66,6 +66,80 @@ namespace GX2
 
 	void GX2Command_StartNewCommandBuffer(uint32 numU32s);
 
+	void GX2CaptureCommandState(GX2CommandStateSnapshot& out)
+	{
+		for (uint32 i = 0; i < Espresso::CORE_COUNT; i++)
+		{
+			const auto& state = s_perCoreCBState[i];
+			out.core[i].bufferPtr = memory_getVirtualOffsetFromPointer(state.bufferPtr);
+			out.core[i].bufferSizeInU32s = state.bufferSizeInU32s;
+			out.core[i].currentWritePtr = memory_getVirtualOffsetFromPointer(state.currentWritePtr);
+			out.core[i].isDisplayList = state.isDisplayList ? 1 : 0;
+		}
+	}
+
+	bool GX2RestoreCommandState(const GX2CommandStateSnapshot& in, std::string& problem)
+	{
+		for (uint32 i = 0; i < Espresso::CORE_COUNT; i++)
+		{
+			const auto& c = in.core[i];
+			if (c.bufferPtr == 0)
+			{
+				if (c.currentWritePtr != 0 || c.bufferSizeInU32s != 0)
+				{
+					problem = fmt::format("core {}: write position without a buffer", i);
+					return false;
+				}
+				continue;
+			}
+			const uint64 bufferBytes = (uint64)c.bufferSizeInU32s * 4ull;
+			if ((c.bufferPtr & 3) != 0 || bufferBytes == 0 || bufferBytes > 0x10000000ull || !memory_isAddressRangeAccessible(c.bufferPtr, (uint32)bufferBytes))
+			{
+				problem = fmt::format("core {}: buffer {:08x} + {:x} words is not guest memory", i, c.bufferPtr, c.bufferSizeInU32s);
+				return false;
+			}
+			if ((c.currentWritePtr & 3) != 0 || c.currentWritePtr < c.bufferPtr || (uint64)c.currentWritePtr > (uint64)c.bufferPtr + bufferBytes)
+			{
+				problem = fmt::format("core {}: write position {:08x} is outside its buffer {:08x}", i, c.currentWritePtr, c.bufferPtr);
+				return false;
+			}
+		}
+		for (uint32 i = 0; i < Espresso::CORE_COUNT; i++)
+		{
+			const auto& c = in.core[i];
+			auto& state = s_perCoreCBState[i];
+			state.bufferPtr = c.bufferPtr ? (uint32be*)memory_getPointerFromVirtualOffset(c.bufferPtr) : nullptr;
+			state.bufferSizeInU32s = c.bufferSizeInU32s;
+			state.currentWritePtr = c.currentWritePtr ? (uint32be*)memory_getPointerFromVirtualOffset(c.currentWritePtr) : nullptr;
+			state.isDisplayList = c.isDisplayList != 0;
+		}
+		return true;
+	}
+
+	void GX2ResyncAfterStateLoad(bool gpuWasNotDrained, std::string& report)
+	{
+		if (gpuWasNotDrained)
+			TCL::TCLResetRing();
+		// What the guest sees of the GPU's progress is guest memory and went back with the restore, while the GPU kept its own
+		// counters. The GPU is idle (the caller drained it), so everything it was given has retired: say so.
+		const uint64 restoredSubmitted = s_commandState->lastSubmissionTime;
+		const uint64 liveMarker = TCL::TCLResyncRetireMarker();
+		s_commandState->lastSubmissionTime = uint64be(liveMarker);
+		// Flips the GPU still owes: the guest's request and execute counters are guest memory too, and the host's count of pending
+		// flips has to be what they say, or the next swap waits for a flip that was never requested (or never waits).
+		sint64 pendingFlips = -1;
+		if (LatteGPUState.sharedArea)
+		{
+			const uint32 requested = _swapEndianU32(LatteGPUState.sharedArea->flipRequestCountBE);
+			const uint32 executed = _swapEndianU32(LatteGPUState.sharedArea->flipExecuteCountBE);
+			pendingFlips = (sint32)(requested - executed);
+			if (pendingFlips < 0)
+				pendingFlips = 0;
+			LatteGPUState.flipRequestCount.store((uint64)pendingFlips);
+		}
+		report = fmt::format("submitted timestamp {} -> {}, retire marker set to {}, pending flips {}{}", restoredSubmitted, liveMarker, liveMarker, pendingFlips, gpuWasNotDrained ? ", unread GPU commands dropped" : "");
+	}
+
 	// called from GX2Init. Allocates a 4MB memory chunk from which command buffers are suballocated from
 	void GX2Init_commandBufferPool(void* bufferBase, uint32 bufferSize)
 	{

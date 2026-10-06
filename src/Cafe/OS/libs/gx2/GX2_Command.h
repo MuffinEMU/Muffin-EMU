@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include "Cafe/HW/Latte/ISA/LatteReg.h"
 #include "Cafe/HW/Espresso/Const.h"
 
@@ -13,6 +14,27 @@ namespace GX2
 	};
 
 	extern GX2PerCoreCBState s_perCoreCBState[Espresso::CORE_COUNT];
+
+	// The per-core command buffer state is host memory: where each core is in the buffer it is filling. A save state records it
+	// next to guest memory, because the buffer's contents come back with the restore and the write position has to match them.
+	struct GX2CommandStateSnapshot
+	{
+		struct Core
+		{
+			uint32 bufferPtr;
+			uint32 bufferSizeInU32s;
+			uint32 currentWritePtr;
+			uint32 isDisplayList;
+		};
+		Core core[Espresso::CORE_COUNT];
+	};
+	void GX2CaptureCommandState(GX2CommandStateSnapshot& out);
+	// Checks every pointer against guest memory first and changes nothing unless all of it is plausible.
+	bool GX2RestoreCommandState(const GX2CommandStateSnapshot& in, std::string& problem);
+	// After a restore, with the GPU idle: brings the counters shared with the GPU back in step with the live GPU. `report` is a log line.
+	// `gpuWasNotDrained`: the caller could not get the GPU idle before the restore (it was parked on a flip), so commands it had not
+	// yet read are dropped rather than run against memory that no longer holds them.
+	void GX2ResyncAfterStateLoad(bool gpuWasNotDrained, std::string& report);
 };
 
 void gx2WriteGather_submitU32AsBE(uint32 v);

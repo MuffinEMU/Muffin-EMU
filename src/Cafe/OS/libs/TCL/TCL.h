@@ -22,6 +22,7 @@ namespace TCL
 	bool TCLGPUReadRBWord(uint32& cmdWord);
 	void TCLResetRing(); // drops commands nobody read; only for the end of a title, when neither the PPC nor the GPU thread is running
 	void TCLGPUNotifyNewRetirementTimestamp();
+	uint64 TCLResyncRetireMarker(); // save states: puts the live retirement marker back into guest memory, returns it
 
 	COSModule* GetModule();
 }
