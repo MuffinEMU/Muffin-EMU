@@ -55,6 +55,10 @@ struct MotionSettingsSection: View {
     @AppStorage(MotionSettings.diagnosticKey)
     private var logValues = false
     @State private var recentred = false
+    @AppStorage(SettingsMode.storageKey)
+    private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+
+    private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
     private var statusText: String {
         switch Int(cemu_bridge_motion_status()) {
@@ -86,7 +90,11 @@ struct MotionSettingsSection: View {
             .onChange(of: motionEnabled) { _ in MotionSettings.applyToBridge() }
 
             if motionEnabled {
-                motionOptions
+                if advanced {
+                    motionOptions
+                } else {
+                    recentreButton
+                }
             }
         } header: {
             SettingsSectionHeader("Motion & Aiming", icon: "gyroscope", accent: .io)
@@ -140,6 +148,10 @@ struct MotionSettingsSection: View {
         }
         .font(.system(size: 13, weight: .semibold, design: .rounded))
 
+        recentreButton
+    }
+
+    private var recentreButton: some View {
         Button {
             cemu_bridge_motion_recenter()
             recentred = true

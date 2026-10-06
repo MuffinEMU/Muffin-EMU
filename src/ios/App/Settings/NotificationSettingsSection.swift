@@ -38,6 +38,9 @@ struct NotificationSettingsSection: View {
     @AppStorage(NotificationSettings.controllerBatteryKey) private var controllerBatteryEnabled = NotificationSettings.defaultControllerBattery
     @AppStorage(NotificationSettings.shaderCompilingKey) private var shaderCompilingEnabled = NotificationSettings.defaultShaderCompiling
     @AppStorage(NotificationSettings.friendsKey) private var friendsEnabled = NotificationSettings.defaultFriends
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+
+    private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
     private var position: ScreenPosition {
         ScreenPosition(rawValue: positionRaw) ?? .disabled
@@ -48,8 +51,11 @@ struct NotificationSettingsSection: View {
     var body: some View {
         Section {
             positionPicker
-            textColorField
-            textScaleSlider
+            // How they look is Advanced mode only (see AdvancedSettings).
+            if advanced {
+                textColorField
+                textScaleSlider
+            }
             controllerProfilesToggle
             controllerBatteryToggle
             shaderCompilingToggle

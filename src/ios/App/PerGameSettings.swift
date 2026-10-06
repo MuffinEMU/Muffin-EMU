@@ -83,7 +83,7 @@ final class PerGameSettingsStore: ObservableObject {
     /// Per-game override first, global default underneath. Read before boot (see
     /// cemu_bridge_set_favour_accuracy's call site).
     func effectiveFavourAccuracy(for gameID: String) -> Bool {
-        overrides(for: gameID).favourAccuracy ?? globalFavourAccuracy
+        activeOverrides(for: gameID).favourAccuracy ?? globalFavourAccuracy
     }
 
     func setFavourAccuracy(_ value: Bool?, for gameID: String) {
@@ -94,7 +94,7 @@ final class PerGameSettingsStore: ObservableObject {
 
     /// Per-game core count first, Settings' choice underneath. Read before boot.
     func effectiveCoreMode(for gameID: String) -> CoreMode {
-        if let raw = overrides(for: gameID).coreMode, let mode = CoreMode(rawValue: raw) {
+        if let raw = activeOverrides(for: gameID).coreMode, let mode = CoreMode(rawValue: raw) {
             return mode
         }
         return CoreMode.current
@@ -113,6 +113,13 @@ final class PerGameSettingsStore: ObservableObject {
         guard key != game.id, let legacy = overridesByGame[game.id], overridesByGame[key] == nil else { return }
         overridesByGame[key] = legacy
         overridesByGame.removeValue(forKey: game.id)
+        persist()
+    }
+
+    /// Replaces every game's overrides at once. Settings mode uses it to clear the Advanced options
+    /// when switching to Basic and to put them back on Restore (see AdvancedSettings).
+    func replaceOverrides(_ next: [String: GameOverrides]) {
+        overridesByGame = next.filter { !$0.value.isIdentity }
         persist()
     }
 
@@ -294,6 +301,7 @@ struct GameOptionsView: View {
     let game: GameMetadata
     @ObservedObject var store: PerGameSettingsStore
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
     /// One line of feedback under the buttons rather than an alert. An alert for a
     /// success is a second tap for something the person already knows they did; the
@@ -398,16 +406,19 @@ struct GameOptionsView: View {
                     Text(choice.title).tag(choice)
                 }
             }
-            OverridePickerRow(title: "Favour accuracy", caption: favourAccuracyCaption, selection: favourAccuracyChoice) {
-                ForEach(TriState.allCases) { choice in
-                    Text(choice.title).tag(choice)
+            // Advanced mode only (see AdvancedSettings).
+            if SettingsMode.isAdvanced(raw: settingsModeRaw) {
+                OverridePickerRow(title: "Favour accuracy", caption: favourAccuracyCaption, selection: favourAccuracyChoice) {
+                    ForEach(TriState.allCases) { choice in
+                        Text(choice.title).tag(choice)
+                    }
                 }
-            }
-            OverridePickerRow(title: "CPU cores", caption: coreModeCaption, selection: coreModeChoice,
-                              isDisabled: !DeviceCapabilities.current.multicoreViable) {
-                Text("Use Global Default").tag("")
-                ForEach(CoreMode.allCases) { mode in
-                    Text(mode.title).tag(mode.rawValue)
+                OverridePickerRow(title: "CPU cores", caption: coreModeCaption, selection: coreModeChoice,
+                                  isDisabled: !DeviceCapabilities.current.multicoreViable) {
+                    Text("Use Global Default").tag("")
+                    ForEach(CoreMode.allCases) { mode in
+                        Text(mode.title).tag(mode.rawValue)
+                    }
                 }
             }
             if !store.overrides(for: game.settingsKey).isIdentity {

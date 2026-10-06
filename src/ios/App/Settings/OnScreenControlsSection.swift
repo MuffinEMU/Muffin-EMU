@@ -39,6 +39,8 @@ struct OnScreenControlsSection: View {
     /// 0 follows the default (on; see TopBarAutoHide.deviceDefault). Read by the in-game top bar.
     @AppStorage(TopBarAutoHide.overrideKey)
     private var topBarAutoHideOverride = TopBarAutoHide.followDevice
+    @AppStorage(SettingsMode.storageKey)
+    private var settingsModeRaw = SettingsMode.defaultValue.rawValue
     @State private var showingResetLayoutConfirmation = false
     @State private var showingResetBindingsConfirmation = false
     /// Shows the binding count so a reset can be confirmed.
@@ -47,6 +49,8 @@ struct OnScreenControlsSection: View {
     private var stickGate: ControllerGeometry.StickGate {
         ControllerGeometry.StickGate(rawValue: stickGateRaw) ?? ControllerLayoutSettings.defaultStickGate
     }
+
+    private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
     /// A TouchLab style is chosen. It carries its own layout, so the rows that only apply to
     /// MuffinEMU's pad (analog-stick mode, comfort controls) are hidden.
@@ -292,59 +296,62 @@ struct OnScreenControlsSection: View {
             }
         }
 
-        // Above the two sliders because it is a different kind of question: the
-        // gate is the shape of the stick, and the sliders are how that shape is
-        // read.
-        VStack(alignment: .leading, spacing: 4) {
-            Picker("Stick gate", selection: $stickGateRaw) {
-                ForEach(ControllerGeometry.StickGate.allCases) { gate in
-                    Text(gate.title).tag(gate.rawValue)
+        // Stick feel is Advanced mode only (see AdvancedSettings).
+        if advanced {
+            // Above the two sliders because it is a different kind of question: the
+            // gate is the shape of the stick, and the sliders are how that shape is
+            // read.
+            VStack(alignment: .leading, spacing: 4) {
+                Picker("Stick gate", selection: $stickGateRaw) {
+                    ForEach(ControllerGeometry.StickGate.allCases) { gate in
+                        Text(gate.title).tag(gate.rawValue)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
-            Text(stickGate.summary)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Stick deadzone")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                Spacer()
-                // The number, not just the handle. This is the one setting where
-                // "how much exactly" is the question being asked, and a bare slider
-                // cannot answer it.
-                Text(stickDeadzone <= 0.0005
-                     ? "off"
-                     : "\(Int((stickDeadzone * 100).rounded()))%")
-                    .font(.system(size: 13, design: .monospaced))
+                .pickerStyle(.segmented)
+                Text(stickGate.summary)
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Slider(
-                value: $stickDeadzone,
-                in: ControllerLayoutSettings.minDeadzone...ControllerLayoutSettings.maxDeadzone
-            )
-            .accessibilityLabel("Stick deadzone")
-        }
 
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Fine control")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                Spacer()
-                Text(stickCurve <= ControllerLayoutSettings.minStickCurve + 0.005
-                     ? "linear"
-                     : String(format: "%.1fx", stickCurve))
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Stick deadzone")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Spacer()
+                    // The number, not just the handle. This is the one setting where
+                    // "how much exactly" is the question being asked, and a bare slider
+                    // cannot answer it.
+                    Text(stickDeadzone <= 0.0005
+                         ? "off"
+                         : "\(Int((stickDeadzone * 100).rounded()))%")
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                Slider(
+                    value: $stickDeadzone,
+                    in: ControllerLayoutSettings.minDeadzone...ControllerLayoutSettings.maxDeadzone
+                )
+                .accessibilityLabel("Stick deadzone")
             }
-            Slider(
-                value: $stickCurve,
-                in: ControllerLayoutSettings.minStickCurve...ControllerLayoutSettings.maxStickCurve
-            )
-            .accessibilityLabel("Fine control")
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Fine control")
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    Spacer()
+                    Text(stickCurve <= ControllerLayoutSettings.minStickCurve + 0.005
+                         ? "linear"
+                         : String(format: "%.1fx", stickCurve))
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                Slider(
+                    value: $stickCurve,
+                    in: ControllerLayoutSettings.minStickCurve...ControllerLayoutSettings.maxStickCurve
+                )
+                .accessibilityLabel("Fine control")
+            }
         }
     }
 

@@ -14,6 +14,9 @@ struct CPUSettingsSection: View {
     @AppStorage(ThermalMonitor.autoThrottleKey) private var autoReduceWhenHot = ThermalMonitor.autoThrottleDefault
     @ObservedObject private var thermal = ThermalMonitor.shared
     @AppStorage(HeatDisplayMode.storageKey) private var heatDisplayMode = HeatDisplayMode.word.rawValue
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+
+    private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
     var body: some View {
         Section {
@@ -34,85 +37,88 @@ struct CPUSettingsSection: View {
                 cemu_bridge_set_recompiler_enabled(newValue)
             }
 
-            Toggle(isOn: $favourAccuracy) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Favour accuracy")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(favourAccuracy
-                         ? "Slower but more accurate: one CPU core and stricter GPU syncing."
-                         : "Faster, with some accuracy shortcuts.")
-                        .font(.system(size: 12))
-                        .foregroundColor(MuffinTheme.secondaryText)
-                }
-            }
-            .tint(MuffinTheme.accentText)
-            .onChange(of: favourAccuracy) { newValue in
-                cemu_bridge_set_favour_accuracy(newValue)
-                // Opposite trades, so turning one on turns the other off.
-                if newValue { favourPerformance = false }
-            }
-
-            Toggle(isOn: $favourPerformance) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Favour performance")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(favourPerformance
-                         ? "As fast as possible: a softer picture, rougher lighting in some games, and shaders that may pop in."
-                         : "Off: the normal balance of speed and quality.")
-                        .font(.system(size: 12))
-                        .foregroundColor(MuffinTheme.secondaryText)
-                }
-            }
-            .tint(MuffinTheme.accentText)
-            .onChange(of: favourPerformance) { newValue in
-                cemu_bridge_set_favour_performance(newValue)
-                if newValue { favourAccuracy = false }
-            }
-
-            // See OneCoreMode in RenderScale.swift.
-            Toggle(isOn: $oneCoreMode) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("One-core mode")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text(oneCoreMode
-                         ? "One CPU core, whatever CPU cores is set to below."
-                         : "Follows the CPU cores setting below.")
-                        .font(.system(size: 12))
-                        .foregroundColor(MuffinTheme.secondaryText)
-                }
-            }
-            .tint(MuffinTheme.accentText)
-            .onChange(of: oneCoreMode) { newValue in
-                cemu_bridge_set_low_power_mode(newValue)
-            }
-
-            // Auto by default: decides per game from its profile, this device's performance cores and
-            // its thermal state, and leans to one core (see CoreMode in RenderScale.swift).
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("CPU cores")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Spacer()
-                    Picker("CPU cores", selection: $coreModeRaw) {
-                        ForEach(CoreMode.allCases) { mode in
-                            Text(mode.title).tag(mode.rawValue)
-                        }
+            // Advanced mode only: Basic keeps these at their defaults (see AdvancedSettings).
+            if advanced {
+                Toggle(isOn: $favourAccuracy) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Favour accuracy")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text(favourAccuracy
+                             ? "Slower but more accurate: one CPU core and stricter GPU syncing."
+                             : "Faster, with some accuracy shortcuts.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
                     }
-                    .pickerStyle(.menu)
-                    // The row's own Text is the label; a menu picker in a Form row prints its label as well.
-                    .labelsHidden()
-                    .tint(MuffinTheme.accentText)
-                    .disabled(!DeviceCapabilities.current.multicoreViable)
                 }
-                Text(DeviceCapabilities.current.multicoreViable
-                     ? (CoreMode(rawValue: coreModeRaw) ?? CoreMode.defaultValue).summary
-                     : DeviceCapabilities.oneCoreOnlyText)
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .onChange(of: coreModeRaw) { newValue in
-                cemu_bridge_set_cpu_core_mode((CoreMode(rawValue: newValue) ?? CoreMode.defaultValue).bridgeValue)
+                .tint(MuffinTheme.accentText)
+                .onChange(of: favourAccuracy) { newValue in
+                    cemu_bridge_set_favour_accuracy(newValue)
+                    // Opposite trades, so turning one on turns the other off.
+                    if newValue { favourPerformance = false }
+                }
+
+                Toggle(isOn: $favourPerformance) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Favour performance")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text(favourPerformance
+                             ? "As fast as possible: a softer picture, rougher lighting in some games, and shaders that may pop in."
+                             : "Off: the normal balance of speed and quality.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
+                }
+                .tint(MuffinTheme.accentText)
+                .onChange(of: favourPerformance) { newValue in
+                    cemu_bridge_set_favour_performance(newValue)
+                    if newValue { favourAccuracy = false }
+                }
+
+                // See OneCoreMode in RenderScale.swift.
+                Toggle(isOn: $oneCoreMode) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("One-core mode")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text(oneCoreMode
+                             ? "One CPU core, whatever CPU cores is set to below."
+                             : "Follows the CPU cores setting below.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
+                }
+                .tint(MuffinTheme.accentText)
+                .onChange(of: oneCoreMode) { newValue in
+                    cemu_bridge_set_low_power_mode(newValue)
+                }
+
+                // Auto by default: decides per game from its profile, this device's performance cores and
+                // its thermal state, and leans to one core (see CoreMode in RenderScale.swift).
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("CPU cores")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Spacer()
+                        Picker("CPU cores", selection: $coreModeRaw) {
+                            ForEach(CoreMode.allCases) { mode in
+                                Text(mode.title).tag(mode.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        // The row's own Text is the label; a menu picker in a Form row prints its label as well.
+                        .labelsHidden()
+                        .tint(MuffinTheme.accentText)
+                        .disabled(!DeviceCapabilities.current.multicoreViable)
+                    }
+                    Text(DeviceCapabilities.current.multicoreViable
+                         ? (CoreMode(rawValue: coreModeRaw) ?? CoreMode.defaultValue).summary
+                         : DeviceCapabilities.oneCoreOnlyText)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .onChange(of: coreModeRaw) { newValue in
+                    cemu_bridge_set_cpu_core_mode((CoreMode(rawValue: newValue) ?? CoreMode.defaultValue).bridgeValue)
+                }
             }
 
             // On by default: at .serious iOS is already throttling, so lowering the pixel count

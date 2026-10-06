@@ -58,6 +58,9 @@ enum SettingsDefaults {
         defaults.removeObject(forKey: RenderScale.storageKey)
         DisplayRouter.shared.reapplyRenderScale(reason: "settings reset")
         TimebaseScale.clearChoice()
+        // Back to Basic, with the saved advanced values forgotten. The sweep below would remove
+        // these keys too; this keeps the rule next to the registry.
+        AdvancedSettings.resetModeAndSnapshot()
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("muffin.") {
             if excluded.contains(key) { continue }
             if alwaysExcludedPrefixes.contains(where: { key.hasPrefix($0) }) { continue }
