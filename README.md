@@ -5,7 +5,7 @@
 <h1 align="center">MuffinEMU</h1>
 
 <p align="center">
-  Wii U emulation for iPhone and iPad.
+  Wii U emulation for iPhone and iPad. Made by Void.
 </p>
 
 <p align="center">
