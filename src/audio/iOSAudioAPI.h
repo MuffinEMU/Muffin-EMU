@@ -46,6 +46,12 @@ private:
 
     AudioUnit m_audioUnit = nullptr;
 
+    // Restarts output after an audio interruption (call, Siri, alarm): iOS stops the unit and
+    // deactivates the session, and nothing else brings them back. Observer tokens, retained.
+    void RestartAfterInterruption(const char* why, bool onlyIfStopped = false);
+    void* m_interruptionObserver = nullptr;
+    void* m_becameActiveObserver = nullptr;
+
     AudioRingBuffer m_buffer;
     std::atomic_bool m_isPlaying = false;
 };

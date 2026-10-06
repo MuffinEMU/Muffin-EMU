@@ -131,6 +131,20 @@ final class PreviewPadStore: ObservableObject {
         }
     }
 
+    /// Re-reads everything from UserDefaults, for after the keys were removed behind this
+    /// store's back (Settings > Reset settings to defaults).
+    func reloadFromDefaults() {
+        layoutPreset = PreviewLayoutPreset(rawValue: defaults.string(forKey: Self.layoutPresetKey) ?? "") ?? .iPadPro2020
+        colourPreset = PreviewColourPreset(rawValue: defaults.string(forKey: Self.colourPresetKey) ?? "") ?? .wiiUWhite
+        displayMode = PadLayout.DisplayMode(rawValue: defaults.string(forKey: Self.displayModeKey) ?? "") ?? .fit
+        if let data = defaults.data(forKey: Self.adjustmentsKey),
+           let decoded = try? JSONDecoder().decode([String: GroupPlacement].self, from: data) {
+            adjustments = decoded
+        } else {
+            adjustments = [:]
+        }
+    }
+
     func adjustment(for group: PadGroup) -> GroupPlacement {
         adjustments[group.rawValue] ?? GroupPlacement(dx: 0, dy: 0, scale: 1)
     }

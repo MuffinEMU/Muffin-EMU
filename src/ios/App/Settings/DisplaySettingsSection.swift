@@ -57,19 +57,22 @@ struct DisplaySettingsSection: View {
 
             if screenLayout == .singleScreen {
                 Toggle(isOn: $showLocalSwapButton) {
-                    Text("Show Swap Button (TV ⇄ Pad)")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Show swap button")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("A small button on screen to switch between the TV and GamePad screens.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
                 }
                 .tint(MuffinTheme.accentText)
             }
 
-            Divider()
-
             Toggle(isOn: $externalDisplaySystemEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Enable External Display System")
+                    Text("Use an external display")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("Off by default. Turn it on before connecting a second display.")
+                    Text("Experimental. Turn it on before connecting a second screen.")
                         .font(.system(size: 12))
                         .foregroundColor(MuffinTheme.secondaryText)
                 }
@@ -83,11 +86,11 @@ struct DisplaySettingsSection: View {
             if externalDisplaySystemEnabled {
                 Toggle(isOn: $swapScreens) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("External display: which screen goes there")
+                        Text("GamePad screen on the external display")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text(swapScreens
-                             ? "GamePad screen on the external display, TV screen on this device."
-                             : "TV screen on the external display, GamePad screen on this device.")
+                             ? "On: GamePad screen on the external display, TV screen on this device."
+                             : "Off: TV screen on the external display, GamePad screen on this device.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -100,9 +103,9 @@ struct DisplaySettingsSection: View {
 
                 Toggle(isOn: $showSwapButton) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Show swap button (to external display)")
+                        Text("Show swap button during play")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("A small on-screen button while playing with an external display connected, so the setting above can be flipped without leaving the game.")
+                        Text("A small button over the game while an external display is connected, to flip the setting above without leaving the game.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -113,9 +116,9 @@ struct DisplaySettingsSection: View {
             SettingsSectionHeader("Display", icon: "rectangle.on.rectangle", accent: .io)
         } footer: {
             InfoButton.footer(
-                "Screen Layout arranges the TV and GamePad on this device. External display output is off until you enable it, and needs a second screen that MuffinEMU can open a window on; AirPlay mirroring doesn't count.",
+                "Screen Layout arranges the TV and GamePad on this device. The external display is off until you turn it on, and needs a second screen that MuffinEMU can open a window on; AirPlay mirroring doesn't count.",
                 title: "Display",
-                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nExternal display output is off by default; turn it on before connecting a display. It is experimental and hasn't been tested on much hardware.")
+                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nThe external display is off by default; turn it on before connecting a display. Then choose which Wii U screen it shows. It is experimental and hasn't been tested on much hardware.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

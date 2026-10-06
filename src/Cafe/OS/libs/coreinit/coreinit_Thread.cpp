@@ -1334,7 +1334,18 @@ namespace coreinit
 				{
 					cemu_assert_debug(nextThread->state == OSThread_t::THREAD_STATE::STATE_RUNNING);
 					PerfTelemetry::Get().ppcIdleNs.fetch_add(PerfTelemetry::NowNs() - idleSegmentStart, std::memory_order_relaxed);
+					// see __OSAllCoresIdle() in coreinit_Thread.h. This host thread is "busy" from here until
+					// control comes back to this idle fiber. A guest fiber that blocks inside an HLE call
+					// (PPCCore_switchToScheduler) is parked in the middle of attemptEnterThread() and is NOT
+					// running, so busy cannot be tracked around attemptEnterThread() itself: that left the flag
+					// set for as long as such a fiber stayed parked. Indexed by host thread (t_assignedCoreIndex),
+					// not by the emulated core a fiber was last given (that rotates in single-core mode).
+					// The slot is captured once: set and clear must hit the same flag even if the core index is
+					// reassigned while the guest fiber runs.
+					const uint32 busySlot = t_assignedCoreIndex < std::size(g_coreIsBusy) ? t_assignedCoreIndex : 0;
+					g_coreIsBusy[busySlot].store(true, std::memory_order_release);
 					__OSSwitchToThreadFiber(nextThread, coreIndex);
+					g_coreIsBusy[busySlot].store(false, std::memory_order_release);
 					idleSegmentStart = PerfTelemetry::NowNs();
 					ranGuestThread = true;
 				}
@@ -1451,14 +1462,7 @@ namespace coreinit
 		while (true)
 		{
             if (hCPU->remainingCycles > 0)
-            {
-                // see __OSAllCoresIdle() in coreinit_Thread.h: this core is genuinely
-                // executing PPC instructions (and may be touching guest memory) only
-                // between these two stores, not merely "not suspended"
-                g_coreIsBusy[hostThread->selectedCore].store(true, std::memory_order_release);
                 attemptEnterThread(hCPU);
-                g_coreIsBusy[hostThread->selectedCore].store(false, std::memory_order_release);
-            }
 
 			// reset reservation
 			hCPU->reservedMemAddr = 0;
@@ -1538,6 +1542,8 @@ namespace coreinit
 			return;
 		cemu_assert_debug(numCPUEmulationThreads == 1 || numCPUEmulationThreads == 3);
 		g_isMulticoreMode = numCPUEmulationThreads > 1;
+		for (auto& busy : g_coreIsBusy)
+			busy.store(false, std::memory_order_release);
 		PerfTelemetry::Get().ppcHostThreads.store((uint32)numCPUEmulationThreads, std::memory_order_relaxed);
 		if (numCPUEmulationThreads == 1)
 			sSchedulerThreads.emplace_back(OSSchedulerCoreEmulationThread, (void*)0);

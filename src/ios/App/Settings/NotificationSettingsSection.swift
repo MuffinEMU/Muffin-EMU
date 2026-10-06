@@ -58,7 +58,7 @@ struct NotificationSettingsSection: View {
             SettingsSectionHeader("Notifications", icon: "bell", accent: .io)
         } footer: {
             InfoButton.footer(
-                "Pop-ups for controller pairing, low battery, shader compiling and friends. Pick a corner to turn them on.",
+                "Pop-ups for controllers, shader compiling and friends. They show in the corner you pick; choose Off to hide them all.",
                 title: "Notifications",
                 text: fullText)
         }
@@ -84,26 +84,19 @@ struct NotificationSettingsSection: View {
         }
     }
 
-    private var textColorHex: Binding<String> { hexColourBinding($textColor) }
-
     private var textColorField: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Text Color")
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-            TextField("AARRGGBB", text: textColorHex)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-        }
-        .disabled(isOff)
-        .onChange(of: textColor) { newValue in
-            cemu_bridge_set_notification_text_color(UInt32(truncatingIfNeeded: newValue))
-        }
+        ColorPicker("Text color", selection: packedColourBinding($textColor), supportsOpacity: false)
+            .font(.system(size: 15, weight: .semibold, design: .rounded))
+            .disabled(isOff)
+            .onChange(of: textColor) { newValue in
+                cemu_bridge_set_notification_text_color(UInt32(truncatingIfNeeded: newValue))
+            }
     }
 
     private var textScaleSlider: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("Text Scale")
+                Text("Text size")
                     .font(.system(size: 13, weight: .semibold, design: .rounded))
                 Spacer()
                 Text("\(textScale)%")
@@ -122,7 +115,7 @@ struct NotificationSettingsSection: View {
 
     private var controllerProfilesToggle: some View {
         Toggle(isOn: $controllerProfilesEnabled) {
-            Text("Controller Profiles")
+            Text("Controller profiles")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.accentText)
@@ -134,7 +127,7 @@ struct NotificationSettingsSection: View {
 
     private var controllerBatteryToggle: some View {
         Toggle(isOn: $controllerBatteryEnabled) {
-            Text("Low Battery")
+            Text("Low controller battery")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.accentText)
@@ -146,7 +139,7 @@ struct NotificationSettingsSection: View {
 
     private var shaderCompilingToggle: some View {
         Toggle(isOn: $shaderCompilingEnabled) {
-            Text("Shader Compiling")
+            Text("Shader compiling")
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
         }
         .tint(MuffinTheme.accentText)
@@ -170,7 +163,9 @@ struct NotificationSettingsSection: View {
 
     private var fullText: String {
         """
-        Controller Profiles: a saved controller profile was applied. Low Battery: a paired controller is running down. Shader Compiling: shown while the engine builds a shader. Friends: friend activity from your account.
+        Position picks a corner of the TV screen; Off hides every pop-up, and the other rows stay dimmed until a corner is chosen.
+
+        Controller profiles: your account name and each controller's saved profile, for a few seconds after a game starts. Low controller battery: a paired controller is running down. Shader compiling: shown while the engine builds new shaders. Friends: friend activity from your account.
         """
     }
 }

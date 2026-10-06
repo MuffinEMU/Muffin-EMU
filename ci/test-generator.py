@@ -10,12 +10,12 @@ spec = importlib.util.spec_from_file_location("gen", os.path.join(os.path.dirnam
 gen = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gen)
 
-BASE = "https://github.com/kiddreads/MuffinEMU/releases/download"
+BASE = "https://github.com/MuffinEMU/Muffin-EMU/releases/download"
 
 
 def rel(tag, name, pre=False, published="2026-09-30T20:00:00Z", body="", assets=("MuffinEMU.ipa", "MuffinEMU-fakesigned.ipa")):
     return {"tag_name": tag, "name": name, "prerelease": pre, "draft": False, "published_at": published,
-            "created_at": published, "body": body, "html_url": f"https://github.com/kiddreads/MuffinEMU/releases/tag/{tag}",
+            "created_at": published, "body": body, "html_url": f"https://github.com/MuffinEMU/Muffin-EMU/releases/tag/{tag}",
             "assets": [{"name": a, "size": 1000, "browser_download_url": f"{BASE}/{tag}/{a}",
                         "updated_at": published} for a in assets]}
 
@@ -54,7 +54,7 @@ class FakeApi:
 def run(rels, api):
     gen.api = api
     out = tempfile.mkdtemp()
-    gen.run("kiddreads/MuffinEMU", None, rels, out)
+    gen.run("MuffinEMU/Muffin-EMU", None, rels, out)
     return out, {f: json.load(open(os.path.join(out, f))) for f in os.listdir(out)}
 
 
@@ -122,7 +122,7 @@ bad = json.loads(json.dumps(good))
 bad["apps"][0]["versions"][0]["downloadURL"] = f"{BASE}/experimental/MuffinEMU.ipa"
 guard({"apps.json": ("stable", bad)}, STABLE + [ROLLING], "mentions an experimental URL")
 gen.api = FakeApi()
-exp = gen.build_experimental(ALL, "kiddreads/MuffinEMU", None, "MuffinEMU.ipa", "i", "n", "s", "a", "x")
+exp = gen.build_experimental(ALL, "MuffinEMU/Muffin-EMU", None, "MuffinEMU.ipa", "i", "n", "s", "a", "x")
 bad = json.loads(json.dumps(exp)); bad["apps"][0]["versions"][0]["downloadURL"] = f"{BASE}/nightly/MuffinEMU.ipa"
 guard({"experimental.json": ("experimental", bad)}, ALL, "points at nightly")
 bad = json.loads(json.dumps(exp)); bad["apps"][0]["versions"][0]["downloadURL"] = f"{BASE}/v6.1/MuffinEMU.ipa"
@@ -143,7 +143,7 @@ print("ok: every guard refuses")
 out = tempfile.mkdtemp()
 gen.api = FakeApi()
 leak = rel("v6.2", "Experimental: leaked (x @ 1234567)")   # an experiment published under a version tag
-expect_exit(lambda: gen.run("kiddreads/MuffinEMU", None, [leak, NIGHTLY], out), "REFUSING")
+expect_exit(lambda: gen.run("MuffinEMU/Muffin-EMU", None, [leak, NIGHTLY], out), "REFUSING")
 assert os.listdir(out) == [], os.listdir(out)
 print("ok: a refused run leaves the existing feeds untouched")
 print("all generator tests passed")

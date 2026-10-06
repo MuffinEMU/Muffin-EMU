@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The core's performance readout and notifications, drawn natively at full screen
 /// resolution.
@@ -127,10 +128,26 @@ private struct NativeOverlayCardView: View {
     }
 }
 
-/// A stack of cards pinned to one corner or edge, 10pt in from it.
+/// A stack of cards pinned to one corner or edge, 10pt in from it, and never closer than the
+/// screen's own safe area (the notch side and rounded corners of an iPhone) or the top bar.
 private struct NativeOverlayStackView: View {
     let position: ScreenPosition
     let cards: [NativeOverlayCard]
+    let safeArea: UIEdgeInsets
+    /// Bottom edge of the in-game top bar. The overlay sits beneath the bar, so a top
+    /// position would otherwise be drawn behind Back and the button row.
+    let topInset: CGFloat
+
+    private static let margin: CGFloat = 10
+
+    private var edgeInsets: EdgeInsets {
+        let margin = Self.margin
+        return EdgeInsets(
+            top: max(margin, topInset > 0 ? topInset + 6 : safeArea.top + margin),
+            leading: max(margin, safeArea.left),
+            bottom: max(margin, safeArea.bottom),
+            trailing: max(margin, safeArea.right))
+    }
 
     private var horizontalAlignment: HorizontalAlignment {
         switch position {
@@ -150,7 +167,7 @@ private struct NativeOverlayStackView: View {
                 NativeOverlayCardView(lines: ordered[index].lines, color: ordered[index].color, scale: ordered[index].scale)
             }
         }
-        .padding(10)
+        .padding(edgeInsets)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: position.alignment)
     }
 }
@@ -158,6 +175,8 @@ private struct NativeOverlayStackView: View {
 /// Polls the core at about 4 Hz and draws what it returns. Only in the view tree while the
 /// native overlay is active, so nothing polls otherwise.
 private struct NativeCoreOverlayLayer: View {
+    let topInset: CGFloat
+
     // Not .read(): a @State default is evaluated on every init of this struct, and reading
     // consumes the core's one-shot counters. The first real read is the first timer tick.
     @State private var snapshot = NativeOverlaySnapshot()
@@ -176,16 +195,30 @@ private struct NativeCoreOverlayLayer: View {
         }
     }
 
-    var body: some View {
+    @ViewBuilder
+    private func stacks(safeArea: UIEdgeInsets) -> some View {
         ZStack {
             if snapshot.statsPosition == snapshot.notificationPosition {
                 // Same corner: one stack, stats first, like the core.
-                NativeOverlayStackView(position: snapshot.statsPosition, cards: statsCards + notificationCards)
+                NativeOverlayStackView(position: snapshot.statsPosition, cards: statsCards + notificationCards,
+                                       safeArea: safeArea, topInset: topInset)
             } else {
-                NativeOverlayStackView(position: snapshot.statsPosition, cards: statsCards)
-                NativeOverlayStackView(position: snapshot.notificationPosition, cards: notificationCards)
+                NativeOverlayStackView(position: snapshot.statsPosition, cards: statsCards,
+                                       safeArea: safeArea, topInset: topInset)
+                NativeOverlayStackView(position: snapshot.notificationPosition, cards: notificationCards,
+                                       safeArea: safeArea, topInset: topInset)
             }
         }
+    }
+
+    var body: some View {
+        // The GeometryReader is only here so the safe area is read again whenever the
+        // window changes size (rotation, Split View, Stage Manager). The game's view tree
+        // ignores the safe area, so SwiftUI cannot supply it here.
+        GeometryReader { _ in
+            stacks(safeArea: WindowSafeArea.insets())
+        }
+        .accessibilityHidden(true)
         .onReceive(timer) { _ in
             let latest = NativeOverlaySnapshot.read()
             if latest != snapshot { snapshot = latest }
@@ -194,12 +227,17 @@ private struct NativeCoreOverlayLayer: View {
 }
 
 /// Drop-in layer for the emulator screen. Does not affect layout and never takes touches.
-/// `active` false hands the overlay back to the core's ImGui drawing.
+/// `active` false hands the overlay back to the core's ImGui drawing. `topInset` is the bottom
+/// edge of the in-game top bar, so top positions sit below it.
 struct NativeCoreOverlayView: View {
     let active: Bool
+    var topInset: CGFloat = 0
 
     var body: some View {
-        content
+        // A ZStack, so onAppear/onDisappear belong to this view and not to whichever branch
+        // of `content` is showing: switching branches must not briefly hand the overlay back
+        // to the core's own drawing and then take it again.
+        ZStack { content }
             .allowsHitTesting(false)
             .onAppear { cemu_bridge_set_native_overlay(active) }
             .onChange(of: active) { newValue in
@@ -211,9 +249,29 @@ struct NativeCoreOverlayView: View {
     @ViewBuilder
     private var content: some View {
         if active {
-            NativeCoreOverlayLayer()
+            NativeCoreOverlayLayer(topInset: topInset)
         } else {
             Color.clear.frame(width: 0, height: 0)
         }
+    }
+}
+
+/// The window's real safe-area insets. The in-game view tree ignores the safe area (the game
+/// fills the whole screen), so SwiftUI reports none inside it; the window still knows where
+/// an iPhone's notch side and rounded corners are. Zero on an iPad filling the screen.
+enum WindowSafeArea {
+    static func insets() -> UIEdgeInsets {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        return (windows.first(where: { $0.isKeyWindow }) ?? windows.first)?.safeAreaInsets ?? .zero
+    }
+
+    /// Padding for something pinned near an edge: `minimum` everywhere, more where the window
+    /// has a safe area. Vertical edges keep `minimum` (the status bar is hidden in game).
+    static func padding(minimum: CGFloat) -> EdgeInsets {
+        let safe = insets()
+        return EdgeInsets(top: minimum, leading: max(minimum, safe.left),
+                          bottom: minimum, trailing: max(minimum, safe.right))
     }
 }

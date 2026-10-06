@@ -61,8 +61,16 @@ final class PerGameSettingsStore: ObservableObject {
     /// value that only lived in a SwiftUI property wrapper would silently revert on every
     /// relaunch).
     func effectivePreCompileShaders(for gameID: String) -> Bool {
-        let globalDefault = defaults.object(forKey: "muffin.shaders.asyncCompile") as? Bool ?? true
-        return overrides(for: gameID).preCompileShaders ?? globalDefault
+        overrides(for: gameID).preCompileShaders ?? globalPreCompileShaders
+    }
+
+    /// What Settings says right now, for the screens that show it beside a game's own choice.
+    var globalPreCompileShaders: Bool {
+        defaults.object(forKey: "muffin.shaders.asyncCompile") as? Bool ?? true
+    }
+
+    var globalFavourAccuracy: Bool {
+        defaults.object(forKey: "muffin.cpu.favourAccuracy") as? Bool ?? false
     }
 
     func setPreCompileShaders(_ value: Bool?, for gameID: String) {
@@ -74,8 +82,7 @@ final class PerGameSettingsStore: ObservableObject {
     /// Per-game override first, global default underneath. Read before boot (see
     /// cemu_bridge_set_favour_accuracy's call site).
     func effectiveFavourAccuracy(for gameID: String) -> Bool {
-        let globalDefault = defaults.object(forKey: "muffin.cpu.favourAccuracy") as? Bool ?? false
-        return overrides(for: gameID).favourAccuracy ?? globalDefault
+        overrides(for: gameID).favourAccuracy ?? globalFavourAccuracy
     }
 
     func setFavourAccuracy(_ value: Bool?, for gameID: String) {
@@ -96,6 +103,11 @@ final class PerGameSettingsStore: ObservableObject {
         var next = overrides(for: gameID)
         next.coreMode = value?.rawValue
         write(next, for: gameID)
+    }
+
+    /// Puts one game back on the global settings.
+    func clearOverrides(for gameID: String) {
+        write(.identity, for: gameID)
     }
 
     /// Clears every per-game override at once - used by Settings > About > "Reset
@@ -141,7 +153,16 @@ struct GameContextMenu: View {
             get: { store.effectivePreCompileShaders(for: game.id) },
             set: { store.setPreCompileShaders($0, for: game.id) }
         )) {
-            Label("Compile Shaders in Background", systemImage: "bolt.fill")
+            Label("Compile Shaders in the Background", systemImage: "bolt.fill")
+        }
+        // The toggle above always sets this game's own choice, so when it has one, say so and
+        // offer the way back to following Settings without a trip into the options screen.
+        if store.overrides(for: game.id).preCompileShaders != nil {
+            Button {
+                store.setPreCompileShaders(nil, for: game.id)
+            } label: {
+                Label("Use Global Shader Setting", systemImage: "arrow.uturn.backward")
+            }
         }
         Button(action: onViewOptions) {
             Label("View Game Options", systemImage: "slider.horizontal.3")
@@ -201,7 +222,47 @@ struct GameContextMenu: View {
     }
 }
 
+/// One override row: the setting's name and menu, with a line under it saying what it follows
+/// or what this game has been set to. Used for every per-game choice on the options screen.
+private struct OverridePickerRow<Selection: Hashable, Options: View>: View {
+    let title: String
+    let caption: String
+    let selection: Binding<Selection>
+    let isDisabled: Bool
+    let options: Options
+
+    init(title: String, caption: String, selection: Binding<Selection>, isDisabled: Bool = false,
+         @ViewBuilder options: () -> Options) {
+        self.title = title
+        self.caption = caption
+        self.selection = selection
+        self.isDisabled = isDisabled
+        self.options = options()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker(selection: selection) {
+                options
+            } label: {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .pickerStyle(.menu)
+            .tint(MuffinTheme.accentText)
+            .disabled(isDisabled)
+            Text(caption)
+                .font(.system(size: 12))
+                .foregroundColor(MuffinTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 /// The full per-game settings screen "View Game Options" opens into.
+///
+/// Only reachable from the library, so a game is never running while these change: every
+/// choice here is read when the game next starts.
 struct GameOptionsView: View {
     let game: GameMetadata
     @ObservedObject var store: PerGameSettingsStore
@@ -256,11 +317,192 @@ struct GameOptionsView: View {
         binding(for: \.favourAccuracy) { store.setFavourAccuracy($0, for: game.id) }
     }
 
-    /// nil is "Use Global Default"; the tag is CoreMode.rawValue otherwise.
+    /// nil is "Use Global Default"; the tag is CoreMode.rawValue otherwise. A stored value this
+    /// version does not know (saved by a newer one) reads as "Use Global Default", which is what
+    /// the launch does with it.
     private var coreModeChoice: Binding<String> {
         Binding(
-            get: { store.overrides(for: game.id).coreMode ?? "" },
+            get: {
+                guard let raw = store.overrides(for: game.id).coreMode, CoreMode(rawValue: raw) != nil else { return "" }
+                return raw
+            },
             set: { store.setCoreMode(CoreMode(rawValue: $0), for: game.id) })
+    }
+
+    // MARK: Captions
+
+    /// "Follows Settings, which has it on." or "Set for this game only. Settings has it on."
+    private func caption(pinned: Bool, settingsValue: String) -> String {
+        pinned
+            ? "Set for this game only. Settings has it \(settingsValue)."
+            : "Follows Settings, which has it \(settingsValue)."
+    }
+
+    private var shaderCaption: String {
+        caption(pinned: store.overrides(for: game.id).preCompileShaders != nil,
+                settingsValue: store.globalPreCompileShaders ? "on" : "off")
+    }
+
+    private var favourAccuracyCaption: String {
+        caption(pinned: store.overrides(for: game.id).favourAccuracy != nil,
+                settingsValue: store.globalFavourAccuracy ? "on" : "off")
+    }
+
+    private var coreModeCaption: String {
+        guard DeviceCapabilities.current.multicoreViable else { return DeviceCapabilities.oneCoreOnlyText }
+        let base = caption(pinned: store.overrides(for: game.id).coreMode != nil,
+                           settingsValue: "set to \(CoreMode.current.title)")
+        guard store.effectiveCoreMode(for: game.id) != .single else { return base }
+        if store.effectiveFavourAccuracy(for: game.id) {
+            return base + " Favour accuracy is on for this game, so it runs on one core whatever this says."
+        }
+        if LowPowerMode.isEnabled {
+            return base + " Low Power Mode is on in Settings, so games run on one core whatever this says."
+        }
+        return base
+    }
+
+    // MARK: Sections
+
+    private var overridesSection: some View {
+        Section {
+            OverridePickerRow(title: "Compile shaders in the background", caption: shaderCaption, selection: shaderChoice) {
+                ForEach(TriState.allCases) { choice in
+                    Text(choice.title).tag(choice)
+                }
+            }
+            OverridePickerRow(title: "Favour accuracy", caption: favourAccuracyCaption, selection: favourAccuracyChoice) {
+                ForEach(TriState.allCases) { choice in
+                    Text(choice.title).tag(choice)
+                }
+            }
+            OverridePickerRow(title: "CPU cores", caption: coreModeCaption, selection: coreModeChoice,
+                              isDisabled: !DeviceCapabilities.current.multicoreViable) {
+                Text("Use Global Default").tag("")
+                ForEach(CoreMode.allCases) { mode in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
+            if !store.overrides(for: game.id).isIdentity {
+                Button {
+                    store.clearOverrides(for: game.id)
+                } label: {
+                    Label("Use Global Defaults for All", systemImage: "arrow.uturn.backward")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                }
+            }
+        } header: {
+            SettingsSectionHeader("Overrides", icon: "slider.horizontal.3", accent: .core)
+        } footer: {
+            InfoButton.footer(
+                "\"Use Global Default\" follows Settings; On or Off sets this game only. Changes apply the next time you start the game.",
+                title: "Overrides",
+                text: "Compile shaders in the background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nFavour accuracy is slower but more accurate, and can fix a game that glitches or crashes. It also keeps the game on one CPU core. See Settings > CPU.\n\nCPU cores picks how many cores run the game. Auto decides for each game and device.\n\n\"Use Global Default\" follows the matching setting in Settings, even if you change it later. On or Off sets this game only.\n\nChanges apply the next time you start the game."
+            )
+        }
+    }
+
+    private var graphicPacksSection: some View {
+        Section {
+            NavigationLink {
+                GraphicPacksView(game: game)
+            } label: {
+                Label("Graphic Packs", systemImage: "wand.and.stars")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+        } header: {
+            SettingsSectionHeader("Graphic packs", icon: "paintpalette", accent: .core)
+        } footer: {
+            InfoButton.footer(
+                "Resolution, frame rate, fixes and mods for this game. They apply the next time you start it.",
+                title: "Graphic packs",
+                text: "Graphic packs change how a game looks or plays: higher resolutions, frame-rate patches, fixes for known glitches and mods. Download the community packs, turn on the ones you want for this game, and pick their options. Nothing is turned on automatically.\n\nHigher resolutions cost speed and memory, and what is reasonable depends on the device, so the options show a suggestion for this one.\n\nPacks listed under All games apply to every game, not just this one. Packs apply the next time you start the game."
+            )
+        }
+    }
+
+    private var gameSavesSection: some View {
+        Section {
+            exportSaveButton
+            importSaveButton
+            if let saveTransferMessage {
+                Text(saveTransferMessage)
+                    .font(.system(size: 12))
+                    .foregroundColor(saveTransferFailed ? .red : MuffinTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            SettingsSectionHeader("Game saves", icon: "externaldrive", accent: .io)
+        } footer: {
+            InfoButton.footer(
+                "The save the game itself writes. Not a save state. Export is available once the game has saved.",
+                title: "Game saves",
+                text: "This is the save the game itself writes. It uses the Wii U\'s own format, so it can move between MuffinEMU, desktop Cemu and a real console. A save state is a snapshot of the whole emulated console and only MuffinEMU can read it.\n\nExport writes a folder named after the game and title ID. Import accepts that folder, a folder named after the title ID from another Cemu install, or its \'user\' folder. Importing replaces the current save; the old one is first copied to save-backups in MuffinEMU\'s Documents folder."
+            )
+        }
+    }
+
+    private var exportSaveButton: some View {
+        Button {
+            GameSaveTransfer.export(game) { result in
+                switch result {
+                case .success(let note):
+                    saveTransferMessage = note
+                    saveTransferFailed = false
+                case .failure(let error):
+                    saveTransferMessage = error.localizedDescription
+                    // Backing out of the picker is not an error, so it is not shown as one.
+                    if case GameSaveTransfer.TransferError.cancelled = error {
+                        saveTransferFailed = false
+                    } else {
+                        saveTransferFailed = true
+                    }
+                }
+            }
+        } label: {
+            Label("Export game saves", systemImage: "square.and.arrow.up")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+        }
+        .disabled(!GameSaveTransfer.hasSave(for: game))
+    }
+
+    // Confirmed, unlike export: this one replaces what is already there. It is backed up
+    // either way, but someone should know they are about to swap their progress out before
+    // the picker opens, not after.
+    private var importSaveButton: some View {
+        Button(role: .destructive) {
+            showingImportConfirmation = true
+        } label: {
+            Label("Import game save folder", systemImage: "square.and.arrow.down")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+        }
+    }
+
+    private func pickSaveFolder() {
+        DocumentImport.present(contentTypes: [.folder]) { result in
+            switch result {
+            case .success(let urls):
+                guard let picked = urls.first else { return }
+                do {
+                    saveTransferMessage = try GameSaveTransfer.importSave(game, from: picked)
+                    saveTransferFailed = false
+                } catch {
+                    saveTransferMessage = error.localizedDescription
+                    saveTransferFailed = true
+                }
+            case .failure(let error):
+                saveTransferMessage = error.localizedDescription
+                saveTransferFailed = true
+            }
+        }
+    }
+
+    private var optionsForm: some View {
+        Form {
+            overridesSection
+            graphicPacksSection
+            gameSavesSection
+        }
     }
 
     var body: some View {
@@ -270,148 +512,10 @@ struct GameOptionsView: View {
                 MuffinTheme.backgroundGradient
                     .ignoresSafeArea()
 
-                Form {
-                    Section {
-                        HStack {
-                            Text("Compile Shaders in Background")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            Spacer()
-                            Picker("Compile Shaders in Background", selection: shaderChoice) {
-                                ForEach(TriState.allCases) { choice in
-                                    Text(choice.title).tag(choice)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            // The row's own Text is the label; a menu picker in a Form row prints its label as well.
-                            .labelsHidden()
-                            .tint(MuffinTheme.accentText)
-                        }
-                        HStack {
-                            Text("Favour Accuracy")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            Spacer()
-                            Picker("Favour Accuracy", selection: favourAccuracyChoice) {
-                                ForEach(TriState.allCases) { choice in
-                                    Text(choice.title).tag(choice)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .labelsHidden()
-                            .tint(MuffinTheme.accentText)
-                        }
-                        HStack {
-                            Text("CPU Cores")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            Spacer()
-                            Picker("CPU Cores", selection: coreModeChoice) {
-                                Text("Use Global Default").tag("")
-                                ForEach(CoreMode.allCases) { mode in
-                                    Text(mode.title).tag(mode.rawValue)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .labelsHidden()
-                            .tint(MuffinTheme.accentText)
-                            .disabled(!DeviceCapabilities.current.multicoreViable)
-                        }
-                        if !DeviceCapabilities.current.multicoreViable {
-                            Text(DeviceCapabilities.oneCoreOnlyText)
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
-                        }
-                    } header: {
-                        SettingsSectionHeader("Overrides", icon: "slider.horizontal.3", accent: .core)
-                    } footer: {
-                        InfoButton.footer(
-                            "\"Use Global Default\" tracks Settings; On/Off pins this game regardless of it.",
-                            title: "Overrides",
-                            text: "Compile Shaders in Background builds shaders while the game keeps running. Most games want this on; Nano Assault Neo breaks with it, so it can be set per game.\n\nFavour Accuracy is slower but more accurate, and can fix a game that glitches, desyncs or crashes. See Settings > CPU.\n\n\"Use Global Default\" follows the matching setting in Settings, even if you change it later. On or Off pins this game."
-                        )
-                    }
-
-
-                    Section {
-                        NavigationLink {
-                            GraphicPacksView(game: game)
-                        } label: {
-                            Label("Graphic Packs", systemImage: "wand.and.stars")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        }
-                    } header: {
-                        SettingsSectionHeader("Graphic packs", icon: "paintpalette", accent: .core)
-                    } footer: {
-                        InfoButton.footer(
-                            "Resolution, frame rate, fixes and mods for this game. They apply the next time you launch it.",
-                            title: "Graphic packs",
-                            text: "Graphic packs change how a game looks or plays: higher resolutions, frame-rate patches, fixes for known glitches and mods. Download the community packs, turn on the ones you want for this game, and pick their options. Nothing is turned on automatically.\n\nHigher resolutions cost speed and memory, and what is reasonable depends on the device, so the options show a suggestion for this one.\n\nPacks apply the next time you launch the game."
-                        )
-                    }
-
-                    Section {
-                        Button {
-                            GameSaveTransfer.export(game) { result in
-                                switch result {
-                                case .success(let note):
-                                    saveTransferMessage = note
-                                    saveTransferFailed = false
-                                case .failure(let error):
-                                    saveTransferMessage = error.localizedDescription
-                                    saveTransferFailed = true
-                                }
-                            }
-                        } label: {
-                            Label("Export game saves", systemImage: "square.and.arrow.up")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        }
-                        .disabled(!GameSaveTransfer.hasSave(for: game))
-
-                        // Confirmed, unlike export: this one replaces what is already
-                        // there. It is backed up either way, but someone should know
-                        // they are about to swap their progress out before the picker
-                        // opens, not after.
-                        Button(role: .destructive) {
-                            showingImportConfirmation = true
-                        } label: {
-                            Label("Import game save folder", systemImage: "square.and.arrow.down")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        }
-
-                        if let saveTransferMessage {
-                            Text(saveTransferMessage)
-                                .font(.system(size: 12))
-                                .foregroundColor(saveTransferFailed ? .red : MuffinTheme.secondaryText)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    } header: {
-                        SettingsSectionHeader("Game saves", icon: "externaldrive", accent: .io)
-                    } footer: {
-                        InfoButton.footer(
-                            "The save the game itself writes. Not a save state.",
-                            title: "Game saves",
-                            text: "This is the save the game itself writes. It uses the Wii U\'s own format, so it can move between MuffinEMU, desktop Cemu and a real console. A save state is a snapshot of the whole emulated console and only MuffinEMU can read it.\n\nExport writes a folder named after the game and title ID. Import accepts that folder, a folder named after the title ID from another Cemu install, or its \'user\' folder. Importing replaces the current save; the old one is first copied to save-backups in MuffinEMU\'s Documents folder. Close the game first."
-                        )
-                    }
-                }
+                optionsForm
             }
             .confirmationDialog("Import a save folder?", isPresented: $showingImportConfirmation, titleVisibility: .visible) {
-                Button("Choose folder", role: .destructive) {
-                    DocumentImport.present(contentTypes: [.folder]) { result in
-                        switch result {
-                        case .success(let urls):
-                            guard let picked = urls.first else { return }
-                            do {
-                                saveTransferMessage = try GameSaveTransfer.importSave(game, from: picked)
-                                saveTransferFailed = false
-                            } catch {
-                                saveTransferMessage = error.localizedDescription
-                                saveTransferFailed = true
-                            }
-                        case .failure(let error):
-                            saveTransferMessage = error.localizedDescription
-                            saveTransferFailed = true
-                        }
-                    }
-                }
+                Button("Choose folder", role: .destructive, action: pickSaveFolder)
                 Button("Cancel", role: .cancel) { }
             } message: {
                 Text("This replaces \(game.title)\'s current save. The one you have now is backed up first, and the game should be closed before you do this.")
