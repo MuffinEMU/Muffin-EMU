@@ -2,9 +2,17 @@
 #include "util/helpers/helpers.h"
 
 #include <mutex>
+#include <algorithm>
 #include <condition_variable>
 #include "zlib.h"
 #include "Common/FileStream.h"
+
+// 16-bit checksum of an entry's stored bytes, kept in the entry's two spare bytes.
+static uint16 _fileCache_checksum(const uint8* data, size_t size)
+{
+	const uLong crc = crc32(0L, data, (uInt)size);
+	return (uint16)((crc ^ (crc >> 16)) & 0xFFFF);
+}
 
 struct FileCacheAsyncJob
 {
@@ -219,6 +227,52 @@ FileCache* FileCache::_OpenExisting(const fs::path& path, bool compareExtraVersi
 	return fileCache;
 }
 
+bool FileCache::Verify(const fs::path& path)
+{
+	std::error_code ec;
+	if (!fs::exists(path, ec))
+		return false;
+	FileCache* fc = _OpenExisting(path, false);
+	if (!fc)
+		return false;
+	bool ok = true;
+	const uint64 fileSize = fc->fileStream->GetSize();
+	// entry 0 is the file table itself and has to agree with the header
+	if (fc->fileTableEntryCount == 0 ||
+		fc->fileTableEntries[0].name1 != FILECACHE_FILETABLE_NAME1 || fc->fileTableEntries[0].name2 != FILECACHE_FILETABLE_NAME2 ||
+		fc->fileTableEntries[0].fileOffset != fc->fileTableOffset)
+		ok = false;
+	std::vector<std::pair<uint64, uint64>> spans; // offset, end
+	for (uint32 i = 0; ok && i < fc->fileTableEntryCount; i++)
+	{
+		const FileTableEntry& e = fc->fileTableEntries[i];
+		if (e.name1 == FILECACHE_FILETABLE_FREE_NAME && e.name2 == FILECACHE_FILETABLE_FREE_NAME)
+			continue;
+		const uint64 end = e.fileOffset + e.fileSize;
+		if (end < e.fileOffset || fc->dataOffset + end > fileSize)
+			ok = false;
+		spans.emplace_back(e.fileOffset, end);
+	}
+	if (ok)
+	{
+		std::sort(spans.begin(), spans.end());
+		for (size_t i = 1; ok && i < spans.size(); i++)
+			if (spans[i].first < spans[i - 1].second)
+				ok = false;
+	}
+	std::vector<uint8> data;
+	for (uint32 i = 1; ok && i < fc->fileTableEntryCount; i++)
+	{
+		const FileTableEntry& e = fc->fileTableEntries[i];
+		if (e.name1 == FILECACHE_FILETABLE_FREE_NAME && e.name2 == FILECACHE_FILETABLE_FREE_NAME)
+			continue;
+		if ((e.flags & FileTableEntry::FLAG_CHECKSUM) != 0 && !fc->_getFileDataInternal(&e, data))
+			ok = false;
+	}
+	delete fc;
+	return ok;
+}
+
 FileCache* FileCache::Open(const fs::path& path, bool allowCreate, uint32 extraVersion)
 {
 	FileCache* fileCache = _OpenExisting(path, true, extraVersion);
@@ -292,6 +346,9 @@ void FileCache::fileCache_updateFiletable(sint32 extraEntriesToAllocate)
 	fileStream->writeU64(this->dataOffset);
 	fileStream->writeU64(this->fileTableOffset);
 	fileStream->writeU32(this->fileTableSize);
+#ifdef __APPLE__
+	fileStream->Flush();
+#endif
 }
 
 uint8* _fileCache_compressFileData(const uint8* fileData, uint32 fileSize, sint32& compressedSize)
@@ -476,6 +533,14 @@ void FileCache::_addFileInternal(uint64 name1, uint64 name2, const uint8* fileDa
 	this->fileTableEntries[entryIndex].extraReserved1 = 0;
 	this->fileTableEntries[entryIndex].extraReserved2 = 0;
 	this->fileTableEntries[entryIndex].extraReserved3 = 0;
+	// Checksum every entry but the file table itself, which is rewritten in place entry by entry.
+	if (!(name1 == FILECACHE_FILETABLE_NAME1 && name2 == FILECACHE_FILETABLE_NAME2))
+	{
+		const uint16 checksum = _fileCache_checksum(rawData, (size_t)rawSize);
+		this->fileTableEntries[entryIndex].flags = (FileTableEntry::FLAGS)(this->fileTableEntries[entryIndex].flags | FileTableEntry::FLAGS::FLAG_CHECKSUM);
+		this->fileTableEntries[entryIndex].extraReserved1 = (uint8)(checksum & 0xFF);
+		this->fileTableEntries[entryIndex].extraReserved2 = (uint8)(checksum >> 8);
+	}
 	// write file data
 	fileStream->SetPosition(this->dataOffset + currentStartOffset);
 	fileStream->writeData(rawData, rawSize);
@@ -516,6 +581,9 @@ bool FileCache::DeleteFile(const FileName&& name)
 			size_t entryIndex = entry - this->fileTableEntries;
 			fileStream->SetPosition(this->dataOffset+this->fileTableOffset+(uint64)(sizeof(FileTableEntry)*entryIndex));
 			fileStream->writeData(this->fileTableEntries+entryIndex, sizeof(FileTableEntry));
+#ifdef __APPLE__
+			fileStream->Flush(); // hand it to the OS now, so a force-quit can't drop it
+#endif
 			return true;
 		}
 		entry++;
@@ -533,7 +601,16 @@ bool FileCache::_getFileDataInternal(const FileTableEntry* entry, std::vector<ui
 	std::vector<uint8> rawData(entry->fileSize);
 
 	fileStream->SetPosition(this->dataOffset + entry->fileOffset);
-	fileStream->readData(rawData.data(), entry->fileSize);
+	// A short read means the file ends before this entry does (cut short by a kill or a full disk):
+	// fail it rather than hand back the zero padding as if it were data.
+	if (fileStream->readData(rawData.data(), entry->fileSize) != entry->fileSize)
+		return false;
+	if ((entry->flags & FileTableEntry::FLAG_CHECKSUM) != 0)
+	{
+		const uint16 stored = (uint16)(entry->extraReserved1 | ((uint16)entry->extraReserved2 << 8));
+		if (_fileCache_checksum(rawData.data(), rawData.size()) != stored)
+			return false;
+	}
 
 	if ((entry->flags&FileTableEntry::FLAG_COMPRESSED) == 0)
 	{
@@ -566,6 +643,17 @@ bool FileCache::GetFile(const FileName&& name, std::vector<uint8>& dataOut)
 	}
 	dataOut.clear();
 	return false;
+}
+
+bool FileCache::IsUsedIndex(sint32 index)
+{
+	std::unique_lock lock(this->mutex);
+	if (index < 0 || index >= this->fileTableEntryCount || this->fileTableEntries == nullptr)
+		return false;
+	const FileTableEntry* entry = this->fileTableEntries + index;
+	if (entry->name1 == FILECACHE_FILETABLE_FREE_NAME && entry->name2 == FILECACHE_FILETABLE_FREE_NAME)
+		return false;
+	return !(entry->name1 == FILECACHE_FILETABLE_NAME1 && entry->name2 == FILECACHE_FILETABLE_NAME2);
 }
 
 bool FileCache::GetFileByIndex(sint32 index, uint64* name1, uint64* name2, std::vector<uint8>& dataOut)

@@ -35,6 +35,9 @@
 #include <audio/IAudioAPI.h>
 #include <util/bootSound/BootSoundReader.h>
 #include <thread>
+#if __APPLE__
+#include <sys/clonefile.h>
+#endif
 
 #if BOOST_OS_WINDOWS
 #include <psapi.h>
@@ -366,6 +369,117 @@ void LatteShaderCache_drawBackgroundImage(ImTextureID texture, int width, int he
 	ImGui::PopStyleVar(2);
 }
 
+// Shader and pipeline cache protection. A game's learned shaders and pipelines are worth hours of
+// play, so they are never thrown away by a crash, a force-quit or a full disk:
+//  - before the caches are opened, each file with a backup is checked end to end (FileCache::Verify);
+//    a damaged one, or every one after a load that found bad entries, is set aside and the backup
+//    restored;
+//  - after a load that found nothing wrong, every cache file of the title is copied to
+//    shaderCache/backup. On APFS the copy is a clone: instant, and no extra space until the files
+//    differ. Copies go through a temporary name and are verified before they replace the old backup,
+//    so a backup is always a known-good file.
+// Clearing the shader cache in Settings removes the backups too.
+static std::vector<fs::path> ShaderCacheGuard_List(const fs::path& dir, uint64 titleId)
+{
+	std::vector<fs::path> files;
+	std::error_code ec;
+	const std::string prefix = fmt::format("{:016x}_", titleId);
+	for (const auto& it : fs::directory_iterator(dir, ec))
+	{
+		std::error_code fileEc;
+		if (!it.is_regular_file(fileEc) || it.path().extension() != ".bin")
+			continue;
+		if (_pathToUtf8(it.path().filename()).rfind(prefix, 0) == 0)
+			files.push_back(it.path());
+	}
+	return files;
+}
+
+static bool ShaderCacheGuard_Copy(const fs::path& src, const fs::path& dst)
+{
+	std::error_code ec;
+	fs::path tmp = dst;
+	tmp += ".tmp";
+	fs::remove(tmp, ec);
+	bool copied = false;
+#if __APPLE__
+	copied = clonefile(src.c_str(), tmp.c_str(), 0) == 0;
+#endif
+	if (!copied)
+		copied = fs::copy_file(src, tmp, fs::copy_options::overwrite_existing, ec) && !ec;
+	if (!copied || !FileCache::Verify(tmp))
+	{
+		fs::remove(tmp, ec);
+		return false;
+	}
+	fs::rename(tmp, dst, ec);
+	if (ec)
+	{
+		fs::remove(tmp, ec);
+		return false;
+	}
+	return true;
+}
+
+static fs::path ShaderCacheGuard_SuspectMarker(uint64 titleId)
+{
+	return ActiveSettings::GetCachePath("shaderCache/backup/{:016x}.suspect", titleId);
+}
+
+static void ShaderCacheGuard_BeforeLoad(uint64 titleId)
+{
+	std::error_code ec;
+	const fs::path liveDir = ActiveSettings::GetCachePath("shaderCache/transferable");
+	const fs::path backupDir = ActiveSettings::GetCachePath("shaderCache/backup");
+	fs::create_directories(backupDir, ec);
+	const fs::path suspect = ShaderCacheGuard_SuspectMarker(titleId);
+	const bool lastLoadFoundDamage = fs::exists(suspect, ec);
+	for (const fs::path& backup : ShaderCacheGuard_List(backupDir, titleId))
+	{
+		const fs::path live = liveDir / backup.filename();
+		const bool liveExists = fs::exists(live, ec);
+		if (liveExists && !lastLoadFoundDamage && FileCache::Verify(live))
+			continue;
+		if (!FileCache::Verify(backup))
+		{
+			cemuLog_log(LogType::Force, "Shader cache guard: backup \"{}\" is not usable, leaving the live file alone", _pathToUtf8(backup.filename()));
+			continue;
+		}
+		if (liveExists)
+		{
+			fs::path aside = live;
+			aside += ".unreadable";
+			fs::remove(aside, ec);
+			fs::rename(live, aside, ec);
+		}
+		if (ShaderCacheGuard_Copy(backup, live))
+			cemuLog_log(LogType::Force, "Shader cache guard: restored \"{}\" from its backup ({})", _pathToUtf8(live.filename()),
+				!liveExists ? "it was missing" : (lastLoadFoundDamage ? "the last load found damaged entries" : "it failed the check"));
+		else
+			cemuLog_log(LogType::Force, "Shader cache guard: could not restore \"{}\"", _pathToUtf8(live.filename()));
+	}
+	fs::remove(suspect, ec);
+}
+
+static void ShaderCacheGuard_AfterLoad(uint64 titleId, bool clean)
+{
+	std::error_code ec;
+	if (!clean)
+	{
+		// Keep the backup as it is (it predates the damage) and restore it at the next start.
+		FileStream* marker = FileStream::createFile2(ShaderCacheGuard_SuspectMarker(titleId));
+		delete marker;
+		cemuLog_log(LogType::Force, "Shader cache guard: damaged entries this load; the backup will be restored at the next start");
+		return;
+	}
+	const fs::path backupDir = ActiveSettings::GetCachePath("shaderCache/backup");
+	for (const fs::path& live : ShaderCacheGuard_List(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId))
+	{
+		if (!ShaderCacheGuard_Copy(live, backupDir / live.filename()))
+			cemuLog_log(LogType::Force, "Shader cache guard: could not back up \"{}\"; the previous backup is kept", _pathToUtf8(live.filename()));
+	}
+}
+
 void LatteShaderCache_Load()
 {
 	shaderCacheScreenStats.compiledShaderCount = 0;
@@ -388,6 +502,7 @@ void LatteShaderCache_Load()
 	std::error_code ec;
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/transferable"), ec);
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/precompiled"), ec);
+	ShaderCacheGuard_BeforeLoad(cacheTitleId);
 	// initialize renderer specific caches
 	switch(g_renderer->GetType())
 	{
@@ -474,6 +589,7 @@ void LatteShaderCache_Load()
 		g_bootSndPlayer.StartSound();
 
 	sint32 numLoadedShaders = 0;
+	sint32 numDamagedShaders = 0;
 	uint32 loadIndex = 0;
 
 	auto LoadShadersUpdate = [&]() -> bool
@@ -486,6 +602,9 @@ void LatteShaderCache_Load()
 		std::vector<uint8> fileData;
 		if (!s_shaderCacheGeneric->GetFileByIndex(loadIndex, &name1, &name2, fileData))
 		{
+			// free slots also return false; a used slot that fails to read (checksum, short file) is damage
+			if (s_shaderCacheGeneric->IsUsedIndex(loadIndex))
+				numDamagedShaders++;
 			loadIndex++;
 			return true;
 		}
@@ -495,6 +614,7 @@ void LatteShaderCache_Load()
 			// something is wrong with the stored shader, remove entry from shader cache files
 			cemuLog_log(LogType::Force, "Shader cache entry {} invalid, deleting...", loadIndex);
 			s_shaderCacheGeneric->DeleteFile({name1, name2 });
+			numDamagedShaders++;
 		}
 		numLoadedShaders++;
 		loadIndex++;
@@ -520,6 +640,7 @@ void LatteShaderCache_Load()
 	if (g_renderer->GetType() == RendererAPI::Vulkan || g_renderer->GetType() == RendererAPI::Metal)
         LatteShaderCache_LoadPipelineCache(cacheTitleId);
 #endif
+	ShaderCacheGuard_AfterLoad(cacheTitleId, numDamagedShaders == 0);
 
 
 	g_renderer->BeginFrame(true);
