@@ -47,6 +47,9 @@ struct DiagnosticsSection: View {
     @AppStorage(LaunchLogSettings.showKey) private var showLaunchLog = false
     @AppStorage("muffin.showLaunchIntro") private var launchIntroEnabled = true
     @AppStorage(PadDiagnostics.enabledKey) private var padOverlayEnabled = PadDiagnostics.defaultEnabled
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+
+    private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
     var body: some View {
         // Log collection is always on (see IOSLiveLog.h). The intro sits directly above the log
@@ -62,30 +65,33 @@ struct DiagnosticsSection: View {
             }
             .tint(MuffinTheme.accentText)
 
-            Toggle(isOn: $showLaunchLog) {
-                Label {
-                    Text("Show launch log")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                } icon: {
-                    Image(systemName: "text.alignleft")
-                }
-            }
-            .tint(MuffinTheme.accentText)
-
-            Toggle(isOn: $padOverlayEnabled) {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show controls diagnostic")
+            // The log and the controls readout are Advanced mode only (see AdvancedSettings).
+            if advanced {
+                Toggle(isOn: $showLaunchLog) {
+                    Label {
+                        Text("Show launch log")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        Text("A small readout over the game showing whether your button presses are reaching the game, and why not if they aren't.")
-                            .font(.system(size: 12))
-                            .foregroundColor(MuffinTheme.secondaryText)
+                    } icon: {
+                        Image(systemName: "text.alignleft")
                     }
-                } icon: {
-                    Image(systemName: "gamecontroller.badge.exclamationmark")
                 }
+                .tint(MuffinTheme.accentText)
+
+                Toggle(isOn: $padOverlayEnabled) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Show controls diagnostic")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("A small readout over the game showing whether your button presses are reaching the game, and why not if they aren't.")
+                                .font(.system(size: 12))
+                                .foregroundColor(MuffinTheme.secondaryText)
+                        }
+                    } icon: {
+                        Image(systemName: "gamecontroller.badge.exclamationmark")
+                    }
+                }
+                .tint(MuffinTheme.accentText)
             }
-            .tint(MuffinTheme.accentText)
         } header: {
             SettingsSectionHeader("Diagnostics", icon: "stethoscope", accent: .system)
         } footer: {

@@ -197,6 +197,8 @@ class GameManager: ObservableObject {
         cemu_bridge_set_title_switch_callback { titleId in
             TitleSwitchSettings.apply(titleId: titleId)
         }
+        // A run that ended without stopEmulation (a crash) can leave a game's own layout in the shared key.
+        ActiveGameSettings.end()
         emulationEngine = EmulationEngine()
         // Thermal throttling lowers the picture quality on its own; say so over the game.
         ThermalMonitor.shared.onNotice = { [weak self] text in
@@ -1109,6 +1111,9 @@ class GameManager: ObservableObject {
         }
         needsCleanRestart = false
         titleEndedByEngine = false
+        // The game's own Advanced options (Resolution, screen layout, ...) have to be in place before the
+        // surface is sized and the views mount, so this comes before .loading.
+        ActiveGameSettings.begin(gameID: game.settingsKey)
         emulationState = .loading
 
         guard let engine = emulationEngine else {
@@ -1205,8 +1210,10 @@ class GameManager: ObservableObject {
             cemu_bridge_set_favour_accuracy(
                 PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.settingsKey))
             // Global. The bridge ignores it when Favour accuracy is on for this game.
-            cemu_bridge_set_favour_performance(FavourPerformance.isEnabled)
-            FullSpeedRenders.applyToBridge()
+            // Per-game override first (Advanced mode), the global switch underneath.
+            cemu_bridge_set_favour_performance(
+                PerGameSettingsStore.shared.effectiveFavourPerformance(for: game.settingsKey))
+            PerGameSettingsStore.shared.applyFullSpeedRenders(for: game.settingsKey)
             // Per-game override first, global default underneath it - PerGameSettingsStore
             // reads the same UserDefaults key directly for exactly the reason above: an
             // override that only lived in a @Published property would revert the moment
@@ -1217,7 +1224,7 @@ class GameManager: ObservableObject {
             // count is fixed the moment _LaunchTitleThread() starts its host threads, so
             // a Settings change only takes effect on the next launch and has to be pushed
             // before boot rather than when the toggle moved.
-            cemu_bridge_set_low_power_mode(OneCoreMode.isEnabled)
+            cemu_bridge_set_low_power_mode(PerGameSettingsStore.shared.effectiveOneCoreMode(for: game.settingsKey))
             // Motion aiming (Settings > Motion & Aiming): on by default. It takes effect live, but the
             // stored choice has to reach the engine at least once per launch.
             MotionSettings.applyToBridge()
@@ -1248,12 +1255,10 @@ class GameManager: ObservableObject {
                 Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.graphicsAPI") as? Int ?? 2))
             // Favour performance swaps both for linear, the cheapest blend, unless this game favours
             // accuracy (which wins, as in the bridge).
-            let cheapFilters = FavourPerformance.isEnabled
-                && !PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.settingsKey)
-            cemu_bridge_set_upscale_filter(cheapFilters ? Int32(ScaleFilter.linear.rawValue) :
-                Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.upscaleFilter") as? Int ?? 1))
-            cemu_bridge_set_downscale_filter(cheapFilters ? Int32(ScaleFilter.linear.rawValue) :
-                Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.downscaleFilter") as? Int ?? 0))
+            // The game's own filters (Advanced mode) come first, the global ones underneath.
+            let filters = PerGameSettingsStore.shared.filtersToPush(for: game.settingsKey)
+            cemu_bridge_set_upscale_filter(filters.upscale)
+            cemu_bridge_set_downscale_filter(filters.downscale)
 
             // Screen flip, gamma and the performance overlay - same "push from UserDefaults
             // before boot" reasoning as everything above: the engine reads all of these once
@@ -1272,9 +1277,9 @@ class GameManager: ObservableObject {
             cemu_bridge_set_override_gamma_value(Float(
                 UserDefaults.standard.object(forKey: OverrideGammaSetting.storageKey) as? Double
                     ?? OverrideGammaSetting.defaultValue))
+            // On or off for this game (Advanced mode) first, the corner chosen in Settings underneath.
             cemu_bridge_set_overlay_position(
-                Int32(clamping: UserDefaults.standard.object(forKey: OverlaySettings.positionKey) as? Int
-                    ?? OverlaySettings.defaultPosition.rawValue))
+                Int32(PerGameSettingsStore.shared.effectiveOverlayPosition(for: game.settingsKey).rawValue))
             cemu_bridge_set_overlay_text_color(
                 UInt32(clamping: UserDefaults.standard.object(forKey: OverlaySettings.textColorKey) as? Int
                     ?? OverlaySettings.defaultTextColor))
@@ -1465,6 +1470,8 @@ class GameManager: ObservableObject {
         surfaceRegistered = false
         emulationState = .idle
         currentGame = nil
+        // The player's own screen layout and controller auto-hide come back if this game had its own.
+        ActiveGameSettings.end()
     }
 
     func getEmulationEngine() -> EmulationEngine? {
@@ -1638,9 +1645,24 @@ final class TitleSwitchSettings {
         cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemoted(gameID: id))
         cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: id).bridgeValue)
         cemu_bridge_set_favour_accuracy(PerGameSettingsStore.shared.effectiveFavourAccuracy(for: id))
-        cemu_bridge_set_favour_performance(FavourPerformance.isEnabled)
-        FullSpeedRenders.applyToBridge()
+        cemu_bridge_set_favour_performance(PerGameSettingsStore.shared.effectiveFavourPerformance(for: id))
+        PerGameSettingsStore.shared.applyFullSpeedRenders(for: id)
+        cemu_bridge_set_low_power_mode(PerGameSettingsStore.shared.effectiveOneCoreMode(for: id))
         cemu_bridge_set_async_shader_compile(PerGameSettingsStore.shared.effectivePreCompileShaders(for: id))
+        // Advanced options the running engine can still take: the overlay corner, and the scaling filters if the
+        // renderer re-reads them (a switch does not rebuild it, so they may only apply at the next full start).
+        cemu_bridge_set_overlay_position(Int32(PerGameSettingsStore.shared.effectiveOverlayPosition(for: id).rawValue))
+        let filters = PerGameSettingsStore.shared.filtersToPush(for: id)
+        cemu_bridge_set_upscale_filter(filters.upscale)
+        cemu_bridge_set_downscale_filter(filters.downscale)
+        // Resolution, screen layout and controller auto-hide for the new game. The surfaces are resized only
+        // when the Resolution actually changed.
+        let resolutionChanged = ActiveGameSettings.begin(gameID: id)
+        #if os(iOS)
+        if resolutionChanged {
+            Task { @MainActor in DisplayRouter.shared.reapplyRenderScale(reason: "the game's own Resolution") }
+        }
+        #endif
         #if os(iOS)
         GameControlHints.applyBeforeLaunch(titleId: titleId)
         #endif

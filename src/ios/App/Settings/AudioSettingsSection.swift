@@ -62,6 +62,9 @@ struct AudioSettingsSection: View {
     @AppStorage(AudioSettings.microphoneEnabledKey) private var microphoneEnabled = AudioSettings.defaultMicrophoneEnabled
     @AppStorage(AudioSettings.inputVolumeKey) private var inputVolume = AudioSettings.defaultInputVolume
     @State private var showMicDenied = false
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+
+    private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
     private var deviceName: String {
         UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
@@ -97,16 +100,19 @@ struct AudioSettingsSection: View {
             volumeRow(label: "TV volume", volume: $tvVolume) { newValue in
                 cemu_bridge_set_tv_volume(Int32(newValue))
             }
-            Picker("TV channels", selection: $tvChannelsRaw) {
-                ForEach(AudioChannelSetting.allCases) { channels in
-                    Text(channels.title).tag(channels.rawValue)
+            // Channel layout is Advanced mode only (see AdvancedSettings).
+            if advanced {
+                Picker("TV channels", selection: $tvChannelsRaw) {
+                    ForEach(AudioChannelSetting.allCases) { channels in
+                        Text(channels.title).tag(channels.rawValue)
+                    }
                 }
-            }
-            .pickerStyle(.menu)
-            .tint(MuffinTheme.accentText)
-            .foregroundColor(MuffinTheme.brownDarkest)
-            .onChange(of: tvChannelsRaw) { newValue in
-                cemu_bridge_set_tv_channels(Int32(newValue))
+                .pickerStyle(.menu)
+                .tint(MuffinTheme.accentText)
+                .foregroundColor(MuffinTheme.brownDarkest)
+                .onChange(of: tvChannelsRaw) { newValue in
+                    cemu_bridge_set_tv_channels(Int32(newValue))
+                }
             }
         }
     }
@@ -125,16 +131,19 @@ struct AudioSettingsSection: View {
             volumeRow(label: "GamePad volume", volume: $padVolume) { newValue in
                 cemu_bridge_set_pad_volume(Int32(newValue))
             }
-            Picker("GamePad channels", selection: $padChannelsRaw) {
-                ForEach(AudioChannelSetting.allCases) { channels in
-                    Text(channels.title).tag(channels.rawValue)
+            // Channel layout is Advanced mode only (see AdvancedSettings).
+            if advanced {
+                Picker("GamePad channels", selection: $padChannelsRaw) {
+                    ForEach(AudioChannelSetting.allCases) { channels in
+                        Text(channels.title).tag(channels.rawValue)
+                    }
                 }
-            }
-            .pickerStyle(.menu)
-            .tint(MuffinTheme.accentText)
-            .foregroundColor(MuffinTheme.brownDarkest)
-            .onChange(of: padChannelsRaw) { newValue in
-                cemu_bridge_set_pad_channels(Int32(newValue))
+                .pickerStyle(.menu)
+                .tint(MuffinTheme.accentText)
+                .foregroundColor(MuffinTheme.brownDarkest)
+                .onChange(of: padChannelsRaw) { newValue in
+                    cemu_bridge_set_pad_channels(Int32(newValue))
+                }
             }
         }
     }

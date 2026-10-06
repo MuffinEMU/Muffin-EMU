@@ -4,6 +4,46 @@ import Combine
 import UIKit
 #endif
 
+/// Thermal settings and state that other code reads from anywhere. Outside the main-actor class below
+/// so RenderScale.current and the Advanced registry can use them without hopping actors.
+enum ThermalSettings {
+    static let scaleKey = "muffin.thermal.scaleBeforeThrottle"
+
+    /// The remembered Resolution is stored for as long as a throttle is in effect.
+    static var isHoldingScale: Bool { UserDefaults.standard.string(forKey: scaleKey) != nil }
+
+    /// Which thermal state starts the automatic cool-down (Settings > CPU, Advanced mode).
+    static let thresholdKey = "muffin.thermal.coolDownThreshold"
+    static let defaultThreshold = Threshold.serious
+
+    enum Threshold: String, CaseIterable, Identifiable {
+        /// iOS has started to throttle. The default: lowering the pixel count gives frames back.
+        case serious
+        /// iOS is throttling hard. The game keeps full quality for longer.
+        case critical
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .serious:  return "Serious"
+            case .critical: return "Critical"
+            }
+        }
+
+        var summary: String {
+            switch self {
+            case .serious:  return "Cools down as soon as iOS starts slowing the device."
+            case .critical: return "Waits until iOS is slowing the device hard. The game keeps its quality longer, and may stutter or run hot first."
+            }
+        }
+    }
+
+    static var threshold: Threshold {
+        Threshold(rawValue: UserDefaults.standard.string(forKey: thresholdKey) ?? "") ?? defaultThreshold
+    }
+}
+
 /// Reads `ProcessInfo.thermalState` and, when the device gets hot, lowers Render Scale to
 /// battery saver and (at `.critical`) slows the emulated cores until it cools.
 ///
@@ -36,7 +76,7 @@ final class ThermalMonitor: ObservableObject {
 
     /// Persisted so a restore survives the app being killed while hot; otherwise Render Scale
     /// would stay pinned at battery saver with nothing remembering the previous value.
-    private static let scaleBeforeThrottleKey = "muffin.thermal.scaleBeforeThrottle"
+    private static let scaleBeforeThrottleKey = ThermalSettings.scaleKey
     private var isThrottling = false
     private var observing = false
 
@@ -69,6 +109,11 @@ final class ThermalMonitor: ObservableObject {
         UserDefaults.standard.set(chosen.rawValue, forKey: RenderScale.storageKey)
         userChosenScale = nil
         cemu_bridge_log_line("iOS thermal: last run ended while throttled; restored render scale to \(chosen.rawValue)")
+    }
+
+    /// The threshold was changed in Settings: apply it to the state the device is in now.
+    func thresholdChanged() {
+        applyAutoThrottleIfNeeded()
     }
 
     /// Idempotent.
@@ -114,7 +159,8 @@ final class ThermalMonitor: ObservableObject {
             return
         }
 
-        let shouldThrottle = (state == .serious || state == .critical)
+        // Serious and critical by default; with the threshold on Critical, only critical.
+        let shouldThrottle = state == .critical || (state == .serious && ThermalSettings.threshold == .serious)
 
         // Re-applied on every change while hot so .serious -> .critical escalates.
         let micros: UInt32 = shouldThrottle ? throttleMicros(for: state) : 0
@@ -122,7 +168,7 @@ final class ThermalMonitor: ObservableObject {
 
         if shouldThrottle && !isThrottling {
             // Remember the user's choice before overwriting it.
-            userChosenScale = RenderScale.current
+            userChosenScale = RenderScale.storedChoice
             // Battery saver, and only from .serious upward.
             UserDefaults.standard.set(RenderScale.battery.rawValue, forKey: RenderScale.storageKey)
             isThrottling = true
@@ -148,7 +194,7 @@ final class ThermalMonitor: ObservableObject {
     /// Puts the remembered Resolution back, unless the user picked a different one while
     /// throttled (then their new choice stands).
     private func restoreChosenScale() {
-        if let restored = userChosenScale, RenderScale.current == .battery {
+        if let restored = userChosenScale, RenderScale.storedChoice == .battery {
             UserDefaults.standard.set(restored.rawValue, forKey: RenderScale.storageKey)
         }
         userChosenScale = nil
