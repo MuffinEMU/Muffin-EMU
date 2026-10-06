@@ -166,6 +166,11 @@ void CurlRequestHelper::initate(NetworkService service, std::string url, SERVER_
 	{
 		curl_easy_setopt(m_curl, CURLOPT_SSL_VERIFYPEER, 0L);
 	}
+	else if (service == NetworkService::Custom && !ActiveSettings::HasRequiredOnlineFiles())
+	{
+		// A custom server used without a Wii U: there are no Nintendo CA or client certificates to install,
+		// so keep libcurl's default certificate check (or none, when the server's XML turns it off).
+	}
 	else if (sslContext == SERVER_SSL_CONTEXT::ACT || sslContext == SERVER_SSL_CONTEXT::TAGAYA)
 	{
 		curl_easy_setopt(m_curl, CURLOPT_SSL_CTX_FUNCTION, _sslctx_function_NUS);
