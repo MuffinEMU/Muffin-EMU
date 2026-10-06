@@ -27,54 +27,72 @@ struct ShaderCompilationSection: View {
     }
 }
 
-/// Shader cache sizes and the two clear actions (compiled shaders only, or everything
-/// including learned ones).
+/// Shader cache size across every game, when it last changed, and the two clear actions (compiled shaders
+/// only, or everything including learned ones), each behind a confirmation. Per game: the game's own options.
 struct ShaderCacheSection: View {
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
     @State private var learnedCacheBytes: Int64 = 0
     @State private var compiledCacheBytes: Int64 = 0
+    @State private var lastUpdated: Date?
+    @State private var confirmClearCompiled = false
     @State private var confirmClearLearned = false
     @State private var cacheStatusMessage: String?
+    @State private var cacheStatusIsError = false
 
     var body: some View {
         Section {
-            SettingsRow(label: "Compiled shaders", value: Self.formatBytes(compiledCacheBytes))
-            SettingsRow(label: "Learned shaders", value: Self.formatBytes(learnedCacheBytes))
-            Button {
-                let freed = cemu_bridge_clear_shader_cache(0, false)
-                cacheStatusMessage = freed < 0
-                    ? "Close the game first, then clear the cache."
-                    : "Freed \(Self.formatBytes(freed)). The next launch of each game is slow once."
-                refreshCacheStats()
-            } label: {
+            SettingsRow(label: "Size on disk", value: Self.formatBytes(learnedCacheBytes + compiledCacheBytes))
+            SettingsRow(label: "Last updated", value: ShaderCacheInfo.formatDate(lastUpdated))
+            if SettingsMode.isAdvanced(raw: settingsModeRaw) {
+                SettingsRow(label: "Learned shaders", value: Self.formatBytes(learnedCacheBytes))
+                SettingsRow(label: "Compiled shaders", value: Self.formatBytes(compiledCacheBytes))
+            }
+            Button { confirmClearCompiled = true } label: {
                 Label("Clear compiled shaders", systemImage: "arrow.counterclockwise")
             }
+            .disabled(compiledCacheBytes <= 0)
             Button(role: .destructive) { confirmClearLearned = true } label: {
                 DestructiveSettingsLabel(title: "Clear everything, including learned", systemImage: "trash")
             }
+            .disabled(learnedCacheBytes <= 0 && compiledCacheBytes <= 0)
             if let cacheStatusMessage {
                 Text(cacheStatusMessage)
                     .font(.system(size: 12))
-                    .foregroundColor(MuffinTheme.secondaryText)
+                    .foregroundColor(cacheStatusIsError ? .red : MuffinTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
             SettingsSectionHeader("Shader Cache", icon: "externaldrive", accent: .core)
         } footer: {
-            InfoButton.footer("Learned shaders are what a game has revealed by drawing with them, saved so the next launch skips rebuilding them. Compiled shaders rebuild on their own.")
+            InfoButton.footer("What every game has saved so it starts faster. To clear one game, open its options. Clearing needs the game closed.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: refreshCacheStats)
-        .confirmationDialog("Clear learned shaders too?", isPresented: $confirmClearLearned, titleVisibility: .visible) {
-            Button("Clear everything", role: .destructive) {
-                let freed = cemu_bridge_clear_shader_cache(0, true)
-                cacheStatusMessage = freed < 0
-                    ? "Close the game first, then clear the cache."
-                    : "Freed \(Self.formatBytes(freed)). Games will stutter while they relearn their shaders."
-                refreshCacheStats()
-            }
+        .confirmationDialog("Clear compiled shaders for every game?", isPresented: $confirmClearCompiled, titleVisibility: .visible) {
+            Button("Clear compiled shaders") { clear(includeLearned: false) }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Games will stutter while they rebuild their shaders.")
+            Text("Each game is slow to start once while it rebuilds. Nothing else is lost.")
         }
+        .confirmationDialog("Clear learned shaders too?", isPresented: $confirmClearLearned, titleVisibility: .visible) {
+            Button("Clear everything", role: .destructive) { clear(includeLearned: true) }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This clears every game's shaders. Games will stutter while they rebuild them.")
+        }
+    }
+
+    private func clear(includeLearned: Bool) {
+        let freed = cemu_bridge_clear_shader_cache(0, includeLearned)
+        if freed < 0 {
+            cacheStatusMessage = "Close the game first, then clear the cache."
+            cacheStatusIsError = true
+        } else {
+            cacheStatusMessage = "Freed \(Self.formatBytes(freed)). "
+                + (includeLearned ? "Games will stutter while they relearn their shaders." : "The next launch of each game is slow once.")
+            cacheStatusIsError = false
+        }
+        refreshCacheStats()
     }
 
     private func refreshCacheStats() {
@@ -83,14 +101,11 @@ struct ShaderCacheSection: View {
         _ = cemu_bridge_shader_cache_stats(0, &learned, &compiled)
         learnedCacheBytes = learned
         compiledCacheBytes = compiled
+        DispatchQueue.global(qos: .userInitiated).async {
+            let newest = ShaderCacheInfo.directory.flatMap { ShaderCacheInfo.newestModification(in: $0, namePrefix: "") }
+            DispatchQueue.main.async { lastUpdated = newest }
+        }
     }
 
-    private static func formatBytes(_ bytes: Int64) -> String {
-        if bytes <= 0 { return "none" }
-        let units = ["B", "KB", "MB", "GB"]
-        var value = Double(bytes)
-        var unit = 0
-        while value >= 1024 && unit < units.count - 1 { value /= 1024; unit += 1 }
-        return unit == 0 ? "\(Int(value)) B" : String(format: "%.1f %@", value, units[unit])
-    }
+    private static func formatBytes(_ bytes: Int64) -> String { ShaderCacheInfo.formatBytes(bytes) }
 }
