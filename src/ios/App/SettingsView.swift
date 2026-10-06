@@ -11,6 +11,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingIconPicker = false
     @State private var showingThemePicker = false
+    @ObservedObject private var accountSheets = AccountSheetRouter.shared
     /// Basic hides the advanced rows (see AdvancedSettings); this view only needs it for whole sections.
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
@@ -96,6 +97,9 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showingThemePicker) {
                 ThemePickerView()
+            }
+            .sheet(isPresented: $accountSheets.showingCreateAccount, onDismiss: accountSheets.sheetClosed) {
+                CreateAccountView()
             }
         }
         .navigationViewStyle(.stack)
