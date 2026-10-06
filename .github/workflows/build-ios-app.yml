@@ -454,10 +454,10 @@ jobs:
         run: ./ci/core-cache-key.sh --stamp build-ios/out
 
       - name: Upload the fresh core (so main can promote it without recompiling)
-        # A pull request never changes what is current. When it merges, the run that publishes the
-        # release adopts this exact core - after re-checking it against main's own tree - instead
-        # of compiling it a second time.
-        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true' && github.event_name == 'pull_request'
+        # A pull request or a compile check on any other branch never changes what is current. When
+        # that tree reaches main, the run that publishes the release adopts this exact core - after
+        # re-checking it against main's own tree - instead of compiling it a second time.
+        if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true' && github.ref != 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: cemu-core-${{ steps.fp.outputs.fingerprint }}
