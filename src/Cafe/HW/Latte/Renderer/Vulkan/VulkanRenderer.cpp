@@ -2796,6 +2796,13 @@ void VulkanRenderer::WaitCommandBufferFinished(uint64 commandBufferId)
 	}
 }
 
+// The driver's cache blob only means something to the driver that wrote it. MoltenVK 1.2.8 and 1.4.3 are both embedded and one is chosen per launch, so
+// the file carries the driver version: switching builds then keeps both caches instead of each launch throwing the other's away.
+static fs::path GetDriverPipelineCacheFilename(const fs::path& dir, uint32 driverVersion)
+{
+	return dir / fmt::format(L"{:016x}_{:08x}.bin", CafeSystem::GetForegroundTitleId(), driverVersion);
+}
+
 void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 {
 	SetThreadName("vkDriverPlCache");
@@ -2813,7 +2820,9 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 		}
 	}
 
-	const auto filename = dir / fmt::format(L"{:016x}.bin", CafeSystem::GetForegroundTitleId());
+	VkPhysicalDeviceProperties deviceProps{};
+	vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProps);
+	const auto filename = GetDriverPipelineCacheFilename(dir, deviceProps.driverVersion);
 
 	while (true)
 	{
@@ -2846,17 +2855,32 @@ void VulkanRenderer::PipelineCacheSaveThread(size_t cache_size)
 			if (res == VK_SUCCESS)
 			{
 
-				auto file = std::ofstream(fs::resolvePathCI(filename), std::ios::out | std::ios::binary);
-				if (file.is_open())
+				// Written beside the real file and renamed over it: a kill or a full disk mid-write must not leave a truncated blob behind
+				const auto finalPath = fs::resolvePathCI(filename);
+				auto tempPath = finalPath;
+				tempPath += L".tmp";
+				bool written = false;
 				{
-					file.write((char*)cacheData.data(), cacheData.size());
-					file.close();
-
+					auto file = std::ofstream(tempPath, std::ios::out | std::ios::binary | std::ios::trunc);
+					if (file.is_open())
+					{
+						file.write((char*)cacheData.data(), cacheData.size());
+						file.close();
+						written = !file.fail();
+					}
+				}
+				std::error_code renameEc;
+				if (written)
+					fs::rename(tempPath, finalPath, renameEc);
+				if (written && !renameEc)
+				{
 					cache_size = size;
 					cemuLog_logDebug(LogType::Force, "pipeline cache saved");
 				}
 				else
 				{
+					std::error_code removeEc;
+					fs::remove(tempPath, removeEc);
 					cemuLog_log(LogType::Force, "can't write pipeline cache to disk");
 				}
 			}
@@ -2879,7 +2903,9 @@ void VulkanRenderer::CreatePipelineCache()
 	const auto dir = ActiveSettings::GetCachePath("shaderCache/driver/vk");
 	if (fs::exists(dir))
 	{
-		const auto filename = dir / fmt::format("{:016x}.bin", CafeSystem::GetForegroundTitleId());
+		VkPhysicalDeviceProperties deviceProps{};
+		vkGetPhysicalDeviceProperties(m_physicalDevice, &deviceProps);
+		const auto filename = GetDriverPipelineCacheFilename(dir, deviceProps.driverVersion);
 		auto file = std::ifstream(fs::resolvePathCI(filename), std::ios::in | std::ios::binary | std::ios::ate);
 		if (file.is_open())
 		{
