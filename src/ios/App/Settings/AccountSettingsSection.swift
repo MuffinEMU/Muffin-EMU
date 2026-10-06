@@ -19,6 +19,12 @@ struct AccountSettingsSection: View {
     @ViewBuilder private var accountFooter: some View {
         if locked {
             InfoButton.footer("Accounts can't be changed while a game is running. Close the game first.")
+        } else if let note = OnlineReadiness.note(accountId: activePersistentId,
+                                                  service: NetworkService(cemu_bridge_network_service(activePersistentId))) {
+            InfoButton.footer(
+                note,
+                title: "Online play",
+                text: OnlineReadiness.howToFix + "\n\nImport from Wii U accepts account.dat, its 800000XX folder, otp.bin and seeprom.bin. MuffinEMU can't create a linked account itself.")
         } else if let activeAccount, !activeAccount.isValidOnline {
             InfoButton.footer(
                 "This account has no cached NNID/PNID login, so it can't play online yet.",
@@ -52,6 +58,9 @@ struct AccountSettingsSection: View {
                     .disabled(locked || accounts.count <= 1 || activeAccount == nil)
             }
             .buttonStyle(.borderless)
+
+            AccountImportButton(locked: locked, onChange: reload)
+                .buttonStyle(.borderless)
         } header: {
             SettingsSectionHeader("Account", icon: "person.crop.circle", accent: .content)
         } footer: {
@@ -135,10 +144,15 @@ struct NetworkServiceSettingsSection: View {
             SettingsSectionHeader("Network Service\(activeAccountName.map { " (\($0))" } ?? "")",
                                   icon: "network", accent: .content)
         } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                if let note = OnlineReadiness.note(accountId: activePersistentId, service: selectedService) {
+                    Text(note)
+                }
             InfoButton.footer(
                 locked ? "The Network Service can't be changed while a game is running. Close the game first." : selectedService.accountHelp,
                 title: "Network Service",
                 text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there's nothing to configure.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom is only available if you've put a network_services.xml (the same file desktop Cemu reads) in the mlc folder.")
+            }
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: reload)

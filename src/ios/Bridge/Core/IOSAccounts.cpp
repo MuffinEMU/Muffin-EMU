@@ -228,6 +228,14 @@ bool IOSAccounts_IsOnlineValid(uint32_t persistentId)
 	return account && account->IsValidOnlineAccount();
 }
 
+int IOSAccounts_OnlineError(uint32_t persistentId)
+{
+	const Account* account = FindAccount(persistentId);
+	if (!account)
+		return -1;
+	return (int)account->GetOnlineAccountError();
+}
+
 std::string IOSAccounts_CountriesList()
 {
 	std::ostringstream out;
