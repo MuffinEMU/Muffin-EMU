@@ -25,7 +25,7 @@ struct AboutSettingsSection: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
 
-            Text("MuffinEMU is made by Void and built on Cemu. The optional melo-controls pad is Melo-Controller by stossy11.")
+            Text("MuffinEMU is made by Void and built on Cemu. The optional Melo-Controller pad is by stossy11.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
 

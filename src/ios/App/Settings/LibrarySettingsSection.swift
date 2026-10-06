@@ -6,7 +6,7 @@ struct LibrarySettingsSection: View {
     var body: some View {
         Section {
             SettingsRow(label: "Games", value: "\(gameManager.games.count)", icon: "square.grid.2x2")
-            SettingsRow(label: "Favorites", value: "\(gameManager.favorites.count)", icon: "heart")
+            SettingsRow(label: "Favourites", value: "\(gameManager.favorites.count)", icon: "heart")
             NavigationLink {
                 GraphicPacksView()
             } label: {

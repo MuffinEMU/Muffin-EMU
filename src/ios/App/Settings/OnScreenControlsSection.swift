@@ -73,7 +73,7 @@ struct OnScreenControlsSection: View {
 
             Toggle(isOn: $useMeloControls) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Use melo-controls")
+                    Text("Use Melo-Controller")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(useMeloControls
                          ? "Melo-Controller by stossy11, with its own layout editor. The options below are for MuffinEMU's pad."

@@ -91,7 +91,7 @@ struct NotificationSettingsSection: View {
     }
 
     private var textColorField: some View {
-        ColorPicker("Text color", selection: packedColourBinding($textColor), supportsOpacity: false)
+        ColorPicker("Text colour", selection: packedColourBinding($textColor), supportsOpacity: false)
             .font(.system(size: 15, weight: .semibold, design: .rounded))
             .disabled(isOff)
             .onChange(of: textColor) { newValue in
