@@ -141,6 +141,22 @@ bool cemu_bridge_has_pad_render_surface(void);
 /// already-registered surface(s) are visible without registering or releasing anything.
 void cemu_bridge_set_visible_outputs(bool tv, bool pad);
 
+/// Which Wii U screen each registered surface shows. By default the TV surface shows the TV screen and the
+/// GamePad surface the GamePad screen. `mainShowsGamePad` makes the TV surface show the GamePad screen instead
+/// and `padShowsTV` makes the GamePad surface show the TV screen, so a second display can repeat the first.
+/// Takes effect on the next frame; no surface is created or released.
+void cemu_bridge_set_output_sources(bool mainShowsGamePad, bool padShowsTV);
+
+/// True once the renderer has a layer behind the registered GamePad surface, i.e. frames can reach it.
+/// Registered without this is a surface nothing draws to.
+bool cemu_bridge_pad_layer_active(void);
+
+/// Gives a registered GamePad surface its layer if it has none. A no-op otherwise.
+void cemu_bridge_ensure_pad_layer(void);
+
+/// Frames presented to the GamePad surface since launch, for judging whether it is being drawn to.
+uint32_t cemu_bridge_pad_present_count(void);
+
 /// The GamePad's own touchscreen - a real Wii U input, and a distinct one from every
 /// button on the pad. `x`/`y` are in the SAME physical-pixel space
 /// cemu_bridge_resize_render_surface()'s width/height already are for the pad surface

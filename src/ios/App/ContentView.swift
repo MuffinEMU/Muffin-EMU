@@ -2831,12 +2831,10 @@ struct EmulatorViewOptimized: View {
         }
     }
 
-    /// Dual-screen places the GamePad screen on this device unless the screens are swapped.
+    /// Whether this device is showing the GamePad screen in dual-screen, so its touches are the GamePad's:
+    /// the other screen when the screens are not swapped, or the same screen when they are.
     private var padIsOnDeviceInDualScreen: Bool {
-        guard displayRouter.placement == .dualScreen else { return false }
-        let swapped = UserDefaults.standard.object(forKey: DisplayLayoutSettings.swapKey) as? Bool
-            ?? DisplayLayoutSettings.defaultSwap
-        return !swapped
+        displayRouter.gamePadTouchOnDevice
     }
 
     /// The GamePad's own touchscreen - a real Wii U input distinct from every button on
@@ -2871,7 +2869,7 @@ struct EmulatorViewOptimized: View {
     /// drives the "hide controls to touch the GamePad screen" button in the top bar,
     /// which has no `GeometryReader` of its own to derive this from directly.
     private var isPadViewVisible: Bool {
-        visibleScreens.contains(false)
+        visibleScreens.contains(false) || padIsOnDeviceInDualScreen
     }
 
     /// A direct port of MeloCafe's `EmulationView.updateVisibleOutputs()`, using
