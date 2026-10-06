@@ -35,6 +35,7 @@
 #include <audio/IAudioAPI.h>
 #include <util/bootSound/BootSoundReader.h>
 #include <thread>
+#include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #if __APPLE__
 #include <sys/clonefile.h>
 #endif
@@ -421,6 +422,11 @@ static bool ShaderCacheGuard_Copy(const fs::path& src, const fs::path& dst)
 	return true;
 }
 
+// The title whose caches are open, and whether its load found nothing wrong. Set by LatteShaderCache_Load,
+// used when the title closes (ShaderCacheGuard_AfterSession).
+static uint64 s_guardTitleId = 0;
+static bool s_guardLoadClean = false;
+
 static fs::path ShaderCacheGuard_SuspectMarker(uint64 titleId)
 {
 	return ActiveSettings::GetCachePath("shaderCache/backup/{:016x}.suspect", titleId);
@@ -464,6 +470,8 @@ static void ShaderCacheGuard_BeforeLoad(uint64 titleId)
 static void ShaderCacheGuard_AfterLoad(uint64 titleId, bool clean)
 {
 	std::error_code ec;
+	s_guardTitleId = titleId;
+	s_guardLoadClean = clean;
 	if (!clean)
 	{
 		// Keep the backup as it is (it predates the damage) and restore it at the next start.
@@ -478,6 +486,35 @@ static void ShaderCacheGuard_AfterLoad(uint64 titleId, bool clean)
 		if (!ShaderCacheGuard_Copy(live, backupDir / live.filename()))
 			cemuLog_log(LogType::Force, "Shader cache guard: could not back up \"{}\"; the previous backup is kept", _pathToUtf8(live.filename()));
 	}
+}
+
+// Leaving a game normally (back to the MuffinEMU menu) refreshes the backup with everything learned this
+// session, but only when the session passed with flying colours: its load found no damaged entries, it
+// didn't end on a GPU error, and every cache file passes FileCache::Verify (ShaderCacheGuard_Copy checks
+// each copy before it replaces the backup). A force-quit or crash never gets here, so the backup from
+// before the session stays.
+static void ShaderCacheGuard_AfterSession()
+{
+	const uint64 titleId = s_guardTitleId;
+	s_guardTitleId = 0;
+	if (titleId == 0)
+		return;
+	if (!s_guardLoadClean || LatteWait::Get().gpuError.load(std::memory_order_relaxed))
+	{
+		cemuLog_log(LogType::Force, "Shader cache guard: session not clean, keeping the backup from before it");
+		return;
+	}
+	const fs::path backupDir = ActiveSettings::GetCachePath("shaderCache/backup");
+	int saved = 0, kept = 0;
+	for (const fs::path& live : ShaderCacheGuard_List(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId))
+	{
+		if (FileCache::Verify(live) && ShaderCacheGuard_Copy(live, backupDir / live.filename()))
+			saved++;
+		else
+			kept++;
+	}
+	cemuLog_log(LogType::Force, "Shader cache guard: session ended cleanly; {} cache file(s) saved as the new backup{}", saved,
+		kept ? fmt::format(", {} failed the check and kept their previous backup", kept) : std::string());
 }
 
 void LatteShaderCache_Load()
@@ -1140,4 +1177,6 @@ void LatteShaderCache_Close()
 		break;
 #endif
 	}
+	// every cache file is closed and flushed now
+	ShaderCacheGuard_AfterSession();
 }
