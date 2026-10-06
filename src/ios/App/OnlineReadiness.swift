@@ -7,6 +7,9 @@ import Foundation
 enum OnlineReadiness {
     /// What is missing, as short phrases. Empty means online play is ready.
     static func missingItems(accountId: UInt32) -> [String] {
+        // Custom needs no linked account or console files: a valid network_services.xml is enough (the
+        // server decides what it needs). Pretendo and Nintendo keep the full list below.
+        if NetworkService(cemu_bridge_network_service(accountId)) == .custom { return [] }
         var missing: [String] = []
         switch cemu_bridge_account_online_error(accountId) {
         case 0: break

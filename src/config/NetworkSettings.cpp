@@ -3,6 +3,7 @@
 #include "LaunchSettings.h"
 #include "CemuConfig.h"
 #include "Common/FileStream.h"
+#include <fstream>
 
 XMLNetworkConfig_t n_config(L"network_services.xml");
 
@@ -32,17 +33,49 @@ void NetworkConfig::Load(XMLConfigParser& parser)
 	urls.OLV = u.get("olv", NintendoURLs::OLVURL);
 }
 
-bool NetworkConfig::XMLExists() 
+static std::optional<bool> s_xmlUsable; // caches the result of the file check; Reload() clears it
+
+bool NetworkConfig::IsValidFile(const fs::path& path)
 {
-	static std::optional<bool> s_exists; // caches result of fs::exists
-	if(s_exists.has_value())
-		return *s_exists;
 	std::error_code ec;
-	if (!fs::exists(ActiveSettings::GetConfigPath("network_services.xml"), ec))
-	{
-		s_exists = false;
+	if (!fs::exists(path, ec))
 		return false;
+	std::ifstream file(path, std::ios::binary);
+	if (!file.is_open())
+		return false;
+	const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+	if (text.empty() || text.size() > 256 * 1024)
+		return false;
+	tinyxml2::XMLDocument doc;
+	if (doc.Parse(text.data(), text.size()) != tinyxml2::XML_SUCCESS)
+		return false;
+	const tinyxml2::XMLElement* content = doc.FirstChildElement("content");
+	if (!content)
+		return false;
+	const tinyxml2::XMLElement* urls = content->FirstChildElement("urls");
+	if (!urls)
+		return false;
+	for (const tinyxml2::XMLElement* e = urls->FirstChildElement(); e; e = e->NextSiblingElement())
+	{
+		const char* value = e->GetText();
+		if (value && (strncmp(value, "http://", 7) == 0 || strncmp(value, "https://", 8) == 0))
+			return true;
 	}
-	s_exists = true;
-	return true;
+	return false;
+}
+
+bool NetworkConfig::XMLExists()
+{
+	if (s_xmlUsable.has_value())
+		return *s_xmlUsable;
+	s_xmlUsable = IsValidFile(ActiveSettings::GetConfigPath("network_services.xml"));
+	return *s_xmlUsable;
+}
+
+void NetworkConfig::Reload()
+{
+	s_xmlUsable.reset();
+	n_config.SetFilename(ActiveSettings::GetConfigPath("network_services.xml").generic_wstring());
+	if (XMLExists())
+		n_config.Load();
 }

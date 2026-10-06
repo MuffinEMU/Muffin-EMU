@@ -9,6 +9,7 @@
 #include "config/ActiveSettings.h"
 #include "config/LaunchSettings.h"
 #include "Cafe/Account/Account.h"
+#include "config/NetworkSettings.h"
 #include "util/helpers/helpers.h"
 
 void ActiveSettings::SetPaths(bool isPortableMode,
@@ -176,6 +177,11 @@ uint32 ActiveSettings::GetPersistentId()
 
 bool ActiveSettings::IsOnlineEnabled()
 {
+	// Custom servers decide for themselves what they need: a valid network_services.xml is enough, with no linked
+	// account or console dump. GetAccountNetworkService() already reports Offline for Custom without a valid XML.
+	// Pretendo and Nintendo still check the account and the console files.
+	if (GetConfig().GetAccountNetworkService(GetPersistentId()) == NetworkService::Custom)
+		return NetworkConfig::XMLExists();
 	if(!Account::GetAccount(GetPersistentId()).IsValidOnlineAccount())
 		return false;
 	if(!HasRequiredOnlineFiles())

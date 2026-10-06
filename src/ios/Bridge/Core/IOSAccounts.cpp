@@ -284,3 +284,14 @@ bool IOSAccounts_CustomNetworkServiceAvailable()
 {
 	return NetworkConfig::XMLExists();
 }
+
+bool IOSAccounts_ReloadCustomNetworkService()
+{
+	NetworkConfig::Reload();
+	return NetworkConfig::XMLExists();
+}
+
+bool IOSAccounts_IsValidNetworkServicesXML(const char* path)
+{
+	return path && NetworkConfig::IsValidFile(fs::path(path));
+}
