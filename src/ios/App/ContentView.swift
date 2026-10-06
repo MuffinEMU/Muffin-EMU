@@ -1285,6 +1285,8 @@ struct EmulatorViewOptimized: View {
     /// it swaps in and why the shipping path is otherwise untouched.
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
     @AppStorage(MeloControlsSetting.storageKey) private var useMeloControls = MeloControlsSetting.defaultValue
+    /// Read only to size the portrait pad's area (belowPicture). Same key and default as the pad's.
+    @AppStorage(ControllerLayoutSettings.joystickKey) private var joystickMode = ControllerLayoutSettings.defaultJoystick
     /// The optional TouchLab control style ("" = MuffinEMU's own pad). See TouchLabPads.swift.
     @AppStorage(TouchLabSettings.schemeKey) private var touchLabScheme = TouchLabSettings.defaultScheme
     /// Where the TV / GamePad views are on screen, reported by the screen views themselves.
@@ -1455,6 +1457,37 @@ struct EmulatorViewOptimized: View {
         // ever called onInput, and were themselves the reason it looked like it did not.
         if previewPadEnabled { return .preview }
         return .muffin
+    }
+
+    /// An iPhone held upright. Same test as screenLayoutComposition's, which this has to agree
+    /// with: the picture is stacked along the top exactly when this is true. On iPhone the
+    /// vertical size class is regular only in portrait.
+    private var isPhonePortrait: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone && verticalSizeClass == .regular
+    }
+
+    /// Lays a pad out over the whole screen, or - held upright on an iPhone - over just the
+    /// area under the picture, so no control sits on it. The area runs from the bottom of the
+    /// stacked screens (screensSizeLayout) to the bottom of the safe area, and is never shorter
+    /// than the pad needs: with both screens stacked on a small phone the pad is allowed to cover
+    /// the bottom of the GamePad screen rather than shrink to nothing (the "hide controls" button
+    /// in the top bar uncovers it). Laid out with a frame, not an offset or a position, so what
+    /// is drawn is also what takes touches.
+    @ViewBuilder private func belowPicture<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if isPhonePortrait {
+            GeometryReader { geometry in
+                let pictures = CGFloat(visibleScreens.count) * geometry.size.width * 9 / 16
+                let needed = ControllerGeometry.Portrait.minimumHeight(joystick: joystickMode)
+                let height = min(geometry.size.height, max(geometry.size.height - pictures, needed))
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    content()
+                        .frame(height: height)
+                }
+            }
+        } else {
+            content()
+        }
     }
 
     /// True while a title is booting, running or paused and the TV screen is on this device.
@@ -1769,6 +1802,8 @@ struct EmulatorViewOptimized: View {
                         Text("Any progress the game itself hasn't saved will be lost.")
                     }
 
+                    // Upright there is no room for the name beside the buttons.
+                    if !isPhonePortrait {
                     VStack(alignment: .center, spacing: 2) {
                         Text(gameName)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -1785,6 +1820,7 @@ struct EmulatorViewOptimized: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
+                    }
 
                     TopBarOverflowScroll {
                     // 2 point gaps: each button is a 44 point target around a smaller visible one.
@@ -2081,6 +2117,7 @@ struct EmulatorViewOptimized: View {
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .touchLab) }
                 } else if padSystem == .muffin {
+                    belowPicture {
                     OptimizedControlPanel(
                         skin: controllerSkin,
                         onInput: { label, pressed in
@@ -2104,9 +2141,12 @@ struct EmulatorViewOptimized: View {
                         },
                         isEditingLayout: $isEditingControlLayout,
                         isPaused: isPaused,
-                        topInset: topBarHeight
+                        // Upright, the pad starts under the picture, clear of the bar.
+                        topInset: isPhonePortrait ? 0 : topBarHeight,
+                        portrait: isPhonePortrait
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .muffin) }
+                    }
                 }
             }
 
