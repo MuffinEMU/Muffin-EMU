@@ -478,6 +478,9 @@ static bool ShaderCacheGuard_Copy(const fs::path& src, const fs::path& dst)
 // used when the title closes (ShaderCacheGuard_AfterSession).
 static uint64 s_guardTitleId = 0;
 static bool s_guardLoadClean = false;
+// FileCache::GetDamagedEntryTotal() when this title's load began. Damage in any of its cache files (the
+// shaders, the pipelines, the SPIR-V cache), not only the first, moves the total past it.
+static uint32 s_guardDamageBase = 0;
 
 // Secondary repair. Damaged entries are first repaired one by one as they're read (FileCache). When a
 // session had damage, its cache files get the full check at the end of loading and when the game is
@@ -573,6 +576,9 @@ static void ShaderCacheGuard_AfterSession()
 	s_guardTitleId = 0;
 	if (titleId == 0)
 		return;
+	// every cache file is closed by now, so damage found during play in any of them is counted
+	if (FileCache::GetDamagedEntryTotal() != s_guardDamageBase)
+		s_guardLoadClean = false;
 	if (!s_guardLoadClean)
 	{
 		cemuLog_log(LogType::Force, "Shader cache guard: damaged entries this session, keeping the backup from before it");
@@ -588,7 +594,8 @@ static void ShaderCacheGuard_AfterSession()
 	int saved = 0, kept = 0;
 	for (const fs::path& live : ShaderCacheGuard_List(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId))
 	{
-		if (FileCache::Verify(live) && ShaderCacheGuard_Copy(live, backupDir / live.filename()))
+		// the copy is verified before it replaces the backup, so the live file isn't checked a second time here
+		if (ShaderCacheGuard_Copy(live, backupDir / live.filename()))
 			saved++;
 		else
 			kept++;
@@ -624,6 +631,7 @@ void LatteShaderCache_Load()
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/precompiled"), ec);
 	ShaderCacheGuard_BeforeLoad(cacheTitleId);
 	s_rekeyedEntries.clear();
+	s_guardDamageBase = FileCache::GetDamagedEntryTotal();
 	// initialize renderer specific caches
 	switch(g_renderer->GetType())
 	{
@@ -769,7 +777,7 @@ void LatteShaderCache_Load()
 	if (g_renderer->GetType() == RendererAPI::Vulkan || g_renderer->GetType() == RendererAPI::Metal)
         LatteShaderCache_LoadPipelineCache(cacheTitleId);
 #endif
-	ShaderCacheGuard_AfterLoad(cacheTitleId, numDamagedShaders == 0 && s_shaderCacheGeneric->GetDamagedEntryCount() == 0);
+	ShaderCacheGuard_AfterLoad(cacheTitleId, numDamagedShaders == 0 && s_shaderCacheGeneric->GetDamagedEntryCount() == 0 && FileCache::GetDamagedEntryTotal() == s_guardDamageBase);
 
 
 	g_renderer->BeginFrame(true);

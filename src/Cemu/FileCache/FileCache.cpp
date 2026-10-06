@@ -4,6 +4,7 @@
 #include <mutex>
 #include <algorithm>
 #include <condition_variable>
+#include <unordered_map>
 #include "zlib.h"
 #include "Common/FileStream.h"
 
@@ -37,6 +38,7 @@ struct _FileCacheAsyncWriter
 			m_isRunning.store(false);
 			m_fileCacheCondVar.notify_one();
 			m_fileCacheThread.join();
+			m_jobDoneCondVar.notify_all(); // nobody waits for jobs that will never run
 		}
 	}
 
@@ -50,9 +52,19 @@ struct _FileCacheAsyncWriter
 
 		std::unique_lock lock(m_fileCacheMutex);
 		m_writeRequests.emplace_back(std::move(async));
+		m_pendingJobs[fileCache]++;
 
 		lock.unlock();
 		m_fileCacheCondVar.notify_one();
+	}
+
+	// Blocks until every job queued for this cache has been written. The jobs hold a raw pointer, so a
+	// cache must not be freed before they're done.
+	void WaitForCache(FileCache* fileCache)
+	{
+		std::unique_lock lock(m_fileCacheMutex);
+		m_jobDoneCondVar.wait(lock, [&]() { return !m_pendingJobs.contains(fileCache) || !m_isRunning.load(); });
+		m_pendingJobs.erase(fileCache);
 	}
 
 private:
@@ -76,6 +88,13 @@ private:
 			for (const auto& entry : requestsCopy)
 			{
 				entry.fileCache->AddFile({ entry.name1, entry.name2 }, entry.fileData.data(), (sint32)entry.fileData.size());
+				// the cache may be freed as soon as its last job is counted off, so this is the final use of it
+				std::unique_lock doneLock(m_fileCacheMutex);
+				auto it = m_pendingJobs.find(entry.fileCache);
+				if (it != m_pendingJobs.end() && --it->second == 0)
+					m_pendingJobs.erase(it);
+				doneLock.unlock();
+				m_jobDoneCondVar.notify_all();
 			}
 		}
 	}
@@ -83,7 +102,9 @@ private:
 	std::thread m_fileCacheThread;
 	std::mutex m_fileCacheMutex;
 	std::condition_variable m_fileCacheCondVar;
+	std::condition_variable m_jobDoneCondVar;
 	std::vector<FileCacheAsyncJob> m_writeRequests;
+	std::unordered_map<FileCache*, uint32> m_pendingJobs; // queued or running jobs per cache
 	std::atomic_bool m_isRunning;
 }FileCacheAsyncWriter;
 
@@ -231,6 +252,12 @@ FileCache* FileCache::_OpenExisting(const fs::path& path, bool compareExtraVersi
 
 static std::mutex s_backupDirMutex;
 static fs::path s_backupDir;
+static std::atomic_uint32_t s_damagedEntryTotal{0};
+
+uint32 FileCache::GetDamagedEntryTotal()
+{
+	return s_damagedEntryTotal.load();
+}
 
 void FileCache::SetBackupDirectory(const fs::path& dir)
 {
@@ -247,11 +274,16 @@ bool FileCache::_handleDamagedEntry(FileTableEntry* entry, std::vector<uint8>& d
 	const uint64 name1 = entry->name1;
 	const uint64 name2 = entry->name2;
 	fs::path backupPath;
+	bool isBackupFile = false;
 	{
 		std::unique_lock lock(s_backupDirMutex);
 		if (!s_backupDir.empty() && !filePath.empty())
 			backupPath = s_backupDir / filePath.filename();
+		isBackupFile = !s_backupDir.empty() && filePath.parent_path() == s_backupDir;
 	}
+	// damage in a backup copy isn't damage to the title's own caches
+	if (!isBackupFile)
+		s_damagedEntryTotal++;
 	std::error_code ec;
 	if (!backupPath.empty() && backupPath != filePath && fs::exists(backupPath, ec))
 	{
@@ -285,38 +317,44 @@ bool FileCache::Verify(const fs::path& path, bool checkEntries)
 	if (!fc)
 		return false;
 	bool ok = true;
-	const uint64 fileSize = fc->fileStream->GetSize();
 	// entry 0 is the file table itself and has to agree with the header
 	if (fc->fileTableEntryCount == 0 ||
 		fc->fileTableEntries[0].name1 != FILECACHE_FILETABLE_NAME1 || fc->fileTableEntries[0].name2 != FILECACHE_FILETABLE_NAME2 ||
 		fc->fileTableEntries[0].fileOffset != fc->fileTableOffset)
 		ok = false;
-	std::vector<std::pair<uint64, uint64>> spans; // offset, end
-	for (uint32 i = 0; ok && i < fc->fileTableEntryCount; i++)
+	// Everything below is about the individual entries. A cut-short entry doesn't make the file unusable:
+	// it's repaired or deleted by itself when it's read, so the quick check leaves it at that.
+	if (ok && checkEntries)
 	{
-		const FileTableEntry& e = fc->fileTableEntries[i];
-		if (e.name1 == FILECACHE_FILETABLE_FREE_NAME && e.name2 == FILECACHE_FILETABLE_FREE_NAME)
-			continue;
-		const uint64 end = e.fileOffset + e.fileSize;
-		if (end < e.fileOffset || fc->dataOffset + end > fileSize)
-			ok = false;
-		spans.emplace_back(e.fileOffset, end);
-	}
-	if (ok)
-	{
-		std::sort(spans.begin(), spans.end());
-		for (size_t i = 1; ok && i < spans.size(); i++)
-			if (spans[i].first < spans[i - 1].second)
+		const uint64 fileSize = fc->fileStream->GetSize();
+		std::vector<std::pair<uint64, uint64>> spans; // offset, end
+		for (uint32 i = 0; ok && i < fc->fileTableEntryCount; i++)
+		{
+			const FileTableEntry& e = fc->fileTableEntries[i];
+			if (e.name1 == FILECACHE_FILETABLE_FREE_NAME && e.name2 == FILECACHE_FILETABLE_FREE_NAME)
+				continue;
+			const uint64 end = e.fileOffset + e.fileSize;
+			if (end < e.fileOffset || fc->dataOffset + end > fileSize)
 				ok = false;
-	}
-	std::vector<uint8> data;
-	for (uint32 i = 1; ok && checkEntries && i < fc->fileTableEntryCount; i++)
-	{
-		const FileTableEntry& e = fc->fileTableEntries[i];
-		if (e.name1 == FILECACHE_FILETABLE_FREE_NAME && e.name2 == FILECACHE_FILETABLE_FREE_NAME)
-			continue;
-		if ((e.flags & FileTableEntry::FLAG_CHECKSUM) != 0 && !fc->_getFileDataInternal(&e, data))
-			ok = false;
+			spans.emplace_back(e.fileOffset, end);
+		}
+		if (ok)
+		{
+			std::sort(spans.begin(), spans.end());
+			for (size_t i = 1; ok && i < spans.size(); i++)
+				if (spans[i].first < spans[i - 1].second)
+					ok = false;
+		}
+		// the checksum covers the stored bytes, so an entry that matches it is intact without decompressing it
+		std::vector<uint8> data;
+		for (uint32 i = 1; ok && i < fc->fileTableEntryCount; i++)
+		{
+			const FileTableEntry& e = fc->fileTableEntries[i];
+			if (e.name1 == FILECACHE_FILETABLE_FREE_NAME && e.name2 == FILECACHE_FILETABLE_FREE_NAME)
+				continue;
+			if ((e.flags & FileTableEntry::FLAG_CHECKSUM) != 0 && !fc->_readEntryRaw(&e, data))
+				ok = false;
+		}
 	}
 	delete fc;
 	return ok;
@@ -329,13 +367,23 @@ FileCache* FileCache::Open(const fs::path& path, bool allowCreate, uint32 extraV
 		return fileCache;
 	if (!allowCreate)
 		return nullptr;
-	// A file that exists but won't open (cut short when the app was killed mid-write or the disk
-	// filled, or written by another cache version) used to be overwritten by Create() below,
-	// silently throwing away every shader the game had learned. Keep it beside the new one
-	// instead. The name keeps its title-ID prefix, so clearing the shader cache in Settings still
-	// counts and removes it.
+	// A file whose header or file table can't be read (cut short when the app was killed mid-write or
+	// the disk filled) used to be overwritten by Create() below, silently throwing away every shader
+	// the game had learned. Keep it beside the new one instead. The name keeps its title-ID prefix, so
+	// clearing the shader cache in Settings still counts and removes it.
+	// A file that reads fine but carries another version stamp is an intentional version change (e.g. the
+	// SPIR-V cache, stamped per app version): nothing is lost that could be used, so it's overwritten.
 	std::error_code ec;
-	if (fs::exists(path, ec) && fs::file_size(path, ec) > 0 && !ec)
+	bool unreadable = fs::exists(path, ec) && fs::file_size(path, ec) > 0 && !ec;
+	if (unreadable)
+	{
+		if (FileCache* readable = _OpenExisting(path, false))
+		{
+			delete readable;
+			unreadable = false;
+		}
+	}
+	if (unreadable)
 	{
 		fs::path aside = path;
 		aside += ".unreadable";
@@ -344,7 +392,7 @@ FileCache* FileCache::Open(const fs::path& path, bool allowCreate, uint32 extraV
 		if (ec)
 			cemuLog_log(LogType::Force, "Cache file \"{}\" could not be opened or set aside: {}", _pathToUtf8(path), ec.message());
 		else
-			cemuLog_log(LogType::Force, "Cache file \"{}\" could not be opened; kept as \"{}\" and started a new one", _pathToUtf8(path), _pathToUtf8(aside));
+			cemuLog_log(LogType::Force, "Cache file \"{}\" could not be read; kept as \"{}\" and started a new one", _pathToUtf8(path), _pathToUtf8(aside));
 	}
 	return Create(path, extraVersion);
 }
@@ -356,6 +404,8 @@ FileCache* FileCache::Open(const fs::path& path)
 
 FileCache::~FileCache()
 {
+	// queued async writes still point at this cache
+	FileCacheAsyncWriter.WaitForCache(this);
 	free(this->fileTableEntries);
 	delete fileStream;
 }
@@ -645,21 +695,35 @@ void FileCache::AddFileAsync(const FileName& name, const uint8* fileData, sint32
 	FileCacheAsyncWriter.AddJob(this, name, fileData, fileSize);
 }
 
-bool FileCache::_getFileDataInternal(const FileTableEntry* entry, std::vector<uint8>& dataOut)
+// Reads the entry's stored bytes and checks them against its checksum, without decompressing.
+bool FileCache::_readEntryRaw(const FileTableEntry* entry, std::vector<uint8>& rawOut)
 {
-	std::vector<uint8> rawData(entry->fileSize);
-
-	fileStream->SetPosition(this->dataOffset + entry->fileOffset);
+	// The table says where the entry is; a corrupt one could name any offset and a size of up to 4GB.
+	// Look at the file before allocating for it.
+	const uint64 start = this->dataOffset + entry->fileOffset;
+	const uint64 end = start + entry->fileSize;
+	if (start < this->dataOffset || end < start || end > fileStream->GetSize())
+		return false;
+	rawOut.resize(entry->fileSize);
+	fileStream->SetPosition(start);
 	// A short read means the file ends before this entry does (cut short by a kill or a full disk):
 	// fail it rather than hand back the zero padding as if it were data.
-	if (fileStream->readData(rawData.data(), entry->fileSize) != entry->fileSize)
+	if (fileStream->readData(rawOut.data(), entry->fileSize) != entry->fileSize)
 		return false;
 	if ((entry->flags & FileTableEntry::FLAG_CHECKSUM) != 0)
 	{
 		const uint16 stored = (uint16)(entry->extraReserved1 | ((uint16)entry->extraReserved2 << 8));
-		if (_fileCache_checksum(rawData.data(), rawData.size()) != stored)
+		if (_fileCache_checksum(rawOut.data(), rawOut.size()) != stored)
 			return false;
 	}
+	return true;
+}
+
+bool FileCache::_getFileDataInternal(const FileTableEntry* entry, std::vector<uint8>& dataOut)
+{
+	std::vector<uint8> rawData;
+	if (!_readEntryRaw(entry, rawData))
+		return false;
 
 	if ((entry->flags&FileTableEntry::FLAG_COMPRESSED) == 0)
 	{
