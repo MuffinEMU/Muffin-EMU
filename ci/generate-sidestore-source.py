@@ -243,10 +243,10 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
         "apps": [{
             "name": "MuffinEMU",
             "bundleIdentifier": BUNDLE_ID,
-            "developerName": "Void",
+            "developerName": "MuffinEMU",
             "subtitle": app_subtitle,
             "localizedDescription": (
-                "MuffinEMU, made by Void, is a Wii U emulator for iPhone and iPad (iOS 15 and later), built on Cemu.\n\n"
+                "MuffinEMU is a Wii U emulator for iPhone and iPad (iOS 15 and later), built on Cemu.\n\n"
                 "- Import games from Files: WUA, decrypted games, and encrypted dumps with your own keys.txt. "
                 "DLC and updates install from the app.\n"
                 "- Metal renderer by default, with Vulkan through MoltenVK as an option.\n"
