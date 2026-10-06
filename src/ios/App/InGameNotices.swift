@@ -20,7 +20,7 @@ struct BootBackButton: View {
                             .font(.system(size: 14, weight: .semibold, design: .rounded))
                     }
                 }
-                .buttonStyle(MuffinSecondaryButtonStyle())
+                .buttonStyle(MuffinBarButtonStyle())
                 .accessibilityHint("Stops starting the game and returns to your games.")
                 Spacer()
             }
@@ -68,6 +68,6 @@ struct HeatNoticeModifier: ViewModifier {
     }
 
     @MainActor private static var hotMessage: String {
-        "The device is hot, so iOS is slowing the game down. Turn on Cool down automatically in Settings, CPU, or lower Resolution in Settings, Graphics."
+        "The device is hot, so iOS is slowing the game down. After you quit, try Cool down automatically (Settings, CPU) or a lower Resolution (Settings, Graphics)."
     }
 }
