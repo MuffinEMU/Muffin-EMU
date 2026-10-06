@@ -117,6 +117,7 @@ PPCInterpreter_t* PPCCore_executeCallbackInternal(uint32 functionMPTR)
 {
     cemu_assert_debug(functionMPTR != 0);
     PPCInterpreter_t* hCPU = PPCInterpreter_getCurrentInstance();
+    hCPU->callbackDepth++; // host-only, for save states
     // remember LR and instruction pointer
     uint32 lr = hCPU->spr.LR;
     uint32 ip = hCPU->instructionPointer;
@@ -148,6 +149,7 @@ PPCInterpreter_t* PPCCore_executeCallbackInternal(uint32 functionMPTR)
     // restore LR and instruction pointer
     hCPU->spr.LR = lr;
     hCPU->instructionPointer = ip;
+    hCPU->callbackDepth--;
     return hCPU;
 }
 

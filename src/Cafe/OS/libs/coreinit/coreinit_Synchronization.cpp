@@ -44,6 +44,7 @@ namespace coreinit
 		else
 		{
 			// enter wait queue
+			OSHleWaitScope waitScope(HLE_WAIT_EVENT, MEMPTR<OSEvent>(event).GetMPTR());
 			event->threadQueue.queueAndWait(OSGetCurrentThread());
 		}
 	}
@@ -51,6 +52,12 @@ namespace coreinit
 	void OSWaitEvent(OSEvent* event)
 	{
 		__OSLockScheduler();
+		// a save state load restarted this call after the wake it was waiting for already happened
+		if (__OSTakeRestartedWait(OSGetCurrentThread(), HLE_WAIT_EVENT, MEMPTR<OSEvent>(event).GetMPTR(), nullptr))
+		{
+			__OSUnlockScheduler();
+			return;
+		}
 		OSWaitEventInternal(event);
 		__OSUnlockScheduler();
 	}
@@ -69,6 +76,7 @@ namespace coreinit
 		if (data->thread->state == OSThread_t::THREAD_STATE::STATE_WAITING)
 		{
 			data->hasTimeout = true;
+			__OSNoteWaitTimedOut(data->thread);
 			data->threadQueue->cancelWait(data->thread);
 		}
 	}
@@ -76,6 +84,15 @@ namespace coreinit
 	bool OSWaitEventWithTimeout(OSEvent* event, uint64 timeout)
 	{
 		__OSLockScheduler();
+		{
+			// a save state load restarted this call after its wait had already ended
+			bool restartedTimedOut = false;
+			if (__OSTakeRestartedWait(OSGetCurrentThread(), HLE_WAIT_EVENT_TIMEOUT, MEMPTR<OSEvent>(event).GetMPTR(), &restartedTimedOut))
+			{
+				__OSUnlockScheduler();
+				return !restartedTimedOut;
+			}
+		}
 		if (event->state == OSEvent::EVENT_STATE::STATE_SIGNALED)
 		{
 			if (event->mode == OSEvent::EVENT_MODE::MODE_AUTO)
@@ -100,8 +117,12 @@ namespace coreinit
 			data.thread = OSGetCurrentThread();
 			data.threadQueue = &event->threadQueue;
 			data.hasTimeout = false;
-			auto hostAlarm = coreinit::OSHostAlarmCreate(OSGetTime() + coreinit::EspressoTime::ConvertNsToTimerTicks(timeout), 0, _OSWaitEventWithTimeoutHandler, &data);
-			event->threadQueue.queueAndWait(OSGetCurrentThread());
+			const uint64 timeoutTicks = coreinit::EspressoTime::ConvertNsToTimerTicks(timeout);
+			auto hostAlarm = coreinit::OSHostAlarmCreate(OSGetTime() + timeoutTicks, 0, _OSWaitEventWithTimeoutHandler, &data);
+			{
+				OSHleWaitScope waitScope(HLE_WAIT_EVENT_TIMEOUT, MEMPTR<OSEvent>(event).GetMPTR(), timeoutTicks);
+				event->threadQueue.queueAndWait(OSGetCurrentThread());
+			}
 			coreinit::OSHostAlarmDestroy(hostAlarm);
 			if (data.hasTimeout)
 			{
@@ -254,7 +275,10 @@ namespace coreinit
 				if (failedAttempts >= 0x800)
 					cemuLog_log(LogType::Force, "Detected long-term contested OSLockMutex");
 				currentThread->waitingForMutex = mutex;
-				mutex->threadQueue.queueAndWait(currentThread);
+				{
+					OSHleWaitScope waitScope(HLE_WAIT_RECHECK);
+					mutex->threadQueue.queueAndWait(currentThread);
+				}
 				currentThread->waitingForMutex = nullptr;
 				failedAttempts++;
 			}
@@ -354,6 +378,8 @@ namespace coreinit
 		// seen in Bayonetta 2
 		// releases the mutex while waiting for the condition to be signaled
 		__OSLockScheduler();
+		// from here until the mutex is back this call can't be run again from its start (a save state is not taken meanwhile)
+		OSHleNoRestartScope noRestartScope;
 		OSThread_t* currentThread = OSGetCurrentThread();
 		cemu_assert_debug(mutex->owner == currentThread);
 		sint32 prevLockCount = mutex->lockCount;
@@ -400,6 +426,7 @@ namespace coreinit
 				semaphore->count = prevCount - 1;
 				return prevCount;
 			}
+			OSHleWaitScope waitScope(HLE_WAIT_RECHECK);
 			semaphore->threadQueue.queueAndWait(OSGetCurrentThread());
 		}
 	}
@@ -507,7 +534,10 @@ namespace coreinit
 				__OSLockScheduler();
 				fastMutex->threadQueueSmall.queueOnly(currentThread);
 				_OSFastMutex_ReleaseContention(fastMutex);
-				PPCCore_switchToSchedulerWithLock();
+				{
+					OSHleWaitScope waitScope(HLE_WAIT_RECHECK);
+					PPCCore_switchToSchedulerWithLock();
+				}
 				currentThread->waitingForFastMutex = nullptr;
 				__OSUnlockScheduler();
 				_OSFastMutex_AcquireContention(fastMutex);
@@ -600,6 +630,7 @@ namespace coreinit
 	{
 		// releases the mutex while waiting for the condition to be signaled
 		__OSLockScheduler();
+		OSHleNoRestartScope noRestartScope; // see OSWaitCond
 		cemu_assert_debug(fastMutex->owner == OSGetCurrentThread());
 		sint32 prevLockCount = fastMutex->lockCount;
 		// unlock mutex

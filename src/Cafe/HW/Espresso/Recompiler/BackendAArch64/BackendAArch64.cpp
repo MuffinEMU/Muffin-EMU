@@ -976,7 +976,13 @@ void* PPCRecompiler_virtualHLE(PPCInterpreter_t* ppcInterpreter, uint32 hleFuncI
 	{
 		auto hleCall = PPCInterpreter_getHLECall(hleFuncId);
 		cemu_assert(hleCall != nullptr);
+		// host-only: where r1 was and that a call is in progress, for save states
+		const uint32 prevEntryR1 = ppcInterpreter->hleEntryR1;
+		ppcInterpreter->hleEntryR1 = ppcInterpreter->gpr[1];
+		ppcInterpreter->hleDepth++;
 		hleCall(ppcInterpreter);
+		ppcInterpreter->hleDepth--;
+		ppcInterpreter->hleEntryR1 = prevEntryR1;
 	}
 	ppcInterpreter->rspTemp = prevRSPTemp;
 	return PPCInterpreter_getCurrentInstance();

@@ -47,6 +47,13 @@ namespace coreinit
 
 	void OSAlarm_Shutdown();
 
+	// Save states. Both need the scheduler lock held.
+	// The guest OSAlarm structs that are armed right now (they are in guest memory; which of them are armed is not).
+	void __OSGetActiveAlarms(std::vector<MPTR>& alarms);
+	// Drops every host alarm, including the ones owned by host stacks that no longer exist, and arms `alarms` again from the
+	// times stored in the (already restored) guest structs.
+	void __OSRestoreActiveAlarms(const std::vector<MPTR>& alarms, std::string& report);
+
 	void alarm_update();
 
 	void MapAlarmExports();

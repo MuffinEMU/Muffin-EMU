@@ -117,6 +117,19 @@ namespace coreinit
 			return currentTick >= g_soonestAlarm;
 		}
 
+		// Deletes every alarm still queued; returns how many. For a save state load, where the stacks that owned them are gone.
+		static size_t DeleteAllQueued()
+		{
+			size_t count = 0;
+			while (!g_activeAlarmList.empty())
+			{
+				delete *g_activeAlarmList.begin(); // takes itself out of the list
+				count++;
+			}
+			updateEarliestAlarmAtomic();
+			return count;
+		}
+
         static void Reset()
         {
             g_activeAlarmList.clear();
@@ -300,6 +313,43 @@ namespace coreinit
         g_activeAlarms.clear();
         OSHostAlarm::Reset();
         __OSUnlockScheduler();
+	}
+
+	void __OSGetActiveAlarms(std::vector<MPTR>& alarms)
+	{
+		cemu_assert_debug(__OSHasSchedulerLock());
+		alarms.clear();
+		for (auto& it : g_activeAlarms)
+			alarms.push_back(MEMPTR<OSAlarm_t>(it.first).GetMPTR());
+	}
+
+	void __OSRestoreActiveAlarms(const std::vector<MPTR>& alarms, std::string& report)
+	{
+		cemu_assert_debug(__OSHasSchedulerLock());
+		const size_t armedBefore = g_activeAlarms.size();
+		for (auto& it : g_activeAlarms)
+			OSHostAlarmDestroy(it.second);
+		g_activeAlarms.clear();
+		const size_t otherAlarms = OSHostAlarm::DeleteAllQueued(); // timeouts of waits whose host stacks are gone
+		size_t armed = 0, skipped = 0;
+		for (MPTR alarmAddress : alarms)
+		{
+			if (!memory_isAddressRangeAccessible(alarmAddress, sizeof(OSAlarm_t)))
+			{
+				skipped++;
+				continue;
+			}
+			OSAlarm_t* alarm = (OSAlarm_t*)memory_getPointerFromVirtualOffset(alarmAddress);
+			if (!alarm->checkMagic())
+			{
+				skipped++;
+				continue;
+			}
+			g_activeAlarms[alarm] = OSHostAlarmCreate(_swapEndianU64(alarm->nextTime), _swapEndianU64(alarm->period), __OSHostAlarmTriggered, nullptr);
+			armed++;
+		}
+		report = fmt::format("{} guest alarms were armed and {} other host alarms were pending; {} guest alarms armed again from the save{}",
+			armedBefore, otherAlarms, armed, skipped ? fmt::format(" ({} skipped: no longer an alarm)", skipped) : std::string());
 	}
 
 	void _OSAlarmThread(PPCInterpreter_t* hCPU)

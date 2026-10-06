@@ -1,8 +1,11 @@
 #pragma once
 #include "Cafe/HW/Espresso/Const.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Scheduler.h"
+#include <string>
+#include <vector>
 
 struct OSThread_t;
+struct PPCInterpreter_t;
 
 struct OSContextRegFPSCR_t
 {
@@ -630,6 +633,79 @@ namespace coreinit
 	// poll for the point where every core has actually reached that point, rather than
 	// assuming IOSTitlePause_Pause() returning means execution has stopped.
 	bool __OSAllCoresIdle();
+
+	// ---- save states (IOSSaveState.cpp) ----------------------------------------------------------------------------
+	//
+	// A guest thread that is blocked inside an HLE call is parked on a host fiber stack, which a load cannot bring back. What
+	// the load does instead is give every thread a fresh fiber that starts from the thread's context in guest memory. For a
+	// thread that was inside an HLE call that context is the call's own opcode with the arguments still in the registers, so
+	// the new fiber simply makes the call again. The few things that makes wrong are handled here:
+	//  - r1: a call that took guest stack (StackAllocator) has already moved it; the value from when the call began is put back.
+	//  - waits that end by being woken (events, sleeps): the wake already happened, so running the call again must return at once
+	//    instead of waiting for a second one. A wait that had a timeout gets a new host alarm with the full timeout.
+	//  - waits that look at their condition again after a wake (mutex, semaphore) need nothing.
+	// Anything else is refused at save time, see InspectThreads() in IOSSaveState.cpp.
+
+	// What the host knows about a thread that guest memory does not. All zero for a thread that is not inside an HLE call.
+	struct OSHostThreadInfo
+	{
+		uint32 hleDepth = 0;
+		uint32 hleEntryR1 = 0;
+		uint32 callbackDepth = 0;
+		uint32 noRestart = 0;
+		uint32 waitKind = 0;
+		uint32 waitObject = 0;
+		uint32 waitTimedOut = 0;
+		uint64 waitTicks = 0;
+	};
+
+	// Caller holds the scheduler lock. False when the thread has no host fiber.
+	bool __OSGetHostThreadInfo(MPTR thread, OSHostThreadInfo& info);
+
+	// A thread as the save recorded it.
+	struct OSThreadRestartRecord
+	{
+		MPTR thread = 0;
+		OSHostThreadInfo info;
+	};
+
+	// Step one of putting the threads back, before guest memory is touched: builds a fresh host fiber for each record.
+	// False (with `problem` set) when one can't be built; nothing has changed then.
+	bool __OSPrepareHostThreadRebuild(const std::vector<OSThreadRestartRecord>& records, std::string& problem);
+	// Gives the prepared fibers back, for a load that stops after step one.
+	void __OSAbortHostThreadRebuild();
+	// Step two, after guest memory was restored and the alarms put back: throws away every old fiber, installs the prepared
+	// ones, rebuilds the active thread list and the run queue counters, and arms what the restarted waits need.
+	void __OSCommitHostThreadRebuild(const std::vector<OSThreadRestartRecord>& records, std::string& report);
+
+	// For a wait that is about to be made: if this thread was restarted from that same wait and it was already woken, true
+	// (and `timedOut` says how it ended). Caller holds the scheduler lock.
+	bool __OSTakeRestartedWait(OSThread_t* thread, uint32 waitKind, uint32 waitObject, bool* timedOut);
+	// A timed wait's timeout fired for this thread (see PPCInterpreter_t::hleWaitTimedOut).
+	void __OSNoteWaitTimedOut(OSThread_t* thread);
+
+	// Marks the current guest thread as parked in a wait of this kind for as long as the object lives.
+	struct OSHleWaitScope
+	{
+		OSHleWaitScope(uint32 kind, uint32 object = 0, uint64 ticks = 0);
+		~OSHleWaitScope();
+		OSHleWaitScope(const OSHleWaitScope&) = delete;
+		OSHleWaitScope& operator=(const OSHleWaitScope&) = delete;
+	private:
+		PPCInterpreter_t* m_cpu;
+		uint32 m_prevKind, m_prevObject, m_prevTimedOut;
+		uint64 m_prevTicks;
+	};
+	// Marks the current guest thread as inside a call that can't be run again from the start, for as long as the object lives.
+	struct OSHleNoRestartScope
+	{
+		OSHleNoRestartScope();
+		~OSHleNoRestartScope();
+		OSHleNoRestartScope(const OSHleNoRestartScope&) = delete;
+		OSHleNoRestartScope& operator=(const OSHleNoRestartScope&) = delete;
+	private:
+		PPCInterpreter_t* m_cpu;
+	};
 
 	/// Thermal governor: how long each emulated core sleeps at its own reschedule point.
 	/// Zero (the default) means no sleep. Applied only while the host reports serious or critical

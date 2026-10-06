@@ -104,6 +104,28 @@ struct PPCInterpreter_t
 
 	// extra variables for recompiler
 	void* rspTemp;
+
+	// Host-only bookkeeping for save states (see IOSSaveState.cpp). It sits after every field generated code addresses
+	// by offset, and nothing here is part of the guest-visible CPU. Only instances that belong to a guest thread's fiber
+	// are zeroed (OSHostThread's constructor); the others never have these read.
+	uint32 hleDepth;		// HLE calls this instance is inside right now
+	uint32 hleEntryR1;		// r1 when the innermost HLE call began (a call that allocates guest stack has moved r1 by the time it parks)
+	uint32 callbackDepth;	// nested PPCCore_executeCallbackInternal() calls
+	uint32 hleNoRestart;	// non-zero while inside a call that can't be run again from its start (OSWaitCond)
+	uint32 hleWaitKind;		// HLE_WAIT_* while parked in a wait that can be resumed after a load, see coreinit_Thread.h
+	uint32 hleWaitObject;	// guest address of what is waited on (event), or 0
+	uint32 hleWaitTimedOut;	// the wait ended because its timeout fired
+	uint64 hleWaitTicks;	// timeout the wait was started with, in timer ticks
+};
+
+// Values of PPCInterpreter_t::hleWaitKind
+enum : uint32
+{
+	HLE_WAIT_NONE = 0,
+	HLE_WAIT_EVENT = 1,			// OSWaitEvent: being woken means the wait is over
+	HLE_WAIT_EVENT_TIMEOUT = 2,	// OSWaitEventWithTimeout: woken by a signal or by the timeout
+	HLE_WAIT_SLEEP = 3,			// OSSleepTicks: woken means the sleep is over
+	HLE_WAIT_RECHECK = 4,		// mutex and semaphore waits: the call looks at its condition again after every wake, so running it from the start is the same
 };
 
 // parameter access (legacy C style)
@@ -214,6 +236,8 @@ extern uint64 ppcMainThreadDECCycleStart; // at which cycle the dec register was
 void PPCTimer_init();
 void PPCTimer_waitForInit();
 uint64 PPCTimer_getFromRDTSC();
+// Makes the guest clock read `cycles` from now on and carry on counting from there. Used when a save state is loaded.
+void PPCTimer_setGuestCycleCounter(uint64 cycles);
 
 uint64 PPCTimer_microsecondsToTsc(uint64 us);
 uint64 PPCTimer_tscToMicroseconds(uint64 us);

@@ -157,6 +157,7 @@ void PPCTimer_init()
 #endif
 }
 
+FSpinlock sTimerSpinlock;
 uint64 _tickSummary = 0;
 
 void PPCTimer_start()
@@ -166,6 +167,30 @@ void PPCTimer_start()
 	_tickSummary = 0;
 #if defined(__aarch64__)
 	PPCTimer_resetArmBase(rawCounter);
+#endif
+}
+
+// Moves the guest clock to `cycles` and lets it carry on from there (a save state's load: every absolute time the guest
+// stored in its memory is relative to the clock it had when it was saved).
+void PPCTimer_setGuestCycleCounter(uint64 cycles)
+{
+	const uint64 rawCounter = __rdtsc();
+#if defined(__aarch64__)
+	sArmTimerRebaseLock.lock();
+	// Raw first: a reader that lands between the two stores sees the new base with the old summary, which is a clock
+	// that is briefly behind, never one that jumps ahead.
+	s_armTimerBaseRaw.store(rawCounter, std::memory_order_relaxed);
+	s_armTimerBaseSummary.store(cycles, std::memory_order_relaxed);
+	s_armTimerBaseShift.store(ActiveSettings::GetTimerShiftFactor(), std::memory_order_relaxed);
+	_rdtscLastMeasure = rawCounter;
+	sArmTimerRebaseLock.unlock();
+#else
+	sTimerSpinlock.lock();
+	_rdtscLastMeasure = rawCounter;
+	_rdtscAcc.low = 0;
+	_rdtscAcc.high = 0;
+	_tickSummary = cycles;
+	sTimerSpinlock.unlock();
 #endif
 }
 
@@ -200,7 +225,6 @@ void PPCTimer_waitForInit()
 	while (!PPCTimer_isReady()) std::this_thread::sleep_for(std::chrono::milliseconds(10));
 }
 
-FSpinlock sTimerSpinlock;
 
 // thread safe
 uint64 PPCTimer_getFromRDTSC()

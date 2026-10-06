@@ -27,6 +27,12 @@
 // such thread resuming into a host frame that belongs to a different moment. Alarms, open
 // file handles, the GPU command ring and AX voices are host-side as well.
 //
+// Within a session a load gives every thread a NEW host fiber that starts from the thread's context in the
+// restored guest memory (a thread parked inside an HLE call makes that call again; see the block comment in
+// coreinit_Thread.h for what that needs), puts the guest clock and the armed alarms back, and so also copes with a
+// different set of threads than the one that was saved. A save is only made when every thread is in a state that
+// can be restarted that way (InspectThreads below); otherwise the game is let run for a moment and looked at again.
+//
 // Failures are specific. Every false return sets a code and a player-facing sentence, read
 // through IOSSaveState_LastErrorCode()/IOSSaveState_LastErrorMessage(), and every step logs its
 // own duration so a device log shows where the time (or the failure) went.
@@ -38,6 +44,7 @@
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Thread.h"
 #include "Cafe/OS/libs/coreinit/coreinit_Scheduler.h"
+#include "Cafe/OS/libs/coreinit/coreinit_Alarm.h"
 #include "Cafe/OS/libs/gx2/GX2_Command.h"
 #include "Cafe/OS/libs/gx2/GX2_Event.h"
 #include "Cemu/Logging/CemuLogging.h"
@@ -97,7 +104,9 @@ namespace
 	// produced them, so there are almost none) are reported as "from an earlier session".
 	// 3: adds tagged chunks of host-side state between the range table and the memory data (GPU command buffer
 	// positions, the guest clock; see the chunk tags below). A load needs every chunk its build knows about.
-	constexpr uint32 kSaveStateFormatVersion = 3;
+	// 4: adds the per-thread host state a load needs to restart each thread (THRD), the armed alarms (ALRM) and the decrementer
+	// to META.
+	constexpr uint32 kSaveStateFormatVersion = 4;
 
 	// Bounded waits: this must never hang the UI forever on a title stuck in a long HLE
 	// call. Timing out means "refuse the operation", never "proceed anyway".
@@ -222,8 +231,11 @@ namespace
 			const uint32 ip = t->context.srr0;
 			const uint32 lr = _swapEndianU32(t->context.lr); // stored big-endian, unlike srr0
 			const MPTR waitQueue = t->currentWaitQueue.GetMPTR();
-			cemuLog_log(LogType::Force, "IOSSaveState:   [{}] {:08x} '{}' {} suspend={} prio={} affinity={:x} ip={:08x} lr={:08x} waitQueue={:08x}",
-				i, threadAddress, SafeGuestString(t->threadName.GetMPTR()), ThreadStateName(state), suspend, priority, t->context.getAffinity(), ip, lr, waitQueue);
+			coreinit::OSHostThreadInfo host;
+			const bool haveHost = coreinit::__OSGetHostThreadInfo(threadAddress, host);
+			const std::string hostText = haveHost ? fmt::format("hle={} callbacks={} wait={} r1@call={:08x}{}", host.hleDepth, host.callbackDepth, host.waitKind, host.hleEntryR1, host.noRestart ? " NO-RESTART" : "") : std::string("no host fiber");
+			cemuLog_log(LogType::Force, "IOSSaveState:   [{}] {:08x} '{}' {} suspend={} prio={} affinity={:x} ip={:08x} lr={:08x} waitQueue={:08x} {}",
+				i, threadAddress, SafeGuestString(t->threadName.GetMPTR()), ThreadStateName(state), suspend, priority, t->context.getAffinity(), ip, lr, waitQueue, hostText);
 		}
 		__OSUnlockScheduler();
 	}
@@ -441,6 +453,93 @@ namespace
 		return Fail(SSE_GpuBusy, "The game's graphics didn't settle in time. Try again in a moment.");
 	}
 
+	// ---- can every thread be restarted from its saved context? ------------------------------------------------------
+
+	// Why this thread can't be put back from a save, or null when it can. See the block comment in coreinit_Thread.h.
+	const char* RestartBlocker(OSThread_t::THREAD_STATE state, const coreinit::OSHostThreadInfo& host)
+	{
+		const bool alive = state == OSThread_t::THREAD_STATE::STATE_WAITING || state == OSThread_t::THREAD_STATE::STATE_READY || state == OSThread_t::THREAD_STATE::STATE_RUNNING;
+		if (host.hleDepth == 0 || !alive)
+			return nullptr; // plain guest code (or finished): its saved context is all there is
+		if (host.noRestart)
+			return "inside a condition-variable wait, which can't be started again from its first line";
+		if (host.callbackDepth)
+			return "inside a callback the system was running for the game";
+		if (state == OSThread_t::THREAD_STATE::STATE_WAITING)
+			return nullptr; // still waiting: the call is made again when it is woken
+		switch (host.waitKind)
+		{
+		case HLE_WAIT_EVENT:
+		case HLE_WAIT_EVENT_TIMEOUT:
+		case HLE_WAIT_SLEEP:
+		case HLE_WAIT_RECHECK:
+			return nullptr; // woken but not yet running again: see __OSCommitHostThreadRebuild
+		}
+		return "woken or yielding inside a system call and not yet running again";
+	}
+
+	// Records what the host knows about each active guest thread. True when every one of them can be restarted; otherwise
+	// `blockers` lists the ones that can't. Needs the title paused and quiescent.
+	bool InspectThreads(std::vector<coreinit::OSThreadRestartRecord>& records, std::string& blockers)
+	{
+		records.clear();
+		blockers.clear();
+		int blocked = 0;
+		__OSLockScheduler();
+		for (sint32 i = 0; i < activeThreadCount; i++)
+		{
+			coreinit::OSThreadRestartRecord rec;
+			rec.thread = activeThread[i];
+			const OSThread_t* t = (const OSThread_t*)memory_getPointerFromVirtualOffset(rec.thread);
+			const char* why = nullptr;
+			if (!coreinit::__OSGetHostThreadInfo(rec.thread, rec.info))
+				why = "has no host fiber";
+			else
+				why = RestartBlocker(t->state, rec.info);
+			if (why)
+			{
+				blocked++;
+				blockers += fmt::format("\n    {:08x} '{}' {} ip={:08x}: {}", rec.thread, SafeGuestString(t->threadName.GetMPTR()), ThreadStateName(t->state), (uint32)t->context.srr0, why);
+			}
+			records.push_back(rec);
+		}
+		__OSUnlockScheduler();
+		return blocked == 0;
+	}
+
+	// How often a save looks again, letting the guest run in between. Threads that were woken a moment ago and have not been
+	// scheduled yet, or that are in the middle of yielding, sort themselves out within a few milliseconds of guest time.
+	constexpr int kThreadSettleAttempts = 10;
+	constexpr int kThreadNudgeBaseMs = 12;
+
+	bool SettleThreads(const char* op, bool skipGpuDrain, bool& gpuDrained, std::vector<coreinit::OSThreadRestartRecord>& records)
+	{
+		for (int attempt = 1; attempt <= kThreadSettleAttempts; attempt++)
+		{
+			std::string blockers;
+			if (InspectThreads(records, blockers))
+			{
+				cemuLog_log(LogType::Force, "IOSSaveState: {}: all {} guest threads can be restarted from the save (attempt {})", op, records.size(), attempt);
+				return true;
+			}
+			cemuLog_log(LogType::Force, "IOSSaveState: {}: attempt {}/{}: some threads can't be put back from a save yet:{}", op, attempt, kThreadSettleAttempts, blockers);
+			if (attempt == kThreadSettleAttempts)
+			{
+				return Fail(SSE_CoresBusy, "The game was in the middle of something that can't be saved safely right now. Wait a moment and try again.",
+					std::string(op) + ": threads still not restartable after " + std::to_string(kThreadSettleAttempts) + " attempts:" + blockers);
+			}
+			const int nudgeMs = kThreadNudgeBaseMs * (1 + attempt % 4);
+			cemuLog_log(LogType::Force, "IOSSaveState: {}: letting the guest run for {} ms and looking again", op, nudgeMs);
+			IOSTitlePause_Resume();
+			std::this_thread::sleep_for(std::chrono::milliseconds(nudgeMs));
+			if (!IOSTitlePause_Pause())
+				return Fail(SSE_PauseFailed, "The game couldn't be paused again. Try once more.", std::string(op) + ": re-pause after a thread nudge failed");
+			if (!Quiesce(op, skipGpuDrain, gpuDrained))
+				return false;
+		}
+		return false;
+	}
+
 	// ---- disk -------------------------------------------------------------------------------------------------------
 
 	struct SavedRange
@@ -549,6 +648,8 @@ namespace
 
 	constexpr uint32 kTagMeta = MakeTag('M', 'E', 'T', 'A');	// flags and the guest clock at the moment of the save
 	constexpr uint32 kTagGx2 = MakeTag('G', 'X', '2', 'S');		// where each core was in its GX2 command buffer
+	constexpr uint32 kTagThreads = MakeTag('T', 'H', 'R', 'D');	// what the host knew about each guest thread (which HLE call it was in, ...)
+	constexpr uint32 kTagAlarms = MakeTag('A', 'L', 'R', 'M');	// the guest alarms that were armed
 
 	constexpr uint32 kMaxChunks = 32;
 	constexpr uint32 kMaxChunkBytes = 4u * 1024 * 1024;
@@ -612,6 +713,44 @@ namespace
 		w.U32(gpuDrained ? kMetaFlagGpuDrained : 0);
 		w.U32(0); // reserved
 		w.U64(PPCInterpreter_getMainCoreCycleCounter());
+		w.U64(ppcMainThreadDECCycleStart);
+		w.U64(ppcMainThreadDECCycleValue);
+		return c;
+	}
+
+	Chunk MakeThreadsChunk(const std::vector<coreinit::OSThreadRestartRecord>& records)
+	{
+		Chunk c;
+		c.tag = kTagThreads;
+		ByteWriter w{c.data};
+		w.U32((uint32)records.size());
+		for (const auto& r : records)
+		{
+			w.U32(r.thread);
+			w.U32(r.info.hleDepth);
+			w.U32(r.info.hleEntryR1);
+			w.U32(r.info.callbackDepth);
+			w.U32(r.info.noRestart);
+			w.U32(r.info.waitKind);
+			w.U32(r.info.waitObject);
+			w.U32(r.info.waitTimedOut);
+			w.U64(r.info.waitTicks);
+		}
+		return c;
+	}
+
+	Chunk MakeAlarmsChunk()
+	{
+		std::vector<MPTR> alarms;
+		__OSLockScheduler();
+		coreinit::__OSGetActiveAlarms(alarms);
+		__OSUnlockScheduler();
+		Chunk c;
+		c.tag = kTagAlarms;
+		ByteWriter w{c.data};
+		w.U32((uint32)alarms.size());
+		for (MPTR a : alarms)
+			w.U32(a);
 		return c;
 	}
 
@@ -634,11 +773,13 @@ namespace
 	}
 
 	// Called with the title paused and quiescent, right before the file is written.
-	std::vector<Chunk> CollectExtras(bool gpuDrained)
+	std::vector<Chunk> CollectExtras(bool gpuDrained, const std::vector<coreinit::OSThreadRestartRecord>& threads)
 	{
 		std::vector<Chunk> chunks;
 		chunks.push_back(MakeMetaChunk(gpuDrained));
 		chunks.push_back(MakeGx2Chunk());
+		chunks.push_back(MakeThreadsChunk(threads));
+		chunks.push_back(MakeAlarmsChunk());
 		for (const auto& c : chunks)
 			cemuLog_log(LogType::Force, "IOSSaveState: save: chunk {} is {} bytes", TagName(c.tag), c.data.size());
 		return chunks;
@@ -1132,6 +1273,7 @@ namespace
 		auto refuse = [&](IOSSaveStateError code, const char* message, const std::string& detail)
 		{
 			fclose(f);
+			coreinit::__OSAbortHostThreadRebuild(); // no-op unless the fibers were already built
 			return Fail(code, message, detail);
 		};
 
@@ -1143,18 +1285,59 @@ namespace
 		// the host-side state this build knows how to put back
 		const Chunk* metaChunk = img.Find(kTagMeta);
 		const Chunk* gx2Chunk = img.Find(kTagGx2);
-		if (!metaChunk || !gx2Chunk)
-			return refuse(SSE_UnsupportedFormat, "This save was made by an older version of MuffinEMU and can't be loaded.", fmt::format("missing chunk (META {}, GX2S {})", metaChunk != nullptr, gx2Chunk != nullptr));
+		const Chunk* threadsChunk = img.Find(kTagThreads);
+		const Chunk* alarmsChunk = img.Find(kTagAlarms);
+		if (!metaChunk || !gx2Chunk || !threadsChunk || !alarmsChunk)
+			return refuse(SSE_UnsupportedFormat, "This save was made by an older version of MuffinEMU and can't be loaded.",
+				fmt::format("missing chunk (META {}, GX2S {}, THRD {}, ALRM {})", metaChunk != nullptr, gx2Chunk != nullptr, threadsChunk != nullptr, alarmsChunk != nullptr));
 
 		uint32 metaFlags = 0;
-		uint64 savedGuestCycles = 0;
+		uint64 savedGuestCycles = 0, savedDecStart = 0, savedDecValue = 0;
 		{
 			ByteReader r{metaChunk->data};
 			metaFlags = r.U32();
 			r.U32();
 			savedGuestCycles = r.U64();
+			savedDecStart = r.U64();
+			savedDecValue = r.U64();
 			if (!r.Finished())
 				return refuse(SSE_FileDamaged, "The save file is damaged.", "META chunk has the wrong size");
+		}
+		std::vector<coreinit::OSThreadRestartRecord> threadRecords;
+		{
+			ByteReader r{threadsChunk->data};
+			const uint32 count = r.U32();
+			if (count != img.threads.size())
+				return refuse(SSE_FileDamaged, "The save file is damaged.", "THRD chunk does not match the thread list");
+			for (uint32 i = 0; i < count && r.ok; i++)
+			{
+				coreinit::OSThreadRestartRecord rec;
+				rec.thread = r.U32();
+				rec.info.hleDepth = r.U32();
+				rec.info.hleEntryR1 = r.U32();
+				rec.info.callbackDepth = r.U32();
+				rec.info.noRestart = r.U32();
+				rec.info.waitKind = r.U32();
+				rec.info.waitObject = r.U32();
+				rec.info.waitTimedOut = r.U32();
+				rec.info.waitTicks = r.U64();
+				if (rec.thread != img.threads[i])
+					return refuse(SSE_FileDamaged, "The save file is damaged.", "THRD chunk lists different threads than the thread list");
+				threadRecords.push_back(rec);
+			}
+			if (!r.Finished())
+				return refuse(SSE_FileDamaged, "The save file is damaged.", "THRD chunk has the wrong size");
+		}
+		std::vector<MPTR> savedAlarms;
+		{
+			ByteReader r{alarmsChunk->data};
+			const uint32 count = r.U32();
+			if (count > 65536)
+				return refuse(SSE_FileDamaged, "The save file is damaged.", "ALRM chunk has an implausible alarm count");
+			for (uint32 i = 0; i < count && r.ok; i++)
+				savedAlarms.push_back(r.U32());
+			if (!r.Finished())
+				return refuse(SSE_FileDamaged, "The save file is damaged.", "ALRM chunk has the wrong size");
 		}
 		GX2::GX2CommandStateSnapshot gx2Snapshot{};
 		{
@@ -1171,19 +1354,14 @@ namespace
 			if (!r.Finished())
 				return refuse(SSE_FileDamaged, "The save file is damaged.", "GX2S chunk has the wrong size");
 		}
-		LogStep("load", fmt::format("file parsed: {} guest threads, {} memory ranges, {} chunks, {} of memory; GPU idle when saved: {}, guest clock {}",
-			img.threads.size(), img.ranges.size(), img.chunks.size(), Megabytes(img.totalBytes), (metaFlags & kMetaFlagGpuDrained) != 0, savedGuestCycles));
+		LogStep("load", fmt::format("file parsed: {} guest threads, {} memory ranges, {} chunks, {} alarms armed, {} of memory; GPU idle when saved: {}, guest clock {}",
+			img.threads.size(), img.ranges.size(), img.chunks.size(), savedAlarms.size(), Megabytes(img.totalBytes), (metaFlags & kMetaFlagGpuDrained) != 0, savedGuestCycles));
 
-		// The set of active guest threads: this can only be trusted because the caller has already forced quiescence (Quiesce()).
+		// The set of active guest threads. This can only be trusted because the caller has already forced quiescence (Quiesce()).
+		// A different set is fine: every thread gets a new host fiber from the save's list. The difference is only logged.
 		std::string threadDifference;
 		const bool sameThreads = CompareThreadSets(img.threads, threadDifference);
 		cemuLog_log(LogType::Force, "IOSSaveState: load: guest threads in the save {} the live ones{}", sameThreads ? "match" : "DIFFER from", sameThreads ? "" : " - " + threadDifference);
-		if (!sameThreads)
-		{
-			return refuse(SSE_ThreadsChanged,
-				"The game has started or stopped background tasks since this save was taken, so it can't be put back safely. Saves load best soon after they're made, in the same part of the game.",
-				threadDifference);
-		}
 
 		std::vector<MMURange*> targets;
 		std::string layoutProblem;
@@ -1193,6 +1371,13 @@ namespace
 				"The game's memory layout has changed since this save was taken (an area was loaded or unloaded), so it can't be put back safely.", layoutProblem);
 		}
 		LogStep("load", "memory layout matches the save");
+
+		std::string fiberProblem;
+		if (!coreinit::__OSPrepareHostThreadRebuild(threadRecords, fiberProblem))
+		{
+			return refuse(SSE_ThreadsChanged, "The game's background tasks couldn't be set up again (the device is short of memory). Close other apps and try again.", fiberProblem);
+		}
+		LogStep("load", fmt::format("built {} fresh host stacks for the saved guest threads", threadRecords.size()));
 
 		std::string gx2Problem;
 		if (!GX2::GX2RestoreCommandState(gx2Snapshot, gx2Problem))
@@ -1214,6 +1399,7 @@ namespace
 			if (!RestoreMemoryRange(f, targets[i], img.ranges[i].size, scratch, stats))
 			{
 				fclose(f);
+				coreinit::__OSAbortHostThreadRebuild();
 				return Fail(SSE_DamagedMidRestore, "The save file couldn't be read all the way through and the game's memory is now half-restored. Quit and restart the game.",
 					"save file truncated mid-restore - guest memory is inconsistent");
 			}
@@ -1229,6 +1415,26 @@ namespace
 		cemuLog_log(LogType::Force, "IOSSaveState: restored {} in {} ms", Megabytes(img.totalBytes), ElapsedMs(restoreStart));
 		LogStep("load", fmt::format("guest memory restored ({}), recompiled code dropped, {} of {} GPU-visible pages differed and were queued for the GPU caches",
 			Megabytes(img.totalBytes), stats.pagesChanged, stats.pagesCompared));
+
+		// The guest stored absolute times in its memory (alarm fire times, wake-up times), all relative to the clock it had when this
+		// was saved. Put the clock, and the decrementer that counts from it, back to that moment before anything arms a timer.
+		PPCTimer_setGuestCycleCounter(savedGuestCycles);
+		ppcMainThreadDECCycleStart = savedDecStart;
+		ppcMainThreadDECCycleValue = savedDecValue;
+		LogStep("load", fmt::format("guest clock set back to {} (decrementer start {}, value {})", savedGuestCycles, savedDecStart, savedDecValue));
+
+		{
+			std::string alarmReport;
+			__OSLockScheduler();
+			coreinit::__OSRestoreActiveAlarms(savedAlarms, alarmReport);
+			__OSUnlockScheduler();
+			LogStep("load", "alarms: " + alarmReport);
+		}
+		{
+			std::string threadReport;
+			coreinit::__OSCommitHostThreadRebuild(threadRecords, threadReport);
+			LogStep("load", "guest threads: " + threadReport);
+		}
 
 		// Guest memory now says what the GPU had been given when the state was saved; the GPU itself did not move.
 		std::string gx2Report;
@@ -1354,15 +1560,22 @@ bool IOSSaveState_Save(const char* path)
 
 	const auto quiesceStart = Clock::now();
 	bool gpuDrained = true;
+	std::vector<coreinit::OSThreadRestartRecord> threads;
 	bool ok = Quiesce("save", videoStalled, gpuDrained);
 	if (ok)
 	{
 		cemuLog_log(LogType::Force, "IOSSaveState: save: quiescent after {} ms", ElapsedMs(quiesceStart));
 		LogStep("save", "cores idle and GPU settled");
+		ok = SettleThreads("save", videoStalled, gpuDrained, threads);
+		if (ok)
+			LogStep("save", "every guest thread can be restarted from its saved context");
+	}
+	if (ok)
+	{
 		LogMemoryRanges("save");
 		LogThreadTable("save: guest threads at the moment of the save");
 	}
-	ok = ok && WriteSaveFile(path, EnsureSessionToken(), CollectExtras(gpuDrained));
+	ok = ok && WriteSaveFile(path, EnsureSessionToken(), CollectExtras(gpuDrained, threads));
 	if (ok)
 		LogStep("save", "file written");
 

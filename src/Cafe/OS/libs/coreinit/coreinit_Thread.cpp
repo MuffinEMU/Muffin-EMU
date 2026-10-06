@@ -136,6 +136,15 @@ namespace coreinit
 	{
 		OSHostThread(OSThread_t* thread) : m_thread(thread), m_fiber((void(*)(void*))__OSFiberThreadEntry, this, this)
 		{
+			// the host-only save state bookkeeping (see PPCInterpreter_t) has to start from zero
+			ppcInstance.hleDepth = 0;
+			ppcInstance.hleEntryR1 = 0;
+			ppcInstance.callbackDepth = 0;
+			ppcInstance.hleNoRestart = 0;
+			ppcInstance.hleWaitKind = 0;
+			ppcInstance.hleWaitObject = 0;
+			ppcInstance.hleWaitTimedOut = 0;
+			ppcInstance.hleWaitTicks = 0;
 		}
 
 		~OSHostThread() = default;
@@ -149,6 +158,19 @@ namespace coreinit
 	};
 
 	std::unordered_map<OSThread_t*, OSHostThread*> s_threadToFiber;
+
+	// Threads a save state load restarted from inside a wait that had already ended (see coreinit_Thread.h). Guarded by the
+	// scheduler lock; the counter lets the common case (nothing to take) skip the lock-protected lookup.
+	struct RestartedWait
+	{
+		uint32 kind = 0;
+		uint32 object = 0;
+		bool timedOut = false;
+		OSHostAlarm* alarm = nullptr;
+	};
+	std::unordered_map<OSThread_t*, RestartedWait> s_restartedWaits;
+	std::atomic<uint32> s_restartedWaitCount{0};
+	std::vector<std::pair<OSThread_t*, OSHostThread*>> s_pendingHostThreads;
 
 	bool __CemuIsMulticoreMode()
 	{
@@ -184,6 +206,14 @@ namespace coreinit
 		auto hostThread = s_threadToFiber[thread];
 		s_threadToFiber.erase(thread);
 		_deleteQueue = hostThread;
+
+		if (auto itr = s_restartedWaits.find(thread); itr != s_restartedWaits.end())
+		{
+			if (itr->second.alarm)
+				OSHostAlarmDestroy(itr->second.alarm);
+			s_restartedWaits.erase(itr);
+			s_restartedWaitCount.store((uint32)s_restartedWaits.size(), std::memory_order_relaxed);
+		}
 	}
 
 
@@ -740,10 +770,221 @@ namespace coreinit
 		StackAllocator<OSThreadQueue> _threadQueue;
 		OSInitThreadQueue(_threadQueue.GetPointer());
 		__OSLockScheduler();
+		// a save state load restarted this call after its sleep was already over
+		if (__OSTakeRestartedWait(OSGetCurrentThread(), HLE_WAIT_SLEEP, 0, nullptr))
+		{
+			__OSUnlockScheduler();
+			return;
+		}
 		OSHostAlarm* hostAlarm = OSHostAlarmCreate(OSGetTime() + ticks, 0, _OSSleepTicks_alarmHandler, _threadQueue.GetPointer());
-		_threadQueue.GetPointer()->queueAndWait(OSGetCurrentThread());
+		{
+			OSHleWaitScope waitScope(HLE_WAIT_SLEEP, MEMPTR<OSThreadQueue>(_threadQueue.GetPointer()).GetMPTR(), ticks);
+			_threadQueue.GetPointer()->queueAndWait(OSGetCurrentThread());
+		}
 		OSHostAlarmDestroy(hostAlarm);
 		__OSUnlockScheduler();
+	}
+
+	/************* save state support ************/
+
+	OSHleWaitScope::OSHleWaitScope(uint32 kind, uint32 object, uint64 ticks) : m_cpu(PPCInterpreter_getCurrentInstance()), m_prevKind(0), m_prevObject(0), m_prevTimedOut(0), m_prevTicks(0)
+	{
+		if (!m_cpu)
+			return;
+		m_prevKind = m_cpu->hleWaitKind;
+		m_prevObject = m_cpu->hleWaitObject;
+		m_prevTimedOut = m_cpu->hleWaitTimedOut;
+		m_prevTicks = m_cpu->hleWaitTicks;
+		m_cpu->hleWaitKind = kind;
+		m_cpu->hleWaitObject = object;
+		m_cpu->hleWaitTimedOut = 0;
+		m_cpu->hleWaitTicks = ticks;
+	}
+
+	OSHleWaitScope::~OSHleWaitScope()
+	{
+		if (!m_cpu)
+			return;
+		m_cpu->hleWaitKind = m_prevKind;
+		m_cpu->hleWaitObject = m_prevObject;
+		m_cpu->hleWaitTimedOut = m_prevTimedOut;
+		m_cpu->hleWaitTicks = m_prevTicks;
+	}
+
+	OSHleNoRestartScope::OSHleNoRestartScope() : m_cpu(PPCInterpreter_getCurrentInstance())
+	{
+		if (m_cpu)
+			m_cpu->hleNoRestart++;
+	}
+
+	OSHleNoRestartScope::~OSHleNoRestartScope()
+	{
+		if (m_cpu)
+			m_cpu->hleNoRestart--;
+	}
+
+	void __OSNoteWaitTimedOut(OSThread_t* thread)
+	{
+		auto itr = s_threadToFiber.find(thread);
+		if (itr != s_threadToFiber.end())
+			itr->second->ppcInstance.hleWaitTimedOut = 1;
+	}
+
+	bool __OSGetHostThreadInfo(MPTR threadAddress, OSHostThreadInfo& info)
+	{
+		auto itr = s_threadToFiber.find((OSThread_t*)memory_getPointerFromVirtualOffset(threadAddress));
+		if (itr == s_threadToFiber.end())
+			return false;
+		const PPCInterpreter_t& cpu = itr->second->ppcInstance;
+		info.hleDepth = cpu.hleDepth;
+		info.hleEntryR1 = cpu.hleEntryR1;
+		info.callbackDepth = cpu.callbackDepth;
+		info.noRestart = cpu.hleNoRestart;
+		info.waitKind = cpu.hleWaitKind;
+		info.waitObject = cpu.hleWaitObject;
+		info.waitTimedOut = cpu.hleWaitTimedOut;
+		info.waitTicks = cpu.hleWaitTicks;
+		return true;
+	}
+
+	bool __OSTakeRestartedWait(OSThread_t* thread, uint32 waitKind, uint32 waitObject, bool* timedOut)
+	{
+		if (s_restartedWaitCount.load(std::memory_order_relaxed) == 0)
+			return false;
+		cemu_assert_debug(__OSHasSchedulerLock());
+		auto itr = s_restartedWaits.find(thread);
+		if (itr == s_restartedWaits.end() || itr->second.kind != waitKind || itr->second.object != waitObject)
+			return false;
+		if (timedOut)
+			*timedOut = itr->second.timedOut;
+		if (itr->second.alarm)
+			OSHostAlarmDestroy(itr->second.alarm);
+		s_restartedWaits.erase(itr);
+		s_restartedWaitCount.store((uint32)s_restartedWaits.size(), std::memory_order_relaxed);
+		return true;
+	}
+
+	// The timeout of a wait that a load restarted fired while the thread was still waiting.
+	void _OSRestartedWaitTimeoutHandler(uint64 currentTick, void* context)
+	{
+		cemu_assert_debug(__OSHasSchedulerLock());
+		OSThread_t* thread = (OSThread_t*)context;
+		auto itr = s_restartedWaits.find(thread);
+		if (itr == s_restartedWaits.end() || thread->state != OSThread_t::THREAD_STATE::STATE_WAITING || thread->currentWaitQueue.IsNull())
+			return;
+		itr->second.timedOut = true;
+		thread->currentWaitQueue.GetPtr()->cancelWait(thread);
+	}
+
+	void __OSAbortHostThreadRebuild()
+	{
+		for (auto& it : s_pendingHostThreads)
+			delete it.second;
+		s_pendingHostThreads.clear();
+	}
+
+	bool __OSPrepareHostThreadRebuild(const std::vector<OSThreadRestartRecord>& records, std::string& problem)
+	{
+		__OSAbortHostThreadRebuild();
+		for (const auto& rec : records)
+		{
+			if (!memory_isAddressRangeAccessible(rec.thread, sizeof(OSThread_t)))
+			{
+				problem = fmt::format("thread {:08x} is not in readable guest memory", rec.thread);
+				__OSAbortHostThreadRebuild();
+				return false;
+			}
+			OSThread_t* thread = (OSThread_t*)memory_getPointerFromVirtualOffset(rec.thread);
+			OSHostThread* hostThread = new OSHostThread(thread);
+			if (!hostThread->m_fiber.IsValid())
+			{
+				problem = fmt::format("no memory for the stack of thread {:08x}", rec.thread);
+				delete hostThread;
+				__OSAbortHostThreadRebuild();
+				return false;
+			}
+			s_pendingHostThreads.emplace_back(thread, hostThread);
+		}
+		return true;
+	}
+
+	void __OSCommitHostThreadRebuild(const std::vector<OSThreadRestartRecord>& records, std::string& report)
+	{
+		cemu_assert_debug(records.size() == s_pendingHostThreads.size());
+		__OSLockScheduler();
+
+		// every old fiber is parked in a host frame that belongs to the moment before the load
+		const size_t oldFibers = s_threadToFiber.size();
+		for (auto& it : s_threadToFiber)
+			delete it.second;
+		s_threadToFiber.clear();
+		// the host alarms behind these were dropped with all the others before this
+		s_restartedWaits.clear();
+		s_restartedWaitCount.store(0, std::memory_order_relaxed);
+
+		srwlock_activeThreadList.LockWrite();
+		activeThreadCount = 0;
+		for (size_t i = 0; i < s_pendingHostThreads.size() && i < std::size(activeThread); i++)
+		{
+			s_threadToFiber.emplace(s_pendingHostThreads[i].first, s_pendingHostThreads[i].second);
+			activeThread[activeThreadCount++] = records[i].thread;
+		}
+		srwlock_activeThreadList.UnlockWrite();
+		s_pendingHostThreads.clear();
+
+		uint32 restartedInHle = 0, consumedWaits = 0, rearmedWaits = 0, recheckWaits = 0;
+		for (const auto& rec : records)
+		{
+			OSThread_t* thread = (OSThread_t*)memory_getPointerFromVirtualOffset(rec.thread);
+			const OSThread_t::THREAD_STATE state = thread->state;
+			const bool alive = state == OSThread_t::THREAD_STATE::STATE_WAITING || state == OSThread_t::THREAD_STATE::STATE_READY || state == OSThread_t::THREAD_STATE::STATE_RUNNING;
+			if (rec.info.hleDepth == 0 || !alive)
+				continue;
+			restartedInHle++;
+			// the call starts again from the top, so r1 has to be where it was when the call first started
+			thread->context.gpr[1] = _swapEndianU32(rec.info.hleEntryR1);
+			const uint32 kind = rec.info.waitKind;
+			if (kind == HLE_WAIT_EVENT || kind == HLE_WAIT_EVENT_TIMEOUT || kind == HLE_WAIT_SLEEP)
+			{
+				RestartedWait wait;
+				wait.kind = kind;
+				wait.object = kind == HLE_WAIT_SLEEP ? 0 : rec.info.waitObject;
+				if (state == OSThread_t::THREAD_STATE::STATE_WAITING)
+				{
+					if (kind != HLE_WAIT_EVENT)
+					{
+						wait.alarm = OSHostAlarmCreate(OSGetTime() + rec.info.waitTicks, 0, _OSRestartedWaitTimeoutHandler, thread);
+						rearmedWaits++;
+					}
+				}
+				else
+				{
+					wait.timedOut = rec.info.waitTimedOut != 0;
+					consumedWaits++;
+				}
+				s_restartedWaits[thread] = wait;
+			}
+			else if (kind == HLE_WAIT_RECHECK)
+				recheckWaits++;
+		}
+		s_restartedWaitCount.store((uint32)s_restartedWaits.size(), std::memory_order_relaxed);
+
+		// the run queues themselves are in guest memory; the counters the idle loops wait on are not
+		uint32 queued[Espresso::CORE_COUNT] = {};
+		for (uint32 core = 0; core < Espresso::CORE_COUNT; core++)
+		{
+			for (OSThread_t* itr = g_coreRunQueue.GetPtr()[core].head.GetPtr(); itr && queued[core] <= 4096; itr = itr->linkRun[core].next.GetPtr())
+				queued[core]++;
+			g_coreRunQueueThreadCount[core].reset();
+			for (uint32 i = 0; i < queued[core]; i++)
+				g_coreRunQueueThreadCount[core].increment();
+			__currentCoreThread[core] = nullptr;
+		}
+		__OSNotifyRunQueueChanged();
+		__OSUnlockScheduler();
+
+		report = fmt::format("{} old host stacks released, {} new ones built; {} threads restart inside a call ({} woken waits to finish at once, {} timed waits re-armed with their full timeout, {} mutex/semaphore waits that just look again); run queue lengths {}/{}/{}",
+			oldFibers, records.size(), restartedInHle, consumedWaits, rearmedWaits, recheckWaits, queued[0], queued[1], queued[2]);
 	}
 
 	void OSDetachThread(OSThread_t* thread)

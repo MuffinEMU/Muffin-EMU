@@ -167,7 +167,13 @@ void* ATTR_MS_ABI PPCRecompiler_virtualHLE(PPCInterpreter_t* hCPU, uint32 hleFun
 	{
 		auto hleCall = PPCInterpreter_getHLECall(hleFuncId);
 		cemu_assert(hleCall != nullptr);
+		// host-only: where r1 was and that a call is in progress, for save states
+		const uint32 prevEntryR1 = hCPU->hleEntryR1;
+		hCPU->hleEntryR1 = hCPU->gpr[1];
+		hCPU->hleDepth++;
 		hleCall(hCPU);
+		hCPU->hleDepth--;
+		hCPU->hleEntryR1 = prevEntryR1;
 	}
 	hCPU->rspTemp = prevRSPTemp;
 	return PPCInterpreter_getCurrentInstance();
