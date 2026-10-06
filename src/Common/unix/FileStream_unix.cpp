@@ -101,9 +101,10 @@ void FileStream::extract(std::vector<uint8>& data)
 	readData(data.data(), fileSize);
 }
 
-void FileStream::Flush()
+bool FileStream::Flush()
 {
     m_fileStream.flush();
+    return !m_fileStream.fail();
 }
 
 uint32 FileStream::readData(void* data, uint32 length)
@@ -150,7 +151,8 @@ sint32 FileStream::writeData(const void* data, sint32 length)
 {
 	SyncReadWriteSeek(true);
 	m_fileStream.write((const char*)data, length);
-	return length;
+	// a full disk or I/O error sets failbit; callers compare the result with the length they asked for
+	return m_fileStream.fail() ? 0 : length;
 }
 
 void FileStream::writeU64(uint64 v)
