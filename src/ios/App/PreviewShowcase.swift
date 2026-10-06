@@ -229,10 +229,19 @@ final class PreviewPadStore: ObservableObject {
 
     // MARK: Resolving the actual layout for a container
 
+    /// The display mode in force for a container. An iPhone held upright is always Native: Fit
+    /// would leave the picture mid-screen with the controls floating over it, and upright the
+    /// picture belongs along the top with the controls below (Native's portrait layout).
+    func effectiveDisplayMode(container: CGSize) -> PadLayout.DisplayMode {
+        if UIDevice.current.userInterfaceIdiom == .phone, container.height > container.width { return .native }
+        return displayMode
+    }
+
     /// The current preset, fitted (or resolved fresh, for `.native`) onto this container,
     /// with the live per-group drag/resize adjustments layered on top. This is the one
     /// call site EmulatorViewOptimized and PreviewControllerPad both need.
     func resolve(container: CGSize, safeArea: CGRect, pointsPerInch: CGFloat) -> PreviewResolved {
+        let displayMode = effectiveDisplayMode(container: container)
         if let file = layoutPreset.layoutFile(displayMode: displayMode) {
             var adjustedFile = file
             for g in PadGroup.allCases {
