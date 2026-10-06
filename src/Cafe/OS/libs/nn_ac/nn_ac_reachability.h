@@ -6,6 +6,6 @@ namespace nn_ac
 {
 	void SetDeviceReachable(bool reachable);
 	bool IsDeviceReachable();
-	// online play enabled (account + network service) AND the device has a network path
+	// the console is connected exactly when the device has a network path
 	bool IsConsoleConnected();
 }

@@ -63,11 +63,12 @@ struct DeviceConnectionStatusRow: View {
     private var consoleText: String {
         // Read here so it refreshes whenever the device connection changes.
         _ = connection.kind
-        return cemu_bridge_console_appears_connected()
+        let status = cemu_bridge_console_appears_connected()
             ? "The console will appear connected."
-            : (connection.kind == .offline
-               ? "The console will appear offline."
-               : "The console will appear offline until online play is set up.")
+            : "The console will appear offline."
+        return cemu_bridge_online_play_enabled()
+            ? status
+            : status + " Online play still needs a linked account and Pretendo."
     }
 
     var body: some View {

@@ -3654,6 +3654,10 @@ bool cemu_bridge_console_appears_connected(void) {
     return nn_ac::IsConsoleConnected();
 }
 
+bool cemu_bridge_online_play_enabled(void) {
+    return ActiveSettings::IsOnlineEnabled();
+}
+
 // ---------------------------------------------------------------------------
 // Emulated toy-to-life devices. Enable flags are plain ConfigValue<bool>s nsyshid's own
 // AttachDefaultBackends() reads when a title's nsyshid module loads (see

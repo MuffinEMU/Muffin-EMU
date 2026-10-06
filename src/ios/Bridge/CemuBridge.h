@@ -1276,9 +1276,11 @@ typedef enum {
 /// store; safe from any thread, before or during a game.
 void cemu_bridge_set_device_network(CemuBridgeDeviceNetwork kind);
 
-/// Whether the emulated console currently appears connected: online play set up (a valid
-/// online account on Pretendo or Custom, with the online files) AND the device reachable.
+/// Whether the emulated console currently appears connected: follows the device only.
 bool cemu_bridge_console_appears_connected(void);
+
+/// Whether online play is set up (valid online account on Pretendo or Custom, with the online files).
+bool cemu_bridge_online_play_enabled(void);
 
 /// Which analog stick an axis call is about.
 typedef enum {

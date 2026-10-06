@@ -38,14 +38,15 @@ namespace nn_ac
 		return s_deviceReachable.load(std::memory_order_relaxed);
 	}
 
-	// connected = online enabled AND device reachable
+	// The console is connected exactly when the device is; the online setting is separate
 	bool IsConsoleConnected()
 	{
-		return IsDeviceReachable() && ActiveSettings::IsOnlineEnabled();
+		return IsDeviceReachable();
 	}
 }
 
 // Error code the console shows when it can't reach the network (102-2802), and the matching result.
+// UNVERIFIED: not confirmed against the source tree or a real console; taken from memory of the Wii U error list.
 static constexpr uint32 AC_ERROR_NO_CONNECTION = 1022802;
 static constexpr uint32 AC_RESULT_NO_CONNECTION = BUILD_NN_RESULT(NN_RESULT_LEVEL_FATAL, NN_RESULT_MODULE_NN_AC, 2802);
 
@@ -219,7 +220,7 @@ void nnAcExport_IsConfigExisting(PPCInterpreter_t* hCPU)
 	ppcDefineParamU32(configId, 0);
 	ppcDefineParamTypePtr(isConfigExisting, uint8, 1);
 	
-	// a connection counts as configured whenever online play is set up; the device itself is the access point
+	// unchanged (not configured) unless online play is set up; then a connection counts as configured, the device being the access point
 	*isConfigExisting = ActiveSettings::IsOnlineEnabled() ? 1 : 0;
 
 	osLib_returnFromFunction(hCPU, 0);
