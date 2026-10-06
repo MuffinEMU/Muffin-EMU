@@ -35,6 +35,7 @@
 #include <audio/IAudioAPI.h>
 #include <util/bootSound/BootSoundReader.h>
 #include <thread>
+#include <set>
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #if __APPLE__
 #include <sys/clonefile.h>
@@ -75,7 +76,57 @@ FileCache* s_shaderCacheGeneric = nullptr;	// contains hardware and version inde
 #define SHADER_CACHE_TYPE_GEOMETRY				(1)
 #define SHADER_CACHE_TYPE_PIXEL					(2)
 
-bool LatteShaderCache_readSeparableShader(uint8* shaderInfoData, sint32 shaderInfoSize);
+bool LatteShaderCache_readSeparableShader(uint8* shaderInfoData, sint32 shaderInfoSize, uint64* currentAuxHashOut = nullptr);
+
+// Shaders are looked up by {base hash, aux hash}, and the aux hash depends on the renderer: a cache written by
+// desktop Cemu (or by the other renderer) stores a different aux hash than this one asks for at runtime. So the
+// read functions below register each shader under the hash this renderer computes from the stored register state,
+// and the load loop then rewrites the entry under that hash (LatteShaderCache_rekeyEntry), once, so the file is
+// native from then on.
+static std::set<std::pair<uint64, uint64>> s_rekeyedEntries; // entries the re-key added during this load (the loop skips them)
+
+// true if an equivalent shader (same base and aux hash) is already loaded; the new one is then thrown away
+static bool LatteShaderCache_discardIfAlreadyLoaded(LatteDecompilerShader* shader, uint64 baseHash, uint64 auxHash)
+{
+	LatteDecompilerShader* existing = nullptr;
+	if (shader->shaderType == LatteConst::ShaderType::Vertex)
+		existing = LatteSHRC_FindVertexShader(baseHash, auxHash);
+	else if (shader->shaderType == LatteConst::ShaderType::Geometry)
+		existing = LatteSHRC_FindGeometryShader(baseHash, auxHash);
+	else if (shader->shaderType == LatteConst::ShaderType::Pixel)
+		existing = LatteSHRC_FindPixelShader(baseHash, auxHash);
+	if (!existing)
+		return false;
+	LatteShader_CleanupAfterCompile(shader);
+	delete shader;
+	return true;
+}
+
+// The entry keeps every byte it had; only the aux hash field (after the version/type byte and the 8 byte base
+// hash, the same layout the write functions use) and its name change. The new entry is written and read back
+// before the old one is deleted, so a failed write can't lose the shader. If an entry under the current hash
+// exists already it is the same shader, and the old one is simply removed.
+static void LatteShaderCache_rekeyEntry(uint64 name1, uint64 storedAuxHash, uint64 currentAuxHash, const std::vector<uint8>& entryData)
+{
+	if (entryData.size() < 17)
+		return;
+	if (!s_shaderCacheGeneric->HasFile({ name1, currentAuxHash }))
+	{
+		std::vector<uint8> patched = entryData;
+		for (sint32 i = 0; i < 8; i++)
+			patched[9 + i] = (uint8)(currentAuxHash >> (56 - 8 * i));
+		s_shaderCacheGeneric->AddFile({ name1, currentAuxHash }, patched.data(), (sint32)patched.size());
+		std::vector<uint8> readBack;
+		if (!s_shaderCacheGeneric->GetFile({ name1, currentAuxHash }, readBack) || readBack != patched)
+		{
+			cemuLog_log(LogType::Force, "Shader cache: could not rewrite an entry under the hash this renderer uses, keeping the old entry");
+			return;
+		}
+		s_rekeyedEntries.insert({ name1, currentAuxHash });
+	}
+	s_shaderCacheGeneric->DeleteFile({ name1, storedAuxHash });
+}
+
 void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId);
 bool LatteShaderCache_updatePipelineLoadingProgress();
 void LatteShaderCache_ShowProgress(const std::function <bool(void)>& loadUpdateFunc, bool isPipelines);
@@ -572,6 +623,7 @@ void LatteShaderCache_Load()
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/transferable"), ec);
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/precompiled"), ec);
 	ShaderCacheGuard_BeforeLoad(cacheTitleId);
+	s_rekeyedEntries.clear();
 	// initialize renderer specific caches
 	switch(g_renderer->GetType())
 	{
@@ -675,14 +727,23 @@ void LatteShaderCache_Load()
 			loadIndex++;
 			return true;
 		}
+		if (s_rekeyedEntries.contains({ name1, name2 }))
+		{
+			// written under its current hash earlier in this load, and already loaded from the old entry
+			loadIndex++;
+			return true;
+		}
 		g_shaderCacheLoaderState.loadedShaderFiles++;
-		if (LatteShaderCache_readSeparableShader(fileData.data(), fileData.size()) == false)
+		uint64 currentAuxHash = name2;
+		if (LatteShaderCache_readSeparableShader(fileData.data(), fileData.size(), &currentAuxHash) == false)
 		{
 			// something is wrong with the stored shader, remove entry from shader cache files
 			cemuLog_log(LogType::Force, "Shader cache entry {} invalid, deleting...", loadIndex);
 			s_shaderCacheGeneric->DeleteFile({name1, name2 });
 			numDamagedShaders++;
 		}
+		else if (currentAuxHash != name2)
+			LatteShaderCache_rekeyEntry(name1, name2, currentAuxHash, fileData);
 		numLoadedShaders++;
 		loadIndex++;
 		return true;
@@ -691,6 +752,7 @@ void LatteShaderCache_Load()
 	LatteShaderCache_ShowProgress(LoadShadersUpdate, false);
 
 	LatteShaderCache_updateCompileQueue(0);
+	s_rekeyedEntries.clear();
 	// write load time and RAM usage to log file (in dev build)
 #if BOOST_OS_WINDOWS
 	const auto timeLoadEnd = now_cached();
@@ -1022,13 +1084,13 @@ void LatteShaderCache_loadOrCompileSeparableShader(LatteDecompilerShader* shader
 	LatteShaderCache_addToCompileQueue(shader);
 }
 
-bool LatteShaderCache_readSeparableVertexShader(MemStreamReader& streamReader, uint8 version)
+bool LatteShaderCache_readSeparableVertexShader(MemStreamReader& streamReader, uint8 version, uint64& currentAuxHashOut)
 {
 	auto lcr = std::make_unique<LatteContextRegister>();
 	if (version != 1)
 		return false;
 	uint64 shaderBaseHash = streamReader.readBE<uint64>();
-	uint64 shaderAuxHash = streamReader.readBE<uint64>();
+	[[maybe_unused]] uint64 shaderAuxHash = streamReader.readBE<uint64>(); // as stored; the hash used is computed below
 	bool usesGeometryShader = streamReader.readBE<uint8>() != 0;
 	// context registers
 	Latte::GPUCompactedRegisterState regState;
@@ -1060,22 +1122,27 @@ bool LatteShaderCache_readSeparableVertexShader(MemStreamReader& streamReader, u
 	// decompile vertex shader
 	LatteDecompilerOutput_t decompilerOutput{};
 	LatteDecompiler_DecompileVertexShader(shaderBaseHash, lcr->GetRawView(), vertexShaderData.data(), vertexShaderData.size(), fetchShader, options, &decompilerOutput);
-	LatteDecompilerShader* vertexShader = LatteShader_CreateShaderFromDecompilerOutput(decompilerOutput, shaderBaseHash, false, shaderAuxHash, lcr->GetRawView());
+	// the aux hash this renderer computes for the stored state, which can differ from the stored one (see above)
+	LatteDecompilerShader* vertexShader = LatteShader_CreateShaderFromDecompilerOutput(decompilerOutput, shaderBaseHash, true, 0, lcr->GetRawView());
+	const uint64 currentAuxHash = vertexShader->auxHash;
+	currentAuxHashOut = currentAuxHash;
+	if (LatteShaderCache_discardIfAlreadyLoaded(vertexShader, shaderBaseHash, currentAuxHash))
+		return true;
 	// compile
-	LatteShader_DumpShader(shaderBaseHash, shaderAuxHash, vertexShader);
-	LatteShader_DumpRawShader(shaderBaseHash, shaderAuxHash, SHADER_DUMP_TYPE_VERTEX, vertexShaderData.data(), vertexShaderData.size());
-	LatteShaderCache_loadOrCompileSeparableShader(vertexShader, shaderBaseHash, shaderAuxHash);
-	LatteSHRC_RegisterShader(vertexShader, shaderBaseHash, shaderAuxHash);
+	LatteShader_DumpShader(shaderBaseHash, currentAuxHash, vertexShader);
+	LatteShader_DumpRawShader(shaderBaseHash, currentAuxHash, SHADER_DUMP_TYPE_VERTEX, vertexShaderData.data(), vertexShaderData.size());
+	LatteShaderCache_loadOrCompileSeparableShader(vertexShader, shaderBaseHash, currentAuxHash);
+	LatteSHRC_RegisterShader(vertexShader, shaderBaseHash, currentAuxHash);
 	return true;
 }
 
-bool LatteShaderCache_readSeparableGeometryShader(MemStreamReader& streamReader, uint8 version)
+bool LatteShaderCache_readSeparableGeometryShader(MemStreamReader& streamReader, uint8 version, uint64& currentAuxHashOut)
 {
 	if (version != 1)
 		return false;
 	auto lcr = std::make_unique<LatteContextRegister>();
 	uint64 shaderBaseHash = streamReader.readBE<uint64>();
-	uint64 shaderAuxHash = streamReader.readBE<uint64>();
+	[[maybe_unused]] uint64 shaderAuxHash = streamReader.readBE<uint64>(); // as stored; the hash used is computed below
 	uint32 vsRingParameterCount = streamReader.readBE<uint16>();
 	// context registers
 	Latte::GPUCompactedRegisterState regState;
@@ -1102,22 +1169,27 @@ bool LatteShaderCache_readSeparableGeometryShader(MemStreamReader& streamReader,
 	// decompile geometry shader
 	LatteDecompilerOutput_t decompilerOutput{};
 	LatteDecompiler_DecompileGeometryShader(shaderBaseHash, lcr->GetRawView(), geometryShaderData.data(), geometryShaderData.size(), geometryCopyShaderData.data(), geometryCopyShaderData.size(), vsRingParameterCount, options, &decompilerOutput);
-	LatteDecompilerShader* geometryShader = LatteShader_CreateShaderFromDecompilerOutput(decompilerOutput, shaderBaseHash, false, shaderAuxHash, lcr->GetRawView());
+	// the aux hash this renderer computes for the stored state, which can differ from the stored one (see above)
+	LatteDecompilerShader* geometryShader = LatteShader_CreateShaderFromDecompilerOutput(decompilerOutput, shaderBaseHash, true, 0, lcr->GetRawView());
+	const uint64 currentAuxHash = geometryShader->auxHash;
+	currentAuxHashOut = currentAuxHash;
+	if (LatteShaderCache_discardIfAlreadyLoaded(geometryShader, shaderBaseHash, currentAuxHash))
+		return true;
 	// compile
-	LatteShader_DumpShader(shaderBaseHash, shaderAuxHash, geometryShader);
-	LatteShader_DumpRawShader(shaderBaseHash, shaderAuxHash, SHADER_DUMP_TYPE_GEOMETRY, geometryShaderData.data(), geometryShaderData.size());
-	LatteShaderCache_loadOrCompileSeparableShader(geometryShader, shaderBaseHash, shaderAuxHash);
-	LatteSHRC_RegisterShader(geometryShader, shaderBaseHash, shaderAuxHash);
+	LatteShader_DumpShader(shaderBaseHash, currentAuxHash, geometryShader);
+	LatteShader_DumpRawShader(shaderBaseHash, currentAuxHash, SHADER_DUMP_TYPE_GEOMETRY, geometryShaderData.data(), geometryShaderData.size());
+	LatteShaderCache_loadOrCompileSeparableShader(geometryShader, shaderBaseHash, currentAuxHash);
+	LatteSHRC_RegisterShader(geometryShader, shaderBaseHash, currentAuxHash);
 	return true;
 }
 
-bool LatteShaderCache_readSeparablePixelShader(MemStreamReader& streamReader, uint8 version)
+bool LatteShaderCache_readSeparablePixelShader(MemStreamReader& streamReader, uint8 version, uint64& currentAuxHashOut)
 {
 	if (version != 1)
 		return false;
 	auto lcr = std::make_unique<LatteContextRegister>();
 	uint64 shaderBaseHash = streamReader.readBE<uint64>();
-	uint64 shaderAuxHash = streamReader.readBE<uint64>();
+	[[maybe_unused]] uint64 shaderAuxHash = streamReader.readBE<uint64>(); // as stored; the hash used is computed below
 	bool usesGeometryShader = streamReader.readBE<uint8>() != 0;
 	// context registers
 	Latte::GPUCompactedRegisterState regState;
@@ -1140,30 +1212,37 @@ bool LatteShaderCache_readSeparablePixelShader(MemStreamReader& streamReader, ui
 	// decompile pixel shader
 	LatteDecompilerOutput_t decompilerOutput{};
 	LatteDecompiler_DecompilePixelShader(shaderBaseHash, lcr->GetRawView(), pixelShaderData.data(), pixelShaderData.size(), options, &decompilerOutput);
-	LatteDecompilerShader* pixelShader = LatteShader_CreateShaderFromDecompilerOutput(decompilerOutput, shaderBaseHash, false, shaderAuxHash, lcr->GetRawView());
+	// the aux hash this renderer computes for the stored state, which can differ from the stored one (see above)
+	LatteDecompilerShader* pixelShader = LatteShader_CreateShaderFromDecompilerOutput(decompilerOutput, shaderBaseHash, true, 0, lcr->GetRawView());
+	const uint64 currentAuxHash = pixelShader->auxHash;
+	currentAuxHashOut = currentAuxHash;
+	if (LatteShaderCache_discardIfAlreadyLoaded(pixelShader, shaderBaseHash, currentAuxHash))
+		return true;
 	// compile
-	LatteShader_DumpShader(shaderBaseHash, shaderAuxHash, pixelShader);
-	LatteShader_DumpRawShader(shaderBaseHash, shaderAuxHash, SHADER_DUMP_TYPE_PIXEL, pixelShaderData.data(), pixelShaderData.size());
-	LatteShaderCache_loadOrCompileSeparableShader(pixelShader, shaderBaseHash, shaderAuxHash);
-	LatteSHRC_RegisterShader(pixelShader, shaderBaseHash, shaderAuxHash);
+	LatteShader_DumpShader(shaderBaseHash, currentAuxHash, pixelShader);
+	LatteShader_DumpRawShader(shaderBaseHash, currentAuxHash, SHADER_DUMP_TYPE_PIXEL, pixelShaderData.data(), pixelShaderData.size());
+	LatteShaderCache_loadOrCompileSeparableShader(pixelShader, shaderBaseHash, currentAuxHash);
+	LatteSHRC_RegisterShader(pixelShader, shaderBaseHash, currentAuxHash);
 	return true;
 }
 
 // read shader info from shader cache
-bool LatteShaderCache_readSeparableShader(uint8* shaderInfoData, sint32 shaderInfoSize)
+bool LatteShaderCache_readSeparableShader(uint8* shaderInfoData, sint32 shaderInfoSize, uint64* currentAuxHashOut)
 {
 	if (shaderInfoSize < 8)
 		return false;
+	uint64 dummyAuxHash;
+	uint64& currentAuxHash = currentAuxHashOut ? *currentAuxHashOut : dummyAuxHash;
 	MemStreamReader streamReader(shaderInfoData, shaderInfoSize);
 	uint8 versionAndType = streamReader.readBE<uint8>();
 	uint8 version = versionAndType & 0xF;
 	uint8 type = (versionAndType >> 4) & 0xF;
 	if (type == SHADER_CACHE_TYPE_VERTEX)
-		return LatteShaderCache_readSeparableVertexShader(streamReader, version);
+		return LatteShaderCache_readSeparableVertexShader(streamReader, version, currentAuxHash);
 	else if (type == SHADER_CACHE_TYPE_GEOMETRY)
-		return LatteShaderCache_readSeparableGeometryShader(streamReader, version);
+		return LatteShaderCache_readSeparableGeometryShader(streamReader, version, currentAuxHash);
 	else if (type == SHADER_CACHE_TYPE_PIXEL)
-		return LatteShaderCache_readSeparablePixelShader(streamReader, version);
+		return LatteShaderCache_readSeparablePixelShader(streamReader, version, currentAuxHash);
 	return false;
 }
 
