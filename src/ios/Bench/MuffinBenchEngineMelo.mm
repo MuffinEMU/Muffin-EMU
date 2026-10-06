@@ -72,7 +72,7 @@ MBenchStatus mbench_boot(const char* rpxPath, MBenchCpuMode cpu)
     if (recompiler && !mbench_jit_permitted())
         return MBENCH_ERR_NO_JIT;
     // The contract is multi-core for every engine, but the bridge defaults to single-core,
-    // so ask for multi-core explicitly (favour accuracy and low power stay off).
+    // so ask for multi-core explicitly (favour accuracy and one-core mode stay off).
     cemu_bridge_set_multicore_enabled(true);
     cemu_bridge_set_recompiler_enabled(recompiler);
     cemu_bridge_set_graphics_api(2); // Metal

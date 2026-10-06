@@ -85,7 +85,7 @@ enum SettingsDefaults {
         cemu_bridge_set_favour_accuracy(false)
         cemu_bridge_set_favour_performance(FavourPerformance.defaultValue)
         cemu_bridge_set_full_speed_renders(FullSpeedRenders.defaultValue, Int32(FullSpeedRenders.defaultShaderMode.rawValue))
-        cemu_bridge_set_low_power_mode(LowPowerMode.defaultValue)
+        cemu_bridge_set_low_power_mode(OneCoreMode.defaultValue)
         MotionSettings.applyToBridge() // its keys were just removed, so this pushes the defaults
         cemu_bridge_set_cpu_core_mode(CoreMode.defaultValue.bridgeValue)
         cemu_bridge_set_async_shader_compile(true)
