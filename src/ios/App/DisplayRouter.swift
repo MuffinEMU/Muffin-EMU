@@ -342,7 +342,10 @@ final class DisplayRouter: ObservableObject {
         // unrendered, which is intended) - both go through applyPlacement so surface
         // creation and display routing can never disagree about which view is which.
         applyPlacement(reason: "the TV surface was registered")
-        log("routing the Wii U TV screen to \(placement == .dualScreen && !swapScreens ? "the external display" : "this device") at \(cInt(geometry.size.width))x\(cInt(geometry.size.height)) points, \(geometry.scale)x scale (placement=\(placementName))")
+        // Report where the surface ended up: applyPlacement may just have moved it (to the external
+        // display, say) and resized it, so the geometry it was registered with can be stale.
+        let placed = tvGeometry()
+        log("routing the Wii U TV screen to \(placement == .dualScreen && !swapScreens ? "the external display" : "this device") at \(cInt(placed.size.width))x\(cInt(placed.size.height)) points, \(placed.scale)x scale (placement=\(placementName))")
     }
 
     /// Called when a title stops. `CafeSystem::ShutdownTitle()` -> `LatteThread_Exit()`
