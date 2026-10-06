@@ -113,6 +113,23 @@ enum LowPowerMode {
     }
 }
 
+/// Speed before picture quality. On, the bridge builds shaders without strict multiply, always
+/// compiles them in the background and skips crash breadcrumbs (see
+/// cemu_bridge_set_favour_performance), and the app presents the picture at Balanced at most with
+/// linear scaling. It never writes `RenderScale.storageKey`: ThermalMonitor already uses that key
+/// to remember the person's own choice while it throttles, so the cap is applied on read instead.
+/// Favour accuracy wins for everything but the resolution cap, which is global (it changes only the
+/// presented picture, never the emulation).
+enum FavourPerformance {
+    static let storageKey = "muffin.cpu.favourPerformance"
+    /// Off by default.
+    static let defaultValue = false
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+    }
+}
+
 /// How the GamePad surface is sized. The console's GamePad screen is 854x480, so the surface
 /// needs no more than about twice that across its long side whatever the display's own scale is.
 enum PadSurfaceScale {
@@ -249,7 +266,11 @@ extension UIScreen {
     /// a 3x scale is only 585 pixels, which is below the picture the game draws. Devices whose
     /// screen is already taller than that at the chosen scale (every iPad) are unaffected.
     var effectiveRenderScale: Double {
-        let choice = RenderScale.current
+        var choice = RenderScale.current
+        // Favour performance caps the picture at Balanced without touching the stored choice.
+        if FavourPerformance.isEnabled && choice.factor > RenderScale.balanced.factor {
+            choice = .balanced
+        }
         var value = Double(scale) * choice.factor
         if choice != .battery {
             let shortSide = Double(min(bounds.width, bounds.height))

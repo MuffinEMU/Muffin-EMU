@@ -78,6 +78,7 @@ final class CoreDriver {
         // one emulated CPU core, real-time clock.
         cemu_bridge_set_timebase_auto_enabled(false)
         cemu_bridge_set_favour_accuracy(false)
+        cemu_bridge_set_favour_performance(false)
         cemu_bridge_initialize(mlc.path)
         // -1 means the engine never initialized (the bridge answers "cannot answer" then).
         guard cemu_bridge_reload_and_count_keys() >= 0 else { throw CoreError.message("the core did not initialize") }
