@@ -7,6 +7,7 @@ struct CemuApp: App {
     // Theme tokens are plain statics, so views do not redraw on their own.
     // Keying the tree to the current theme id rebuilds it when the theme changes.
     @ObservedObject private var themeStore = MuffinThemeStore.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // The device capability snapshot and its one-line summary, before anything else is written:
@@ -56,6 +57,14 @@ struct CemuApp: App {
                 // of them all over the app. Set once here, it reaches every scroll view below,
                 // including the ones in sheets and in screens added later.
                 .muffinScrollEdgeBlurHidden()
+                // A swipe-away from the app switcher gives no willTerminate. Ask for the preferences to be
+                // written out as soon as the app stops being active, not on cfprefsd's own schedule.
+                .onChange(of: scenePhase) { phase in
+                    if phase != .active {
+                        ControllerCustomLayout.shared.flushPending()
+                        UserDefaults.standard.synchronize()
+                    }
+                }
                 .onAppear {
                     cemu_bridge_log_checkpoint("ContentView.onAppear reached")
                     #if os(iOS)
