@@ -16,6 +16,7 @@ struct AboutSettingsSection: View {
         Section {
             SettingsRow(label: "Version", value: Bundle.main.appVersionString, icon: "number")
             SettingsRow(label: "Created by", value: "Void", icon: "person.fill")
+            HelpLinkRows()
             Link(destination: URL(string: "https://github.com/MuffinEMU/Muffin-EMU")!) {
                 Label("View on GitHub", systemImage: "arrow.up.right.square")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -25,8 +26,8 @@ struct AboutSettingsSection: View {
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
 
-            Text("MuffinEMU is made by Void and built on Cemu. The optional melo-controls pad is Melo-Controller by stossy11.")
-                .font(.system(size: 12))
+            Text("MuffinEMU is made by Void and built on Cemu. The optional Melo-Controller pad is by stossy11.")
+                .font(.caption)
                 .foregroundColor(MuffinTheme.secondaryText)
 
             // Resets the completion flag, which ContentView watches, so the guide reopens.
@@ -42,7 +43,7 @@ struct AboutSettingsSection: View {
 
             if let resetMessage {
                 Text(resetMessage)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundColor(MuffinTheme.secondaryText)
             }
         } header: {

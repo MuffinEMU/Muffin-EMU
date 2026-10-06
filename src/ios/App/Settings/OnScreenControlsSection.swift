@@ -73,12 +73,12 @@ struct OnScreenControlsSection: View {
 
             Toggle(isOn: $useMeloControls) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Use melo-controls")
+                    Text("Use Melo-Controller")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(useMeloControls
                          ? "Melo-Controller by stossy11, with its own layout editor. The options below are for MuffinEMU's pad."
                          : "MuffinEMU's measured GamePad layout.")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
@@ -92,7 +92,7 @@ struct OnScreenControlsSection: View {
                         Text(joystickMode
                              ? "Both sticks shown alongside the d-pad and face buttons, not instead of them."
                              : "Just the d-pad and face buttons, from the measured layout.")
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -133,7 +133,7 @@ struct OnScreenControlsSection: View {
                         .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(usingTouchLab ? max(0, shoulderOffset) : shoulderOffset))
                     }
                     Text("Moves the four shoulder buttons up or down together. They stop before they would leave the screen or touch the sticks and buttons.")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -171,7 +171,7 @@ struct OnScreenControlsSection: View {
                     Text("Haptic feedback")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("A light tap on press. Turn off if it feels like buzzing rather than a button.")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
@@ -182,7 +182,7 @@ struct OnScreenControlsSection: View {
                     Text("Hide the top bar while playing")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("The bar fades away a few seconds after you last touch it. Tap the small handle at the top of the screen, or swipe down from it, to bring it back. It stays up while paused, in menus, and with VoiceOver on. On by default.")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -199,7 +199,7 @@ struct OnScreenControlsSection: View {
                     Text("Hide on-screen controls when a controller is connected")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("The controls come back when it disconnects. The GamePad's screen stays, so you can still touch it.")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
@@ -220,7 +220,7 @@ struct OnScreenControlsSection: View {
 
             if let bindingsResetResult {
                 Text(bindingsResetResult)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
         } header: {
@@ -278,7 +278,7 @@ struct OnScreenControlsSection: View {
             }
             .pickerStyle(.segmented)
             Text("The area you tap to bring the bar back. Large is easier to hit, but it can take touches meant for the GamePad screen at the top of the picture.")
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -294,7 +294,7 @@ struct OnScreenControlsSection: View {
                     Text(comfortControls
                          ? "L, ZL and minus sit on the left stick; R, ZR and plus sit on the right stick."
                          : "L, ZL and minus stay on the d-pad; R, ZR and plus stay on A/B/X/Y.")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(.secondary)
                 }
             }
@@ -327,7 +327,7 @@ struct OnScreenControlsSection: View {
                         .accessibilityHidden(true)
                 }
                 Text("Moves both sticks closer together or further apart, to fit your hands.")
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -346,7 +346,7 @@ struct OnScreenControlsSection: View {
                 }
                 .pickerStyle(.segmented)
                 Text(stickGate.summary)
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

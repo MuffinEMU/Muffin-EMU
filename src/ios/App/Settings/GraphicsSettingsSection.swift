@@ -138,7 +138,7 @@ struct GraphicsSettingsSection: View {
             resolutionPicker
             if favourPerformance {
                 Text("Favour performance is on (Settings > CPU), so the picture is drawn at Balanced at most, with linear scaling.")
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundColor(MuffinTheme.secondaryText)
             }
             stretchToggle
@@ -147,12 +147,17 @@ struct GraphicsSettingsSection: View {
                 if rendererRaw == RendererAPI.metal.rawValue {
                     framebufferFetchToggle
                 }
-                gammaSlider
-                overrideGammaToggle
-                if overrideAppGammaEnabled {
-                    overrideGammaSlider
+                // Only the Vulkan renderer applies these: Metal's output shaders have no gamma stage, so on
+                // Metal (the default) the sliders would do nothing. The stored values stay as they are.
+                if rendererRaw == RendererAPI.vulkan.rawValue {
+                    gammaSlider
+                    overrideGammaToggle
+                    if overrideAppGammaEnabled {
+                        overrideGammaSlider
+                    }
                 }
             }
+            vulkanNote
             meshShaderNote
         } header: {
             SettingsSectionHeader("Graphics", icon: "cube.transparent", accent: .core)
@@ -183,17 +188,17 @@ struct GraphicsSettingsSection: View {
                 }
             }
             Text("Experimental: Vulkan runs through MoltenVK on top of Metal. Some games may draw wrongly or stop, and if Vulkan fails the next launch switches back to Metal.")
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundColor(MuffinTheme.secondaryText)
             if let reason = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailureReason"), !reason.isEmpty {
                 Text("Last Vulkan failure: \(reason)")
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundColor(MuffinTheme.secondaryText)
             }
             if let failedBuild = UserDefaults.standard.string(forKey: "muffin.render.vulkanFailedBuild"),
                rendererRaw == RendererAPI.metal.rawValue {
                 Text("Vulkan didn't start on this device with MoltenVK \(failedBuild). Metal is in use. Choosing Vulkan again tries it again.")
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundColor(MuffinTheme.secondaryText)
             }
         }
@@ -210,7 +215,7 @@ struct GraphicsSettingsSection: View {
             }
             .pickerStyle(.segmented)
             Text(moltenVKCaption)
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundColor(MuffinTheme.secondaryText)
         }
     }
@@ -225,25 +230,35 @@ struct GraphicsSettingsSection: View {
     }
 
     private var upscalePicker: some View {
-        Picker("Upscale filter", selection: $upscaleRaw) {
-            ForEach(ScaleFilter.allCases) { filter in
-                Text(filter.title).tag(filter.rawValue)
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Enlarging filter", selection: $upscaleRaw) {
+                ForEach(ScaleFilter.allCases) { filter in
+                    Text(filter.title).tag(filter.rawValue)
+                }
             }
+            .pickerStyle(.menu)
+            .tint(MuffinTheme.accentText)
+            .foregroundColor(MuffinTheme.brownDarkest)
+            Text("How the picture is smoothed when it's drawn bigger than the game made it.")
+                .font(.caption)
+                .foregroundColor(MuffinTheme.secondaryText)
         }
-        .pickerStyle(.menu)
-        .tint(MuffinTheme.accentText)
-        .foregroundColor(MuffinTheme.brownDarkest)
     }
 
     private var downscalePicker: some View {
-        Picker("Downscale filter", selection: $downscaleRaw) {
-            ForEach(ScaleFilter.allCases) { filter in
-                Text(filter.title).tag(filter.rawValue)
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Shrinking filter", selection: $downscaleRaw) {
+                ForEach(ScaleFilter.allCases) { filter in
+                    Text(filter.title).tag(filter.rawValue)
+                }
             }
+            .pickerStyle(.menu)
+            .tint(MuffinTheme.accentText)
+            .foregroundColor(MuffinTheme.brownDarkest)
+            Text("How the picture is smoothed when it's drawn smaller than the game made it.")
+                .font(.caption)
+                .foregroundColor(MuffinTheme.secondaryText)
         }
-        .pickerStyle(.menu)
-        .tint(MuffinTheme.accentText)
-        .foregroundColor(MuffinTheme.brownDarkest)
     }
 
     private var fullSpeedRendersToggle: some View {
@@ -254,8 +269,15 @@ struct GraphicsSettingsSection: View {
                 Text(fullSpeedRenders
                      ? "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster."
                      : "Off: frames are shown the moment they're ready.")
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundColor(MuffinTheme.secondaryText)
+                // The even frame pacing is a Metal feature. The rest of the switch works on both renderers.
+                if fullSpeedRenders && rendererRaw == RendererAPI.vulkan.rawValue {
+                    Text("Steady frame pacing works on Metal only. With Vulkan selected, the rest of this switch still applies.")
+                        .font(.caption)
+                        .foregroundColor(MuffinTheme.secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .tint(MuffinTheme.accentText)
@@ -274,21 +296,14 @@ struct GraphicsSettingsSection: View {
             .foregroundColor(MuffinTheme.brownDarkest)
             .onChange(of: fullSpeedShaderMode) { _ in FullSpeedRenders.applyToBridge() }
             Text((FullSpeedRenders.ShaderMode(rawValue: fullSpeedShaderMode) ?? FullSpeedRenders.defaultShaderMode).summary)
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundColor(MuffinTheme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var resolutionPicker: some View {
-        Picker("Resolution", selection: $renderScaleRaw) {
-            ForEach(RenderScale.allCases) { scale in
-                Text(scale.title).tag(scale.rawValue)
-            }
-        }
-        .pickerStyle(.menu)
-        .tint(MuffinTheme.accentText)
-        .foregroundColor(MuffinTheme.brownDarkest)
+        ResolutionPickerRows()
     }
 
     private var stretchToggle: some View {
@@ -337,8 +352,13 @@ struct GraphicsSettingsSection: View {
     // Metal only: MetalRenderer.cpp is the only backend that reads framebuffer_fetch.
     private var framebufferFetchToggle: some View {
         Toggle(isOn: $framebufferFetchEnabled) {
-            Text("Framebuffer fetch")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Faster blending")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("Metal only. Leave it on unless a game's picture looks wrong.")
+                    .font(.caption)
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
         }
         .tint(MuffinTheme.accentText)
         .onChange(of: framebufferFetchEnabled) { newValue in
@@ -387,20 +407,31 @@ struct GraphicsSettingsSection: View {
     @ViewBuilder private var meshShaderNote: some View {
         if meshShadersUnsupported {
             Text("This device doesn't support mesh shaders, so some graphic packs may not render correctly. See Graphic Packs under Library.")
-                .font(.system(size: 12))
+                .font(.caption)
                 .foregroundColor(MuffinTheme.secondaryText)
+        }
+    }
+
+    /// Vulkan (MoltenVK) has no geometry shaders, so on every device those draws, and the RECTS draws some
+    /// graphic packs use, are dropped. Shown whenever Vulkan is the renderer, not only on devices without mesh shaders.
+    @ViewBuilder private var vulkanNote: some View {
+        if rendererRaw == RendererAPI.vulkan.rawValue {
+            Text("Vulkan skips draws that need geometry shaders or RECTS, on every device. Some effects and graphic packs can look wrong or go missing. Metal doesn't have this limit.")
+                .font(.caption)
+                .foregroundColor(MuffinTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var fullText: String {
         """
-        Full speed renders! puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: "Wait for it" holds the frame until it's ready (a short hitch, never a missing object), "Keep going" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over Favour accuracy, Favour performance and Compile shaders in the background. Takes effect the next time you start a game.
+        Full speed renders! puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: "Wait for it" holds the frame until it's ready (a short hitch, never a missing object), "Keep going" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over Favour accuracy, Favour performance and Compile shaders in the background. Takes effect the next time you start a game. The even frame pacing is Metal only; with Vulkan the other parts still apply.
 
         Metal is the default renderer. Vulkan (MoltenVK) goes through a translation layer and may work better for some games, at some cost to speed. Takes effect the next time you launch a game.
 
         MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is the default; 1.2.8 is an older build that some games run better on. A change applies the next time MuffinEMU starts.
 
-        Upscale filter is used when MuffinEMU draws the game's picture larger than the game rendered it; downscale filter is used when drawing it smaller. Bicubic (the upscale default) is smoother than linear; Bicubic Hermite sharpens that further; Nearest Neighbor keeps hard pixel edges with no blending at all. Linear is the downscale default.
+        Enlarging filter (the upscale filter) is used when MuffinEMU draws the game's picture larger than the game rendered it; Shrinking filter (the downscale filter) is used when drawing it smaller. Bicubic (the upscale default) is smoother than linear; Bicubic Hermite sharpens that further; Nearest Neighbor keeps hard pixel edges with no blending at all. Linear is the downscale default.
 
         \(renderScale.summary)
 
@@ -412,12 +443,40 @@ struct GraphicsSettingsSection: View {
 
         Flip screen upside down turns both Wii U screens vertically before they reach the screen. Off for everyone except a panel or capture rig that presents the image inverted. Takes effect on the next frame.
 
-        Framebuffer fetch lets some Metal shaders read a pixel already sitting in the framebuffer instead of a separate blend pass - on by default, Metal only, and takes effect the next time you launch a game.
+        Faster blending (framebuffer fetch) lets some Metal shaders read a pixel already sitting in the framebuffer instead of a separate blend pass - on by default, Metal only, and takes effect the next time you launch a game.
 
-        Display gamma adjusts how bright the mid-tones look without changing pure black or pure white. 2.2 is the standard display gamma and the default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.
+        Display gamma (Vulkan only, because Metal has no gamma stage) adjusts how bright the mid-tones look without changing pure black or pure white. 2.2 is the standard display gamma and the default; lower looks flatter and brighter in the mids, higher looks more contrasty and darker in the mids. Takes effect on the next frame.
 
-        Override the game's gamma and Override gamma are a separate stage from Display gamma above, not a second copy of it: some games ask for their own gamma value, and this either adds Override gamma on top of that request (off) or replaces the game's request with Override gamma entirely (on) - before Display gamma is applied to the result. Off by default; most games never ask for a specific gamma at all, so this has nothing to override until one does.
+        Override the game's gamma and Override gamma (also Vulkan only) are a separate stage from Display gamma above, not a second copy of it: some games ask for their own gamma value, and this either adds Override gamma on top of that request (off) or replaces the game's request with Override gamma entirely (on) - before Display gamma is applied to the result. Off by default; most games never ask for a specific gamma at all, so this has nothing to override until one does.
         """
+        + (rendererRaw == RendererAPI.vulkan.rawValue ? "\n\nVulkan can't run geometry shaders (MoltenVK doesn't have them), so those draws and RECTS draws are skipped on every device." : "")
         + (meshShadersUnsupported ? "\n\nThis device doesn't support mesh shaders, so graphic packs that rely on geometry shaders or post-processing (RECTS) draws may not render correctly. Everything else works normally." : "")
+    }
+}
+
+/// Resolution picker with what the choice costs and buys, and when it applies. Used in Graphics and under
+/// "Game runs slowly?".
+struct ResolutionPickerRows: View {
+    @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.deviceDefault.rawValue
+
+    private var renderScale: RenderScale {
+        RenderScale(rawValue: renderScaleRaw) ?? RenderScale.deviceDefault
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Resolution", selection: $renderScaleRaw) {
+                ForEach(RenderScale.allCases) { scale in
+                    Text(scale.title).tag(scale.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(MuffinTheme.accentText)
+            .foregroundColor(MuffinTheme.brownDarkest)
+            Text("\(renderScale.summary) Applies the next time a game starts.")
+                .font(.caption)
+                .foregroundColor(MuffinTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

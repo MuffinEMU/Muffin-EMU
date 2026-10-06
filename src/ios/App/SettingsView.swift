@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Every section is its own View struct (most under Settings/), so the type checker isn't
 /// asked to infer one huge Form expression. ViewBuilder allows at most 10 children per
-/// block, hence the five groups below.
+/// block, hence the groups below.
 struct SettingsView: View {
     // Observed so flipping Classic UI or Flat surfaces repaints this subtree immediately.
     @ObservedObject private var uiStyle = UIStyleStore.shared
@@ -14,17 +14,12 @@ struct SettingsView: View {
     /// Basic hides the advanced rows (see AdvancedSettings); this view only needs it for whole sections.
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
-    // Grouped the way the section headers are coloured (SettingsSectionAccent): what decides
-    // whether a game runs, then what the player touches, sees and hears, then what the app
-    // holds for them, then identity, then housekeeping with About and Reset last.
-    @ViewBuilder private var formCore: some View {
-        CPUSettingsSection()
+    // Ordered by what players look for first: Keys, Graphics (Resolution), Controls, Display, Theme, then
+    // sound, the library and accounts, then the CPU and shader internals, then housekeeping with About
+    // and Reset last. The Settings mode picker and the quick-help section sit above all of it.
+    @ViewBuilder private var formFirst: some View {
+        KeysSettingsSection()
         GraphicsSettingsSection()
-        ShaderCompilationSection()
-        ShaderCacheSection()
-        if SettingsMode.isAdvanced(raw: settingsModeRaw) {
-            EmulatedClockSection()
-        }
     }
 
     @ViewBuilder private var formInput: some View {
@@ -32,6 +27,11 @@ struct SettingsView: View {
         PreviewPadSection()
         MotionSettingsSection()
         DisplaySettingsSection()
+    }
+
+    @ViewBuilder private var formApp: some View {
+        AppearanceSettingsSection(showingIconPicker: $showingIconPicker, showingThemePicker: $showingThemePicker)
+        PremiumSettingsSection()
         AudioSettingsSection()
         OverlaySettingsSection()
         NotificationSettingsSection()
@@ -39,16 +39,20 @@ struct SettingsView: View {
 
     @ViewBuilder private var formContent: some View {
         LibrarySettingsSection(gameManager: gameManager)
-        KeysSettingsSection()
         WiiUMenuSettingsSection()
         AccountSettingsSection()
         NetworkServiceSettingsSection()
         EmulatedDevicesSettingsSection()
     }
 
-    @ViewBuilder private var formApp: some View {
-        AppearanceSettingsSection(showingIconPicker: $showingIconPicker, showingThemePicker: $showingThemePicker)
-        PremiumSettingsSection()
+    // What decides how fast a game runs, once Resolution is sorted.
+    @ViewBuilder private var formCore: some View {
+        CPUSettingsSection()
+        ShaderCompilationSection()
+        ShaderCacheSection()
+        if SettingsMode.isAdvanced(raw: settingsModeRaw) {
+            EmulatedClockSection()
+        }
     }
 
     @ViewBuilder private var formSystem: some View {
@@ -64,10 +68,12 @@ struct SettingsView: View {
     private var settingsForm: some View {
         Form {
             SettingsModeSection()
-            formCore
+            QuickHelpSection()
+            formFirst
             formInput
-            formContent
             formApp
+            formContent
+            formCore
             formSystem
         }
     }

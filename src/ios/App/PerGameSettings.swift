@@ -191,8 +191,8 @@ enum PerGameKeyMigration {
     }
 }
 
-/// Quick actions offered from a long-press on a library title: a couple of toggles, plus a
-/// way into the full options screen. Applied as a `.contextMenu` modifier on the game's card.
+/// Quick actions offered from a long-press on a library title: the way into the full options screen first
+/// (the shader-compile choice lives there), then cover art, DLC and updates. Applied as a `.contextMenu` modifier on the game's card.
 struct GameContextMenu: View {
     let game: GameMetadata
     @ObservedObject var store: PerGameSettingsStore
@@ -207,21 +207,6 @@ struct GameContextMenu: View {
     let onChangeCoverArt: () -> Void
 
     var body: some View {
-        Toggle(isOn: Binding(
-            get: { store.effectivePreCompileShaders(for: game.settingsKey) },
-            set: { store.setPreCompileShaders($0, for: game.settingsKey) }
-        )) {
-            Label("Compile Shaders in the Background", systemImage: "bolt.fill")
-        }
-        // The toggle above always sets this game's own choice, so when it has one, say so and
-        // offer the way back to following Settings without a trip into the options screen.
-        if store.overrides(for: game.settingsKey).preCompileShaders != nil {
-            Button {
-                store.setPreCompileShaders(nil, for: game.settingsKey)
-            } label: {
-                Label("Use Global Shader Setting", systemImage: "arrow.uturn.backward")
-            }
-        }
         Button(action: onViewOptions) {
             Label("View Game Options", systemImage: "slider.horizontal.3")
         }

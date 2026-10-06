@@ -34,7 +34,7 @@ struct DeviceReportSection: View {
         } header: {
             SettingsSectionHeader("This Device", icon: "iphone", accent: .system)
         } footer: {
-            InfoButton.footer("Send this with any bug report. It lists your chip, memory and app build.")
+            InfoButton.footer("Tap Copy device report, then paste it into a report from Settings > About > Report a problem. It lists your chip, memory and app build.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
@@ -83,7 +83,7 @@ struct DiagnosticsSection: View {
                             Text("Show controls diagnostic")
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                             Text("A small readout over the game showing whether your button presses are reaching the game, and why not if they aren't.")
-                                .font(.system(size: 12))
+                                .font(.caption)
                                 .foregroundColor(MuffinTheme.secondaryText)
                         }
                     } icon: {

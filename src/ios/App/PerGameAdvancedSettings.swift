@@ -226,7 +226,7 @@ struct AdvancedGameOptionsSection: View {
             }
         }
         AdvancedOverrideRow(
-            title: "Upscale filter",
+            title: "Enlarging filter",
             caption: caption(pinned: own.upscaleFilter != nil, settingsValue: "set to \(store.globalUpscaleFilter.title)"),
             selection: numberChoice(\.upscaleFilter, known: ScaleFilter.allCases.map(\.rawValue))
         ) {
@@ -236,7 +236,7 @@ struct AdvancedGameOptionsSection: View {
             }
         }
         AdvancedOverrideRow(
-            title: "Downscale filter",
+            title: "Shrinking filter",
             caption: caption(pinned: own.downscaleFilter != nil, settingsValue: "set to \(store.globalDownscaleFilter.title)"),
             selection: numberChoice(\.downscaleFilter, known: ScaleFilter.allCases.map(\.rawValue))
         ) {

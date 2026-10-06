@@ -29,7 +29,7 @@ struct CPUSettingsSection: View {
                     Text("Use the recompiler (JIT)")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text("The fast way to run games. Needs a JIT enabler; without one the slow interpreter runs instead.")
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(MuffinTheme.secondaryText)
                 }
             }
@@ -47,7 +47,7 @@ struct CPUSettingsSection: View {
                         Text(favourAccuracy
                              ? "Slower but more accurate: one CPU core and stricter GPU syncing."
                              : "Faster, with some accuracy shortcuts.")
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
                 }
@@ -65,7 +65,7 @@ struct CPUSettingsSection: View {
                         Text(favourPerformance
                              ? "As fast as possible: a softer picture, rougher lighting in some games, and shaders that may pop in."
                              : "Off: the normal balance of speed and quality.")
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
                 }
@@ -83,7 +83,7 @@ struct CPUSettingsSection: View {
                         Text(oneCoreMode
                              ? "One CPU core, whatever CPU cores is set to below."
                              : "Follows the CPU cores setting below.")
-                            .font(.system(size: 12))
+                            .font(.caption)
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
                 }
@@ -113,7 +113,7 @@ struct CPUSettingsSection: View {
                     Text(DeviceCapabilities.current.multicoreViable
                          ? (CoreMode(rawValue: coreModeRaw) ?? CoreMode.defaultValue).summary
                          : DeviceCapabilities.oneCoreOnlyText)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -122,18 +122,7 @@ struct CPUSettingsSection: View {
                 }
             }
 
-            // On by default: at .serious iOS is already throttling, so lowering the pixel count
-            // gives frames back.
-            Toggle(isOn: $autoReduceWhenHot) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Cool down automatically")
-                        .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("When iOS reports the device is overheating, lowers resolution and CPU load until it cools.")
-                        .font(.system(size: 12))
-                        .foregroundColor(MuffinTheme.secondaryText)
-                }
-            }
-            .tint(MuffinTheme.accentText)
+            CoolDownToggle()
 
             // When the cool-down starts: Advanced mode only (see AdvancedSettings).
             if advanced && autoReduceWhenHot {
@@ -150,7 +139,7 @@ struct CPUSettingsSection: View {
                         thermal.thresholdChanged()
                     }
                     Text((ThermalSettings.Threshold(rawValue: coolDownThresholdRaw) ?? ThermalSettings.defaultThreshold).summary)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(MuffinTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -168,7 +157,7 @@ struct CPUSettingsSection: View {
                     Text("Memory")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                     Text(String(cString: cemu_bridge_memory_headroom_summary()))
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(MuffinTheme.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -208,21 +197,41 @@ struct CPUSettingsSection: View {
     }
 }
 
-/// Reports whether this launch got the PPC recompiler or the interpreter, and why. The
-/// bridge decides once at engine init, so a plain `let` read is correct.
-private struct CPUModeRow: View {
+/// Whether this launch got the PPC recompiler or the interpreter, and why. The bridge decides once at
+/// engine init, so a plain `let` read is correct. Shared by the CPU section and "Game runs slowly?".
+struct JITStatus {
     private let mode = cemu_bridge_cpu_mode()
-    private let detail = String(cString: cemu_bridge_cpu_mode_detail())
+    private let bridgeDetail = String(cString: cemu_bridge_cpu_mode_detail())
 
-    private var title: String {
+    /// True once the engine has settled on one or the other, which only happens when a game first starts.
+    var isKnown: Bool { mode == 1 || mode == 2 }
+
+    var title: String {
         switch mode {
         case 2:  return "Recompiler (JIT)"
         case 1:  return "Interpreter"
-        default: return "Not decided yet"
+        default: return "Not checked yet"
         }
     }
 
-    private var tint: Color {
+    /// The short form for a row with little room.
+    var rowValue: String {
+        switch mode {
+        case 2:  return "JIT is on"
+        case 1:  return "JIT is off"
+        default: return "Not checked yet"
+        }
+    }
+
+    var detail: String {
+        // The engine's own text for this case reads like a status code, so say what it means to a player.
+        if !isKnown {
+            return "MuffinEMU checks for a JIT enabler the first time you start a game. Come back here after that to see the result."
+        }
+        return bridgeDetail
+    }
+
+    var tint: Color {
         // Amber rather than red for the interpreter: it is slow, but it works.
         switch mode {
         case 2:  return MuffinTheme.accentText
@@ -230,20 +239,43 @@ private struct CPUModeRow: View {
         default: return MuffinTheme.brownMid
         }
     }
+}
+
+private struct CPUModeRow: View {
+    private let status = JITStatus()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("CPU")
                 Spacer()
-                Text(title)
-                    .foregroundColor(tint)
+                Text(status.title)
+                    .foregroundColor(status.tint)
             }
-            Text(detail)
+            Text(status.detail)
                 .font(.footnote)
                 .foregroundColor(MuffinTheme.brownMid)
                 .fixedSize(horizontal: false, vertical: true)
-
         }
+    }
+}
+
+/// "Cool down automatically", in the CPU section and again under "Game runs slowly?".
+struct CoolDownToggle: View {
+    @AppStorage(ThermalMonitor.autoThrottleKey) private var autoReduceWhenHot = ThermalMonitor.autoThrottleDefault
+
+    var body: some View {
+        // On by default: at .serious iOS is already throttling, so lowering the pixel count
+        // gives frames back.
+        Toggle(isOn: $autoReduceWhenHot) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Cool down automatically")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("When iOS reports the device is overheating, lowers resolution and CPU load until it cools.")
+                    .font(.caption)
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
+        }
+        .tint(MuffinTheme.accentText)
     }
 }
