@@ -1469,14 +1469,15 @@ struct EmulatorViewOptimized: View {
     /// Lays a pad out over the whole screen, or - held upright on an iPhone - over just the
     /// area under the picture, so no control sits on it. The area runs from the bottom of the
     /// stacked screens (screensSizeLayout) to the bottom of the safe area, and is never shorter
-    /// than the pad needs: with both screens stacked on a small phone the pad is allowed to cover
-    /// the bottom of the GamePad screen rather than shrink to nothing (the "hide controls" button
-    /// in the top bar uncovers it). Laid out with a frame, not an offset or a position, so what
+    /// than the pad needs: with both screens stacked on a small phone, after the GamePad screen
+    /// has shrunk as far as it will (portraitScreenHeight), the pad is allowed to cover the
+    /// bottom of it rather than shrink to nothing (the "hide controls" button in the top bar
+    /// uncovers it). Laid out with a frame, not an offset or a position, so what
     /// is drawn is also what takes touches.
     @ViewBuilder private func belowPicture<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         if isPhonePortrait {
             GeometryReader { geometry in
-                let pictures = CGFloat(visibleScreens.count) * geometry.size.width * 9 / 16
+                let pictures = visibleScreens.reduce(CGFloat(0)) { $0 + portraitScreenHeight(main: $1, in: geometry.size) }
                 let needed = ControllerGeometry.Portrait.minimumHeight(joystick: joystickMode)
                 let height = min(geometry.size.height, max(geometry.size.height - pictures, needed))
                 VStack(spacing: 0) {
@@ -2773,16 +2774,27 @@ struct EmulatorViewOptimized: View {
     /// otherwise; MuffinEMU never mounts a controller overlay in here (see
     /// screenLayoutComposition's doc comment), so it's always the `Spacer`.
     private func screensSizeLayout(in size: CGSize) -> some View {
-        let screenHeight = size.width * 9.0 / 16.0
-
         return VStack(spacing: 0) {
             ForEach(visibleScreens, id: \.self) { main in
+                let height = portraitScreenHeight(main: main, in: size)
                 screenView(main: main)
-                    .frame(width: size.width, height: screenHeight)
+                    .frame(width: height * 16 / 9, height: height)
+                    .frame(width: size.width)
             }
             Spacer(minLength: 0)
         }
         .frame(width: size.width, height: size.height, alignment: .top)
+    }
+
+    /// How tall a screen is when the phone is upright. The TV (or the only screen) runs the full
+    /// width at 16:9. With both screens up, the GamePad screen under it gives up height to the
+    /// controls, down to about half the width, centred; below that the controls cover the bottom
+    /// of it instead (see belowPicture) rather than shrink it to a postage stamp.
+    private func portraitScreenHeight(main: Bool, in size: CGSize) -> CGFloat {
+        let full = size.width * 9.0 / 16.0
+        guard !main, visibleScreens.count > 1 else { return full }
+        let room = size.height - full - ControllerGeometry.Portrait.minimumHeight(joystick: joystickMode)
+        return min(full, max(full * 0.55, room))
     }
 
     private var screens: some View {
