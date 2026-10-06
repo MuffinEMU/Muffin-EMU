@@ -1228,9 +1228,7 @@ class GameManager: ObservableObject {
             // an earlier three-core run of this title went badly.
             cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: game.settingsKey).bridgeValue)
             cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemotedAtLaunch(gameID: game.settingsKey))
-            // Global, not per-game - see CemuBridge.h's cemu_bridge_set_vsync_enabled().
-            // Applied once per layer (re)init, so reading it here before boot is what
-            // makes a mid-session Settings change take effect on the next launch.
+            // Legacy stored value with no effect on iOS - see CemuBridge.h's cemu_bridge_set_vsync_enabled().
             cemu_bridge_set_vsync_enabled(
                 UserDefaults.standard.object(forKey: "muffin.render.vsync") as? Bool ?? true)
             // Same "sync from UserDefaults before boot" reason as the calls above, but for a

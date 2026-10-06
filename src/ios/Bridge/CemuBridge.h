@@ -587,17 +587,11 @@ void cemu_bridge_set_async_shader_compile(bool enabled);
 bool cemu_bridge_async_shader_compile(void);
 
 
-/// VSync for both Wii U screens' Metal layers - CAMetalLayer.displaySyncEnabled, which
-/// nothing on this port has ever set before (Cemu's own `vsync` config value only ever
-/// reached the Vulkan backend's swapchain present-mode selection - VulkanRenderer.cpp/
-/// SwapchainInfoVk.cpp - and does nothing for Metal). Metal's own default for a freshly
-/// created CAMetalLayer is true (synced), so leaving this untouched changed nothing for
-/// anyone; on means nextDrawable() paces to the display's refresh (smoother, capped at
-/// the screen's rate, no tearing), off lets a title that can render faster than that do
-/// so uncapped, at the cost of possible tearing. Applied in
-/// MetalRenderer::InitializeLayer() right after setPixelFormat(), so - like the other
-/// settings on this page - it takes effect on the NEXT title launch, not the one already
-/// running.
+/// Stores Cemu's `vsync` config value. It has no visible effect on iOS and Settings no longer
+/// offers it: iOS always syncs presents to the display (CAMetalLayer.displaySyncEnabled is
+/// macOS-only, and nothing on this port sets it), so the Metal renderer never reads this value,
+/// and the Vulkan renderer's iOS path (SwapchainInfoVk::ChoosePresentMode) uses FIFO whatever
+/// it says. Kept so the saved "muffin.render.vsync" key and the audit harness still work.
 void cemu_bridge_set_vsync_enabled(bool enabled);
 
 bool cemu_bridge_vsync_enabled(void);
