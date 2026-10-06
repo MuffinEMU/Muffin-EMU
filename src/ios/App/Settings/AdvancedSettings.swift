@@ -78,6 +78,7 @@ enum AdvancedSettings {
         AdvancedSetting(FavourPerformance.storageKey, FavourPerformance.defaultValue),
         AdvancedSetting(OneCoreMode.storageKey, OneCoreMode.defaultValue),
         AdvancedSetting(CoreMode.storageKey, CoreMode.defaultValue.rawValue),
+        AdvancedSetting(ThermalSettings.thresholdKey, ThermalSettings.defaultThreshold.rawValue),
         // The switch CPU cores replaced. CoreMode.current falls back to it when the new key is absent.
         AdvancedSetting("muffin.cpu.multicore", nil),
     ]) {
