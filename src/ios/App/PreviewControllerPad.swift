@@ -37,7 +37,7 @@ struct PreviewControllerPad: View {
                                   height: full.height - insets.top - insets.bottom)
             let resolved = store.resolve(container: proxy.size, safeArea: safeArea,
                                          pointsPerInch: DeviceMetrics.current().pointsPerInch)
-            let colours = store.colourPreset.file
+            let colours = store.colourFile
 
             ZStack(alignment: .topLeading) {
                 ForEach(PadGroup.allCases) { group in

@@ -383,8 +383,8 @@ struct GameOptionsView: View {
         if store.effectiveFavourAccuracy(for: game.settingsKey) {
             return base + " Favour accuracy is on for this game, so it runs on one core whatever this says."
         }
-        if LowPowerMode.isEnabled {
-            return base + " Low Power Mode is on in Settings, so games run on one core whatever this says."
+        if OneCoreMode.isEnabled {
+            return base + " One-core mode is on in Settings, so games run on one core whatever this says."
         }
         return base
     }

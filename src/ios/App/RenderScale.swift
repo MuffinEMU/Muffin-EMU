@@ -103,7 +103,7 @@ enum RenderScale: String, CaseIterable, Identifiable {
 ///
 /// Independent of `Favour accuracy` (which also ends up on one core, for a different
 /// reason) and of Render Scale, which stays the user's own choice.
-enum LowPowerMode {
+enum OneCoreMode {
     static let storageKey = "muffin.cpu.lowPowerMode"
     /// Off by default.
     static let defaultValue = false
