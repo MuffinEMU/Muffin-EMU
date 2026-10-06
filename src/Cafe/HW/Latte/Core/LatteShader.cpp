@@ -671,6 +671,9 @@ uint64 LatteSHRC_CalcGSAuxHash(LatteDecompilerShader* geometryShader, uint32* co
 
 uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* contextRegisters)
 {
+	// the render target state is read from the passed registers (the live GPU state while playing, the
+	// stored state while loading a cached shader), so both give the same hash for the same state
+	[[maybe_unused]] const LatteContextRegister& lcr = *(const LatteContextRegister*)contextRegisters;
 	uint64 auxHash = 0;
 	// CB_SHADER_MASK can remap pixel shader outputs
 	auxHash = (auxHash >> 3) | (auxHash << 61);
@@ -699,7 +702,7 @@ uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* conte
 	{
 		for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
 		{
-			const uint32 format = (uint32)LatteMRT::GetColorBufferFormat(i, LatteGPUState.contextNew);
+			const uint32 format = (uint32)LatteMRT::GetColorBufferFormat(i, lcr);
 			const bool isInteger = (format & (uint32)Latte::E_GX2SURFFMT::FMT_BIT_INT) != 0;
 			const bool isSigned = (format & (uint32)Latte::E_GX2SURFFMT::FMT_BIT_SIGNED) != 0;
 			const uint8 dataType = isInteger ? (isSigned ? 2 : 1) : 0;
@@ -724,14 +727,14 @@ uint64 LatteSHRC_CalcPSAuxHash(LatteDecompilerShader* pixelShader, uint32* conte
 		// Color buffers
         for (uint8 i = 0; i < LATTE_NUM_COLOR_TARGET; i++)
         {
-            auto format = LatteMRT::GetColorBufferFormat(i, LatteGPUState.contextNew);
+            auto format = LatteMRT::GetColorBufferFormat(i, lcr);
             uint8 dataType = (uint8)GetMtlPixelFormatInfo(format, false).dataType;
             auxHash = std::rotl<uint64>(auxHash, 7);
             auxHash += (uint64)dataType;
         }
 
         // Depth buffer
-        bool hasDepthBuffer = LatteMRT::GetActiveDepthBufferMask(LatteGPUState.contextNew);
+        bool hasDepthBuffer = LatteMRT::GetActiveDepthBufferMask(lcr);
         if (hasDepthBuffer)
         {
             auxHash = std::rotl<uint64>(auxHash, 5);

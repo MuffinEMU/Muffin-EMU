@@ -38,14 +38,21 @@ public:
 	static FileCache* Create(const fs::path& path, uint32 extraVersion = 0);
 	static FileCache* Open(const fs::path& path, bool allowCreate, uint32 extraVersion = 0);
 	static FileCache* Open(const fs::path& path); // open without extraVersion check
-	// Health check without changing anything: header and file table readable, every entry inside the
-	// file and not overlapping another, and (checkEntries) every checksummed entry intact.
+	// Health check without changing anything: header and file table readable and the file table's own
+	// entry in order. With checkEntries also every entry inside the file and not overlapping another, and
+	// every checksummed entry intact (checksum of the stored bytes; nothing is decompressed). Without it, a
+	// single cut-short entry doesn't fail the file: that one is repaired when it's read.
 	static bool Verify(const fs::path& path, bool checkEntries = true);
 	// Where known-good copies of cache files live (same file names). A damaged entry is repaired from
 	// there the moment it's read, or deleted if no good copy exists; every other entry stays.
 	static void SetBackupDirectory(const fs::path& dir);
 	// Damaged entries found (and repaired or deleted) since this file was opened.
 	uint32 GetDamagedEntryCount() const { return damagedEntryCount; }
+	// The same across every cache file in the process (backup copies excluded), so a caller can tell whether
+	// anything at all was damaged between two points, whichever files it touched.
+	static uint32 GetDamagedEntryTotal();
+	// The version stamp from the header (for the caches here: derived from the title, or a legacy constant).
+	uint32 GetExtraVersion() const { return extraVersion; }
 
 	void UseCompression(bool enable) { enableCompression = enable; };
 
@@ -89,6 +96,7 @@ private:
 
 	void fileCache_updateFiletable(sint32 extraEntriesToAllocate);
 	void _addFileInternal(uint64 name1, uint64 name2, const uint8* fileData, sint32 fileSize, bool noCompression);
+	bool _readEntryRaw(const FileTableEntry* entry, std::vector<uint8>& rawOut);
 	bool _getFileDataInternal(const FileTableEntry* entry, std::vector<uint8>& dataOut);
 
 	class FileStream* fileStream{};

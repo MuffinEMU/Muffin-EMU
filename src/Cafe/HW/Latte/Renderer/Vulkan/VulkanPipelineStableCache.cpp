@@ -24,6 +24,9 @@ struct
 
 VulkanPipelineStableCache g_vkPipelineStableCacheInstance;
 
+// Close() frees s_cache while the writer thread may be about to use it
+static std::mutex s_cacheLifetimeMutex;
+
 VulkanPipelineStableCache& VulkanPipelineStableCache::GetInstance()
 {
 	return g_vkPipelineStableCacheInstance;
@@ -119,10 +122,13 @@ void VulkanPipelineStableCache::EndLoading()
 
 void VulkanPipelineStableCache::Close()
 {
-    if(s_cache)
     {
-        delete s_cache;
-        s_cache = nullptr;
+        std::lock_guard lock(s_cacheLifetimeMutex);
+        if(s_cache)
+        {
+            delete s_cache; // waits for this cache's queued writes
+            s_cache = nullptr;
+        }
     }
     // this object outlives the title: pipelines that were recorded as already cached belong to the cache file that was just
     // closed, and the next title (with a different file) would skip writing them
@@ -432,10 +438,13 @@ void VulkanPipelineStableCache::WorkerThread()
 	{
 		CachedPipeline* job;
 		g_pipelineCachingQueue.pop(job);
-		if (!s_cache)
 		{
-			delete job;
-			continue;
+			std::lock_guard lock(s_cacheLifetimeMutex);
+			if (!s_cache)
+			{
+				delete job;
+				continue;
+			}
 		}
 		// serialize
 		MemStreamWriter memWriter(1024 * 4);
@@ -446,7 +455,12 @@ void VulkanPipelineStableCache::WorkerThread()
 		SHA256(blob.data(), blob.size(), hash);
 		uint64 nameA = *(uint64be*)(hash + 0);
 		uint64 nameB = *(uint64be*)(hash + 8);
-		s_cache->AddFileAsync({ nameA, nameB }, blob.data(), blob.size());
+		{
+			// s_cache may have been closed while this was serialized
+			std::lock_guard lock(s_cacheLifetimeMutex);
+			if (s_cache)
+				s_cache->AddFileAsync({ nameA, nameB }, blob.data(), blob.size());
+		}
 		delete job;
 	}
 }
