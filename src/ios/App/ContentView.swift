@@ -1689,13 +1689,15 @@ struct EmulatorViewOptimized: View {
                                           height: full.height - insets.top - insets.bottom)
                     let resolved = previewPad.resolve(container: proxy.size, safeArea: safeArea,
                                                       pointsPerInch: DeviceMetrics.current().pointsPerInch)
+                    // Upright on an iPhone that is always Native (see effectiveDisplayMode).
+                    let native = previewPad.effectiveDisplayMode(container: proxy.size) == .native
                     ZStack(alignment: .topLeading) {
                         MetalViewIOS(gameManager: gameManager)
                     }
-                    .frame(width: previewPad.displayMode == .native ? resolved.video.width : proxy.size.width,
-                          height: previewPad.displayMode == .native ? resolved.video.height : proxy.size.height)
-                    .position(x: previewPad.displayMode == .native ? resolved.video.midX : proxy.size.width / 2,
-                             y: previewPad.displayMode == .native ? resolved.video.midY : proxy.size.height / 2)
+                    .frame(width: native ? resolved.video.width : proxy.size.width,
+                          height: native ? resolved.video.height : proxy.size.height)
+                    .position(x: native ? resolved.video.midX : proxy.size.width / 2,
+                             y: native ? resolved.video.midY : proxy.size.height / 2)
                     .clipped()
 
                     // Hidden with the rest of the on-screen pad (the top bar's hide button, or a connected
@@ -2102,18 +2104,23 @@ struct EmulatorViewOptimized: View {
             // Melo-Controller's pad, when chosen, takes the place of both of MuffinEMU's.
             if !padControlsHidden {
                 if useMeloControls {
-                    MeloControlsOverlay(
-                        gameID: gameManager.currentGame?.settingsKey,
-                        isEditing: isEditingControlLayout
-                    )
-                    .onAppear { PadDiagnostics.shared.report(activePad: .melo) }
+                    // Upright, Melo-Controller gets only the area under the picture; it lays its
+                    // buttons out itself, so that is all that can be done for it.
+                    belowPicture {
+                        MeloControlsOverlay(
+                            gameID: gameManager.currentGame?.settingsKey,
+                            isEditing: isEditingControlLayout
+                        )
+                        .onAppear { PadDiagnostics.shared.report(activePad: .melo) }
+                    }
                 } else if padSystem == .touchLab {
                     TouchLabPadOverlay(
                         schemeID: touchLabScheme,
                         gameID: gameManager.currentGame?.settingsKey,
                         screens: touchLabScreens,
                         enabled: !isPaused && !isEditingControlLayout,
-                        topInset: topBarHeight
+                        // Upright the picture is along the top and the controls go under it.
+                        topInset: isPhonePortrait ? 0 : topBarHeight
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .touchLab) }
                 } else if padSystem == .muffin {
