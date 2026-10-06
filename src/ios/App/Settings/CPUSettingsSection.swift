@@ -8,6 +8,7 @@ struct CPUSettingsSection: View {
     // position.
     @AppStorage("muffin.cpu.recompiler") private var recompilerEnabled = true
     @AppStorage("muffin.cpu.favourAccuracy") private var favourAccuracy = false
+    @AppStorage(FavourPerformance.storageKey) private var favourPerformance = FavourPerformance.defaultValue
     @AppStorage(LowPowerMode.storageKey) private var lowPowerMode = LowPowerMode.defaultValue
     @AppStorage(CoreMode.storageKey) private var coreModeRaw = CoreMode.current.rawValue
     @AppStorage(ThermalMonitor.autoThrottleKey) private var autoReduceWhenHot = ThermalMonitor.autoThrottleDefault
@@ -47,6 +48,25 @@ struct CPUSettingsSection: View {
             .tint(MuffinTheme.accentText)
             .onChange(of: favourAccuracy) { newValue in
                 cemu_bridge_set_favour_accuracy(newValue)
+                // Opposite trades, so turning one on turns the other off.
+                if newValue { favourPerformance = false }
+            }
+
+            Toggle(isOn: $favourPerformance) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Favour performance")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text(favourPerformance
+                         ? "As fast as possible: a softer picture, rougher lighting in some games, and shaders that may pop in."
+                         : "Off: the normal balance of speed and quality.")
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                }
+            }
+            .tint(MuffinTheme.accentText)
+            .onChange(of: favourPerformance) { newValue in
+                cemu_bridge_set_favour_performance(newValue)
+                if newValue { favourAccuracy = false }
             }
 
             // See LowPowerMode in RenderScale.swift.
@@ -154,7 +174,7 @@ struct CPUSettingsSection: View {
             InfoButton.footer(
                 "Changes to the CPU switches apply the next time you start a game. Cool down automatically only acts when the device overheats; Low Power Mode is the always-on version.",
                 title: "CPU",
-                text: "The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer). Without one the interpreter runs instead, which is much slower; the CPU line above shows which you got.\n\nFavour accuracy is slower but can fix a game that glitches, desyncs or crashes. It also builds every shader before it is needed, whatever Compile shaders in the background is set to.\n\nCool down automatically acts when iOS reports the device is overheating, and Device heat shows that same state.\n\nThe recompiler, Favour accuracy, Low Power Mode and CPU cores apply the next time you start a game.")
+                text: "The recompiler needs a JIT enabler (StikJIT, SideStore or LiveContainer). Without one the interpreter runs instead, which is much slower; the CPU line above shows which you got.\n\nFavour accuracy is slower but can fix a game that glitches, desyncs or crashes. It also builds every shader before it is needed, whatever Compile shaders in the background is set to.\n\nFavour performance is the opposite trade: everything runs as fast as MuffinEMU can make it, and some quality goes. The picture is drawn at Balanced at most with linear scaling, so it's softer. Shaders skip the Wii U's exact multiply rule, which is faster but can make lighting or shadows look wrong in some games. Shaders always compile in the background, so things can pop in for a moment instead of the game pausing. Crash reports carry less detail. Favour accuracy and Favour performance turn each other off, and a game set to favour accuracy in its own options still does.\n\nCool down automatically acts when iOS reports the device is overheating, and Device heat shows that same state.\n\nThe recompiler, Favour accuracy, Favour performance, Low Power Mode and CPU cores apply the next time you start a game.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }

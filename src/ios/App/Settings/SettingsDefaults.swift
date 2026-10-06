@@ -83,6 +83,7 @@ enum SettingsDefaults {
     private static func pushDefaultsToBridge() {
         cemu_bridge_set_recompiler_enabled(true)
         cemu_bridge_set_favour_accuracy(false)
+        cemu_bridge_set_favour_performance(FavourPerformance.defaultValue)
         cemu_bridge_set_low_power_mode(LowPowerMode.defaultValue)
         MotionSettings.applyToBridge() // its keys were just removed, so this pushes the defaults
         cemu_bridge_set_cpu_core_mode(CoreMode.defaultValue.bridgeValue)

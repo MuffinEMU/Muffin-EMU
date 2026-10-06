@@ -484,6 +484,16 @@ bool cemu_bridge_recompiler_enabled(void);
 /// the fast path. Read when a title starts.
 void cemu_bridge_set_favour_accuracy(bool enabled);
 
+/// Speed before picture quality, one step past the default speed path. On: shaders are built
+/// without Cemu's strict 0*anything=0 multiply (fewer GPU instructions, possible lighting or
+/// shadow glitches), shaders always compile in the background (no stalls, objects can pop in
+/// briefly), and the per-draw crash breadcrumbs are skipped (less detail in a crash report).
+/// The Swift side also caps the presented resolution at Balanced and uses linear scaling.
+/// Favour accuracy wins when both are on, including a per-game accuracy override. Read when a
+/// title starts.
+void cemu_bridge_set_favour_performance(bool enabled);
+bool cemu_bridge_favour_performance(void);
+
 /// Best-effort real device temperature in Celsius, or NaN when it cannot be read.
 ///
 /// iOS publishes NO device temperature to apps - ProcessInfo.thermalState's four levels

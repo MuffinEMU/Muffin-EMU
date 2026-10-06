@@ -1156,6 +1156,8 @@ class GameManager: ObservableObject {
             // Per-game override first, the global switch underneath it.
             cemu_bridge_set_favour_accuracy(
                 PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.id))
+            // Global. The bridge ignores it when Favour accuracy is on for this game.
+            cemu_bridge_set_favour_performance(FavourPerformance.isEnabled)
             // Per-game override first, global default underneath it - PerGameSettingsStore
             // reads the same UserDefaults key directly for exactly the reason above: an
             // override that only lived in a @Published property would revert the moment
@@ -1197,9 +1199,13 @@ class GameManager: ObservableObject {
             // linear down.
             cemu_bridge_set_graphics_api(
                 Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.graphicsAPI") as? Int ?? 2))
-            cemu_bridge_set_upscale_filter(
+            // Favour performance swaps both for linear, the cheapest blend, unless this game favours
+            // accuracy (which wins, as in the bridge).
+            let cheapFilters = FavourPerformance.isEnabled
+                && !PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.id)
+            cemu_bridge_set_upscale_filter(cheapFilters ? Int32(ScaleFilter.linear.rawValue) :
                 Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.upscaleFilter") as? Int ?? 1))
-            cemu_bridge_set_downscale_filter(
+            cemu_bridge_set_downscale_filter(cheapFilters ? Int32(ScaleFilter.linear.rawValue) :
                 Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.downscaleFilter") as? Int ?? 0))
 
             // Screen flip, gamma and the performance overlay - same "push from UserDefaults
@@ -1604,6 +1610,7 @@ final class TitleSwitchSettings {
         cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemoted(gameID: id))
         cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: id).bridgeValue)
         cemu_bridge_set_favour_accuracy(PerGameSettingsStore.shared.effectiveFavourAccuracy(for: id))
+        cemu_bridge_set_favour_performance(FavourPerformance.isEnabled)
         cemu_bridge_set_async_shader_compile(PerGameSettingsStore.shared.effectivePreCompileShaders(for: id))
         #if os(iOS)
         GameControlHints.applyBeforeLaunch(titleId: titleId)

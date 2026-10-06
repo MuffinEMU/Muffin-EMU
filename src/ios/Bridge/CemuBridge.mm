@@ -58,6 +58,7 @@
 #include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
+#include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "StallDetector.h"
 #include "Cafe/HW/Latte/Core/PerfTelemetry.h"
@@ -745,6 +746,9 @@ namespace {
     std::atomic<int> g_cpuMode{kCpuModeUndecided};
     std::atomic<bool> g_recompilerRequested{false};
     std::atomic<bool> g_favourAccuracy{false};
+    // Favour performance: the opposite trade to Favour accuracy, applied in
+    // ios_apply_render_profile(). Ignored while Favour accuracy is on.
+    std::atomic<bool> g_favourPerformance{false};
     // Low Power Mode. Separate from Favour accuracy on purpose: both end up asking for
     // one emulated CPU core, but for opposite reasons and with different side effects.
     // Favour accuracy also forces synchronous shader compilation, accurate Vulkan
@@ -1116,13 +1120,22 @@ void ios_apply_render_profile()
 {
     auto& config = GetConfig();
     const bool accuracy = g_favourAccuracy.load();
+    const bool performance = g_favourPerformance.load() && !accuracy;
     config.vk_accurate_barriers = accuracy;
     config.gx2drawdone_sync = accuracy;
     if (accuracy)
         config.async_compile = false;
-    cemuLog_log(LogType::Force, "iOS: {} - async shaders {}, accurate barriers {}, GX2DrawDone sync {}",
-        accuracy ? "favouring accuracy" : "favouring speed",
-        config.async_compile.GetValue(), config.vk_accurate_barriers.GetValue(), config.gx2drawdone_sync.GetValue());
+    // Favour performance goes past the default speed path: a missing shader never stalls the
+    // frame, multiplies skip the console's 0*anything=0 rule, and draws skip the breadcrumbs that
+    // only a crash report reads. Set on every title start so turning it off restores all three.
+    if (performance)
+        config.async_compile = true;
+    g_latteRelaxShaderMul.store(performance, std::memory_order_relaxed);
+    PerfTelemetry::DrawBreadcrumbsEnabled().store(!performance, std::memory_order_relaxed);
+    cemuLog_log(LogType::Force, "iOS: {} - async shaders {}, accurate barriers {}, GX2DrawDone sync {}, strict shader mul {}",
+        accuracy ? "favouring accuracy" : (performance ? "favouring performance" : "favouring speed"),
+        config.async_compile.GetValue(), config.vk_accurate_barriers.GetValue(), config.gx2drawdone_sync.GetValue(),
+        performance ? "off" : "per game profile");
 }
 
 }  // namespace
@@ -2534,6 +2547,16 @@ void cemu_bridge_set_favour_accuracy(bool enabled) {
 
 bool cemu_bridge_favour_accuracy(void) {
     return g_favourAccuracy.load();
+}
+
+void cemu_bridge_set_favour_performance(bool enabled) {
+    // Nothing to recompute now: everything it changes is applied by ios_apply_render_profile()
+    // when the next title starts.
+    g_favourPerformance.store(enabled);
+}
+
+bool cemu_bridge_favour_performance(void) {
+    return g_favourPerformance.load();
 }
 
 // Best-effort real device temperature, in degrees Celsius. NaN when unavailable.
