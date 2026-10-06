@@ -567,7 +567,7 @@ const char* cemu_bridge_perf_line(void);
 /// performance log and reports use to tell devices apart.
 const char* cemu_bridge_device_summary(void);
 
-/// Low Power Mode: run one emulated CPU core and nothing else changes. Separate from
+/// One-core mode: run one emulated CPU core and nothing else changes. Separate from
 /// cemu_bridge_set_favour_accuracy(), which also forces synchronous shader compilation
 /// and accurate barriers (more work, the wrong lever for a device that is already hot).
 /// Read when a title starts - the core count cannot change under a running title.
