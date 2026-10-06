@@ -425,6 +425,29 @@ private struct LibraryHeartButton: View {
     }
 }
 
+/// The "..." button: the same per-game menu a long-press opens.
+private struct LibraryOptionsButton<Options: View>: View {
+    let name: String
+    let size: CGFloat
+    let options: Options
+
+    var body: some View {
+        Menu {
+            options
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: size * 0.45, weight: .semibold))
+                .foregroundColor(MuffinTheme.sparkleCream)
+                .frame(width: size, height: size)
+                .background(Color.black.opacity(0.4))
+                .cornerRadius(10)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("More options for \(name)")
+    }
+}
+
 private func libraryCardChrome<V: View>(_ view: V, radius: CGFloat = 16) -> some View {
     view
         .background(MuffinTheme.cream)
@@ -437,30 +460,42 @@ private func libraryCardChrome<V: View>(_ view: V, radius: CGFloat = 16) -> some
 }
 
 /// Picks the view for the chosen style. The standard style is the existing GameCardOptimized.
-struct LibraryCard: View {
+struct LibraryCard<Options: View>: View {
     let game: GameMetadata
     let style: LibraryCardStyle
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
+    /// The per-game menu behind the "..." button (the same one a long-press opens).
+    let options: Options
+
+    init(game: GameMetadata, style: LibraryCardStyle, onTap: @escaping () -> Void,
+         onFavoriteTap: @escaping () -> Void, @ViewBuilder options: () -> Options) {
+        self.game = game
+        self.style = style
+        self.onTap = onTap
+        self.onFavoriteTap = onFavoriteTap
+        self.options = options()
+    }
 
     var body: some View {
         switch style {
         case .standard:
-            GameCardOptimized(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap)
+            GameCardOptimized(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, options: { options })
         case .largeCovers:
-            LibraryLargeCoverCard(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap)
+            LibraryLargeCoverCard(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, options: options)
         case .compact:
-            LibraryCompactCard(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap)
+            LibraryCompactCard(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, options: options)
         case .list:
-            LibraryListRow(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap)
+            LibraryListRow(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, options: options)
         }
     }
 }
 
-struct LibraryLargeCoverCard: View {
+struct LibraryLargeCoverCard<Options: View>: View {
     let game: GameMetadata
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
+    let options: Options
 
     var body: some View {
         let name = game.cardName
@@ -474,6 +509,10 @@ struct LibraryLargeCoverCard: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Play \(name.name)")
                     LibraryHeartButton(isFavorite: game.isFavorite, size: 34, action: onFavoriteTap)
+                        .padding(4)
+                }
+                .overlay(alignment: .topLeading) {
+                    LibraryOptionsButton(name: name.name, size: 34, options: options)
                         .padding(4)
                 }
                 VStack(alignment: .leading, spacing: 4) {
@@ -491,13 +530,17 @@ struct LibraryLargeCoverCard: View {
                 .padding(12)
             }
         )
+        // The whole card starts the game; the heart and "..." keep their own taps.
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture(perform: onTap)
     }
 }
 
-struct LibraryCompactCard: View {
+struct LibraryCompactCard<Options: View>: View {
     let game: GameMetadata
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
+    let options: Options
 
     var body: some View {
         let name = game.cardName
@@ -513,6 +556,11 @@ struct LibraryCompactCard: View {
                     .padding(.top, -6)
                     .padding(.trailing, -6)
             }
+            .overlay(alignment: .topLeading) {
+                LibraryOptionsButton(name: name.name, size: 26, options: options)
+                    .padding(.top, -6)
+                    .padding(.leading, -6)
+            }
             Text(name.name)
                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .lineLimit(2)
@@ -521,13 +569,16 @@ struct LibraryCompactCard: View {
                 .frame(maxWidth: .infinity)
         }
         .shadow(color: MuffinTheme.shadow.opacity(0.12), radius: 4, x: 0, y: 2)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
     }
 }
 
-struct LibraryListRow: View {
+struct LibraryListRow<Options: View>: View {
     let game: GameMetadata
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
+    let options: Options
     @ObservedObject private var stats = LibraryPlayStats.shared
 
     private var detailLine: String {
@@ -577,6 +628,17 @@ struct LibraryListRow: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Play \(name.name)")
+
+                Menu {
+                    options
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(MuffinTheme.brownMid)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("More options for \(name.name)")
 
                 Button(action: onFavoriteTap) {
                     Image(systemName: game.isFavorite ? "heart.fill" : "heart")
