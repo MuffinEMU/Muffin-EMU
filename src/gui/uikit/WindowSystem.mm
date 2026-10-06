@@ -226,8 +226,9 @@ void CemuUIKit_SetMainView(UIView* view)
         ? view.window.screen.nativeScale
         : UIScreen.mainScreen.nativeScale;
 
+    // __bridge, not __bridge_retained: nothing ever released the extra retain, so every title launch leaked a layer. g_mainView keeps it alive.
     WindowHandleInfo info { WindowHandleInfo::Backend::UIKit, view,
-                            (__bridge_retained CAMetalLayer*)view.layer };
+                            (__bridge void*)view.layer };
     g_windowInfo.window_main = info;
     g_windowInfo.canvas_main = info;
 }
@@ -336,7 +337,8 @@ void CemuUIKit_SetPadView(UIView* view)
 {
     g_padView = view;
 
-    WindowHandleInfo info { WindowHandleInfo::Backend::UIKit, view, (__bridge_retained CAMetalLayer*)view.layer };
+    // __bridge: g_padView keeps the layer alive (see CemuUIKit_SetMainView)
+    WindowHandleInfo info { WindowHandleInfo::Backend::UIKit, view, (__bridge void*)view.layer };
 
     g_windowInfo.window_pad = info;
     g_windowInfo.canvas_pad = info;
