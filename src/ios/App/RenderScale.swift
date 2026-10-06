@@ -56,11 +56,22 @@ enum RenderScale: String, CaseIterable, Identifiable {
 
     static let storageKey = "renderScale"
 
-    /// What the person chose, or the preset picked for this device (`deviceDefault`) if they never did.
-    static var current: RenderScale {
+    /// What the person chose in Settings, or the preset picked for this device (`deviceDefault`) if they never did.
+    static var storedChoice: RenderScale {
         guard let raw = UserDefaults.standard.string(forKey: storageKey),
               let value = RenderScale(rawValue: raw) else { return deviceDefault }
         return value
+    }
+
+    /// What the picture is drawn at now: the running game's own Resolution if it has one (Advanced mode,
+    /// see ActiveGameSettings), otherwise `storedChoice`. While the thermal governor is holding Resolution at
+    /// battery saver, that wins over the game's own.
+    static var current: RenderScale {
+        if !ThermalHold.isHoldingScale,
+           let own = ActiveGameSettings.overrides.renderScale.flatMap(RenderScale.init(rawValue:)) {
+            return own
+        }
+        return storedChoice
     }
 
     /// The preset for someone who never touched Resolution, worked out from this device. The only place
@@ -125,8 +136,11 @@ enum FavourPerformance {
     /// Off by default.
     static let defaultValue = false
 
+    /// The running game's own choice if it has one (Advanced mode), otherwise Settings. Read by the
+    /// resolution cap in `effectiveRenderScale`; the launch push uses PerGameSettingsStore directly.
     static var isEnabled: Bool {
-        UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+        ActiveGameSettings.overrides.favourPerformance
+            ?? UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
     }
 }
 

@@ -304,30 +304,28 @@ enum AdvancedSettings {
     }
 }
 
-/// Per-game options that only exist in Advanced mode. A new advanced per-game option is added to
-/// the three functions below (and to GameOverrides in PerGameSettings.swift).
+/// Per-game options and Settings mode. Everything in GameOverrides is Advanced except
+/// `preCompileShaders` (the Compile shaders in the background escape hatch, which Basic keeps), so a
+/// field added to GameOverrides is Advanced without anything else to register.
 extension GameOverrides {
     /// A copy holding only the Advanced options, for the snapshot.
     var advancedFields: GameOverrides {
-        var copy = GameOverrides()
-        copy.favourAccuracy = favourAccuracy
-        copy.coreMode = coreMode
+        var copy = self
+        copy.preCompileShaders = nil
         return copy
     }
 
-    /// What Basic uses: the Advanced options cleared, everything else kept.
+    /// What Basic uses: the Advanced options cleared, the shader choice kept.
     func removingAdvancedFields() -> GameOverrides {
-        var copy = self
-        copy.favourAccuracy = nil
-        copy.coreMode = nil
+        var copy = GameOverrides()
+        copy.preCompileShaders = preCompileShaders
         return copy
     }
 
-    /// Restore: takes the Advanced options from `other` and leaves the rest as it is now.
+    /// Restore: takes the Advanced options from `other` and leaves the shader choice as it is now.
     func adopting(advancedFieldsOf other: GameOverrides) -> GameOverrides {
-        var copy = self
-        copy.favourAccuracy = other.favourAccuracy
-        copy.coreMode = other.coreMode
+        var copy = other
+        copy.preCompileShaders = preCompileShaders
         return copy
     }
 }
