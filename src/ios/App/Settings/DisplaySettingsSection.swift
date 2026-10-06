@@ -23,6 +23,8 @@ struct DisplaySettingsSection: View {
     private var swapScreens = DisplayLayoutSettings.defaultSwap
     @AppStorage(DisplayLayoutSettings.showSwapButtonKey)
     private var showSwapButton = DisplayLayoutSettings.defaultShowSwapButton
+    @AppStorage(DisplayLayoutSettings.deviceShowsKey)
+    private var deviceShows = DisplayLayoutSettings.defaultDeviceShows
 
     var body: some View {
         Section {
@@ -89,8 +91,8 @@ struct DisplaySettingsSection: View {
                         Text("GamePad screen on the external display")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text(swapScreens
-                             ? "On: GamePad screen on the external display, TV screen on this device."
-                             : "Off: TV screen on the external display, GamePad screen on this device.")
+                             ? "On: the external display shows the GamePad screen."
+                             : "Off: the external display shows the TV screen.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -98,6 +100,29 @@ struct DisplaySettingsSection: View {
                 .tint(MuffinTheme.accentText)
                 // Re-routes immediately if a title is already running in .dualScreen.
                 .onChange(of: swapScreens) { _ in
+                    DisplayRouter.shared.rerouteForScreenLayoutChange()
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("When a TV is connected, this device shows")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Spacer()
+                        Picker("When a TV is connected, this device shows", selection: $deviceShows) {
+                            ForEach(DeviceScreenMode.allCases) { mode in
+                                Text(mode.string).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .tint(MuffinTheme.accentText)
+                    }
+                    Text(deviceShowsCaption)
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                }
+                // Applies at once in a running game; with none running it is used the next time a game starts.
+                .onChange(of: deviceShows) { _ in
                     DisplayRouter.shared.rerouteForScreenLayoutChange()
                 }
 
@@ -118,10 +143,24 @@ struct DisplaySettingsSection: View {
             InfoButton.footer(
                 "Screen Layout arranges the TV and GamePad on this device. The external display is off until you turn it on, and needs a second screen that MuffinEMU can open a window on; AirPlay mirroring doesn't count.",
                 title: "Display",
-                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nThe external display is off by default; turn it on before connecting a display. Then choose which Wii U screen it shows. It is experimental and hasn't been tested on much hardware.")
+                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nThe external display is off by default; turn it on before connecting a display. Then choose which Wii U screen it shows, and what this device shows next to it: the other screen, the same screen, or only the controls. It is experimental and hasn't been tested on much hardware.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
 
     @State private var screenLayoutInfoShown = false
+
+    /// What the choice above does with the swap setting as it is now.
+    private var deviceShowsCaption: String {
+        let tvScreen = swapScreens ? "GamePad screen" : "TV screen"
+        let otherScreen = swapScreens ? "TV screen" : "GamePad screen"
+        switch deviceShows {
+        case .otherScreen:
+            return "The external display shows the \(tvScreen) and this device shows the \(otherScreen)."
+        case .sameScreen:
+            return "Both show the \(tvScreen)."
+        case .nothing:
+            return "The external display shows the \(tvScreen). This device shows only the on-screen controls on black."
+        }
+    }
 }

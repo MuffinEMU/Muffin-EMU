@@ -107,6 +107,7 @@ void CemuUIKit_UpdateMainWindowSize(CGFloat width, CGFloat height, CGFloat scale
 
 void CemuUIKit_UpdatePadWindowSize(void);
 void CemuUIKit_SetVisibleOutputs(bool tv, bool pad);
+void CemuUIKit_SetOutputSources(bool mainShowsGamePad, bool padShowsTV);
 void CemuUIKit_DescribeMainSurface(char* out, size_t outSize);
 void CemuUIKit_SetPadTouch(CGFloat x, CGFloat y, bool down);
 void* GCControllerBridge_add(const GCBridgeControllerDesc* desc);
@@ -2945,9 +2946,11 @@ void cemu_bridge_register_pad_render_surface(void* uiView, int width, int height
     CemuUIKit_SetPadView(view);
     ((CAMetalLayer*)view.layer).contentsScale = dpiScale;
     g_padRegistered.store(true);
-    // A running title gets its pad layer now; otherwise CemuRun() initializes it at boot.
-    if (g_titleRunning.load())
-        CemuUIKit_InitializeLayer(false);
+    // Initialized now whenever a renderer exists (CemuUIKit_InitializeLayer does nothing before one does, and
+    // CemuPrepareRenderer() then picks the surface up). This used to wait for g_titleRunning, which is only set
+    // after CemuRun() returns: a surface registered between the renderer being built and that flag - an external
+    // display connecting while the title boots - was registered and sized but never got a layer, so nothing drew to it.
+    CemuUIKit_InitializeLayer(false);
     CemuUIKit_SetVisibleOutputs(true, true);
     cemuLog_log(LogType::Force, "iOS: GamePad (DRC) screen surface registered, {}x{} points at {}x scale", width, height, dpiScale);
 }
@@ -2969,6 +2972,24 @@ bool cemu_bridge_has_pad_render_surface(void) {
 
 void cemu_bridge_set_visible_outputs(bool tv, bool pad) {
     CemuUIKit_SetVisibleOutputs(tv, pad);
+}
+
+void cemu_bridge_set_output_sources(bool mainShowsGamePad, bool padShowsTV) {
+    CemuUIKit_SetOutputSources(mainShowsGamePad, padShowsTV);
+}
+
+bool cemu_bridge_pad_layer_active(void) {
+    return g_renderer && g_renderer->IsPadWindowActive();
+}
+
+void cemu_bridge_ensure_pad_layer(void) {
+    // Only for a surface that is registered but has no layer behind it; one that already has a layer is left alone.
+    if (g_padRegistered.load() && !cemu_bridge_pad_layer_active())
+        CemuUIKit_InitializeLayer(false);
+}
+
+uint32_t cemu_bridge_pad_present_count(void) {
+    return PerfTelemetry::Get().padPresents.load(std::memory_order_relaxed);
 }
 
 void cemu_bridge_set_pad_touch(double x, double y, bool down) {
