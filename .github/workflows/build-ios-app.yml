@@ -73,9 +73,9 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: 'Off main only: "experimental" publishes an Experimental pre-release; anything else leaves run artifacts only'
+        description: 'Off main only: "experimental" publishes an Experimental pre-release; "release" publishes the next numbered release from this branch (it must contain the latest release); anything else leaves run artifacts only'
         type: choice
-        options: [ artifacts-only, experimental ]
+        options: [ artifacts-only, experimental, release ]
         default: artifacts-only
       experiment_name:
         description: 'Experimental builds: a short name for the release title (defaults to the branch name)'
@@ -606,6 +606,8 @@ jobs:
           key: muffin-spm-v1-${{ hashFiles('src/ios/project.yml') }}
 
       - name: Choose the version
+        env:
+          MUFFIN_CHANNEL: ${{ steps.channel.outputs.channel }}
         # Every build of main is the next release: the highest vX.Y tag plus 0.1, with .9
         # rolling over to the next whole number (1.9 -> 2.0). With no numbered tag yet the
         # first release is ci/VERSION. Other branches build unnumbered test builds. A build
@@ -614,7 +616,8 @@ jobs:
           set -eo pipefail
           git fetch --tags --force -q origin
           PUBLISH=true
-          if [ "$GITHUB_REF_NAME" = "main" ]; then
+          # A branch dispatched with channel=release is numbered exactly like main.
+          if [ "$GITHUB_REF_NAME" = "main" ] || [ "$MUFFIN_CHANNEL" = "release" ]; then
             LAST=$(git tag -l 'v*' | sed -nE 's/^v([0-9]+)\.([0-9])$/\1 \2/p' | sort -n -k1,1 -k2,2 | tail -n1)
             if [ -z "$LAST" ]; then
               VER=$(./ci/version.sh)
@@ -628,6 +631,10 @@ jobs:
               # A numbered release must strictly contain the latest one. A re-run of an old build of
               # main would otherwise ship old code as the newest version.
               if ! ./ci/check-stable.sh "$PREV"; then
+                if [ "$MUFFIN_CHANNEL" = "release" ]; then
+                  echo "::error::$GITHUB_REF_NAME does not contain $PREV. Merge main into it before releasing from it."
+                  exit 1
+                fi
                 PUBLISH=false
                 # Not a release, so it must not claim the next number: this IPA can still be picked up
                 # by the rolling build job (it decides that on its own), and an app saying "6.5" would
@@ -838,7 +845,7 @@ jobs:
         # only reads published releases) and looking from the outside like the build
         # simply produced nothing. A retry re-attaches the missing files to the same
         # draft and publishes it.
-        if: steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false'
+        if: ((steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main') || (steps.channel.outputs.channel == 'release' && github.event_name == 'workflow_dispatch')) && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         id: publish
         continue-on-error: true
@@ -868,7 +875,7 @@ jobs:
         # assets is not installable and must not read as a green build. That also means
         # no separate guard step is needed - and a guard checking failure() would never
         # have fired anyway, because continue-on-error above keeps the job green.
-        if: steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false' && steps.publish.outcome == 'failure'
+        if: ((steps.channel.outputs.channel == 'main' && github.ref == 'refs/heads/main') || (steps.channel.outputs.channel == 'release' && github.event_name == 'workflow_dispatch')) && github.event_name != 'pull_request' && env.MUFFIN_PUBLISH != 'false' && steps.publish.outcome == 'failure'
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ env.MUFFIN_TAG }}
