@@ -38,6 +38,14 @@ public:
 	static FileCache* Create(const fs::path& path, uint32 extraVersion = 0);
 	static FileCache* Open(const fs::path& path, bool allowCreate, uint32 extraVersion = 0);
 	static FileCache* Open(const fs::path& path); // open without extraVersion check
+	// Health check without changing anything: header and file table readable, every entry inside the
+	// file and not overlapping another, and (checkEntries) every checksummed entry intact.
+	static bool Verify(const fs::path& path, bool checkEntries = true);
+	// Where known-good copies of cache files live (same file names). A damaged entry is repaired from
+	// there the moment it's read, or deleted if no good copy exists; every other entry stays.
+	static void SetBackupDirectory(const fs::path& dir);
+	// Damaged entries found (and repaired or deleted) since this file was opened.
+	uint32 GetDamagedEntryCount() const { return damagedEntryCount; }
 
 	void UseCompression(bool enable) { enableCompression = enable; };
 
@@ -59,6 +67,9 @@ private:
 		{
 			FLAG_NONE = 0x00,
 			FLAG_COMPRESSED = (1 << 0), // zLib compressed
+			// extraReserved1/2 hold a 16-bit checksum of the stored bytes (folded CRC32). Older
+			// entries and older builds leave the bit clear and are read as before.
+			FLAG_CHECKSUM = (1 << 1),
 		};
 		uint64 name1;
 		uint64 name2;
@@ -91,6 +102,9 @@ private:
 	uint32 fileTableSize{};
 	// options
 	bool enableCompression{true};
+	fs::path filePath;
+	uint32 damagedEntryCount{};
+	bool _handleDamagedEntry(FileTableEntry* entry, std::vector<uint8>& dataOut);
 
 	std::recursive_mutex mutex;
 };

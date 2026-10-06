@@ -35,6 +35,10 @@
 #include <audio/IAudioAPI.h>
 #include <util/bootSound/BootSoundReader.h>
 #include <thread>
+#include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
+#if __APPLE__
+#include <sys/clonefile.h>
+#endif
 
 #if BOOST_OS_WINDOWS
 #include <psapi.h>
@@ -366,6 +370,185 @@ void LatteShaderCache_drawBackgroundImage(ImTextureID texture, int width, int he
 	ImGui::PopStyleVar(2);
 }
 
+// Shader and pipeline cache protection. A game's learned shaders and pipelines are worth hours of
+// play, so they are never thrown away by a crash, a force-quit or a full disk:
+//  - a damaged entry is dealt with the moment anything reads it (FileCache): put back from the
+//    backup's good copy, or deleted if there is none. Every other entry stays;
+//  - before the caches are opened, a file that is missing or whose header/table can't be read at all
+//    is restored from its backup (the damaged one is kept aside as .unreadable);
+//  - after a load that found nothing wrong, and again when the game is left normally with a clean
+//    session, every cache file of the title is copied to shaderCache/backup. On APFS the copy is a
+//    clone: instant, and no extra space until the files differ. Copies go through a temporary name and
+//    are fully verified before they replace the old backup, so a backup is always known-good.
+// Clearing the shader cache in Settings removes the backups too.
+static std::vector<fs::path> ShaderCacheGuard_List(const fs::path& dir, uint64 titleId)
+{
+	std::vector<fs::path> files;
+	std::error_code ec;
+	const std::string prefix = fmt::format("{:016x}_", titleId);
+	for (const auto& it : fs::directory_iterator(dir, ec))
+	{
+		std::error_code fileEc;
+		if (!it.is_regular_file(fileEc) || it.path().extension() != ".bin")
+			continue;
+		if (_pathToUtf8(it.path().filename()).rfind(prefix, 0) == 0)
+			files.push_back(it.path());
+	}
+	return files;
+}
+
+static bool ShaderCacheGuard_Copy(const fs::path& src, const fs::path& dst)
+{
+	std::error_code ec;
+	fs::path tmp = dst;
+	tmp += ".tmp";
+	fs::remove(tmp, ec);
+	bool copied = false;
+#if __APPLE__
+	copied = clonefile(src.c_str(), tmp.c_str(), 0) == 0;
+#endif
+	if (!copied)
+		copied = fs::copy_file(src, tmp, fs::copy_options::overwrite_existing, ec) && !ec;
+	if (!copied || !FileCache::Verify(tmp))
+	{
+		fs::remove(tmp, ec);
+		return false;
+	}
+	fs::rename(tmp, dst, ec);
+	if (ec)
+	{
+		fs::remove(tmp, ec);
+		return false;
+	}
+	return true;
+}
+
+// The title whose caches are open, and whether its load found nothing wrong. Set by LatteShaderCache_Load,
+// used when the title closes (ShaderCacheGuard_AfterSession).
+static uint64 s_guardTitleId = 0;
+static bool s_guardLoadClean = false;
+
+// Secondary repair. Damaged entries are first repaired one by one as they're read (FileCache). When a
+// session had damage, its cache files get the full check at the end of loading and when the game is
+// left; one that still fails means that repair didn't fix it, and this marker restores the backups
+// before the next load (the files can't be swapped while the game has them open).
+static fs::path ShaderCacheGuard_RestoreMarker(uint64 titleId)
+{
+	return ActiveSettings::GetCachePath("shaderCache/backup/{:016x}.restore", titleId);
+}
+
+// After damage was repaired: if any cache file still fails the full check, ask for the secondary repair.
+static void ShaderCacheGuard_CheckRepair(uint64 titleId)
+{
+	for (const fs::path& live : ShaderCacheGuard_List(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId))
+	{
+		if (FileCache::Verify(live))
+			continue;
+		FileStream* marker = FileStream::createFile2(ShaderCacheGuard_RestoreMarker(titleId));
+		delete marker;
+		cemuLog_log(LogType::Force, "Shader cache guard: \"{}\" still fails the check after repair; its backup will be restored at the next start", _pathToUtf8(live.filename()));
+		return;
+	}
+}
+
+static void ShaderCacheGuard_BeforeLoad(uint64 titleId)
+{
+	std::error_code ec;
+	const fs::path liveDir = ActiveSettings::GetCachePath("shaderCache/transferable");
+	const fs::path backupDir = ActiveSettings::GetCachePath("shaderCache/backup");
+	fs::create_directories(backupDir, ec);
+	FileCache::SetBackupDirectory(backupDir);
+	const fs::path restoreMarker = ShaderCacheGuard_RestoreMarker(titleId);
+	const bool repairFailed = fs::exists(restoreMarker, ec);
+	for (const fs::path& backup : ShaderCacheGuard_List(backupDir, titleId))
+	{
+		const fs::path live = liveDir / backup.filename();
+		const bool liveExists = fs::exists(live, ec);
+		// Damaged entries inside a readable file are repaired one by one as they're read, so a file is
+		// replaced as a whole only when it's missing, its header or table is unreadable, or that repair
+		// didn't fix it last time (then only if it still fails the full check).
+		if (liveExists && FileCache::Verify(live, false) && (!repairFailed || FileCache::Verify(live)))
+			continue;
+		if (!FileCache::Verify(backup))
+		{
+			cemuLog_log(LogType::Force, "Shader cache guard: backup \"{}\" is not usable, leaving the live file alone", _pathToUtf8(backup.filename()));
+			continue;
+		}
+		if (liveExists)
+		{
+			fs::path aside = live;
+			aside += ".unreadable";
+			fs::remove(aside, ec);
+			fs::rename(live, aside, ec);
+		}
+		if (ShaderCacheGuard_Copy(backup, live))
+			cemuLog_log(LogType::Force, "Shader cache guard: restored \"{}\" from its backup ({})", _pathToUtf8(live.filename()),
+				!liveExists ? "it was missing" : (repairFailed ? "repairing its damaged entries didn't fix it" : "its header or file table could not be read"));
+		else
+			cemuLog_log(LogType::Force, "Shader cache guard: could not restore \"{}\"", _pathToUtf8(live.filename()));
+	}
+	fs::remove(restoreMarker, ec);
+}
+
+static void ShaderCacheGuard_AfterLoad(uint64 titleId, bool clean)
+{
+	std::error_code ec;
+	s_guardTitleId = titleId;
+	s_guardLoadClean = clean;
+	if (!clean)
+	{
+		// The damaged entries are already repaired or deleted; the backup stays as it was, the copy from
+		// before the damage. If the repair didn't fix a file, the backup comes back at the next start.
+		cemuLog_log(LogType::Force, "Shader cache guard: damaged entries were repaired or removed during loading; backup left as it was");
+		ShaderCacheGuard_CheckRepair(titleId);
+		return;
+	}
+	const fs::path backupDir = ActiveSettings::GetCachePath("shaderCache/backup");
+	for (const fs::path& live : ShaderCacheGuard_List(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId))
+	{
+		if (!ShaderCacheGuard_Copy(live, backupDir / live.filename()))
+			cemuLog_log(LogType::Force, "Shader cache guard: could not back up \"{}\"; the previous backup is kept", _pathToUtf8(live.filename()));
+	}
+}
+
+// Leaving a game normally (back to the MuffinEMU menu) refreshes the backup with everything learned this
+// session, but only when the session passed with flying colours: its load found no damaged entries, it
+// didn't end on a GPU error, no damaged shader entry turned up during play, and every cache file passes FileCache::Verify (ShaderCacheGuard_Copy checks
+// each copy before it replaces the backup). A force-quit or crash never gets here, so the backup from
+// before the session stays.
+static void ShaderCacheGuard_AfterSession()
+{
+	const uint64 titleId = s_guardTitleId;
+	s_guardTitleId = 0;
+	if (titleId == 0)
+		return;
+	if (!s_guardLoadClean)
+	{
+		cemuLog_log(LogType::Force, "Shader cache guard: damaged entries this session, keeping the backup from before it");
+		ShaderCacheGuard_CheckRepair(titleId);
+		return;
+	}
+	if (LatteWait::Get().gpuError.load(std::memory_order_relaxed))
+	{
+		cemuLog_log(LogType::Force, "Shader cache guard: session ended on a GPU error, keeping the backup from before it");
+		return;
+	}
+	const fs::path backupDir = ActiveSettings::GetCachePath("shaderCache/backup");
+	int saved = 0, kept = 0;
+	for (const fs::path& live : ShaderCacheGuard_List(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId))
+	{
+		if (FileCache::Verify(live) && ShaderCacheGuard_Copy(live, backupDir / live.filename()))
+			saved++;
+		else
+			kept++;
+	}
+	cemuLog_log(LogType::Force, "Shader cache guard: session ended cleanly; {} cache file(s) saved as the new backup{}", saved,
+		kept ? fmt::format(", {} failed the check and kept their previous backup", kept) : std::string());
+	if (kept)
+		ShaderCacheGuard_CheckRepair(titleId); // damage nothing read this session: restore at the next start
+
+}
+
 void LatteShaderCache_Load()
 {
 	shaderCacheScreenStats.compiledShaderCount = 0;
@@ -388,6 +571,7 @@ void LatteShaderCache_Load()
 	std::error_code ec;
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/transferable"), ec);
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/precompiled"), ec);
+	ShaderCacheGuard_BeforeLoad(cacheTitleId);
 	// initialize renderer specific caches
 	switch(g_renderer->GetType())
 	{
@@ -474,6 +658,7 @@ void LatteShaderCache_Load()
 		g_bootSndPlayer.StartSound();
 
 	sint32 numLoadedShaders = 0;
+	sint32 numDamagedShaders = 0;
 	uint32 loadIndex = 0;
 
 	auto LoadShadersUpdate = [&]() -> bool
@@ -486,6 +671,7 @@ void LatteShaderCache_Load()
 		std::vector<uint8> fileData;
 		if (!s_shaderCacheGeneric->GetFileByIndex(loadIndex, &name1, &name2, fileData))
 		{
+			// a free slot, or a damaged entry FileCache had no good copy for and has just deleted
 			loadIndex++;
 			return true;
 		}
@@ -495,6 +681,7 @@ void LatteShaderCache_Load()
 			// something is wrong with the stored shader, remove entry from shader cache files
 			cemuLog_log(LogType::Force, "Shader cache entry {} invalid, deleting...", loadIndex);
 			s_shaderCacheGeneric->DeleteFile({name1, name2 });
+			numDamagedShaders++;
 		}
 		numLoadedShaders++;
 		loadIndex++;
@@ -520,6 +707,7 @@ void LatteShaderCache_Load()
 	if (g_renderer->GetType() == RendererAPI::Vulkan || g_renderer->GetType() == RendererAPI::Metal)
         LatteShaderCache_LoadPipelineCache(cacheTitleId);
 #endif
+	ShaderCacheGuard_AfterLoad(cacheTitleId, numDamagedShaders == 0 && s_shaderCacheGeneric->GetDamagedEntryCount() == 0);
 
 
 	g_renderer->BeginFrame(true);
@@ -983,6 +1171,9 @@ void LatteShaderCache_Close()
 {
     if(s_shaderCacheGeneric)
     {
+        // damage found during play also means the session wasn't clean (ShaderCacheGuard_AfterSession)
+        if (s_shaderCacheGeneric->GetDamagedEntryCount() != 0)
+            s_guardLoadClean = false;
         delete s_shaderCacheGeneric;
         s_shaderCacheGeneric = nullptr;
     }
@@ -1019,4 +1210,6 @@ void LatteShaderCache_Close()
 		break;
 #endif
 	}
+	// every cache file is closed and flushed now
+	ShaderCacheGuard_AfterSession();
 }
