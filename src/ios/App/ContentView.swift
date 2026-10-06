@@ -288,7 +288,7 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
         switch self {
         case .title: return "Title"
         case .recentlyAdded: return "Recently added"
-        case .favoritesFirst: return "Favorites first"
+        case .favoritesFirst: return "Favourites first"
         case .lastPlayed: return "Last played"
         case .mostPlayed: return "Most played"
         }
@@ -652,7 +652,7 @@ struct GameBrowserView: View {
                     }
                     .buttonStyle(MuffinSecondaryButtonStyle())
                     .frame(minWidth: 44, minHeight: 44)
-                    .accessibilityLabel(showingFavorites ? "Show all games" : "Show favorites only")
+                    .accessibilityLabel(showingFavorites ? "Show all games" : "Show favourites only")
 
                     Menu {
                         Button {
@@ -1246,7 +1246,7 @@ struct GameCardOptimized<Options: View>: View {
                                 .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
-                        .accessibilityLabel(game.isFavorite ? "Remove from favorites" : "Add to favorites")
+                        .accessibilityLabel(game.isFavorite ? "Remove from favourites" : "Add to favourites")
                         .padding(8)
                     }
                     Spacer()
