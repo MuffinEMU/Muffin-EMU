@@ -110,6 +110,9 @@ struct GraphicsSettingsSection: View {
     @AppStorage("muffin.render.framebufferFetch") private var framebufferFetchEnabled = true
     @AppStorage("muffin.render.overrideAppGamma") private var overrideAppGammaEnabled = false
     @AppStorage(OverrideGammaSetting.storageKey) private var overrideGammaValue = OverrideGammaSetting.defaultValue
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+
+    private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
     private var renderScale: RenderScale {
         RenderScale(rawValue: renderScaleRaw) ?? RenderScale.deviceDefault
@@ -117,17 +120,21 @@ struct GraphicsSettingsSection: View {
 
     var body: some View {
         Section {
-            fullSpeedRendersToggle
-            if fullSpeedRenders {
-                fullSpeedShaderPicker
+            // The renderer, filters, Full speed renders! and the picture tweaks are Advanced mode only:
+            // Basic keeps them at their defaults (see AdvancedSettings).
+            if advanced {
+                fullSpeedRendersToggle
+                if fullSpeedRenders {
+                    fullSpeedShaderPicker
+                }
+                rendererPicker
+                // Only the Vulkan renderer loads MoltenVK, so Metal users have nothing to pick here.
+                if rendererRaw == RendererAPI.vulkan.rawValue {
+                    moltenVKPicker
+                }
+                upscalePicker
+                downscalePicker
             }
-            rendererPicker
-            // Only the Vulkan renderer loads MoltenVK, so Metal users have nothing to pick here.
-            if rendererRaw == RendererAPI.vulkan.rawValue {
-                moltenVKPicker
-            }
-            upscalePicker
-            downscalePicker
             resolutionPicker
             if favourPerformance {
                 Text("Favour performance is on (Settings > CPU), so the picture is drawn at Balanced at most, with linear scaling.")
@@ -135,14 +142,16 @@ struct GraphicsSettingsSection: View {
                     .foregroundColor(MuffinTheme.secondaryText)
             }
             stretchToggle
-            upsideDownToggle
-            if rendererRaw == RendererAPI.metal.rawValue {
-                framebufferFetchToggle
-            }
-            gammaSlider
-            overrideGammaToggle
-            if overrideAppGammaEnabled {
-                overrideGammaSlider
+            if advanced {
+                upsideDownToggle
+                if rendererRaw == RendererAPI.metal.rawValue {
+                    framebufferFetchToggle
+                }
+                gammaSlider
+                overrideGammaToggle
+                if overrideAppGammaEnabled {
+                    overrideGammaSlider
+                }
             }
             meshShaderNote
         } header: {
