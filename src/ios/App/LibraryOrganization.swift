@@ -88,7 +88,7 @@ enum LibraryGrouping: String, CaseIterable, Hashable, Identifiable {
     var title: String {
         switch self {
         case .none: return "No groups"
-        case .favorites: return "Favorites and the rest"
+        case .favorites: return "Favourites and the rest"
         case .recentlyPlayed: return "Recently played"
         case .alphabet: return "A to Z"
         }
@@ -120,7 +120,7 @@ enum LibraryFilter: String, CaseIterable, Hashable, Identifiable {
     var title: String {
         switch self {
         case .all: return "All games"
-        case .favorites: return "Favorites only"
+        case .favorites: return "Favourites only"
         case .played: return "Played before"
         case .neverPlayed: return "Never played"
         }
@@ -162,7 +162,7 @@ extension LibraryGrouping {
             let favs = games.filter { $0.isFavorite }
             let rest = games.filter { !$0.isFavorite }
             return [
-                LibrarySection(id: "favorites", title: "Favorites", games: favs),
+                LibrarySection(id: "favorites", title: "Favourites", games: favs),
                 LibrarySection(id: "rest", title: favs.isEmpty ? nil : "Other games", games: rest),
             ].filter { !$0.games.isEmpty }
         case .recentlyPlayed:
@@ -421,7 +421,7 @@ private struct LibraryHeartButton: View {
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
         }
-        .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+        .accessibilityLabel(isFavorite ? "Remove from favourites" : "Add to favourites")
     }
 }
 
@@ -647,7 +647,7 @@ struct LibraryListRow<Options: View>: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
-                .accessibilityLabel(game.isFavorite ? "Remove from favorites" : "Add to favorites")
+                .accessibilityLabel(game.isFavorite ? "Remove from favourites" : "Add to favourites")
             }
             .padding(.leading, 10)
             .padding(.trailing, 4)
