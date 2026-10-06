@@ -65,6 +65,9 @@ std::optional<std::vector<uint8>> FileStream::LoadIntoMemory(const fs::path& pat
 void FileStream::SetPosition(uint64 pos)
 {
 	cemu_assert(m_isValid);
+	// A read that hits the end of the file (or a write that fails) leaves eof/fail set, and seekg does
+	// nothing while they are: every later read would then return 0. Each seek starts from a clean state.
+	m_fileStream.clear();
 	if (m_prevOperationWasWrite)
 		m_fileStream.seekp((std::streampos)pos);
 	else
@@ -74,6 +77,7 @@ void FileStream::SetPosition(uint64 pos)
 uint64 FileStream::GetSize()
 {
 	cemu_assert(m_isValid);
+	m_fileStream.clear(); // a failed read leaves fail set, and tellg then returns -1
 	auto currentPos = m_fileStream.tellg();
 	m_fileStream.seekg(0, std::ios::end);
 	auto fileSize = m_fileStream.tellg();
