@@ -12,6 +12,8 @@ struct CemuApp: App {
         // The device capability snapshot and its one-line summary, before anything else is written:
         // every device log starts with it, so reports from different devices compare.
         DeviceCapabilities.bootstrap()
+        // Before anything reads the mode: an update must not switch off advanced settings already in use.
+        SettingsMode.chooseInitialModeIfNeeded()
 
         // Which build is this? The release commit and core are stamped into Info.plist when the IPA
         // is packaged (ci/package-ipas.sh), outside the core's own fingerprint, so a core reused

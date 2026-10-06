@@ -28,6 +28,16 @@ enum SettingsMode: String, CaseIterable, Identifiable {
 
     /// For a view holding the stored raw value in an @AppStorage.
     static func isAdvanced(raw: String) -> Bool { raw == SettingsMode.advanced.rawValue }
+
+    /// Once, on the first launch after updating from a version without Settings mode: someone who
+    /// already changed an advanced setting (a game's own Favour accuracy or CPU cores, say, set so it
+    /// would boot) starts in Advanced, so nothing they set is switched off or hidden by the update.
+    /// Everyone else, and every new install, starts in Basic. Main thread, at launch.
+    static func chooseInitialModeIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: storageKey) == nil else { return }
+        defaults.set((AdvancedSettings.hasCustomisedValues ? SettingsMode.advanced : .basic).rawValue, forKey: storageKey)
+    }
 }
 
 /// One advanced setting: its UserDefaults key and the value the app uses when the key is absent.
