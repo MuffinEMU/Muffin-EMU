@@ -94,7 +94,16 @@ final class ControllerCustomLayout: ObservableObject {
 
     /// Call when a drag or pinch ends, to write to disk what `write(_:for:)` only kept in
     /// `overrides` while the gesture was live.
+    /// Writes a change still waiting on the short coalescing delay; no-op when nothing is pending.
+    func flushPending() {
+        guard pendingPersist != nil else { return }
+        pendingPersist?.cancel()
+        pendingPersist = nil
+        persist()
+    }
+
     func commit() {
+        pendingPersist?.cancel()
         persist()
     }
 
@@ -106,7 +115,18 @@ final class ControllerCustomLayout: ObservableObject {
         } else {
             overrides[key] = value
         }
-        // No persist() here: this runs on every gesture tick. `commit()` writes to disk.
+        // Not written per tick: coalesced to one write shortly after the last change, so a force-quit
+        // mid-drag keeps the layout. `commit()` writes at once when the gesture ends.
+        schedulePersist()
+    }
+
+    private var pendingPersist: DispatchWorkItem?
+
+    private func schedulePersist() {
+        pendingPersist?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.persist() }
+        pendingPersist = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
     }
 
     private func persist() {
