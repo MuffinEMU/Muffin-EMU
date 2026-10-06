@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "Cafe/HW/Latte/Core/LatteConst.h"
 #include "Cafe/HW/Latte/ISA/LatteReg.h"
 #include "util/VirtualHeap/VirtualHeap.h"
@@ -187,3 +188,8 @@ void LatteThread_Exit();
 // that is not, for the post-teardown check.
 void Latte_ResetHostState();
 void Latte_CollectLeftovers(std::vector<std::string>& leftovers);
+
+// Set by the iOS bridge ("Full speed renders!") before a title starts. The GPU thread then runs at
+// the highest scheduling class, and the Metal renderer paces each present to the game's own frame
+// interval. Read when the GPU thread starts and once per present.
+extern std::atomic<bool> g_latteFullSpeedRenders;

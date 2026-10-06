@@ -31,6 +31,12 @@ case "$EVENT" in
       fi
       CHANNEL=main
       WHY="$EVENT on main: the next numbered release, and Nightly if eligible"
+    elif [ "$EVENT" = "workflow_dispatch" ] && [ "$INPUT_CHANNEL" = "release" ]; then
+      # Opt-in, by hand only: the next numbered release built from this branch. Nightly stays
+      # main-only (its job checks the ref), and the version step refuses a branch that doesn't
+      # contain the latest release.
+      CHANNEL=release
+      WHY="dispatched on $REF_NAME with channel=release: the next numbered release, from this branch"
     elif [ "$EVENT" = "workflow_dispatch" ] && [ "$INPUT_CHANNEL" = "experimental" ]; then
       CHANNEL=experimental
       WHY="dispatched on $REF_NAME with channel=experimental"
@@ -67,6 +73,7 @@ echo " DISTRIBUTION CHANNEL: $CHANNEL"
 echo "   $WHY"
 case "$CHANNEL" in
   main)         echo "   releases: next numbered release; Nightly only if ci/publish-nightly.sh finds this build eligible" ;;
+  release)      echo "   releases: next numbered release (Latest) from $REF_NAME. Nightly NOT touched" ;;
   experimental) echo "   releases: $TAG and the rolling 'experimental'. Nightly, stable and every source are NOT touched" ;;
   none)         echo "   releases: NONE. This build is run artifacts only" ;;
 esac

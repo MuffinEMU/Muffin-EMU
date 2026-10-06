@@ -1158,6 +1158,7 @@ class GameManager: ObservableObject {
                 PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.id))
             // Global. The bridge ignores it when Favour accuracy is on for this game.
             cemu_bridge_set_favour_performance(FavourPerformance.isEnabled)
+            FullSpeedRenders.applyToBridge()
             // Per-game override first, global default underneath it - PerGameSettingsStore
             // reads the same UserDefaults key directly for exactly the reason above: an
             // override that only lived in a @Published property would revert the moment
@@ -1611,6 +1612,7 @@ final class TitleSwitchSettings {
         cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: id).bridgeValue)
         cemu_bridge_set_favour_accuracy(PerGameSettingsStore.shared.effectiveFavourAccuracy(for: id))
         cemu_bridge_set_favour_performance(FavourPerformance.isEnabled)
+        FullSpeedRenders.applyToBridge()
         cemu_bridge_set_async_shader_compile(PerGameSettingsStore.shared.effectivePreCompileShaders(for: id))
         #if os(iOS)
         GameControlHints.applyBeforeLaunch(titleId: titleId)

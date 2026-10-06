@@ -36,7 +36,7 @@ struct OnScreenControlsSection: View {
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
     private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
-    /// 0 follows the device: on for iPhone, off for iPad. Read by the in-game top bar.
+    /// 0 follows the default (on; see TopBarAutoHide.deviceDefault). Read by the in-game top bar.
     @AppStorage(TopBarAutoHide.overrideKey)
     private var topBarAutoHideOverride = TopBarAutoHide.followDevice
     @State private var showingResetLayoutConfirmation = false
@@ -173,7 +173,7 @@ struct OnScreenControlsSection: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Hide the top bar while playing")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    Text("The bar fades away a few seconds after you last touch it. Tap the small handle at the top of the screen, or swipe down from it, to bring it back. It stays up while paused, in menus, and with VoiceOver on. On by default on iPhone, off on iPad.")
+                    Text("The bar fades away a few seconds after you last touch it. Tap the small handle at the top of the screen, or swipe down from it, to bring it back. It stays up while paused, in menus, and with VoiceOver on. On by default.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
