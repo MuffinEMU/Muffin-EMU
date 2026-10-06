@@ -1285,6 +1285,8 @@ struct EmulatorViewOptimized: View {
     /// it swaps in and why the shipping path is otherwise untouched.
     @AppStorage(PreviewPadStore.enabledKey) private var previewPadEnabled = PreviewPadStore.defaultEnabled
     @AppStorage(MeloControlsSetting.storageKey) private var useMeloControls = MeloControlsSetting.defaultValue
+    /// Read only to size the portrait pad's area (belowPicture). Same key and default as the pad's.
+    @AppStorage(ControllerLayoutSettings.joystickKey) private var joystickMode = ControllerLayoutSettings.defaultJoystick
     /// The optional TouchLab control style ("" = MuffinEMU's own pad). See TouchLabPads.swift.
     @AppStorage(TouchLabSettings.schemeKey) private var touchLabScheme = TouchLabSettings.defaultScheme
     /// Where the TV / GamePad views are on screen, reported by the screen views themselves.
@@ -1455,6 +1457,39 @@ struct EmulatorViewOptimized: View {
         // ever called onInput, and were themselves the reason it looked like it did not.
         if previewPadEnabled { return .preview }
         return .muffin
+    }
+
+    /// An iPhone held upright. Same test as screenLayoutComposition's, which this has to agree
+    /// with: the picture is stacked along the top exactly when this is true. On iPhone the
+    /// vertical size class is regular only in portrait.
+    private var isPhonePortrait: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone && verticalSizeClass == .regular
+    }
+
+    /// Lays a pad out over the whole screen, or - held upright on an iPhone - over just the
+    /// area under the picture, so no control sits on it. The area runs from the bottom of the
+    /// stacked screens (screensSizeLayout) to the bottom of the safe area, and is never shorter
+    /// than the pad needs: with both screens stacked on a small phone, after the GamePad screen
+    /// has shrunk as far as it will (portraitScreenHeight), the pad is allowed to cover the
+    /// bottom of it rather than shrink to nothing (the "hide controls" button in the top bar
+    /// uncovers it). Laid out with a frame, not an offset or a position, so what
+    /// is drawn is also what takes touches.
+    @ViewBuilder private func belowPicture<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        let built = content()
+        if isPhonePortrait {
+            GeometryReader { geometry in
+                let pictures = visibleScreens.reduce(CGFloat(0)) { $0 + portraitScreenHeight(main: $1, in: geometry.size) }
+                let needed = ControllerGeometry.Portrait.minimumHeight(joystick: joystickMode)
+                let height = min(geometry.size.height, max(geometry.size.height - pictures, needed))
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    built
+                        .frame(height: height)
+                }
+            }
+        } else {
+            built
+        }
     }
 
     /// True while a title is booting, running or paused and the TV screen is on this device.
@@ -1656,13 +1691,15 @@ struct EmulatorViewOptimized: View {
                                           height: full.height - insets.top - insets.bottom)
                     let resolved = previewPad.resolve(container: proxy.size, safeArea: safeArea,
                                                       pointsPerInch: DeviceMetrics.current().pointsPerInch)
+                    // Upright on an iPhone that is always Native (see effectiveDisplayMode).
+                    let native = previewPad.effectiveDisplayMode(container: proxy.size) == .native
                     ZStack(alignment: .topLeading) {
                         MetalViewIOS(gameManager: gameManager)
                     }
-                    .frame(width: previewPad.displayMode == .native ? resolved.video.width : proxy.size.width,
-                          height: previewPad.displayMode == .native ? resolved.video.height : proxy.size.height)
-                    .position(x: previewPad.displayMode == .native ? resolved.video.midX : proxy.size.width / 2,
-                             y: previewPad.displayMode == .native ? resolved.video.midY : proxy.size.height / 2)
+                    .frame(width: native ? resolved.video.width : proxy.size.width,
+                          height: native ? resolved.video.height : proxy.size.height)
+                    .position(x: native ? resolved.video.midX : proxy.size.width / 2,
+                             y: native ? resolved.video.midY : proxy.size.height / 2)
                     .clipped()
 
                     // Hidden with the rest of the on-screen pad (the top bar's hide button, or a connected
@@ -1769,6 +1806,8 @@ struct EmulatorViewOptimized: View {
                         Text("Any progress the game itself hasn't saved will be lost.")
                     }
 
+                    // Upright there is no room for the name beside the buttons.
+                    if !isPhonePortrait {
                     VStack(alignment: .center, spacing: 2) {
                         Text(gameName)
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -1785,6 +1824,7 @@ struct EmulatorViewOptimized: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
+                    }
 
                     TopBarOverflowScroll {
                     // 2 point gaps: each button is a 44 point target around a smaller visible one.
@@ -2066,21 +2106,27 @@ struct EmulatorViewOptimized: View {
             // Melo-Controller's pad, when chosen, takes the place of both of MuffinEMU's.
             if !padControlsHidden {
                 if useMeloControls {
-                    MeloControlsOverlay(
-                        gameID: gameManager.currentGame?.settingsKey,
-                        isEditing: isEditingControlLayout
-                    )
-                    .onAppear { PadDiagnostics.shared.report(activePad: .melo) }
+                    // Upright, Melo-Controller gets only the area under the picture; it lays its
+                    // buttons out itself, so that is all that can be done for it.
+                    belowPicture {
+                        MeloControlsOverlay(
+                            gameID: gameManager.currentGame?.settingsKey,
+                            isEditing: isEditingControlLayout
+                        )
+                        .onAppear { PadDiagnostics.shared.report(activePad: .melo) }
+                    }
                 } else if padSystem == .touchLab {
                     TouchLabPadOverlay(
                         schemeID: touchLabScheme,
                         gameID: gameManager.currentGame?.settingsKey,
                         screens: touchLabScreens,
                         enabled: !isPaused && !isEditingControlLayout,
-                        topInset: topBarHeight
+                        // Upright the picture is along the top and the controls go under it.
+                        topInset: isPhonePortrait ? 0 : topBarHeight
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .touchLab) }
                 } else if padSystem == .muffin {
+                    belowPicture {
                     OptimizedControlPanel(
                         skin: controllerSkin,
                         onInput: { label, pressed in
@@ -2104,9 +2150,12 @@ struct EmulatorViewOptimized: View {
                         },
                         isEditingLayout: $isEditingControlLayout,
                         isPaused: isPaused,
-                        topInset: topBarHeight
+                        // Upright, the pad starts under the picture, clear of the bar.
+                        topInset: isPhonePortrait ? 0 : topBarHeight,
+                        portrait: isPhonePortrait
                     )
                     .onAppear { PadDiagnostics.shared.report(activePad: .muffin) }
+                    }
                 }
             }
 
@@ -2254,9 +2303,14 @@ struct EmulatorViewOptimized: View {
         // Tied to this view's lifetime, not the store's: no launch log on screen means
         // nothing draining, and the C ring keeps filling either way so switching the
         // setting on mid-boot still catches up on everything already logged.
-        .onAppear { if showLaunchLog { launchLog.start() } }
+        .onAppear {
+            if showLaunchLog { launchLog.start() }
+            // An iPhone may turn upright for as long as a game is on screen.
+            OrientationPolicy.setInGame(true)
+        }
         .onDisappear {
             launchLog.stop()
+            OrientationPolicy.setInGame(false)
             // The pad can no longer vanish mid-press while a title runs, so the only
             // way out from under a held finger is leaving the emulator entirely. Each
             // button releases itself on disappear; this sweeps anyway, because a button
@@ -2721,16 +2775,27 @@ struct EmulatorViewOptimized: View {
     /// otherwise; MuffinEMU never mounts a controller overlay in here (see
     /// screenLayoutComposition's doc comment), so it's always the `Spacer`.
     private func screensSizeLayout(in size: CGSize) -> some View {
-        let screenHeight = size.width * 9.0 / 16.0
-
         return VStack(spacing: 0) {
             ForEach(visibleScreens, id: \.self) { main in
+                let height = portraitScreenHeight(main: main, in: size)
                 screenView(main: main)
-                    .frame(width: size.width, height: screenHeight)
+                    .frame(width: height * 16 / 9, height: height)
+                    .frame(width: size.width)
             }
             Spacer(minLength: 0)
         }
         .frame(width: size.width, height: size.height, alignment: .top)
+    }
+
+    /// How tall a screen is when the phone is upright. The TV (or the only screen) runs the full
+    /// width at 16:9. With both screens up, the GamePad screen under it gives up height to the
+    /// controls, down to about half the width, centred; below that the controls cover the bottom
+    /// of it instead (see belowPicture) rather than shrink it to a postage stamp.
+    private func portraitScreenHeight(main: Bool, in size: CGSize) -> CGFloat {
+        let full = size.width * 9.0 / 16.0
+        guard !main, visibleScreens.count > 1 else { return full }
+        let room = size.height - full - ControllerGeometry.Portrait.minimumHeight(joystick: joystickMode)
+        return min(full, max(full * 0.55, room))
     }
 
     private var screens: some View {

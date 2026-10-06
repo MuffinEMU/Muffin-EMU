@@ -122,6 +122,11 @@ enum ControllerLayoutSettings {
         supportsShoulderOffset ? stored : defaultShoulderOffset
     }
 
+    /// The key a half's saved move is stored under while the phone is held upright. Separate
+    /// from the landscape one: the two layouts have different room, so a drag made in one
+    /// would land somewhere meaningless in the other.
+    static func portraitKey(_ key: String) -> String { key + ".portrait" }
+
     /// Puts every adjustment back to the measured layout by removing the keys, so each
     /// `@AppStorage` falls back to its own declared default. `joystickKey` is not reset:
     /// that is the control scheme, not the layout.
@@ -132,6 +137,7 @@ enum ControllerLayoutSettings {
                     leftOffsetXKey, leftOffsetYKey,
                     rightOffsetXKey, rightOffsetYKey] {
             defaults.removeObject(forKey: key)
+            defaults.removeObject(forKey: portraitKey(key))
         }
         // Per-element placement is layout too.
         ControllerCustomLayout.shared.resetAll()
