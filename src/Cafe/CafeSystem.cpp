@@ -223,7 +223,9 @@ void InfoLog_TitleLoaded()
 	cemuLog_log(LogType::Force, "Save path:   {}{}", _pathToUtf8(effectiveSavePath), saveDirExists ? "" : " (not present)");
 
 	// log shader cache name
-	cemuLog_log(LogType::Force, "Shader cache file: shaderCache/transferable/{:016x}.bin", titleId);
+	// The file this renderer actually reads (LatteShaderCache_Load), not the old generic name
+	cemuLog_log(LogType::Force, "Shader cache file: shaderCache/transferable/{:016x}{}.bin", titleId,
+		ActiveSettings::GetGraphicsAPI() == GraphicAPI::kMetal ? "_mtlshaders" : "_shaders");
 	// game profile info
 	std::string gameProfilePath;
 	if(g_current_game_profile->IsDefaultProfile())

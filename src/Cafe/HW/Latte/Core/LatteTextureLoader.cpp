@@ -707,7 +707,21 @@ void LatteTextureLoader_UpdateTextureSliceData(LatteTexture* tex, uint32 sliceIn
 	{
 		PerfTelemetry::Get().textureDecodes.fetch_add(1, std::memory_order_relaxed);
 		PerfTelemetry::ScopedTimer textureDecodeTimer(PerfTelemetry::Get().textureDecodeNs);
-		texDecoder->decode(&textureLoader, pixelData);
+		// A decode that can't get memory (a huge scratch buffer during a scene load, say) used to throw
+		// std::bad_alloc out of the GPU thread and stop the game. Treat it like a missing upload buffer:
+		// leave the texture as it is and have it loaded again later.
+		try
+		{
+			texDecoder->decode(&textureLoader, pixelData);
+		}
+		catch (const std::bad_alloc&)
+		{
+			cemuLog_log(LogType::Force, "Texture decode ran out of memory ({}x{}x{}, format {:04x}); the texture will be loaded again",
+				textureLoader.width, textureLoader.height, textureLoader.surfaceInfoDepth, (int)tex->format);
+			g_renderer->texture_uploadBufferUnavailable(tex);
+			g_renderer->texture_releaseTextureUploadBuffer(pixelData);
+			return;
+		}
 	}
 
 #ifdef BENCHMARK_TEXTURE_DECODING
