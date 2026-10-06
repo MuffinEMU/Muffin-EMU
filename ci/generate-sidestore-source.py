@@ -391,7 +391,7 @@ def check_guards(feeds, rels):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--repo", default="MuffinEMU/MuffinEMU")
+    ap.add_argument("--repo", default="MuffinEMU/Muffin-EMU")
     ap.add_argument("--out-dir", default="docs")
     a = ap.parse_args()
     token = os.environ.get("GITHUB_TOKEN")
