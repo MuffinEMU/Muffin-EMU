@@ -38,6 +38,9 @@ public:
 	static FileCache* Create(const fs::path& path, uint32 extraVersion = 0);
 	static FileCache* Open(const fs::path& path, bool allowCreate, uint32 extraVersion = 0);
 	static FileCache* Open(const fs::path& path); // open without extraVersion check
+	// Whole-file health check without changing anything: header and file table readable, every
+	// entry inside the file and not overlapping another, and every checksummed entry intact.
+	static bool Verify(const fs::path& path);
 
 	void UseCompression(bool enable) { enableCompression = enable; };
 
@@ -46,6 +49,8 @@ public:
 	bool DeleteFile(const FileName&& name);
 	bool GetFile(const FileName&& name, std::vector<uint8>& dataOut);
 	bool GetFileByIndex(sint32 index, uint64* name1, uint64* name2, std::vector<uint8>& dataOut);
+	// true when the slot holds a file (not free, not the file table), so a GetFileByIndex() failure on it is damage
+	bool IsUsedIndex(sint32 index);
 	bool HasFile(const FileName&& name);
 
 	sint32 GetFileCount();
@@ -59,6 +64,9 @@ private:
 		{
 			FLAG_NONE = 0x00,
 			FLAG_COMPRESSED = (1 << 0), // zLib compressed
+			// extraReserved1/2 hold a 16-bit checksum of the stored bytes (folded CRC32). Older
+			// entries and older builds leave the bit clear and are read as before.
+			FLAG_CHECKSUM = (1 << 1),
 		};
 		uint64 name1;
 		uint64 name2;
