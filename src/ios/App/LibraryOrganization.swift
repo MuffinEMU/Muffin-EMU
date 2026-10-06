@@ -414,11 +414,8 @@ struct LibraryCoverWell: View {
         ZStack {
             RoundedRectangle(cornerRadius: radius, style: .continuous)
                 .fill(MuffinTheme.muffinTopGradient)
-            if let path = game.coverPath, let image = UIImage(contentsOfFile: path) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .padding(8)
+            if let path = game.coverPath {
+                CoverImage(path: path, padding: 8)
             } else {
                 Image(systemName: "gamecontroller.fill")
                     .font(.system(size: glyphSize))
