@@ -229,12 +229,16 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
     case title
     case recentlyAdded
     case favoritesFirst
+    case lastPlayed
+    case mostPlayed
 
     var title: String {
         switch self {
         case .title: return "Title"
         case .recentlyAdded: return "Recently added"
         case .favoritesFirst: return "Favorites first"
+        case .lastPlayed: return "Last played"
+        case .mostPlayed: return "Most played"
         }
     }
 
@@ -243,6 +247,8 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
         case .title: return "textformat"
         case .recentlyAdded: return "clock"
         case .favoritesFirst: return "heart"
+        case .lastPlayed: return "clock.arrow.circlepath"
+        case .mostPlayed: return "flame"
         }
     }
 
@@ -256,8 +262,27 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
     /// `favoritesFirst` groups favorites first and sorts by title WITHIN each group -
     /// not a stable no-op, since "grouped, but otherwise still alphabetical" is what
     /// actually makes the option useful once there's more than a couple of favorites.
-    func sorted(_ games: [GameMetadata]) -> [GameMetadata] {
+    func sorted(_ games: [GameMetadata], stats: LibraryPlayStats = .shared) -> [GameMetadata] {
+        let byTitle: (GameMetadata, GameMetadata) -> Bool = {
+            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+        }
         switch self {
+        case .lastPlayed:
+            // Never-played games go after the played ones, in title order.
+            return games.sorted { lhs, rhs in
+                switch (stats.entry(for: lhs.id)?.last, stats.entry(for: rhs.id)?.last) {
+                case let (l?, r?): return l > r
+                case (nil, nil): return byTitle(lhs, rhs)
+                case (nil, _): return false
+                case (_, nil): return true
+                }
+            }
+        case .mostPlayed:
+            return games.sorted { lhs, rhs in
+                let l = stats.entry(for: lhs.id)?.count ?? 0
+                let r = stats.entry(for: rhs.id)?.count ?? 0
+                return l != r ? l > r : byTitle(lhs, rhs)
+            }
         case .title:
             return games.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         case .recentlyAdded:
@@ -345,6 +370,10 @@ struct GameBrowserView: View {
     /// Same pattern again, for "Change Cover Art…" (CoverArtPickerView.swift).
     @State private var coverArtTarget: GameMetadata?
     @ObservedObject private var perGameSettings = PerGameSettingsStore.shared
+    @ObservedObject private var playStats = LibraryPlayStats.shared
+    @AppStorage(LibraryCardStyle.storageKey) private var cardStyleRaw = LibraryCardStyle.defaultValue.rawValue
+    @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
+    @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
     /// What the picker is being opened for.
     ///
     /// A document picker only lets you SELECT a directory when UTType.folder is among
@@ -418,7 +447,16 @@ struct GameBrowserView: View {
         let searched = searchText.isEmpty
             ? gamesToShow
             : gamesToShow.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-        return sortOrder.sorted(searched)
+        let filtered = (LibraryFilter(rawValue: filterRaw) ?? .all).apply(searched, stats: playStats)
+        return sortOrder.sorted(filtered, stats: playStats)
+    }
+
+    private var libraryCardStyle: LibraryCardStyle {
+        LibraryCardStyle(rawValue: cardStyleRaw) ?? .standard
+    }
+
+    private var librarySections: [LibrarySection] {
+        (LibraryGrouping(rawValue: groupingRaw) ?? .none).sections(for: filteredGames, stats: playStats)
     }
 
     /// The Menu is offered in the library at all: installed, not hidden, and not being
@@ -636,6 +674,8 @@ struct GameBrowserView: View {
                         .frame(width: 44, height: 44)
                 }
                 .accessibilityLabel("Sort games")
+
+                LibraryViewMenu()
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -654,17 +694,18 @@ struct GameBrowserView: View {
                 EmptyGamesView(onImportTapped: { beginImport(contentTypes: Self.fileImportTypes) })
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVGrid(
-                        columns: [GridItem(.adaptive(minimum: 140), spacing: 16)],
-                        spacing: 20
-                    ) {
+                LibraryGameCollection(
+                    sections: librarySections,
+                    style: libraryCardStyle,
+                    lead: {
                         if showsMenuCard {
                             WiiUMenuCard(onLaunch: launchMenu)
                         }
-                        ForEach(filteredGames) { game in
-                            GameCardOptimized(
+                    },
+                    card: { game in
+                            LibraryCard(
                                 game: game,
+                                style: libraryCardStyle,
                                 onTap: {
                                     // A second tap while a launch is under way must not swap the
                                     // game the screen thinks it is showing.
@@ -695,10 +736,8 @@ struct GameBrowserView: View {
                                     onChangeCoverArt: { coverArtTarget = game }
                                 )
                             }
-                        }
                     }
-                    .padding(16)
-                }
+                )
             }
         }
         .frame(maxHeight: .infinity)
