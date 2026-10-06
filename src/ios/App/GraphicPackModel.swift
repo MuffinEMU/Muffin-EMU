@@ -258,8 +258,7 @@ struct GraphicPackDetails {
 ///
 /// Nothing here measures speed, and nothing is ever applied automatically: it is a starting point
 /// drawn from the GPU family, the memory, the screen and the power mode, so a small iPhone, a base
-/// iPad and an M-series iPad Pro each get their own answer. A12Z iPads are scored by the same rule
-/// as every other device.
+/// iPad and an M-series iPad Pro each get their own answer. Every device is scored by the same rule.
 struct GraphicPackDeviceProfile: Equatable {
     /// 1 (Apple GPU family 5 or older) ... 5 (family 9 or newer).
     var gpuFamily: Int

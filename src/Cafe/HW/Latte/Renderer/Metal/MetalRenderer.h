@@ -700,9 +700,8 @@ private:
     uint64 m_startAvailableMemory = 0;
 
     // Draw breadcrumbs (see MetalDrawBreadcrumb)
-    // Ring capacity is chosen from the device's physical memory when the renderer is created (about 0.7 KB per
-    // entry): 1024 draws on devices with 6 GB or more, fewer on small ones, so a low-memory iPhone does not
-    // pay for a trail it rarely needs while a big iPad keeps a long one.
+    // Ring capacity is set when the renderer is created, large enough to cover every draw in the command buffers
+    // that can be in flight at once. It is the same on every device (about 1 KB per entry).
     uint32 m_breadcrumbCapacity = 1024;
     std::vector<MetalDrawBreadcrumb> m_breadcrumbs;
     uint32 m_breadcrumbNext = 0;

@@ -24,7 +24,7 @@ struct PreviewPadSection: View {
 
     private var previewLayoutPresetBinding: Binding<String> {
         Binding(get: { previewPad.layoutPreset.rawValue },
-               set: { previewPad.layoutPreset = PreviewLayoutPreset(rawValue: $0) ?? .iPadPro2020 })
+               set: { previewPad.layoutPreset = PreviewLayoutPreset(rawValue: $0) ?? .native })
     }
     private var previewColourPresetBinding: Binding<String> {
         Binding(get: { previewPad.customColours == nil ? previewPad.colourPreset.rawValue : Self.customColourTag },
