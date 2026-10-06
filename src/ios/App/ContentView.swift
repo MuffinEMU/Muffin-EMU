@@ -2254,9 +2254,14 @@ struct EmulatorViewOptimized: View {
         // Tied to this view's lifetime, not the store's: no launch log on screen means
         // nothing draining, and the C ring keeps filling either way so switching the
         // setting on mid-boot still catches up on everything already logged.
-        .onAppear { if showLaunchLog { launchLog.start() } }
+        .onAppear {
+            if showLaunchLog { launchLog.start() }
+            // An iPhone may turn upright for as long as a game is on screen.
+            OrientationPolicy.setInGame(true)
+        }
         .onDisappear {
             launchLog.stop()
+            OrientationPolicy.setInGame(false)
             // The pad can no longer vanish mid-press while a title runs, so the only
             // way out from under a held finger is leaving the emulator entirely. Each
             // button releases itself on disappear; this sweeps anyway, because a button

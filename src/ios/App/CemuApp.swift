@@ -2,6 +2,8 @@ import SwiftUI
 
 @main
 struct CemuApp: App {
+    // Narrows the orientations Info.plist lists to what the screen on show may use.
+    @UIApplicationDelegateAdaptor(AppOrientationDelegate.self) private var orientationDelegate
     // Theme tokens are plain statics, so views do not redraw on their own.
     // Keying the tree to the current theme id rebuilds it when the theme changes.
     @ObservedObject private var themeStore = MuffinThemeStore.shared
