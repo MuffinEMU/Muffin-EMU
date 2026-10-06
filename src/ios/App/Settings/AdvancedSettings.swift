@@ -263,10 +263,18 @@ enum AdvancedSettings {
                 defaults.set(data, forKey: perGameSnapshotKey)
             }
         }
+        clearAdvanced()
+        NotificationCenter.default.post(name: .muffinSettingsWereReset, object: nil)
+    }
+
+    /// Every advanced setting back to its default, in the app and in each game's own options, pushed to the
+    /// engine. What Basic means; a settings import into Basic uses it too.
+    static func clearAdvanced() {
+        let defaults = UserDefaults.standard
+        let perGame = PerGameSettingsStore.shared
         for setting in allSettings { defaults.removeObject(forKey: setting.key) }
         perGame.replaceOverrides(perGame.overridesByGame.mapValues { $0.removingAdvancedFields() })
         applyToBridge()
-        NotificationCenter.default.post(name: .muffinSettingsWereReset, object: nil)
     }
 
     /// Brings the saved values back and pushes them to the engine.
