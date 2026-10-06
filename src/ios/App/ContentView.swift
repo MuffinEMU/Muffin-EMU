@@ -1475,6 +1475,7 @@ struct EmulatorViewOptimized: View {
     /// uncovers it). Laid out with a frame, not an offset or a position, so what
     /// is drawn is also what takes touches.
     @ViewBuilder private func belowPicture<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        let built = content()
         if isPhonePortrait {
             GeometryReader { geometry in
                 let pictures = visibleScreens.reduce(CGFloat(0)) { $0 + portraitScreenHeight(main: $1, in: geometry.size) }
@@ -1482,12 +1483,12 @@ struct EmulatorViewOptimized: View {
                 let height = min(geometry.size.height, max(geometry.size.height - pictures, needed))
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    content()
+                    built
                         .frame(height: height)
                 }
             }
         } else {
-            content()
+            built
         }
     }
 
