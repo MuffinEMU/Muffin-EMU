@@ -732,7 +732,7 @@ struct GameBrowserView: View {
                 SettingsView(gameManager: gameManager)
             }
             .sheet(item: $gameOptionsTarget) { game in
-                GameOptionsView(game: game, store: perGameSettings)
+                GameOptionsView(game: game, store: perGameSettings, libraryGames: gameManager.games)
             }
             .sheet(item: $decryptTarget) { game in
                 DecryptROMView(game: game)
