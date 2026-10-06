@@ -41,6 +41,10 @@ struct OnScreenControlsSection: View {
     private var topBarAutoHideOverride = TopBarAutoHide.followDevice
     @AppStorage(SettingsMode.storageKey)
     private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+    @AppStorage(TopBarAutoHide.hideDelayKey)
+    private var topBarHideDelay = TopBarAutoHide.defaultHideDelaySeconds
+    @AppStorage(TopBarAutoHide.handleSizeKey)
+    private var topBarHandleSize = TopBarAutoHide.defaultHandleSize.rawValue
     @State private var showingResetLayoutConfirmation = false
     @State private var showingResetBindingsConfirmation = false
     /// Shows the binding count so a reset can be confirmed.
@@ -185,6 +189,11 @@ struct OnScreenControlsSection: View {
             }
             .tint(MuffinTheme.pixelBlue)
 
+            // How long the bar waits, and how big the handle is: Advanced mode only (see AdvancedSettings).
+            if advanced && hideTopBar.wrappedValue {
+                topBarOptions
+            }
+
             Toggle(isOn: $autoHideWithController) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Hide on-screen controls when a controller is connected")
@@ -244,6 +253,34 @@ struct OnScreenControlsSection: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Rebuilds the default button bindings. Use this if some buttons do nothing while the sticks still work. Any buttons you remapped go back to default.")
+        }
+    }
+
+    @ViewBuilder private var topBarOptions: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Top bar hides after")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Picker("Top bar hides after", selection: $topBarHideDelay) {
+                ForEach(TopBarAutoHide.hideDelayChoices, id: \.self) { seconds in
+                    Text("\(seconds) s").tag(seconds)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Reveal handle")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+            Picker("Reveal handle", selection: $topBarHandleSize) {
+                ForEach(TopBarAutoHide.HandleSize.allCases) { size in
+                    Text(size.title).tag(size.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            Text("The area you tap to bring the bar back. Large is easier to hit, but it can take touches meant for the GamePad screen at the top of the picture.")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -356,6 +393,6 @@ struct OnScreenControlsSection: View {
     }
 
     private var fullText: String {
-        "Add analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nStick spacing moves both sticks closer together or further apart, for smaller or bigger hands. On a narrow screen it stops before the sticks would touch.\n\nOn iPad, L, R, ZL and ZR height moves the four shoulder buttons up or down together, stopping before they would leave the screen or touch a stick or button.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nHide the top bar while playing fades the Back and pause bar out a few seconds after you last touch it, so it stops covering the picture. A small handle stays at the top centre of the screen: tap it, or swipe down from it, to bring the bar back. The bar stays up while the game is paused, a menu is open, or VoiceOver is on.\n\nHide on-screen controls when a controller is connected takes the controls off the screen while a controller is paired, and puts them back when it disconnects. It is off by default. The GamePad's screen stays visible and touchable either way.\n\nThese settings apply to every game. Two things are kept per game instead: Adaptive remembers where your thumbs land, and Melo-Controller remembers where you moved its buttons.\n\nTo move a cluster, start a game and tap the move button in the top bar. There you can also switch control style without leaving the game."
+        "Add analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nStick spacing moves both sticks closer together or further apart, for smaller or bigger hands. On a narrow screen it stops before the sticks would touch.\n\nOn iPad, L, R, ZL and ZR height moves the four shoulder buttons up or down together, stopping before they would leave the screen or touch a stick or button.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nHide the top bar while playing fades the Back and pause bar out a few seconds after you last touch it, so it stops covering the picture. A small handle stays at the top centre of the screen: tap it, or swipe down from it, to bring the bar back. The bar stays up while the game is paused, a menu is open, or VoiceOver is on.\n\nIn Advanced mode, Top bar hides after sets the wait (2, 4 or 8 seconds) and Reveal handle sets the size of the area you tap to bring the bar back. Normal is the default; Large is easier to hit but can take touches meant for the GamePad screen at the top of the picture.\n\nHide on-screen controls when a controller is connected takes the controls off the screen while a controller is paired, and puts them back when it disconnects. It is off by default. The GamePad's screen stays visible and touchable either way.\n\nThese settings apply to every game. Two things are kept per game instead: Adaptive remembers where your thumbs land, and Melo-Controller remembers where you moved its buttons.\n\nTo move a cluster, start a game and tap the move button in the top bar. There you can also switch control style without leaving the game."
     }
 }
