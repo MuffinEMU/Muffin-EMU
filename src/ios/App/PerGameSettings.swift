@@ -208,6 +208,10 @@ struct GameContextMenu: View {
     var onRename: () -> Void = {}
 
     var body: some View {
+        if let installLabel = game.installLabel {
+            Text("\(game.cardName.name) \u{2022} \(installLabel)")
+            Divider()
+        }
         Toggle(isOn: Binding(
             get: { store.effectivePreCompileShaders(for: game.settingsKey) },
             set: { store.setPreCompileShaders($0, for: game.settingsKey) }
@@ -229,9 +233,9 @@ struct GameContextMenu: View {
         Button(action: onRename) {
             Label("Rename\u{2026}", systemImage: "pencil")
         }
-        if LibraryCustomNames.shared.name(for: game.settingsKey) != nil {
+        if LibraryCustomNames.shared.name(for: game.installKey) != nil {
             Button {
-                LibraryCustomNames.shared.set(nil, for: game.settingsKey)
+                LibraryCustomNames.shared.set(nil, for: game.installKey)
             } label: {
                 Label("Reset to Original Title", systemImage: "arrow.uturn.backward")
             }
