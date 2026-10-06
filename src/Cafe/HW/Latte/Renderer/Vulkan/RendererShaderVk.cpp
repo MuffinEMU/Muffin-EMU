@@ -457,7 +457,7 @@ void RendererShaderVk::ShaderCacheLoading_begin(uint64 cacheTitleId)
 	const bool relaxedMul = g_latteRelaxShaderMul.load(std::memory_order_relaxed) && g_current_game_profile->GetAccurateShaderMul() != AccurateShaderMulOption::False;
 	const std::string cacheFilename = fmt::format("{:016x}{}.bin", cacheTitleId, relaxedMul ? "_spirv_relaxed" : "_spirv");
 	const fs::path cachePath = ActiveSettings::GetCachePath("shaderCache/precompiled/{}", cacheFilename);
-	s_spirvCache = FileCache::Open(cachePath, true, spirvCacheMagic);
+	s_spirvCache = FileCache::Open(cachePath, true, spirvCacheMagic, true); // stamped per app version: replaced, not set aside
 	if (s_spirvCache == nullptr)
 		cemuLog_log(LogType::Force, "Unable to open SPIR-V cache {}", cacheFilename);
 	s_isLoadingShadersVk = true;

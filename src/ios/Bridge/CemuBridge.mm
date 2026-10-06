@@ -2144,8 +2144,10 @@ void IOSCacheInspect(unsigned long long titleId, const char* path, CemuCacheFile
     info->status = CEMU_CACHE_STATUS_NOT_A_CACHE;
     if (!path)
         return;
-    // FileCache reads the V3 format and the older V2 header, and skips the checksum bit when an entry has none
-    FileCache* cache = FileCache::Open(std::filesystem::path(path));
+    // FileCache reads the V3 format and the older V2 header, and skips the checksum bit when an entry has none.
+    // Read-only: the file is the player's, so a damaged entry is not repaired or deleted and nothing is restored
+    // from MuffinEMU's backup even when the file carries the same name as the title's own cache.
+    FileCache* cache = FileCache::OpenReadOnly(std::filesystem::path(path));
     if (!cache)
         return;
     info->stamp = cache->GetExtraVersion();
@@ -2256,7 +2258,7 @@ int cemu_bridge_cache_file_import(unsigned long long titleId, const char* path, 
     }
     dest->UseCompression(false);
 
-    FileCache* source = FileCache::Open(std::filesystem::path(path));
+    FileCache* source = FileCache::OpenReadOnly(std::filesystem::path(path)); // never modified, see IOSCacheInspect
     if (!source) {
         delete dest;
         return CEMU_CACHE_STATUS_NOT_A_CACHE;
@@ -2276,7 +2278,10 @@ int cemu_bridge_cache_file_import(unsigned long long titleId, const char* path, 
             already++; // the title's own entry wins
             continue;
         }
-        dest->AddFile({ name1, name2 }, data.data(), (sint32)data.size());
+        if (!dest->AddFile({ name1, name2 }, data.data(), (sint32)data.size())) {
+            skipped++; // not written (storage full); the title's file is unchanged by this entry
+            continue;
+        }
         added++;
     }
     skipped += (int)source->GetDamagedEntryCount() + info.damagedCount;
