@@ -12,6 +12,7 @@ struct CemuApp: App {
         // The device capability snapshot and its one-line summary, before anything else is written:
         // every device log starts with it, so reports from different devices compare.
         DeviceCapabilities.bootstrap()
+        DeviceConnection.shared.start()
         // Before anything reads the mode: an update must not switch off advanced settings already in use.
         SettingsMode.chooseInitialModeIfNeeded()
 

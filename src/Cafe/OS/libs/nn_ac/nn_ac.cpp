@@ -2,10 +2,12 @@
 #include "Cafe/OS/libs/nn_common.h"
 #include "nn_ac.h"
 #include "Common/socket.h"
+#include "nn_ac_reachability.h"
+#include "config/ActiveSettings.h"
 
 #if BOOST_OS_WINDOWS
 #include <iphlpapi.h>
-#elif BOOST_OS_LINUX
+#elif BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_IOS
 #include <ifaddrs.h>
 #include <net/if.h>
 #endif
@@ -19,6 +21,33 @@ enum class AC_STATUS : uint32
 };
 
 static_assert(TRUE == 1, "TRUE not 1");
+
+// Whether the host device currently has a usable network path. The iOS app reports this
+// from NWPathMonitor. Defaults to true so platforms that never report keep the old behaviour.
+static std::atomic<bool> s_deviceReachable{true};
+
+namespace nn_ac
+{
+	void SetDeviceReachable(bool reachable)
+	{
+		s_deviceReachable.store(reachable, std::memory_order_relaxed);
+	}
+
+	bool IsDeviceReachable()
+	{
+		return s_deviceReachable.load(std::memory_order_relaxed);
+	}
+
+	// connected = online enabled AND device reachable
+	bool IsConsoleConnected()
+	{
+		return IsDeviceReachable() && ActiveSettings::IsOnlineEnabled();
+	}
+}
+
+// Error code the console shows when it can't reach the network (102-2802), and the matching result.
+static constexpr uint32 AC_ERROR_NO_CONNECTION = 1022802;
+static constexpr uint32 AC_RESULT_NO_CONNECTION = BUILD_NN_RESULT(NN_RESULT_LEVEL_FATAL, NN_RESULT_MODULE_NN_AC, 2802);
 
 void _GetLocalIPAndSubnetMaskFallback(uint32& localIp, uint32& subnetMask)
 {
@@ -84,7 +113,7 @@ void _GetLocalIPAndSubnetMask(uint32& localIp, uint32& subnetMask)
 	cemuLog_logDebug(LogType::Force, "_GetLocalIPAndSubnetMask(): Failed to find network IP and subnet mask");
 	_GetLocalIPAndSubnetMaskFallback(localIp, subnetMask);
 }
-#elif BOOST_OS_LINUX
+#elif BOOST_OS_LINUX || BOOST_OS_MACOS || BOOST_OS_IOS
 void _GetLocalIPAndSubnetMask(uint32& localIp, uint32& subnetMask)
 {
 	struct ifaddrs *ifaddr;
@@ -92,6 +121,7 @@ void _GetLocalIPAndSubnetMask(uint32& localIp, uint32& subnetMask)
 	{
 		cemuLog_log(LogType::Force, "Failed to acquire local IP and subnet mask");
 		_GetLocalIPAndSubnetMaskFallback(localIp, subnetMask);
+		return;
 	}
 	stdx::scope_exit _ifa([&]{ freeifaddrs(ifaddr); });
 
@@ -137,7 +167,7 @@ void nnAcExport_GetAssignedAddress(PPCInterpreter_t* hCPU)
 
 	*ipAddrOut = localIp;
 
-	const uint32 nnResultCode = BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
+	const uint32 nnResultCode = nn_ac::IsConsoleConnected() ? BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0) : AC_RESULT_NO_CONNECTION;
 	osLib_returnFromFunction(hCPU, nnResultCode);
 }
 
@@ -153,7 +183,7 @@ void nnAcExport_GetAssignedSubnet(PPCInterpreter_t* hCPU)
 
 	*subnetMaskOut = subnetMask;
 
-	const uint32 nnResultCode = BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
+	const uint32 nnResultCode = nn_ac::IsConsoleConnected() ? BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0) : AC_RESULT_NO_CONNECTION;
 	osLib_returnFromFunction(hCPU, nnResultCode);
 }
 
@@ -166,7 +196,7 @@ void nnAcExport_ACGetAssignedAddress(PPCInterpreter_t* hCPU)
 	_GetLocalIPAndSubnetMask(localIp, subnetMask);
 	*ipAddrOut = localIp;
 
-	const uint32 nnResultCode = BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
+	const uint32 nnResultCode = nn_ac::IsConsoleConnected() ? BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0) : AC_RESULT_NO_CONNECTION;
 	osLib_returnFromFunction(hCPU, nnResultCode);
 }
 
@@ -177,7 +207,7 @@ void nnAcExport_IsSystemConnected(PPCInterpreter_t* hCPU)
 
 	cemuLog_logDebug(LogType::Force, "nn_ac.IsSystemConnected() - placeholder");
 	*apTypeOut = 0; // ukn
-	*isConnectedOut = 1;
+	*isConnectedOut = nn_ac::IsConsoleConnected() ? 1 : 0;
 
 	osLib_returnFromFunction(hCPU, 0);
 }
@@ -189,7 +219,8 @@ void nnAcExport_IsConfigExisting(PPCInterpreter_t* hCPU)
 	ppcDefineParamU32(configId, 0);
 	ppcDefineParamTypePtr(isConfigExisting, uint8, 1);
 	
-	*isConfigExisting = 0;
+	// a connection counts as configured whenever online play is set up; the device itself is the access point
+	*isConfigExisting = ActiveSettings::IsOnlineEnabled() ? 1 : 0;
 
 	osLib_returnFromFunction(hCPU, 0);
 }
@@ -209,7 +240,7 @@ namespace nn_ac
 	nnResult IsApplicationConnected(uint8be* connected)
 	{
 		if (connected)
-			*connected = TRUE;
+			*connected = IsConsoleConnected() ? TRUE : FALSE;
 		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
 	}
 
@@ -218,6 +249,8 @@ namespace nn_ac
 		// Terraria expects this (or GetLastErrorCode) to return 0 on success
 		// investigate on the actual console
 		// maybe all success codes are always 0 and dont have any of the other fields set?
+		if (!IsConsoleConnected())
+			return AC_RESULT_NO_CONNECTION;
 		uint32 nnResultCode = 0;// BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0); // Splatoon freezes if this function fails?
 		return nnResultCode;
 	}
@@ -225,7 +258,7 @@ namespace nn_ac
 	nnResult GetConnectStatus(betype<AC_STATUS>* status)
 	{
 		if (status)
-			*status = AC_STATUS::OK;
+			*status = IsConsoleConnected() ? AC_STATUS::OK : AC_STATUS::FAILED;
 		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
 	}
 
@@ -237,13 +270,13 @@ namespace nn_ac
 	nnResult GetLastErrorCode(uint32be* errorCode)
 	{
 		if (errorCode)
-			*errorCode = 0;
+			*errorCode = IsConsoleConnected() ? 0 : AC_ERROR_NO_CONNECTION;
 		return BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
 	}
 
 	nnResult GetConnectResult(uint32be* connectResult)
 	{
-		const uint32 nnResultCode = BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0);
+		const uint32 nnResultCode = IsConsoleConnected() ? BUILD_NN_RESULT(NN_RESULT_LEVEL_SUCCESS, NN_RESULT_MODULE_NN_AC, 0) : AC_RESULT_NO_CONNECTION;
 		if (connectResult)
 			*connectResult = nnResultCode;
 		return nnResultCode;

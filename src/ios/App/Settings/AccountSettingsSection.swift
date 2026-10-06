@@ -131,6 +131,7 @@ struct NetworkServiceSettingsSection: View {
                           // Nintendo's servers are shut down; only keep it selectable if it's already chosen.
                           || (service == .nintendo && selectedService != .nintendo))
             }
+            DeviceConnectionStatusRow()
         } header: {
             SettingsSectionHeader("Network Service\(activeAccountName.map { " (\($0))" } ?? "")",
                                   icon: "network", accent: .content)
