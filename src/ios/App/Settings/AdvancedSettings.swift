@@ -201,6 +201,11 @@ enum AdvancedSettings {
         AdvancedSetting(ControllerLayoutSettings.stickCurveKey, ControllerLayoutSettings.defaultStickCurve),
     ], applyToBridge: nil)
 
+    private static let topBar = AdvancedGroup(name: "Top bar", settings: [
+        AdvancedSetting(TopBarAutoHide.hideDelayKey, TopBarAutoHide.defaultHideDelaySeconds),
+        AdvancedSetting(TopBarAutoHide.handleSizeKey, TopBarAutoHide.defaultHandleSize.rawValue),
+    ], applyToBridge: nil)
+
     private static let diagnostics = AdvancedGroup(name: "Diagnostics", settings: [
         AdvancedSetting(LaunchLogSettings.showKey, false),
         AdvancedSetting(PadDiagnostics.enabledKey, PadDiagnostics.defaultEnabled),
@@ -217,6 +222,7 @@ enum AdvancedSettings {
         audioChannels,
         motionTuning,
         stickFeel,
+        topBar,
         diagnostics,
     ]
 
