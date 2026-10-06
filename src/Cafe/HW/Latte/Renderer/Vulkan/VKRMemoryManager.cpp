@@ -24,7 +24,7 @@ void VKRSynchronizedRingAllocator::addUploadBufferSyncPoint(AllocatorBuffer_t& b
 	buffer.queue_syncPoints.emplace(cmdBufferId, offset);
 }
 
-void VKRSynchronizedRingAllocator::allocateAdditionalUploadBuffer(uint32 sizeRequiredForAlloc)
+bool VKRSynchronizedRingAllocator::allocateAdditionalUploadBuffer(uint32 sizeRequiredForAlloc)
 {
 	// calculate buffer size, should be a multiple of bufferAllocSize that is at least as large as sizeRequiredForAlloc
 	uint32 bufferAllocSize = m_minimumBufferAllocSize;
@@ -34,21 +34,29 @@ void VKRSynchronizedRingAllocator::allocateAdditionalUploadBuffer(uint32 sizeReq
 	AllocatorBuffer_t newBuffer{};
 	newBuffer.writeIndex = 0;
 	newBuffer.basePtr = nullptr;
+	bool created = false;
 	if (m_bufferType == VKR_BUFFER_TYPE::STAGING)
-		m_vkrMemMgr->CreateBuffer(bufferAllocSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, newBuffer.vk_buffer, newBuffer.vk_mem);
+		created = m_vkrMemMgr->CreateBuffer(bufferAllocSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, newBuffer.vk_buffer, newBuffer.vk_mem);
 	else if (m_bufferType == VKR_BUFFER_TYPE::INDEX)
-		m_vkrMemMgr->CreateBuffer(bufferAllocSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, newBuffer.vk_buffer, newBuffer.vk_mem);
+		created = m_vkrMemMgr->CreateBuffer(bufferAllocSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, newBuffer.vk_buffer, newBuffer.vk_mem);
 	else if (m_bufferType == VKR_BUFFER_TYPE::STRIDE)
-		m_vkrMemMgr->CreateBuffer(bufferAllocSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, newBuffer.vk_buffer, newBuffer.vk_mem);
+		created = m_vkrMemMgr->CreateBuffer(bufferAllocSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, newBuffer.vk_buffer, newBuffer.vk_mem);
 	else
 		cemu_assert_debug(false);
+	if (!created)
+		return false;
 
 	void* bufferPtr = nullptr;
-	vkMapMemory(m_vkr->GetLogicalDevice(), newBuffer.vk_mem, 0, VK_WHOLE_SIZE, 0, &bufferPtr);
+	if (vkMapMemory(m_vkr->GetLogicalDevice(), newBuffer.vk_mem, 0, VK_WHOLE_SIZE, 0, &bufferPtr) != VK_SUCCESS || !bufferPtr)
+	{
+		m_vkrMemMgr->DeleteBuffer(newBuffer.vk_buffer, newBuffer.vk_mem);
+		return false;
+	}
 	newBuffer.basePtr = (uint8*)bufferPtr;
 	newBuffer.size = bufferAllocSize;
 	newBuffer.index = (uint32)m_buffers.size();
 	m_buffers.push_back(newBuffer);
+	return true;
 }
 
 VKRSynchronizedRingAllocator::AllocatorReservation_t VKRSynchronizedRingAllocator::AllocateBufferMemory(uint32 size, uint32 alignment)
@@ -109,7 +117,13 @@ VKRSynchronizedRingAllocator::AllocatorReservation_t VKRSynchronizedRingAllocato
 		return res;
 	}
 	// allocate new buffer
-	allocateAdditionalUploadBuffer(size);
+	if (!allocateAdditionalUploadBuffer(size))
+	{
+		// The callers memcpy straight into memPtr, so a null reservation would be a SIGSEGV that no catch sees. Throwing
+		// lets the GPU thread's handler stop the title instead.
+		cemuLog_log(LogType::Force, "Vulkan: could not allocate a {} byte upload buffer (out of memory)", size);
+		throw std::runtime_error("Vulkan: out of memory for an upload buffer");
+	}
 	return AllocateBufferMemory(size, alignment);
 }
 
@@ -484,19 +498,26 @@ bool VKRMemoryManager::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
 	VkMemoryAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocInfo.allocationSize = memRequirements.size;
+	// on failure the out parameters are left null so a caller can't use or free a destroyed handle
 	if (!FindMemoryType(memRequirements.memoryTypeBits, properties, allocInfo.memoryTypeIndex))
 	{
 		vkDestroyBuffer(m_vkr->GetLogicalDevice(), buffer, nullptr);
+		buffer = VK_NULL_HANDLE;
 		return false;
 	}
 	if (vkAllocateMemory(m_vkr->GetLogicalDevice(), &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
 	{
 		vkDestroyBuffer(m_vkr->GetLogicalDevice(), buffer, nullptr);
+		buffer = VK_NULL_HANDLE;
+		bufferMemory = VK_NULL_HANDLE;
 		return false;
 	}
 	if (vkBindBufferMemory(m_vkr->GetLogicalDevice(), buffer, bufferMemory, 0) != VK_SUCCESS)
 	{
 		vkDestroyBuffer(m_vkr->GetLogicalDevice(), buffer, nullptr);
+		vkFreeMemory(m_vkr->GetLogicalDevice(), bufferMemory, nullptr);
+		buffer = VK_NULL_HANDLE;
+		bufferMemory = VK_NULL_HANDLE;
 		cemuLog_log(LogType::Force, "Failed to bind buffer (CreateBuffer)");
 		return false;
 	}
@@ -543,16 +564,22 @@ bool VKRMemoryManager::CreateBufferFromHostMemory(void* hostPointer, VkDeviceSiz
 	if (!FindMemoryType(memRequirements.memoryTypeBits, properties, allocInfo.memoryTypeIndex))
 	{
 		vkDestroyBuffer(m_vkr->GetLogicalDevice(), buffer, nullptr);
+		buffer = VK_NULL_HANDLE;
 		return false;
 	}
 	if (vkAllocateMemory(m_vkr->GetLogicalDevice(), &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
 	{
 		vkDestroyBuffer(m_vkr->GetLogicalDevice(), buffer, nullptr);
+		buffer = VK_NULL_HANDLE;
+		bufferMemory = VK_NULL_HANDLE;
 		return false;
 	}
 	if (vkBindBufferMemory(m_vkr->GetLogicalDevice(), buffer, bufferMemory, 0) != VK_SUCCESS)
 	{
 		vkDestroyBuffer(m_vkr->GetLogicalDevice(), buffer, nullptr);
+		vkFreeMemory(m_vkr->GetLogicalDevice(), bufferMemory, nullptr);
+		buffer = VK_NULL_HANDLE;
+		bufferMemory = VK_NULL_HANDLE;
 		cemuLog_log(LogType::Force, "Failed to bind buffer (CreateBufferFromHostMemory)");
 		return false;
 	}
