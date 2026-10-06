@@ -1435,8 +1435,12 @@ void VulkanRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32
 	auto vkObjPipeline = pipeline_info->m_vkrObjPipeline;
 	if (vkObjPipeline->GetPipeline() == VK_NULL_HANDLE)
 	{
-		// invalid/uninitialized pipeline
+		// invalid/uninitialized pipeline (still compiling, failed, or skipped because the device can't run it, e.g. no geometry shader).
+		// Finish the drawcall bookkeeping like a normal draw so streamout and draw counters can't be left half-prepared,
+		// and make the next draw rebind everything instead of trusting state from before this one.
 		m_state.activeVertexDS = nullptr;
+		LatteStreamout_FinishDrawcall(m_useHostMemoryForCache);
+		LatteGPUState.drawCallCounter++;
 		return;
 	}
 
