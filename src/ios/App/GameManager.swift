@@ -1095,6 +1095,7 @@ class GameManager: ObservableObject {
         // restart the launch underneath the one already booting. Every way back to the library
         // goes through stopEmulation(), which leaves the state at .idle.
         guard emulationState == .idle else { return }
+        LibraryPlayStats.shared.recordLaunch(of: game.id)
         launchToken = UUID()
         currentGame = game
         surfaceRegistered = false
