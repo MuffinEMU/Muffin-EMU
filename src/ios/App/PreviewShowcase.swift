@@ -40,7 +40,7 @@ enum PreviewLayoutPreset: String, CaseIterable, Identifiable {
         case .native:
             return nil
         case .iPadPro2020:
-            // iPad Pro 12.9" (2020, A12Z): 1366x1024 pt container, 132 ppi, no notch.
+            // iPad Pro 12.9" (2020): 1366x1024 pt container, 132 ppi, no notch.
             return (CGSize(width: 1366, height: 1024), CGRect(x: 0, y: 0, width: 1366, height: 1004), 132, 1.0)
         case .compact:
             // Captured on the same reference device at 70% scale, so "Compact" means
@@ -131,7 +131,7 @@ final class PreviewPadStore: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        layoutPreset = PreviewLayoutPreset(rawValue: defaults.string(forKey: Self.layoutPresetKey) ?? "") ?? .iPadPro2020
+        layoutPreset = PreviewLayoutPreset(rawValue: defaults.string(forKey: Self.layoutPresetKey) ?? "") ?? .native
         colourPreset = PreviewColourPreset(rawValue: defaults.string(forKey: Self.colourPresetKey) ?? "") ?? .wiiUWhite
         displayMode = PadLayout.DisplayMode(rawValue: defaults.string(forKey: Self.displayModeKey) ?? "") ?? .fit
         customColours = Self.loadCustomColours(defaults)
@@ -148,7 +148,7 @@ final class PreviewPadStore: ObservableObject {
     func reloadFromDefaults() {
         // Read first: setting colourPreset below clears the imported colours.
         let custom = Self.loadCustomColours(defaults)
-        layoutPreset = PreviewLayoutPreset(rawValue: defaults.string(forKey: Self.layoutPresetKey) ?? "") ?? .iPadPro2020
+        layoutPreset = PreviewLayoutPreset(rawValue: defaults.string(forKey: Self.layoutPresetKey) ?? "") ?? .native
         colourPreset = PreviewColourPreset(rawValue: defaults.string(forKey: Self.colourPresetKey) ?? "") ?? .wiiUWhite
         displayMode = PadLayout.DisplayMode(rawValue: defaults.string(forKey: Self.displayModeKey) ?? "") ?? .fit
         customColours = custom

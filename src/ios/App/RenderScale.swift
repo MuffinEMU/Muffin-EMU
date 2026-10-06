@@ -199,8 +199,9 @@ enum PadSurfaceScale {
 ///
 /// `auto` decides per game at launch: from the game's own profile, the device's performance-core
 /// count and its thermal state (see ios_decide_core_count in CemuBridge.mm). It leans to one
-/// core, because on a fanless A12Z iPad Pro three host threads drew about three times the power,
-/// the SoC throttled within a minute, and Wind Waker HD ran 4-20 fps against 40-60 on one. Three
+/// core unless the device qualifies (four or more performance cores, memory Tier High or above,
+/// nominal thermal state) or the game's profile asks for three, because three host threads draw
+/// about three times the power and a part that throttles can end up slower than on one. Three
 /// cores stay available as a labelled experiment, globally and per game.
 enum CoreMode: String, CaseIterable, Identifiable {
     case auto, single, multi
@@ -217,8 +218,8 @@ enum CoreMode: String, CaseIterable, Identifiable {
 
     var summary: String {
         switch self {
-        case .auto:   return "Picks per game and per device. Uses one core unless the game's profile asks for three and this device has the headroom."
-        case .single: return "One core. Cooler, and usually faster on this hardware."
+        case .auto:   return "Picks per game and per device. Uses three cores when the game's profile asks for them or this device has the performance cores, memory and cooling headroom, and one core otherwise."
+        case .single: return "One core. Cooler, and often faster on devices without spare performance cores."
         case .multi:  return "Three cores. Can be faster on a device with spare performance cores and cooling, but heats up quickly on most iPads and has hung some games."
         }
     }

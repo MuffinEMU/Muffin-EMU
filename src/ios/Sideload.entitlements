@@ -35,7 +35,7 @@
 	<true/>
 
 	<!-- Raises the memory iOS allows before terminating the app, which matters most on
-	     6 GB devices like the A12Z iPad Pro where the default sits close to what a retail
+	     6 GB devices where the default sits close to what a retail
 	     title needs. Unrestricted, so it costs nothing if a re-signer's profile does not
 	     carry it: it is dropped on its own, quietly, without taking get-task-allow with
 	     it. That is why the build step reports what was embedded but only REQUIRES

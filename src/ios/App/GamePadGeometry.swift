@@ -534,14 +534,19 @@ enum DeviceMetrics {
 
     private static let modelTable: [String: CGFloat] = [
         // The 2020 iPad Pros.
-        "iPad8,11": padStandard, "iPad8,12": padStandard,   // iPad Pro 12.9 in, 2020 (A12Z)
-        "iPad8,9":  padStandard, "iPad8,10": padStandard,   // iPad Pro 11 in, 2020 (A12Z)
+        "iPad8,11": padStandard, "iPad8,12": padStandard,   // iPad Pro 12.9 in, 2020 
+        "iPad8,9":  padStandard, "iPad8,10": padStandard,   // iPad Pro 11 in, 2020
         // The 9.7 in iPads (Air 2, Pro 9.7, iPad 5th and 6th gen) share a 2048x1536 panel with the
         // 326 ppi minis but are 264 ppi; the panel size alone cannot tell them apart, so the model does.
         "iPad5,3": padStandard,  "iPad5,4": padStandard,    // Air 2
         "iPad6,3": padStandard,  "iPad6,4": padStandard,    // Pro 9.7 in
         "iPad6,11": padStandard, "iPad6,12": padStandard,   // iPad 5th gen
         "iPad7,5": padStandard,  "iPad7,6": padStandard,    // iPad 6th gen
+        // Older 2048x1536 iPads: Air and Air 1 are 264 ppi, minis 2 to 5 are 326.
+        "iPad4,1": padStandard,  "iPad4,2": padStandard,  "iPad4,3": padStandard,   // Air
+        "iPad4,4": padMini, "iPad4,5": padMini, "iPad4,6": padMini,                 // mini 2
+        "iPad4,7": padMini, "iPad4,8": padMini, "iPad4,9": padMini,                 // mini 3
+        "iPad11,1": padMini, "iPad11,2": padMini,                                   // mini 5
         // iPad mini is the only iPad that is not 264.
         "iPad14,1": padMini, "iPad14,2": padMini,           // mini 6
         "iPad16,1": padMini, "iPad16,2": padMini,           // mini 7
@@ -549,7 +554,7 @@ enum DeviceMetrics {
         // The 3x phones that are not 460.
         "iPhone13,1": phoneMini, "iPhone14,4": phoneMini,   // 12 mini, 13 mini
         // The Plus phones: a 1080p panel that iOS scales from 1242 px, 401 ppi.
-        "iPhone8,2": phonePlus, "iPhone9,2": phonePlus, "iPhone9,4": phonePlus,   // 6s Plus, 7 Plus
+        "iPhone7,1": phonePlus, "iPhone8,2": phonePlus, "iPhone9,2": phonePlus, "iPhone9,4": phonePlus,   // 6 Plus, 6s Plus, 7 Plus
         "iPhone10,2": phonePlus, "iPhone10,5": phonePlus,                          // 8 Plus
         // The 2x phones.
         "iPhone14,6": phoneLCD, "iPhone12,8": phoneLCD,     // SE 3, SE 2
@@ -564,12 +569,14 @@ enum DeviceMetrics {
         "2752x2064": padStandard,   // 13 in iPad Pro M4
         "2360x1640": padStandard,   // iPad Air 11 in, iPad 10th/11th
         "2160x1620": padStandard,   // iPad 10.2 in
+        "2224x1668": padStandard,   // iPad Pro 10.5 in, iPad Air 3
         "2266x1488": padMini,       // iPad mini 6 and 7
         "2796x1290": phoneOLED, "2868x1320": phoneOLED, "2778x1284": phoneOLED,
         "2556x1179": phoneOLED, "2622x1206": phoneOLED, "2532x1170": phoneOLED,
-        "2436x1125": phoneOLED, "2688x1242": phoneOLED,
+        "2436x1125": phoneOLED, "2688x1242": phoneOLED, "2736x1260": phoneOLED,   // 2736x1260: iPhone Air
         "2340x1080": phoneMini,
-        "1792x828": phoneLCD, "1334x750": phoneLCD, "1920x1080": phoneLCD,
+        "1792x828": phoneLCD, "1334x750": phoneLCD,
+        "1920x1080": phonePlus,     // the Plus phones report their physical 1080p panel, not the 1242 px render size
     ]
 
     /// The whole decision, with nothing platform-specific in it.
@@ -604,9 +611,12 @@ enum DeviceMetrics {
         if isPad {
             if short <= 1536 { native = padMini; why = "iPad, short side \(Int(short)) px - mini class" }
             else { native = padStandard; why = "iPad, short side \(Int(short)) px - standard class" }
-        } else if safeScale >= 3 {
+        } else if safeScale >= 2.9 {
             if short <= 1080 { native = phoneMini; why = "3x phone, \(Int(short)) px wide - mini class" }
             else { native = phoneOLED; why = "3x phone, \(Int(short)) px wide" }
+        } else if safeScale > 2.5 {
+            // A scale between 2x and 3x is the downsampled 1080p panel of the Plus phones.
+            native = phonePlus; why = "phone at \(safeScale)x, \(Int(short)) px wide - Plus class"
         } else {
             native = phoneLCD; why = "2x phone"
         }
