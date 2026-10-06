@@ -2947,7 +2947,21 @@ void cemu_bridge_register_pad_render_surface(void* uiView, int width, int height
     g_padRegistered.store(true);
     // A running title gets its pad layer now; otherwise CemuRun() initializes it at boot.
     if (g_titleRunning.load())
-        CemuUIKit_InitializeLayer(false);
+    {
+        // Called from Swift: nothing may throw out of here (Vulkan's swapchain code throws on failure).
+        try
+        {
+            CemuUIKit_InitializeLayer(false);
+        }
+        catch (const std::exception& ex)
+        {
+            cemuLog_log(LogType::Force, "iOS: GamePad surface could not be initialized: {}", ex.what());
+        }
+        catch (...)
+        {
+            cemuLog_log(LogType::Force, "iOS: GamePad surface could not be initialized (unknown error)");
+        }
+    }
     CemuUIKit_SetVisibleOutputs(true, true);
     cemuLog_log(LogType::Force, "iOS: GamePad (DRC) screen surface registered, {}x{} points at {}x scale", width, height, dpiScale);
 }
