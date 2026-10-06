@@ -19,6 +19,12 @@ struct AccountSettingsSection: View {
     @ViewBuilder private var accountFooter: some View {
         if locked {
             InfoButton.footer("Accounts can't be changed while a game is running. Close the game first.")
+        } else if let note = OnlineReadiness.note(accountId: activePersistentId,
+                                                  service: NetworkService(cemu_bridge_network_service(activePersistentId))) {
+            InfoButton.footer(
+                note,
+                title: "Online play",
+                text: OnlineReadiness.howToFix + "\n\nImport from Wii U accepts account.dat, its 800000XX folder, otp.bin and seeprom.bin. MuffinEMU can't create a linked account itself.")
         } else if let activeAccount, !activeAccount.isValidOnline {
             InfoButton.footer(
                 "This account has no cached NNID/PNID login, so it can't play online yet.",
@@ -52,6 +58,9 @@ struct AccountSettingsSection: View {
                     .disabled(locked || accounts.count <= 1 || activeAccount == nil)
             }
             .buttonStyle(.borderless)
+
+            AccountImportButton(locked: locked, onChange: reload)
+                .buttonStyle(.borderless)
         } header: {
             SettingsSectionHeader("Account", icon: "person.crop.circle", accent: .content)
         } footer: {
@@ -110,9 +119,49 @@ struct NetworkServiceSettingsSection: View {
     @State private var selectedService: NetworkService = .offline
     @State private var locked = false
     @State private var customAvailable = false
+    @State private var accounts: [Account] = []
+    @State private var hasOTP = false
+    @State private var hasSeeprom = false
+
+    /// The one-line status at the top of the section.
+    private var readinessLine: String {
+        let missing = OnlineReadiness.missingItems(accountId: activePersistentId)
+        if selectedService == .offline { return "Online play is off. Pick a Network Service to use it." }
+        return missing.isEmpty ? "Ready for online play" : "Not ready for online play. Missing: " + missing.joined(separator: ", ") + "."
+    }
 
     var body: some View {
         Section {
+            Text(readinessLine)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+
+            Picker("Active account", selection: Binding(
+                get: { activePersistentId },
+                set: { newValue in
+                    cemu_bridge_set_active_account_persistent_id(newValue)
+                    reload()
+                }
+            )) {
+                ForEach(accounts) { account in
+                    Text("\(account.displayNameWithId) - \(account.isValidOnline ? "Linked" : "Not linked")")
+                        .tag(account.persistentId)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(MuffinTheme.accentText)
+            .disabled(locked || accounts.isEmpty)
+
+            SettingsRow(label: "otp.bin", value: hasOTP ? "Found" : "Missing")
+            SettingsRow(label: "seeprom.bin", value: hasSeeprom ? "Found" : "Missing")
+
+            AccountImportButton(locked: locked, onChange: reload)
+                .buttonStyle(.borderless)
+
+            NavigationLink("Manage accounts") {
+                Form { AccountSettingsSection() }
+                    .navigationTitle("Accounts")
+            }
+
             ForEach(NetworkService.allCases) { service in
                 Button {
                     cemu_bridge_set_network_service(activePersistentId, service.bridgeValue)
@@ -139,7 +188,7 @@ struct NetworkServiceSettingsSection: View {
             InfoButton.footer(
                 locked ? "The Network Service can't be changed while a game is running. Close the game first." : selectedService.accountHelp,
                 title: "Network Service",
-                text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there's nothing to configure.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom is only available if you've put a network_services.xml (the same file desktop Cemu reads) in the mlc folder.")
+                text: "Pretendo is a community-run replacement for Nintendo's Wii U online services. Its server addresses are built in, so there's nothing to configure.\n\nNintendo's own servers have been shut down, so that option can't be selected.\n\nCustom is only available if you've put a network_services.xml (the same file desktop Cemu reads) in the mlc folder.\n\n" + OnlineReadiness.howToFix)
         }
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: reload)
@@ -148,10 +197,14 @@ struct NetworkServiceSettingsSection: View {
 
     private func reload() {
         activePersistentId = cemu_bridge_active_account_persistent_id()
-        let accounts = Account.loadAll()
-        activeAccountName = accounts.first { $0.persistentId == activePersistentId }?.displayName
+        let loaded = Account.loadAll()
+        accounts = loaded
+        activeAccountName = loaded.first { $0.persistentId == activePersistentId }?.displayName
         selectedService = NetworkService(cemu_bridge_network_service(activePersistentId))
         locked = cemu_bridge_accounts_locked()
         customAvailable = cemu_bridge_custom_network_service_available()
+        let root = WiiUMenu.mlcRootURL
+        hasOTP = root.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("otp.bin").path) } ?? false
+        hasSeeprom = root.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("seeprom.bin").path) } ?? false
     }
 }

@@ -1228,6 +1228,12 @@ void cemu_bridge_set_active_account_persistent_id(uint32_t persistentId);
 /// below, which only decides WHERE an online-capable account connects.
 bool cemu_bridge_account_is_online_valid(uint32_t persistentId);
 
+/// Why persistentId can't play online, from Account::GetOnlineAccountError():
+/// 0 none (valid), 1 no account ID, 2 password not cached, 3 password cache empty,
+/// 4 no principal ID, -1 no such account. Call cemu_bridge_accounts_refresh() first
+/// if the account.dat may have just changed.
+int cemu_bridge_account_online_error(uint32_t persistentId);
+
 /// Real Wii U country codes, for the same picker desktop Cemu's account editor uses
 /// (NCrypto::GetCountryCount()/GetCountryAsString()). Records separated by 0x1E, fields
 /// by 0x1F: code (decimal), name. Index 0's placeholder entry is included; NCrypto's
