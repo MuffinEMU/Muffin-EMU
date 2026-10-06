@@ -80,6 +80,16 @@ final class ControllerCustomLayout: ObservableObject {
         persist()
     }
 
+    /// Re-reads the stored layout, for a settings import that rewrote it.
+    func reloadFromDefaults() {
+        if let data = defaults.data(forKey: Self.storageKey),
+           let decoded = try? JSONDecoder().decode([String: ControlOverride].self, from: data) {
+            overrides = decoded
+        } else {
+            overrides = [:]
+        }
+    }
+
     var hasCustomisations: Bool { !overrides.isEmpty }
 
     /// Call when a drag or pinch ends, to write to disk what `write(_:for:)` only kept in
