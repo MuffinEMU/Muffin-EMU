@@ -2100,6 +2100,8 @@ long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includ
         return -1;
     }
     long long freed = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, true);
+    // the Vulkan driver's own pipeline cache is compiled output too (VulkanRenderer::PipelineCacheSaveThread)
+    freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/driver/vk"), titleId, true);
     if (includeLearned)
     {
         freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId, true);
@@ -2114,7 +2116,8 @@ int cemu_bridge_shader_cache_stats(unsigned long long titleId, long long* outLea
     if (outLearnedBytes)
         *outLearnedBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId, false);
     if (outCompiledBytes)
-        *outCompiledBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, false);
+        *outCompiledBytes = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, false)
+            + IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/driver/vk"), titleId, false);
     return 0;
 }
 
