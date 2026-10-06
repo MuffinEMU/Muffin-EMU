@@ -99,6 +99,7 @@ struct GraphicsSettingsSection: View {
     @AppStorage(UpscaleFilterSetting.storageKey) private var upscaleRaw = UpscaleFilterSetting.defaultValue.rawValue
     @AppStorage(DownscaleFilterSetting.storageKey) private var downscaleRaw = DownscaleFilterSetting.defaultValue.rawValue
     @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.deviceDefault.rawValue
+    @AppStorage(FavourPerformance.storageKey) private var favourPerformance = FavourPerformance.defaultValue
     @AppStorage("muffin.render.vsync") private var vsyncEnabled = true
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
@@ -123,6 +124,11 @@ struct GraphicsSettingsSection: View {
             upscalePicker
             downscalePicker
             resolutionPicker
+            if favourPerformance {
+                Text("Favour performance is on (Settings > CPU), so the picture is drawn at Balanced at most, with linear scaling.")
+                    .font(.system(size: 12))
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
             stretchToggle
             vsyncToggle
             upsideDownToggle

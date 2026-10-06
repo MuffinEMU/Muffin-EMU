@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "Cafe/HW/Latte/LegacyShaderDecompiler/LatteDecompiler.h"
 #include "Cafe/HW/Latte/ISA/RegDefines.h"
 
@@ -98,6 +99,12 @@ extern uint64 _shaderBaseHash_gs;
 extern uint64 _shaderBaseHash_ps;
 
 void LatteShader_GetDecompilerOptions(struct LatteDecompilerOptions& options, LatteConst::ShaderType shaderType, bool geometryShaderEnabled);
+
+// Set by the iOS bridge (Favour performance) before a title starts. When true, shaders are
+// decompiled without the strict 0*anything=0 multiply even if the game profile asks for it:
+// fewer GPU instructions per multiply, at the risk of lighting or shadow glitches in the games
+// that rely on the console's behaviour.
+extern std::atomic<bool> g_latteRelaxShaderMul;
 LatteDecompilerShader* LatteShader_CreateShaderFromDecompilerOutput(LatteDecompilerOutput_t& decompilerOutput, uint64 baseHash, bool calculateAuxHash, uint64 optionalAuxHash, uint32* contextRegister);
 
 void LatteShader_CreateRendererShader(LatteDecompilerShader* shader, bool compileAsync);
