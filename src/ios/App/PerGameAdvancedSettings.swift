@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Per-game options that exist in Advanced mode only (see AdvancedSettings): Resolution, scaling
-/// filters, Favour performance, Full speed renders!, One-core mode, screen layout, controller auto-hide
+/// filters, Favour performance, Steady frame rate, One-core mode, screen layout, controller auto-hide
 /// and the performance overlay. Each follows the matching global setting until a game is given its own
 /// value. The values live in GameOverrides (PerGameSettings.swift); this file reads them back.
 ///
@@ -106,7 +106,7 @@ extension PerGameSettingsStore {
         return (Int32(effectiveUpscaleFilter(for: gameID).rawValue), Int32(effectiveDownscaleFilter(for: gameID).rawValue))
     }
 
-    /// Pushes Full speed renders! for this game (both the switch and the shader choice).
+    /// Pushes Steady frame rate for this game (both the switch and the shader choice).
     func applyFullSpeedRenders(for gameID: String) {
         cemu_bridge_set_full_speed_renders(effectiveFullSpeedRenders(for: gameID),
                                            Int32(effectiveFullSpeedShaderMode(for: gameID).rawValue))
@@ -201,7 +201,7 @@ struct AdvancedGameOptionsSection: View {
                 InfoButton.footer(
                     "Extra options for this game only. \"Use Global Default\" follows Settings. They apply the next time you start the game.",
                     title: "Advanced game options",
-                    text: "Each option here follows the matching setting in Settings until you give this game its own value, and then keeps it whatever Settings says.\n\nResolution and the two scaling filters change how the picture is drawn for this game. Favour performance, Full speed renders! and One-core mode work as they do in Settings, for this game only.\n\nScreen layout and Hide on-screen controls when a controller is connected are put in place when the game starts, and your own choices come back when it stops. A layout change you make during the game is not kept.\n\nPerformance overlay turns the readout on or off for this game. On uses the corner chosen in Settings, or the top left if Settings has it off.\n\nReset this game's options puts every option for this game, in this screen and the one above, back on Settings.")
+                    text: "Each option here follows the matching setting in Settings until you give this game its own value, and then keeps it whatever Settings says.\n\nResolution and the two scaling filters change how the picture is drawn for this game. Favour performance, Steady frame rate and One-core mode work as they do in Settings, for this game only.\n\nScreen layout and Hide on-screen controls when a controller is connected are put in place when the game starts, and your own choices come back when it stops. A layout change you make during the game is not kept.\n\nPerformance overlay turns the readout on or off for this game. On uses the corner chosen in Settings, or the top left if Settings has it off.\n\nReset this game's options puts every option for this game, in this screen and the one above, back on Settings.")
             }
             .confirmationDialog("Reset this game's options?", isPresented: $confirmReset, titleVisibility: .visible) {
                 Button("Reset", role: .destructive) { store.clearOverrides(for: gameKey) }
@@ -226,7 +226,7 @@ struct AdvancedGameOptionsSection: View {
             }
         }
         AdvancedOverrideRow(
-            title: "Upscale filter",
+            title: "Filter when enlarging",
             caption: caption(pinned: own.upscaleFilter != nil, settingsValue: "set to \(store.globalUpscaleFilter.title)"),
             selection: numberChoice(\.upscaleFilter, known: ScaleFilter.allCases.map(\.rawValue))
         ) {
@@ -236,7 +236,7 @@ struct AdvancedGameOptionsSection: View {
             }
         }
         AdvancedOverrideRow(
-            title: "Downscale filter",
+            title: "Filter when shrinking",
             caption: caption(pinned: own.downscaleFilter != nil, settingsValue: "set to \(store.globalDownscaleFilter.title)"),
             selection: numberChoice(\.downscaleFilter, known: ScaleFilter.allCases.map(\.rawValue))
         ) {
@@ -258,7 +258,7 @@ struct AdvancedGameOptionsSection: View {
             }
         }
         AdvancedOverrideRow(
-            title: "Full speed renders!",
+            title: "Steady frame rate",
             caption: caption(pinned: own.fullSpeedRenders != nil, settingsValue: onOff(store.globalFullSpeedRenders)),
             selection: toggleChoice(\.fullSpeedRenders)
         ) {

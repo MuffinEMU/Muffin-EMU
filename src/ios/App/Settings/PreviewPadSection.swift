@@ -44,7 +44,7 @@ struct PreviewPadSection: View {
 
     private var toggleCaption: String {
         if previewPadEnabled && otherPadChosen {
-            return "Not showing: melo-controls or a control style is chosen under On-screen Controls, and wins over this."
+            return "Not showing: Melo-Controller or a control style is chosen under On-screen Controls, and wins over this."
         }
         return previewPadEnabled
             ? "Replaces the normal pad. If controls don't respond, turn this off."

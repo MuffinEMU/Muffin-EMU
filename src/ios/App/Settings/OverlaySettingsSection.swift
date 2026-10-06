@@ -128,7 +128,7 @@ struct OverlaySettingsSection: View {
     }
 
     private var textColorField: some View {
-        ColorPicker("Text color", selection: packedColourBinding($textColor), supportsOpacity: false)
+        ColorPicker("Text colour", selection: packedColourBinding($textColor), supportsOpacity: false)
             .font(.system(size: 15, weight: .semibold, design: .rounded))
             .disabled(isOff)
             .onChange(of: textColor) { newValue in
@@ -248,7 +248,7 @@ struct OverlaySettingsSection: View {
 
         The panel only appears while at least one of FPS, draw calls, CPU, per-core CPU or RAM is on. VRAM usage and debug info are extra lines inside it, so on their own they show nothing.
 
-        Text size and color change the readout's look. Changes show up straight away.
+        Text size and colour change the readout's look. Changes show up straight away.
         """
     }
 }

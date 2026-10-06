@@ -30,10 +30,10 @@ enum ScreenPosition: Int, CaseIterable, Identifiable {
         switch self {
         case .disabled:     return "Off"
         case .topLeft:      return "Top Left"
-        case .topCenter:    return "Top Center"
+        case .topCenter:    return "Top Centre"
         case .topRight:     return "Top Right"
         case .bottomLeft:   return "Bottom Left"
-        case .bottomCenter: return "Bottom Center"
+        case .bottomCenter: return "Bottom Centre"
         case .bottomRight:  return "Bottom Right"
         }
     }
