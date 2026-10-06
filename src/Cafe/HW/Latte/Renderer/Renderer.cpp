@@ -90,8 +90,20 @@ void Renderer::StopRenderWorker()
     m_renderWorkerCondition.notify_all();
     m_renderWorkerThread.join();
     
+    // Shutting down: a job that failed with nobody left to receive it must not throw out of the teardown
     std::unique_lock lock(m_renderWorkerMutex);
-    RethrowRenderWorkerException();
+    try
+    {
+        RethrowRenderWorkerException();
+    }
+    catch (const std::exception& ex)
+    {
+        cemuLog_log(LogType::Force, "Render worker: dropping an exception from a job at shutdown: {}", ex.what());
+    }
+    catch (...)
+    {
+        cemuLog_log(LogType::Force, "Render worker: dropping an unknown exception from a job at shutdown");
+    }
 }
 
 void Renderer::QueueRenderWorkerJob(std::function<void()> job)
@@ -150,10 +162,11 @@ void Renderer::RenderWorkerThread(std::string threadName)
         }
         catch (...)
         {
+            // Hand the exception to the GPU thread (it is rethrown from the next Queue/Wait call) but keep the worker running: stopping it
+            // here left the thread joinable with nobody draining the queue, so the next WaitRenderWorkerIdle() (device idle, shutdown) hung forever.
             std::unique_lock lock(m_renderWorkerMutex);
             if (!m_renderWorkerException)
                 m_renderWorkerException = std::current_exception();
-            m_renderWorkerStopRequested = true;
         }
         
         {
