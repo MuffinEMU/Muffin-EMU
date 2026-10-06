@@ -1,0 +1,68 @@
+name: Sync Pages to the profile repo
+
+# The docs and install sources are served from MuffinEMU/MuffinEMU (the profile repository), so their URL,
+# muffinemu.github.io/MuffinEMU/, stayed the same when this repository was renamed to Muffin-EMU. This copies
+# docs/ there whenever it changes here. Edit docs/ in this repository only; the copy is overwritten.
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'docs/**' ]
+  # Commits made with GITHUB_TOKEN (the install-source updates) do not raise push events, so follow that
+  # workflow too.
+  workflow_run:
+    workflows: ["Update SideStore source"]
+    types: [completed]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-pages-to-profile
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: source
+
+      - uses: actions/checkout@v4
+        with:
+          repository: MuffinEMU/MuffinEMU
+          ref: main
+          path: profile
+          ssh-key: ${{ secrets.PROFILE_PAGES_DEPLOY_KEY }}
+
+      - name: Refuse to publish broken install sources
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          for f in ["apps.json", "trollstore.json"]:
+              app = json.loads(pathlib.Path("source/docs", f).read_text())["apps"][0]
+              assert app["versions"], f"{f} has no versions"
+              print(f"ok: {f} newest v{app['versions'][0]['version']}")
+          PY
+
+      - name: Copy docs/ and push if changed
+        run: |
+          rsync -a --delete source/docs/ profile/docs/
+          cd profile
+          git add -A docs
+          if git diff --cached --quiet; then
+            echo "profile docs already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Sync docs from Muffin-EMU ${GITHUB_SHA::7}"
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
