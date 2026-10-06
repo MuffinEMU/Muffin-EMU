@@ -106,6 +106,7 @@ FileCache* FileCache::Create(const fs::path& path, uint32 extraVersion)
 	// init file cache
 	auto* fileCache = new FileCache();
 	fileCache->fileStream = fs;
+	fileCache->filePath = path;
 	fileCache->dataOffset = FILECACHE_HEADER_RESV;
 	fileCache->fileTableEntryCount = 32;
 	fileCache->fileTableOffset = 0;
@@ -191,6 +192,7 @@ FileCache* FileCache::_OpenExisting(const fs::path& path, bool compareExtraVersi
 	// init struct
 	auto* fileCache = new FileCache();
 	fileCache->fileStream = fs;
+	fileCache->filePath = path;
 	fileCache->extraVersion = extraVersion;
 	fileCache->dataOffset = headerDataOffset;
 	fileCache->fileTableEntryCount = fileTableEntryCount;
@@ -227,7 +229,54 @@ FileCache* FileCache::_OpenExisting(const fs::path& path, bool compareExtraVersi
 	return fileCache;
 }
 
-bool FileCache::Verify(const fs::path& path)
+static std::mutex s_backupDirMutex;
+static fs::path s_backupDir;
+
+void FileCache::SetBackupDirectory(const fs::path& dir)
+{
+	std::unique_lock lock(s_backupDirMutex);
+	s_backupDir = dir;
+}
+
+// Called with this->mutex held, for an entry that is in use but failed to read (checksum mismatch or
+// cut short). Puts back the known-good copy from the backup directory when it has this entry intact,
+// in the same table slot, and returns it; otherwise deletes the entry. Nothing else in the file changes.
+bool FileCache::_handleDamagedEntry(FileTableEntry* entry, std::vector<uint8>& dataOut)
+{
+	damagedEntryCount++;
+	const uint64 name1 = entry->name1;
+	const uint64 name2 = entry->name2;
+	fs::path backupPath;
+	{
+		std::unique_lock lock(s_backupDirMutex);
+		if (!s_backupDir.empty() && !filePath.empty())
+			backupPath = s_backupDir / filePath.filename();
+	}
+	std::error_code ec;
+	if (!backupPath.empty() && backupPath != filePath && fs::exists(backupPath, ec))
+	{
+		if (FileCache* backup = _OpenExisting(backupPath, false))
+		{
+			std::vector<uint8> good;
+			const bool found = backup->GetFile({ name1, name2 }, good);
+			delete backup;
+			if (found)
+			{
+				// the name is still in the table, so this rewrites the same slot
+				_addFileInternal(name1, name2, good.data(), (sint32)good.size(), false);
+				dataOut = std::move(good);
+				cemuLog_log(LogType::Force, "\"{}\": damaged entry {:016x}{:016x} restored from the backup", _pathToUtf8(filePath.filename()), name1, name2);
+				return true;
+			}
+		}
+	}
+	DeleteFile({ name1, name2 });
+	dataOut.clear();
+	cemuLog_log(LogType::Force, "\"{}\": damaged entry {:016x}{:016x} deleted (no good copy in the backup)", _pathToUtf8(filePath.filename()), name1, name2);
+	return false;
+}
+
+bool FileCache::Verify(const fs::path& path, bool checkEntries)
 {
 	std::error_code ec;
 	if (!fs::exists(path, ec))
@@ -261,7 +310,7 @@ bool FileCache::Verify(const fs::path& path)
 				ok = false;
 	}
 	std::vector<uint8> data;
-	for (uint32 i = 1; ok && i < fc->fileTableEntryCount; i++)
+	for (uint32 i = 1; ok && checkEntries && i < fc->fileTableEntryCount; i++)
 	{
 		const FileTableEntry& e = fc->fileTableEntries[i];
 		if (e.name1 == FILECACHE_FILETABLE_FREE_NAME && e.name2 == FILECACHE_FILETABLE_FREE_NAME)
@@ -637,23 +686,14 @@ bool FileCache::GetFile(const FileName&& name, std::vector<uint8>& dataOut)
 	{
 		if( entry->name1 == name.name1 && entry->name2 == name.name2 )
 		{
-			return _getFileDataInternal(entry, dataOut);
+			if (_getFileDataInternal(entry, dataOut))
+				return true;
+			return _handleDamagedEntry(entry, dataOut);
 		}
 		entry++;
 	}
 	dataOut.clear();
 	return false;
-}
-
-bool FileCache::IsUsedIndex(sint32 index)
-{
-	std::unique_lock lock(this->mutex);
-	if (index < 0 || index >= this->fileTableEntryCount || this->fileTableEntries == nullptr)
-		return false;
-	const FileTableEntry* entry = this->fileTableEntries + index;
-	if (entry->name1 == FILECACHE_FILETABLE_FREE_NAME && entry->name2 == FILECACHE_FILETABLE_FREE_NAME)
-		return false;
-	return !(entry->name1 == FILECACHE_FILETABLE_NAME1 && entry->name2 == FILECACHE_FILETABLE_NAME2);
 }
 
 bool FileCache::GetFileByIndex(sint32 index, uint64* name1, uint64* name2, std::vector<uint8>& dataOut)
@@ -676,7 +716,9 @@ bool FileCache::GetFileByIndex(sint32 index, uint64* name1, uint64* name2, std::
 		*name1 = entry->name1;
 	if(name2)
 		*name2 = entry->name2;
-	return _getFileDataInternal(entry, dataOut);
+	if (_getFileDataInternal(entry, dataOut))
+		return true;
+	return _handleDamagedEntry(entry, dataOut);
 }
 
 bool FileCache::HasFile(const FileName&& name)
