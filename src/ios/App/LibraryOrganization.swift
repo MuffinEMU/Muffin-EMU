@@ -204,8 +204,9 @@ extension LibraryGrouping {
 // MARK: - Custom names
 
 /// A name the player gave a game, shown in the library instead of its own title. Display only:
-/// nothing on disk is renamed and the title ID is untouched. Keyed by the game's settings key
-/// (title ID, falling back to the file name), so it follows the game through a re-import.
+/// nothing on disk is renamed and the title ID is untouched. Keyed by `GameMetadata.installKey` (the install's file
+/// or folder name in Roms), so two installs of one title keep separate names. Names saved before that were keyed by
+/// the title ID, and `migrateLegacyKeys` moves them over.
 final class LibraryCustomNames: ObservableObject {
     static let shared = LibraryCustomNames()
     private static let defaultsKey = "muffin.library.customNames"
@@ -222,6 +223,27 @@ final class LibraryCustomNames: ObservableObject {
     }
 
     func name(for key: String) -> String? { names[key] }
+
+    /// Moves a name saved under an old title-ID key to the install it belongs to. One matching install gets it. When
+    /// several installs share the key there is no telling which one was meant, so the name is dropped. A key with no
+    /// installed match stays, in case the game comes back.
+    func migrateLegacyKeys(games: [GameMetadata]) {
+        let legacy = names.keys.filter { !$0.hasPrefix("install:") }
+        guard !legacy.isEmpty, !games.isEmpty else { return }
+        var changed = false
+        for key in legacy {
+            let matches = games.filter { $0.settingsKey == key }
+            if matches.isEmpty { continue }
+            if matches.count == 1, let value = names[key], names[matches[0].installKey] == nil {
+                names[matches[0].installKey] = value
+            }
+            names.removeValue(forKey: key)
+            changed = true
+        }
+        if changed, let data = try? JSONEncoder().encode(names) {
+            UserDefaults.standard.set(data, forKey: Self.defaultsKey)
+        }
+    }
 
     /// nil, or a name that is empty after trimming, goes back to the original title.
     func set(_ name: String?, for key: String) {
@@ -240,10 +262,11 @@ struct LibraryRenameSheet: View {
 
     init(game: GameMetadata) {
         self.game = game
-        _text = State(initialValue: LibraryCustomNames.shared.name(for: game.settingsKey) ?? game.cardName.name)
+        _text = State(initialValue: LibraryCustomNames.shared.name(for: game.installKey) ?? game.cardName.name)
     }
 
     private var originalTitle: String { game.displayTitle ?? game.title }
+    private var installDescription: String { game.installLabel ?? "" }
 
     var body: some View {
         NavigationView {
@@ -252,12 +275,13 @@ struct LibraryRenameSheet: View {
                     TextField("Name", text: $text)
                         .autocapitalization(.words)
                 } footer: {
-                    Text("Only changes how the game is named in your library. Original title: \(originalTitle)")
+                    Text("Only changes how the game is named in your library. Original title: \(originalTitle)"
+                         + (installDescription.isEmpty ? "" : "\nInstall: \(installDescription)"))
                 }
-                if LibraryCustomNames.shared.name(for: game.settingsKey) != nil {
+                if LibraryCustomNames.shared.name(for: game.installKey) != nil {
                     Section {
                         Button("Reset to Original Title") {
-                            LibraryCustomNames.shared.set(nil, for: game.settingsKey)
+                            LibraryCustomNames.shared.set(nil, for: game.installKey)
                             presentationMode.wrappedValue.dismiss()
                         }
                     }
@@ -273,7 +297,7 @@ struct LibraryRenameSheet: View {
                     Button("Save") {
                         // A name left the same as the original is no override at all.
                         let same = text.trimmingCharacters(in: .whitespacesAndNewlines) == originalTitle
-                        LibraryCustomNames.shared.set(same ? nil : text, for: game.settingsKey)
+                        LibraryCustomNames.shared.set(same ? nil : text, for: game.installKey)
                         presentationMode.wrappedValue.dismiss()
                     }
                 }
@@ -525,6 +549,7 @@ struct LibraryLargeCoverCard<Options: View>: View {
                             .font(.system(size: 12, weight: .regular, design: .rounded))
                             .foregroundColor(MuffinTheme.brownMid)
                     }
+                    if let label = game.installLabel { LibraryInstallLine(text: label, size: 12) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
@@ -567,6 +592,7 @@ struct LibraryCompactCard<Options: View>: View {
                 .multilineTextAlignment(.center)
                 .foregroundColor(MuffinTheme.brownDarkest)
                 .frame(maxWidth: .infinity)
+            if let label = game.installLabel { LibraryInstallLine(text: label, size: 10, centered: true) }
         }
         .shadow(color: MuffinTheme.shadow.opacity(0.12), radius: 4, x: 0, y: 2)
         .contentShape(Rectangle())
@@ -609,6 +635,7 @@ struct LibraryListRow<Options: View>: View {
                                 .lineLimit(2)
                                 .multilineTextAlignment(.leading)
                                 .foregroundColor(MuffinTheme.brownDarkest)
+                            if let label = game.installLabel { LibraryInstallLine(text: label, size: 12) }
                             Text(detailLine)
                                 .font(.system(size: 12, weight: .regular, design: .rounded))
                                 .lineLimit(2)
@@ -699,5 +726,83 @@ struct LibraryViewMenu: View {
                 .frame(width: 44, height: 44)
         }
         .accessibilityLabel("Library layout")
+    }
+}
+
+// MARK: - Duplicate installs
+
+/// The small line under a game's name that says which install it is, shown only when the library holds more than one
+/// install of the same game.
+struct LibraryInstallLine: View {
+    let text: String
+    let size: CGFloat
+    var centered = false
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: size, weight: .medium, design: .rounded))
+            .foregroundColor(MuffinTheme.brownMid)
+            .lineLimit(2)
+            .multilineTextAlignment(centered ? .center : .leading)
+            .frame(maxWidth: centered ? .infinity : nil, alignment: centered ? .center : .leading)
+    }
+}
+
+/// Works out, for each install that has a twin (same title ID or same name), a short line from what differs between
+/// them: region, then format, then the file name. The file name is also added whenever the rest would still read the
+/// same. Rebuilt whenever the game list changes.
+final class DuplicateInstalls {
+    static let shared = DuplicateInstalls()
+    private var labels: [String: String] = [:]
+
+    func label(for id: String) -> String? { labels[id] }
+
+    private static func format(of game: GameMetadata) -> String {
+        let ext = (game.romPath as NSString).pathExtension.lowercased()
+        switch ext {
+        case "wua": return "WUA"
+        case "wud": return "WUD"
+        case "wux": return "WUX"
+        case "rpx", "tmd": return "Folder"
+        default: return ext.isEmpty ? "Folder" : ext.uppercased()
+        }
+    }
+
+    private static func fileName(of game: GameMetadata) -> String {
+        String(game.installKey.dropFirst("install:".count))
+    }
+
+    func update(_ games: [GameMetadata]) {
+        var byTitle: [UInt64: [GameMetadata]] = [:]
+        var byName: [String: [GameMetadata]] = [:]
+        for game in games {
+            if let t = game.titleId { byTitle[t, default: []].append(game) }
+            let name = (game.displayTitle ?? game.title).lowercased()
+            byName[name, default: []].append(game)
+        }
+        var result: [String: String] = [:]
+        for game in games {
+            var group: [String: GameMetadata] = [game.id: game]
+            if let t = game.titleId { byTitle[t]?.forEach { group[$0.id] = $0 } }
+            byName[(game.displayTitle ?? game.title).lowercased()]?.forEach { group[$0.id] = $0 }
+            guard group.count > 1 else { continue }
+            let peers = Array(group.values)
+            var parts: [String] = []
+            if Set(peers.map { $0.region ?? "" }).count > 1, let region = game.region { parts.append(region) }
+            if Set(peers.map(Self.format(of:))).count > 1 { parts.append(Self.format(of: game)) }
+            let line = parts.joined(separator: ", ")
+            result[game.id] = line.isEmpty ? Self.fileName(of: game) : line
+        }
+        // Two installs that still read the same get their file names added.
+        var counts: [String: Int] = [:]
+        for (id, line) in result { counts[(games.first { $0.id == id }?.titleId.map(String.init) ?? "") + "|" + line, default: 0] += 1 }
+        for game in games {
+            guard let line = result[game.id] else { continue }
+            let key = (game.titleId.map(String.init) ?? "") + "|" + line
+            if (counts[key] ?? 0) > 1, line != Self.fileName(of: game) {
+                result[game.id] = line + ", " + Self.fileName(of: game)
+            }
+        }
+        labels = result
     }
 }

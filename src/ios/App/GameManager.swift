@@ -42,7 +42,22 @@ struct GameMetadata: Codable, Identifiable {
     /// rename or a re-import. Only a title with no derivable ID falls back to the file-name `id`.
     /// What Title sort and the A to Z groups order by: the player's own name for the game when
     /// they set one, otherwise the file-name title.
-    var sortTitle: String { LibraryCustomNames.shared.name(for: settingsKey) ?? title }
+    var sortTitle: String { LibraryCustomNames.shared.name(for: installKey) ?? title }
+
+    /// Identifies this one install: its file or folder name inside the Roms folder. Unlike `settingsKey`, two
+    /// installs of the same title never share it. Relative, so it survives the app container's path changing.
+    var installKey: String { Self.installKey(forRomPath: romPath, fallback: id) }
+
+    static func installKey(forRomPath romPath: String, fallback: String) -> String {
+        let marker = "/Roms/"
+        guard let range = romPath.range(of: marker, options: .backwards) else { return "install:" + fallback }
+        let rest = romPath[range.upperBound...]
+        let first = rest.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: true).first.map(String.init)
+        return "install:" + (first ?? fallback)
+    }
+
+    /// Short line telling this install apart from another of the same game; nil unless the library holds a duplicate.
+    var installLabel: String? { DuplicateInstalls.shared.label(for: id) }
 
     var settingsKey: String {
         titleId.map(Self.settingsKey(forTitleId:)) ?? id
@@ -56,7 +71,7 @@ struct GameMetadata: Codable, Identifiable {
     /// "0005000010145D00 - Mario Kart 8", the bare hex anywhere), and the ID as text for the card's small caption. The
     /// caption is nil when the ID is unknown or was not in the name. Nothing on disk is renamed.
     var cardName: (name: String, titleIdText: String?) {
-        let name = LibraryCustomNames.shared.name(for: settingsKey) ?? displayTitle ?? title
+        let name = LibraryCustomNames.shared.name(for: installKey) ?? displayTitle ?? title
         guard let titleId else { return (name, nil) }
         let hex = Self.settingsKey(forTitleId: titleId)
         return CardNameCache.shared.cardName(for: name, hex: hex)
@@ -188,7 +203,12 @@ private enum LibraryMetadataCache {
 
 @MainActor
 class GameManager: ObservableObject {
-    @Published var games: [GameMetadata] = []
+    @Published var games: [GameMetadata] = [] {
+        didSet {
+            DuplicateInstalls.shared.update(games)
+            LibraryCustomNames.shared.migrateLegacyKeys(games: games)
+        }
+    }
     @Published var favorites: [GameMetadata] = []
     @Published var isLoading = false
     @Published var currentGame: GameMetadata?

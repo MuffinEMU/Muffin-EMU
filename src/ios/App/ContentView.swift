@@ -507,7 +507,8 @@ struct GameBrowserView: View {
             : gamesToShow.filter {
                 $0.title.localizedCaseInsensitiveContains(searchText)
                     || ($0.displayTitle?.localizedCaseInsensitiveContains(searchText) ?? false)
-                    || (customNames.name(for: $0.settingsKey)?.localizedCaseInsensitiveContains(searchText) ?? false)
+                    || (customNames.name(for: $0.installKey)?.localizedCaseInsensitiveContains(searchText) ?? false)
+                    || ($0.installLabel?.localizedCaseInsensitiveContains(searchText) ?? false)
             }
         let filtered = (LibraryFilter(rawValue: filterRaw) ?? .all).apply(searched, stats: playStats)
         return sortOrder.sorted(filtered, stats: playStats)
@@ -1272,6 +1273,7 @@ struct GameCardOptimized<Options: View>: View {
                     }
                     Spacer()
                 }
+                if let label = game.installLabel { LibraryInstallLine(text: label, size: 11) }
 
                 Button(action: onTap) {
                     HStack(spacing: 6) {
