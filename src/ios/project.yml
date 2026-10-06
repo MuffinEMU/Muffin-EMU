@@ -40,7 +40,10 @@ settings:
   INFOPLIST_KEY_CFBundleDisplayName: MuffinEMU
   INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
   INFOPLIST_KEY_UIApplicationSceneManifest_Generation: 'YES'
-  INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+  # iPhone may turn upright, but only during a game (OrientationPolicy.swift narrows it to
+  # landscape everywhere else). iPad stays landscape-only, exactly as before.
+  INFOPLIST_KEY_UISupportedInterfaceOrientations: 'UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+  INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: 'UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
   INFOPLIST_KEY_GCSupportsControllerUserInteraction: 'YES'
   INFOPLIST_KEY_UIStatusBarHidden: 'YES'
   # The core opens the microphone when a title asks for GamePad microphone input.
