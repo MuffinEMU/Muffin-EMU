@@ -117,9 +117,9 @@ enum ShaderCacheImport {
         case Int(CEMU_CACHE_STATUS_TITLE_RUNNING.rawValue):
             return Outcome(message: "Close the game first, then import.", failed: true)
         case -2:
-            return Outcome(message: "This game's own cache file belongs to a different version of the cache format, so nothing was changed.", failed: true)
+            return Outcome(message: "This game's own cache file was saved by a different version of the cache format, so nothing was changed. Clear this game's shaders in its options, then import again.", failed: true)
         case -1:
-            return Outcome(message: "This game's own cache file couldn't be opened, so nothing was changed.", failed: true)
+            return Outcome(message: "This game's own cache file couldn't be opened or created, so nothing was changed. If storage is full, free some up and try again.", failed: true)
         default:
             return Outcome(message: "Couldn't import \"\(originalName)\" (code \(result)). Nothing was changed.", failed: true)
         }
@@ -151,17 +151,21 @@ enum ShaderCacheImport {
     private static func successMessage(kind: Kind, added: Int, already: Int, skipped: Int,
                                        renderer: RendererAPI, pipelineIsVulkan: Bool?) -> String {
         let noun = kind == .shaders ? "shader" : "pipeline"
+        let plural = { (n: Int) in "\(n) \(noun)\(n == 1 ? "" : "s")" }
         var parts: [String] = []
-        if added == 0 {
-            parts.append("Nothing new: this game already had all \(already) \(noun)\(already == 1 ? "" : "s") in that file.")
+        if added == 0 && skipped == 0 {
+            parts.append("Nothing new: this game already had all \(plural(already)) in that file.")
+        } else if added == 0 {
+            parts.append("Nothing was added.")
         } else {
-            var line = "Added \(added) \(noun)\(added == 1 ? "" : "s")"
+            var line = "Added \(plural(added))"
             if already > 0 { line += " (\(already) already there)" }
             parts.append(line + ".")
         }
         if skipped > 0 {
-            parts.append("\(skipped) \(skipped == 1 ? "entry was" : "entries were") damaged or not in a usable format and left out.")
+            parts.append("\(skipped) \(skipped == 1 ? "entry was" : "entries were") left out: damaged, not in a usable format, or there wasn't room on this device. If storage is low, free some up and import the file again; entries already added are kept.")
         }
+        parts.append("The file you picked wasn't changed.")
         switch kind {
         case .shaders:
             parts.append("Added to the \(renderer == .vulkan ? "Vulkan" : "Metal") shader file. Shaders from desktop Cemu are converted the first time you start the game, which is a normal shader load; after that they load as fast as the game's own.")
