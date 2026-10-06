@@ -33,6 +33,7 @@ MBenchStatus mbench_initialize(const char* dataDir)
     cemu_bridge_set_timebase_auto_enabled(false);
     cemu_bridge_set_favour_accuracy(false);
     cemu_bridge_set_favour_performance(false);
+    cemu_bridge_set_full_speed_renders(false, 0);
     cemu_bridge_set_recompiler_enabled(false);
     cemu_bridge_initialize(dataDir);
     // -1 means the engine never initialized (the bridge answers "cannot answer" then).

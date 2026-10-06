@@ -1282,7 +1282,7 @@ struct EmulatorViewOptimized: View {
     /// Bottom edge of the top bar, so TouchLab's controls stay clear of Back / pause.
     @State private var topBarHeight: CGFloat = 0
     /// Settings > On-screen Controls > "Hide the top bar while playing". 0 follows the
-    /// device (on for iPhone, off for iPad); see TopBarAutoHide.
+    /// device default (on); see TopBarAutoHide.
     @AppStorage(TopBarAutoHide.overrideKey) private var topBarAutoHideOverride = TopBarAutoHide.followDevice
     /// The bar is faded out and slid away. `topBarHeight` deliberately keeps its last
     /// measured value while this is true, so the pads, which reserve that band, never move.
@@ -2427,7 +2427,10 @@ struct EmulatorViewOptimized: View {
     /// Where the core's FPS readout and notifications, and the picture-stopped card, start.
     /// They are informational and don't touch input, so they take the freed space. The pads
     /// do not use this: they keep reserving the bar's full height (see TopBarAutoHide.swift).
-    private var overlayTopInset: CGFloat { topBarHidden ? 0 : topBarHeight }
+    /// Kept at the bar's height while the bar is hidden as well: the handle that brings it back
+    /// sits up there, and the bar slides back over the same strip, so alerts that moved up into
+    /// it were covered either way.
+    private var overlayTopInset: CGFloat { topBarHeight }
 
     /// The bar may go away only while nothing needs it and nothing is covering it: the game
     /// is running and not paused, no menu, sheet, dialog or card is up, the layout isn't
@@ -2769,8 +2772,11 @@ struct EmulatorViewOptimized: View {
     /// `cemu_bridge_resize_render_surface()` already sizes this surface in, so they're
     /// scaled the same way that sizing is - see RenderScale.swift's effectiveRenderScale.
     private var padScreen: some View {
+        // Simultaneous, like the TV screen's gesture above. This view's container is cached and
+        // re-mounted on every swap; an exclusive minimum-distance-0 drag on it is the prime
+        // suspect for every control going dead after swapping to the GamePad screen.
         PadMetalViewIOS()
-            .gesture(
+            .simultaneousGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in sendPadTouch(value.location, down: true) }
                     .onEnded { value in sendPadTouch(value.location, down: false) }

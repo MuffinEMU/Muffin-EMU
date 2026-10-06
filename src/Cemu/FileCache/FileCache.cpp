@@ -226,6 +226,23 @@ FileCache* FileCache::Open(const fs::path& path, bool allowCreate, uint32 extraV
 		return fileCache;
 	if (!allowCreate)
 		return nullptr;
+	// A file that exists but won't open (cut short when the app was killed mid-write or the disk
+	// filled, or written by another cache version) used to be overwritten by Create() below,
+	// silently throwing away every shader the game had learned. Keep it beside the new one
+	// instead. The name keeps its title-ID prefix, so clearing the shader cache in Settings still
+	// counts and removes it.
+	std::error_code ec;
+	if (fs::exists(path, ec) && fs::file_size(path, ec) > 0 && !ec)
+	{
+		fs::path aside = path;
+		aside += ".unreadable";
+		fs::remove(aside, ec);
+		fs::rename(path, aside, ec);
+		if (ec)
+			cemuLog_log(LogType::Force, "Cache file \"{}\" could not be opened or set aside: {}", _pathToUtf8(path), ec.message());
+		else
+			cemuLog_log(LogType::Force, "Cache file \"{}\" could not be opened; kept as \"{}\" and started a new one", _pathToUtf8(path), _pathToUtf8(aside));
+	}
 	return Create(path, extraVersion);
 }
 

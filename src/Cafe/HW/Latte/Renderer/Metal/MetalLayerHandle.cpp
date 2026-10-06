@@ -1,4 +1,5 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalLayerHandle.h"
+#include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Renderer/Metal/MetalLayer.h"
 
 #include "gui/interface/WindowSystem.h"
@@ -169,7 +170,16 @@ bool MetalLayerHandle::AcquireDrawable()
 
 void MetalLayerHandle::PresentDrawable(MTL::CommandBuffer* commandBuffer)
 {
-    commandBuffer->presentDrawable(m_drawable);
+    // Full speed renders: keep each frame on screen for at least the game's own frame interval,
+    // the GX2 swap interval in 60 Hz vsyncs (1 = 60 fps, 2 = 30 fps), so frames arrive evenly and
+    // never faster than on the console. 1.5 ms under the exact interval so a frame that is on time
+    // is not pushed a whole refresh later (on a 60 Hz panel 16.7 ms would otherwise become 33.3).
+    // Swap interval 0 means the game asked for no vsync: present at once, as before.
+    const uint32 swapInterval = LatteGPUState.sharedArea ? LatteGPUState.sharedArea->swapInterval : 0;
+    if (g_latteFullSpeedRenders.load(std::memory_order_relaxed) && swapInterval > 0 && swapInterval <= 4)
+        commandBuffer->presentDrawableAfterMinimumDuration(m_drawable, (double)swapInterval / 60.0 - 0.0015);
+    else
+        commandBuffer->presentDrawable(m_drawable);
     m_drawable->release();
     m_drawable = nullptr;
     if (m_isMainWindow)
