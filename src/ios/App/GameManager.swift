@@ -40,6 +40,10 @@ struct GameMetadata: Codable, Identifiable {
 
     /// What per-game settings are stored under: the base title ID as 16 hex digits, so they follow the game through a
     /// rename or a re-import. Only a title with no derivable ID falls back to the file-name `id`.
+    /// What Title sort and the A to Z groups order by: the player's own name for the game when
+    /// they set one, otherwise the file-name title.
+    var sortTitle: String { LibraryCustomNames.shared.name(for: settingsKey) ?? title }
+
     var settingsKey: String {
         titleId.map(Self.settingsKey(forTitleId:)) ?? id
     }
@@ -52,22 +56,60 @@ struct GameMetadata: Codable, Identifiable {
     /// "0005000010145D00 - Mario Kart 8", the bare hex anywhere), and the ID as text for the card's small caption. The
     /// caption is nil when the ID is unknown or was not in the name. Nothing on disk is renamed.
     var cardName: (name: String, titleIdText: String?) {
-        let name = displayTitle ?? title
+        let name = LibraryCustomNames.shared.name(for: settingsKey) ?? displayTitle ?? title
         guard let titleId else { return (name, nil) }
         let hex = Self.settingsKey(forTitleId: titleId)
-        let pattern = "[\\[({]?\\s*(?<![0-9A-Fa-f])" + String(hex.prefix(8)) + "[-_ ]?" + String(hex.suffix(8)) + "(?![0-9A-Fa-f])\\s*[\\])}]?"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
-              let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
-              let range = Range(match.range, in: name) else { return (name, nil) }
-        var cleaned = name.replacingCharacters(in: range, with: " ")
-        while cleaned.contains("  ") { cleaned = cleaned.replacingOccurrences(of: "  ", with: " ") }
-        cleaned = cleaned.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: "-\u{2013}\u{2014}_.,:;|")))
-        // A name that was nothing but the ID keeps showing it rather than going blank.
-        return cleaned.isEmpty ? (name, nil) : (cleaned, hex)
+        return CardNameCache.shared.cardName(for: name, hex: hex)
     }
 
     enum CodingKeys: String, CodingKey {
         case id, title, romPath, coverPath, region, releaseDate, genre, titleId, dumpDirectoryPath, displayTitle
+    }
+}
+
+/// Works out a card's name once per (name, title ID) instead of on every render: the card body reads it twice, and
+/// each read used to compile an NSRegularExpression. Entries are tiny, and NSCache drops them under memory pressure.
+final class CardNameCache: @unchecked Sendable {
+    static let shared = CardNameCache()
+
+    private final class Entry {
+        let name: String
+        let titleIdText: String?
+        init(name: String, titleIdText: String?) { self.name = name; self.titleIdText = titleIdText }
+    }
+
+    private let entries = NSCache<NSString, Entry>()
+    private let separators = CharacterSet.whitespaces.union(CharacterSet(charactersIn: "-\u{2013}\u{2014}_.,:;|"))
+
+    func cardName(for name: String, hex: String) -> (name: String, titleIdText: String?) {
+        let key = "\(hex)|\(name)" as NSString
+        if let hit = entries.object(forKey: key) { return (hit.name, hit.titleIdText) }
+        let result = compute(name: name, hex: hex)
+        entries.setObject(Entry(name: result.name, titleIdText: result.titleIdText), forKey: key)
+        return result
+    }
+
+    private func compute(name: String, hex: String) -> (name: String, titleIdText: String?) {
+        let pattern = "[\\[({]?\\s*(?<![0-9A-Fa-f])" + String(hex.prefix(8)) + "[-_ ]?" + String(hex.suffix(8)) + "(?![0-9A-Fa-f])\\s*[\\])}]?"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+              let range = Range(match.range, in: name) else { return (name, nil) }
+        // Only the separators next to the removed ID go, so a "." or "-" elsewhere in the name stays.
+        var before = String(name[..<range.lowerBound])
+        var after = String(name[range.upperBound...])
+        while let last = before.unicodeScalars.last, separators.contains(last) { before.unicodeScalars.removeLast() }
+        while let first = after.unicodeScalars.first, separators.contains(first) { after.unicodeScalars.removeFirst() }
+        // "Game (USA, 0005000010145D00)" loses its ID and the comma; give back the bracket that went with it.
+        let removed = name[range]
+        for (open, close) in [("(", ")"), ("[", "]"), ("{", "}")] {
+            let opens = before.filter { String($0) == open }.count
+            let closes = before.filter { String($0) == close }.count
+            if opens > closes, removed.contains(close) { before += close }
+        }
+        let cleaned: String
+        if before.isEmpty { cleaned = after } else if after.isEmpty { cleaned = before } else { cleaned = before + " " + after }
+        // A name that was nothing but the ID keeps showing it rather than going blank.
+        return cleaned.isEmpty ? (name, nil) : (cleaned, hex)
     }
 }
 
@@ -210,9 +252,10 @@ class GameManager: ObservableObject {
         }
     }
 
-    func loadGames() async {
-        isLoading = true
-        defer { isLoading = false }
+    /// `showSpinner` is false for a rescan while the grid is on screen, so the list does not flash to the loading view.
+    func loadGames(showSpinner: Bool = true) async {
+        if showSpinner { isLoading = true }
+        defer { if showSpinner { isLoading = false } }
 
         let fileManager = FileManager.default
         guard let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
@@ -241,10 +284,54 @@ class GameManager: ObservableObject {
             print("Error scanning Roms directory")
             return
         }
-        self.games = discovered.sorted { $0.title < $1.title }
+        let sortedDiscovered = discovered.sorted { $0.title < $1.title }
+        // A quiet rescan that finds the same games changes nothing, so the grid keeps its scroll position and covers.
+        if !showSpinner, sortedDiscovered.map({ $0.id + "|" + $0.romPath }) == games.map({ $0.id + "|" + $0.romPath }) { return }
+        self.games = sortedDiscovered
         PerGameKeyMigration.run(games: self.games)
         self.favorites = self.games.filter { $0.isFavorite }
         enrichMissingCoverArt()
+    }
+
+    /// Looks for games dropped into Roms from the Files app while MuffinEMU was open. Only when nothing is running or
+    /// importing, and without the loading view.
+    func rescanIfIdle() async {
+        guard emulationState == .idle, !isLoading, importState == .idle else { return }
+        await loadGames(showSpinner: false)
+    }
+
+    enum RemoveGameError: LocalizedError {
+        case notInLibrary
+        case failed(Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .notInLibrary: return "Couldn't find that game's files."
+            case .failed(let error): return "Couldn't remove the game: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Deletes the game's own file or folder from Documents/Roms. Save data, save states, per-game options and favourites
+    /// are kept, so adding the game back picks up where it left off.
+    func removeGame(_ game: GameMetadata) async throws {
+        guard emulationState == .idle, importState == .idle else { return }
+        guard let roms = romsDirectoryURL?.resolvingSymlinksInPath() else { throw RemoveGameError.notInLibrary }
+        // The library entry is the item directly inside Roms: the file itself, or the top folder of a dump.
+        var item = URL(fileURLWithPath: game.romPath).resolvingSymlinksInPath()
+        while item.deletingLastPathComponent().path != roms.path {
+            let parent = item.deletingLastPathComponent()
+            guard parent.path != item.path, parent.path.hasPrefix(roms.path) else { throw RemoveGameError.notInLibrary }
+            item = parent
+        }
+        guard item.path != roms.path, FileManager.default.fileExists(atPath: item.path) else { throw RemoveGameError.notInLibrary }
+        let target = item
+        do {
+            try await Task.detached { try FileManager.default.removeItem(at: target) }.value
+        } catch {
+            throw RemoveGameError.failed(error)
+        }
+        await loadGames(showSpinner: false)
     }
 
     /// Scans Roms/ for games. Pure disk and bridge work with no main-actor state, so it is
@@ -780,7 +867,7 @@ class GameManager: ObservableObject {
                 // check runs against the copy we already made, and every way it can fail
                 // - unsupported extension, supported extension over the wrong bytes -
                 // means the same thing to the person holding the iPad.
-                return "This isn't a valid Wii U game file."
+                return "This isn't a Wii U game file MuffinEMU can read. It accepts .wua, .wux, .wud, .iso, .rpx, .elf and .wuhb files, or a game folder. Encrypted games also need keys.txt."
             case .notAWiiUDump(let name):
                 return "\"\(name)\" isn't a Wii U game dump. A dump folder needs code, content and meta folders inside it, or an encrypted game folder: title.tmd and title.tik next to its .app files."
             case .accessDenied:
@@ -1095,6 +1182,7 @@ class GameManager: ObservableObject {
         // restart the launch underneath the one already booting. Every way back to the library
         // goes through stopEmulation(), which leaves the state at .idle.
         guard emulationState == .idle else { return }
+        LibraryPlayStats.shared.recordLaunch(of: game.id)
         launchToken = UUID()
         currentGame = game
         surfaceRegistered = false
@@ -1395,7 +1483,7 @@ class GameManager: ObservableObject {
                 var notice = String(cString: cemu_bridge_take_launch_notice())
                 // iOS slows the CPU and GPU in Low Power Mode, which no setting here can undo. Say so, but never over a more specific note.
                 if notice.isEmpty && status == CEMU_BRIDGE_OK && ProcessInfo.processInfo.isLowPowerModeEnabled {
-                    notice = "Low Power Mode is on, so games may run slowly. Turn it off in Control Center for full speed."
+                    notice = "Low Power Mode is on, so games may run slowly. Turn it off in Control Centre for full speed."
                 }
                 if !notice.isEmpty {
                     self.showLaunchNotice(notice)
@@ -1417,8 +1505,15 @@ class GameManager: ObservableObject {
     /// Also used for the in-game heat notice (InGameNotices.swift): same banner, same fade.
     func showLaunchNotice(_ notice: String) {
         launchNotice = notice
+        #if os(iOS)
+        // The banner takes no touches and VoiceOver never lands on it, so say it aloud.
+        UIAccessibility.post(notification: .announcement, argument: notice)
+        #endif
+        // About 2.5 words a second, plus a moment to notice it: a six-word line stays 6 seconds, the 28-word heat notice 14.
+        let words = notice.split(whereSeparator: \.isWhitespace).count
+        let seconds = min(20.0, max(6.0, 2.5 + Double(words) / 2.5))
         Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             if self?.launchNotice == notice {
                 self?.launchNotice = nil
             }

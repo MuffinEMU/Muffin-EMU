@@ -150,8 +150,9 @@ struct HomeMenuEventsModifier: ViewModifier {
 
 // MARK: - Menu
 
-/// What the menu asks the emulator view to do. The view owns the pause, the save-state sheet, edit
-/// mode and the quit confirmation; the menu only asks.
+/// What the menu asks the emulator view to do. The view owns the pause, the save-state sheet and edit
+/// mode; the menu only asks. `quit` is the confirmed quit: the menu asks "Quit game?" itself, on a page,
+/// so a controller can answer it.
 struct HomeMenuActions {
     let resume: () -> Void
     let saveStates: () -> Void
@@ -172,6 +173,14 @@ private struct HomeMenuRow: Identifiable {
     let action: () -> Void
 }
 
+/// Height of the rows inside the card, so the card can cap it and let the rows scroll on a short screen.
+private struct HomeRowsHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// The menu: a dimmed layer over the game and a compact card. Touch works as usual. With a
 /// controller, up and down move a highlight, A chooses and B goes back (or resumes, from the
 /// first page); HOME is handled by the emulator view, which closes the menu.
@@ -185,17 +194,21 @@ struct HomeMenuOverlay: View {
     let canQuit: Bool
     let actions: HomeMenuActions
 
-    private enum Page { case root, layout }
+    private enum Page { case root, layout, confirmQuit }
     @State private var page = Page.root
     @State private var focus = 0
+    @State private var rowsHeight: CGFloat = 280
     /// The highlight is for controller players: shown from the start when one is connected, and once
     /// a controller button is used otherwise, so a touch player is not handed a row that looks chosen.
     @State private var usingController = ControllerPresence.isConnected()
 
     var body: some View {
-        ZStack {
-            scrim
-            card
+        GeometryReader { proxy in
+            ZStack {
+                scrim
+                card(availableHeight: proxy.size.height)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
         .transition(.opacity)
         .accessibilityElement(children: .contain)
@@ -213,12 +226,36 @@ struct HomeMenuOverlay: View {
             .accessibilityHidden(true)
     }
 
-    private var card: some View {
+    private func card(availableHeight: CGFloat) -> some View {
         MuffinCard(cornerRadius: MuffinTheme.Radius.card) {
             VStack(spacing: 8) {
                 header
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    HomeMenuRowView(row: row, isFocused: usingController && index == focus)
+                // Scrolls when the card is taller than the screen (an iPhone in landscape), and follows the
+                // controller's highlight.
+                ScrollViewReader { reader in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 8) {
+                            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                                HomeMenuRowView(row: row, isFocused: usingController && index == focus)
+                                    .id(row.id)
+                            }
+                        }
+                        // Room for the focus ring, which is drawn just outside the row.
+                        .padding(4)
+                        .background(
+                            GeometryReader { inner in
+                                Color.clear.preference(key: HomeRowsHeightKey.self, value: inner.size.height)
+                            }
+                        )
+                    }
+                    .frame(height: rowsHeight > 0 ? min(rowsHeight, max(96, availableHeight - 130)) : nil)
+                    .onPreferenceChange(HomeRowsHeightKey.self) { rowsHeight = $0 }
+                    .onChange(of: focus) { _ in
+                        let current = rows
+                        if current.indices.contains(focus) {
+                            withAnimation(.easeInOut(duration: 0.15)) { reader.scrollTo(current[focus].id) }
+                        }
+                    }
                 }
             }
             .padding(14)
@@ -229,17 +266,34 @@ struct HomeMenuOverlay: View {
         .padding(.vertical, 8)
     }
 
+    private var headerTitle: String {
+        switch page {
+        case .root: return "HOME menu"
+        case .layout: return "Screen layout"
+        case .confirmQuit: return "Quit game?"
+        }
+    }
+
     private var header: some View {
         VStack(spacing: 2) {
-            Text(page == .root ? "HOME menu" : "Screen layout")
+            Text(headerTitle)
                 .font(MuffinTheme.Font.sectionTitle)
                 .foregroundColor(MuffinTheme.brownDarkest)
                 .accessibilityAddTraits(.isHeader)
-            if page == .root {
+            switch page {
+            case .root:
                 Text(gameName)
                     .font(MuffinTheme.Font.caption)
                     .foregroundColor(MuffinTheme.brownMid)
                     .lineLimit(1)
+            case .confirmQuit:
+                Text("Save states can't be loaded after you quit. Use the game's own save.")
+                    .font(MuffinTheme.Font.caption)
+                    .foregroundColor(MuffinTheme.brownMid)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            case .layout:
+                EmptyView()
             }
         }
         .padding(.bottom, 2)
@@ -248,7 +302,21 @@ struct HomeMenuOverlay: View {
     // MARK: Rows
 
     private var rows: [HomeMenuRow] {
-        page == .root ? rootRows : layoutRows
+        switch page {
+        case .root: return rootRows
+        case .layout: return layoutRows
+        case .confirmQuit: return confirmQuitRows
+        }
+    }
+
+    /// "Keep playing" is the first row, so it is the one highlighted: a stray A press does not quit.
+    private var confirmQuitRows: [HomeMenuRow] {
+        [
+            HomeMenuRow(id: "keep", title: "Keep playing", symbol: "play.fill",
+                        hint: "Goes back to the HOME menu without quitting.", isPrimary: true, action: { show(.root) }),
+            HomeMenuRow(id: "quitNow", title: "Quit game", symbol: "xmark.circle",
+                        hint: "Leaves the game now.", isDestructive: true, action: actions.quit)
+        ]
     }
 
     private var rootRows: [HomeMenuRow] {
@@ -276,7 +344,7 @@ struct HomeMenuOverlay: View {
             }
         case .quit:
             // Dropped, not disabled, while a save is being written: quitting tears the title down under it.
-            return canQuit ? make(destructive: true, actions.quit) : nil
+            return canQuit ? make(destructive: true, { show(.confirmQuit) }) : nil
         }
     }
 
@@ -311,17 +379,23 @@ struct HomeMenuOverlay: View {
     // MARK: Navigation
 
     private func show(_ next: Page) {
+        let previous = page
         page = next
-        // Coming back lands on the row that opened the page; going in lands on the layout in use.
-        if next == .root {
-            focus = HomeMenuDestination.visible.firstIndex(of: .screenLayout) ?? 0
-        } else {
+        // Coming back lands on the row that opened the page; going in lands on the layout in use, or on
+        // "Keep playing" when asked to confirm a quit.
+        switch next {
+        case .root:
+            let opener: HomeMenuDestination = previous == .confirmQuit ? .quit : .screenLayout
+            focus = HomeMenuDestination.visible.firstIndex(of: opener) ?? 0
+        case .layout:
             focus = layoutRows.firstIndex(where: { $0.isSelected }) ?? 0
+        case .confirmQuit:
+            focus = 0
         }
     }
 
     private func goBack() {
-        if page == .layout { show(.root) } else { actions.resume() }
+        if page != .root { show(.root) } else { actions.resume() }
     }
 
     private func handle(_ event: HomeMenuEvent) {
@@ -378,7 +452,8 @@ private struct HomeMenuRowView: View {
             Spacer(minLength: 4)
             trailing
         }
-        .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+        // 22 plus the button style's 8 points above and below: a 44 point row.
+        .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
         .foregroundColor(row.isDestructive ? MuffinTheme.alertText : nil)
     }
 

@@ -222,6 +222,11 @@ enum AdvancedSettings {
         AdvancedSetting(PadDiagnostics.enabledKey, PadDiagnostics.defaultEnabled),
     ], applyToBridge: nil)
 
+    private static let libraryOrganization = AdvancedGroup(name: "Library organization", settings: [
+        AdvancedSetting(LibraryGrouping.storageKey, LibraryGrouping.defaultValue.rawValue),
+        AdvancedSetting(LibraryFilter.storageKey, LibraryFilter.defaultValue.rawValue),
+    ], applyToBridge: nil)
+
     static let groups: [AdvancedGroup] = [
         cpuAndPerformance,
         fullSpeedRenders,
@@ -235,6 +240,7 @@ enum AdvancedSettings {
         stickFeel,
         topBar,
         diagnostics,
+        libraryOrganization,
     ]
 
     static var allSettings: [AdvancedSetting] { groups.flatMap { $0.settings } }
