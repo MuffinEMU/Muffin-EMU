@@ -31,10 +31,10 @@ enum TopBarAutoHide {
     /// How long the bar stays after the last touch on it.
     static let hideDelayNanoseconds: UInt64 = 4_000_000_000
 
-    /// On for iPhone, where the bar takes a large share of a short screen; off for iPad.
-    static var deviceDefault: Bool {
-        UIDevice.current.userInterfaceIdiom == .phone
-    }
+    /// On everywhere. It was iPhone-only at first, but on an iPad the bar sitting over the picture
+    /// for a whole session read as a bug, not a choice. Kept as a property so a device class can
+    /// differ again without touching the stored-override logic.
+    static var deviceDefault: Bool { true }
 
     static func isOn(override: Int) -> Bool {
         switch override {
