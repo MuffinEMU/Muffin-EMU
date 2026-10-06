@@ -25,6 +25,16 @@ enum MeloControlsSetting {
     /// Bumped by "Reset to default" so a live pad rebuilds from the cleared layout.
     static let layoutResetKey = "muffin.melo.layoutResetCount"
 
+    /// Copies a game's saved button positions to its title-ID name, unless that one already exists. Copied rather than moved, so
+    /// the file under the old name is still there if anything goes wrong.
+    static func adoptLayout(from oldID: String, to newID: String) {
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let folder = documents.appendingPathComponent("controller_layouts")
+        let old = folder.appendingPathComponent("\(oldID).json"), new = folder.appendingPathComponent("\(newID).json")
+        guard FileManager.default.fileExists(atPath: old.path), !FileManager.default.fileExists(atPath: new.path) else { return }
+        try? FileManager.default.copyItem(at: old, to: new)
+    }
+
     /// Puts this game's button positions back to how Melo-Controller ships them, and the
     /// size with them. The package keeps positions in Documents/controller_layouts/<game
     /// id>.json (default.json with no game) and its LayoutManager isn't public, so this

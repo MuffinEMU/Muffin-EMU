@@ -29,7 +29,8 @@ struct GameOverrides: Codable, Equatable {
     var isIdentity: Bool { self == GameOverrides.identity }
 }
 
-/// Where per-game overrides live, keyed by `GameMetadata.id`.
+/// Where per-game overrides live, keyed by `GameMetadata.settingsKey` (the game's title ID, or its file-name id when no title ID
+/// could be read).
 ///
 /// One JSON blob rather than a key per game per setting - the same shape
 /// `ControllerCustomLayout` already uses for per-element pad overrides - because the game
@@ -105,6 +106,16 @@ final class PerGameSettingsStore: ObservableObject {
         write(next, for: gameID)
     }
 
+    /// Moves overrides saved under the game's file-name id (before settings were keyed by title ID) to its title-ID key. An entry
+    /// already under the title-ID key is never overwritten, and the old one is only removed once it has been moved.
+    func adoptTitleIDKey(for game: GameMetadata) {
+        let key = game.settingsKey
+        guard key != game.id, let legacy = overridesByGame[game.id], overridesByGame[key] == nil else { return }
+        overridesByGame[key] = legacy
+        overridesByGame.removeValue(forKey: game.id)
+        persist()
+    }
+
     /// Puts one game back on the global settings.
     func clearOverrides(for gameID: String) {
         write(.identity, for: gameID)
@@ -133,6 +144,22 @@ final class PerGameSettingsStore: ObservableObject {
     }
 }
 
+/// Carries everything a game's settings stored under its file name over to its title-ID key (GameMetadata.settingsKey): the
+/// per-game overrides, Auto's memory of a bad three-core run, and the pad layouts. Run on every library scan. Each step only
+/// acts on a game that still has something under the old name and nothing under the new key, so it is safe to repeat and a
+/// game attached later (a disc image whose key arrived after the first scan) is picked up too. Nothing is deleted that was
+/// not moved or copied first. Save states, covers, favourites and the library's own caches stay keyed by file name.
+enum PerGameKeyMigration {
+    @MainActor static func run(games: [GameMetadata]) {
+        for game in games where game.titleId != nil && game.settingsKey != game.id {
+            PerGameSettingsStore.shared.adoptTitleIDKey(for: game)
+            AutoCoreHistory.adoptTitleIDKey(from: game.id, to: game.settingsKey)
+            TouchLabSettings.adoptAdaptiveKey(from: game.id, to: game.settingsKey)
+            MeloControlsSetting.adoptLayout(from: game.id, to: game.settingsKey)
+        }
+    }
+}
+
 /// Quick actions offered from a long-press on a library title: a couple of toggles, plus a
 /// way into the full options screen. Applied as a `.contextMenu` modifier on the game's card.
 struct GameContextMenu: View {
@@ -150,16 +177,16 @@ struct GameContextMenu: View {
 
     var body: some View {
         Toggle(isOn: Binding(
-            get: { store.effectivePreCompileShaders(for: game.id) },
-            set: { store.setPreCompileShaders($0, for: game.id) }
+            get: { store.effectivePreCompileShaders(for: game.settingsKey) },
+            set: { store.setPreCompileShaders($0, for: game.settingsKey) }
         )) {
             Label("Compile Shaders in the Background", systemImage: "bolt.fill")
         }
         // The toggle above always sets this game's own choice, so when it has one, say so and
         // offer the way back to following Settings without a trip into the options screen.
-        if store.overrides(for: game.id).preCompileShaders != nil {
+        if store.overrides(for: game.settingsKey).preCompileShaders != nil {
             Button {
-                store.setPreCompileShaders(nil, for: game.id)
+                store.setPreCompileShaders(nil, for: game.settingsKey)
             } label: {
                 Label("Use Global Shader Setting", systemImage: "arrow.uturn.backward")
             }
@@ -294,7 +321,7 @@ struct GameOptionsView: View {
                          set setter: @escaping (Bool?) -> Void) -> Binding<TriState> {
         Binding(
             get: {
-                switch store.overrides(for: game.id)[keyPath: keyPath] {
+                switch store.overrides(for: game.settingsKey)[keyPath: keyPath] {
                 case .none: return .useGlobalDefault
                 case .some(true): return .on
                 case .some(false): return .off
@@ -310,11 +337,11 @@ struct GameOptionsView: View {
     }
 
     private var shaderChoice: Binding<TriState> {
-        binding(for: \.preCompileShaders) { store.setPreCompileShaders($0, for: game.id) }
+        binding(for: \.preCompileShaders) { store.setPreCompileShaders($0, for: game.settingsKey) }
     }
 
     private var favourAccuracyChoice: Binding<TriState> {
-        binding(for: \.favourAccuracy) { store.setFavourAccuracy($0, for: game.id) }
+        binding(for: \.favourAccuracy) { store.setFavourAccuracy($0, for: game.settingsKey) }
     }
 
     /// nil is "Use Global Default"; the tag is CoreMode.rawValue otherwise. A stored value this
@@ -323,10 +350,10 @@ struct GameOptionsView: View {
     private var coreModeChoice: Binding<String> {
         Binding(
             get: {
-                guard let raw = store.overrides(for: game.id).coreMode, CoreMode(rawValue: raw) != nil else { return "" }
+                guard let raw = store.overrides(for: game.settingsKey).coreMode, CoreMode(rawValue: raw) != nil else { return "" }
                 return raw
             },
-            set: { store.setCoreMode(CoreMode(rawValue: $0), for: game.id) })
+            set: { store.setCoreMode(CoreMode(rawValue: $0), for: game.settingsKey) })
     }
 
     // MARK: Captions
@@ -339,21 +366,21 @@ struct GameOptionsView: View {
     }
 
     private var shaderCaption: String {
-        caption(pinned: store.overrides(for: game.id).preCompileShaders != nil,
+        caption(pinned: store.overrides(for: game.settingsKey).preCompileShaders != nil,
                 settingsValue: store.globalPreCompileShaders ? "on" : "off")
     }
 
     private var favourAccuracyCaption: String {
-        caption(pinned: store.overrides(for: game.id).favourAccuracy != nil,
+        caption(pinned: store.overrides(for: game.settingsKey).favourAccuracy != nil,
                 settingsValue: store.globalFavourAccuracy ? "on" : "off")
     }
 
     private var coreModeCaption: String {
         guard DeviceCapabilities.current.multicoreViable else { return DeviceCapabilities.oneCoreOnlyText }
-        let base = caption(pinned: store.overrides(for: game.id).coreMode != nil,
+        let base = caption(pinned: store.overrides(for: game.settingsKey).coreMode != nil,
                            settingsValue: "set to \(CoreMode.current.title)")
-        guard store.effectiveCoreMode(for: game.id) != .single else { return base }
-        if store.effectiveFavourAccuracy(for: game.id) {
+        guard store.effectiveCoreMode(for: game.settingsKey) != .single else { return base }
+        if store.effectiveFavourAccuracy(for: game.settingsKey) {
             return base + " Favour accuracy is on for this game, so it runs on one core whatever this says."
         }
         if LowPowerMode.isEnabled {
@@ -383,9 +410,9 @@ struct GameOptionsView: View {
                     Text(mode.title).tag(mode.rawValue)
                 }
             }
-            if !store.overrides(for: game.id).isIdentity {
+            if !store.overrides(for: game.settingsKey).isIdentity {
                 Button {
-                    store.clearOverrides(for: game.id)
+                    store.clearOverrides(for: game.settingsKey)
                 } label: {
                     Label("Use Global Defaults for All", systemImage: "arrow.uturn.backward")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))

@@ -39,8 +39,8 @@ enum SaveStateAvailability {
 }
 
 /// Where save-state slot files live on disk and the numbering every game shares. Namespaced
-/// by `GameMetadata.id` (the same key PerGameSettingsStore uses), which is always present,
-/// unlike `titleId`.
+/// by `GameMetadata.id` (the file name), which is always present, unlike `titleId`. Per-game
+/// settings moved to the title ID (`GameMetadata.settingsKey`); save states stay here, as game data.
 enum SaveStateStore {
     /// Number of slots per game; nothing else assumes a specific count.
     static let slotCount = 4
