@@ -17,6 +17,10 @@ struct DisplaySettingsSection: View {
     @AppStorage(LocalScreenLayoutSettings.showSwapButtonKey)
     private var showLocalSwapButton = LocalScreenLayoutSettings.defaultShowSwapButton
 
+    // Read by OrientationPolicy each time UIKit asks which way the app may turn, so there is nothing to push.
+    @AppStorage(OrientationPolicy.allowPortraitKey)
+    private var allowPortrait = OrientationPolicy.defaultAllowPortrait
+
     @AppStorage(ExternalDisplaySystemSettings.enabledKey)
     private var externalDisplaySystemEnabled = ExternalDisplaySystemSettings.defaultEnabled
     @AppStorage(DisplayLayoutSettings.swapKey)
@@ -61,6 +65,20 @@ struct DisplaySettingsSection: View {
                         Text("Show swap button")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text("A small button on screen to switch between the TV and GamePad screens.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
+                }
+                .tint(MuffinTheme.accentText)
+            }
+
+            // iPhone only: iPad stays landscape, and the menus on every device do.
+            if UIDevice.current.userInterfaceIdiom == .phone {
+                Toggle(isOn: $allowPortrait) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Allow portrait during games")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("Hold the phone upright to play: the picture goes along the top and the controls below it. Off keeps games in landscape.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }
@@ -118,7 +136,7 @@ struct DisplaySettingsSection: View {
             InfoButton.footer(
                 "Screen Layout arranges the TV and GamePad on this device. The external display is off until you turn it on, and needs a second screen that MuffinEMU can open a window on; AirPlay mirroring doesn't count.",
                 title: "Display",
-                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nThe external display is off by default; turn it on before connecting a display. Then choose which Wii U screen it shows. It is experimental and hasn't been tested on much hardware.")
+                text: "The Wii U has two screens: the TV and the GamePad.\n\nScreen Layout: Single Screen shows one at a time with a swap button; Adaptive shows both, stacked in portrait and side by side in landscape; Both Screens (GamePad Top Right) keeps the TV full size with a small GamePad inset.\n\nAllow portrait during games (iPhone): hold the phone upright and the picture goes along the top with the controls below it. Menus stay in landscape. Turn it off if you'd rather a game never turns when the phone tilts; the iOS rotation lock works too.\n\nThe external display is off by default; turn it on before connecting a display. Then choose which Wii U screen it shows. It is experimental and hasn't been tested on much hardware.")
         }
         .foregroundColor(MuffinTheme.brownDarkest)
     }
