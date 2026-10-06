@@ -318,7 +318,7 @@ struct CustomServerFormView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             Form {
                 Section("Name") {
                     TextField("Server name", text: $addresses.name)
