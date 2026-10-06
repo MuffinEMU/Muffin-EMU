@@ -429,6 +429,18 @@ private:
 
 	std::unique_ptr<SwapchainInfoVk> m_mainSwapchainInfo{}, m_padSwapchainInfo{};
 	std::atomic_flag m_destroyPadSwapchainNextAcquire{};
+	// GamePad surface (re)registered by the UI thread while the GPU thread may be using the old chain: the UI thread only
+	// records the size here, and the GPU thread swaps the chain in ApplyPendingPadSurface()
+	std::atomic_bool m_padSurfaceChanged{false};
+	std::atomic<sint32> m_padSurfaceWidth{0}, m_padSurfaceHeight{0};
+	// backoff for chains that failed to (re)build, [0] = TV, [1] = GamePad. GPU thread only
+	struct SwapchainRetryState
+	{
+		std::chrono::steady_clock::time_point notBefore{};
+		uint32 delayMs = 0;
+	};
+	std::array<SwapchainRetryState, 2> m_swapchainRetry{};
+	bool m_imguiBackendInitialized = false; // ImGui_ImplVulkan_Init() ran and has not been shut down again
 	std::array<std::atomic_bool, 2> m_swapchainPresentPending{};
 	bool IsSwapchainInfoValid(bool mainWindow) const;
 
@@ -579,6 +591,9 @@ private:
 	VkPipeline backbufferBlit_createGraphicsPipeline(VkDescriptorSetLayout descriptorLayout, bool padView, RendererOutputShader* shader);
 	bool AcquireNextSwapchainImage(bool mainWindow);
 	void RecreateSwapchain(bool mainWindow, bool skipCreate = false);
+	void ApplyPendingPadSurface();
+	void NoteSwapchainFailure(bool mainWindow, const char* what);
+	void RetryDeadSwapchain(bool mainWindow);
 
 	// streamout
 	void streamout_setupXfbBuffer(uint32 bufferIndex, sint32 ringBufferOffset, uint32 rangeAddr, uint32 rangeSize) override;

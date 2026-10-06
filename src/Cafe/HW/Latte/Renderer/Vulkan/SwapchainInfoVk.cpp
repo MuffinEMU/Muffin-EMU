@@ -41,10 +41,31 @@ void SwapchainInfoVk::Create()
 		cemuLog_log(LogType::Force, "Vulkan: Swapchain image count less than 2 may cause problems");
 
 	VkSwapchainCreateInfoKHR create_info = CreateSwapchainCreateInfo(m_surface, details, m_surfaceFormat, image_count, m_actualExtent);
-	create_info.oldSwapchain = nullptr;
+	// A rebuild hands the previous swapchain over (Cleanup(true) kept it) and it is only destroyed once the replacement exists
+	VkSwapchainKHR oldSwapchain = m_swapchain;
+	create_info.oldSwapchain = oldSwapchain;
 	create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
-	VkResult result = vkCreateSwapchainKHR(m_logicalDevice, &create_info, nullptr, &m_swapchain);
+	VkSwapchainKHR newSwapchain = VK_NULL_HANDLE;
+	VkResult result = vkCreateSwapchainKHR(m_logicalDevice, &create_info, nullptr, &newSwapchain);
+	if (result != VK_SUCCESS)
+		newSwapchain = VK_NULL_HANDLE;
+	if (oldSwapchain != VK_NULL_HANDLE)
+	{
+		// retired by the call above whether or not it succeeded, and nothing renders to it any more
+		vkDestroySwapchainKHR(m_logicalDevice, oldSwapchain, nullptr);
+		m_swapchain = VK_NULL_HANDLE;
+		if (result != VK_SUCCESS)
+		{
+			// the driver may not like the handover (or the old chain was already dead): try once more from scratch
+			cemuLog_log(LogType::Force, "Vulkan: {} swapchain rebuild with the old chain failed ({}), retrying without it", mainWindow ? "TV" : "GamePad", (sint32)result);
+			create_info.oldSwapchain = VK_NULL_HANDLE;
+			result = vkCreateSwapchainKHR(m_logicalDevice, &create_info, nullptr, &newSwapchain);
+			if (result != VK_SUCCESS)
+				newSwapchain = VK_NULL_HANDLE;
+		}
+	}
+	m_swapchain = newSwapchain;
 	if (result != VK_SUCCESS)
 	{
 		cemuLog_log(LogType::Force, "Vulkan: vkCreateSwapchainKHR failed with {} ({} swapchain): {}x{} (surface currentExtent {}x{}, min {}x{}, max {}x{}, desired {}x{}), {} images, format {}, present mode {}",
@@ -180,7 +201,7 @@ void SwapchainInfoVk::Create()
 	m_queueDepth = 0;
 }
 
-void SwapchainInfoVk::Cleanup()
+void SwapchainInfoVk::Cleanup(bool keepSwapchain)
 {
 	m_swapchainImages.clear();
 
@@ -213,7 +234,7 @@ void SwapchainInfoVk::Cleanup()
 		vkDestroyFence(m_logicalDevice, m_imageAvailableFence, nullptr);
 		m_imageAvailableFence = nullptr;
 	}
-	if (m_swapchain)
+	if (m_swapchain && !keepSwapchain)
 	{
 		vkDestroySwapchainKHR(m_logicalDevice, m_swapchain, nullptr);
 		m_swapchain = VK_NULL_HANDLE;
@@ -222,7 +243,8 @@ void SwapchainInfoVk::Cleanup()
 
 bool SwapchainInfoVk::IsValid() const
 {
-	return m_swapchain && !m_acquireSemaphores.empty();
+	// the fence is the last thing Create() makes: a chain that failed half way is not usable
+	return m_swapchain && !m_acquireSemaphores.empty() && m_imageAvailableFence != VK_NULL_HANDLE;
 }
 
 void SwapchainInfoVk::WaitAvailableFence()
