@@ -24,6 +24,9 @@ struct
 
 VulkanPipelineStableCache g_vkPipelineStableCacheInstance;
 
+// Entries whose shader hashes were translated while loading; rewritten under their new names once loading is done
+static std::vector<LatteShaderCachePipelineRekey> s_pendingRekeys;
+
 // Close() frees s_cache while the writer thread may be about to use it
 static std::mutex s_cacheLifetimeMutex;
 
@@ -43,6 +46,7 @@ uint32 VulkanPipelineStableCache::BeginLoading(uint64 cacheTitleId)
 	g_vkCacheState.pipelineMaxFileIndex = 0;
 	g_vkCacheState.pipelinesLoaded = 0;
 	g_vkCacheState.pipelinesQueued = 0;
+	s_pendingRekeys.clear();
 	
 	// start async compilation threads
 	m_compilationCount.store(0);	
@@ -92,6 +96,8 @@ bool VulkanPipelineStableCache::UpdateLoading(uint32& pipelinesLoadedTotal, uint
 		std::vector<uint8> fileData;
 		if (s_cache->GetFileByIndex(g_vkCacheState.pipelineLoadIndex, &fileNameA, &fileNameB, fileData))
 		{
+			// the entry names its shaders by the hash they were stored with; the shader loader may have re-keyed them
+			LatteShaderCache_TranslatePipelineEntry(fileNameA, fileNameB, fileData, s_pendingRekeys);
 			// queue for async compilation
 			g_vkCacheState.pipelinesQueued++;
 			m_compilationQueue.push(std::move(fileData));
@@ -105,6 +111,7 @@ bool VulkanPipelineStableCache::UpdateLoading(uint32& pipelinesLoadedTotal, uint
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		return true; // pipelines still compiling
 	}
+	LatteShaderCache_ApplyPipelineRekeys(s_cache, s_pendingRekeys);
 	return false; // done
 }
 

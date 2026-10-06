@@ -36,6 +36,8 @@
 #include <util/bootSound/BootSoundReader.h>
 #include <thread>
 #include <set>
+#include <map>
+#include <openssl/sha.h>
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #if __APPLE__
 #include <sys/clonefile.h>
@@ -81,9 +83,38 @@ bool LatteShaderCache_readSeparableShader(uint8* shaderInfoData, sint32 shaderIn
 // Shaders are looked up by {base hash, aux hash}, and the aux hash depends on the renderer: a cache written by
 // desktop Cemu (or by the other renderer) stores a different aux hash than this one asks for at runtime. So the
 // read functions below register each shader under the hash this renderer computes from the stored register state,
-// and the load loop then rewrites the entry under that hash (LatteShaderCache_rekeyEntry), once, so the file is
-// native from then on.
-static std::set<std::pair<uint64, uint64>> s_rekeyedEntries; // entries the re-key added during this load (the loop skips them)
+// and the entries are rewritten under that hash after the load loop (LatteShaderCache_ApplyShaderRekeys), in one
+// batch, so the file is native from then on.
+struct ShaderRekey
+{
+	uint64 name1;
+	uint64 storedAuxHash;
+	uint64 currentAuxHash;
+};
+static std::vector<ShaderRekey> s_pendingShaderRekeys;
+
+// {shader type, base hash, stored aux hash} -> current aux hash, for the pipeline loaders. Written while the shaders
+// load, read while the pipelines do (from several threads), and cleared when the next title's load starts.
+static std::mutex s_auxRekeyMutex;
+static std::map<std::tuple<uint8, uint64, uint64>, uint64> s_auxRekeyMap;
+
+static void LatteShaderCache_recordAuxRekey(LatteConst::ShaderType type, uint64 baseHash, uint64 storedAuxHash, uint64 currentAuxHash)
+{
+	if (storedAuxHash == currentAuxHash)
+		return;
+	std::lock_guard lock(s_auxRekeyMutex);
+	s_auxRekeyMap[std::make_tuple((uint8)type, baseHash, storedAuxHash)] = currentAuxHash;
+}
+
+static bool LatteShaderCache_translateAuxHash(LatteConst::ShaderType type, uint64 baseHash, uint64& auxHash)
+{
+	std::lock_guard lock(s_auxRekeyMutex);
+	auto it = s_auxRekeyMap.find(std::make_tuple((uint8)type, baseHash, auxHash));
+	if (it == s_auxRekeyMap.end())
+		return false;
+	auxHash = it->second;
+	return true;
+}
 
 // true if an equivalent shader (same base and aux hash) is already loaded; the new one is then thrown away
 static bool LatteShaderCache_discardIfAlreadyLoaded(LatteDecompilerShader* shader, uint64 baseHash, uint64 auxHash)
@@ -103,28 +134,93 @@ static bool LatteShaderCache_discardIfAlreadyLoaded(LatteDecompilerShader* shade
 }
 
 // The entry keeps every byte it had; only the aux hash field (after the version/type byte and the 8 byte base
-// hash, the same layout the write functions use) and its name change. The new entry is written and read back
-// before the old one is deleted, so a failed write can't lose the shader. If an entry under the current hash
+// hash, the same layout the write functions use) and its name change. FileCache writes and reads back every new
+// entry before it deletes any old one, so a failed write can't lose a shader. If an entry under the current hash
 // exists already it is the same shader, and the old one is simply removed.
-static void LatteShaderCache_rekeyEntry(uint64 name1, uint64 storedAuxHash, uint64 currentAuxHash, const std::vector<uint8>& entryData)
+static void LatteShaderCache_applyShaderRekeys()
 {
-	if (entryData.size() < 17)
-		return;
-	if (!s_shaderCacheGeneric->HasFile({ name1, currentAuxHash }))
+	if (s_pendingShaderRekeys.empty() || !s_shaderCacheGeneric)
 	{
-		std::vector<uint8> patched = entryData;
-		for (sint32 i = 0; i < 8; i++)
-			patched[9 + i] = (uint8)(currentAuxHash >> (56 - 8 * i));
-		s_shaderCacheGeneric->AddFile({ name1, currentAuxHash }, patched.data(), (sint32)patched.size());
-		std::vector<uint8> readBack;
-		if (!s_shaderCacheGeneric->GetFile({ name1, currentAuxHash }, readBack) || readBack != patched)
-		{
-			cemuLog_log(LogType::Force, "Shader cache: could not rewrite an entry under the hash this renderer uses, keeping the old entry");
-			return;
-		}
-		s_rekeyedEntries.insert({ name1, currentAuxHash });
+		s_pendingShaderRekeys.clear();
+		return;
 	}
-	s_shaderCacheGeneric->DeleteFile({ name1, storedAuxHash });
+	std::vector<FileCache::RekeyJob> jobs;
+	jobs.reserve(s_pendingShaderRekeys.size());
+	for (const ShaderRekey& r : s_pendingShaderRekeys)
+	{
+		const uint64 currentAuxHash = r.currentAuxHash;
+		jobs.push_back({ { r.name1, r.storedAuxHash }, { r.name1, currentAuxHash }, [currentAuxHash](std::vector<uint8>& entry)
+		{
+			for (sint32 i = 0; i < 8; i++)
+				entry[9 + i] = (uint8)(currentAuxHash >> (56 - 8 * i));
+		} });
+	}
+	const uint32 moved = s_shaderCacheGeneric->RekeyEntries(jobs);
+	if (moved != jobs.size())
+		cemuLog_log(LogType::Force, "Shader cache: {} of {} entries could not be rewritten under the hash this renderer uses, the old entries were kept", jobs.size() - moved, jobs.size());
+	s_pendingShaderRekeys.clear();
+}
+
+void LatteShaderCache_TranslatePipelineEntry(uint64 name1, uint64 name2, std::vector<uint8>& blob, std::vector<LatteShaderCachePipelineRekey>& rekeys)
+{
+	// version byte, present mask, then {base hash, aux hash} (big endian) for each present vertex, geometry and pixel shader
+	if (blob.size() < 2 || blob[0] != 1)
+		return;
+	const uint8 presentMask = blob[1];
+	const LatteConst::ShaderType types[3] = { LatteConst::ShaderType::Vertex, LatteConst::ShaderType::Geometry, LatteConst::ShaderType::Pixel };
+	size_t hashCount = 0;
+	for (sint32 i = 0; i < 3; i++)
+		hashCount += (presentMask >> i) & 1;
+	if (blob.size() < 2 + hashCount * 16)
+		return;
+	auto readBE = [&](size_t pos) { uint64 v = 0; for (sint32 i = 0; i < 8; i++) v = (v << 8) | blob[pos + i]; return v; };
+	std::vector<uint8> patched = blob;
+	bool changed = false;
+	size_t pos = 2;
+	for (sint32 i = 0; i < 3; i++)
+	{
+		if (!((presentMask >> i) & 1))
+			continue;
+		uint64 auxHash = readBE(pos + 8);
+		if (LatteShaderCache_translateAuxHash(types[i], readBE(pos), auxHash))
+		{
+			for (sint32 b = 0; b < 8; b++)
+				patched[pos + 8 + b] = (uint8)(auxHash >> (56 - 8 * b));
+			changed = true;
+		}
+		pos += 16;
+	}
+	if (!changed)
+		return;
+	// entries are named after the SHA-256 of their contents
+	uint8 hash[SHA256_DIGEST_LENGTH];
+	SHA256(patched.data(), patched.size(), hash);
+	LatteShaderCachePipelineRekey rekey;
+	rekey.fromName1 = name1;
+	rekey.fromName2 = name2;
+	rekey.toName1 = *(uint64be*)(hash + 0);
+	rekey.toName2 = *(uint64be*)(hash + 8);
+	rekey.data = patched;
+	rekeys.push_back(std::move(rekey));
+	blob = std::move(patched);
+}
+
+void LatteShaderCache_ApplyPipelineRekeys(FileCache* pipelineCache, std::vector<LatteShaderCachePipelineRekey>& rekeys)
+{
+	if (pipelineCache && !rekeys.empty())
+	{
+		std::vector<FileCache::RekeyJob> jobs;
+		jobs.reserve(rekeys.size());
+		for (auto& r : rekeys)
+		{
+			auto data = std::make_shared<std::vector<uint8>>(std::move(r.data));
+			jobs.push_back({ { r.fromName1, r.fromName2 }, { r.toName1, r.toName2 }, [data](std::vector<uint8>& entry) { entry = *data; } });
+		}
+		const uint32 moved = pipelineCache->RekeyEntries(jobs);
+		if (moved != jobs.size())
+			cemuLog_log(LogType::Force, "Pipeline cache: {} of {} entries could not be rewritten under the current shader hashes, the old entries were kept", jobs.size() - moved, jobs.size());
+	}
+	rekeys.clear();
 }
 
 void LatteShaderCache_LoadPipelineCache(uint64 cacheTitleId);
@@ -630,7 +726,11 @@ void LatteShaderCache_Load()
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/transferable"), ec);
 	fs::create_directories(ActiveSettings::GetCachePath("shaderCache/precompiled"), ec);
 	ShaderCacheGuard_BeforeLoad(cacheTitleId);
-	s_rekeyedEntries.clear();
+	s_pendingShaderRekeys.clear();
+	{
+		std::lock_guard lock(s_auxRekeyMutex);
+		s_auxRekeyMap.clear();
+	}
 	s_guardDamageBase = FileCache::GetDamagedEntryTotal();
 	// initialize renderer specific caches
 	switch(g_renderer->GetType())
@@ -735,12 +835,6 @@ void LatteShaderCache_Load()
 			loadIndex++;
 			return true;
 		}
-		if (s_rekeyedEntries.contains({ name1, name2 }))
-		{
-			// written under its current hash earlier in this load, and already loaded from the old entry
-			loadIndex++;
-			return true;
-		}
 		g_shaderCacheLoaderState.loadedShaderFiles++;
 		uint64 currentAuxHash = name2;
 		if (LatteShaderCache_readSeparableShader(fileData.data(), fileData.size(), &currentAuxHash) == false)
@@ -750,8 +844,8 @@ void LatteShaderCache_Load()
 			s_shaderCacheGeneric->DeleteFile({name1, name2 });
 			numDamagedShaders++;
 		}
-		else if (currentAuxHash != name2)
-			LatteShaderCache_rekeyEntry(name1, name2, currentAuxHash, fileData);
+		else if (currentAuxHash != name2 && fileData.size() >= 17)
+			s_pendingShaderRekeys.push_back({ name1, name2, currentAuxHash }); // rewritten after the loop, so the table stays put while it's walked
 		numLoadedShaders++;
 		loadIndex++;
 		return true;
@@ -760,7 +854,7 @@ void LatteShaderCache_Load()
 	LatteShaderCache_ShowProgress(LoadShadersUpdate, false);
 
 	LatteShaderCache_updateCompileQueue(0);
-	s_rekeyedEntries.clear();
+	LatteShaderCache_applyShaderRekeys();
 	// write load time and RAM usage to log file (in dev build)
 #if BOOST_OS_WINDOWS
 	const auto timeLoadEnd = now_cached();
@@ -1098,7 +1192,7 @@ bool LatteShaderCache_readSeparableVertexShader(MemStreamReader& streamReader, u
 	if (version != 1)
 		return false;
 	uint64 shaderBaseHash = streamReader.readBE<uint64>();
-	[[maybe_unused]] uint64 shaderAuxHash = streamReader.readBE<uint64>(); // as stored; the hash used is computed below
+	uint64 shaderAuxHash = streamReader.readBE<uint64>(); // as stored; the hash used is computed below
 	bool usesGeometryShader = streamReader.readBE<uint8>() != 0;
 	// context registers
 	Latte::GPUCompactedRegisterState regState;
@@ -1134,6 +1228,7 @@ bool LatteShaderCache_readSeparableVertexShader(MemStreamReader& streamReader, u
 	LatteDecompilerShader* vertexShader = LatteShader_CreateShaderFromDecompilerOutput(decompilerOutput, shaderBaseHash, true, 0, lcr->GetRawView());
 	const uint64 currentAuxHash = vertexShader->auxHash;
 	currentAuxHashOut = currentAuxHash;
+	LatteShaderCache_recordAuxRekey(LatteConst::ShaderType::Vertex, shaderBaseHash, shaderAuxHash, currentAuxHash);
 	if (LatteShaderCache_discardIfAlreadyLoaded(vertexShader, shaderBaseHash, currentAuxHash))
 		return true;
 	// compile
@@ -1150,7 +1245,7 @@ bool LatteShaderCache_readSeparableGeometryShader(MemStreamReader& streamReader,
 		return false;
 	auto lcr = std::make_unique<LatteContextRegister>();
 	uint64 shaderBaseHash = streamReader.readBE<uint64>();
-	[[maybe_unused]] uint64 shaderAuxHash = streamReader.readBE<uint64>(); // as stored; the hash used is computed below
+	uint64 shaderAuxHash = streamReader.readBE<uint64>(); // as stored; the hash used is computed below
 	uint32 vsRingParameterCount = streamReader.readBE<uint16>();
 	// context registers
 	Latte::GPUCompactedRegisterState regState;
@@ -1181,6 +1276,7 @@ bool LatteShaderCache_readSeparableGeometryShader(MemStreamReader& streamReader,
 	LatteDecompilerShader* geometryShader = LatteShader_CreateShaderFromDecompilerOutput(decompilerOutput, shaderBaseHash, true, 0, lcr->GetRawView());
 	const uint64 currentAuxHash = geometryShader->auxHash;
 	currentAuxHashOut = currentAuxHash;
+	LatteShaderCache_recordAuxRekey(LatteConst::ShaderType::Geometry, shaderBaseHash, shaderAuxHash, currentAuxHash);
 	if (LatteShaderCache_discardIfAlreadyLoaded(geometryShader, shaderBaseHash, currentAuxHash))
 		return true;
 	// compile
@@ -1197,7 +1293,7 @@ bool LatteShaderCache_readSeparablePixelShader(MemStreamReader& streamReader, ui
 		return false;
 	auto lcr = std::make_unique<LatteContextRegister>();
 	uint64 shaderBaseHash = streamReader.readBE<uint64>();
-	[[maybe_unused]] uint64 shaderAuxHash = streamReader.readBE<uint64>(); // as stored; the hash used is computed below
+	uint64 shaderAuxHash = streamReader.readBE<uint64>(); // as stored; the hash used is computed below
 	bool usesGeometryShader = streamReader.readBE<uint8>() != 0;
 	// context registers
 	Latte::GPUCompactedRegisterState regState;
@@ -1224,6 +1320,7 @@ bool LatteShaderCache_readSeparablePixelShader(MemStreamReader& streamReader, ui
 	LatteDecompilerShader* pixelShader = LatteShader_CreateShaderFromDecompilerOutput(decompilerOutput, shaderBaseHash, true, 0, lcr->GetRawView());
 	const uint64 currentAuxHash = pixelShader->auxHash;
 	currentAuxHashOut = currentAuxHash;
+	LatteShaderCache_recordAuxRekey(LatteConst::ShaderType::Pixel, shaderBaseHash, shaderAuxHash, currentAuxHash);
 	if (LatteShaderCache_discardIfAlreadyLoaded(pixelShader, shaderBaseHash, currentAuxHash))
 		return true;
 	// compile
