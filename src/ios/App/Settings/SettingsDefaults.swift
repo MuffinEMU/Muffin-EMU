@@ -81,7 +81,6 @@ enum SettingsDefaults {
         // Resolution and Emulated Clock predate the "muffin." prefix, so the loop below
         // doesn't cover them.
         defaults.removeObject(forKey: RenderScale.storageKey)
-        DisplayRouter.shared.reapplyRenderScale(reason: "settings reset")
         TimebaseScale.clearChoice()
         // Back to Basic, with the saved advanced values forgotten. The sweep below would remove
         // these keys too; this keeps the rule next to the registry.
@@ -95,6 +94,9 @@ enum SettingsDefaults {
         if includingPerGameOverrides {
             PerGameSettingsStore.shared.removeAllOverrides()
         }
+        // After the sweep and the per-game clear: the resolution cap reads Favour performance, which is one of the
+        // advanced keys removed above, and a surface sized before that would still see the old value.
+        DisplayRouter.shared.reapplyRenderScale(reason: "settings reset")
         // The style store caches its keys, so it must re-read them after the loop above.
         UIStyleStore.shared.reloadFromDefaults()
         // Same for these two: they hold their values in memory and would otherwise keep the

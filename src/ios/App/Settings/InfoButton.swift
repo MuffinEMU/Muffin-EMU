@@ -17,8 +17,8 @@ struct InfoButton: View {
                 .font(.system(size: 15, weight: .semibold))
                 // The accent so it stands out from the grey footer text.
                 .foregroundColor(MuffinTheme.accentText)
-                // 30pt tap target around a 15pt glyph.
-                .frame(width: 30, height: 30)
+                // 44pt tap target (Apple's minimum) around a 15pt glyph.
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)
@@ -65,7 +65,10 @@ extension InfoButton {
             footerText(short)
             Spacer(minLength: 4)
             InfoButton(title: title, text: text)
-                .padding(.trailing, -7)
+                // The 44pt tap target would make the footer row 44pt tall. Negative padding keeps the glyph where
+                // it was and the row as short as before; the tap area still reaches the full frame.
+                .padding(.trailing, -14)
+                .padding(.vertical, -14)
         }
         .padding(.top, 2)
     }
