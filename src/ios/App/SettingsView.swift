@@ -11,6 +11,8 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showingIconPicker = false
     @State private var showingThemePicker = false
+    /// Basic hides the advanced rows (see AdvancedSettings); this view only needs it for whole sections.
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
     // Grouped the way the section headers are coloured (SettingsSectionAccent): what decides
     // whether a game runs, then what the player touches, sees and hears, then what the app
@@ -20,7 +22,9 @@ struct SettingsView: View {
         GraphicsSettingsSection()
         ShaderCompilationSection()
         ShaderCacheSection()
-        EmulatedClockSection()
+        if SettingsMode.isAdvanced(raw: settingsModeRaw) {
+            EmulatedClockSection()
+        }
     }
 
     @ViewBuilder private var formInput: some View {
@@ -49,6 +53,7 @@ struct SettingsView: View {
 
     @ViewBuilder private var formSystem: some View {
         FilesSettingsSection()
+        SettingsBackupSection()
         DeviceReportSection()
         DiagnosticsSection()
         AboutSettingsSection()
@@ -58,6 +63,7 @@ struct SettingsView: View {
     /// unreadable with the current colours.
     private var settingsForm: some View {
         Form {
+            SettingsModeSection()
             formCore
             formInput
             formContent

@@ -25,6 +25,25 @@ struct GameOverrides: Codable, Equatable {
     /// throwing away every override.
     var coreMode: String?
 
+    // The options below are Advanced mode only (see AdvancedSettings and PerGameAdvancedSettings.swift).
+    // Each nil follows the global setting. Raw values rather than enums, like coreMode.
+    /// RenderScale.rawValue.
+    var renderScale: String?
+    /// ScaleFilter.rawValue, for the upscale and downscale filters.
+    var upscaleFilter: Int?
+    var downscaleFilter: Int?
+    var favourPerformance: Bool?
+    var fullSpeedRenders: Bool?
+    /// FullSpeedRenders.ShaderMode.rawValue.
+    var fullSpeedShaderMode: Int?
+    var oneCoreMode: Bool?
+    /// ScreenLayout.rawValue.
+    var screenLayout: String?
+    /// Hide the on-screen controls while a controller is connected.
+    var autoHideControls: Bool?
+    /// On shows the performance overlay, off hides it.
+    var performanceOverlay: Bool?
+
     static let identity = GameOverrides()
     var isIdentity: Bool { self == GameOverrides.identity }
 }
@@ -83,7 +102,7 @@ final class PerGameSettingsStore: ObservableObject {
     /// Per-game override first, global default underneath. Read before boot (see
     /// cemu_bridge_set_favour_accuracy's call site).
     func effectiveFavourAccuracy(for gameID: String) -> Bool {
-        overrides(for: gameID).favourAccuracy ?? globalFavourAccuracy
+        activeOverrides(for: gameID).favourAccuracy ?? globalFavourAccuracy
     }
 
     func setFavourAccuracy(_ value: Bool?, for gameID: String) {
@@ -94,7 +113,7 @@ final class PerGameSettingsStore: ObservableObject {
 
     /// Per-game core count first, Settings' choice underneath. Read before boot.
     func effectiveCoreMode(for gameID: String) -> CoreMode {
-        if let raw = overrides(for: gameID).coreMode, let mode = CoreMode(rawValue: raw) {
+        if let raw = activeOverrides(for: gameID).coreMode, let mode = CoreMode(rawValue: raw) {
             return mode
         }
         return CoreMode.current
@@ -114,6 +133,18 @@ final class PerGameSettingsStore: ObservableObject {
         overridesByGame[key] = legacy
         overridesByGame.removeValue(forKey: game.id)
         persist()
+    }
+
+    /// Replaces every game's overrides at once. Settings mode uses it to clear the Advanced options
+    /// when switching to Basic and to put them back on Restore (see AdvancedSettings).
+    func replaceOverrides(_ next: [String: GameOverrides]) {
+        overridesByGame = next.filter { !$0.value.isIdentity }
+        persist()
+    }
+
+    /// Writes one game's overrides. An empty set is removed, like every other write.
+    func setOverrides(_ value: GameOverrides, for gameID: String) {
+        write(value, for: gameID)
     }
 
     /// Puts one game back on the global settings.
@@ -296,6 +327,7 @@ struct GameOptionsView: View {
     /// The whole library, so a cache file that belongs to another game can say which one.
     var libraryGames: [GameMetadata] = []
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
     /// One line of feedback under the buttons rather than an alert. An alert for a
     /// success is a second tap for something the person already knows they did; the
@@ -413,16 +445,19 @@ struct GameOptionsView: View {
                     Text(choice.title).tag(choice)
                 }
             }
-            OverridePickerRow(title: "Favour accuracy", caption: favourAccuracyCaption, selection: favourAccuracyChoice) {
-                ForEach(TriState.allCases) { choice in
-                    Text(choice.title).tag(choice)
+            // Advanced mode only (see AdvancedSettings).
+            if SettingsMode.isAdvanced(raw: settingsModeRaw) {
+                OverridePickerRow(title: "Favour accuracy", caption: favourAccuracyCaption, selection: favourAccuracyChoice) {
+                    ForEach(TriState.allCases) { choice in
+                        Text(choice.title).tag(choice)
+                    }
                 }
-            }
-            OverridePickerRow(title: "CPU cores", caption: coreModeCaption, selection: coreModeChoice,
-                              isDisabled: !DeviceCapabilities.current.multicoreViable) {
-                Text("Use Global Default").tag("")
-                ForEach(CoreMode.allCases) { mode in
-                    Text(mode.title).tag(mode.rawValue)
+                OverridePickerRow(title: "CPU cores", caption: coreModeCaption, selection: coreModeChoice,
+                                  isDisabled: !DeviceCapabilities.current.multicoreViable) {
+                    Text("Use Global Default").tag("")
+                    ForEach(CoreMode.allCases) { mode in
+                        Text(mode.title).tag(mode.rawValue)
+                    }
                 }
             }
             if !store.overrides(for: game.settingsKey).isIdentity {
@@ -644,6 +679,8 @@ struct GameOptionsView: View {
     private var optionsForm: some View {
         Form {
             overridesSection
+            AdvancedGameOptionsSection(game: game, store: store)
+            GameShaderCacheSection(game: game)
             graphicPacksSection
             gameSavesSection
             shaderCachesSection

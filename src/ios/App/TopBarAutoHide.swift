@@ -28,8 +28,40 @@ enum TopBarAutoHide {
     static let forceOn = 1
     static let forceOff = 2
 
-    /// How long the bar stays after the last touch on it.
-    static let hideDelayNanoseconds: UInt64 = 4_000_000_000
+    /// How long the bar stays after the last touch on it (Settings > On-screen Controls, Advanced mode).
+    /// Read each time the wait starts, so a change applies to the next wait.
+    static let hideDelayKey = "muffin.topBar.hideDelaySeconds"
+    static let defaultHideDelaySeconds = 4
+    static let hideDelayChoices = [2, 4, 8]
+
+    static var hideDelayNanoseconds: UInt64 {
+        let stored = UserDefaults.standard.object(forKey: hideDelayKey) as? Int ?? defaultHideDelaySeconds
+        let seconds = hideDelayChoices.contains(stored) ? stored : defaultHideDelaySeconds
+        return UInt64(seconds) * 1_000_000_000
+    }
+
+    /// The size of the touch target that brings the bar back. Normal by default: the large one can take
+    /// touches meant for the GamePad screen at the top centre of the picture.
+    static let handleSizeKey = "muffin.topBar.handleSize"
+    static let defaultHandleSize = HandleSize.normal
+
+    enum HandleSize: String, CaseIterable, Identifiable {
+        case normal
+        case large
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .normal: return "Normal"
+            case .large:  return "Large"
+            }
+        }
+
+        /// The touch target in points. The visible pill is 40 by 5 either way.
+        var width: CGFloat { self == .large ? 220 : 96 }
+        var height: CGFloat { self == .large ? 72 : 44 }
+    }
 
     /// On everywhere. It was iPhone-only at first, but on an iPad the bar sitting over the picture
     /// for a whole session read as a bug, not a choice. Kept as a property so a device class can
@@ -67,11 +99,16 @@ struct TopBarHidingEffect: ViewModifier {
     }
 }
 
-/// The pill that brings the bar back: a tap, or a swipe down. A 220 by 72 point target
-/// around a small, faint pill, so it is easy to hit without looking and easy to ignore.
-/// The frame itself is what grows (never negative padding: hit testing clips to the frame).
+/// The pill that brings the bar back: a tap, or a swipe down. A 96 by 44 point target (or 220 by 72,
+/// see TopBarAutoHide.HandleSize) around a small, faint pill, so it is easy to hit without looking and
+/// easy to ignore. The frame itself is what grows (never negative padding: hit testing clips to the frame).
 struct TopBarRevealHandle: View {
     let onReveal: () -> Void
+    @AppStorage(TopBarAutoHide.handleSizeKey) private var handleSizeRaw = TopBarAutoHide.defaultHandleSize.rawValue
+
+    private var size: TopBarAutoHide.HandleSize {
+        TopBarAutoHide.HandleSize(rawValue: handleSizeRaw) ?? TopBarAutoHide.defaultHandleSize
+    }
 
     var body: some View {
         Capsule()
@@ -80,7 +117,7 @@ struct TopBarRevealHandle: View {
             .shadow(color: Color.black.opacity(0.4), radius: 1, x: 0, y: 0.5)
             .frame(width: 40, height: 5)
             .padding(.top, 6)
-            .frame(width: 220, height: 72, alignment: .top)
+            .frame(width: size.width, height: size.height, alignment: .top)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0).onEnded { value in

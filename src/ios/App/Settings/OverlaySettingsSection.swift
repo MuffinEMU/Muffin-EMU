@@ -70,6 +70,9 @@ struct OverlaySettingsSection: View {
     @AppStorage(OverlaySettings.ramUsageKey) private var ramUsageEnabled = OverlaySettings.defaultRamUsage
     @AppStorage(OverlaySettings.vramUsageKey) private var vramUsageEnabled = OverlaySettings.defaultVramUsage
     @AppStorage(OverlaySettings.debugKey) private var debugEnabled = OverlaySettings.defaultDebug
+    @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+
+    private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
     private var position: ScreenPosition {
         ScreenPosition(rawValue: positionRaw) ?? .disabled
@@ -80,15 +83,20 @@ struct OverlaySettingsSection: View {
     var body: some View {
         Section {
             positionPicker
-            textColorField
-            textScaleSlider
+            // Position and Show FPS are the overlay's on/off; the rest is Advanced mode only (see AdvancedSettings).
+            if advanced {
+                textColorField
+                textScaleSlider
+            }
             fpsToggle
-            drawcallsToggle
-            cpuUsageToggle
-            cpuPerCoreUsageToggle
-            ramUsageToggle
-            vramUsageToggle
-            debugToggle
+            if advanced {
+                drawcallsToggle
+                cpuUsageToggle
+                cpuPerCoreUsageToggle
+                ramUsageToggle
+                vramUsageToggle
+                debugToggle
+            }
         } header: {
             SettingsSectionHeader("Performance Overlay", icon: "speedometer", accent: .io)
         } footer: {

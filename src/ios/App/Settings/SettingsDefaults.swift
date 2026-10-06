@@ -42,6 +42,31 @@ enum SettingsDefaults {
     /// game. Kept unless the person picks "Reset Settings and Per-Game Options".
     private static let perGamePrefix = "muffin.touchlab.adaptive."
 
+    /// More that is state rather than a setting: left out of a settings export along with everything
+    /// the reset leaves alone. The theme stays out for the same reason the reset keeps it.
+    private static let notPortableKeys: Set<String> = [
+        PerGameSettingsStore.storageKey,
+        "muffin.perGame.swappedGlobals",
+        "muffin.thermal.scaleBeforeThrottle",
+        "muffin.savestate",
+        "muffin.onboarding.reopen",
+    ]
+    private static let notPortablePrefixes = [
+        "muffin.theme.", "muffin.hints.", "muffin.melo.", "muffin.title.", "muffin.settings.advancedSnapshot",
+    ]
+
+    /// Whether a UserDefaults key is a setting a settings export carries: the "muffin." keys the reset
+    /// removes, plus Resolution and Emulated Clock, which predate the prefix. Never the premium unlock,
+    /// the library's records, results the app worked out itself, or per-game data, which is exported on its own.
+    static func isPortableSetting(_ key: String) -> Bool {
+        if key == RenderScale.storageKey || key == TimebaseScale.storageKey { return true }
+        guard key.hasPrefix("muffin.") else { return false }
+        if alwaysExcludedKeys.contains(key) || notPortableKeys.contains(key) { return false }
+        if alwaysExcludedPrefixes.contains(where: { key.hasPrefix($0) }) { return false }
+        if notPortablePrefixes.contains(where: { key.hasPrefix($0) }) { return false }
+        return !key.hasPrefix(perGamePrefix)
+    }
+
     /// @MainActor: touches UIStyleStore and ThermalMonitor, which are main-actor isolated.
     @MainActor
     static func reset(includingPerGameOverrides: Bool) {
@@ -58,6 +83,9 @@ enum SettingsDefaults {
         defaults.removeObject(forKey: RenderScale.storageKey)
         DisplayRouter.shared.reapplyRenderScale(reason: "settings reset")
         TimebaseScale.clearChoice()
+        // Back to Basic, with the saved advanced values forgotten. The sweep below would remove
+        // these keys too; this keeps the rule next to the registry.
+        AdvancedSettings.resetModeAndSnapshot()
         for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("muffin.") {
             if excluded.contains(key) { continue }
             if alwaysExcludedPrefixes.contains(where: { key.hasPrefix($0) }) { continue }
