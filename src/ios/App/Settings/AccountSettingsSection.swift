@@ -196,12 +196,12 @@ struct NetworkServiceSettingsSection: View {
 
     private func reload() {
         activePersistentId = cemu_bridge_active_account_persistent_id()
-        let accounts = Account.loadAll()
-        activeAccountName = accounts.first { $0.persistentId == activePersistentId }?.displayName
+        let loaded = Account.loadAll()
+        accounts = loaded
+        activeAccountName = loaded.first { $0.persistentId == activePersistentId }?.displayName
         selectedService = NetworkService(cemu_bridge_network_service(activePersistentId))
         locked = cemu_bridge_accounts_locked()
         customAvailable = cemu_bridge_custom_network_service_available()
-        accounts = Account.loadAll()
         let root = WiiUMenu.mlcRootURL
         hasOTP = root.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("otp.bin").path) } ?? false
         hasSeeprom = root.map { FileManager.default.fileExists(atPath: $0.appendingPathComponent("seeprom.bin").path) } ?? false
