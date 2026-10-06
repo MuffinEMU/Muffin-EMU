@@ -23,6 +23,10 @@ struct OptimizedControlPanel: View {
     /// pad is drawn over that bar, so without this a cluster could be dragged on top of it
     /// and take the buttons that get the player out of edit mode.
     var topInset: CGFloat = 0
+    /// Held upright on an iPhone, in the area under the picture: see PortraitPad.swift. Fixed for
+    /// the life of the view, because the offsets below are stored under different keys; a turn
+    /// builds a new pad (EmulatorViewOptimized.belowPicture is a different branch in each).
+    var portrait: Bool = false
 
     @AppStorage(ControllerLayoutSettings.scaleKey)
     private var userScale = ControllerLayoutSettings.defaultScale
@@ -48,22 +52,66 @@ struct OptimizedControlPanel: View {
     @AppStorage(ControllerLayoutSettings.individualEditModeKey)
     private var individualEditMode = ControllerLayoutSettings.defaultIndividualEditMode
 
+    /// A half's controls as they are laid out in this orientation.
+    private func layoutControls(_ controls: [ControllerGeometry.Control]) -> [ControllerGeometry.Control] {
+        portrait ? ControllerGeometry.Portrait.cluster(controls) : controls
+    }
+
+    init(skin: WiiUControllerSkin,
+         onInput: @escaping (String, Bool) -> Void,
+         onStick: @escaping (Int, CGPoint) -> Void,
+         isEditingLayout: Binding<Bool>,
+         isPaused: Bool = false,
+         topInset: CGFloat = 0,
+         portrait: Bool = false) {
+        self.skin = skin
+        self.onInput = onInput
+        self.onStick = onStick
+        self._isEditingLayout = isEditingLayout
+        self.isPaused = isPaused
+        self.topInset = topInset
+        self.portrait = portrait
+        // Where each half was dragged to is kept per orientation.
+        func key(_ key: String) -> String { portrait ? ControllerLayoutSettings.portraitKey(key) : key }
+        _leftOffsetX = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.leftOffsetXKey))
+        _leftOffsetY = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.leftOffsetYKey))
+        _rightOffsetX = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.rightOffsetXKey))
+        _rightOffsetY = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.rightOffsetYKey))
+        _rightStickOffsetX = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.rightStickOffsetXKey))
+        _rightStickOffsetY = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.rightStickOffsetYKey))
+        _leftStickOffsetX = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.leftStickOffsetXKey))
+        _leftStickOffsetY = AppStorage(wrappedValue: 0.0, key(ControllerLayoutSettings.leftStickOffsetYKey))
+    }
+
     var body: some View {
         // Re-runs on every size change (rotation, resized scene, external display), so the
         // unit, anchors and drag clamps always follow the size on screen.
         GeometryReader { proxy in
-            let unit = ControllerGeometry.automaticDiameter(in: proxy.size) * CGFloat(userScale)
+            // Upright, the size is whatever lets both halves fit across, and the slider can only
+            // shrink it (see PortraitPad.swift).
+            let unit = portrait
+                ? ControllerGeometry.Portrait.diameter(in: proxy.size, joystick: joystickMode) * CGFloat(min(userScale, 1))
+                : ControllerGeometry.automaticDiameter(in: proxy.size) * CGFloat(userScale)
 
             // Comfort controls move the shoulder buttons onto the sticks, so it only
-            // applies while joystick mode is on.
-            let comfortActive = comfortControls && joystickMode
+            // applies while joystick mode is on. Not upright: there is no room beside the stick.
+            let comfortActive = comfortControls && joystickMode && !portrait
             let leftStickControls = comfortActive ? ControllerGeometry.leftStickClusterComfort : ControllerGeometry.leftStickCluster
             let rightStickControls = comfortActive ? ControllerGeometry.rightStickClusterComfort : ControllerGeometry.rightStickCluster
             // The stick-spacing setting, applied to both sticks' starting places (before any
             // drag), so a reset of the drags keeps it and the two sticks always move together.
-            let stickShift = ControllerGeometry.stickShift(
+            let stickShift = portrait ? 0 : ControllerGeometry.stickShift(
                 spacing: stickSpacing, containerWidth: proxy.size.width, unit: unit,
                 left: leftStickControls, right: rightStickControls)
+            // Per-button moves and sizes are measured in the landscape layout, so they are not
+            // applied upright.
+            let individualEdit = individualEditMode && !portrait
+            let leftStickAnchor = portrait ? ControllerGeometry.Portrait.stickAnchorOffset : CGPoint(
+                x: ControllerGeometry.leftStickAnchorOffset.x - stickShift,
+                y: ControllerGeometry.leftStickAnchorOffset.y)
+            let rightStickAnchor = portrait ? ControllerGeometry.Portrait.stickAnchorOffset : CGPoint(
+                x: ControllerGeometry.rightStickAnchorOffset.x + stickShift,
+                y: ControllerGeometry.rightStickAnchorOffset.y)
 
             // The shoulder slider is iPad only: on iPhone the stored value is never read.
             let shoulderDrop = ControllerLayoutSettings.effectiveShoulderOffset(shoulderOffset)
@@ -72,15 +120,16 @@ struct OptimizedControlPanel: View {
 
             ZStack(alignment: .topLeading) {
                 ControlCluster(
-                    controls: comfortActive ? ControllerGeometry.leftClusterComfort : ControllerGeometry.leftCluster,
+                    controls: layoutControls(comfortActive ? ControllerGeometry.leftClusterComfort : ControllerGeometry.leftCluster),
                     edge: .leading,
+                    portrait: portrait,
                     skin: skin,
                     unit: unit,
                     shoulderOffset: shoulderDrop,
                     topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
-                    individualEditMode: individualEditMode,
+                    individualEditMode: individualEdit,
                     offsetX: $leftOffsetX,
                     offsetY: $leftOffsetY,
                     onInput: onInput,
@@ -94,15 +143,15 @@ struct OptimizedControlPanel: View {
                     ControlCluster(
                         controls: leftStickControls,
                         edge: .leading,
-                        anchorOffset: CGPoint(x: ControllerGeometry.leftStickAnchorOffset.x - stickShift,
-                                              y: ControllerGeometry.leftStickAnchorOffset.y),
+                        portrait: portrait,
+                        anchorOffset: leftStickAnchor,
                         skin: skin,
                         unit: unit,
                         shoulderOffset: shoulderDrop,
                         topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
-                        individualEditMode: individualEditMode,
+                        individualEditMode: individualEdit,
                         offsetX: $leftStickOffsetX,
                         offsetY: $leftStickOffsetY,
                         onInput: onInput,
@@ -111,15 +160,16 @@ struct OptimizedControlPanel: View {
                 }
 
                 ControlCluster(
-                    controls: comfortActive ? ControllerGeometry.rightClusterComfort : ControllerGeometry.rightCluster,
+                    controls: layoutControls(comfortActive ? ControllerGeometry.rightClusterComfort : ControllerGeometry.rightCluster),
                     edge: .trailing,
+                    portrait: portrait,
                     skin: skin,
                     unit: unit,
                     shoulderOffset: shoulderDrop,
                     topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
-                    individualEditMode: individualEditMode,
+                    individualEditMode: individualEdit,
                     offsetX: $rightOffsetX,
                     offsetY: $rightOffsetY,
                     onInput: onInput,
@@ -132,15 +182,15 @@ struct OptimizedControlPanel: View {
                     ControlCluster(
                         controls: rightStickControls,
                         edge: .trailing,
-                        anchorOffset: CGPoint(x: ControllerGeometry.rightStickAnchorOffset.x + stickShift,
-                                              y: ControllerGeometry.rightStickAnchorOffset.y),
+                        portrait: portrait,
+                        anchorOffset: rightStickAnchor,
                         skin: skin,
                         unit: unit,
                         shoulderOffset: shoulderDrop,
                         topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
-                        individualEditMode: individualEditMode,
+                        individualEditMode: individualEdit,
                         offsetX: $rightStickOffsetX,
                         offsetY: $rightStickOffsetY,
                         onInput: onInput,
@@ -167,6 +217,9 @@ struct OptimizedControlPanel: View {
 private struct ControlCluster: View {
     let controls: [ControllerGeometry.Control]
     let edge: HorizontalEdge
+    /// The pad is held upright (PortraitPad.swift): the half is pinned to the bottom corner
+    /// at the portrait distances, and the per-button overrides are not applied.
+    var portrait: Bool = false
     /// Shifts this cluster's unmoved position, in units, away from the standard anchor -
     /// for a cluster the measured layout has no anchor for. Applied before the user's
     /// drag and before the clamp, so it is genuinely a different starting point rather
@@ -205,10 +258,11 @@ private struct ControlCluster: View {
     /// The unmoved position from the measured layout: a fixed number of button-widths in
     /// from the near edge and up from the bottom.
     private var anchor: CGPoint {
-        let inset = ControllerGeometry.centreFromNearEdge * unit
+        let inset = (portrait ? ControllerGeometry.Portrait.centreFromNearEdge : ControllerGeometry.centreFromNearEdge) * unit
+        let fromBottom = portrait ? ControllerGeometry.Portrait.centreFromBottom : ControllerGeometry.centreFromBottom
         return CGPoint(
             x: (edge == .leading ? inset : container.width - inset) + anchorOffset.x * unit,
-            y: container.height - ControllerGeometry.centreFromBottom * unit + anchorOffset.y * unit
+            y: container.height - fromBottom * unit + anchorOffset.y * unit
         )
     }
 
@@ -268,6 +322,7 @@ private struct ControlCluster: View {
                     topReserve: topReserve,
                     isEditingLayout: isEditingLayout,
                     individualEditMode: individualEditMode,
+                    portrait: portrait,
                     onStick: onStick,
                     onInput: onInput
                 )
@@ -335,6 +390,8 @@ private struct EditableControl: View {
     /// See ControllerLayoutSettings.individualEditModeKey. editGesture is only attached
     /// when the cluster's own drag handle is not.
     let individualEditMode: Bool
+    /// Upright: the per-button moves and sizes are landscape measurements, so they are not applied.
+    var portrait: Bool = false
     let onStick: (CGPoint) -> Void
     let onInput: (String, Bool) -> Void
 
@@ -342,7 +399,7 @@ private struct EditableControl: View {
     @State private var dragOrigin: ControlOverride?
     @State private var scaleOrigin: Double?
 
-    private var settings: ControlOverride { custom.override(for: control.id) }
+    private var settings: ControlOverride { portrait ? .identity : custom.override(for: control.id) }
 
     /// Where the control is drawn and hit: the default place plus the player's move, kept
     /// inside the screen. Held at draw time as well as on drag, so a rotation, a bigger
