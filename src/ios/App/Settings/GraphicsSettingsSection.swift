@@ -92,7 +92,7 @@ enum MoltenVKBuild: String, CaseIterable, Identifiable {
     static let defaultValue: MoltenVKBuild = .v143
 }
 
-/// Renderer, filters, resolution, stretching, VSync and gamma. The bridge reads the
+/// Renderer, filters, resolution, stretching and gamma. The bridge reads the
 /// renderer and filter keys itself before every launch, so those three have no bridge call here.
 struct GraphicsSettingsSection: View {
     @AppStorage(RendererAPI.storageKey) private var rendererRaw = RendererAPI.defaultValue.rawValue
@@ -102,7 +102,6 @@ struct GraphicsSettingsSection: View {
     @AppStorage(FavourPerformance.storageKey) private var favourPerformance = FavourPerformance.defaultValue
     @AppStorage(FullSpeedRenders.storageKey) private var fullSpeedRenders = FullSpeedRenders.defaultValue
     @AppStorage(FullSpeedRenders.shaderModeKey) private var fullSpeedShaderMode = FullSpeedRenders.defaultShaderMode.rawValue
-    @AppStorage("muffin.render.vsync") private var vsyncEnabled = true
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
     @AppStorage("muffin.render.upsideDown") private var upsideDownEnabled = false
@@ -136,7 +135,6 @@ struct GraphicsSettingsSection: View {
                     .foregroundColor(MuffinTheme.secondaryText)
             }
             stretchToggle
-            vsyncToggle
             upsideDownToggle
             if rendererRaw == RendererAPI.metal.rawValue {
                 framebufferFetchToggle
@@ -295,17 +293,6 @@ struct GraphicsSettingsSection: View {
         }
     }
 
-    private var vsyncToggle: some View {
-        Toggle(isOn: $vsyncEnabled) {
-            Text("VSync")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-        }
-        .tint(MuffinTheme.accentText)
-        .onChange(of: vsyncEnabled) { newValue in
-            cemu_bridge_set_vsync_enabled(newValue)
-        }
-    }
-
     private var upsideDownToggle: some View {
         Toggle(isOn: $upsideDownEnabled) {
             Text("Flip screen upside down")
@@ -412,7 +399,7 @@ struct GraphicsSettingsSection: View {
 
         Stretch picture to fill the screen fills the screen's own shape instead of keeping the Wii U's 1280x720 proportions, which otherwise letterboxes with bars on two sides. Off keeps the picture undistorted; on trades that for using every pixel. Takes effect on the very next frame.
 
-        VSync paces new frames to the screen's own refresh instead of showing them the instant they're ready, which avoids tearing at the cost of capping how fast the picture can update. On by default. Turn it off only if a game feels laggy behind your input and you don't mind tearing. Takes effect on the next launch of a game.
+        There's no VSync switch because iOS always syncs frames to the screen's own refresh, so the picture never tears and there is nothing to turn off. For even frame pacing, use Full speed renders! at the top of this page.
 
         Flip screen upside down turns both Wii U screens vertically before they reach the screen. Off for everyone except a panel or capture rig that presents the image inverted. Takes effect on the next frame.
 

@@ -37,8 +37,7 @@ struct CemuApp: App {
         }
 
 
-        // Push the saved VSync setting before the renderer creates its layer, so the
-        // toggle takes effect on the first launch after changing it.
+        // Push the saved (legacy) VSync value; it has no effect on iOS, see CemuBridge.h.
         cemu_bridge_set_vsync_enabled(
             UserDefaults.standard.object(forKey: "muffin.render.vsync") as? Bool ?? true)
     }
