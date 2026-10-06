@@ -1,4 +1,16 @@
 import SwiftUI
+import Combine
+
+/// Presents New Account from the root of Settings rather than from a Form section. A sheet
+/// attached to a section closes by itself when the Form rebuilds or scrolls that section out
+/// (the keyboard appearing is enough), which made New Account vanish after a second or two.
+final class AccountSheetRouter: ObservableObject {
+    static let shared = AccountSheetRouter()
+    @Published var showingCreateAccount = false
+    /// Bumped when the sheet closes so every account list on screen reloads.
+    @Published private(set) var revision = 0
+    func sheetClosed() { revision += 1 }
+}
 
 /// Wii U console accounts (Cafe/Account/Account.h): pick, create and delete accounts, the
 /// same account.dat files desktop Cemu uses. The Network Service picker is a separate
@@ -7,7 +19,7 @@ struct AccountSettingsSection: View {
     @State private var accounts: [Account] = []
     @State private var activePersistentId: UInt32 = 0
     @State private var locked = false
-    @State private var showingCreateAccount = false
+    @ObservedObject private var accountSheets = AccountSheetRouter.shared
     @State private var accountToDelete: Account?
     @State private var errorMessage: String?
 
@@ -51,7 +63,7 @@ struct AccountSettingsSection: View {
             .disabled(locked || accounts.isEmpty)
 
             HStack {
-                Button("Create") { showingCreateAccount = true }
+                Button("Create") { accountSheets.showingCreateAccount = true }
                     .disabled(locked || !cemu_bridge_accounts_has_free_slot())
                 Spacer()
                 Button("Delete", role: .destructive) { accountToDelete = activeAccount }
@@ -69,9 +81,7 @@ struct AccountSettingsSection: View {
         .foregroundColor(MuffinTheme.brownDarkest)
         .onAppear(perform: reload)
         .refreshable { reload() }
-        .sheet(isPresented: $showingCreateAccount, onDismiss: reload) {
-            CreateAccountView()
-        }
+        .onReceive(accountSheets.$revision.dropFirst()) { _ in reload() }
         .confirmationDialog(
             "Delete account?",
             isPresented: Binding(
