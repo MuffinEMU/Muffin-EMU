@@ -35,6 +35,10 @@ namespace WindowSystem
 		std::atomic<double> dpi_scale;
 
         std::atomic_uint32_t visible_outputs{1};
+        // Which Wii U screen each output window shows (iOS). Bit 0: the main window shows the GamePad (DRC)
+        // picture instead of the TV one. Bit 1: the pad window shows the TV picture instead of the GamePad one.
+        // 0 is the console's own arrangement.
+        std::atomic_uint32_t output_sources{0};
 
 		std::atomic_bool pad_open;							 // if separate pad view is open
 		std::atomic_int32_t pad_width, pad_height;			 // client size of pad window
