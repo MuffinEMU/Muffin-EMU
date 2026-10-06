@@ -100,6 +100,8 @@ struct GraphicsSettingsSection: View {
     @AppStorage(DownscaleFilterSetting.storageKey) private var downscaleRaw = DownscaleFilterSetting.defaultValue.rawValue
     @AppStorage(RenderScale.storageKey) private var renderScaleRaw = RenderScale.deviceDefault.rawValue
     @AppStorage(FavourPerformance.storageKey) private var favourPerformance = FavourPerformance.defaultValue
+    @AppStorage(FullSpeedRenders.storageKey) private var fullSpeedRenders = FullSpeedRenders.defaultValue
+    @AppStorage(FullSpeedRenders.shaderModeKey) private var fullSpeedShaderMode = FullSpeedRenders.defaultShaderMode.rawValue
     @AppStorage("muffin.render.vsync") private var vsyncEnabled = true
     @AppStorage(FrameStretch.storageKey) private var frameStretchEnabled = FrameStretch.defaultValue
     @AppStorage(MoltenVKBuild.storageKey) private var moltenVKRaw = MoltenVKBuild.defaultValue.rawValue
@@ -116,6 +118,10 @@ struct GraphicsSettingsSection: View {
 
     var body: some View {
         Section {
+            fullSpeedRendersToggle
+            if fullSpeedRenders {
+                fullSpeedShaderPicker
+            }
             rendererPicker
             // Only the Vulkan renderer loads MoltenVK, so Metal users have nothing to pick here.
             if rendererRaw == RendererAPI.vulkan.rawValue {
@@ -231,6 +237,40 @@ struct GraphicsSettingsSection: View {
         .pickerStyle(.menu)
         .tint(MuffinTheme.accentText)
         .foregroundColor(MuffinTheme.brownDarkest)
+    }
+
+    private var fullSpeedRendersToggle: some View {
+        Toggle(isOn: $fullSpeedRenders) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Full speed renders!")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text(fullSpeedRenders
+                     ? "Rendering comes first: steady frames at the game's own Wii U frame rate, never faster."
+                     : "Off: frames are shown the moment they're ready.")
+                    .font(.system(size: 12))
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
+        }
+        .tint(MuffinTheme.accentText)
+        .onChange(of: fullSpeedRenders) { _ in FullSpeedRenders.applyToBridge() }
+    }
+
+    private var fullSpeedShaderPicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("First time a new effect appears", selection: $fullSpeedShaderMode) {
+                ForEach(FullSpeedRenders.ShaderMode.allCases) { mode in
+                    Text(mode.title).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.menu)
+            .tint(MuffinTheme.accentText)
+            .foregroundColor(MuffinTheme.brownDarkest)
+            .onChange(of: fullSpeedShaderMode) { _ in FullSpeedRenders.applyToBridge() }
+            Text((FullSpeedRenders.ShaderMode(rawValue: fullSpeedShaderMode) ?? FullSpeedRenders.defaultShaderMode).summary)
+                .font(.system(size: 12))
+                .foregroundColor(MuffinTheme.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var resolutionPicker: some View {
@@ -358,6 +398,8 @@ struct GraphicsSettingsSection: View {
 
     private var fullText: String {
         """
+        Full speed renders! puts rendering ahead of everything else MuffinEMU does: the graphics thread gets first call on the fastest cores, each frame is shown at the game's own Wii U frame rate (steady, and never faster than the console), and debugging extras are skipped. Every shader the game has used before is built while the game loads, so those never cause a hitch or a flicker. The first time something brand new appears, its shader has to be built: "Wait for it" holds the frame until it's ready (a short hitch, never a missing object), "Keep going" draws without it once (no hitch, but it can be missing for a moment). Either way it's saved, so it happens only once. This choice wins over Favour accuracy, Favour performance and Compile shaders in the background. Takes effect the next time you start a game.
+
         Metal is the default renderer. Vulkan (MoltenVK) goes through a translation layer and may work better for some games, at some cost to speed. Takes effect the next time you launch a game.
 
         MoltenVK is the layer that turns Vulkan into Metal, so it only matters with the Vulkan renderer. 1.4.3 is the default; 1.2.8 is an older build that some games run better on. A change applies the next time MuffinEMU starts.

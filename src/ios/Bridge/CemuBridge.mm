@@ -749,6 +749,10 @@ namespace {
     // Favour performance: the opposite trade to Favour accuracy, applied in
     // ios_apply_render_profile(). Ignored while Favour accuracy is on.
     std::atomic<bool> g_favourPerformance{false};
+    // Full speed renders: on/off and its shader choice (0 wait for a new shader, 1 keep going).
+    // Applied in ios_apply_render_profile(), after both Favour switches, so it has the last word.
+    std::atomic<bool> g_fullSpeedRenders{false};
+    std::atomic<int> g_fullSpeedShaderMode{0};
     // Low Power Mode. Separate from Favour accuracy on purpose: both end up asking for
     // one emulated CPU core, but for opposite reasons and with different side effects.
     // Favour accuracy also forces synchronous shader compilation, accurate Vulkan
@@ -1131,7 +1135,14 @@ void ios_apply_render_profile()
     if (performance)
         config.async_compile = true;
     g_latteRelaxShaderMul.store(performance, std::memory_order_relaxed);
-    PerfTelemetry::DrawBreadcrumbsEnabled().store(!performance, std::memory_order_relaxed);
+    const bool fullSpeed = g_fullSpeedRenders.load();
+    if (fullSpeed)
+        config.async_compile = g_fullSpeedShaderMode.load() == 1;
+    g_latteFullSpeedRenders.store(fullSpeed, std::memory_order_relaxed);
+    PerfTelemetry::DrawBreadcrumbsEnabled().store(!(performance || fullSpeed), std::memory_order_relaxed);
+    if (fullSpeed)
+        cemuLog_log(LogType::Force, "iOS: full speed renders - GPU thread user-interactive, presents paced to the game, new shaders {}",
+            g_fullSpeedShaderMode.load() == 1 ? "in the background" : "waited for");
     cemuLog_log(LogType::Force, "iOS: {} - async shaders {}, accurate barriers {}, GX2DrawDone sync {}, strict shader mul {}",
         accuracy ? "favouring accuracy" : (performance ? "favouring performance" : "favouring speed"),
         config.async_compile.GetValue(), config.vk_accurate_barriers.GetValue(), config.gx2drawdone_sync.GetValue(),
@@ -2557,6 +2568,16 @@ void cemu_bridge_set_favour_performance(bool enabled) {
 
 bool cemu_bridge_favour_performance(void) {
     return g_favourPerformance.load();
+}
+
+void cemu_bridge_set_full_speed_renders(bool enabled, int shaderMode) {
+    // Applied by ios_apply_render_profile() and Latte_Start() when the next title starts.
+    g_fullSpeedRenders.store(enabled);
+    g_fullSpeedShaderMode.store(shaderMode == 1 ? 1 : 0);
+}
+
+bool cemu_bridge_full_speed_renders(void) {
+    return g_fullSpeedRenders.load();
 }
 
 // Best-effort real device temperature, in degrees Celsius. NaN when unavailable.

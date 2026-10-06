@@ -130,6 +130,45 @@ enum FavourPerformance {
     }
 }
 
+/// "Full speed renders!" (Settings > Graphics). See cemu_bridge_set_full_speed_renders.
+enum FullSpeedRenders {
+    static let storageKey = "muffin.render.fullSpeedRenders"
+    static let defaultValue = false
+    /// What happens the first time a game needs a shader it has never built.
+    static let shaderModeKey = "muffin.render.fullSpeedShaderMode"
+    enum ShaderMode: Int, CaseIterable, Identifiable {
+        /// Build it before drawing: a short hitch, never a missing or flickering object.
+        case waitForIt = 0
+        /// Draw without it this once: never a hitch, the object can be missing for a moment.
+        case keepGoing = 1
+        var id: Int { rawValue }
+        var title: String {
+            switch self {
+            case .waitForIt: return "Wait for it"
+            case .keepGoing: return "Keep going"
+            }
+        }
+        var summary: String {
+            switch self {
+            case .waitForIt: return "Never flickers. A short hitch the first time a new effect appears."
+            case .keepGoing: return "Never freezes. A new effect can be missing for a moment the first time."
+            }
+        }
+    }
+    static let defaultShaderMode = ShaderMode.waitForIt
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.object(forKey: storageKey) as? Bool ?? defaultValue
+    }
+    static var shaderMode: ShaderMode {
+        ShaderMode(rawValue: UserDefaults.standard.object(forKey: shaderModeKey) as? Int ?? defaultShaderMode.rawValue)
+            ?? defaultShaderMode
+    }
+    static func applyToBridge() {
+        cemu_bridge_set_full_speed_renders(isEnabled, Int32(shaderMode.rawValue))
+    }
+}
+
 /// How the GamePad surface is sized. The console's GamePad screen is 854x480, so the surface
 /// needs no more than about twice that across its long side whatever the display's own scale is.
 enum PadSurfaceScale {
