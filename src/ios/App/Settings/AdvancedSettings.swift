@@ -99,7 +99,7 @@ enum AdvancedSettings {
         cemu_bridge_set_cpu_core_mode(CoreMode.current.bridgeValue)
     }
 
-    private static let fullSpeedRenders = AdvancedGroup(name: "Full speed renders", settings: [
+    private static let fullSpeedRenders = AdvancedGroup(name: "Steady frame rate", settings: [
         AdvancedSetting(FullSpeedRenders.storageKey, FullSpeedRenders.defaultValue),
         AdvancedSetting(FullSpeedRenders.shaderModeKey, FullSpeedRenders.defaultShaderMode.rawValue),
     ]) {
