@@ -15,7 +15,7 @@ struct AboutSettingsSection: View {
     var body: some View {
         Section {
             SettingsRow(label: "Version", value: Bundle.main.appVersionString, icon: "number")
-            Link(destination: URL(string: "https://github.com/MuffinEMU/MuffinEMU")!) {
+            Link(destination: URL(string: "https://github.com/MuffinEMU/Muffin-EMU")!) {
                 Label("View on GitHub", systemImage: "arrow.up.right.square")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
