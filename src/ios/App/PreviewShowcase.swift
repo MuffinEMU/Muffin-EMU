@@ -96,6 +96,7 @@ final class PreviewPadStore: ObservableObject {
     static let defaultEnabled = false
     static let layoutPresetKey = "muffin.preview.layoutPreset"
     static let colourPresetKey = "muffin.preview.colourPreset"
+    static let customColoursKey = "muffin.preview.customColours"
     static let displayModeKey = "muffin.preview.displayMode"
     static let adjustmentsKey = "muffin.preview.groupAdjustments"
 
@@ -103,8 +104,18 @@ final class PreviewPadStore: ObservableObject {
         didSet { defaults.set(layoutPreset.rawValue, forKey: Self.layoutPresetKey) }
     }
     @Published var colourPreset: PreviewColourPreset {
-        didSet { defaults.set(colourPreset.rawValue, forKey: Self.colourPresetKey) }
+        // Picking a preset, even the one already picked, drops an imported colour file.
+        didSet {
+            defaults.set(colourPreset.rawValue, forKey: Self.colourPresetKey)
+            customColours = nil
+        }
     }
+    /// A .muffinclr the person imported. Wins over `colourPreset` until they pick a preset again.
+    @Published private(set) var customColours: MuffinColourFile? {
+        didSet { persistCustomColours() }
+    }
+    /// The colours actually in effect: the imported file if there is one, else the picked preset.
+    var colourFile: MuffinColourFile { customColours ?? colourPreset.file }
     @Published var displayMode: PadLayout.DisplayMode {
         didSet { defaults.set(displayMode.rawValue, forKey: Self.displayModeKey) }
     }
@@ -123,6 +134,7 @@ final class PreviewPadStore: ObservableObject {
         layoutPreset = PreviewLayoutPreset(rawValue: defaults.string(forKey: Self.layoutPresetKey) ?? "") ?? .iPadPro2020
         colourPreset = PreviewColourPreset(rawValue: defaults.string(forKey: Self.colourPresetKey) ?? "") ?? .wiiUWhite
         displayMode = PadLayout.DisplayMode(rawValue: defaults.string(forKey: Self.displayModeKey) ?? "") ?? .fit
+        customColours = Self.loadCustomColours(defaults)
         if let data = defaults.data(forKey: Self.adjustmentsKey),
            let decoded = try? JSONDecoder().decode([String: GroupPlacement].self, from: data) {
             adjustments = decoded
@@ -134,9 +146,12 @@ final class PreviewPadStore: ObservableObject {
     /// Re-reads everything from UserDefaults, for after the keys were removed behind this
     /// store's back (Settings > Reset settings to defaults).
     func reloadFromDefaults() {
+        // Read first: setting colourPreset below clears the imported colours.
+        let custom = Self.loadCustomColours(defaults)
         layoutPreset = PreviewLayoutPreset(rawValue: defaults.string(forKey: Self.layoutPresetKey) ?? "") ?? .iPadPro2020
         colourPreset = PreviewColourPreset(rawValue: defaults.string(forKey: Self.colourPresetKey) ?? "") ?? .wiiUWhite
         displayMode = PadLayout.DisplayMode(rawValue: defaults.string(forKey: Self.displayModeKey) ?? "") ?? .fit
+        customColours = custom
         if let data = defaults.data(forKey: Self.adjustmentsKey),
            let decoded = try? JSONDecoder().decode([String: GroupPlacement].self, from: data) {
             adjustments = decoded
@@ -165,6 +180,12 @@ final class PreviewPadStore: ObservableObject {
         adjustments = file.groups
     }
 
+    /// Importing a .muffinclr means "use exactly these colours" - the file is kept whole, so
+    /// exporting it again gives back the same file.
+    func applyImportedColours(_ file: MuffinColourFile) {
+        customColours = file
+    }
+
     /// The arrangement actually in effect right now - the active preset's own groups
     /// with the live drag/resize adjustments already folded in - so exporting captures
     /// what is genuinely on screen, not just the preset or just the deltas.
@@ -186,6 +207,19 @@ final class PreviewPadStore: ObservableObject {
             merged.groups[g.rawValue] = v.clamped
         }
         return merged
+    }
+
+    private static func loadCustomColours(_ defaults: UserDefaults) -> MuffinColourFile? {
+        guard let data = defaults.data(forKey: customColoursKey) else { return nil }
+        return try? MuffinColourFile.decode(data)
+    }
+
+    private func persistCustomColours() {
+        if let customColours, let data = try? customColours.encoded() {
+            defaults.set(data, forKey: Self.customColoursKey)
+        } else {
+            defaults.removeObject(forKey: Self.customColoursKey)
+        }
     }
 
     private func persistAdjustments() {

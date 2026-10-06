@@ -1217,7 +1217,7 @@ class GameManager: ObservableObject {
             // count is fixed the moment _LaunchTitleThread() starts its host threads, so
             // a Settings change only takes effect on the next launch and has to be pushed
             // before boot rather than when the toggle moved.
-            cemu_bridge_set_low_power_mode(LowPowerMode.isEnabled)
+            cemu_bridge_set_low_power_mode(OneCoreMode.isEnabled)
             // Motion aiming (Settings > Motion & Aiming): on by default. It takes effect live, but the
             // stored choice has to reach the engine at least once per launch.
             MotionSettings.applyToBridge()
