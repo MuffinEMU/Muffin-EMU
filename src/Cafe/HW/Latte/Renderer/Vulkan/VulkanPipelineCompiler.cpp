@@ -374,6 +374,29 @@ bool PipelineCompiler::InitShaderStages(VulkanRenderer* vkRenderer, RendererShad
 	return true;
 }
 
+// Bytes per texel for the vertex formats GetVertexFormat() can return, and the next narrower format of the same family.
+// Used so an attribute never reads past the binding stride: Metal has no robust vertex fetch and MoltenVK would otherwise
+// rewrite the format itself ("attribute larger than its binding's stride") while the guest buffer may end right after the stride.
+static bool NarrowerVertexFormat(VkFormat format, uint32& sizeBytes, VkFormat& narrower)
+{
+	switch (format)
+	{
+	case VK_FORMAT_R32G32B32A32_UINT: sizeBytes = 16; narrower = VK_FORMAT_R32G32B32_UINT; return true;
+	case VK_FORMAT_R32G32B32_UINT: sizeBytes = 12; narrower = VK_FORMAT_R32G32_UINT; return true;
+	case VK_FORMAT_R32G32_UINT: sizeBytes = 8; narrower = VK_FORMAT_R32_UINT; return true;
+	case VK_FORMAT_R32_UINT: sizeBytes = 4; return false;
+	case VK_FORMAT_R16G16B16A16_UINT: sizeBytes = 8; narrower = VK_FORMAT_R16G16B16_UINT; return true;
+	case VK_FORMAT_R16G16B16_UINT: sizeBytes = 6; narrower = VK_FORMAT_R16G16_UINT; return true;
+	case VK_FORMAT_R16G16_UINT: sizeBytes = 4; narrower = VK_FORMAT_R16_UINT; return true;
+	case VK_FORMAT_R16_UINT: sizeBytes = 2; return false;
+	case VK_FORMAT_R8G8B8A8_UINT: sizeBytes = 4; narrower = VK_FORMAT_R8G8B8_UINT; return true;
+	case VK_FORMAT_R8G8B8_UINT: sizeBytes = 3; narrower = VK_FORMAT_R8G8_UINT; return true;
+	case VK_FORMAT_R8G8_UINT: sizeBytes = 2; narrower = VK_FORMAT_R8_UINT; return true;
+	case VK_FORMAT_R8_UINT: sizeBytes = 1; return false;
+	default: sizeBytes = 0; return false;
+	}
+}
+
 void PipelineCompiler::InitVertexInputState(const LatteContextRegister& latteRegister, LatteDecompilerShader* vertexShader, LatteFetchShader* fetchShader)
 {
 	vertexInputAttributeDescription.reserve(16);
@@ -382,6 +405,7 @@ void PipelineCompiler::InitVertexInputState(const LatteContextRegister& latteReg
 	for (auto& bufferGroup : fetchShader->bufferGroups)
 	{
 		std::optional<LatteConst::VertexFetchType2> fetchType;
+		const size_t groupFirstAttribute = vertexInputAttributeDescription.size();
 
 		for (sint32 j = 0; j < bufferGroup.attribCount; ++j)
 		{
@@ -421,6 +445,18 @@ void PipelineCompiler::InitVertexInputState(const LatteContextRegister& latteReg
 		}
 #endif
 		entry.stride = bufferStride;
+		if (bufferStride != 0)
+		{
+			// never declare an attribute that reads past the stride (see NarrowerVertexFormat)
+			for (size_t a = groupFirstAttribute; a < vertexInputAttributeDescription.size(); ++a)
+			{
+				auto& attrDesc = vertexInputAttributeDescription[a];
+				uint32 attrSize;
+				VkFormat narrower;
+				while (NarrowerVertexFormat(attrDesc.format, attrSize, narrower) && attrDesc.offset + attrSize > bufferStride)
+					attrDesc.format = narrower;
+			}
+		}
 		if (!fetchType.has_value() || fetchType == LatteConst::VertexFetchType2::VERTEX_DATA)
 			entry.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 		else if (fetchType == LatteConst::VertexFetchType2::INSTANCE_DATA)
@@ -987,7 +1023,13 @@ bool PipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool show
 	}
 
 	VkPipelineRobustnessCreateInfoEXT pipelineRobustnessCreateInfo{};
-	if (vkRenderer->m_featureControl.deviceExtensions.pipeline_robustness && m_requestRobustBufferAccess)
+	#if BOOST_OS_MACOS || BOOST_OS_IOS
+	// Apple GPUs fault on an out-of-bounds buffer read instead of returning zero, so every pipeline asks for robust access
+	const bool wantRobustAccess = true;
+#else
+	const bool wantRobustAccess = m_requestRobustBufferAccess;
+#endif
+	if (vkRenderer->m_featureControl.deviceExtensions.pipeline_robustness && wantRobustAccess)
 	{
 		// per-pipeline handling of robust buffer access, if the extension is not available then we fall back to device feature robustBufferAccess
 		pipelineRobustnessCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO_EXT;
@@ -995,7 +1037,11 @@ bool PipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool show
 		prevStruct = &pipelineRobustnessCreateInfo;
 		pipelineRobustnessCreateInfo.storageBuffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
 		pipelineRobustnessCreateInfo.uniformBuffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
+#if BOOST_OS_MACOS || BOOST_OS_IOS
+		pipelineRobustnessCreateInfo.vertexInputs = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
+#else
 		pipelineRobustnessCreateInfo.vertexInputs = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DEVICE_DEFAULT_EXT;
+#endif
 		pipelineRobustnessCreateInfo.images = VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_DEVICE_DEFAULT_EXT;
 	}
 
