@@ -264,7 +264,7 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
     /// actually makes the option useful once there's more than a couple of favorites.
     func sorted(_ games: [GameMetadata], stats: LibraryPlayStats = .shared) -> [GameMetadata] {
         let byTitle: (GameMetadata, GameMetadata) -> Bool = {
-            $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            $0.sortTitle.localizedCaseInsensitiveCompare($1.sortTitle) == .orderedAscending
         }
         switch self {
         case .lastPlayed:
@@ -284,12 +284,12 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
                 return l != r ? l > r : byTitle(lhs, rhs)
             }
         case .title:
-            return games.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            return games.sorted { $0.sortTitle.localizedCaseInsensitiveCompare($1.sortTitle) == .orderedAscending }
         case .recentlyAdded:
             return games.sorted { lhs, rhs in
                 switch (lhs.addedDate, rhs.addedDate) {
                 case let (l?, r?): return l > r
-                case (nil, nil): return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                case (nil, nil): return lhs.sortTitle.localizedCaseInsensitiveCompare(rhs.sortTitle) == .orderedAscending
                 case (nil, _): return false
                 case (_, nil): return true
                 }
@@ -297,7 +297,7 @@ enum LibrarySortOrder: String, CaseIterable, Hashable {
         case .favoritesFirst:
             return games.sorted { lhs, rhs in
                 if lhs.isFavorite != rhs.isFavorite { return lhs.isFavorite && !rhs.isFavorite }
-                return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                return lhs.sortTitle.localizedCaseInsensitiveCompare(rhs.sortTitle) == .orderedAscending
             }
         }
     }
@@ -371,6 +371,8 @@ struct GameBrowserView: View {
     @State private var coverArtTarget: GameMetadata?
     @ObservedObject private var perGameSettings = PerGameSettingsStore.shared
     @ObservedObject private var playStats = LibraryPlayStats.shared
+    @ObservedObject private var customNames = LibraryCustomNames.shared
+    @State private var renameTarget: GameMetadata?
     @AppStorage(LibraryCardStyle.storageKey) private var cardStyleRaw = LibraryCardStyle.defaultValue.rawValue
     @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
     @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
@@ -446,7 +448,11 @@ struct GameBrowserView: View {
         let gamesToShow = showingFavorites ? gameManager.favorites : gameManager.games
         let searched = searchText.isEmpty
             ? gamesToShow
-            : gamesToShow.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+            : gamesToShow.filter {
+                $0.title.localizedCaseInsensitiveContains(searchText)
+                    || ($0.displayTitle?.localizedCaseInsensitiveContains(searchText) ?? false)
+                    || (customNames.name(for: $0.settingsKey)?.localizedCaseInsensitiveContains(searchText) ?? false)
+            }
         let filtered = (LibraryFilter(rawValue: filterRaw) ?? .all).apply(searched, stats: playStats)
         return sortOrder.sorted(filtered, stats: playStats)
     }
@@ -733,7 +739,8 @@ struct GameBrowserView: View {
                                     onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
                                     onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
                                     onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) },
-                                    onChangeCoverArt: { coverArtTarget = game }
+                                    onChangeCoverArt: { coverArtTarget = game },
+                                    onRename: { renameTarget = game }
                                 )
                             }
                     }
@@ -769,6 +776,9 @@ struct GameBrowserView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView(gameManager: gameManager)
+            }
+            .sheet(item: $renameTarget) { game in
+                LibraryRenameSheet(game: game)
             }
             .sheet(item: $gameOptionsTarget) { game in
                 GameOptionsView(game: game, store: perGameSettings, libraryGames: gameManager.games)

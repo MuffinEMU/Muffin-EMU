@@ -193,11 +193,93 @@ extension LibraryGrouping {
 
     /// Same field the Title sort uses, so the letters line up with the order of the games.
     private static func letter(for game: GameMetadata) -> String {
-        let folded = game.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let folded = game.sortTitle.trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
         guard let first = folded.unicodeScalars.first,
               CharacterSet.letters.contains(first) else { return "#" }
         return String(first).uppercased()
+    }
+}
+
+// MARK: - Custom names
+
+/// A name the player gave a game, shown in the library instead of its own title. Display only:
+/// nothing on disk is renamed and the title ID is untouched. Keyed by the game's settings key
+/// (title ID, falling back to the file name), so it follows the game through a re-import.
+final class LibraryCustomNames: ObservableObject {
+    static let shared = LibraryCustomNames()
+    private static let defaultsKey = "muffin.library.customNames"
+
+    @Published private(set) var names: [String: String]
+
+    private init() {
+        if let data = UserDefaults.standard.data(forKey: Self.defaultsKey),
+           let decoded = try? JSONDecoder().decode([String: String].self, from: data) {
+            names = decoded
+        } else {
+            names = [:]
+        }
+    }
+
+    func name(for key: String) -> String? { names[key] }
+
+    /// nil, or a name that is empty after trimming, goes back to the original title.
+    func set(_ name: String?, for key: String) {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty { names.removeValue(forKey: key) } else { names[key] = trimmed }
+        if let data = try? JSONEncoder().encode(names) {
+            UserDefaults.standard.set(data, forKey: Self.defaultsKey)
+        }
+    }
+}
+
+struct LibraryRenameSheet: View {
+    let game: GameMetadata
+    @Environment(\.presentationMode) private var presentationMode
+    @State private var text: String
+
+    init(game: GameMetadata) {
+        self.game = game
+        _text = State(initialValue: LibraryCustomNames.shared.name(for: game.settingsKey) ?? game.cardName.name)
+    }
+
+    private var originalTitle: String { game.displayTitle ?? game.title }
+
+    var body: some View {
+        NavigationView {
+            Form {
+                Section {
+                    TextField("Name", text: $text)
+                        .autocapitalization(.words)
+                } footer: {
+                    Text("Only changes how the game is named in your library. Original title: \(originalTitle)")
+                }
+                if LibraryCustomNames.shared.name(for: game.settingsKey) != nil {
+                    Section {
+                        Button("Reset to Original Title") {
+                            LibraryCustomNames.shared.set(nil, for: game.settingsKey)
+                            presentationMode.wrappedValue.dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Rename")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { presentationMode.wrappedValue.dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        // A name left the same as the original is no override at all.
+                        let same = text.trimmingCharacters(in: .whitespacesAndNewlines) == originalTitle
+                        LibraryCustomNames.shared.set(same ? nil : text, for: game.settingsKey)
+                        presentationMode.wrappedValue.dismiss()
+                    }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
     }
 }
 

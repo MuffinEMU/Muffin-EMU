@@ -205,6 +205,7 @@ struct GameContextMenu: View {
     let onRemoveDLC: () -> Void
     let onRemoveUpdate: () -> Void
     let onChangeCoverArt: () -> Void
+    var onRename: () -> Void = {}
 
     var body: some View {
         Toggle(isOn: Binding(
@@ -224,6 +225,16 @@ struct GameContextMenu: View {
         }
         Button(action: onViewOptions) {
             Label("View Game Options", systemImage: "slider.horizontal.3")
+        }
+        Button(action: onRename) {
+            Label("Rename\u{2026}", systemImage: "pencil")
+        }
+        if LibraryCustomNames.shared.name(for: game.settingsKey) != nil {
+            Button {
+                LibraryCustomNames.shared.set(nil, for: game.settingsKey)
+            } label: {
+                Label("Reset to Original Title", systemImage: "arrow.uturn.backward")
+            }
         }
         // The escape hatch for a card still showing the plain gamepad placeholder
         // (or the wrong art) because GameTDB's automatic fetch (CoverArtFetcher)
