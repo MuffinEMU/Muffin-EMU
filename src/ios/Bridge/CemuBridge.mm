@@ -2101,7 +2101,11 @@ long long cemu_bridge_clear_shader_cache(unsigned long long titleId, bool includ
     }
     long long freed = IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/precompiled"), titleId, true);
     if (includeLearned)
+    {
         freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/transferable"), titleId, true);
+        // and the guard's backups of them (LatteShaderCache.cpp), or the next start would restore what was just cleared
+        freed += IOSShaderCacheSweep(ActiveSettings::GetCachePath("shaderCache/backup"), titleId, true);
+    }
     cemuLog_log(LogType::Force, "Shader cache: cleared {} bytes ({})", freed, includeLearned ? "compiled and learned" : "compiled only");
     return freed;
 }
