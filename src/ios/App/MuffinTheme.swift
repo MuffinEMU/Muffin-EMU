@@ -510,32 +510,35 @@ enum MuffinTheme {
 
     /// The app's type ramp: a row label is 15 semibold rounded, an empty-state caption is 13
     /// rounded, and a Settings sub-caption is 12 and not rounded (it pairs with secondaryText).
-    /// `.rounded` is the app's voice. Sizes are fixed rather than Dynamic Type because the pad
-    /// editor and in-game overlay are laid out against measured geometry.
+    /// `.rounded` is the app's voice. Each token is a text style, so it follows the Dynamic Type setting, and
+    /// at the default setting it is the size it always was: 28 title, 22 title2, 17 headline, 15 subheadline,
+    /// 13 footnote, 12 caption, 11 caption2. The in-game bar and pads are capped at Extra Large where they are
+    /// drawn, because they are laid out against measured geometry. MuffinPrimaryButtonStyle's 14 has no
+    /// matching text style and stays fixed.
     enum Font {
         /// Screen-owning titles.
-        static var display: SwiftUI.Font { .system(size: 28, weight: .bold, design: .rounded) }
+        static var display: SwiftUI.Font { .system(.title, design: .rounded).weight(.bold) }
         /// Titles inside a screen, sheet headers.
-        static var title: SwiftUI.Font { .system(size: 22, weight: .bold, design: .rounded) }
+        static var title: SwiftUI.Font { .system(.title2, design: .rounded).weight(.bold) }
         /// Section headers in a Form or List.
-        static var sectionTitle: SwiftUI.Font { .system(size: 17, weight: .semibold, design: .rounded) }
+        static var sectionTitle: SwiftUI.Font { .system(.headline, design: .rounded) }
         /// The leading label of a settings row or a list item. The app's workhorse.
-        static var rowLabel: SwiftUI.Font { .system(size: 15, weight: .semibold, design: .rounded) }
+        static var rowLabel: SwiftUI.Font { .system(.subheadline, design: .rounded).weight(.semibold) }
         /// The trailing value on that same row - same size, unemphasised.
-        static var rowValue: SwiftUI.Font { .system(size: 15, design: .rounded) }
+        static var rowValue: SwiftUI.Font { .system(.subheadline, design: .rounded) }
         /// Running text, and empty-state copy.
-        static var caption: SwiftUI.Font { .system(size: 13, design: .rounded) }
+        static var caption: SwiftUI.Font { .system(.footnote, design: .rounded) }
         /// The explanatory line under a settings row. Not rounded - see above.
-        static var subCaption: SwiftUI.Font { .system(size: 12) }
+        static var subCaption: SwiftUI.Font { .system(.caption) }
         /// Counts, badges, the smallest readable label.
-        static var micro: SwiftUI.Font { .system(size: 11) }
+        static var micro: SwiftUI.Font { .system(.caption2) }
         /// MuffinPrimaryButtonStyle's label.
         static var primaryButton: SwiftUI.Font { .system(size: 14, weight: .bold, design: .rounded) }
         /// MuffinSecondaryButtonStyle's label.
-        static var secondaryButton: SwiftUI.Font { .system(size: 13, weight: .semibold, design: .rounded) }
+        static var secondaryButton: SwiftUI.Font { .system(.footnote, design: .rounded).weight(.semibold) }
         /// Version strings, title IDs, hashes - anything that must not be kerned into
         /// prose. Monospaced rather than rounded on purpose; it is data, not voice.
-        static var monoTag: SwiftUI.Font { .system(size: 12, weight: .semibold, design: .monospaced) }
+        static var monoTag: SwiftUI.Font { .system(.caption, design: .monospaced).weight(.semibold) }
     }
 
     // MARK: - Spacing and shape
