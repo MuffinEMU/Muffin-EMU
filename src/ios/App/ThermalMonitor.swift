@@ -4,6 +4,15 @@ import Combine
 import UIKit
 #endif
 
+/// Whether the governor is holding Resolution at battery saver. Outside the main-actor class below so
+/// RenderScale.current can ask it from anywhere.
+enum ThermalHold {
+    static let scaleKey = "muffin.thermal.scaleBeforeThrottle"
+
+    /// The remembered Resolution is stored for as long as a throttle is in effect.
+    static var isHoldingScale: Bool { UserDefaults.standard.string(forKey: scaleKey) != nil }
+}
+
 /// Reads `ProcessInfo.thermalState` and, when the device gets hot, lowers Render Scale to
 /// battery saver and (at `.critical`) slows the emulated cores until it cools.
 ///
@@ -36,7 +45,7 @@ final class ThermalMonitor: ObservableObject {
 
     /// Persisted so a restore survives the app being killed while hot; otherwise Render Scale
     /// would stay pinned at battery saver with nothing remembering the previous value.
-    private static let scaleBeforeThrottleKey = "muffin.thermal.scaleBeforeThrottle"
+    private static let scaleBeforeThrottleKey = ThermalHold.scaleKey
     private var isThrottling = false
     private var observing = false
 
@@ -122,7 +131,7 @@ final class ThermalMonitor: ObservableObject {
 
         if shouldThrottle && !isThrottling {
             // Remember the user's choice before overwriting it.
-            userChosenScale = RenderScale.current
+            userChosenScale = RenderScale.storedChoice
             // Battery saver, and only from .serious upward.
             UserDefaults.standard.set(RenderScale.battery.rawValue, forKey: RenderScale.storageKey)
             isThrottling = true
@@ -148,7 +157,7 @@ final class ThermalMonitor: ObservableObject {
     /// Puts the remembered Resolution back, unless the user picked a different one while
     /// throttled (then their new choice stands).
     private func restoreChosenScale() {
-        if let restored = userChosenScale, RenderScale.current == .battery {
+        if let restored = userChosenScale, RenderScale.storedChoice == .battery {
             UserDefaults.standard.set(restored.rawValue, forKey: RenderScale.storageKey)
         }
         userChosenScale = nil

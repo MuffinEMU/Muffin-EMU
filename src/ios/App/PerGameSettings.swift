@@ -25,6 +25,25 @@ struct GameOverrides: Codable, Equatable {
     /// throwing away every override.
     var coreMode: String?
 
+    // The options below are Advanced mode only (see AdvancedSettings and PerGameAdvancedSettings.swift).
+    // Each nil follows the global setting. Raw values rather than enums, like coreMode.
+    /// RenderScale.rawValue.
+    var renderScale: String?
+    /// ScaleFilter.rawValue, for the upscale and downscale filters.
+    var upscaleFilter: Int?
+    var downscaleFilter: Int?
+    var favourPerformance: Bool?
+    var fullSpeedRenders: Bool?
+    /// FullSpeedRenders.ShaderMode.rawValue.
+    var fullSpeedShaderMode: Int?
+    var oneCoreMode: Bool?
+    /// ScreenLayout.rawValue.
+    var screenLayout: String?
+    /// Hide the on-screen controls while a controller is connected.
+    var autoHideControls: Bool?
+    /// On shows the performance overlay, off hides it.
+    var performanceOverlay: Bool?
+
     static let identity = GameOverrides()
     var isIdentity: Bool { self == GameOverrides.identity }
 }
@@ -121,6 +140,11 @@ final class PerGameSettingsStore: ObservableObject {
     func replaceOverrides(_ next: [String: GameOverrides]) {
         overridesByGame = next.filter { !$0.value.isIdentity }
         persist()
+    }
+
+    /// Writes one game's overrides. An empty set is removed, like every other write.
+    func setOverrides(_ value: GameOverrides, for gameID: String) {
+        write(value, for: gameID)
     }
 
     /// Puts one game back on the global settings.
@@ -538,6 +562,7 @@ struct GameOptionsView: View {
     private var optionsForm: some View {
         Form {
             overridesSection
+            AdvancedGameOptionsSection(game: game, store: store)
             graphicPacksSection
             gameSavesSection
         }
