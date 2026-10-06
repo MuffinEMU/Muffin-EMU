@@ -38,9 +38,14 @@ public:
 	static FileCache* Create(const fs::path& path, uint32 extraVersion = 0);
 	static FileCache* Open(const fs::path& path, bool allowCreate, uint32 extraVersion = 0);
 	static FileCache* Open(const fs::path& path); // open without extraVersion check
-	// Whole-file health check without changing anything: header and file table readable, every
-	// entry inside the file and not overlapping another, and every checksummed entry intact.
-	static bool Verify(const fs::path& path);
+	// Health check without changing anything: header and file table readable, every entry inside the
+	// file and not overlapping another, and (checkEntries) every checksummed entry intact.
+	static bool Verify(const fs::path& path, bool checkEntries = true);
+	// Where known-good copies of cache files live (same file names). A damaged entry is repaired from
+	// there the moment it's read, or deleted if no good copy exists; every other entry stays.
+	static void SetBackupDirectory(const fs::path& dir);
+	// Damaged entries found (and repaired or deleted) since this file was opened.
+	uint32 GetDamagedEntryCount() const { return damagedEntryCount; }
 
 	void UseCompression(bool enable) { enableCompression = enable; };
 
@@ -49,8 +54,6 @@ public:
 	bool DeleteFile(const FileName&& name);
 	bool GetFile(const FileName&& name, std::vector<uint8>& dataOut);
 	bool GetFileByIndex(sint32 index, uint64* name1, uint64* name2, std::vector<uint8>& dataOut);
-	// true when the slot holds a file (not free, not the file table), so a GetFileByIndex() failure on it is damage
-	bool IsUsedIndex(sint32 index);
 	bool HasFile(const FileName&& name);
 
 	sint32 GetFileCount();
@@ -99,6 +102,9 @@ private:
 	uint32 fileTableSize{};
 	// options
 	bool enableCompression{true};
+	fs::path filePath;
+	uint32 damagedEntryCount{};
+	bool _handleDamagedEntry(FileTableEntry* entry, std::vector<uint8>& dataOut);
 
 	std::recursive_mutex mutex;
 };
