@@ -1282,7 +1282,7 @@ struct EmulatorViewOptimized: View {
     /// Bottom edge of the top bar, so TouchLab's controls stay clear of Back / pause.
     @State private var topBarHeight: CGFloat = 0
     /// Settings > On-screen Controls > "Hide the top bar while playing". 0 follows the
-    /// device (on for iPhone, off for iPad); see TopBarAutoHide.
+    /// device default (on); see TopBarAutoHide.
     @AppStorage(TopBarAutoHide.overrideKey) private var topBarAutoHideOverride = TopBarAutoHide.followDevice
     /// The bar is faded out and slid away. `topBarHeight` deliberately keeps its last
     /// measured value while this is true, so the pads, which reserve that band, never move.
