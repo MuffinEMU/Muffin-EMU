@@ -155,6 +155,11 @@ class GameManager: ObservableObject {
             TitleSwitchSettings.apply(titleId: titleId)
         }
         emulationEngine = EmulationEngine()
+        // Thermal throttling lowers the picture quality on its own; say so over the game.
+        ThermalMonitor.shared.onNotice = { [weak self] text in
+            guard let self, self.emulationState == .running else { return }
+            self.showLaunchNotice(text)
+        }
         Task {
             await loadGames()
         }
@@ -1036,6 +1041,10 @@ class GameManager: ObservableObject {
     private var launchToken = UUID()
 
     func launchGame(_ game: GameMetadata) {
+        // A second tap on a card (or the Wii U Menu tile) before the library has gone away would
+        // restart the launch underneath the one already booting. Every way back to the library
+        // goes through stopEmulation(), which leaves the state at .idle.
+        guard emulationState == .idle else { return }
         launchToken = UUID()
         currentGame = game
         surfaceRegistered = false
@@ -1045,8 +1054,8 @@ class GameManager: ObservableObject {
         if cemu_bridge_clean_start_required() {
             needsCleanRestart = true
             let reason = String(cString: cemu_bridge_clean_start_reason())
-            lastStatusMessage = "For a clean start, close and reopen MuffinEMU."
-                + (reason.isEmpty ? "" : "\n\n\(reason.prefix(1).uppercased() + reason.dropFirst()).")
+            lastStatusMessage = "MuffinEMU has to be closed and reopened before it can start another game."
+                + (reason.isEmpty ? "" : "\n\nWhat happened: \(reason).")
             emulationState = .error
             return
         }
@@ -1147,6 +1156,8 @@ class GameManager: ObservableObject {
             // Per-game override first, the global switch underneath it.
             cemu_bridge_set_favour_accuracy(
                 PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.id))
+            // Global. The bridge ignores it when Favour accuracy is on for this game.
+            cemu_bridge_set_favour_performance(FavourPerformance.isEnabled)
             // Per-game override first, global default underneath it - PerGameSettingsStore
             // reads the same UserDefaults key directly for exactly the reason above: an
             // override that only lived in a @Published property would revert the moment
@@ -1188,9 +1199,13 @@ class GameManager: ObservableObject {
             // linear down.
             cemu_bridge_set_graphics_api(
                 Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.graphicsAPI") as? Int ?? 2))
-            cemu_bridge_set_upscale_filter(
+            // Favour performance swaps both for linear, the cheapest blend, unless this game favours
+            // accuracy (which wins, as in the bridge).
+            let cheapFilters = FavourPerformance.isEnabled
+                && !PerGameSettingsStore.shared.effectiveFavourAccuracy(for: game.id)
+            cemu_bridge_set_upscale_filter(cheapFilters ? Int32(ScaleFilter.linear.rawValue) :
                 Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.upscaleFilter") as? Int ?? 1))
-            cemu_bridge_set_downscale_filter(
+            cemu_bridge_set_downscale_filter(cheapFilters ? Int32(ScaleFilter.linear.rawValue) :
                 Int32(clamping: UserDefaults.standard.object(forKey: "muffin.render.downscaleFilter") as? Int ?? 0))
 
             // Screen flip, gamma and the performance overlay - same "push from UserDefaults
@@ -1325,7 +1340,11 @@ class GameManager: ObservableObject {
                 }
                 engine.refreshStatus()
                 self.lastStatusMessage = engine.statusText
-                let notice = String(cString: cemu_bridge_take_launch_notice())
+                var notice = String(cString: cemu_bridge_take_launch_notice())
+                // iOS slows the CPU and GPU in Low Power Mode, which no setting here can undo. Say so, but never over a more specific note.
+                if notice.isEmpty && status == CEMU_BRIDGE_OK && ProcessInfo.processInfo.isLowPowerModeEnabled {
+                    notice = "Low Power Mode is on, so games may run slowly. Turn it off in Control Center for full speed."
+                }
                 if !notice.isEmpty {
                     self.showLaunchNotice(notice)
                 }
@@ -1343,7 +1362,8 @@ class GameManager: ObservableObject {
     }
     #endif
 
-    private func showLaunchNotice(_ notice: String) {
+    /// Also used for the in-game heat notice (InGameNotices.swift): same banner, same fade.
+    func showLaunchNotice(_ notice: String) {
         launchNotice = notice
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 8_000_000_000)
@@ -1590,6 +1610,7 @@ final class TitleSwitchSettings {
         cemu_bridge_set_cpu_auto_demoted(AutoCoreHistory.isDemoted(gameID: id))
         cemu_bridge_set_cpu_core_mode(PerGameSettingsStore.shared.effectiveCoreMode(for: id).bridgeValue)
         cemu_bridge_set_favour_accuracy(PerGameSettingsStore.shared.effectiveFavourAccuracy(for: id))
+        cemu_bridge_set_favour_performance(FavourPerformance.isEnabled)
         cemu_bridge_set_async_shader_compile(PerGameSettingsStore.shared.effectivePreCompileShaders(for: id))
         #if os(iOS)
         GameControlHints.applyBeforeLaunch(titleId: titleId)

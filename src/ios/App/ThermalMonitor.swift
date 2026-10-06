@@ -40,6 +40,11 @@ final class ThermalMonitor: ObservableObject {
     private var isThrottling = false
     private var observing = false
 
+    /// Told, in words for a player, when the automatic response starts or ends. GameManager
+    /// shows it over the game; the response used to lower the picture quality with no sign
+    /// at all. Not called for the title stopping or the setting being switched off.
+    var onNotice: (@MainActor (String) -> Void)?
+
     private init() {}
 
     var autoThrottleEnabled: Bool {
@@ -123,8 +128,10 @@ final class ThermalMonitor: ObservableObject {
             isThrottling = true
             DisplayRouter.shared.reapplyRenderScale(reason: "thermal state \(description)")
             cemu_bridge_log_line("iOS thermal: reduced render scale to battery saver while hot")
+            onNotice?("The device is hot, so MuffinEMU made the picture softer to keep the game running. It goes back when the device cools.")
         } else if !shouldThrottle && isThrottling {
             unwind(reason: "cooled to \(description)")
+            onNotice?("The device has cooled down. The picture is back to normal.")
         }
     }
 

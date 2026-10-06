@@ -1,6 +1,6 @@
 {
  "$schema": "http://json-schema.org/draft-07/schema#",
- "$id": "https://github.com/kiddreads/MuffinEMU/tools/audit-app/schema/report.schema.json",
+ "$id": "https://github.com/MuffinEMU/Muffin-EMU/tools/audit-app/schema/report.schema.json",
  "title": "MuffinEMU Audit report (muffinaudit.report/1)",
  "description": "Written by the MuffinEMU Audit app as report.json. Every tNs is nanoseconds on the core's monotonic clock (cemu_audit_now_ns). Additional properties are allowed everywhere so a newer app can add fields without breaking older readers; readers must ignore what they do not know.",
  "type": "object",

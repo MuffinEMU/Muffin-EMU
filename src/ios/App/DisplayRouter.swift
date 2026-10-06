@@ -62,7 +62,7 @@ enum ScreenLayout: String, CaseIterable, Identifiable {
         case .singleScreen:
             return "Shows one screen at a time. Tap the swap button to switch between TV and GamePad."
         case .bothScreens:
-            return "Shows both screens side by side."
+            return "Shows both screens: stacked in portrait, side by side in landscape."
         case .smallGamePadTopRight:
             return "Shows the TV screen with a small GamePad screen in the top-right corner."
         }

@@ -156,11 +156,12 @@ struct EmulatedDevicesView: View {
                         }
                         .pickerStyle(.menu)
                         .tint(MuffinTheme.accentText)
-                        Toggle(isOn: deviceEnabled) {
-                            Text("Emulate Device")
-                                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                        }
-                        .tint(MuffinTheme.accentText)
+                        EmulateDeviceToggle(device: device)
+                            .id(device)
+                    } footer: {
+                        // Games look for USB devices as they start, so a change made mid-game is
+                        // usually not seen until the next start.
+                        Text("Turning a device on or off takes effect when a game next looks for it, which is usually when the game starts. If a figure doesn't appear in a game that's already running, quit it and start it again.")
                     }
 
                     EmulatedDeviceSlotsSection(device: device)
@@ -180,18 +181,31 @@ struct EmulatedDevicesView: View {
         }
         .navigationViewStyle(.stack)
     }
+}
 
-    private var deviceEnabled: Binding<Bool> {
-        Binding(
-            get: {
-                UserDefaults.standard.object(forKey: device.enabledStorageKey) as? Bool
-                    ?? EmulatedDevicesSettings.defaultEnabled
-            },
-            set: { newValue in
-                UserDefaults.standard.set(newValue, forKey: device.enabledStorageKey)
-                device.setEmulated(newValue)
-            }
-        )
+/// The "Emulate Device" switch. Holds its own state, seeded from the stored choice: a binding
+/// read straight from UserDefaults has nothing to redraw the switch when the value changes, so
+/// it could snap back to its old position after a tap.
+private struct EmulateDeviceToggle: View {
+    let device: EmulatedDevice
+    @State private var isOn: Bool
+
+    init(device: EmulatedDevice) {
+        self.device = device
+        _isOn = State(initialValue: UserDefaults.standard.object(forKey: device.enabledStorageKey) as? Bool
+                      ?? EmulatedDevicesSettings.defaultEnabled)
+    }
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            Text("Emulate Device")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+        }
+        .tint(MuffinTheme.accentText)
+        .onChange(of: isOn) { newValue in
+            UserDefaults.standard.set(newValue, forKey: device.enabledStorageKey)
+            device.setEmulated(newValue)
+        }
     }
 }
 

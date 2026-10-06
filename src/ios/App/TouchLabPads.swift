@@ -1,6 +1,6 @@
 //
 // Everything MuffinEMU needs to offer the TouchLab control styles (Zone, Float, Adaptive,
-// Frame) alongside its own pad and Melo-Controller. Written against kiddreads/MuffinEMU
+// Frame) alongside its own pad and Melo-Controller. Written against MuffinEMU/Muffin-EMU
 // release/v6.4 @ 4e7223af; see integration/INTEGRATION.md for the ContentView / Settings /
 // PadDiagnostics edits that wire it in.
 //
@@ -124,6 +124,13 @@ final class CemuBridgePadOutput: @preconcurrency PadOutput {
 
     func setButton(_ button: PadButton, pressed: Bool) {
         PadDiagnostics.shared.recordInput(Self.label(button), pressed)
+        // HOME is the app's, not the game's: it opens the HOME menu (HomeMenu.swift) and never reaches
+        // the bridge, whose GamePad mapping has no HOME bit. Intercepted here so the vendored TouchLab
+        // package stays as it is.
+        if button == .home {
+            HomeMenuRouter.shared.padHome(pressed: pressed)
+            return
+        }
         cemu_bridge_set_button_state(Self.bridgeButton(button), pressed)
     }
 

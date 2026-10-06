@@ -484,6 +484,16 @@ bool cemu_bridge_recompiler_enabled(void);
 /// the fast path. Read when a title starts.
 void cemu_bridge_set_favour_accuracy(bool enabled);
 
+/// Speed before picture quality, one step past the default speed path. On: shaders are built
+/// without Cemu's strict 0*anything=0 multiply (fewer GPU instructions, possible lighting or
+/// shadow glitches), shaders always compile in the background (no stalls, objects can pop in
+/// briefly), and the per-draw crash breadcrumbs are skipped (less detail in a crash report).
+/// The Swift side also caps the presented resolution at Balanced and uses linear scaling.
+/// Favour accuracy wins when both are on, including a per-game accuracy override. Read when a
+/// title starts.
+void cemu_bridge_set_favour_performance(bool enabled);
+bool cemu_bridge_favour_performance(void);
+
 /// Best-effort real device temperature in Celsius, or NaN when it cannot be read.
 ///
 /// iOS publishes NO device temperature to apps - ProcessInfo.thermalState's four levels
@@ -872,6 +882,26 @@ bool cemu_bridge_clean_start_required(void);
 /// game is prepared. The app applies that title's per-game settings here, the same ones a library launch pushes before boot.
 typedef void (*CemuTitleSwitchCallback)(uint64_t titleId);
 void cemu_bridge_set_title_switch_callback(CemuTitleSwitchCallback callback);
+
+/// What a physical controller's buttons mean to the app's own menus rather than to the game.
+/// HOME is reported whether or not menu capture is on; the other four only while it is.
+typedef enum {
+    CEMU_BRIDGE_MENU_HOME    = 0, // the controller's HOME / guide button went down
+    CEMU_BRIDGE_MENU_UP      = 1, // d-pad up, or the left stick pushed up
+    CEMU_BRIDGE_MENU_DOWN    = 2,
+    CEMU_BRIDGE_MENU_CONFIRM = 3, // A
+    CEMU_BRIDGE_MENU_BACK    = 4, // B
+} CemuBridgeMenuEvent;
+
+/// Called on the main thread, once per press, for the events above.
+typedef void (*CemuMenuInputCallback)(CemuBridgeMenuEvent event);
+void cemu_bridge_set_menu_input_callback(CemuMenuInputCallback callback);
+
+/// While on, the bound physical controller drives the app's menu instead of the game: the game sees none of its
+/// buttons, sticks or triggers, and the menu events above are delivered. Turning it off hands the controller back to
+/// the game, and anything still held at that moment stays ignored until it is let go, so the press that chose a menu
+/// row is never also a press in the game. Touch input is unaffected. Call from the main thread.
+void cemu_bridge_set_menu_capture(bool capture);
 /// A one-line reason for the log and the message, valid until the next call on the same thread.
 const char* cemu_bridge_clean_start_reason(void);
 
@@ -893,12 +923,33 @@ bool cemu_bridge_save_state(const char* path);
 
 /// Restores guest RAM from a file `cemu_bridge_save_state()` wrote, into the SAME
 /// still-running title instance the save was taken from - not "the same game relaunched".
+/// Every launch of a title has its own session token, stored in the save file; a file from
+/// another launch is refused before the game is even paused (see
+/// `cemu_bridge_save_state_inspect()` and IOSSaveState.cpp for why it cannot be made to
+/// work across launches).
 /// Refuses (returns false, touches no memory) unless the currently running title's ID,
 /// active guest thread list, and mapped memory layout all match the save exactly; a
 /// mismatch means the save doesn't line up with the live session and there is no safe way
 /// to reconcile that. On success, forces the recompiler to drop any JIT-compiled code that
 /// may now be stale (safe under the interpreter too - a no-op there).
 bool cemu_bridge_load_state(const char* path);
+
+/// Why the last `cemu_bridge_save_state()` or `cemu_bridge_load_state()` returned false: a sentence meant to be shown to the
+/// player as it is, valid until the next call on the same thread. Empty after a success. Read it on the thread that made
+/// the call (the save queue), right after it returned: the text belongs to the most recent save or load.
+const char* cemu_bridge_save_state_last_error(void);
+
+/// The same failure as a code, for the UI to branch on. 0 none, 1 no path, 2 no game running, 3 couldn't pause, 4 a CPU
+/// core never went idle (a long loading call), 5 the GPU never drained, 6 not enough storage, 7 couldn't create the file,
+/// 8 write failed, 9 file missing, 10 not a save state, 11 older format, 12 a different game, 13 from an earlier session,
+/// 14 the game's thread set changed since the save, 15 its memory layout changed, 16 file damaged, 17 damaged mid-restore
+/// (the game should be restarted).
+int cemu_bridge_save_state_last_error_code(void);
+
+/// What a slot file is, judged from its header alone (nothing is paused, no memory is read). 0 unreadable or not a save
+/// state, 1 loadable now (taken in this launch of the running game), 2 from an earlier session (the game or the app was
+/// relaunched since: kept on disk but can't be loaded), 3 saved by a different game, 4 an older file format.
+int cemu_bridge_save_state_inspect(const char* path);
 
 /// Human-readable one-liner describing engine/bridge state, for display in the UI.
 /// Never NULL. Points to static/thread-local storage; copy if you need to keep it.

@@ -15,6 +15,7 @@
 //  CemuBridge.h, which is plain C.
 //
 #include "Common/precompiled.h"
+#include "audio/IAudioAPI.h"
 #include <cxxabi.h>
 #include <typeinfo>
 #import "CemuBridge.h"
@@ -57,6 +58,7 @@
 #include "Cafe/Filesystem/FST/KeyCache.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
+#include "Cafe/HW/Latte/Core/LatteShader.h"
 #include "Cafe/HW/Latte/Core/LatteWaitInfo.h"
 #include "StallDetector.h"
 #include "Cafe/HW/Latte/Core/PerfTelemetry.h"
@@ -171,6 +173,10 @@ bool IOSTitlePause_IsPaused();
 void IOSTitlePause_Forget();
 bool IOSSaveState_Save(const char* path);
 bool IOSSaveState_Load(const char* path);
+void IOSSaveState_BeginSession();
+int IOSSaveState_LastErrorCode();
+const char* IOSSaveState_LastErrorMessage();
+int IOSSaveState_InspectFile(const char* path);
 void IOSSystemImplementation_Install();
 bool IOSSystemImplementation_TitleExited(int* statusOut);
 bool IOSSystemImplementation_TitleSwitchFailed();
@@ -740,6 +746,9 @@ namespace {
     std::atomic<int> g_cpuMode{kCpuModeUndecided};
     std::atomic<bool> g_recompilerRequested{false};
     std::atomic<bool> g_favourAccuracy{false};
+    // Favour performance: the opposite trade to Favour accuracy, applied in
+    // ios_apply_render_profile(). Ignored while Favour accuracy is on.
+    std::atomic<bool> g_favourPerformance{false};
     // Low Power Mode. Separate from Favour accuracy on purpose: both end up asking for
     // one emulated CPU core, but for opposite reasons and with different side effects.
     // Favour accuracy also forces synchronous shader compilation, accurate Vulkan
@@ -1111,13 +1120,22 @@ void ios_apply_render_profile()
 {
     auto& config = GetConfig();
     const bool accuracy = g_favourAccuracy.load();
+    const bool performance = g_favourPerformance.load() && !accuracy;
     config.vk_accurate_barriers = accuracy;
     config.gx2drawdone_sync = accuracy;
     if (accuracy)
         config.async_compile = false;
-    cemuLog_log(LogType::Force, "iOS: {} - async shaders {}, accurate barriers {}, GX2DrawDone sync {}",
-        accuracy ? "favouring accuracy" : "favouring speed",
-        config.async_compile.GetValue(), config.vk_accurate_barriers.GetValue(), config.gx2drawdone_sync.GetValue());
+    // Favour performance goes past the default speed path: a missing shader never stalls the
+    // frame, multiplies skip the console's 0*anything=0 rule, and draws skip the breadcrumbs that
+    // only a crash report reads. Set on every title start so turning it off restores all three.
+    if (performance)
+        config.async_compile = true;
+    g_latteRelaxShaderMul.store(performance, std::memory_order_relaxed);
+    PerfTelemetry::DrawBreadcrumbsEnabled().store(!performance, std::memory_order_relaxed);
+    cemuLog_log(LogType::Force, "iOS: {} - async shaders {}, accurate barriers {}, GX2DrawDone sync {}, strict shader mul {}",
+        accuracy ? "favouring accuracy" : (performance ? "favouring performance" : "favouring speed"),
+        config.async_compile.GetValue(), config.vk_accurate_barriers.GetValue(), config.gx2drawdone_sync.GetValue(),
+        performance ? "off" : "per game profile");
 }
 
 }  // namespace
@@ -1755,6 +1773,19 @@ namespace {
     GCController* g_boundController = nil;
     bool g_homeWarned = false;
 
+    // The controller's own HOME / guide button and the app's menus. HOME never reaches the game (the core's GamePad
+    // mapping has no HOME bit); it is reported to the app instead. While menu capture is on, the same controller also
+    // drives the app's menu: the game sees nothing and four more events (up, down, A, B) are reported.
+    std::atomic<CemuMenuInputCallback> g_menuCallback{nullptr};
+    std::atomic<bool> g_menuCapture{false};
+    // Bits held when capture ended (or while it is on), still ignored by the game until let go. Under g_inputMutex.
+    uint32_t g_physicalSuppress = 0;
+    // Main thread only, in ios_update_physical: what was held at the last update, to find the new presses.
+    constexpr uint32_t kMenuUp = 1u << 0, kMenuDown = 1u << 1, kMenuConfirm = 1u << 2, kMenuBack = 1u << 3;
+    constexpr float kMenuStickThreshold = 0.6f;
+    uint32_t g_menuHeld = 0;
+    bool g_homeHeld = false;
+
     int ios_button_bit(CemuBridgeButton button)
     {
         switch (button)
@@ -1866,18 +1897,62 @@ namespace {
         bit(pad.dpad.left.isPressed, kBitLeft);
         bit(pad.dpad.right.isPressed, kBitRight);
 
-        std::lock_guard lock(g_inputMutex);
-        g_physicalButtons = buttons;
-        g_physicalSticks[0] = GCBridgeVec2{pad.leftThumbstick.xAxis.value, pad.leftThumbstick.yAxis.value};
-        g_physicalSticks[1] = GCBridgeVec2{pad.rightThumbstick.xAxis.value, pad.rightThumbstick.yAxis.value};
-        g_physicalTriggers[0] = pad.leftTrigger.value;
-        g_physicalTriggers[1] = pad.rightTrigger.value;
+        // What the app's menus see. Tracked on every update, capture or not, so turning capture on while a button is
+        // held does not report that button as a fresh press.
+        const bool capture = g_menuCapture.load();
+        const float stickY = pad.leftThumbstick.yAxis.value;
+        uint32_t menuNow = 0;
+        if (pad.dpad.up.isPressed || stickY > kMenuStickThreshold) menuNow |= kMenuUp;
+        if (pad.dpad.down.isPressed || stickY < -kMenuStickThreshold) menuNow |= kMenuDown;
+        if (pad.buttonA.isPressed) menuNow |= kMenuConfirm;
+        if (pad.buttonB.isPressed) menuNow |= kMenuBack;
+        const uint32_t menuNew = menuNow & ~g_menuHeld;
+        g_menuHeld = menuNow;
+        const bool homeNow = pad.buttonHome ? pad.buttonHome.isPressed : NO;
+        const bool homeNew = homeNow && !g_homeHeld;
+        g_homeHeld = homeNow;
+
+        {
+            std::lock_guard lock(g_inputMutex);
+            if (capture)
+            {
+                g_physicalSuppress = buttons;
+                g_physicalButtons = 0;
+                g_physicalSticks[0] = g_physicalSticks[1] = GCBridgeVec2{};
+                g_physicalTriggers[0] = g_physicalTriggers[1] = 0.0f;
+            }
+            else
+            {
+                g_physicalSuppress &= buttons;
+                g_physicalButtons = buttons & ~g_physicalSuppress;
+                g_physicalSticks[0] = GCBridgeVec2{pad.leftThumbstick.xAxis.value, pad.leftThumbstick.yAxis.value};
+                g_physicalSticks[1] = GCBridgeVec2{pad.rightThumbstick.xAxis.value, pad.rightThumbstick.yAxis.value};
+                g_physicalTriggers[0] = (g_physicalSuppress & (1u << kBitZL)) ? 0.0f : pad.leftTrigger.value;
+                g_physicalTriggers[1] = (g_physicalSuppress & (1u << kBitZR)) ? 0.0f : pad.rightTrigger.value;
+            }
+        }
+
+        if (CemuMenuInputCallback callback = g_menuCallback.load())
+        {
+            if (homeNew)
+                callback(CEMU_BRIDGE_MENU_HOME);
+            if (capture)
+            {
+                if (menuNew & kMenuUp) callback(CEMU_BRIDGE_MENU_UP);
+                if (menuNew & kMenuDown) callback(CEMU_BRIDGE_MENU_DOWN);
+                if (menuNew & kMenuConfirm) callback(CEMU_BRIDGE_MENU_CONFIRM);
+                if (menuNew & kMenuBack) callback(CEMU_BRIDGE_MENU_BACK);
+            }
+        }
     }
 
     void ios_clear_physical()
     {
+        g_menuHeld = 0;
+        g_homeHeld = false;
         std::lock_guard lock(g_inputMutex);
         g_physicalButtons = 0;
+        g_physicalSuppress = 0;
         g_physicalSticks[0] = g_physicalSticks[1] = GCBridgeVec2{};
         g_physicalTriggers[0] = g_physicalTriggers[1] = 0.0f;
     }
@@ -1893,6 +1968,10 @@ namespace {
             if (!pad)
                 continue;
             g_boundController = controller;
+            // HOME is the app's while a game is up (it opens the in-game menu). Left alone, iOS keeps the button for
+            // itself and the app never hears it.
+            if (pad.buttonHome)
+                pad.buttonHome.preferredSystemGestureState = GCSystemGestureStateDisabled;
             pad.valueChangedHandler = ^(GCExtendedGamepad* gamepad, GCControllerElement* element) {
                 (void)element;
                 ios_update_physical(gamepad);
@@ -2364,6 +2443,10 @@ bool cemu_bridge_tv_audio_enabled(void) {
 
 void cemu_bridge_set_tv_volume(int volume) {
     GetConfig().tv_volume = std::clamp(volume, 0, 100);
+    // apply to a running title too; the device reads it on every render callback
+    std::shared_lock lock(g_audioMutex);
+    if (g_tvAudio)
+        g_tvAudio->SetVolume(GetConfig().tv_volume);
 }
 
 int cemu_bridge_tv_volume(void) {
@@ -2389,6 +2472,10 @@ bool cemu_bridge_pad_audio_enabled(void) {
 
 void cemu_bridge_set_pad_volume(int volume) {
     GetConfig().pad_volume = std::clamp(volume, 0, 100);
+    // apply to a running title too; the device reads it on every render callback
+    std::shared_lock lock(g_audioMutex);
+    if (g_padAudio)
+        g_padAudio->SetVolume(GetConfig().pad_volume);
 }
 
 int cemu_bridge_pad_volume(void) {
@@ -2460,6 +2547,16 @@ void cemu_bridge_set_favour_accuracy(bool enabled) {
 
 bool cemu_bridge_favour_accuracy(void) {
     return g_favourAccuracy.load();
+}
+
+void cemu_bridge_set_favour_performance(bool enabled) {
+    // Nothing to recompute now: everything it changes is applied by ios_apply_render_profile()
+    // when the next title starts.
+    g_favourPerformance.store(enabled);
+}
+
+bool cemu_bridge_favour_performance(void) {
+    return g_favourPerformance.load();
 }
 
 // Best-effort real device temperature, in degrees Celsius. NaN when unavailable.
@@ -3046,6 +3143,8 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
     ios_report_renderer_fallback();
     // A new title: judge it from scratch, with the start-up grace period counted from now.
     ios_reset_video_stall_state();
+    // Save states are only valid inside the launch they were taken in.
+    IOSSaveState_BeginSession();
     g_titleRunning.store(true);
     ios_timebase_ladder_start();
     setStatus("Title launched.");
@@ -3657,6 +3756,18 @@ bool cemu_bridge_load_state(const char* path) {
     return IOSSaveState_Load(path);
 }
 
+const char* cemu_bridge_save_state_last_error(void) {
+    return IOSSaveState_LastErrorMessage();
+}
+
+int cemu_bridge_save_state_last_error_code(void) {
+    return IOSSaveState_LastErrorCode();
+}
+
+int cemu_bridge_save_state_inspect(const char* path) {
+    return IOSSaveState_InspectFile(path);
+}
+
 void cemu_bridge_shutdown_title(void) {
     cemu_bridge_memory_note("before title shutdown");
     ios_timebase_ladder_stop();
@@ -3686,6 +3797,8 @@ void cemu_bridge_set_title_switch_callback(CemuTitleSwitchCallback callback) {
 }
 
 void IOSBridge_TitleSwitching(uint64_t titleId) {
+    // The Menu is gone and a different title is about to start: save states taken so far belong to the old one.
+    IOSSaveState_BeginSession();
     if (CemuTitleSwitchCallback callback = g_titleSwitchCallback.load())
         callback(titleId);
 }
@@ -3710,6 +3823,20 @@ void cemu_bridge_shutdown(void) {
     setStatus("Cemu core shut down.");
 }
 
+void cemu_bridge_set_menu_input_callback(CemuMenuInputCallback callback) {
+    g_menuCallback.store(callback);
+}
+
+void cemu_bridge_set_menu_capture(bool capture) {
+    g_menuCapture.store(capture);
+    // Applies at once rather than at the controller's next change: the game has to stop seeing what is held now, and on
+    // the way out it has to start ignoring it until it is let go.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (GCExtendedGamepad* pad = g_boundController.extendedGamepad)
+            ios_update_physical(pad);
+    });
+}
+
 void cemu_bridge_refresh_input_devices(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         ios_bind_first_controller();
@@ -3723,7 +3850,7 @@ void cemu_bridge_set_button_state(CemuBridgeButton button, bool pressed) {
         if (button == CEMU_BRIDGE_BUTTON_HOME && !g_homeWarned)
         {
             g_homeWarned = true;
-            cemuLog_log(LogType::Force, "iOS input: HOME has no binding in the core's GamePad mapping, so it is ignored");
+            cemuLog_log(LogType::Force, "iOS input: HOME has no binding in the core's GamePad mapping, so it is ignored (the app opens its HOME menu from HOME and should not send it here)");
         }
         return;
     }
