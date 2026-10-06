@@ -563,6 +563,7 @@ struct GameOptionsView: View {
         Form {
             overridesSection
             AdvancedGameOptionsSection(game: game, store: store)
+            GameShaderCacheSection(game: game)
             graphicPacksSection
             gameSavesSection
         }
