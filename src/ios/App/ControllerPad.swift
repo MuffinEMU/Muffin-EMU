@@ -618,12 +618,17 @@ struct HeldControl<Content: View>: View {
     /// True once the gesture ended normally, to tell a lift from a cancel in diagnostics.
     @State private var endedNormally = false
     @State private var pressBegan = Date()
+    /// The pressed look is kept on screen for at least `minimumLook` after a press, so a tap
+    /// whose down and up were both handled before the next render (a busy main thread) is still
+    /// seen pressed once. Drawing only: the press and release reach the game as they happen.
+    @State private var glowing = false
+    private static var minimumLook: TimeInterval { 0.09 }
 
     @AppStorage(ControllerLayoutSettings.hapticsKey)
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
 
     var body: some View {
-        content(isPressed || downSent)
+        content(isPressed || downSent || glowing)
             .contentShape(hitShape)
             .accessibilityAddTraits(.isButton)
             .gesture(
@@ -663,7 +668,7 @@ struct HeldControl<Content: View>: View {
     // change and the report.
     private func report(_ pressed: Bool) {
         let began = pressBegan
-        if pressed { pressBegan = Date(); endedNormally = false }
+        if pressed { pressBegan = Date(); endedNormally = false; glowing = true }
         onPressChange(pressed)
         if pressed {
             PadDiagnostics.shared.recordPressBegan()
@@ -674,6 +679,14 @@ struct HeldControl<Content: View>: View {
             PadDiagnostics.shared.recordRelease(reason, heldSince: began)
         }
         if pressed, hapticsEnabled { PadHaptics.shared.fire() }
+        if !pressed {
+            let remaining = Self.minimumLook - Date().timeIntervalSince(pressBegan)
+            if remaining > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + remaining) { glowing = false }
+            } else {
+                glowing = false
+            }
+        }
     }
 }
 

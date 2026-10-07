@@ -20,6 +20,18 @@ enum GameControlHints {
         0x0005000010162B00,
     ]
 
+    /// Mario Kart 8: USA, Europe, Japan. The Racing control style is built for it.
+    private static let marioKart8TitleIds: Set<UInt64> = [
+        0x000500001010ec00,
+        0x000500001010ed00,
+        0x000500001010eb00,
+    ]
+
+    /// What the player's control style was before Racing was picked for Mario Kart 8: the stored
+    /// string, or "<unset>" when nothing was stored. Put back when the game ends.
+    private static let previousSchemeKey = "muffin.hints.previousControlStyle"
+    private static let unset = "<unset>"
+
     /// What the last launch wrote into the global keys, as key -> the value it wrote, so a later
     /// call (even in a new app session, if the app was closed mid-game) can undo exactly that and
     /// nothing the person has chosen since.
@@ -31,9 +43,25 @@ enum GameControlHints {
         defer { lock.unlock() }
         // Whatever the previous title's hints wrote ends here, whether or not this title has its own.
         undoLocked()
-        guard let titleId, splatoonTitleIds.contains(titleId) else { return }
+        guard let titleId else { return }
         let defaults = UserDefaults.standard
         var applied: [String: String] = [:]
+
+        // Racing for Mario Kart 8, for a player on MuffinEMU's own pad. Someone who chose a TouchLab
+        // style, Melo-Controller or the preview pad has made a choice about controls, so it stays.
+        if marioKart8TitleIds.contains(titleId) {
+            let current = defaults.string(forKey: TouchLabSettings.schemeKey) ?? ""
+            let hasOtherPad = defaults.bool(forKey: MeloControlsSetting.storageKey)
+                || defaults.bool(forKey: PreviewPadStore.enabledKey)
+            if current.isEmpty, !hasOtherPad {
+                defaults.set(defaults.string(forKey: TouchLabSettings.schemeKey) ?? unset, forKey: previousSchemeKey)
+                defaults.set(TouchLabSettings.racingStyleID, forKey: TouchLabSettings.schemeKey)
+                applied[TouchLabSettings.schemeKey] = described(TouchLabSettings.schemeKey)
+                defaults.set(applied, forKey: appliedKey)
+            }
+            return
+        }
+        guard splatoonTitleIds.contains(titleId) else { return }
 
         // Both sticks on screen: without them there is no way to move or turn.
         if defaults.object(forKey: ControllerLayoutSettings.joystickKey) == nil {
@@ -64,8 +92,15 @@ enum GameControlHints {
         let defaults = UserDefaults.standard
         guard let applied = defaults.dictionary(forKey: appliedKey) as? [String: String] else { return }
         defaults.removeObject(forKey: appliedKey)
+        let previousScheme = defaults.string(forKey: previousSchemeKey)
+        defaults.removeObject(forKey: previousSchemeKey)
         for (key, written) in applied where described(key) == written {
-            defaults.removeObject(forKey: key)
+            if key == TouchLabSettings.schemeKey, let previousScheme, previousScheme != unset {
+                // Back to exactly what was stored, not just "unset".
+                defaults.set(previousScheme, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
         }
     }
 

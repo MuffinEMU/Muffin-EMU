@@ -27,6 +27,10 @@ enum TouchLabSettings {
     static let floatCameraKey = "muffin.touchlab.float.camera"
     static let defaultFloatCamera = FloatPad.Camera.stick.rawValue
 
+    /// Racing's two options: hold A for the player, and steer by turning the device.
+    static let racingAutoAccelerateKey = "muffin.touchlab.racing.autoAccelerate"
+    static let racingTiltKey = "muffin.touchlab.racing.tilt"
+
     /// Bumped by "Reset Adaptive layout" so the live pad rebuilds from the cleared data.
     static let adaptiveResetKey = "muffin.touchlab.adaptive.resetCount"
 
@@ -88,6 +92,7 @@ enum TouchLabSettings {
     static let floatStyleID = FloatPad.schemeInfo.id
     static let adaptiveStyleID = AdaptivePad.schemeInfo.id
     static let zoneStyleID = ZonePad.schemeInfo.id
+    static let racingStyleID = RacingPad.schemeInfo.id
 
     /// Styles whose sticks sit in fixed places, so the stick-spacing setting can move them.
     /// Float's sticks appear under the thumb and Frame's live in its side columns.
@@ -257,6 +262,8 @@ struct TouchLabPadOverlay: View {
     @AppStorage(ControllerLayoutSettings.stickGateKey) private var gateRaw = ControllerLayoutSettings.defaultStickGateRaw
     @AppStorage(TouchLabSettings.floatCameraKey) private var cameraRaw = TouchLabSettings.defaultFloatCamera
     @AppStorage(TouchLabSettings.adaptiveResetKey) private var adaptiveResets = 0
+    @AppStorage(TouchLabSettings.racingAutoAccelerateKey) private var racingAuto = false
+    @AppStorage(TouchLabSettings.racingTiltKey) private var racingTilt = false
 
     var body: some View {
         TouchPad(schemeID: schemeID,
@@ -289,6 +296,8 @@ struct TouchLabPadOverlay: View {
         h.combine(cameraRaw)
         h.combine(gameID)
         h.combine(adaptiveResets)
+        h.combine(racingAuto)
+        h.combine(racingTilt)
         return h.finalize()
     }
 
@@ -305,6 +314,8 @@ struct TouchLabPadOverlay: View {
             let pad = AdaptivePad(learned: AdaptivePad.decode(UserDefaults.standard.string(forKey: key) ?? "{}"))
             pad.onLearned = { UserDefaults.standard.set(AdaptivePad.encode($0), forKey: key) }
             return pad
+        case RacingPad.schemeInfo.id:
+            return RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto, tilt: racingTilt))
         default:
             return SchemeCatalog.make(id)
         }
