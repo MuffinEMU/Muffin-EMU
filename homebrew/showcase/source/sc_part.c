@@ -77,7 +77,7 @@ static void launch(float x)
       if (!rk[i].on)
       {
          rk[i].on = 1;
-         rk[i].x = x; rk[i].y = (float)SCN_H - 14.0f;
+         rk[i].x = x; rk[i].y = (float)REF_H - 14.0f;
          rk[i].vx = frands() * 12.0f;
          rk[i].vy = -(120.0f + frand() * 40.0f);
          rk[i].type = (int)(rnd() & 3u);
@@ -176,7 +176,7 @@ static void update(const Input *in, float dt, int demo)
 static void render_fireworks(void)
 {
    s_fade(&S_SCN, 200);
-   const float sc = (float)g_sw / (float)SCN_W;
+   const float sc = (float)g_sw / (float)REF_W;
    for (int i = 0; i < 70; i++)
    {
       u32 h = hash2(i, 5);

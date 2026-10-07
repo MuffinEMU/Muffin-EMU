@@ -9,7 +9,7 @@
 #include <whb/proc.h>
 
 const Scene *const g_scenes[NUM_SCENES] = {
-   &sc_landscape, &sc_particles, &sc_shader, &sc_inputlab, &sc_audio, &sc_stress
+   &sc_landscape, &sc_particles, &sc_shader, &sc_mesh, &sc_inputlab, &sc_audio, &sc_stress
 };
 
 Stats g_stats;
@@ -126,20 +126,20 @@ static void draw_menu_tv(void)
    s_text_sh(&S_TV, 60, 50, 5, COL_WHITE, "CHOOSE A SCENE");
    for (int i = 0; i < NUM_SCENES; i++)
    {
-      int y = 130 + i * 88, on = (i == s_sel);
+      int y = 112 + i * 76, on = (i == s_sel);
       int x = on ? 76 : 60;
-      s_rect_a(&S_TV, x, y, 800, 78, on ? RGB(70, 40, 20) : COL_PANEL, 215);
-      s_box_outline(&S_TV, x, y, 800, 78, on ? COL_ACCENT : RGB(60, 55, 100));
-      if (on) s_box_outline(&S_TV, x + 1, y + 1, 798, 76, COL_ACCENT);
-      s_textf(&S_TV, x + 18, y + 12, 4, on ? COL_ACCENT : COL_WHITE, "%d  %s", i + 1, g_scenes[i]->name);
-      s_text(&S_TV, x + 18, y + 52, 2, COL_DIM, g_scenes[i]->blurb);
+      s_rect_a(&S_TV, x, y, 800, 68, on ? RGB(70, 40, 20) : COL_PANEL, 215);
+      s_box_outline(&S_TV, x, y, 800, 68, on ? COL_ACCENT : RGB(60, 55, 100));
+      if (on) s_box_outline(&S_TV, x + 1, y + 1, 798, 66, COL_ACCENT);
+      s_textf(&S_TV, x + 18, y + 8, 4, on ? COL_ACCENT : COL_WHITE, "%d  %s", i + 1, g_scenes[i]->name);
+      s_text(&S_TV, x + 18, y + 44, 2, COL_DIM, g_scenes[i]->blurb);
    }
-   s_panel(&S_TV, 920, 130, 300, 200, COL_CYAN);
-   s_text_sh(&S_TV, 936, 144, 2, COL_CYAN, "NOW PLAYING");
-   s_text_sh(&S_TV, 936, 176, 2, COL_WHITE, audio_track_name(audio_track()));
-   s_textf(&S_TV, 936, 208, 2, COL_DIM, "%d BPM", audio_track_bpm(audio_track()));
-   s_text(&S_TV, 936, 240, 2, audio_muted() ? COL_RED : COL_GREEN, audio_muted() ? "MUTED" : "SOUND ON");
-   s_text(&S_TV, 936, 280, 2, COL_DIM, "+ TO MUTE");
+   s_panel(&S_TV, 920, 112, 300, 200, COL_CYAN);
+   s_text_sh(&S_TV, 936, 126, 2, COL_CYAN, "NOW PLAYING");
+   s_text_sh(&S_TV, 936, 158, 2, COL_WHITE, audio_track_name(audio_track()));
+   s_textf(&S_TV, 936, 190, 2, COL_DIM, "%d BPM", audio_track_bpm(audio_track()));
+   s_text(&S_TV, 936, 222, 2, audio_muted() ? COL_RED : COL_GREEN, audio_muted() ? "MUTED" : "SOUND ON");
+   s_text(&S_TV, 936, 262, 2, COL_DIM, "+ TO MUTE");
    s_text(&S_TV, 60, 676, 2, COL_DIM, "UP/DOWN: PICK   A: START   B: TITLE   OR TOUCH THE GAMEPAD");
 }
 
@@ -159,12 +159,12 @@ static void draw_menu_drc(void)
    s_text_sh(&S_DRC, 16, 12, 3, COL_ACCENT, "TOUCH A SCENE");
    for (int i = 0; i < NUM_SCENES; i++)
    {
-      int cx = 16 + (i & 1) * 424, cy = 52 + (i >> 1) * 98, on = (i == s_sel);
-      s_rect(&S_DRC, cx, cy, 406, 88, on ? RGB(110, 60, 20) : COL_PANEL);
-      s_box_outline(&S_DRC, cx, cy, 406, 88, on ? COL_ACCENT : COL_DIM);
-      s_textf(&S_DRC, cx + 14, cy + 12, 3, on ? COL_ACCENT : COL_WHITE, "%d", i + 1);
-      s_text_sh(&S_DRC, cx + 50, cy + 14, 2, COL_WHITE, g_scenes[i]->name);
-      s_text(&S_DRC, cx + 14, cy + 52, 1, COL_DIM, g_scenes[i]->blurb);
+      int cx = 16 + (i & 1) * 424, cy = 50 + (i >> 1) * 76, on = (i == s_sel);
+      s_rect(&S_DRC, cx, cy, 406, 68, on ? RGB(110, 60, 20) : COL_PANEL);
+      s_box_outline(&S_DRC, cx, cy, 406, 68, on ? COL_ACCENT : COL_DIM);
+      s_textf(&S_DRC, cx + 14, cy + 10, 3, on ? COL_ACCENT : COL_WHITE, "%d", i + 1);
+      s_text_sh(&S_DRC, cx + 50, cy + 12, 2, COL_WHITE, g_scenes[i]->name);
+      s_text(&S_DRC, cx + 14, cy + 44, 1, COL_DIM, g_scenes[i]->blurb);
    }
    s_rect(&S_DRC, 16, 354, 406, 52, audio_muted() ? COL_RED : COL_PANEL);
    s_box_outline(&S_DRC, 16, 354, 406, 52, COL_DIM);
@@ -176,14 +176,18 @@ static void draw_menu_drc(void)
    s_text(&S_DRC, 16, 452, 2, COL_DIM, "IDLE FOR A WHILE AND THE DEMO STARTS BY ITSELF");
 }
 
+// Starts at 640x360 and steps down (320x180, then 160x90) when the host cannot keep up. It never
+// steps back up on its own, so a borderline machine does not flap between two sizes.
 static void update_quality(void)
 {
    static float acc;
    static int n;
    acc += g_stats.frame_ms; n++;
-   if (n >= 45)
+   // Judge quickly (12 frames) so a slow host does not sit through a long crawl at 640x360.
+   if (n >= 12)
    {
-      if (!s_quality_manual && g_scale == 4 && acc / (float)n > 85.0f) gfx_set_scale(8);
+      if (!s_quality_manual && g_scale < 8 && acc / (float)n > (g_scale == 2 ? 48.0f : 85.0f))
+         gfx_set_scale(g_scale == 2 ? 4 : 8);
       acc = 0; n = 0;
    }
 }
@@ -193,6 +197,7 @@ int main(int argc, char **argv)
    (void)argc; (void)argv;
    WHBProcInit();
    util_init();
+   par_init();
    gfx_init();
    input_init();
    audio_init();
@@ -237,7 +242,7 @@ int main(int argc, char **argv)
          s_idle = 0.0f;
       }
       if (in.trig & B_PLUS) audio_set_mute(!audio_muted());
-      if (in.trig & B_Y) { s_quality_manual = 1; gfx_set_scale(g_scale == 4 ? 8 : 4); }
+      if (in.trig & B_Y) { s_quality_manual = 1; gfx_set_scale(g_scale == 2 ? 4 : (g_scale == 4 ? 8 : 2)); }
 
       if (s_state == ST_TITLE)
       {
@@ -257,8 +262,8 @@ int main(int argc, char **argv)
          {
             for (int i = 0; i < NUM_SCENES; i++)
             {
-               int cx = 16 + (i & 1) * 424, cy = 52 + (i >> 1) * 98;
-               if (in.tx >= cx && in.tx < cx + 406 && in.ty >= cy && in.ty < cy + 88) { s_sel = i; goto_scene(i); drc_tick = 0; in.touch_trig = 0; break; }
+               int cx = 16 + (i & 1) * 424, cy = 50 + (i >> 1) * 76;
+               if (in.tx >= cx && in.tx < cx + 406 && in.ty >= cy && in.ty < cy + 68) { s_sel = i; goto_scene(i); drc_tick = 0; in.touch_trig = 0; break; }
             }
             if (s_state == ST_MENU && in.ty >= 354 && in.ty < 406)
             {
@@ -339,6 +344,7 @@ int main(int argc, char **argv)
 
    input_rumble_stop();
    stress_stop_workers();
+   par_shutdown();
    audio_shutdown();
    WHBProcShutdown();
    return 0;

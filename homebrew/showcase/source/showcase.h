@@ -17,8 +17,10 @@ typedef uint32_t u32;
 #define DRC_W     854
 #define DRC_H     480
 #define DRC_PITCH 896
-#define SCN_W     320   // largest internal scene buffer (4x upscaled to the TV)
-#define SCN_H     180
+#define SCN_W     640   // largest internal scene buffer (2x upscaled to the TV)
+#define SCN_H     360
+#define REF_W     320   // reference grid that scene coordinates were authored on (4x quality)
+#define REF_H     180
 
 // OSScreen pixels are RGBX8888 in PPC (big-endian) word order.
 #define RGB(r, g, b) ((((u32)(r)) << 24) | (((u32)(g)) << 16) | (((u32)(b)) << 8) | 0xFFu)
@@ -41,6 +43,8 @@ typedef uint32_t u32;
 
 // ---------------------------------------------------------------- util.c
 void  util_init(void);
+u32   col_lerp(u32 a, u32 b, int t256);   // packed two-multiply blend, t 0..256
+u32   col_avg(u32 a, u32 b);              // (a+b)/2 with no overflow between channels
 float m_sin(float x);
 float m_cos(float x);
 float m_sqrt(float x);
@@ -65,7 +69,8 @@ typedef struct { u32 *p; int pitch, w, h; } Surf;
 extern Surf S_TV, S_DRC, S_SCN;
 extern int  g_scale, g_sw, g_sh;
 void gfx_init(void);
-void gfx_set_scale(int scale);      // 4 or 8
+void gfx_set_scale(int scale);      // 2 (640x360), 4 (320x180) or 8 (160x90)
+void gfx_upsample(const u32 *lo, int lw, int lh, int bx, int by);   // bilinear lo-res grid -> S_SCN
 void gfx_begin_frame(void);
 void gfx_present_scene(void);       // S_SCN -> TV back buffer (upscaled)
 void gfx_flip_tv(void);
@@ -89,6 +94,22 @@ int  text_w(const char *str, int scale);
 void s_fade(Surf *s, int k256);     // multiply every pixel by k/256
 void s_add_pixel(Surf *s, int x, int y, u32 c);
 void s_panel(Surf *s, int x, int y, int w, int h, u32 border);
+void s_blob(Surf *s, int cx, int cy, int rx, int ry, u32 c, int a256);   // soft additive-free glow, centre alpha a
+void s_glow(Surf *s, int cx, int cy, int r, u32 c, int k256);           // additive radial glow
+void s_line_aa(Surf *s, float x0, float y0, float x1, float y1, u32 c);  // anti-aliased line
+void s_disc_aa(Surf *s, float cx, float cy, float r, u32 c);            // anti-aliased disc
+void s_blend_pixel(Surf *s, int x, int y, u32 c, int a256);
+void s_edge_aa(Surf *s, int y0, int y1);                                // cheap edge smoothing on rows y0..y1-1
+
+// ---------------------------------------------------------------- par.c
+#define PAR_JOBS 3
+void par_init(void);
+void par_run(void (*fn)(void *ctx, int job, int njobs), void *ctx);
+void par_shutdown(void);
+void par_publish(const void *p, size_t n);   // main: flush data the slices will read
+void par_flush(const void *p, size_t n);     // slice: write back what this core produced
+void par_consume(const void *p, size_t n);   // any core: drop stale cache lines before reading
+static inline void par_range(int job, int njobs, int n, int *a, int *b) { *a = n * job / njobs; *b = n * (job + 1) / njobs; }
 
 // ---------------------------------------------------------------- input.c
 typedef struct {
@@ -163,9 +184,9 @@ typedef struct {
    void (*drc)(const Input *in);     // draws the whole GamePad screen
 } Scene;
 
-#define NUM_SCENES 6
+#define NUM_SCENES 7
 extern const Scene *const g_scenes[NUM_SCENES];
-extern const Scene sc_landscape, sc_particles, sc_shader, sc_inputlab, sc_audio, sc_stress;
+extern const Scene sc_landscape, sc_particles, sc_shader, sc_inputlab, sc_audio, sc_stress, sc_mesh;
 
 // Global state shared between main and the scenes.
 typedef struct {

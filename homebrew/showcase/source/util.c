@@ -138,3 +138,18 @@ u32 hsv(float h, float s, float v)
    }
    return RGB((int)(r * 255.0f), (int)(g * 255.0f), (int)(b * 255.0f));
 }
+
+u32 col_lerp(u32 a, u32 b, int t)
+{
+   u32 a1 = (a >> 8) & 0x00FF00FFu, b1 = (b >> 8) & 0x00FF00FFu;   // R and B lanes
+   u32 a2 = a & 0x00FF00FFu, b2 = b & 0x00FF00FFu;                 // G and X lanes
+   u32 it = (u32)(256 - t), ut = (u32)t;
+   u32 rb = (((a1 * it + b1 * ut) >> 8) & 0x00FF00FFu) << 8;
+   u32 gx = ((a2 * it + b2 * ut) >> 8) & 0x00FF00FFu;
+   return rb | gx;
+}
+
+u32 col_avg(u32 a, u32 b)
+{
+   return ((a & 0xFEFEFEFEu) >> 1) + ((b & 0xFEFEFEFEu) >> 1) + (a & b & 0x01010101u);
+}

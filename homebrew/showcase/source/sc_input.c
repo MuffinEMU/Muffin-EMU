@@ -59,7 +59,7 @@ static void update(const Input *in, float dt, int demo)
          }
          else if (x < 140 && y > 400)       // clear button
             s_fill(&S_CAN, RGB(10, 9, 26));
-         add_ripple(x * (float)SCN_W / (float)DRC_W, y * (float)SCN_H / (float)DRC_H);
+         add_ripple(x * (float)g_sw / (float)DRC_W, y * (float)g_sh / (float)DRC_H);
          tx_s = -1;
       }
       if (!(x > 700 && y > 395) && !(x < 140 && y > 400))
@@ -68,7 +68,7 @@ static void update(const Input *in, float dt, int demo)
          s_disc(&S_CAN, (int)x, (int)y, 3, c);
          tx_s = x; ty_s = y;
       }
-      float sx = x * (float)SCN_W / (float)DRC_W, sy = y * (float)SCN_H / (float)DRC_H;
+      float sx = x * (float)g_sw / (float)DRC_W, sy = y * (float)g_sh / (float)DRC_H;
       if (trail_n < 48) { trail[trail_n][0] = sx; trail[trail_n][1] = sy; trail_n++; }
       else { memmove(trail[0], trail[1], sizeof(trail[0]) * 47); trail[47][0] = sx; trail[47][1] = sy; }
    }
