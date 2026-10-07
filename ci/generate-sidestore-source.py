@@ -26,7 +26,10 @@ MuffinEMU-fakesigned.ipa, which carries the JIT entitlements inside its ad-hoc s
 Usage:  python3 ci/generate-sidestore-source.py [--repo owner/name] [--out-dir docs]
 Reads GITHUB_TOKEN from the environment when present (raises the API rate limit).
 """
-import json, os, re, sys, urllib.request, urllib.error, urllib.parse, argparse
+import json
+import re
+import os
+import plistlib, os, re, sys, urllib.request, urllib.error, urllib.parse, argparse
 
 PAGES = "https://muffinemu.github.io/MuffinEMU"
 BUNDLE_ID = "com.kiddreads.MuffinEMU"
@@ -45,6 +48,42 @@ EXPERIMENTAL_KEEP = 10
 EXPERIMENTAL_NOTE = (
     'These are unfinished test builds, published by hand to try out work in progress. Each one replaces an installed MuffinEMU: it has the same bundle identifier as the standard build, so your games, saves and settings carry over. They can crash or misbehave. For normal play use the Stable source instead.')
 
+
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Which entitlements file signs which IPA (see the "Package the IPAs" step).
+ENTITLEMENTS_FOR_ASSET = {
+    "MuffinEMU.ipa": "src/ios/Sideload.entitlements",
+    "MuffinEMU-fakesigned.ipa": "src/ios/Cemu.entitlements",
+}
+HEADER_URL = f"{PAGES}/social-preview.png"
+
+
+def app_permissions(asset_name):
+    """The entitlements the IPA really carries and the privacy strings it shows.
+
+    AltStore 2 and SideStore compare a source's entitlements with the installed app, so an
+    empty list (what the feeds used to ship) reads as "this app asks for nothing" and can
+    trip that check. Both come from the repo, never typed by hand, so they can't drift.
+    """
+    ents = []
+    path = ENTITLEMENTS_FOR_ASSET.get(asset_name)
+    if path:
+        try:
+            with open(os.path.join(REPO_ROOT, path), "rb") as f:
+                ents = sorted(k for k, v in plistlib.load(f).items() if v)
+        except (OSError, plistlib.InvalidFileException):
+            ents = []
+    privacy = {}
+    try:
+        with open(os.path.join(REPO_ROOT, "src/ios/project.yml"), encoding="utf-8") as f:
+            for line in f:
+                m = re.match(r"\s*INFOPLIST_KEY_(NS\w+UsageDescription):\s*['\"]?(.*?)['\"]?\s*$", line)
+                if m:
+                    privacy[m.group(1)] = m.group(2)
+    except OSError:
+        pass
+    return {"entitlements": ents, "privacy": privacy}
 
 def api(repo, path, token, allow_404=False):
     req = urllib.request.Request(
@@ -144,7 +183,7 @@ def build_nightly(rels, asset_name, ident, name, subtitle, app_subtitle, extra_n
     ipa = next((x for x in rel.get("assets", []) if x["name"] == asset_name), None)
     if not ipa:
         return None
-    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note)
+    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_name)
     src["apps"][0]["name"] = "MuffinEMU Nightly"
     src["apps"][0]["versions"] = [{
         "version": nightly_version(rel, ipa),
@@ -181,9 +220,9 @@ def build_source(rels, asset_name, ident, name, subtitle, app_subtitle, extra_no
     versions.sort(key=lambda v: v["key"], reverse=True)
     for v in versions:
         del v["key"]
-    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note)
+    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_name)
     src["apps"][0]["versions"] = versions
-    src["news"] = news_for(rels)
+    src["news"] = news_for(rels, count=3)
     return src
 
 
@@ -211,7 +250,8 @@ def news_for(rels, count=1):
             "identifier": f"muffinemu-v{version}",
             "caption": caption,
             "date": (rel.get("published_at") or "")[:10],
-            "tintColor": "E5652E",
+            "tintColor": "#E5652E",
+            "imageURL": HEADER_URL,
             "url": rel.get("html_url"),
             "appID": BUNDLE_ID,
             "notify": False,
@@ -220,10 +260,14 @@ def news_for(rels, count=1):
     items.sort(key=lambda n: n["key"], reverse=True)
     for n in items:
         del n["key"]
-    return items[:count]
+    items = items[:count]
+    # Only the newest release may notify, so adding the source doesn't fire three alerts.
+    for i, n in enumerate(items):
+        n["notify"] = i == 0
+    return items
 
 
-def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
+def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_name="MuffinEMU.ipa"):
     """Everything about a feed except which versions are in it.
 
     Shared so the stable and nightly feeds cannot drift apart in their description,
@@ -238,8 +282,10 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
             "The install source for MuffinEMU, a Wii U emulator for iPhone and iPad built "
             "on Cemu. " + extra_note),
         "iconURL": f"{PAGES}/icon.png",
+        "headerURL": HEADER_URL,
         "website": f"{PAGES}/",
-        "tintColor": "E5652E",
+        "tintColor": "#E5652E",
+        "featuredApps": [BUNDLE_ID],
         "apps": [{
             "name": "MuffinEMU",
             "bundleIdentifier": BUNDLE_ID,
@@ -259,11 +305,11 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
                 + extra_note + "\n\n"
                 "Bring your own games and keys. No copyrighted content is distributed here."),
             "iconURL": f"{PAGES}/icon.png",
-            "tintColor": "E5652E",
+            "tintColor": "#E5652E",
             "category": "games",
             "screenshotURLs": [],
             "versions": [],
-            "appPermissions": {"entitlements": [], "privacy": {}},
+            "appPermissions": app_permissions(asset_name),
         }],
         "news": [],
     }
@@ -330,7 +376,7 @@ def build_experimental(rels, repo, token, asset_name, ident, name, subtitle, app
             break
     if not chosen:
         return None
-    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note)
+    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_name)
     src["apps"][0]["name"] = "MuffinEMU Experimental"
     src["apps"][0]["versions"] = [{
         "version": experimental_version(rel),
@@ -482,6 +528,7 @@ def run(repo, token, rels, out_dir):
 
     os.makedirs(out_dir, exist_ok=True)
     for fname, (channel, src) in built.items():
+        src["sourceURL"] = f"{PAGES}/{fname}"
         out = os.path.join(out_dir, fname)
         with open(out, "w", encoding="utf-8") as f:
             json.dump(src, f, indent=2, ensure_ascii=False)
