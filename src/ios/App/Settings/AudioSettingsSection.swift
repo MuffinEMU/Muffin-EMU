@@ -63,6 +63,7 @@ struct AudioSettingsSection: View {
     @AppStorage(AudioSettings.inputVolumeKey) private var inputVolume = AudioSettings.defaultInputVolume
     @State private var showMicDenied = false
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+    @AppStorage(AudioRecorder.autoRecordKey) private var autoRecord = false
 
     private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
@@ -72,6 +73,17 @@ struct AudioSettingsSection: View {
 
     var body: some View {
         Section {
+            Toggle(isOn: $autoRecord) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Save all audio automatically")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("Records every game's music and sound to an M4A in Files > MuffinEMU > Recordings, from start to quit.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .tint(MuffinTheme.accentText)
             tvGroup
             padGroup
             microphoneGroup
