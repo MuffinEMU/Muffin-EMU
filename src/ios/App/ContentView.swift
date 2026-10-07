@@ -956,6 +956,7 @@ struct GameBrowserView: View {
 
     private func withAlerts<Content: View>(_ content: Content) -> some View {
         content
+            .modifier(AudioRecordingNoticeModifier())
             .alert("Added", isPresented: .constant(dlcUpdateSuccessMessage != nil), presenting: dlcUpdateSuccessMessage) { _ in
                 Button("OK") { dlcUpdateSuccessMessage = nil }
             } message: { message in
@@ -1971,7 +1972,8 @@ struct EmulatorViewOptimized: View {
                     gameManager.stopEmulation()
                     isRunning = true
                 },
-                swapScreens: swapScreensFromHomeMenu
+                swapScreens: swapScreensFromHomeMenu,
+                toggleRecording: { AudioRecorder.shared.toggle(gameName: gameName) }
             )
         )
     }
@@ -2618,6 +2620,7 @@ struct EmulatorViewOptimized: View {
         }
         .onDisappear {
             launchLog.stop()
+            AudioRecorder.shared.stop()
             OrientationPolicy.setInGame(false)
             // The pad can no longer vanish mid-press while a title runs, so the only
             // way out from under a held finger is leaving the emulator entirely. Each
@@ -2660,6 +2663,8 @@ struct EmulatorViewOptimized: View {
                 isPaused = false
                 setTitlePaused(false)
             } else {
+                // A recording ends when the app leaves the foreground, finished properly.
+                AudioRecorder.shared.stop()
                 // Released on every trip out of .active, paused or not. A touch in
                 // progress when the app resigns active is cancelled by UIKit, which does
                 // not reliably deliver the gesture's end, so without this a held button or
@@ -2703,6 +2708,11 @@ struct EmulatorViewOptimized: View {
         // with on-screen controls sitting right where it appears.
         .hidingSystemOverlaysDuringPlay()
         .modifier(HeatNoticeModifier { gameManager.showLaunchNotice($0) })
+        // Red "Recording 0:42" while Record audio (HOME menu) is on.
+        .overlay(alignment: .top) {
+            RecordingIndicator()
+                .padding(.top, overlayTopInset + 8)
+        }
         // Also on while the controls are being moved: a controller's B only reaches the app while it is captured.
         .modifier(HomeMenuEventsModifier(isOpen: showHomeMenu || isEditingControlLayout, onEvent: handleHomeMenuEvent))
         .modifier(ControllerAutoHideModifier(apply: setPadHiddenByController))

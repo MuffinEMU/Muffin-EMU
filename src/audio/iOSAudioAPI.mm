@@ -11,6 +11,7 @@
 
 #include "iOSAudioAPI.h"
 #include "iOSDeviceDescription.h"
+#include "iOSAudioRecorder.h"
 #include "config/CemuConfig.h"
 #include <algorithm>
 #include <cstring>
@@ -208,6 +209,10 @@ bool IOSAudioAPI::NeedAdditionalBlocks() const
 
 bool IOSAudioAPI::FeedBlock(sint16* data)
 {
+    // "Record audio": a copy of the TV mix, taken before it is queued so playback is untouched. Only the
+    // TV device; the GamePad's own stream is not part of the recording. A no-op unless a recording is on.
+    if (m_bitsPerSample == 16 && IOSAudioRecorder::IsActive() && this == g_tvAudio.get())
+        IOSAudioRecorder::Tap(data, m_samplesPerBlock, m_channels, m_samplerate);
 #if MUFFIN_AUDIT_HOOKS
     const bool accepted = m_buffer.write(reinterpret_cast<const std::uint8_t*>(data), m_bytesPerBlock);
     if (!accepted)

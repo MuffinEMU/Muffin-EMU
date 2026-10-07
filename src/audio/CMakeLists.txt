@@ -37,6 +37,8 @@ if(IOS)
 		iOSAudioAPI.h
 		iOSAudioInputAPI.mm
 		iOSAudioInputAPI.h
+		iOSAudioRecorder.mm
+		iOSAudioRecorder.h
 		iOSDeviceDescription.h
 	)
 	target_link_libraries(CemuAudio PRIVATE

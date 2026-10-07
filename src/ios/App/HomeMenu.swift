@@ -32,6 +32,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
     case saveStates
     case screenLayout
     case moveControls
+    case recordAudio
     case recentreAim
     case quit
     // case wiiUMenu   // see EXTENSION POINT above
@@ -56,6 +57,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .saveStates: return "Save States"
         case .screenLayout: return "Screen layout"
         case .moveControls: return "Move controls"
+        case .recordAudio: return "Record audio"
         case .recentreAim: return "Recentre aim"
         case .quit: return "Quit game"
         }
@@ -67,6 +69,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .saveStates: return "bookmark.fill"
         case .screenLayout: return "rectangle.split.2x1"
         case .moveControls: return "arrow.up.and.down.and.arrow.left.and.right"
+        case .recordAudio: return "record.circle"
         case .recentreAim: return "scope"
         case .quit: return "xmark.circle"
         }
@@ -78,6 +81,7 @@ enum HomeMenuDestination: String, CaseIterable, Identifiable {
         case .saveStates: return "Opens the save state slots."
         case .screenLayout: return "Opens the screen layout choices."
         case .moveControls: return "Closes the menu and lets you drag the on-screen controls."
+        case .recordAudio: return "Records the game's sound to an M4A file in the Recordings folder in Files. Choose it again to stop."
         case .recentreAim: return "Takes the way you are holding the device now as straight ahead, then goes back to the game."
         case .quit: return "Asks before leaving the game."
         }
@@ -159,6 +163,7 @@ struct HomeMenuActions {
     let moveControls: () -> Void
     let quit: () -> Void
     let swapScreens: () -> Void
+    let toggleRecording: () -> Void
 }
 
 private struct HomeMenuRow: Identifiable {
@@ -195,6 +200,7 @@ struct HomeMenuOverlay: View {
     let actions: HomeMenuActions
 
     private enum Page { case root, layout, confirmQuit }
+    @ObservedObject private var recorder = AudioRecorder.shared
     @State private var page = Page.root
     @State private var focus = 0
     @State private var rowsHeight: CGFloat = 280
@@ -335,6 +341,11 @@ struct HomeMenuOverlay: View {
         case .saveStates: return make(actions.saveStates)
         case .screenLayout: return make(chevron: true, { show(.layout) })
         case .moveControls: return make(actions.moveControls)
+        case .recordAudio:
+            // Stays open, so the checkmark shows it took; Resume carries on with the game.
+            var row = make(actions.toggleRecording)
+            row.isSelected = recorder.isRecording
+            return row
         case .recentreAim:
             // Same call as Settings > Motion & Aiming > Recentre aim. The pose at the tap is the new
             // straight ahead, so the player is already holding the device the way they play.
