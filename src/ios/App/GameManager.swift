@@ -212,7 +212,9 @@ class GameManager: ObservableObject {
     @Published var favorites: [GameMetadata] = []
     @Published var isLoading = false
     @Published var currentGame: GameMetadata?
-    @Published var emulationState: EmulationState = .idle
+    @Published var emulationState: EmulationState = .idle {
+        didSet { ScreenBrightness.shared.setGameRunning(emulationState == .running) }
+    }
     /// Last human-readable message from the engine bridge (e.g. "engine not built yet").
     @Published var lastStatusMessage: String = ""
     /// A short note about how the last launch differed from what was asked for (for example Vulkan not starting so
