@@ -344,7 +344,12 @@ final class ArtPackStore: ObservableObject {
                 self?.setProgress(pid, "Checking", 0)
                 let digest = try Self.sha256(of: zip, isCancelled: { flag.isSet }) { f in self?.setProgress(pid, "Checking", f) }
                 guard digest.caseInsensitiveCompare(file.sha256) == .orderedSame else { throw ArtPackError.badChecksum(file.name) }
-                let archive = try MiniZip(url: zip)
+                let archive = try MiniZip(url: zip, limits: .artPack(zipBytes: file.size))
+                // Unpacking needs room for every image while the zip is still on disk.
+                let need = Int64(archive.totalUncompressedSize) + 32 * 1024 * 1024
+                if let have = ArtLocations.availableBytes(), have < need {
+                    throw ArtPackError.notEnoughSpace(need: need, have: have)
+                }
                 let count = try archive.extract(to: files, progress: { f in
                     self?.setProgress(pid, "Unpacking", (Double(n) + f) / Double(totalFiles))
                 }, isCancelled: { flag.isSet })

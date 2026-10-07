@@ -40,23 +40,39 @@ struct MiniZip {
         let isSymlink: Bool
     }
 
-    /// Limits that no real pack comes close to.
-    static let maxEntrySize = 64 * 1024 * 1024
-    static let maxTotalSize = 768 * 1024 * 1024
-    static let maxEntries = 100_000
+    /// Size limits for one archive. The defaults are for graphic packs and imported zips and are
+    /// limits that no real graphic pack comes close to. Art packs are far bigger, so they pass
+    /// limits worked out from what their manifest lists.
+    struct Limits {
+        var maxEntrySize: Int
+        var maxTotalSize: Int
+        var maxEntries: Int
+
+        static let graphicPack = Limits(maxEntrySize: 64 * 1024 * 1024, maxTotalSize: 768 * 1024 * 1024, maxEntries: 100_000)
+
+        /// For an art pack whose zip the manifest lists at `zipBytes`: images barely compress, so
+        /// the unpacked size is allowed to reach twice the zip plus a margin. One image is capped at 50 MB.
+        static func artPack(zipBytes: Int64) -> Limits {
+            let total = Int(min(max(zipBytes, 0) * 2 + 128 * 1024 * 1024, Int64(Int32.max)))
+            return Limits(maxEntrySize: 50 * 1024 * 1024, maxTotalSize: max(total, graphicPack.maxTotalSize), maxEntries: 100_000)
+        }
+    }
 
     private let data: Data
     let entries: [Entry]
+    /// What the archive's files add up to once unpacked.
+    let totalUncompressedSize: Int
 
     /// Reads and validates the central directory. The file is memory-mapped, not loaded.
-    init(url: URL) throws {
+    init(url: URL, limits: Limits = .graphicPack) throws {
         let mapped = try Data(contentsOf: url, options: .alwaysMapped)
-        try self.init(data: mapped)
+        try self.init(data: mapped, limits: limits)
     }
 
-    init(data: Data) throws {
+    init(data: Data, limits: Limits = .graphicPack) throws {
         self.data = data
-        self.entries = try MiniZip.readCentralDirectory(data)
+        self.entries = try MiniZip.readCentralDirectory(data, limits: limits)
+        self.totalUncompressedSize = entries.reduce(0) { $0 + ($1.isDirectory ? 0 : $1.size) }
     }
 
     // MARK: - Reading
@@ -69,7 +85,7 @@ struct MiniZip {
         u16(d, o) | u16(d, o + 2) << 16
     }
 
-    private static func readCentralDirectory(_ d: Data) throws -> [Entry] {
+    private static func readCentralDirectory(_ d: Data, limits: Limits) throws -> [Entry] {
         // End of central directory record: 22 bytes plus a comment of up to 65535.
         guard d.count >= 22 else { throw ZipError.notAZip }
         var eocd = -1
@@ -89,7 +105,7 @@ struct MiniZip {
         let cdOffset = u32(d, eocd + 16)
         guard disk == 0, cdDisk == 0, countOnDisk == count else { throw ZipError.unsupported("multi-disk archive") }
         if count == 0xFFFF || cdSize == 0xFFFF_FFFF || cdOffset == 0xFFFF_FFFF { throw ZipError.unsupported("Zip64") }
-        guard count > 0, count <= maxEntries else { throw ZipError.corrupt("entry count") }
+        guard count > 0, count <= limits.maxEntries else { throw ZipError.corrupt("entry count") }
         guard cdOffset + cdSize <= eocd, cdOffset >= 0 else { throw ZipError.corrupt("directory position") }
 
         var entries: [Entry] = []
@@ -123,9 +139,9 @@ struct MiniZip {
             entries.append(Entry(name: name, method: method, crc32: crc, compressedSize: csize, size: size,
                                  localHeaderOffset: localOffset, isDirectory: isDir, isSymlink: mode == 0xA000))
             if !isDir {
-                guard size <= maxEntrySize else { throw ZipError.tooLarge }
+                guard size <= limits.maxEntrySize else { throw ZipError.tooLarge }
                 total += size
-                guard total <= maxTotalSize else { throw ZipError.tooLarge }
+                guard total <= limits.maxTotalSize else { throw ZipError.tooLarge }
             }
             p += 46 + nameLen + extraLen + commentLen
         }
