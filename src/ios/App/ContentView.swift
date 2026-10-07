@@ -1200,17 +1200,13 @@ struct GameCardOptimized<Options: View>: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(MuffinTheme.muffinTopGradient)
 
-                if let coverPath = game.coverPath,
-                   let uiImage = UIImage(contentsOfFile: coverPath) {
+                if let coverPath = game.coverPath {
                     // scaledToFit, not scaledToFill. A game's own icon is SQUARE and
                     // this well is 3:4, so filling it would crop the top and bottom
                     // quarter off every icon - which on a Wii U icon is usually the
                     // title text. Fitting leaves the muffin gradient showing around it
                     // instead, and box art that is already 3:4 fits exactly either way.
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .scaledToFit()
-                        .padding(10)
+                    CoverImage(path: coverPath, padding: 10)
                         .cornerRadius(16)
                 } else {
                     VStack {
