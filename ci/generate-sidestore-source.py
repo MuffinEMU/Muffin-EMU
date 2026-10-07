@@ -175,7 +175,9 @@ def screenshots():
         for n in names:
             url = f"{PAGES}/assets/screenshots/{device}/{n}"
             size = image_size(os.path.join(folder, n))
-            if size:
+            if device == "iphone":
+                entries.append(url)
+            elif size:
                 entries.append({"imageURL": url, "width": size[0], "height": size[1]})
         if entries:
             shots[device] = entries
@@ -437,7 +439,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
             "tintColor": "#E5652E",
             "category": "games",
             "screenshots": screenshots(),
-            "screenshotURLs": [e["imageURL"] for e in screenshots().get("iphone", [])],
+            "screenshotURLs": screenshots().get("iphone", []),
             "versions": [],
             "appPermissions": app_permissions(asset_name),
         }],
