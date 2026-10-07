@@ -100,12 +100,12 @@ struct ContentView: View {
         // file is imported exactly as if it had been picked in the library.
         .onOpenURL { url in openSharedFile(url) }
         // Theme music in the library (Settings > Audio): only while no game is running and the app is on screen.
-        .onAppear { MenuMusic.shared.update(emulationState: gameManager.emulationState, appActive: appScenePhase == .active) }
+        .onAppear { MenuMusic.shared.update(emulationState: gameManager.emulationState, appActive: appScenePhase != .background) }
         .onChange(of: gameManager.emulationState) { state in
-            MenuMusic.shared.update(emulationState: state, appActive: appScenePhase == .active)
+            MenuMusic.shared.update(emulationState: state, appActive: appScenePhase != .background)
         }
         .onChange(of: appScenePhase) { phase in
-            MenuMusic.shared.update(emulationState: gameManager.emulationState, appActive: phase == .active)
+            MenuMusic.shared.update(emulationState: gameManager.emulationState, appActive: phase != .background)
         }
         .alert("Couldn't add that game", isPresented: Binding(
             get: { sharedImportError != nil }, set: { if !$0 { sharedImportError = nil } })) {
