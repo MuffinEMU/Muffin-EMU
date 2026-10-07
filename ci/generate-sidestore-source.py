@@ -59,6 +59,46 @@ ENTITLEMENTS_FOR_ASSET = {
 HEADER_URL = f"{PAGES}/social-preview.png"
 
 
+APP_DESCRIPTION = """MuffinEMU is a Wii U emulator for iPhone and iPad, built on Cemu. It runs on iOS 15 and later. The app does not include games, keys or system files. Use only games you own.
+
+[Your Library]
+- Import from Files: WUA, WUD/WUX, decrypted games, and encrypted dumps with your own keys.txt
+- Updates and DLC install from inside the app
+- High-resolution cover art fetched automatically, or add your own at up to 4K
+- Cards, large covers, compact grid or list, with sorting, grouping, filters and renaming
+
+[Graphics]
+- Metal renderer by default, with Vulkan through MoltenVK as an option
+- Graphic packs and resolution scaling
+- Import shader caches from desktop Cemu for smoother first runs
+
+[Speed]
+- Runs on the interpreter out of the box
+- The faster recompiler turns on with a JIT enabler such as StikDebug or SideStore, and MuffinEMU offers to enable it at launch
+
+[Play Your Way]
+- An on-screen GamePad laid out from a real Wii U GamePad, with skins, an analog stick and a layout editor
+- Hardware controllers alongside the touch GamePad
+- Single screen, both screens, portrait on iPhone, or the TV image on an external display
+
+[Online]
+- Pretendo Network with your own Wii U account files
+- Custom servers: import a network_services.xml or type the addresses
+
+[Made for You]
+- Basic and Advanced settings, per-game settings and settings backup
+- 31 app icons with matching themes
+
+Official Site: https://muffinemu.github.io/MuffinEMU/
+Guides: https://muffinemu.github.io/MuffinEMU/docs/
+Source code: https://github.com/MuffinEMU/Muffin-EMU
+Report a problem: https://github.com/MuffinEMU/Muffin-EMU/issues
+
+Legal
+
+MuffinEMU is not affiliated with Nintendo or Apple. Wii U is a trademark of Nintendo. No copyrighted games, keys or firmware are distributed here."""
+
+
 def app_permissions(asset_name):
     """The entitlements the IPA really carries and the privacy strings it shows.
 
@@ -104,12 +144,25 @@ def releases(repo, token):
 
 
 def notes_for(rel):
-    body = (rel.get("body") or "").strip()
+    """The player-facing changes only: the "What changed" bullets.
+
+    The GitHub release body also explains the IPAs, the dSYM, the commit and the
+    changelog link. That belongs on GitHub, not in SideStore or AltStore, where it
+    buried the actual changes.
+    """
+    body = re.sub(r"\r\n", "\n", (rel.get("body") or "").strip())
     if not body:
         return rel["tag_name"]
-    body = re.sub(r"\r\n", "\n", body)
-    return body[:1500] + ("..." if len(body) > 1500 else "")
-
+    bullets = []
+    for line in body.split("\n"):
+        if line.startswith("- "):
+            bullets.append(line)
+        elif line.startswith("  ") and bullets:
+            bullets.append(line)
+        elif bullets and line.strip() and not line.startswith("#"):
+            break
+    text = "\n".join(bullets) or body.split("\n\n")[0]
+    return text[:1500] + ("..." if len(text) > 1500 else "")
 
 
 def nightly_asset_date(rel, ipa):
@@ -220,9 +273,10 @@ def build_source(rels, asset_name, ident, name, subtitle, app_subtitle, extra_no
     versions.sort(key=lambda v: v["key"], reverse=True)
     for v in versions:
         del v["key"]
+    versions = versions[:1]
     src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_name)
     src["apps"][0]["versions"] = versions
-    src["news"] = news_for(rels, count=3)
+    src["news"] = news_for(rels, count=1)
     return src
 
 
@@ -240,13 +294,14 @@ def news_for(rels, count=1):
         if not m:
             continue
         body = (rel.get("body") or "").replace("\r\n", "\n")
-        bullets = [l[2:].strip() for l in body.split("\n") if l.startswith("- ")][:2]
-        caption = " ".join(bullets) or "A new version of MuffinEMU is available."
-        if len(caption) > 220:
-            caption = caption[:217].rsplit(" ", 1)[0] + "..."
+        bullets = [l[2:].strip() for l in body.split("\n") if l.startswith("- ")]
+        caption = bullets[0] if bullets else "A new version of MuffinEMU is available."
+        caption = caption.split(". ")[0].rstrip(".")
+        if len(caption) > 110:
+            caption = caption[:107].rsplit(" ", 1)[0] + "..."
         version = f"{m.group(1)}.{m.group(2)}"
         items.append({
-            "title": f"MuffinEMU {version}",
+            "title": f"MuffinEMU {version} Now Available",
             "identifier": f"muffinemu-v{version}",
             "caption": caption,
             "date": (rel.get("published_at") or "")[:10],
@@ -279,15 +334,9 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
         "identifier": ident,
         "subtitle": subtitle,
         "description": (
-            "The official install source for MuffinEMU, a Wii U emulator for iPhone and iPad "
-            "built on Cemu. Updates arrive here the moment a release is published.\n\n"
-            + extra_note + "\n\n"
-            "Other MuffinEMU sources:\n"
-            f"- Stable: {PAGES}/apps.json\n"
-            f"- TrollStore: {PAGES}/trollstore.json\n"
-            f"- Nightly: {PAGES}/nightly.json\n"
-            f"- Experimental: {PAGES}/experimental.json\n\n"
-            f"Guides and help: {PAGES}/docs/"),
+            "MuffinEMU brings the Wii U to iPhone and iPad - your games, your GamePad, "
+            "on the screen in your hand or on the TV. Free and open source, built on Cemu. "
+            + extra_note),
         "iconURL": f"{PAGES}/icon.png",
         "headerURL": HEADER_URL,
         "website": f"{PAGES}/",
@@ -298,19 +347,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
             "bundleIdentifier": BUNDLE_ID,
             "developerName": "MuffinEMU Official",
             "subtitle": app_subtitle,
-            "localizedDescription": (
-                "MuffinEMU is a Wii U emulator for iPhone and iPad (iOS 15 and later), built on Cemu.\n\n"
-                "- Import games from Files: WUA, decrypted games, and encrypted dumps with your own keys.txt. "
-                "DLC and updates install from the app.\n"
-                "- Metal renderer by default, with Vulkan through MoltenVK as an option.\n"
-                "- Runs on the interpreter out of the box, and on the faster recompiler when a JIT "
-                "enabler such as StikDebug is attached.\n"
-                "- An on-screen GamePad laid out from a real Wii U GamePad, with an optional analog stick, "
-                "skins and a layout editor. Hardware controllers work alongside it.\n"
-                "- Single screen, both screens, or the TV image on an external display.\n"
-                "- Save states, graphic packs, and 31 app icons with matching themes.\n\n"
-                + extra_note + "\n\n"
-                "Bring your own games and keys. No copyrighted content is distributed here."),
+            "localizedDescription": APP_DESCRIPTION,
             "iconURL": f"{PAGES}/icon.png",
             "tintColor": "#E5652E",
             "category": "games",
@@ -455,18 +492,15 @@ def main():
 def run(repo, token, rels, out_dir):
     feeds = [
         ("apps.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.source", "MuffinEMU",
-         "Wii U emulation for iPhone and iPad.",
-         "Wii U emulator for iPhone and iPad",
-         "This source serves the standard build for SideStore, AltStore and "
-         "LiveContainer, which re-sign it with your own Apple ID at install."),
+         "The Wii U, in your hands.",
+         "The Wii U, in your hands",
+         "Works with SideStore, AltStore and LiveContainer."),
         ("trollstore.json", "MuffinEMU-fakesigned.ipa", "com.kiddreads.MuffinEMU.trollstore",
          "MuffinEMU (TrollStore)",
-         "Wii U emulation for iPhone and iPad - TrollStore build.",
-         "Wii U emulator - TrollStore build",
-         "This source serves the ad-hoc signed build for TrollStore and jailbroken "
-         "devices, with the JIT entitlements embedded so the recompiler can get "
-         "executable memory. On SideStore or AltStore use the standard source instead - "
-         "those re-sign at install and would strip these entitlements."),
+         "The Wii U, in your hands. TrollStore edition.",
+         "The Wii U, in your hands - TrollStore",
+         "This is the TrollStore and jailbreak build, with JIT built in. "
+         "On SideStore or AltStore, add the standard source instead."),
     ]
 
     nightlies = [
