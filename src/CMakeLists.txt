@@ -143,6 +143,7 @@ if(IOS)
 		ios/Bridge/Core/IOSTitleDecrypt.cpp
 		ios/Bridge/Core/IOSTitleLaunch.cpp
 		ios/Bridge/Core/IOSTitlePause.cpp
+		ios/Bridge/Core/IOSWuaContent.cpp
 	)
 	target_include_directories(CemuBin PRIVATE ios/Bridge)
 	if(MUFFIN_AUDIT_HOOKS)

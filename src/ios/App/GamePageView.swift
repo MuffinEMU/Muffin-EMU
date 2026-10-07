@@ -86,6 +86,7 @@ struct GamePageView: View {
                     yourPlaySection
                     manageSection
                     filesSection
+                    GameContentSection(game: live)
                     GameShaderCacheSection(game: live)
                     saveStatesSection
                     removeSection

@@ -248,6 +248,18 @@ void cemu_bridge_get_progress(CemuBridgeProgress* out);
 /// depends on to read a disc.
 bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool toWua);
 
+/// Packs several titles of one game (base, update, DLC) into a single .wua, given as
+/// newline-separated paths (folders, NUS dumps, WUD/WUX; one title each). Shares the
+/// decrypt progress / cancel calls below. Validates before writing: sources from
+/// different games finish with result_status 9, the same title twice with 10. Writes to
+/// destPath + ".part" and renames on success, so an existing destPath survives a failure.
+/// Skips ._* and .DS_Store entries.
+bool cemu_bridge_start_wua_build(const char* sourcePathsNewlineSeparated, const char* destPath);
+
+/// Lists the title roots in a .wua as "titleIdHex16 version" lines into outLines.
+/// Returns the number of titles, or -1 on a bad argument. 0 when it can't be opened.
+int cemu_bridge_wua_list_titles(const char* wuaPath, char* outLines, size_t outSize);
+
 typedef struct {
     bool is_running;
     bool completed;
