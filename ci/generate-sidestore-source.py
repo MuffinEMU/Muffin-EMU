@@ -68,35 +68,38 @@ ENTITLEMENTS_FOR_ASSET = {
 HEADER_URL = f"{PAGES}/social-preview.png"
 
 
-APP_DESCRIPTION = """MuffinEMU is a Wii U emulator for iPhone and iPad, built on Cemu. It runs on iOS 15 and later. The app does not include games, keys or system files. Use only games you own.
+APP_DESCRIPTION = """MuffinEMU is the most complete way to play Wii U on iPhone and iPad. Real games, a real GamePad, on the screen in your hand or the TV across the room. Every emulation feature is free. No paywalls, no subscriptions, no catch. Built on Cemu, tuned for every iPhone and iPad from iOS 15 up.
 
-[Your Library]
-- Import from Files: WUA, WUD/WUX, decrypted games, and encrypted dumps with your own keys.txt
-- Updates and DLC install from inside the app
-- High-resolution cover art fetched automatically, or add your own at up to 4K
-- Cards, large covers, compact grid or list, with sorting, grouping, filters and renaming
+The app does not include games, keys or system files. Bring the games you own.
 
-[Graphics]
-- Metal renderer by default, with Vulkan through MoltenVK as an option
+[A Library That Looks the Part]
+- Drop in WUA, WUD/WUX, decrypted or encrypted dumps straight from Files. Updates and DLC install in the app
+- HD box art finds itself, or add your own in up to 4K
+- Cards, big covers, compact grid or list, with sorting, grouping, filters and renaming
+
+[Serious Graphics]
+- A Metal renderer built for Apple GPUs, plus Vulkan through MoltenVK
 - Graphic packs and resolution scaling
-- Import shader caches from desktop Cemu for smoother first runs
+- Bring your desktop Cemu shader caches and skip the stutter
 
 [Speed]
-- Runs on the interpreter out of the box
-- The faster recompiler turns on with a JIT enabler such as StikDebug or SideStore, and MuffinEMU offers to enable it at launch
+- Plays out of the box on the interpreter
+- Flip on JIT with StikDebug or LiveContainer for the full-speed recompiler. MuffinEMU asks for you at launch
 
-[Play Your Way]
-- An on-screen GamePad laid out from a real Wii U GamePad, with skins, an analog stick and a layout editor
-- Hardware controllers alongside the touch GamePad
-- Single screen, both screens, portrait on iPhone, or the TV image on an external display
+[The GamePad, Done Right]
+- An on-screen GamePad measured from the real thing, with skins, an analog stick and a full layout editor
+- Hardware controllers work right alongside it
+- One screen, both screens, iPhone portrait, or the TV image on an external display
 
 [Online]
 - Pretendo Network with your own Wii U account files
 - Custom servers: import a network_services.xml or type the addresses
 
-[Made for You]
-- Basic and Advanced settings, per-game settings and settings backup
+[Yours to Tune]
+- Basic and Advanced settings, per-game settings and one-tap settings backup
 - 31 app icons with matching themes
+
+Free, open source, and updated constantly. This is Wii U on iOS the way it should be.
 
 Official Site: https://muffinemu.github.io/MuffinEMU/
 Guides: https://muffinemu.github.io/MuffinEMU/docs/
@@ -368,8 +371,8 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
         "identifier": ident,
         "subtitle": subtitle,
         "description": (
-            "MuffinEMU brings the Wii U to iPhone and iPad - your games, your GamePad, "
-            "on the screen in your hand or on the TV. Free and open source, built on Cemu. "
+            "The most complete Wii U experience on iPhone and iPad. Your games, a real "
+            "GamePad, your TV - every feature free, no paywalls, ever. "
             + extra_note),
         "iconURL": f"{PAGES}/icon.png",
         "headerURL": HEADER_URL,
@@ -528,12 +531,12 @@ def run(repo, token, rels, out_dir):
     feeds = [
         ("apps.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.source", "MuffinEMU",
          "The Wii U, in your hands.",
-         "Wii U games, anywhere",
+         "Wii U, the way it should be",
          "Works with SideStore, AltStore and LiveContainer."),
         ("trollstore.json", "MuffinEMU-fakesigned.ipa", "com.kiddreads.MuffinEMU.trollstore",
          "MuffinEMU (TrollStore)",
          "The Wii U, in your hands. TrollStore edition.",
-         "Wii U games, anywhere - TrollStore",
+         "Wii U, the way it should be - TrollStore",
          "This is the TrollStore and jailbreak build, with JIT built in. "
          "On SideStore or AltStore, add the standard source instead."),
     ]
