@@ -148,6 +148,14 @@ struct NetworkServiceSettingsSection: View {
 
             DeviceConnectionStatusRow()
 
+            NavigationLink {
+                Form { CustomServersSettingsSection() }
+                    .navigationTitle("Custom servers")
+            } label: {
+                Label("Custom servers", systemImage: "server.rack")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+
             ForEach(NetworkService.allCases) { service in
                 Button {
                     cemu_bridge_set_network_service(activePersistentId, service.bridgeValue)

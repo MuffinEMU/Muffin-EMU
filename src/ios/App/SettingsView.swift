@@ -30,7 +30,6 @@ struct SettingsView: View {
 
     @ViewBuilder private var formInput: some View {
         OnScreenControlsSection()
-        PreviewPadSection()
         MotionSettingsSection()
         DisplaySettingsSection()
         AudioSettingsSection()
@@ -45,7 +44,6 @@ struct SettingsView: View {
         WiiUMenuSettingsSection()
         AccountSettingsSection()
         NetworkServiceSettingsSection()
-        CustomServersSettingsSection()
         EmulatedDevicesSettingsSection()
     }
 
