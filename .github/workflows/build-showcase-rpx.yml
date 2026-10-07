@@ -133,10 +133,10 @@ jobs:
           while IFS="$(printf '\t')" read -r num slug name bpm; do
             wav="wav/muffinemu-showcase-$(printf %02d "$num")-$slug.wav"
             base="music/muffinemu-showcase-$(printf %02d "$num")-$slug"
-            ffmpeg -hide_banner -loglevel error -y -i "$wav" -vn -c:a libmp3lame -b:a 256k -id3v2_version 3 \
+            ffmpeg -nostdin -hide_banner -loglevel error -y -i "$wav" -vn -c:a libmp3lame -b:a 256k -id3v2_version 3 \
               -metadata title="$name" -metadata artist="MuffinEMU" -metadata album_artist="MuffinEMU" \
               -metadata album="MuffinEMU Showcase" -metadata track="$num/5" "$base.mp3"
-            ffmpeg -hide_banner -loglevel error -y -i "$wav" -vn -c:a aac -b:a 256k -movflags +faststart \
+            ffmpeg -nostdin -hide_banner -loglevel error -y -i "$wav" -vn -c:a aac -b:a 256k -movflags +faststart \
               -metadata title="$name" -metadata artist="MuffinEMU" -metadata album_artist="MuffinEMU" \
               -metadata album="MuffinEMU Showcase" -metadata track="$num/5" "$base.m4a"
             n=$((n + 1))
