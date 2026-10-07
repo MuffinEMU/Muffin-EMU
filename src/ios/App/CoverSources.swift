@@ -40,25 +40,14 @@ extension CoverSource {
 /// background pass walks the same order to fill gaps. A custom upload (`<gameID>_cover.*`,
 /// GameManager.findCover) always sits above this whole chain, as step one.
 ///
-/// The order, after the custom upload:
-///   GameTDB HQ -> installed art pack in the chosen style -> GameTDB standard -> extracted icon
-///   -> nothing: the cards then draw the gamecontroller.fill glyph on the card gradient, so no card is ever blank.
-/// When the player picks "3D box" or "Disc" explicitly, the pack moves above GameTDB HQ: asking
-/// for 3D boxes and getting a flat cover whenever GameTDB has one would make the setting pointless.
-/// To add a source, implement `CoverSource` and insert it in `sources(for:)`.
+/// The order, after the custom upload, is always the same:
+///   GameTDB HQ -> installed 2D art pack -> GameTDB standard -> extracted icon
+///   -> nothing: the cards then draw the gamecontroller.fill glyph, so no card is ever blank.
+/// This is the flat cover. 3D mode doesn't change it: a 3D card shows a 3D pack's box when there is
+/// one (ArtPackMatching.box3DPath) and otherwise builds a box from this flat cover (Box3DCover).
 enum CoverSourceChain {
-    static var sources: [CoverSource] { sources(for: CoverStylePreference.current) }
-
-    static func sources(for style: CoverStylePreference) -> [CoverSource] {
-        let pack = ArtPackCoverSource(style: style)
-        let hq = GameTDBHQCoverSource()
-        let rest: [CoverSource] = [GameTDBStandardCoverSource(), ExtractedIconCoverSource()]
-        let base = (style.packBeatsGameTDB ? [pack, hq] : [hq, pack]) + rest
-        // An applied art pack wins over everything else except a custom upload; games it doesn't have fall through.
-        if let applied = ArtPackApplyStore.appliedID, ArtPackIndex.shared.isInstalled(applied) {
-            return [AppliedPackCoverSource(packID: applied)] + base
-        }
-        return base
+    static var sources: [CoverSource] {
+        [GameTDBHQCoverSource(), ArtPackCoverSource(), GameTDBStandardCoverSource(), ExtractedIconCoverSource()]
     }
 
     static func cachedPath(_ context: CoverContext) -> String? {
@@ -117,31 +106,13 @@ struct ExtractedIconCoverSource: CoverSource {
 /// is preferred. Nothing here touches the network; packs are downloaded in Settings.
 struct ArtPackCoverSource: CoverSource {
     let id = "art-pack"
-    let style: CoverStylePreference
 
     func cachedPath(_ c: CoverContext) -> String? {
         guard ArtPackIndex.shared.hasAnyPack else { return nil }
-        // A flat (2D or disc) pack the player applied should show, framed, rather than some other
-        // pack's 3D box: no 3D art here, so the card frames the applied cover instead.
-        if let applied = ArtPackApplyStore.appliedID, let style = ArtPackIndex.shared.meta(applied)?.style, style != "3d" {
-            return nil
-        }
-        return ArtPackMatching.hit(for: c, style: style)?.path
+        return ArtPackMatching.hit(for: c, style: .flat)?.path
     }
 }
 
-/// Art from the pack the player applied, ahead of the rest of the chain.
-struct AppliedPackCoverSource: CoverSource {
-    let id = "applied-art-pack"
-    let packID: String
-
-    func cachedPath(_ c: CoverContext) -> String? {
-        guard let style = ArtPackIndex.shared.meta(packID)?.style else { return nil }
-        var regions = RegionCode.codes(in: c.region)
-        if regions.isEmpty, let match = GameDataStore.shared.match(for: c.gameID), let r = RegionCode.code(forGameTdbId: match.tdbID) { regions = [r] }
-        return ArtPackIndex.shared.lookup(candidates: ArtPackMatching.candidates(for: c), styles: [style], regions: regions, onlyPack: packID)?.path
-    }
-}
 
 enum ArtPackMatching {
     /// Normalised title candidates, most trustworthy first.
@@ -182,7 +153,7 @@ enum ArtPackMatching {
     /// `box3DPath` remembered per game, for a card that asks on every render. Dropped whenever packs
     /// or game data change (`revision` is the game data's change counter).
     static func cachedBox3DPath(for game: GameMetadata, revision: Int) -> String? {
-        let stamp = "\(ArtPackIndex.shared.generation)|\(revision)|\(ArtPackApplyStore.appliedID ?? "")"
+        let stamp = "\(ArtPackIndex.shared.generation)|\(revision)"
         boxLock.lock(); defer { boxLock.unlock() }
         if boxCacheStamp != stamp { boxCache = [:]; boxCacheStamp = stamp }
         if let hit = boxCache[game.id] { return hit.isEmpty ? nil : hit }
@@ -200,10 +171,6 @@ enum ArtPackMatching {
                              currentCoverPath: nil, region: game.region, titles: [game.displayTitle, game.title].compactMap { $0 })
         let regions = RegionCode.codes(in: game.region)
         let names = candidates(for: c)
-        if let applied = ArtPackApplyStore.appliedID, ArtPackIndex.shared.meta(applied)?.style == "3d",
-           let hit = ArtPackIndex.shared.lookup(candidates: names, styles: ["3d"], regions: regions, onlyPack: applied) {
-            return hit.path
-        }
         return ArtPackIndex.shared.lookup(candidates: names, styles: ["3d"], regions: regions)?.path
     }
 }

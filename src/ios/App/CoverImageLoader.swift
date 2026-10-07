@@ -106,12 +106,15 @@ enum CoverImageLoader {
 struct CoverImage: View {
     let path: String
     var padding: CGFloat = 0
+    /// Fill and crop instead of fit; Box3DCover uses it so any image, square ones included, covers the box face.
+    var fill: Bool = false
     /// File modification stamp, so replacing a cover in place (same path) re-renders the card.
     private let stamp: TimeInterval
 
-    init(path: String, padding: CGFloat = 0) {
+    init(path: String, padding: CGFloat = 0, fill: Bool = false) {
         self.path = path
         self.padding = padding
+        self.fill = fill
         self.stamp = (try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date)?
             .timeIntervalSince1970 ?? 0
     }
@@ -126,7 +129,12 @@ struct CoverImage: View {
             let image = CoverImageLoader.cached(path: path, maxPixel: px) ?? (loadedKey == tag ? loaded : nil)
             Group {
                 if let image {
-                    Image(uiImage: image).resizable().scaledToFit()
+                    if fill {
+                        Image(uiImage: image).resizable().scaledToFill()
+                            .frame(width: geo.size.width, height: geo.size.height).clipped()
+                    } else {
+                        Image(uiImage: image).resizable().scaledToFit()
+                    }
                 } else {
                     Color.clear
                 }

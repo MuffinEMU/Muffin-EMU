@@ -1,52 +1,72 @@
 import Foundation
 
-/// Which look of cover art the library prefers. The art itself comes from the cover chain
-/// (CoverSources.swift); this only decides which source is asked first and which kind of art pack
-/// counts as "the chosen style".
+/// How the library shows covers: flat, or as 3D boxes. That's the whole choice.
+/// Flat: GameTDB's HD cover, then an installed 2D pack, then GameTDB's standard cover, then the
+/// game's own icon, then the controller glyph. 3D: a 3D pack's box when one is installed, otherwise
+/// the flat cover built into a box by the card itself (Box3DCover), so every game gets a 3D box.
 enum CoverStylePreference: String, CaseIterable, Identifiable {
-    case auto
-    case hd2d
-    case box3d
-    case disc
+    case flat
+    case threeD = "3d"
 
     static let storageKey = "muffin.cover.style"
-    static let defaultValue: CoverStylePreference = .auto
+    static let defaultValue: CoverStylePreference = .flat
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .auto: return "Auto (best available)"
-        case .hd2d: return "HD 2D (GameTDB)"
-        case .box3d: return "3D box (art packs)"
-        case .disc: return "Disc (art packs)"
+        case .flat: return "Flat"
+        case .threeD: return "3D"
         }
     }
 
-    var detail: String {
-        switch self {
-        case .auto: return "GameTDB first, then any art pack you have installed."
-        case .hd2d: return "Flat front covers from GameTDB, then 2D art packs."
-        case .box3d: return "3D box art from an installed pack when there is one."
-        case .disc: return "Disc art from an installed pack when there is one."
-        }
-    }
-
-    /// Manifest `style` values of the packs this preference reads, best first.
+    /// Manifest `style` values of the packs this mode reads.
     var packStyles: [String] {
         switch self {
-        case .auto: return ["3d", "2d", "disc"]
-        case .hd2d: return ["2d"]
-        case .box3d: return ["3d"]
-        case .disc: return ["disc"]
+        case .flat: return ["2d"]
+        case .threeD: return ["3d"]
         }
     }
 
-    /// True when an installed pack of the chosen style should win over GameTDB's own cover.
-    var packBeatsGameTDB: Bool { self == .box3d || self == .disc }
+    /// Reads the stored mode. Values from 7.9 to 8.0.1 ("auto", "hd2d", "disc", "box3d") map onto
+    /// the two modes, so nobody's library breaks on update.
+    init(stored raw: String?) {
+        switch raw {
+        case "3d", "box3d": self = .threeD
+        default: self = .flat
+        }
+    }
 
     static var current: CoverStylePreference {
-        CoverStylePreference(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? defaultValue
+        CoverStylePreference(stored: UserDefaults.standard.string(forKey: storageKey))
+    }
+}
+
+/// 8.0 and 8.0.1 had an art pack "Apply" that changed the theme, card style and size, sort and
+/// grouping, and kept the player's own settings in a snapshot. Apply is gone; on the first launch
+/// after it, put that snapshot back once so nobody is left with 8.0's changes.
+enum LegacyArtPackApply {
+    static func migrateOnce() {
+        let d = UserDefaults.standard
+        // 7.9's "3D boxes" card style is now Covers > 3D with the default layout.
+        if d.string(forKey: "muffin.library.cardStyle") == "box3d" {
+            d.set(CoverStylePreference.threeD.rawValue, forKey: CoverStylePreference.storageKey)
+            d.removeObject(forKey: "muffin.library.cardStyle")
+        }
+        defer { d.removeObject(forKey: "muffin.art.appliedPack"); d.removeObject(forKey: "muffin.art.preApplySnapshot") }
+        guard let data = d.data(forKey: "muffin.art.preApplySnapshot"),
+              let snap = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+        func put(_ field: String, _ key: String) {
+            if let value = snap[field] as? String { d.set(value, forKey: key) } else { d.removeObject(forKey: key) }
+        }
+        put("cardStyle", "muffin.library.cardStyle")
+        put("grouping", "muffin.library.grouping")
+        put("sort", "muffin.library.sortOrder")
+        put("coverStyle", CoverStylePreference.storageKey)
+        if let size = snap["cardSize"] as? Double { d.set(size, forKey: "muffin.library.cardSize") } else { d.removeObject(forKey: "muffin.library.cardSize") }
+        if let id = snap["themeID"] as? String, let theme = MuffinThemePresets.all.first(where: { $0.id == id }) {
+            DispatchQueue.main.async { MuffinThemeStore.shared.select(theme) }
+        }
     }
 }
 

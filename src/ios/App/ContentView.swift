@@ -433,6 +433,7 @@ struct GameBrowserView: View {
     @ObservedObject private var customNames = LibraryCustomNames.shared
     @State private var renameTarget: GameMetadata?
     @AppStorage(LibraryCardStyle.storageKey) private var cardStyleRaw = LibraryCardStyle.defaultValue.rawValue
+    @AppStorage(CoverStylePreference.storageKey) private var coverModeRaw = CoverStylePreference.defaultValue.rawValue
     @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
     @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
     @Environment(\.scenePhase) private var scenePhase
@@ -522,7 +523,8 @@ struct GameBrowserView: View {
     }
 
     private var libraryCardStyle: LibraryCardStyle {
-        LibraryCardStyle(rawValue: cardStyleRaw) ?? .standard
+        // Covers > 3D turns every card into a box; otherwise the chosen layout.
+        CoverStylePreference(stored: coverModeRaw) == .threeD ? .box3d : (LibraryCardStyle(rawValue: cardStyleRaw) ?? .standard)
     }
 
     private var librarySections: [LibrarySection] {

@@ -7,7 +7,7 @@ struct CoverDataSettingsSection: View {
     @ObservedObject private var data = GameDataStore.shared
     @AppStorage(CoverStylePreference.storageKey) private var styleRaw = CoverStylePreference.defaultValue.rawValue
 
-    private var style: CoverStylePreference { CoverStylePreference(rawValue: styleRaw) ?? .defaultValue }
+    private var style: CoverStylePreference { CoverStylePreference(stored: styleRaw) }
 
     var body: some View {
         Section {
@@ -17,7 +17,7 @@ struct CoverDataSettingsSection: View {
                 Label("Covers and game data", systemImage: "photo.on.rectangle.angled")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
-            SettingsRow(label: "Cover style", value: style.title, icon: "rectangle.portrait")
+            SettingsRow(label: "Covers", value: style.title, icon: "rectangle.portrait")
             SettingsRow(label: "Art packs installed", value: "\(packs.installed.count)", icon: "shippingbox")
             SettingsRow(label: "Games with data", value: "\(data.matchedCount) of \(gameManager.games.count)", icon: "doc.text.magnifyingglass")
         } header: {
@@ -35,13 +35,12 @@ struct CoverDataSettingsView: View {
     @AppStorage(CoverStylePreference.storageKey) private var styleRaw = CoverStylePreference.defaultValue.rawValue
     @State private var deleteTarget: ArtPack?
 
-    private var style: CoverStylePreference { CoverStylePreference(rawValue: styleRaw) ?? .defaultValue }
+    private var style: CoverStylePreference { CoverStylePreference(stored: styleRaw) }
 
     private static func bytes(_ n: Int64) -> String { ByteCountFormatter.string(fromByteCount: n, countStyle: .file) }
 
     var body: some View {
         Form {
-            styleSection
             packsSection
             scrapeSection
             creditsSection
@@ -63,40 +62,13 @@ struct CoverDataSettingsView: View {
         }
     }
 
-    // MARK: Style
-
-    private var styleSection: some View {
-        Section {
-            Picker(selection: $styleRaw) {
-                ForEach(CoverStylePreference.allCases) { s in Text(s.title).tag(s.rawValue) }
-            } label: {
-                Label("Cover style", systemImage: "rectangle.portrait")
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-            }
-            .onChange(of: styleRaw) { _ in
-                NotificationCenter.default.post(name: .muffinCoverArtSourcesChanged, object: nil)
-            }
-            Text(style.detail)
-                .font(.system(size: 12))
-                .foregroundColor(MuffinTheme.secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        } header: {
-            SettingsSectionHeader("Cover style", icon: "rectangle.portrait", accent: .content)
-        } footer: {
-            InfoButton.footer(
-                "A cover you add yourself always wins. A game with no art anywhere gets MuffinEMU's no-cover box.",
-                title: "Cover style",
-                text: "Covers come from a chain, first match wins: a cover you added yourself, then GameTDB's HD cover, then an art pack you installed in the style you chose, then GameTDB's standard cover, then the game's own icon, then MuffinEMU's no-cover image.\n\n3D box and Disc put the art pack ahead of GameTDB, so a game that has pack art shows it. Games the pack doesn't have fall back to the rest of the chain.\n\nThe 3D boxes card style in Settings > Library draws 3D pack art whatever style is chosen here."
-            )
-        }
-    }
-
     // MARK: Packs
 
     private var packsSection: some View {
         Section {
             if let manifest = packs.manifest {
-                ForEach(manifest.packs) { pack in
+                // Disc art has no place in Flat or 3D, so those packs aren't offered.
+                ForEach(manifest.packs.filter { $0.style != "disc" }) { pack in
                     PackRow(pack: pack, store: packs, games: gameManager.games) { deleteTarget = pack }
                 }
             } else if packs.isLoadingManifest {
@@ -198,18 +170,18 @@ struct CoverDataSettingsView: View {
 private struct PackRow: View {
     let pack: ArtPack
     @ObservedObject var store: ArtPackStore
-    @AppStorage(ArtPackApplyStore.appliedKey) private var appliedID = ""
     let games: [GameMetadata]
     let onDelete: () -> Void
 
-    /// How many of the player's games this pack has art for, so Apply shows what it changed.
+    /// How many of the player's games this pack has art for.
     private var matchedCount: Int {
-        let source = AppliedPackCoverSource(packID: pack.id)
-        return games.filter { g in
+        games.filter { g in
             let names = [LibraryMetadataCache.cachedTitleName(for: g.id), g.title, g.id].compactMap { $0 }.filter { !$0.isEmpty }
-            return source.cachedPath(CoverContext(gameID: g.id, romPath: g.romPath, dumpDirectoryPath: nil,
-                                                  libraryDirectory: URL(fileURLWithPath: "/"), currentCoverPath: nil,
-                                                  region: LibraryMetadataCache.cachedRegion(for: g.id), titles: names)) != nil
+            let c = CoverContext(gameID: g.id, romPath: g.romPath, dumpDirectoryPath: nil,
+                                 libraryDirectory: URL(fileURLWithPath: "/"), currentCoverPath: nil,
+                                 region: LibraryMetadataCache.cachedRegion(for: g.id), titles: names)
+            return ArtPackIndex.shared.lookup(candidates: ArtPackMatching.candidates(for: c), styles: [pack.style],
+                                              regions: RegionCode.codes(in: c.region), onlyPack: pack.id) != nil
         }.count
     }
 
@@ -218,40 +190,8 @@ private struct PackRow: View {
 
     private static func bytes(_ n: Int64) -> String { ByteCountFormatter.string(fromByteCount: n, countStyle: .file) }
 
-    private var look: ArtPackLook { ArtPackLook.look(for: pack.id, style: pack.style) }
-    private var isApplied: Bool { appliedID == pack.id && installed != nil }
-
-    @ViewBuilder private var applyControl: some View {
-        if busy == nil {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Button {
-                        if isApplied { ArtPackApplyStore.restoreDefault() } else if let installed { ArtPackApplyStore.apply(installed) }
-                    } label: {
-                        Label(isApplied ? "Applied" : "Apply", systemImage: isApplied ? "checkmark.circle.fill" : "paintbrush")
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(installed == nil)
-                    if installed == nil {
-                        Text("Download first").font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
-                    }
-                    Spacer(minLength: 8)
-                    if isApplied {
-                        Button("Stop using") { ArtPackApplyStore.restoreDefault() }
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .buttonStyle(.borderless)
-                    }
-                }
-                if installed != nil {
-                    Text(isApplied
-                         ? "Showing this pack's art for \(matchedCount) of \(games.count) games. The rest keep their usual covers."
-                         : "Has art for \(matchedCount) of \(games.count) of your games.")
-                        .font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
-                }
-            }
-        }
-    }
+    /// Which library mode uses this pack, said plainly.
+    private var usedIn: String { pack.style == "3d" ? "Used when Covers is set to 3D." : "Used for flat covers." }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -298,9 +238,10 @@ private struct PackRow: View {
                 .buttonStyle(.borderless)
             }
             if installed != nil, busy == nil {
-                PackLookPreview(packID: pack.id, shape: look.preview)
+                Text("Has art for \(matchedCount) of \(games.count) of your games. \(usedIn)")
+                    .font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            applyControl
             if let error = store.errors[pack.id] {
                 Text(error).font(.system(size: 12)).foregroundColor(.red).fixedSize(horizontal: false, vertical: true)
             }

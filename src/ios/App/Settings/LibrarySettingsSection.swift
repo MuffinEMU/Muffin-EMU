@@ -4,6 +4,7 @@ struct LibrarySettingsSection: View {
     @AppStorage(LibraryCardStyle.sizeStorageKey) private var cardSize = 1.0
     @ObservedObject var gameManager: GameManager
     @AppStorage(LibraryCardStyle.storageKey) private var cardStyleRaw = LibraryCardStyle.defaultValue.rawValue
+    @AppStorage(CoverStylePreference.storageKey) private var coverRaw = CoverStylePreference.defaultValue.rawValue
     @AppStorage("muffin.library.sortOrder") private var sortRaw = LibrarySortOrder.title.rawValue
     @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
     @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
@@ -14,8 +15,15 @@ struct LibrarySettingsSection: View {
         Section {
             SettingsRow(label: "Games", value: "\(gameManager.games.count)", icon: "square.grid.2x2")
             SettingsRow(label: "Favourites", value: "\(gameManager.favorites.count)", icon: "heart")
+            Picker(selection: Binding(get: { CoverStylePreference(stored: coverRaw).rawValue }, set: { coverRaw = $0 })) {
+                ForEach(CoverStylePreference.allCases) { mode in Text(mode.title).tag(mode.rawValue) }
+            } label: {
+                Label("Covers", systemImage: "cube")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .pickerStyle(.segmented)
             Picker(selection: $cardStyleRaw) {
-                ForEach(LibraryCardStyle.allCases) { style in
+                ForEach(LibraryCardStyle.choices) { style in
                     Text(style.title).tag(style.rawValue)
                 }
             } label: {
@@ -78,12 +86,13 @@ struct LibrarySettingsSection: View {
                 // Back to how a fresh install lays out the library, and no art pack applied.
                 let d = UserDefaults.standard
                 for key in [LibraryCardStyle.storageKey, LibraryCardStyle.sizeStorageKey, LibraryGrouping.storageKey,
-                            LibraryFilter.storageKey, "muffin.library.sortOrder", CoverStylePreference.storageKey] {
+                            LibraryFilter.storageKey, "muffin.library.sortOrder", CoverStylePreference.storageKey,
+                            "muffin.art.appliedPack", "muffin.art.preApplySnapshot"] {
                     d.removeObject(forKey: key)
                 }
-                if ArtPackApplyStore.appliedID != nil { ArtPackApplyStore.restoreDefault() }
                 for key in [LibraryCardStyle.storageKey, LibraryCardStyle.sizeStorageKey, LibraryGrouping.storageKey,
-                            LibraryFilter.storageKey, "muffin.library.sortOrder", CoverStylePreference.storageKey] {
+                            LibraryFilter.storageKey, "muffin.library.sortOrder", CoverStylePreference.storageKey,
+                            "muffin.art.appliedPack", "muffin.art.preApplySnapshot"] {
                     d.removeObject(forKey: key)
                 }
                 NotificationCenter.default.post(name: .muffinCoverArtSourcesChanged, object: nil)
