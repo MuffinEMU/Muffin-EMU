@@ -2658,6 +2658,7 @@ struct EmulatorViewOptimized: View {
         // the GPU gate above gets closed, not widen any safety margin.
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .active {
+                if gameManager.emulationState == .running { AudioRecorder.shared.autoStartIfEnabled(gameName: gameName) }
                 guard pausedByLifecycle else { return }
                 pausedByLifecycle = false
                 isPaused = false
@@ -2686,6 +2687,7 @@ struct EmulatorViewOptimized: View {
         // up paused, or it runs on in the background.
         .onChange(of: gameManager.emulationState) { state in
             guard state == .running else { return }
+            if scenePhase == .active { AudioRecorder.shared.autoStartIfEnabled(gameName: gameName) }
             // After the launch intro has had its moment.
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { showGamePadHintIfNeeded() }
             if scenePhase != .active && !isPaused {
