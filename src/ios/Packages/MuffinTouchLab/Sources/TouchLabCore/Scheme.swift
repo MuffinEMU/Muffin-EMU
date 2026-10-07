@@ -32,11 +32,29 @@ public protocol TouchScheme: AnyObject {
     func tick(time: Double) -> [TouchID: Contribution]
 
     func render(pressed: Set<PadButton>, sticks: [PadStick: StickValue]) -> [RenderElement]
+
+    /// Input that belongs to no finger: a button held for the player (auto-accelerate) or a
+    /// stick driven by the device's motion. `PadEngine` re-reads it after every touch event
+    /// and feeds it to the mixer under one fixed identity, so it is released with everything
+    /// else and never outlives the pad.
+    func ambient() -> Contribution?
+
+    /// True while the scheme steers from the device's motion. The UI layer then runs the
+    /// motion sensor and calls `motion(angle:)`.
+    var wantsMotion: Bool { get }
+
+    /// A new wheel angle from the device's motion, in radians, positive clockwise as the
+    /// player sees the screen. Returns the contributions of fingers whose output changed
+    /// because of it.
+    func motion(angle: Double) -> [TouchID: Contribution]
 }
 
 public extension TouchScheme {
     var needsTicks: Bool { false }
     func tick(time: Double) -> [TouchID: Contribution] { [:] }
+    func ambient() -> Contribution? { nil }
+    var wantsMotion: Bool { false }
+    func motion(angle: Double) -> [TouchID: Contribution] { [:] }
 }
 
 /// What to draw. Kept platform-free so the same list feeds UIKit on device and the SVG
@@ -51,6 +69,8 @@ public struct RenderElement: Equatable, Sendable {
         case stickBase
         case stickKnob
         case zone          // a floating control's catchment, drawn faintly
+        case area          // a catchment that is always drawn, faintly (Racing's steering area)
+        case pedal         // a large held zone; drawn lighter than a button so it leaves the game visible
         case touchscreen   // outline of the passthrough area (debug)
     }
 

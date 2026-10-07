@@ -232,6 +232,9 @@ public enum LayoutCheck {
         case .dpad: return "d-pad"
         case .stick(let s, _, _), .floatingStick(let s, _, _, _, _), .swipeStick(let s, _):
             return s == .left ? "left stick" : "right stick"
+        case .pedal(let set): return "pedal " + set.map(\.description).sorted().joined(separator: "+")
+        case .steer: return "steering area"
+        case .recentre: return "recentre"
         }
     }
 }
