@@ -191,106 +191,38 @@ enum PerGameKeyMigration {
     }
 }
 
-/// Quick actions offered from a long-press on a library title: a couple of toggles, plus a
-/// way into the full options screen. Applied as a `.contextMenu` modifier on the game's card.
+/// The long-press menu on a game, and the "..." button on its card: just the quick actions.
+/// Everything else (settings, save states, shader cache, DLC and updates) is on the game's page.
 struct GameContextMenu: View {
     let game: GameMetadata
-    @ObservedObject var store: PerGameSettingsStore
-    /// Used to check/clear a manual cover override; the picker screen takes its own reference.
     @ObservedObject var gameManager: GameManager
-    let onViewOptions: () -> Void
-    let onDecryptToFiles: () -> Void
-    let onImportDLC: () -> Void
-    let onImportUpdate: () -> Void
-    let onRemoveDLC: () -> Void
-    let onRemoveUpdate: () -> Void
+    let onPlay: () -> Void
+    let onOpenPage: () -> Void
     let onChangeCoverArt: () -> Void
-    var onRename: () -> Void = {}
+    let onRename: () -> Void
 
     var body: some View {
         if let installLabel = game.installLabel {
             Text("\(game.cardName.name) \u{2022} \(installLabel)")
             Divider()
         }
-        Toggle(isOn: Binding(
-            get: { store.effectivePreCompileShaders(for: game.settingsKey) },
-            set: { store.setPreCompileShaders($0, for: game.settingsKey) }
-        )) {
-            Label("Compile Shaders in the Background", systemImage: "bolt.fill")
+        Button(action: onPlay) {
+            Label("Play", systemImage: "play.fill")
         }
-        // The toggle above always sets this game's own choice, so when it has one, say so and
-        // offer the way back to following Settings without a trip into the options screen.
-        if store.overrides(for: game.settingsKey).preCompileShaders != nil {
-            Button {
-                store.setPreCompileShaders(nil, for: game.settingsKey)
-            } label: {
-                Label("Use Global Shader Setting", systemImage: "arrow.uturn.backward")
-            }
+        Button(action: onOpenPage) {
+            Label("Game page", systemImage: "info.circle")
         }
-        Button(action: onViewOptions) {
-            Label("View Game Options", systemImage: "slider.horizontal.3")
+        Button {
+            gameManager.toggleFavorite(game)
+        } label: {
+            Label(game.isFavorite ? "Unfavourite" : "Favourite",
+                  systemImage: game.isFavorite ? "heart.slash" : "heart")
         }
         Button(action: onRename) {
             Label("Rename\u{2026}", systemImage: "pencil")
         }
-        if LibraryCustomNames.shared.name(for: game.installKey) != nil {
-            Button {
-                LibraryCustomNames.shared.set(nil, for: game.installKey)
-            } label: {
-                Label("Reset to Original Title", systemImage: "arrow.uturn.backward")
-            }
-        }
-        // The escape hatch for a card still showing the plain gamepad placeholder
-        // (or the wrong art) because GameTDB's automatic fetch (CoverArtFetcher)
-        // never found anything for it - homebrew, or an obscure title GameTDB
-        // simply doesn't list. Opens CoverArtPickerView; the automatic fetch itself
-        // is untouched and still runs first, same as always.
         Button(action: onChangeCoverArt) {
-            Label("Change Cover Art\u{2026}", systemImage: "photo")
-        }
-        // Only offered once there's actually an override to clear - checked fresh
-        // against disk each time the menu opens, same as the DLC/update removal
-        // actions below, rather than a separately-kept record that could drift.
-        if gameManager.hasManualCoverOverride(forGameID: game.id) {
-            Button(role: .destructive) {
-                gameManager.removeManualCover(forGameID: game.id)
-            } label: {
-                DestructiveSettingsLabel(title: "Remove Custom Cover", systemImage: "photo.badge.minus")
-            }
-        }
-        // Disc images only - see gameSupportsDecryptToFiles() in DecryptROMView.swift for
-        // why a folder dump, homebrew .rpx/.elf, and .wuhb don't get this action.
-        if gameSupportsDecryptToFiles(romPath: game.romPath) {
-            Button(action: onDecryptToFiles) {
-                // Opens a choice of "Decrypt to Raw Source" or "Decrypt to WUA" -
-                // DecryptROMView.swift's formatChoiceBody - so this entry names the
-                // action, not a specific destination.
-                Label("Decrypt\u{2026}", systemImage: "lock.open")
-            }
-        }
-        // Both go through DlcUpdateImport - see that file for the actual copy/match/
-        // install logic. Long-pressing a specific game is what tells the import which
-        // game the content is FOR when auto-matching by title ID can't (the manual
-        // fallback), so these live here rather than behind the general import menu.
-        Button(action: onImportDLC) {
-            Label("Import DLC\u{2026}", systemImage: "shippingbox")
-        }
-        Button(action: onImportUpdate) {
-            Label("Import Update\u{2026}", systemImage: "arrow.triangle.2.circlepath")
-        }
-        // Checked fresh each time the menu opens, against what's actually on disk under
-        // Documents/mlc - not a separately-kept record, which could drift from it. A
-        // game with nothing installed simply doesn't offer a removal action for it.
-        let installed = DlcUpdateImport.installedContent(for: game)
-        if installed.hasDLC {
-            Button(role: .destructive, action: onRemoveDLC) {
-                DestructiveSettingsLabel(title: "Remove DLC", systemImage: "trash")
-            }
-        }
-        if installed.hasUpdate {
-            Button(role: .destructive, action: onRemoveUpdate) {
-                DestructiveSettingsLabel(title: "Remove Update", systemImage: "trash")
-            }
+            Label("Change cover\u{2026}", systemImage: "photo")
         }
     }
 }
@@ -341,10 +273,6 @@ struct GameOptionsView: View {
     @ObservedObject var store: PerGameSettingsStore
     /// The whole library, so a cache file that belongs to another game can say which one.
     var libraryGames: [GameMetadata] = []
-    /// Needed by the dashboard (cover, Info) at the top of the screen.
-    let gameManager: GameManager
-    /// Starts the game; the dashboard's Play closes this screen first.
-    var onPlay: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
@@ -697,7 +625,6 @@ struct GameOptionsView: View {
 
     private var optionsForm: some View {
         Form {
-            GameDashboardSection(game: game, gameManager: gameManager, onPlay: onPlay)
             overridesSection
             AdvancedGameOptionsSection(game: game, store: store)
             GameShaderCacheSection(game: game)
