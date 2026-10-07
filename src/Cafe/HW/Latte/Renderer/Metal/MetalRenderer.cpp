@@ -1590,7 +1590,7 @@ const char* MetalRenderer::CopyRawBlocksIntoTranscodedTexture(LatteTexture* src,
     const sint64 copyBlocksW = std::min<sint64>((texelsW + 3) / 4, srcLevelW - srcX);
     const sint64 copyBlocksH = std::min<sint64>((texelsH + 3) / 4, srcLevelH - srcY);
     // A readback stalls the GPU thread, so only regions of the size these surfaces really have are taken
-    if (copyBlocksW * copyBlocksH > 128 * 128)
+    if (copyBlocksW * copyBlocksH > 256 * 256)
         return "the region is too large to re-encode";
     const sint64 slices = std::min<sint64>({(sint64)sliceCount, (sint64)std::max<NS::UInteger>(1, mtlSrc->arrayLength()) - srcSlice, (sint64)std::max<NS::UInteger>(1, mtlDst->arrayLength()) - dstSlice});
     if (slices < 1)
