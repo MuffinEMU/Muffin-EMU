@@ -54,6 +54,11 @@ IOSAudioAPI::IOSAudioAPI(uint32 samplerate,
                              AVAudioSessionCategoryOptionAllowBluetoothA2DP
                        error:&error];
     }
+    else if ([[NSUserDefaults standardUserDefaults] boolForKey:@"muffin.audio.respectSilentMode"]) {
+        // Settings > Audio > Respect silent mode: ambient audio is muted by the Ring/Silent switch
+        // (or Silent mode in Control Centre), like any game on the App Store.
+        [session setCategory:AVAudioSessionCategoryAmbient error:&error];
+    }
     else {
         [session setCategory:AVAudioSessionCategoryPlayback
                  withOptions:AVAudioSessionCategoryOptionMixWithOthers
