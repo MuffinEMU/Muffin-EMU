@@ -57,6 +57,9 @@ enum CoverArtFetcher {
         return FileManager.default.fileExists(atPath: p) ? p : nil
     }
 
+    static func cachedHQCoverPath(for gameID: String, in dir: URL) -> String? { cachedHQPath(for: gameID, in: dir) }
+    static func cachedStandardCoverPath(for gameID: String, in dir: URL) -> String? { cachedStandardPath(for: gameID, in: dir) }
+
     private static func cachedHQPath(for gameID: String, in libraryDirectory: URL) -> String? {
         let dir = libraryDirectory.appendingPathComponent(cacheDirectoryName)
         for ext in extensions { if let p = existing("\(hqPrefix(gameID)).\(ext)", in: dir) { return p } }
