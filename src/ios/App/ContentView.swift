@@ -82,6 +82,7 @@ struct ContentView: View {
                         message: gameManager.lastStatusMessage,
                         needsCleanRestart: gameManager.needsCleanRestart,
                         endedWhileRunning: gameManager.titleEndedByEngine,
+                        driveWasLost: gameManager.driveWasLost,
                         onDismiss: {
                             gameManager.stopEmulation()
                             showingGameBrowser = true
@@ -152,6 +153,8 @@ struct BootFailureView: View {
     var needsCleanRestart: Bool = false
     /// Set when the game was running and the engine ended it (it quit, or something fatal happened), as opposed to never starting.
     var endedWhileRunning: Bool = false
+    /// Set when the game stopped because the drive or folder it lives in was disconnected.
+    var driveWasLost: Bool = false
     let onDismiss: () -> Void
 
     /// The name the library card shows, not the dump's file name.
@@ -170,6 +173,7 @@ struct BootFailureView: View {
 
     private var title: String {
         if needsCleanRestart { return "Restart needed before \(name)" }
+        if driveWasLost { return "\(name) stopped: drive disconnected" }
         return endedWhileRunning ? "\(name) stopped" : "Couldn't start \(name)"
     }
 
@@ -187,6 +191,7 @@ struct BootFailureView: View {
     /// What to do next, in plain words. The engine's own message and the log paths are under Details.
     private var plainLine: String {
         if needsCleanRestart { return "Close MuffinEMU and open it again from your Home Screen, then start a game." }
+        if driveWasLost { return "The drive or folder this game is stored on was disconnected. Connect it again, go back and start the game again." }
         if endedWhileRunning { return "The game stopped. Go back and try it again. If it keeps happening, close and reopen MuffinEMU." }
         if needsKeys { return "This game is encrypted, so it needs a keys.txt file to start." }
         if let keysAdded { return "Added \(keysAdded) key\(keysAdded == 1 ? "" : "s"). Go back and start the game again. If it still won't start, close and reopen MuffinEMU." }
@@ -723,6 +728,18 @@ struct GameBrowserView: View {
                             Label("Keys (keys.txt)", systemImage: "key")
                         }
                         Divider()
+                        // Played where they are: a USB drive or SD card, iCloud Drive, a server in Files. Nothing is copied.
+                        Button {
+                            beginLink(contentTypes: Self.folderImportTypes)
+                        } label: {
+                            Label("Link a folder\u{2026}", systemImage: "externaldrive.badge.plus")
+                        }
+                        Button {
+                            beginLink(contentTypes: Self.fileImportTypes)
+                        } label: {
+                            Label("Link a game file\u{2026}", systemImage: "link")
+                        }
+                        Divider()
                         Button {
                             beginGeneralDlcUpdateImport(kind: .dlc)
                         } label: {
@@ -894,7 +911,7 @@ struct GameBrowserView: View {
         Button(role: .destructive) {
             pendingGameRemoval = game
         } label: {
-            DestructiveSettingsLabel(title: "Remove game\u{2026}", systemImage: "trash")
+            DestructiveSettingsLabel(title: game.removeActionTitle, systemImage: "trash")
         }
     }
 
@@ -902,6 +919,17 @@ struct GameBrowserView: View {
     /// game the screen thinks it is showing.
     private func playGame(_ game: GameMetadata) {
         guard gameManager.emulationState == .idle else { return }
+        // A linked game first has its drive checked (off the main thread), so a missing drive is an alert here and
+        // not a boot failure screen.
+        if game.isExternal {
+            Task {
+                guard await gameManager.externalGameIsReady(game), gameManager.emulationState == .idle else { return }
+                selectedGame = game
+                gameManager.launchGame(game)
+                showingGameBrowser = false
+            }
+            return
+        }
         selectedGame = game
         gameManager.launchGame(game)
         showingGameBrowser = false
@@ -1024,17 +1052,26 @@ struct GameBrowserView: View {
                 Text("Remove the \(pending.kind.displayName) installed for \"\(pending.game.title)\"? This can't be undone - you'll need to import it again.")
             }
             .confirmationDialog(
-                "Remove this game?",
+                pendingGameRemoval?.removeConfirmTitle ?? "Remove this game?",
                 isPresented: .constant(pendingGameRemoval != nil),
                 titleVisibility: .visible,
                 presenting: pendingGameRemoval
             ) { pending in
-                Button("Remove game", role: .destructive) {
+                Button(pending.removeConfirmButton, role: .destructive) {
                     removeGameNow(pending)
                 }
                 Button("Cancel", role: .cancel) { pendingGameRemoval = nil }
             } message: { pending in
-                Text("This deletes \"\(pending.cardName.name)\" from MuffinEMU to free up space. Your saves and options are kept. To play it again, add the game back.")
+                Text(pending.removeConfirmMessage)
+            }
+            .alert("Connect the drive to play", isPresented: .constant(gameManager.launchBlockedMessage != nil), presenting: gameManager.launchBlockedMessage) { _ in
+                Button("Check again") {
+                    gameManager.launchBlockedMessage = nil
+                    Task { await gameManager.loadGames(showSpinner: false) }
+                }
+                Button("OK", role: .cancel) { gameManager.launchBlockedMessage = nil }
+            } message: { message in
+                Text(message)
             }
             .confirmationDialog(
                 "Replace existing file?",
@@ -1072,6 +1109,25 @@ struct GameBrowserView: View {
                 }
             case .failure(let error):
                 dlcImportErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    /// "Link a folder" and "Link a game file": the picker hands back the original (not a copy), and only a bookmark is kept.
+    private func beginLink(contentTypes: [UTType]) {
+        DocumentImport.present(contentTypes: contentTypes) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task {
+                    do {
+                        try await gameManager.linkLocation(url)
+                    } catch {
+                        romImportErrorMessage = error.localizedDescription
+                    }
+                }
+            case .failure(let error):
+                romImportErrorMessage = error.localizedDescription
             }
         }
     }
@@ -1339,6 +1395,7 @@ struct GameCardOptimized<Options: View>: View {
                     Spacer()
                 }
                 if let label = game.installLabel { LibraryInstallLine(text: label, size: 11) }
+                LibraryExternalLine(game: game, size: 11)
 
                 Button(action: onPlay ?? onTap) {
                     HStack(spacing: 6) {

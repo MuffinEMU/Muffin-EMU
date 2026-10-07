@@ -265,6 +265,9 @@ final class GameDataStore: ObservableObject {
     /// run it off the main thread.
     static func targets(for games: [GameMetadata]) -> [ScrapeTarget] {
         games.map { game in
+            // A linked game's file is only readable while its location is held open.
+            let hold = (game.isExternal && !game.isUnavailable) ? game.externalLocationID.flatMap { ExternalLibrary.shared.acquire($0) } : nil
+            defer { if let hold { ExternalLibrary.shared.release(hold) } }
             let derived = CoverArtFetcher.deriveGameTdbId(romPath: game.romPath)
             var regions = RegionCode.codes(in: game.region)
             if regions.isEmpty, let derived, let r = RegionCode.code(forGameTdbId: derived) { regions = [r] }
