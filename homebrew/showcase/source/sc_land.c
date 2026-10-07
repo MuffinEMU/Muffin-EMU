@@ -123,8 +123,10 @@ static void update(const Input *in, float dt, int demo)
    float cs = m_cos(yaw), sn = m_sin(yaw);
    cx += (cs * fwd - sn * str) * speed_now * dt;
    cy += (sn * fwd + cs * str) * speed_now * dt;
-   if (cx < 0) cx += 256; if (cx >= 256) cx -= 256;
-   if (cy < 0) cy += 256; if (cy >= 256) cy -= 256;
+   if (cx < 0) cx += 256;
+   if (cx >= 256) cx -= 256;
+   if (cy < 0) cy += 256;
+   if (cy >= 256) cy -= 256;
    yaw += turn * 1.7f * dt;
    pitch = m_clamp(pitch + tilt * 0.9f * dt, -0.45f, 0.45f);
    lift = m_clamp(lift + up * 45.0f * dt, 6.0f, 120.0f);
