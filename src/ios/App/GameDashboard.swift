@@ -28,8 +28,9 @@ struct GameDashboardSection: View {
                     if let path = coverPath {
                         CoverImage(path: path, padding: 6)
                     } else {
-                        Image(CoverStylePreference.current.genericIs3D ? "NoCover3d" : "NoCover2d")
-                            .resizable().scaledToFit().padding(6)
+                        Image(systemName: "gamecontroller.fill")
+                            .font(.system(size: 34))
+                            .foregroundColor(MuffinTheme.onMuffinTop)
                     }
                 }
                 .frame(width: 96, height: 128)

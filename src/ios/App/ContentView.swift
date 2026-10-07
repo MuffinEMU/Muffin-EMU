@@ -1214,8 +1214,11 @@ struct GameCardOptimized<Options: View>: View {
                     CoverImage(path: coverPath, padding: 10)
                         .cornerRadius(16)
                 } else {
-                    Image(CoverStylePreference.current.genericIs3D ? "NoCover3d" : "NoCover2d")
-                        .resizable().scaledToFit().padding(10)
+                    VStack {
+                        Image(systemName: "gamecontroller.fill")
+                            .font(.system(size: 28))
+                            .foregroundColor(MuffinTheme.onMuffinTop)
+                    }
                 }
 
                 VStack {

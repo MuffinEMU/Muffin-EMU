@@ -42,7 +42,7 @@ extension CoverSource {
 ///
 /// The order, after the custom upload:
 ///   GameTDB HQ -> installed art pack in the chosen style -> GameTDB standard -> extracted icon
-///   -> generic no-cover (3D or 2D to match the style, always found, so no game is ever bare).
+///   -> nothing: the cards then draw the gamecontroller.fill glyph on the card gradient, so no card is ever blank.
 /// When the player picks "3D box" or "Disc" explicitly, the pack moves above GameTDB HQ: asking
 /// for 3D boxes and getting a flat cover whenever GameTDB has one would make the setting pointless.
 /// To add a source, implement `CoverSource` and insert it in `sources(for:)`.
@@ -52,7 +52,7 @@ enum CoverSourceChain {
     static func sources(for style: CoverStylePreference) -> [CoverSource] {
         let pack = ArtPackCoverSource(style: style)
         let hq = GameTDBHQCoverSource()
-        let rest: [CoverSource] = [GameTDBStandardCoverSource(), ExtractedIconCoverSource(), GenericCoverSource(style: style)]
+        let rest: [CoverSource] = [GameTDBStandardCoverSource(), ExtractedIconCoverSource()]
         return (style.packBeatsGameTDB ? [pack, hq] : [hq, pack]) + rest
     }
 
@@ -169,26 +169,8 @@ enum ArtPackMatching {
     }
 }
 
-/// The last link: a generic "no cover" image bundled in the app (so it works offline), written once
-/// to Application Support so the rest of the pipeline, which works in file paths, treats it like any
-/// other cover. Always answers, which is what guarantees no game is ever left without a cover.
-struct GenericCoverSource: CoverSource {
-    let id = "generic"
-    let style: CoverStylePreference
-    func cachedPath(_ c: CoverContext) -> String? { GenericCover.path(threeD: style.genericIs3D) }
-}
-
+/// Older builds stored a generic no-cover file as a game's cover; it still counts as no cover.
 enum GenericCover {
-    private static func fileName(_ threeD: Bool) -> String { threeD ? "no-cover-3d.png" : "no-cover-2d.png" }
-
-    static func path(threeD: Bool) -> String? {
-        let url = ArtLocations.genericDirectory.appendingPathComponent(fileName(threeD))
-        if FileManager.default.fileExists(atPath: url.path) { return url.path }
-        guard let data = UIImage(named: threeD ? "NoCover3d" : "NoCover2d")?.pngData() else { return nil }
-        do { try data.write(to: url, options: .atomic) } catch { return nil }
-        return url.path
-    }
-
     static func isGeneric(_ path: String?) -> Bool {
         guard let path else { return false }
         return (path as NSString).deletingLastPathComponent == ArtLocations.genericDirectory.path
