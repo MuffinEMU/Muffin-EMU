@@ -1,0 +1,91 @@
+name: Build Vancouver Map RPX (Homebrew)
+
+# Builds homebrew/vancouver into vancouver.rpx with the standard devkitPro Wii U toolchain.
+#
+# Homebrew RPX files carry no
+# encryption, so this is built from source in a plain Linux container with no relation
+# to the Xcode/iOS build in build-ios-app.yml, and no console keys are involved at any
+# point.
+#
+# Rather than reproduce wut's sample Makefile here - it is a long boilerplate that
+# tracks the toolchain and would silently rot - this copies the official sample's
+# Makefile verbatim from the wut checkout and swaps the sources. TARGET is overridden on
+# the make command line, which wins over the `:=` in the Makefile.
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [feature/metro-vancouver-rpx]
+    paths:
+      - 'homebrew/vancouver/**'
+      - '.github/workflows/build-vancouver-rpx.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  # The devkitPPC container ships no bash, so Actions falls back to `sh -e {0}` for every
+  # `run:` block here. That is dash, which has no `pipefail` - `set -euo pipefail` aborts
+  # the step before the first real command. Every script below stays POSIX and uses
+  # `set -eu`; no pipeline in this workflow needs pipefail, since the last command in each
+  # is the one whose exit status matters.
+  build-vancouver-rpx:
+    runs-on: ubuntu-latest
+    # Pinned to the digest of devkitpro/devkitppc:latest from the 2026-09-21 green run, so the
+    # toolchain only changes when this line does.
+    container: devkitpro/devkitppc@sha256:44cb1a920e1ec3ec7c06767493c3b85f8d643d6137cc4661f0201895ac6e4967
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Install wut (Wii U userland toolchain)
+        run: dkp-pacman -Sy --noconfirm wut
+
+      - name: Clone wut (for its sample Makefile)
+        run: git init -q /tmp/wut && git -C /tmp/wut fetch -q --depth 1 https://github.com/devkitPro/wut.git 0a740dccd2bc038395dacc48e701a3228f63c245 && git -C /tmp/wut checkout -q FETCH_HEAD
+
+      - name: Assemble the project
+        run: |
+          set -eu
+          cp -r /tmp/wut/samples/make/helloworld /tmp/vancouver
+          rm -f /tmp/vancouver/source/*.c /tmp/vancouver/source/*.cpp
+          cp homebrew/vancouver/source/vancouver.c /tmp/vancouver/source/
+          ls -la /tmp/vancouver /tmp/vancouver/source
+
+      - name: Build vancouver.rpx
+        run: |
+          set -eu
+          make -C /tmp/vancouver TARGET=vancouver
+          test -f /tmp/vancouver/vancouver.rpx
+
+      # A zero-byte or truncated RPX that still gets uploaded and released is exactly the
+      # failure this repo has already shipped twice. Check the file is real here, where
+      # failing is free, rather than on a device.
+      - name: Verify the built RPX
+        run: |
+          set -eu
+          RPX=/tmp/vancouver/vancouver.rpx
+          SIZE=$(stat -c%s "$RPX")
+          echo "vancouver.rpx = $SIZE bytes"
+          test "$SIZE" -gt 4096
+          # RPX is an ELF variant; it must still start with \x7fELF.
+          head -c 4 "$RPX" | od -An -tx1 | tr -d ' \n' | grep -qi '^7f454c46'
+          echo "verify: PASS"
+
+      - name: Upload vancouver.rpx
+        uses: actions/upload-artifact@v4
+        with:
+          name: vancouver-demo-rpx
+          path: /tmp/vancouver/vancouver.rpx
+          retention-days: 30
+
+      # Pre-release only, tagged vancouver-<sha>. Never touches numbered releases or sources.
+      - name: Publish vancouver pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          apt-get update -qq >/dev/null 2>&1 && apt-get install -y -qq gh >/dev/null 2>&1 || true
+          command -v gh >/dev/null || { echo "gh missing"; exit 1; }
+          TAG="vancouver-$(echo "$GITHUB_SHA" | cut -c1-7)"
+          gh release create "$TAG" /tmp/vancouver/vancouver.rpx --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "$TAG" --notes "Metro Vancouver flyover map for Wii U. Map data (c) OpenStreetMap contributors, ODbL. Made by MuffinEMU."
