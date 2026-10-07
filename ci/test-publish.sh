@@ -1,4 +1,14 @@
 #!/bin/bash
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
+# MuffinEMU — code by the MuffinEMU Development Team.
+# Copyright (c) 2026 MuffinEMU Development Team.
+# SPDX-License-Identifier: MPL-2.0
+# This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 # Proves ci/publish-nightly.sh and ci/publish-experimental.sh against a throwaway git history and a
 # stand-in `gh`, with DRY_RUN=1: every write is printed instead of performed, every read is answered
 # from the fixture. Nothing real is touched. Run: ci/test-publish.sh

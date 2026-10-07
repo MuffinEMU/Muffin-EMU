@@ -50,6 +50,7 @@ settings:
   # Without a usage string iOS terminates the app at that moment instead of asking.
   INFOPLIST_KEY_NSMicrophoneUsageDescription: 'MuffinEMU uses the microphone only when a Wii U game asks for GamePad microphone input.'
   INFOPLIST_KEY_NSLocalNetworkUsageDescription: 'MuffinEMU connects to game servers on your local network when you use a custom server hosted at home.'
+  INFOPLIST_KEY_NSHumanReadableCopyright: '© 2026 MuffinEMU Development Team'
 
 # Melo-Controller, for the optional "Use melo-controls" pad (App/MeloControls.swift).
 # Pinned to a fixed revision, so a push to its main branch cannot change a MuffinEMU build. GPL-3.0; see README.md.
