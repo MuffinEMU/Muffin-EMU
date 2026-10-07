@@ -107,7 +107,7 @@ enum CoverArtFetcher {
 
     /// Wraps cemu_bridge_derive_gametdb_id - see CemuBridge.h for what it does and why
     /// it can honestly return nothing for a game with no real identity to look up.
-    private static func deriveGameTdbId(romPath: String) -> String? {
+    static func deriveGameTdbId(romPath: String) -> String? {
         var buffer = [CChar](repeating: 0, count: 7)
         let ok = romPath.withCString { cPath in
             buffer.withUnsafeMutableBufferPointer { buf in
@@ -116,6 +116,23 @@ enum CoverArtFetcher {
         }
         guard ok else { return nil }
         return String(cString: buffer)
+    }
+
+    /// The ID to look art up under: a choice the player made in "Wrong game?", else the ID derived
+    /// from the dump, else a confident title match from the game data scrape.
+    static func resolvedTdbId(gameID: String, romPath: String) -> String? {
+        GameDataStore.shared.coverTdbID(gameID: gameID, derived: deriveGameTdbId(romPath: romPath))
+    }
+
+    /// Forgets everything stored or remembered for one install, so a new GameTDB ID starts clean.
+    static func clearCache(gameID: String, in libraryDirectory: URL) {
+        let dir = libraryDirectory.appendingPathComponent(cacheDirectoryName)
+        for ext in extensions {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent("\(hqPrefix(gameID)).\(ext)"))
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent("\(gameID).\(ext)"))
+        }
+        try? FileManager.default.removeItem(at: notFoundMarkerPath(for: gameID, in: libraryDirectory))
+        try? FileManager.default.removeItem(at: noHQMarkerPath(for: gameID, in: libraryDirectory))
     }
 
     /// Already-cached art (or a already-known "nothing to find") for a game, without
@@ -147,7 +164,7 @@ enum CoverArtFetcher {
                 return false
             }
         }
-        return deriveGameTdbId(romPath: romPath) != nil
+        return resolvedTdbId(gameID: gameID, romPath: romPath) != nil
     }
 
     /// Thrown by fetchArt(forGameTdbId:) for an actual transport failure (offline,
@@ -205,7 +222,7 @@ enum CoverArtFetcher {
     /// listed" marker is written only when GameTDB definitively has nothing. A transport
     /// failure or failed write writes no marker, so a later launch retries.
     static func fetchAndCache(gameID: String, romPath: String, in libraryDirectory: URL) async -> String? {
-        guard let tdbId = deriveGameTdbId(romPath: romPath) else { return nil }
+        guard let tdbId = resolvedTdbId(gameID: gameID, romPath: romPath) else { return nil }
 
         let cacheDirectory = libraryDirectory.appendingPathComponent(cacheDirectoryName)
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)

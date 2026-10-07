@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /// What a cover source needs to know about one install. `gameID` is `GameMetadata.id`, which
 /// is derived from the install's own file/folder name inside Roms (two installs of one title
@@ -12,6 +13,10 @@ struct CoverContext {
     let libraryDirectory: URL
     /// The cover the card shows right now, if any.
     let currentCoverPath: String?
+    /// The install's region label ("USA", "EUR", "USA/EUR"), when known.
+    var region: String? = nil
+    /// Names the install is known by (the title's own name, then its folder or file name), best first.
+    var titles: [String] = []
 }
 
 /// One link in the cover chain. `cachedPath` is synchronous and never touches the network
@@ -32,19 +37,24 @@ extension CoverSource {
 }
 
 /// The ordered cover chain: first source with a stored cover wins on screen, and the
-/// background pass walks the same order to fill gaps. A hand-placed `<gameID>_cover.*`
-/// override (GameManager.findCover) always sits above this whole chain.
+/// background pass walks the same order to fill gaps. A custom upload (`<gameID>_cover.*`,
+/// GameManager.findCover) always sits above this whole chain, as step one.
 ///
-/// Intended order, with the sources still to be added marked:
-///   GameTDB HQ -> GameTDB standard -> installed art pack (TODO) -> generated 3D (TODO)
-///   -> extracted icon -> generic no-cover (TODO; the card draws the controller glyph today)
-/// To add one, implement `CoverSource` and insert it at its place in `sources`.
+/// The order, after the custom upload:
+///   GameTDB HQ -> installed art pack in the chosen style -> GameTDB standard -> extracted icon
+///   -> generic no-cover (3D or 2D to match the style, always found, so no game is ever bare).
+/// When the player picks "3D box" or "Disc" explicitly, the pack moves above GameTDB HQ: asking
+/// for 3D boxes and getting a flat cover whenever GameTDB has one would make the setting pointless.
+/// To add a source, implement `CoverSource` and insert it in `sources(for:)`.
 enum CoverSourceChain {
-    static var sources: [CoverSource] = [
-        GameTDBHQCoverSource(),
-        GameTDBStandardCoverSource(),
-        ExtractedIconCoverSource(),
-    ]
+    static var sources: [CoverSource] { sources(for: CoverStylePreference.current) }
+
+    static func sources(for style: CoverStylePreference) -> [CoverSource] {
+        let pack = ArtPackCoverSource(style: style)
+        let hq = GameTDBHQCoverSource()
+        let rest: [CoverSource] = [GameTDBStandardCoverSource(), ExtractedIconCoverSource(), GenericCoverSource(style: style)]
+        return (style.packBeatsGameTDB ? [pack, hq] : [hq, pack]) + rest
+    }
 
     static func cachedPath(_ context: CoverContext) -> String? {
         for source in sources {
@@ -87,9 +97,100 @@ struct GameTDBStandardCoverSource: CoverSource {
 struct ExtractedIconCoverSource: CoverSource {
     let id = "extracted-icon"
     func cachedPath(_ c: CoverContext) -> String? { WiiUIcon.existingCachedIconPath(for: c.gameID, in: c.libraryDirectory) }
-    func needsAcquire(_ c: CoverContext) -> Bool { c.currentCoverPath == nil && c.dumpDirectoryPath != nil }
+    func needsAcquire(_ c: CoverContext) -> Bool {
+        (c.currentCoverPath == nil || GenericCover.isGeneric(c.currentCoverPath)) && c.dumpDirectoryPath != nil
+    }
     func acquire(_ c: CoverContext) async -> String? {
         guard let dump = c.dumpDirectoryPath else { return nil }
         return WiiUIcon.cachedIconPath(for: c.gameID, dump: URL(fileURLWithPath: dump), in: c.libraryDirectory)
+    }
+}
+
+/// Art from an installed pack, in the chosen style. Matching is by title, using the manifest's own
+/// normalisation: the GameTDB entry the game was matched to supplies the most reliable titles
+/// (its name in every language), the install's own names come after. Art for the install's region
+/// is preferred. Nothing here touches the network; packs are downloaded in Settings.
+struct ArtPackCoverSource: CoverSource {
+    let id = "art-pack"
+    let style: CoverStylePreference
+
+    func cachedPath(_ c: CoverContext) -> String? {
+        guard ArtPackIndex.shared.hasAnyPack else { return nil }
+        return ArtPackMatching.hit(for: c, style: style)?.path
+    }
+}
+
+enum ArtPackMatching {
+    /// Normalised title candidates, most trustworthy first.
+    static func candidates(for c: CoverContext) -> [String] {
+        var out: [String] = []
+        if let info = GameDataStore.shared.info(for: c.gameID) {
+            let preferred = GameInfo.preferredLanguages + ["EN"]
+            for lang in preferred { if let t = info.titles[lang] { out.append(ArtTitleNormalizer.normalize(t)) } }
+            out.append(ArtTitleNormalizer.normalize(info.name))
+            for t in info.titles.values { out.append(ArtTitleNormalizer.normalize(t)) }
+        }
+        out.append(contentsOf: c.titles.map(ArtTitleNormalizer.normalize))
+        var seen = Set<String>()
+        return out.filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    static func hit(for c: CoverContext, style: CoverStylePreference) -> PackArtHit? {
+        var regions = RegionCode.codes(in: c.region)
+        if regions.isEmpty, let match = GameDataStore.shared.match(for: c.gameID), let r = RegionCode.code(forGameTdbId: match.tdbID) { regions = [r] }
+        return ArtPackIndex.shared.lookup(candidates: candidates(for: c), styles: style.packStyles, regions: regions)
+    }
+
+    private static let boxLock = NSLock()
+    private static var boxCache: [String: String] = [:]
+    private static var boxCacheStamp = ""
+
+    /// `box3DPath` remembered per game, for a card that asks on every render. Dropped whenever packs
+    /// or game data change (`revision` is the game data's change counter).
+    static func cachedBox3DPath(for game: GameMetadata, revision: Int) -> String? {
+        let stamp = "\(ArtPackIndex.shared.generation)|\(revision)"
+        boxLock.lock(); defer { boxLock.unlock() }
+        if boxCacheStamp != stamp { boxCache = [:]; boxCacheStamp = stamp }
+        if let hit = boxCache[game.id] { return hit.isEmpty ? nil : hit }
+        boxLock.unlock()
+        let path = box3DPath(for: game)
+        boxLock.lock()
+        boxCache[game.id] = path ?? ""
+        return path
+    }
+
+    /// 3D pack art for a game, whatever the cover style is: what the "3D boxes" card style draws.
+    static func box3DPath(for game: GameMetadata) -> String? {
+        guard ArtPackIndex.shared.hasAnyPack else { return nil }
+        let c = CoverContext(gameID: game.id, romPath: game.romPath, dumpDirectoryPath: nil, libraryDirectory: URL(fileURLWithPath: "/"),
+                             currentCoverPath: nil, region: game.region, titles: [game.displayTitle, game.title].compactMap { $0 })
+        return ArtPackIndex.shared.lookup(candidates: candidates(for: c), styles: ["3d"],
+                                          regions: RegionCode.codes(in: game.region))?.path
+    }
+}
+
+/// The last link: a generic "no cover" image bundled in the app (so it works offline), written once
+/// to Application Support so the rest of the pipeline, which works in file paths, treats it like any
+/// other cover. Always answers, which is what guarantees no game is ever left without a cover.
+struct GenericCoverSource: CoverSource {
+    let id = "generic"
+    let style: CoverStylePreference
+    func cachedPath(_ c: CoverContext) -> String? { GenericCover.path(threeD: style.genericIs3D) }
+}
+
+enum GenericCover {
+    private static func fileName(_ threeD: Bool) -> String { threeD ? "no-cover-3d.png" : "no-cover-2d.png" }
+
+    static func path(threeD: Bool) -> String? {
+        let url = ArtLocations.genericDirectory.appendingPathComponent(fileName(threeD))
+        if FileManager.default.fileExists(atPath: url.path) { return url.path }
+        guard let data = UIImage(named: threeD ? "NoCover3d" : "NoCover2d")?.pngData() else { return nil }
+        do { try data.write(to: url, options: .atomic) } catch { return nil }
+        return url.path
+    }
+
+    static func isGeneric(_ path: String?) -> Bool {
+        guard let path else { return false }
+        return (path as NSString).deletingLastPathComponent == ArtLocations.genericDirectory.path
     }
 }
