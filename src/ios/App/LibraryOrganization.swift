@@ -505,22 +505,26 @@ struct LibraryCard<Options: View>: View {
     let style: LibraryCardStyle
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
+    /// What the standard card's Play button does; nil means the same as a tap on the card.
+    var onPlay: (() -> Void)?
     /// The per-game menu behind the "..." button (the same one a long-press opens).
     let options: Options
 
     init(game: GameMetadata, style: LibraryCardStyle, onTap: @escaping () -> Void,
-         onFavoriteTap: @escaping () -> Void, @ViewBuilder options: () -> Options) {
+         onFavoriteTap: @escaping () -> Void, onPlay: (() -> Void)? = nil,
+         @ViewBuilder options: () -> Options) {
         self.game = game
         self.style = style
         self.onTap = onTap
         self.onFavoriteTap = onFavoriteTap
+        self.onPlay = onPlay
         self.options = options()
     }
 
     var body: some View {
         switch style {
         case .standard:
-            GameCardOptimized(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, options: { options })
+            GameCardOptimized(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, onPlay: onPlay, options: { options })
         case .largeCovers:
             LibraryLargeCoverCard(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, options: options)
         case .compact:
