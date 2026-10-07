@@ -48,7 +48,11 @@ private:
 	inline static std::optional<bool> s_render_upside_down{};
 	inline static std::optional<bool> s_fullscreen{};
 
-	inline static bool s_verbose = true; // false
+	// Off by default: with this on, every cemuLog_log() on every thread does std::cout << text << std::endl, a flushed write()
+	// to stdout under the stdio FILE lock. On iOS stdout is a pipe or file nothing reliably drains (and that a backgrounded
+	// app can stall on), so one stuck write() kept the FILE lock and every other thread that logged - including the main
+	// thread (display resize, Quit) - hung behind it until the watchdog killed the app. The log file already gets every line.
+	inline static bool s_verbose = false;
 
 	inline static bool s_enable_gdbstub = false;
 	inline static bool s_nsight_mode = false;
