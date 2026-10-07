@@ -65,7 +65,11 @@ ENTITLEMENTS_FOR_ASSET = {
     "MuffinEMU.ipa": "src/ios/Sideload.entitlements",
     "MuffinEMU-fakesigned.ipa": "src/ios/Cemu.entitlements",
 }
-HEADER_URL = f"{PAGES}/social-preview.png"
+# 1800x1200 like Manic EMU's: the icon centred on its own colours, no text, so nothing
+# collides with the source name and buttons SideStore and AltStore draw over it.
+HEADER_URL = f"{PAGES}/assets/source-header.jpg"
+# The official website (MuffinSite-Remastered). PAGES above still hosts the sources and guides.
+SITE = "https://muffinemu.github.io/MuffinSite-Remastered/"
 
 
 APP_DESCRIPTION = """MuffinEMU is the most complete way to play Wii U on iPhone and iPad. Real games, a real GamePad, on the screen in your hand or the TV across the room. Every emulation feature is free. No paywalls, no subscriptions, no catch. Built on Cemu, tuned for every iPhone and iPad from iOS 15 up.
@@ -101,7 +105,7 @@ The app does not include games, keys or system files. Bring the games you own.
 
 Free, open source, and updated constantly. This is Wii U on iOS the way it should be.
 
-Official Site: https://muffinemu.github.io/MuffinEMU/
+Official Site: https://muffinemu.github.io/MuffinSite-Remastered/
 Guides: https://muffinemu.github.io/MuffinEMU/docs/
 Source code: https://github.com/MuffinEMU/Muffin-EMU
 Report a problem: https://github.com/MuffinEMU/Muffin-EMU/issues
@@ -114,12 +118,50 @@ MuffinEMU is not affiliated with Nintendo or Apple. Wii U is a trademark of Nint
 SCREENSHOT_DIR = os.path.join(REPO_ROOT, "docs", "assets", "screenshots")
 
 
+def image_size(path):
+    """(width, height) of a PNG, JPEG or WebP file, read from its header. None if unknown."""
+    import struct
+    try:
+        with open(path, "rb") as f:
+            head = f.read(64)
+            if head[:8] == b"\x89PNG\r\n\x1a\n":
+                return struct.unpack(">II", head[16:24])
+            if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+                kind = head[12:16]
+                if kind == b"VP8X":
+                    return (int.from_bytes(head[24:27], "little") + 1, int.from_bytes(head[27:30], "little") + 1)
+                if kind == b"VP8L":
+                    b = int.from_bytes(head[21:25], "little")
+                    return ((b & 0x3FFF) + 1, ((b >> 14) & 0x3FFF) + 1)
+                if kind == b"VP8 ":
+                    w, h = struct.unpack("<HH", head[26:30])
+                    return (w & 0x3FFF, h & 0x3FFF)
+            if head[:2] == b"\xff\xd8":
+                f.seek(2)
+                while True:
+                    marker = f.read(2)
+                    if len(marker) < 2 or marker[0] != 0xFF:
+                        return None
+                    seg_len = struct.unpack(">H", f.read(2))[0]
+                    if marker[1] in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                        f.read(1)
+                        h, w = struct.unpack(">HH", f.read(4))
+                        return (w, h)
+                    f.seek(seg_len - 2, 1)
+    except (OSError, struct.error):
+        return None
+    return None
+
+
 def screenshots():
     """The app page's screenshots, from docs/assets/screenshots/{iphone,ipad}/.
 
     Drop PNG, JPG or WebP files in those folders (named so they sort in the order they
-    should show, e.g. 01-library.png) and the next source update lists them, Manic EMU
-    style: one set for iPhone and one for iPad. Empty folders give an empty list.
+    should show, e.g. 01-library.png) and the next source update lists them. iPhone shots
+    are plain URLs; iPad shots must say their pixel size, or SideStore refuses the whole
+    source ("An iPad screenshot ... does not specify its size"), so they're written as
+    {imageURL, width, height} the way Manic EMU's source does. A file whose size can't be
+    read is left out rather than breaking the source.
     """
     shots = {}
     for device in ("iphone", "ipad"):
@@ -129,8 +171,16 @@ def screenshots():
                            if n.lower().endswith((".png", ".jpg", ".jpeg", ".webp")))
         except OSError:
             names = []
-        if names:
-            shots[device] = [f"{PAGES}/assets/screenshots/{device}/{n}" for n in names]
+        entries = []
+        for n in names:
+            url = f"{PAGES}/assets/screenshots/{device}/{n}"
+            size = image_size(os.path.join(folder, n))
+            if device == "iphone":
+                entries.append(url)
+            elif size:
+                entries.append({"imageURL": url, "width": size[0], "height": size[1]})
+        if entries:
+            shots[device] = entries
     return shots
 
 
@@ -376,7 +426,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
             + extra_note),
         "iconURL": f"{PAGES}/icon.png",
         "headerURL": HEADER_URL,
-        "website": f"{PAGES}/",
+        "website": SITE,
         "tintColor": "#E5652E",
         "featuredApps": [BUNDLE_ID],
         "apps": [{
@@ -389,7 +439,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
             "tintColor": "#E5652E",
             "category": "games",
             "screenshots": screenshots(),
-            "screenshotURLs": [u for urls in screenshots().values() for u in urls],
+            "screenshotURLs": screenshots().get("iphone", []),
             "versions": [],
             "appPermissions": app_permissions(asset_name),
         }],
