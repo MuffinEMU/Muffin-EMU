@@ -50,15 +50,27 @@ enum LibraryCardStyle: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
+    /// Where the Card size slider is stored (Settings > Library). 1.0 is the default size.
+    static let sizeStorageKey = "muffin.library.cardSize"
+    static let sizeRange: ClosedRange<Double> = 0.7...1.6
+
     /// Column layout for this style. Adaptive, so an iPhone in portrait gets fewer columns than
     /// an iPad or a phone turned sideways without any size-class checks.
-    var columns: [GridItem] {
+    var columns: [GridItem] { columns(scale: 1) }
+
+    /// The same layout with the card size slider applied. Every card's minimum width scales,
+    /// capped at 340 pt so one card still fits across the narrowest supported screen.
+    func columns(scale: Double) -> [GridItem] {
+        let s = CGFloat(min(max(scale, Self.sizeRange.lowerBound), Self.sizeRange.upperBound))
+        func item(_ base: CGFloat, _ spacing: CGFloat) -> [GridItem] {
+            [GridItem(.adaptive(minimum: min(base * s, 340)), spacing: spacing)]
+        }
         switch self {
-        case .standard: return [GridItem(.adaptive(minimum: 140), spacing: 16)]
-        case .largeCovers: return [GridItem(.adaptive(minimum: 220), spacing: 18)]
-        case .compact: return [GridItem(.adaptive(minimum: 96), spacing: 12)]
-        case .list: return [GridItem(.adaptive(minimum: 340), spacing: 12)]
-        case .box3d: return [GridItem(.adaptive(minimum: 150), spacing: 14)]
+        case .standard: return item(140, 16)
+        case .largeCovers: return item(220, 18)
+        case .compact: return item(96, 12)
+        case .list: return item(340, 12)
+        case .box3d: return item(150, 14)
         }
     }
 
@@ -364,10 +376,11 @@ struct LibraryGameCollection<Card: View, Lead: View>: View {
     let style: LibraryCardStyle
     @ViewBuilder let lead: () -> Lead
     @ViewBuilder let card: (GameMetadata) -> Card
+    @AppStorage(LibraryCardStyle.sizeStorageKey) private var cardSize = 1.0
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            LazyVGrid(columns: style.columns, spacing: style.rowSpacing, pinnedViews: [.sectionHeaders]) {
+            LazyVGrid(columns: style.columns(scale: cardSize), spacing: style.rowSpacing, pinnedViews: [.sectionHeaders]) {
                 Section { lead() }
                 ForEach(sections) { section in
                     Section {

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct LibrarySettingsSection: View {
+    @AppStorage(LibraryCardStyle.sizeStorageKey) private var cardSize = 1.0
     @ObservedObject var gameManager: GameManager
     @AppStorage(LibraryCardStyle.storageKey) private var cardStyleRaw = LibraryCardStyle.defaultValue.rawValue
     @AppStorage("muffin.library.sortOrder") private var sortRaw = LibrarySortOrder.title.rawValue
@@ -19,6 +20,18 @@ struct LibrarySettingsSection: View {
             } label: {
                 Label("Show games as", systemImage: "square.grid.2x2")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Label("Card size", systemImage: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Spacer()
+                    Text("\(Int((cardSize * 100).rounded()))%")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .monospacedDigit()
+                }
+                Slider(value: $cardSize, in: LibraryCardStyle.sizeRange, step: 0.05)
+                    .tint(MuffinTheme.accentText)
             }
             Picker(selection: $sortRaw) {
                 ForEach(LibrarySortOrder.allCases, id: \.self) { order in

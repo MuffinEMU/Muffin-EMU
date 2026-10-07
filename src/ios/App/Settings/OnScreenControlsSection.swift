@@ -103,7 +103,15 @@ struct OnScreenControlsSection: View {
             // under a d-pad is a control with nothing behind it. The TouchLab styles always
             // have sticks, and read the same gate, deadzone and curve.
             if joystickMode || usingTouchLab {
-                joystickOptions
+                // Gate, deadzone, curve and spacing live on their own page so this section
+                // stays a short list of the things most people change.
+                NavigationLink {
+                    Form { Section { joystickOptions } }
+                        .navigationTitle("Stick tuning")
+                } label: {
+                    Label("Stick tuning", systemImage: "dial.medium")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                }
             }
 
             // iPad only: an iPhone has no spare height to move them in. Applies to MuffinEMU's
@@ -192,6 +200,14 @@ struct OnScreenControlsSection: View {
             // How long the bar waits, and how big the handle is: Advanced mode only (see AdvancedSettings).
             if advanced && hideTopBar.wrappedValue {
                 topBarOptions
+            }
+
+            NavigationLink {
+                Form { PreviewPadSection() }
+                    .navigationTitle("New pad system (preview)")
+            } label: {
+                Label("New pad system (preview)", systemImage: "sparkles")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
 
             Toggle(isOn: $autoHideWithController) {
