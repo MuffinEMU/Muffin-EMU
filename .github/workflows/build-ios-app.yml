@@ -85,6 +85,10 @@ on:
         description: 'Ignore the cached core and any prebuilt IPA: compile everything fresh and, on main, promote the result as the new current core'
         type: boolean
         default: false
+      point_release:
+        description: 'On main only: publish a point release (7.7 -> 7.7.1, 7.7.1 -> 7.7.2) instead of the next X.Y. Does not move the next normal release: after 7.7.1 the next normal one is still 7.8'
+        type: boolean
+        default: false
   push:
     branches: [ main, ios27-sdk ]
     # Documentation, issue templates, bench tooling, the install-source generator and the other
@@ -608,6 +612,10 @@ jobs:
       - name: Choose the version
         env:
           MUFFIN_CHANNEL: ${{ steps.channel.outputs.channel }}
+          MUFFIN_POINT: ${{ github.event_name == 'workflow_dispatch' && inputs.point_release || 'false' }}
+        # A dispatch of main with point_release=true is a point release instead: the newest tag
+        # (vX.Y or vX.Y.Z) plus one patch step, 7.7 -> 7.7.1 -> 7.7.2. A normal build counts vX.Y
+        # tags only, so a point release never changes which X.Y comes next.
         # Every build of main is the next release: the highest vX.Y tag plus 0.1, with .9
         # rolling over to the next whole number (1.9 -> 2.0). With no numbered tag yet the
         # first release is ci/VERSION. Other branches build unnumbered test builds. A build
@@ -619,15 +627,27 @@ jobs:
           # A branch dispatched with channel=release is numbered exactly like main.
           if [ "$GITHUB_REF_NAME" = "main" ] || [ "$MUFFIN_CHANNEL" = "release" ]; then
             LAST=$(git tag -l 'v*' | sed -nE 's/^v([0-9]+)\.([0-9])$/\1 \2/p' | sort -n -k1,1 -k2,2 | tail -n1)
+            # The newest tag of any shape, vX.Y or vX.Y.Z, as "MAJ MIN PATCH".
+            NEWEST=$(git tag -l 'v*' | sed -nE 's/^v([0-9]+)\.([0-9])(\.([0-9]+))?$/\1 \2 \4/p' | awk '{print $1, $2, ($3==""?0:$3)}' | sort -n -k1,1 -k2,2 -k3,3 | tail -n1)
+            if [ "$MUFFIN_POINT" = "true" ] && [ "$GITHUB_REF_NAME" != "main" ]; then
+              echo "::error::point_release only works on main"
+              exit 1
+            fi
             if [ -z "$LAST" ]; then
+              if [ "$MUFFIN_POINT" = "true" ]; then echo "::error::no numbered release to patch yet"; exit 1; fi
               VER=$(./ci/version.sh)
             else
-              MAJ=${LAST% *}; MIN=${LAST#* }
+              set -- $NEWEST
               # The release we are building on top of - the range the notes describe.
-              PREV="v$MAJ.$MIN"
-              MIN=$((MIN + 1))
-              if [ "$MIN" -ge 10 ]; then MAJ=$((MAJ + 1)); MIN=0; fi
-              VER="$MAJ.$MIN"
+              if [ "$3" = "0" ]; then PREV="v$1.$2"; else PREV="v$1.$2.$3"; fi
+              if [ "$MUFFIN_POINT" = "true" ]; then
+                VER="$1.$2.$(($3 + 1))"
+              else
+                MAJ=${LAST% *}; MIN=${LAST#* }
+                MIN=$((MIN + 1))
+                if [ "$MIN" -ge 10 ]; then MAJ=$((MAJ + 1)); MIN=0; fi
+                VER="$MAJ.$MIN"
+              fi
               # A numbered release must strictly contain the latest one. A re-run of an old build of
               # main would otherwise ship old code as the newest version.
               if ! ./ci/check-stable.sh "$PREV"; then

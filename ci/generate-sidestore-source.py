@@ -33,7 +33,16 @@ import plistlib, os, re, sys, urllib.request, urllib.error, urllib.parse, argpar
 
 PAGES = "https://muffinemu.github.io/MuffinEMU"
 BUNDLE_ID = "com.kiddreads.MuffinEMU"
-VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)$")
+# vX.Y, or vX.Y.Z for a point release. X.Y.Z sorts after X.Y (patch counts as 0 when absent).
+VERSION_TAG = re.compile(r"^v(\d+)\.(\d+)(?:\.(\d+))?$")
+
+
+def tag_version(m):
+    return ".".join(g for g in m.groups() if g is not None)
+
+
+def tag_key(m):
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3) or 0))
 NIGHTLY_NOTE = (
     'This source serves the nightly build: the newest code, rebuilt on every change and not tested. It has the same bundle identifier as the standard build, so installing it replaces a standard install and keeps your games, saves and settings. Add it only if you want the newest build rather than the one known to work.')
 
@@ -260,8 +269,8 @@ def build_source(rels, asset_name, ident, name, subtitle, app_subtitle, extra_no
         if not ipa:
             continue
         versions.append({
-            "version": f"{m.group(1)}.{m.group(2)}",
-            "key": (int(m.group(1)), int(m.group(2))),
+            "version": tag_version(m),
+            "key": tag_key(m),
             "date": rel["published_at"],
             "localizedDescription": notes_for(rel),
             "downloadURL": ipa["browser_download_url"],
@@ -299,7 +308,7 @@ def news_for(rels, count=1):
         caption = caption.split(". ")[0].rstrip(".")
         if len(caption) > 110:
             caption = caption[:107].rsplit(" ", 1)[0] + "..."
-        version = f"{m.group(1)}.{m.group(2)}"
+        version = tag_version(m)
         items.append({
             "title": f"MuffinEMU {version} Now Available",
             "identifier": f"muffinemu-v{version}",
@@ -310,7 +319,7 @@ def news_for(rels, count=1):
             "url": rel.get("html_url"),
             "appID": BUNDLE_ID,
             "notify": False,
-            "key": (int(m.group(1)), int(m.group(2))),
+            "key": tag_key(m),
         })
     items.sort(key=lambda n: n["key"], reverse=True)
     for n in items:
@@ -462,7 +471,7 @@ def check_guards(feeds, rels):
         if channel == "experimental":
             if ROLLING_EXPERIMENTAL_URL in text:
                 bad.append(f"{fname}: the experimental feed points at the rolling `experimental` release")
-            if "/releases/download/nightly/" in text or re.search(r"/releases/download/v\d+\.\d+/", text):
+            if "/releases/download/nightly/" in text or re.search(r"/releases/download/v\d+\.\d+(\.\d+)?/", text):
                 bad.append(f"{fname}: the experimental feed points at nightly or a numbered release")
         for v in src["apps"][0]["versions"]:
             m = DOWNLOAD.search(v["downloadURL"])
