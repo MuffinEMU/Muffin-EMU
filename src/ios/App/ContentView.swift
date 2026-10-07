@@ -2076,10 +2076,12 @@ struct EmulatorViewOptimized: View {
                     .buttonStyle(MuffinBarButtonStyle())
                     // Quitting while a save state is being written would tear the title down under the write.
                     .disabled(saveStateBusySlot != nil)
-                    .confirmationDialog(
+                    // An alert, not a confirmationDialog: on iPad a confirmationDialog is a popover anchored
+                    // to this button, and from the in-game top bar it could fail to appear, leaving Back
+                    // doing nothing. An alert always presents.
+                    .alert(
                         "Quit \(gameName)?",
-                        isPresented: $showingBackConfirmation,
-                        titleVisibility: .visible
+                        isPresented: $showingBackConfirmation
                     ) {
                         Button("Quit", role: .destructive) {
                             gameManager.stopEmulation()
