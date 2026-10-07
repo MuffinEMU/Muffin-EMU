@@ -881,7 +881,23 @@ final class DisplayRouter: ObservableObject {
         // picture comes from the TV surface (applyOutputs), so it is not created and nothing draws to it.
         let wantPad = (placement == .dualScreen && deviceMode != .nothing)
         let padGoesExternal = wantPad && !tvGoesExternal
-        let havePad = cemu_bridge_has_pad_render_surface()
+        var havePad = cemu_bridge_has_pad_render_surface()
+
+        // A GamePad surface can already exist that this placement didn't make: the on-device one from
+        // a both-screens Screen Layout (registered through attachLocalPadContainer, so padRenderView is
+        // nil), or one of ours sitting on the wrong display. Keeping it would leave the GamePad screen
+        // drawing into a view nobody sees - the "other screen" stayed black on this device after an
+        // external display connected. Release it so the right one is made below.
+        if wantPad, havePad {
+            let expected: UIView? = padGoesExternal ? externalWindow : deviceContainer
+            let placed = padRenderView.map { view in expected.map { view.isDescendant(of: $0) } ?? false } ?? false
+            if !placed {
+                cemu_bridge_release_pad_render_surface()
+                padRenderView?.removeFromSuperview()
+                padRenderView = nil
+                havePad = false
+            }
+        }
 
         if wantPad, !havePad {
             let view = MetalLayerView()

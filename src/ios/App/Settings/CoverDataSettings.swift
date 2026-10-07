@@ -147,6 +147,8 @@ struct CoverDataSettingsView: View {
             }
             creditRow("MuffinEMU-Art", "Hosts the art packs, with the full credits in CREDITS.md.", "https://github.com/MuffinEMU/MuffinEMU-Art")
             creditRow("box3d by RtaSistemas (MIT)", "The 3D box template behind MuffinEMU's no-cover images.", "https://github.com/RtaSistemas/box3d")
+            Text("3D case template (spine, logo and badges) from Robin55's Nintendo Wii U 3D Boxes 1.3.")
+            Text("Wii U and Nintendo logos \u{00A9} Nintendo. Rating icons \u{00A9} ESRB.")
             Text("Box art \u{00A9} respective publishers.")
                 .font(.system(size: 12))
                 .foregroundColor(MuffinTheme.secondaryText)
