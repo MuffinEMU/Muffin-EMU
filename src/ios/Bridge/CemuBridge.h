@@ -446,6 +446,14 @@ const char* cemu_bridge_usb_device_create(CemuBridgeUSBDevice device, uint32_t f
 /// a Dimensions figure, since only the toypad has a physical position to move between.
 const char* cemu_bridge_usb_device_move_dimensions(int fromSlot, int toSlot);
 
+/// Taps an amiibo on the emulated NFC reader: the core's nnNfp_touchNfcTagFromFile (desktop
+/// Cemu's "Load amiibo / NFC file"). `path` is a full NTAG215 dump (.bin/.nfc, 532 to 572
+/// bytes). NULL on success; otherwise a short reason to show the player: no game has started
+/// the NFC library yet, the file can't be read, or it isn't an amiibo dump. The amiibo
+/// master keys are built into the core, so no key file is needed. The tag stays on the reader
+/// for about 1.5 seconds, as a real tap does.
+const char* cemu_bridge_touch_amiibo(const char* path);
+
 /// How fast the emulated console believes time is passing, as a right-shift factor:
 /// 3 = real time (1x), 4 = half (0.5x), 5 = quarter, 6 = an eighth, and so on
 /// (ActiveSettings::SetTimerShiftFactor(), desktop Cemu's Timer Speed).
