@@ -76,7 +76,6 @@ APP_DESCRIPTION = """Wii U on iPhone and iPad. Play on-screen, use the GamePad, 
 
 Games, keys and system files are not included. Bring the games you own.
 
-[A Library Worth Showing Off]
 - Add games from Files: WUA, WUD/WUX, decrypted or encrypted with your own keys. Updates and DLC install in the app
 - HD box art and game info find themselves: summaries, release dates and more
 - Download art packs, including 3D boxes, or add your own covers in up to 4K
