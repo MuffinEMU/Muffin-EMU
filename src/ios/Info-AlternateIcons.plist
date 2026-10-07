@@ -20,6 +20,12 @@
 		<string>arm64</string>
 		<string>metal</string>
 	</array>
+	<!-- Schemes the JIT enabler setting asks canOpenURL about (App/JITEnabler.swift). -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>stikdebug</string>
+		<string>livecontainer</string>
+	</array>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
