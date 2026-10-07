@@ -111,41 +111,22 @@ struct TopBarRevealHandle: View {
         TopBarAutoHide.HandleSize(rawValue: handleSizeRaw) ?? TopBarAutoHide.defaultHandleSize
     }
 
+    /// A tap only. Swipes down from the top edge belong to iOS (windowing and Control Centre on
+    /// iPadOS 26 and later), so the bar comes back from a big, easy-to-see pill instead.
     var body: some View {
-        ZStack(alignment: .top) {
-            // A swipe down from anywhere along the top edge brings the bar back. Only a downward
-            // swipe counts here, so a tap on the top of the picture still reaches the game.
-            // It starts a little below the very edge, where iOS's own top-edge gestures begin.
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .padding(.top, 14)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 10).onEnded { value in
-                        if value.translation.height > 12 { onReveal() }
-                    }
-                )
-            // The pill itself: a tap or a swipe down, on a target bigger than it looks.
-            Capsule()
-                .fill(Color.white.opacity(0.6))
-                // A hairline of shadow so it still reads over a white title screen.
-                .shadow(color: Color.black.opacity(0.45), radius: 1.5, x: 0, y: 0.5)
-                .frame(width: 56, height: 6)
-                .padding(.top, 6)
-                .frame(width: size.width, height: size.height, alignment: .top)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0).onEnded { value in
-                        // A tap, or a swipe that ends lower than it began. A swipe up is not a request.
-                        if value.translation.height > -12 { onReveal() }
-                    }
-                )
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Show top bar")
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction { onReveal() }
-        }
+        Capsule()
+            .fill(Color.white.opacity(0.7))
+            // A hairline of shadow so it still reads over a white title screen.
+            .shadow(color: Color.black.opacity(0.5), radius: 2, x: 0, y: 0.5)
+            .frame(width: size == .large ? 120 : 90, height: size == .large ? 10 : 8)
+            .padding(.top, 10)
+            .frame(width: size.width, height: size.height, alignment: .top)
+            .contentShape(Rectangle())
+            .onTapGesture { onReveal() }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Show top bar")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onReveal() }
     }
 }
 
