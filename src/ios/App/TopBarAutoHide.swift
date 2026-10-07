@@ -58,9 +58,10 @@ enum TopBarAutoHide {
             }
         }
 
-        /// The touch target in points. The visible pill is 40 by 5 either way.
-        var width: CGFloat { self == .large ? 220 : 96 }
-        var height: CGFloat { self == .large ? 72 : 44 }
+        /// The tap target in points around the pill. A swipe down works anywhere along the top edge
+        /// whichever size this is (TopBarRevealHandle).
+        var width: CGFloat { self == .large ? 260 : 170 }
+        var height: CGFloat { self == .large ? 80 : 60 }
     }
 
     /// On everywhere. It was iPhone-only at first, but on an iPad the bar sitting over the picture
@@ -110,21 +111,18 @@ struct TopBarRevealHandle: View {
         TopBarAutoHide.HandleSize(rawValue: handleSizeRaw) ?? TopBarAutoHide.defaultHandleSize
     }
 
+    /// A tap only. Swipes down from the top edge belong to iOS (windowing and Control Centre on
+    /// iPadOS 26 and later), so the bar comes back from a big, easy-to-see pill instead.
     var body: some View {
         Capsule()
-            .fill(Color.white.opacity(0.45))
+            .fill(Color.white.opacity(0.7))
             // A hairline of shadow so it still reads over a white title screen.
-            .shadow(color: Color.black.opacity(0.4), radius: 1, x: 0, y: 0.5)
-            .frame(width: 40, height: 5)
-            .padding(.top, 6)
+            .shadow(color: Color.black.opacity(0.5), radius: 2, x: 0, y: 0.5)
+            .frame(width: size == .large ? 120 : 90, height: size == .large ? 10 : 8)
+            .padding(.top, 10)
             .frame(width: size.width, height: size.height, alignment: .top)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0).onEnded { value in
-                    // A tap, or a swipe that ends lower than it began. A swipe up is not a request.
-                    if value.translation.height > -12 { onReveal() }
-                }
-            )
+            .onTapGesture { onReveal() }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Show top bar")
             .accessibilityAddTraits(.isButton)

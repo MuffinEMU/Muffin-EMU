@@ -14,6 +14,18 @@ import AVFoundation
 final class AudioRecorder: ObservableObject {
     static let shared = AudioRecorder()
 
+    /// Settings > Audio > "Save all audio automatically": every game session is recorded from the
+    /// moment it runs, and again after the app comes back to the foreground, without touching the
+    /// HOME menu toggle.
+    static let autoRecordKey = "muffin.audio.autoRecord"
+    static var autoRecordEnabled: Bool { UserDefaults.standard.bool(forKey: autoRecordKey) }
+
+    /// Starts a recording when auto-save is on and none is running.
+    func autoStartIfEnabled(gameName: String) {
+        guard Self.autoRecordEnabled, !isRecording else { return }
+        start(gameName: gameName)
+    }
+
     struct Finished: Identifiable, Equatable {
         let id = UUID()
         let url: URL
