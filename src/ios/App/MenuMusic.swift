@@ -13,6 +13,9 @@ final class MenuMusic {
     static let defaultVolume = 0.6
 
     enum Track: String, CaseIterable, Identifiable {
+        /// All five, four times each, crossfaded into one another, with the end crossfaded back into the start:
+        /// one file mixed ahead of time, so it loops with no gap or click.
+        case allSongs = "AllSongs"
         case muffinTheme = "MuffinTheme"
         case horizonDrive = "HorizonDrive"
         case starfall = "Starfall"
@@ -23,6 +26,7 @@ final class MenuMusic {
 
         var title: String {
             switch self {
+            case .allSongs: return "All songs"
             case .muffinTheme: return "MuffinEMU Theme"
             case .horizonDrive: return "Horizon Drive"
             case .starfall: return "Starfall"
@@ -31,7 +35,10 @@ final class MenuMusic {
             }
         }
 
-        var url: URL? { Bundle.main.url(forResource: "MenuMusic-" + rawValue, withExtension: "wav") }
+        var url: URL? {
+            Bundle.main.url(forResource: "MenuMusic-" + rawValue, withExtension: "caf")
+                ?? Bundle.main.url(forResource: "MenuMusic-" + rawValue, withExtension: "wav")
+        }
     }
 
     private var player: AVAudioPlayer?
@@ -41,7 +48,7 @@ final class MenuMusic {
 
     private var defaults: UserDefaults { .standard }
     private var enabled: Bool { defaults.bool(forKey: Self.enabledKey) }
-    private var track: Track { Track(rawValue: defaults.string(forKey: Self.trackKey) ?? "") ?? .muffinTheme }
+    private var track: Track { Track(rawValue: defaults.string(forKey: Self.trackKey) ?? "") ?? .allSongs }
     private var volume: Float {
         Float(defaults.object(forKey: Self.volumeKey) as? Double ?? Self.defaultVolume)
     }
@@ -92,7 +99,7 @@ final class MenuMusic {
 /// Settings > Audio: the library's theme music.
 struct MenuMusicSettingsGroup: View {
     @AppStorage(MenuMusic.enabledKey) private var enabled = false
-    @AppStorage(MenuMusic.trackKey) private var trackRaw = MenuMusic.Track.muffinTheme.rawValue
+    @AppStorage(MenuMusic.trackKey) private var trackRaw = MenuMusic.Track.allSongs.rawValue
     @AppStorage(MenuMusic.volumeKey) private var volume = MenuMusic.defaultVolume
 
     var body: some View {
@@ -100,7 +107,7 @@ struct MenuMusicSettingsGroup: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Theme music")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text("Plays a MuffinEMU theme on loop in the library. It stops when a game starts, and stays quiet while another app is playing music.")
+                Text("Plays MuffinEMU's themes on loop in the library. It stops when a game starts, and stays quiet while another app is playing music.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
