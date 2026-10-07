@@ -108,6 +108,29 @@ Legal
 MuffinEMU is not affiliated with Nintendo or Apple. Wii U is a trademark of Nintendo. No copyrighted games, keys or firmware are distributed here."""
 
 
+SCREENSHOT_DIR = os.path.join(REPO_ROOT, "docs", "assets", "screenshots")
+
+
+def screenshots():
+    """The app page's screenshots, from docs/assets/screenshots/{iphone,ipad}/.
+
+    Drop PNG, JPG or WebP files in those folders (named so they sort in the order they
+    should show, e.g. 01-library.png) and the next source update lists them, Manic EMU
+    style: one set for iPhone and one for iPad. Empty folders give an empty list.
+    """
+    shots = {}
+    for device in ("iphone", "ipad"):
+        folder = os.path.join(SCREENSHOT_DIR, device)
+        try:
+            names = sorted(n for n in os.listdir(folder)
+                           if n.lower().endswith((".png", ".jpg", ".jpeg", ".webp")))
+        except OSError:
+            names = []
+        if names:
+            shots[device] = [f"{PAGES}/assets/screenshots/{device}/{n}" for n in names]
+    return shots
+
+
 def app_permissions(asset_name):
     """The entitlements the IPA really carries and the privacy strings it shows.
 
@@ -305,9 +328,11 @@ def news_for(rels, count=1):
         body = (rel.get("body") or "").replace("\r\n", "\n")
         bullets = [l[2:].strip() for l in body.split("\n") if l.startswith("- ")]
         caption = bullets[0] if bullets else "A new version of MuffinEMU is available."
-        caption = caption.split(". ")[0].rstrip(".")
-        if len(caption) > 110:
-            caption = caption[:107].rsplit(" ", 1)[0] + "..."
+        # A headline, not a paragraph (Manic EMU's read like "WonderSwan, NAOMI arcade,
+        # Flash, and built-in JIT"): the first change, cut at its first clause.
+        caption = re.split(r"(?<=[a-z0-9)])[.;:,]\s|\s-\s|\s\(", caption)[0].rstrip(".")
+        if len(caption) > 70:
+            caption = caption[:67].rsplit(" ", 1)[0] + "..."
         version = tag_version(m)
         items.append({
             "title": f"MuffinEMU {version} Now Available",
@@ -360,7 +385,8 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
             "iconURL": f"{PAGES}/icon.png",
             "tintColor": "#E5652E",
             "category": "games",
-            "screenshotURLs": [],
+            "screenshots": screenshots(),
+            "screenshotURLs": [u for urls in screenshots().values() for u in urls],
             "versions": [],
             "appPermissions": app_permissions(asset_name),
         }],
@@ -502,12 +528,12 @@ def run(repo, token, rels, out_dir):
     feeds = [
         ("apps.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.source", "MuffinEMU",
          "The Wii U, in your hands.",
-         "The Wii U, in your hands",
+         "Wii U games, anywhere",
          "Works with SideStore, AltStore and LiveContainer."),
         ("trollstore.json", "MuffinEMU-fakesigned.ipa", "com.kiddreads.MuffinEMU.trollstore",
          "MuffinEMU (TrollStore)",
          "The Wii U, in your hands. TrollStore edition.",
-         "The Wii U, in your hands - TrollStore",
+         "Wii U games, anywhere - TrollStore",
          "This is the TrollStore and jailbreak build, with JIT built in. "
          "On SideStore or AltStore, add the standard source instead."),
     ]
