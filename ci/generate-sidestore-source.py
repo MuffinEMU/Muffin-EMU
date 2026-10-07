@@ -72,9 +72,9 @@ HEADER_URL = f"{PAGES}/assets/source-header.jpg"
 SITE = "https://muffinemu.github.io/MuffinSite-Remastered/"
 
 
-APP_DESCRIPTION = """The most complete way to play Wii U on iPhone and iPad. Your games, a GamePad built from the real thing, on the screen in your hands or the TV across the room. Every emulation feature is free: no paywalls, no subscriptions, no catch.
+APP_DESCRIPTION = """Wii U on iPhone and iPad. Play on-screen, use the GamePad, or switch to your TV. Free, open source, and built around Cemu.
 
-Built on Cemu and tuned for every iPhone and iPad on iOS 15 and later. Games, keys and system files are not included. Bring the games you own.
+Games, keys and system files are not included. Bring the games you own.
 
 [A Library Worth Showing Off]
 - Add games from Files: WUA, WUD/WUX, decrypted or encrypted with your own keys. Updates and DLC install in the app
@@ -422,8 +422,8 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
         "identifier": ident,
         "subtitle": subtitle,
         "description": (
-            "Wii U on iPhone and iPad, done properly. Your games, your GamePad, your TV, "
-            "with every feature free. " + extra_note),
+            "Wii U on iPhone and iPad, done right. GamePad, TV, or both. Free and open source."
+            + (" " + extra_note if extra_note else "")),
         "iconURL": f"{PAGES}/icon.png",
         "headerURL": HEADER_URL,
         "website": SITE,
@@ -581,12 +581,12 @@ def run(repo, token, rels, out_dir):
     feeds = [
         ("apps.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.source", "MuffinEMU",
          "The Wii U, in your hands.",
-         "Wii U, the way it should be",
-         "Works with SideStore, AltStore and LiveContainer."),
+         "Wii U, the way it should be.",
+         ""),
         ("trollstore.json", "MuffinEMU-fakesigned.ipa", "com.kiddreads.MuffinEMU.trollstore",
          "MuffinEMU (TrollStore)",
          "The Wii U, in your hands. TrollStore edition.",
-         "Wii U, the way it should be - TrollStore",
+         "Wii U, the way it should be. TrollStore edition.",
          "This is the TrollStore and jailbreak build, with JIT built in. "
          "On SideStore or AltStore, add the standard source instead."),
     ]
