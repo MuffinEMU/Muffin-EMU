@@ -1,10 +1,10 @@
 import AVFoundation
 import SwiftUI
+import UniformTypeIdentifiers
 
-/// MuffinEMU's own theme songs, looping quietly behind the library while no game is running.
-/// Off until it's switched on in Settings > Audio. It stops when a game starts or the app leaves the
-/// screen, and it never plays over music from another app.
-final class MenuMusic {
+/// Theme music in the menus: MuffinEMU's own songs, or the player's own tracks from Documents/Theme Music.
+/// Off until it's switched on in Settings > Audio. It stops when a game starts or the app goes to the background.
+final class MenuMusic: NSObject, AVAudioPlayerDelegate {
     static let shared = MenuMusic()
 
     static let enabledKey = "muffin.menuMusic.enabled"
@@ -46,14 +46,38 @@ final class MenuMusic {
         }
     }
 
+    /// What the Song picker can choose besides the built-in tracks: every one of the player's own tracks in turn,
+    /// or one of them (stored as "custom:" + its file name).
+    static let customAllTag = "CustomAll"
+    static let customPrefix = "custom:"
+
+    /// Documents/Theme Music: the player's own tracks. Files shows it, so tracks can also be dropped in there.
+    static var customFolder: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Theme Music", isDirectory: true)
+    }
+    static let customExtensions: Set<String> = ["mp3", "m4a", "aac", "wav", "aif", "aiff", "caf", "flac", "mp4"]
+
+    /// The player's own tracks, sorted by name.
+    static func customTracks() -> [URL] {
+        let files = (try? FileManager.default.contentsOfDirectory(at: customFolder, includingPropertiesForKeys: nil,
+                                                                   options: [.skipsHiddenFiles])) ?? []
+        return files.filter { customExtensions.contains($0.pathExtension.lowercased()) }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+    }
+
     private var player: AVAudioPlayer?
-    private var playingTrack: Track?
+    /// The picker value the current player was started for.
+    private var playingSelection: String?
+    /// For "All my tracks": the queue being played and where it is.
+    private var queue: [URL] = []
+    private var queueIndex = 0
     private var inLibrary = true
     private var appActive = true
 
     private var defaults: UserDefaults { .standard }
     private var enabled: Bool { defaults.bool(forKey: Self.enabledKey) }
-    private var track: Track { Track(rawValue: defaults.string(forKey: Self.trackKey) ?? "") ?? .allSongs }
+    private var selection: String { defaults.string(forKey: Self.trackKey) ?? Track.allSongs.rawValue }
     private var volume: Float {
         Float(defaults.object(forKey: Self.volumeKey) as? Double ?? Self.defaultVolume)
     }
@@ -72,12 +96,26 @@ final class MenuMusic {
             if player != nil { log("stopped (on=\(enabled), menus=\(inLibrary), active=\(appActive))") }
             stop(); return
         }
-        if let player, playingTrack == track {
+        if let player, playingSelection == selection {
             player.volume = volume
             if !player.isPlaying { player.play() }
             return
         }
-        start(track)
+        start(selection)
+    }
+
+    /// The files a picker value plays, in order, and whether one file loops on its own.
+    private func files(for selection: String) -> (urls: [URL], loopOne: Bool) {
+        if selection == Self.customAllTag {
+            let all = Self.customTracks()
+            return (all, all.count == 1)
+        }
+        if selection.hasPrefix(Self.customPrefix) {
+            let url = Self.customFolder.appendingPathComponent(String(selection.dropFirst(Self.customPrefix.count)))
+            return (FileManager.default.fileExists(atPath: url.path) ? [url] : [], true)
+        }
+        let track = Track(rawValue: selection) ?? .allSongs
+        return (track.url.map { [$0] } ?? [], true)
     }
 
     /// Starts the music again so a changed audio setting applies now.
@@ -86,10 +124,11 @@ final class MenuMusic {
         refresh()
     }
 
-    private func start(_ track: Track) {
+    private func start(_ selection: String) {
         stop()
+        let (urls, loopOne) = files(for: selection)
+        guard !urls.isEmpty else { log("not started: nothing to play for \(selection)"); return }
         let session = AVAudioSession.sharedInstance()
-        guard let url = track.url else { log("not started: \(track.rawValue) is missing from the app"); return }
         // With Respect silent mode on, ambient: the silent switch mutes it. Otherwise it plays through silent
         // mode like the game audio does. Either way it mixes with other sounds. A game sets its own category when
         // its audio starts.
@@ -99,23 +138,71 @@ final class MenuMusic {
             try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         }
         try? session.setActive(true)
+        playingSelection = selection
+        queue = urls
+        queueIndex = 0
+        play(at: 0, loop: loopOne)
+    }
+
+    /// Plays one file of the queue: looping forever when it is the only one, otherwise once, then the next.
+    private func play(at index: Int, loop: Bool) {
+        let url = queue[index]
         let player: AVAudioPlayer
-        do { player = try AVAudioPlayer(contentsOf: url) } catch { log("not started: \(error.localizedDescription)"); return }
-        player.numberOfLoops = -1
+        do { player = try AVAudioPlayer(contentsOf: url) } catch {
+            log("couldn't play \(url.lastPathComponent): \(error.localizedDescription)")
+            // A file that won't play is skipped, as long as another one in the queue might.
+            if queue.count > 1, index + 1 < queue.count { play(at: index + 1, loop: false) }
+            return
+        }
+        player.numberOfLoops = loop ? -1 : 0
         player.volume = volume
+        player.delegate = self
         player.prepareToPlay()
         let ok = player.play()
-        log("\(ok ? "playing" : "play() refused") \(track.rawValue), volume \(volume), route \(session.currentRoute.outputs.map(\.portType.rawValue).joined(separator: "+"))")
+        let route = AVAudioSession.sharedInstance().currentRoute.outputs.map(\.portType.rawValue).joined(separator: "+")
+        log("\(ok ? "playing" : "play() refused") \(url.lastPathComponent), volume \(volume), route \(route)")
         self.player = player
-        playingTrack = track
+        queueIndex = index
+    }
+
+    /// The next of the player's own tracks, back to the first after the last.
+    func audioPlayerDidFinishPlaying(_ finished: AVAudioPlayer, successfully flag: Bool) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, finished === self.player, self.queue.count > 1 else { return }
+            self.play(at: (self.queueIndex + 1) % self.queue.count, loop: false)
+        }
     }
 
     private func log(_ message: String) { cemu_bridge_log_checkpoint("Theme music: " + message) }
 
     private func stop() {
+        player?.delegate = nil
         player?.stop()
         player = nil
-        playingTrack = nil
+        playingSelection = nil
+        queue = []
+    }
+
+    /// Copies picked audio files into Documents/Theme Music; the originals are left where they are.
+    /// Returns how many were added.
+    @discardableResult
+    static func importTracks(_ urls: [URL]) -> Int {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: customFolder, withIntermediateDirectories: true)
+        var added = 0
+        for url in urls where customExtensions.contains(url.pathExtension.lowercased()) {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            var dest = customFolder.appendingPathComponent(url.lastPathComponent)
+            var n = 2
+            while fm.fileExists(atPath: dest.path) {
+                dest = customFolder.appendingPathComponent(
+                    "\(url.deletingPathExtension().lastPathComponent) \(n).\(url.pathExtension)")
+                n += 1
+            }
+            if (try? fm.copyItem(at: url, to: dest)) != nil { added += 1 }
+        }
+        return added
     }
 }
 
@@ -124,13 +211,15 @@ struct MenuMusicSettingsGroup: View {
     @AppStorage(MenuMusic.enabledKey) private var enabled = false
     @AppStorage(MenuMusic.trackKey) private var trackRaw = MenuMusic.Track.allSongs.rawValue
     @AppStorage(MenuMusic.volumeKey) private var volume = MenuMusic.defaultVolume
+    @State private var customTracks = MenuMusic.customTracks()
+    @State private var importing = false
 
     var body: some View {
         Toggle(isOn: $enabled) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Theme music")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text("Plays MuffinEMU's themes on loop in the menus, never in a game.")
+                Text("Plays MuffinEMU's themes, or your own tracks, on loop in the menus, never in a game.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -144,8 +233,46 @@ struct MenuMusicSettingsGroup: View {
                 ForEach(MenuMusic.Track.allCases) { track in
                     Text(track.title).tag(track.rawValue)
                 }
+                if !customTracks.isEmpty {
+                    Text("All my tracks").tag(MenuMusic.customAllTag)
+                    ForEach(customTracks, id: \.self) { url in
+                        Text(url.deletingPathExtension().lastPathComponent)
+                            .tag(MenuMusic.customPrefix + url.lastPathComponent)
+                    }
+                }
             }
             .onChange(of: trackRaw) { _ in MenuMusic.shared.refresh() }
+
+            Button {
+                importing = true
+            } label: {
+                Label("Add your own tracks", systemImage: "plus.circle")
+            }
+            .fileImporter(isPresented: $importing, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
+                guard case .success(let urls) = result, MenuMusic.importTracks(urls) > 0 else { return }
+                customTracks = MenuMusic.customTracks()
+                // Adding tracks for the first time switches to them, which is what the player came here for.
+                if !trackRaw.hasPrefix(MenuMusic.customPrefix) && trackRaw != MenuMusic.customAllTag {
+                    trackRaw = MenuMusic.customAllTag
+                }
+                MenuMusic.shared.restart()
+            }
+
+            ForEach(customTracks, id: \.self) { url in
+                Label(url.deletingPathExtension().lastPathComponent, systemImage: "music.note")
+                    .font(.system(size: 14))
+                    .lineLimit(1)
+            }
+            .onDelete { offsets in
+                for i in offsets { try? FileManager.default.removeItem(at: customTracks[i]) }
+                customTracks = MenuMusic.customTracks()
+                let stillThere = trackRaw == MenuMusic.customAllTag
+                    ? !customTracks.isEmpty
+                    : !trackRaw.hasPrefix(MenuMusic.customPrefix)
+                        || customTracks.contains { MenuMusic.customPrefix + $0.lastPathComponent == trackRaw }
+                if !stillThere { trackRaw = MenuMusic.Track.allSongs.rawValue }
+                MenuMusic.shared.restart()
+            }
 
             HStack(spacing: 10) {
                 Image(systemName: "speaker.fill").foregroundColor(.secondary)
