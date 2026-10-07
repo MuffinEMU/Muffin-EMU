@@ -72,9 +72,9 @@ static void read_input(void)
       g_in.ty = (float)cal.y;
    }
 
-   g_in.ax = st.accelerometer.acc.x;
-   g_in.ay = st.accelerometer.acc.y;
-   g_in.az = st.accelerometer.acc.z;
+   g_in.ax = st.accelorometer.acc.x;
+   g_in.ay = st.accelorometer.acc.y;
+   g_in.az = st.accelorometer.acc.z;
    g_in.gx = st.gyro.x;
    g_in.gy = st.gyro.y;
    g_in.gz = st.gyro.z;

@@ -120,7 +120,9 @@ jobs:
       - name: Build showcase-gx2.rpx
         run: |
           set -eu
-          make -C /tmp/gx2show TARGET=showcase-gx2 LIBS="-lwut -lm"
+          # -k keeps going after the first error so one run lists every problem
+          make -k -C /tmp/gx2show TARGET=showcase-gx2 LIBS="-lwut -lm" > /tmp/gx2show/build.log 2>&1 || { cat /tmp/gx2show/build.log; exit 1; }
+          cat /tmp/gx2show/build.log
           test -f /tmp/gx2show/showcase-gx2.rpx
 
       # A zero-byte or truncated RPX that still gets uploaded is the failure this repo has
