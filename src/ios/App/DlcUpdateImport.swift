@@ -304,6 +304,12 @@ enum DlcUpdateImport {
         return true
     }
 
+    /// The installed folder for `kind` on `game`, or nil when there is none.
+    static func installedFolder(kind: ContentKind, for game: GameMetadata) -> URL? {
+        guard let baseTitleId = game.titleId else { return nil }
+        return mlcDestination(forContentTitleId: cemu_bridge_derive_content_title_id(baseTitleId, kind == .update))
+    }
+
     /// nil for titleId 0 (not applicable) or a path that is not there.
     private static func mlcDestination(forContentTitleId titleId: UInt64) -> URL? {
         guard titleId != 0, let mlcRoot = mlcRoot() else { return nil }
