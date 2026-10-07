@@ -38,6 +38,11 @@ struct LibrarySettingsSection: View {
                     Text("\(Int((cardSize * 100).rounded()))%")
                         .font(.system(size: 14, weight: .medium, design: .rounded))
                         .monospacedDigit()
+                    Button("Reset") { cardSize = LibraryCardStyle.sizeDefault }
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .buttonStyle(.borderless)
+                        .disabled(abs(cardSize - LibraryCardStyle.sizeDefault) < 0.001)
+                        .accessibilityLabel("Reset card size")
                 }
                 Slider(value: $cardSize, in: LibraryCardStyle.sizeRange, step: 0.05)
                     .tint(MuffinTheme.accentText)

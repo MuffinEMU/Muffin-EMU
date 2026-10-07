@@ -56,18 +56,21 @@ enum LibraryCardStyle: String, CaseIterable, Hashable, Identifiable {
     /// The styles offered in the pickers. 3D boxes isn't one of them: Covers > 3D turns every card
     /// into a box, whatever layout is chosen here.
     static var choices: [LibraryCardStyle] { allCases.filter { $0 != .box3d } }
-    static let sizeRange: ClosedRange<Double> = 0.7...1.6
+    static let sizeRange: ClosedRange<Double> = 0.6...1.6
+    static let sizeDefault = 1.0
 
     /// Column layout for this style. Adaptive, so an iPhone in portrait gets fewer columns than
     /// an iPad or a phone turned sideways without any size-class checks.
     var columns: [GridItem] { columns(scale: 1) }
 
-    /// The same layout with the card size slider applied. Every card's minimum width scales,
-    /// capped at 340 pt so one card still fits across the narrowest supported screen.
-    func columns(scale: Double) -> [GridItem] {
+    /// The same layout with the card size slider applied. Every card's minimum width scales, capped
+    /// at the width the grid actually has (`available`, read from the screen the app is running on),
+    /// so one card always fits across the narrowest window whatever the scale.
+    func columns(scale: Double, available: CGFloat = .infinity) -> [GridItem] {
         let s = CGFloat(min(max(scale, Self.sizeRange.lowerBound), Self.sizeRange.upperBound))
+        let cap = max(available, 64)
         func item(_ base: CGFloat, _ spacing: CGFloat) -> [GridItem] {
-            [GridItem(.adaptive(minimum: min(base * s, 340)), spacing: spacing)]
+            [GridItem(.adaptive(minimum: min(base * s, cap)), spacing: spacing)]
         }
         switch self {
         case .standard: return item(140, 16)
@@ -383,22 +386,27 @@ struct LibraryGameCollection<Card: View, Lead: View>: View {
     @AppStorage(LibraryCardStyle.sizeStorageKey) private var cardSize = 1.0
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            LazyVGrid(columns: style.columns(scale: cardSize), spacing: style.rowSpacing, pinnedViews: [.sectionHeaders]) {
-                Section { lead() }
-                ForEach(sections) { section in
-                    Section {
-                        ForEach(section.games) { game in
-                            card(game)
-                        }
-                    } header: {
-                        if let title = section.title {
-                            LibrarySectionHeader(title: title, count: section.games.count)
+        // The grid's own width (less its 16 pt padding each side) caps the column minimum, so a big
+        // card size never asks for more room than the window has, in either orientation.
+        GeometryReader { geo in
+            ScrollView(showsIndicators: false) {
+                LazyVGrid(columns: style.columns(scale: cardSize, available: geo.size.width - 32),
+                          spacing: style.rowSpacing, pinnedViews: [.sectionHeaders]) {
+                    Section { lead() }
+                    ForEach(sections) { section in
+                        Section {
+                            ForEach(section.games) { game in
+                                card(game)
+                            }
+                        } header: {
+                            if let title = section.title {
+                                LibrarySectionHeader(title: title, count: section.games.count)
+                            }
                         }
                     }
                 }
+                .padding(16)
             }
-            .padding(16)
         }
     }
 }
@@ -632,6 +640,12 @@ struct LibraryListRow<Options: View>: View {
     let onFavoriteTap: () -> Void
     let options: Options
     @ObservedObject private var stats = LibraryPlayStats.shared
+    @AppStorage(LibraryCardStyle.sizeStorageKey) private var cardSize = 1.0
+
+    /// The Card size slider, applied to the row's cover.
+    private var listScale: CGFloat {
+        CGFloat(min(max(cardSize, LibraryCardStyle.sizeRange.lowerBound), LibraryCardStyle.sizeRange.upperBound))
+    }
 
     private var detailLine: String {
         var parts: [String] = []
@@ -654,7 +668,7 @@ struct LibraryListRow<Options: View>: View {
                 Button(action: onTap) {
                     HStack(spacing: 12) {
                         LibraryCoverWell(game: game, radius: 10, glyphSize: 18)
-                            .frame(width: 56, height: 74)
+                            .frame(width: 56 * listScale, height: 74 * listScale)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(name.name)
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
@@ -862,8 +876,12 @@ struct LibraryBox3DCard<Options: View>: View {
                 Button(action: onTap) {
                     ZStack {
                         if let boxPath {
-                            CoverImage(path: boxPath)
-                                .shadow(color: .black.opacity(0.35), radius: 8, x: 4, y: 6)
+                            // The shadow follows the card's size, so it reads the same at any Card size.
+                            GeometryReader { g in
+                                CoverImage(path: boxPath)
+                                    .shadow(color: .black.opacity(0.35), radius: g.size.height * 0.03,
+                                            x: g.size.height * 0.012, y: g.size.height * 0.02)
+                            }
                         } else if let path = game.coverPath {
                             Box3DCover<AnyView>.game(game, coverPath: path)
                         } else {
