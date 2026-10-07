@@ -48,6 +48,7 @@ struct DiagnosticsSection: View {
     @AppStorage("muffin.showLaunchIntro") private var launchIntroEnabled = true
     @AppStorage(PadDiagnostics.enabledKey) private var padOverlayEnabled = PadDiagnostics.defaultEnabled
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+    @Environment(\.dismiss) private var dismiss
 
     private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
 
@@ -91,6 +92,27 @@ struct DiagnosticsSection: View {
                     }
                 }
                 .tint(MuffinTheme.accentText)
+
+                // Only ever starts from this button. Closes Settings, then steps through the app's screens
+                // with a demo library and saves a picture of each to Photos (StoreScreenshots.swift).
+                Button {
+                    dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        StoreScreenshotRunner.shared.start()
+                    }
+                } label: {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Capture store screenshots")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("Shows a demo library, steps through the main screens and saves a picture of each to Photos in the album MuffinEMU Screenshots. Your own library isn't touched.")
+                                .font(.system(size: 12))
+                                .foregroundColor(MuffinTheme.secondaryText)
+                        }
+                    } icon: {
+                        Image(systemName: "camera.viewfinder")
+                    }
+                }
             }
         } header: {
             SettingsSectionHeader("Diagnostics", icon: "stethoscope", accent: .system)

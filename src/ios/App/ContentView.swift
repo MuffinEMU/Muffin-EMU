@@ -77,6 +77,12 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+        .onAppear {
+            // Store screenshot mode drives the library through this manager, and puts back any
+            // preference it changed if the app was closed in the middle of a run.
+            StoreScreenshotRunner.shared.gameManager = gameManager
+            StoreScreenshotRunner.restoreIfInterrupted()
+        }
         .jitEnablerPrompt(blocked: { [gameManager] in
             switch gameManager.emulationState {
             case .idle, .error: return false

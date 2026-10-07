@@ -349,7 +349,11 @@ final class LibraryPlayStats: ObservableObject {
         }
     }
 
-    func entry(for gameID: String) -> Entry? { entries[gameID] }
+    /// Play history for the store-screenshot demo library only (StoreScreenshots.swift). Never saved.
+    @Published private(set) var demoEntries: [String: Entry] = [:]
+    func setDemoEntries(_ demo: [String: Entry]) { demoEntries = demo }
+
+    func entry(for gameID: String) -> Entry? { demoEntries[gameID] ?? entries[gameID] }
 
     func recordLaunch(of gameID: String) {
         var entry = entries[gameID] ?? Entry(last: Date(), count: 0)
@@ -362,7 +366,7 @@ final class LibraryPlayStats: ObservableObject {
     }
 
     func recentIDs(limit: Int) -> [String] {
-        entries.sorted { $0.value.last > $1.value.last }.prefix(limit).map { $0.key }
+        entries.merging(demoEntries) { _, demo in demo }.sorted { $0.value.last > $1.value.last }.prefix(limit).map { $0.key }
     }
 }
 

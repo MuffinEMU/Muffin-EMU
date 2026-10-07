@@ -195,13 +195,30 @@ final class GameDataStore: ObservableObject {
 
     func match(for gameID: String) -> GameMatch? {
         lock.lock(); defer { lock.unlock() }
-        return file.matches[gameID]
+        return demoOverlay[gameID]?.match ?? file.matches[gameID]
     }
 
     func info(for gameID: String) -> GameInfo? {
         lock.lock(); defer { lock.unlock() }
+        if let demo = demoOverlay[gameID] { return demo.info }
         guard let m = file.matches[gameID] else { return nil }
         return file.info[m.tdbID]
+    }
+
+    // MARK: Store screenshot demo (StoreScreenshots.swift)
+
+    /// In-memory entries for the demo library, consulted before the stored ones. Never written to disk.
+    private var demoOverlay: [String: (match: GameMatch, info: GameInfo)] = [:]
+
+    /// What the stored database already knows about a GameTDB ID, for the demo to reuse.
+    func storedInfo(tdbID: String) -> GameInfo? {
+        lock.lock(); defer { lock.unlock() }
+        return file.info[tdbID]
+    }
+
+    func setDemoOverlay(_ overlay: [String: (match: GameMatch, info: GameInfo)]) {
+        lock.lock(); demoOverlay = overlay; lock.unlock()
+        DispatchQueue.main.async { self.revision += 1 }
     }
 
     var hasTitleIndex: Bool { lock.lock(); defer { lock.unlock() }; return !titleIndex.isEmpty }

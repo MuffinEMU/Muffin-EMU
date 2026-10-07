@@ -206,7 +206,8 @@ class GameManager: ObservableObject {
     @Published var games: [GameMetadata] = [] {
         didSet {
             DuplicateInstalls.shared.update(games)
-            LibraryCustomNames.shared.migrateLegacyKeys(games: games)
+            // The store-screenshot demo library must never rename or migrate anything the player has saved.
+            if savedLibraryDuringDemo == nil { LibraryCustomNames.shared.migrateLegacyKeys(games: games) }
         }
     }
     @Published var favorites: [GameMetadata] = []
@@ -281,15 +282,40 @@ class GameManager: ObservableObject {
 
     private var coverSourcesObserver: NSObjectProtocol?
 
+    // MARK: Store screenshot demo library (StoreScreenshots.swift)
+
+    /// The player's real library while the in-memory demo set stands in for it; nil the rest of the time.
+    private var savedLibraryDuringDemo: (games: [GameMetadata], favorites: [GameMetadata])?
+    var isShowingDemoLibrary: Bool { savedLibraryDuringDemo != nil }
+
+    /// Swaps the library for `demo`, in memory only. Nothing is written, and rescans are held off until `endDemoLibrary()`.
+    func beginDemoLibrary(_ demo: [GameMetadata]) {
+        guard savedLibraryDuringDemo == nil else { return }
+        savedLibraryDuringDemo = (games, favorites)
+        games = demo
+        favorites = []
+    }
+
+    func endDemoLibrary() {
+        guard let saved = savedLibraryDuringDemo else { return }
+        games = saved.games
+        favorites = saved.favorites
+        savedLibraryDuringDemo = nil
+        LibraryCustomNames.shared.migrateLegacyKeys(games: games)
+        Task { await loadGames(showSpinner: false) }
+    }
+
     /// Asks the cover chain again for every game, then lets the background pass fill what is still
     /// missing. Cheap: stored lookups only.
     func refreshAllCoverPaths() {
+        guard savedLibraryDuringDemo == nil else { return }
         for game in games { refreshCoverPath(forGameID: game.id) }
         enrichMissingCoverArt()
     }
 
     /// `showSpinner` is false for a rescan while the grid is on screen, so the list does not flash to the loading view.
     func loadGames(showSpinner: Bool = true) async {
+        guard savedLibraryDuringDemo == nil else { return }
         if showSpinner { isLoading = true }
         defer { if showSpinner { isLoading = false } }
 
@@ -687,6 +713,7 @@ class GameManager: ObservableObject {
     /// slower for a feature that is purely cosmetic upside, never something the app
     /// depends on to function.
     private func enrichMissingCoverArt() {
+        guard savedLibraryDuringDemo == nil else { return }
         let fileManager = FileManager.default
         guard let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let romsPath = documentsPath.appendingPathComponent(romsDirectory)

@@ -70,6 +70,7 @@ struct GamePageView: View {
         NavigationView {
             ZStack {
                 MuffinTheme.backgroundGradient.ignoresSafeArea()
+                ScrollViewReader { proxy in
                 Form {
                     heroSection
                     GameInfoSections(game: live, gameManager: gameManager)
@@ -79,6 +80,11 @@ struct GamePageView: View {
                     GameShaderCacheSection(game: live)
                     saveStatesSection
                     removeSection
+                }
+                // Store screenshot mode scrolls the page to Your play and Manage (StoreScreenshots.swift).
+                .onReceive(NotificationCenter.default.publisher(for: .muffinStoreShotScrollGamePage)) { _ in
+                    proxy.scrollTo(StoreShotScrollID.yourPlay, anchor: UnitPoint(x: 0.5, y: 0.08))
+                }
                 }
             }
             .navigationTitle(live.cardName.name)
@@ -213,6 +219,7 @@ struct GamePageView: View {
     private var yourPlaySection: some View {
         Section {
             SettingsRow(label: "Last played", value: lastPlayedText, icon: "clock.arrow.circlepath")
+                .id(StoreShotScrollID.yourPlay)
             SettingsRow(label: "Times played", value: "\(stats.entry(for: game.id)?.count ?? 0)", icon: "number")
             SettingsRow(label: "Size on disk", value: sizeOnDisk.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "\u{2026}",
                         icon: "internaldrive")
