@@ -436,9 +436,9 @@ struct LibraryCoverWell: View {
             if let path = game.coverPath {
                 CoverImage(path: path, padding: 8)
             } else {
-                // Only until the first cover pass has run; the chain always ends in this same image.
-                Image(CoverStylePreference.current.genericIs3D ? "NoCover3d" : "NoCover2d")
-                    .resizable().scaledToFit().padding(8)
+                Image(systemName: "gamecontroller.fill")
+                    .font(.system(size: glyphSize))
+                    .foregroundColor(MuffinTheme.onMuffinTop)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -851,7 +851,7 @@ struct LibraryBox3DCard<Options: View>: View {
                         } else if let path = game.coverPath {
                             framed2D(path)
                         } else {
-                            Image("NoCover3d").resizable().scaledToFit()
+                            framedGlyph
                         }
                     }
                     .aspectRatio(3 / 4, contentMode: .fit)
@@ -878,6 +878,29 @@ struct LibraryBox3DCard<Options: View>: View {
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
+    }
+
+    /// No art at all: the controller glyph on the card gradient, framed and turned like the 2D cover.
+    private var framedGlyph: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(MuffinTheme.muffinTopGradient)
+            Image(systemName: "gamecontroller.fill")
+                .font(.system(size: 36))
+                .foregroundColor(MuffinTheme.onMuffinTop)
+        }
+        .aspectRatio(3 / 4, contentMode: .fit)
+        .overlay(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.35), lineWidth: 1)
+        )
+        .overlay(alignment: .leading) {
+            LinearGradient(colors: [Color.black.opacity(0.28), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 10)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        }
+        .rotation3DEffect(.degrees(-8), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
+        .shadow(color: .black.opacity(0.35), radius: 8, x: 5, y: 6)
+        .padding(8)
     }
 
     private func framed2D(_ path: String) -> some View {

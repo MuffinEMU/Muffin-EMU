@@ -45,9 +45,6 @@ enum CoverStylePreference: String, CaseIterable, Identifiable {
     /// True when an installed pack of the chosen style should win over GameTDB's own cover.
     var packBeatsGameTDB: Bool { self == .box3d || self == .disc }
 
-    /// The generic no-cover image that matches this style.
-    var genericIs3D: Bool { self != .hd2d }
-
     static var current: CoverStylePreference {
         CoverStylePreference(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? defaultValue
     }
