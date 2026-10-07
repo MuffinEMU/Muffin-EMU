@@ -126,6 +126,15 @@ MuffinEMU is not affiliated with Nintendo or Apple. Wii U is a trademark of Nint
 
 
 SCREENSHOT_DIR = os.path.join(REPO_ROOT, "docs", "assets", "screenshots")
+NEWS_DIR = os.path.join(REPO_ROOT, "docs", "assets", "news")
+
+
+def news_image(version):
+    """A news card's picture: docs/assets/news/<version>.jpg, else default.jpg there, else the source header."""
+    for name in (f"{version}.jpg", "default.jpg"):
+        if os.path.isfile(os.path.join(NEWS_DIR, name)):
+            return f"{PAGES}/assets/news/{name}"
+    return HEADER_URL
 
 
 def image_size(path):
@@ -403,7 +412,7 @@ def news_for(rels, count=1):
             "caption": caption,
             "date": (rel.get("published_at") or "")[:10],
             "tintColor": "#E5652E",
-            "imageURL": HEADER_URL,
+            "imageURL": news_image(version),
             "url": rel.get("html_url"),
             "appID": BUNDLE_ID,
             "notify": False,
