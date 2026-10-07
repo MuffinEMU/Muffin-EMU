@@ -54,9 +54,9 @@ void input_poll(Input *in)
       in->ly = dz(vs.leftStick.y);
       in->rx = dz(vs.rightStick.x);
       in->ry = dz(vs.rightStick.y);
-      in->acc[0] = vs.accelerometer.acc.x;
-      in->acc[1] = vs.accelerometer.acc.y;
-      in->acc[2] = vs.accelerometer.acc.z;
+      in->acc[0] = vs.accelorometer.acc.x;
+      in->acc[1] = vs.accelorometer.acc.y;
+      in->acc[2] = vs.accelorometer.acc.z;
       in->gyro[0] = vs.gyro.x; in->gyro[1] = vs.gyro.y; in->gyro[2] = vs.gyro.z;
       in->ang[0] = vs.angle.x; in->ang[1] = vs.angle.y; in->ang[2] = vs.angle.z;
       if (vs.tpNormal.touched)

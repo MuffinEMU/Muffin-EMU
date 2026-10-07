@@ -64,7 +64,7 @@ jobs:
       - name: Build showcase.rpx
         run: |
           set -eu
-          make -C /tmp/showcase TARGET=showcase > /tmp/showcase/build.log 2>&1 || { cat /tmp/showcase/build.log; exit 1; }
+          make -k -C /tmp/showcase TARGET=showcase > /tmp/showcase/build.log 2>&1 || { cat /tmp/showcase/build.log; exit 1; }
           cat /tmp/showcase/build.log
           test -f /tmp/showcase/showcase.rpx
 
