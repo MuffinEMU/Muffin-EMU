@@ -81,6 +81,7 @@ struct LibrarySettingsSection: View {
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                 }
             }
+            LinkedLocationsRows(gameManager: gameManager)
             NavigationLink {
                 GraphicPacksView()
             } label: {
