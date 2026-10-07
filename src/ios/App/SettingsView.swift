@@ -20,6 +20,7 @@ struct SettingsView: View {
     // holds for them, then identity, then housekeeping with About and Reset last.
     @ViewBuilder private var formCore: some View {
         CPUSettingsSection()
+        JITEnablerSection()
         GraphicsSettingsSection()
         ShaderCompilationSection()
         ShaderCacheSection()
