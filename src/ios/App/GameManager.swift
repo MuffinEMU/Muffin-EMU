@@ -644,10 +644,12 @@ class GameManager: ObservableObject {
             }
         }
 
-        // Real box art already fetched by CoverArtFetcher (see enrichMissingCoverArt())
-        // beats the in-game icon - it is what a person actually recognizes the game by.
-        if let boxArt = CoverArtFetcher.cachedCoverPath(for: gameID, romPath: romPath, in: directory) {
-            return boxArt
+        // The ordered cover chain (CoverSources.swift): stored box art, then the extracted
+        // icon. Stored lookups only here - no network, no decoding.
+        if let path = CoverSourceChain.cachedPath(CoverContext(
+            gameID: gameID, romPath: romPath, dumpDirectoryPath: nil, libraryDirectory: directory, currentCoverPath: nil
+        )) {
+            return path
         }
 
         // No icon fallback here any more. Decoding meta/iconTex.tga used to happen
@@ -682,24 +684,13 @@ class GameManager: ObservableObject {
 
         Task.detached { [weak self, romsPath] in
             for game in candidates {
-                // Box art, when there's a real ID to look it up by and nothing already
-                // cached (or already known-missing) for it.
-                if CoverArtFetcher.shouldAttemptFetch(gameID: game.id, romPath: game.romPath, in: romsPath),
-                   let coverPath = await CoverArtFetcher.fetchAndCache(gameID: game.id, romPath: game.romPath, in: romsPath) {
+                // Walk the cover chain (CoverSources.swift) for whatever this install is missing.
+                let context = CoverContext(
+                    gameID: game.id, romPath: game.romPath, dumpDirectoryPath: game.dumpDirectoryPath,
+                    libraryDirectory: romsPath, currentCoverPath: game.coverPath
+                )
+                if let coverPath = await CoverSourceChain.acquireMissing(context) {
                     await self?.applyCoverPath(coverPath, forGameID: game.id)
-                } else if game.coverPath == nil, let dumpPath = game.dumpDirectoryPath {
-                    // No box art (or none to look up) and nothing already found by
-                    // loadGames()'s own findCover() - fall back to the console's own
-                    // icon. This is the TGA decode that used to run inline inside
-                    // loadGames() on the main actor for every freshly-discovered dump;
-                    // it runs here instead so the library appears immediately and
-                    // icons fill in afterward rather than the whole scan waiting on
-                    // every dump's decode.
-                    if let iconPath = WiiUIcon.cachedIconPath(
-                        for: game.id, dump: URL(fileURLWithPath: dumpPath), in: romsPath
-                    ) {
-                        await self?.applyCoverPath(iconPath, forGameID: game.id)
-                    }
                 }
 
                 // Region and the title's real name both come from the same
