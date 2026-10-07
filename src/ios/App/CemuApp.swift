@@ -30,6 +30,7 @@ struct CemuApp: App {
         // Earliest Swift-side checkpoint; if it is missing from the crash log, the
         // crash happened in native static initialisation.
         cemu_bridge_log_checkpoint("CemuApp.init() reached")
+        cemu_bridge_log_checkpoint(Ownership.notice)
 
         // Create the folders players drop keys and games into, so Files lists
         // Documents on a fresh install. Idempotent.
