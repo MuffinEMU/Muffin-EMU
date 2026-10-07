@@ -289,7 +289,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
         "apps": [{
             "name": "MuffinEMU",
             "bundleIdentifier": BUNDLE_ID,
-            "developerName": "Void",
+            "developerName": "MuffinEMU Official",
             "subtitle": app_subtitle,
             "localizedDescription": (
                 "MuffinEMU is a Wii U emulator for iPhone and iPad (iOS 15 and later), built on Cemu.\n\n"
