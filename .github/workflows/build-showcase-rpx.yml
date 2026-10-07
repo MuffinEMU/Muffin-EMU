@@ -21,7 +21,7 @@ on:
         required: false
         default: false
   push:
-    branches: [ feature/showcase-rpx ]
+    branches: [ feature/showcase-rpx, feature/showcase-rpx-hifi ]
     paths:
       - 'homebrew/showcase/**'
       - '.github/workflows/build-showcase-rpx.yml'
