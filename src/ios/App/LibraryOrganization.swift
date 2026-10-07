@@ -52,6 +52,10 @@ enum LibraryCardStyle: String, CaseIterable, Hashable, Identifiable {
 
     /// Where the Card size slider is stored (Settings > Library). 1.0 is the default size.
     static let sizeStorageKey = "muffin.library.cardSize"
+
+    /// The styles offered in the pickers. 3D boxes isn't one of them: Covers > 3D turns every card
+    /// into a box, whatever layout is chosen here.
+    static var choices: [LibraryCardStyle] { allCases.filter { $0 != .box3d } }
     static let sizeRange: ClosedRange<Double> = 0.7...1.6
 
     /// Column layout for this style. Adaptive, so an iPhone in portrait gets fewer columns than
@@ -712,14 +716,22 @@ struct LibraryListRow<Options: View>: View {
 /// filter when Settings mode is Advanced.
 struct LibraryViewMenu: View {
     @AppStorage(LibraryCardStyle.storageKey) private var styleRaw = LibraryCardStyle.defaultValue.rawValue
+    @AppStorage(CoverStylePreference.storageKey) private var coverRaw = CoverStylePreference.defaultValue.rawValue
     @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
     @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
     @AppStorage(SettingsMode.storageKey) private var modeRaw = SettingsMode.defaultValue.rawValue
 
     var body: some View {
         Menu {
+            Section("Covers") {
+                ForEach(CoverStylePreference.allCases) { mode in
+                    Button { coverRaw = mode.rawValue } label: {
+                        Label(mode.title, systemImage: CoverStylePreference(stored: coverRaw) == mode ? "checkmark" : (mode == .threeD ? "cube" : "rectangle.portrait"))
+                    }
+                }
+            }
             Section("Show games as") {
-                ForEach(LibraryCardStyle.allCases) { style in
+                ForEach(LibraryCardStyle.choices) { style in
                     Button { styleRaw = style.rawValue } label: {
                         Label(style.title, systemImage: styleRaw == style.rawValue ? "checkmark" : style.systemImage)
                     }
@@ -853,9 +865,9 @@ struct LibraryBox3DCard<Options: View>: View {
                             CoverImage(path: boxPath)
                                 .shadow(color: .black.opacity(0.35), radius: 8, x: 4, y: 6)
                         } else if let path = game.coverPath {
-                            framed2D(path)
+                            Box3DCover<AnyView, AnyView>.image(path)
                         } else {
-                            framedGlyph
+                            Box3DCover<AnyView, AnyView>.noCover
                         }
                     }
                     .aspectRatio(3 / 4, contentMode: .fit)
@@ -884,43 +896,4 @@ struct LibraryBox3DCard<Options: View>: View {
         .onTapGesture(perform: onTap)
     }
 
-    /// No art at all: the controller glyph on the card gradient, framed and turned like the 2D cover.
-    private var framedGlyph: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 4, style: .continuous).fill(MuffinTheme.muffinTopGradient)
-            Image(systemName: "gamecontroller.fill")
-                .font(.system(size: 36))
-                .foregroundColor(MuffinTheme.onMuffinTop)
-        }
-        .aspectRatio(3 / 4, contentMode: .fit)
-        .overlay(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.35), lineWidth: 1)
-        )
-        .overlay(alignment: .leading) {
-            LinearGradient(colors: [Color.black.opacity(0.28), .clear], startPoint: .leading, endPoint: .trailing)
-                .frame(width: 10)
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        }
-        .rotation3DEffect(.degrees(8), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
-        .shadow(color: .black.opacity(0.35), radius: 8, x: 5, y: 6)
-        .padding(8)
-    }
-
-    private func framed2D(_ path: String) -> some View {
-        CoverImage(path: path)
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 1)
-            )
-            .overlay(alignment: .leading) {
-                LinearGradient(colors: [Color.black.opacity(0.28), .clear], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: 10)
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            }
-            .rotation3DEffect(.degrees(8), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
-            .shadow(color: .black.opacity(0.35), radius: 8, x: 5, y: 6)
-            .padding(8)
-    }
 }

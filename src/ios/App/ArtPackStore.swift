@@ -415,7 +415,6 @@ final class ArtPackStore: ObservableObject {
         guard progress[id] == nil else { return }
         try? FileManager.default.removeItem(at: ArtLocations.packDirectory(id))
         ArtPackIndex.shared.reload()
-        ArtPackApplyStore.packDeleted(id)
         installed = ArtPackIndex.shared.installedMeta
         NotificationCenter.default.post(name: .muffinCoverArtSourcesChanged, object: nil)
     }

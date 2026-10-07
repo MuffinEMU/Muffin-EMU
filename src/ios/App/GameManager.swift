@@ -272,6 +272,7 @@ class GameManager: ObservableObject {
         Task {
             await loadGames()
         }
+        LegacyArtPackApply.migrateOnce()
         // An art pack was installed or deleted, the cover style changed, or game data was scraped.
         coverSourcesObserver = NotificationCenter.default.addObserver(
             forName: .muffinCoverArtSourcesChanged, object: nil, queue: .main) { [weak self] _ in
@@ -1079,7 +1080,8 @@ class GameManager: ObservableObject {
                 try Self.stageAndPromoteDirectory(source: source, destination: destination, stagingPath: stagingPath)
             }.value
 
-            await loadGames()
+            // A rescan, not a fresh load: keep the library on screen instead of flashing the spinner.
+            await loadGames(showSpinner: games.isEmpty)
             return
         }
 
@@ -1096,7 +1098,7 @@ class GameManager: ObservableObject {
             try Self.stageAndPromoteFile(source: source, destination: destination, stagingPath: stagingPath)
         }.value
 
-        await loadGames()
+        await loadGames(showSpinner: games.isEmpty)
     }
 
     /// The actual byte-moving for a directory-dump import: stage, re-validate the
