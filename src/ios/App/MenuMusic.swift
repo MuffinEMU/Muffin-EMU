@@ -38,8 +38,11 @@ final class MenuMusic {
         }
 
         var url: URL? {
-            Bundle.main.url(forResource: "MenuMusic-" + rawValue, withExtension: "caf")
-                ?? Bundle.main.url(forResource: "MenuMusic-" + rawValue, withExtension: "wav")
+            for bundle in [Bundle.main, Bundle(for: MenuMusic.self)] {
+                if let url = bundle.url(forResource: "MenuMusic-" + rawValue, withExtension: "caf")
+                    ?? bundle.url(forResource: "MenuMusic-" + rawValue, withExtension: "wav") { return url }
+            }
+            return nil
         }
     }
 
@@ -86,8 +89,6 @@ final class MenuMusic {
     private func start(_ track: Track) {
         stop()
         let session = AVAudioSession.sharedInstance()
-        // Someone else's music is playing: leave it alone rather than play over it.
-        if session.secondaryAudioShouldBeSilencedHint { log("not started: another app is playing audio"); return }
         guard let url = track.url else { log("not started: \(track.rawValue) is missing from the app"); return }
         // With Respect silent mode on, ambient: the silent switch mutes it. Otherwise it plays through silent
         // mode like the game audio does. Either way it mixes with other sounds. A game sets its own category when
@@ -129,7 +130,7 @@ struct MenuMusicSettingsGroup: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Theme music")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text("Plays MuffinEMU's themes on loop in the menus, never in a game. It stays quiet while another app is playing music.")
+                Text("Plays MuffinEMU's themes on loop in the menus, never in a game.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
