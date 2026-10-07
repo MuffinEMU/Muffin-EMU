@@ -66,6 +66,8 @@ ENTITLEMENTS_FOR_ASSET = {
     "MuffinEMU-fakesigned.ipa": "src/ios/Cemu.entitlements",
 }
 HEADER_URL = f"{PAGES}/social-preview.png"
+# The official website (MuffinSite-Remastered). PAGES above still hosts the sources and guides.
+SITE = "https://muffinemu.github.io/MuffinSite-Remastered/"
 
 
 APP_DESCRIPTION = """MuffinEMU is the most complete way to play Wii U on iPhone and iPad. Real games, a real GamePad, on the screen in your hand or the TV across the room. Every emulation feature is free. No paywalls, no subscriptions, no catch. Built on Cemu, tuned for every iPhone and iPad from iOS 15 up.
@@ -101,7 +103,7 @@ The app does not include games, keys or system files. Bring the games you own.
 
 Free, open source, and updated constantly. This is Wii U on iOS the way it should be.
 
-Official Site: https://muffinemu.github.io/MuffinEMU/
+Official Site: https://muffinemu.github.io/MuffinSite-Remastered/
 Guides: https://muffinemu.github.io/MuffinEMU/docs/
 Source code: https://github.com/MuffinEMU/Muffin-EMU
 Report a problem: https://github.com/MuffinEMU/Muffin-EMU/issues
@@ -376,7 +378,7 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
             + extra_note),
         "iconURL": f"{PAGES}/icon.png",
         "headerURL": HEADER_URL,
-        "website": f"{PAGES}/",
+        "website": SITE,
         "tintColor": "#E5652E",
         "featuredApps": [BUNDLE_ID],
         "apps": [{
