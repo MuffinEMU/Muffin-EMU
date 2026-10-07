@@ -14,6 +14,7 @@ struct ContentView: View {
     @State private var selectedGame: GameMetadata?
     @State private var showingGameBrowser = true
     @State private var showingFavorites = false
+    @State private var sharedImportError: String?
     /// The skin's name, stored so the choice survives relaunch (it used to be @State and reset to Standard).
     /// A name rather than the skin: ControllerSkinLibrary.getSkin(by:) also resolves renamed skins.
     @AppStorage(ControllerSkinStorage.key) private var selectedSkinName = WiiUControllerSkin.standard.name
@@ -23,6 +24,23 @@ struct ContentView: View {
             get: { ControllerSkinLibrary.getSkin(by: selectedSkinName) ?? WiiUControllerSkin.standard },
             set: { selectedSkinName = $0.name }
         )
+    }
+
+    /// Wii U game files MuffinEMU claims; anything else opened into the app is ignored.
+    static let sharedGameExtensions: Set<String> = ["wua", "wud", "wux", "rpx"]
+
+    private func openSharedFile(_ url: URL) {
+        guard url.isFileURL, Self.sharedGameExtensions.contains(url.pathExtension.lowercased()) else { return }
+        if gameManager.emulationState == .idle { showingGameBrowser = true }
+        Task {
+            do {
+                try await gameManager.importROM(from: url)
+            } catch {
+                sharedImportError = error.localizedDescription
+            }
+            // A shared copy lands in Documents/Inbox; once imported it is only clutter in Files.
+            if url.path.contains("/Documents/Inbox/") { try? FileManager.default.removeItem(at: url) }
+        }
     }
 
     var body: some View {
@@ -77,6 +95,15 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+        // "Open with MuffinEMU", "Copy to MuffinEMU" from the share sheet, and AirDrop: a Wii U game
+        // file is imported exactly as if it had been picked in the library.
+        .onOpenURL { url in openSharedFile(url) }
+        .alert("Couldn't add that game", isPresented: Binding(
+            get: { sharedImportError != nil }, set: { if !$0 { sharedImportError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(sharedImportError ?? "")
+        }
         .jitEnablerPrompt(blocked: { [gameManager] in
             switch gameManager.emulationState {
             case .idle, .error: return false

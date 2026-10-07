@@ -39,6 +39,64 @@
 	     working (they filter by the Swift-side UTType, not this plist) but the Files app
 	     showing a generic document icon and name instead of "Muffin Layout"/"Muffin
 	     Colours" for these two extensions. -->
+	<!-- Wii U game files. Imported, not exported: MuffinEMU doesn't own these formats, it opens
+	     them. Declaring them is what puts MuffinEMU under "Open with" and in the share sheet for
+	     .wua, .wud, .wux and .rpx; ContentView.openSharedFile imports what arrives. -->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.muffinemu.wiiu.wua</string>
+			<key>UTTypeDescription</key>
+			<string>Wii U Archive</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>wua</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.muffinemu.wiiu.disc</string>
+			<key>UTTypeDescription</key>
+			<string>Wii U Disc Image</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>wud</string>
+					<string>wux</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.muffinemu.wiiu.rpx</string>
+			<key>UTTypeDescription</key>
+			<string>Wii U Executable</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>rpx</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
@@ -82,6 +140,20 @@
 	     not Viewer, since the preview pad writes these files too (Settings export). -->
 	<key>CFBundleDocumentTypes</key>
 	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Wii U Game</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.muffinemu.wiiu.wua</string>
+				<string>com.muffinemu.wiiu.disc</string>
+				<string>com.muffinemu.wiiu.rpx</string>
+			</array>
+		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
 			<string>Muffin Layout</string>
