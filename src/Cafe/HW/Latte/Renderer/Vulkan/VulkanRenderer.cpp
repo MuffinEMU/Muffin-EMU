@@ -4624,7 +4624,8 @@ std::pair<VkBuffer, uint32> VulkanRenderer::buffer_genStrideWorkaroundVertexBuff
 	uint32 newStride = oldStride + (4-(oldStride % 4));
 	uint32 newSize = size / oldStride * newStride;
 
-	auto new_buffer_alloc = memoryManager->getMetalStrideWorkaroundAllocator().AllocateBufferMemory(newSize, 128);
+	// 16 bytes of tail: an attribute on the last vertex can be wider than the stride and must not read past the allocation
+	auto new_buffer_alloc = memoryManager->getMetalStrideWorkaroundAllocator().AllocateBufferMemory(newSize + 16, 128);
 
 	std::span<uint8> new_buffer{new_buffer_alloc.memPtr, new_buffer_alloc.size};
 
@@ -4671,7 +4672,10 @@ void VulkanRenderer::bufferCache_init(const sint32 bufferSize)
 		}
 	}
 	if(!m_useHostMemoryForCache)
-		memoryManager->CreateBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 0, m_bufferCache, m_bufferCacheMemory);
+		// The heap hands out offsets below bufferSize only. The extra guard keeps every vertex fetch (an attribute wider than its
+		// stride on the last vertex) and every dynamic-offset uniform binding (offset + the fixed 64 KB range) inside the VkBuffer,
+		// because Apple GPUs fault on a read past the end of a buffer.
+		memoryManager->CreateBuffer((VkDeviceSize)bufferSize + 64 * 1024 + 256, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 0, m_bufferCache, m_bufferCacheMemory);
 }
 
 void VulkanRenderer::bufferCache_upload(uint8* buffer, sint32 size, uint32 bufferOffset)
