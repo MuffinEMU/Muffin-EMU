@@ -341,6 +341,10 @@ struct GameOptionsView: View {
     @ObservedObject var store: PerGameSettingsStore
     /// The whole library, so a cache file that belongs to another game can say which one.
     var libraryGames: [GameMetadata] = []
+    /// Needed by the dashboard (cover, Info) at the top of the screen.
+    let gameManager: GameManager
+    /// Starts the game; the dashboard's Play closes this screen first.
+    var onPlay: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
@@ -693,6 +697,7 @@ struct GameOptionsView: View {
 
     private var optionsForm: some View {
         Form {
+            GameDashboardSection(game: game, gameManager: gameManager, onPlay: onPlay)
             overridesSection
             AdvancedGameOptionsSection(game: game, store: store)
             GameShaderCacheSection(game: game)
