@@ -65,7 +65,9 @@ ENTITLEMENTS_FOR_ASSET = {
     "MuffinEMU.ipa": "src/ios/Sideload.entitlements",
     "MuffinEMU-fakesigned.ipa": "src/ios/Cemu.entitlements",
 }
-HEADER_URL = f"{PAGES}/social-preview.png"
+# 1800x1200 like Manic EMU's: the icon centred on its own colours, no text, so nothing
+# collides with the source name and buttons SideStore and AltStore draw over it.
+HEADER_URL = f"{PAGES}/assets/source-header.jpg"
 # The official website (MuffinSite-Remastered). PAGES above still hosts the sources and guides.
 SITE = "https://muffinemu.github.io/MuffinSite-Remastered/"
 
