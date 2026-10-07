@@ -148,33 +148,6 @@ struct NetworkServiceSettingsSection: View {
 
             DeviceConnectionStatusRow()
 
-            Picker("Active account", selection: Binding(
-                get: { activePersistentId },
-                set: { newValue in
-                    cemu_bridge_set_active_account_persistent_id(newValue)
-                    reload()
-                }
-            )) {
-                ForEach(accounts) { account in
-                    Text("\(account.displayNameWithId) - \(account.isValidOnline ? "Linked" : "Not linked")")
-                        .tag(account.persistentId)
-                }
-            }
-            .pickerStyle(.menu)
-            .tint(MuffinTheme.accentText)
-            .disabled(locked || accounts.isEmpty)
-
-            SettingsRow(label: "otp.bin", value: hasOTP ? "Found" : "Missing")
-            SettingsRow(label: "seeprom.bin", value: hasSeeprom ? "Found" : "Missing")
-
-            AccountImportButton(locked: locked, onChange: reload)
-                .buttonStyle(.borderless)
-
-            NavigationLink("Manage accounts") {
-                Form { AccountSettingsSection() }
-                    .navigationTitle("Accounts")
-            }
-
             ForEach(NetworkService.allCases) { service in
                 Button {
                     cemu_bridge_set_network_service(activePersistentId, service.bridgeValue)

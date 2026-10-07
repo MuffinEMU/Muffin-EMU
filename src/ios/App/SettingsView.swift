@@ -22,7 +22,6 @@ struct SettingsView: View {
         CPUSettingsSection()
         JITEnablerSection()
         GraphicsSettingsSection()
-        ShaderCompilationSection()
         ShaderCacheSection()
         if SettingsMode.isAdvanced(raw: settingsModeRaw) {
             EmulatedClockSection()
