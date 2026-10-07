@@ -77,6 +77,12 @@ struct ContentView: View {
             }
         }
         .ignoresSafeArea()
+        .jitEnablerPrompt(blocked: { [gameManager] in
+            switch gameManager.emulationState {
+            case .idle, .error: return false
+            case .loading, .running, .paused: return true
+            }
+        })
         // First launch, and again whenever Settings > About resets the flag. The library closes Settings first
         // (GameBrowserView), so the guide waits for that sheet to finish going away.
         .onReceive(NotificationCenter.default.publisher(for: .muffinReopenOnboarding)) { _ in

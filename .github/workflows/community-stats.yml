@@ -73,7 +73,7 @@ jobs:
               page += 1
 
           def channel(tag):
-              if re.fullmatch(r"v\d+\.\d+", tag): return "stable"
+              if re.fullmatch(r"v\d+\.\d+(\.\d+)?", tag): return "stable"
               if tag == "nightly": return "nightly"
               if tag.startswith("experimental"): return "experimental"
               if tag.startswith("audit"): return "audit"
