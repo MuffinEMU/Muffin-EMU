@@ -18,6 +18,7 @@ on:
     branches: [feature/metro-vancouver-rpx]
     paths:
       - 'homebrew/vancouver/**'
+      - 'tools/gen_vancouver_height.py'
       - '.github/workflows/build-vancouver-rpx.yml'
 
 permissions:
@@ -49,7 +50,7 @@ jobs:
           set -eu
           cp -r /tmp/wut/samples/make/helloworld /tmp/vancouver
           rm -f /tmp/vancouver/source/*.c /tmp/vancouver/source/*.cpp
-          cp homebrew/vancouver/source/vancouver.c /tmp/vancouver/source/
+          cp homebrew/vancouver/source/vancouver.c homebrew/vancouver/source/vancouver_height.h /tmp/vancouver/source/
           ls -la /tmp/vancouver /tmp/vancouver/source
 
       - name: Build vancouver.rpx
