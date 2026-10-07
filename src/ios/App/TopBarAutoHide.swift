@@ -58,9 +58,10 @@ enum TopBarAutoHide {
             }
         }
 
-        /// The touch target in points. The visible pill is 40 by 5 either way.
-        var width: CGFloat { self == .large ? 220 : 96 }
-        var height: CGFloat { self == .large ? 72 : 44 }
+        /// The tap target in points around the pill. A swipe down works anywhere along the top edge
+        /// whichever size this is (TopBarRevealHandle).
+        var width: CGFloat { self == .large ? 260 : 170 }
+        var height: CGFloat { self == .large ? 80 : 60 }
     }
 
     /// On everywhere. It was iPhone-only at first, but on an iPad the bar sitting over the picture
@@ -111,24 +112,38 @@ struct TopBarRevealHandle: View {
     }
 
     var body: some View {
-        Capsule()
-            .fill(Color.white.opacity(0.45))
-            // A hairline of shadow so it still reads over a white title screen.
-            .shadow(color: Color.black.opacity(0.4), radius: 1, x: 0, y: 0.5)
-            .frame(width: 40, height: 5)
-            .padding(.top, 6)
-            .frame(width: size.width, height: size.height, alignment: .top)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0).onEnded { value in
-                    // A tap, or a swipe that ends lower than it began. A swipe up is not a request.
-                    if value.translation.height > -12 { onReveal() }
-                }
-            )
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Show top bar")
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { onReveal() }
+        ZStack(alignment: .top) {
+            // A swipe down from anywhere along the top edge brings the bar back. Only a downward
+            // swipe counts here, so a tap on the top of the picture still reaches the game.
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 10).onEnded { value in
+                        if value.translation.height > 12 { onReveal() }
+                    }
+                )
+            // The pill itself: a tap or a swipe down, on a target bigger than it looks.
+            Capsule()
+                .fill(Color.white.opacity(0.6))
+                // A hairline of shadow so it still reads over a white title screen.
+                .shadow(color: Color.black.opacity(0.45), radius: 1.5, x: 0, y: 0.5)
+                .frame(width: 56, height: 6)
+                .padding(.top, 6)
+                .frame(width: size.width, height: size.height, alignment: .top)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0).onEnded { value in
+                        // A tap, or a swipe that ends lower than it began. A swipe up is not a request.
+                        if value.translation.height > -12 { onReveal() }
+                    }
+                )
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Show top bar")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { onReveal() }
+        }
     }
 }
 

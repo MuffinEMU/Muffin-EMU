@@ -13,12 +13,12 @@ struct CompactTopBarRevealHandle: View {
 
     var body: some View {
         Capsule()
-            .fill(Color.white.opacity(0.45))
+            .fill(Color.white.opacity(0.6))
             // A hairline of shadow so it still reads over a white title screen.
-            .shadow(color: Color.black.opacity(0.4), radius: 1, x: 0, y: 0.5)
-            .frame(width: 40, height: 5)
+            .shadow(color: Color.black.opacity(0.45), radius: 1.5, x: 0, y: 0.5)
+            .frame(width: 56, height: 6)
             .padding(.top, 6)
-            .frame(width: 96, height: 44, alignment: .top)
+            .frame(width: 130, height: 50, alignment: .top)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0).onEnded { value in
