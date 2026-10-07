@@ -194,6 +194,8 @@ static void IOSTitleLaunch_LogMenuPreflight()
 
 // Launches a title that is installed in the MLC by its title id - the Wii U Menu, mainly.
 // Same contract as IOSTitleLaunch_PrepareForegroundTitle: prepares, does not launch.
+static std::vector<fs::path> IOSTitleLaunch_FindWuaCompanions(TitleId baseTitleId);
+
 int IOSTitleLaunch_PrepareForegroundTitleById(uint64 titleId)
 {
 	IOSTitleLaunch_AdoptDroppedKeys();
