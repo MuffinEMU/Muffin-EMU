@@ -1,8 +1,10 @@
 # MuffinTouchLab (vendored)
 
 The on-screen control schemes offered under Settings > On-screen Controls > Control style
-(Zone, Float, Adaptive, Frame). Vendored from MuffinEMU-TouchLab at commit
-`ec49f45d2fc19594ecc20881d2602162ce2380c5` by `tools/export-to-muffinemu.sh`.
+(Zone, Float, Adaptive, Frame, Racing). Vendored from MuffinEMU-TouchLab at commit
+`fbc9ba9` on its `feature/racing-mode` branch (not yet on its main), copied by hand with the
+same steps as `tools/export-to-muffinemu.sh`, which refuses a commit that isn't on main. The
+next export from main will carry these files once that branch is merged there.
 
 Do not edit these files here. Change them in MuffinEMU-TouchLab, run its checks, and
 re-export - otherwise the next export silently overwrites the change.

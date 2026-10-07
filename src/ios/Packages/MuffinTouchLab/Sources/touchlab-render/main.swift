@@ -33,5 +33,18 @@ for info in SchemeCatalog.all {
         }
     }
 }
+// Options worth seeing next to the defaults.
+index += "<h2>Zone, large A</h2>"
+for device in TargetDevice.all {
+    let ctx = device.context(.stacked)
+    let engine = PadEngine(scheme: ZonePad(largeA: true), output: NullOutput(), context: ctx)
+    let svg = SVGRenderer.svg(size: ctx.size, videoRects: ctx.videoRects, safe: ctx.safeBounds,
+                              title: "Zone, large A - \(device.name) - stacked", elements: engine.render())
+    let slug = device.name.lowercased().replacingOccurrences(of: " ", with: "-")
+        .replacingOccurrences(of: "(", with: "").replacingOccurrences(of: ")", with: "")
+    let file = "zone-large-a-\(slug)-stacked.svg"
+    try svg.write(toFile: "\(dir)/\(file)", atomically: true, encoding: .utf8)
+    index += "<img src='\(file)' width='480' style='margin:4px'>"
+}
 try index.write(toFile: "\(dir)/index.html", atomically: true, encoding: .utf8)
 print("wrote previews to \(dir)")

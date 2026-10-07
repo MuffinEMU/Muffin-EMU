@@ -23,6 +23,9 @@ struct TouchLabStyleSettingsRows: View {
     @AppStorage(TouchLabSettings.schemeKey) private var scheme = TouchLabSettings.defaultScheme
     @AppStorage(MeloControlsSetting.storageKey) private var useMeloControls = MeloControlsSetting.defaultValue
     @AppStorage(TouchLabSettings.floatCameraKey) private var floatCamera = TouchLabSettings.defaultFloatCamera
+    @AppStorage(TouchLabSettings.racingAutoAccelerateKey) private var racingAuto = false
+    @AppStorage(TouchLabSettings.racingTiltKey) private var racingTilt = false
+    @AppStorage(TouchLabSettings.zoneLargeAKey) private var zoneLargeA = false
     @State private var showingAdaptiveReset = false
 
     var body: some View {
@@ -68,6 +71,43 @@ struct TouchLabStyleSettingsRows: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                }
+
+                if scheme == TouchLabSettings.zoneStyleID {
+                    Toggle(isOn: $zoneLargeA) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Large A button")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("Makes A bigger and easier to hit. The buttons around it shrink a little.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(MuffinTheme.pixelBlue)
+                }
+
+                if scheme == TouchLabSettings.racingStyleID {
+                    Toggle(isOn: $racingAuto) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Auto-accelerate")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("Holds A for you. Touching Brake lets it go.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(MuffinTheme.pixelBlue)
+
+                    Toggle(isOn: $racingTilt) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Tilt steering")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("Turn the device like a wheel. Tap C at the top to set straight ahead.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(MuffinTheme.pixelBlue)
                 }
 
                 if scheme == TouchLabSettings.adaptiveStyleID {
