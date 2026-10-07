@@ -131,7 +131,7 @@ NEWS_DIR = os.path.join(REPO_ROOT, "docs", "assets", "news")
 
 def news_image(version):
     """A news card's picture: docs/assets/news/<version>.jpg, else default.jpg there, else the source header."""
-    for name in (f"{version}.jpg", "default.jpg"):
+    for name in (f"{version}.png", f"{version}.jpg", "default.png", "default.jpg"):
         if os.path.isfile(os.path.join(NEWS_DIR, name)):
             return f"{PAGES}/assets/news/{name}"
     return HEADER_URL
