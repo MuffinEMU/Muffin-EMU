@@ -1344,6 +1344,20 @@ void cemu_bridge_set_stick_axis(CemuBridgeStick stick, float x, float y);
 /// function on the same thread; copy it before calling again.
 const char* cemu_bridge_memory_headroom_summary(void);
 
+/// Record the game's TV audio to an M4A (AAC, 256 kbps, stereo) file at `path`. The folder must
+/// exist. Returns false when a recording is already on. The samples are copied from the TV
+/// device's feed on the audio thread into a lock-free ring; a background thread encodes them.
+bool cemu_bridge_audio_record_start(const char* path);
+
+/// Stops the recording and finishes the file. Blocks until the encoder has closed it, so call it
+/// off the main thread. Does nothing when no recording is on.
+void cemu_bridge_audio_record_stop(void);
+
+bool cemu_bridge_audio_record_active(void);
+
+/// Seconds of audio written to the current (or last) recording.
+double cemu_bridge_audio_record_seconds(void);
+
 int cemu_bridge_input_button_mapping_count(void);
 
 /// Which controller profile the GamePad is on ("default" when none was loaded). Owned by
