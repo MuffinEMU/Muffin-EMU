@@ -148,6 +148,8 @@ std::string IOSEmulatedDevices_Load(int device, int slot, const char* path);
 std::string IOSEmulatedDevices_Clear(int device, int slot);
 std::string IOSEmulatedDevices_Create(int device, uint32_t figureId, uint16_t variant, const char* path);
 std::string IOSEmulatedDevices_MoveDimensions(int fromSlot, int toSlot);
+bool nnNfp_isInitialized();
+bool nnNfp_touchNfcTagFromFile(const fs::path& filePath, uint32* nfcError);
 std::string IOSGraphicPacks_List();
 void IOSGraphicPacks_Refresh();
 void IOSGraphicPacks_SetEnabled(int index, bool enabled);
@@ -3771,6 +3773,34 @@ const char* cemu_bridge_usb_device_move_dimensions(int fromSlot, int toSlot) {
     static thread_local std::string g_usbDeviceMoveError;
     g_usbDeviceMoveError = IOSEmulatedDevices_MoveDimensions(fromSlot, toSlot);
     return g_usbDeviceMoveError.empty() ? nullptr : g_usbDeviceMoveError.c_str();
+}
+
+// ---------------------------------------------------------------------------
+// amiibo. Desktop Cemu's "Load amiibo / NFC file": nnNfp_touchNfcTagFromFile() (Cafe/OS/libs/
+// nn_nfp/nn_nfp.cpp) loads the NTAG215 dump as the tag on the reader and signals the title's
+// activate event; the core lifts it again after about 1.5 seconds, the way a real tap does.
+// The amiibo master keys are built into the core (amiiboInitMasterKeys), so no
+// key_retail.bin is read from anywhere.
+const char* cemu_bridge_touch_amiibo(const char* path) {
+    static thread_local std::string g_amiiboError;
+    if (!path || path[0] == '\0') {
+        g_amiiboError = "No amiibo file was chosen.";
+        return g_amiiboError.c_str();
+    }
+    if (!g_titleRunning.load() || !nnNfp_isInitialized()) {
+        g_amiiboError = "No game is waiting for an amiibo right now. Start a game that uses amiibo, get to the point where it asks you to tap one, then scan again.";
+        return g_amiiboError.c_str();
+    }
+    uint32_t nfcError = 0;
+    if (nnNfp_touchNfcTagFromFile(fs::path(path), &nfcError)) {
+        g_amiiboError.clear();
+        return nullptr;
+    }
+    // The core's codes: 1 = the file could not be read, 2 = it is not an amiibo dump.
+    g_amiiboError = (nfcError == 2)
+        ? "That file isn't a valid amiibo dump. MuffinEMU needs a full amiibo dump (a .bin or .nfc file of 532 bytes or more, usually 540 or 572)."
+        : "MuffinEMU couldn't read that amiibo file.";
+    return g_amiiboError.c_str();
 }
 
 // ---------------------------------------------------------------------------
