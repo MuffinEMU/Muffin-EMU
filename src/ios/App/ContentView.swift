@@ -869,7 +869,12 @@ struct GameBrowserView: View {
                 LibraryRenameSheet(game: game)
             }
             .sheet(item: $gameOptionsTarget) { game in
-                GameOptionsView(game: game, store: perGameSettings, libraryGames: gameManager.games)
+                GameOptionsView(game: game, store: perGameSettings, libraryGames: gameManager.games, gameManager: gameManager, onPlay: {
+                    guard gameManager.emulationState == .idle else { return }
+                    selectedGame = game
+                    gameManager.launchGame(game)
+                    showingGameBrowser = false
+                })
             }
             .sheet(item: $decryptTarget) { game in
                 DecryptROMView(game: game)
