@@ -865,9 +865,9 @@ struct LibraryBox3DCard<Options: View>: View {
                             CoverImage(path: boxPath)
                                 .shadow(color: .black.opacity(0.35), radius: 8, x: 4, y: 6)
                         } else if let path = game.coverPath {
-                            Box3DCover<AnyView>.image(path, title: name.name)
+                            Box3DCover<AnyView>.game(game, coverPath: path)
                         } else {
-                            Box3DCover<AnyView>.noCover(title: name.name)
+                            Box3DCover<AnyView>.game(game, coverPath: nil)
                         }
                     }
                     .aspectRatio(3 / 4, contentMode: .fit)

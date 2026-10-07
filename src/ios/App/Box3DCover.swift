@@ -2,20 +2,27 @@ import SwiftUI
 import QuartzCore
 import ImageIO
 
-/// A Wii U game case drawn in 3D, modelled on the art packs' own 3D boxes (Robin55 1.3 and the
-/// 3D BOXES set) so a built case sits beside pack art without looking different:
-/// - the case is Wii U blue plastic, showing as rounded lips at the top and bottom of the spine;
-/// - the spine is the white insert, with "Wii U" running down the top and the game's title in blue
-///   running down the middle;
-/// - the front is the cover. Official cover scans already carry the blue "Wii U" banner; any other
-///   image (square, custom, an icon) gets that banner added across the top.
+/// A Wii U game case drawn in 3D, built from Robin55's own case template (Nintendo Wii U 3D Boxes
+/// 1.3): the real spine with its blue case lips and Wii U logo, the Wii U banner, and the Nintendo and
+/// ESRB badges, cut out of those renders and flattened (BoxSpineTemplate, BoxWiiUBanner,
+/// BoxSpineNintendo, BoxRating*). This game's own cover, spine tile and title go in it.
+/// - Official cover scans (sleeve-shaped) are used as they are: they already carry the banner and
+///   rating. Any other image gets the banner, and the ESRB box when GameTDB knows the rating.
+/// - The Nintendo badge only appears on games GameTDB lists as published by Nintendo.
 ///
 /// Proportions are a real Wii U case (135 x 190 mm front, 14 mm deep), turned 38 degrees with the
 /// far edge at about 90% of the near edge's height, as measured from the pack renders.
 struct Box3DCover<Front: View>: View {
     let title: String
-    /// False for an official cover scan, which already has the banner printed on it.
+    /// False for an official cover scan, which already has the banner and rating printed on it.
     let addBanner: Bool
+    /// The Nintendo badge on the spine: only for games GameTDB lists as published by Nintendo.
+    var nintendoPublished = false
+    /// "E", "E10", "T" or "M": the game's ESRB rating from GameTDB. Nil draws no rating box,
+    /// so nothing is made up for a game whose rating isn't known.
+    var esrb: String? = nil
+    /// A small picture for the spine's tile under the logo, as on real Wii U spines.
+    var spineTilePath: String? = nil
     @ViewBuilder let front: () -> Front
 
     private let turn: Double = 38
@@ -54,60 +61,64 @@ struct Box3DCover<Front: View>: View {
     // MARK: Faces
 
     private func frontFace(width: CGFloat, height: CGFloat) -> some View {
-        let banner = height * 0.085
-        return ZStack(alignment: .top) {
-            front()
-                .frame(width: width, height: addBanner ? height - banner : height)
-                .clipped()
-                .frame(width: width, height: height, alignment: .bottom)
-            if addBanner {
-                ZStack {
-                    Self.caseBlue
-                    Text("Wii U")
-                        .font(.system(size: banner * 0.55, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+        // Proportions from the Robin55 renders: banner about 7.4% of the height, rating box about
+        // 19% of the width in the bottom-left corner, thin blue case lips top and bottom.
+        let banner = height * 0.074
+        let lip = height * 0.012
+        return ZStack(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                if addBanner {
+                    Image("BoxWiiUBanner").resizable().frame(width: width, height: banner)
                 }
-                .frame(width: width, height: banner)
+                front()
+                    .frame(width: width, height: addBanner ? height - banner : height)
+                    .clipped()
             }
-        }
-        .frame(width: width, height: height)
-        // The plastic: a thin blue edge round the sleeve, rounded like the case.
-        .overlay(RoundedRectangle(cornerRadius: width * 0.03, style: .continuous)
-            .strokeBorder(Self.caseBlue.opacity(0.85), lineWidth: max(1, width * 0.012)))
-        .clipShape(RoundedRectangle(cornerRadius: width * 0.03, style: .continuous))
-        .overlay(LinearGradient(colors: [Color.white.opacity(0.12), .clear, Color.black.opacity(0.10)],
-                                startPoint: .leading, endPoint: .trailing))
-    }
-
-    private func spineFace(width: CGFloat, height: CGFloat) -> some View {
-        let lip = height * 0.022
-        return ZStack {
-            Color(white: 0.985)
+            if addBanner, let esrb {
+                Image("BoxRating" + esrb).resizable()
+                    .frame(width: width * 0.19, height: width * 0.19 * 202 / 138)
+                    .offset(x: width * 0.045, y: height - lip - height * 0.035 - width * 0.19 * 202 / 138)
+            }
             VStack(spacing: 0) {
                 Self.caseBlue.frame(height: lip)
-                // "Wii U" down the top of the spine, then the title down the middle, both reading
-                // top to bottom like the real insert.
-                Text("Wii U")
-                    .font(.system(size: width * 0.62, weight: .semibold, design: .rounded))
-                    .foregroundColor(Color(white: 0.55))
-                    .fixedSize()
-                    .rotationEffect(.degrees(90))
-                    .frame(width: width, height: height * 0.16)
-                Spacer(minLength: height * 0.06)
-                Text(title.uppercased())
-                    .font(.system(size: width * 0.5, weight: .heavy, design: .rounded))
-                    .foregroundColor(Self.titleBlue)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.4)
-                    .frame(width: height * 0.6, height: width)
-                    .rotationEffect(.degrees(90))
-                    .frame(width: width, height: height * 0.6)
                 Spacer(minLength: 0)
                 Self.caseBlue.frame(height: lip)
             }
         }
         .frame(width: width, height: height)
-        .overlay(Color.black.opacity(0.18))
+        .clipShape(RoundedRectangle(cornerRadius: width * 0.02, style: .continuous))
+        .overlay(LinearGradient(colors: [Color.white.opacity(0.10), .clear, Color.black.opacity(0.10)],
+                                startPoint: .leading, endPoint: .trailing))
+    }
+
+    /// Robin55's spine with its own title and tile removed (BoxSpineTemplate: the case lips, the white
+    /// insert and the Wii U logo), with this game's tile, title and, for Nintendo games, the badge.
+    private func spineFace(width: CGFloat, height: CGFloat) -> some View {
+        ZStack(alignment: .topLeading) {
+            Image("BoxSpineTemplate").resizable().frame(width: width, height: height)
+            if let spineTilePath {
+                CoverImage(path: spineTilePath, fill: true)
+                    .frame(width: width * 0.70, height: height * 0.049)
+                    .clipShape(RoundedRectangle(cornerRadius: width * 0.06, style: .continuous))
+                    .offset(x: width * 0.15, y: height * 0.219)
+            }
+            Text(title)
+                .font(.system(size: width * 0.52, weight: .heavy, design: .default))
+                .foregroundColor(Self.titleBlue)
+                .lineLimit(1)
+                .minimumScaleFactor(0.35)
+                .frame(width: height * 0.62, height: width * 0.8)
+                .rotationEffect(.degrees(90))
+                .frame(width: width, height: height * 0.62)
+                .offset(y: height * 0.31)
+            if nintendoPublished {
+                Image("BoxSpineNintendo").resizable()
+                    .frame(width: width, height: height * 0.031)
+                    .offset(y: height * 0.955)
+            }
+        }
+        .frame(width: width, height: height)
+        .overlay(Color.black.opacity(0.16))
     }
 
     /// Rotates a face about the vertical line x = pivotX (its edge on the shared spine corner), then
@@ -125,22 +136,33 @@ struct Box3DCover<Front: View>: View {
 }
 
 extension Box3DCover where Front == AnyView {
-    /// A case from a cover image. An image shaped like a Wii U sleeve (about 0.70 wide per unit of
-    /// height, which official scans are) is used as is; any other shape is filled and cropped under
-    /// an added "Wii U" banner.
-    static func image(_ path: String, title: String) -> Box3DCover<AnyView> {
-        Box3DCover<AnyView>(title: title, addBanner: !CoverShape.isSleeve(path)) {
-            AnyView(CoverImage(path: path, fill: true))
+    /// A case for a library game: its cover (or the controller glyph when it has none), its title on
+    /// the spine, and the Nintendo badge and ESRB box only where GameTDB says they apply.
+    static func game(_ game: GameMetadata, coverPath: String?) -> Box3DCover<AnyView> {
+        let info = GameDataStore.shared.info(for: game.id)
+        let nintendo = info?.publisher?.localizedCaseInsensitiveContains("nintendo") ?? false
+        var esrb: String?
+        if info?.ratingType?.uppercased() == "ESRB" {
+            switch info?.ratingValue?.uppercased() {
+            case "E", "EC": esrb = "E"
+            case "E10+", "E10": esrb = "E10"
+            case "T": esrb = "T"
+            case "M": esrb = "M"
+            default: esrb = nil
+            }
         }
-    }
-
-    /// The case for a game with no art at all: the controller glyph on the card gradient.
-    static func noCover(title: String) -> Box3DCover<AnyView> {
-        Box3DCover<AnyView>(title: title, addBanner: true) {
-            AnyView(ZStack {
-                MuffinTheme.muffinTopGradient
-                Image(systemName: "gamecontroller.fill").font(.system(size: 34)).foregroundColor(MuffinTheme.onMuffinTop)
-            })
+        let title = game.cardName.name
+        guard let coverPath else {
+            return Box3DCover<AnyView>(title: title, addBanner: true, nintendoPublished: nintendo, esrb: esrb, spineTilePath: nil) {
+                AnyView(ZStack {
+                    MuffinTheme.muffinTopGradient
+                    Image(systemName: "gamecontroller.fill").font(.system(size: 34)).foregroundColor(MuffinTheme.onMuffinTop)
+                })
+            }
+        }
+        return Box3DCover<AnyView>(title: title, addBanner: !CoverShape.isSleeve(coverPath), nintendoPublished: nintendo,
+                                   esrb: esrb, spineTilePath: coverPath) {
+            AnyView(CoverImage(path: coverPath, fill: true))
         }
     }
 }
