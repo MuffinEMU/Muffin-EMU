@@ -31,6 +31,7 @@ struct ShaderCompilationSection: View {
 /// only, or everything including learned ones), each behind a confirmation. Per game: the game's own options.
 struct ShaderCacheSection: View {
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
+    @AppStorage("muffin.shaders.asyncCompile") private var asyncShaderCompile = true
     @State private var learnedCacheBytes: Int64 = 0
     @State private var compiledCacheBytes: Int64 = 0
     @State private var lastUpdated: Date?
@@ -41,6 +42,14 @@ struct ShaderCacheSection: View {
 
     var body: some View {
         Section {
+            Toggle(isOn: $asyncShaderCompile) {
+                Text("Compile shaders in the background")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .tint(MuffinTheme.accentText)
+            .onChange(of: asyncShaderCompile) { newValue in
+                cemu_bridge_set_async_shader_compile(newValue)
+            }
             SettingsRow(label: "Size on disk", value: Self.formatBytes(learnedCacheBytes + compiledCacheBytes))
             SettingsRow(label: "Last updated", value: ShaderCacheInfo.formatDate(lastUpdated))
             if SettingsMode.isAdvanced(raw: settingsModeRaw) {
@@ -62,7 +71,7 @@ struct ShaderCacheSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } header: {
-            SettingsSectionHeader("Shader Cache", icon: "externaldrive", accent: .core)
+            SettingsSectionHeader("Shaders", icon: "externaldrive", accent: .core)
         } footer: {
             InfoButton.footer("What every game has saved so it starts faster. To clear one game, open its options. Clearing needs the game closed.")
         }
