@@ -13,6 +13,7 @@ enum LibraryCardStyle: String, CaseIterable, Hashable, Identifiable {
     case largeCovers
     case compact
     case list
+    case box3d
 
     static let storageKey = "muffin.library.cardStyle"
     static let defaultValue: LibraryCardStyle = .standard
@@ -25,6 +26,7 @@ enum LibraryCardStyle: String, CaseIterable, Hashable, Identifiable {
         case .largeCovers: return "Large covers"
         case .compact: return "Compact grid"
         case .list: return "List"
+        case .box3d: return "3D boxes"
         }
     }
 
@@ -34,6 +36,7 @@ enum LibraryCardStyle: String, CaseIterable, Hashable, Identifiable {
         case .largeCovers: return "Bigger covers, tap a cover to play"
         case .compact: return "Many small covers on screen at once"
         case .list: return "One game per row, with details"
+        case .box3d: return "Box art standing free, 3D when a pack has it"
         }
     }
 
@@ -43,6 +46,7 @@ enum LibraryCardStyle: String, CaseIterable, Hashable, Identifiable {
         case .largeCovers: return "square.grid.2x2.fill"
         case .compact: return "square.grid.3x3"
         case .list: return "list.bullet"
+        case .box3d: return "cube"
         }
     }
 
@@ -54,6 +58,7 @@ enum LibraryCardStyle: String, CaseIterable, Hashable, Identifiable {
         case .largeCovers: return [GridItem(.adaptive(minimum: 220), spacing: 18)]
         case .compact: return [GridItem(.adaptive(minimum: 96), spacing: 12)]
         case .list: return [GridItem(.adaptive(minimum: 340), spacing: 12)]
+        case .box3d: return [GridItem(.adaptive(minimum: 150), spacing: 14)]
         }
     }
 
@@ -63,6 +68,7 @@ enum LibraryCardStyle: String, CaseIterable, Hashable, Identifiable {
         case .largeCovers: return 22
         case .compact: return 14
         case .list: return 10
+        case .box3d: return 18
         }
     }
 
@@ -417,9 +423,9 @@ struct LibraryCoverWell: View {
             if let path = game.coverPath {
                 CoverImage(path: path, padding: 8)
             } else {
-                Image(systemName: "gamecontroller.fill")
-                    .font(.system(size: glyphSize))
-                    .foregroundColor(MuffinTheme.onMuffinTop)
+                // Only until the first cover pass has run; the chain always ends in this same image.
+                Image(CoverStylePreference.current.genericIs3D ? "NoCover3d" : "NoCover2d")
+                    .resizable().scaledToFit().padding(8)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
@@ -508,6 +514,8 @@ struct LibraryCard<Options: View>: View {
             LibraryCompactCard(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, options: options)
         case .list:
             LibraryListRow(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, options: options)
+        case .box3d:
+            LibraryBox3DCard(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, options: options)
         }
     }
 }
@@ -801,5 +809,78 @@ final class DuplicateInstalls {
             }
         }
         labels = result
+    }
+}
+
+// MARK: - 3D boxes card
+
+/// The "3D boxes" card style: the box art stands free on the library background with a soft shadow,
+/// using 3D pack art when an installed pack has this game and the ordinary cover otherwise. The 2D
+/// cover is framed with a slight turn and a spine edge so it still reads as a box. No tilt tracking
+/// and no per-frame work: the turn is a fixed transform.
+struct LibraryBox3DCard<Options: View>: View {
+    let game: GameMetadata
+    let onTap: () -> Void
+    let onFavoriteTap: () -> Void
+    let options: Options
+    @ObservedObject private var data = GameDataStore.shared
+
+    var body: some View {
+        let name = game.cardName
+        let boxPath = ArtPackMatching.cachedBox3DPath(for: game, revision: data.revision)
+        VStack(spacing: 6) {
+            ZStack(alignment: .topTrailing) {
+                Button(action: onTap) {
+                    ZStack {
+                        if let boxPath {
+                            CoverImage(path: boxPath)
+                                .shadow(color: .black.opacity(0.35), radius: 8, x: 4, y: 6)
+                        } else if let path = game.coverPath {
+                            framed2D(path)
+                        } else {
+                            Image("NoCover3d").resizable().scaledToFit()
+                        }
+                    }
+                    .aspectRatio(3 / 4, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Play \(name.name)")
+                LibraryHeartButton(isFavorite: game.isFavorite, size: 30, action: onFavoriteTap)
+                    .padding(.top, -4)
+                    .padding(.trailing, -4)
+            }
+            .overlay(alignment: .topLeading) {
+                LibraryOptionsButton(name: name.name, size: 30, options: options)
+                    .padding(.top, -4)
+                    .padding(.leading, -4)
+            }
+            Text(name.name)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .foregroundColor(MuffinTheme.brownDarkest)
+                .frame(maxWidth: .infinity)
+            if let label = game.installLabel { LibraryInstallLine(text: label, size: 10, centered: true) }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
+    }
+
+    private func framed2D(_ path: String) -> some View {
+        CoverImage(path: path)
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.35), lineWidth: 1)
+            )
+            .overlay(alignment: .leading) {
+                LinearGradient(colors: [Color.black.opacity(0.28), .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 10)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+            .rotation3DEffect(.degrees(-8), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
+            .shadow(color: .black.opacity(0.35), radius: 8, x: 5, y: 6)
+            .padding(8)
     }
 }
