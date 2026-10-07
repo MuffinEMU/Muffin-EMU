@@ -1567,6 +1567,8 @@ class GameManager: ObservableObject {
 
     func stopEmulation() {
         launchToken = UUID()
+        // Finishes a "Record audio" recording before the title and its audio go away.
+        AudioRecorder.shared.stop()
         if let gameID = currentGame?.settingsKey {
             // A three-core run that Auto chose and that ended with the picture stopped is not retried.
             AutoCoreHistory.sessionEnded(gameID: gameID, stalled: videoStalled && videoStallKind == 1)

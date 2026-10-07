@@ -16,6 +16,7 @@
 //
 #include "Common/precompiled.h"
 #include "audio/IAudioAPI.h"
+#include "audio/iOSAudioRecorder.h"
 #include <cxxabi.h>
 #include <typeinfo>
 #import "CemuBridge.h"
@@ -2658,6 +2659,23 @@ void cemu_bridge_set_tv_channels(int channels) {
 
 int cemu_bridge_tv_channels(void) {
     return (int)GetConfig().tv_channels;
+}
+
+// "Record audio" (HOME menu). See audio/iOSAudioRecorder.mm.
+bool cemu_bridge_audio_record_start(const char* path) {
+    return IOSAudioRecorder::Start(path);
+}
+
+void cemu_bridge_audio_record_stop(void) {
+    IOSAudioRecorder::Stop();
+}
+
+bool cemu_bridge_audio_record_active(void) {
+    return IOSAudioRecorder::IsActive();
+}
+
+double cemu_bridge_audio_record_seconds(void) {
+    return IOSAudioRecorder::Seconds();
 }
 
 void cemu_bridge_set_pad_audio_enabled(bool enabled) {
