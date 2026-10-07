@@ -38,7 +38,6 @@ static int built;
 
 // Per-frame transformed vertices: [0] real, [1] mirrored in the floor.
 static MV tv[2][MAXV] __attribute__((aligned(32)));
-static float tw[MAXV][3];                 // world positions (real), for nothing but debugging aids
 
 static float zbuf[SCN_W * SCN_H] __attribute__((aligned(32)));
 static float mzbuf[SCN_W * SCN_H] __attribute__((aligned(32)));
@@ -518,7 +517,6 @@ static void mesh_job(void *vc, int job, int njobs)
    int px_count = 0;
    if (pc->pass == 0)
    {
-      par_consume(tv, sizeof(tv));
       for (int y0 = 0; y0 < H; y0 += STRIPE)
       {
          if (!owned(y0, job, njobs)) continue;
@@ -564,8 +562,6 @@ static void mesh_job(void *vc, int job, int njobs)
    else
    {
       // Silhouette anti-aliasing from the id buffer, then a light vignette.
-      par_consume(S_SCN.p, (size_t)W * H * 4);
-      par_consume(idbuf, (size_t)W * H);
       for (int y0 = 0; y0 < H; y0 += STRIPE)
       {
          if (!owned(y0, job, njobs)) continue;
@@ -640,7 +636,6 @@ static void xform_object(int o, const float *R, const float *T, float s, const f
          o2->nx = nx; o2->ny = ny; o2->nz = nz;
          o2->u = ruv[v0 + i][0]; o2->v = ruv[v0 + i][1];
       }
-      tw[v0 + i][0] = wx; tw[v0 + i][1] = wy; tw[v0 + i][2] = wz;
    }
 }
 
@@ -800,5 +795,5 @@ static void drc(const Input *in)
 }
 
 const Scene sc_mesh = {
-   "3D MESH LAB", "7,680 TRIANGLE KNOT, SHADED PIXEL BY PIXEL ON THREE CORES, WITH REFLECTIONS", 3, enter, update, render, hud, drc
+   "3D MESH LAB", "CHROME, GLASS AND GOLD SHADED PER PIXEL ON 3 CORES", 3, enter, update, render, hud, drc
 };

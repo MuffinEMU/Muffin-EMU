@@ -59,14 +59,20 @@ static void render(void)
    const s16 *pcm = audio_pcm(view_track(), &len);
    int pos = audio_pcm_pos();
    int mid = H * 2 / 5;
-   int cols = W;
-   for (int x = 0; x < cols; x++)
+   const int step = 7680 / W;          // samples per column: the same 0.32 s window at any size
+   const int unit = W >= 480 ? 2 : 1;
+   // Kick and snare light the room.
+   s_glow(&S_SCN, W / 2, mid, H * 2 / 3, kRowCol[0], (int)(meter[0] * 120.0f));
+   s_glow(&S_SCN, W / 4, mid, H / 3, kRowCol[1], (int)(meter[1] * 90.0f));
+   s_glow(&S_SCN, W * 3 / 4, mid, H / 3, kRowCol[4], (int)(meter[4] * 90.0f));
+   int prev_h = 0;
+   for (int x = 0; x < W; x++)
    {
       int a = 0;
-      if (pcm && pos >= 0)
+      if (pcm && pos >= 0 && len > 0)
       {
-         int base = pos + x * 24;
-         for (int k = 0; k < 24; k += 3)
+         int base = pos + x * step;
+         for (int k = 0; k < step; k += 3)
          {
             int s = pcm[(base + k) % len];
             if (s < 0) s = -s;
@@ -74,19 +80,30 @@ static void render(void)
          }
       }
       else
-         a = (int)(m_abs(m_sin(g_time * 3.0f + (float)x * 0.07f)) * 5000.0f);
+         a = (int)(m_abs(m_sin(g_time * 3.0f + (float)x * 0.07f * (320.0f / (float)W))) * 5000.0f);
       int h = a * (H / 3) / 24000;
       if (h > H / 3) h = H / 3;
       u32 c = hsv((float)x / (float)W * 0.8f + g_time * 0.05f, 0.65f, 1.0f);
-      s_rect(&S_SCN, x, mid - h, 1, 2 * h + 1, c);
+      s_rect(&S_SCN, x, mid - h, 1, 2 * h + 1, col_scale(c, 200));
+      s_rect(&S_SCN, x, mid - h, 1, unit, c);
+      s_rect(&S_SCN, x, mid + h - unit + 1, 1, unit, c);
+      // Reflection below the centre line.
+      int rh = h / 3;
+      if (rh > 0) s_rect_a(&S_SCN, x, mid + h + unit, 1, rh, c, 70);
+      if (x > 0 && unit == 2) s_line_aa(&S_SCN, (float)(x - 1), (float)(mid - prev_h), (float)x, (float)(mid - h), COL_WHITE);
+      prev_h = h;
    }
-   s_hline(&S_SCN, 0, mid, W, RGB(80, 70, 140));
-   // Meters as a rising skyline.
+   s_hline(&S_SCN, 0, mid, W, RGB(110, 100, 190));
+   // Meters as a rising skyline with a lit top cap.
    int bw = W / 6;
    for (int i = 0; i < 6; i++)
    {
       int h = (int)(meter[i] * (float)(H / 4));
-      s_rect(&S_SCN, i * bw + 2, H - 1 - h, bw - 4, h, col_scale(kRowCol[i], 90 + (int)(meter[i] * 160)));
+      if (h < 1) continue;
+      u32 top = col_scale(kRowCol[i], 120 + (int)(meter[i] * 135));
+      s_vgrad(&S_SCN, i * bw + 2 * unit, H - h, bw - 4 * unit, h, top, col_scale(kRowCol[i], 70));
+      s_rect(&S_SCN, i * bw + 2 * unit, H - h, bw - 4 * unit, unit, COL_WHITE);
+      s_glow(&S_SCN, i * bw + bw / 2, H - h, bw / 2, kRowCol[i], (int)(meter[i] * 120.0f));
    }
 }
 
@@ -110,10 +127,10 @@ static void grid(Surf *s, int x0, int y0, int cw, int ch, int t, int labels)
 static void hud(void)
 {
    int t = view_track();
-   s_panel(&S_TV, 24, 24, 640, 92, COL_PINK);
-   s_text_sh(&S_TV, 40, 36, 3, COL_ACCENT, audio_track_name(t));
-   s_textf(&S_TV, 40, 76, 2, COL_WHITE, "%d BPM   %s   VOL %d%%", audio_track_bpm(t), audio_muted() ? "MUTED" : "PLAYING", (int)(audio_volume() * 100.0f));
-   if (!audio_ready(t)) s_text_sh(&S_TV, 700, 50, 3, COL_RED, "RENDERING...");
+   s_panel(&S_TV, 24, 64, 640, 92, COL_PINK);
+   s_text_sh(&S_TV, 40, 76, 3, COL_ACCENT, audio_track_name(t));
+   s_textf(&S_TV, 40, 116, 2, COL_WHITE, "%d BPM   %s   VOL %d%%", audio_track_bpm(t), audio_muted() ? "MUTED" : "PLAYING", (int)(audio_volume() * 100.0f));
+   if (!audio_ready(t)) s_text_sh(&S_TV, 700, 90, 3, COL_RED, "RENDERING...");
    s_panel(&S_TV, 20, 520, 1240, 170, COL_CYAN);
    grid(&S_TV, 98, 534, 18, 22, t, 1);
    s_text(&S_TV, 98, 672, 2, COL_DIM, "SEQUENCER  64 STEPS  4 BARS");

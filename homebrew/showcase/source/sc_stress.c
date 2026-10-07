@@ -22,6 +22,7 @@ static volatile int j_cols, j_rows, j_B, j_r0[3], j_r1[3];
 static volatile float j_cre, j_cim, j_scale;
 
 static u32 s_pal[256];
+static u32 lo[(SCN_W / 2) * (SCN_H / 2)] __attribute__((aligned(32)));   // Mandelbrot grid before the bilinear expand
 static u32 kRowColor(int c) { static const u32 k[3] = { RGB(255,110,80), RGB(110,230,140), RGB(90,190,255) }; return k[c % 3]; }
 static int s_cores = 3;
 static float s_ms_one, s_ms_three, s_job_ms;
@@ -30,33 +31,41 @@ static float s_credit_y;
 
 static void render_band(int id)
 {
-   const int B = j_B, cols = j_cols;
+   const int cols = j_cols;
    const float scale = j_scale, cre = j_cre, cim = j_cim;
    const float inv = scale / (float)cols;
-   for (int j = j_r0[id]; j < j_r1[id]; j++)
+   const int r0 = j_r0[id], r1 = j_r1[id];
+   for (int j = r0; j < r1; j++)
    {
       float ci = cim + ((float)j - (float)j_rows * 0.5f) * inv;
       for (int i = 0; i < cols; i++)
       {
          float cr = cre + ((float)i - (float)cols * 0.5f) * inv;
-         float zr = 0.0f, zi = 0.0f;
+         float zr = 0.0f, zi = 0.0f, r2 = 0.0f;
          int it = 0;
-         while (it < 56 && zr * zr + zi * zi < 16.0f)
+         while (it < 96)
          {
+            r2 = zr * zr + zi * zi;
+            if (r2 >= 256.0f) break;
             float t = zr * zr - zi * zi + cr;
             zi = 2.0f * zr * zi + ci;
             zr = t;
             it++;
          }
-         u32 c = it >= 56 ? RGB(6, 4, 14) : s_pal[(it * 9) & 255];
-         int x = i * B, y = j * B;
-         for (int dy = 0; dy < B && y + dy < g_sh; dy++)
+         u32 c;
+         if (it >= 96) c = RGB(6, 4, 14);
+         else
          {
-            u32 *p = S_SCN.p + (y + dy) * g_sw + x;
-            for (int dx = 0; dx < B && x + dx < g_sw; dx++) p[dx] = c;
+            // Smooth iteration count: removes the colour banding between escape bands.
+            float nu = (float)it + 1.0f - m_log2(0.5f * m_log2(r2));
+            float f = nu * 9.0f;
+            int i0 = (int)f;
+            c = col_lerp(s_pal[i0 & 255], s_pal[(i0 + 1) & 255], (int)((f - (float)i0) * 256.0f));
          }
+         lo[j * cols + i] = c;
       }
    }
+   par_flush(lo + r0 * cols, (size_t)(r1 - r0) * (size_t)cols * 4);
 }
 
 static int worker_main(int id, const char **argv)
@@ -83,6 +92,7 @@ void stress_start_workers(void)
       float f = (float)i * 0.0245f;
       s_pal[i] = RGB(128 + (int)(120 * m_sin(f)), 100 + (int)(100 * m_sin(f * 1.3f + 1.0f)), 150 + (int)(100 * m_sin(f * 0.8f + 2.2f)));
    }
+   par_publish(s_pal, sizeof(s_pal));
    s_threads_ok = 1;
    for (int i = 0; i < 3; i++)
    {
@@ -128,7 +138,7 @@ static void update(const Input *in, float dt, int demo)
 
 static void render(void)
 {
-   const int B = 2;
+   const int B = g_sw >= 320 ? 2 : 1;
    int cols = (g_sw + B - 1) / B, rows = (g_sh + B - 1) / B;
    float ph = g_time * 0.30f;
    ph -= (float)((int)(ph / 10.5f)) * 10.5f;
@@ -159,6 +169,8 @@ static void render(void)
       }
    }
    s_job_ms = (float)OSTicksToMicroseconds(OSGetSystemTime() - t0) / 1000.0f;
+   par_consume(lo, (size_t)cols * (size_t)rows * 4);
+   gfx_upsample(lo, cols, rows, B, B);
    for (int c = 0; c < 3; c++) s_core_ms[c] = (float)OSTicksToMicroseconds(s_wtime[c]) / 1000.0f;
    float *ema = (n == 3) ? &s_ms_three : &s_ms_one;
    *ema = (*ema <= 0.0f) ? s_job_ms : *ema * 0.9f + s_job_ms * 0.1f;
@@ -180,8 +192,8 @@ static void bar(Surf *s, int x, int y, int w, int h, float frac, u32 c)
 
 static void hud(void)
 {
-   s_panel(&S_TV, TV_W - 440, 24, 416, 330, COL_ACCENT);
-   int x = TV_W - 424, y = 36;
+   s_panel(&S_TV, TV_W - 440, 64, 416, 330, COL_ACCENT);
+   int x = TV_W - 424, y = 76;
    s_textf(&S_TV, x, y, 3, COL_WHITE, "%d FPS", (int)(g_stats.fps + 0.5f));
    s_textf(&S_TV, x + 190, y + 4, 2, COL_DIM, "%.1f MS", g_stats.frame_ms);
    s_textf(&S_TV, x, y + 36, 2, COL_CYAN, "UPDATE %.1f  RENDER %.1f", g_stats.update_ms, g_stats.render_ms);
@@ -190,7 +202,7 @@ static void hud(void)
    for (int c = 0; c < 3; c++)
    {
       s_textf(&S_TV, x, y + 122 + c * 30, 2, COL_WHITE, "CPU%d", c);
-      bar(&S_TV, x + 80, y + 122 + c * 30, 320, 20, s_core_ms[c] / (s_job_ms + 0.001f), kRowColor(c));
+      bar(&S_TV, x + 80, y + 122 + c * 30, 310, 20, s_core_ms[c] / (s_job_ms + 0.001f), kRowColor(c));
    }
    if (s_ms_one > 0.0f && s_ms_three > 0.0f)
       s_textf(&S_TV, x, y + 218, 2, COL_GREEN, "3 CORES = %.2fX FASTER", s_ms_one / s_ms_three);

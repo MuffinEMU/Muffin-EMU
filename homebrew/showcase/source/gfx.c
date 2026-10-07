@@ -105,8 +105,6 @@ static void present_slice(void *ctx, int job, int njobs)
    // Each slice keeps its own two row buffers on its stack (about 10 KB).
    u32 rows[2][TV_W + 8] __attribute__((aligned(32)));
    int cur = 0;
-   int ylast = y1 < sh ? y1 : sh;
-   par_consume(S_SCN.p + y0 * sw, (size_t)(ylast - y0 + (y1 < sh ? 1 : 0)) * (size_t)sw * 4);
    hexp(rows[cur], S_SCN.p + y0 * sw, sw, s);
    for (int y = y0; y < y1; y++)
    {
@@ -303,17 +301,76 @@ void s_tri(Surf *s, int x0, int y0, int x1, int y1, int x2, int y2, u32 c)
    }
 }
 
-void s_fade(Surf *s, int k)
+// Gouraud triangle: barycentric colour interpolation in 8.8 fixed point.
+void s_tri_g(Surf *s, int x0, int y0, u32 c0, int x1, int y1, u32 c1, int x2, int y2, u32 c2)
 {
-   for (int y = 0; y < s->h; y++)
+   int minx = x0 < x1 ? (x0 < x2 ? x0 : x2) : (x1 < x2 ? x1 : x2);
+   int maxx = x0 > x1 ? (x0 > x2 ? x0 : x2) : (x1 > x2 ? x1 : x2);
+   int miny = y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2);
+   int maxy = y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2);
+   if (minx < 0) minx = 0;
+   if (miny < 0) miny = 0;
+   if (maxx >= s->w) maxx = s->w - 1;
+   if (maxy >= s->h) maxy = s->h - 1;
+   int area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+   if (area == 0) return;
+   float inv = 256.0f / (float)area;
+   for (int y = miny; y <= maxy; y++)
+   {
+      u32 *row = s->p + y * s->pitch;
+      for (int x = minx; x <= maxx; x++)
+      {
+         int w0 = (x1 - x0) * (y - y0) - (x - x0) * (y1 - y0);   // edge 0-1: weight of vertex 2
+         int w1 = (x2 - x1) * (y - y1) - (x - x1) * (y2 - y1);   // edge 1-2: weight of vertex 0
+         int w2 = (x0 - x2) * (y - y2) - (x - x2) * (y0 - y2);   // edge 2-0: weight of vertex 1
+         if (area > 0 ? (w0 >= 0 && w1 >= 0 && w2 >= 0) : (w0 <= 0 && w1 <= 0 && w2 <= 0))
+         {
+            int a = (int)((float)w1 * inv), b = (int)((float)w2 * inv), c = 256 - a - b;
+            int r = ((int)CR(c0) * a + (int)CR(c1) * b + (int)CR(c2) * c) >> 8;
+            int g = ((int)CG(c0) * a + (int)CG(c1) * b + (int)CG(c2) * c) >> 8;
+            int bl = ((int)CB(c0) * a + (int)CB(c1) * b + (int)CB(c2) * c) >> 8;
+            row[x] = RGB(r < 0 ? 0 : (r > 255 ? 255 : r), g < 0 ? 0 : (g > 255 ? 255 : g), bl < 0 ? 0 : (bl > 255 ? 255 : bl));
+         }
+      }
+   }
+}
+
+typedef struct { Surf *s; int k; } FadeCtx;
+
+static void fade_rows(Surf *s, int y0, int y1, int k)
+{
+   for (int y = y0; y < y1; y++)
    {
       u32 *p = s->p + y * s->pitch;
       for (int x = 0; x < s->w; x++)
       {
          u32 c = p[x];
-         p[x] = RGB((CR(c) * (u32)k) >> 8, (CG(c) * (u32)k) >> 8, (CB(c) * (u32)k) >> 8);
+         u32 rb = ((((c >> 8) & 0x00FF00FFu) * (u32)k) >> 8) & 0x00FF00FFu;
+         u32 g = ((((c) & 0x00FF00FFu) * (u32)k) >> 8) & 0x00FF00FFu;
+         p[x] = (rb << 8) | g | 0xFFu;
       }
    }
+}
+
+static void fade_slice(void *vc, int job, int njobs)
+{
+   FadeCtx *c = vc;
+   int y0, y1;
+   par_range(job, njobs, c->s->h, &y0, &y1);
+   fade_rows(c->s, y0, y1, c->k);
+   par_flush(c->s->p + y0 * c->s->pitch, (size_t)(y1 - y0) * (size_t)c->s->pitch * 4);
+}
+
+void s_fade(Surf *s, int k)
+{
+   if (s == &S_SCN)
+   {
+      FadeCtx c = { s, k };
+      par_publish(s->p, (size_t)s->h * (size_t)s->pitch * 4);
+      par_run(fade_slice, &c);
+      par_consume(s->p, (size_t)s->h * (size_t)s->pitch * 4);
+   }
+   else fade_rows(s, 0, s->h, k);
 }
 
 // ------------------------------------------------------------------ smooth primitives
@@ -518,7 +575,6 @@ static void upsample_slice(void *vc, int job, int njobs)
 void gfx_upsample(const u32 *lo, int lw, int lh, int bx, int by)
 {
    UpCtx c = { lo, lw, lh, bx, by };
-   par_publish(lo, (size_t)lw * (size_t)lh * 4);
    par_run(upsample_slice, &c);
    par_consume(S_SCN.p, (size_t)g_sw * (size_t)g_sh * 4);
 }

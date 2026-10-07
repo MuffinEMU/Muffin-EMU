@@ -70,8 +70,11 @@ void par_run(void (*fn)(void *ctx, int job, int njobs), void *ctx)
    for (int i = 0; i < NWORK; i++) OSWaitSemaphore(&s_done[i]);
 }
 
-// The three PPC cores do not share a coherent cache. Main publishes what workers read, each slice
-// flushes what it wrote, and main invalidates before reading the result.
+// Memory model. Normal cached memory is shared between the cores by the hardware, so slices read
+// each other's data directly. What does need explicit cache control is anything the display
+// reads from RAM: each slice flushes the rows it wrote, main flushes what it wrote before it
+// hands data out, and main alone (never a slice, while others are still writing) invalidates its
+// own stale lines once every slice has finished.
 void par_publish(const void *p, size_t n) { DCFlushRange((void *)p, (uint32_t)n); }
 void par_consume(const void *p, size_t n) { DCInvalidateRange((void *)p, (uint32_t)n); }
 void par_flush(const void *p, size_t n) { DCFlushRange((void *)p, (uint32_t)n); }   // slice: after writing

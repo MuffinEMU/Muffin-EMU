@@ -116,7 +116,11 @@ u32 col_add(u32 a, u32 b)
 
 u32 col_scale(u32 c, int k)
 {
-   return RGB((CR(c) * (u32)k) >> 8, (CG(c) * (u32)k) >> 8, (CB(c) * (u32)k) >> 8);
+   // k is 8.8 fixed point and may exceed 256 (over-bright); channels saturate instead of
+   // carrying into their neighbours.
+   if (k < 0) k = 0;
+   u32 r = (CR(c) * (u32)k) >> 8, g = (CG(c) * (u32)k) >> 8, b = (CB(c) * (u32)k) >> 8;
+   return RGB(r > 255 ? 255 : r, g > 255 ? 255 : g, b > 255 ? 255 : b);
 }
 
 u32 hsv(float h, float s, float v)
@@ -152,4 +156,17 @@ u32 col_lerp(u32 a, u32 b, int t)
 u32 col_avg(u32 a, u32 b)
 {
    return ((a & 0xFEFEFEFEu) >> 1) + ((b & 0xFEFEFEFEu) >> 1) + (a & b & 0x01010101u);
+}
+
+// log2 from the float exponent plus a cubic fit of the mantissa (error under 0.01).
+float m_log2(float x)
+{
+   if (x <= 0.0f) return -126.0f;
+   u32 bits;
+   memcpy(&bits, &x, 4);
+   int e = (int)((bits >> 23) & 255u) - 127;
+   bits = (bits & 0x007FFFFFu) | 0x3F800000u;
+   float m;
+   memcpy(&m, &bits, 4);
+   return (float)e + ((-0.34484843f * m + 2.02466578f) * m - 0.67487759f);
 }

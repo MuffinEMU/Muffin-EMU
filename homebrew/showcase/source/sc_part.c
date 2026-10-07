@@ -1,11 +1,13 @@
-// Scene 2: particles. Two modes share one pool of up to 6000 additive sparks / 7000 stars:
-// fireworks (rockets, sphere/ring/heart/willow bursts, gravity, drag, trails) and a spiral galaxy
-// (7000 stars on differential-rotation orbits, rotated and perspective-projected in 3D).
-// Everything is plain CPU maths into the scene buffer. Touch the GamePad view to fire a burst.
+// Scene 2: particles. Two modes share one pool of up to 6000 additive sparks / 14000 stars:
+// fireworks (rockets, sphere/ring/heart/willow bursts, gravity, drag, trails, burst flashes) and a
+// spiral galaxy (14000 stars on differential-rotation orbits, rotated and perspective-projected in
+// 3D). Everything is plain CPU maths into the 640x360 scene buffer; sprites are 2x2 with glow
+// halos. Scene coordinates stay on the 320x180 reference grid and are scaled at draw time.
+// Touch the GamePad view to fire a burst.
 #include "showcase.h"
 
 #define MAXP 6000
-#define NSTAR 7000
+#define NSTAR 14000
 #define IMG_X 107
 #define IMG_Y 14
 
@@ -24,6 +26,10 @@ static float gyaw, gtilt = 0.9f, pulse, mode_t;
 static int stars_ready;
 static int total_bursts;
 
+typedef struct { float x, y, age; u32 col; } Flash;
+static Flash fl[8];
+static int fl_n;
+
 static void spark(float x, float y, float sx, float sy, float l, float dr, u32 c)
 {
    if (np >= MAXP) return;
@@ -34,6 +40,7 @@ static void spark(float x, float y, float sx, float sy, float l, float dr, u32 c
 static void burst(float x, float y, int type, u32 col)
 {
    total_bursts++;
+   fl[fl_n & 7].x = x; fl[fl_n & 7].y = y; fl[fl_n & 7].age = 0.0f; fl[fl_n & 7].col = col; fl_n++;
    switch (type)
    {
    case 0:
@@ -98,7 +105,7 @@ static void init_stars(void)
       gr[i] = r;
       gz[i] = (((float)(rnd_r(&s) >> 8) * (1.0f / 16777216.0f)) - 0.5f) * 0.10f * (1.2f - r);
       float core = m_clamp(1.0f - r * 1.6f, 0.0f, 1.0f);
-      int b = 70 + (int)(rnd_r(&s) & 63u);
+      int b = 28 + (int)(rnd_r(&s) & 31u);
       int rr = (int)((float)b * (0.55f + 0.7f * core)), gg = (int)((float)b * (0.62f + 0.4f * core)),
           bb = (int)((float)b * (1.2f - 0.55f * core));
       gcol[i] = RGB(rr > 255 ? 255 : rr, gg > 255 ? 255 : gg, bb > 255 ? 255 : bb);
@@ -109,6 +116,7 @@ static void init_stars(void)
 static void enter(void)
 {
    np = 0;
+   for (int i = 0; i < 8; i++) fl[i].age = 9.0f;
    for (int i = 0; i < 6; i++) rk[i].on = 0;
    mode_t = 0;
    s_fill(&S_SCN, RGB(0, 0, 0));
@@ -118,6 +126,7 @@ static void enter(void)
 static void update(const Input *in, float dt, int demo)
 {
    mode_t += dt;
+   for (int i = 0; i < 8; i++) fl[i].age += dt;
    if (in->trig & B_X) mode ^= 1;
    if (demo && mode_t > 7.0f) { mode = 1; }
    if (demo && mode_t < 0.1f) mode = 0;
@@ -173,16 +182,36 @@ static void update(const Input *in, float dt, int demo)
    }
 }
 
+// Reference-grid rectangle drawn at the current scene resolution.
+static void rrect(int xr, int yr, int wr, int hr, u32 c)
+{
+   float sc = (float)g_sw / (float)REF_W;
+   int x0 = (int)((float)xr * sc), y0 = (int)((float)yr * sc);
+   int x1 = (int)((float)(xr + wr) * sc), y1 = (int)((float)(yr + hr) * sc);
+   if (x1 <= x0) x1 = x0 + 1;
+   if (y1 <= y0) y1 = y0 + 1;
+   s_rect(&S_SCN, x0, y0, x1 - x0, y1 - y0, c);
+}
+
 static void render_fireworks(void)
 {
-   s_fade(&S_SCN, 200);
+   s_fade(&S_SCN, 205);
    const float sc = (float)g_sw / (float)REF_W;
-   for (int i = 0; i < 70; i++)
+   const int big = g_sw >= 480;
+   for (int i = 0; i < 90; i++)
    {
       u32 h = hash2(i, 5);
       int x = (int)((h & 1023u) % (u32)g_sw), y = (int)(((h >> 10) & 1023u) % (u32)(g_sh * 3 / 4));
-      int tw = 40 + (int)(60.0f * (0.5f + 0.5f * m_sin(g_time * 2.0f + (float)i)));
+      int tw = 40 + (int)(70.0f * (0.5f + 0.5f * m_sin(g_time * 2.0f + (float)i)));
       s_add_pixel(&S_SCN, x, y, RGB(tw, tw, tw + 20));
+      if (big && (h & 7u) == 0) { u32 c2 = RGB(tw / 3, tw / 3, tw / 3 + 8); s_add_pixel(&S_SCN, x + 1, y, c2); s_add_pixel(&S_SCN, x, y + 1, c2); }
+   }
+   // Burst flashes light the sky for a moment.
+   for (int i = 0; i < 8; i++)
+   {
+      if (fl[i].age > 0.45f) continue;
+      float k = 1.0f - fl[i].age / 0.45f;
+      s_glow(&S_SCN, (int)(fl[i].x * sc), (int)(fl[i].y * sc), (int)(70.0f * sc * (0.6f + 0.4f * (1.0f - k))), fl[i].col, (int)(k * k * 150.0f));
    }
    for (int i = 0; i < np; i++)
    {
@@ -192,35 +221,51 @@ static void render_fireworks(void)
       if (k > 255) k = 255;
       u32 c = col_scale(pcol[i], k);
       s_add_pixel(&S_SCN, x, y, c);
-      if (f > 0.6f)
+      if (big)
+      {
+         u32 c2 = col_scale(c, 190);
+         s_add_pixel(&S_SCN, x + 1, y, c2);
+         s_add_pixel(&S_SCN, x, y + 1, c2);
+         s_add_pixel(&S_SCN, x + 1, y + 1, c2);
+         if (f > 0.5f)
+         {
+            u32 c3 = col_scale(c, 64);
+            s_add_pixel(&S_SCN, x - 1, y, c3); s_add_pixel(&S_SCN, x + 2, y, c3);
+            s_add_pixel(&S_SCN, x, y - 1, c3); s_add_pixel(&S_SCN, x, y + 2, c3);
+         }
+      }
+      else if (f > 0.6f)
       {
          u32 c2 = col_scale(c, 110);
          s_add_pixel(&S_SCN, x + 1, y, c2);
          s_add_pixel(&S_SCN, x, y + 1, c2);
       }
    }
-   // Skyline with lit windows, drawn over the sparks.
-   int base = g_sh - 1;
-   for (int x = 0; x < g_sw; x += 1)
+   // Skyline with lit windows, drawn over the sparks, on the reference grid.
+   int base = REF_H - 1;
+   for (int x = 0; x < REF_W; x++)
    {
-      int bx = x / (g_sw / 20 + 1);
+      int bx = x / (REF_W / 20 + 1);
       u32 h = hash2(bx, 9);
-      int bh = g_sh / 12 + (int)(h % (u32)(g_sh / 5 + 1));
-      s_rect(&S_SCN, x, base - bh, 1, bh + 1, RGB(8, 7, 18));
+      int bh = REF_H / 12 + (int)(h % (u32)(REF_H / 5 + 1));
+      rrect(x, base - bh, 1, bh + 1, RGB(8, 7, 18));
       if (((x & 3) == 1) && (hash2(x, (int)(g_time * 0.7f) + bx) & 7u) < 2u)
          for (int wy = base - bh + 3; wy < base - 2; wy += 4)
-            if ((hash2(x, wy) & 3u) == 0) s_rect(&S_SCN, x, wy, 1, 1, RGB(120, 100, 50));
+            if ((hash2(x, wy) & 3u) == 0) rrect(x, wy, 1, 1, RGB(130, 108, 54));
    }
 }
 
 static void render_galaxy(void)
 {
-   s_fade(&S_SCN, 140);
+   s_fade(&S_SCN, 150);
    const int cxp = g_sw / 2, cyp = g_sh / 2;
+   const int big = g_sw >= 480;
    const float scl = (float)g_sh * 0.46f;
    float ct = m_cos(gtilt), st = m_sin(gtilt);
    float cy_ = m_cos(gyaw), sy_ = m_sin(gyaw);
    float expand = 1.0f + pulse * 0.45f;
+   // Soft core glow first so the stars sit on top of it.
+   s_glow(&S_SCN, cxp, cyp, g_sh / 3, RGB(255, 190, 120), 70 + (int)(pulse * 110.0f));
    for (int i = 0; i < NSTAR; i++)
    {
       float r = gr[i];
@@ -231,12 +276,23 @@ static void render_galaxy(void)
       float y3 = y2 * ct - z * st, z3 = y2 * st + z * ct;
       float s = 1.0f / (2.2f - z3 * 0.6f);
       int sx = cxp + (int)(x2 * scl * s * 2.0f), sy = cyp + (int)(y3 * scl * s * 2.0f);
-      s_add_pixel(&S_SCN, sx, sy, gcol[i]);
+      u32 c = gcol[i];
+      s_add_pixel(&S_SCN, sx, sy, c);
+      if (big)
+      {
+         u32 c2 = col_scale(c, (int)(70.0f + 90.0f * s * 0.5f));
+         s_add_pixel(&S_SCN, sx + 1, sy, c2);
+         s_add_pixel(&S_SCN, sx, sy + 1, col_scale(c2, 200));
+         if ((i & 15) == 0)
+         {
+            // The occasional bright star gets a small cross flare.
+            u32 c3 = col_scale(c, 90);
+            s_add_pixel(&S_SCN, sx - 1, sy, c3); s_add_pixel(&S_SCN, sx + 2, sy, c3);
+            s_add_pixel(&S_SCN, sx, sy - 1, c3); s_add_pixel(&S_SCN, sx, sy + 2, c3);
+         }
+      }
    }
-   // Bright core glow.
-   for (int k = 6; k >= 1; k--)
-      s_rect_a(&S_SCN, cxp - k * 3, cyp - k * 2, k * 6, k * 4, RGB(255, 200, 140), 20 + (int)(pulse * 40.0f));
-   s_disc(&S_SCN, cxp, cyp, 2, COL_WHITE);
+   s_disc_aa(&S_SCN, (float)cxp, (float)cyp, big ? 3.0f : 1.5f, COL_WHITE);
 }
 
 static void render(void)

@@ -175,7 +175,7 @@ static Sky sky_now(void)
    s.lb = (int)(256 * (amb * (1.0f - 0.30f * sunset) + 0.12f * (1 - day)));
    // Direct light: the sun while it is up, a weak blue moon otherwise.
    float sun_w = m_clamp((se + 0.04f) / 0.22f, 0.0f, 1.0f);
-   float moon_w = m_clamp(-se / 0.3f, 0.0f, 1.0f) * 0.20f * (1.0f - sun_w);
+   float moon_w = m_clamp(-se / 0.3f, 0.0f, 1.0f) * 0.30f * (1.0f - sun_w);
    float sun_i = sun_w * (0.55f + 0.55f * m_clamp(se, 0.0f, 1.0f));
    int sr = (int)(256.0f * sun_i * (1.0f + 0.05f * (1 - sunset) + 0.25f * sunset));
    int sg = (int)(256.0f * sun_i * (0.97f - 0.22f * sunset));
@@ -615,5 +615,5 @@ static void drc(const Input *in)
 }
 
 const Scene sc_landscape = {
-   "3D LANDSCAPE", "LIT TERRAIN WITH SHADOWS, REFLECTIVE WATER, CLOUDS, DAY-NIGHT SKY", 1, enter, update, render, hud, drc
+   "3D LANDSCAPE", "LIT TERRAIN, SHADOWS, WATER, CLOUDS AND A DAY-NIGHT SKY", 1, enter, update, render, hud, drc
 };

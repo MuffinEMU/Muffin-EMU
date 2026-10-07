@@ -94,23 +94,24 @@ static void render(void)
    const int W = g_sw, H = g_sh;
    s_vgrad(&S_SCN, 0, 0, W, H, RGB(10, 8, 30), RGB(26, 14, 52));
    // Scrolling grid.
-   int off = (int)(g_time * 8.0f) % 16;
+   const int K = W / 320 > 0 ? W / 320 : 1;
+   int off = (int)(g_time * 8.0f * (float)K) % (16 * K);
    u32 gc = RGB(34, 28, 78);
-   for (int y = H / 3 + off % 8; y < H; y += 10) s_hline(&S_SCN, 0, y, W, gc);
-   for (int x = -16 + off; x < W; x += 16) s_vline(&S_SCN, x, H / 3, H, gc);
+   for (int y = H / 3 + off % (8 * K); y < H; y += 10 * K) s_hline(&S_SCN, 0, y, W, gc);
+   for (int x = -16 * K + off; x < W; x += 16 * K) s_vline(&S_SCN, x, H / 3, H, gc);
 
    for (int i = 0; i < 16; i++)
    {
       if (rip[i].age > 1.2f) continue;
-      int r = (int)(rip[i].age * 70.0f), k = (int)((1.0f - rip[i].age / 1.2f) * 255.0f);
+      int r = (int)(rip[i].age * 70.0f * (float)K), k = (int)((1.0f - rip[i].age / 1.2f) * 255.0f);
       s_ring(&S_SCN, (int)rip[i].x, (int)rip[i].y, r, col_scale(COL_CYAN, k));
       s_ring(&S_SCN, (int)rip[i].x, (int)rip[i].y, r / 2, col_scale(COL_PINK, k));
    }
    for (int i = 1; i < trail_n; i++)
-      s_line(&S_SCN, (int)trail[i - 1][0], (int)trail[i - 1][1], (int)trail[i][0], (int)trail[i][1],
-             col_scale(COL_ACCENT, 80 + i * 3));
+      s_line_aa(&S_SCN, trail[i - 1][0], trail[i - 1][1], trail[i][0], trail[i][1], col_scale(COL_ACCENT, 80 + i * 3));
 
-   // Cube.
+   // Cube, with a soft glow behind it.
+   s_glow(&S_SCN, W / 2, H / 2, H * 2 / 5, RGB(160, 90, 255), 70);
    static const float V[8][3] = { {-1,-1,-1},{1,-1,-1},{1,1,-1},{-1,1,-1},{-1,-1,1},{1,-1,1},{1,1,1},{-1,1,1} };
    static const int F[6][4] = { {0,1,2,3},{5,4,7,6},{4,0,3,7},{1,5,6,2},{3,2,6,7},{4,5,1,0} };
    static const float N[6][3] = { {0,0,-1},{0,0,1},{-1,0,0},{1,0,0},{0,1,0},{0,-1,0} };
@@ -144,14 +145,22 @@ static void render(void)
       float nx = N[f][0], ny = N[f][1], nz = N[f][2];
       rotate(&nx, &ny, &nz, cx_, sx_, cy_, sy_, cz_, sz_);
       if (nz > 0.0f) continue;             // facing away from the camera
-      float lit = 0.35f + 0.65f * m_clamp(-nx * 0.3f - ny * 0.6f - nz * 0.7f, 0.0f, 1.0f);
-      u32 c = col_scale(FC[f], (int)(lit * 256.0f));
-      s_tri(&S_SCN, sxp[F[f][0]], syp[F[f][0]], sxp[F[f][1]], syp[F[f][1]], sxp[F[f][2]], syp[F[f][2]], c);
-      s_tri(&S_SCN, sxp[F[f][0]], syp[F[f][0]], sxp[F[f][2]], syp[F[f][2]], sxp[F[f][3]], syp[F[f][3]], c);
+      // Per-corner lighting from the corner directions gives the faces a soft, pillowy gradient.
+      u32 vc[4];
+      for (int q = 0; q < 4; q++)
+      {
+         float qx = V[F[f][q]][0] * 0.577f + nx * 0.6f, qy = V[F[f][q]][1] * 0.577f + ny * 0.6f, qz = V[F[f][q]][2] * 0.577f + nz * 0.6f;
+         float rx2 = qx, ry2 = qy, rz2 = qz;
+         rotate(&rx2, &ry2, &rz2, cx_, sx_, cy_, sy_, cz_, sz_);
+         float l = 0.30f + 0.70f * m_clamp(-rx2 * 0.3f - ry2 * 0.6f - rz2 * 0.7f, 0.0f, 1.0f);
+         vc[q] = col_scale(FC[f], (int)(l * 256.0f));
+      }
+      s_tri_g(&S_SCN, sxp[F[f][0]], syp[F[f][0]], vc[0], sxp[F[f][1]], syp[F[f][1]], vc[1], sxp[F[f][2]], syp[F[f][2]], vc[2]);
+      s_tri_g(&S_SCN, sxp[F[f][0]], syp[F[f][0]], vc[0], sxp[F[f][2]], syp[F[f][2]], vc[2], sxp[F[f][3]], syp[F[f][3]], vc[3]);
       for (int e = 0; e < 4; e++)
       {
          int a = F[f][e], b = F[f][(e + 1) & 3];
-         s_line(&S_SCN, sxp[a], syp[a], sxp[b], syp[b], col_scale(COL_WHITE, 220));
+         s_line_aa(&S_SCN, (float)sxp[a], (float)syp[a], (float)sxp[b], (float)syp[b], col_scale(COL_WHITE, 220));
       }
    }
 }
@@ -178,12 +187,12 @@ static void lamp(Surf *s, int x, int y, int w, int h, const char *label, int on)
 static void hud(void)
 {
    const Input *in = &last;
-   s_panel(&S_TV, 24, 24, 360, 150, COL_CYAN);
-   s_textf(&S_TV, 38, 36, 2, COL_CYAN, "VPAD  %s", in->vpad_ok ? "GAMEPAD OK" : "NO GAMEPAD");
-   s_textf(&S_TV, 38, 62, 2, COL_WHITE, "ACC  %5.2f %5.2f %5.2f", in->acc[0], in->acc[1], in->acc[2]);
-   s_textf(&S_TV, 38, 86, 2, COL_WHITE, "GYRO %5.2f %5.2f %5.2f", in->gyro[0], in->gyro[1], in->gyro[2]);
-   s_textf(&S_TV, 38, 110, 2, COL_WHITE, "TOUCH %s %3d,%3d", in->touched ? "DOWN" : "UP  ", (int)in->tx, (int)in->ty);
-   s_textf(&S_TV, 38, 140, 2, COL_ACCENT, "PRO CONTROLLER %s", in->pro ? "YES" : "NO");
+   s_panel(&S_TV, 24, 64, 360, 150, COL_CYAN);
+   s_textf(&S_TV, 38, 76, 2, COL_CYAN, "VPAD  %s", in->vpad_ok ? "GAMEPAD OK" : "NO GAMEPAD");
+   s_textf(&S_TV, 38, 102, 2, COL_WHITE, "ACC  %5.2f %5.2f %5.2f", in->acc[0], in->acc[1], in->acc[2]);
+   s_textf(&S_TV, 38, 126, 2, COL_WHITE, "GYRO %5.2f %5.2f %5.2f", in->gyro[0], in->gyro[1], in->gyro[2]);
+   s_textf(&S_TV, 38, 150, 2, COL_WHITE, "TOUCH %s %3d,%3d", in->touched ? "DOWN" : "UP  ", (int)in->tx, (int)in->ty);
+   s_textf(&S_TV, 38, 180, 2, COL_ACCENT, "PRO CONTROLLER %s", in->pro ? "YES" : "NO");
    stick(&S_TV, 120, 560, 70, in->lx, in->ly, "LEFT STICK");
    stick(&S_TV, 1160, 560, 70, in->rx, in->ry, "RIGHT STICK");
    static const struct { const char *l; u32 b; } btn[] = {

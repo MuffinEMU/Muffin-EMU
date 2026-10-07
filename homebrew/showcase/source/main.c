@@ -24,51 +24,99 @@ static int s_state = ST_TITLE, s_cur, s_sel;
 static float s_idle, s_demo_t, s_fadein, s_stick_cd;
 static int s_quality_manual;
 
-// A small pixel-art muffin: tan dome with chocolate chips over a striped paper cup.
+// The logo muffin: a pleated paper cup under a lit, glossy dome with chocolate chips. Drawn with
+// per-pixel normal shading and anti-aliased edges so it holds up at any size.
 void draw_muffin(Surf *s, int cx, int cy, int sz)
 {
-   for (int dy = -sz; dy <= sz / 2; dy++)
-   {
-      float t = (float)dy / (float)sz;
-      float hw = (float)sz * 1.3f * m_sqrt(m_clamp(1.0f - t * t * (t < 0 ? 1.0f : 3.2f), 0.0f, 1.0f));
-      int w = (int)hw;
-      u32 c = col_mix(RGB(238, 176, 92), RGB(176, 108, 48), (dy + sz) * 256 / (sz * 3 / 2 + 1));
-      s_rect(s, cx - w, cy + dy, 2 * w, 1, c);
-   }
-   for (int i = 0; i < 9; i++)
-   {
-      u32 h = hash2(i, 31);
-      int x = cx + (int)(h % (u32)(sz * 2)) - sz;
-      int y = cy - (int)((h >> 8) % (u32)(sz)) ;
-      s_disc(s, x, y, sz / 9 + 1, RGB(62, 36, 24));
-   }
-   s_disc(s, cx - sz / 2, cy - sz * 3 / 4, sz / 6, RGB(255, 225, 160));
-   int top = cy + sz / 2, hgt = sz;
+   // Paper cup, narrowing towards the base, cylinder-shaded with a ridge on every pleat.
+   const int top = cy + sz * 40 / 100, hgt = sz * 118 / 100, pleat = sz / 5 + 2;
    for (int dy = 0; dy < hgt; dy++)
    {
-      int hw = sz * 11 / 10 - dy * sz / (hgt * 4);
-      for (int x = -hw; x < hw; x += 1)
+      int hw = sz * 120 / 100 - dy * sz * 32 / (hgt * 100);
+      for (int x = -hw; x <= hw; x++)
       {
-         int stripe = ((x + 1000) / (sz / 4 + 1)) & 1;
-         s_rect(s, cx + x, top + dy, 1, 1, stripe ? RGB(255, 120, 150) : RGB(255, 200, 215));
+         int pi = (x + 4000) / pleat, ph = (x + 4000) % pleat;
+         float u = (float)x / (float)hw;
+         float sh = 0.50f + 0.50f * m_sqrt(1.0f - u * u);
+         float ridge = ph == 0 ? 0.78f : (ph == pleat - 1 ? 0.90f : 1.0f);
+         u32 base = (pi & 1) ? RGB(255, 108, 148) : RGB(255, 198, 216);
+         int k = (int)(sh * ridge * 256.0f);
+         k = k * (256 - dy * 70 / hgt) >> 8;
+         s_blend_pixel(s, cx + x, top + dy, col_scale(base, k), 256);
       }
    }
+   // Dome: ellipse above its centre line, nearly straight skirt below it.
+   const float rx = (float)sz * 1.40f, ry = (float)sz * 1.05f;
+   const int ccy = cy + sz * 30 / 100;
+   const int ytop = ccy - (int)ry - 1, ybot = top + sz / 8;
+   const float lx = -0.45f, ly = -0.62f, lz = 0.64f;
+   for (int y = ytop; y <= ybot; y++)
+   {
+      float dyn = (float)(y - ccy) / ry;
+      float hw;
+      if (y <= ccy) { float q = 1.0f - dyn * dyn; hw = q > 0.0f ? rx * m_sqrt(q) : 0.0f; }
+      else { float t = (float)(y - ccy) / (float)(ybot - ccy + 1); hw = rx * (1.0f - 0.07f * t * t); }
+      if (hw < 0.5f) continue;
+      int x0 = (int)(-hw - 1.0f), x1 = (int)(hw + 1.0f);
+      for (int x = x0; x <= x1; x++)
+      {
+         float cov = hw - (float)(x < 0 ? -x : x) + 0.5f;
+         if (cov <= 0.0f) continue;
+         if (cov > 1.0f) cov = 1.0f;
+         float nx = (float)x / rx, ny = dyn > 0.0f ? 0.0f : dyn;
+         float nzz = 1.0f - nx * nx - ny * ny;
+         float nz = nzz > 0.0f ? m_sqrt(nzz) : 0.0f;
+         float diff = nx * lx + ny * ly + nz * lz;
+         if (diff < 0.0f) diff = 0.0f;
+         float hx = lx, hy = ly, hz = lz + 1.0f;
+         float hl = 1.0f / m_sqrt(hx * hx + hy * hy + hz * hz);
+         float nh = (nx * hx + ny * hy + nz * hz) * hl;
+         if (nh < 0.0f) nh = 0.0f;
+         float sp = nh * nh; sp *= sp; sp *= sp; sp *= sp;
+         int grain = sz > 20 ? (int)(hash2(cx + x, y) & 15u) - 8 : 0;
+         u32 c = col_mix(RGB(142, 84, 36), RGB(248, 188, 104), (int)(diff * 256.0f > 256.0f ? 256.0f : diff * 256.0f));
+         int r = (int)CR(c) + grain + (int)(sp * 70.0f), g = (int)CG(c) + grain + (int)(sp * 60.0f), b = (int)CB(c) + grain / 2 + (int)(sp * 40.0f);
+         c = RGB(r < 0 ? 0 : (r > 255 ? 255 : r), g < 0 ? 0 : (g > 255 ? 255 : g), b < 0 ? 0 : (b > 255 ? 255 : b));
+         s_blend_pixel(s, cx + x, y, c, (int)(cov * 256.0f));
+      }
+   }
+   // Chocolate chips with a small glint each.
+   for (int i = 0; i < 11; i++)
+   {
+      u32 h = hash2(i, 31);
+      float nx = ((float)(h & 1023u) / 1023.0f) * 1.5f - 0.75f;
+      float ny = -(float)((h >> 10) & 1023u) / 1023.0f * 0.78f - 0.06f;
+      if (nx * nx + ny * ny > 0.62f) continue;
+      float px = (float)cx + nx * rx, py = (float)ccy + ny * ry, r = (float)sz * 0.085f + 0.8f;
+      s_disc_aa(s, px, py, r, RGB(64, 36, 22));
+      s_disc_aa(s, px - r * 0.3f, py - r * 0.35f, r * 0.38f, RGB(150, 98, 66));
+   }
+   // Soft sheen across the upper left of the dome.
+   s_blob(s, cx - sz * 45 / 100, ccy - sz * 60 / 100, sz * 55 / 100, sz * 24 / 100, RGB(255, 236, 190), 100);
 }
+
+// Slow animated background, evaluated on a coarse grid and expanded with bilinear filtering.
+static u32 s_bg_lo[(SCN_W / 2 + 2) * (SCN_H / 2 + 2)] __attribute__((aligned(32)));
 
 static void bg_plasma(float dim256)
 {
-   const int B = 4;
-   for (int j = 0; j < g_sh; j += B)
-      for (int i = 0; i < g_sw; i += B)
+   const int B = g_sw / 80;
+   const int cols = (g_sw + B - 1) / B, rows = (g_sh + B - 1) / B;
+   const float t = g_time;
+   for (int j = 0; j < rows; j++)
+      for (int i = 0; i < cols; i++)
       {
-         float x = (float)i * 0.045f, y = (float)j * 0.06f, t = g_time;
-         float v = m_sin(x + t * 0.8f) + m_sin(y * 1.3f - t * 1.1f) + m_sin((x + y) * 0.7f + t * 0.6f);
-         int k = (int)((v * 0.17f + 0.5f) * 255.0f);
+         float x = (float)i * 0.36f * (float)B / 4.0f * 0.045f * 4.0f, y = (float)j * 0.06f * (float)B;
+         float v = m_sin(x + t * 0.8f) + m_sin(y * 1.3f - t * 1.1f) + m_sin((x + y) * 0.7f + t * 0.6f)
+                 + 0.5f * m_sin(m_sqrt(x * x + y * y) * 1.4f - t * 0.9f);
+         int k = (int)((v * 0.14f + 0.5f) * 255.0f);
+         if (k < 0) k = 0;
+         if (k > 255) k = 255;
          u32 c = RGB(40 + (k >> 2), 14 + (k >> 3), 80 + (k >> 1));
-         c = col_scale(c, (int)dim256);
-         for (int dy = 0; dy < B && j + dy < g_sh; dy++)
-            for (int dx = 0; dx < B && i + dx < g_sw; dx++) S_SCN.p[(j + dy) * g_sw + i + dx] = c;
+         s_bg_lo[j * cols + i] = col_scale(c, (int)dim256);
       }
+   par_publish(s_bg_lo, (size_t)cols * (size_t)rows * 4);
+   gfx_upsample(s_bg_lo, cols, rows, B, B);
 }
 
 static void goto_scene(int i)
@@ -99,7 +147,8 @@ static void hud_common(const Scene *sc)
 static void draw_title_tv(void)
 {
    bg_plasma(230.0f);
-   draw_muffin(&S_SCN, g_sw / 2, g_sh * 30 / 100 + (int)(m_sin(g_time * 2.0f) * 2.0f), g_sh / 8);
+   s_glow(&S_SCN, g_sw / 2, g_sh * 26 / 100, g_sh * 34 / 100, RGB(255, 170, 90), 80 + (int)(30.0f * m_sin(g_time * 1.5f)));
+   draw_muffin(&S_SCN, g_sw / 2, g_sh * 24 / 100 + (int)(m_sin(g_time * 2.0f) * (float)(g_sh / 90)), g_sh / 9);
    gfx_present_scene();
    const char *t = "MUFFINEMU";
    int sc = 11, x = (TV_W - text_w(t, sc)) / 2;
@@ -146,7 +195,7 @@ static void draw_menu_tv(void)
 static void draw_title_drc(void)
 {
    s_vgrad(&S_DRC, 0, 0, DRC_W, DRC_H, RGB(34, 18, 70), RGB(10, 8, 28));
-   draw_muffin(&S_DRC, DRC_W / 2, 160, 70);
+   draw_muffin(&S_DRC, DRC_W / 2, 128, 62);
    s_text_sh(&S_DRC, (DRC_W - text_w("MUFFINEMU SHOWCASE", 4)) / 2, 270, 4, COL_WHITE, "MUFFINEMU SHOWCASE");
    if (!((g_frame >> 5) & 1))
       s_text_sh(&S_DRC, (DRC_W - text_w("TOUCH TO START", 3)) / 2, 340, 3, COL_ACCENT, "TOUCH TO START");
