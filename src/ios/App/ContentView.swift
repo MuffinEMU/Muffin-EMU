@@ -1707,6 +1707,7 @@ struct EmulatorViewOptimized: View {
     @AppStorage(EmulatedDevicesSettings.infinityBaseKey) private var infinityBaseEnabled = EmulatedDevicesSettings.defaultEnabled
     @AppStorage(EmulatedDevicesSettings.dimensionsToypadKey) private var dimensionsToypadEnabled = EmulatedDevicesSettings.defaultEnabled
     @State private var showEmulatedDevices = false
+    @State private var showAmiibo = false
     private var anyEmulatedDeviceEnabled: Bool {
         skylanderPortalEnabled || infinityBaseEnabled || dimensionsToypadEnabled
     }
@@ -1944,6 +1945,8 @@ struct EmulatorViewOptimized: View {
                 showSaveStates = false
             } else if showEmulatedDevices {
                 showEmulatedDevices = false
+            } else if showAmiibo {
+                showAmiibo = false
             } else if showHomeMenu {
                 if !showingBackConfirmation { closeHomeMenu() }
             } else {
@@ -1959,7 +1962,7 @@ struct EmulatorViewOptimized: View {
     @ViewBuilder private var homeMenuLayer: some View {
         HomeMenuOverlay(
             gameName: gameName,
-            isActive: !showSaveStates && !showingBackConfirmation && !showEmulatedDevices,
+            isActive: !showSaveStates && !showingBackConfirmation && !showEmulatedDevices && !showAmiibo,
             screenLayout: $screenLayout,
             isDualScreen: displayRouter.placement == .dualScreen,
             canQuit: saveStateBusySlot == nil,
@@ -1973,7 +1976,8 @@ struct EmulatorViewOptimized: View {
                     isRunning = true
                 },
                 swapScreens: swapScreensFromHomeMenu,
-                toggleRecording: { AudioRecorder.shared.toggle(gameName: gameName) }
+                toggleRecording: { AudioRecorder.shared.toggle(gameName: gameName) },
+                scanAmiibo: { showAmiibo = true }
             )
         )
     }
@@ -2770,6 +2774,14 @@ struct EmulatorViewOptimized: View {
         .sheet(isPresented: $showEmulatedDevices) {
             EmulatedDevicesView()
         }
+        .sheet(isPresented: $showAmiibo) {
+            AmiiboSheet { message in
+                // The game has to be running for the reader to hand the tag over.
+                showAmiibo = false
+                closeHomeMenu()
+                gameManager.showLaunchNotice(message)
+            }
+        }
     }
 
     /// Writes to `slot`, creating this game's SaveStates folder on first use. `path` is
@@ -2847,6 +2859,7 @@ struct EmulatorViewOptimized: View {
             && !showSkinSelector
             && !showSaveStates
             && !showEmulatedDevices
+            && !showAmiibo
             && !showingBackConfirmation
             && !showsStallCard
             && saveStateBusySlot == nil
