@@ -270,6 +270,20 @@ class GameManager: ObservableObject {
         Task {
             await loadGames()
         }
+        // An art pack was installed or deleted, the cover style changed, or game data was scraped.
+        coverSourcesObserver = NotificationCenter.default.addObserver(
+            forName: .muffinCoverArtSourcesChanged, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshAllCoverPaths() }
+        }
+    }
+
+    private var coverSourcesObserver: NSObjectProtocol?
+
+    /// Asks the cover chain again for every game, then lets the background pass fill what is still
+    /// missing. Cheap: stored lookups only.
+    func refreshAllCoverPaths() {
+        for game in games { refreshCoverPath(forGameID: game.id) }
+        enrichMissingCoverArt()
     }
 
     /// `showSpinner` is false for a rescan while the grid is on screen, so the list does not flash to the loading view.
@@ -646,8 +660,10 @@ class GameManager: ObservableObject {
 
         // The ordered cover chain (CoverSources.swift): stored box art, then the extracted
         // icon. Stored lookups only here - no network, no decoding.
+        let names = [LibraryMetadataCache.cachedTitleName(for: gameID), gameID].compactMap { $0 }.filter { !$0.isEmpty }
         if let path = CoverSourceChain.cachedPath(CoverContext(
-            gameID: gameID, romPath: romPath, dumpDirectoryPath: nil, libraryDirectory: directory, currentCoverPath: nil
+            gameID: gameID, romPath: romPath, dumpDirectoryPath: nil, libraryDirectory: directory, currentCoverPath: nil,
+            region: LibraryMetadataCache.cachedRegion(for: gameID), titles: names
         )) {
             return path
         }
@@ -687,10 +703,13 @@ class GameManager: ObservableObject {
                 // Walk the cover chain (CoverSources.swift) for whatever this install is missing.
                 let context = CoverContext(
                     gameID: game.id, romPath: game.romPath, dumpDirectoryPath: game.dumpDirectoryPath,
-                    libraryDirectory: romsPath, currentCoverPath: game.coverPath
+                    libraryDirectory: romsPath, currentCoverPath: game.coverPath,
+                    region: game.region, titles: [game.displayTitle, game.title].compactMap { $0 }
                 )
-                if let coverPath = await CoverSourceChain.acquireMissing(context) {
-                    await self?.applyCoverPath(coverPath, forGameID: game.id)
+                if await CoverSourceChain.acquireMissing(context) != nil {
+                    // Ask the chain again rather than taking the new file as is: a higher source
+                    // (an art pack in the chosen style) may already have something better.
+                    await self?.refreshCoverPath(forGameID: game.id)
                 }
 
                 // Region and the title's real name both come from the same
@@ -701,6 +720,11 @@ class GameManager: ObservableObject {
                     || LibraryMetadataCache.cachedTitleName(for: game.id) == nil {
                     await self?.deriveAndApplyRegionAndTitleName(for: game)
                 }
+            }
+            // With names and regions in place, tie every game to its GameTDB entry (at most every few hours).
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                GameDataStore.shared.scrapeIfNeeded(games: self.games)
             }
         }
     }
