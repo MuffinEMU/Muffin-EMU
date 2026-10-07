@@ -174,6 +174,25 @@ final class ArtPackIndex {
                 }
             }
         }
+        // Last resort: one pack title that starts with the game's loose name, or the other way round
+        // ("mario kart 8" vs "mario kart 8 deluxe edition"). Only taken when exactly one title fits,
+        // so a short or generic name never grabs the wrong game's art.
+        let looseKeys = candidates.map(ArtTitleNormalizer.loose).filter { $0.count >= 8 }
+        for style in styles {
+            let ofStyle = all.values.filter { $0.meta.style == style && (onlyPack == nil || $0.meta.id == onlyPack) }.sorted { $0.meta.order < $1.meta.order }
+            for loose in looseKeys {
+                for pack in ofStyle {
+                    let fits = pack.byTitle.keys.filter { !$0.contains(" ") && $0.count >= 8 && ($0.hasPrefix(loose) || loose.hasPrefix($0)) }
+                    guard fits.count == 1, let key = fits.first, let records = pack.byTitle[key] else { continue }
+                    let matched = records.first { r in !regions.isEmpty && !RegionCode.codes(in: r.region).isDisjoint(with: regions) }
+                    guard let pick = matched ?? records.first else { continue }
+                    let path = pack.directory.appendingPathComponent(pick.file).path
+                    if FileManager.default.fileExists(atPath: path) {
+                        return PackArtHit(packID: pack.meta.id, path: path, regionMatched: matched != nil)
+                    }
+                }
+            }
+        }
         return nil
     }
 }
