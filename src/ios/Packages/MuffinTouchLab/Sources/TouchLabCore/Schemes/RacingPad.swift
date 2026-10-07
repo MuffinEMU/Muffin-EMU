@@ -42,6 +42,8 @@ public final class RacingPad: ControlScheme {
     }
 
     public let options: Options
+    /// A's size as a multiple of its usual one (1...1.8): the Accelerate pedal grows with it.
+    public let aScale: CGFloat
 
     /// How far the device is turned, from straight ahead, for full lock: 35 degrees.
     public static let tiltFullLock: Double = 35 * .pi / 180
@@ -51,36 +53,37 @@ public final class RacingPad: ControlScheme {
     /// Steering from the device's motion, -1...1. Zero until the first sample.
     public private(set) var tiltValue: Double = 0
 
-    public init(options: Options = Options()) {
+    public init(options: Options = Options(), aScale: CGFloat = 1) {
         self.options = options
+        self.aScale = aScale
         super.init(info: Self.schemeInfo)
     }
 
     // MARK: Layout
 
     override public func makeControls(_ context: LayoutContext) -> [PadControl] {
-        RacingPad.build(context, options: options)
+        RacingPad.build(context, options: options, aScale: aScale)
     }
 
     /// The layout at the largest size that fits: the context's own unit, then 8% smaller
     /// each step until nothing overlaps, everything is inside the safe area and the steering
     /// area is still wide enough to use.
-    public static func build(_ ctx: LayoutContext, options: Options = Options()) -> [PadControl] {
+    public static func build(_ ctx: LayoutContext, options: Options = Options(), aScale: CGFloat = 1) -> [PadControl] {
         var u = ctx.unit
         for _ in 0..<12 {
-            if let set = arrangement(ctx, u: u, options: options),
+            if let set = arrangement(ctx, u: u, options: options, aScale: aScale),
                LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty {
                 return set
             }
             u *= 0.92
         }
-        return arrangement(ctx, u: u, options: options, force: true) ?? []
+        return arrangement(ctx, u: u, options: options, aScale: aScale, force: true) ?? []
     }
 
     /// Group the pedals slide within.
     static let pedalGroup = 31
 
-    static func arrangement(_ ctx: LayoutContext, u: CGFloat, options: Options, force: Bool = false) -> [PadControl]? {
+    static func arrangement(_ ctx: LayoutContext, u: CGFloat, options: Options, aScale: CGFloat = 1, force: Bool = false) -> [PadControl]? {
         let s = ctx.safeBounds
         guard s.width > 0, s.height > 0 else { return nil }
         let landscape = s.width >= s.height
@@ -90,8 +93,9 @@ public final class RacingPad: ControlScheme {
         let gap = 0.05 * u            // drawn gap between neighbouring zones; the catchment closes it
 
         // Pedals, bottom right. Widths and heights in units of a thumb-sized button.
-        let wA = 2.7 * u, wB = 1.8 * u
-        let hA = 2.3 * u, hC = 1.5 * u, hR = 1.3 * u
+        let a = PadParts.clampedAScale(aScale)
+        let wA = 2.7 * a * u, wB = 1.8 * u
+        let hA = 2.3 * a * u, hC = 1.5 * u, hR = 1.3 * u
         let xA = s.maxX - wA, xB = xA - wB
         let yA = s.maxY - hA, yC = yA - hC, yR = yC - hR
         func inset(_ r: CGRect) -> CGRect { r.insetBy(dx: gap / 2, dy: gap / 2) }

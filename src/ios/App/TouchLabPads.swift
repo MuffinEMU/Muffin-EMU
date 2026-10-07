@@ -41,8 +41,19 @@ enum TouchLabSettings {
     static let racingAutoAccelerateKey = "muffin.touchlab.racing.autoAccelerate"
     static let racingTiltKey = "muffin.touchlab.racing.tilt"
 
-    /// Zone's option: A about 1.4 times its size.
-    static let zoneLargeAKey = "muffin.touchlab.zone.largeA"
+    /// A button size for every style, as a multiple of its usual size.
+    static let aScaleKey = "muffin.touchlab.aScale"
+    static let defaultAScale = 1.0
+    static let aScaleRange = 1.0...1.8
+
+    /// Replaces the old Zone-only "Large A button" switch, which meant 1.4. Runs once: the
+    /// new key is written, so the old one is never read again.
+    private static let legacyLargeAKey = "muffin.touchlab.zone.largeA"
+    static func migrateLegacyLargeA() {
+        let d = UserDefaults.standard
+        guard d.object(forKey: aScaleKey) == nil else { return }
+        if d.bool(forKey: legacyLargeAKey) { d.set(1.4, forKey: aScaleKey) }
+    }
 
     /// Bumped by "Reset Adaptive layout" so the live pad rebuilds from the cleared data.
     static let adaptiveResetKey = "muffin.touchlab.adaptive.resetCount"
@@ -277,7 +288,7 @@ struct TouchLabPadOverlay: View {
     @AppStorage(TouchLabSettings.adaptiveResetKey) private var adaptiveResets = 0
     @AppStorage(TouchLabSettings.racingAutoAccelerateKey) private var racingAuto = false
     @AppStorage(TouchLabSettings.racingTiltKey) private var racingTilt = false
-    @AppStorage(TouchLabSettings.zoneLargeAKey) private var zoneLargeA = false
+    @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
 
     var body: some View {
         TouchPad(schemeID: schemeID,
@@ -301,7 +312,10 @@ struct TouchLabPadOverlay: View {
                  extraInsets: Insets(top: topInset),
                  makeScheme: makeScheme)
             .ignoresSafeArea()
-            .onAppear { syncGamepadSize() }
+            .onAppear {
+                TouchLabSettings.migrateLegacyLargeA()
+                syncGamepadSize()
+            }
             .onChange(of: screens) { _ in syncGamepadSize() }
     }
 
@@ -312,7 +326,7 @@ struct TouchLabPadOverlay: View {
         h.combine(adaptiveResets)
         h.combine(racingAuto)
         h.combine(racingTilt)
-        h.combine(zoneLargeA)
+        h.combine(aScale)
         return h.finalize()
     }
 
@@ -323,18 +337,20 @@ struct TouchLabPadOverlay: View {
     private func makeScheme(_ id: String) -> TouchScheme {
         switch id {
         case FloatPad.schemeInfo.id:
-            return FloatPad(camera: FloatPad.Camera(rawValue: cameraRaw) ?? .stick)
+            return FloatPad(camera: FloatPad.Camera(rawValue: cameraRaw) ?? .stick, aScale: CGFloat(aScale))
         case AdaptivePad.schemeInfo.id:
             let key = TouchLabSettings.adaptiveKey(gameID: gameID)
-            let pad = AdaptivePad(learned: AdaptivePad.decode(UserDefaults.standard.string(forKey: key) ?? "{}"))
+            let pad = AdaptivePad(learned: AdaptivePad.decode(UserDefaults.standard.string(forKey: key) ?? "{}"),
+                                aScale: CGFloat(aScale))
             pad.onLearned = { UserDefaults.standard.set(AdaptivePad.encode($0), forKey: key) }
             return pad
         case ZonePad.schemeInfo.id:
-            return ZonePad(largeA: zoneLargeA)
+            return ZonePad(aScale: CGFloat(aScale))
         case RacingPad.schemeInfo.id:
-            return RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto, tilt: racingTilt))
+            return RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto, tilt: racingTilt),
+                             aScale: CGFloat(aScale))
         default:
-            return SchemeCatalog.make(id)
+            return SchemeCatalog.make(id, aScale: CGFloat(aScale))
         }
     }
 }

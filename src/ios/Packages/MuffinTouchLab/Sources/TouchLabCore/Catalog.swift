@@ -6,13 +6,15 @@ public enum SchemeCatalog {
                                            AdaptivePad.schemeInfo, FramePad.schemeInfo,
                                            RacingPad.schemeInfo]
 
-    public static func make(_ id: String) -> TouchScheme {
+    public static func make(_ id: String) -> TouchScheme { make(id, aScale: 1) }
+
+    public static func make(_ id: String, aScale: CGFloat) -> TouchScheme {
         switch id {
-        case FloatPad.schemeInfo.id: return FloatPad()
-        case AdaptivePad.schemeInfo.id: return AdaptivePad()
-        case FramePad.schemeInfo.id: return FramePad()
-        case RacingPad.schemeInfo.id: return RacingPad()
-        default: return ZonePad()
+        case FloatPad.schemeInfo.id: return FloatPad(aScale: aScale)
+        case AdaptivePad.schemeInfo.id: return AdaptivePad(aScale: aScale)
+        case FramePad.schemeInfo.id: return FramePad(aScale: aScale)
+        case RacingPad.schemeInfo.id: return RacingPad(aScale: aScale)
+        default: return ZonePad(aScale: aScale)
         }
     }
 }
