@@ -29,8 +29,12 @@ public final class FloatPad: ControlScheme {
         didSet { if camera != oldValue, context.size != .zero { layout(context) } }
     }
 
-    public init(camera: Camera = .stick) {
+    /// A's size as a multiple of its usual one (1...1.8).
+    public let aScale: CGFloat
+
+    public init(camera: Camera = .stick, aScale: CGFloat = 1) {
         self.camera = camera
+        self.aScale = aScale
         super.init(info: Self.schemeInfo)
     }
 
@@ -78,7 +82,8 @@ public final class FloatPad: ControlScheme {
         // Face diamond bottom-right, a touch smaller than Zone's so the camera area
         // around it stays generous.
         let fk: CGFloat = 0.92
-        let faceCentre = CGPoint(x: s.maxX - (PadParts.clusterRadius * fk + 0.7) * u,
+        let aExtra = 0.5 * (PadParts.clampedAScale(aScale) - 1) * fk * u
+        let faceCentre = CGPoint(x: s.maxX - (PadParts.clusterRadius * fk + 0.7) * u - aExtra,
                                  y: s.maxY - (PadParts.clusterRadius * fk + 0.7) * u)
 
         let zoneTop = belowBands
@@ -121,6 +126,6 @@ public final class FloatPad: ControlScheme {
             PadControl(.floatingStick(.left, travel: travel, rest: leftRest, follow: false, click: .stickL),
                        shape: .roundedRect(leftZone, cornerRadius: 0), role: .zone, label: "L", priority: 0),
             cameraControl,
-        ] + PadParts.faceDiamond(faceCentre, u: u, scale: fk, rDot: false)
+        ] + PadParts.faceDiamond(faceCentre, u: u, scale: fk, rDot: false, aScale: aScale)
     }
 }

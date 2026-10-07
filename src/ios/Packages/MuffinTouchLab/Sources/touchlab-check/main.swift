@@ -163,22 +163,41 @@ for options in [RacingPad.Options(), RacingPad.Options(autoAccelerate: true), Ra
     }
 }
 
-// MARK: Zone with a large A
+// MARK: A button size
+// The slider runs 1.0...1.8 in 0.01 steps on every style. A must only ever grow with it, with
+// no jump between adjacent steps, and stay on screen and clear of its neighbours at the top.
 
-for device in TargetDevice.all {
+func aWidth(_ scheme: ControlScheme) -> CGFloat {
+    let a = scheme.controls.first {
+        if case .pedal(let set) = $0.kind { return set == [.a] }
+        return $0.button == .a
+    }
+    return a?.shape.boundingBox.width ?? 0
+}
+
+for device in ["iPad Pro 11 (A12Z)", "iPhone 16"].compactMap({ name in TargetDevice.all.first { $0.name == name } }) {
     for display in TargetDevice.Display.allCases {
         let ctx = device.context(display)
-        let normal = ZonePad(), large = ZonePad(largeA: true)
-        normal.layout(ctx); large.layout(ctx)
-        let where_ = "Zone large A / \(device.name) / \(display.rawValue)"
-        check(LayoutCheck.problems(large.controls, in: ctx.safeBounds).isEmpty,
-              "\(where_): \(LayoutCheck.problems(large.controls, in: ctx.safeBounds).joined(separator: "; "))")
-        let aN = normal.controls.first { $0.button == .a }!.shape.boundingBox.width
-        let aL = large.controls.first { $0.button == .a }!.shape.boundingBox.width
-        let yL = large.controls.first { $0.button == .y }!.shape.boundingBox.width
-        check(abs(aL / yL - 1.4 / 0.9) < 0.01, "\(where_): A is \(aL / yL)x its neighbours")
-        // About 1.4x, less only where the whole layout had to shrink to fit.
-        check(aL >= aN * 1.2, "\(where_): A grew only \(aL / aN)x")
+        for info in SchemeCatalog.all {
+            let where_ = "A size / \(info.name) / \(device.name) / \(display.rawValue)"
+            func laidOut(_ a: CGFloat) -> ControlScheme {
+                let s = SchemeCatalog.make(info.id, aScale: a) as! ControlScheme
+                s.layout(ctx)
+                return s
+            }
+            var prev = aWidth(laidOut(1))
+            check(prev > 0, "\(where_): no A control")
+            for step in 1...80 {
+                let w = aWidth(laidOut(1 + CGFloat(step) / 100))
+                check(w >= prev - 0.001, "\(where_): A shrank \(prev) -> \(w) at \(1 + Double(step) / 100)")
+                check(w <= prev * 1.02 + 0.001, "\(where_): A jumped \(prev) -> \(w) at \(1 + Double(step) / 100)")
+                prev = w
+            }
+            let top = laidOut(1.8)
+            let problems = LayoutCheck.problems(top.controls, in: ctx.safeBounds)
+            check(problems.isEmpty, "\(where_) at 1.8: \(problems.joined(separator: "; "))")
+            check(aWidth(top) >= aWidth(laidOut(1)) * 1.2, "\(where_): A grew only \(aWidth(top) / aWidth(laidOut(1)))x")
+        }
     }
 }
 

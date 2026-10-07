@@ -37,7 +37,7 @@ for info in SchemeCatalog.all {
 index += "<h2>Zone, large A</h2>"
 for device in TargetDevice.all {
     let ctx = device.context(.stacked)
-    let engine = PadEngine(scheme: ZonePad(largeA: true), output: NullOutput(), context: ctx)
+    let engine = PadEngine(scheme: ZonePad(aScale: 1.4), output: NullOutput(), context: ctx)
     let svg = SVGRenderer.svg(size: ctx.size, videoRects: ctx.videoRects, safe: ctx.safeBounds,
                               title: "Zone, large A - \(device.name) - stacked", elements: engine.render())
     let slug = device.name.lowercased().replacingOccurrences(of: " ", with: "-")
