@@ -131,6 +131,10 @@ int IOSTitleDecrypt_ExtractToFolder(const char* srcPath, const char* destFolderP
 int IOSTitleDecrypt_ExtractToWua(const char* srcPath, const char* destPath,
     std::atomic_bool& cancelRequested,
     const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
+int IOSWuaContent_Build(const std::vector<std::string>& srcs, const char* destPath,
+    std::atomic_bool& cancelRequested,
+    const std::function<void(uint64_t bytesWritten, uint32_t filesWritten)>& progressCallback);
+std::string IOSWuaContent_ListTitles(const char* wuaPath);
 std::string IOSCoverArt_DeriveGameTdbId(const char* romPath);
 std::string IOSCoverArt_GetTitleName(const char* romPath);
 bool IOSDlcUpdateImport_DeriveTitleId(const char* romPath, uint64_t* titleIdOut);
@@ -3466,9 +3470,7 @@ static std::atomic<uint32_t> g_decryptFilesWritten{0};
 static std::thread g_decryptThread;
 static std::mutex g_decryptThreadMutex;
 
-bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool toWua) {
-    if (!srcPath || srcPath[0] == '\0' || !destPath || destPath[0] == '\0')
-        return false;
+static bool StartDecryptJob(const std::function<int(const std::function<void(uint64_t, uint32_t)>&)>& job) {
     if (g_decryptRunning.exchange(true))
         return false;
 
@@ -3480,18 +3482,14 @@ bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool t
     g_decryptBytesWritten.store(0);
     g_decryptFilesWritten.store(0);
 
-    std::string src(srcPath);
-    std::string dest(destPath);
-    g_decryptThread = std::thread([src, dest, toWua]() {
+    g_decryptThread = std::thread([job]() {
         auto progress = [](uint64_t bytesWritten, uint32_t filesWritten) {
             g_decryptBytesWritten.store(bytesWritten);
             g_decryptFilesWritten.store(filesWritten);
         };
         int status = 5; // IOS_DECRYPT_INCOMPLETE: an exception means the output can't be trusted
         try {
-            status = toWua
-                ? IOSTitleDecrypt_ExtractToWua(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress)
-                : IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress);
+            status = job(progress);
         } catch (...) {
             std::string message = "decrypt: threw: " + cemu_describe_current_exception();
             cemu_bridge_log_checkpoint(message.c_str());
@@ -3501,6 +3499,54 @@ bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool t
         g_decryptRunning.store(false);
     });
     return true;
+}
+
+bool cemu_bridge_start_decrypt(const char* srcPath, const char* destPath, bool toWua) {
+    if (!srcPath || srcPath[0] == '\0' || !destPath || destPath[0] == '\0')
+        return false;
+    std::string src(srcPath);
+    std::string dest(destPath);
+    return StartDecryptJob([src, dest, toWua](const std::function<void(uint64_t, uint32_t)>& progress) {
+        return toWua
+            ? IOSTitleDecrypt_ExtractToWua(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress)
+            : IOSTitleDecrypt_ExtractToFolder(src.c_str(), dest.c_str(), g_decryptCancelRequested, progress);
+    });
+}
+
+bool cemu_bridge_start_wua_build(const char* sourcePathsNewlineSeparated, const char* destPath) {
+    if (!sourcePathsNewlineSeparated || !destPath || destPath[0] == '\0')
+        return false;
+    std::vector<std::string> sources;
+    std::string list(sourcePathsNewlineSeparated);
+    size_t start = 0;
+    while (start <= list.size()) {
+        size_t end = list.find('\n', start);
+        if (end == std::string::npos)
+            end = list.size();
+        if (end > start)
+            sources.push_back(list.substr(start, end - start));
+        start = end + 1;
+    }
+    if (sources.empty())
+        return false;
+    std::string dest(destPath);
+    return StartDecryptJob([sources, dest](const std::function<void(uint64_t, uint32_t)>& progress) {
+        return IOSWuaContent_Build(sources, dest.c_str(), g_decryptCancelRequested, progress);
+    });
+}
+
+int cemu_bridge_wua_list_titles(const char* wuaPath, char* outLines, size_t outSize) {
+    if (!wuaPath || !outLines || outSize == 0)
+        return -1;
+    std::string lines = IOSWuaContent_ListTitles(wuaPath);
+    int count = 0;
+    for (char c : lines)
+        if (c == '\n')
+            count++;
+    size_t length = std::min(lines.size(), outSize - 1);
+    memcpy(outLines, lines.data(), length);
+    outLines[length] = '\0';
+    return count;
 }
 
 void cemu_bridge_get_decrypt_progress(CemuBridgeDecryptProgress* out) {
