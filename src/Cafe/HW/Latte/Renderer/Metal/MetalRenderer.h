@@ -337,6 +337,9 @@ public:
 
 		void texture_setLatteTexture(LatteTextureView* textureView, uint32 textureUnit) override;
 		void texture_notifyDelete(LatteTextureView* textureView);
+		// Copy raw BC blocks, written through an uncompressed alias surface, into a compressed texture this GPU stores as a transcode
+		// (ASTC or decoded). Returns nullptr when the copy was done, otherwise the reason it could not be.
+		const char* CopyRawBlocksIntoTranscodedTexture(LatteTexture* src, sint32 srcMip, sint32 srcX, sint32 srcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 dstX, sint32 dstY, sint32 dstSlice, sint32 blocksW, sint32 blocksH, sint32 sliceCount);
 		void texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth) override;
 
 	LatteTextureReadbackInfo* texture_createReadback(LatteTextureView* textureView) override;

@@ -19,6 +19,7 @@
 #include "Cafe/HW/Latte/Renderer/Metal/UtilityShaderSource.h"
 
 #include "Cafe/HW/Latte/Core/LatteShader.h"
+#include "Cafe/HW/Latte/Core/LatteTextureLoader.h"
 #include "Cafe/HW/Latte/Core/PerfTelemetry.h"
 #include "Cafe/HW/Latte/Core/LatteIndices.h"
 #include "Cafe/HW/Latte/Core/LatteBufferCache.h"
@@ -91,6 +92,7 @@ enum class MetalGuard : uint32
     SurfaceCopyScissorClamped,
     UploadRetryStopped,
     CopyBytesPerBlockMismatch,
+    CopyRetranscoded,
     Count
 };
 
@@ -126,6 +128,7 @@ namespace
         {"surface-copy-scissor-clamped", "clamp"},
         {"upload-retry-stopped", "note"},
         {"copy-bytes-per-block-mismatch", "skip"},
+        {"copy-blocks-retranscoded", "note"},
     };
     constexpr uint32 kMetalGuardCount = (uint32)MetalGuard::Count;
     static_assert(std::size(kMetalGuardInfo) == kMetalGuardCount, "MetalGuard names out of step with the enum");
@@ -1552,8 +1555,118 @@ void MetalRenderer::texture_notifyDelete(LatteTextureView* textureView)
     }
 }
 
+const char* MetalRenderer::CopyRawBlocksIntoTranscodedTexture(LatteTexture* src, sint32 srcMip, sint32 srcX, sint32 srcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 dstX, sint32 dstY, sint32 dstSlice, sint32 blocksW, sint32 blocksH, sint32 sliceCount)
+{
+    // Every Apple GPU takes this path when it has no BC support, so nothing here depends on the model: the sizes come from the
+    // textures, the block layout from the Latte format, and the encoding from the same decoder an upload of that format uses.
+    auto mtlSrc = static_cast<LatteTextureMtl*>(src)->GetTexture();
+    auto mtlDst = static_cast<LatteTextureMtl*>(dst)->GetTexture();
+    if (!mtlSrc || !mtlDst || src->isDepth || dst->isDepth)
+        return "a texture is missing or is depth";
+    const auto& srcInfo = GetMtlPixelFormatInfo(src->format, false);
+    const auto& dstInfo = GetMtlPixelFormatInfo(dst->format, false);
+    TextureDecoder* decoder = dstInfo.textureDecoder;
+    if (!decoder)
+        return "no decoder for the destination format";
+    const uint32 latteBlockBytes = Latte::GetFormatBits(dst->format) / 8;
+    if (srcInfo.blockTexelSize.x != 1 || srcInfo.blockTexelSize.y != 1 || srcInfo.bytesPerBlock != latteBlockBytes || (latteBlockBytes != 8 && latteBlockBytes != 16))
+        return "the source blocks are not the size of the BC blocks";
+    auto planar = [](MTL::Texture* texture) { return texture->textureType() == MTL::TextureType2D || texture->textureType() == MTL::TextureType2DArray; };
+    if (!planar(mtlSrc) || !planar(mtlDst))
+        return "only 2D textures are handled";
+    if (srcMip < 0 || dstMip < 0 || (NS::UInteger)srcMip >= mtlSrc->mipmapLevelCount() || (NS::UInteger)dstMip >= mtlDst->mipmapLevelCount())
+        return "a texture has no such mip level";
+    if (srcX < 0 || srcY < 0 || dstX < 0 || dstY < 0 || (dstX & 3) || (dstY & 3) || srcSlice < 0 || dstSlice < 0 || sliceCount < 1 || blocksW < 1 || blocksH < 1)
+        return "the copy is not aligned to whole blocks";
+
+    const sint64 srcLevelW = std::max<sint64>(1, (sint64)mtlSrc->width() >> std::min(srcMip, 63));
+    const sint64 srcLevelH = std::max<sint64>(1, (sint64)mtlSrc->height() >> std::min(srcMip, 63));
+    const sint64 dstLevelW = std::max<sint64>(1, (sint64)mtlDst->width() >> std::min(dstMip, 63));
+    const sint64 dstLevelH = std::max<sint64>(1, (sint64)mtlDst->height() >> std::min(dstMip, 63));
+    if (srcX >= srcLevelW || srcY >= srcLevelH || dstX >= dstLevelW || dstY >= dstLevelH)
+        return "the copy starts outside a level";
+    const sint64 texelsW = std::min<sint64>((sint64)blocksW * 4, dstLevelW - dstX);
+    const sint64 texelsH = std::min<sint64>((sint64)blocksH * 4, dstLevelH - dstY);
+    const sint64 copyBlocksW = std::min<sint64>((texelsW + 3) / 4, srcLevelW - srcX);
+    const sint64 copyBlocksH = std::min<sint64>((texelsH + 3) / 4, srcLevelH - srcY);
+    // A readback stalls the GPU thread, so only regions of the size these surfaces really have are taken
+    if (copyBlocksW * copyBlocksH > 128 * 128)
+        return "the region is too large to re-encode";
+    const sint64 slices = std::min<sint64>({(sint64)sliceCount, (sint64)std::max<NS::UInteger>(1, mtlSrc->arrayLength()) - srcSlice, (sint64)std::max<NS::UInteger>(1, mtlDst->arrayLength()) - dstSlice});
+    if (slices < 1)
+        return "a slice the copy starts at does not exist";
+
+    const size_t bytesPerRowIn = (size_t)copyBlocksW * latteBlockBytes;
+    const size_t bytesPerImageIn = bytesPerRowIn * (size_t)copyBlocksH;
+    MTL::Buffer* readback = m_device->newBuffer(bytesPerImageIn * (size_t)slices, MTL::ResourceStorageModeShared);
+    if (!readback)
+        return "no memory for the readback";
+
+    // Take the blocks off the alias. The blit is ordered behind whatever wrote them, so it is enough to submit and wait.
+    {
+        auto blit = GetBlitCommandEncoder();
+        for (sint64 i = 0; i < slices; i++)
+            blit->copyFromTexture(mtlSrc, (NS::UInteger)(srcSlice + i), (NS::UInteger)srcMip, MTL::Origin(srcX, srcY, 0), MTL::Size((NS::UInteger)copyBlocksW, (NS::UInteger)copyBlocksH, 1), readback, (NS::UInteger)(bytesPerImageIn * (size_t)i), bytesPerRowIn, bytesPerImageIn);
+    }
+    CommitCommandBuffer();
+    bool finished = true;
+    if (!m_executingCommandBuffers.empty())
+        finished = WaitForCommandBuffer(m_executingCommandBuffers.back(), "re-encoding raw blocks into a transcoded texture");
+    ProcessFinishedCommandBuffers();
+    if (!finished)
+    {
+        readback->release();
+        return "the GPU did not finish the readback";
+    }
+
+    const size_t bytesPerRowOut = GetMtlTextureBytesPerRow(dst->format, false, (uint32)texelsW);
+    const size_t rowsOut = ((size_t)texelsH + std::max<uint32>(1, dstInfo.blockTexelSize.y) - 1) / std::max<uint32>(1, dstInfo.blockTexelSize.y);
+    const uint8* readbackData = static_cast<const uint8*>(readback->contents());
+    std::vector<std::vector<uint8>> encoded((size_t)slices);
+    for (sint64 i = 0; i < slices; i++)
+    {
+        LatteTextureLoaderCtx ctx{};
+        ctx.tileMode = Latte::E_HWTILEMODE::TM_LINEAR_GENERAL;
+        ctx.bpp = latteBlockBytes * 8;
+        ctx.stepX = 4;
+        ctx.stepY = 4;
+        ctx.width = (sint32)texelsW;
+        ctx.height = (sint32)texelsH;
+        ctx.pitch = (sint32)copyBlocksW;
+        ctx.mipLevels = 1;
+        ctx.surfaceInfoHeight = (uint32)copyBlocksH;
+        ctx.surfaceInfoDepth = 1;
+        ctx.inputData = const_cast<uint8*>(readbackData) + bytesPerImageIn * (size_t)i;
+        const size_t outSize = (size_t)decoder->calculateImageSize(&ctx);
+        if (outSize < bytesPerRowOut * rowsOut)
+        {
+            readback->release();
+            return "the decoder output is smaller than the region";
+        }
+        encoded[(size_t)i].resize(outSize);
+        decoder->decode(&ctx, encoded[(size_t)i].data());
+    }
+    readback->release();
+
+    auto blit = GetBlitCommandEncoder();
+    auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
+    for (sint64 i = 0; i < slices; i++)
+    {
+        auto allocation = bufferAllocator.AllocateBufferMemory((uint32)encoded[(size_t)i].size(), 1);
+        if (!allocation.mtlBuffer)
+            return "no staging memory for the re-encoded blocks";
+        memcpy(allocation.memPtr, encoded[(size_t)i].data(), encoded[(size_t)i].size());
+        bufferAllocator.FlushReservation(allocation);
+        blit->copyFromBuffer(allocation.mtlBuffer, allocation.bufferOffset, bytesPerRowOut, 0, MTL::Size((NS::UInteger)texelsW, (NS::UInteger)texelsH, 1), mtlDst, (NS::UInteger)(dstSlice + i), (NS::UInteger)dstMip, MTL::Origin(dstX, dstY, 0), MTL::BlitOptionNone);
+    }
+    return nullptr;
+}
+
 void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, sint32 effectiveSrcX, sint32 effectiveSrcY, sint32 srcSlice, LatteTexture* dst, sint32 dstMip, sint32 effectiveDstX, sint32 effectiveDstY, sint32 dstSlice, sint32 effectiveCopyWidth, sint32 effectiveCopyHeight, sint32 srcDepth_)
 {
+    const sint32 sourceCopyWidth = effectiveCopyWidth;
+    const sint32 sourceCopyHeight = effectiveCopyHeight;
+
     // Source size seems to apply to the destination texture as well, therefore we need to adjust it when block size doesn't match
     Uvec2 srcBlockTexelSize = GetMtlPixelFormatInfo(src->format, src->isDepth).blockTexelSize;
     Uvec2 dstBlockTexelSize = GetMtlPixelFormatInfo(dst->format, dst->isDepth).blockTexelSize;
@@ -1611,7 +1724,19 @@ void MetalRenderer::texture_copyImageSubData(LatteTexture* src, sint32 srcMip, s
             MTL::Texture* compressedSide = src->IsCompressedFormat() ? mtlSrc : mtlDst;
             if (!MetalPixelFormatIsNativeBC(compressedSide->pixelFormat()))
             {
-                MetalGuardNote(MetalGuard::CopyTranscodedBlocks, {keyFormats, keyMips, keyLevels}, [&] { return describe("raw blocks cannot be exchanged with a compressed texture this GPU stores as a transcode"); });
+                // The game writes BC blocks through an uncompressed alias to compress a texture on the GPU. Take the blocks off the alias and
+                // put them through the same decoder an upload of BC data uses, into this GPU's own storage for the texture.
+                const char* retranscodeFailure = "the compressed side is the source of the copy";
+                if (dst->IsCompressedFormat() && !src->IsCompressedFormat())
+                {
+                    retranscodeFailure = CopyRawBlocksIntoTranscodedTexture(src, srcMip, effectiveSrcX, effectiveSrcY, srcSlice, dst, dstMip, effectiveDstX, effectiveDstY, dstSlice, sourceCopyWidth, sourceCopyHeight, srcDepth_);
+                    if (!retranscodeFailure)
+                    {
+                        MetalGuardNote(MetalGuard::CopyRetranscoded, {keyFormats, keyMips, keyLevels}, [&] { return describe("raw blocks re-encoded into the transcoded compressed texture"); });
+                        return;
+                    }
+                }
+                MetalGuardNote(MetalGuard::CopyTranscodedBlocks, {keyFormats, keyMips, keyLevels}, [&] { return describe(fmt::format("raw blocks cannot be exchanged with a compressed texture this GPU stores as a transcode: {}", retranscodeFailure).c_str()); });
                 return;
             }
         }

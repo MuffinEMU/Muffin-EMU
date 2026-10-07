@@ -635,14 +635,14 @@ namespace H264
 
 	uint32 H264DECExecute(void* workMemory, void* imageOutput)
 	{
-		cemuLog_log(LogType::Force, "H264DECExecute(): [BEGIN]");
+		cemuLog_log(LogType::H264, "H264DECExecute(): [BEGIN]"); // once per decoded frame, so not in the always-on log
 		BenchmarkTimer bt;
 		bt.Start();
 		H264Context* ctx = (H264Context*)workMemory;
 		H264DecoderBackend* session = _AcquireDecoderSession(ctx->sessionHandle);
 		if (!session)
 		{
-			cemuLog_log(LogType::Force, "H264DECExecute(): Invalid session");
+			cemuLog_logOnce(LogType::Force, "H264DECExecute(): Invalid session");
 			return 0;
 		}
 		// if in recovery mode then return an error until we reach a IDR frame
