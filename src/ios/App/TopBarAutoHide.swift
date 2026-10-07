@@ -115,9 +115,11 @@ struct TopBarRevealHandle: View {
         ZStack(alignment: .top) {
             // A swipe down from anywhere along the top edge brings the bar back. Only a downward
             // swipe counts here, so a tap on the top of the picture still reaches the game.
+            // It starts a little below the very edge, where iOS's own top-edge gestures begin.
             Color.clear
                 .frame(maxWidth: .infinity)
-                .frame(height: 28)
+                .frame(height: 44)
+                .padding(.top, 14)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 10).onEnded { value in
