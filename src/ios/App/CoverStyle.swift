@@ -92,6 +92,16 @@ enum ArtLocations {
 /// groups, punctuation, trademark and registered symbols; collapse spaces. Roman numerals stay.
 /// Checked against all 2,525 entries of the live manifest: it reproduces every `normalizedTitle`.
 enum ArtTitleNormalizer {
+    /// A forgiving key for matching game names to pack file names, which often differ in
+    /// punctuation and word order ("Legend of Zelda, The - Breath of the Wild" vs "The Legend of
+    /// Zelda: Breath of the Wild"): drops "the" anywhere, "&"/"and", and everything that isn't a
+    /// letter or digit.
+    static func loose(_ title: String) -> String {
+        let words = normalize(title.replacingOccurrences(of: "&", with: " and "))
+            .split(separator: " ").filter { $0 != "the" && $0 != "and" }
+        return words.joined().filter { $0.isLetter || $0.isNumber }
+    }
+
     static func normalize(_ title: String) -> String {
         var t = title.lowercased()
         t = t.replacingOccurrences(of: "\\([^)]*\\)|\\[[^\\]]*\\]", with: "", options: .regularExpression)

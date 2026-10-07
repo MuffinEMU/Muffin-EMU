@@ -86,13 +86,9 @@ enum ArtPackApplyStore {
                 themeID: MuffinThemeStore.shared.current.id)
             if let data = try? JSONEncoder().encode(snap) { d.set(data, forKey: snapshotKey) }
         }
-        let look = ArtPackLook.look(for: meta.id, style: meta.style)
-        d.set(look.cardStyle.rawValue, forKey: LibraryCardStyle.storageKey)
-        d.set(look.cardSize, forKey: LibraryCardStyle.sizeStorageKey)
-        d.set(look.coverStyle.rawValue, forKey: CoverStylePreference.storageKey)
-        d.set(look.grouping.rawValue, forKey: LibraryGrouping.storageKey)
-        d.set(look.sort.rawValue, forKey: "muffin.library.sortOrder")
-        if let theme = MuffinThemePresets.all.first(where: { $0.id == look.themeID }) { MuffinThemeStore.shared.select(theme) }
+        // Applying a pack is about its art. Only the card style follows it, so 3D art shows as 3D
+        // boxes; theme, size, sort and grouping stay as the player set them.
+        if meta.style == "3d" { d.set(LibraryCardStyle.box3d.rawValue, forKey: LibraryCardStyle.storageKey) }
         d.set(meta.id, forKey: appliedKey)
         changed()
     }
@@ -103,11 +99,6 @@ enum ArtPackApplyStore {
         if let data = d.data(forKey: snapshotKey), let snap = try? JSONDecoder().decode(Snapshot.self, from: data) {
             func put(_ value: String?, _ key: String) { if let value { d.set(value, forKey: key) } else { d.removeObject(forKey: key) } }
             put(snap.cardStyle, LibraryCardStyle.storageKey)
-            if let size = snap.cardSize { d.set(size, forKey: LibraryCardStyle.sizeStorageKey) } else { d.removeObject(forKey: LibraryCardStyle.sizeStorageKey) }
-            put(snap.coverStyle, CoverStylePreference.storageKey)
-            put(snap.grouping, LibraryGrouping.storageKey)
-            put(snap.sort, "muffin.library.sortOrder")
-            if let id = snap.themeID, let theme = MuffinThemePresets.all.first(where: { $0.id == id }) { MuffinThemeStore.shared.select(theme) }
         }
         d.removeObject(forKey: snapshotKey)
         d.removeObject(forKey: appliedKey)

@@ -144,7 +144,7 @@ enum ImportState: Equatable {
 /// on every launch. UserDefaults, not a file: this is a handful of short strings per
 /// game, nowhere near what would justify its own cache file the way CoverArtFetcher's
 /// image cache does.
-private enum LibraryMetadataCache {
+enum LibraryMetadataCache {
     private static let regionKey = "muffin.library.regionByGameID"
     private static let titleNameKey = "muffin.library.titleNameByGameID"
     private static let versionKey = "muffin.library.metadataCacheVersion"
