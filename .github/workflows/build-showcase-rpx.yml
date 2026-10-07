@@ -1,0 +1,122 @@
+name: Build Showcase RPX (Homebrew)
+
+# Builds homebrew/showcase into showcase.rpx with the standard devkitPro Wii U toolchain: the
+# MuffinEMU Showcase, an original homebrew demo (3D landscape, particles, shader-style effects,
+# input lab, procedural audio, stress/info) that draws on the TV and the GamePad at once.
+#
+# Same approach as build-rainbow-rpx.yml: a plain Linux devkitPPC container, wut's sample Makefile
+# copied verbatim with our sources swapped in, no console keys and no relation to the iOS build.
+#
+#   push               feature/showcase-rpx only (workflow_dispatch needs the workflow on the default branch)
+#   workflow_dispatch  publish=true also publishes a showcase-<sha> PRE-release with the rpx attached
+#
+# It never touches numbered releases, tags other than showcase-<sha>, or any source file.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the RPX as a showcase-<sha> pre-release (never a numbered release)"
+        type: boolean
+        required: false
+        default: false
+  push:
+    branches: [ feature/showcase-rpx ]
+    paths:
+      - 'homebrew/showcase/**'
+      - '.github/workflows/build-showcase-rpx.yml'
+
+concurrency:
+  group: showcase-rpx-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The devkitPPC container ships no bash, so every `run:` block here is dash (`sh -e`). No
+  # `pipefail`; scripts stay POSIX and use `set -eu`.
+  build-showcase-rpx:
+    runs-on: ubuntu-latest
+    # Same pinned toolchain digest as the rainbow build.
+    container: devkitpro/devkitppc@sha256:44cb1a920e1ec3ec7c06767493c3b85f8d643d6137cc4661f0201895ac6e4967
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Install wut (Wii U userland toolchain)
+        run: dkp-pacman -Sy --noconfirm wut
+
+      - name: Clone wut (for its sample Makefile)
+        run: git init -q /tmp/wut && git -C /tmp/wut fetch -q --depth 1 https://github.com/devkitPro/wut.git 0a740dccd2bc038395dacc48e701a3228f63c245 && git -C /tmp/wut checkout -q FETCH_HEAD
+
+      - name: Assemble the project
+        run: |
+          set -eu
+          cp -r /tmp/wut/samples/make/helloworld /tmp/showcase
+          rm -f /tmp/showcase/source/*.c /tmp/showcase/source/*.cpp
+          cp homebrew/showcase/source/*.c homebrew/showcase/source/*.h /tmp/showcase/source/
+          ls -la /tmp/showcase/source
+
+      - name: Build showcase.rpx
+        run: |
+          set -eu
+          make -C /tmp/showcase TARGET=showcase > /tmp/showcase/build.log 2>&1 || { cat /tmp/showcase/build.log; exit 1; }
+          cat /tmp/showcase/build.log
+          test -f /tmp/showcase/showcase.rpx
+
+      # A zero-byte or truncated RPX that gets uploaded and released is a failure this repo has
+      # shipped before. Check the file is real here, where failing is free.
+      - name: Verify the built RPX
+        run: |
+          set -eu
+          RPX=/tmp/showcase/showcase.rpx
+          SIZE=$(stat -c%s "$RPX")
+          echo "showcase.rpx = $SIZE bytes"
+          test "$SIZE" -gt 16384
+          head -c 4 "$RPX" | od -An -tx1 | tr -d ' \n' | grep -qi '^7f454c46'
+          echo "verify: PASS"
+
+      - name: Upload showcase.rpx
+        uses: actions/upload-artifact@v4
+        with:
+          name: showcase-rpx
+          path: /tmp/showcase/showcase.rpx
+          retention-days: 30
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: showcase-build-log
+          path: /tmp/showcase/build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Only on a manual run with publish=true: a PRE-release tagged showcase-<sha>. Its own job so
+  # the build job needs no write permission.
+  publish:
+    needs: build-showcase-rpx
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the RPX
+        uses: actions/download-artifact@v4
+        with:
+          name: showcase-rpx
+          path: out
+      - name: Publish the pre-release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: showcase-${{ github.sha }}
+          target_commitish: ${{ github.sha }}
+          name: MuffinEMU Showcase (${{ github.sha }})
+          prerelease: true
+          make_latest: "false"
+          files: out/showcase.rpx
+          body: |
+            MuffinEMU Showcase, an original Wii U homebrew demo, built from `${{ github.sha }}`.
+            Not a MuffinEMU release. Copy `showcase.rpx` to the emulator's Wii U homebrew folder
+            or a real console's homebrew launcher. See homebrew/showcase/README.md.
