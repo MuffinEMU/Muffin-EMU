@@ -120,7 +120,11 @@ final class ArtPackIndex {
                   let indexData = try? Data(contentsOf: Self.indexURL(id)),
                   let records = try? JSONDecoder().decode([PackIndexRecord].self, from: indexData) else { continue }
             var map: [String: [PackIndexRecord]] = [:]
-            for r in records { map[r.normalizedTitle, default: []].append(r) }
+            for r in records {
+                map[r.normalizedTitle, default: []].append(r)
+                let loose = ArtTitleNormalizer.loose(r.normalizedTitle)
+                if !loose.isEmpty, loose != r.normalizedTitle { map[loose, default: []].append(r) }
+            }
             result[id] = Loaded(meta: meta, byTitle: map, directory: Self.filesURL(id))
         }
         packs = result
@@ -152,7 +156,11 @@ final class ArtPackIndex {
         guard !all.isEmpty, !candidates.isEmpty else { return nil }
         for style in styles {
             let ofStyle = all.values.filter { $0.meta.style == style && (onlyPack == nil || $0.meta.id == onlyPack) }.sorted { $0.meta.order < $1.meta.order }
-            for candidate in candidates where !candidate.isEmpty {
+            var keys: [String] = []
+            for c in candidates where !c.isEmpty {
+                for k in [c, ArtTitleNormalizer.loose(c)] where !k.isEmpty && !keys.contains(k) { keys.append(k) }
+            }
+            for candidate in keys {
                 for pack in ofStyle {
                     guard let records = pack.byTitle[candidate] else { continue }
                     let matched = records.first { r in
