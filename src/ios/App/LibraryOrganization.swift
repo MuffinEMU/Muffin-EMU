@@ -902,7 +902,7 @@ struct LibraryBox3DCard<Options: View>: View {
                 .frame(width: 10)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
-        .rotation3DEffect(.degrees(-8), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
+        .rotation3DEffect(.degrees(8), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
         .shadow(color: .black.opacity(0.35), radius: 8, x: 5, y: 6)
         .padding(8)
     }
@@ -919,7 +919,7 @@ struct LibraryBox3DCard<Options: View>: View {
                     .frame(width: 10)
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
             }
-            .rotation3DEffect(.degrees(-8), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
+            .rotation3DEffect(.degrees(8), axis: (x: 0, y: 1, z: 0), perspective: 0.5)
             .shadow(color: .black.opacity(0.35), radius: 8, x: 5, y: 6)
             .padding(8)
     }

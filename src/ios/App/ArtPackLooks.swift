@@ -98,7 +98,14 @@ enum ArtPackApplyStore {
         let d = UserDefaults.standard
         if let data = d.data(forKey: snapshotKey), let snap = try? JSONDecoder().decode(Snapshot.self, from: data) {
             func put(_ value: String?, _ key: String) { if let value { d.set(value, forKey: key) } else { d.removeObject(forKey: key) } }
+            // Put back everything the snapshot holds. Snapshots from 8.0, when Apply also changed the
+            // theme, size, sort and grouping, restore all of those, so "Stop using" fully undoes them.
             put(snap.cardStyle, LibraryCardStyle.storageKey)
+            if let size = snap.cardSize { d.set(size, forKey: LibraryCardStyle.sizeStorageKey) } else { d.removeObject(forKey: LibraryCardStyle.sizeStorageKey) }
+            put(snap.coverStyle, CoverStylePreference.storageKey)
+            put(snap.grouping, LibraryGrouping.storageKey)
+            put(snap.sort, "muffin.library.sortOrder")
+            if let id = snap.themeID, let theme = MuffinThemePresets.all.first(where: { $0.id == id }) { MuffinThemeStore.shared.select(theme) }
         }
         d.removeObject(forKey: snapshotKey)
         d.removeObject(forKey: appliedKey)
