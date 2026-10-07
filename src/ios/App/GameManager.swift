@@ -1021,10 +1021,13 @@ class GameManager: ObservableObject {
         // The claim stays live for as long as this function hasn't returned, which
         // includes the whole `await` on the detached copy task below - `defer` runs at
         // function exit, not when execution merely suspends.
-        guard source.startAccessingSecurityScopedResource() else {
+        // A file shared into MuffinEMU ("Copy to MuffinEMU", AirDrop) arrives already inside the app's
+        // own container, with no security scope to claim; one opened in place from Files has one.
+        let scoped = source.startAccessingSecurityScopedResource()
+        guard scoped || FileManager.default.isReadableFile(atPath: source.path) else {
             throw ROMImportError.accessDenied
         }
-        defer { source.stopAccessingSecurityScopedResource() }
+        defer { if scoped { source.stopAccessingSecurityScopedResource() } }
 
         let fileManager = FileManager.default
 
