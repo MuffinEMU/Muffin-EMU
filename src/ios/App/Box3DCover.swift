@@ -12,8 +12,11 @@ struct Box3DCover<Front: View, Spine: View>: View {
     @ViewBuilder let front: () -> Front
     @ViewBuilder let spine: () -> Spine
 
-    /// Turn of the case toward the viewer. Positive turns the spine side toward you.
-    private let turn: Double = 24
+    /// Turn of the case toward the viewer. Positive turns the spine side toward you. 38 degrees and
+    /// the perspective below are measured from the art packs' own 3D boxes (Robin55 1.3 and the
+    /// 3D BOXES set): there the spine shows at about 8% of the front's width and the far edge is about
+    /// 90% the height of the near one, so a built case sits beside pack art without looking thinner.
+    private let turn: Double = 38
 
     var body: some View {
         GeometryReader { geo in
@@ -28,7 +31,8 @@ struct Box3DCover<Front: View, Spine: View>: View {
             let left = (geo.size.width - projected) / 2 + dw * sin(a)
             let top = (geo.size.height - fh) / 2
             let centreX = left + (fw * cos(a) - dw * sin(a)) / 2
-            let distance = fw * 3.5
+            // Far edge at about 90% of the near edge's height, as in the pack renders.
+            let distance = fw * 5.5
 
             ZStack(alignment: .topLeading) {
                 spine()
