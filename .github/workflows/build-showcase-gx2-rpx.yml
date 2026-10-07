@@ -54,7 +54,7 @@ jobs:
       - name: Install wut (Wii U userland toolchain)
         run: |
           set -eu
-          for i in 1 2 3 4; do dkp-pacman -Sy --noconfirm wut && exit 0; echo "dkp-pacman failed (attempt $i), retrying"; sleep $((i * 20)); done
+          for i in 1 2 3 4 5 6 7 8; do dkp-pacman -Sy --noconfirm wut && exit 0; echo "dkp-pacman failed (attempt $i), retrying"; sleep $((i * 30)); done
           exit 1
 
       - name: Clone wut (for its sample Makefile)
