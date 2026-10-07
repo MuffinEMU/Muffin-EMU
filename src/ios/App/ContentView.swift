@@ -5,6 +5,7 @@ import Foundation
 
 struct ContentView: View {
     @StateObject var gameManager = GameManager()
+    @Environment(\.scenePhase) private var appScenePhase
     @AppStorage(OnboardingState.completedKey) private var onboardingCompleted = false
     // What the welcome guide's full-screen cover follows. Its own state rather than a binding computed from
     // onboardingCompleted: Settings > About > "Show welcome guide again" clears that flag and posts a notification, and a
@@ -98,6 +99,14 @@ struct ContentView: View {
         // "Open with MuffinEMU", "Copy to MuffinEMU" from the share sheet, and AirDrop: a Wii U game
         // file is imported exactly as if it had been picked in the library.
         .onOpenURL { url in openSharedFile(url) }
+        // Theme music in the library (Settings > Audio): only while no game is running and the app is on screen.
+        .onAppear { MenuMusic.shared.update(emulationState: gameManager.emulationState, appActive: appScenePhase == .active) }
+        .onChange(of: gameManager.emulationState) { state in
+            MenuMusic.shared.update(emulationState: state, appActive: appScenePhase == .active)
+        }
+        .onChange(of: appScenePhase) { phase in
+            MenuMusic.shared.update(emulationState: gameManager.emulationState, appActive: phase == .active)
+        }
         .alert("Couldn't add that game", isPresented: Binding(
             get: { sharedImportError != nil }, set: { if !$0 { sharedImportError = nil } })) {
             Button("OK", role: .cancel) {}
