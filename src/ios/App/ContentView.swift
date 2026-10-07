@@ -2381,6 +2381,10 @@ struct EmulatorViewOptimized: View {
                 if !topBarHidden, bottom != topBarHeight { topBarHeight = bottom }
             }
             .overlay(alignment: .top) { topBarRevealHandle }
+            .onChange(of: isPaused) { paused in
+                // Pausing always brings the bar back, whatever hid it.
+                if paused, topBarHidden { setTopBarHidden(false) }
+            }
             .task(id: topBarHideKey) { await runTopBarAutoHide(topBarHideKey) }
             .onReceive(NotificationCenter.default.publisher(for: UIAccessibility.voiceOverStatusDidChangeNotification)) { _ in
                 voiceOverRunning = UIAccessibility.isVoiceOverRunning
@@ -2502,13 +2506,20 @@ struct EmulatorViewOptimized: View {
                     Text("PAUSED")
                         .font(.system(size: 22, weight: .bold, design: .rounded))
                         .tracking(2)
+                    Text("Tap to resume")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .opacity(0.85)
                 }
                 .foregroundColor(.white)
                 .padding(28)
                 .background(Color.black.opacity(0.6))
                 .cornerRadius(20)
                 .transition(.opacity)
-                .allowsHitTesting(false)
+                // Tappable, so a paused game can always be resumed even when the top bar is out of reach.
+                .contentShape(RoundedRectangle(cornerRadius: 20))
+                .onTapGesture { togglePause() }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel("Paused. Resume")
             }
 
             // The Metal view above must mount (so it can register the render
@@ -2658,6 +2669,7 @@ struct EmulatorViewOptimized: View {
         // the GPU gate above gets closed, not widen any safety margin.
         .onChange(of: scenePhase) { newPhase in
             if newPhase == .active {
+                if gameManager.emulationState == .running { AudioRecorder.shared.autoStartIfEnabled(gameName: gameName) }
                 guard pausedByLifecycle else { return }
                 pausedByLifecycle = false
                 isPaused = false
@@ -2686,6 +2698,7 @@ struct EmulatorViewOptimized: View {
         // up paused, or it runs on in the background.
         .onChange(of: gameManager.emulationState) { state in
             guard state == .running else { return }
+            if scenePhase == .active { AudioRecorder.shared.autoStartIfEnabled(gameName: gameName) }
             // After the launch intro has had its moment.
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { showGamePadHintIfNeeded() }
             if scenePhase != .active && !isPaused {
@@ -2829,6 +2842,7 @@ struct EmulatorViewOptimized: View {
             && gameManager.emulationState == .running
             && !launchIntroVisible
             && !isPaused
+            && !showHomeMenu
             && !isEditingControlLayout
             && !showSkinSelector
             && !showSaveStates
