@@ -126,6 +126,15 @@ enum LocalScreenLayoutSettings {
 /// registered view's layer directly, so the TV and GamePad views must be this type.
 final class MetalLayerView: UIView {
     override class var layerClass: AnyClass { CAMetalLayer.self }
+
+    /// Settings > Display > "Brightness boost": a screen-blend layer above the renderer's own layer.
+    private var boostHost: BrightnessBoostHost?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if boostHost == nil { boostHost = BrightnessBoostHost(view: self) }
+        boostHost?.layout(in: self)
+    }
 }
 
 /// Decides which physical display each of the Wii U's two screens goes to, and keeps

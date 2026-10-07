@@ -21,6 +21,11 @@ struct DisplaySettingsSection: View {
     @AppStorage(OrientationPolicy.allowPortraitKey)
     private var allowPortrait = OrientationPolicy.defaultAllowPortrait
 
+    @AppStorage(BrightnessBoost.key)
+    private var brightnessBoost = BrightnessBoost.defaultValue
+    @AppStorage(ScreenBrightness.maxWhilePlayingKey)
+    private var maxBrightnessWhilePlaying = ScreenBrightness.defaultMaxWhilePlaying
+
     @AppStorage(ExternalDisplaySystemSettings.enabledKey)
     private var externalDisplaySystemEnabled = ExternalDisplaySystemSettings.defaultEnabled
     @AppStorage(DisplayLayoutSettings.swapKey)
@@ -87,6 +92,38 @@ struct DisplaySettingsSection: View {
                 }
                 .tint(MuffinTheme.accentText)
             }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Brightness boost")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Spacer()
+                    Text(BrightnessBoost.label(for: brightnessBoost))
+                        .font(.system(size: 13))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                }
+                HStack(spacing: 8) {
+                    Text("Off").font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
+                    Slider(value: $brightnessBoost, in: 0...BrightnessBoost.maxValue)
+                        .tint(MuffinTheme.accentText)
+                        .accessibilityLabel("Brightness boost")
+                    Text("Strong").font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
+                }
+                Text("Brightness boost lightens the game picture beyond your screen's maximum. Higher settings wash out dark areas.")
+                    .font(.system(size: 12))
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
+
+            Toggle(isOn: $maxBrightnessWhilePlaying) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Max screen brightness while playing")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("Sets your screen to full brightness during a game and puts it back afterwards.")
+                        .font(.system(size: 12))
+                        .foregroundColor(MuffinTheme.secondaryText)
+                }
+            }
+            .tint(MuffinTheme.accentText)
 
             Toggle(isOn: $externalDisplaySystemEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
