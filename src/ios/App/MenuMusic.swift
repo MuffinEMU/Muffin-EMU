@@ -65,7 +65,10 @@ final class MenuMusic {
 
     /// Re-reads the settings: called when the toggle, the track or the volume changes.
     func refresh() {
-        guard enabled, inLibrary, appActive else { stop(); return }
+        guard enabled, inLibrary, appActive else {
+            if player != nil { log("stopped (on=\(enabled), menus=\(inLibrary), active=\(appActive))") }
+            stop(); return
+        }
         if let player, playingTrack == track {
             player.volume = volume
             if !player.isPlaying { player.play() }
@@ -84,7 +87,8 @@ final class MenuMusic {
         stop()
         let session = AVAudioSession.sharedInstance()
         // Someone else's music is playing: leave it alone rather than play over it.
-        guard !session.secondaryAudioShouldBeSilencedHint, let url = track.url else { return }
+        if session.secondaryAudioShouldBeSilencedHint { log("not started: another app is playing audio"); return }
+        guard let url = track.url else { log("not started: \(track.rawValue) is missing from the app"); return }
         // With Respect silent mode on, ambient: the silent switch mutes it. Otherwise it plays through silent
         // mode like the game audio does. Either way it mixes with other sounds. A game sets its own category when
         // its audio starts.
@@ -94,14 +98,18 @@ final class MenuMusic {
             try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         }
         try? session.setActive(true)
-        guard let player = try? AVAudioPlayer(contentsOf: url) else { return }
+        let player: AVAudioPlayer
+        do { player = try AVAudioPlayer(contentsOf: url) } catch { log("not started: \(error.localizedDescription)"); return }
         player.numberOfLoops = -1
         player.volume = volume
         player.prepareToPlay()
-        player.play()
+        let ok = player.play()
+        log("\(ok ? "playing" : "play() refused") \(track.rawValue), volume \(volume), route \(session.currentRoute.outputs.map(\.portType.rawValue).joined(separator: "+"))")
         self.player = player
         playingTrack = track
     }
+
+    private func log(_ message: String) { cemu_bridge_log_checkpoint("Theme music: " + message) }
 
     private func stop() {
         player?.stop()
