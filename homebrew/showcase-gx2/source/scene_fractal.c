@@ -108,6 +108,8 @@ static void render_row(int y, double cx, double cy, double sc, int maxIter, uint
       }
       dst[x] = px;
    }
+   // each core has its own data cache; push this row to memory so the GPU upload sees it
+   DCFlushRange(dst, FW * 4);
    *iters += total;
 }
 

@@ -63,7 +63,7 @@ static void read_input(void)
 
    VPADTouchData cal;
    memset(&cal, 0, sizeof(cal));
-   VPADGetTPCalibratedPoint(VPAD_CHAN_0, &cal, &st.tpNormal);
+   VPADGetTPCalibratedPointEx(VPAD_CHAN_0, VPAD_TP_1280X720, &cal, &st.tpNormal);
    bool was = g_in.touch;
    g_in.touch = st.tpNormal.touched != 0 && cal.touched != 0;
    g_in.touchStart = g_in.touch && !was;
