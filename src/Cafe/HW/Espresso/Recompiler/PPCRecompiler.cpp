@@ -1048,6 +1048,17 @@ constexpr uint32 PPCRecompiler_GetNumAddressSpaceBlocks()
 
 std::bitset<PPCRecompiler_GetNumAddressSpaceBlocks()> ppcRecompiler_reservedBlockMask;
 
+static bool PPCRecompiler_isLookupTableBlockReserved(uint32 address)
+{
+	uint32 blockIndex = address / PPC_REC_ALLOC_BLOCK_SIZE;
+	return blockIndex < ppcRecompiler_reservedBlockMask.size() && ppcRecompiler_reservedBlockMask[blockIndex];
+}
+
+static uint32 PPCRecompiler_lookupTableBlockSize()
+{
+	return PPC_REC_ALLOC_BLOCK_SIZE;
+}
+
 void PPCRecompiler_reserveLookupTableBlock(uint32 offset)
 {
 	uint32 blockIndex = offset / PPC_REC_ALLOC_BLOCK_SIZE;
@@ -1154,6 +1165,10 @@ void PPCRecompiler_deleteFunction(PPCRecFunction_t* func)
     }
 }
 
+// Whether the lookup-table block holding this address has been committed (defined below).
+static bool PPCRecompiler_isLookupTableBlockReserved(uint32 address);
+static uint32 PPCRecompiler_lookupTableBlockSize();
+
 namespace
 {
 void PPCRecompiler_invalidateRangeInternal(uint32 startAddr, uint32 endAddr)
@@ -1170,9 +1185,21 @@ void PPCRecompiler_invalidateRangeInternal(uint32 startAddr, uint32 endAddr)
 	uint32 rEnd;
 	PPCRecFunction_t* rFunc;
 
-	// mark range as unvisited
-	for (uint64 currentAddr = (uint64)startAddr&~3; currentAddr < (uint64)(endAddr&~3); currentAddr += 4)
-		ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[currentAddr / 4] = PPCRecompiler_leaveRecompilerCode_unvisited;
+	// mark range as unvisited - only in lookup-table blocks that have been committed. The table is reserved
+	// for the whole code area but committed block by block as code is found; writing into an uncommitted
+	// block faults (a save-state load invalidates the entire code area).
+	const uint64 blockSize = PPCRecompiler_lookupTableBlockSize();
+	const uint64 rangeEnd = (uint64)(endAddr & ~3);
+	for (uint64 blockStart = (uint64)startAddr & ~3; blockStart < rangeEnd; )
+	{
+		uint64 blockEnd = std::min<uint64>((blockStart / blockSize + 1) * blockSize, rangeEnd);
+		if (PPCRecompiler_isLookupTableBlockReserved((uint32)blockStart))
+		{
+			for (uint64 currentAddr = blockStart; currentAddr < blockEnd; currentAddr += 4)
+				ppcRecompilerInstanceData->ppcRecompilerDirectJumpTable[currentAddr / 4] = PPCRecompiler_leaveRecompilerCode_unvisited;
+		}
+		blockStart = blockEnd;
+	}
 
 	// add entry to invalidation queue
 	PPCRecompilerState.invalidationRanges.emplace_back(startAddr, endAddr-startAddr);
