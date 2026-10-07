@@ -1,8 +1,9 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// "Updates & DLC" on a game's page: what is installed for this game, removing it, and packing the
-/// game with its installed update and DLC into one .wua you can keep or move to another device.
-/// Installing new content stays in the library's import menu (DlcUpdateImport).
+/// game with its installed update and DLC into one .wua you can keep or move to another device,
+/// and adding an update or DLC from a folder or a .wua (DlcUpdateImport).
 struct GameContentSection: View {
     let game: GameMetadata
     @State private var hasUpdate = false
@@ -13,11 +14,34 @@ struct GameContentSection: View {
     @State private var progress = DecryptProgress()
     @State private var pollTimer: Timer?
     @State private var packedFile: URL?
+    @State private var showingAddContentPicker = false
+    @State private var importMessage: String?
+    @State private var importInProgress = false
+    @State private var pendingContentKind: DlcUpdateImport.ContentKind?
+    @State private var pendingReinstall: (url: URL, kind: DlcUpdateImport.ContentKind)?
+    @State private var showingReinstallConfirm = false
 
     var body: some View {
         Section {
             row("Update", installed: hasUpdate, kind: .update)
             row("DLC", installed: hasDLC, kind: .dlc)
+
+            if importInProgress {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(0.8, anchor: .center)
+                    Text("Adding content...")
+                        .font(.system(size: 13, design: .rounded))
+                }
+            } else {
+                Menu {
+                    Button("Update") { selectContentKind(.update) }
+                    Button("DLC") { selectContentKind(.dlc) }
+                } label: {
+                    Label("Add update or DLC...", systemImage: "plus.circle")
+                }
+                .disabled(cemu_bridge_is_title_running())
+            }
 
             if packing {
                 VStack(alignment: .leading, spacing: 6) {
@@ -46,13 +70,23 @@ struct GameContentSection: View {
                     .font(.system(size: 12, design: .rounded))
                     .foregroundColor(MuffinTheme.secondaryText)
             }
+            if let importMessage {
+                Text(importMessage)
+                    .font(.system(size: 12, design: .rounded))
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
         } header: {
             Text("Updates & DLC")
         } footer: {
-            Text("Add an update or DLC from the library's import menu. Packing leaves your installed files where they are.")
+            Text("Packing leaves your installed files where they are.")
         }
         .onAppear { refresh() }
         .onDisappear { pollTimer?.invalidate(); pollTimer = nil }
+        .fileImporter(
+            isPresented: $showingAddContentPicker,
+            allowedContentTypes: [.folder, .item],
+            onCompletion: addContent
+        )
         .alert(item: Binding(
             get: { confirmRemove.map { RemoveRequest(kind: $0) } },
             set: { confirmRemove = $0?.kind }
@@ -62,6 +96,20 @@ struct GameContentSection: View {
                 message: Text("The game itself and your saves are not touched."),
                 primaryButton: .destructive(Text("Remove")) { remove(request.kind) },
                 secondaryButton: .cancel())
+        }
+        .confirmationDialog(
+            "Reinstall this version?",
+            isPresented: $showingReinstallConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Reinstall", role: .destructive) {
+                if let pending = pendingReinstall {
+                    install(pending.url, kind: pending.kind, allowReinstall: true)
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingReinstall = nil }
+        } message: {
+            Text("The same version is already installed. Reinstalling replaces it. Save data is not touched.")
         }
     }
 
@@ -161,6 +209,42 @@ struct GameContentSection: View {
         case 9: return "The update or DLC belongs to a different game."
         case 10: return "The same title was added twice."
         default: return "Couldn't build the .wua."
+        }
+    }
+
+    private func selectContentKind(_ kind: DlcUpdateImport.ContentKind) {
+        pendingContentKind = kind
+        showingAddContentPicker = true
+    }
+
+    private func addContent(result: Result<URL, Error>) {
+        importMessage = nil
+        guard case .success(let url) = result, let kind = pendingContentKind else {
+            importMessage = "Couldn't access that file."
+            return
+        }
+        install(url, kind: kind, allowReinstall: false)
+    }
+
+    private func install(_ url: URL, kind: DlcUpdateImport.ContentKind, allowReinstall: Bool) {
+        importMessage = nil
+        importInProgress = true
+        Task {
+            do {
+                _ = try await DlcUpdateImport.import(
+                    from: url, kind: kind, library: [], manualMatch: game,
+                    strictMatch: true, allowReinstall: allowReinstall)
+                importMessage = "Added the \(kind.displayName)."
+            } catch DlcUpdateImport.ImportError.alreadyInstalledSameOrNewer(let installed, let imported)
+                where installed == imported && !allowReinstall {
+                pendingReinstall = (url, kind)
+                showingReinstallConfirm = true
+            } catch {
+                importMessage = error.localizedDescription
+            }
+            pendingContentKind = nil
+            importInProgress = false
+            refresh()
         }
     }
 }

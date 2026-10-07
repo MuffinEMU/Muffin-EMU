@@ -241,6 +241,8 @@ int IOSTitleLaunch_PrepareForegroundTitleById(uint64 titleId)
 	TitleId baseTitleId;
 	if (!CafeTitleList::FindBaseTitleId(titleId, baseTitleId))
 		return IOS_TITLE_LAUNCH_BASE_NOT_FOUND;
+	for (const fs::path& wua : IOSTitleLaunch_FindWuaCompanions(baseTitleId))
+		CafeTitleList::AddTitleFromPath(wua);
 	cemuLog_log(LogType::Force, "iOS: launching installed title {:016x} from {}", (uint64)baseTitleId, _pathToUtf8(titleDir));
 	CafeSystem::PREPARE_STATUS_CODE r = CafeSystem::PrepareForegroundTitle(baseTitleId);
 	switch (r)
@@ -252,6 +254,23 @@ int IOSTitleLaunch_PrepareForegroundTitleById(uint64 titleId)
 	default:
 		return IOS_TITLE_LAUNCH_UNABLE_TO_MOUNT;
 	}
+}
+
+// An update or DLC imported from a .wua is kept whole at <mlc>/wua-content/<base id>/, one file
+// per kind. The core adds every title inside a .wua when the file is added by path, so they
+// are added here next to the game, the same way the folder companions below are.
+static std::vector<fs::path> IOSTitleLaunch_FindWuaCompanions(TitleId baseTitleId)
+{
+	std::vector<fs::path> found;
+	const fs::path dir = ActiveSettings::GetMlcPath() / "wua-content" / fmt::format("{:016x}", (uint64)baseTitleId);
+	std::error_code ec;
+	for (const char* name : {"update.wua", "dlc.wua"})
+	{
+		const fs::path candidate = dir / name;
+		if (fs::is_regular_file(candidate, ec))
+			found.push_back(candidate);
+	}
+	return found;
 }
 
 // Encrypted game folders often come as a parent folder holding one subfolder each for the
@@ -346,7 +365,9 @@ int IOSTitleLaunch_PrepareForegroundTitle(const char* pathStr)
 		}
 		else
 			IOSTitleLaunch_DropMenuScanPath();
-		const std::vector<fs::path> companionTitles = IOSTitleLaunch_FindCompanionTitles(launchTitle, baseTitleId);
+		std::vector<fs::path> companionTitles = IOSTitleLaunch_FindCompanionTitles(launchTitle, baseTitleId);
+		for (const fs::path& wua : IOSTitleLaunch_FindWuaCompanions(baseTitleId))
+			companionTitles.push_back(wua);
 		for (const fs::path& companion : companionTitles)
 		{
 			cemuLog_log(LogType::Force, "iOS: adding update/DLC folder {} next to the game", _pathToUtf8(companion));
