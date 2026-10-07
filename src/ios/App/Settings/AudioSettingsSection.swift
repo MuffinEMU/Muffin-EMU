@@ -84,6 +84,7 @@ struct AudioSettingsSection: View {
                 }
             }
             .tint(MuffinTheme.accentText)
+            MenuMusicSettingsGroup()
             tvGroup
             padGroup
             microphoneGroup
