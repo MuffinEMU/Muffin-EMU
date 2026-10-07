@@ -31,6 +31,9 @@ enum TouchLabSettings {
     static let racingAutoAccelerateKey = "muffin.touchlab.racing.autoAccelerate"
     static let racingTiltKey = "muffin.touchlab.racing.tilt"
 
+    /// Zone's option: A about 1.4 times its size.
+    static let zoneLargeAKey = "muffin.touchlab.zone.largeA"
+
     /// Bumped by "Reset Adaptive layout" so the live pad rebuilds from the cleared data.
     static let adaptiveResetKey = "muffin.touchlab.adaptive.resetCount"
 
@@ -264,6 +267,7 @@ struct TouchLabPadOverlay: View {
     @AppStorage(TouchLabSettings.adaptiveResetKey) private var adaptiveResets = 0
     @AppStorage(TouchLabSettings.racingAutoAccelerateKey) private var racingAuto = false
     @AppStorage(TouchLabSettings.racingTiltKey) private var racingTilt = false
+    @AppStorage(TouchLabSettings.zoneLargeAKey) private var zoneLargeA = false
 
     var body: some View {
         TouchPad(schemeID: schemeID,
@@ -298,6 +302,7 @@ struct TouchLabPadOverlay: View {
         h.combine(adaptiveResets)
         h.combine(racingAuto)
         h.combine(racingTilt)
+        h.combine(zoneLargeA)
         return h.finalize()
     }
 
@@ -314,6 +319,8 @@ struct TouchLabPadOverlay: View {
             let pad = AdaptivePad(learned: AdaptivePad.decode(UserDefaults.standard.string(forKey: key) ?? "{}"))
             pad.onLearned = { UserDefaults.standard.set(AdaptivePad.encode($0), forKey: key) }
             return pad
+        case ZonePad.schemeInfo.id:
+            return ZonePad(largeA: zoneLargeA)
         case RacingPad.schemeInfo.id:
             return RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto, tilt: racingTilt))
         default:

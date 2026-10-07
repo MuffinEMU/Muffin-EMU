@@ -2,7 +2,7 @@
 
 The on-screen control schemes offered under Settings > On-screen Controls > Control style
 (Zone, Float, Adaptive, Frame, Racing). Vendored from MuffinEMU-TouchLab at commit
-`0fa4e34` on its `feature/racing-mode` branch (not yet on its main), copied by hand with the
+`fbc9ba9` on its `feature/racing-mode` branch (not yet on its main), copied by hand with the
 same steps as `tools/export-to-muffinemu.sh`, which refuses a commit that isn't on main. The
 next export from main will carry these files once that branch is merged there.
 

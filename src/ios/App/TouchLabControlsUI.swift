@@ -25,6 +25,7 @@ struct TouchLabStyleSettingsRows: View {
     @AppStorage(TouchLabSettings.floatCameraKey) private var floatCamera = TouchLabSettings.defaultFloatCamera
     @AppStorage(TouchLabSettings.racingAutoAccelerateKey) private var racingAuto = false
     @AppStorage(TouchLabSettings.racingTiltKey) private var racingTilt = false
+    @AppStorage(TouchLabSettings.zoneLargeAKey) private var zoneLargeA = false
     @State private var showingAdaptiveReset = false
 
     var body: some View {
@@ -70,6 +71,19 @@ struct TouchLabStyleSettingsRows: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                }
+
+                if scheme == TouchLabSettings.zoneStyleID {
+                    Toggle(isOn: $zoneLargeA) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Large A button")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("Makes A bigger and easier to hit. The buttons around it shrink a little.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(MuffinTheme.pixelBlue)
                 }
 
                 if scheme == TouchLabSettings.racingStyleID {

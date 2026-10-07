@@ -28,13 +28,19 @@ public enum PadParts {
 
     /// A/B/X/Y in the Wii U diamond (X top, Y left, A right, B bottom) plus the R3 dot.
     /// Faces slide into each other and chord across the gaps.
+    public static let largeAScale: CGFloat = 1.4
+    /// How much the other face buttons shrink when A is enlarged, so A's growth is paid for
+    /// by its neighbours and the diamond stays about as wide as it was.
+    public static let largeANeighbourScale: CGFloat = 0.9
+
     public static func faceDiamond(_ c: CGPoint, u: CGFloat, cluster: Int = -1, scale k: CGFloat = 1,
-                                   reach: CGFloat = 0.45, rDot: Bool = true) -> [PadControl] {
-        let r = 0.5 * u * k
+                                   reach: CGFloat = 0.45, rDot: Bool = true, largeA: Bool = false) -> [PadControl] {
         func face(_ b: PadButton, _ dx: CGFloat, _ dy: CGFloat) -> PadControl {
-            PadControl(.button(b), shape: .circle(center: c + CGPoint(x: dx * u * k, y: dy * u * k), radius: r),
+            let grow: CGFloat = largeA ? (b == .a ? largeAScale : largeANeighbourScale) : 1
+            // A larger button also reaches further, so the catchment stays gap-free.
+            return PadControl(.button(b), shape: .circle(center: c + CGPoint(x: dx * u * k, y: dy * u * k), radius: 0.5 * u * k * grow),
                        role: .face, label: b.description, group: Group.face, cluster: cluster,
-                       reach: reach * u, chords: true)
+                       reach: reach * u * grow, chords: true)
         }
         var out = [face(.x, 0, -crossY), face(.y, -crossX, 0), face(.a, crossX, 0), face(.b, 0, crossY)]
         if rDot {
@@ -100,32 +106,32 @@ public enum GamePadArrangement {
         public static let system = 7
     }
 
-    public static func build(_ ctx: LayoutContext) -> [PadControl] {
+    public static func build(_ ctx: LayoutContext, largeA: Bool = false) -> [PadControl] {
         var u = ctx.unit
         for _ in 0..<8 {
             for inboard in [false, true] {
-                let set = arrangement(ctx, u: u, sticksInboard: inboard)
+                let set = arrangement(ctx, u: u, sticksInboard: inboard, largeA: largeA)
                 if LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty {
-                    let spacing = fittingSpacing(ctx, u: u, sticksInboard: inboard)
-                    let shoulder = fittingShoulderOffset(ctx, u: u, sticksInboard: inboard, stickSpacing: spacing)
+                    let spacing = fittingSpacing(ctx, u: u, sticksInboard: inboard, largeA: largeA)
+                    let shoulder = fittingShoulderOffset(ctx, u: u, sticksInboard: inboard, stickSpacing: spacing, largeA: largeA)
                     if spacing == 0 && shoulder == 0 { return set }
                     return arrangement(ctx, u: u, sticksInboard: inboard,
-                                       stickSpacing: spacing, shoulderOffset: shoulder)
+                                       stickSpacing: spacing, shoulderOffset: shoulder, largeA: largeA)
                 }
             }
             u *= 0.92
         }
-        return arrangement(ctx, u: u, sticksInboard: true)
+        return arrangement(ctx, u: u, sticksInboard: true, largeA: largeA)
     }
 
     /// As much of the requested stick spacing as fits, stepping back toward none a quarter
     /// of a button at a time. Zero when there is none to apply or none fits.
-    static func fittingSpacing(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool) -> CGFloat {
+    static func fittingSpacing(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool, largeA: Bool = false) -> CGFloat {
         let requested = ctx.stickSpacing
         guard requested != 0 else { return 0 }
         var spacing = requested
         while abs(spacing) > 0.001 {
-            let set = arrangement(ctx, u: u, sticksInboard: sticksInboard, stickSpacing: spacing)
+            let set = arrangement(ctx, u: u, sticksInboard: sticksInboard, stickSpacing: spacing, largeA: largeA)
             if LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty { return spacing }
             spacing = requested > 0 ? max(0, spacing - 0.25) : min(0, spacing + 0.25)
         }
@@ -139,12 +145,12 @@ public enum GamePadArrangement {
     /// up to the limit rather than stopping a quarter-button short of it. Zero always
     /// fits (the caller has already checked that arrangement), so the search has a floor.
     static func fittingShoulderOffset(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool,
-                                      stickSpacing: CGFloat) -> CGFloat {
+                                      stickSpacing: CGFloat, largeA: Bool = false) -> CGFloat {
         let requested = max(0, ctx.shoulderOffset)
         guard requested > 0.001 else { return 0 }
         func fits(_ drop: CGFloat) -> Bool {
             let set = arrangement(ctx, u: u, sticksInboard: sticksInboard,
-                                  stickSpacing: stickSpacing, shoulderOffset: drop)
+                                  stickSpacing: stickSpacing, shoulderOffset: drop, largeA: largeA)
             return LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty
         }
         if fits(requested) { return requested }
@@ -157,11 +163,13 @@ public enum GamePadArrangement {
     }
 
     static func arrangement(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool,
-                            stickSpacing: CGFloat = 0, shoulderOffset: CGFloat = 0) -> [PadControl] {
+                            stickSpacing: CGFloat = 0, shoulderOffset: CGFloat = 0, largeA: Bool = false) -> [PadControl] {
         let s = ctx.safeBounds
         let cy = s.maxY - (PadParts.clusterRadius + 0.75) * u
+        // A bigger A sticks out further on the right: the diamond moves in by the extra.
+        let aExtra = largeA ? 0.5 * (PadParts.largeAScale - 1) * u : 0
         let cl = CGPoint(x: s.minX + (PadParts.clusterRadius + 0.85) * u, y: cy)
-        let cr = CGPoint(x: s.maxX - (PadParts.clusterRadius + 0.85) * u, y: cy)
+        let cr = CGPoint(x: s.maxX - (PadParts.clusterRadius + 0.85) * u - aExtra, y: cy)
         let stickR = PadParts.stickBaseDiameter / 2 * u
 
         var sl: CGPoint, sr: CGPoint
@@ -197,7 +205,7 @@ public enum GamePadArrangement {
             PadParts.system(.minus, at: cl + CGPoint(x: 2.353 * u, y: -1.025 * u), u: u, cluster: C.dpad),
             PadParts.system(.plus, at: cr + CGPoint(x: -2.353 * u, y: -1.025 * u), u: u, cluster: C.face),
             PadParts.system(.home, at: CGPoint(x: s.midX, y: s.maxY - 0.6 * u), u: u, cluster: C.system),
-        ] + PadParts.faceDiamond(cr, u: u, cluster: C.face)
+        ] + PadParts.faceDiamond(cr, u: u, cluster: C.face, largeA: largeA)
     }
 }
 

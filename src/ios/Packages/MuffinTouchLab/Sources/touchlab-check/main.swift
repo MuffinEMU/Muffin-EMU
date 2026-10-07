@@ -163,6 +163,25 @@ for options in [RacingPad.Options(), RacingPad.Options(autoAccelerate: true), Ra
     }
 }
 
+// MARK: Zone with a large A
+
+for device in TargetDevice.all {
+    for display in TargetDevice.Display.allCases {
+        let ctx = device.context(display)
+        let normal = ZonePad(), large = ZonePad(largeA: true)
+        normal.layout(ctx); large.layout(ctx)
+        let where_ = "Zone large A / \(device.name) / \(display.rawValue)"
+        check(LayoutCheck.problems(large.controls, in: ctx.safeBounds).isEmpty,
+              "\(where_): \(LayoutCheck.problems(large.controls, in: ctx.safeBounds).joined(separator: "; "))")
+        let aN = normal.controls.first { $0.button == .a }!.shape.boundingBox.width
+        let aL = large.controls.first { $0.button == .a }!.shape.boundingBox.width
+        let yL = large.controls.first { $0.button == .y }!.shape.boundingBox.width
+        check(abs(aL / yL - 1.4 / 0.9) < 0.01, "\(where_): A is \(aL / yL)x its neighbours")
+        // About 1.4x, less only where the whole layout had to shrink to fit.
+        check(aL >= aN * 1.2, "\(where_): A grew only \(aL / aN)x")
+    }
+}
+
 // MARK: Stick spacing
 // The hand-size setting moves the sticks apart or together. Every value the app's slider
 // can send must still give a layout with no overlaps, on every target device, and must
