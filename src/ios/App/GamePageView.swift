@@ -1,0 +1,437 @@
+import SwiftUI
+
+/// What tapping a game in the library does. Long-press always offers the quick menu.
+enum LibraryTapAction: String, CaseIterable, Identifiable {
+    case openPage
+    case playImmediately
+
+    static let storageKey = "muffin.library.tapAction"
+    static let defaultValue = LibraryTapAction.openPage
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .openPage: return "Open its page"
+        case .playImmediately: return "Play immediately"
+        }
+    }
+
+    static func current(raw: String) -> LibraryTapAction { LibraryTapAction(rawValue: raw) ?? defaultValue }
+}
+
+/// A game's own page: its cover and a big Play button, what GameTDB knows about it, how you have
+/// played it, and everything you can change for it. Opened by tapping a game in the library.
+struct GamePageView: View {
+    let game: GameMetadata
+    @ObservedObject var store: PerGameSettingsStore
+    @ObservedObject var gameManager: GameManager
+    /// The actions below run on the library, which sits underneath this page. Each one closes the
+    /// page first, so a picker, a sheet or the emulator never has to open on top of it.
+    let onPlay: () -> Void
+    let onDecrypt: () -> Void
+    let onImportDLC: () -> Void
+    let onImportUpdate: () -> Void
+    let onRemoveDLC: () -> Void
+    let onRemoveUpdate: () -> Void
+    let onRemoveGame: () -> Void
+
+    @ObservedObject private var stats = LibraryPlayStats.shared
+    @ObservedObject private var data = GameDataStore.shared
+    @ObservedObject private var names = LibraryCustomNames.shared
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    private enum PageSheet: String, Identifiable {
+        case settings, cover, rename
+        var id: String { rawValue }
+    }
+
+    @State private var sheet: PageSheet?
+    @State private var sizeOnDisk: Int64?
+    @State private var shaderBytes: Int64?
+    @State private var slots: [SaveStateSlot] = []
+    @State private var slotToDelete: Int?
+    @State private var confirmingRemoval = false
+
+    /// The installed game as the library holds it now, so a new cover, name or favourite shows at once.
+    private var live: GameMetadata { gameManager.games.first { $0.id == game.id } ?? game }
+
+    private var installLine: String {
+        if let label = live.installLabel { return label }
+        return live.installKey.replacingOccurrences(of: "install:", with: "")
+    }
+
+    /// Cover beside the text on iPad and in landscape; stacked on a portrait phone.
+    private var sideBySide: Bool { horizontalSizeClass == .regular || verticalSizeClass == .compact }
+
+    var body: some View {
+        NavigationView {
+            ZStack {
+                MuffinTheme.backgroundGradient.ignoresSafeArea()
+                Form {
+                    heroSection
+                    GameInfoSections(game: live, gameManager: gameManager)
+                    yourPlaySection
+                    manageSection
+                    filesSection
+                    GameShaderCacheSection(game: live)
+                    saveStatesSection
+                    removeSection
+                }
+            }
+            .navigationTitle(live.cardName.name)
+            .muffinOpaqueNavigationBar(MuffinTheme.formGround)
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+            .sheet(item: $sheet) { which in
+                switch which {
+                case .settings:
+                    GameOptionsView(game: live, store: store, libraryGames: gameManager.games)
+                case .cover:
+                    CoverArtPickerView(game: live, gameManager: gameManager)
+                case .rename:
+                    LibraryRenameSheet(game: live)
+                }
+            }
+            .confirmationDialog("Remove this game?", isPresented: $confirmingRemoval, titleVisibility: .visible) {
+                Button("Remove game", role: .destructive) { closeThen(onRemoveGame) }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This deletes \"\(live.cardName.name)\" from MuffinEMU to free up space. Your saves and options are kept. To play it again, add the game back.")
+            }
+            .alert("Delete this save state?", isPresented: Binding(
+                get: { slotToDelete != nil },
+                set: { if !$0 { slotToDelete = nil } }
+            )) {
+                Button("Delete", role: .destructive) {
+                    if let number = slotToDelete,
+                       let slot = slots.first(where: { $0.number == number }) {
+                        try? FileManager.default.removeItem(at: slot.fileURL)
+                    }
+                    slotToDelete = nil
+                    reloadSlots()
+                }
+                Button("Cancel", role: .cancel) { slotToDelete = nil }
+            }
+        }
+        .navigationViewStyle(.stack)
+        .foregroundColor(MuffinTheme.brownDarkest)
+        .onAppear {
+            reloadSlots()
+            loadSizes()
+        }
+    }
+
+    // MARK: Hero
+
+    private var heroSection: some View {
+        Section {
+            VStack(spacing: 18) {
+                if sideBySide {
+                    HStack(alignment: .center, spacing: 24) {
+                        cover(width: 150)
+                        VStack(alignment: .leading, spacing: 14) {
+                            titleBlock(alignment: .leading)
+                            playButtons
+                        }
+                    }
+                } else {
+                    cover(width: 190)
+                    titleBlock(alignment: .center)
+                    playButtons
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+        }
+    }
+
+    private func cover(width: CGFloat) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(MuffinTheme.muffinTopGradient)
+            if let path = live.coverPath {
+                CoverImage(path: path, padding: 8)
+            } else {
+                Image(systemName: "gamecontroller.fill")
+                    .font(.system(size: width * 0.3))
+                    .foregroundColor(MuffinTheme.onMuffinTop)
+            }
+        }
+        .frame(width: width, height: width * 4 / 3)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .shadow(color: MuffinTheme.shadow.opacity(0.3), radius: 14, x: 0, y: 8)
+        .accessibilityHidden(true)
+    }
+
+    private func titleBlock(alignment: HorizontalAlignment) -> some View {
+        VStack(alignment: alignment, spacing: 5) {
+            Text(live.cardName.name)
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .multilineTextAlignment(alignment == .center ? .center : .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            if let info = data.info(for: game.id), let by = info.publisher ?? info.developer {
+                Text(by)
+                    .font(.system(size: 14, design: .rounded))
+                    .foregroundColor(MuffinTheme.brownMid)
+            }
+            Label(live.region ?? "Region unknown", systemImage: "globe")
+                .font(.system(size: 13, design: .rounded))
+                .foregroundColor(MuffinTheme.brownMid)
+            Text(installLine)
+                .font(.system(size: 12, design: .rounded))
+                .foregroundColor(MuffinTheme.secondaryText)
+                .multilineTextAlignment(alignment == .center ? .center : .leading)
+                .lineLimit(2)
+        }
+    }
+
+    private var playButtons: some View {
+        Button {
+            closeThen(onPlay)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "play.fill").font(.system(size: 18, weight: .bold))
+                Text("Play").font(.system(size: 20, weight: .bold, design: .rounded))
+            }
+            .frame(maxWidth: .infinity, minHeight: 36)
+        }
+        .buttonStyle(MuffinPrimaryButtonStyle())
+        .frame(maxWidth: 340)
+        .accessibilityLabel("Play \(live.cardName.name)")
+    }
+
+    // MARK: Your play
+
+    private var yourPlaySection: some View {
+        Section {
+            SettingsRow(label: "Last played", value: lastPlayedText, icon: "clock.arrow.circlepath")
+            SettingsRow(label: "Times played", value: "\(stats.entry(for: game.id)?.count ?? 0)", icon: "number")
+            SettingsRow(label: "Size on disk", value: sizeOnDisk.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "\u{2026}",
+                        icon: "internaldrive")
+            if live.titleId != nil {
+                SettingsRow(label: "Shader cache", value: shaderBytes.map { ShaderCacheInfo.formatBytes($0) } ?? "\u{2026}",
+                            icon: "externaldrive")
+            }
+        } header: {
+            SettingsSectionHeader("Your play", icon: "clock.arrow.circlepath", accent: .content)
+        }
+    }
+
+    private var lastPlayedText: String {
+        guard let entry = stats.entry(for: game.id) else { return "Not yet" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: entry.last, relativeTo: Date())
+    }
+
+    // MARK: Manage
+
+    private var manageSection: some View {
+        let key = live.settingsKey
+        return Section {
+            Button { sheet = .settings } label: {
+                rowLabel("Game settings", systemImage: "slider.horizontal.3", chevron: true)
+            }
+            Toggle(isOn: Binding(
+                get: { live.isFavorite },
+                set: { _ in gameManager.toggleFavorite(live) }
+            )) {
+                rowLabel("Favourite", systemImage: live.isFavorite ? "heart.fill" : "heart")
+            }
+            .tint(MuffinTheme.accentText)
+            Toggle(isOn: Binding(
+                get: { store.effectivePreCompileShaders(for: key) },
+                set: { store.setPreCompileShaders($0, for: key) }
+            )) {
+                rowLabel("Compile shaders in the background", systemImage: "bolt.fill")
+            }
+            .tint(MuffinTheme.accentText)
+            if store.overrides(for: key).preCompileShaders != nil {
+                Button { store.setPreCompileShaders(nil, for: key) } label: {
+                    rowLabel("Use the global shader setting", systemImage: "arrow.uturn.backward")
+                }
+            }
+            Button { sheet = .cover } label: {
+                rowLabel("Change cover", systemImage: "photo")
+            }
+            if gameManager.hasManualCoverOverride(forGameID: game.id) {
+                Button(role: .destructive) {
+                    gameManager.removeManualCover(forGameID: game.id)
+                } label: {
+                    DestructiveSettingsLabel(title: "Remove custom cover", systemImage: "photo.badge.minus")
+                }
+            }
+            Button { sheet = .rename } label: {
+                rowLabel("Rename", systemImage: "pencil")
+            }
+            if names.name(for: live.installKey) != nil {
+                Button { names.set(nil, for: live.installKey) } label: {
+                    rowLabel("Reset to original title", systemImage: "arrow.uturn.backward")
+                }
+            }
+        } header: {
+            SettingsSectionHeader("Manage", icon: "slider.horizontal.3", accent: .core)
+        }
+    }
+
+    /// Updates, DLC and decrypting: work on the game's files, so each one hands off to the library.
+    private var filesSection: some View {
+        let installed = DlcUpdateImport.installedContent(for: live)
+        return Section {
+            Button { closeThen(onImportUpdate) } label: {
+                rowLabel("Import update", systemImage: "arrow.triangle.2.circlepath")
+            }
+            Button { closeThen(onImportDLC) } label: {
+                rowLabel("Import DLC", systemImage: "shippingbox")
+            }
+            if installed.hasUpdate {
+                Button(role: .destructive) { closeThen(onRemoveUpdate) } label: {
+                    DestructiveSettingsLabel(title: "Remove update", systemImage: "trash")
+                }
+            }
+            if installed.hasDLC {
+                Button(role: .destructive) { closeThen(onRemoveDLC) } label: {
+                    DestructiveSettingsLabel(title: "Remove DLC", systemImage: "trash")
+                }
+            }
+            if gameSupportsDecryptToFiles(romPath: live.romPath) {
+                Button { closeThen(onDecrypt) } label: {
+                    rowLabel("Decrypt", systemImage: "lock.open")
+                }
+            }
+        } header: {
+            SettingsSectionHeader("Updates and files", icon: "shippingbox", accent: .io)
+        }
+    }
+
+    // MARK: Save states
+
+    private var saveStatesSection: some View {
+        let used = slots.filter { $0.isOccupied }
+        return Section {
+            if used.isEmpty {
+                Text("No save states yet.")
+                    .font(.system(size: 13))
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
+            ForEach(used) { slot in
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Slot \(slot.number)")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text(slotDetail(slot))
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
+                    Spacer(minLength: 8)
+                    Button { slotToDelete = slot.number } label: {
+                        Image(systemName: "trash")
+                            .foregroundColor(.red)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Delete slot \(slot.number)")
+                }
+            }
+        } header: {
+            SettingsSectionHeader("Save states", icon: "clock.arrow.2.circlepath", accent: .io)
+        } footer: {
+            Text("Save and load states from the top bar while the game is running. A state can't be loaded after the game has been closed.")
+        }
+    }
+
+    private func slotDetail(_ slot: SaveStateSlot) -> String {
+        var parts: [String] = []
+        if let date = slot.savedAt {
+            parts.append(date.formatted(date: .abbreviated, time: .shortened))
+        }
+        if let bytes = slot.byteCount {
+            parts.append(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    // MARK: Remove
+
+    private var removeSection: some View {
+        Section {
+            Button(role: .destructive) {
+                confirmingRemoval = true
+            } label: {
+                DestructiveSettingsLabel(title: "Remove game\u{2026}", systemImage: "trash")
+            }
+        } footer: {
+            Text("Frees up the space the game uses. Your saves and options are kept.")
+        }
+    }
+
+    // MARK: Helpers
+
+    private func rowLabel(_ title: String, systemImage: String, chevron: Bool = false) -> some View {
+        HStack {
+            Label(title, systemImage: systemImage)
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+            if chevron {
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(MuffinTheme.secondaryText)
+            }
+        }
+    }
+
+    /// Closes the page, then runs `action` once it is gone, so what it opens isn't blocked by it.
+    private func closeThen(_ action: @escaping () -> Void) {
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { action() }
+    }
+
+    private func reloadSlots() {
+        slots = SaveStateStore.slots(for: game.id)
+    }
+
+    private func loadSizes() {
+        let path = live.dumpDirectoryPath ?? live.romPath
+        let titleId = live.titleId
+        DispatchQueue.global(qos: .utility).async {
+            let bytes = Self.byteCount(atPath: path)
+            var shader: Int64?
+            if let titleId {
+                var learned: Int64 = 0
+                var compiled: Int64 = 0
+                _ = cemu_bridge_shader_cache_stats(titleId, &learned, &compiled)
+                shader = learned + compiled
+            }
+            DispatchQueue.main.async {
+                sizeOnDisk = bytes
+                shaderBytes = shader
+            }
+        }
+    }
+
+    /// A file's size, or a folder's total. Blocking: call it off the main thread.
+    private static func byteCount(atPath path: String) -> Int64 {
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        guard fm.fileExists(atPath: path, isDirectory: &isDirectory) else { return 0 }
+        if !isDirectory.boolValue {
+            return ((try? fm.attributesOfItem(atPath: path))?[.size] as? NSNumber)?.int64Value ?? 0
+        }
+        let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey, .fileSizeKey]
+        guard let walker = fm.enumerator(at: URL(fileURLWithPath: path), includingPropertiesForKeys: keys) else { return 0 }
+        var total: Int64 = 0
+        for case let url as URL in walker {
+            let values = try? url.resourceValues(forKeys: Set(keys))
+            total += Int64(values?.totalFileAllocatedSize ?? values?.fileSize ?? 0)
+        }
+        return total
+    }
+}

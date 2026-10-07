@@ -7,6 +7,7 @@ struct LibrarySettingsSection: View {
     @AppStorage("muffin.library.sortOrder") private var sortRaw = LibrarySortOrder.title.rawValue
     @AppStorage(LibraryGrouping.storageKey) private var groupingRaw = LibraryGrouping.defaultValue.rawValue
     @AppStorage(LibraryFilter.storageKey) private var filterRaw = LibraryFilter.defaultValue.rawValue
+    @AppStorage(LibraryTapAction.storageKey) private var tapActionRaw = LibraryTapAction.defaultValue.rawValue
     @AppStorage(SettingsMode.storageKey) private var modeRaw = SettingsMode.defaultValue.rawValue
 
     var body: some View {
@@ -32,6 +33,14 @@ struct LibrarySettingsSection: View {
                 }
                 Slider(value: $cardSize, in: LibraryCardStyle.sizeRange, step: 0.05)
                     .tint(MuffinTheme.accentText)
+            }
+            Picker(selection: $tapActionRaw) {
+                ForEach(LibraryTapAction.allCases) { action in
+                    Text(action.title).tag(action.rawValue)
+                }
+            } label: {
+                Label("Tap a game to", systemImage: "hand.tap")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
             Picker(selection: $sortRaw) {
                 ForEach(LibrarySortOrder.allCases, id: \.self) { order in
