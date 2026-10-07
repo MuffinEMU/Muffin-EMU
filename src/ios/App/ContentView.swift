@@ -3280,12 +3280,7 @@ struct EmulatorViewOptimized: View {
 private struct HideSystemOverlaysIfAvailable: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 16.0, *) {
-            // Defer the system's edge swipes while a game is up: on iPadOS 26 and later a swipe down
-            // from the top otherwise drags the app into a window or opens the window controls, which
-            // collides with the swipe that brings MuffinEMU's top bar back. Deferred, the first swipe
-            // goes to the game screen; a second one still reaches iOS.
             content.persistentSystemOverlays(.hidden)
-                .defersSystemGestures(on: .all)
         } else {
             content
         }

@@ -16,16 +16,11 @@ struct CompactTopBarRevealHandle: View {
             .fill(Color.white.opacity(0.6))
             // A hairline of shadow so it still reads over a white title screen.
             .shadow(color: Color.black.opacity(0.45), radius: 1.5, x: 0, y: 0.5)
-            .frame(width: 56, height: 6)
-            .padding(.top, 6)
-            .frame(width: 130, height: 50, alignment: .top)
+            .frame(width: 80, height: 8)
+            .padding(.top, 8)
+            .frame(width: 140, height: 52, alignment: .top)
             .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0).onEnded { value in
-                    // A tap, or a swipe that ends lower than it began. A swipe up is not a request.
-                    if value.translation.height > -12 { onReveal() }
-                }
-            )
+            .onTapGesture { onReveal() }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Show top bar")
             .accessibilityAddTraits(.isButton)
