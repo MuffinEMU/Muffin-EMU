@@ -120,7 +120,11 @@ final class ArtPackIndex {
                   let indexData = try? Data(contentsOf: Self.indexURL(id)),
                   let records = try? JSONDecoder().decode([PackIndexRecord].self, from: indexData) else { continue }
             var map: [String: [PackIndexRecord]] = [:]
-            for r in records { map[r.normalizedTitle, default: []].append(r) }
+            for r in records {
+                map[r.normalizedTitle, default: []].append(r)
+                let loose = ArtTitleNormalizer.loose(r.normalizedTitle)
+                if !loose.isEmpty, loose != r.normalizedTitle { map[loose, default: []].append(r) }
+            }
             result[id] = Loaded(meta: meta, byTitle: map, directory: Self.filesURL(id))
         }
         packs = result
@@ -152,12 +156,35 @@ final class ArtPackIndex {
         guard !all.isEmpty, !candidates.isEmpty else { return nil }
         for style in styles {
             let ofStyle = all.values.filter { $0.meta.style == style && (onlyPack == nil || $0.meta.id == onlyPack) }.sorted { $0.meta.order < $1.meta.order }
-            for candidate in candidates where !candidate.isEmpty {
+            var keys: [String] = []
+            for c in candidates where !c.isEmpty {
+                for k in [c, ArtTitleNormalizer.loose(c)] where !k.isEmpty && !keys.contains(k) { keys.append(k) }
+            }
+            for candidate in keys {
                 for pack in ofStyle {
                     guard let records = pack.byTitle[candidate] else { continue }
                     let matched = records.first { r in
                         !regions.isEmpty && !RegionCode.codes(in: r.region).isDisjoint(with: regions)
                     }
+                    guard let pick = matched ?? records.first else { continue }
+                    let path = pack.directory.appendingPathComponent(pick.file).path
+                    if FileManager.default.fileExists(atPath: path) {
+                        return PackArtHit(packID: pack.meta.id, path: path, regionMatched: matched != nil)
+                    }
+                }
+            }
+        }
+        // Last resort: one pack title that starts with the game's loose name, or the other way round
+        // ("mario kart 8" vs "mario kart 8 deluxe edition"). Only taken when exactly one title fits,
+        // so a short or generic name never grabs the wrong game's art.
+        let looseKeys = candidates.map(ArtTitleNormalizer.loose).filter { $0.count >= 8 }
+        for style in styles {
+            let ofStyle = all.values.filter { $0.meta.style == style && (onlyPack == nil || $0.meta.id == onlyPack) }.sorted { $0.meta.order < $1.meta.order }
+            for loose in looseKeys {
+                for pack in ofStyle {
+                    let fits = pack.byTitle.keys.filter { !$0.contains(" ") && $0.count >= 8 && ($0.hasPrefix(loose) || loose.hasPrefix($0)) }
+                    guard fits.count == 1, let key = fits.first, let records = pack.byTitle[key] else { continue }
+                    let matched = records.first { r in !regions.isEmpty && !RegionCode.codes(in: r.region).isDisjoint(with: regions) }
                     guard let pick = matched ?? records.first else { continue }
                     let path = pack.directory.appendingPathComponent(pick.file).path
                     if FileManager.default.fileExists(atPath: path) {
