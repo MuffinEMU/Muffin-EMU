@@ -1,4 +1,5 @@
 #if canImport(UIKit)
+import CoreMotion
 import SwiftUI
 import TouchLabCore
 import UIKit
@@ -40,6 +41,7 @@ public final class TouchPadView: UIView {
         didSet {
             guard isInputEnabled != oldValue else { return }
             if !isInputEnabled { dropAll() }
+            updateAmbient()
             setNeedsDisplay()
         }
     }
@@ -51,6 +53,8 @@ public final class TouchPadView: UIView {
     public var extraInsets = Insets() { didSet { relayout() } }
 
     private var displayLink: CADisplayLink?
+    private var glowTimer: Timer?
+    private let wheel = WheelAngleSource()
     private let impact = UIImpactFeedbackGenerator(style: .light)
     private var lastPressed: Set<PadButton> = []
 
@@ -63,6 +67,8 @@ public final class TouchPadView: UIView {
         contentMode = .redraw
         NotificationCenter.default.addObserver(self, selector: #selector(dropAll),
                                                name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(becameActive),
+                                               name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
     @available(*, unavailable)
@@ -70,11 +76,14 @@ public final class TouchPadView: UIView {
 
     deinit {
         displayLink?.invalidate()
+        glowTimer?.invalidate()
+        wheel.stop()
     }
 
     public func setScheme(_ scheme: TouchScheme) {
         engine.setScheme(scheme)
         relayout(force: true)
+        updateAmbient()
     }
 
     // MARK: Layout
@@ -92,6 +101,7 @@ public final class TouchPadView: UIView {
     public override func didMoveToWindow() {
         super.didMoveToWindow()
         relayout()
+        updateAmbient()
     }
 
     private func toLocal(_ r: CGRect) -> CGRect {
@@ -157,25 +167,66 @@ public final class TouchPadView: UIView {
 
     public override func willMove(toWindow newWindow: UIWindow?) {
         super.willMove(toWindow: newWindow)
-        if newWindow == nil { dropAll() }
+        if newWindow == nil {
+            engine.ambientEnabled = false
+            dropAll()
+            wheel.stop()
+        }
     }
 
     /// Every finger forgotten and every input released - the view is leaving, or the app
     /// is. The stuck-button guard lives here, once, for the whole pad.
     @objc public func dropAll() {
+        // Anything the pad holds for the player (auto-accelerate) goes too, until the pad is
+        // live again: a backgrounded or paused game must not keep A down.
+        engine.ambientEnabled = false
         engine.cancelAll()
         changed()
     }
 
-    private func changed() {
+    @objc private func becameActive() { updateAmbient() }
+
+    /// Turns what the pad holds for the player on or off with whether the pad is live, and
+    /// runs the motion sensor only while the scheme steers from it.
+    private func updateAmbient() {
+        let live = isInputEnabled && window != nil && UIApplication.shared.applicationState == .active
+        engine.ambientEnabled = live
+        if live, engine.scheme.wantsMotion {
+            wheel.start { [weak self] angle in
+                guard let self else { return }
+                self.engine.motion(angle: angle)
+                self.changed(redraw: self.engine.scheme.wantsMotion)
+            } orientation: { [weak self] in
+                self?.window?.windowScene?.interfaceOrientation ?? .landscapeRight
+            }
+        } else {
+            wheel.stop()
+        }
+        changed()
+    }
+
+    private func changed(redraw: Bool = true) {
         let pressed = engine.mixer.pressed
         if hapticsEnabled, !pressed.subtracting(lastPressed).isEmpty {
             impact.impactOccurred(intensity: 0.7)
         }
         lastPressed = pressed
         updateDisplayLink()
-        setNeedsDisplay()
+        if redraw { setNeedsDisplay() }
+        scheduleGlowRedraw()
         onChange?()
+    }
+
+    /// A button drawn pressed only for its minimum time needs one more draw when that runs out.
+    private func scheduleGlowRedraw() {
+        glowTimer?.invalidate()
+        glowTimer = nil
+        guard let expiry = engine.nextLitExpiry() else { return }
+        let delay = max(0.005, expiry - engine.clock())
+        glowTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            self?.glowTimer = nil
+            self?.setNeedsDisplay()
+        }
     }
 
     private func updateDisplayLink() {
@@ -215,6 +266,10 @@ enum PadDrawing {
         switch e.role {
         case .zone: alpha = e.lit ? 0.10 : 0.0
         case .touchscreen: alpha = 0
+        // Racing's steering area: always there, faint enough to leave the game visible.
+        case .area: alpha = (e.lit ? 0.34 : 0.2) * opacity
+        // Racing's pedals: large, so drawn lighter than a button.
+        case .pedal: alpha = 0.62 * opacity
         default: alpha = (e.ghost ? 0.3 : 1) * opacity
         }
         guard alpha > 0 else { return }
@@ -234,7 +289,7 @@ enum PadDrawing {
     }
 
     static func colours(_ e: RenderElement) -> (UIColor, UIColor, UIColor) {
-        if e.lit, e.role != .stickBase {
+        if e.lit, e.role != .stickBase, e.role != .area {
             return (UIColor(red: 1, green: 0.79, blue: 0.24, alpha: 1), .white, UIColor(white: 0.1, alpha: 1))
         }
         switch e.role {
@@ -245,6 +300,9 @@ enum PadDrawing {
         case .stickBase: return (UIColor(white: 0.22, alpha: 1), UIColor(white: 0.5, alpha: 1), .white)
         case .stickKnob: return (UIColor(white: 0.75, alpha: 1), .white, UIColor(white: 0.12, alpha: 1))
         case .zone, .touchscreen: return (UIColor(red: 0.5, green: 0.66, blue: 1, alpha: 1), .clear, .clear)
+        case .area: return (UIColor(red: 0.5, green: 0.66, blue: 1, alpha: 1), UIColor(red: 0.6, green: 0.74, blue: 1, alpha: 1),
+                            UIColor(red: 0.77, green: 0.84, blue: 1, alpha: 1))
+        case .pedal: return (UIColor(white: 0.85, alpha: 1), .white, UIColor(white: 0.1, alpha: 1))
         }
     }
 }
@@ -338,6 +396,46 @@ public struct TouchPad: UIViewRepresentable {
         view.dropAll()
     }
 }
+/// The device turned like a steering wheel, as an angle in the screen's own frame: radians,
+/// positive when the top of the screen turns toward the player's right, whichever way up the
+/// interface is. Read from gravity, so it needs no calibration and is the same on every device;
+/// the scheme decides what "straight ahead" is.
+///
+/// Gravity lying nearly flat on the screen's plane (a device held face up) has no wheel
+/// angle, so those samples are skipped rather than turned into noise.
+final class WheelAngleSource {
+    private let manager = CMMotionManager()
+    private var running = false
+
+    func start(handler: @escaping (Double) -> Void, orientation: @escaping () -> UIInterfaceOrientation) {
+        guard !running, manager.isDeviceMotionAvailable else { return }
+        running = true
+        manager.deviceMotionUpdateInterval = 1.0 / 60.0
+        manager.startDeviceMotionUpdates(to: .main) { motion, _ in
+            guard let g = motion?.gravity else { return }
+            // The screen's right and down directions in the device's x/y axes, per interface
+            // orientation.
+            let right: (Double, Double), down: (Double, Double)
+            switch orientation() {
+            case .portraitUpsideDown: right = (-1, 0); down = (0, 1)
+            case .landscapeRight: right = (0, -1); down = (-1, 0)
+            case .landscapeLeft: right = (0, 1); down = (1, 0)
+            default: right = (1, 0); down = (0, -1)
+            }
+            let toRight = g.x * right.0 + g.y * right.1
+            let toDown = g.x * down.0 + g.y * down.1
+            guard (toRight * toRight + toDown * toDown).squareRoot() > 0.35 else { return }
+            handler(atan2(toRight, toDown))
+        }
+    }
+
+    func stop() {
+        guard running else { return }
+        running = false
+        manager.stopDeviceMotionUpdates()
+    }
+}
+
 /// Pad labels, rendered once with their halo. The pad redraws on every input change,
 /// so during a stick drag every label would otherwise be laid out and blurred again on
 /// every frame, on the main thread, while the emulator wants the CPU. What shapes a

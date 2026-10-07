@@ -94,11 +94,18 @@ for info in SchemeCatalog.all {
                 case .stick(_, _, let click), .floatingStick(_, _, _, _, let click):
                     stickCount += 1; if let click { reachable.insert(click) }
                 case .swipeStick: stickCount += 1
+                case .pedal(let set): reachable.formUnion(set)
+                case .steer: stickCount += 1
+                case .recentre: break
                 }
             }
-            let missing = Set(PadButton.allCases).subtracting(reachable)
+            // Racing is for one game's controls: only the buttons Mario Kart 8 uses and the one
+            // stick it steers with. Every other scheme must reach the whole GamePad.
+            let required: Set<PadButton> = info.id == RacingPad.schemeInfo.id
+                ? [.a, .b, .x, .l, .r, .plus, .home] : Set(PadButton.allCases)
+            let missing = required.subtracting(reachable)
             check(missing.isEmpty, "\(where_): unreachable \(missing.map(\.description).sorted())")
-            check(stickCount == 2, "\(where_): \(stickCount) sticks")
+            check(stickCount == (info.id == RacingPad.schemeInfo.id ? 1 : 2), "\(where_): \(stickCount) sticks")
 
             if let frame = scheme as? FramePad, frame.mode != .overlay {
                 for c in scheme.controls where !c.isZone {
@@ -132,6 +139,47 @@ for info in SchemeCatalog.all {
         w += 70
     }
     check(bad.isEmpty, "\(info.name): \(bad.count) window sizes fail, e.g. \(bad.prefix(3).joined(separator: " | "))")
+}
+
+// MARK: Racing layouts with each option, on every device
+
+for options in [RacingPad.Options(), RacingPad.Options(autoAccelerate: true), RacingPad.Options(tilt: true),
+                RacingPad.Options(autoAccelerate: true, tilt: true)] {
+    for device in TargetDevice.all {
+        for display in TargetDevice.Display.allCases {
+            let scheme = RacingPad(options: options)
+            let ctx = device.context(display)
+            scheme.layout(ctx)
+            let where_ = "Racing \(options) / \(device.name) / \(display.rawValue)"
+            check(LayoutCheck.problems(scheme.controls, in: ctx.safeBounds).isEmpty,
+                  "\(where_): \(LayoutCheck.problems(scheme.controls, in: ctx.safeBounds).joined(separator: "; "))")
+            // Thumb-sized: the pedal the thumb rests on is never smaller than a 44 point target.
+            if let a = scheme.controls.first(where: { if case .pedal(let s) = $0.kind { return s == [.a] }; return false }) {
+                let b = a.shape.boundingBox
+                check(b.width >= 44 && b.height >= 44, "\(where_): accelerate zone \(Int(b.width))x\(Int(b.height)) is smaller than a thumb")
+            } else { check(false, "\(where_): no accelerate zone") }
+            check(scheme.controls.contains { if case .steer = $0.kind { return true }; return false }, "\(where_): no steering area")
+        }
+    }
+}
+
+// MARK: Zone with a large A
+
+for device in TargetDevice.all {
+    for display in TargetDevice.Display.allCases {
+        let ctx = device.context(display)
+        let normal = ZonePad(), large = ZonePad(largeA: true)
+        normal.layout(ctx); large.layout(ctx)
+        let where_ = "Zone large A / \(device.name) / \(display.rawValue)"
+        check(LayoutCheck.problems(large.controls, in: ctx.safeBounds).isEmpty,
+              "\(where_): \(LayoutCheck.problems(large.controls, in: ctx.safeBounds).joined(separator: "; "))")
+        let aN = normal.controls.first { $0.button == .a }!.shape.boundingBox.width
+        let aL = large.controls.first { $0.button == .a }!.shape.boundingBox.width
+        let yL = large.controls.first { $0.button == .y }!.shape.boundingBox.width
+        check(abs(aL / yL - 1.4 / 0.9) < 0.01, "\(where_): A is \(aL / yL)x its neighbours")
+        // About 1.4x, less only where the whole layout had to shrink to fit.
+        check(aL >= aN * 1.2, "\(where_): A grew only \(aL / aN)x")
+    }
 }
 
 // MARK: Stick spacing
@@ -364,6 +412,149 @@ do {
     let portrait = TargetDevice.all.first { $0.name.contains("portrait") }!
     let fp = FramePad(); fp.layout(portrait.context(.single))
     check(fp.mode == .band, "frame: portrait single screen uses the bottom band, got \(fp.mode)")
+}
+
+
+// MARK: Racing behaviour
+
+func racingEngine(_ options: RacingPad.Options = RacingPad.Options()) -> (PadEngine, Recorder, RacingPad) {
+    let r = Recorder()
+    let pad = RacingPad(options: options)
+    let e = PadEngine(scheme: pad, output: r, context: ipad.context(.stacked))
+    return (e, r, pad)
+}
+func pedalCentre(_ s: ControlScheme, _ set: Set<PadButton>) -> CGPoint {
+    s.controls.first { if case .pedal(let x) = $0.kind { return x == set }; return false }!.shape.center
+}
+func steerSpec(_ s: ControlScheme) -> (SteerSpec, CGRect) {
+    for c in s.controls { if case .steer(let spec) = c.kind { return (spec, c.shape.boundingBox) } }
+    fatalError("no steering area")
+}
+
+do {
+    let (e, r, s) = racingEngine()
+    let (spec, zone) = steerSpec(s)
+    let start = CGPoint(x: zone.midX, y: zone.midY)
+    e.began(1, at: start, time: 0)
+    check(r.sticks[.left] == nil || r.sticks[.left] == .zero, "racing: landing on the steering area does not steer")
+    e.moved(1, to: start + CGPoint(x: spec.lockX, y: 0), time: 0.1)
+    check(near(r.sticks[.left]?.x ?? 0, 1, 0.01), "racing: full lock right, got \(String(describing: r.sticks[.left]))")
+    e.moved(1, to: start + CGPoint(x: -spec.lockX, y: 0), time: 0.2)
+    check(near(r.sticks[.left]?.x ?? 0, -1, 0.01), "racing: full lock left")
+    e.moved(1, to: start + CGPoint(x: spec.lockX * 0.5, y: 0), time: 0.3)
+    check((r.sticks[.left]?.x ?? 0) > 0.3 && (r.sticks[.left]?.x ?? 0) < 0.6, "racing: half travel is about half steering")
+    e.moved(1, to: start + CGPoint(x: spec.lockX * 0.5, y: -spec.lockY * 0.3), time: 0.35)
+    check((r.sticks[.left]?.y ?? 1) == 0, "racing: small upward wander is inside the item dead zone")
+    e.moved(1, to: start + CGPoint(x: spec.lockX * 0.5, y: -spec.lockY), time: 0.4)
+    check((r.sticks[.left]?.y ?? 0) > 0.9, "racing: push up = throw forward (+y)")
+    e.moved(1, to: start + CGPoint(x: 0, y: spec.lockY), time: 0.5)
+    check((r.sticks[.left]?.y ?? 0) < -0.9, "racing: pull down = throw back (-y)")
+    e.moved(1, to: start + CGPoint(x: spec.lockX * 4, y: 0), time: 0.6)
+    check(near(r.sticks[.left]?.x ?? 0, 1, 0.01), "racing: stays at full lock far past it")
+    e.moved(1, to: start + CGPoint(x: spec.lockX * 4 - spec.lockX * 1.3, y: 0), time: 0.7)
+    check((r.sticks[.left]?.x ?? 0) < 0.99, "racing: the anchor followed the thumb, so backing off leaves full lock quickly")
+    e.ended(1, at: start, time: 0.8)
+    check(r.sticks[.left] == .zero, "racing: stick centres when the thumb lifts")
+}
+
+do {
+    let (e, r, s) = racingEngine()
+    let a = pedalCentre(s, [.a]), ar = pedalCentre(s, [.a, .r]), rr = pedalCentre(s, [.r]), b = pedalCentre(s, [.b])
+    e.began(1, at: a, time: 0)
+    check(r.held == [.a], "racing: thumb on the accelerate zone holds A, got \(r.held)")
+    e.moved(1, to: ar, time: 0.1)
+    check(r.held == [.a, .r], "racing: sliding up onto A+R holds both, got \(r.held)")
+    e.moved(1, to: rr, time: 0.2)
+    check(r.held == [.r], "racing: sliding on to the drift zone hands over to R, got \(r.held)")
+    e.moved(1, to: ar, time: 0.3)
+    e.moved(1, to: a, time: 0.4)
+    check(r.held == [.a], "racing: and back down to A, got \(r.held)")
+    e.moved(1, to: b, time: 0.5)
+    check(r.held == [.b], "racing: brake is next to accelerate, got \(r.held)")
+    e.ended(1, at: b, time: 0.6)
+    check(r.held.isEmpty, "racing: lift releases")
+    r.log = []
+    e.began(2, at: a, time: 1)
+    e.moved(2, to: ar, time: 1.1)
+    e.ended(2, at: ar, time: 1.2)
+    check(r.log == ["A+", "R+", "A-", "R-"] || r.log == ["A+", "R+", "R-", "A-"], "racing: A to A+R presses A once and keeps it: \(r.log)")
+}
+
+do {
+    let (e, r, s) = racingEngine()
+    let (spec, zone) = steerSpec(s)
+    let a = pedalCentre(s, [.a])
+    let start = CGPoint(x: zone.midX, y: zone.midY)
+    e.began(1, at: start, time: 0)
+    e.began(2, at: a, time: 0.01)
+    check(r.held == [.a], "racing: A held while steering")
+    for i in 1...20 {
+        e.moved(1, to: start + CGPoint(x: spec.lockX * CGFloat(sin(Double(i) / 3)), y: 0), time: 0.02 * Double(i))
+        check(r.held == [.a], "racing: steering move \(i) must not drop A, got \(r.held)")
+    }
+    e.ended(1, at: start, time: 1)
+    check(r.held == [.a] && r.sticks[.left] == .zero, "racing: lifting the steering thumb keeps A and centres the stick")
+    e.ended(2, at: a, time: 1.1)
+    r.log = []
+    e.began(1, at: start, time: 2)
+    for i in 0..<5 { tap(e, a, id: 5, t: 2.1 + Double(i) * 0.3) }
+    e.ended(1, at: start, time: 4)
+    check(r.log.filter { $0 == "A+" }.count == 5 && r.log.filter { $0 == "A-" }.count == 5, "racing: five taps on A while steering, got \(r.log)")
+}
+
+do {
+    let (e, r, s) = racingEngine(RacingPad.Options(autoAccelerate: true))
+    check(r.held == [.a], "racing: auto-accelerate holds A with no finger down, got \(r.held)")
+    let b = pedalCentre(s, [.b])
+    e.began(1, at: b, time: 0)
+    check(r.held == [.b], "racing: the brake zone overrides auto-accelerate, got \(r.held)")
+    e.ended(1, at: b, time: 0.1)
+    check(r.held == [.a], "racing: A comes back when the brake lifts, got \(r.held)")
+    e.ambientEnabled = false
+    check(r.held.isEmpty, "racing: nothing is held for the player while the pad is off")
+    e.ambientEnabled = true
+    check(r.held == [.a], "racing: and back on")
+}
+
+do {
+    let (e, r, s) = racingEngine(RacingPad.Options(tilt: true))
+    let (_, zone) = steerSpec(s)
+    check(s.wantsMotion, "racing: tilt option asks for motion")
+    e.motion(angle: 1.0)
+    check(r.sticks[.left] == nil || r.sticks[.left] == .zero, "racing: first motion sample is straight ahead")
+    e.motion(angle: 1.0 + RacingPad.tiltFullLock)
+    check(near(r.sticks[.left]?.x ?? 0, 1, 0.01), "racing: turned the full angle = full lock, got \(String(describing: r.sticks[.left]))")
+    e.motion(angle: 1.0 - RacingPad.tiltFullLock / 2)
+    check((r.sticks[.left]?.x ?? 0) < -0.3, "racing: turned the other way steers left")
+    let steer = CGPoint(x: zone.midX, y: zone.midY)
+    e.began(1, at: steer, time: 0)
+    e.moved(1, to: steer + CGPoint(x: -400, y: -400), time: 0.1)
+    check((r.sticks[.left]?.x ?? 0) < 0 && (r.sticks[.left]?.y ?? 0) > 0.5, "racing: tilt gives X, the thumb still throws items, got \(String(describing: r.sticks[.left]))")
+    e.ended(1, at: steer, time: 0.2)
+    check((r.sticks[.left]?.x ?? 0) < 0, "racing: tilt keeps steering after the thumb lifts")
+    let c = s.controls.first { if case .recentre = $0.kind { return true }; return false }!
+    e.began(2, at: c.shape.center, time: 1)
+    e.ended(2, at: c.shape.center, time: 1.1)
+    check(r.sticks[.left] == nil || r.sticks[.left] == .zero, "racing: the recentre button re-centres, got \(String(describing: r.sticks[.left]))")
+}
+
+// MARK: Pressed look outlasts a quick tap
+
+do {
+    let r = Recorder()
+    let e = PadEngine(scheme: ZonePad(), output: r, context: ipad.context(.stacked))
+    var now = 100.0
+    e.clock = { now }
+    let s = e.scheme as! ControlScheme
+    let a = centre(s, .a)
+    e.began(1, at: a, time: 0)
+    e.ended(1, at: a, time: 0.001)
+    check(r.held.isEmpty, "afterglow: the game still sees the release")
+    check(e.litButtons().contains(.a), "afterglow: a tap that ended before a draw is still drawn pressed")
+    check(e.render().contains { $0.label == "A" && $0.lit }, "afterglow: render shows A lit")
+    now += e.minimumLitDuration + 0.01
+    check(!e.litButtons().contains(.a), "afterglow: and then it lets go")
+    check(e.nextLitExpiry() == nil, "afterglow: nothing left waiting")
 }
 
 do {

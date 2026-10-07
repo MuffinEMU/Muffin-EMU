@@ -19,9 +19,16 @@ public final class ZonePad: ControlScheme {
         name: "Zone",
         summary: "The GamePad's own layout with forgiving, gap-free touch zones, slide between buttons and two-button presses.")
 
-    public init() { super.init(info: Self.schemeInfo) }
+    /// A is about 1.4 times its usual size, with a wider catchment; the other face buttons
+    /// shrink a little to make room and the diamond moves in to stay on screen.
+    public let largeA: Bool
+
+    public init(largeA: Bool = false) {
+        self.largeA = largeA
+        super.init(info: Self.schemeInfo)
+    }
 
     override public func makeControls(_ context: LayoutContext) -> [PadControl] {
-        GamePadArrangement.build(context)
+        GamePadArrangement.build(context, largeA: largeA)
     }
 }

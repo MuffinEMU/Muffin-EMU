@@ -27,7 +27,8 @@ public enum SVGRenderer {
 
     static func element(_ e: RenderElement) -> String {
         let (fill, stroke, text) = colours(e)
-        let opacity = e.ghost ? (e.role == .zone || e.role == .touchscreen ? 0.12 : 0.3) : 0.9
+        let opacity = e.ghost ? (e.role == .zone || e.role == .touchscreen ? 0.12 : 0.3)
+            : (e.role == .area ? (e.lit ? 0.35 : 0.22) : (e.role == .pedal ? (e.lit ? 0.85 : 0.5) : 0.9))
         var out = ""
         let fillAttr = e.role == .touchscreen ? "none" : fill
         switch e.shape {
@@ -45,7 +46,7 @@ public enum SVGRenderer {
     }
 
     static func colours(_ e: RenderElement) -> (String, String, String) {
-        if e.lit && e.role != .zone && e.role != .touchscreen { return ("#ffc93c", "#fff1c1", "#2a2000") }
+        if e.lit && e.role != .zone && e.role != .touchscreen && e.role != .area { return ("#ffc93c", "#fff1c1", "#2a2000") }
         switch e.role {
         case .face: return ("#e9e9ef", "#ffffff", "#24242c")
         case .dpad: return ("#c9c9d2", "#ededf3", "#24242c")
@@ -55,6 +56,8 @@ public enum SVGRenderer {
         case .stickBase: return ("#3a3a44", "#6a6a76", "#c0c0cc")
         case .stickKnob: return ("#b8b8c4", "#e0e0ea", "#24242c")
         case .zone: return (e.lit ? "#ffc93c" : "#7fa8ff", "#7fa8ff", "#7fa8ff")
+        case .area: return (e.lit ? "#ffc93c" : "#7fa8ff", "#9bbcff", "#c4d6ff")
+        case .pedal: return ("#d9d9e2", "#ffffff", "#24242c")
         case .touchscreen: return ("none", e.lit ? "#ffc93c" : "#4d6690", "#4d6690")
         }
     }
