@@ -10,8 +10,10 @@ import ImageIO
 ///   rating. Any other image gets the banner, and the ESRB box when GameTDB knows the rating.
 /// - The Nintendo badge only appears on games GameTDB lists as published by Nintendo.
 ///
-/// Proportions are a real Wii U case (135 x 190 mm front, 14 mm deep), turned 38 degrees with the
-/// far edge at about 90% of the near edge's height, as measured from the pack renders.
+/// The turn, depth and perspective are fitted to the pack's own renders (the far edge stands at about
+/// 90% of the near edge's height, the spine is about 6% of the case's width), and the case's edges,
+/// banner and rating box are measured from them. Everything is sized from the case's own height, so
+/// it holds at any card size or screen.
 struct Box3DCover<Front: View>: View {
     let title: String
     /// False for an official cover scan, which already has the banner and rating printed on it.
@@ -23,9 +25,19 @@ struct Box3DCover<Front: View>: View {
     var esrb: String? = nil
     /// A small picture for the spine's tile under the logo, as on real Wii U spines.
     var spineTilePath: String? = nil
+    /// True when the image already has the case's blue edges printed on it (the art packs' 2D boxes),
+    /// so it fills the whole face instead of sitting inside the case's own edges.
+    var coverHasEdges = false
     @ViewBuilder let front: () -> Front
 
-    private let turn: Double = 38
+    /// Fitted to Robin55's renders: the case is turned 27 degrees, and its spine reads about 20 mm
+    /// deep at this turn (the renders are a little deeper than a real 14 mm case).
+    private let turn: Double = 27
+    private let depthMM: Double = 20
+    private let perspective: CGFloat = 4.4
+    /// Top and bottom case edge as a share of the face's height, the right edge as a share of its width.
+    private let edgeY: CGFloat = 0.015
+    private let edgeX: CGFloat = 0.028
 
     static var caseBlue: Color { Color(red: 22 / 255, green: 161 / 255, blue: 200 / 255) }
     static var titleBlue: Color { Color(red: 46 / 255, green: 109 / 255, blue: 180 / 255) }
@@ -35,14 +47,14 @@ struct Box3DCover<Front: View>: View {
             let a = turn * .pi / 180
             // Tallest case that fits the slot once turned: projected width is fw*cos + depth*sin.
             let fh = min(geo.size.height * 0.94,
-                         geo.size.width * 0.94 / ((135.0 / 190) * cos(a) + (14.0 / 190) * sin(a)))
+                         geo.size.width * 0.94 / ((135.0 / 190) * cos(a) + (depthMM / 190) * sin(a)))
             let fw = fh * 135 / 190
-            let dw = fw * 14 / 135
+            let dw = fw * depthMM / 135
             let projected = fw * cos(a) + dw * sin(a)
             let left = (geo.size.width - projected) / 2 + dw * sin(a)
             let top = (geo.size.height - fh) / 2
             let centreX = left + (fw * cos(a) - dw * sin(a)) / 2
-            let distance = fw * 5.5
+            let distance = fw * perspective
 
             ZStack(alignment: .topLeading) {
                 spineFace(width: dw, height: fh)
@@ -54,39 +66,42 @@ struct Box3DCover<Front: View>: View {
                                                 centreX: centreX - left, centreY: fh / 2, distance: distance))
                     .offset(x: left, y: top)
             }
-            .shadow(color: .black.opacity(0.35), radius: 8, x: 4, y: 6)
+            .shadow(color: .black.opacity(0.35), radius: fh * 0.03, x: fh * 0.012, y: fh * 0.02)
         }
     }
 
     // MARK: Faces
 
     private func frontFace(width: CGFloat, height: CGFloat) -> some View {
-        // Proportions from the Robin55 renders: banner about 7.4% of the height, rating box about
-        // 19% of the width in the bottom-left corner, thin blue case lips top and bottom.
-        let banner = height * 0.074
-        let lip = height * 0.012
+        // Measured from the Robin55 renders: blue case edges about 1.5% of the height top and bottom and
+        // 2.8% of the width on the right, rounded corners about 3.5% of the width, the banner across the
+        // top of the cover, and the ESRB box about 12% of the width in the bottom-left corner.
+        let capY = coverHasEdges ? 0 : height * edgeY
+        let capX = coverHasEdges ? 0 : width * edgeX
+        let innerW = width - capX
+        let innerH = height - 2 * capY
+        let banner = innerW * 200 / 1165
+        let ratingW = innerW * 0.121
+        let ratingH = ratingW * 202 / 138
         return ZStack(alignment: .topLeading) {
-            VStack(spacing: 0) {
-                if addBanner {
-                    Image("BoxWiiUBanner").resizable().frame(width: width, height: banner)
+            Self.caseBlue
+            front()
+                .frame(width: innerW, height: innerH)
+                .clipped()
+                .offset(y: capY)
+            if addBanner {
+                Image("BoxWiiUBanner").resizable()
+                    .frame(width: innerW, height: banner)
+                    .offset(y: capY)
+                if let esrb {
+                    Image("BoxRating" + esrb).resizable()
+                        .frame(width: ratingW, height: ratingH)
+                        .offset(x: innerW * 0.026, y: height - capY - innerH * 0.0062 - ratingH)
                 }
-                front()
-                    .frame(width: width, height: addBanner ? height - banner : height)
-                    .clipped()
-            }
-            if addBanner, let esrb {
-                Image("BoxRating" + esrb).resizable()
-                    .frame(width: width * 0.19, height: width * 0.19 * 202 / 138)
-                    .offset(x: width * 0.045, y: height - lip - height * 0.035 - width * 0.19 * 202 / 138)
-            }
-            VStack(spacing: 0) {
-                Self.caseBlue.frame(height: lip)
-                Spacer(minLength: 0)
-                Self.caseBlue.frame(height: lip)
             }
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: width * 0.02, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: width * 0.035, style: .continuous))
         .overlay(LinearGradient(colors: [Color.white.opacity(0.10), .clear, Color.black.opacity(0.10)],
                                 startPoint: .leading, endPoint: .trailing))
     }
@@ -103,7 +118,7 @@ struct Box3DCover<Front: View>: View {
                     .offset(x: width * 0.15, y: height * 0.219)
             }
             Text(title)
-                .font(.system(size: width * 0.52, weight: .heavy, design: .default))
+                .font(.system(size: width * 0.46, weight: .heavy, design: .default))
                 .foregroundColor(Self.titleBlue)
                 .lineLimit(1)
                 .minimumScaleFactor(0.35)
@@ -118,7 +133,6 @@ struct Box3DCover<Front: View>: View {
             }
         }
         .frame(width: width, height: height)
-        .overlay(Color.black.opacity(0.16))
     }
 
     /// Rotates a face about the vertical line x = pivotX (its edge on the shared spine corner), then
@@ -154,34 +168,85 @@ extension Box3DCover where Front == AnyView {
         let title = game.cardName.name
         guard let coverPath else {
             return Box3DCover<AnyView>(title: title, addBanner: true, nintendoPublished: nintendo, esrb: esrb, spineTilePath: nil) {
-                AnyView(ZStack {
-                    MuffinTheme.muffinTopGradient
-                    Image(systemName: "gamecontroller.fill").font(.system(size: 34)).foregroundColor(MuffinTheme.onMuffinTop)
+                // The glyph is sized from the face, so it keeps its place at any card size.
+                AnyView(GeometryReader { g in
+                    ZStack {
+                        MuffinTheme.muffinTopGradient
+                        Image(systemName: "gamecontroller.fill")
+                            .font(.system(size: g.size.width * 0.28))
+                            .foregroundColor(MuffinTheme.onMuffinTop)
+                    }
+                    .frame(width: g.size.width, height: g.size.height)
                 })
             }
         }
-        return Box3DCover<AnyView>(title: title, addBanner: !CoverShape.isSleeve(coverPath), nintendoPublished: nintendo,
-                                   esrb: esrb, spineTilePath: coverPath) {
+        let shape = CoverShape.shape(of: coverPath)
+        return Box3DCover<AnyView>(title: title, addBanner: !shape.isSleeve, nintendoPublished: nintendo,
+                                   esrb: esrb, spineTilePath: coverPath, coverHasEdges: shape.hasCaseEdges) {
             AnyView(CoverImage(path: coverPath, fill: true))
         }
     }
 }
 
-/// Whether an image already has a Wii U sleeve's shape, read from its header once and remembered.
+/// Whether an image already has a Wii U sleeve's shape, and whether it already carries the case's blue
+/// edges (the art packs' 2D boxes do, GameTDB's covers don't). Read from the file once and remembered.
 enum CoverShape {
-    private static var cache: [String: Bool] = [:]
+    struct Result { let isSleeve: Bool; let hasCaseEdges: Bool }
+
+    private static var cache: [String: Result] = [:]
     private static let lock = NSLock()
 
-    static func isSleeve(_ path: String) -> Bool {
+    static func isSleeve(_ path: String) -> Bool { shape(of: path).isSleeve }
+
+    static func shape(of path: String) -> Result {
         lock.lock(); if let hit = cache[path] { lock.unlock(); return hit }; lock.unlock()
-        var result = false
+        var result = Result(isSleeve: false, hasCaseEdges: false)
         if let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil),
            let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
-           let w = props[kCGImagePropertyPixelWidth] as? CGFloat, let h = props[kCGImagePropertyPixelHeight] as? CGFloat, h > 0 {
-            let ratio = w / h
-            result = ratio > 0.64 && ratio < 0.76
+           let rawW = props[kCGImagePropertyPixelWidth] as? CGFloat, let rawH = props[kCGImagePropertyPixelHeight] as? CGFloat, rawH > 0 {
+            // A phone photo or scan can be stored turned; the picture's own orientation decides its shape.
+            let turned = [5, 6, 7, 8].contains((props[kCGImagePropertyOrientation] as? Int) ?? 1)
+            let ratio = turned ? rawH / rawW : rawW / rawH
+            let sleeve = ratio > 0.64 && ratio < 0.76
+            result = Result(isSleeve: sleeve, hasCaseEdges: sleeve && carriesCaseEdges(src))
         }
         lock.lock(); cache[path] = result; lock.unlock()
         return result
+    }
+
+    /// Looks at a small copy of the picture: the right edge and the top and bottom edges are the case's
+    /// blue on every row sampled.
+    private static func carriesCaseEdges(_ src: CGImageSource) -> Bool {
+        let opts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: 160,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return false }
+        let w = cg.width, h = cg.height
+        guard w >= 40, h >= 40 else { return false }
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        let drew = pixels.withUnsafeMutableBytes { buf -> Bool in
+            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        guard drew else { return false }
+        func isCaseBlue(_ x: Int, _ y: Int) -> Bool {
+            let o = (y * w + x) * 4
+            let r = Int(pixels[o]), g = Int(pixels[o + 1]), b = Int(pixels[o + 2])
+            return r < 90 && g > 110 && g < 205 && b > 150 && b > r + 80
+        }
+        func share(_ points: [(Int, Int)]) -> Double {
+            Double(points.filter { isCaseBlue($0.0, $0.1) }.count) / Double(max(points.count, 1))
+        }
+        let rows = stride(from: h / 5, through: h * 4 / 5, by: 3).map { $0 }
+        let cols = stride(from: w / 5, through: w * 4 / 5, by: 3).map { $0 }
+        let right = share(rows.map { (w - 2, $0) })
+        let top = share(cols.map { ($0, 0) })
+        let bottom = share(cols.map { ($0, h - 1) })
+        return right > 0.8 && top > 0.7 && bottom > 0.7
     }
 }
