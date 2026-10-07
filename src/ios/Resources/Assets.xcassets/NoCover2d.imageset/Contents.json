@@ -1,0 +1,6 @@
+{
+  "images" : [
+    { "filename" : "no-cover-2d.png", "idiom" : "universal" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}
