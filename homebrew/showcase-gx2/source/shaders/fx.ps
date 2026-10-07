@@ -1,0 +1,146 @@
+// fx.ps - four procedural scenes in one pixel shader, picked by a uniform:
+//   0 domain-warped plasma, 1 raymarched sphere field, 2 animated Julia set, 3 checker tunnel.
+// Everything is computed per pixel, with real loops and branches, no textures.
+
+#version 420
+
+layout(std140, binding = 0) uniform uf_fx
+{
+   vec4 p0;   // x time, y aspect, z mode, w audio level
+   vec4 p1;   // x,y pan, z zoom, w unused
+};
+
+layout(location = 0) in vec4 in_color;
+layout(location = 1) in vec2 in_uv;
+
+layout(location = 0) out vec4 out_color;
+
+vec3 palette(float t)
+{
+   return 0.5 + 0.5 * cos(6.28318 * (t + vec3(0.0, 0.33, 0.67)));
+}
+
+vec3 plasma(vec2 uv, float t, float au)
+{
+   vec2 p = uv * 2.6;
+   p += 0.6 * vec2(sin(p.y * 1.3 + t * 0.7), cos(p.x * 1.1 - t * 0.6));
+   float v = sin(p.x * 1.3 + t);
+   v += sin(p.y * 1.7 + t * 1.3);
+   v += sin((p.x + p.y) * 1.1 + t * 0.7);
+   vec2 c = p + vec2(sin(t * 0.5), cos(t * 0.4)) * 2.0;
+   v += sin(sqrt(dot(c, c) + 1.0) * 2.0 - t * 1.5);
+   v *= 0.5;
+   vec3 col = palette(v * 0.22 + t * 0.04 + au * 0.15);
+   return col * (0.55 + 0.45 * sin(v * 3.14159));
+}
+
+float map(vec3 p, float t)
+{
+   vec3 q = p;
+   q.z += t * 2.0;
+   q.xy += vec2(sin(q.z * 0.4), cos(q.z * 0.3)) * 0.4;
+   vec3 c = mod(q + 2.0, 4.0) - 2.0;
+   float sph = length(c) - (0.85 + 0.12 * sin(t * 2.0 + q.z));
+   float fl = p.y + 2.0 + 0.15 * sin(p.x * 1.7 + t) * sin(q.z * 1.3);
+   float k = 0.9;
+   float h = clamp(0.5 + 0.5 * (fl - sph) / k, 0.0, 1.0);
+   return mix(fl, sph, h) - k * h * (1.0 - h);
+}
+
+vec3 raymarch(vec2 uv, float t, float au)
+{
+   vec3 ro = vec3(sin(t * 0.3) * 0.8, 0.2 + 0.2 * sin(t * 0.5), 0.0);
+   vec3 rd = normalize(vec3(uv, -1.4));
+   float yaw = sin(t * 0.2) * 0.3;
+   float cy = cos(yaw);
+   float sy = sin(yaw);
+   rd = vec3(rd.x * cy + rd.z * sy, rd.y, -rd.x * sy + rd.z * cy);
+
+   float d = 0.0;
+   float hit = 0.0;
+   for (int i = 0; i < 56; i++) {
+      float m = map(ro + rd * d, t);
+      if (m < 0.003) {
+         hit = 1.0;
+         break;
+      }
+      d += m;
+      if (d > 40.0) {
+         break;
+      }
+   }
+
+   vec3 sky = vec3(0.04, 0.02, 0.10) + vec3(0.25, 0.10, 0.30) * (0.5 - 0.5 * uv.y);
+   vec3 col = sky;
+   if (hit > 0.5) {
+      vec3 p = ro + rd * d;
+      vec2 e = vec2(0.01, 0.0);
+      vec3 n = normalize(vec3(map(p + e.xyy, t) - map(p - e.xyy, t),
+                              map(p + e.yxy, t) - map(p - e.yxy, t),
+                              map(p + e.yyx, t) - map(p - e.yyx, t)));
+      vec3 l = normalize(vec3(0.5, 0.8, 0.6));
+      float dif = max(dot(n, l), 0.0);
+      float fres = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
+      vec3 base = palette(p.z * 0.05 + t * 0.03);
+      col = base * (0.2 + 0.9 * dif) + fres * vec3(0.6, 0.4, 0.9) * (0.6 + au);
+      col = mix(col, sky, 1.0 - exp(-0.035 * d));
+   }
+   return col;
+}
+
+vec3 julia(vec2 uv, float t, float au, vec2 pan, float zoom)
+{
+   vec2 z = uv * (1.6 / zoom) + pan;
+   float a = t * 0.25;
+   vec2 c = 0.7885 * vec2(cos(a), sin(a));
+   float it = 0.0;
+   for (int i = 0; i < 80; i++) {
+      z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
+      if (dot(z, z) > 16.0) {
+         break;
+      }
+      it += 1.0;
+   }
+   if (it > 79.5) {
+      return vec3(0.02, 0.01, 0.05);
+   }
+   float sm = it - log2(log2(max(dot(z, z), 1.0001))) + 4.0;
+   return palette(sm * 0.035 + t * 0.05 + au * 0.1);
+}
+
+vec3 tunnel(vec2 uv, float t, float au)
+{
+   float r = length(uv) + 0.0001;
+   float ang = atan(uv.y, uv.x);
+   vec2 tc = vec2(ang / 3.14159 * 4.0 + t * 0.2, 0.35 / r + t * 0.8);
+   float chk = abs(mod(floor(tc.x) + floor(tc.y), 2.0));
+   vec3 base = palette(tc.y * 0.08 + t * 0.05);
+   vec3 col = mix(base * 0.25, base, chk);
+   col += (0.12 / (r + 0.1)) * vec3(1.0, 0.7, 0.4) * (0.5 + au);
+   col *= smoothstep(0.0, 0.35, r);
+   return col;
+}
+
+void main()
+{
+   vec2 q = (in_uv - 0.5) * 2.0;
+   q.x *= p0.y;
+   float t = p0.x;
+   float m = p0.z;
+   float au = p0.w;
+
+   vec3 col;
+   if (m < 0.5) {
+      col = plasma(q, t, au);
+   } else if (m < 1.5) {
+      col = raymarch(q, t, au);
+   } else if (m < 2.5) {
+      col = julia(q, t, au, p1.xy, p1.z);
+   } else {
+      col = tunnel(q, t, au);
+   }
+
+   vec2 vc = in_uv - 0.5;
+   col *= (0.85 + 0.35 * au) * (1.0 - 0.7 * dot(vc, vc));
+   out_color = vec4(col, 1.0) * in_color;
+}

@@ -1,0 +1,167 @@
+name: Build Showcase GX2 RPX (Homebrew)
+
+# Builds homebrew/showcase-gx2 into showcase-gx2.rpx: the GX2 half of the MuffinEMU showcase.
+#
+# homebrew/showcase (a separate program, built by build-showcase-rpx.yml) draws on the CPU
+# through OSScreen. This one is a real GX2 renderer: shaders, vertex buffers, render targets,
+# TV and GamePad as separate GPU targets. Together they cover both display paths.
+#
+# Same shape and the same reasoning as build-bench-rpx.yml and build-rainbow-rpx.yml:
+# homebrew RPX files carry no encryption, so this is built from source in the plain
+# devkitPPC Linux container, with no relation to the Xcode/iOS build, and no console
+# keys are involved at any point. wut's own sample Makefile is copied verbatim from a
+# pinned wut checkout and the sources are swapped in.
+#
+# Two shader pairs are compiled at build time with CafeGLSL's glslcompiler (the same
+# pinned, sha256-checked binary build-bench-rpx.yml uses) and baked into C headers, so
+# the RPX needs no files next to it.
+#
+# Nothing is published unless the `publish` input is set on a manual run; then a
+# `showcase-gx2-<sha>` pre-release is created and nothing else is touched.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Also create a showcase-gx2-<sha> pre-release with the RPX attached"
+        type: boolean
+        default: false
+  push:
+    branches: [ feature/showcase-gx2 ]
+    paths:
+      - 'homebrew/showcase-gx2/**'
+      - '.github/workflows/build-showcase-gx2-rpx.yml'
+
+concurrency:
+  group: showcase-gx2-rpx-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # The devkitPPC container ships no bash, so every `run:` block here is POSIX sh (dash):
+  # `set -eu`, no pipefail, no arrays.
+  build-showcase-gx2-rpx:
+    runs-on: ubuntu-latest
+    # Same digest as the other homebrew workflows, so the toolchain only changes when
+    # all of them are changed together.
+    container: devkitpro/devkitppc@sha256:44cb1a920e1ec3ec7c06767493c3b85f8d643d6137cc4661f0201895ac6e4967
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Install wut (Wii U userland toolchain)
+        run: |
+          set -eu
+          for i in 1 2 3 4; do dkp-pacman -Sy --noconfirm wut && exit 0; echo "dkp-pacman failed (attempt $i), retrying"; sleep $((i * 20)); done
+          exit 1
+
+      - name: Clone wut (for its sample Makefile)
+        run: git init -q /tmp/wut && git -C /tmp/wut fetch -q --depth 1 https://github.com/devkitPro/wut.git 0a740dccd2bc038395dacc48e701a3228f63c245 && git -C /tmp/wut checkout -q FETCH_HEAD
+
+      - name: Assemble the project
+        run: |
+          set -eu
+          cp -r /tmp/wut/samples/make/helloworld /tmp/gx2show
+          rm -f /tmp/gx2show/source/*.c /tmp/gx2show/source/*.cpp
+          cp homebrew/showcase-gx2/source/*.c homebrew/showcase-gx2/source/*.h /tmp/gx2show/source/
+          ls -la /tmp/gx2show/source
+
+      - name: Download CafeGLSL's glslcompiler (PC-hosted GLSL-to-GX2 compiler)
+        run: |
+          set -eu
+          URL="https://github.com/Exzap/CafeGLSL/releases/download/v0.2.0/glslcompiler.elf"
+          if command -v curl >/dev/null 2>&1; then
+            curl -fsSL -o /tmp/glslcompiler.elf "$URL"
+          elif command -v wget >/dev/null 2>&1; then
+            wget -q -O /tmp/glslcompiler.elf "$URL"
+          else
+            echo "neither curl nor wget is available in this container" >&2
+            exit 1
+          fi
+          echo "067402bde2fbda66fcde65534ae8ffbf99ef46da5ed67af8294cd7b385d84acd  /tmp/glslcompiler.elf" | sha256sum -c -
+          chmod +x /tmp/glslcompiler.elf
+
+      # glslcompiler prints the uniform mode it chose; both pairs must say block mode,
+      # because gfx.c selects GX2_SHADER_MODE_UNIFORM_BLOCK before every draw.
+      - name: Compile the shaders
+        run: |
+          set -eu
+          S=homebrew/showcase-gx2/source/shaders
+          /tmp/glslcompiler.elf -vs $S/scene.vs -ps $S/scene.ps -o /tmp/scene.gsh | tee /tmp/scene.log
+          /tmp/glslcompiler.elf -vs $S/fx.vs -ps $S/fx.ps -o /tmp/fx.gsh | tee /tmp/fx.log
+          for f in scene fx; do
+            test -s /tmp/$f.gsh
+            SIZE=$(stat -c%s /tmp/$f.gsh)
+            echo "$f.gsh = $SIZE bytes"
+            test "$SIZE" -gt 64
+          done
+
+      - name: Turn the compiled shaders into C headers
+        run: |
+          set -eu
+          for pair in "scene kScene" "fx kFx"; do
+            set -- $pair
+            od -An -v -tx1 /tmp/$1.gsh | awk -v name="$2" '
+              BEGIN {
+                print "// Generated at build time by CafeGLSL glslcompiler from shaders/*.vs + *.ps."
+                print "// Do not hand-edit: edit the GLSL and let the workflow regenerate it."
+                printf "static const unsigned char %sGsh[] = {\n", name
+              }
+              { for (i = 1; i <= NF; i++) printf "0x%s,", $i }
+              END { print ""; print "};" }
+            ' > /tmp/gx2show/source/$1_gsh.h
+            SIZE=$(wc -c < /tmp/$1.gsh | tr -d ' ')
+            echo "static const unsigned int $2GshSize = ${SIZE}u;" >> /tmp/gx2show/source/$1_gsh.h
+            test -s /tmp/gx2show/source/$1_gsh.h
+          done
+
+      - name: Build showcase-gx2.rpx
+        run: |
+          set -eu
+          make -C /tmp/gx2show TARGET=showcase-gx2 LIBS="-lwut -lm"
+          test -f /tmp/gx2show/showcase-gx2.rpx
+
+      # A zero-byte or truncated RPX that still gets uploaded is the failure this repo has
+      # already shipped twice. Check the file here, where failing is free.
+      - name: Verify the built RPX
+        run: |
+          set -eu
+          RPX=/tmp/gx2show/showcase-gx2.rpx
+          SIZE=$(stat -c%s "$RPX")
+          echo "showcase-gx2.rpx = $SIZE bytes"
+          test "$SIZE" -gt 65536
+          head -c 4 "$RPX" | od -An -tx1 | tr -d ' \n' | grep -qi '^7f454c46'
+          sha256sum "$RPX"
+          echo "verify: PASS"
+
+      - name: Upload showcase-gx2.rpx
+        uses: actions/upload-artifact@v4
+        with:
+          name: muffinemu-showcase-gx2-rpx
+          path: /tmp/gx2show/showcase-gx2.rpx
+          retention-days: 30
+
+  publish:
+    needs: build-showcase-gx2-rpx
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the RPX
+        uses: actions/download-artifact@v4
+        with:
+          name: muffinemu-showcase-gx2-rpx
+          path: out
+
+      - name: Create the pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          TAG="showcase-gx2-$(echo "$GITHUB_SHA" | cut -c1-8)"
+          gh release create "$TAG" out/showcase-gx2.rpx --repo "$GITHUB_REPOSITORY" --prerelease \
+            --title "MuffinEMU Showcase GX2 ($TAG)" \
+            --notes "A single homebrew RPX that exercises the emulator: 3D terrain, particles, GPU shaders, render-to-texture, three-core compute, GamePad input and a four-channel synthesizer. Everything is generated by code; there are no bundled assets. Load showcase-gx2.rpx like any other game. A CPU-rendered companion lives in homebrew/showcase."
