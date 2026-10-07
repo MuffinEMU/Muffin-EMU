@@ -37,6 +37,12 @@ struct GameMetadata: Codable, Identifiable {
     /// of CodingKeys - games.json isn't actually used (see gameListFile) and this is
     /// cheap enough to just re-read from the filesystem on every loadGames().
     var addedDate: Date? = nil
+    /// Set for a game that lives in a linked folder or is a linked file (ExternalLibrary): it stays where it is and is never
+    /// copied. Not part of CodingKeys, like `addedDate`; the scan fills it in every time.
+    var externalLocationID: String? = nil
+    /// A linked game whose drive is not connected or whose bookmark will not resolve. It stays in the library, greyed out.
+    var isUnavailable: Bool = false
+    var isExternal: Bool { externalLocationID != nil }
 
     /// What per-game settings are stored under: the base title ID as 16 hex digits, so they follow the game through a
     /// rename or a re-import. Only a title with no derivable ID falls back to the file-name `id`.
@@ -46,7 +52,21 @@ struct GameMetadata: Codable, Identifiable {
 
     /// Identifies this one install: its file or folder name inside the Roms folder. Unlike `settingsKey`, two
     /// installs of the same title never share it. Relative, so it survives the app container's path changing.
-    var installKey: String { Self.installKey(forRomPath: romPath, fallback: id) }
+    var installKey: String {
+        // A linked game's path says nothing about the Roms folder, even when the drive has a folder called Roms.
+        isExternal ? "install:" + id : Self.installKey(forRomPath: romPath, fallback: id)
+    }
+
+    /// Wording for taking the game out of the library: a linked game's file is never deleted.
+    var removeActionTitle: String { isExternal ? "Remove from library\u{2026}" : "Remove game\u{2026}" }
+    var removeConfirmTitle: String { isExternal ? "Remove this game from your library?" : "Remove this game?" }
+    var removeConfirmButton: String { isExternal ? "Remove from library" : "Remove game" }
+    var removeConfirmMessage: String {
+        if isExternal {
+            return "\"\(cardName.name)\" is only linked, so its file stays where it is and isn't deleted. Your saves and options are kept. You can bring it back from Settings > Library."
+        }
+        return "This deletes \"\(cardName.name)\" from MuffinEMU to free up space. Your saves and options are kept. To play it again, add the game back."
+    }
 
     static func installKey(forRomPath romPath: String, fallback: String) -> String {
         let marker = "/Roms/"
@@ -247,6 +267,13 @@ class GameManager: ObservableObject {
     /// outright rather than ever silently deleting what was already there.
     var confirmOverwrite: ((String) async -> Bool)?
     private var frameRateTimer: Timer?
+    /// Access to the linked location of the game that is running (or booting). Held from launch until stopEmulation().
+    private var externalHold: ExternalLibrary.Hold?
+    private var driveCheckInFlight = false
+    /// Set when a linked game can't be started because its drive isn't connected. The library shows it as an alert.
+    @Published var launchBlockedMessage: String?
+    /// True when the running game stopped because the drive holding it went away.
+    @Published private(set) var driveWasLost = false
 
     private let romsDirectory = "Roms"
     private var didSweepStaging = false
@@ -323,7 +350,7 @@ class GameManager: ObservableObject {
         }
         let sortedDiscovered = discovered.sorted { $0.title < $1.title }
         // A quiet rescan that finds the same games changes nothing, so the grid keeps its scroll position and covers.
-        if !showSpinner, sortedDiscovered.map({ $0.id + "|" + $0.romPath }) == games.map({ $0.id + "|" + $0.romPath }) { return }
+        if !showSpinner, sortedDiscovered.map({ $0.id + "|" + $0.romPath + "|" + ($0.isUnavailable ? "x" : "") }) == games.map({ $0.id + "|" + $0.romPath + "|" + ($0.isUnavailable ? "x" : "") }) { return }
         self.games = sortedDiscovered
         PerGameKeyMigration.run(games: self.games)
         self.favorites = self.games.filter { $0.isFavorite }
@@ -334,6 +361,25 @@ class GameManager: ObservableObject {
     /// importing, and without the loading view.
     func rescanIfIdle() async {
         guard emulationState == .idle, !isLoading, importState == .idle else { return }
+        await loadGames(showSpinner: false)
+    }
+
+    /// Links a folder or a game file the player picked, where it is. Nothing is copied or moved: only a bookmark is kept.
+    func linkLocation(_ picked: URL) async throws {
+        _ = try await Task.detached { try ExternalLibrary.shared.link(picked) }.value
+        await loadGames(showSpinner: false)
+    }
+
+    /// Stops listing a linked location. The files in it are never touched.
+    func unlinkLocation(_ id: String) async {
+        guard emulationState == .idle else { return }
+        ExternalLibrary.shared.unlink(id)
+        await loadGames(showSpinner: false)
+    }
+
+    /// Brings back the games the player removed from a linked folder.
+    func restoreHiddenGames(in id: String) async {
+        ExternalLibrary.shared.restoreHidden(id)
         await loadGames(showSpinner: false)
     }
 
@@ -353,6 +399,12 @@ class GameManager: ObservableObject {
     /// are kept, so adding the game back picks up where it left off.
     func removeGame(_ game: GameMetadata) async throws {
         guard emulationState == .idle, importState == .idle else { return }
+        // A linked game only leaves the library. Its file is on the player's drive or folder and is never touched.
+        if let locationID = game.externalLocationID {
+            ExternalLibrary.shared.removeFromLibrary(locationID: locationID, gameID: game.id)
+            await loadGames(showSpinner: false)
+            return
+        }
         guard let roms = romsDirectoryURL?.resolvingSymlinksInPath() else { throw RemoveGameError.notInLibrary }
         // The library entry is the item directly inside Roms: the file itself, or the top folder of a dump.
         var item = URL(fileURLWithPath: game.romPath).resolvingSymlinksInPath()
@@ -409,9 +461,43 @@ class GameManager: ObservableObject {
         // Stable order so duplicate-id resolution below is deterministic.
         let sortedContents = contents.sorted { $0.lastPathComponent < $1.lastPathComponent }
 
+        // Documents/Roms first, then every linked location. A linked location is held open (security scope) for the whole scan,
+        // and lets go when this function returns. One that can't be opened is listed from what the last scan found there.
+        struct ScanItem { let url: URL; let locationID: String?; let root: URL? }
+        var work: [ScanItem] = sortedContents.map { ScanItem(url: $0, locationID: nil, root: nil) }
+        var unavailableLocations: [LinkedLocation] = []
+        var holds: [ExternalLibrary.Hold] = []
+        defer { holds.forEach { ExternalLibrary.shared.release($0) } }
+        var seenExternalItems = Set<String>()
+        var availability: [String: Bool] = [:]
+        for location in ExternalLibrary.shared.snapshot() {
+            guard let hold = ExternalLibrary.shared.acquire(location.id, reresolve: true) else {
+                unavailableLocations.append(location)
+                availability[location.id] = false
+                continue
+            }
+            guard let items = ExternalLibrary.shared.discover(location, root: hold.url) else {
+                ExternalLibrary.shared.release(hold)
+                unavailableLocations.append(location)
+                availability[location.id] = false
+                continue
+            }
+            holds.append(hold)
+            availability[location.id] = true
+            for item in items {
+                let rel = ExternalLibrary.relativePath(of: item, under: hold.url)
+                if location.hidden.contains(rel) { continue }
+                guard seenExternalItems.insert(item.path).inserted else { continue }
+                work.append(ScanItem(url: item, locationID: location.id, root: hold.url))
+            }
+        }
+        ExternalLibrary.shared.setAvailability(availability)
+        var externalRecords: [String: [ExternalGameRecord]] = [:]
+
         var discoveredGames: [GameMetadata] = []
         var usedIDs = Set<String>()
-        for item in sortedContents {
+        for scanItem in work {
+            let item = scanItem.url
             // A Roms entry is either a single-file dump or a dumped game DIRECTORY.
             // For a directory the engine still boots an .rpx, but it must be the one
             // sitting inside code/ so Cemu sees the real layout next to it - boot it
@@ -478,10 +564,47 @@ class GameManager: ObservableObject {
                 titleId: derivedTitleId ?? LibraryMetadataCache.cachedTitleId(for: gameID),
                 dumpDirectoryPath: dumpDirectory?.path,
                 displayTitle: Self.nonEmptyOrNil(LibraryMetadataCache.cachedTitleName(for: gameID)),
-                addedDate: addedDate
+                addedDate: addedDate,
+                externalLocationID: scanItem.locationID
             )
 
             discoveredGames.append(gameMetadata)
+            if let locationID = scanItem.locationID, let root = scanItem.root {
+                externalRecords[locationID, default: []].append(ExternalGameRecord(
+                    id: gameID,
+                    itemRel: ExternalLibrary.relativePath(of: item, under: root),
+                    bootRel: ExternalLibrary.relativePath(of: URL(fileURLWithPath: bootPath), under: root),
+                    titleId: gameMetadata.titleId))
+            }
+        }
+
+        for location in ExternalLibrary.shared.snapshot() where availability[location.id] == true {
+            ExternalLibrary.shared.updateRecords(location.id, externalRecords[location.id] ?? [], path: holds.first { $0.locationID == location.id }?.url.path ?? location.lastPath)
+        }
+
+        // Linked games whose drive isn't there: still in the library, marked, and refused at launch with a clear message.
+        for location in unavailableLocations {
+            for record in location.games where !location.hidden.contains(record.itemRel) {
+                var gameID = record.id
+                if usedIDs.contains(gameID) { gameID = (record.itemRel as NSString).lastPathComponent }
+                guard usedIDs.insert(gameID).inserted else { continue }
+                let bootPath = location.kind == .file ? location.lastPath : (location.lastPath as NSString).appendingPathComponent(record.bootRel)
+                discoveredGames.append(GameMetadata(
+                    id: gameID,
+                    title: gameID,
+                    romPath: bootPath,
+                    coverPath: Self.findCover(for: gameID, romPath: bootPath, in: romsPath),
+                    region: Self.nonEmptyOrNil(LibraryMetadataCache.cachedRegion(for: gameID)),
+                    releaseDate: "Unknown",
+                    genre: "Game",
+                    titleId: record.titleId ?? LibraryMetadataCache.cachedTitleId(for: gameID),
+                    dumpDirectoryPath: nil,
+                    displayTitle: Self.nonEmptyOrNil(LibraryMetadataCache.cachedTitleName(for: gameID)),
+                    addedDate: nil,
+                    externalLocationID: location.id,
+                    isUnavailable: true
+                ))
+            }
         }
 
         // Favorites used to be rebuilt false on every scan - nothing anywhere
@@ -703,6 +826,15 @@ class GameManager: ObservableObject {
 
         Task.detached { [weak self, romsPath] in
             for game in candidates {
+                // A linked game is read off its drive, so access is held while its files are looked at, and a game
+                // whose drive is missing is skipped: reading nothing must not be remembered as "no region, no name".
+                if game.isUnavailable { continue }
+                var externalHold: ExternalLibrary.Hold?
+                if let locationID = game.externalLocationID {
+                    guard let hold = ExternalLibrary.shared.acquire(locationID) else { continue }
+                    externalHold = hold
+                }
+                defer { if let externalHold { ExternalLibrary.shared.release(externalHold) } }
                 // Walk the cover chain (CoverSources.swift) for whatever this install is missing.
                 let context = CoverContext(
                     gameID: game.id, romPath: game.romPath, dumpDirectoryPath: game.dumpDirectoryPath,
@@ -1228,6 +1360,20 @@ class GameManager: ObservableObject {
         launchToken = UUID()
         currentGame = game
         surfaceRegistered = false
+        driveWasLost = false
+
+        // A linked game is opened where it is. Access to its location is held until the game stops (stopEmulation), so the
+        // core can read the file, and every other file around it, for the whole run.
+        releaseExternalHold()
+        if let locationID = game.externalLocationID {
+            guard !game.isUnavailable, let hold = ExternalLibrary.shared.acquire(locationID),
+                  ExternalLibrary.isReachable(path: game.romPath) else {
+                lastStatusMessage = ExternalLibrary.unavailableMessage + ". \"\(game.cardName.name)\" is stored on a drive or folder MuffinEMU can't reach right now."
+                emulationState = .error
+                return
+            }
+            externalHold = hold
+        }
 
         // A real problem was found when the previous game stopped: starting another on top of it is likely to fault. The
         // bridge only says so for a real leftover (a GPU fault, state that could not be reset), never after a normal stop.
@@ -1610,10 +1756,45 @@ class GameManager: ObservableObject {
         DisplayRouter.shared.titleStopped()
         #endif
         surfaceRegistered = false
+        // After the engine has let go of the game's files.
+        releaseExternalHold()
         emulationState = .idle
         currentGame = nil
         // The player's own screen layout and controller auto-hide come back if this game had its own.
         ActiveGameSettings.end()
+    }
+
+    private func releaseExternalHold() {
+        if let hold = externalHold { ExternalLibrary.shared.release(hold) }
+        externalHold = nil
+    }
+
+    /// Before a linked game starts: checks, off the main thread, that its drive is connected and the file is there.
+    /// Says so (launchBlockedMessage) when it isn't. A game that lives in Documents/Roms is always ready.
+    func externalGameIsReady(_ game: GameMetadata) async -> Bool {
+        guard let locationID = game.externalLocationID else { return true }
+        let path = game.romPath
+        let unavailable = game.isUnavailable
+        var ready = false
+        if !unavailable {
+            ready = await Task.detached { ExternalLibrary.shared.probe(locationID, path: path) }.value
+        }
+        if !ready {
+            launchBlockedMessage = "\"\(game.cardName.name)\" is stored on a drive or folder MuffinEMU can't reach right now. Connect the drive, then try again."
+        }
+        return ready
+    }
+
+    /// The drive holding the running game went away: stop the game the way Back does and say why.
+    private func stopBecauseDriveWasLost() {
+        let game = currentGame
+        stopEmulation()
+        guard let game else { return }
+        currentGame = game
+        lastStatusMessage = "The drive or folder holding \"\(game.cardName.name)\" was disconnected. Connect it again, then start the game again. Your progress up to your last save is kept."
+        driveWasLost = true
+        titleEndedByEngine = true
+        emulationState = .error
     }
 
     func getEmulationEngine() -> EmulationEngine? {
@@ -1661,6 +1842,22 @@ class GameManager: ObservableObject {
                     self.stopTitleEndedByEngine()
                     return
                 }
+                // A linked game can lose its drive while it runs. Looked for off the main thread, so a slow drive can't stall the UI.
+                if self.emulationState == .running, let game = self.currentGame, game.isExternal, !self.driveCheckInFlight {
+                    self.driveCheckInFlight = true
+                    let path = game.romPath
+                    let gameID = game.id
+                    Task.detached { [weak self] in
+                        let present = ExternalLibrary.isReachable(path: path)
+                        await MainActor.run { [weak self] in
+                            guard let self else { return }
+                            self.driveCheckInFlight = false
+                            if !present, self.emulationState == .running, self.currentGame?.id == gameID {
+                                self.stopBecauseDriveWasLost()
+                            }
+                        }
+                    }
+                }
                 let fps = Int(cemu_bridge_get_fps().rounded())
                 if fps != self.frameRate {
                     self.frameRate = fps
@@ -1695,6 +1892,9 @@ class GameManager: ObservableObject {
     private func stopTitleEndedByEngine() {
         let reason = String(cString: cemu_bridge_status_text())
         let game = currentGame
+        // The engine gives up when its file disappears under it; say what really happened.
+        let driveGone = game.map { $0.isExternal && !ExternalLibrary.isReachable(path: $0.romPath) } ?? false
+        if driveGone { stopBecauseDriveWasLost(); return }
         stopEmulation()
         guard let game else { return }
         currentGame = game

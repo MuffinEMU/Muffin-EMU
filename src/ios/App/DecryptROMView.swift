@@ -53,6 +53,7 @@ struct DecryptROMView: View {
     @State private var progress = DecryptProgress()
     @State private var pollTimer: Timer?
     @State private var destinationPath: String = ""
+    @State private var externalHold: ExternalLibrary.Hold?
 
     var body: some View {
         NavigationView {
@@ -244,6 +245,9 @@ struct DecryptROMView: View {
             }
         }
         .onAppear { start(chosenFormat) }
+        .onDisappear {
+            if let hold = externalHold { ExternalLibrary.shared.release(hold); externalHold = nil }
+        }
     }
 
     private func start(_ chosenFormat: DecryptFormat) {
@@ -251,7 +255,12 @@ struct DecryptROMView: View {
         destinationPath = chosenFormat.toWua
             ? "\(documentsPath)/Decrypted/\(game.id).wua"
             : "\(documentsPath)/Decrypted/\(game.id)"
+        // A linked game is read off its drive for as long as the decrypt runs.
+        if let locationID = game.externalLocationID, externalHold == nil {
+            externalHold = ExternalLibrary.shared.acquire(locationID)
+        }
         guard cemu_bridge_start_decrypt(game.romPath, destinationPath, chosenFormat.toWua) else {
+            if let hold = externalHold { ExternalLibrary.shared.release(hold); externalHold = nil }
             // Already running or a bad path; show it as a failed result.
             progress = DecryptProgress(isRunning: false, completed: true, resultStatus: -1)
             return

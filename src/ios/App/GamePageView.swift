@@ -99,11 +99,11 @@ struct GamePageView: View {
                     LibraryRenameSheet(game: live)
                 }
             }
-            .confirmationDialog("Remove this game?", isPresented: $confirmingRemoval, titleVisibility: .visible) {
-                Button("Remove game", role: .destructive) { closeThen(onRemoveGame) }
+            .confirmationDialog(live.removeConfirmTitle, isPresented: $confirmingRemoval, titleVisibility: .visible) {
+                Button(live.removeConfirmButton, role: .destructive) { closeThen(onRemoveGame) }
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("This deletes \"\(live.cardName.name)\" from MuffinEMU to free up space. Your saves and options are kept. To play it again, add the game back.")
+                Text(live.removeConfirmMessage)
             }
             .alert("Delete this save state?", isPresented: Binding(
                 get: { slotToDelete != nil },
@@ -366,10 +366,12 @@ struct GamePageView: View {
             Button(role: .destructive) {
                 confirmingRemoval = true
             } label: {
-                DestructiveSettingsLabel(title: "Remove game\u{2026}", systemImage: "trash")
+                DestructiveSettingsLabel(title: live.removeActionTitle, systemImage: "trash")
             }
         } footer: {
-            Text("Frees up the space the game uses. Your saves and options are kept.")
+            Text(live.isExternal
+                 ? "Only takes the game out of your library. Its file stays where it is. Your saves and options are kept."
+                 : "Frees up the space the game uses. Your saves and options are kept.")
         }
     }
 
@@ -401,8 +403,13 @@ struct GamePageView: View {
     private func loadSizes() {
         let path = live.dumpDirectoryPath ?? live.romPath
         let titleId = live.titleId
+        let locationID = live.isUnavailable ? nil : live.externalLocationID
+        let isExternal = live.isExternal
         DispatchQueue.global(qos: .utility).async {
-            let bytes = Self.byteCount(atPath: path)
+            // A linked game is measured where it is, so its location is held open for the read.
+            let hold = locationID.flatMap { ExternalLibrary.shared.acquire($0) }
+            defer { if let hold { ExternalLibrary.shared.release(hold) } }
+            let bytes = (isExternal && hold == nil) ? nil : Self.byteCount(atPath: path)
             var shader: Int64?
             if let titleId {
                 var learned: Int64 = 0

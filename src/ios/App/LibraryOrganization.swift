@@ -534,6 +534,12 @@ struct LibraryCard<Options: View>: View {
     }
 
     var body: some View {
+        card
+            // A linked game whose drive is away stays in the library, dimmed.
+            .opacity(game.isUnavailable ? 0.55 : 1)
+    }
+
+    @ViewBuilder private var card: some View {
         switch style {
         case .standard:
             GameCardOptimized(game: game, onTap: onTap, onFavoriteTap: onFavoriteTap, onPlay: onPlay, options: { options })
@@ -584,6 +590,7 @@ struct LibraryLargeCoverCard<Options: View>: View {
                             .foregroundColor(MuffinTheme.brownMid)
                     }
                     if let label = game.installLabel { LibraryInstallLine(text: label, size: 12) }
+                    LibraryExternalLine(game: game, size: 12)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
@@ -627,6 +634,7 @@ struct LibraryCompactCard<Options: View>: View {
                 .foregroundColor(MuffinTheme.brownDarkest)
                 .frame(maxWidth: .infinity)
             if let label = game.installLabel { LibraryInstallLine(text: label, size: 10, centered: true) }
+            LibraryExternalLine(game: game, size: 10, centered: true)
         }
         .shadow(color: MuffinTheme.shadow.opacity(0.12), radius: 4, x: 0, y: 2)
         .contentShape(Rectangle())
@@ -676,6 +684,7 @@ struct LibraryListRow<Options: View>: View {
                                 .multilineTextAlignment(.leading)
                                 .foregroundColor(MuffinTheme.brownDarkest)
                             if let label = game.installLabel { LibraryInstallLine(text: label, size: 12) }
+                            LibraryExternalLine(game: game, size: 12)
                             Text(detailLine)
                                 .font(.system(size: 12, weight: .regular, design: .rounded))
                                 .lineLimit(2)
@@ -796,6 +805,27 @@ struct LibraryInstallLine: View {
     }
 }
 
+/// The small "External" mark on a linked game, or "Connect the drive to play" when its drive isn't there. Nothing for a
+/// game that lives in Documents/Roms.
+struct LibraryExternalLine: View {
+    let game: GameMetadata
+    let size: CGFloat
+    var centered = false
+
+    var body: some View {
+        if game.isExternal {
+            Label(game.isUnavailable ? ExternalLibrary.unavailableMessage : "External",
+                  systemImage: game.isUnavailable ? "externaldrive.badge.exclamationmark" : "externaldrive")
+                .font(.system(size: size, weight: .medium, design: .rounded))
+                .foregroundColor(game.isUnavailable ? MuffinTheme.alertText : MuffinTheme.brownMid)
+                .lineLimit(2)
+                .multilineTextAlignment(centered ? .center : .leading)
+                .frame(maxWidth: centered ? .infinity : nil, alignment: centered ? .center : .leading)
+                .accessibilityLabel(game.isUnavailable ? ExternalLibrary.unavailableMessage : "Stored outside MuffinEMU, played in place")
+        }
+    }
+}
+
 /// Works out, for each install that has a twin (same title ID or same name), a short line from what differs between
 /// them: region, then format, then the file name. The file name is also added whenever the rest would still read the
 /// same. Rebuilt whenever the game list changes.
@@ -909,6 +939,7 @@ struct LibraryBox3DCard<Options: View>: View {
                 .foregroundColor(MuffinTheme.brownDarkest)
                 .frame(maxWidth: .infinity)
             if let label = game.installLabel { LibraryInstallLine(text: label, size: 10, centered: true) }
+            LibraryExternalLine(game: game, size: 10, centered: true)
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
