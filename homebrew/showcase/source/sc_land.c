@@ -8,6 +8,9 @@
 #define HM 256
 #define WATER 58
 #define DIST 250.0f
+#define CLEARANCE 9.0f            // minimum camera height above the terrain it flies over
+#define NEAR_Z 8.0f               // terrain nearer than this and above the camera is not drawn
+#define NEAR_CLEAR 2.5f
 
 static u8 hmap[HM * HM];
 static u32 cmap[HM * HM];
@@ -103,6 +106,29 @@ static float ground_at(float x, float y)
    return (float)h * 0.55f;
 }
 
+// Highest terrain (plus the clearance) under the camera and along the direction of travel, so the
+// camera starts rising before it reaches a slope. Each sample also looks one voxel to each side,
+// because the renderer draws whole voxel columns.
+static float terrain_floor(float mx, float my, float look)
+{
+   float len = m_sqrt(mx * mx + my * my);
+   if (len < 0.001f) { mx = m_cos(yaw); my = m_sin(yaw); }
+   else { mx /= len; my /= len; }
+   float best = 0.0f;
+   for (int i = 0; i <= 6; i++)
+   {
+      float d = look * (float)i * (1.0f / 6.0f);
+      float x = cx + mx * d + 1024.0f, y = cy + my * d + 1024.0f;
+      for (int k = 0; k < 5; k++)
+      {
+         static const float ox[5] = { 0, 1, -1, 0, 0 }, oy[5] = { 0, 0, 0, 1, -1 };
+         float g = ground_at(x + ox[k], y + oy[k]);
+         if (g > best) best = g;
+      }
+   }
+   return best + CLEARANCE;
+}
+
 static void update(const Input *in, float dt, int demo)
 {
    float fwd = in->ly, str = in->lx, turn = in->rx, tilt = in->ry;
@@ -121,8 +147,9 @@ static void update(const Input *in, float dt, int demo)
    float boost = (in->hold & B_A) ? 3.0f : 1.0f;
    speed_now = 38.0f * boost;
    float cs = m_cos(yaw), sn = m_sin(yaw);
-   cx += (cs * fwd - sn * str) * speed_now * dt;
-   cy += (sn * fwd + cs * str) * speed_now * dt;
+   float vx = cs * fwd - sn * str, vy = sn * fwd + cs * str;
+   cx += vx * speed_now * dt;
+   cy += vy * speed_now * dt;
    if (cx < 0) cx += 256;
    if (cx >= 256) cx -= 256;
    if (cy < 0) cy += 256;
@@ -130,8 +157,14 @@ static void update(const Input *in, float dt, int demo)
    yaw += turn * 1.7f * dt;
    pitch = m_clamp(pitch + tilt * 0.9f * dt, -0.45f, 0.45f);
    lift = m_clamp(lift + up * 45.0f * dt, 6.0f, 120.0f);
+   float floor_h = terrain_floor(vx, vy, 12.0f + speed_now * 0.7f);
    float target = ground_at(cx, cy) + lift;
-   cam_h += (target - cam_h) * m_clamp(dt * 3.0f, 0.0f, 1.0f);
+   if (target < floor_h) target = floor_h;
+   // Rise quickly (but still eased) toward terrain that is coming up, settle slowly otherwise.
+   cam_h += (target - cam_h) * m_clamp(dt * (target > cam_h ? 6.0f : 3.0f), 0.0f, 1.0f);
+   // Hard guard: never below the terrain right under and beside the camera.
+   float under = terrain_floor(0.0f, 0.0f, 0.0f) - CLEARANCE + 3.0f;
+   if (cam_h < under) cam_h = under;
 
    if (in->hold & B_LEFT) tod -= 1.6f * dt;
    else if (in->hold & B_RIGHT) tod += 1.6f * dt;
@@ -237,6 +270,9 @@ static void render(void)
          int hh = hmap[idx];
          int water = hh < WATER;
          if (water) hh = WATER;
+         // Near plane: terrain close to the camera that reaches up past it is skipped, so the
+         // view never fills with a wall of voxel top.
+         if (z < NEAR_Z && (float)hh * 0.55f > cam_h - NEAR_CLEAR) { z += dz; dz *= 1.02f; continue; }
          float sy = (float)hor + (cam_h - (float)hh * 0.55f) * K / z;
          int top = (int)sy;
          if (top < 0) top = 0;

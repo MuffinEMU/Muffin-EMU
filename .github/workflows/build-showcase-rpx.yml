@@ -10,6 +10,8 @@ name: Build Showcase RPX (Homebrew)
 #   push               feature/showcase-rpx only (workflow_dispatch needs the workflow on the default branch)
 #   workflow_dispatch  publish=true also publishes a showcase-<sha> PRE-release with the rpx attached
 #
+# The five soundtrack tracks are also rendered and encoded to MP3 + M4A (encode-music job).
+#
 # It never touches numbered releases, tags other than showcase-<sha>, or any source file.
 
 on:
@@ -96,10 +98,74 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The soundtrack as audio files. A separate plain-Ubuntu job (not the devkitPPC container): it
+  # compiles tools/render_showcase_music.c against the same synth core the RPX uses
+  # (source/audio_synth.c), renders each of the five tracks to 44.1 kHz stereo WAV, then encodes
+  # MP3 (libmp3lame, 256 kbps CBR) and M4A (AAC, 256 kbps) with ffmpeg. 10 files in total.
+  encode-music:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: |
+          set -eu
+          if ! ffmpeg -hide_banner -encoders 2>/dev/null | grep -q libmp3lame; then
+            sudo apt-get update -q
+            sudo apt-get install -y -q ffmpeg
+          fi
+          ffmpeg -hide_banner -encoders 2>/dev/null | grep -E 'libmp3lame|aac'
+
+      - name: Render the tracks to WAV
+        run: |
+          set -eu
+          mkdir -p wav music
+          cd homebrew/showcase
+          cc -O2 -Wall -Wno-unused-function -I source tools/render_showcase_music.c source/audio_synth.c source/util.c -o /tmp/render_showcase_music
+          /tmp/render_showcase_music "$GITHUB_WORKSPACE/wav"
+          cat "$GITHUB_WORKSPACE/wav/tracks.tsv"
+
+      - name: Encode MP3 and M4A
+        run: |
+          set -eu
+          n=0
+          while IFS="$(printf '\t')" read -r num slug name bpm; do
+            wav="wav/muffinemu-showcase-$(printf %02d "$num")-$slug.wav"
+            base="music/muffinemu-showcase-$(printf %02d "$num")-$slug"
+            ffmpeg -hide_banner -loglevel error -y -i "$wav" -vn -c:a libmp3lame -b:a 256k -id3v2_version 3 \
+              -metadata title="$name" -metadata artist="MuffinEMU" -metadata album_artist="MuffinEMU" \
+              -metadata album="MuffinEMU Showcase" -metadata track="$num/5" "$base.mp3"
+            ffmpeg -hide_banner -loglevel error -y -i "$wav" -vn -c:a aac -b:a 256k -movflags +faststart \
+              -metadata title="$name" -metadata artist="MuffinEMU" -metadata album_artist="MuffinEMU" \
+              -metadata album="MuffinEMU Showcase" -metadata track="$num/5" "$base.m4a"
+            n=$((n + 1))
+          done < wav/tracks.tsv
+          test "$n" -eq 5
+
+      - name: Verify the audio files
+        run: |
+          set -eu
+          test "$(ls music/*.mp3 | wc -l)" -eq 5
+          test "$(ls music/*.m4a | wc -l)" -eq 5
+          for f in music/*; do
+            ffprobe -v error -show_entries stream=codec_name,sample_rate,channels,bit_rate:format_tags=title,artist -of default=nw=1 "$f" | tr '\n' ' '
+            echo " <- $f"
+            test "$(stat -c%s "$f")" -gt 100000
+            ffprobe -v error -show_entries format_tags=artist -of default=nw=1:nk=1 "$f" | grep -qx MuffinEMU
+          done
+
+      - name: Upload the audio files
+        uses: actions/upload-artifact@v4
+        with:
+          name: showcase-music
+          path: music/*
+          retention-days: 30
+
   # Only on a manual run with publish=true: a PRE-release tagged showcase-<sha>. Its own job so
   # the build job needs no write permission.
   publish:
-    needs: build-showcase-rpx
+    needs: [build-showcase-rpx, encode-music]
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -110,6 +176,11 @@ jobs:
         with:
           name: showcase-rpx
           path: out
+      - name: Download the audio files
+        uses: actions/download-artifact@v4
+        with:
+          name: showcase-music
+          path: out/music
       - name: Publish the pre-release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
@@ -118,8 +189,11 @@ jobs:
           name: MuffinEMU Showcase (${{ github.sha }})
           prerelease: true
           make_latest: "false"
-          files: out/showcase.rpx
+          files: |
+            out/showcase.rpx
+            out/music/*
           body: |
             MuffinEMU Showcase, an original Wii U homebrew demo, built from `${{ github.sha }}`.
             Not a MuffinEMU release. Copy `showcase.rpx` to the emulator's Wii U homebrew folder
-            or a real console's homebrew launcher. See homebrew/showcase/README.md.
+            or a real console's homebrew launcher. The soundtrack is attached as 5 tracks in MP3 and M4A
+            (256 kbps, 44.1 kHz stereo, by MuffinEMU). See homebrew/showcase/README.md.

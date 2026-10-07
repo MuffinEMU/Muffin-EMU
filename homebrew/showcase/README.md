@@ -66,3 +66,10 @@ every scene; any input stops it.
 Original code by MuffinEMU, licensed MPL-2.0 like the rest of the repository. Built with devkitPro's
 devkitPPC and wut (see their licences); no third-party code is bundled. No Nintendo code, assets,
 music or fonts are used.
+
+## Soundtrack files
+
+`tools/render_showcase_music.c` renders the five tracks offline with the same synth core as the
+RPX (`source/audio_synth.c`). CI encodes them to MP3 (libmp3lame, 256 kbps CBR) and M4A (AAC,
+256 kbps), 44.1 kHz stereo, tagged MuffinEMU, and attaches all 10 files to the `showcase-<sha>`
+pre-release next to the rpx. Each file is the 64-step loop played twice.
