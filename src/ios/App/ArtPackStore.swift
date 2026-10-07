@@ -135,14 +135,23 @@ final class ArtPackIndex {
     func meta(_ id: String) -> InstalledPackMeta? { loaded()[id]?.meta }
     var hasAnyPack: Bool { !loaded().isEmpty }
 
+    /// Paths of up to `count` images from one installed pack, spread across its index, for previews.
+    func samplePaths(_ id: String, count: Int) -> [String] {
+        guard let pack = loaded()[id] else { return [] }
+        let files = pack.byTitle.keys.sorted().compactMap { pack.byTitle[$0]?.first?.file }
+        guard !files.isEmpty, count > 0 else { return [] }
+        let step = max(files.count / count, 1)
+        return stride(from: 0, to: files.count, by: step).prefix(count).map { pack.directory.appendingPathComponent(files[$0]).path }
+    }
+
     /// Art for the first candidate title (best first) that any installed pack of one of `styles`
     /// has. Styles are tried in the order given, packs of one style in manifest order. Within a
     /// pack, art whose region matches the install wins over art for another region.
-    func lookup(candidates: [String], styles: [String], regions: Set<RegionCode>) -> PackArtHit? {
+    func lookup(candidates: [String], styles: [String], regions: Set<RegionCode>, onlyPack: String? = nil) -> PackArtHit? {
         let all = loaded()
         guard !all.isEmpty, !candidates.isEmpty else { return nil }
         for style in styles {
-            let ofStyle = all.values.filter { $0.meta.style == style }.sorted { $0.meta.order < $1.meta.order }
+            let ofStyle = all.values.filter { $0.meta.style == style && (onlyPack == nil || $0.meta.id == onlyPack) }.sorted { $0.meta.order < $1.meta.order }
             for candidate in candidates where !candidate.isEmpty {
                 for pack in ofStyle {
                     guard let records = pack.byTitle[candidate] else { continue }
@@ -379,6 +388,7 @@ final class ArtPackStore: ObservableObject {
         guard progress[id] == nil else { return }
         try? FileManager.default.removeItem(at: ArtLocations.packDirectory(id))
         ArtPackIndex.shared.reload()
+        ArtPackApplyStore.packDeleted(id)
         installed = ArtPackIndex.shared.installedMeta
         NotificationCenter.default.post(name: .muffinCoverArtSourcesChanged, object: nil)
     }

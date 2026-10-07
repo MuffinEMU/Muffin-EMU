@@ -198,12 +198,43 @@ struct CoverDataSettingsView: View {
 private struct PackRow: View {
     let pack: ArtPack
     @ObservedObject var store: ArtPackStore
+    @AppStorage(ArtPackApplyStore.appliedKey) private var appliedID = ""
     let onDelete: () -> Void
 
     private var installed: InstalledPackMeta? { store.installed.first { $0.id == pack.id } }
     private var busy: ArtPackStore.PackProgress? { store.progress[pack.id] }
 
     private static func bytes(_ n: Int64) -> String { ByteCountFormatter.string(fromByteCount: n, countStyle: .file) }
+
+    private var look: ArtPackLook { ArtPackLook.look(for: pack.id, style: pack.style) }
+    private var isApplied: Bool { appliedID == pack.id && installed != nil }
+
+    @ViewBuilder private var applyControl: some View {
+        if busy == nil {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Button {
+                        if isApplied { ArtPackApplyStore.restoreDefault() } else if let installed { ArtPackApplyStore.apply(installed) }
+                    } label: {
+                        Label(isApplied ? "Applied" : "Apply", systemImage: isApplied ? "checkmark.circle.fill" : "paintbrush")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(installed == nil)
+                    if installed == nil {
+                        Text("Download first").font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
+                    }
+                    Spacer(minLength: 8)
+                    if isApplied {
+                        Button("Use default look") { ArtPackApplyStore.restoreDefault() }
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                            .buttonStyle(.borderless)
+                    }
+                }
+                Text("Look: \(look.name)").font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
+            }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -249,6 +280,10 @@ private struct PackRow: View {
                 }
                 .buttonStyle(.borderless)
             }
+            if installed != nil, busy == nil {
+                PackLookPreview(packID: pack.id, shape: look.preview)
+            }
+            applyControl
             if let error = store.errors[pack.id] {
                 Text(error).font(.system(size: 12)).foregroundColor(.red).fixedSize(horizontal: false, vertical: true)
             }
