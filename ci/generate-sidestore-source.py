@@ -279,8 +279,15 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_na
         "identifier": ident,
         "subtitle": subtitle,
         "description": (
-            "The install source for MuffinEMU, a Wii U emulator for iPhone and iPad built "
-            "on Cemu. " + extra_note),
+            "The official install source for MuffinEMU, a Wii U emulator for iPhone and iPad "
+            "built on Cemu. Updates arrive here the moment a release is published.\n\n"
+            + extra_note + "\n\n"
+            "Other MuffinEMU sources:\n"
+            f"- Stable: {PAGES}/apps.json\n"
+            f"- TrollStore: {PAGES}/trollstore.json\n"
+            f"- Nightly: {PAGES}/nightly.json\n"
+            f"- Experimental: {PAGES}/experimental.json\n\n"
+            f"Guides and help: {PAGES}/docs/"),
         "iconURL": f"{PAGES}/icon.png",
         "headerURL": HEADER_URL,
         "website": f"{PAGES}/",
