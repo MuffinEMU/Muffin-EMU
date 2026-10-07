@@ -121,6 +121,11 @@ struct ArtPackCoverSource: CoverSource {
 
     func cachedPath(_ c: CoverContext) -> String? {
         guard ArtPackIndex.shared.hasAnyPack else { return nil }
+        // A flat (2D or disc) pack the player applied should show, framed, rather than some other
+        // pack's 3D box: no 3D art here, so the card frames the applied cover instead.
+        if let applied = ArtPackApplyStore.appliedID, let style = ArtPackIndex.shared.meta(applied)?.style, style != "3d" {
+            return nil
+        }
         return ArtPackMatching.hit(for: c, style: style)?.path
     }
 }
@@ -148,7 +153,18 @@ enum ArtPackMatching {
             out.append(ArtTitleNormalizer.normalize(info.name))
             for t in info.titles.values { out.append(ArtTitleNormalizer.normalize(t)) }
         }
-        out.append(contentsOf: c.titles.map(ArtTitleNormalizer.normalize))
+        // Library entries are often named after their file ("Mario Kart 8 (USA) [AMKE01].wua",
+        // "Super_Mario_3D_World.wud"): drop the extension and treat underscores as spaces, or the
+        // name never matches a pack image and Apply appears to do nothing.
+        for raw in c.titles {
+            var t = raw
+            if let dot = t.lastIndex(of: "."), t.distance(from: dot, to: t.endIndex) <= 5,
+               ["wua", "wud", "wux", "rpx", "iso", "zip", "wup"].contains(t[t.index(after: dot)...].lowercased()) {
+                t = String(t[..<dot])
+            }
+            t = t.replacingOccurrences(of: "_", with: " ")
+            out.append(ArtTitleNormalizer.normalize(t))
+        }
         var seen = Set<String>()
         return out.filter { !$0.isEmpty && seen.insert($0).inserted }
     }

@@ -97,7 +97,7 @@ struct CoverDataSettingsView: View {
         Section {
             if let manifest = packs.manifest {
                 ForEach(manifest.packs) { pack in
-                    PackRow(pack: pack, store: packs) { deleteTarget = pack }
+                    PackRow(pack: pack, store: packs, games: gameManager.games) { deleteTarget = pack }
                 }
             } else if packs.isLoadingManifest {
                 HStack(spacing: 8) { ProgressView(); Text("Loading the pack list\u{2026}").font(.system(size: 13)).foregroundColor(MuffinTheme.secondaryText) }
@@ -199,7 +199,19 @@ private struct PackRow: View {
     let pack: ArtPack
     @ObservedObject var store: ArtPackStore
     @AppStorage(ArtPackApplyStore.appliedKey) private var appliedID = ""
+    let games: [GameMetadata]
     let onDelete: () -> Void
+
+    /// How many of the player's games this pack has art for, so Apply shows what it changed.
+    private var matchedCount: Int {
+        let source = AppliedPackCoverSource(packID: pack.id)
+        return games.filter { g in
+            let names = [LibraryMetadataCache.cachedTitleName(for: g.id), g.title, g.id].compactMap { $0 }.filter { !$0.isEmpty }
+            return source.cachedPath(CoverContext(gameID: g.id, romPath: g.romPath, dumpDirectoryPath: nil,
+                                                  libraryDirectory: URL(fileURLWithPath: "/"), currentCoverPath: nil,
+                                                  region: LibraryMetadataCache.cachedRegion(for: g.id), titles: names)) != nil
+        }.count
+    }
 
     private var installed: InstalledPackMeta? { store.installed.first { $0.id == pack.id } }
     private var busy: ArtPackStore.PackProgress? { store.progress[pack.id] }
@@ -226,12 +238,17 @@ private struct PackRow: View {
                     }
                     Spacer(minLength: 8)
                     if isApplied {
-                        Button("Use default look") { ArtPackApplyStore.restoreDefault() }
+                        Button("Stop using") { ArtPackApplyStore.restoreDefault() }
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                             .buttonStyle(.borderless)
                     }
                 }
-                Text("Look: \(look.name)").font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
+                if installed != nil {
+                    Text(isApplied
+                         ? "Showing this pack's art for \(matchedCount) of \(games.count) games. The rest keep their usual covers."
+                         : "Has art for \(matchedCount) of \(games.count) of your games.")
+                        .font(.system(size: 12)).foregroundColor(MuffinTheme.secondaryText)
+                }
             }
         }
     }

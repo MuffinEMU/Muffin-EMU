@@ -74,6 +74,23 @@ struct LibrarySettingsSection: View {
                 Label("Graphic Packs", systemImage: "wand.and.stars")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
+            Button(role: .destructive) {
+                // Back to how a fresh install lays out the library, and no art pack applied.
+                let d = UserDefaults.standard
+                for key in [LibraryCardStyle.storageKey, LibraryCardStyle.sizeStorageKey, LibraryGrouping.storageKey,
+                            LibraryFilter.storageKey, "muffin.library.sortOrder", CoverStylePreference.storageKey] {
+                    d.removeObject(forKey: key)
+                }
+                if ArtPackApplyStore.appliedID != nil { ArtPackApplyStore.restoreDefault() }
+                for key in [LibraryCardStyle.storageKey, LibraryCardStyle.sizeStorageKey, LibraryGrouping.storageKey,
+                            LibraryFilter.storageKey, "muffin.library.sortOrder", CoverStylePreference.storageKey] {
+                    d.removeObject(forKey: key)
+                }
+                NotificationCenter.default.post(name: .muffinCoverArtSourcesChanged, object: nil)
+            } label: {
+                Label("Reset library layout", systemImage: "arrow.counterclockwise")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
         } header: {
             SettingsSectionHeader("Library", icon: "books.vertical", accent: .content)
         }
