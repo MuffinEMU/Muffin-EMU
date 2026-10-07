@@ -154,6 +154,7 @@ if(IOS)
 	endif()
 	target_link_libraries(CemuBin PRIVATE
 		ZArchive::zarchive
+		zstd::zstd
 		"-framework UIKit"
 		"-framework GameController"
 		"-framework CoreMotion"
