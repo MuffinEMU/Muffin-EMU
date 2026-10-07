@@ -420,10 +420,11 @@ struct GameBrowserView: View {
     @State private var searchText = ""
     @State private var showingIconPicker = false
     @State private var showingSettings = false
-    /// Which game "View Game Options" was opened for - the sheet's own presence, not a
-    /// separate Bool, so there is no way for the sheet to open pointed at the wrong game.
-    @State private var gameOptionsTarget: GameMetadata?
-    /// Same pattern as gameOptionsTarget, for "Decrypt…" (DecryptROMView.swift).
+    /// Which game's page is open - the sheet's own presence, not a separate Bool, so there is
+    /// no way for the sheet to open pointed at the wrong game.
+    @State private var gamePageTarget: GameMetadata?
+    @AppStorage(LibraryTapAction.storageKey) private var tapActionRaw = LibraryTapAction.defaultValue.rawValue
+    /// Same pattern as gamePageTarget, for "Decrypt…" (DecryptROMView.swift).
     @State private var decryptTarget: GameMetadata?
     /// Same pattern again, for "Change Cover Art…" (CoverArtPickerView.swift).
     @State private var coverArtTarget: GameMetadata?
@@ -796,16 +797,16 @@ struct GameBrowserView: View {
                                 game: game,
                                 style: libraryCardStyle,
                                 onTap: {
-                                    // A second tap while a launch is under way must not swap the
-                                    // game the screen thinks it is showing.
-                                    guard gameManager.emulationState == .idle else { return }
-                                    selectedGame = game
-                                    gameManager.launchGame(game)
-                                    showingGameBrowser = false
+                                    if LibraryTapAction.current(raw: tapActionRaw) == .openPage {
+                                        gamePageTarget = game
+                                    } else {
+                                        playGame(game)
+                                    }
                                 },
                                 onFavoriteTap: {
                                     gameManager.toggleFavorite(game)
                                 },
+                                onPlay: { playGame(game) },
                                 options: { gameMenu(for: game) }
                             )
                             // Same pattern as Manic: a long-press on the card
@@ -840,18 +841,14 @@ struct GameBrowserView: View {
         }
     }
 
-    /// The per-game menu: the long-press menu, and the "..." button on each card.
+    /// The per-game menu: the long-press menu, and the "..." button on each card. Only the quick
+    /// actions live here; everything else is on the game's page.
     @ViewBuilder private func gameMenu(for game: GameMetadata) -> some View {
         GameContextMenu(
             game: game,
-            store: perGameSettings,
             gameManager: gameManager,
-            onViewOptions: { gameOptionsTarget = game },
-            onDecryptToFiles: { decryptTarget = game },
-            onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
-            onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
-            onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
-            onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) },
+            onPlay: { playGame(game) },
+            onOpenPage: { gamePageTarget = game },
             onChangeCoverArt: { coverArtTarget = game },
             onRename: { renameTarget = game }
         )
@@ -860,6 +857,28 @@ struct GameBrowserView: View {
             pendingGameRemoval = game
         } label: {
             DestructiveSettingsLabel(title: "Remove game\u{2026}", systemImage: "trash")
+        }
+    }
+
+    /// Starts a game from the library. A second tap while a launch is under way must not swap the
+    /// game the screen thinks it is showing.
+    private func playGame(_ game: GameMetadata) {
+        guard gameManager.emulationState == .idle else { return }
+        selectedGame = game
+        gameManager.launchGame(game)
+        showingGameBrowser = false
+    }
+
+    private func removeGameNow(_ game: GameMetadata) {
+        pendingGameRemoval = nil
+        removingContentMessage = "Removing \"\(game.cardName.name)\"\u{2026}"
+        Task {
+            do {
+                try await gameManager.removeGame(game)
+            } catch {
+                dlcImportErrorMessage = error.localizedDescription
+            }
+            removingContentMessage = nil
         }
     }
 
@@ -874,13 +893,19 @@ struct GameBrowserView: View {
             .sheet(item: $renameTarget) { game in
                 LibraryRenameSheet(game: game)
             }
-            .sheet(item: $gameOptionsTarget) { game in
-                GameOptionsView(game: game, store: perGameSettings, libraryGames: gameManager.games, gameManager: gameManager, onPlay: {
-                    guard gameManager.emulationState == .idle else { return }
-                    selectedGame = game
-                    gameManager.launchGame(game)
-                    showingGameBrowser = false
-                })
+            .sheet(item: $gamePageTarget) { game in
+                GamePageView(
+                    game: game,
+                    store: perGameSettings,
+                    gameManager: gameManager,
+                    onPlay: { playGame(game) },
+                    onDecrypt: { decryptTarget = game },
+                    onImportDLC: { beginDlcUpdateImport(for: game, kind: .dlc) },
+                    onImportUpdate: { beginDlcUpdateImport(for: game, kind: .update) },
+                    onRemoveDLC: { pendingRemoval = (game: game, kind: .dlc) },
+                    onRemoveUpdate: { pendingRemoval = (game: game, kind: .update) },
+                    onRemoveGame: { removeGameNow(game) }
+                )
             }
             .sheet(item: $decryptTarget) { game in
                 DecryptROMView(game: game)
@@ -966,16 +991,7 @@ struct GameBrowserView: View {
                 presenting: pendingGameRemoval
             ) { pending in
                 Button("Remove game", role: .destructive) {
-                    pendingGameRemoval = nil
-                    removingContentMessage = "Removing \"\(pending.cardName.name)\"\u{2026}"
-                    Task {
-                        do {
-                            try await gameManager.removeGame(pending)
-                        } catch {
-                            dlcImportErrorMessage = error.localizedDescription
-                        }
-                        removingContentMessage = nil
-                    }
+                    removeGameNow(pending)
                 }
                 Button("Cancel", role: .cancel) { pendingGameRemoval = nil }
             } message: { pending in
@@ -1186,14 +1202,17 @@ struct GameCardOptimized<Options: View>: View {
     let game: GameMetadata
     let onTap: () -> Void
     let onFavoriteTap: () -> Void
+    /// What the card's own Play button does. Nil means the same as a tap on the card.
+    var onPlay: (() -> Void)?
     /// The per-game menu behind the "..." button (the same one a long-press opens).
     let options: Options
 
     init(game: GameMetadata, onTap: @escaping () -> Void, onFavoriteTap: @escaping () -> Void,
-         @ViewBuilder options: () -> Options) {
+         onPlay: (() -> Void)? = nil, @ViewBuilder options: () -> Options) {
         self.game = game
         self.onTap = onTap
         self.onFavoriteTap = onFavoriteTap
+        self.onPlay = onPlay
         self.options = options()
     }
 
@@ -1282,7 +1301,7 @@ struct GameCardOptimized<Options: View>: View {
                 }
                 if let label = game.installLabel { LibraryInstallLine(text: label, size: 11) }
 
-                Button(action: onTap) {
+                Button(action: onPlay ?? onTap) {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")
                             .font(.system(size: 10, weight: .semibold))

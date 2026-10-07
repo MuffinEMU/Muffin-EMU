@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// What GameTDB says about one install, with how sure the match is and a way to correct it.
-struct GameInfoView: View {
+/// These are Form sections, so a screen drops them into its own Form: the game's page shows them
+/// under its cover and Play button.
+struct GameInfoSections: View {
     let game: GameMetadata
     @ObservedObject var gameManager: GameManager
     @ObservedObject private var data = GameDataStore.shared
@@ -11,7 +13,7 @@ struct GameInfoView: View {
     private var match: GameMatch? { data.match(for: game.id) }
 
     var body: some View {
-        Form {
+        Group {
             if let info {
                 summarySection(info)
                 detailsSection(info)
@@ -24,12 +26,6 @@ struct GameInfoView: View {
                 emptySection
             }
         }
-        .navigationTitle("Info")
-        .muffinOpaqueNavigationBar(MuffinTheme.formGround)
-        #if os(iOS)
-        .navigationBarTitleDisplayMode(.inline)
-        #endif
-        .foregroundColor(MuffinTheme.brownDarkest)
         .sheet(isPresented: $showingPicker) {
             GameMatchPickerView(game: game, gameManager: gameManager)
         }
