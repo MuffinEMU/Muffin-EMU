@@ -26,7 +26,10 @@ MuffinEMU-fakesigned.ipa, which carries the JIT entitlements inside its ad-hoc s
 Usage:  python3 ci/generate-sidestore-source.py [--repo owner/name] [--out-dir docs]
 Reads GITHUB_TOKEN from the environment when present (raises the API rate limit).
 """
-import json, os, re, sys, urllib.request, urllib.error, urllib.parse, argparse
+import json
+import re
+import os
+import plistlib, os, re, sys, urllib.request, urllib.error, urllib.parse, argparse
 
 PAGES = "https://muffinemu.github.io/MuffinEMU"
 BUNDLE_ID = "com.kiddreads.MuffinEMU"
@@ -55,6 +58,82 @@ EXPERIMENTAL_NOTE = (
     'These are unfinished test builds, published by hand to try out work in progress. Each one replaces an installed MuffinEMU: it has the same bundle identifier as the standard build, so your games, saves and settings carry over. They can crash or misbehave. For normal play use the Stable source instead.')
 
 
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Which entitlements file signs which IPA (see the "Package the IPAs" step).
+ENTITLEMENTS_FOR_ASSET = {
+    "MuffinEMU.ipa": "src/ios/Sideload.entitlements",
+    "MuffinEMU-fakesigned.ipa": "src/ios/Cemu.entitlements",
+}
+HEADER_URL = f"{PAGES}/social-preview.png"
+
+
+APP_DESCRIPTION = """MuffinEMU is a Wii U emulator for iPhone and iPad, built on Cemu. It runs on iOS 15 and later. The app does not include games, keys or system files. Use only games you own.
+
+[Your Library]
+- Import from Files: WUA, WUD/WUX, decrypted games, and encrypted dumps with your own keys.txt
+- Updates and DLC install from inside the app
+- High-resolution cover art fetched automatically, or add your own at up to 4K
+- Cards, large covers, compact grid or list, with sorting, grouping, filters and renaming
+
+[Graphics]
+- Metal renderer by default, with Vulkan through MoltenVK as an option
+- Graphic packs and resolution scaling
+- Import shader caches from desktop Cemu for smoother first runs
+
+[Speed]
+- Runs on the interpreter out of the box
+- The faster recompiler turns on with a JIT enabler such as StikDebug or SideStore, and MuffinEMU offers to enable it at launch
+
+[Play Your Way]
+- An on-screen GamePad laid out from a real Wii U GamePad, with skins, an analog stick and a layout editor
+- Hardware controllers alongside the touch GamePad
+- Single screen, both screens, portrait on iPhone, or the TV image on an external display
+
+[Online]
+- Pretendo Network with your own Wii U account files
+- Custom servers: import a network_services.xml or type the addresses
+
+[Made for You]
+- Basic and Advanced settings, per-game settings and settings backup
+- 31 app icons with matching themes
+
+Official Site: https://muffinemu.github.io/MuffinEMU/
+Guides: https://muffinemu.github.io/MuffinEMU/docs/
+Source code: https://github.com/MuffinEMU/Muffin-EMU
+Report a problem: https://github.com/MuffinEMU/Muffin-EMU/issues
+
+Legal
+
+MuffinEMU is not affiliated with Nintendo or Apple. Wii U is a trademark of Nintendo. No copyrighted games, keys or firmware are distributed here."""
+
+
+def app_permissions(asset_name):
+    """The entitlements the IPA really carries and the privacy strings it shows.
+
+    AltStore 2 and SideStore compare a source's entitlements with the installed app, so an
+    empty list (what the feeds used to ship) reads as "this app asks for nothing" and can
+    trip that check. Both come from the repo, never typed by hand, so they can't drift.
+    """
+    ents = []
+    path = ENTITLEMENTS_FOR_ASSET.get(asset_name)
+    if path:
+        try:
+            with open(os.path.join(REPO_ROOT, path), "rb") as f:
+                ents = sorted(k for k, v in plistlib.load(f).items() if v)
+        except (OSError, plistlib.InvalidFileException):
+            ents = []
+    privacy = {}
+    try:
+        with open(os.path.join(REPO_ROOT, "src/ios/project.yml"), encoding="utf-8") as f:
+            for line in f:
+                m = re.match(r"\s*INFOPLIST_KEY_(NS\w+UsageDescription):\s*['\"]?(.*?)['\"]?\s*$", line)
+                if m:
+                    privacy[m.group(1)] = m.group(2)
+    except OSError:
+        pass
+    return {"entitlements": ents, "privacy": privacy}
+
 def api(repo, path, token, allow_404=False):
     req = urllib.request.Request(
         f"https://api.github.com/repos/{repo}/{path}",
@@ -74,12 +153,25 @@ def releases(repo, token):
 
 
 def notes_for(rel):
-    body = (rel.get("body") or "").strip()
+    """The player-facing changes only: the "What changed" bullets.
+
+    The GitHub release body also explains the IPAs, the dSYM, the commit and the
+    changelog link. That belongs on GitHub, not in SideStore or AltStore, where it
+    buried the actual changes.
+    """
+    body = re.sub(r"\r\n", "\n", (rel.get("body") or "").strip())
     if not body:
         return rel["tag_name"]
-    body = re.sub(r"\r\n", "\n", body)
-    return body[:1500] + ("..." if len(body) > 1500 else "")
-
+    bullets = []
+    for line in body.split("\n"):
+        if line.startswith("- "):
+            bullets.append(line)
+        elif line.startswith("  ") and bullets:
+            bullets.append(line)
+        elif bullets and line.strip() and not line.startswith("#"):
+            break
+    text = "\n".join(bullets) or body.split("\n\n")[0]
+    return text[:1500] + ("..." if len(text) > 1500 else "")
 
 
 def nightly_asset_date(rel, ipa):
@@ -153,7 +245,7 @@ def build_nightly(rels, asset_name, ident, name, subtitle, app_subtitle, extra_n
     ipa = next((x for x in rel.get("assets", []) if x["name"] == asset_name), None)
     if not ipa:
         return None
-    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note)
+    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_name)
     src["apps"][0]["name"] = "MuffinEMU Nightly"
     src["apps"][0]["versions"] = [{
         "version": nightly_version(rel, ipa),
@@ -190,9 +282,10 @@ def build_source(rels, asset_name, ident, name, subtitle, app_subtitle, extra_no
     versions.sort(key=lambda v: v["key"], reverse=True)
     for v in versions:
         del v["key"]
-    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note)
+    versions = versions[:1]
+    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_name)
     src["apps"][0]["versions"] = versions
-    src["news"] = news_for(rels)
+    src["news"] = news_for(rels, count=1)
     return src
 
 
@@ -210,17 +303,19 @@ def news_for(rels, count=1):
         if not m:
             continue
         body = (rel.get("body") or "").replace("\r\n", "\n")
-        bullets = [l[2:].strip() for l in body.split("\n") if l.startswith("- ")][:2]
-        caption = " ".join(bullets) or "A new version of MuffinEMU is available."
-        if len(caption) > 220:
-            caption = caption[:217].rsplit(" ", 1)[0] + "..."
+        bullets = [l[2:].strip() for l in body.split("\n") if l.startswith("- ")]
+        caption = bullets[0] if bullets else "A new version of MuffinEMU is available."
+        caption = caption.split(". ")[0].rstrip(".")
+        if len(caption) > 110:
+            caption = caption[:107].rsplit(" ", 1)[0] + "..."
         version = tag_version(m)
         items.append({
-            "title": f"MuffinEMU {version}",
+            "title": f"MuffinEMU {version} Now Available",
             "identifier": f"muffinemu-v{version}",
             "caption": caption,
             "date": (rel.get("published_at") or "")[:10],
-            "tintColor": "E5652E",
+            "tintColor": "#E5652E",
+            "imageURL": HEADER_URL,
             "url": rel.get("html_url"),
             "appID": BUNDLE_ID,
             "notify": False,
@@ -229,10 +324,14 @@ def news_for(rels, count=1):
     items.sort(key=lambda n: n["key"], reverse=True)
     for n in items:
         del n["key"]
-    return items[:count]
+    items = items[:count]
+    # Only the newest release may notify, so adding the source doesn't fire three alerts.
+    for i, n in enumerate(items):
+        n["notify"] = i == 0
+    return items
 
 
-def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
+def build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_name="MuffinEMU.ipa"):
     """Everything about a feed except which versions are in it.
 
     Shared so the stable and nightly feeds cannot drift apart in their description,
@@ -244,35 +343,26 @@ def build_source_shell(ident, name, subtitle, app_subtitle, extra_note):
         "identifier": ident,
         "subtitle": subtitle,
         "description": (
-            "The install source for MuffinEMU, a Wii U emulator for iPhone and iPad built "
-            "on Cemu. " + extra_note),
+            "MuffinEMU brings the Wii U to iPhone and iPad - your games, your GamePad, "
+            "on the screen in your hand or on the TV. Free and open source, built on Cemu. "
+            + extra_note),
         "iconURL": f"{PAGES}/icon.png",
+        "headerURL": HEADER_URL,
         "website": f"{PAGES}/",
-        "tintColor": "E5652E",
+        "tintColor": "#E5652E",
+        "featuredApps": [BUNDLE_ID],
         "apps": [{
             "name": "MuffinEMU",
             "bundleIdentifier": BUNDLE_ID,
-            "developerName": "Void",
+            "developerName": "MuffinEMU Official",
             "subtitle": app_subtitle,
-            "localizedDescription": (
-                "MuffinEMU is a Wii U emulator for iPhone and iPad (iOS 15 and later), built on Cemu.\n\n"
-                "- Import games from Files: WUA, decrypted games, and encrypted dumps with your own keys.txt. "
-                "DLC and updates install from the app.\n"
-                "- Metal renderer by default, with Vulkan through MoltenVK as an option.\n"
-                "- Runs on the interpreter out of the box, and on the faster recompiler when a JIT "
-                "enabler such as StikDebug is attached.\n"
-                "- An on-screen GamePad laid out from a real Wii U GamePad, with an optional analog stick, "
-                "skins and a layout editor. Hardware controllers work alongside it.\n"
-                "- Single screen, both screens, or the TV image on an external display.\n"
-                "- Save states, graphic packs, and 31 app icons with matching themes.\n\n"
-                + extra_note + "\n\n"
-                "Bring your own games and keys. No copyrighted content is distributed here."),
+            "localizedDescription": APP_DESCRIPTION,
             "iconURL": f"{PAGES}/icon.png",
-            "tintColor": "E5652E",
+            "tintColor": "#E5652E",
             "category": "games",
             "screenshotURLs": [],
             "versions": [],
-            "appPermissions": {"entitlements": [], "privacy": {}},
+            "appPermissions": app_permissions(asset_name),
         }],
         "news": [],
     }
@@ -339,7 +429,7 @@ def build_experimental(rels, repo, token, asset_name, ident, name, subtitle, app
             break
     if not chosen:
         return None
-    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note)
+    src = build_source_shell(ident, name, subtitle, app_subtitle, extra_note, asset_name)
     src["apps"][0]["name"] = "MuffinEMU Experimental"
     src["apps"][0]["versions"] = [{
         "version": experimental_version(rel),
@@ -411,18 +501,15 @@ def main():
 def run(repo, token, rels, out_dir):
     feeds = [
         ("apps.json", "MuffinEMU.ipa", "com.kiddreads.MuffinEMU.source", "MuffinEMU",
-         "Wii U emulation for iPhone and iPad.",
-         "Wii U emulator for iPhone and iPad",
-         "This source serves the standard build for SideStore, AltStore and "
-         "LiveContainer, which re-sign it with your own Apple ID at install."),
+         "The Wii U, in your hands.",
+         "The Wii U, in your hands",
+         "Works with SideStore, AltStore and LiveContainer."),
         ("trollstore.json", "MuffinEMU-fakesigned.ipa", "com.kiddreads.MuffinEMU.trollstore",
          "MuffinEMU (TrollStore)",
-         "Wii U emulation for iPhone and iPad - TrollStore build.",
-         "Wii U emulator - TrollStore build",
-         "This source serves the ad-hoc signed build for TrollStore and jailbroken "
-         "devices, with the JIT entitlements embedded so the recompiler can get "
-         "executable memory. On SideStore or AltStore use the standard source instead - "
-         "those re-sign at install and would strip these entitlements."),
+         "The Wii U, in your hands. TrollStore edition.",
+         "The Wii U, in your hands - TrollStore",
+         "This is the TrollStore and jailbreak build, with JIT built in. "
+         "On SideStore or AltStore, add the standard source instead."),
     ]
 
     nightlies = [
@@ -491,6 +578,7 @@ def run(repo, token, rels, out_dir):
 
     os.makedirs(out_dir, exist_ok=True)
     for fname, (channel, src) in built.items():
+        src["sourceURL"] = f"{PAGES}/{fname}"
         out = os.path.join(out_dir, fname)
         with open(out, "w", encoding="utf-8") as f:
             json.dump(src, f, indent=2, ensure_ascii=False)
