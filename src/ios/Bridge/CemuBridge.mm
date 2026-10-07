@@ -688,6 +688,7 @@ void cemu_bridge_start_memory_watchdog(void) {
         uint64_t lastAvailBucket = UINT64_MAX;
         bool criticalAnnounced = false;
         auto lastForced = std::chrono::steady_clock::now();
+        auto lastWritten = lastForced;
         while (g_memWatchRunning.load())
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -699,15 +700,18 @@ void cemu_bridge_start_memory_watchdog(void) {
             const uint64_t availBucket = avail / (64ull << 20);
             const auto now = std::chrono::steady_clock::now();
 
-            bool report = footBucket > lastFootBucket || availBucket < lastAvailBucket;
+            // A footprint that wobbles across a bucket edge used to write a line every tick (8,000 lines in one session). A change
+            // is written at most once every 5 seconds, and the buckets only advance when a line is written, so a real climb still shows.
+            bool report = (footBucket > lastFootBucket || availBucket < lastAvailBucket) && now - lastWritten >= std::chrono::seconds(5);
             if (now - lastForced >= std::chrono::seconds(60)) report = true;
-            lastFootBucket = footBucket;
-            lastAvailBucket = availBucket;
 
             if (report)
             {
+                lastFootBucket = footBucket;
+                lastAvailBucket = availBucket;
                 cemu_mem_write_line("sample", avail, foot);
                 lastForced = now;
+                lastWritten = now;
             }
 
             if (!criticalAnnounced && avail > 0 && avail < (128ull << 20))
