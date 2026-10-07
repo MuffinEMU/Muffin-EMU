@@ -50,6 +50,8 @@
 #include <thread>
 #include <vector>
 
+#include <zstd.h>
+
 #include <sys/stat.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
@@ -89,7 +91,17 @@ namespace
 	constexpr char kSaveStateMagic[8] = {'M', 'F', 'N', 'S', 'T', 'A', 'T', '1'};
 	// 2: adds the session token after the title ID. Version 1 files (saving always failed on the device that
 	// produced them, so there are almost none) are reported as "from an earlier session".
-	constexpr uint32 kSaveStateFormatVersion = 2;
+	//    Version 2 stores every mapped range raw, byte for byte.
+	// 3: same header, then (after the range table) the chunk size and chunks-per-segment, and each range is stored as
+	//    segments: a table with one uint32 per 64 KiB chunk (0 = all zero and not stored, 0x80000000 = stored raw,
+	//    otherwise the length of the zstd frame), followed by the stored chunks back to back. Files are written as
+	//    version 3; both 2 and 3 load.
+	constexpr uint32 kSaveStateFormatVersion = 3;
+	constexpr uint32 kSaveStateRawFormatVersion = 2;
+	constexpr uint32 kChunkSize = 64 * 1024;
+	constexpr uint32 kSegmentChunks = 512; // 32 MiB of guest memory per segment; bounds the working buffers
+	constexpr uint32 kChunkRawFlag = 0x80000000u;
+	constexpr int kZstdLevel = 1;
 
 	// Bounded waits: this must never hang the UI forever on a title stuck in a long HLE
 	// call. Timing out means "refuse the operation", never "proceed anyway".
@@ -306,15 +318,98 @@ namespace
 		uint32 areaId;
 	};
 
+	// ---- chunk helpers ----------------------------------------------------------------------------------------------
+
+	bool IsAllZero(const uint8* p, size_t n)
+	{
+		size_t i = 0;
+		for (; i + 256 <= n; i += 256)
+		{
+			uint64 acc = 0;
+			for (size_t j = 0; j < 256; j += 8)
+			{
+				uint64 v;
+				memcpy(&v, p + i + j, 8);
+				acc |= v;
+			}
+			if (acc)
+				return false;
+		}
+		for (; i < n; i++)
+		{
+			if (p[i])
+				return false;
+		}
+		return true;
+	}
+
+	// Runs `worker` on up to 8 threads (never more than there are items) and the calling thread. Each worker pulls its
+	// own work from a shared atomic counter, so a thread that fails to start only means the rest do more.
+	template<typename F>
+	void RunWorkers(size_t items, F&& worker)
+	{
+		unsigned n = std::thread::hardware_concurrency();
+		if (n == 0)
+			n = 2;
+		n = (unsigned)std::max<size_t>(1, std::min<size_t>(std::min(n, 8u), items));
+		std::vector<std::thread> threads;
+		for (unsigned i = 1; i < n; i++)
+		{
+			try
+			{
+				threads.emplace_back(worker);
+			}
+			catch (...)
+			{
+				break;
+			}
+		}
+		worker();
+		for (auto& t : threads)
+			t.join();
+	}
+
+	inline size_t ChunkLength(uint32 rangeSize, uint64 chunkIndex, uint32 chunkSize)
+	{
+		return (size_t)std::min<uint64>(chunkSize, (uint64)rangeSize - chunkIndex * chunkSize);
+	}
+
+	// Upper bound on the file size: the header plus every chunk that is not entirely zero, stored raw. Compression only
+	// ever makes a chunk smaller (a chunk that would grow is stored raw), so this is the worst case. The game is still
+	// running while this is computed, so it is an estimate; the write itself still reports a full disk.
 	uint64 EstimateSaveBytes()
 	{
 		uint64 total = 4096; // header, thread list, range table
+		std::atomic<uint64> dataBytes{0};
 		for (auto* r : memory_getMMURanges())
 		{
-			if (r->isMapped())
-				total += r->getSize();
+			if (!r->isMapped())
+				continue;
+			const uint8* base = r->getPtr();
+			const uint32 size = r->getSize();
+			const uint64 chunks = ((uint64)size + kChunkSize - 1) / kChunkSize;
+			total += chunks * sizeof(uint32);
+			std::atomic<uint64> next{0};
+			RunWorkers((size_t)((chunks + 63) / 64), [&]()
+			{
+				uint64 local = 0;
+				for (;;)
+				{
+					const uint64 first = next.fetch_add(64);
+					if (first >= chunks)
+						break;
+					const uint64 last = std::min<uint64>(first + 64, chunks);
+					for (uint64 c = first; c < last; c++)
+					{
+						const size_t len = ChunkLength(size, c, kChunkSize);
+						if (!IsAllZero(base + c * kChunkSize, len))
+							local += len;
+					}
+				}
+				dataBytes += local;
+			});
 		}
-		return total;
+		return total + dataBytes.load();
 	}
 
 	std::string ParentDirectory(const std::string& path)
@@ -392,6 +487,162 @@ namespace
 		return true;
 	}
 
+	// Version 3 body for one range. Each segment is compressed on several threads (zstd frames are independent per
+	// chunk), packed in place, and written as table + payload. Totals: `stored` is bytes written for the range.
+	bool WriteRangeChunked(FILE* f, const uint8* src, uint32 size, std::vector<uint8>& buffer, uint64& stored, uint64& zeroChunks)
+	{
+		const uint64 totalChunks = ((uint64)size + kChunkSize - 1) / kChunkSize;
+		const size_t slotBytes = ZSTD_compressBound(kChunkSize);
+		for (uint64 segFirst = 0; segFirst < totalChunks; segFirst += kSegmentChunks)
+		{
+			const size_t n = (size_t)std::min<uint64>(kSegmentChunks, totalChunks - segFirst);
+			buffer.resize(n * slotBytes);
+			std::vector<uint32> table(n, 0);
+			std::atomic<size_t> next{0};
+			std::atomic<bool> failed{false};
+			RunWorkers(n, [&]()
+			{
+				ZSTD_CCtx* cctx = ZSTD_createCCtx();
+				if (!cctx)
+				{
+					failed = true;
+					return;
+				}
+				for (;;)
+				{
+					const size_t i = next.fetch_add(1);
+					if (i >= n)
+						break;
+					const uint8* chunk = src + (segFirst + i) * kChunkSize;
+					const size_t len = ChunkLength(size, segFirst + i, kChunkSize);
+					if (IsAllZero(chunk, len))
+					{
+						table[i] = 0;
+						continue;
+					}
+					const size_t cs = ZSTD_compressCCtx(cctx, buffer.data() + i * slotBytes, slotBytes, chunk, len, kZstdLevel);
+					table[i] = (ZSTD_isError(cs) || cs >= len) ? kChunkRawFlag : (uint32)cs;
+				}
+				ZSTD_freeCCtx(cctx);
+			});
+			if (failed)
+			{
+				errno = ENOMEM;
+				return false;
+			}
+			// Pack in place. A chunk's stored length never exceeds its 64 KiB of source, so the write position is always
+			// behind the slot being read.
+			size_t off = 0;
+			for (size_t i = 0; i < n; i++)
+			{
+				if (table[i] == 0)
+				{
+					zeroChunks++;
+					continue;
+				}
+				if (table[i] == kChunkRawFlag)
+				{
+					const size_t len = ChunkLength(size, segFirst + i, kChunkSize);
+					memcpy(buffer.data() + off, src + (segFirst + i) * kChunkSize, len);
+					off += len;
+				}
+				else
+				{
+					memmove(buffer.data() + off, buffer.data() + i * slotBytes, table[i]);
+					off += table[i];
+				}
+			}
+			if (!WriteAll(f, table.data(), n * sizeof(uint32)) || !WriteMemoryRange(f, buffer.data(), (uint32)off))
+				return false;
+			stored += n * sizeof(uint32) + off;
+		}
+		return true;
+	}
+
+	// Reads one segment's table and checks it against what the range needs. `payloadBytes` is the stored size after it.
+	bool ReadSegmentTable(FILE* f, std::vector<uint32>& table, size_t n, uint64 segFirst, uint32 rangeSize, uint32 chunkSize, uint64& payloadBytes)
+	{
+		table.resize(n);
+		if (!ReadAll(f, table.data(), n * sizeof(uint32)))
+			return false;
+		payloadBytes = 0;
+		for (size_t i = 0; i < n; i++)
+		{
+			const size_t len = ChunkLength(rangeSize, segFirst + i, chunkSize);
+			if (table[i] == 0)
+				continue;
+			if (table[i] == kChunkRawFlag)
+				payloadBytes += len;
+			else if (table[i] < len)
+				payloadBytes += table[i];
+			else
+				return false;
+		}
+		return true;
+	}
+
+	// Restores one range from version 3 data. Returns false if the file ends early or a chunk does not decode.
+	bool ReadRangeChunked(FILE* f, uint8* dst, uint32 size, uint32 chunkSize, uint32 segmentChunks, std::vector<uint8>& buffer)
+	{
+		const uint64 totalChunks = ((uint64)size + chunkSize - 1) / chunkSize;
+		std::vector<uint32> table;
+		std::vector<size_t> offsets;
+		for (uint64 segFirst = 0; segFirst < totalChunks; segFirst += segmentChunks)
+		{
+			const size_t n = (size_t)std::min<uint64>(segmentChunks, totalChunks - segFirst);
+			uint64 payloadBytes = 0;
+			if (!ReadSegmentTable(f, table, n, segFirst, size, chunkSize, payloadBytes))
+				return false;
+			buffer.resize((size_t)payloadBytes);
+			if (!ReadMemoryRange(f, buffer.data(), (uint32)payloadBytes))
+				return false;
+			offsets.assign(n, 0);
+			size_t off = 0;
+			for (size_t i = 0; i < n; i++)
+			{
+				offsets[i] = off;
+				const size_t len = ChunkLength(size, segFirst + i, chunkSize);
+				if (table[i] == kChunkRawFlag)
+					off += len;
+				else if (table[i] != 0)
+					off += table[i];
+			}
+			std::atomic<size_t> next{0};
+			std::atomic<bool> bad{false};
+			RunWorkers(n, [&]()
+			{
+				ZSTD_DCtx* dctx = ZSTD_createDCtx();
+				if (!dctx)
+				{
+					bad = true;
+					return;
+				}
+				for (;;)
+				{
+					const size_t i = next.fetch_add(1);
+					if (i >= n)
+						break;
+					uint8* out = dst + (segFirst + i) * chunkSize;
+					const size_t len = ChunkLength(size, segFirst + i, chunkSize);
+					if (table[i] == 0)
+					{
+						// Reading first keeps untouched zero pages from being dirtied by a write of zeros.
+						if (!IsAllZero(out, len))
+							memset(out, 0, len);
+					}
+					else if (table[i] == kChunkRawFlag)
+						memcpy(out, buffer.data() + offsets[i], len);
+					else if (ZSTD_decompressDCtx(dctx, out, len, buffer.data() + offsets[i], table[i]) != len)
+						bad = true;
+				}
+				ZSTD_freeDCtx(dctx);
+			});
+			if (bad)
+				return false;
+		}
+		return true;
+	}
+
 	// Writes to "<path>.tmp" and renames it over the slot only after every byte was
 	// written, flushed and closed successfully, so a failed save (for example a full
 	// disk) leaves the slot's previous save untouched.
@@ -434,6 +685,9 @@ namespace
 			WriteAll(f, &rangeCount, sizeof(rangeCount));
 		if (!ok)
 			noteFail();
+		uint64 storedBytes = 0;
+		uint64 zeroChunks = 0;
+		std::vector<uint8> chunkBuffer;
 
 		if (ok)
 		{
@@ -451,17 +705,30 @@ namespace
 
 		if (ok)
 		{
+			const uint32 chunkSize = kChunkSize;
+			const uint32 segmentChunks = kSegmentChunks;
+			if (!WriteAll(f, &chunkSize, sizeof(chunkSize)) || !WriteAll(f, &segmentChunks, sizeof(segmentChunks)))
+			{
+				ok = false;
+				noteFail();
+			}
+		}
+
+		if (ok)
+		{
 			for (auto* r : mapped)
 			{
 				const auto rangeStart = Clock::now();
-				if (!WriteMemoryRange(f, r->getPtr(), r->getSize()))
+				uint64 rangeStored = 0;
+				if (!WriteRangeChunked(f, r->getPtr(), r->getSize(), chunkBuffer, rangeStored, zeroChunks))
 				{
 					ok = false;
 					noteFail();
 					cemuLog_log(LogType::Force, "IOSSaveState: write of range {:08x} ({}) failed after {} ms", r->getBase(), Megabytes(r->getSize()), ElapsedMs(rangeStart));
 					break;
 				}
-				cemuLog_log(LogType::Force, "IOSSaveState: wrote range {:08x} ({}) in {} ms", r->getBase(), Megabytes(r->getSize()), ElapsedMs(rangeStart));
+				storedBytes += rangeStored;
+				cemuLog_log(LogType::Force, "IOSSaveState: wrote range {:08x} ({} -> {}) in {} ms", r->getBase(), Megabytes(r->getSize()), Megabytes(rangeStored), ElapsedMs(rangeStart));
 			}
 		}
 
@@ -496,7 +763,8 @@ namespace
 		}
 
 		const int totalMs = ElapsedMs(start);
-		cemuLog_log(LogType::Force, "IOSSaveState: wrote {} to '{}' in {} ms (fsync {} ms, {} MB/s)", Megabytes(dataBytes), path, totalMs, syncMs,
+		cemuLog_log(LogType::Force, "IOSSaveState: wrote '{}': {} of guest memory stored as {} ({} all-zero chunks skipped) in {} ms (fsync {} ms, {} MB/s of guest memory)", path,
+			Megabytes(dataBytes), Megabytes(storedBytes), (unsigned long long)zeroChunks, totalMs, syncMs,
 			totalMs > 0 ? (unsigned long long)((dataBytes / (1024 * 1024)) * 1000ull / (uint64)totalMs) : 0ull);
 		return true;
 	}
@@ -526,7 +794,7 @@ namespace
 			return PrefixResult::NotASave;
 		if (!ReadAll(f, &h.formatVersion, sizeof(h.formatVersion)))
 			return PrefixResult::Truncated;
-		if (h.formatVersion != kSaveStateFormatVersion)
+		if (h.formatVersion != kSaveStateFormatVersion && h.formatVersion != kSaveStateRawFormatVersion)
 			return PrefixResult::OldFormat;
 		if (!ReadAll(f, &h.titleId, sizeof(h.titleId)) || !ReadAll(f, &h.sessionToken, sizeof(h.sessionToken)))
 			return PrefixResult::Truncated;
@@ -674,6 +942,17 @@ namespace
 
 		// The file must be exactly as long as the header says. Checking now, before any
 		// memory is touched, means a truncated or damaged slot is refused cleanly.
+		const bool chunked = header.formatVersion == kSaveStateFormatVersion;
+		uint32 chunkSize = 0;
+		uint32 segmentChunks = 0;
+		if (chunked)
+		{
+			if (!ReadAll(f, &chunkSize, sizeof(chunkSize)) || !ReadAll(f, &segmentChunks, sizeof(segmentChunks)))
+				return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "truncated chunk header");
+			const bool pow2 = chunkSize != 0 && (chunkSize & (chunkSize - 1)) == 0;
+			if (!pow2 || chunkSize < 4096 || chunkSize > (1u << 20) || segmentChunks == 0 || (uint64)segmentChunks * chunkSize > (256ull << 20))
+				return refuse(SSE_FileDamaged, "The save file is damaged.", "chunk layout in file is not plausible");
+		}
 		uint64 totalBytes = 0;
 		{
 			const off_t dataStart = ftello(f);
@@ -682,8 +961,36 @@ namespace
 			if (dataStart < 0 || fseeko(f, 0, SEEK_END) != 0)
 				return refuse(SSE_FileDamaged, "The save file couldn't be read.", "could not determine file size");
 			const off_t fileEnd = ftello(f);
-			if (fileEnd < 0 || (uint64)fileEnd != (uint64)dataStart + totalBytes)
-				return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "file size does not match its header (truncated or damaged)");
+			if (fileEnd < 0)
+				return refuse(SSE_FileDamaged, "The save file couldn't be read.", "could not determine file size");
+			if (!chunked)
+			{
+				if ((uint64)fileEnd != (uint64)dataStart + totalBytes)
+					return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "file size does not match its header (truncated or damaged)");
+			}
+			else
+			{
+				// Walk every segment table, skipping the payloads, so the layout is proven to end exactly at the end of the file.
+				if (fseeko(f, dataStart, SEEK_SET) != 0)
+					return refuse(SSE_FileDamaged, "The save file couldn't be read.", "could not seek within file");
+				std::vector<uint32> table;
+				for (const auto& sr : savedRanges)
+				{
+					const uint64 chunks = ((uint64)sr.size + chunkSize - 1) / chunkSize;
+					for (uint64 segFirst = 0; segFirst < chunks; segFirst += segmentChunks)
+					{
+						const size_t n = (size_t)std::min<uint64>(segmentChunks, chunks - segFirst);
+						uint64 payloadBytes = 0;
+						if (!ReadSegmentTable(f, table, n, segFirst, sr.size, chunkSize, payloadBytes))
+							return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "chunk table is truncated or not valid");
+						const off_t here = ftello(f);
+						if (here < 0 || (uint64)here + payloadBytes > (uint64)fileEnd || fseeko(f, (off_t)payloadBytes, SEEK_CUR) != 0)
+							return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "chunk data runs past the end of the file");
+					}
+				}
+				if ((uint64)ftello(f) != (uint64)fileEnd)
+					return refuse(SSE_FileDamaged, "The save file is damaged or incomplete.", "file size does not match its header (truncated or damaged)");
+			}
 			if (fseeko(f, dataStart, SEEK_SET) != 0)
 				return refuse(SSE_FileDamaged, "The save file couldn't be read.", "could not seek within file");
 		}
@@ -694,10 +1001,12 @@ namespace
 		// be partially overwritten with no way back to a consistent pre-load state - the
 		// title must be treated as no longer trustworthy if that happens.
 		const auto restoreStart = Clock::now();
+		std::vector<uint8> chunkBuffer;
 		for (size_t i = 0; i < targets.size(); i++)
 		{
 			const auto rangeStart = Clock::now();
-			if (!ReadMemoryRange(f, targets[i]->getPtr(), savedRanges[i].size))
+			if (!(chunked ? ReadRangeChunked(f, targets[i]->getPtr(), savedRanges[i].size, chunkSize, segmentChunks, chunkBuffer)
+						  : ReadMemoryRange(f, targets[i]->getPtr(), savedRanges[i].size)))
 			{
 				fclose(f);
 				return Fail(SSE_DamagedMidRestore, "The save file couldn't be read all the way through and the game's memory is now half-restored. Quit and restart the game.",
