@@ -1,3 +1,13 @@
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
+// MuffinEMU — code by the MuffinEMU Development Team.
+// Copyright (c) 2026 MuffinEMU Development Team.
+// SPDX-License-Identifier: MPL-2.0
+// This notice must be kept in any copy or derivative (MPL-2.0 §3.4).
+
 // gpubench.rpx - a real GX2 renderer workload: a grid of textured,
 // alpha-blended quads driven through a compiled vertex+pixel shader, drawn
 // across several draw calls, every frame, for a fixed frame count. See
