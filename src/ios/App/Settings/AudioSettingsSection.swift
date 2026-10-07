@@ -84,6 +84,7 @@ struct AudioSettingsSection: View {
                 }
             }
             .tint(MuffinTheme.accentText)
+            RespectSilentModeToggle()
             MenuMusicSettingsGroup()
             tvGroup
             padGroup

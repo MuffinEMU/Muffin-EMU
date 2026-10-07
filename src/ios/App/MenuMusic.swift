@@ -11,6 +11,8 @@ final class MenuMusic {
     static let trackKey = "muffin.menuMusic.track"
     static let volumeKey = "muffin.menuMusic.volume"
     static let defaultVolume = 0.6
+    /// Settings > Audio > Respect silent mode. Also read by the core when a game's audio starts (iOSAudioAPI.mm).
+    static let respectSilentModeKey = "muffin.audio.respectSilentMode"
 
     enum Track: String, CaseIterable, Identifiable {
         /// All five, four times each, crossfaded into one another, with the end crossfaded back into the start:
@@ -55,7 +57,8 @@ final class MenuMusic {
 
     /// Called whenever the emulation state or the scene phase changes.
     func update(emulationState: EmulationState, appActive: Bool) {
-        inLibrary = emulationState == .idle || emulationState == .error
+        // Only in the menus: never while a game is loading, running, paused or showing an error.
+        inLibrary = emulationState == .idle
         self.appActive = appActive
         refresh()
     }
@@ -71,14 +74,25 @@ final class MenuMusic {
         start(track)
     }
 
+    /// Starts the music again so a changed audio setting applies now.
+    func restart() {
+        stop()
+        refresh()
+    }
+
     private func start(_ track: Track) {
         stop()
         let session = AVAudioSession.sharedInstance()
         // Someone else's music is playing: leave it alone rather than play over it.
         guard !session.secondaryAudioShouldBeSilencedHint, let url = track.url else { return }
-        // Ambient: mixes with other sounds and follows the silent switch, like menu music should.
-        // A game sets its own category when its audio starts.
-        try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        // With Respect silent mode on, ambient: the silent switch mutes it. Otherwise it plays through silent
+        // mode like the game audio does. Either way it mixes with other sounds. A game sets its own category when
+        // its audio starts.
+        if defaults.bool(forKey: Self.respectSilentModeKey) {
+            try? session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        } else {
+            try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        }
         try? session.setActive(true)
         guard let player = try? AVAudioPlayer(contentsOf: url) else { return }
         player.numberOfLoops = -1
@@ -107,7 +121,7 @@ struct MenuMusicSettingsGroup: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Theme music")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text("Plays MuffinEMU's themes on loop in the library. It stops when a game starts, and stays quiet while another app is playing music.")
+                Text("Plays MuffinEMU's themes on loop in the menus, never in a game. It stays quiet while another app is playing music.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -134,5 +148,25 @@ struct MenuMusicSettingsGroup: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Theme music volume")
         }
+    }
+}
+
+/// Settings > Audio: let the Ring/Silent switch (or Silent mode in Control Centre) mute MuffinEMU.
+struct RespectSilentModeToggle: View {
+    @AppStorage(MenuMusic.respectSilentModeKey) private var respect = false
+
+    var body: some View {
+        Toggle(isOn: $respect) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Respect silent mode")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("When silent mode is on, games and theme music make no sound. Takes effect from the next game you start. With the microphone on, game audio keeps playing.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(MuffinTheme.accentText)
+        .onChange(of: respect) { _ in MenuMusic.shared.restart() }
     }
 }
