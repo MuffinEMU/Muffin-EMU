@@ -45,7 +45,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install wut (Wii U userland toolchain)
-        run: dkp-pacman -Sy --noconfirm wut
+        run: |
+          set -eu
+          for i in 1 2 3 4; do dkp-pacman -Sy --noconfirm wut && exit 0; echo "dkp-pacman failed (attempt $i), retrying"; sleep $((i * 20)); done
+          exit 1
 
       - name: Clone wut (for its sample Makefile)
         run: git init -q /tmp/wut && git -C /tmp/wut fetch -q --depth 1 https://github.com/devkitPro/wut.git 0a740dccd2bc038395dacc48e701a3228f63c245 && git -C /tmp/wut checkout -q FETCH_HEAD
