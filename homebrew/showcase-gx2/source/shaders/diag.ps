@@ -1,0 +1,14 @@
+// diag.ps - constant orange. If this square shows, the pipeline itself (fetch shader, vertex
+// buffer, draw, blend-off, TV/GamePad target) works with no uniforms and no textures.
+
+#version 420
+
+layout(location = 0) in vec4 in_color;
+layout(location = 1) in vec2 in_uv;
+
+layout(location = 0) out vec4 out_color;
+
+void main()
+{
+   out_color = vec4(1.0, 0.55, 0.0, 1.0) + in_color * 0.0 + vec4(in_uv * 0.0, 0.0, 0.0);
+}

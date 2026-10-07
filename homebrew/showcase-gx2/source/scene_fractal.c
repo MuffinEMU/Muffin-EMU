@@ -65,6 +65,13 @@ static const double kTargets[3][2] = {
 };
 static const char *kTargetName[3] = {"SEAHORSE VALLEY", "ELEPHANT VALLEY", "SPIRAL"};
 
+// RGBA8 pixel as one 32-bit word: R is the first byte in memory on both byte orders
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define PACK_RGBA(r, g, b, a) (((uint32_t)(a) << 24) | ((uint32_t)(b) << 16) | ((uint32_t)(g) << 8) | (uint32_t)(r))
+#else
+#define PACK_RGBA(r, g, b, a) (((uint32_t)(r) << 24) | ((uint32_t)(g) << 16) | ((uint32_t)(b) << 8) | (uint32_t)(a))
+#endif
+
 #define IMG_X 24.0f
 #define IMG_Y 90.0f
 #define IMG_W 832.0f
@@ -84,7 +91,7 @@ static void render_row(int y, double cx, double cy, double sc, int maxIter, uint
       double q = (cr - 0.25) * (cr - 0.25) + ci * ci;
       uint32_t px;
       if (q * (q + (cr - 0.25)) < 0.25 * ci * ci || (cr + 1.0) * (cr + 1.0) + ci * ci < 0.0625) {
-         px = 0x06030CFFu;   // inside the main cardioid or period-2 bulb
+         px = PACK_RGBA(6, 3, 12, 255);   // inside the main cardioid or period-2 bulb
       } else {
          double zr = 0.0, zi = 0.0, r2 = 0.0;
          int n = 0;
@@ -98,7 +105,7 @@ static void render_row(int y, double cx, double cy, double sc, int maxIter, uint
          }
          total += (uint32_t)n;
          if (n >= maxIter) {
-            px = 0x06030CFFu;
+            px = PACK_RGBA(6, 3, 12, 255);
          } else {
             double lz = 0.5 * log(r2);
             double mu = (double)n + 1.0 - log(lz) / ln2;
@@ -222,8 +229,7 @@ static void fractal_enter(void)
          float t = (float)i / 1024.0f;
          Col c = pal(t * 2.0f + 0.05f, 1.0f);
          float v = 0.35f + 0.65f * (0.5f + 0.5f * fsin(t * 6.28318f * 4.0f));
-         sLut[i] = ((uint32_t)(c.r * v * 255.0f) << 24) | ((uint32_t)(c.g * v * 255.0f) << 16) |
-                   ((uint32_t)(c.b * v * 255.0f) << 8) | 0xFFu;
+         sLut[i] = PACK_RGBA((uint32_t)(c.r * v * 255.0f), (uint32_t)(c.g * v * 255.0f), (uint32_t)(c.b * v * 255.0f), 255);
       }
    }
    make_threads();

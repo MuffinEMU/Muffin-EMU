@@ -48,14 +48,15 @@ typedef enum { BLEND_OPAQUE, BLEND_ALPHA, BLEND_ADD } BlendMode;
 typedef enum { DEPTH_ON, DEPTH_READ, DEPTH_OFF } DepthMode;
 
 // Pixel-shader block for scene.ps: fog colour (density in .density, 0 = off), fog range,
-// a brightness multiplier, and an RGB tint multiplied into the final colour.
+// brightness and an RGB tint. Both are stored RELATIVE to 1.0 (0 = unchanged) so that a block
+// the GPU reads back as all zeros still gives a normal picture, not a black one.
 typedef struct
 {
    float r, g, b, density;
    float start, end, bright, pad0;
    float tr, tg, tb, pad1;
 } Fog;
-static inline Fog fog_none(void) { Fog f = {0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0}; return f; }
+static inline Fog fog_none(void) { Fog f = {0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}; return f; }
 
 // ---- math (column-major, matches GLSL mat4 uploads) ------------------------
 float fsin(float x);   // never call sinf/cosf directly: GCC folds the pair into
@@ -87,6 +88,9 @@ void gfx_draw_batch_range(Batch *b, uint32_t first, uint32_t count, const float 
 void gfx_draw_mesh(const Mesh *m, const float mvp[16], BlendMode bm, DepthMode dm, const Fog *fog);
 void gfx_use_texture(const Tex *t);        // default is the atlas
 const Tex *gfx_atlas(void);
+// Three tiny squares, one per pipeline path, drawn on top of everything for a few seconds after
+// launch: [orange] no uniforms or textures, [green] pixel uniforms only, [purple] the scene shader.
+void gfx_draw_probes(void);
 void gfx_draw_fx(float mode, float aspect, float time, float audio, float px, float py, float zoom, float aux);
 
 // ---- render targets --------------------------------------------------------

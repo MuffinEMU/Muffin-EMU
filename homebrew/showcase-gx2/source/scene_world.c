@@ -405,8 +405,8 @@ static void world_update(float dt)
 static Fog make_fog(bool map)
 {
    Fog f = fog_none();
-   f.tr = sCur.tint[0]; f.tg = sCur.tint[1]; f.tb = sCur.tint[2];
-   f.bright = sCur.bright;
+   f.tr = sCur.tint[0] - 1.0f; f.tg = sCur.tint[1] - 1.0f; f.tb = sCur.tint[2] - 1.0f;
+   f.bright = sCur.bright - 1.0f;
    if (!map) {
       f.r = sCur.hor[0]; f.g = sCur.hor[1]; f.b = sCur.hor[2];
       f.density = 1.0f;

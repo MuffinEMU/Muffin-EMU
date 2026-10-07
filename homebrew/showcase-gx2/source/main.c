@@ -133,6 +133,8 @@ static void overlay(Target t)
    float mvp[16];
    m4_ortho_ui(mvp);
    gfx_draw_batch(b, mvp, BLEND_ALPHA, DEPTH_OFF, NULL);
+   // pipeline probes: first 12 seconds, or any time ZL+ZR are held
+   if (g_time < 12.0 || (HELD(VPAD_BUTTON_ZL) && HELD(VPAD_BUTTON_ZR))) gfx_draw_probes();
    (void)t;
 }
 
@@ -198,13 +200,13 @@ int main(int argc, char **argv)
       }
 
       WHBGfxBeginRenderTV();
-      WHBGfxClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+      WHBGfxClearColor(0.03f, 0.05f, 0.22f, 1.0f);
       sc->draw(TARGET_TV);
       overlay(TARGET_TV);
       WHBGfxFinishRenderTV();
 
       WHBGfxBeginRenderDRC();
-      WHBGfxClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+      WHBGfxClearColor(0.03f, 0.05f, 0.22f, 1.0f);
       sc->draw(TARGET_DRC);
       overlay(TARGET_DRC);
       WHBGfxFinishRenderDRC();

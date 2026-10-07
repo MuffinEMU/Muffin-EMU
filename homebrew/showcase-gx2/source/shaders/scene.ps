@@ -7,8 +7,8 @@ layout(binding = 0) uniform sampler2D tex0;
 layout(std140, binding = 0) uniform uf_fog
 {
    vec4 fog_color;   // rgb colour, a = strength (0 disables fog)
-   vec4 fog_misc;    // x = start, y = end, z = brightness
-   vec4 fog_tint;    // rgb multiplied into the result
+   vec4 fog_misc;    // x = start, y = end, z = brightness minus 1
+   vec4 fog_tint;    // rgb = tint minus 1
 };
 
 layout(location = 0) in vec4 in_color;
@@ -16,10 +16,13 @@ layout(location = 1) in vec3 in_uvd;
 
 layout(location = 0) out vec4 out_color;
 
+// Brightness and tint are stored relative to 1.0, so a block that reads back as all zeros
+// (wrong shader mode, bad address) gives a neutral picture instead of a black one.
 void main()
 {
    vec4 c = texture(tex0, in_uvd.xy) * in_color;
-   float f = clamp((in_uvd.z - fog_misc.x) / (fog_misc.y - fog_misc.x), 0.0, 1.0) * fog_color.a;
-   c.rgb = mix(c.rgb * fog_tint.rgb, fog_color.rgb, f) * fog_misc.z;
+   float range = max(fog_misc.y - fog_misc.x, 0.001);
+   float f = clamp((in_uvd.z - fog_misc.x) / range, 0.0, 1.0) * fog_color.a;
+   c.rgb = mix(c.rgb * (vec3(1.0) + fog_tint.rgb), fog_color.rgb, f) * (1.0 + fog_misc.z);
    out_color = c;
 }

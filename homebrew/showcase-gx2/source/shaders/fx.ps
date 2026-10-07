@@ -129,6 +129,12 @@ void main()
    float m = p0.z;
    float au = p0.w;
 
+   if (m > 8.5) {
+      // probe: constant green, proves the pixel-uniform path and this shader pair
+      out_color = vec4(0.1, 1.0, 0.3, 1.0) * in_color;
+      return;
+   }
+
    vec3 col;
    if (m < 0.5) {
       col = plasma(q, t, au);

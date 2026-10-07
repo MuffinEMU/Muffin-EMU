@@ -91,7 +91,8 @@ jobs:
           S=homebrew/showcase-gx2/source/shaders
           /tmp/glslcompiler.elf -vs $S/scene.vs -ps $S/scene.ps -o /tmp/scene.gsh | tee /tmp/scene.log
           /tmp/glslcompiler.elf -vs $S/fx.vs -ps $S/fx.ps -o /tmp/fx.gsh | tee /tmp/fx.log
-          for f in scene fx; do
+          /tmp/glslcompiler.elf -vs $S/diag.vs -ps $S/diag.ps -o /tmp/diag.gsh | tee /tmp/diag.log
+          for f in scene fx diag; do
             test -s /tmp/$f.gsh
             SIZE=$(stat -c%s /tmp/$f.gsh)
             echo "$f.gsh = $SIZE bytes"
@@ -101,7 +102,7 @@ jobs:
       - name: Turn the compiled shaders into C headers
         run: |
           set -eu
-          for pair in "scene kScene" "fx kFx"; do
+          for pair in "scene kScene" "fx kFx" "diag kDiag"; do
             set -- $pair
             od -An -v -tx1 /tmp/$1.gsh | awk -v name="$2" '
               BEGIN {

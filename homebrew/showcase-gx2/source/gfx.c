@@ -4,6 +4,7 @@
 #include "font.h"
 #include "scene_gsh.h"
 #include "fx_gsh.h"
+#include "diag_gsh.h"
 
 #include <coreinit/cache.h>
 #include <coreinit/debug.h>
@@ -178,6 +179,9 @@ Col pal(float t, float a)
 
 static WHBGfxShaderGroup gSceneGroup;
 static WHBGfxShaderGroup gFxGroup;
+static WHBGfxShaderGroup gDiagGroup;
+static bool gDiagOk;
+static Mesh gProbe[3];
 static Batch gPool[2][POOL_SIZE];
 static int gSet = 0;
 static int gUsed = 0;
@@ -311,6 +315,7 @@ bool gfx_init(void)
 {
    if (!init_group(&gSceneGroup, kSceneGsh, "scene")) return false;
    if (!init_group(&gFxGroup, kFxGsh, "fx")) return false;
+   gDiagOk = init_group(&gDiagGroup, kDiagGsh, "diag");   // probe only: not fatal
 
    // The shaders use uniform blocks, so GX2 must be in block mode for every draw.
    GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_BLOCK);
@@ -339,6 +344,19 @@ bool gfx_init(void)
       {-1, -1, 0, 1, 1, 1, 1, 0, 0}, {1, 1, 0, 1, 1, 1, 1, 1, 1}, {-1, 1, 0, 1, 1, 1, 1, 0, 1},
    };
    gFullscreen = gfx_mesh_from(quad, 6);
+
+   // probe squares in clip space, bottom centre-right, above the footer
+   static const float px[3][2] = {{0.40f, 0.52f}, {0.56f, 0.68f}, {0.72f, 0.84f}};
+   static const Col pc[3] = {{1.0f, 0.55f, 0.0f, 1}, {0.1f, 1.0f, 0.3f, 1}, {0.7f, 0.2f, 1.0f, 1}};
+   for (int i = 0; i < 3; i++) {
+      float x0 = px[i][0], x1 = px[i][1], y0 = -0.82f, y1 = -0.58f;
+      Vtx q6[6] = {
+         {x0, y0, 0, pc[i].r, pc[i].g, pc[i].b, 1, SOLID_U, SOLID_V}, {x1, y0, 0, pc[i].r, pc[i].g, pc[i].b, 1, SOLID_U, SOLID_V},
+         {x1, y1, 0, pc[i].r, pc[i].g, pc[i].b, 1, SOLID_U, SOLID_V}, {x0, y0, 0, pc[i].r, pc[i].g, pc[i].b, 1, SOLID_U, SOLID_V},
+         {x1, y1, 0, pc[i].r, pc[i].g, pc[i].b, 1, SOLID_U, SOLID_V}, {x0, y1, 0, pc[i].r, pc[i].g, pc[i].b, 1, SOLID_U, SOLID_V},
+      };
+      gProbe[i] = gfx_mesh_from(q6, 6);
+   }
    return gFullscreen.n == 6;
 }
 
@@ -795,4 +813,41 @@ void b_box(Batch *b, float cx, float cy, float cz, float sx, float sy, float sz,
    b_quad3(b, v[0], v[4], v[7], v[3], CMUL(c, 0.62f));   // -x
    b_quad3(b, v[7], v[6], v[2], v[3], CMUL(c, 1.00f));   // +y
    b_quad3(b, v[0], v[1], v[5], v[4], CMUL(c, 0.40f));   // -y
+}
+
+// ---------------------------------------------------------------------------
+// startup probe: tells which pipeline path is broken if the screen stays black
+// ---------------------------------------------------------------------------
+
+void gfx_draw_probes(void)
+{
+   // 1. no uniforms, no textures
+   if (gDiagOk && gProbe[0].n) {
+      GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_BLOCK);
+      GX2SetFetchShader(&gDiagGroup.fetchShader);
+      GX2SetVertexShader(gDiagGroup.vertexShader);
+      GX2SetPixelShader(gDiagGroup.pixelShader);
+      apply_state(BLEND_OPAQUE, DEPTH_OFF);
+      GX2RSetAttributeBuffer(&gProbe[0].buf, 0, gProbe[0].buf.elemSize, 0);
+      GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
+   }
+   // 2. the fx shader pair, pixel uniform block only, constant output (mode 9)
+   if (gProbe[1].n) {
+      float u[8] = {0, 1, 9.0f, 0, 0, 0, 1, 0};
+      GX2SetShaderMode(GX2_SHADER_MODE_UNIFORM_BLOCK);
+      GX2SetFetchShader(&gFxGroup.fetchShader);
+      GX2SetVertexShader(gFxGroup.vertexShader);
+      GX2SetPixelShader(gFxGroup.pixelShader);
+      GX2SetPixelUniformBlock(0, sizeof(u), uni_copy(u, sizeof(u)));
+      apply_state(BLEND_OPAQUE, DEPTH_OFF);
+      GX2RSetAttributeBuffer(&gProbe[1].buf, 0, gProbe[1].buf.elemSize, 0);
+      GX2DrawEx(GX2_PRIMITIVE_MODE_TRIANGLES, 6, 0, 1);
+   }
+   // 3. the scene shader: vertex uniform block + pixel uniform block + texture
+   if (gProbe[2].n) {
+      float id[16];
+      m4_identity(id);
+      gfx_use_texture(NULL);
+      gfx_draw_mesh(&gProbe[2], id, BLEND_OPAQUE, DEPTH_OFF, NULL);
+   }
 }
