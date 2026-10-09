@@ -78,6 +78,9 @@ Known issues:
 - **Vulkan** — on A12Z-class iPads the Vulkan renderer fails to find a suitable GPU. Use Metal, the default.
 - **Older GPUs** — devices without mesh shader support (A12Z and earlier) skip geometry-shader and RECTS draws, which can leave some effects missing.
 
+## Compatible games:
+See [COMPATIBILITY.md](https://github.com/MuffinEMU/Muffin-EMU/blob/main/COMPATIBILITY.md) for games that have been verified working on certain device running MuffinEMU.
+
 ## Building
 
 The CI workflow ([`build-ios-app.yml`](.github/workflows/build-ios-app.yml)) is the reference build and publishes every release. To build by hand on a Mac with Xcode, CMake, Ninja and XcodeGen:
