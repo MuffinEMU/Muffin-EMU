@@ -186,9 +186,9 @@ static bool astcCompressRGBA8Image(const uint8* rgba8, sint32 width, sint32 heig
 }
 
 template<typename DecodeFn>
-static void decodeBCToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8)
+static void decodeBCToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8, sint32 yBegin, sint32 yEnd)
 {
-    for (sint32 y = 0; y < tl->height; y += tl->stepY) {
+    for (sint32 y = yBegin; y < yEnd; y += tl->stepY) {
         for (sint32 x = 0; x < tl->width; x += tl->stepX) {
             uint8* blockData = LatteTextureLoader_GetInput(tl, x, y);
             sint32 bsX = std::min(4, tl->width - x);
@@ -200,7 +200,7 @@ static void decodeBCToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* 
             for (sint32 py = 0; py < bsY; ++py) {
                 for (sint32 px = 0; px < bsX; ++px) {
                     sint32 src = (py * 4 + px) * 4;
-                    sint32 dst = ((y + py) * tl->width + (x + px)) * 4;
+                    sint32 dst = ((y - yBegin + py) * tl->width + (x + px)) * 4;
                     rgba8[dst + 0] = astcFloatToUNorm8(floatBuf[src + 0]);
                     rgba8[dst + 1] = astcFloatToUNorm8(floatBuf[src + 1]);
                     rgba8[dst + 2] = astcFloatToUNorm8(floatBuf[src + 2]);
@@ -212,9 +212,9 @@ static void decodeBCToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* 
 }
 
 template<typename DecodeFn>
-static void decodeBC4ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8, bool isSigned)
+static void decodeBC4ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8, bool isSigned, sint32 yBegin, sint32 yEnd)
 {
-    for (sint32 y = 0; y < tl->height; y += tl->stepY) {
+    for (sint32 y = yBegin; y < yEnd; y += tl->stepY) {
         for (sint32 x = 0; x < tl->width; x += tl->stepX) {
             uint8* blockData = LatteTextureLoader_GetInput(tl, x, y);
             sint32 bsX = std::min(4, tl->width - x);
@@ -226,7 +226,7 @@ static void decodeBC4ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8*
             for (sint32 py = 0; py < bsY; ++py) {
                 for (sint32 px = 0; px < bsX; ++px) {
                     sint32 src = py * 4 + px;
-                    sint32 dst = ((y + py) * tl->width + (x + px)) * 4;
+                    sint32 dst = ((y - yBegin + py) * tl->width + (x + px)) * 4;
                     uint8 r = isSigned ? astcFloatToUNorm8FromSNorm(floatBuf[src]) : astcFloatToUNorm8(floatBuf[src]);
                     rgba8[dst + 0] = r;
                     rgba8[dst + 1] = 0;
@@ -239,9 +239,9 @@ static void decodeBC4ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8*
 }
 
 template<typename DecodeFn>
-static void decodeBC5ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8, bool isSigned)
+static void decodeBC5ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8* rgba8, bool isSigned, sint32 yBegin, sint32 yEnd)
 {
-    for (sint32 y = 0; y < tl->height; y += tl->stepY) {
+    for (sint32 y = yBegin; y < yEnd; y += tl->stepY) {
         for (sint32 x = 0; x < tl->width; x += tl->stepX) {
             uint8* blockData = LatteTextureLoader_GetInput(tl, x, y);
             sint32 bsX = std::min(4, tl->width - x);
@@ -253,7 +253,7 @@ static void decodeBC5ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8*
             for (sint32 py = 0; py < bsY; ++py) {
                 for (sint32 px = 0; px < bsX; ++px) {
                     sint32 src = (py * 4 + px) * 2;
-                    sint32 dst = ((y + py) * tl->width + (x + px)) * 4;
+                    sint32 dst = ((y - yBegin + py) * tl->width + (x + px)) * 4;
                     uint8 r = isSigned ? astcFloatToUNorm8FromSNorm(floatBuf[src + 0]) : astcFloatToUNorm8(floatBuf[src + 0]);
                     uint8 g = isSigned ? astcFloatToUNorm8FromSNorm(floatBuf[src + 1]) : astcFloatToUNorm8(floatBuf[src + 1]);
                     rgba8[dst + 0] = r;
@@ -266,38 +266,61 @@ static void decodeBC5ToRGBA8Image(DecodeFn fn, LatteTextureLoaderCtx* tl, uint8*
     }
 }
 
+// The RGBA8 copy of a BC image is the biggest scratch allocation a texture load makes (64 MB for 4096x4096) and the
+// one that failed on a device with memory to spare. ASTC blocks are encoded independently (no alpha-weight radius,
+// no cross-block state), so the image is decoded and encoded in bands of whole block rows into the matching part of
+// the output, which is byte-identical to one pass. Images whose RGBA8 copy fits the budget are one band, as before.
+static constexpr size_t kAstcScratchBudgetBytes = 8u * 1024u * 1024u;
+
+template<typename BandDecodeFn>
+static void decodeBandsAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, astcenc_profile profile, BandDecodeFn decodeBand)
+{
+    const sint32 width = tl->width;
+    const sint32 height = tl->height;
+    const size_t rowBytes = (size_t)width * 4u;
+    size_t bandRows = std::max<size_t>(4, (kAstcScratchBudgetBytes / std::max<size_t>(rowBytes, 1)) & ~(size_t)3);
+    bandRows = std::min<size_t>(bandRows, (size_t)((height + 3) & ~3));
+    std::vector<uint8> rgba8(rowBytes * std::min<size_t>(bandRows, (size_t)height));
+    const size_t blocksX = (size_t)((width + 3) / 4);
+    for (sint32 y0 = 0; y0 < height; y0 += (sint32)bandRows)
+    {
+        const sint32 y1 = std::min<sint32>(height, y0 + (sint32)bandRows);
+        decodeBand(rgba8.data(), y0, y1);
+        uint8* bandOutput = outputData + (size_t)(y0 / 4) * blocksX * 16u;
+        if (!astcCompressRGBA8Image(rgba8.data(), width, y1 - y0, profile, bandOutput))
+        {
+            std::fill(outputData, outputData + astcCompressedImageSize(width, height), 0);
+            return;
+        }
+    }
+}
+
 template<astcenc_profile Profile, typename DecodeFn>
 static void decodeRGBAAndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, DecodeFn fn)
 {
-    std::vector<uint8> rgba8((size_t)tl->width * (size_t)tl->height * 4u);
-    decodeBCToRGBA8Image(fn, tl, rgba8.data());
-
-    if (!astcCompressRGBA8Image(rgba8.data(), tl->width, tl->height, Profile, outputData))
-        std::fill(outputData, outputData + astcCompressedImageSize(tl->width, tl->height), 0);
+    decodeBandsAndCompressASTC(tl, outputData, Profile, [&](uint8* rgba8, sint32 y0, sint32 y1) {
+        decodeBCToRGBA8Image(fn, tl, rgba8, y0, y1);
+    });
 }
 
 static void decodeBC4AndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, bool isSigned)
 {
-    std::vector<uint8> rgba8((size_t)tl->width * (size_t)tl->height * 4u);
-    if (isSigned)
-        decodeBC4ToRGBA8Image(decodeBC4Block_SNORM, tl, rgba8.data(), true);
-    else
-        decodeBC4ToRGBA8Image(decodeBC4Block_UNORM, tl, rgba8.data(), false);
-
-    if (!astcCompressRGBA8Image(rgba8.data(), tl->width, tl->height, ASTCENC_PRF_LDR, outputData))
-        std::fill(outputData, outputData + astcCompressedImageSize(tl->width, tl->height), 0);
+    decodeBandsAndCompressASTC(tl, outputData, ASTCENC_PRF_LDR, [&](uint8* rgba8, sint32 y0, sint32 y1) {
+        if (isSigned)
+            decodeBC4ToRGBA8Image(decodeBC4Block_SNORM, tl, rgba8, true, y0, y1);
+        else
+            decodeBC4ToRGBA8Image(decodeBC4Block_UNORM, tl, rgba8, false, y0, y1);
+    });
 }
 
 static void decodeBC5AndCompressASTC(LatteTextureLoaderCtx* tl, uint8* outputData, bool isSigned)
 {
-    std::vector<uint8> rgba8((size_t)tl->width * (size_t)tl->height * 4u);
-    if (isSigned)
-        decodeBC5ToRGBA8Image(decodeBC5Block_SNORM, tl, rgba8.data(), true);
-    else
-        decodeBC5ToRGBA8Image(decodeBC5Block_UNORM, tl, rgba8.data(), false);
-
-    if (!astcCompressRGBA8Image(rgba8.data(), tl->width, tl->height, ASTCENC_PRF_LDR, outputData))
-        std::fill(outputData, outputData + astcCompressedImageSize(tl->width, tl->height), 0);
+    decodeBandsAndCompressASTC(tl, outputData, ASTCENC_PRF_LDR, [&](uint8* rgba8, sint32 y0, sint32 y1) {
+        if (isSigned)
+            decodeBC5ToRGBA8Image(decodeBC5Block_SNORM, tl, rgba8, true, y0, y1);
+        else
+            decodeBC5ToRGBA8Image(decodeBC5Block_UNORM, tl, rgba8, false, y0, y1);
+    });
 }
 
 template<astcenc_profile Profile>

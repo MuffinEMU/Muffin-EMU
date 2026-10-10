@@ -140,8 +140,15 @@ MetalSynchronizedRingAllocator::AllocatorReservation_t MetalSynchronizedRingAllo
 	}
 
 	// allocate new buffer
-	const size_t bufferCountBefore = m_buffers.size();
+	size_t bufferCountBefore = m_buffers.size();
 	allocateAdditionalUploadBuffer(size);
+	if (m_buffers.size() == bufferCountBefore && releaseIdleBuffers())
+	{
+		// The device refused a new buffer. The ring keeps idle buffers around for a thousand cleanups; give those
+		// back now and try once more, instead of skipping an upload while memory sits unused in the ring.
+		bufferCountBefore = m_buffers.size();
+		allocateAdditionalUploadBuffer(size);
+	}
 	if (m_buffers.size() == bufferCountBefore)
 	{
 		// The heap could not grow; return an empty reservation (null mtlBuffer) rather than recurse.
@@ -158,6 +165,24 @@ void MetalSynchronizedRingAllocator::FlushReservation(AllocatorReservation_t& up
     {
         uploadReservation.mtlBuffer->didModifyRange(NS::Range(uploadReservation.bufferOffset, uploadReservation.size));
     }
+}
+
+// Releases every buffer no command buffer is using any more. Only called when the device has just refused a new
+// buffer; a buffer with a pending sync point (including one handed out in the command buffer being recorded) stays.
+bool MetalSynchronizedRingAllocator::releaseIdleBuffers()
+{
+	bool releasedAny = false;
+	for (sint32 i = (sint32)m_buffers.size() - 1; i >= 0; i--)
+	{
+		if (!m_buffers[i].queue_syncPoints.empty())
+			continue;
+		m_buffers[i].mtlBuffer->release();
+		m_buffers.erase(m_buffers.begin() + i);
+		for (size_t j = (size_t)i; j < m_buffers.size(); j++)
+			m_buffers[j].index = (uint32)j;
+		releasedAny = true;
+	}
+	return releasedAny;
 }
 
 void MetalSynchronizedRingAllocator::CleanupBuffer(MTL::CommandBuffer* latestFinishedCommandBuffer)

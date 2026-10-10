@@ -430,6 +430,14 @@ namespace {
         {
             cemu_crash_write("terminate called with no in-flight exception\n");
         }
+        // The throw has not unwound anything yet when terminate runs, so this stack names the code that threw.
+        {
+            cemu_crash_write("terminate backtrace:\n");
+            void* frames[40];
+            const int frameCount = backtrace(frames, 40);
+            if (g_crashLogFd >= 0)
+                backtrace_symbols_fd(frames, frameCount, g_crashLogFd);
+        }
         if (g_previousTerminateHandler && g_previousTerminateHandler != cemu_terminate_handler)
             g_previousTerminateHandler();
         abort();
