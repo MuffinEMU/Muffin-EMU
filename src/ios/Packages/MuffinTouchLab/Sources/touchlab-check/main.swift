@@ -997,6 +997,7 @@ do {
     check(part != nil && part!.jitter > 0.01 && part!.jitter < 0.05, "calibration: the rest wobble is recorded, got \(String(describing: part?.jitter))")
     let whole = run(radius: 1.0, rest: .zero, wobble: 0)
     check(whole?.fullThrow == 1 && whole?.centre == .zero, "calibration: a player who uses the whole ring keeps the default throw and centre")
+    check(run(radius: 1.1, rest: .zero, wobble: 0)?.fullThrow == 1, "calibration: a sweep past the ring is still a throw of 1, so the stick can reach full output")
     check(run(radius: 0.8, sectors: 4) == nil, "calibration: lifting before reaching most of the ring saves nothing")
     var early = StickCalibrationSession(travel: travel)
     early.begin(at: .zero, time: 0)
