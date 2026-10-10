@@ -1,6 +1,6 @@
 # Device support
 
-[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Device%20support-E5652E)](../README.md) [Back to the README](../README.md)
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Device%20support-E5652E?style=for-the-badge&labelColor=1d1d1f)](../README.md) [Back to the README](../README.md)
 
 MuffinEMU is built for every iPhone and iPad that runs its minimum iOS, not for one device.
 The app reads what the device is and can afford once, at launch (`DeviceCapabilities`), and

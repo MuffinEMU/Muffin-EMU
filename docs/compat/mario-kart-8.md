@@ -1,6 +1,6 @@
 # Mario Kart 8 compatibility
 
-[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Compatibility%20report-E5652E)](../../README.md) [Back to the README](../../README.md) · [All compatible games](../../COMPATIBILITY.md)
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Compatibility%20report-E5652E?style=for-the-badge&labelColor=1d1d1f)](../../README.md) [Back to the README](../../README.md) · [All compatible games](../../COMPATIBILITY.md)
 
 **Title IDs:** base 00050000-1010EC00 (US), 1010ED00 (EU), 1010EB00 (JP); updates 0005000E-same low word; DLC 0005000C-same low word.
 

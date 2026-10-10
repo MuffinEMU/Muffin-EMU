@@ -1,6 +1,6 @@
 # The on-screen pad, taken from the GamePad itself
 
-[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Gamepad%20layout-E5652E)](../../README.md) [Back to the README](../../README.md)
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Gamepad%20layout-E5652E?style=for-the-badge&labelColor=1d1d1f)](../../README.md) [Back to the README](../../README.md)
 
 The measurements behind MuffinEMU's on-screen GamePad. The implementation is `src/ios/App/GamePadGeometry.swift`.
 Browsable version: <https://muffinemu.github.io/MuffinEMU/gamepad-layout/>

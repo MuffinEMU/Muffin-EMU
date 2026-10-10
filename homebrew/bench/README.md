@@ -1,6 +1,6 @@
 # bench - cross-engine guest workloads
 
-[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Homebrew-E5652E)](../../README.md) [Back to the README](../../README.md)
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Homebrew-E5652E?style=for-the-badge&labelColor=1d1d1f)](../../README.md) [Back to the README](../../README.md)
 
 Two homebrew RPX files, `cpubench.rpx` and `gpubench.rpx`, built by
 `.github/workflows/build-bench-rpx.yml`. They are the actual benchmark: the
