@@ -130,7 +130,10 @@ struct OptimizedControlPanel: View {
             // The shoulder slider is iPad only: on iPhone the stored value is never read.
             let shoulderDrop = ControllerLayoutSettings.effectiveShoulderOffset(
                 ControllerLayoutSettings.isUpright(proxy.size) ? shoulderOffsetUpright : shoulderOffset)
-            let shoulderLimit = ControllerLayoutSettings.shoulderRange(in: proxy.size)
+            // Never narrower than the clamp the pad has always applied, so a saved value draws where it
+            // always did; the physical limits inside shoulderShift still stop the buttons.
+            let measuredRange = ControllerLayoutSettings.shoulderRange(in: proxy.size)
+            let shoulderLimit = min(measuredRange.lowerBound, ControllerLayoutSettings.minShoulderOffset)...max(measuredRange.upperBound, ControllerLayoutSettings.maxShoulderOffset)
             // How much of this view's top the bar covers, in this view's own coordinates.
             let topReserve = max(0, topInset - proxy.frame(in: .global).minY)
 
