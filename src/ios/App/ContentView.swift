@@ -1630,6 +1630,8 @@ struct EmulatorViewOptimized: View {
     /// unobstructed, where the physical control overlay would otherwise sit on top of
     /// it and eat every touch before it reaches PadMetalViewIOS underneath.
     @State private var padControlsHidden = false
+    @State private var padHiddenByHomeMenu = false
+    @AppStorage(HiddenScreenSettings.hideControlsInHomeMenuKey) private var hideControlsInHomeMenu = false
     @State private var isPaused = false
     /// The HOME menu is up (see HomeMenu.swift). The game is paused for as long as it is, through
     /// the same togglePause() as the top bar's button.
@@ -1706,6 +1708,8 @@ struct EmulatorViewOptimized: View {
     /// two screens Single Screen mode currently shows resets to TV each fresh launch
     /// rather than being remembered, the same way MeloCafe never persisted it either.
     @State private var localSwapped = false
+    @AppStorage(HiddenScreenSettings.pauseHiddenTVKey) private var pauseHiddenTV = false
+    @AppStorage(HiddenScreenSettings.pauseHiddenPadKey) private var pauseHiddenPad = false
     // Defaults ON, and must keep matching SettingsView's declaration of the same key -
     // two @AppStorage defaults for one key that disagree means the toggle and the
     // emulator disagree about what is on. See SettingsView for why this flipped.
@@ -2809,6 +2813,17 @@ struct EmulatorViewOptimized: View {
         // Also on while the controls are being moved: a controller's B only reaches the app while it is captured.
         .modifier(HomeMenuEventsModifier(isOpen: showHomeMenu || isEditingControlLayout, onEvent: handleHomeMenuEvent))
         .modifier(ControllerAutoHideModifier(apply: setPadHiddenByController))
+        .onChange(of: showHomeMenu) { open in
+            if open {
+                guard hideControlsInHomeMenu, !padControlsHidden else { return }
+                padHiddenByHomeMenu = true
+                padControlsHidden = true
+                cemu_bridge_release_all_buttons()
+            } else if padHiddenByHomeMenu {
+                padHiddenByHomeMenu = false
+                if !padHiddenByController { padControlsHidden = false }
+            }
+        }
         .overlay(alignment: .top) {
             if showsStallCard {
                 videoStalledCard
@@ -3208,6 +3223,8 @@ struct EmulatorViewOptimized: View {
         .onChange(of: screenLayout) { _ in updateVisibleOutputs() }
         .onChange(of: localSwapped) { _ in updateVisibleOutputs() }
         .onChange(of: displayRouter.placement) { _ in updateVisibleOutputs() }
+        .onChange(of: pauseHiddenTV) { _ in updateVisibleOutputs() }
+        .onChange(of: pauseHiddenPad) { _ in updateVisibleOutputs() }
         .onDisappear {
             // MeloCafe's own onDisappear sets both outputs false outright - not ported
             // literally, because this specific view can disappear for a reason MeloCafe's
@@ -3220,6 +3237,7 @@ struct EmulatorViewOptimized: View {
             // behavior - is the safe default for "this composition went away, but the
             // title itself may still be very much running."
             DisplayRouter.shared.updateLocalVisibleOutputs(showTV: true, showPad: false)
+            cemu_bridge_set_skip_hidden_screen(false, false)
             // Mirrors MeloCafe's own `cemuPadView.cancelActiveTouches()` call here -
             // MuffinEMU has no such method, but this is the same cleanup MetalView.swift's
             // touch-cancel path already performs elsewhere (see sendPadTouch below and the
@@ -3355,6 +3373,7 @@ struct EmulatorViewOptimized: View {
     private func updateVisibleOutputs() {
         let both = displayRouter.placement == .dualScreen || screenLayout.showsBothScreens
         DisplayRouter.shared.updateLocalVisibleOutputs(showTV: both || !localSwapped, showPad: both || localSwapped)
+        cemu_bridge_set_skip_hidden_screen(!both && pauseHiddenTV, !both && pauseHiddenPad)
         if !both && !localSwapped {
             cemu_bridge_set_pad_touch(0, 0, false)
         }
