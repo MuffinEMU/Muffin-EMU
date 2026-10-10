@@ -302,6 +302,65 @@ func tap(_ e: PadEngine, _ p: CGPoint, id: TouchID = 1, t: Double = 0) {
     e.began(id, at: p, time: t); e.ended(id, at: p, time: t + 0.1)
 }
 
+// MARK: Stick overtravel
+do {
+    let travel: CGFloat = 100
+    let extra = StickMath.overtravel(travel)
+    check(extra > 0 && extra <= 0.2 * travel, "overtravel is a small fraction of travel: \(extra)")
+    let round = StickTuning(deadzone: 0.06, curve: 1, gate: .round)
+    let oct = StickTuning(deadzone: 0.06, curve: 1, gate: .octagon)
+    for tuning in [round, oct] {
+        let g = tuning.gate
+        for deg in stride(from: 0.0, to: 360.0, by: 15.0) {
+            let a = CGFloat(deg * .pi / 180)
+            let dir = CGPoint(x: cos(a), y: sin(a))
+            let lim = StickMath.gateFraction(g, angle: a)
+            let atEdge = StickMath.value(offset: dir * travel, travel: travel, tuning: tuning)
+            let past = StickMath.value(offset: dir * (travel + 3 * extra), travel: travel, tuning: tuning)
+            check(near(atEdge.magnitude, Double(lim), 1e-6), "edge value is the gate limit at \(deg)deg (\(g)): \(atEdge.magnitude)")
+            check(near(past.magnitude, atEdge.magnitude, 1e-9) && abs(past.x) <= 1 && abs(past.y) <= 1,
+                  "beyond the edge adds no output at \(deg)deg (\(g))")
+            let knob = StickMath.knobOffset(offset: dir * (travel + 3 * extra), travel: travel, gate: g)
+            check(near(Double(knob.length), Double(travel * lim + extra), 1e-3), "knob stops at gate + overtravel at \(deg)deg (\(g))")
+            let inside = StickMath.knobOffset(offset: dir * (travel * 0.5), travel: travel, gate: g)
+            check(near(Double(inside.length), Double(travel * 0.5), 1e-3), "knob follows the finger inside the ring")
+        }
+    }
+    check(near(StickMath.value(offset: CGPoint(x: travel, y: 0), travel: travel, tuning: round).x, 1, 1e-9), "exact boundary = exactly 1")
+    check(StickMath.value(offset: CGPoint(x: 3, y: -3), travel: travel, tuning: round) == .zero, "recentred finger is inside the deadzone")
+}
+
+do {
+    let (e, r, s) = engine("zone", .stacked)
+    let left = s.controls.first { if case .stick(.left, _, _) = $0.kind { return true }; return false }!
+    let right = s.controls.first { if case .stick(.right, _, _) = $0.kind { return true }; return false }!
+    guard case let .stick(_, travel, _) = left.kind else { fatalError() }
+    let extra = StickMath.overtravel(travel)
+    let lc = left.shape.center, rc = right.shape.center
+    e.began(1, at: lc, time: 0)
+    e.began(2, at: rc, time: 0)
+    e.moved(1, to: lc + CGPoint(x: travel, y: 0), time: 0.1)
+    check(near(r.sticks[.left]?.x ?? 0, 1, 1e-9), "overtravel: left at boundary is exactly 1, got \(String(describing: r.sticks[.left]))")
+    e.moved(1, to: lc + CGPoint(x: travel + extra * 0.8, y: 0), time: 0.2)
+    check(near(r.sticks[.left]?.x ?? 0, 1, 1e-9), "overtravel: left past the boundary stays 1")
+    e.moved(2, to: rc + CGPoint(x: 0, y: -(travel + 5 * extra)), time: 0.2)
+    check(near(r.sticks[.right]?.y ?? 0, 1, 1e-9) && near(r.sticks[.right]?.x ?? 1, 0, 1e-9), "overtravel: right far up is (0,1)")
+    check(near(r.sticks[.left]?.x ?? 0, 1, 1e-9), "overtravel: left unaffected by the right finger")
+    let knobs = e.render().filter { $0.role == .stickKnob }
+    let lk = knobs.first { $0.shape.center.distance(to: lc) < 3 * travel && abs($0.shape.center.y - lc.y) < 1 }
+    check(lk != nil && near(Double(lk!.shape.center.x - lc.x), Double(travel + extra * 0.8), 1e-3), "overtravel: left knob follows past the ring")
+    let rk = knobs.first { $0.shape.center.distance(to: rc) < 3 * travel && abs($0.shape.center.x - rc.x) < 1 }
+    check(rk != nil && near(Double(rc.y - rk!.shape.center.y), Double(travel + extra), 1e-3), "overtravel: right knob stops at travel + overtravel")
+    e.moved(1, to: lc + CGPoint(x: 8, y: -8), time: 0.3)
+    check(near(r.sticks[.right]?.y ?? 0, 1, 1e-9), "overtravel: right still held while left moves")
+    e.moved(1, to: lc, time: 0.4)
+    check(r.sticks[.left] == .zero, "overtravel: left recentres to zero")
+    e.ended(2, at: rc, time: 0.5)
+    check(r.sticks[.right] == .zero, "overtravel: right recentres on release")
+    e.ended(1, at: lc, time: 0.6)
+}
+
+
 for id in ["zone", "adaptive", "frame", "float"] {
     let (e, r, s) = engine(id)
     for b in [PadButton.a, .b, .x, .y, .l, .r, .zl, .zr, .plus, .minus, .home] {
@@ -381,7 +440,7 @@ do {
     check((r.sticks[.left]?.x ?? 0) > 0.9, "float: drag right = full right, got \(String(describing: r.sticks[.left]))")
     let knob = e.render().first { $0.role == .stickKnob }!.shape.center
     let travel = PadParts.stickTravel * s.controls.first { $0.button == .a }!.shape.boundingBox.width / 0.92
-    check(knob.distance(to: landing) <= travel + 0.5, "float: knob stops at full push, \(knob.distance(to: landing)) from anchor")
+    check(knob.distance(to: landing) <= travel + StickMath.overtravel(travel) + 0.5, "float: knob stops at full push plus overtravel, \(knob.distance(to: landing)) from anchor")
     check(e.render().contains { $0.role == .dot && $0.shape.center == landing }, "float: anchor stays put when dragging past the edge")
     e.moved(1, to: landing + CGPoint(x: -300, y: 0), time: 0.2)
     check((r.sticks[.left]?.x ?? 0) < -0.9, "float: full left from the same anchor, got \(String(describing: r.sticks[.left]))")
