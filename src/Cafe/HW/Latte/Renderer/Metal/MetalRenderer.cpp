@@ -491,7 +491,8 @@ MetalRenderer::MetalRenderer()
     m_supportsMetal3 = m_device->supportsFamily(MTL::GPUFamilyMetal3);
     // Metal 3 also runs on A13 (Apple6), whose GPU has no mesh shader hardware: on Apple GPUs it takes Apple7 (A14, M1) or later.
     m_supportsMeshShaders = (m_supportsMetal3 && (!m_isAppleGPU || m_device->supportsFamily(MTL::GPUFamilyApple7)) && (m_vendor != GfxVendor::Intel || GetConfig().force_mesh_shaders.GetValue())); // Intel GPUs have issues with mesh shaders
-    cemuLog_log(LogType::Force, "Metal: mesh shaders {}{}", m_supportsMeshShaders ? "yes" : "no", m_supportsMeshShaders ? "" : " - geometry-shader and RECTS draws are emulated with compute passes");
+    m_emulateMissingEffects = GetConfig().emulate_missing_effects.GetValue();
+    cemuLog_log(LogType::Force, "Metal: mesh shaders {}{}", m_supportsMeshShaders ? "yes" : "no", m_supportsMeshShaders ? "" : (m_emulateMissingEffects ? " - geometry-shader and RECTS draws are emulated with compute passes" : " - geometry-shader and RECTS draws are skipped (Emulate missing effects is off)"));
     m_argumentBufferTier = m_device->argumentBuffersSupport();
     m_maxArgumentBufferSamplerCount = static_cast<uint32>(m_device->maxArgumentBufferSamplerCount());
     cemuLog_log(LogType::Force, "Metal argument buffers: Tier {}, {} samplers", m_argumentBufferTier == MTL::ArgumentBuffersTier2 ? 2 : 1, m_maxArgumentBufferSamplerCount);
@@ -743,6 +744,7 @@ void MetalRenderer::Shutdown()
     Flush(true);
     MetalGuardReport("title stop", 200, true);
     LogGeometryEmulationSummary("title stop");
+    ReleaseGeometryEmulationBuffers();
     // TODO: should shutdown both layers
     // ImGui_ImplMetal_Shutdown() dereferences its backend data without a check, so only call it for a context that has some
     if (ImGui::GetCurrentContext() && ImGui::GetIO().BackendRendererUserData)
@@ -2374,7 +2376,10 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 
     bool usesGeometryShader = UseGeometryShader(LatteGPUState.contextNew, geometryShader != nullptr);
     // Without mesh shaders the draw is rebuilt from compute passes instead of being skipped (see RunGeometryEmulation)
-    const bool emulateGeometryShader = usesGeometryShader && !m_supportsMeshShaders;
+    // With the setting off these draws are skipped, as before emulation existed
+    if (usesGeometryShader && !m_supportsMeshShaders && !m_emulateMissingEffects)
+        return;
+    const bool emulateGeometryShader = usesGeometryShader && UseGeometryShaderEmulation();
     const bool emulateRects = emulateGeometryShader && geometryShader == nullptr;
 
     const bool usesVertexStreamout = !usesGeometryShader && vertexShader->hasStreamoutBufferWrite;
@@ -2451,6 +2456,67 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
     if (usesGeometryShader)
         PrepareUniformBufferSizes(geometryShader);
     PrepareUniformBufferSizes(pixelShader);
+
+    // A last check of what hardware vertex fetch will read
+    if (!fetchVertexManually)
+    {
+        // Hardware vertex fetch has no bounds check: a slot that is unbound, or bound to less than the draw reads,
+        // is a GPU page fault. Manual fetch checks the size in the shader and gets a null buffer below instead.
+        bool vertexBuffersUsable = true;
+        const uint64 vertexShaderHash = vertexShader ? vertexShader->baseHash : 0;
+        for (const auto& group : fetchShader->bufferGroups)
+        {
+            const uint32 i = group.attributeBufferIndex;
+            if (i >= MAX_MTL_VERTEX_BUFFERS)
+            {
+                vertexBuffersUsable = false;
+                MetalGuardNote(MetalGuard::DrawVertexBuffer, {vertexShaderHash, i, 1}, [&] { return fmt::format("vertex buffer slot {} is out of range (vs {:016x})", i, vertexShaderHash); });
+                continue;
+            }
+            // The pipeline's vertex descriptor leaves out attributes the vertex shader does not read, so the GPU
+            // never fetches from a group made only of those, whatever its registers say.
+            uint32 usedEnd = 0;
+            if (!MetalVertexGroupIsRead(group, vertexShader, usedEnd))
+                continue;
+            MTL::Buffer* buffer = m_state.m_vertexBuffers[i];
+            const size_t offset = m_state.m_vertexBufferOffsets[i];
+            const size_t bound = m_state.m_vertexBufferSizes[i];
+            // The size the buffer was bound for is a conservative one (a whole stride past the last index, plus the
+            // start offset of the last attribute). What the hardware reads is the last element the draw reaches
+            // plus the end of the furthest attribute it fetches, so that is what has to be in the buffer.
+            const uint64 stride = (LatteGPUState.contextRegister[mmSQ_VTX_ATTRIBUTE_BLOCK_START + i * 7 + 2] >> 11) & 0xFFFF;
+            // maxVertexIndex already includes the base vertex: indexMax + signedBaseVertex for indexed draws (clamped at 0),
+            // baseVertex + count - 1 otherwise. It is also the maxIndex m_vertexBufferRequired was computed from, so
+            // the base vertex is counted in both sizes and must not be added again here.
+            uint64 reach = 0;
+            if (group.hasVtxIndexAccess)
+                reach = stride * (uint64)maxVertexIndex + usedEnd;
+            if (group.hasInstanceIndexAccess)
+                reach = std::max<uint64>(reach, stride * ((uint64)baseInstance + std::max<uint32>(instanceCount, 1) - 1) + usedEnd);
+            if (stride == 0)
+                reach = usedEnd; // constant step: only the first element is read
+            const uint64 needed = std::min<uint64>(m_state.m_vertexBufferRequired[i], reach);
+            if (!buffer || offset == INVALID_OFFSET || offset >= buffer->length() || bound < needed)
+            {
+                vertexBuffersUsable = false;
+                const uint64 failure = !buffer ? 2 : (offset == INVALID_OFFSET ? 3 : (offset >= buffer->length() ? 4 : 5));
+                MetalGuardNote(MetalGuard::DrawVertexBuffer, {vertexShaderHash, i, failure}, [&] {
+                    return fmt::format("vertex buffer {} {} (vs {:016x}): stride {}, offset {}, buffer length {}, bound {} bytes, conservative size {}, draw reaches {}, max vertex {}, base vertex {}, instances {}+{}",
+                        i, failure == 2 ? "is not bound" : (failure == 3 ? "has no valid offset" : (failure == 4 ? "starts past its buffer" : "is smaller than what the draw reads")),
+                        vertexShaderHash, stride, offset == INVALID_OFFSET ? (sint64)-1 : (sint64)offset, buffer ? (uint64)buffer->length() : (uint64)0, (uint64)bound, (uint64)m_state.m_vertexBufferRequired[i], reach,
+                        maxVertexIndex, signedBaseVertex, baseInstance, instanceCount);
+                });
+            }
+        }
+        if (!vertexBuffersUsable)
+        {
+            if (m_crumb)
+                m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_VERTEX_BUFFER | MetalDrawBreadcrumb::SUSPECT_SKIPPED;
+            streamout_rendererFinishDrawcall();
+            LatteGPUState.drawCallCounter++;
+            return;
+        }
+    }
 
     // Emulated geometry-shader and RECTS draws run their vertex and geometry stages as compute passes before the render pass for the
     // draw is opened. The pipeline is looked up first because RECTS keeps its expansion kernel on it; the render pass that follows the
@@ -2739,67 +2805,6 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
             entry.size = m_state.m_vertexBufferSizes[i];
             entry.required = m_state.m_vertexBufferRequired[i];
             entry.bufferLength = m_state.m_vertexBuffers[i] ? m_state.m_vertexBuffers[i]->length() : 0;
-        }
-    }
-
-    // A last check of what hardware vertex fetch will read
-    if (!fetchVertexManually)
-    {
-        // Hardware vertex fetch has no bounds check: a slot that is unbound, or bound to less than the draw reads,
-        // is a GPU page fault. Manual fetch checks the size in the shader and gets a null buffer below instead.
-        bool vertexBuffersUsable = true;
-        const uint64 vertexShaderHash = vertexShader ? vertexShader->baseHash : 0;
-        for (const auto& group : fetchShader->bufferGroups)
-        {
-            const uint32 i = group.attributeBufferIndex;
-            if (i >= MAX_MTL_VERTEX_BUFFERS)
-            {
-                vertexBuffersUsable = false;
-                MetalGuardNote(MetalGuard::DrawVertexBuffer, {vertexShaderHash, i, 1}, [&] { return fmt::format("vertex buffer slot {} is out of range (vs {:016x})", i, vertexShaderHash); });
-                continue;
-            }
-            // The pipeline's vertex descriptor leaves out attributes the vertex shader does not read, so the GPU
-            // never fetches from a group made only of those, whatever its registers say.
-            uint32 usedEnd = 0;
-            if (!MetalVertexGroupIsRead(group, vertexShader, usedEnd))
-                continue;
-            MTL::Buffer* buffer = m_state.m_vertexBuffers[i];
-            const size_t offset = m_state.m_vertexBufferOffsets[i];
-            const size_t bound = m_state.m_vertexBufferSizes[i];
-            // The size the buffer was bound for is a conservative one (a whole stride past the last index, plus the
-            // start offset of the last attribute). What the hardware reads is the last element the draw reaches
-            // plus the end of the furthest attribute it fetches, so that is what has to be in the buffer.
-            const uint64 stride = (LatteGPUState.contextRegister[mmSQ_VTX_ATTRIBUTE_BLOCK_START + i * 7 + 2] >> 11) & 0xFFFF;
-            // maxVertexIndex already includes the base vertex: indexMax + signedBaseVertex for indexed draws (clamped at 0),
-            // baseVertex + count - 1 otherwise. It is also the maxIndex m_vertexBufferRequired was computed from, so
-            // the base vertex is counted in both sizes and must not be added again here.
-            uint64 reach = 0;
-            if (group.hasVtxIndexAccess)
-                reach = stride * (uint64)maxVertexIndex + usedEnd;
-            if (group.hasInstanceIndexAccess)
-                reach = std::max<uint64>(reach, stride * ((uint64)baseInstance + std::max<uint32>(instanceCount, 1) - 1) + usedEnd);
-            if (stride == 0)
-                reach = usedEnd; // constant step: only the first element is read
-            const uint64 needed = std::min<uint64>(m_state.m_vertexBufferRequired[i], reach);
-            if (!buffer || offset == INVALID_OFFSET || offset >= buffer->length() || bound < needed)
-            {
-                vertexBuffersUsable = false;
-                const uint64 failure = !buffer ? 2 : (offset == INVALID_OFFSET ? 3 : (offset >= buffer->length() ? 4 : 5));
-                MetalGuardNote(MetalGuard::DrawVertexBuffer, {vertexShaderHash, i, failure}, [&] {
-                    return fmt::format("vertex buffer {} {} (vs {:016x}): stride {}, offset {}, buffer length {}, bound {} bytes, conservative size {}, draw reaches {}, max vertex {}, base vertex {}, instances {}+{}",
-                        i, failure == 2 ? "is not bound" : (failure == 3 ? "has no valid offset" : (failure == 4 ? "starts past its buffer" : "is smaller than what the draw reads")),
-                        vertexShaderHash, stride, offset == INVALID_OFFSET ? (sint64)-1 : (sint64)offset, buffer ? (uint64)buffer->length() : (uint64)0, (uint64)bound, (uint64)m_state.m_vertexBufferRequired[i], reach,
-                        maxVertexIndex, signedBaseVertex, baseInstance, instanceCount);
-                });
-            }
-        }
-        if (!vertexBuffersUsable)
-        {
-            if (m_crumb)
-                m_crumb->suspect |= MetalDrawBreadcrumb::SUSPECT_VERTEX_BUFFER | MetalDrawBreadcrumb::SUSPECT_SKIPPED;
-            streamout_rendererFinishDrawcall();
-            LatteGPUState.drawCallCounter++;
-            return;
         }
     }
 
@@ -4238,7 +4243,17 @@ bool MetalRenderer::EnsureGeometryEmulationBuffers(uint64 payloadBytes, uint64 o
 {
     // A draw wide enough to need more than this is not one to serve: quietly allocating hundreds of megabytes on a 4 GB iPad to try
     // would take the whole app down instead of one effect.
-    constexpr uint64 MAX_TOTAL = 96ull * 1024ull * 1024ull;
+    // The cap follows physical RAM, since the buffers are private, never shrunk while a title runs, and a jetsam kill takes the whole app.
+    if (m_gsMaxScratchBytes == 0)
+    {
+        uint64 physicalMemory = 0;
+        size_t memSize = sizeof(physicalMemory);
+        if (sysctlbyname("hw.memsize", &physicalMemory, &memSize, nullptr, 0) != 0 || physicalMemory == 0)
+            physicalMemory = 4ull * 1024ull * 1024ull * 1024ull; // unknown: assume the small case
+        constexpr uint64 GiB = 1024ull * 1024ull * 1024ull;
+        m_gsMaxScratchBytes = physicalMemory <= 4 * GiB ? 24ull * 1024ull * 1024ull : (physicalMemory <= 6 * GiB ? 48ull * 1024ull * 1024ull : 96ull * 1024ull * 1024ull);
+    }
+    const uint64 MAX_TOTAL = m_gsMaxScratchBytes;
     if (payloadBytes + outBytes + primCountBytes > MAX_TOTAL)
         return false;
 

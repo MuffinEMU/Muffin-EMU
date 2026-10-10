@@ -2460,6 +2460,14 @@ bool cemu_bridge_framebuffer_fetch(void) {
     return GetConfig().framebuffer_fetch.GetValue();
 }
 
+void cemu_bridge_set_emulate_missing_effects(bool enabled) {
+    GetConfig().emulate_missing_effects = enabled;
+}
+
+bool cemu_bridge_emulate_missing_effects(void) {
+    return GetConfig().emulate_missing_effects.GetValue();
+}
+
 // ---------------------------------------------------------------------------
 // Screen orientation, gamma and the on-screen performance overlay. See the doc comments
 // on the declarations in CemuBridge.h for what each one does and why the gamma range is

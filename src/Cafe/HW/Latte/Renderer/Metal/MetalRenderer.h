@@ -313,7 +313,7 @@ public:
 	bool UseTFViaSSBO() const override { return true; }
 	// No mesh shaders: geometry-shader and RECTS draws run as two compute kernels plus a passthrough vertex shader. Baked into
 	// every shader generated, and fixed by the hardware, so it can never change while a title runs.
-	bool UseGeometryShaderEmulation() const override { return !m_supportsMeshShaders; }
+	bool UseGeometryShaderEmulation() const override { return !m_supportsMeshShaders && m_emulateMissingEffects; }
 	void AppendOverlayDebugInfo() override;
 
 	// rendertarget
@@ -631,6 +631,8 @@ private:
 	bool m_hasUnifiedMemory;
 	bool m_supportsMetal3;
 	bool m_supportsMeshShaders;
+	// emulate_missing_effects, read once at Initialize: shaders bake the choice in, so it cannot change while a title runs
+	bool m_emulateMissingEffects = true;
 	// Scratch the emulated geometry stages hand to each other and to the passthrough vertex shader. Private memory, regrown on demand.
 	MTL::Buffer* m_gsPayloadBuffer = nullptr;
 	MTL::Buffer* m_gsOutBuffer = nullptr;
@@ -644,6 +646,7 @@ private:
 	uint64 m_rectEmulatedDraws = 0;
 	uint64 m_rectSkippedDraws = 0;
 	uint32 m_gsSkipReasonsLogged = 0;
+	uint64 m_gsMaxScratchBytes = 0; // scratch cap, scaled with physical RAM when the buffers are first requested
 	MTL::ArgumentBuffersTier m_argumentBufferTier{MTL::ArgumentBuffersTier1};
 	uint32 m_maxArgumentBufferSamplerCount{};
 	uint32 m_recommendedMaxVRAMUsage;
