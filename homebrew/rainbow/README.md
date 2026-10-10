@@ -1,7 +1,20 @@
 # rainbow.rpx
 
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Homebrew-E5652E?style=for-the-badge&labelColor=1d1d1f)](../../README.md) [Back to the README](../../README.md)
+
 A homebrew Wii U test rom whose entire job is to be impossible to confuse with a black
 screen.
+
+<details>
+<summary>Contents</summary>
+
+- [Why](#why)
+- [What it does](#what-it-does)
+- [How to read the result](#how-to-read-the-result)
+- [Deliberate design choices](#deliberate-design-choices)
+- [Building](#building)
+
+</details>
 
 ## Why
 
@@ -29,8 +42,9 @@ large amount of very loud colour on the glass.
 | Magenta | The emulator's own empty frame. The rom never drew. |
 | Black | Neither the rom nor the emulator's empty-frame clear ran. |
 
-A low frame rate in the neon phase is expected, not a bug - per-pixel drawing goes
-through an HLE call each time and there is no working recompiler on iOS yet.
+> [!NOTE]
+> A low frame rate in the neon phase is expected, not a bug - per-pixel drawing goes
+> through an HLE call each time and there is no working recompiler on iOS yet.
 
 ## Deliberate design choices
 
