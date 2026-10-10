@@ -789,11 +789,12 @@ namespace {
     // down and nothing else changed.
     std::atomic<bool> g_lowPowerMode{false};
     // Core count choice from Settings (or this game's override): 0 Auto, 1 one core, 2 three
-    // cores. Auto decides per title in ios_decide_core_count(); see there for why it leans
+    // cores, 3 two host threads. Auto decides per title in ios_decide_core_count(); see there for why it leans
     // to one core.
     constexpr int kCoreModeAuto   = 0;
     constexpr int kCoreModeSingle = 1;
     constexpr int kCoreModeMulti  = 2;
+    constexpr int kCoreModeTwo    = 3;
     std::atomic<int> g_coreModeSetting{kCoreModeAuto};
     // Set by the app when an earlier three-core run of this title crashed or hung (Auto only).
     std::atomic<bool> g_autoDemoted{false};
@@ -826,6 +827,8 @@ namespace {
 
 static void ios_timebase_ladder_start();
 static void ios_timebase_ladder_stop();
+static void ios_two_core_watch_start();
+static void ios_two_core_watch_stop();
 
 // ---------------------------------------------------------------------------
 // JIT environment
@@ -990,9 +993,33 @@ namespace {
             && thermalState == 0;
     }
 
+    NSString* ios_two_core_hang_key() { return @"muffin.cpu.twoCoreHung"; }
+
+    NSString* ios_title_key(uint64_t titleId) { return [NSString stringWithFormat:@"%016llx", (unsigned long long)titleId]; }
+
+    bool ios_two_core_hang_recorded(uint64_t titleId)
+    {
+        return [[[NSUserDefaults standardUserDefaults] stringArrayForKey:ios_two_core_hang_key()] containsObject:ios_title_key(titleId)];
+    }
+
+    void ios_two_core_hang_set(uint64_t titleId, bool hung)
+    {
+        NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+        NSMutableArray<NSString*>* list = [([defaults stringArrayForKey:ios_two_core_hang_key()] ?: @[]) mutableCopy];
+        NSString* key = ios_title_key(titleId);
+        if (hung && ![list containsObject:key])
+            [list addObject:key];
+        else if (!hung && [list containsObject:key])
+            [list removeObject:key];
+        else
+            return;
+        [defaults setObject:list forKey:ios_two_core_hang_key()];
+    }
+
     struct CoreDecision
     {
         bool singleCore = true;
+        bool twoCores = false;
         bool autoPickedMulti = false;
         std::string reason;
     };
@@ -1030,13 +1057,30 @@ namespace {
             d.reason = "one core, chosen in Settings";
             return d;
         }
-        // A hard limit of the device, ahead of both the manual and the Auto choice: under 4.5 GB of RAM, or with
-        // fewer than three host cores, three host threads starve the GPU and heat the part (DeviceCapabilities.h).
-        if (!DeviceCaps::GetBudgets().multicoreViable)
+        // Auto never exceeds the device: under 4.5 GB of RAM, or with fewer than three performance cores, three host
+        // threads starve the GPU and heat the part (DeviceCapabilities.h). A manual Two or Three cores here came from an
+        // Advanced choice (Basic resolves an unavailable one to Auto in Swift), so it is attempted, and the GX2Init guard
+        // drops a stuck title to one core on its next launch.
+        const uint32_t maxThreads = DeviceCaps::GetBudgets().maxHostThreads;
+        if (setting == kCoreModeAuto && maxThreads < 3)
         {
-            d.reason = std::string(setting == kCoreModeMulti ? "one core: three were chosen in Settings, but this device has too little memory or too few cores to run three at once"
-                                                              : "one core: this device has too little memory or too few cores to run three at once")
-                + " (" + deviceText + ")";
+            d.reason = std::string("one core: this device has too little memory or too few performance cores to run three at once (") + deviceText + ")";
+            return d;
+        }
+        if (setting != kCoreModeAuto && maxThreads < (setting == kCoreModeTwo ? 2u : 3u))
+            cemu_bridge_log_line((std::string("CPU cores: ") + (setting == kCoreModeTwo ? "two" : "three") + " cores chosen in Advanced settings, more than this device can run (up to " + std::to_string(maxThreads) + " host thread(s); " + deviceText + "). Attempting it anyway").c_str());
+        if (setting == kCoreModeTwo)
+        {
+            if (titleId != 0 && ios_two_core_hang_recorded(titleId))
+            {
+                d.reason = std::string("one core: a two-core run of this title never reached GX2Init before (") + deviceText + ")";
+                return d;
+            }
+            d.singleCore = false;
+            d.twoCores = true;
+            d.reason = std::string("two cores, chosen in Settings (experimental; ") + deviceText + ")";
+            if (device.perfCores < 2)
+                d.reason += ". This device has fewer than two performance cores, so expect it to run slower than one core";
             return d;
         }
         if (setting == kCoreModeMulti)
@@ -1118,7 +1162,8 @@ void ios_apply_cpu_mode(bool announce = false)
 
     if (announce)
         cemuLog_log(LogType::Force, "CPU cores: {}", cores.reason);
-    g_coresRunning.store(singleCore ? 1 : 3);
+    const char* coreWord = singleCore ? "single-core" : (cores.twoCores ? "two-core" : "multi-core");
+    g_coresRunning.store(singleCore ? 1 : (cores.twoCores ? 2 : 3));
     g_autoPickedMulti.store(cores.autoPickedMulti);
 
     if (!g_recompilerRequested.load() || !debugged)
@@ -1126,19 +1171,19 @@ void ios_apply_cpu_mode(bool announce = false)
         // Without CS_DEBUGGED the interpreter is the only option, not a preference: the
         // kernel kills the process the moment it runs generated code, and an explicit
         // recompiler mode skips the debugger check the core applies to Auto.
-        config.cpu_mode = singleCore ? CPUMode::SinglecoreInterpreter : CPUMode::MulticoreInterpreter;
+        config.cpu_mode = singleCore ? CPUMode::SinglecoreInterpreter : (cores.twoCores ? CPUMode::TwocoreInterpreter : CPUMode::MulticoreInterpreter);
         g_cpuMode.store(kCpuModeInterpreter);
         if (!g_recompilerRequested.load())
             snprintf(detail, sizeof(detail), "The recompiler is off in Settings, so the %s interpreter is running. Cores: %s.",
-                singleCore ? "single-core" : "multi-core", cores.reason.c_str());
+                coreWord, cores.reason.c_str());
         else
             snprintf(detail, sizeof(detail), "The recompiler is on in Settings, but no JIT enabler is attached (cs_flags 0x%08x), "
                 "so the %s interpreter is running. Launch through StikJIT, SideStore or LiveContainer to use the recompiler. Cores: %s.",
-                csFlags, singleCore ? "single-core" : "multi-core", cores.reason.c_str());
+                csFlags, coreWord, cores.reason.c_str());
         setCpuModeDetail(detail);
         return;
     }
-    config.cpu_mode = singleCore ? CPUMode::SinglecoreRecompiler : CPUMode::MulticoreRecompiler;
+    config.cpu_mode = singleCore ? CPUMode::SinglecoreRecompiler : (cores.twoCores ? CPUMode::TwocoreRecompiler : CPUMode::MulticoreRecompiler);
     g_cpuMode.store(kCpuModeRecompiler);
     snprintf(detail, sizeof(detail), "A JIT enabler is attached, so the AArch64 recompiler runs this launch. Cores: %s.",
         cores.reason.c_str());
@@ -2901,7 +2946,7 @@ void cemu_bridge_set_multicore_enabled(bool enabled) {
 }
 
 void cemu_bridge_set_cpu_core_mode(int mode) {
-    g_coreModeSetting.store(mode == 1 ? kCoreModeSingle : (mode == 2 ? kCoreModeMulti : kCoreModeAuto));
+    g_coreModeSetting.store(mode == 1 ? kCoreModeSingle : (mode == 2 ? kCoreModeMulti : (mode == 3 ? kCoreModeTwo : kCoreModeAuto)));
     if (g_initialized.load())
         ios_apply_cpu_mode();
 }
@@ -3423,6 +3468,7 @@ static CemuBridgeStatus ios_boot_prepared_title(int prepared) {
     IOSSaveState_BeginSession();
     g_titleRunning.store(true);
     ios_timebase_ladder_start();
+    ios_two_core_watch_start();
     setStatus("Title launched.");
     return CEMU_BRIDGE_OK;
 }
@@ -4145,6 +4191,7 @@ int cemu_bridge_save_state_inspect(const char* path) {
 void cemu_bridge_shutdown_title(void) {
     cemu_bridge_memory_note("before title shutdown");
     ios_timebase_ladder_stop();
+    ios_two_core_watch_stop();
     // Suspended guest threads cannot be joined, so a paused title is resumed first.
     IOSTitlePause_Resume();
     IOSTitlePause_Forget();
@@ -4386,4 +4433,49 @@ void LatteRenderTarget_SetSkipHiddenOutputs(bool tv, bool pad);
 
 void cemu_bridge_set_skip_hidden_screen(bool tv, bool pad) {
     LatteRenderTarget_SetSkipHiddenOutputs(tv, pad);
+}
+
+// Two-core guard. A two-core run cannot be turned into a one-core run while the title is up, so a
+// run that never reaches GX2Init is remembered and the next launch of that title uses one core.
+static constexpr int kTwoCoreGx2InitSeconds = 240;
+static std::atomic<bool> g_twoCoreWatchRunning{false};
+static std::thread g_twoCoreWatchThread;
+static std::mutex g_twoCoreWatchMutex;
+
+static void ios_two_core_watch_entry(uint64_t titleId) {
+    int waitedHalfSeconds = 0;
+    while (g_twoCoreWatchRunning.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (!g_twoCoreWatchRunning.load() || !CafeSystem::IsTitleRunning())
+            return;
+        if (IOSTitlePause_IsPaused())
+            continue;
+        if (LatteGPUState.gx2InitCalled > 0) {
+            ios_two_core_hang_set(titleId, false);
+            cemuLog_log(LogType::Force, "CPU cores: the two-core run reached GX2Init after {:.1f}s", waitedHalfSeconds / 2.0);
+            return;
+        }
+        if (++waitedHalfSeconds >= kTwoCoreGx2InitSeconds * 2) {
+            ios_two_core_hang_set(titleId, true);
+            cemuLog_log(LogType::Force, "CPU cores: the two-core run has not reached GX2Init after {}s. The next launch of this title uses one core.",
+                kTwoCoreGx2InitSeconds);
+            return;
+        }
+    }
+}
+
+static void ios_two_core_watch_stop() {
+    std::lock_guard lock{g_twoCoreWatchMutex};
+    g_twoCoreWatchRunning.store(false);
+    if (g_twoCoreWatchThread.joinable())
+        g_twoCoreWatchThread.join();
+}
+
+static void ios_two_core_watch_start() {
+    ios_two_core_watch_stop();
+    if (g_coresRunning.load() != 2)
+        return;
+    std::lock_guard lock{g_twoCoreWatchMutex};
+    g_twoCoreWatchRunning.store(true);
+    g_twoCoreWatchThread = std::thread(ios_two_core_watch_entry, (uint64_t)CafeSystem::GetForegroundTitleId());
 }
