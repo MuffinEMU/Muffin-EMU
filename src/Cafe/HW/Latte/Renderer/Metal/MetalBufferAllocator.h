@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 
 #include "Cafe/HW/Latte/Renderer/Metal/MetalRenderer.h"
 #include "Metal/MTLResource.hpp"
@@ -131,6 +132,12 @@ private:
 	const uint32 m_minimumBufferAllocSize;
 
 	std::vector<AllocatorBuffer_t> m_buffers;
+
+	// the pause after the device refused a new buffer (see allocateAdditionalUploadBuffer)
+	uint32 m_consecutiveFailures{ 0 };
+	uint32 m_failedRequiredSize{ 0 };
+	uint32 m_skippedWhilePaused{ 0 };
+	std::chrono::steady_clock::time_point m_retryNotBefore{};
 };
 
 // heap style allocator with released memory being freed after the current command buffer finishes
