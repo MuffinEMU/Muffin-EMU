@@ -413,6 +413,11 @@ jobs:
           swift run --package-path src/ios/Packages/MuffinTouchLab \
             --scratch-path "$RUNNER_TEMP/touchlab-build" touchlab-check
 
+      - name: LoadKit validation and storage checks
+        run: |
+          swift run --package-path src/ios/Packages/MuffinLoadKit \
+            --scratch-path "$RUNNER_TEMP/loadkit-build" loadkit-check
+
       - name: Identify the pinned vcpkg
         if: steps.go.outputs.reuse != 'true' && steps.core.outputs.build == 'true'
         id: vcpkg

@@ -58,6 +58,8 @@ public:
 		uint32 bytesToRead = (std::min)(bytesLeft, (uint32)size);
 		uint32 bytesSuccessfullyRead = (uint32)m_archive->ReadFromFile(m_nodeHandle, m_seek, bytesToRead, buffer);
 		m_seek += bytesSuccessfullyRead;
+		if (bytesSuccessfullyRead < bytesToRead)
+			fscNoteShortRead();
 		return bytesSuccessfullyRead;
 	}
 
