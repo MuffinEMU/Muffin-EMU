@@ -1,6 +1,6 @@
 # MuffinTouchLab (vendored)
 
-[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Vendored-E5652E)](../../../../README.md) [Back to the README](../../../../README.md)
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Vendored-E5652E?style=for-the-badge&labelColor=1d1d1f)](../../../../README.md) [Back to the README](../../../../README.md)
 
 The on-screen control schemes offered under Settings > On-screen Controls > Control style
 (Zone, Float, Adaptive, Frame, Racing). Vendored from MuffinEMU-TouchLab at commit

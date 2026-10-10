@@ -1,6 +1,6 @@
 # rainbow.rpx
 
-[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Homebrew-E5652E)](../../README.md) [Back to the README](../../README.md)
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Homebrew-E5652E?style=for-the-badge&labelColor=1d1d1f)](../../README.md) [Back to the README](../../README.md)
 
 A homebrew Wii U test rom whose entire job is to be impossible to confuse with a black
 screen.

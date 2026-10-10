@@ -12,9 +12,9 @@
 
 **Games reported working in MuffinEMU, the free Wii U emulator for iPhone and iPad.**
 
-[![Games listed](https://img.shields.io/badge/games%20listed-6-E5652E)](#compatible-games)
-[![Report a game](https://img.shields.io/badge/report%20a%20game-open%20an%20issue-E5652E)](https://github.com/MuffinEMU/Muffin-EMU/issues/new/choose)
-[![Back to README](https://img.shields.io/badge/back%20to-README-555)](README.md)
+[![Games listed](https://img.shields.io/badge/games%20listed-6-E5652E?style=for-the-badge&labelColor=1d1d1f)](#compatible-games)
+[![Report a game](https://img.shields.io/badge/report%20a%20game-open%20an%20issue-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=github&logoColor=white)](https://github.com/MuffinEMU/Muffin-EMU/issues/new/choose)
+[![Back to README](https://img.shields.io/badge/back%20to-README-E5652E?style=for-the-badge&labelColor=1d1d1f)](README.md)
 
 </div>
 

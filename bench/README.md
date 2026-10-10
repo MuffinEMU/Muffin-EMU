@@ -1,6 +1,6 @@
 # MuffinEMU Bench
 
-[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Bench-E5652E)](../README.md) [Back to the README](../README.md)
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Bench-E5652E?style=for-the-badge&labelColor=1d1d1f)](../README.md) [Back to the README](../README.md)
 
 A single iOS app that benchmarks all three Wii U emulator engines under evaluation -
 `muffin-v38`, `melocafe`, `muffin-v38-melofixes` - back to back, in one process, one run,

@@ -1,6 +1,6 @@
 # CI: release channels, and build speed
 
-[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-CI-E5652E)](../README.md) [Back to the README](../README.md)
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-CI-E5652E?style=for-the-badge&labelColor=1d1d1f)](../README.md) [Back to the README](../README.md)
 
 Two parts: where a build is distributed (channels), and how builds stay fast without shipping a stale binary (the verified core).
 

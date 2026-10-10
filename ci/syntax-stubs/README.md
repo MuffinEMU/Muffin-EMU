@@ -1,6 +1,6 @@
 # Local syntax-check stubs
 
-[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-CI%20tooling-E5652E)](../../README.md) [Back to the README](../../README.md)
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-CI%20tooling-E5652E?style=for-the-badge&labelColor=1d1d1f)](../../README.md) [Back to the README](../../README.md)
 
 Fake minimal `boost/` and `fmt/` headers, used ONLY by `ci/syntax-check.sh`.
 

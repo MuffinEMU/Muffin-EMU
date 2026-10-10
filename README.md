@@ -6,11 +6,14 @@
 
 **Wii U emulation for iPhone and iPad.**
 
-[![Latest release](https://img.shields.io/github/v/release/MuffinEMU/Muffin-EMU?label=release&color=E5652E)](https://github.com/MuffinEMU/Muffin-EMU/releases/latest)
-[![Platform: iOS and iPadOS](https://img.shields.io/badge/platform-iOS%20%7C%20iPadOS-E5652E)](https://muffinemu.github.io/MuffinEMU/docs/installation.html)
-[![iOS 15+](https://img.shields.io/badge/iOS-15%2B-E5652E)](docs/DEVICE_SUPPORT.md)
-[![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-E5652E)](LICENSE.txt)
-[![Documentation](https://img.shields.io/badge/docs-muffinemu.github.io-E5652E)](https://muffinemu.github.io/MuffinEMU/)
+[![Latest release](https://img.shields.io/github/v/release/MuffinEMU/Muffin-EMU?style=for-the-badge&labelColor=1d1d1f&color=E5652E&label=release&logo=github&logoColor=white)](https://github.com/MuffinEMU/Muffin-EMU/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/MuffinEMU/Muffin-EMU/total?style=for-the-badge&labelColor=1d1d1f&color=E5652E&label=downloads&logo=github&logoColor=white)](https://github.com/MuffinEMU/Muffin-EMU/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/MuffinEMU/Muffin-EMU/build-ios-app.yml?branch=main&style=for-the-badge&labelColor=1d1d1f&label=build&logo=githubactions&logoColor=white)](https://github.com/MuffinEMU/Muffin-EMU/actions/workflows/build-ios-app.yml)
+[![iPhone and iPad, iOS 15+](https://img.shields.io/badge/iPhone%20%26%20iPad-iOS%2015%2B-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=apple&logoColor=white)](docs/DEVICE_SUPPORT.md)
+[![License: MPL-2.0](https://img.shields.io/badge/license-MPL--2.0-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=opensourceinitiative&logoColor=white)](LICENSE.txt)
+
+[![Add to SideStore](https://img.shields.io/badge/add%20to-SideStore%20%7C%20AltStore-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=appstore&logoColor=white)](https://muffinemu.github.io/MuffinEMU/docs/installation.html)
+[![Documentation](https://img.shields.io/badge/docs-muffinemu.github.io-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=readthedocs&logoColor=white)](https://muffinemu.github.io/MuffinEMU/)
 
 **Official website: [MuffinEMU.github.io/MuffinSite-Remastered](https://muffinemu.github.io/MuffinSite-Remastered/)**
 

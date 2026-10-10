@@ -1,6 +1,6 @@
 # Coding style guidelines for Cemu
 
-[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Coding%20style-E5652E)](README.md) [Back to the README](README.md)
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Coding%20style-E5652E?style=for-the-badge&labelColor=1d1d1f)](README.md) [Back to the README](README.md)
 
 This document describes the latest version of our coding-style guidelines. Since we did not use this style from the beginning, older code may not adhere to these guidelines. Nevertheless, use these rules even if the surrounding code does not match. 
 
