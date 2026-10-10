@@ -4471,21 +4471,21 @@ bool MetalRenderer::BindStageResources(MTL::RenderCommandEncoder* renderCommandE
         if (computeCommandEncoder)
             computeCommandEncoder->setBuffer(buffer, offset, index);
         else
-            bindBuffer(type, buffer, offset, index);
+            SetBuffer(renderCommandEncoder, type, buffer, offset, index);
     };
     auto bindTexture = [&](MetalShaderType type, MTL::Texture* texture, uint32 index)
     {
         if (computeCommandEncoder)
             computeCommandEncoder->setTexture(texture, index);
         else
-            bindTexture(type, texture, index);
+            SetTexture(renderCommandEncoder, type, texture, index);
     };
     auto bindSampler = [&](MetalShaderType type, MTL::SamplerState* sampler, uint32 index)
     {
         if (computeCommandEncoder)
             computeCommandEncoder->setSamplerState(sampler, index);
         else
-            bindSampler(type, sampler, index);
+            SetSamplerState(renderCommandEncoder, type, sampler, index);
     };
 
     MTL::RenderStages renderStage = MTL::RenderStageVertex;
