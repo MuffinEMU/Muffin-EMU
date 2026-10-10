@@ -382,7 +382,7 @@ MetalPipelineCompiler::~MetalPipelineCompiler()
 void MetalPipelineCompiler::InitFromState(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* geometryShader, const LatteDecompilerShader* pixelShader, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr)
 {
     m_usesGeometryShader = UseGeometryShader(lcr, geometryShader != nullptr);
-    m_emulateGeometryShader = m_usesGeometryShader && !m_mtlr->SupportsMeshShaders();
+    m_emulateGeometryShader = m_usesGeometryShader && m_mtlr->UseGeometryShaderEmulation();
 
     // Rasterization
 	m_rasterizationEnabled = lcr.IsRasterizationEnabled();

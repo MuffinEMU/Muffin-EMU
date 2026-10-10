@@ -153,6 +153,7 @@ XMLConfigParser CemuConfig::Load(XMLConfigParser& parser)
 #ifdef ENABLE_METAL
 	force_mesh_shaders = graphic.get("ForceMeshShaders", false);
 #endif
+	emulate_missing_effects = graphic.get("EmulateMissingEffects", true);
 
 	auto overlay_node = graphic.get("Overlay");
 	if(overlay_node.valid())
@@ -385,6 +386,7 @@ XMLConfigParser CemuConfig::Save(XMLConfigParser& parser)
 #ifdef ENABLE_METAL
 	graphic.set("ForceMeshShaders", force_mesh_shaders);
 #endif
+	graphic.set("EmulateMissingEffects", emulate_missing_effects);
 	graphic.set("PrecompiledShaders", precompiled_shaders.GetValue());
 	graphic.set("UpscaleFilter", upscale_filter);
 	graphic.set("DownscaleFilter", downscale_filter);

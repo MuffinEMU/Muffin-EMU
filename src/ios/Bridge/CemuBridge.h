@@ -669,6 +669,12 @@ void cemu_bridge_set_downscale_filter(int filter);
 void cemu_bridge_set_framebuffer_fetch(bool enabled);
 bool cemu_bridge_framebuffer_fetch(void);
 
+/// Metal-only: on a GPU without mesh shaders, geometry-shader and RECTS draws are rebuilt from compute passes. Off skips
+/// those draws instead (the behaviour before emulation existed). On by default. Read once when the Metal layer
+/// initializes, so it takes effect on the next game launch.
+void cemu_bridge_set_emulate_missing_effects(bool enabled);
+bool cemu_bridge_emulate_missing_effects(void);
+
 // ---------------------------------------------------------------------------
 // Screen orientation, gamma and the on-screen performance overlay.
 //

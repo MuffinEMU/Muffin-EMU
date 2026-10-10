@@ -491,7 +491,8 @@ MetalRenderer::MetalRenderer()
     m_supportsMetal3 = m_device->supportsFamily(MTL::GPUFamilyMetal3);
     // Metal 3 also runs on A13 (Apple6), whose GPU has no mesh shader hardware: on Apple GPUs it takes Apple7 (A14, M1) or later.
     m_supportsMeshShaders = (m_supportsMetal3 && (!m_isAppleGPU || m_device->supportsFamily(MTL::GPUFamilyApple7)) && (m_vendor != GfxVendor::Intel || GetConfig().force_mesh_shaders.GetValue())); // Intel GPUs have issues with mesh shaders
-    cemuLog_log(LogType::Force, "Metal: mesh shaders {}{}", m_supportsMeshShaders ? "yes" : "no", m_supportsMeshShaders ? "" : " - geometry-shader and RECTS draws are emulated with compute passes");
+    m_emulateMissingEffects = GetConfig().emulate_missing_effects.GetValue();
+    cemuLog_log(LogType::Force, "Metal: mesh shaders {}{}", m_supportsMeshShaders ? "yes" : "no", m_supportsMeshShaders ? "" : (m_emulateMissingEffects ? " - geometry-shader and RECTS draws are emulated with compute passes" : " - geometry-shader and RECTS draws are skipped (Emulate missing effects is off)"));
     m_argumentBufferTier = m_device->argumentBuffersSupport();
     m_maxArgumentBufferSamplerCount = static_cast<uint32>(m_device->maxArgumentBufferSamplerCount());
     cemuLog_log(LogType::Force, "Metal argument buffers: Tier {}, {} samplers", m_argumentBufferTier == MTL::ArgumentBuffersTier2 ? 2 : 1, m_maxArgumentBufferSamplerCount);
@@ -2375,7 +2376,10 @@ void MetalRenderer::draw_execute(uint32 baseVertex, uint32 baseInstance, uint32 
 
     bool usesGeometryShader = UseGeometryShader(LatteGPUState.contextNew, geometryShader != nullptr);
     // Without mesh shaders the draw is rebuilt from compute passes instead of being skipped (see RunGeometryEmulation)
-    const bool emulateGeometryShader = usesGeometryShader && !m_supportsMeshShaders;
+    // With the setting off these draws are skipped, as before emulation existed
+    if (usesGeometryShader && !m_supportsMeshShaders && !m_emulateMissingEffects)
+        return;
+    const bool emulateGeometryShader = usesGeometryShader && UseGeometryShaderEmulation();
     const bool emulateRects = emulateGeometryShader && geometryShader == nullptr;
 
     const bool usesVertexStreamout = !usesGeometryShader && vertexShader->hasStreamoutBufferWrite;

@@ -127,6 +127,7 @@ enum AdvancedSettings {
     private static let picture = AdvancedGroup(name: "Picture", settings: [
         AdvancedSetting("muffin.render.upsideDown", false),
         AdvancedSetting("muffin.render.framebufferFetch", true),
+        AdvancedSetting("muffin.render.emulateMissingEffects", true),
         AdvancedSetting(DisplayGammaSetting.storageKey, DisplayGammaSetting.defaultValue),
         AdvancedSetting("muffin.render.overrideAppGamma", false),
         AdvancedSetting(OverrideGammaSetting.storageKey, OverrideGammaSetting.defaultValue),
@@ -134,6 +135,7 @@ enum AdvancedSettings {
         let defaults = UserDefaults.standard
         cemu_bridge_set_render_upside_down(defaults.object(forKey: "muffin.render.upsideDown") as? Bool ?? false)
         cemu_bridge_set_framebuffer_fetch(defaults.object(forKey: "muffin.render.framebufferFetch") as? Bool ?? true)
+        cemu_bridge_set_emulate_missing_effects(defaults.object(forKey: "muffin.render.emulateMissingEffects") as? Bool ?? true)
         cemu_bridge_set_display_gamma(Float(
             defaults.object(forKey: DisplayGammaSetting.storageKey) as? Double ?? DisplayGammaSetting.defaultValue))
         cemu_bridge_set_override_app_gamma(defaults.object(forKey: "muffin.render.overrideAppGamma") as? Bool ?? false)

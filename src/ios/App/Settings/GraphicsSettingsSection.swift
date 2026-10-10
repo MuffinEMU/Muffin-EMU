@@ -118,6 +118,8 @@ struct GraphicsSettingsSection: View {
     @AppStorage(DisplayGammaSetting.storageKey) private var displayGamma = DisplayGammaSetting.defaultValue
     // Default true: matches CemuConfig's framebuffer_fetch default.
     @AppStorage("muffin.render.framebufferFetch") private var framebufferFetchEnabled = true
+    // Default true: matches CemuConfig's emulate_missing_effects default.
+    @AppStorage("muffin.render.emulateMissingEffects") private var emulateMissingEffects = true
     @AppStorage("muffin.render.overrideAppGamma") private var overrideAppGammaEnabled = false
     @AppStorage(OverrideGammaSetting.storageKey) private var overrideGammaValue = OverrideGammaSetting.defaultValue
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
@@ -156,6 +158,10 @@ struct GraphicsSettingsSection: View {
                 upsideDownToggle
                 if rendererRaw == RendererAPI.metal.rawValue {
                     framebufferFetchToggle
+                    // Devices with mesh shaders draw these effects natively, so there is nothing to switch
+                    if meshShadersUnsupported {
+                        emulateMissingEffectsToggle
+                    }
                 }
                 gammaSlider
                 overrideGammaToggle
@@ -353,6 +359,22 @@ struct GraphicsSettingsSection: View {
         .tint(MuffinTheme.accentText)
         .onChange(of: framebufferFetchEnabled) { newValue in
             cemu_bridge_set_framebuffer_fetch(newValue)
+        }
+    }
+
+    private var emulateMissingEffectsToggle: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(isOn: $emulateMissingEffects) {
+                Text("Emulate missing effects")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+            }
+            .tint(MuffinTheme.accentText)
+            .onChange(of: emulateMissingEffects) { newValue in
+                cemu_bridge_set_emulate_missing_effects(newValue)
+            }
+            Text("Draws effects that this device's GPU can't run natively. Turn off if a game crashes or slows down. Takes effect on the next game launch.")
+                .font(.system(size: 12))
+                .foregroundColor(MuffinTheme.secondaryText)
         }
     }
 

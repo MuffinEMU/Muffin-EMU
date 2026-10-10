@@ -455,6 +455,8 @@ struct CemuConfig
 #ifdef ENABLE_METAL
 	ConfigValue<bool> force_mesh_shaders{ false };
 #endif
+	// GPUs without mesh shaders rebuild geometry-shader and RECTS draws from compute passes; off skips those draws instead
+	ConfigValue<bool> emulate_missing_effects{ true };
 
 	// Gamma
 	ConfigValue<bool> overrideAppGammaPreference{ false };

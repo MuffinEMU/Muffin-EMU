@@ -190,6 +190,9 @@ static CPUMode toCPUMode(ObjCCPUMode mode) {
 - (float)userDisplayGamma                  { return GetConfig().userDisplayGamma.GetValue(); }
 - (void)setUserDisplayGamma:(float)v       { GetConfig().userDisplayGamma = v; autoSave(); }
 
+- (BOOL)emulateMissingEffects              { return GetConfig().emulate_missing_effects.GetValue(); }
+- (void)setEmulateMissingEffects:(BOOL)v   { GetConfig().emulate_missing_effects = v; autoSave(); }
+
 #ifdef ENABLE_METAL
 - (BOOL)forceMeshShaders                   { return GetConfig().force_mesh_shaders.GetValue(); }
 - (void)setForceMeshShaders:(BOOL)v        { GetConfig().force_mesh_shaders = v; autoSave(); }
