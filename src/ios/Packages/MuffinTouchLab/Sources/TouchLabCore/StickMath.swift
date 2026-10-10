@@ -36,6 +36,10 @@ public enum StickMath {
         }
     }
 
+    /// How far past full travel the knob keeps following a finger that already owns the stick.
+    /// Output is unaffected: it is full from `travel` on.
+    public static func overtravel(_ travel: CGFloat) -> CGFloat { travel * 0.15 }
+
     /// Converts a finger offset from the stick's centre (view points, +y down) into a
     /// console-convention stick value (+y up).
     ///
@@ -58,7 +62,7 @@ public enum StickMath {
     public static func knobOffset(offset: CGPoint, travel: CGFloat, gate: StickTuning.Gate) -> CGPoint {
         let len = offset.length
         guard len > 0 else { return .zero }
-        let maxLen = travel * gateFraction(gate, angle: offset.screenAngle)
+        let maxLen = travel * gateFraction(gate, angle: offset.screenAngle) + overtravel(travel)
         return len <= maxLen ? offset : offset * (maxLen / len)
     }
 }
