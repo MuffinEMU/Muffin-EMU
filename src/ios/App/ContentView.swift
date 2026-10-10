@@ -534,6 +534,7 @@ struct GameBrowserView: View {
     /// closure captured from the continuation rather than storing the continuation
     /// type directly, so the two alert buttons don't need to know anything about
     /// CheckedContinuation.
+    @StateObject private var loadCoordinator = LoadCoordinator()
     @State private var pendingOverwriteConfirmation: (name: String, resume: (Bool) -> Void)?
     /// Set while DlcUpdateImport.remove() is running in the background (see the
     /// "Remove content?" alert below) - shown as a LibraryActivityBanner, same as
@@ -736,6 +737,17 @@ struct GameBrowserView: View {
                             beginKeysImport()
                         } label: {
                             Label("Keys (keys.txt)", systemImage: "key")
+                        }
+                        Divider()
+                        Button {
+                            loadCoordinator.begin(.folder)
+                        } label: {
+                            Label("Load from Folder\u{2026}", systemImage: "folder.badge.gearshape")
+                        }
+                        Button {
+                            loadCoordinator.begin(.file)
+                        } label: {
+                            Label("Load from File\u{2026}", systemImage: "doc.badge.gearshape")
                         }
                         Divider()
                         // Played where they are: a USB drive or SD card, iCloud Drive, a server in Files. Nothing is copied.
@@ -1083,6 +1095,7 @@ struct GameBrowserView: View {
             } message: { message in
                 Text(message)
             }
+            .loadPrompts(loadCoordinator, gameManager: gameManager)
             .confirmationDialog(
                 "Replace existing file?",
                 isPresented: .constant(pendingOverwriteConfirmation != nil),

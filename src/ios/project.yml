@@ -62,6 +62,8 @@ packages:
   # (see Packages/MuffinTouchLab/VENDORED.md) so the app builds with no outside dependency.
   MuffinTouchLab:
     path: Packages/MuffinTouchLab
+  MuffinLoadKit:
+    path: Packages/MuffinLoadKit
 
 targets:
   MuffinEMU:
@@ -94,6 +96,8 @@ targets:
         product: TouchLabCore
       - package: MuffinTouchLab
         product: TouchLabUI
+      - package: MuffinLoadKit
+        product: LoadKit
       - framework: ../../build-ios/out/Cemu.framework
         embed: true
       # Two MoltenVK builds for the Vulkan renderer, embedded and deliberately not linked:
