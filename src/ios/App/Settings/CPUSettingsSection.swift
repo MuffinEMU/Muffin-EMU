@@ -17,7 +17,11 @@ struct CPUSettingsSection: View {
     @AppStorage(HeatDisplayMode.storageKey) private var heatDisplayMode = HeatDisplayMode.word.rawValue
     @AppStorage(SettingsMode.storageKey) private var settingsModeRaw = SettingsMode.defaultValue.rawValue
 
+    @State private var coreWarning: CoreMode?
+
     private var advanced: Bool { SettingsMode.isAdvanced(raw: settingsModeRaw) }
+
+    private var selectedModeUnavailable: Bool { advanced && !(CoreMode(rawValue: coreModeRaw)?.isAvailable ?? true) }
 
     var body: some View {
         Section {
@@ -100,25 +104,41 @@ struct CPUSettingsSection: View {
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Spacer()
                         Picker("CPU cores", selection: $coreModeRaw) {
-                            ForEach(CoreMode.allCases) { mode in
-                                Text(mode.title).tag(mode.rawValue)
+                            ForEach(CoreMode.listed) { mode in
+                                Text(mode.isAvailable ? mode.title : mode.title + ", may not work").tag(mode.rawValue)
                             }
                         }
                         .pickerStyle(.menu)
                         // The row's own Text is the label; a menu picker in a Form row prints its label as well.
                         .labelsHidden()
                         .tint(MuffinTheme.accentText)
-                        .disabled(!DeviceCapabilities.current.multicoreViable)
+                        .disabled(!CoreMode.hasMultiOption && !advanced)
                     }
-                    Text(DeviceCapabilities.current.multicoreViable
-                         ? (CoreMode(rawValue: coreModeRaw) ?? CoreMode.defaultValue).summary
-                         : DeviceCapabilities.oneCoreOnlyText)
+                    Text(!CoreMode.hasMultiOption && !advanced
+                         ? DeviceCapabilities.oneCoreOnlyText
+                         : CoreMode.resolved(CoreMode(rawValue: coreModeRaw) ?? CoreMode.defaultValue).summary
+                            + (selectedModeUnavailable ? " May not work on this device." : ""))
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(selectedModeUnavailable ? .orange : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .onChange(of: coreModeRaw) { newValue in
-                    cemu_bridge_set_cpu_core_mode((CoreMode(rawValue: newValue) ?? CoreMode.defaultValue).bridgeValue)
+                    let mode = CoreMode(rawValue: newValue) ?? CoreMode.defaultValue
+                    cemu_bridge_set_cpu_core_mode(CoreMode.resolved(mode).bridgeValue)
+                    if advanced, !mode.isAvailable { coreWarning = mode }
+                }
+                .alert("May not work on this device", isPresented: Binding(
+                    get: { coreWarning != nil },
+                    set: { if !$0 { coreWarning = nil } }
+                ), presenting: coreWarning) { _ in
+                    Button("OK", role: .cancel) { }
+                } message: { mode in
+                    Text(mode.limitWarning)
+                }
+                .onAppear {
+                    if !advanced, let saved = CoreMode(rawValue: coreModeRaw), !saved.isAvailable {
+                        coreModeRaw = CoreMode.resolved(saved).rawValue
+                    }
                 }
             }
 

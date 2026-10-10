@@ -124,7 +124,7 @@ final class PerGameSettingsStore: ObservableObject {
     /// Per-game core count first, Settings' choice underneath. Read before boot.
     func effectiveCoreMode(for gameID: String) -> CoreMode {
         if let raw = activeOverrides(for: gameID).coreMode, let mode = CoreMode(rawValue: raw) {
-            return mode
+            return CoreMode.resolved(mode)
         }
         return CoreMode.current
     }
@@ -290,6 +290,7 @@ struct GameOptionsView: View {
     /// success is a second tap for something the person already knows they did; the
     /// failures here are all short enough to read in place.
     @State private var saveTransferMessage: String?
+    @State private var coreWarning: CoreMode?
     @State private var saveTransferFailed = false
     @State private var showingImportConfirmation = false
 
@@ -357,7 +358,11 @@ struct GameOptionsView: View {
                 guard let raw = store.overrides(for: game.settingsKey).coreMode, CoreMode(rawValue: raw) != nil else { return "" }
                 return raw
             },
-            set: { store.setCoreMode(CoreMode(rawValue: $0), for: game.settingsKey) })
+            set: {
+                let mode = CoreMode(rawValue: $0)
+                store.setCoreMode(mode, for: game.settingsKey)
+                if let mode, !mode.isAvailable { coreWarning = mode }
+            })
     }
 
     // MARK: Captions
@@ -380,10 +385,11 @@ struct GameOptionsView: View {
     }
 
     private var coreModeCaption: String {
-        guard DeviceCapabilities.current.multicoreViable else { return DeviceCapabilities.oneCoreOnlyText }
         let base = caption(pinned: store.overrides(for: game.settingsKey).coreMode != nil,
                            settingsValue: "set to \(CoreMode.current.title)")
-        guard store.effectiveCoreMode(for: game.settingsKey) != .single else { return base }
+        let effective = store.effectiveCoreMode(for: game.settingsKey)
+        if !effective.isAvailable { return base + " May not work on this device." }
+        guard effective != .single else { return base }
         if store.effectiveFavourAccuracy(for: game.settingsKey) {
             return base + " Favour accuracy is on for this game, so it runs on one core whatever this says."
         }
@@ -409,11 +415,10 @@ struct GameOptionsView: View {
                         Text(choice.title).tag(choice)
                     }
                 }
-                OverridePickerRow(title: "CPU cores", caption: coreModeCaption, selection: coreModeChoice,
-                                  isDisabled: !DeviceCapabilities.current.multicoreViable) {
+                OverridePickerRow(title: "CPU cores", caption: coreModeCaption, selection: coreModeChoice) {
                     Text("Use Global Default").tag("")
-                    ForEach(CoreMode.allCases) { mode in
-                        Text(mode.title).tag(mode.rawValue)
+                    ForEach(CoreMode.listed) { mode in
+                        Text(mode.isAvailable ? mode.title : mode.title + ", may not work").tag(mode.rawValue)
                     }
                 }
             }
@@ -668,6 +673,14 @@ struct GameOptionsView: View {
                 Button("Cancel", role: .cancel) { discardPending(pending) }
             } message: { pending in
                 Text("\"\(pending.name)\" doesn't say. Desktop Cemu's are named ..._vkpipeline.bin and MuffinEMU's ..._mtlpipeline.bin. It's stored under the matching name either way.")
+            }
+            .alert("May not work on this device", isPresented: Binding(
+                get: { coreWarning != nil },
+                set: { if !$0 { coreWarning = nil } }
+            ), presenting: coreWarning) { _ in
+                Button("OK", role: .cancel) { }
+            } message: { mode in
+                Text(mode.limitWarning)
             }
             .navigationTitle(game.title)
             .muffinOpaqueNavigationBar(MuffinTheme.formGround)

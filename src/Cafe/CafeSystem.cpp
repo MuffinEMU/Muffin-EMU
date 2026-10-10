@@ -962,8 +962,11 @@ namespace CafeSystem
 			module->TitleStart();
 		cemu_initForGame();
 		// enter scheduler
-		if ((ActiveSettings::GetCPUMode() == CPUMode::MulticoreRecompiler || ActiveSettings::GetCPUMode() == CPUMode::MulticoreInterpreter || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
+		const CPUMode cpuMode = ActiveSettings::GetCPUMode();
+		if ((cpuMode == CPUMode::MulticoreRecompiler || cpuMode == CPUMode::MulticoreInterpreter || LaunchSettings::ForceMultiCoreInterpreter()) && !LaunchSettings::ForceInterpreter())
 			coreinit::OSSchedulerBegin(Espresso::CORE_COUNT);
+		else if ((cpuMode == CPUMode::TwocoreRecompiler || cpuMode == CPUMode::TwocoreInterpreter) && !LaunchSettings::ForceInterpreter())
+			coreinit::OSSchedulerBegin(2);
 		else
 			coreinit::OSSchedulerBegin(1);
 	}

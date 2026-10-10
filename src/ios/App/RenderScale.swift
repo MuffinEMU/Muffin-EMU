@@ -214,7 +214,7 @@ enum PadSurfaceScale {
 /// about three times the power and a part that throttles can end up slower than on one. Three
 /// cores stay available as a labelled experiment, globally and per game.
 enum CoreMode: String, CaseIterable, Identifiable {
-    case auto, single, multi
+    case auto, single, two, multi
 
     var id: String { rawValue }
 
@@ -222,6 +222,7 @@ enum CoreMode: String, CaseIterable, Identifiable {
         switch self {
         case .auto:   return "Auto"
         case .single: return "One core"
+        case .two:    return "Two cores (Experimental)"
         case .multi:  return "Three cores (Experimental)"
         }
     }
@@ -230,6 +231,7 @@ enum CoreMode: String, CaseIterable, Identifiable {
         switch self {
         case .auto:   return "Picks per game and per device. Uses three cores when the game's profile asks for them or this device has the performance cores, memory and cooling headroom, and one core otherwise."
         case .single: return "One core. Cooler, and often faster on devices without spare performance cores."
+        case .two:    return "Two cores. Runs the console's three cores on two host threads: faster than one core, with less heat and fewer performance cores than three."
         case .multi:  return "Three cores. Can be faster on a device with spare performance cores and cooling, but heats up quickly on most iPads and has hung some games."
         }
     }
@@ -240,7 +242,44 @@ enum CoreMode: String, CaseIterable, Identifiable {
         case .auto:   return 0
         case .single: return 1
         case .multi:  return 2
+        case .two:    return 3
         }
+    }
+
+    /// Host threads the mode needs. Auto and One core need one.
+    var hostThreads: Int {
+        switch self {
+        case .auto, .single: return 1
+        case .two:           return 2
+        case .multi:         return 3
+        }
+    }
+
+    /// Whether this device can run the mode's host threads (DeviceCapabilities.maxHostThreads).
+    var isAvailable: Bool { hostThreads <= DeviceCapabilities.current.maxHostThreads }
+
+    /// Basic lists only what the device can run; Advanced lists every mode.
+    static var listed: [CoreMode] { SettingsMode.isAdvanced ? allCases : allCases.filter(\.isAvailable) }
+
+    /// Whether the device offers anything beyond Auto and One core.
+    static var hasMultiOption: Bool { allCases.filter(\.isAvailable).count > 2 }
+
+    /// Shown when an Advanced user picks a mode the device cannot run.
+    var limitWarning: String {
+        let caps = DeviceCapabilities.current
+        let cores = caps.performanceCores
+        let threads = caps.maxHostThreads
+        return "\(title) probably won't work on this device. It has \(cores) performance core\(cores == 1 ? "" : "s") and can run \(threads) host thread\(threads == 1 ? "" : "s") for the console's cores; this mode needs \(hostThreads). It will be tried anyway, and a game that never starts runs on one core the next time."
+    }
+
+    /// The mode itself. A mode the device cannot run stands only in Advanced; Basic uses Auto (logged), such as
+    /// after switching back from Advanced or restoring a backup from a bigger device.
+    static func resolved(_ mode: CoreMode) -> CoreMode {
+        guard mode.isAvailable || SettingsMode.isAdvanced else {
+            cemu_bridge_log_line("CPU cores: \(mode.title) is not available on this device in Basic settings, using Auto")
+            return .auto
+        }
+        return mode
     }
 
     static let storageKey = "muffin.cpu.coreMode"
@@ -251,10 +290,10 @@ enum CoreMode: String, CaseIterable, Identifiable {
     static var current: CoreMode {
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: storageKey), let value = CoreMode(rawValue: raw) {
-            return value
+            return resolved(value)
         }
         if let legacy = defaults.object(forKey: legacyKey) as? Bool {
-            return legacy ? .multi : .single
+            return resolved(legacy ? .multi : .single)
         }
         return defaultValue
     }

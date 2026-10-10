@@ -1424,7 +1424,7 @@ void PPCRecompiler_init()
 {
     s_recompilerEnableCount = 0;
     // PPCRecompiler_notifyWorkers();
-    if (ActiveSettings::GetCPUMode() == CPUMode::SinglecoreInterpreter || ActiveSettings::GetCPUMode() == CPUMode::MulticoreInterpreter)
+    if (ActiveSettings::GetCPUMode() == CPUMode::SinglecoreInterpreter || ActiveSettings::GetCPUMode() == CPUMode::MulticoreInterpreter || ActiveSettings::GetCPUMode() == CPUMode::TwocoreInterpreter)
     {
         ppcRecompilerEnabled = false;
         PPCCore_InitializePointer(ppcRecompilerEnabled);

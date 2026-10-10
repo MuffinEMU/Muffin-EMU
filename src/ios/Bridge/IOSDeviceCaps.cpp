@@ -159,6 +159,7 @@ extern "C" void cemu_device_caps_get(CemuDeviceCaps* out)
     out->minBootHeadroomBytes = b.minBootHeadroomBytes;
     out->jitArenaStartMB = b.jitArenaStartMB;
     out->logicalCores = i.logicalCores;
+    out->maxHostThreads = b.maxHostThreads;
     out->perfCores = i.perfCores;
     out->effCores = i.effCores;
     out->screenClass = (int32_t)i.screen;

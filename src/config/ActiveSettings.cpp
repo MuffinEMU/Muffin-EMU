@@ -75,7 +75,7 @@ CPUMode ActiveSettings::GetCPUMode()
     if (g_current_game_profile)
     {
         const auto& profileMode = g_current_game_profile->GetCPUMode();
-        if (profileMode && (*profileMode == CPUMode::SinglecoreInterpreter || *profileMode == CPUMode::MulticoreInterpreter))
+        if (profileMode && (*profileMode == CPUMode::SinglecoreInterpreter || *profileMode == CPUMode::MulticoreInterpreter || *profileMode == CPUMode::TwocoreInterpreter))
             return *profileMode;
     }
     return GetConfig().cpu_mode.GetValue();
