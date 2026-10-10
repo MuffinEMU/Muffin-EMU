@@ -1,8 +1,22 @@
 # MuffinEMU Bench
 
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Bench-E5652E)](../README.md) [Back to the README](../README.md)
+
 A single iOS app that benchmarks all three Wii U emulator engines under evaluation -
 `muffin-v38`, `melocafe`, `muffin-v38-melofixes` - back to back, in one process, one run,
 and prints one plain-text report meant to be copied straight into a chat.
+
+<details>
+<summary>Contents</summary>
+
+- [What it measures](#what-it-measures)
+- [Method](#method)
+- [Isolation checking](#isolation-checking)
+- [Report layout](#report-layout)
+- [Building](#building)
+- [Installing and running](#installing-and-running)
+
+</details>
 
 ## What it measures
 
@@ -122,7 +136,7 @@ xcodegen generate
 open MuffinEMU\ Bench.xcodeproj
 ```
 
-Requires, before `xcodegen generate` runs:
+**Requires, before `xcodegen generate` runs:**
 - `../build-bench/engines/MuffinBenchV38.framework`
 - `../build-bench/engines/MuffinBenchMelo.framework`
 - `../build-bench/engines/MuffinBenchV38Melo.framework`
