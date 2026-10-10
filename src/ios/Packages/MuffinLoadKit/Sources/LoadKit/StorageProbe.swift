@@ -15,6 +15,7 @@ public enum StorageProbe {
     public struct Candidate: Equatable {
         public var path: String
         public var size: UInt64
+        public init(path: String, size: UInt64) { self.path = path; self.size = size }
     }
 
     public static func gatherFiles(under path: String, using fs: FileInspecting, limit: Int = 4000, maxDepth: Int = 5) -> (largest: [Candidate], undownloaded: Bool, unreadable: Bool) {
@@ -70,7 +71,7 @@ public enum StorageProbe {
         return facts
     }
 
-    static func sample(_ target: Candidate, samples: Int, chunk: Int, into facts: inout StorageFacts) {
+    public static func sample(_ target: Candidate, samples: Int, chunk: Int, into facts: inout StorageFacts) {
         let descriptor = open(target.path, O_RDONLY)
         guard descriptor >= 0 else {
             facts.sampleAttempts = 1
