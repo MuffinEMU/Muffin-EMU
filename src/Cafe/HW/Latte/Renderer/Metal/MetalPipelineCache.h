@@ -21,6 +21,8 @@ bool MetalPipelineCache_LoaderAbandoned();
 NS::Array* MetalPipelineCache_GetBinaryArchives();
 void MetalPipelineCache_NoteArchiveLookup(bool hit);
 void MetalPipelineCache_QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc);
+// Saves the pipelines compiled so far to the binary archive and waits up to timeoutMs; false if it did not finish in time. Safe from any thread.
+bool MetalPipelineCache_FlushArchive(uint32 timeoutMs);
 
 class MetalPipelineCache
 {
@@ -44,6 +46,7 @@ public:
     NS::Array* GetBinaryArchives() const { return m_binaryArchives; }
     void NoteArchiveLookup(bool hit) { (hit ? m_archiveHits : m_archiveMisses).fetch_add(1, std::memory_order_relaxed); }
     void QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc);
+    bool FlushBinaryArchive(uint32 timeoutMs);
 
     // Debug
     size_t GetPipelineCacheSize() const { return m_pipelineCache.size(); }
@@ -87,6 +90,11 @@ private:
     std::deque<MTL::RenderPipelineDescriptor*> m_archiveQueue;
     std::thread* m_archiveThread{nullptr};
     bool m_archiveStop{false};
+    bool m_archiveThreadAlive{false};
+    bool m_archiveFlushRequested{false};
+    uint64_t m_archiveFlushGen{0};
+    uint64_t m_archiveFlushDoneGen{0};
+    std::condition_variable m_archiveFlushCv;
     std::atomic<bool> m_archiveWriteEnabled{false};
     std::string m_archiveWritePath;
     uint64_t m_archiveBaseBytes{0};

@@ -128,6 +128,7 @@ bool IsAsyncPipelineAllowed(const MetalAttachmentsInfo& attachmentsInfo, Vector2
 }
 
 MetalPipelineCache* g_mtlPipelineCache = nullptr;
+static std::mutex g_mtlPipelineCacheLifeMutex; // keeps the cache alive while MetalPipelineCache_FlushArchive uses it
 
 MetalPipelineCache& MetalPipelineCache::GetInstance()
 {
@@ -141,6 +142,7 @@ MetalPipelineCache::MetalPipelineCache(class MetalRenderer* metalRenderer) : m_m
 
 MetalPipelineCache::~MetalPipelineCache()
 {
+    std::lock_guard<std::mutex> lifeLock(g_mtlPipelineCacheLifeMutex);
     EndLoading(); // no-op if loading already ended: stops the background loader threads, which hold this pointer
     Close();      // stops the cache writer thread, which also holds it, and drops what it had not written yet
     for (auto& [key, pipelineObj] : m_pipelineCache)
@@ -744,6 +746,12 @@ void MetalPipelineCache::WorkerThread()
 	}
 }
 
+bool MetalPipelineCache_FlushArchive(uint32 timeoutMs)
+{
+	std::lock_guard<std::mutex> lifeLock(g_mtlPipelineCacheLifeMutex);
+	return g_mtlPipelineCache ? g_mtlPipelineCache->FlushBinaryArchive(timeoutMs) : true;
+}
+
 NS::Array* MetalPipelineCache_GetBinaryArchives()
 {
 	return g_mtlPipelineCache ? g_mtlPipelineCache->GetBinaryArchives() : nullptr;
@@ -859,8 +867,20 @@ void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
 		cemuLog_log(LogType::Force, "Metal binary archive: not adding more pipelines ({} file(s), {} MB)", loaded.size(), bytes / (1024 * 1024));
 }
 
+bool MetalPipelineCache::FlushBinaryArchive(uint32 timeoutMs)
+{
+	std::unique_lock<std::mutex> lock(m_archiveMutex);
+	if (!m_archiveThreadAlive || m_archiveStop)
+		return true;
+	const uint64_t generation = ++m_archiveFlushGen;
+	m_archiveFlushRequested = true;
+	m_archiveCv.notify_all();
+	return m_archiveFlushCv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [&] { return m_archiveFlushDoneGen >= generation || !m_archiveThreadAlive; });
+}
+
 void MetalPipelineCache::CloseBinaryArchives()
 {
+	FlushBinaryArchive(3000); // saves what is still queued; the writer only saves what it already added when it is stopped
 	if (m_archiveThread)
 	{
 		{
@@ -871,6 +891,10 @@ void MetalPipelineCache::CloseBinaryArchives()
 		m_archiveThread->join();
 		delete m_archiveThread;
 		m_archiveThread = nullptr;
+		std::lock_guard<std::mutex> lock(m_archiveMutex);
+		m_archiveThreadAlive = false;
+		m_archiveFlushRequested = false;
+		m_archiveFlushCv.notify_all();
 	}
 	{
 		std::lock_guard<std::mutex> lock(m_archiveMutex);
@@ -899,7 +923,10 @@ void MetalPipelineCache::QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc)
 	copy->setBinaryArchives(nullptr);
 	m_archiveQueue.push_back(copy);
 	if (!m_archiveThread)
+	{
 		m_archiveThread = new std::thread(&MetalPipelineCache::BinaryArchiveWriterThread, this);
+		m_archiveThreadAlive = true;
+	}
 	m_archiveCv.notify_one();
 }
 
@@ -914,17 +941,21 @@ void MetalPipelineCache::BinaryArchiveWriterThread()
 	{
 		MTL::RenderPipelineDescriptor* desc = nullptr;
 		bool stopping;
+		bool flushing;
+		uint64_t flushGeneration;
 		bool queueEmpty;
 		{
 			std::unique_lock<std::mutex> lock(m_archiveMutex);
-			if (m_archiveQueue.empty() && !m_archiveStop)
+			if (m_archiveQueue.empty() && !m_archiveStop && !m_archiveFlushRequested)
 			{
 				if (pending == 0)
-					m_archiveCv.wait(lock, [&] { return !m_archiveQueue.empty() || m_archiveStop; });
+					m_archiveCv.wait(lock, [&] { return !m_archiveQueue.empty() || m_archiveStop || m_archiveFlushRequested; });
 				else
-					m_archiveCv.wait_for(lock, std::chrono::seconds(20), [&] { return !m_archiveQueue.empty() || m_archiveStop; });
+					m_archiveCv.wait_for(lock, std::chrono::seconds(20), [&] { return !m_archiveQueue.empty() || m_archiveStop || m_archiveFlushRequested; });
 			}
 			stopping = m_archiveStop;
+			flushing = m_archiveFlushRequested;
+			flushGeneration = m_archiveFlushGen;
 			if (stopping)
 			{
 				for (auto* d : m_archiveQueue)
@@ -960,7 +991,7 @@ void MetalPipelineCache::BinaryArchiveWriterThread()
 			}
 			desc->release();
 		}
-		if (archive && pending > 0 && (pending >= ARCHIVE_SAVE_EVERY || stopping || (queueEmpty && std::chrono::steady_clock::now() - lastSave >= std::chrono::seconds(20))))
+		if (archive && pending > 0 && (pending >= ARCHIVE_SAVE_EVERY || stopping || (flushing && queueEmpty) || (queueEmpty && std::chrono::steady_clock::now() - lastSave >= std::chrono::seconds(20))))
 		{
 			const auto start = std::chrono::steady_clock::now();
 			const std::string tmpPath = m_archiveWritePath + ".tmp";
@@ -989,6 +1020,16 @@ void MetalPipelineCache::BinaryArchiveWriterThread()
 			}
 			pending = 0;
 			lastSave = std::chrono::steady_clock::now();
+		}
+		if (flushing && queueEmpty)
+		{
+			std::lock_guard<std::mutex> lock(m_archiveMutex);
+			if (m_archiveQueue.empty())
+			{
+				m_archiveFlushDoneGen = flushGeneration;
+				m_archiveFlushRequested = m_archiveFlushGen != flushGeneration;
+				m_archiveFlushCv.notify_all();
+			}
 		}
 		if (stopping)
 			break;
