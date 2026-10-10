@@ -74,6 +74,8 @@ static ObjCCPUMode toObjCCPUMode(CPUMode mode) {
         case CPUMode::DualcoreRecompiler: return ObjCCPUModeDualcoreRecompiler;
         case CPUMode::MulticoreRecompiler: return ObjCCPUModeMulticoreRecompiler;
         case CPUMode::MulticoreInterpreter: return ObjCCPUModeMulticoreInterpreter;
+        case CPUMode::TwocoreRecompiler: return ObjCCPUModeTwocoreRecompiler;
+        case CPUMode::TwocoreInterpreter: return ObjCCPUModeTwocoreInterpreter;
         case CPUMode::Auto: return ObjCCPUModeAuto;
     }
     return ObjCCPUModeAuto;
@@ -86,6 +88,8 @@ static CPUMode toCPUMode(ObjCCPUMode mode) {
         case ObjCCPUModeDualcoreRecompiler: return CPUMode::DualcoreRecompiler;
         case ObjCCPUModeMulticoreRecompiler: return CPUMode::MulticoreRecompiler;
         case ObjCCPUModeMulticoreInterpreter: return CPUMode::MulticoreInterpreter;
+        case ObjCCPUModeTwocoreRecompiler: return CPUMode::TwocoreRecompiler;
+        case ObjCCPUModeTwocoreInterpreter: return CPUMode::TwocoreInterpreter;
         case ObjCCPUModeAuto: return CPUMode::Auto;
     }
     return CPUMode::Auto;
