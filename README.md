@@ -95,7 +95,7 @@ MuffinEMU is under active development and releases often. Expect some games not 
 >
 > - **On-screen controls** — the default on-screen controls don't respond reliably yet. A fix is on the way. Until then, we recommend using one of our other on-screen controller layout options.
 > - **Vulkan** — on A12Z-class iPads the Vulkan renderer fails to find a suitable GPU. Use Metal, the default.
-> - **Older GPUs** — devices without mesh shader support (A12Z and earlier) skip geometry-shader and RECTS draws, which can leave some effects missing.
+> - **Older GPUs** — devices without mesh shader support (A12Z and earlier) draw geometry-shader and RECTS effects with a compute-based fallback instead of skipping them. It is new, so report any effect that still looks wrong or missing.
 
 ## Compatible games
 

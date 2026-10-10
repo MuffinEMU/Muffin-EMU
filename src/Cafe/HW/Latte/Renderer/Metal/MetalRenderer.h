@@ -311,6 +311,9 @@ public:
 	void DeleteFontTextures() override;
 
 	bool UseTFViaSSBO() const override { return true; }
+	// No mesh shaders: geometry-shader and RECTS draws run as two compute kernels plus a passthrough vertex shader. Baked into
+	// every shader generated, and fixed by the hardware, so it can never change while a title runs.
+	bool UseGeometryShaderEmulation() const override { return !m_supportsMeshShaders; }
 	void AppendOverlayDebugInfo() override;
 
 	// rendertarget
@@ -372,6 +375,11 @@ public:
 
 	// minIndex/fetchVertexManually let the snapshot cache upload only the range a draw
 	// actually reads - see the firstByte computation in the implementation.
+	// Geometry-shader emulation. Returns false when the draw produced nothing (counted and logged as skipped when it was a draw that should have rendered).
+	bool RunGeometryEmulation(struct PipelineObject* pipelineObj, bool isRects, LatteDecompilerShader* vertexShader, LatteDecompilerShader* geometryShader, LattePrimitiveMode primitiveMode, uint32 count, uint32 instanceCount, uint32& drawVertexCount, MTL::PrimitiveType& drawPrimitiveType);
+	bool EnsureGeometryEmulationBuffers(uint64 payloadBytes, uint64 outBytes, uint64 primCountBytes);
+	void ReleaseGeometryEmulationBuffers();
+	void LogGeometryEmulationSummary(const char* when);
 	void draw_updateVertexBuffersDirectAccess(uint32 minIndex, uint32 maxIndex, uint32 baseInstance, uint32 instanceCount, bool fetchVertexManually);
 	void draw_updateUniformBuffersDirectAccess(LatteDecompilerShader* shader, const uint32 uniformBufferRegOffset);
     void PrepareUniformBufferSizes(LatteDecompilerShader* shader);
@@ -488,7 +496,7 @@ public:
     bool AcquireDrawable(bool mainWindow);
 
 	bool CheckIfRenderPassNeedsFlush(LatteDecompilerShader* shader);
-	bool BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader);
+	bool BindStageResources(MTL::RenderCommandEncoder* renderCommandEncoder, LatteDecompilerShader* shader, bool usesGeometryShader, MTL::ComputeCommandEncoder* computeCommandEncoder = nullptr);
 
     void ClearColorTextureInternal(MTL::Texture* mtlTexture, sint32 sliceIndex, sint32 mipIndex, float r, float g, float b, float a);
 
@@ -623,6 +631,19 @@ private:
 	bool m_hasUnifiedMemory;
 	bool m_supportsMetal3;
 	bool m_supportsMeshShaders;
+	// Scratch the emulated geometry stages hand to each other and to the passthrough vertex shader. Private memory, regrown on demand.
+	MTL::Buffer* m_gsPayloadBuffer = nullptr;
+	MTL::Buffer* m_gsOutBuffer = nullptr;
+	MTL::Buffer* m_gsPrimCountBuffer = nullptr;
+	uint64 m_gsPayloadBufferSize = 0;
+	uint64 m_gsOutBufferSize = 0;
+	uint64 m_gsPrimCountBufferSize = 0;
+	// Per session: what was emulated and what was still skipped. Skipped should read 0; each reason is logged the first time it happens.
+	uint64 m_gsEmulatedDraws = 0;
+	uint64 m_gsSkippedDraws = 0;
+	uint64 m_rectEmulatedDraws = 0;
+	uint64 m_rectSkippedDraws = 0;
+	uint32 m_gsSkipReasonsLogged = 0;
 	MTL::ArgumentBuffersTier m_argumentBufferTier{MTL::ArgumentBuffersTier1};
 	uint32 m_maxArgumentBufferSamplerCount{};
 	uint32 m_recommendedMaxVRAMUsage;

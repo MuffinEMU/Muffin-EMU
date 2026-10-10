@@ -350,8 +350,27 @@ RendererShaderMtl::~RendererShaderMtl()
 	}
 	if (m_argumentEncoder)
 		m_argumentEncoder->release();
+    if (m_computePipeline)
+        m_computePipeline->release();
+    if (m_passthroughFunction)
+        m_passthroughFunction->release();
     if (m_function)
         m_function->release();
+}
+
+MTL::ComputePipelineState* RendererShaderMtl::GetComputePipelineState()
+{
+    if (m_computePipeline || m_computePipelineFailed || !m_function)
+        return m_computePipeline;
+    NS::Error* error = nullptr;
+    m_computePipeline = m_mtlr->GetDevice()->newComputePipelineState(m_function, &error);
+    if (!m_computePipeline)
+    {
+        // Remembered: a kernel that failed to build fails identically every frame
+        m_computePipelineFailed = true;
+        cemuLog_log(LogType::Force, "Metal: shader {:016x}-{:016x} could not be built as a compute pipeline for geometry-shader emulation: {}", GetBaseHash(), GetAuxHash(), error ? error->localizedDescription()->utf8String() : "unknown error");
+    }
+    return m_computePipeline;
 }
 
 void RendererShaderMtl::PreponeCompilation(bool isRenderThread)
@@ -487,6 +506,8 @@ void RendererShaderMtl::CompileInternal()
     }
 
     m_function = library->newFunction(ToNSString("main0"));
+    // Absent unless this is an emulated geometry shader, so a null here is normal and not worth a log line
+    m_passthroughFunction = library->newFunction(ToNSString("gsPassthroughVS"));
     library->release();
 
 	if (m_function && m_isGameShader)
