@@ -146,8 +146,9 @@ public enum GamePadArrangement {
                 let set = arrangement(ctx, u: u, sticksInboard: inboard, aScale: aScale)
                 if LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty {
                     let spacing = fittingSpacing(ctx, u: u, sticksInboard: inboard, aScale: aScale)
-                    return fittingShoulderOffset(ctx, u: u, sticksInboard: inboard, stickSpacing: spacing,
-                                                 aScale: aScale, limit: ctx.size.height / max(u, 1))
+                    let drop = fittingShoulderOffset(ctx, u: u, sticksInboard: inboard, stickSpacing: spacing,
+                                                     aScale: aScale, limit: ctx.size.height / max(u, 1))
+                    return drop.isFinite ? drop : 0
                 }
             }
             u *= 0.92
@@ -169,17 +170,35 @@ public enum GamePadArrangement {
         return 0
     }
 
+    /// The most the shoulder drop could ever be set to before the shoulders were allowed to go
+    /// further (the settings slider's old maximum). Up to here the search below is exactly what
+    /// it always was; the GamePad-avoiding stop applies only past it.
+    static let legacyMaxShoulderDrop: CGFloat = 1.5
+
     /// As much of the requested shoulder drop as fits, given the stick spacing already
     /// chosen. Only downward: the shoulders start against the top of the safe area, so a
     /// negative request is ignored. When the full drop would hit a stick or leave the safe
     /// area, the largest one that doesn't is found by halving, so the shoulders go right
     /// up to the limit rather than stopping a quarter-button short of it. Zero always
     /// fits (the caller has already checked that arrangement), so the search has a floor.
+    ///
+    /// Requests up to `legacyMaxShoulderDrop` get that search unchanged. Past it, the shoulders
+    /// keep going while they stay clear of the safe-area edge and every other control, and
+    /// stop before covering the GamePad touchscreen or video they started clear of.
     static func fittingShoulderOffset(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool,
                                       stickSpacing: CGFloat, aScale: CGFloat = 1,
                                       limit: CGFloat? = nil) -> CGFloat {
-        let requested = max(0, limit ?? ctx.shoulderOffset)
-        guard requested > 0.001 else { return 0 }
+        let want = max(0, limit ?? ctx.shoulderOffset)
+        let cap = legacyMaxShoulderDrop
+        guard want.isFinite, want > cap else {
+            return legacyFittingShoulderOffset(ctx, u: u, sticksInboard: sticksInboard,
+                                               stickSpacing: stickSpacing, aScale: aScale, requested: want)
+        }
+        let near = legacyFittingShoulderOffset(ctx, u: u, sticksInboard: sticksInboard,
+                                               stickSpacing: stickSpacing, aScale: aScale, requested: cap)
+        // Stopped short of the old maximum by a stick, the d-pad or the edge: nothing past it.
+        guard near == cap else { return near }
+
         // The GamePad touchscreen and the video are drawn under the pad. Shoulders already over
         // one at home stay free to be; one they start clear of is not somewhere they are dropped
         // into (a portrait iPad stacks the pictures, and a lowered shoulder would cover them).
@@ -201,10 +220,10 @@ public enum GamePadArrangement {
         // the exact limit inside that last step. A single test at the full amount could land
         // past the obstacle instead of stopping in front of it, and upright the request can be
         // many buttons.
-        var low: CGFloat = 0
-        var drop: CGFloat = 0
-        while drop < requested {
-            let next = min(requested, drop + 0.25)
+        var low = cap
+        var drop = cap
+        while drop < want {
+            let next = min(want, drop + 0.25)
             if fits(next) { low = next; drop = next } else {
                 var high = next
                 for _ in 0..<12 {
@@ -213,6 +232,26 @@ public enum GamePadArrangement {
                 }
                 return low
             }
+        }
+        return low
+    }
+
+    /// The shoulder-drop search as it was before the shoulders could go further than
+    /// `legacyMaxShoulderDrop`: kept as it was so every request up to that is answered the same.
+    private static func legacyFittingShoulderOffset(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool,
+                                                    stickSpacing: CGFloat, aScale: CGFloat,
+                                                    requested: CGFloat) -> CGFloat {
+        guard requested > 0.001 else { return 0 }
+        func fits(_ drop: CGFloat) -> Bool {
+            let set = arrangement(ctx, u: u, sticksInboard: sticksInboard,
+                                  stickSpacing: stickSpacing, shoulderOffset: drop, aScale: aScale)
+            return LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty
+        }
+        if fits(requested) { return requested }
+        var low: CGFloat = 0, high = requested
+        for _ in 0..<12 {
+            let mid = (low + high) / 2
+            if fits(mid) { low = mid } else { high = mid }
         }
         return low
     }

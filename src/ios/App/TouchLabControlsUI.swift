@@ -188,13 +188,12 @@ struct TouchLabLayoutPanel: View {
     @AppStorage(ControllerLayoutSettings.scaleKey) private var controlScale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.opacityKey) private var controlOpacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey) private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetPortraitKey)
-    private var shoulderOffsetUpright = ControllerLayoutSettings.defaultShoulderOffset
+    private var shoulderStore = ShoulderOffsetStorage()
     @ObservedObject private var windowSize = ControlsWindowSize.shared
-    /// The shoulder setting for the orientation the iPad is in now (kept apart per orientation).
+    /// The shoulder setting for the orientation the pad is in now (kept apart per orientation),
+    /// taken from the same size the pad itself uses.
     private var shoulderBinding: Binding<Double> {
-        ControllerLayoutSettings.isUpright(windowSize.size) ? $shoulderOffsetUpright : $shoulderOffset
+        shoulderStore.binding(upright: ControllerLayoutSettings.isUpright(windowSize.effectiveSize))
     }
 
     private var isAdaptive: Bool { scheme == TouchLabSettings.adaptiveStyleID }
@@ -236,11 +235,10 @@ struct TouchLabLayoutPanel: View {
 
         // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare height
         // for it. Only the styles with fixed shoulders have anything to move.
-        if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme)
-            && ControllerLayoutSettings.hasShoulderRoom(touchLab: true, in: windowSize.size) {
+        if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
             PanelSliderRow("Shoulder button height", title: "L/R", leadingIcon: "arrow.up.and.down",
                            value: shoulderBinding,
-                           range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true, in: windowSize.size),
+                           range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true, in: windowSize.effectiveSize),
                            step: ControllerLayoutSettings.shoulderOffsetStep,
                            spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(max(0, shoulderBinding.wrappedValue)))
         }
@@ -267,8 +265,7 @@ struct TouchLabLayoutPanel: View {
         controlScale = ControllerLayoutSettings.defaultScale
         controlOpacity = ControllerLayoutSettings.defaultOpacity
         stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-        shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
-        shoulderOffsetUpright = ControllerLayoutSettings.defaultShoulderOffset
+        shoulderStore.reset()
         if isAdaptive {
             TouchLabSettings.resetAdaptive(gameID: gameID)
         }
