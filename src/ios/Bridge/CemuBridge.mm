@@ -240,6 +240,98 @@ namespace {
         if (g_crashLogFd >= 0) write(g_crashLogFd, out, (size_t)i);
     }
 
+    const char* crash_vm_tag_name(unsigned tag) {
+        switch (tag) {
+            case 0: return "untagged (direct vm_allocate)";
+            case 1: return "malloc";
+            case 2: return "malloc small";
+            case 3: return "malloc large";
+            case 4: return "malloc huge";
+            case 6: return "realloc";
+            case 7: return "malloc tiny";
+            case 11: return "malloc nano";
+            case 21: return "IOKit";
+            case 30: return "stack";
+            case 31: return "guard";
+            case 33: return "dylib";
+            case 88: return "IOSurface";
+            default: return "other";
+        }
+    }
+
+    // Where the address space goes and where it is free. Written for the allocation-failure reports: a 32 MB
+    // MTLBuffer and operator new failing while os_proc_available_memory() still shows gigabytes means the limit
+    // being hit is not physical memory, and this names which one (a full map, a map of holes too small to use,
+    // or one region type holding most of it). Stack memory and write() only, so it is safe with malloc failing.
+    void cemu_vm_report(const char* why, uint64_t wantedBytes) {
+        struct Top { uint64_t size; uint64_t addr; unsigned tag; };
+        Top top[5] = {};
+        uint64_t tagBytes[256] = {};
+        uint64_t regions = 0, mapped = 0, gapTotal = 0, gapMax = 0, gapMaxAt = 0, gaps1M = 0, gaps32M = 0, highestEnd = 0, prevEnd = 0;
+        vm_address_t addr = 0;
+        natural_t depth = 0;
+        for (int guard = 0; guard < 200000; guard++) {
+            vm_size_t size = 0;
+            vm_region_submap_info_data_64_t info;
+            mach_msg_type_number_t count = VM_REGION_SUBMAP_INFO_COUNT_64;
+            if (vm_region_recurse_64(mach_task_self(), &addr, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS)
+                break;
+            if (info.is_submap) {
+                depth++;
+                continue;
+            }
+            regions++;
+            mapped += size;
+            if (prevEnd != 0 && addr > prevEnd) {
+                const uint64_t gap = (uint64_t)addr - prevEnd;
+                gapTotal += gap;
+                if (gap >= (1ull << 20)) gaps1M++;
+                if (gap >= (32ull << 20)) gaps32M++;
+                if (gap > gapMax) { gapMax = gap; gapMaxAt = prevEnd; }
+            }
+            prevEnd = (uint64_t)addr + size;
+            highestEnd = prevEnd;
+            const unsigned tag = info.user_tag & 0xFF;
+            tagBytes[tag] += size;
+            for (int i = 0; i < 5; i++) {
+                if (size > top[i].size) {
+                    for (int j = 4; j > i; j--) top[j] = top[j - 1];
+                    top[i] = { (uint64_t)size, (uint64_t)addr, tag };
+                    break;
+                }
+            }
+            addr += size;
+        }
+        cemu_crash_write("\nADDRESS SPACE at "); cemu_crash_write(why ? why : "?");
+        cemu_crash_write(" (wanted "); crash_dec((int64_t)(wantedBytes >> 10)); cemu_crash_write(" KB): ");
+        crash_dec((int64_t)regions); cemu_crash_write(" regions, ");
+        crash_dec((int64_t)(mapped >> 20)); cemu_crash_write(" MB mapped, highest end "); crash_hex(highestEnd);
+        cemu_crash_write(", free holes below it ");  crash_dec((int64_t)(gapTotal >> 20)); cemu_crash_write(" MB in total, ");
+        crash_dec((int64_t)gaps1M); cemu_crash_write(" holes of 1 MB or more, "); crash_dec((int64_t)gaps32M);
+        cemu_crash_write(" of 32 MB or more, largest "); crash_dec((int64_t)(gapMax >> 20)); cemu_crash_write(" MB at "); crash_hex(gapMaxAt);
+        cemu_crash_write("\n");
+        for (int i = 0; i < 5 && top[i].size; i++) {
+            cemu_crash_write("  region "); crash_hex(top[i].addr); cemu_crash_write(" "); crash_dec((int64_t)(top[i].size >> 20));
+            cemu_crash_write(" MB tag "); crash_dec((int64_t)top[i].tag); cemu_crash_write(" "); cemu_crash_write(crash_vm_tag_name(top[i].tag)); cemu_crash_write("\n");
+        }
+        for (int round = 0; round < 4; round++) {
+            unsigned best = 0; uint64_t bestBytes = 0;
+            for (unsigned t = 0; t < 256; t++) if (tagBytes[t] > bestBytes) { bestBytes = tagBytes[t]; best = t; }
+            if (!bestBytes) break;
+            cemu_crash_write("  by type: tag "); crash_dec((int64_t)best); cemu_crash_write(" "); cemu_crash_write(crash_vm_tag_name(best));
+            cemu_crash_write(" "); crash_dec((int64_t)(bestBytes >> 20)); cemu_crash_write(" MB\n");
+            tagBytes[best] = 0;
+        }
+        task_vm_info_data_t vi{};
+        mach_msg_type_number_t viCount = TASK_VM_INFO_COUNT;
+        if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&vi, &viCount) == KERN_SUCCESS) {
+            cemu_crash_write("  footprint "); crash_dec((int64_t)(vi.phys_footprint >> 20)); cemu_crash_write(" MB, resident "); crash_dec((int64_t)(vi.resident_size >> 20));
+            cemu_crash_write(" MB, internal "); crash_dec((int64_t)(vi.internal >> 20)); cemu_crash_write(" MB, compressed "); crash_dec((int64_t)(vi.compressed >> 20));
+            cemu_crash_write(" MB, virtual "); crash_dec((int64_t)(vi.virtual_size >> 20)); cemu_crash_write(" MB, os_proc_available_memory "); 
+            crash_dec((int64_t)(os_proc_available_memory() >> 20)); cemu_crash_write(" MB\n");
+        }
+    }
+
     // "0x... Image +offset symbol +offset". The raw address always goes out first: dladdr takes dyld's lock,
     // and a crash inside dyld would otherwise leave the line empty.
     void crash_describe_address(uint64_t addr) {
@@ -415,6 +507,10 @@ namespace {
             }
             catch (const std::exception& ex)
             {
+                // Several threads can fail at once; one report is enough.
+                static std::atomic_flag s_reportedOnce = ATOMIC_FLAG_INIT;
+                if (dynamic_cast<const std::bad_alloc*>(&ex) && !s_reportedOnce.test_and_set())
+                    cemu_vm_report("std::bad_alloc escaping a thread", 0);
                 cemu_crash_write("uncaught C++ exception, type: ");
                 cemu_crash_write(typeid(ex).name());
                 cemu_crash_write("\nwhat(): ");
@@ -4150,6 +4246,13 @@ void IOSBridge_VulkanDeviceLost(const char* why) {
 // froze with no crash log. This writes a crash-style entry (exception type, what(), and the GPU thread's backtrace at the catch site,
 // since the throw site is already unwound) and raises the same fatal flag the core uses. That flag is only an atomic; the app polls
 // it on the main thread, shows the message and runs cemu_bridge_shutdown_title(), the clean-slate stop path.
+// Called by the Metal allocators when the device refuses a buffer (the first few times only). Writes where the address space and the
+// footprint stand into CemuCrashLog.txt, so the next log says whether the limit hit was physical memory or the address space.
+void IOSBridge_LogAllocationFailure(const char* what, uint64_t wantedBytes) {
+    cemu_crash_open_log();
+    cemu_vm_report(what, wantedBytes);
+}
+
 void IOSBridge_GPUThreadException(const char* type, const char* what) {
     cemu_crash_open_log();
     cemu_bridge_log_checkpoint("\n=== GPU THREAD EXCEPTION ===");

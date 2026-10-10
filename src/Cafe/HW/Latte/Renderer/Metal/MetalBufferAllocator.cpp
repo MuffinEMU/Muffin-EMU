@@ -1,5 +1,6 @@
 #include "Cafe/HW/Latte/Renderer/Metal/MetalBufferAllocator.h"
 #include "Cemu/Logging/CemuLogging.h"
+#include <chrono>
 
 MetalBufferChunkedHeap::~MetalBufferChunkedHeap()
 {
@@ -36,8 +37,23 @@ void MetalSynchronizedRingAllocator::addUploadBufferSyncPoint(AllocatorBuffer_t&
 	buffer.queue_syncPoints.emplace(commandBuffer, offset);
 }
 
+#if BOOST_OS_IOS
+// Defined in CemuBridge.mm: writes where the address space and the footprint stand into the crash log.
+void IOSBridge_LogAllocationFailure(const char* what, uint64 wantedBytes);
+#endif
+
 void MetalSynchronizedRingAllocator::allocateAdditionalUploadBuffer(uint32 sizeRequiredForAlloc)
 {
+	// After a failure the device keeps refusing for a while (the log showed over a thousand failed attempts in
+	// 0.3 s, one per skipped upload, each trying six sizes). Until the pause ends, a request at least as large
+	// as the one that failed is refused without asking again; a smaller one still gets its chance below.
+	const auto now = std::chrono::steady_clock::now();
+	if (m_consecutiveFailures > 0 && now < m_retryNotBefore && sizeRequiredForAlloc >= m_failedRequiredSize)
+	{
+		m_skippedWhilePaused++;
+		return;
+	}
+
 	// calculate buffer size, should be a multiple of bufferAllocSize that is at least as large as sizeRequiredForAlloc
 	uint32 bufferAllocSize = m_minimumBufferAllocSize;
 	while (bufferAllocSize < sizeRequiredForAlloc)
@@ -47,6 +63,7 @@ void MetalSynchronizedRingAllocator::allocateAdditionalUploadBuffer(uint32 sizeR
 	// When the usual chunk (a multiple of the minimum size) cannot be had, settle for less: halve the request
 	// down to what this allocation needs, rounded to 1 MB, before giving up.
 	uint32 attemptSize = bufferAllocSize;
+	uint32 lastTried = bufferAllocSize;
 	while (!mtlBuffer && attemptSize > sizeRequiredForAlloc)
 	{
 		const uint32 previousAttemptSize = attemptSize;
@@ -59,21 +76,45 @@ void MetalSynchronizedRingAllocator::allocateAdditionalUploadBuffer(uint32 sizeR
 		if (attemptSize >= previousAttemptSize)
 			break;
 		mtlBuffer = m_mtlr->GetDevice()->newBuffer(attemptSize, m_options);
+		lastTried = attemptSize;
 		if (attemptSize <= sizeRequiredForAlloc)
 			break;
 	}
 	if (mtlBuffer)
 		bufferAllocSize = attemptSize;
+	// A small request must not fail because a 1 MB chunk cannot be had (16-byte mip levels were being skipped):
+	// keep halving, in 16 KB steps, down to what the request needs.
+	if (!mtlBuffer)
+	{
+		const uint32 floorSize = std::max<uint32>(0x4000, (sizeRequiredForAlloc + 0x3FFF) & ~0x3FFFu);
+		uint32 smallSize = lastTried;
+		while (!mtlBuffer && smallSize > floorSize)
+		{
+			smallSize = std::max<uint32>(floorSize, ((smallSize / 2) + 0x3FFF) & ~0x3FFFu);
+			mtlBuffer = m_mtlr->GetDevice()->newBuffer(smallSize, m_options);
+		}
+		if (mtlBuffer)
+			bufferAllocSize = smallSize;
+	}
 	if (!mtlBuffer)
 	{
 		// Out of memory: leave the list alone so AllocateBufferMemory() reports the failure, and ask the GPU
 		// thread to drop unused textures at the end of the frame. The upload that needed this is skipped.
 		static uint32 s_failures = 0;
 		if (s_failures++ < 8 || (s_failures % 500) == 0)
-			cemuLog_log(LogType::Force, "Metal: staging buffer allocation failed, wanted {} bytes ({} failures so far)", bufferAllocSize, s_failures);
+			cemuLog_log(LogType::Force, "Metal: staging buffer allocation failed, wanted {} bytes ({} failures so far, {} requests refused during the pauses)", bufferAllocSize, s_failures, m_skippedWhilePaused);
+#if BOOST_OS_IOS
+		if (s_failures <= 3)
+			IOSBridge_LogAllocationFailure("Metal staging buffer", bufferAllocSize);
+#endif
+		// pause: 250 ms, doubling for every failure in a row up to 2 s (about 15 to 120 frames at 60 fps)
+		m_consecutiveFailures = std::min<uint32>(m_consecutiveFailures + 1, 16);
+		m_failedRequiredSize = sizeRequiredForAlloc;
+		m_retryNotBefore = now + std::chrono::milliseconds(std::min<uint32>(2000, 250u << std::min<uint32>(m_consecutiveFailures - 1, 3)));
 		LatteWait::Get().evictionRequested.store(true);
 		return;
 	}
+	m_consecutiveFailures = 0;
 
 	AllocatorBuffer_t newBuffer{};
 	newBuffer.writeIndex = 0;
@@ -147,6 +188,7 @@ MetalSynchronizedRingAllocator::AllocatorReservation_t MetalSynchronizedRingAllo
 		// The device refused a new buffer. The ring keeps idle buffers around for a thousand cleanups; give those
 		// back now and try once more, instead of skipping an upload while memory sits unused in the ring.
 		bufferCountBefore = m_buffers.size();
+		m_consecutiveFailures = 0; // memory was just given back: the pause must not swallow this retry
 		allocateAdditionalUploadBuffer(size);
 	}
 	if (m_buffers.size() == bufferCountBefore)
