@@ -731,6 +731,8 @@ do {
           "nearest: the bias shifts where the touch is read")
     check(hit(135, current: "A") == "A" && hit(135, current: "B") == "B", "nearest: a finger on the seam keeps the button it holds")
     check(hit(160, current: "A") == "B", "nearest: sliding well onto B hands over from A")
+    check(hit(100 + 29, 29, reach: 1.15) == "A", "nearest: a round button's frame corner presses it at Normal")
+    check(hit(150, current: "A") == "B" && hit(150, current: "B") == "B", "nearest: a point inside B while holding A switches to B")
     let pill = HitTarget(id: "ZL", centre: CGPoint(x: 0, y: 0), halfSize: CGSize(width: 60, height: 20), isCircle: false)
     check(HitResolver.resolve(CGPoint(x: 50, y: 24), targets: [pill], reachFactor: 1.4) == "ZL", "nearest: a shoulder's reach follows its shorter side")
     check(HitResolver.resolve(CGPoint(x: 50, y: 40), targets: [pill], reachFactor: 1.4) == nil, "nearest: and stops there")

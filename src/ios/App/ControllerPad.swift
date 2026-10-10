@@ -165,6 +165,7 @@ struct OptimizedControlPanel: View {
                     topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
+                    isPaused: isPaused,
                     individualEditMode: individualEdit,
                     offsetX: $leftOffsetX,
                     offsetY: $leftOffsetY,
@@ -188,6 +189,7 @@ struct OptimizedControlPanel: View {
                         topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
+                        isPaused: isPaused,
                         individualEditMode: individualEdit,
                         offsetX: $leftStickOffsetX,
                         offsetY: $leftStickOffsetY,
@@ -208,6 +210,7 @@ struct OptimizedControlPanel: View {
                     topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
+                    isPaused: isPaused,
                     individualEditMode: individualEdit,
                     offsetX: $rightOffsetX,
                     offsetY: $rightOffsetY,
@@ -230,6 +233,7 @@ struct OptimizedControlPanel: View {
                         topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
+                        isPaused: isPaused,
                         individualEditMode: individualEdit,
                         offsetX: $rightStickOffsetX,
                         offsetY: $rightStickOffsetY,
@@ -241,7 +245,6 @@ struct OptimizedControlPanel: View {
             // Full opacity while editing, regardless of the opacity setting.
             .opacity(isEditingLayout ? 1.0 : max(padOpacity, 0.15))
         }
-        .deferSystemGestures()
         // Release is reported from the pad, not per control, so a re-render cannot drop
         // a press: when the whole pad goes away, release everything.
         .onDisappear { cemu_bridge_release_all_buttons() }
@@ -278,6 +281,8 @@ private struct ControlCluster: View {
     var topReserve: CGFloat = 0
     let container: CGSize
     let isEditingLayout: Bool
+    /// While true the touch surface releases everything held and takes no touches.
+    var isPaused: Bool = false
     /// See ControllerLayoutSettings.individualEditModeKey. When true, this cluster's
     /// own drag handle below is not attached at all - every touch inside the cluster
     /// can then only ever be a single button's own drag/pinch, with no whole-cluster
@@ -352,7 +357,7 @@ private struct ControlCluster: View {
                 .allowsHitTesting(false)
 
             PadTouchSurface(targets: touchTargets,
-                            enabled: !isEditingLayout,
+                            enabled: !isEditingLayout && !isPaused,
                             tolerance: TouchTolerance(rawValue: toleranceRaw) ?? .defaultValue,
                             leading: edge == .leading,
                             onChange: touchChanged)
@@ -479,6 +484,8 @@ private struct EditableControl: View {
     let container: CGSize
     let topReserve: CGFloat
     let isEditingLayout: Bool
+    /// While true the touch surface releases everything held and takes no touches.
+    var isPaused: Bool = false
     /// See ControllerLayoutSettings.individualEditModeKey. editGesture is only attached
     /// when the cluster's own drag handle is not.
     let individualEditMode: Bool

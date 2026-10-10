@@ -16,9 +16,9 @@ public struct HitTarget: Equatable, Sendable {
 
     public var radius: CGFloat { min(halfSize.width, halfSize.height) }
 
-    /// Distance from `p` to the drawn edge; negative inside.
+    /// Distance from `p` to the button's full bounding box; negative inside. Round buttons
+    /// use the box too, so every point the old rectangular frame pressed still presses.
     public func edgeDistance(to p: CGPoint) -> CGFloat {
-        if isCircle { return hypot(p.x - centre.x, p.y - centre.y) - radius }
         let ox = abs(p.x - centre.x) - halfSize.width
         let oy = abs(p.y - centre.y) - halfSize.height
         if ox > 0 || oy > 0 { return hypot(max(ox, 0), max(oy, 0)) }
@@ -50,7 +50,8 @@ public enum HitResolver {
             if best == nil || d < best!.d { best = (t.id, d) }
         }
         guard let best else { return nil }
-        if let held, let current, held <= best.d + hysteresis { return current }
+        // Inside a button the finger belongs to it; hysteresis only applies outside.
+        if best.d >= 0, let held, let current, held <= best.d + hysteresis { return current }
         return best.id
     }
 }
