@@ -36,7 +36,10 @@ struct TouchLabStyleSettingsRows: View {
     @AppStorage(TouchLabSettings.racingAutoAccelerateKey) private var racingAuto = false
     @AppStorage(TouchLabSettings.racingTiltKey) private var racingTilt = false
     @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
+    @AppStorage(TouchLabSettings.showcaseColourKey) private var showcaseColour = TouchLabSettings.defaultShowcaseColour
+    @AppStorage(TouchLabSettings.showcaseDisplayKey) private var showcaseDisplay = TouchLabSettings.defaultShowcaseDisplay
     @State private var showingAdaptiveReset = false
+    @State private var showingArcReset = false
 
     var body: some View {
         // Choosing a style switches melo-controls off, because the player just picked
@@ -83,6 +86,29 @@ struct TouchLabStyleSettingsRows: View {
                     .pickerStyle(.segmented)
                 }
 
+                if scheme == TouchLabSettings.showcaseStyleID {
+                    Picker("Colour", selection: $showcaseColour) {
+                        ForEach(TouchLabSettings.showcaseColourOptions, id: \.value) { option in
+                            Text(option.title).tag(option.value)
+                        }
+                    }
+                    Picker("Display", selection: $showcaseDisplay) {
+                        ForEach(TouchLabSettings.showcaseDisplayOptions, id: \.value) { option in
+                            Text(option.title).tag(option.value)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text("Fit sizes the pad around the picture. Native draws the GamePad at its real size on your screen.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+
+                if scheme == TouchLabSettings.arcStyleID {
+                    ArcSettingsRows(showResetConfirmation: $showingArcReset)
+                }
+
+                // Arc places every button by your reach and Showcase is the GamePad at its real size, so neither has a separate A size.
+                if scheme != TouchLabSettings.arcStyleID && scheme != TouchLabSettings.showcaseStyleID {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         Text("A button size")
@@ -107,6 +133,7 @@ struct TouchLabStyleSettingsRows: View {
                     Text("Makes A bigger and easier to hit. The buttons around it shrink a little. Tap the percentage to reset.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
+                }
                 }
 
                 if scheme == TouchLabSettings.racingStyleID {
@@ -146,6 +173,12 @@ struct TouchLabStyleSettingsRows: View {
             }
         }
         .onAppear { TouchLabSettings.migrateLegacyLargeA() }
+        .confirmationDialog("Reset Arc?", isPresented: $showingArcReset, titleVisibility: .visible) {
+            Button("Reset Arc", role: .destructive) { ArcLive.shared.reset() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Arc forgets how your thumbs sweep and every position you fine-tuned, and goes back to its default arc.")
+        }
         .confirmationDialog("Reset learned layouts?", isPresented: $showingAdaptiveReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) { TouchLabSettings.resetAdaptiveAll() }
             Button("Cancel", role: .cancel) { }
@@ -197,6 +230,7 @@ struct TouchLabLayoutPanel: View {
     }
 
     private var isAdaptive: Bool { scheme == TouchLabSettings.adaptiveStyleID }
+    @State private var showingArcReset = false
 
     var body: some View {
         LayoutPanelCard(rows: { rows }, footer: {
@@ -252,6 +286,14 @@ struct TouchLabLayoutPanel: View {
             .pickerStyle(.segmented)
         }
 
+        if scheme == TouchLabSettings.arcStyleID {
+            ArcSettingsRows(showResetConfirmation: $showingArcReset)
+                .confirmationDialog("Reset Arc?", isPresented: $showingArcReset, titleVisibility: .visible) {
+                    Button("Reset Arc", role: .destructive) { ArcLive.shared.reset() }
+                    Button("Cancel", role: .cancel) { }
+                }
+        }
+
         PanelCaption(text: isAdaptive
                      ? "These settings apply to every game, except that Adaptive remembers where your thumbs land separately for each game."
                      : "These settings apply to every game.",
@@ -268,6 +310,63 @@ struct TouchLabLayoutPanel: View {
         shoulderStore.reset()
         if isAdaptive {
             TouchLabSettings.resetAdaptive(gameID: gameID)
+        }
+    }
+}
+
+/// Arc's own settings: lock, calibrate, fine-tune, reset. Calibrating and fine-tuning work on the
+/// live pad, so they are offered while a game is running (the in-game layout panel); the lock and
+/// the reset also work from Settings.
+struct ArcSettingsRows: View {
+    @ObservedObject private var arc = ArcLive.shared
+    @Binding var showResetConfirmation: Bool
+
+    var body: some View {
+        let locked = Binding<Bool>(get: { arc.isLocked }, set: { arc.setLocked($0) })
+
+        Toggle(isOn: locked) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Lock Arc positions")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("Keeps every button exactly where it is. Turns on by itself after your first calibration.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .tint(MuffinTheme.pixelBlue)
+
+        Button {
+            arc.calibrate()
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Calibrate Arc", systemImage: "hand.draw")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text(arc.isLocked ? "Unlock to recalibrate"
+                     : (arc.isLive ? "Sweep each thumb once and Arc fits every button to your reach."
+                                   : "Open this from a running game to calibrate."))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .disabled(arc.isLocked || !arc.isLive)
+
+        Button {
+            arc.setFineTuning(!arc.isFineTuning)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Label(arc.isFineTuning ? "Done fine-tuning" : "Fine-tune positions", systemImage: "hand.point.up.left")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text(arc.isLocked ? "Unlock to fine-tune"
+                     : (arc.isLive ? "Drag a button along its arc, or in and out. Presses do nothing while you do."
+                                   : "Open this from a running game to fine-tune."))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .disabled(arc.isLocked || !arc.isLive)
+
+        Button(role: .destructive) { showResetConfirmation = true } label: {
+            DestructiveSettingsLabel(title: "Reset Arc", systemImage: "arrow.uturn.backward")
         }
     }
 }

@@ -4,7 +4,8 @@ import CoreGraphics
 public enum SchemeCatalog {
     public static let all: [SchemeInfo] = [ZonePad.schemeInfo, FloatPad.schemeInfo,
                                            AdaptivePad.schemeInfo, FramePad.schemeInfo,
-                                           RacingPad.schemeInfo, ArcPad.schemeInfo]
+                                           RacingPad.schemeInfo, ArcPad.schemeInfo,
+                                           ShowcasePad.schemeInfo]
 
     public static func make(_ id: String) -> TouchScheme { make(id, aScale: 1) }
 
@@ -15,6 +16,7 @@ public enum SchemeCatalog {
         case FramePad.schemeInfo.id: return FramePad(aScale: aScale)
         case RacingPad.schemeInfo.id: return RacingPad(aScale: aScale)
         case ArcPad.schemeInfo.id: return ArcPad()
+        case ShowcasePad.schemeInfo.id: return ShowcasePad()
         default: return ZonePad(aScale: aScale)
         }
     }

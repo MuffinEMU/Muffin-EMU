@@ -165,7 +165,10 @@ public final class TouchPadView: UIView {
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         // No other finger is down, so anything the engine still holds is a leaked touch whose end never arrived.
         if let all = event?.allTouches, all.count == touches.count { engine.cancelAll() }
-        for t in touches { engine.began(id(t), at: t.location(in: self), time: t.timestamp) }
+        for t in touches {
+            (engine.scheme as? ArcPad)?.contactRadius = t.majorRadius
+            engine.began(id(t), at: t.location(in: self), time: t.timestamp)
+        }
         changed()
     }
 
@@ -173,6 +176,7 @@ public final class TouchPadView: UIView {
         for t in touches {
             // Coalesced touches: every intermediate sample, so a fast flick across two
             // buttons or a quick stick snap is not reduced to its endpoints.
+            (engine.scheme as? ArcPad)?.contactRadius = t.majorRadius
             for c in event?.coalescedTouches(for: t) ?? [t] {
                 engine.moved(id(t), to: c.location(in: self), time: c.timestamp)
             }
@@ -274,6 +278,12 @@ public final class TouchPadView: UIView {
 
     public override func draw(_ rect: CGRect) {
         guard let g = UIGraphicsGetCurrentContext() else { return }
+        // Showcase has its own look (shadow, rim, dish, octagonal gate), as a scene to draw.
+        if let showcase = engine.scheme as? ShowcasePad {
+            ShowcaseDrawing.draw(showcase.scene(pressed: engine.litButtons(), sticks: engine.mixer.sticks),
+                                 in: g, opacity: controlOpacity)
+            return
+        }
         for e in engine.render() { PadDrawing.draw(e, in: g, opacity: controlOpacity) }
     }
 }
@@ -357,6 +367,8 @@ public struct TouchPad: UIViewRepresentable {
     public var rectSpace: TouchPadView.RectSpace
     public var extraInsets: Insets
     public var onChange: ((PadEngine) -> Void)?
+    /// Called once with the live view, for a host that needs to reach it (Arc's calibration overlay).
+    public var onView: ((TouchPadView) -> Void)?
 
     public init(schemeID: String, output: PadOutput, touchscreenRect: CGRect? = nil, videoRects: [CGRect] = [],
                 scale: CGFloat = 1, stickSpacing: CGFloat = 0, shoulderOffset: CGFloat = 0, opacity: CGFloat = 0.85, haptics: Bool = true, revision: Int = 0,
@@ -407,6 +419,7 @@ public struct TouchPad: UIViewRepresentable {
         let view = TouchPadView(scheme: makeScheme(schemeID), output: output)
         context.coordinator.revision = revision
         apply(to: view)
+        onView?(view)
         return view
     }
 
