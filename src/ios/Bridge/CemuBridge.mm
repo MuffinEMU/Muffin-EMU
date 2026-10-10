@@ -1049,16 +1049,18 @@ namespace {
             d.reason = "one core, chosen in Settings";
             return d;
         }
-        // A hard limit of the device, ahead of both the manual and the Auto choice: under 4.5 GB of RAM, or with
-        // fewer than three host cores, three host threads starve the GPU and heat the part (DeviceCapabilities.h).
-        if (!DeviceCaps::GetBudgets().multicoreViable)
+        // Auto never exceeds the device: under 4.5 GB of RAM, or with fewer than three performance cores, three host
+        // threads starve the GPU and heat the part (DeviceCapabilities.h). A manual Two or Three cores here came from an
+        // Advanced choice (Basic resolves an unavailable one to Auto in Swift), so it is attempted, and the GX2Init guard
+        // drops a stuck title to one core on its next launch.
+        const uint32_t maxThreads = DeviceCaps::GetBudgets().maxHostThreads;
+        if (setting == kCoreModeAuto && maxThreads < 3)
         {
-            d.reason = std::string(setting == kCoreModeMulti ? "one core: three were chosen in Settings, but this device has too little memory or too few cores to run three at once"
-                                  : setting == kCoreModeTwo ? "one core: two were chosen in Settings, but this device has too little memory or too few cores to run more than one"
-                                                            : "one core: this device has too little memory or too few cores to run three at once")
-                + " (" + deviceText + ")";
+            d.reason = std::string("one core: this device has too little memory or too few performance cores to run three at once (") + deviceText + ")";
             return d;
         }
+        if (setting != kCoreModeAuto && maxThreads < (setting == kCoreModeTwo ? 2u : 3u))
+            cemu_bridge_log_line((std::string("CPU cores: ") + (setting == kCoreModeTwo ? "two" : "three") + " cores chosen in Advanced settings, more than this device can run (up to " + std::to_string(maxThreads) + " host thread(s); " + deviceText + "). Attempting it anyway").c_str());
         if (setting == kCoreModeTwo)
         {
             if (titleId != 0 && ios_two_core_hang_recorded(titleId))

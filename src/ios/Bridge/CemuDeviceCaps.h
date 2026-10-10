@@ -38,6 +38,7 @@ typedef struct CemuDeviceCaps {
     uint64_t minBootHeadroomBytes;
     uint32_t jitArenaStartMB;
     uint32_t logicalCores;
+    uint32_t maxHostThreads;          // most host threads the emulated cores may use on this device (1 to 3)
     uint32_t perfCores;
     uint32_t effCores;
     int32_t  screenClass;             // 0 unknown, 1 phone-compact, 2 phone, 3 pad, 4 pad-large

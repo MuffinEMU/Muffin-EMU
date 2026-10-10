@@ -126,6 +126,7 @@ namespace DeviceCaps
 		uint64_t evictCriticalFloorBytes = 400ull * 1024 * 1024; // ...and unused GPU-written ones below this
 		uint64_t minBootHeadroomBytes = 0;                    // refuse to start a game with less room than this
 		bool multicoreViable = true;                          // three host threads for the emulated cores
+		uint32_t maxHostThreads = 3;                          // most host threads the emulated cores may use here (1 to 3)
 	};
 
 	// How far a tier's budgets may grow from the memory the process really has. The tier's own
@@ -193,9 +194,10 @@ namespace DeviceCaps
 		// The cache is one MTLBuffer, so it cannot be larger than the device's maximum buffer.
 		if (info.maxBufferLength != 0)
 			b.bufferCacheBytes = std::min<uint64_t>(b.bufferCacheBytes, std::max<uint64_t>(64 * MB, info.maxBufferLength));
-		// The emulated console has three cores; fewer host cores than that cannot run them in parallel.
-		if (info.logicalCores != 0 && info.logicalCores < 3)
-			b.multicoreViable = false;
+		// The emulated console has three cores; a mode with N host threads needs N performance cores.
+		const uint32_t hostCores = info.perfCores != 0 ? info.perfCores : info.logicalCores;
+		b.maxHostThreads = !b.multicoreViable ? 1u : (hostCores != 0 ? std::min<uint32_t>(3u, std::max<uint32_t>(1u, hostCores)) : 3u);
+		b.multicoreViable = b.maxHostThreads >= 3;
 		// The cache, the first staging chunk and room for the guest's own working set. Sized from the
 		// floor values, so scaling up never makes a game refuse to start where it started before.
 		b.minBootHeadroomBytes = std::min<uint64_t>(b.bufferCacheBytes, floorCache) + floorStaging + 192 * MB;

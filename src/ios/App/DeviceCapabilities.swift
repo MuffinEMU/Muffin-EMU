@@ -37,10 +37,13 @@ struct DeviceCapabilities {
     var isHighEndSoC: Bool { raw.isHighEndSoc }
     /// Whether three host threads for the emulated cores are worth offering at all.
     var multicoreViable: Bool { raw.multicoreViable }
+    /// Most host threads the emulated cores may use here, 1 to 3. A CPU cores option is listed only up to this.
+    var maxHostThreads: Int { Int(raw.maxHostThreads) }
+    var performanceCores: Int { Int(raw.perfCores) }
     var meshShaders: Bool { raw.meshShaders }
-    /// What Settings says when `multicoreViable` is false. The engine refuses three cores on such a
-    /// device whatever the CPU cores setting says, including Auto (ios_decide_core_count in CemuBridge.mm).
-    static let oneCoreOnlyText = "One core only: this device has too little memory or too few cores to run three at once."
+    /// What Settings says when `multicoreViable` is false. Auto stays on one core there, and
+    /// Basic offers nothing else; Advanced can still force a mode (ios_decide_core_count in CemuBridge.mm).
+    static let oneCoreOnlyText = "One core only: this device has too little memory or too few performance cores to run more than one at once."
 
     /// A17 Pro or later, or any M-series chip, with 7 GiB or more: the GPU and thermal room to start
     /// Resolution at High. `RenderScale.deviceDefault` is the one place the default is decided, and
