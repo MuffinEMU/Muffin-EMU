@@ -775,7 +775,10 @@ void MetalPipelineCache_QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc)
 // which means no archive is ever read and written at the same time. The file name carries the OS build and GPU the archive was
 // built on; files for another build are deleted.
 static constexpr uint32 ARCHIVE_MAX_FILES = 8;
-static constexpr uint64 ARCHIVE_MAX_BYTES = 768ull * 1024 * 1024;
+static constexpr uint64 ARCHIVE_MAX_BYTES = 384ull * 1024 * 1024; // loaded archives plus what a session may add to them
+static constexpr uint64 ARCHIVE_LOAD_BYTES = 256ull * 1024 * 1024; // a title opens at most this much, newest files first; older files are deleted
+static constexpr uint64 ARCHIVE_ALL_TITLES_BYTES = 1024ull * 1024 * 1024; // all titles together; the oldest files of other titles go first
+static constexpr int ARCHIVE_MAX_AGE_DAYS = 45;
 static constexpr size_t ARCHIVE_MAX_QUEUE = 20000;
 static constexpr uint32 ARCHIVE_SAVE_EVERY = 2000;
 
@@ -805,22 +808,77 @@ void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
 	const std::string titlePrefix = fmt::format("{:016x}_mtlbin_", cacheTitleId);
 	const std::string keyPrefix = titlePrefix + GetBinaryArchiveKey(m_mtlr->GetDevice()) + "_";
 
-	std::vector<fs::path> files;
-	std::vector<bool> used(ARCHIVE_MAX_FILES, false);
+	// Prune the whole archive directory, not just this title: files of another OS build or GPU can never be used again,
+	// and files nobody has touched for weeks belong to titles that are no longer played.
+	struct ArchiveFile { fs::path path; uint64 size; fs::file_time_type time; bool currentTitle; };
+	std::vector<ArchiveFile> all;
+	const std::string keyOnly = "_mtlbin_" + GetBinaryArchiveKey(m_mtlr->GetDevice()) + "_";
+	const auto ageLimit = fs::file_time_type::clock::now() - std::chrono::hours(24 * ARCHIVE_MAX_AGE_DAYS);
+	uint32 prunedFiles = 0;
+	uint64 prunedBytes = 0;
+	auto prune = [&](const fs::path& path, uint64 size) {
+		std::error_code rmEc;
+		if (fs::remove(path, rmEc))
+		{
+			prunedFiles++;
+			prunedBytes += size;
+		}
+	};
 	for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
 	{
 		const std::string name = it->path().filename().string();
-		if (name.compare(0, titlePrefix.size(), titlePrefix) != 0)
+		if (name.find("_mtlbin_") == std::string::npos)
 			continue;
-		std::error_code rmEc;
-		if (name.compare(0, keyPrefix.size(), keyPrefix) != 0 || name.size() < 4 || name.compare(name.size() - 4, 4, ".bin") != 0)
+		std::error_code sizeEc, timeEc;
+		const uint64 size = it->is_regular_file(sizeEc) ? (uint64)it->file_size(sizeEc) : 0;
+		const auto time = fs::last_write_time(it->path(), timeEc);
+		const bool isBin = name.size() > 4 && name.compare(name.size() - 4, 4, ".bin") == 0;
+		if (!isBin || name.find(keyOnly) == std::string::npos || (!timeEc && time < ageLimit))
 		{
-			fs::remove(it->path(), rmEc); // built on another OS build or GPU, or a leftover temp file
+			prune(it->path(), size); // another OS build or GPU, a leftover temp file, or not used for weeks
 			continue;
 		}
-		files.push_back(it->path());
+		all.push_back({it->path(), size, timeEc ? fs::file_time_type::min() : time, name.compare(0, titlePrefix.size(), titlePrefix) == 0});
 	}
-	std::sort(files.begin(), files.end());
+	// all titles together stay under a cap: the oldest files of the other titles go first
+	{
+		uint64 total = 0;
+		for (auto& f : all)
+			total += f.size;
+		std::sort(all.begin(), all.end(), [](const ArchiveFile& a, const ArchiveFile& b) { return a.time < b.time; });
+		for (auto it = all.begin(); it != all.end() && total > ARCHIVE_ALL_TITLES_BYTES;)
+		{
+			if (it->currentTitle)
+			{
+				++it;
+				continue;
+			}
+			total -= it->size;
+			prune(it->path, it->size);
+			it = all.erase(it);
+		}
+	}
+	// this title: newest files first, opened until the budget is used; the older ones are deleted
+	std::vector<fs::path> files;
+	std::vector<bool> used(ARCHIVE_MAX_FILES, false);
+	{
+		std::vector<ArchiveFile> mine;
+		for (auto& f : all)
+			if (f.currentTitle)
+				mine.push_back(f);
+		std::sort(mine.begin(), mine.end(), [](const ArchiveFile& a, const ArchiveFile& b) { return a.time > b.time; });
+		uint64 budget = 0;
+		for (auto& f : mine)
+		{
+			if (!files.empty() && budget + f.size > ARCHIVE_LOAD_BYTES)
+			{
+				prune(f.path, f.size);
+				continue;
+			}
+			budget += f.size;
+			files.push_back(f.path);
+		}
+	}
 
 	std::vector<NS::Object*> loaded;
 	uint64 bytes = 0;
@@ -856,6 +914,8 @@ void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
 	}
 	m_archiveFilesLoaded = (uint32)loaded.size();
 	m_archiveBaseBytes = bytes;
+	cemuLog_log(LogType::Force, "Metal binary archive: opened {} file(s), {} MB for this title; removed {} file(s), {} MB (another OS build or GPU, not used for {} days, or over the size caps)",
+		loaded.size(), bytes / (1024 * 1024), prunedFiles, prunedBytes / (1024 * 1024), ARCHIVE_MAX_AGE_DAYS);
 
 	uint32 nextIndex = 0;
 	while (nextIndex < ARCHIVE_MAX_FILES && used[nextIndex])
