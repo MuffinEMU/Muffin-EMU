@@ -1,11 +1,24 @@
 # bench - cross-engine guest workloads
 
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Homebrew-E5652E?style=for-the-badge&labelColor=1d1d1f)](../../README.md) [Back to the README](../../README.md)
+
 Two homebrew RPX files, `cpubench.rpx` and `gpubench.rpx`, built by
 `.github/workflows/build-bench-rpx.yml`. They are the actual benchmark: the
 host iOS app boots the same RPX in each engine under test and times each one
 by tailing its OSReport log
 for a fixed marker protocol. Retail games can't be bundled with the app, so
 these are what gets compared instead.
+
+<details>
+<summary>Contents</summary>
+
+- [The marker protocol](#the-marker-protocol)
+- [cpubench.rpx](#cpubenchrpx)
+- [gpubench.rpx](#gpubenchrpx)
+- [Rebuilding](#rebuilding)
+- [Tuning iteration counts](#tuning-iteration-counts)
+
+</details>
 
 ## The marker protocol
 

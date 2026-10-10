@@ -1,6 +1,19 @@
 # Architecture
 
+[![MuffinEMU](https://img.shields.io/badge/MuffinEMU-Architecture-E5652E?style=for-the-badge&labelColor=1d1d1f)](README.md) [Back to the README](README.md)
+
 MuffinEMU is three layers: a SwiftUI app, a plain-C bridge, and the emulator core. The app never touches the core directly.
+
+<details>
+<summary>Contents</summary>
+
+- [Build products](#build-products)
+- [CPU](#cpu)
+- [Graphics](#graphics)
+- [Input](#input)
+- [Releases](#releases)
+
+</details>
 
 ```
 ┌──────────────────────────────────────────────┐
