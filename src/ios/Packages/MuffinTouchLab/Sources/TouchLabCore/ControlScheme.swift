@@ -469,8 +469,9 @@ open class ControlScheme: TouchScheme {
     private func stickContribution(_ t: inout Track, stick: PadStick, travel: CGFloat, click: PadButton?,
                                    point: CGPoint, follow: Bool) -> Contribution {
         var offset = point - t.origin
-        if follow, offset.length > travel {
-            t.origin = t.origin + offset * (1 - travel / offset.length)
+        let reach = travel + StickMath.overtravel(travel)
+        if follow, offset.length > reach {
+            t.origin = t.origin + offset * (1 - reach / offset.length)
             offset = point - t.origin
         }
         t.knob = StickMath.knobOffset(offset: offset, travel: travel, gate: context.stick.gate)
