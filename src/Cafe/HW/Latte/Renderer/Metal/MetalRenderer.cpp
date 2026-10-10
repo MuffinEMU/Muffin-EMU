@@ -1465,6 +1465,48 @@ void MetalRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, s
     // Allocate a temporary buffer
     auto& bufferAllocator = m_memoryManager->GetStagingAllocator();
     auto allocation = bufferAllocator.AllocateBufferMemory(compressedImageSize, 1);
+    if (!allocation.mtlBuffer && bytesPerRow != 0 && compressedImageSize > bytesPerRow)
+    {
+        // No single piece of staging memory is big enough. Upload the slice in bands of whole block rows, each
+        // through its own (smaller) reservation, halving the band until one fits. Only reached after the
+        // whole-slice reservation failed, so every upload that fits keeps taking the path above.
+        const uint32 blockH = std::max<uint32>(1, formatInfo.blockTexelSize.y);
+        const uint32 blockRowsTotal = ((uint32)uploadHeight + blockH - 1) / blockH;
+        uint32 bandRows = std::max<uint32>(1, blockRowsTotal / 2);
+        uint32 doneRows = 0;
+        bool failed = false;
+        while (doneRows < blockRowsTotal)
+        {
+            const uint32 rows = std::min(bandRows, blockRowsTotal - doneRows);
+            const uint64 sourceOffset = (uint64)doneRows * bytesPerRow;
+            if (sourceOffset >= compressedImageSize)
+                break; // the source has no more rows (clamped upload)
+            const uint32 bandBytes = (uint32)std::min<uint64>((uint64)rows * bytesPerRow, compressedImageSize - sourceOffset);
+            auto band = bufferAllocator.AllocateBufferMemory(bandBytes, 1);
+            if (!band.mtlBuffer)
+            {
+                if (bandRows == 1)
+                {
+                    failed = true;
+                    break;
+                }
+                bandRows = std::max<uint32>(1, bandRows / 2);
+                continue;
+            }
+            memcpy(band.memPtr, static_cast<const uint8*>(pixelData) + sourceOffset, bandBytes);
+            bufferAllocator.FlushReservation(band);
+            const uint32 y0 = doneRows * blockH;
+            const uint32 bandHeight = std::min<uint32>(rows * blockH, (uint32)uploadHeight - y0);
+            blitCommandEncoder->copyFromBuffer(band.mtlBuffer, band.bufferOffset, bytesPerRow, 0, MTL::Size(uploadWidth, bandHeight, 1), textureMtl->GetTexture(), sliceIndex, mipIndex, MTL::Origin(0, y0, offsetZ), GetTextureUploadBlitOption(formatInfo.pixelFormat));
+            doneRows += rows;
+        }
+        if (!failed)
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: an upload of {} bytes (format {:04x} {}x{}) did not fit one staging reservation and went through in bands", compressedImageSize, (uint32)textureMtl->format, width, height);
+            return;
+        }
+        // a band could not be had even at one block row: fall through to the skip below (rows already copied stay)
+    }
     if (!allocation.mtlBuffer)
     {
         // out of staging memory - skip the upload rather than write through null

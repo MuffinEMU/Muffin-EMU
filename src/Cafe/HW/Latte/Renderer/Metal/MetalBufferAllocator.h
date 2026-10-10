@@ -123,6 +123,7 @@ public:
 private:
 	void allocateAdditionalUploadBuffer(uint32 sizeRequiredForAlloc);
 	void addUploadBufferSyncPoint(AllocatorBuffer_t& buffer, uint32 offset);
+	bool releaseIdleBuffers();
 
 	const class MetalRenderer* m_mtlr;
 
