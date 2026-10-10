@@ -858,6 +858,7 @@ std::atomic<bool> g_latteRelaxShaderMul{false};
 void LatteShader_GetDecompilerOptions(LatteDecompilerOptions& options, LatteConst::ShaderType shaderType, bool geometryShaderEnabled)
 {
 	options.usesGeometryShader = geometryShaderEnabled;
+	options.geometryShaderEmulation = g_renderer->UseGeometryShaderEmulation();
 	options.spirvInstrinsics.hasRoundingModeRTEFloat32 = false;
 	options.useTFViaSSBO = g_renderer->UseTFViaSSBO();
 #ifdef ENABLE_VULKAN

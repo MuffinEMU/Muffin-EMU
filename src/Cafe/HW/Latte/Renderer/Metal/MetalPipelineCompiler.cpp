@@ -18,7 +18,7 @@ extern std::atomic_int g_compiling_pipelines;
 extern std::atomic_int g_compiling_pipelines_async;
 extern std::atomic_uint64_t g_compiling_pipelines_syncTimeSum;
 
-static void rectsEmulationGS_outputSingleVertex(std::string& gsSrc, const LatteDecompilerShader* vertexShader, LatteShaderPSInputTable& psInputTable, sint32 vIdx, const LatteContextRegister& latteRegister)
+static void rectsEmulationGS_outputSingleVertex(std::string& gsSrc, const LatteDecompilerShader* vertexShader, LatteShaderPSInputTable& psInputTable, sint32 vIdx, const LatteContextRegister& latteRegister, bool compute)
 {
 	auto parameterMask = vertexShader->outputParameterMask;
 	for (uint32 i = 0; i < 32; i++)
@@ -34,10 +34,13 @@ static void rectsEmulationGS_outputSingleVertex(std::string& gsSrc, const LatteD
 		gsSrc.append(fmt::format("out.passParameterSem{} = objectPayload.vertexOut[{}].passParameterSem{};\r\n", vsSemanticId, vIdx, vsSemanticId));
 	}
 	gsSrc.append(fmt::format("out.position = objectPayload.vertexOut[{}].position;\r\n", vIdx));
-	gsSrc.append(fmt::format("mesh.set_vertex({}, out);\r\n", vIdx));
+	if (compute)
+		gsSrc.append(fmt::format("v[{}] = out;\r\n", vIdx));
+	else
+		gsSrc.append(fmt::format("mesh.set_vertex({}, out);\r\n", vIdx));
 }
 
-static void rectsEmulationGS_outputGeneratedVertex(std::string& gsSrc, const LatteDecompilerShader* vertexShader, LatteShaderPSInputTable& psInputTable, const char* variant, const LatteContextRegister& latteRegister)
+static void rectsEmulationGS_outputGeneratedVertex(std::string& gsSrc, const LatteDecompilerShader* vertexShader, LatteShaderPSInputTable& psInputTable, const char* variant, const LatteContextRegister& latteRegister, bool compute)
 {
 	auto parameterMask = vertexShader->outputParameterMask;
 	for (uint32 i = 0; i < 32; i++)
@@ -53,18 +56,29 @@ static void rectsEmulationGS_outputGeneratedVertex(std::string& gsSrc, const Lat
 		gsSrc.append(fmt::format("out.passParameterSem{} = gen4thVertex{}(objectPayload.vertexOut[0].passParameterSem{}, objectPayload.vertexOut[1].passParameterSem{}, objectPayload.vertexOut[2].passParameterSem{});\r\n", vsSemanticId, variant, vsSemanticId, vsSemanticId, vsSemanticId));
 	}
 	gsSrc.append(fmt::format("out.position = gen4thVertex{}(objectPayload.vertexOut[0].position, objectPayload.vertexOut[1].position, objectPayload.vertexOut[2].position);\r\n", variant));
-	gsSrc.append(fmt::format("mesh.set_vertex(3, out);\r\n"));
+	if (compute)
+		gsSrc.append("v[3] = out;\r\n");
+	else
+		gsSrc.append(fmt::format("mesh.set_vertex(3, out);\r\n"));
 }
 
-static void rectsEmulationGS_outputVerticesCode(std::string& gsSrc, const LatteDecompilerShader* vertexShader, LatteShaderPSInputTable& psInputTable, sint32 p0, sint32 p1, sint32 p2, sint32 p3, const char* variant, const LatteContextRegister& latteRegister)
+static void rectsEmulationGS_outputVerticesCode(std::string& gsSrc, const LatteDecompilerShader* vertexShader, LatteShaderPSInputTable& psInputTable, sint32 p0, sint32 p1, sint32 p2, sint32 p3, const char* variant, const LatteContextRegister& latteRegister, bool compute)
 {
 	sint32 pList[4] = { p0, p1, p2, p3 };
 	for (sint32 i = 0; i < 4; i++)
 	{
 		if (pList[i] == 3)
-			rectsEmulationGS_outputGeneratedVertex(gsSrc, vertexShader, psInputTable, variant, latteRegister);
+			rectsEmulationGS_outputGeneratedVertex(gsSrc, vertexShader, psInputTable, variant, latteRegister, compute);
 		else
-			rectsEmulationGS_outputSingleVertex(gsSrc, vertexShader, psInputTable, pList[i], latteRegister);
+			rectsEmulationGS_outputSingleVertex(gsSrc, vertexShader, psInputTable, pList[i], latteRegister, compute);
+	}
+	if (compute)
+	{
+		// The same six vertices the mesh path indexes: (p0, p1, p2) and (p1, p2, p3)
+		const sint32 order[6] = { pList[0], pList[1], pList[2], pList[1], pList[2], pList[3] };
+		for (sint32 i = 0; i < 6; i++)
+			gsSrc.append(fmt::format("gsOut[gid * 6 + {}] = v[{}];\r\n", i, order[i]));
+		return;
 	}
 	gsSrc.append(fmt::format("mesh.set_index(0, {});\r\n", pList[0]));
 	gsSrc.append(fmt::format("mesh.set_index(1, {});\r\n", pList[1]));
@@ -74,7 +88,9 @@ static void rectsEmulationGS_outputVerticesCode(std::string& gsSrc, const LatteD
 	gsSrc.append(fmt::format("mesh.set_index(5, {});\r\n", pList[3]));
 }
 
-static RendererShaderMtl* rectsEmulationGS_generate(MetalRenderer* metalRenderer, const LatteDecompilerShader* vertexShader, const LatteContextRegister& latteRegister)
+// compute: no mesh shaders on this GPU, so the same expansion runs as a kernel that writes its six vertices to a device buffer, and a
+// passthrough vertex function in the same library draws them. outVertexStride receives the byte size of one stored vertex.
+static RendererShaderMtl* rectsEmulationGS_generate(MetalRenderer* metalRenderer, const LatteDecompilerShader* vertexShader, const LatteContextRegister& latteRegister, bool compute = false, uint32* outVertexStride = nullptr)
 {
 	std::string gsSrc;
 	gsSrc.append("#include <metal_stdlib>\r\n");
@@ -87,7 +103,10 @@ static RendererShaderMtl* rectsEmulationGS_generate(MetalRenderer* metalRenderer
 	std::string vertexOutDefinition = "struct VertexOut {\r\n";
 	vertexOutDefinition += "float4 position;\r\n";
 	std::string geometryOutDefinition = "struct GeometryOut {\r\n";
-	geometryOutDefinition += "float4 position [[position]];\r\n";
+	geometryOutDefinition += compute ? "float4 position;\r\n" : "float4 position [[position]];\r\n";
+	std::string rasterOutDefinition = "struct GeometryOutRaster {\r\nfloat4 position [[position]];\r\n";
+	std::string rasterConvert = "static GeometryOutRaster gsToRaster(GeometryOut o) {\r\nGeometryOutRaster r;\r\nr.position = o.position;\r\n";
+	uint32 storedParamCount = 0;
 	auto parameterMask = vertexShader->outputParameterMask;
 	for (uint32 i = 0; i < 32; i++)
 	{
@@ -104,23 +123,47 @@ static RendererShaderMtl* rectsEmulationGS_generate(MetalRenderer* metalRenderer
 		vertexOutDefinition += fmt::format("float4 passParameterSem{};\r\n", vsSemanticId);
 
 		// GeometryOut
-		geometryOutDefinition += fmt::format("float4 passParameterSem{}", vsSemanticId);
-
-        geometryOutDefinition += fmt::format(" [[user(locn{})]]", psInputTable.getPSImportLocationBySemanticId(vsSemanticId));
+		std::string attributes = fmt::format(" [[user(locn{})]]", psInputTable.getPSImportLocationBySemanticId(vsSemanticId));
         if (psImport->isFlat)
-            geometryOutDefinition += " [[flat]]";
+            attributes += " [[flat]]";
         if (psImport->isNoPerspective)
-			geometryOutDefinition += " [[center_no_perspective]]";
-        geometryOutDefinition += ";\r\n";
+			attributes += " [[center_no_perspective]]";
+		if (compute)
+		{
+			geometryOutDefinition += fmt::format("float4 passParameterSem{};\r\n", vsSemanticId);
+			rasterOutDefinition += fmt::format("float4 passParameterSem{}{};\r\n", vsSemanticId, attributes);
+			rasterConvert += fmt::format("r.passParameterSem{} = o.passParameterSem{};\r\n", vsSemanticId, vsSemanticId);
+			storedParamCount++;
+		}
+		else
+			geometryOutDefinition += fmt::format("float4 passParameterSem{}{};\r\n", vsSemanticId, attributes);
 	}
 	vertexOutDefinition += "};\r\n";
 	geometryOutDefinition += "};\r\n";
 
+	if (compute)
+	{
+		// The vertex kernel wrote its VertexOut with this exact definition, so the kernel reads it back with the same text. A second
+		// hand-built struct could differ in size (pointSize, PS inputs the VS does not write) and then every vertexOut[i] would be off.
+		vertexOutDefinition = vertexShader->mtlRectVertexOutDef;
+		rasterOutDefinition += "};\r\n";
+		rasterConvert += "return r;\r\n}\r\n";
+		if (outVertexStride)
+			*outVertexStride = 16u + storedParamCount * 16u;
+	}
+
 	gsSrc.append(vertexOutDefinition);
 	gsSrc.append(geometryOutDefinition);
+	if (compute)
+	{
+		gsSrc.append(rasterOutDefinition);
+		gsSrc.append(rasterConvert);
+	}
 
 	gsSrc.append("struct ObjectPayload {\r\n");
 	gsSrc.append("VertexOut vertexOut[3];\r\n");
+	if (compute)
+		gsSrc.append("uint primitiveID;\r\n");
 	gsSrc.append("};\r\n");
 
 	// gen function
@@ -140,10 +183,20 @@ static RendererShaderMtl* rectsEmulationGS_generate(MetalRenderer* metalRenderer
 	gsSrc.append("}\r\n");
 
 	// main
-	gsSrc.append("using MeshType = mesh<GeometryOut, void, 4, 2, topology::triangle>;\r\n");
-	gsSrc.append("[[mesh, max_total_threads_per_threadgroup(1)]]\r\n");
-	gsSrc.append("void main0(MeshType mesh, const object_data ObjectPayload& objectPayload [[payload]])\r\n");
-	gsSrc.append("{\r\n");
+	if (compute)
+	{
+		gsSrc.append(fmt::format("kernel void main0(uint gid [[thread_position_in_grid]], const device ObjectPayload* gsPayloadIn [[buffer({})]], device GeometryOut* gsOut [[buffer({})]], device uint* gsPrimCount [[buffer({})]])\r\n", MTL_GS_PAYLOAD_BUFFER, MTL_GS_OUT_BUFFER, MTL_GS_PRIMCOUNT_BUFFER));
+		gsSrc.append("{\r\n");
+		gsSrc.append("const device ObjectPayload& objectPayload = gsPayloadIn[gid];\r\n");
+		gsSrc.append("GeometryOut v[4];\r\n");
+	}
+	else
+	{
+		gsSrc.append("using MeshType = mesh<GeometryOut, void, 4, 2, topology::triangle>;\r\n");
+		gsSrc.append("[[mesh, max_total_threads_per_threadgroup(1)]]\r\n");
+		gsSrc.append("void main0(MeshType mesh, const object_data ObjectPayload& objectPayload [[payload]])\r\n");
+		gsSrc.append("{\r\n");
+	}
 	gsSrc.append("GeometryOut out;\r\n");
 
 	// there are two possible winding orders that need different triangle generation:
@@ -164,23 +217,37 @@ static RendererShaderMtl* rectsEmulationGS_generate(MetalRenderer* metalRenderer
 	gsSrc.append("if(dist0_1 > dist0_2 && dist0_1 > dist1_2)\r\n");
 	gsSrc.append("{\r\n");
 	// p0 to p1 is diagonal
-	rectsEmulationGS_outputVerticesCode(gsSrc, vertexShader, psInputTable, 2, 1, 0, 3, "A", latteRegister);
+	rectsEmulationGS_outputVerticesCode(gsSrc, vertexShader, psInputTable, 2, 1, 0, 3, "A", latteRegister, compute);
 	gsSrc.append("} else if ( dist0_2 > dist0_1 && dist0_2 > dist1_2 ) {\r\n");
 	// p0 to p2 is diagonal
-	rectsEmulationGS_outputVerticesCode(gsSrc, vertexShader, psInputTable, 1, 2, 0, 3, "B", latteRegister);
+	rectsEmulationGS_outputVerticesCode(gsSrc, vertexShader, psInputTable, 1, 2, 0, 3, "B", latteRegister, compute);
 	gsSrc.append("} else {\r\n");
 	// p1 to p2 is diagonal
-	rectsEmulationGS_outputVerticesCode(gsSrc, vertexShader, psInputTable, 0, 1, 2, 3, "C", latteRegister);
+	rectsEmulationGS_outputVerticesCode(gsSrc, vertexShader, psInputTable, 0, 1, 2, 3, "C", latteRegister, compute);
 	gsSrc.append("}\r\n");
 
-	gsSrc.append("mesh.set_primitive_count(2);\r\n");
+	if (compute)
+	{
+		gsSrc.append("gsPrimCount[gid] = 2;\r\n");
+		gsSrc.append("}\r\n");
+		gsSrc.append(fmt::format("vertex GeometryOutRaster gsPassthroughVS(uint vid [[vertex_id]], const device GeometryOut* gsOut [[buffer(0)]]) {{ return gsToRaster(gsOut[vid]); }}\r\n"));
+	}
+	else
+	{
+		gsSrc.append("mesh.set_primitive_count(2);\r\n");
 
-	gsSrc.append("}\r\n");
+		gsSrc.append("}\r\n");
+	}
 
 	auto mtlShader = new RendererShaderMtl(metalRenderer, RendererShader::ShaderType::kGeometry, 0, 0, false, false, gsSrc);
 	mtlShader->PreponeCompilation(true);
 
 	return mtlShader;
+}
+
+PipelineObject::~PipelineObject()
+{
+    delete m_rectKernel;
 }
 
 #define INVALID_TITLE_ID 0xFFFFFFFFFFFFFFFF
@@ -315,8 +382,7 @@ MetalPipelineCompiler::~MetalPipelineCompiler()
 void MetalPipelineCompiler::InitFromState(const LatteFetchShader* fetchShader, const LatteDecompilerShader* vertexShader, const LatteDecompilerShader* geometryShader, const LatteDecompilerShader* pixelShader, const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr)
 {
     m_usesGeometryShader = UseGeometryShader(lcr, geometryShader != nullptr);
-    if (m_usesGeometryShader && !m_mtlr->SupportsMeshShaders())
-        return;
+    m_emulateGeometryShader = m_usesGeometryShader && !m_mtlr->SupportsMeshShaders();
 
     // Rasterization
 	m_rasterizationEnabled = lcr.IsRasterizationEnabled();
@@ -326,12 +392,28 @@ void MetalPipelineCompiler::InitFromState(const LatteFetchShader* fetchShader, c
     if (geometryShader)
         m_geometryShaderMtl = static_cast<RendererShaderMtl*>(geometryShader->shader);
     else if (UseRectEmulation(lcr))
-        m_geometryShaderMtl = rectsEmulationGS_generate(m_mtlr, vertexShader, lcr);
+    {
+        if (m_emulateGeometryShader)
+        {
+            // Without the vertex stage's own VertexOut text there is nothing the kernel could read the payload with
+            if (!vertexShader->mtlRectVertexOutDef.empty())
+            {
+                m_geometryShaderMtl = rectsEmulationGS_generate(m_mtlr, vertexShader, lcr, true, &m_pipelineObj.m_rectOutVertexStride);
+                m_pipelineObj.m_rectKernel = m_geometryShaderMtl;
+            }
+            else
+                m_geometryShaderMtl = nullptr;
+        }
+        else
+            m_geometryShaderMtl = rectsEmulationGS_generate(m_mtlr, vertexShader, lcr);
+    }
     else
         m_geometryShaderMtl = nullptr;
     m_pixelShaderMtl = static_cast<RendererShaderMtl*>(pixelShader->shader);
 
-    if (m_usesGeometryShader)
+    if (m_emulateGeometryShader)
+        InitFromStateGeometryEmulation(lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr, pixelShader);
+    else if (m_usesGeometryShader)
         InitFromStateMesh(fetchShader, pixelShader, lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr);
     else
         InitFromStateRender(fetchShader, vertexShader, pixelShader, lastUsedAttachmentsInfo, activeAttachmentsInfo, lcr);
@@ -340,8 +422,9 @@ void MetalPipelineCompiler::InitFromState(const LatteFetchShader* fetchShader, c
 bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool showInOverlay)
 {
 	NS_STACK_SCOPED NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
-    if (m_usesGeometryShader && !m_mtlr->SupportsMeshShaders())
-        return false;
+    // Emulated, there is no render pipeline to build when nothing is rasterized: the compute stages are the whole draw
+    if (m_emulateGeometryShader && !m_rasterizationEnabled)
+        return true;
 
     if (forceCompile)
 	{
@@ -369,7 +452,25 @@ bool MetalPipelineCompiler::Compile(bool forceCompile, bool isRenderThread, bool
     NS::Error* error = nullptr;
 
     auto start = std::chrono::high_resolution_clock::now();
-    if (m_usesGeometryShader)
+    if (m_emulateGeometryShader)
+    {
+        auto desc = static_cast<MTL::RenderPipelineDescriptor*>(m_pipelineDescriptor);
+
+        // The vertex stage already ran as compute. What is left to rasterize is whatever the geometry kernel wrote, and the
+        // passthrough function in that shader's library is what reads it.
+        MTL::Function* passthroughFunction = m_geometryShaderMtl ? m_geometryShaderMtl->GetPassthroughFunction() : nullptr;
+        MTL::Function* fragmentFunction = m_pixelShaderMtl->GetFunction();
+        if (!passthroughFunction || !fragmentFunction)
+        {
+            cemuLog_logOnce(LogType::Force, "Metal: a geometry-shader emulation pipeline could not be built because a shader function is nil (passthrough {}, fragment {})", passthroughFunction ? "ok" : "missing", fragmentFunction ? "ok" : "missing");
+            return false;
+        }
+        desc->setVertexFunction(passthroughFunction);
+        desc->setFragmentFunction(fragmentFunction);
+        desc->setLabel(ToNSString(fmt::format("emulated geometry pipeline PS {:016x}-{:016x}", m_pixelShaderMtl->GetBaseHash(), m_pixelShaderMtl->GetAuxHash())));
+        pipeline = m_mtlr->GetDevice()->newRenderPipelineState(desc, MTL::PipelineOptionNone, nullptr, &error);
+    }
+    else if (m_usesGeometryShader)
     {
         auto desc = static_cast<MTL::MeshRenderPipelineDescriptor*>(m_pipelineDescriptor);
 
@@ -523,6 +624,18 @@ void MetalPipelineCompiler::InitFromStateRender(const LatteFetchShader* fetchSha
 
     	desc->setVertexDescriptor(vertexDescriptor);
     }
+
+	SetFragmentState(desc, lastUsedAttachmentsInfo, activeAttachmentsInfo, m_rasterizationEnabled, m_mtlr->SupportsFramebufferFetch(), lcr, pixelShader);
+
+	m_pipelineDescriptor = desc;
+}
+
+void MetalPipelineCompiler::InitFromStateGeometryEmulation(const MetalAttachmentsInfo& lastUsedAttachmentsInfo, const MetalAttachmentsInfo& activeAttachmentsInfo, const LatteContextRegister& lcr, const LatteDecompilerShader* pixelShader)
+{
+	// An ordinary render pipeline with no vertex descriptor: the passthrough vertex function takes no stage_in, it indexes the buffer
+	// the geometry kernel filled by its own vertex_id
+	MTL::RenderPipelineDescriptor* desc = MTL::RenderPipelineDescriptor::alloc()->init();
+	desc->fragmentBuffers()->object(MetalArgumentBuffer::BindingIndex)->setMutability(MTL::MutabilityImmutable);
 
 	SetFragmentState(desc, lastUsedAttachmentsInfo, activeAttachmentsInfo, m_rasterizationEnabled, m_mtlr->SupportsFramebufferFetch(), lcr, pixelShader);
 

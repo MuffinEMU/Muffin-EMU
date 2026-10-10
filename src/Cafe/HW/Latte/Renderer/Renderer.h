@@ -96,6 +96,8 @@ public:
 
 	GfxVendor GetVendor() const { return m_vendor; }
 	virtual bool UseTFViaSSBO() const { return false; }
+	// True when geometry shaders and RECTS cannot run natively and are rebuilt from compute passes; changes the generated shader source
+	virtual bool UseGeometryShaderEmulation() const { return false; }
 	virtual void AppendOverlayDebugInfo() = 0;
 
 	// rendertarget
