@@ -79,7 +79,7 @@ ENTITLEMENTS_FOR_ASSET = {
 # collides with the source name and buttons SideStore and AltStore draw over it.
 HEADER_URL = f"{PAGES}/assets/source-header.jpg"
 # The official website (MuffinSite-Remastered). PAGES above still hosts the sources and guides.
-SITE = "https://muffinemu.github.io/MuffinSite-Remastered/"
+SITE = "https://muffinemu.github.io/MuffinEMU/"
 
 
 APP_DESCRIPTION = """Wii U on iPhone and iPad. Play on-screen, use the GamePad, or switch to your TV. Free, open source, and built around Cemu.
@@ -115,7 +115,7 @@ Games, keys and system files are not included. Bring the games you own.
 
 Free, open source and updated constantly. Wii U on iOS, the way it should be.
 
-Official Site: https://muffinemu.github.io/MuffinSite-Remastered/
+Official Site: https://muffinemu.github.io/MuffinEMU/
 Guides: https://muffinemu.github.io/MuffinEMU/docs/
 Source code: https://github.com/MuffinEMU/Muffin-EMU
 Report a problem: https://github.com/MuffinEMU/Muffin-EMU/issues
