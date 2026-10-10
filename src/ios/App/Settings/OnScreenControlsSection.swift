@@ -46,14 +46,12 @@ struct OnScreenControlsSection: View {
     private var touchLabScheme = TouchLabSettings.defaultScheme
     @AppStorage(ControllerLayoutSettings.stickSpacingKey)
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
-    private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetPortraitKey)
-    private var shoulderOffsetUpright = ControllerLayoutSettings.defaultShoulderOffset
+    private var shoulderStore = ShoulderOffsetStorage()
     @ObservedObject private var windowSize = ControlsWindowSize.shared
-    /// The shoulder setting for the orientation the iPad is in now (kept apart per orientation).
+    /// The shoulder setting for the orientation the pad is in now (kept apart per orientation),
+    /// taken from the same size the pad itself uses.
     private var shoulderBinding: Binding<Double> {
-        ControllerLayoutSettings.isUpright(windowSize.size) ? $shoulderOffsetUpright : $shoulderOffset
+        shoulderStore.binding(upright: ControllerLayoutSettings.isUpright(windowSize.effectiveSize))
     }
     /// 0 follows the default (on; see TopBarAutoHide.deviceDefault). Read by the in-game top bar.
     @AppStorage(TopBarAutoHide.overrideKey)
@@ -136,7 +134,6 @@ struct OnScreenControlsSection: View {
             // iPad only: an iPhone has no spare height to move them in. Applies to MuffinEMU's
             // pad and to the TouchLab styles whose shoulders are fixed.
             if ControllerLayoutSettings.supportsShoulderOffset
-                && ControllerLayoutSettings.hasShoulderRoom(touchLab: usingTouchLab, in: windowSize.size)
                 && (!usingTouchLab || TouchLabSettings.hasMovableShoulders(touchLabScheme)) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
@@ -154,7 +151,7 @@ struct OnScreenControlsSection: View {
                             .accessibilityHidden(true)
                         Slider(
                             value: shoulderBinding,
-                            in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: usingTouchLab, in: windowSize.size),
+                            in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: usingTouchLab, in: windowSize.effectiveSize),
                             step: ControllerLayoutSettings.shoulderOffsetStep
                         )
                         .accessibilityLabel("Shoulder button height")

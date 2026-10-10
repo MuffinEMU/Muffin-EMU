@@ -52,12 +52,9 @@ struct OptimizedControlPanel: View {
     @AppStorage(ControllerLayoutSettings.leftStickOffsetYKey) private var leftStickOffsetY = 0.0
     @AppStorage(ControllerLayoutSettings.stickSpacingKey)
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
-    private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
-    // The same setting while the pad is taller than it is wide (an iPad held upright): kept
-    // apart, because the room to move the shoulders in is nothing like the landscape room.
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetPortraitKey)
-    private var shoulderOffsetUpright = ControllerLayoutSettings.defaultShoulderOffset
+    // Landscape and upright are stored apart (the room to move the shoulders in is nothing like
+    // the same), and an iPhone has its own copies; see ShoulderOffsetStorage.
+    private var shoulderStore = ShoulderOffsetStorage()
     // The default must match SettingsView's declaration of the same key.
     @AppStorage(ControllerLayoutSettings.comfortControlsKey)
     private var comfortControls = ControllerLayoutSettings.defaultComfortControls
@@ -127,13 +124,10 @@ struct OptimizedControlPanel: View {
                 x: ControllerGeometry.rightStickAnchorOffset.x + stickShift,
                 y: ControllerGeometry.rightStickAnchorOffset.y)
 
-            // The shoulder slider is iPad only: on iPhone the stored value is never read.
-            let shoulderDrop = ControllerLayoutSettings.effectiveShoulderOffset(
-                ControllerLayoutSettings.isUpright(proxy.size) ? shoulderOffsetUpright : shoulderOffset)
-            // Never narrower than the clamp the pad has always applied, so a saved value draws where it
-            // always did; the physical limits inside shoulderShift still stop the buttons.
-            let measuredRange = ControllerLayoutSettings.shoulderRange(in: proxy.size)
-            let shoulderLimit = min(measuredRange.lowerBound, ControllerLayoutSettings.minShoulderOffset)...max(measuredRange.upperBound, ControllerLayoutSettings.maxShoulderOffset)
+            // Never narrower than the clamp the pad has always applied, so a saved value draws
+            // where it always did; the physical limits inside shoulderShift still stop the buttons.
+            let shoulderDrop = shoulderStore.value(upright: ControllerLayoutSettings.isUpright(proxy.size))
+            let shoulderLimit = ControllerLayoutSettings.shoulderRange(in: proxy.size)
             // How much of this view's top the bar covers, in this view's own coordinates.
             let topReserve = max(0, topInset - proxy.frame(in: .global).minY)
 
@@ -224,6 +218,7 @@ struct OptimizedControlPanel: View {
             // Full opacity while editing, regardless of the opacity setting.
             .opacity(isEditingLayout ? 1.0 : max(padOpacity, 0.15))
         }
+        .reportsPadSize()
         // Release is reported from the pad, not per control, so a re-render cannot drop
         // a press: when the whole pad goes away, release everything.
         .onDisappear { cemu_bridge_release_all_buttons() }

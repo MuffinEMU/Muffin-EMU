@@ -131,9 +131,12 @@ enum TouchLabSettings {
     }
 
     /// The most the movable styles can drop their shoulders on a window this size, in button
-    /// widths, from the layout itself (safe area, sticks, d-pad and face buttons).
+    /// widths, from the layout itself (safe area, sticks, d-pad and face buttons). Never less
+    /// than the slider's old maximum, and that old maximum whenever the size or the maths
+    /// is not a usable number.
     static func maxShoulderDrop(in size: CGSize) -> Double {
-        guard size.width > 0, size.height > 0 else { return ControllerLayoutSettings.maxShoulderOffset }
+        let old = ControllerLayoutSettings.maxShoulderOffset
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return old }
         let window = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.windows.first { $0.isKeyWindow } }.first
         let safe = window?.safeAreaInsets ?? .zero
         let scale = UserDefaults.standard.object(forKey: ControllerLayoutSettings.scaleKey) as? Double
@@ -143,7 +146,10 @@ enum TouchLabSettings {
                                 scale: CGFloat(scale))
         let step = ControllerLayoutSettings.shoulderOffsetStep
         let drop = Double(GamePadArrangement.maxShoulderDrop(ctx))
-        return max((drop / step).rounded(.down) * step, 0)
+        guard drop.isFinite else { return old }
+        let rounded = (drop / step).rounded(.down) * step
+        guard rounded.isFinite else { return old }
+        return max(rounded, old)
     }
 
     /// Float's right-hand side options: stored value and label.
@@ -294,8 +300,10 @@ struct TouchLabPadOverlay: View {
 
     @AppStorage(ControllerLayoutSettings.scaleKey) private var scale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey) private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetPortraitKey) private var shoulderOffsetUpright = ControllerLayoutSettings.defaultShoulderOffset
+    private var shoulderStore = ShoulderOffsetStorage()
+    /// The pad's own size, measured behind it (zero until the first pass), so the right
+    /// orientation's shoulder setting is read as the iPad rotates.
+    @State private var padSize: CGSize = .zero
     @AppStorage(ControllerLayoutSettings.opacityKey) private var opacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.hapticsKey) private var haptics = ControllerLayoutSettings.defaultHaptics
     @AppStorage(ControllerLayoutSettings.deadzoneKey) private var deadzone = ControllerLayoutSettings.defaultDeadzone
@@ -308,12 +316,8 @@ struct TouchLabPadOverlay: View {
     @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
 
     var body: some View {
-        // Sized by the pad's own container, so the right orientation's setting is read as the
-        // iPad rotates.
-        GeometryReader { proxy in
-            pad(upright: ControllerLayoutSettings.isUpright(proxy.size))
-        }
-        .ignoresSafeArea()
+        pad(upright: ControllerLayoutSettings.isUpright(padSize))
+            .reportsPadSize { padSize = $0 }
     }
 
     private func pad(upright: Bool) -> some View {
@@ -323,9 +327,9 @@ struct TouchLabPadOverlay: View {
                  videoRects: screens.screens.videoRects,
                  scale: scale,
                  stickSpacing: stickSpacing,
-                 // iPad only: the stored value is ignored on iPhone. The layouts ignore a
-                 // negative value (the shoulders already start at the top edge).
-                 shoulderOffset: CGFloat(ControllerLayoutSettings.effectiveShoulderOffset(upright ? shoulderOffsetUpright : shoulderOffset)),
+                 // Each device and orientation reads its own stored value (ShoulderOffsetStorage).
+                 // The layouts ignore a negative value (the shoulders already start at the top edge).
+                 shoulderOffset: CGFloat(shoulderStore.value(upright: upright)),
                  opacity: opacity,
                  haptics: haptics,
                  // Rebuild the scheme only when something that shapes it changes - never on
