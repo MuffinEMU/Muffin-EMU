@@ -178,7 +178,8 @@ func aWidth(_ scheme: ControlScheme) -> CGFloat {
 for device in ["iPad Pro 11 (A12Z)", "iPhone 16"].compactMap({ name in TargetDevice.all.first { $0.name == name } }) {
     for display in TargetDevice.Display.allCases {
         let ctx = device.context(display)
-        for info in SchemeCatalog.all {
+        // Arc places every button by the player's own reach and Showcase is the GamePad at life size, so neither has a separate A size.
+        for info in SchemeCatalog.all where info.id != ArcPad.schemeInfo.id && info.id != ShowcasePad.schemeInfo.id {
             let where_ = "A size / \(info.name) / \(device.name) / \(display.rawValue)"
             func laidOut(_ a: CGFloat) -> ControlScheme {
                 let s = SchemeCatalog.make(info.id, aScale: a) as! ControlScheme
@@ -406,7 +407,7 @@ do {
             let lim = StickMath.gateFraction(g, angle: a)
             let atEdge = StickMath.value(offset: dir * travel, travel: travel, tuning: tuning)
             let past = StickMath.value(offset: dir * (travel + 3 * extra), travel: travel, tuning: tuning)
-            check(near(atEdge.magnitude, Double(lim), 1e-6), "edge value is the gate limit at \(deg)deg (\(g)): \(atEdge.magnitude)")
+            check(near(atEdge.magnitude, (Double(lim) - tuning.deadzone) / (1 - tuning.deadzone), 1e-6), "edge value is the gate limit, rescaled past the deadzone (as on the pad) at \(deg)deg (\(g)): \(atEdge.magnitude)")
             check(near(past.magnitude, atEdge.magnitude, 1e-9) && abs(past.x) <= 1 && abs(past.y) <= 1,
                   "beyond the edge adds no output at \(deg)deg (\(g))")
             let knob = StickMath.knobOffset(offset: dir * (travel + 3 * extra), travel: travel, gate: g)
@@ -761,6 +762,738 @@ for (name, size, insets) in [
         check(LayoutCheck.problems(farScheme.controls, in: ctx.safeBounds).isEmpty, "\(name) \(id): max shoulder drop leaves a problem")
         check(abs(moved(farScheme) - limit * u) < u * 0.1 + 1, "\(name) \(id): the slider maximum \(limit) is not reached (\(moved(farScheme) / u))")
         check(moved(overScheme) <= moved(farScheme) + 1, "\(name) \(id): the shoulders move past the slider maximum")
+    }
+}
+
+
+// MARK: Shared settings: every scheme gives the same stick output as MuffinEMU's own pad
+
+/// A literal copy of the stick maths in MuffinEMU's own pad (JoystickControl.report and the
+/// clamp above it in ControllerPad.swift). `dx`/`dy` are the finger's offset from the ring's
+/// centre in points, +y down; the result is the console value, +y up.
+func gen1Stick(dx: CGFloat, dy: CGFloat, travel: CGFloat, deadzone: Double, curve: Double, octagon: Bool) -> (x: Double, y: Double) {
+    func radiusFraction(_ angle: CGFloat) -> CGFloat {
+        if !octagon { return 1 }
+        let wedge = CGFloat.pi / 4
+        var offset = angle.truncatingRemainder(dividingBy: wedge)
+        if offset < 0 { offset += wedge }
+        return cos(wedge / 2) / cos(offset - wedge / 2)
+    }
+    let dead = CGFloat(min(max(deadzone, 0), 0.30))
+    let curve = CGFloat(min(max(curve, 1), 2.5))
+    let distance = (dx * dx + dy * dy).squareRoot()
+    let reach = travel * radiusFraction(atan2(dy, dx))
+    let deflection = travel > 0 ? min(distance, reach) / travel : 0
+    guard deflection > dead, distance > 0 else { return (0, 0) }
+    var magnitude = (deflection - dead) / (1 - dead)
+    if curve != 1 { magnitude = CGFloat(pow(Double(magnitude), Double(curve))) }
+    return (Double(dx / distance * magnitude), Double(-dy / distance * magnitude))
+}
+
+func settingsContext(_ settings: PadSettings, _ display: TargetDevice.Display = .stacked) -> LayoutContext {
+    var c = ipad.context(display)
+    c.scale = settings.scale; c.stick = settings.stick; c.calibration = settings.calibration
+    c.tolerance = settings.tolerance; c.stickSpacing = settings.stickSpacing; c.shoulderOffset = settings.shoulderOffset
+    return c
+}
+
+do {
+    // 1. The shared function itself, against the pad's, over a grid of settings and positions.
+    let travel: CGFloat = 80
+    var worst = 0.0
+    for dead in [0.0, 0.06, 0.15, 0.30] {
+        for curve in [1.0, 1.6, 2.5] {
+            for gate in StickTuning.Gate.allCases {
+                let tuning = StickTuning(deadzone: dead, curve: curve, gate: gate)
+                for deg in stride(from: 0.0, to: 360.0, by: 7.5) {
+                    for r in [0.0, 0.03, 0.06, 0.1, 0.3, 0.5, 0.8, 0.93, 1.0, 1.1, 1.3] {
+                        let a = CGFloat(deg * .pi / 180)
+                        let dx = cos(a) * CGFloat(r) * travel, dy = sin(a) * CGFloat(r) * travel
+                        let mine = StickMath.value(offset: CGPoint(x: dx, y: dy), travel: travel, tuning: tuning)
+                        let ref = gen1Stick(dx: dx, dy: dy, travel: travel, deadzone: dead, curve: curve, octagon: gate == .octagon)
+                        worst = max(worst, abs(mine.x - ref.x), abs(mine.y - ref.y))
+                    }
+                }
+            }
+        }
+    }
+    check(worst < 1e-12, "StickMath.value equals the pad's formula over the whole grid (worst difference \(worst))")
+    let wild = StickTuning(deadzone: 5, curve: 0.2, gate: .round)
+    check(StickMath.value(offset: CGPoint(x: 80, y: 0), travel: 80, tuning: wild)
+          == StickMath.value(offset: CGPoint(x: 80, y: 0), travel: 80, tuning: StickTuning(deadzone: 0.30, curve: 1, gate: .round)),
+          "out-of-range deadzone and curve are clamped to the pad's ranges")
+}
+
+/// The first stick control of the given side that a scheme lays out, and where a finger starts.
+func stickControl(_ s: ControlScheme, _ side: PadStick) -> (PadControl, travel: CGFloat, floating: Bool)? {
+    for c in s.controls {
+        switch c.kind {
+        case let .stick(st, travel, _) where st == side: return (c, travel, false)
+        case let .floatingStick(st, travel, _, _, _) where st == side: return (c, travel, true)
+        default: break
+        }
+    }
+    return nil
+}
+
+do {
+    let tunings = [StickTuning(), StickTuning(deadzone: 0, curve: 1, gate: .round),
+                   StickTuning(deadzone: 0.2, curve: 2.2, gate: .octagon),
+                   StickTuning(deadzone: 0.3, curve: 1.4, gate: .round)]
+    var compared = 0
+    var schemesWithSticks: [String] = []
+    for info in SchemeCatalog.all {
+        for tuning in tunings {
+            var settings = PadSettings(); settings.stick = tuning
+            let r = Recorder()
+            let e = PadEngine(scheme: SchemeCatalog.make(info.id), output: r, context: settingsContext(settings))
+            let s = e.scheme as! ControlScheme
+            for side in [PadStick.left, .right] {
+                guard let (c, travel, floating) = stickControl(s, side) else { continue }
+                if !schemesWithSticks.contains(info.id) { schemesWithSticks.append(info.id) }
+                let origin = floating ? CGPoint(x: c.shape.boundingBox.midX, y: c.shape.boundingBox.midY) : c.shape.center
+                for deg in stride(from: 0.0, to: 360.0, by: 15.0) {
+                    for rr in [0.02, 0.07, 0.25, 0.6, 0.95, 1.0, 1.1] {
+                        let a = CGFloat(deg * .pi / 180)
+                        let dx = cos(a) * CGFloat(rr) * travel, dy = sin(a) * CGFloat(rr) * travel
+                        e.began(1, at: origin, time: 0)
+                        e.moved(1, to: origin + CGPoint(x: dx, y: dy), time: 0.1)
+                        let got = r.sticks[side] ?? .zero
+                        let ref = gen1Stick(dx: dx, dy: dy, travel: travel, deadzone: tuning.deadzone,
+                                            curve: tuning.curve, octagon: tuning.gate == .octagon)
+                        compared += 1
+                        check(abs(got.x - ref.x) < 1e-9 && abs(got.y - ref.y) < 1e-9,
+                              "\(info.id) \(side) stick at \(deg)deg r\(rr), \(tuning): got \(got), the pad gives \(ref)")
+                        e.ended(1, at: origin, time: 0.2)
+                    }
+                }
+            }
+        }
+    }
+    check(compared > 500, "stick parity compared \(compared) positions across \(schemesWithSticks)")
+    check(["zone", "float", "adaptive", "frame"].allSatisfy { schemesWithSticks.contains($0) }, "every stick scheme was exercised: \(schemesWithSticks)")
+}
+
+do {
+    // 2. Defaults: the unset PadSettings lays out exactly what the bare context did.
+    let bare = ipad.context(.stacked)
+    let viaSettings = LayoutContext(size: bare.size, safeInsets: bare.safeInsets, videoRects: bare.videoRects,
+                                    touchscreenRect: bare.touchscreenRect, settings: PadSettings())
+    check(viaSettings == bare, "default PadSettings is the default layout context")
+    for info in SchemeCatalog.all {
+        let a = SchemeCatalog.make(info.id) as! ControlScheme, b = SchemeCatalog.make(info.id) as! ControlScheme
+        a.layout(bare); b.layout(viaSettings)
+        check(a.controls.map(\.shape) == b.controls.map(\.shape) && a.controls.map(\.reach) == b.controls.map(\.reach),
+              "\(info.id): default settings change no control or catchment")
+    }
+    check(StickCalibration().isIdentity && StickCalibration(encoded: "").isIdentity, "no calibration stored = identity")
+    let zero = StickMath.value(offset: CGPoint(x: 40, y: -25), travel: 80, tuning: StickTuning())
+    check(zero == StickMath.value(offset: CGPoint(x: 40, y: -25), travel: 80, tuning: StickTuning(),
+                                  calibration: .identity, fixedBase: false), "identity calibration changes nothing")
+}
+
+do {
+    // 3. Calibration maps the player's reach and rest onto the same output, in every scheme.
+    let cal = StickCalibration(fullThrow: 0.7, centre: CGPoint(x: 0.1, y: -0.05), jitter: 0.12)
+    for info in SchemeCatalog.all {
+        var settings = PadSettings(); settings.calibration = StickCalibrations(left: cal, right: cal)
+        let r = Recorder()
+        let e = PadEngine(scheme: SchemeCatalog.make(info.id), output: r, context: settingsContext(settings))
+        let s = e.scheme as! ControlScheme
+        for side in [PadStick.left, .right] {
+            guard let (c, travel, floating) = stickControl(s, side) else { continue }
+            let origin = floating ? CGPoint(x: c.shape.boundingBox.midX, y: c.shape.boundingBox.midY) : c.shape.center
+            let rest = floating ? CGPoint.zero : CGPoint(x: cal.centre.x * travel, y: cal.centre.y * travel)
+            e.began(1, at: origin + rest, time: 0)
+            check((r.sticks[side] ?? .zero) == .zero, "\(info.id) \(side): the calibrated rest spot is the centre")
+            let wobble = travel * CGFloat(cal.jitter) * 0.9
+            e.moved(1, to: origin + rest + CGPoint(x: wobble, y: 0), time: 0.05)
+            check((r.sticks[side] ?? .zero) == .zero, "\(info.id) \(side): wobble inside the calibrated rest is ignored")
+            e.moved(1, to: origin + rest + CGPoint(x: travel * 0.7, y: 0), time: 0.1)
+            check(near(r.sticks[side]?.x ?? 0, 1, 1e-9), "\(info.id) \(side): the calibrated throw is full output, got \(String(describing: r.sticks[side]))")
+            e.moved(1, to: origin + rest + CGPoint(x: -travel * 0.7, y: 0), time: 0.15)
+            check(near(r.sticks[side]?.x ?? 0, -1, 1e-9), "\(info.id) \(side): and full the other way")
+            e.moved(1, to: origin + rest + CGPoint(x: 0, y: -travel * 0.35), time: 0.2)
+            let half = r.sticks[side]?.y ?? 0
+            let want = (0.5 - 0.12 / 0.7) / (1 - 0.12 / 0.7)
+            check(near(half, want, 1e-9), "\(info.id) \(side): half the calibrated throw is half output past the deadzone: \(half) vs \(want)")
+            e.ended(1, at: origin, time: 0.3)
+        }
+    }
+    // Racing steers the same way: their throw is full lock, their wobble is not steering.
+    var settings = PadSettings(); settings.calibration = StickCalibrations(left: cal)
+    let r = Recorder()
+    let e = PadEngine(scheme: SchemeCatalog.make("racing"), output: r, context: settingsContext(settings))
+    let (spec, zone) = steerSpec(e.scheme as! ControlScheme)
+    let start = CGPoint(x: zone.midX, y: zone.midY)
+    e.began(1, at: start, time: 0)
+    e.moved(1, to: start + CGPoint(x: spec.lockX * 0.11 * 0.7, y: 0), time: 0.1)
+    check((r.sticks[.left]?.x ?? 0) == 0, "racing: wobble inside the calibrated rest does not steer")
+    e.moved(1, to: start + CGPoint(x: spec.lockX * 0.7, y: 0), time: 0.2)
+    check(near(r.sticks[.left]?.x ?? 0, 1, 1e-9), "racing: the calibrated throw is full lock")
+    e.ended(1, at: start, time: 0.3)
+    // Racing deadzone and curve are the same numbers as the sticks'.
+    var t = PadSettings(); t.stick = StickTuning(deadzone: 0.2, curve: 2, gate: .octagon)
+    let r2 = Recorder()
+    let e2 = PadEngine(scheme: SchemeCatalog.make("racing"), output: r2, context: settingsContext(t))
+    let (spec2, zone2) = steerSpec(e2.scheme as! ControlScheme)
+    let start2 = CGPoint(x: zone2.midX, y: zone2.midY)
+    e2.began(1, at: start2, time: 0)
+    e2.moved(1, to: start2 + CGPoint(x: spec2.lockX * 0.6, y: 0), time: 0.1)
+    check(near(r2.sticks[.left]?.x ?? 0, pow((0.6 - 0.2) / 0.8, 2), 1e-9), "racing: deadzone and curve mean what they do on the sticks")
+}
+
+do {
+    // 4. Touch tolerance: never less than the scheme's own reach, and more at a higher level.
+    func reaches(_ id: String, _ tol: PadTolerance?) -> [CGFloat] {
+        var settings = PadSettings(); settings.tolerance = tol
+        let s = SchemeCatalog.make(id) as! ControlScheme
+        s.layout(settingsContext(settings))
+        return s.controls.map(\.reach)
+    }
+    for info in SchemeCatalog.all {
+        let base = reaches(info.id, nil), normal = reaches(info.id, .normal)
+        let generous = reaches(info.id, .generous), very = reaches(info.id, .veryGenerous)
+        check(zip(base, normal).allSatisfy { $0 <= $1 } && zip(normal, generous).allSatisfy { $0 <= $1 }
+              && zip(generous, very).allSatisfy { $0 <= $1 }, "\(info.id): tolerance only ever widens a catchment")
+        check(zip(base, very).contains { $0 < $1 }, "\(info.id): the most generous level widens something")
+    }
+    // A touch just outside a button is taken at the most generous level, and not before.
+    var settings = PadSettings(); settings.tolerance = .veryGenerous
+    let s = SchemeCatalog.make("float") as! ControlScheme
+    let plain = SchemeCatalog.make("float") as! ControlScheme
+    s.layout(settingsContext(settings)); plain.layout(settingsContext(PadSettings()))
+    let a = plain.controls.first { $0.button == .x }!
+    let r = a.shape.boundingBox.width / 2
+    let p = a.shape.center + CGPoint(x: r + 0.6 * r, y: 0)
+    check(s.claims(p) || !plain.claims(p), "float: a touch 0.6 radii outside a button is claimed when tolerance is raised")
+}
+
+do {
+    // 5. The calibration flow.
+    let travel: CGFloat = 80
+    func run(radius: Double, sectors: Int = 8, rest: CGPoint = CGPoint(x: 4, y: -3), wobble: CGFloat = 1) -> StickCalibration? {
+        var session = StickCalibrationSession(travel: travel)
+        var t = 0.0
+        session.begin(at: rest, time: t)
+        while session.phase == .rest {
+            t += 0.05
+            let k = CGFloat(Int(t * 20) % 2 == 0 ? 1 : -1)
+            session.move(to: rest + CGPoint(x: wobble * k, y: -wobble * k), time: t)
+        }
+        for i in 0..<sectors {
+            let a = CGFloat(i) * .pi / 4
+            let lim = Double(StickMath.gateFraction(.octagon, angle: a))
+            let r = CGFloat(radius * lim) * travel
+            t += 0.05
+            session.move(to: rest + CGPoint(x: cos(a) * r, y: -sin(a) * r), time: t)
+        }
+        return session.lift()
+    }
+    let part = run(radius: 0.8)
+    check(part != nil && near(part!.fullThrow, 0.8, 0.01), "calibration: a 0.8 sweep reads 0.8, got \(String(describing: part))")
+    check(part != nil && near(Double(part!.centre.x), 4.0 / 80, 0.002) && near(Double(part!.centre.y), -3.0 / 80, 0.002),
+          "calibration: the rest spot is recorded, got \(String(describing: part?.centre))")
+    check(part != nil && part!.jitter > 0.01 && part!.jitter < 0.05, "calibration: the rest wobble is recorded, got \(String(describing: part?.jitter))")
+    let whole = run(radius: 1.0, rest: .zero, wobble: 0)
+    check(whole?.fullThrow == 1 && whole?.centre == .zero, "calibration: a player who uses the whole ring keeps the default throw and centre")
+    check(run(radius: 1.1, rest: .zero, wobble: 0)?.fullThrow == 1, "calibration: a sweep past the ring is still a throw of 1, so the stick can reach full output")
+    check(run(radius: 0.8, sectors: 4) == nil, "calibration: lifting before reaching most of the ring saves nothing")
+    var early = StickCalibrationSession(travel: travel)
+    early.begin(at: .zero, time: 0)
+    check(early.lift() == nil && early.phase == .waiting, "calibration: lifting during the rest saves nothing and starts over")
+    var wander = StickCalibrationSession(travel: travel)
+    wander.begin(at: .zero, time: 0)
+    wander.move(to: CGPoint(x: 60, y: 0), time: 0.5)
+    wander.move(to: CGPoint(x: 60, y: 0), time: 1.0)
+    check(wander.phase == .rest, "calibration: a thumb that wanders off has not rested")
+    if let p = part {
+        let back = StickCalibration(encoded: p.encoded)
+        check(near(back.fullThrow, p.fullThrow, 1e-4) && near(Double(back.centre.x), Double(p.centre.x), 1e-4) && near(back.jitter, p.jitter, 1e-4),
+              "calibration: stored string round-trips")
+    }
+    check(StickCalibration(encoded: "nonsense").isIdentity && StickCalibration(encoded: "9,9,9,9").fullThrow == 1.15,
+          "calibration: a bad stored string is the identity and out-of-range values are clamped")
+}
+
+do {
+    // 6. Haptics, opacity, scale and shoulders reach the shared settings unchanged.
+    var s = PadSettings(); s.scale = 1.3; s.shoulderOffset = 0.8; s.stickSpacing = -1
+    let c = LayoutContext(size: CGSize(width: 800, height: 400), settings: s)
+    check(c.scale == 1.3 && c.shoulderOffset == 0.8 && c.stickSpacing == -1, "PadSettings reaches the layout context")
+}
+
+// MARK: Arc
+
+func arcDevices() -> [TargetDevice] {
+    let names = ["iPhone SE", "iPhone 16 Pro Max", "iPad mini", "iPad Pro 13"]
+    return TargetDevice.all.filter { names.contains($0.name) } + TargetDevice.portraitVariants
+}
+
+// Circle fit: recovers a known pivot and radius from noisy thumb-sweep samples.
+do {
+    var seed: UInt64 = 0x9E3779B97F4A7C15
+    func rnd() -> Double {
+        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+        return Double(seed >> 11) / Double(1 << 53)
+    }
+    func gauss() -> Double { (-2 * log(max(rnd(), 1e-12))).squareRoot() * cos(2 * .pi * rnd()) }
+    for (cx, cy, r, a0, a1) in [(1180.0, 600.0, 260.0, 1.9, 3.0), (-40.0, 700.0, 190.0, -0.1, 1.2), (400.0, 900.0, 320.0, 1.1, 1.8)] {
+        var pts: [CGPoint] = []
+        for _ in 0..<80 {
+            let a = a0 + (a1 - a0) * rnd()
+            let rr = r + 3 * gauss()
+            pts.append(CGPoint(x: cx + rr * cos(a), y: cy - rr * sin(a) + 0))
+        }
+        // (y is flipped on screen; the circle is the same circle.)
+        if let fit = ArcMath.fitCircle(pts) {
+            let ce = hypot(Double(fit.center.x) - cx, Double(fit.center.y) - cy)
+            check(ce < 0.12 * r, "arc: fit pivot off by \(ce) for r=\(r)")
+            check(abs(Double(fit.radius) - r) < 0.08 * r, "arc: fit radius \(fit.radius) vs \(r)")
+            check(Double(fit.rms) < 6, "arc: residual \(fit.rms) should be near the 3pt noise")
+        } else {
+            check(false, "arc: no fit for r=\(r)")
+        }
+    }
+    // Noise-free samples are recovered exactly.
+    let exact = (0..<20).map { i -> CGPoint in let a = 1.2 + Double(i) * 0.05; return CGPoint(x: 700 + 300 * cos(a), y: 500 - 300 * sin(a)) }
+    if let f = ArcMath.fitCircle(exact) {
+        check(hypot(Double(f.center.x) - 700, Double(f.center.y) - 500) < 0.01 && abs(Double(f.radius) - 300) < 0.01, "arc: exact fit, got \(f)")
+    } else { check(false, "arc: exact samples must fit") }
+    let line = (0..<30).map { CGPoint(x: Double($0) * 5, y: 100 + Double($0) * 2) }
+    check(ArcMath.fitCircle(line) == nil, "arc: a straight sweep is not a circle")
+    check(ArcMath.fitCircle([CGPoint(x: 1, y: 1)]) == nil, "arc: too few points")
+}
+
+// Layout on every device and orientation, with and without calibration.
+for device in arcDevices() {
+    for display in TargetDevice.Display.allCases {
+        let ctx = device.context(display)
+        let arc = ArcPad()
+        arc.layout(ctx)
+        let where_ = "Arc / \(device.name) / \(display.rawValue)"
+        check(!arc.usingFallback, "\(where_): fell back to the plain arrangement")
+        let problems = LayoutCheck.problems(arc.controls, in: ctx.safeBounds)
+        check(problems.isEmpty, "\(where_): \(problems.joined(separator: "; "))")
+        if arc.avoidance != .none {
+            let keep = arc.avoidance == .video ? ctx.videoRects + [ctx.touchscreenRect!] : [ctx.touchscreenRect!]
+            for c in arc.controls where !c.isZone {
+                for k in keep where k.insetBy(dx: 1, dy: 1).intersects(c.shape.boundingBox) {
+                    check(false, "\(where_): \(c.label) covers the video/GamePad rect")
+                }
+            }
+        }
+        if display == .stacked && device.name != "iPad Pro 13 portrait" {
+            check(arc.avoidance != .none, "\(where_): stacked screens leave margins, Arc must stay off the video (got \(arc.avoidance))")
+        }
+    }
+}
+
+// Angular assignment: radial over/undershoot keeps the button; sliding along the arc moves it.
+for device in arcDevices() {
+    let ctx = device.context(.stacked)
+    for (rad, name) in [(-0.8, "short"), (0.0, "on"), (0.9, "far")] {
+        let out = Recorder()
+        let arc = ArcPad()
+        let eng = PadEngine(scheme: arc, output: out, context: ctx)
+        for set in arc.hands {
+            let buttons: [PadButton] = set.side == .right ? [.a, .b, .x, .y] : [.up, .right, .down, .left]
+            for b in buttons {
+                guard let c = arc.controls.first(where: { $0.button == b }) else { check(false, "arc: no \(b)"); continue }
+                let (r, phi) = set.polar(c.shape.center)
+                let p = set.point(r: r + CGFloat(rad) * arc.layoutUnit, phi: phi)
+                eng.began(1, at: p, time: 0)
+                check(out.held == [b], "arc \(device.name): \(name) press of \(b) gave \(out.held.map(\.description).sorted())")
+                eng.ended(1, at: p, time: 0.1)
+                check(out.held.isEmpty, "arc: release after \(b)")
+            }
+        }
+    }
+    // Slide A -> B along the arc, with a wobbling radius.
+    let out = Recorder()
+    let arc = ArcPad()
+    let eng = PadEngine(scheme: arc, output: out, context: ctx)
+    let hand = arc.hands.first { $0.side == .right }!
+    let a = arc.controls.first { $0.button == .a }!.shape.center
+    let b = arc.controls.first { $0.button == .b }!.shape.center
+    let (r, pa) = hand.polar(a), (_, pb) = hand.polar(b)
+    eng.began(1, at: a, time: 0)
+    check(out.held == [.a], "arc: touch A")
+    for i in 1...10 {
+        let t = CGFloat(i) / 10
+        let wobble = (i % 2 == 0 ? 0.5 : -0.5) * arc.layoutUnit
+        eng.moved(1, to: hand.point(r: r + wobble, phi: pa + (pb - pa) * t), time: Double(i) * 0.01)
+    }
+    check(out.held == [.b], "arc: slid A to B, holding \(out.held)")
+    eng.moved(1, to: CGPoint(x: ctx.size.width / 2, y: ctx.safeBounds.minY + 4), time: 1)
+    check(out.held.isEmpty, "arc: far off the arc lets go")
+    eng.ended(1, at: .zero, time: 2)
+    check(out.held.isEmpty, "arc: nothing stuck")
+}
+
+// Calibration end to end: guided, left thumb then right, review, Done. Then it locks.
+func sweep(_ eng: PadEngine, id: Int, pivot: CGPoint, side: ArcSide, radius: CGFloat, from: CGFloat, to: CGFloat, t0: Double) {
+    var seed: UInt64 = UInt64(id) &* 977
+    func jitter() -> CGFloat {
+        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+        return CGFloat(Double(seed >> 11) / Double(1 << 53) - 0.5) * 6
+    }
+    func at(_ phi: CGFloat) -> CGPoint {
+        CGPoint(x: pivot.x + side.inboardSign * radius * sin(phi) + jitter(), y: pivot.y - radius * cos(phi) + jitter())
+    }
+    eng.began(id, at: at(from), time: t0)
+    for i in 1...100 { eng.moved(id, to: at(from + (to - from) * CGFloat(i) / 100), time: t0 + Double(i) * 0.02) }
+    eng.ended(id, at: at(to), time: t0 + 2.1)
+}
+
+do {
+    let device = TargetDevice.all.first { $0.name == "iPad mini" }!
+    let ctx = device.context(.stacked)
+    let out = Recorder()
+    let arc = ArcPad()
+    var saved: [String: ArcProfile] = [:]
+    arc.onProfiles = { saved = $0 }
+    let eng = PadEngine(scheme: arc, output: out, context: ctx)
+    let u = ctx.unit
+    let rp = CGPoint(x: ctx.size.width - 10, y: ctx.size.height + 40), lp = CGPoint(x: 10, y: ctx.size.height + 40)
+    let rad: CGFloat = 6.2 * u
+    check(!arc.isLocked && !arc.hasCalibration, "arc: unlocked until the first calibration completes")
+    check(arc.startCalibration() && arc.calibrationPhase == .left && eng.claims(CGPoint(x: 5, y: 5)), "arc: calibration starts with the left thumb and claims the screen")
+    check(arc.calibrationPrompt.contains("left thumb"), "arc: prompt names the thumb")
+    // A tap is not a sweep: stay on the left thumb with a note.
+    eng.began(5, at: CGPoint(x: 200, y: 500), time: 0); eng.ended(5, at: CGPoint(x: 200, y: 500), time: 0.1)
+    check(arc.calibrationPhase == .left && arc.calibrationNote != nil, "arc: a tap is not a sweep")
+    sweep(eng, id: 1, pivot: lp, side: .left, radius: rad, from: 0.35, to: 1.25, t0: 1)
+    check(arc.calibrationPhase == .right, "arc: left sweep accepted, now the right thumb")
+    sweep(eng, id: 2, pivot: rp, side: .right, radius: rad, from: 0.35, to: 1.25, t0: 4)
+    check(arc.calibrationPhase == .review, "arc: both swept, review")
+    check(out.held.isEmpty && out.log.isEmpty, "arc: a calibration sweep presses nothing")
+    check(!arc.render(pressed: [], sticks: [:]).isEmpty, "arc: review renders")
+    // Redo throws the sweeps away; do it once, then redo for real.
+    arc.redoCalibration()
+    check(arc.calibrationPhase == .left, "arc: redo starts over")
+    sweep(eng, id: 3, pivot: lp, side: .left, radius: rad, from: 0.35, to: 1.25, t0: 8)
+    sweep(eng, id: 4, pivot: rp, side: .right, radius: rad, from: 0.35, to: 1.25, t0: 11)
+    arc.acceptCalibration()
+    check(!arc.isCalibrating && arc.isLocked && arc.hasCalibration, "arc: Done saves and locks")
+    let prof = saved["landscape"]
+    check(prof?.left != nil && prof?.right != nil && prof?.locked == true, "arc: both hands saved, got \(String(describing: prof))")
+    if let r = prof?.right {
+        let short = Double(min(ctx.size.width, ctx.size.height))
+        check(abs(r.radius * short - Double(rad)) < 0.08 * Double(rad), "arc: fitted radius \(r.radius * short) vs \(rad)")
+        check(abs(r.pivotX * Double(ctx.size.width) - Double(rp.x)) < 0.1 * Double(rad), "arc: fitted pivot x")
+        check(abs(r.pivotY * Double(ctx.size.height) - Double(rp.y)) < 0.1 * Double(rad), "arc: fitted pivot y")
+    }
+    check(arc.hands.allSatisfy { $0.calibrated }, "arc: layout uses the calibration")
+    check(LayoutCheck.problems(arc.controls, in: ctx.safeBounds).isEmpty, "arc: calibrated layout has no overlaps")
+    check(arc.avoidance != .none, "arc: calibrated layout still avoids the video")
+    let json = ArcPad.encode(saved)
+    check(ArcPad.decode(json) == saved, "arc: calibration round-trips through JSON")
+    check(ArcPad.decode("garbage").isEmpty && ArcPad.decode("{\"landscape\":{\"right\":{\"pivotX\":1e999}}}").isEmpty, "arc: bad saved data loads as nothing")
+    let again = ArcPad(profiles: ArcPad.decode(json))
+    again.layout(ctx)
+    check(again.hands == arc.hands && again.isLocked, "arc: saved calibration reproduces the layout and the lock")
+    again.layout(TargetDevice.portraitVariants.first { $0.name == "iPad mini portrait" }!.context(.stacked))
+    check(again.hands.allSatisfy { !$0.calibrated } && !again.isLocked, "arc: calibration and lock are per orientation")
+
+    // LOCKED: nothing can start, nothing can be dragged, play still works.
+    let before = arc.controls.map(\.shape)
+    check(!arc.startCalibration() && !arc.isCalibrating, "arc: locked refuses calibration")
+    check(!arc.setFineTuning(true) && !arc.isFineTuning, "arc: locked refuses fine-tuning")
+    let a = arc.controls.first { $0.button == .a }!.shape.center
+    let hand = arc.hands.first { $0.side == .right }!
+    let (ra, pa) = hand.polar(a)
+    eng.began(20, at: a, time: 20)
+    check(out.held == [.a], "arc: locked, a press still plays")
+    eng.moved(20, to: hand.point(r: ra + 40, phi: pa + 0.3), time: 20.1)
+    eng.ended(20, at: a, time: 20.2)
+    check(arc.controls.map(\.shape) == before && saved["landscape"]?.rightTweaks == nil, "arc: locked, a drag moves nothing")
+
+    // UNLOCKED: fine-tune by dragging along the arc and in/out, per hand, persisted. Done on
+    // a window with no video so the geometry, not the margins, decides where things go.
+    arc.setLocked(false)
+    check(!arc.isLocked && saved["landscape"]?.locked == false, "arc: unlock persists")
+    check(arc.setFineTuning(true) && arc.isFineTuning, "arc: unlocked allows fine-tuning")
+    arc.setFineTuning(false)
+    arc.resetToDefault()
+    let open = LayoutContext(size: CGSize(width: 1376, height: 1032), safeInsets: Insets(top: 24, bottom: 20))
+    let tarc = ArcPad()
+    var tsaved: [String: ArcProfile] = [:]
+    tarc.onProfiles = { tsaved = $0 }
+    let teng = PadEngine(scheme: tarc, output: out, context: open)
+    check(tarc.setFineTuning(true), "arc: fine-tune on")
+    out.log.removeAll()
+    let ta = tarc.controls.first { $0.button == .a }!.shape.center
+    let thand = tarc.hands.first { $0.side == .right }!
+    let leftBefore = tarc.controls.first { $0.button == .left }!.shape.center
+    let (tra, tpa) = thand.polar(ta)
+    teng.began(21, at: ta, time: 30)
+    check(out.log.isEmpty && out.held.isEmpty, "arc: fine-tune presses nothing")
+    for i in 1...10 { teng.moved(21, to: thand.point(r: tra + 3 * CGFloat(i), phi: tpa + 0.02 * CGFloat(i)), time: 30 + Double(i) * 0.02) }
+    teng.ended(21, at: ta, time: 31)
+    let ta2 = tarc.controls.first { $0.button == .a }!.shape.center
+    let (tra2, tpa2) = tarc.hands.first { $0.side == .right }!.polar(ta2)
+    check(abs((tpa2 - tpa) - 0.2) < 0.05, "arc: dragged 0.2 rad along the arc, moved \(tpa2 - tpa)")
+    check(abs((tra2 - tra) - 30) < 3, "arc: dragged 30pt out, moved \(tra2 - tra)")
+    check(tarc.controls.first { $0.button == .left }!.shape.center == leftBefore, "arc: the other hand is untouched")
+    check(tsaved["landscape"]?.rightTweaks?["arc"] != nil && tsaved["landscape"]?.leftTweaks == nil, "arc: fine-tune saved for that hand only")
+    let tuned = ArcPad(profiles: ArcPad.decode(ArcPad.encode(tsaved)))
+    tuned.layout(open)
+    check(tuned.controls.map(\.shape) == tarc.controls.map(\.shape), "arc: fine-tuning persists exactly")
+    check(LayoutCheck.problems(tarc.controls, in: open.safeBounds).isEmpty, "arc: fine-tuned layout has no overlaps")
+    // Drag the left stick on its own.
+    let ls = tarc.controls.first { if case .stick(.left, _, _) = $0.kind { return true } else { return false } }!.shape.center
+    teng.began(22, at: ls, time: 40)
+    teng.moved(22, to: CGPoint(x: ls.x + 25, y: ls.y), time: 40.1)
+    teng.ended(22, at: ls, time: 40.2)
+    check(tsaved["landscape"]?.leftTweaks?["stick"] != nil, "arc: any control can be dragged, saved under its hand")
+    tarc.setLocked(true)
+    check(!tarc.isFineTuning, "arc: locking ends fine-tuning")
+    let frozen = tarc.controls.map(\.shape)
+    teng.began(23, at: tarc.controls.first { $0.button == .a }!.shape.center, time: 50)
+    teng.moved(23, to: CGPoint(x: 900, y: 500), time: 50.1)
+    teng.ended(23, at: .zero, time: 50.2)
+    check(tarc.controls.map(\.shape) == frozen, "arc: locked again, drags move nothing")
+    tarc.setLocked(false)
+    tarc.resetToDefault()
+    check(!tarc.hasCalibration && tsaved["landscape"] == nil, "arc: reset clears tweaks")
+    arc.resetToDefault()
+    arc.startCalibration()
+    check(arc.startCalibration() && arc.isCalibrating, "arc: recalibrate available when unlocked")
+    arc.cancelCalibration()
+}
+
+// Overlap: nothing covers the video when there is margin, the stacked layouts all fit, and
+// a screen the video fills falls back to the placement that covers least, logged once.
+do {
+    var lines: [String] = []
+    ArcPad.logSink = { lines.append($0) }
+    ArcPad.logged.removeAll()
+    for d in (TargetDevice.all + TargetDevice.portraitVariants) {
+        let ctx = d.context(.stacked)
+        let arc = ArcPad(); arc.layout(ctx)
+        check(arc.avoidance != .none && !arc.usingFallback, "arc: \(d.name) stacked has margin and must avoid the video, got \(arc.avoidance)")
+    }
+    check(lines.isEmpty, "arc: no fallback log when everything fits, got \(lines)")
+    let se = TargetDevice.all.first { $0.name == "iPhone SE" }!.context(.single)
+    let full = ArcPad(); full.layout(se)
+    check(full.avoidance == .none && !full.usingFallback, "arc: a video that fills the screen falls back to least overlap")
+    check(LayoutCheck.problems(full.controls, in: se.safeBounds).isEmpty, "arc: and still nothing overlaps each other")
+    let again = ArcPad(); again.layout(se); again.layout(se)
+    check(lines.count == 1, "arc: the fallback is logged once, got \(lines.count)")
+    // Least overlap: no worse than the plain Zone-style arrangement over the same video.
+    let zone = GamePadArrangement.build(se)
+    func covered(_ cs: [PadControl]) -> CGFloat {
+        cs.reduce(0) { acc, c in
+            let i = c.shape.boundingBox.intersection(se.videoRects[0])
+            return acc + (i.isNull ? 0 : i.width * i.height)
+        }
+    }
+    check(covered(full.controls) <= covered(zone), "arc: covers no more of the video than the plain layout")
+}
+
+
+// MARK: Showcase
+// The showcase pad's geometry, transplant and colours ported as pure Swift, and the TouchLab
+// scheme built on them.
+
+do {
+    func rect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect { CGRect(x: x, y: y, width: w, height: h) }
+    func centre(_ r: ShowcaseResolved, _ id: String) -> CGPoint { r.controls[id]!.centre }
+    func nearPt(_ p: CGPoint, _ x: CGFloat, _ y: CGFloat) -> Bool { abs(p.x - x) < 0.02 && abs(p.y - y) < 0.02 }
+
+    // Expected values are PreviewPadStore.resolve's own, taken by compiling the showcase
+    // pad's GamePadGeometry.swift and MuffinPadCustomisation.swift unchanged on the same inputs.
+    func resolve(_ preset: ShowcaseLayoutPreset, _ mode: ShowcaseLayout.DisplayMode, size: CGSize, safe: CGRect,
+                 ppi: CGFloat, phone: Bool) -> ShowcaseResolved {
+        ShowcaseResolver.resolve(preset: preset, displayMode: mode, container: size, safeArea: safe,
+                                 pointsPerInch: ppi, isPhone: phone)
+    }
+    let pro11 = resolve(.native, .fit, size: CGSize(width: 1194, height: 834), safe: rect(0, 24, 1194, 790), ppi: 132, phone: false)
+    check(abs(pro11.unit - 55.22) < 0.01, "showcase: iPad Pro 11 life-size D is 10.625 mm at 132 ppi, got \(pro11.unit)")
+    check(nearPt(centre(pro11, "A"), 1105.62, 573.81) && nearPt(centre(pro11, "stickL"), 88.37, 429.15)
+          && nearPt(centre(pro11, "dpad"), 141.39, 573.81) && nearPt(centre(pro11, "HOME"), 597.00, 765.96),
+          "showcase: iPad Pro 11 fit/native positions differ from PreviewPadStore")
+    check(abs(pro11.video.height - 671.62) < 0.01, "showcase: iPad Pro 11 fit picture is full-bleed 16:9")
+
+    let se = resolve(.native, .native, size: CGSize(width: 667, height: 375), safe: rect(0, 0, 667, 375), ppi: 163, phone: true)
+    check(abs(se.unit - 54.95) < 0.01 && nearPt(centre(se, "plus"), 448.58, 198.38) && nearPt(centre(se, "minus"), 218.42, 198.38),
+          "showcase: iPhone SE native: +/- at the elbow, unit 54.95, got \(se.unit)")
+    check(abs(se.video.minX - 256.34) < 0.01 && abs(se.video.width - 154.32) < 0.01, "showcase: iPhone SE native picture rect \(se.video)")
+
+    let seT = resolve(.iPadPro2020, .fit, size: CGSize(width: 667, height: 375), safe: rect(0, 0, 667, 375), ppi: 163, phone: true)
+    check(abs(seT.unit - 41.40) < 0.01 && nearPt(centre(seT, "A"), 600.74, 194.91) && nearPt(centre(seT, "stickR"), 600.74, 86.45)
+          && nearPt(centre(seT, "plus"), 516.28, 295.10), "showcase: iPad Pro preset transplanted to iPhone SE differs from PadPresetFitter, unit \(seT.unit)")
+    let miniT = resolve(.iPadPro2020, .native, size: CGSize(width: 1133, height: 744), safe: rect(0, 24, 1133, 700), ppi: 163, phone: false)
+    check(abs(miniT.unit - 48.66) < 0.01 && nearPt(centre(miniT, "A"), 1055.11, 251.43) && nearPt(centre(miniT, "HOME"), 558.71, 547.26),
+          "showcase: iPad Pro preset on iPad mini native differs from PadPresetFitter, unit \(miniT.unit)")
+    let up = resolve(.compact, .fit, size: CGSize(width: 440, height: 956), safe: rect(0, 62, 440, 860), ppi: 460.0 / 3, phone: true)
+    check(abs(up.unit - 44.90) < 0.01 && nearPt(centre(up, "A"), 368.14, 311.05) && abs(up.video.minY - 62) < 0.01 && abs(up.video.height - 247.5) < 0.01,
+          "showcase: phone upright is forced to Native (picture on top), got \(up.unit) \(up.video)")
+
+    // Colour files: the showcase's JSON, byte for byte readable both ways.
+    let json = "{\"version\":1,\"name\":\"Mine\",\"outline\":{\"hex\":\"#101010\"},\"fills\":{\"default\":{\"hex\":\"#336699\",\"alpha\":0.5}},\"glyphs\":{\"default\":{\"hex\":\"#FFFFFF\"}},\"pressedAlphaBoost\":0.12}"
+    if let file = try? ShowcaseColourFile.decode(Data(json.utf8)) {
+        check(file.fill("A").hex == "#336699" && abs(file.alpha("A", pressed: true) - 0.62) < 1e-9, "showcase: .muffinclr fill/alpha lookup")
+        check((try? ShowcaseColourFile.decode(file.encoded())) == file, "showcase: .muffinclr round-trips")
+    } else { check(false, "showcase: a .muffinclr written by the showcase pad failed to decode") }
+    for p in ShowcaseColourPreset.allCases {
+        check((try? ShowcaseColourFile.decode(p.file.encoded())) == p.file, "showcase: \(p.rawValue) round-trips as .muffinclr")
+    }
+    check(ShowcaseColourPresets.wiiUWhite.fill("A").hex == "#F1F1F1" && ShowcaseColourPresets.wiiUWhite.fill("dpad").hex == "#BDBDC1"
+          && ShowcaseColourPresets.superFamicom.fill("Y").hex == "#D14B45", "showcase: preset colours")
+    check(abs(ShowcaseDeviceMetrics.measurement(identifier: "iPad8,9", nativePixels: CGSize(width: 1668, height: 2388), scale: 2, isPad: true, calibrated: nil).pointsPerInch - 132) < 0.01
+          && abs(ShowcaseDeviceMetrics.measurement(identifier: "iPad16,1", nativePixels: .zero, scale: 2, isPad: true, calibrated: nil).pointsPerInch - 163) < 0.01,
+          "showcase: points per inch from model")
+
+    // Every review device, both orientations, both display modes, both host layouts, every preset.
+    var overlays = 0, clears = 0
+    var smallest: (CGFloat, String) = (1, "")
+    for device in TargetDevice.showcaseReview {
+        for mode in ShowcaseLayout.DisplayMode.allCases {
+            for display in TargetDevice.Display.allCases {
+                for preset in ShowcaseLayoutPreset.allCases {
+                    let pad = ShowcasePad()
+                    pad.pointsPerInch = device.showcasePointsPerInch
+                    pad.layoutPreset = preset
+                    pad.displayMode = mode
+                    let ctx = device.context(display)
+                    pad.layout(ctx)
+                    let where_ = "Showcase / \(device.name) / \(mode.rawValue) / \(display.rawValue) / \(preset.rawValue)"
+                    let problems = LayoutCheck.problems(pad.controls, in: ctx.safeBounds)
+                    check(problems.isEmpty, "\(where_): \(problems.joined(separator: "; "))")
+                    var reach = Set<PadButton>(), sticks = 0
+                    for c in pad.controls {
+                        switch c.kind {
+                        case .button(let b): reach.insert(b)
+                        case .dpad: reach.formUnion([.up, .down, .left, .right, .stickL])
+                        case .stick: sticks += 1
+                        default: break
+                        }
+                    }
+                    check(reach == Set(PadButton.allCases) && sticks == 2, "\(where_): missing \(Set(PadButton.allCases).subtracting(reach))")
+                    let avoid: [CGRect]
+                    switch pad.arrangement {
+                    case .native:
+                        let r = pad.pictureRect
+                        check(r != nil && abs(r!.width / r!.height - 16.0 / 9) < 0.01 && ctx.safeBounds.insetBy(dx: -1, dy: -1).contains(r!),
+                              "\(where_): native picture rect \(String(describing: r))")
+                        avoid = r.map { [$0] } ?? []
+                    case .clear:
+                        clears += 1
+                        avoid = ctx.videoRects
+                        check(pad.unitPoints >= pad.minimumUnit - 0.01, "\(where_): clear layout under the minimum size")
+                    case .overlay:
+                        overlays += 1
+                        avoid = []
+                        check(mode == .fit, "\(where_): only Fit may float over the picture")
+                    }
+                    for c in pad.controls where !avoid.isEmpty {
+                        check(!avoid.contains { $0.insetBy(dx: 1, dy: 1).intersects(c.shape.boundingBox) },
+                              "\(where_): \(c.label) covers the picture")
+                    }
+                    if pad.lifeSizeFraction < smallest.0 { smallest = (pad.lifeSizeFraction, where_) }
+                }
+            }
+        }
+    }
+    print("showcase: \(clears) clear, \(overlays) overlay; smallest \(Int(smallest.0 * 100))% of life size (\(smallest.1))")
+    // The GamePad stays a real touchscreen wherever Fit found a margin.
+    do {
+        let d = TargetDevice.all.first { $0.name.contains("A12Z") }!
+        let pad = ShowcasePad(); pad.pointsPerInch = 132; pad.layout(d.context(.stacked))
+        check(pad.arrangement == .clear && abs(pad.lifeSizeFraction - 1) < 0.01, "showcase: iPad Pro 11 stacked is clear at life size, got \(pad.arrangement) \(pad.lifeSizeFraction)")
+        let face = pad.controls.first { $0.button == .a }!.shape.boundingBox.width
+        check(abs(face - 10.625 * 132 / 25.4) < 0.05, "showcase: a face button is 10.625 mm across, got \(face) pt")
+    }
+    // Window sizes of every shape: Fit and Native both stay valid.
+    for mode in ShowcaseLayout.DisplayMode.allCases {
+        var bad: [String] = []
+        var w: CGFloat = 480
+        while w <= 1400 {
+            var h: CGFloat = 300
+            while h <= 1100 {
+                let ctx = LayoutContext(size: CGSize(width: w, height: h), safeInsets: Insets(top: 20, left: 0, bottom: 20, right: 0))
+                let pad = ShowcasePad(); pad.displayMode = mode; pad.layout(ctx)
+                let p = LayoutCheck.problems(pad.controls, in: ctx.safeBounds)
+                if !p.isEmpty { bad.append("\(Int(w))x\(Int(h)): \(p.first!)") }
+                h += 80
+            }
+            w += 70
+        }
+        check(bad.isEmpty, "Showcase \(mode.rawValue): \(bad.count) window sizes fail, e.g. \(bad.prefix(3).joined(separator: " | "))")
+    }
+
+    // Behaviour, through the engine, on the A12Z iPad (Fit, clear) and an iPhone (Native).
+    for (name, display, mode) in [("iPad Pro 11 (A12Z)", TargetDevice.Display.stacked, ShowcaseLayout.DisplayMode.fit),
+                                  ("iPhone 16 Pro Max", .stacked, .native)] {
+        let d = TargetDevice.all.first { $0.name == name }!
+        let r = Recorder()
+        let pad = ShowcasePad(); pad.pointsPerInch = d.showcasePointsPerInch; pad.displayMode = mode
+        let e = PadEngine(scheme: pad, output: r, context: d.context(display))
+        func at(_ b: PadButton) -> CGPoint { pad.controls.first { $0.button == b }!.shape.center }
+        for b in [PadButton.a, .b, .x, .y, .l, .r, .zl, .zr, .plus, .minus, .home, .stickR] {
+            e.began(1, at: at(b), time: 0)
+            check(r.held == [b], "showcase \(name): tap \(b) holds exactly \(b), got \(r.held)")
+            e.ended(1, at: at(b), time: 0.1)
+            check(r.held.isEmpty, "showcase \(name): \(b) released")
+        }
+        let a = at(.a), b = at(.b)
+        e.began(1, at: a, time: 1); e.moved(1, to: b, time: 1.1)
+        check(r.held == [.b], "showcase \(name): slide A to B, got \(r.held)")
+        e.cancelled(1, time: 1.2)
+        check(r.held.isEmpty, "showcase \(name): cancel releases")
+        let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        e.began(2, at: mid, time: 2)
+        check(r.held == [.a, .b], "showcase \(name): chord in the gap between A and B, got \(r.held)")
+        e.ended(2, at: mid, time: 2.1)
+        e.began(1, at: at(.zl), time: 3); e.moved(1, to: at(.l), time: 3.1)
+        check(r.held == [.l], "showcase \(name): slide ZL to L, got \(r.held)")
+        e.ended(1, at: at(.l), time: 3.2)
+        // A finger resting in the gap between the faces and the d-pad is claimed by something (gap-free).
+        let dpad = pad.controls.first { if case .dpad = $0.kind { return true }; return false }!
+        let c = dpad.shape.center, u = pad.unitPoints
+        e.began(1, at: c + CGPoint(x: 0.9 * u, y: -0.9 * u), time: 4)
+        check(r.held == [.up, .right], "showcase \(name): d-pad up-right diagonal, got \(r.held)")
+        e.moved(1, to: c + CGPoint(x: 0, y: 0.9 * u), time: 4.05)
+        check(r.held == [.down], "showcase \(name): d-pad rolls to down, got \(r.held)")
+        e.ended(1, at: c, time: 4.1)
+        e.began(1, at: c, time: 5)
+        check(r.held == [.stickL], "showcase \(name): d-pad centre is L3, got \(r.held)")
+        e.ended(1, at: c, time: 5.1)
+        let stick = pad.controls.first { if case .stick(.left, _, _) = $0.kind { return true }; return false }!
+        e.began(3, at: stick.shape.center, time: 6)
+        e.moved(3, to: stick.shape.center + CGPoint(x: 400, y: 0), time: 6.1)
+        check(near(r.sticks[.left]?.x ?? 0, 1), "showcase \(name): left stick full right, got \(String(describing: r.sticks[.left]))")
+        check(pad.scene(pressed: [], sticks: [:]).primitives.count > 40, "showcase \(name): scene has the full pad")
+        e.ended(3, at: .zero, time: 6.2)
+        check(r.sticks[.left] == .zero, "showcase \(name): stick recentres")
+        // Shared stick settings reach it: a bigger deadzone swallows a small push.
+        var ctx = d.context(display); ctx.stick = StickTuning(deadzone: 0.3, curve: 1, gate: .round)
+        e.setContext(ctx)
+        let s2 = pad.controls.first { if case .stick(.left, _, _) = $0.kind { return true }; return false }!
+        e.began(4, at: s2.shape.center, time: 7)
+        guard case let .stick(_, travel2, _) = s2.kind else { fatalError() }
+        e.moved(4, to: s2.shape.center + CGPoint(x: 0.25 * travel2, y: 0), time: 7.1)
+        check(r.sticks[.left] == .zero, "showcase \(name): stick reads context.stick (deadzone)")
+        e.ended(4, at: .zero, time: 7.2)
+    }
+
+    // Settings: preset, colour and display mode each change the pad, and colour reaches the scene.
+    do {
+        let d = TargetDevice.all.first { $0.name.contains("A12Z") }!
+        let pad = ShowcasePad(); pad.pointsPerInch = 132; pad.layout(d.context(.stacked))
+        let before = pad.controls.first { $0.button == .a }!.shape.center
+        pad.layoutPreset = .compact
+        check(pad.controls.first { $0.button == .a }!.shape.center != before && pad.lifeSizeFraction < 0.8, "showcase: Compact preset re-lays out at 70%")
+        pad.layoutPreset = .native
+        pad.displayMode = .native
+        check(pad.arrangement == .native && pad.pictureRect != nil, "showcase: display mode switches to Native")
+        let white = pad.scene(pressed: [], sticks: [:])
+        pad.colourPreset = .wiiUBlack
+        check(pad.scene(pressed: [], sticks: [:]) != white, "showcase: colour preset changes the scene")
+        let held = pad.scene(pressed: [.a], sticks: [:])
+        check(held != pad.scene(pressed: [], sticks: [:]), "showcase: a held button looks different")
     }
 }
 

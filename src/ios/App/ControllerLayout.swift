@@ -39,6 +39,10 @@ enum ControllerLayoutSettings {
     static let deadzoneKey = "muffin.controls.stick.deadzone"
     static let stickCurveKey = "muffin.controls.stick.curve"
     static let stickGateKey = "muffin.controls.stick.gate"
+    /// Each stick's calibration (full throw, rest centre, rest jitter), written by "Calibrate
+    /// sticks" and read by every control scheme. Empty = not calibrated. Not reset by `reset()`.
+    static let stickCalibrationLeftKey = "muffin.controls.stick.cal.left"
+    static let stickCalibrationRightKey = "muffin.controls.stick.cal.right"
 
     /// Grouped (false): dragging a cluster's dashed box moves the whole cluster.
     /// Individual (true): each button has its own drag and pinch, and the cluster handle

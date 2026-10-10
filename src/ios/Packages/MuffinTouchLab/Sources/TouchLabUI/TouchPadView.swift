@@ -31,6 +31,29 @@ public final class TouchPadView: UIView {
     /// See LayoutContext.shoulderOffset.
     public var shoulderOffset: CGFloat = 0 { didSet { relayout() } }
     public var stickTuning = StickTuning() { didSet { relayout() } }
+    /// See LayoutContext.calibration.
+    public var calibration = StickCalibrations() { didSet { relayout() } }
+    /// See LayoutContext.tolerance.
+    public var tolerance: PadTolerance? { didSet { relayout() } }
+
+    /// Every shared setting at once; the same values for every scheme.
+    public var settings: PadSettings {
+        get {
+            PadSettings(stick: stickTuning, calibration: calibration, tolerance: tolerance, scale: scale,
+                        opacity: controlOpacity, haptics: hapticsEnabled, stickSpacing: stickSpacing,
+                        shoulderOffset: shoulderOffset)
+        }
+        set {
+            if stickTuning != newValue.stick { stickTuning = newValue.stick }
+            if calibration != newValue.calibration { calibration = newValue.calibration }
+            if tolerance != newValue.tolerance { tolerance = newValue.tolerance }
+            if scale != newValue.scale { scale = newValue.scale }
+            if stickSpacing != newValue.stickSpacing { stickSpacing = newValue.stickSpacing }
+            if shoulderOffset != newValue.shoulderOffset { shoulderOffset = newValue.shoulderOffset }
+            if controlOpacity != newValue.opacity { controlOpacity = newValue.opacity }
+            hapticsEnabled = newValue.haptics
+        }
+    }
     /// Which coordinate space `touchscreenRect` / `videoRects` are given in. `.window`
     /// takes SwiftUI `.global` frames (window coordinates) and converts them into this
     /// view's space, so a host can report screen frames from anywhere in its hierarchy.
@@ -117,7 +140,7 @@ public final class TouchPadView: UIView {
                                                    bottom: i.bottom + e.bottom, right: i.right + e.right),
                                 videoRects: videoRects.map(toLocal), touchscreenRect: touchscreenRect.map(toLocal),
                                 scale: scale, stick: stickTuning, stickSpacing: stickSpacing,
-                                shoulderOffset: shoulderOffset)
+                                shoulderOffset: shoulderOffset, calibration: calibration, tolerance: tolerance)
         if force || ctx != engine.context {
             engine.setContext(ctx)
             if force { engine.scheme.layout(ctx) }
@@ -142,7 +165,10 @@ public final class TouchPadView: UIView {
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         // No other finger is down, so anything the engine still holds is a leaked touch whose end never arrived.
         if let all = event?.allTouches, all.count == touches.count { engine.cancelAll() }
-        for t in touches { engine.began(id(t), at: t.location(in: self), time: t.timestamp) }
+        for t in touches {
+            (engine.scheme as? ArcPad)?.contactRadius = t.majorRadius
+            engine.began(id(t), at: t.location(in: self), time: t.timestamp)
+        }
         changed()
     }
 
@@ -150,6 +176,7 @@ public final class TouchPadView: UIView {
         for t in touches {
             // Coalesced touches: every intermediate sample, so a fast flick across two
             // buttons or a quick stick snap is not reduced to its endpoints.
+            (engine.scheme as? ArcPad)?.contactRadius = t.majorRadius
             for c in event?.coalescedTouches(for: t) ?? [t] {
                 engine.moved(id(t), to: c.location(in: self), time: c.timestamp)
             }
@@ -251,6 +278,12 @@ public final class TouchPadView: UIView {
 
     public override func draw(_ rect: CGRect) {
         guard let g = UIGraphicsGetCurrentContext() else { return }
+        // Showcase has its own look (shadow, rim, dish, octagonal gate), as a scene to draw.
+        if let showcase = engine.scheme as? ShowcasePad {
+            ShowcaseDrawing.draw(showcase.scene(pressed: engine.litButtons(), sticks: engine.mixer.sticks),
+                                 in: g, opacity: controlOpacity)
+            return
+        }
         for e in engine.render() { PadDrawing.draw(e, in: g, opacity: controlOpacity) }
     }
 }
@@ -329,9 +362,13 @@ public struct TouchPad: UIViewRepresentable {
     public var haptics: Bool
     public var enabled: Bool
     public var stickTuning: StickTuning
+    public var calibration = StickCalibrations()
+    public var tolerance: PadTolerance?
     public var rectSpace: TouchPadView.RectSpace
     public var extraInsets: Insets
     public var onChange: ((PadEngine) -> Void)?
+    /// Called once with the live view, for a host that needs to reach it (Arc's calibration overlay).
+    public var onView: ((TouchPadView) -> Void)?
 
     public init(schemeID: String, output: PadOutput, touchscreenRect: CGRect? = nil, videoRects: [CGRect] = [],
                 scale: CGFloat = 1, stickSpacing: CGFloat = 0, shoulderOffset: CGFloat = 0, opacity: CGFloat = 0.85, haptics: Bool = true, revision: Int = 0,
@@ -357,6 +394,21 @@ public struct TouchPad: UIViewRepresentable {
         self.onChange = onChange
     }
 
+    /// The usual way in: one `PadSettings` for every scheme.
+    public init(schemeID: String, output: PadOutput, settings: PadSettings, touchscreenRect: CGRect? = nil,
+                videoRects: [CGRect] = [], revision: Int = 0, enabled: Bool = true,
+                rectSpace: TouchPadView.RectSpace = .local, extraInsets: Insets = Insets(),
+                makeScheme: @escaping (String) -> TouchScheme = SchemeCatalog.make,
+                onChange: ((PadEngine) -> Void)? = nil) {
+        self.init(schemeID: schemeID, output: output, touchscreenRect: touchscreenRect, videoRects: videoRects,
+                  scale: settings.scale, stickSpacing: settings.stickSpacing, shoulderOffset: settings.shoulderOffset,
+                  opacity: settings.opacity, haptics: settings.haptics, revision: revision, enabled: enabled,
+                  stickTuning: settings.stick, rectSpace: rectSpace, extraInsets: extraInsets,
+                  makeScheme: makeScheme, onChange: onChange)
+        self.calibration = settings.calibration
+        self.tolerance = settings.tolerance
+    }
+
     public final class Coordinator {
         var revision = 0
     }
@@ -367,6 +419,7 @@ public struct TouchPad: UIViewRepresentable {
         let view = TouchPadView(scheme: makeScheme(schemeID), output: output)
         context.coordinator.revision = revision
         apply(to: view)
+        onView?(view)
         return view
     }
 
@@ -382,6 +435,8 @@ public struct TouchPad: UIViewRepresentable {
         if view.rectSpace != rectSpace { view.rectSpace = rectSpace }
         if view.extraInsets != extraInsets { view.extraInsets = extraInsets }
         if view.stickTuning != stickTuning { view.stickTuning = stickTuning }
+        if view.calibration != calibration { view.calibration = calibration }
+        if view.tolerance != tolerance { view.tolerance = tolerance }
         if view.isInputEnabled != enabled { view.isInputEnabled = enabled }
         if view.touchscreenRect != touchscreenRect { view.touchscreenRect = touchscreenRect }
         if view.videoRects != videoRects { view.videoRects = videoRects }
