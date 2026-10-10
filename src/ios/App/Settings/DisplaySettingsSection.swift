@@ -26,6 +26,10 @@ struct DisplaySettingsSection: View {
     private var screenLayout = ScreenLayout.initialValue
     @AppStorage(LocalScreenLayoutSettings.showSwapButtonKey)
     private var showLocalSwapButton = LocalScreenLayoutSettings.defaultShowSwapButton
+    @AppStorage(HiddenScreenSettings.pauseHiddenTVKey)
+    private var pauseHiddenTV = false
+    @AppStorage(HiddenScreenSettings.pauseHiddenPadKey)
+    private var pauseHiddenPad = false
 
     // Read by OrientationPolicy each time UIKit asks which way the app may turn, so there is nothing to push.
     @AppStorage(OrientationPolicy.allowPortraitKey)
@@ -82,6 +86,28 @@ struct DisplaySettingsSection: View {
                         Text("Show swap button")
                             .font(.system(size: 15, weight: .semibold, design: .rounded))
                         Text("A small button on screen to switch between the TV and GamePad screens.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
+                }
+                .tint(MuffinTheme.accentText)
+
+                Toggle(isOn: $pauseHiddenTV) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pause the TV screen when it isn't shown")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("Stops drawing the TV while the GamePad is up. The game keeps running. Saves heat and battery.")
+                            .font(.system(size: 12))
+                            .foregroundColor(MuffinTheme.secondaryText)
+                    }
+                }
+                .tint(MuffinTheme.accentText)
+
+                Toggle(isOn: $pauseHiddenPad) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pause the GamePad screen when it isn't shown")
+                            .font(.system(size: 15, weight: .semibold, design: .rounded))
+                        Text("Stops drawing the GamePad while the TV is up. The game keeps running. Saves heat and battery.")
                             .font(.system(size: 12))
                             .foregroundColor(MuffinTheme.secondaryText)
                     }

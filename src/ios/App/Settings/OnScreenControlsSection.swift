@@ -38,6 +38,8 @@ struct OnScreenControlsSection: View {
     private var hapticsEnabled = ControllerLayoutSettings.defaultHaptics
     @AppStorage(ControllerLayoutSettings.autoHideWithControllerKey)
     private var autoHideWithController = ControllerLayoutSettings.defaultAutoHideWithController
+    @AppStorage(HiddenScreenSettings.hideControlsInHomeMenuKey)
+    private var hideControlsInHomeMenu = false
     @AppStorage(MeloControlsSetting.storageKey)
     private var useMeloControls = MeloControlsSetting.defaultValue
     @AppStorage(TouchLabSettings.schemeKey)
@@ -219,6 +221,17 @@ struct OnScreenControlsSection: View {
                 Label("New pad system (preview)", systemImage: "sparkles")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
             }
+
+            Toggle(isOn: $hideControlsInHomeMenu) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Hide the on-screen controls in the home menu")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("The controls disappear while the home menu is open and come back when it closes.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .tint(MuffinTheme.pixelBlue)
 
             Toggle(isOn: $autoHideWithController) {
                 VStack(alignment: .leading, spacing: 2) {

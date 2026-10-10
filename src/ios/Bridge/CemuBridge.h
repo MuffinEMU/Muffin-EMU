@@ -1393,6 +1393,11 @@ const char* cemu_bridge_input_profile_name(void);
 bool cemu_bridge_reset_controller_bindings(void);
 
 
+/// Stops the core compositing a Wii U screen that no output is showing. The game, GX2 swaps and
+/// vsync are untouched; only the host copy to the hidden screen's layer is skipped. Off by default.
+void cemu_bridge_set_skip_hidden_screen(bool tv, bool pad);
+
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

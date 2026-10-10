@@ -976,8 +976,38 @@ void LatteRenderTarget_copyToBackbuffer(LatteTextureView* textureView, bool isPa
 	g_renderer->ImguiEnd();
 }
 
+#if BOOST_OS_IOS
+std::atomic_uint32_t g_latteSkipHiddenOutputs{0};
+
+void LatteRenderTarget_SetSkipHiddenOutputs(bool tv, bool pad)
+{
+	g_latteSkipHiddenOutputs.store((tv ? 1u : 0u) | (pad ? 2u : 0u));
+}
+
+static bool LatteRenderTarget_isScreenShown(bool isTVScreen)
+{
+	const auto& windowInfo = WindowSystem::GetWindowInfo();
+	const auto visibleOutputs = windowInfo.visible_outputs.load();
+	const auto outputSources = windowInfo.output_sources.load();
+	if ((visibleOutputs & 2u) && ((outputSources & 2u) ? isTVScreen : !isTVScreen) && g_renderer->IsPadWindowActive())
+		return true;
+	if ((visibleOutputs & 1u) && ((outputSources & 1u) ? !isTVScreen : isTVScreen))
+		return true;
+	return false;
+}
+#endif
+
 void LatteRenderTarget_itHLECopyColorBufferToScanBuffer(MPTR colorBufferPtr, uint32 colorBufferWidth, uint32 colorBufferHeight, uint32 colorBufferSliceIndex, uint32 colorBufferFormat, uint32 colorBufferPitch, Latte::E_HWTILEMODE colorBufferTilemode, uint32 colorBufferSwizzle, uint32 renderTarget)
 {
+#if BOOST_OS_IOS
+	if (const auto skipFlags = g_latteSkipHiddenOutputs.load(std::memory_order_relaxed))
+	{
+		const bool isTVTarget = (renderTarget & RENDER_TARGET_TV) != 0;
+		const bool isDRCTarget = (renderTarget & RENDER_TARGET_DRC) != 0;
+		if (isTVTarget != isDRCTarget && (skipFlags & (isTVTarget ? 1u : 2u)) && !LatteRenderTarget_isScreenShown(isTVTarget))
+			return;
+	}
+#endif
 	cemu_assert_debug(colorBufferSliceIndex == 0); // todo - support for non-zero slice
 	LatteTextureView* texView = LatteTC_GetTextureSliceViewOrTryCreate(colorBufferPtr, MPTR_NULL, (Latte::E_GX2SURFFMT)colorBufferFormat, colorBufferTilemode, colorBufferWidth, colorBufferHeight, 1, colorBufferPitch, colorBufferSwizzle, 0, 0, true);
 	if (!texView)
