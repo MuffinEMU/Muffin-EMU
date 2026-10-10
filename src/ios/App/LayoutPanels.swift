@@ -218,14 +218,12 @@ struct MuffinPadLayoutPanel: View {
     private var controlOpacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.stickSpacingKey)
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
-    private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetPortraitKey)
-    private var shoulderOffsetUpright = ControllerLayoutSettings.defaultShoulderOffset
+    private var shoulderStore = ShoulderOffsetStorage()
     @ObservedObject private var windowSize = ControlsWindowSize.shared
-    /// The shoulder setting for the orientation the iPad is in now (kept apart per orientation).
+    /// The shoulder setting for the orientation the pad is in now (kept apart per orientation),
+    /// taken from the same size the pad itself uses.
     private var shoulderBinding: Binding<Double> {
-        ControllerLayoutSettings.isUpright(windowSize.size) ? $shoulderOffsetUpright : $shoulderOffset
+        shoulderStore.binding(upright: ControllerLayoutSettings.isUpright(windowSize.effectiveSize))
     }
     @AppStorage(ControllerLayoutSettings.joystickKey)
     private var joystickMode = ControllerLayoutSettings.defaultJoystick
@@ -272,11 +270,10 @@ struct MuffinPadLayoutPanel: View {
                        value: $controlOpacity, range: 0.2...1.0)
 
         // L, ZL, R and ZR move up or down together. iPad only.
-        if ControllerLayoutSettings.supportsShoulderOffset
-            && ControllerLayoutSettings.hasShoulderRoom(touchLab: false, in: windowSize.size) {
+        if ControllerLayoutSettings.supportsShoulderOffset {
             PanelSliderRow("Shoulder button height", title: "L/R", leadingIcon: "arrow.up.and.down",
                            value: shoulderBinding,
-                           range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: false, in: windowSize.size),
+                           range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: false, in: windowSize.effectiveSize),
                            step: ControllerLayoutSettings.shoulderOffsetStep,
                            spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(shoulderBinding.wrappedValue))
         }

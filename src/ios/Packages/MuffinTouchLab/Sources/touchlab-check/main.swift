@@ -313,9 +313,65 @@ for id in ["zone", "adaptive"] {
     // Stacked: the lowered shoulders stay clear of the GamePad touchscreen.
     let stacked = drop(CGSize(width: 1024, height: 1366), request: 20, display: .stacked)
     check(stacked.1.isEmpty, "upright iPad \(id) stacked: \(stacked.1.first ?? "")")
+    // Up to the old 1.5-button maximum the shoulders go exactly where they always did, over the
+    // GamePad screen or not; past it they stop before covering it.
     if let zl = stacked.2, let gp = stacked.3 {
-        check(!zl.intersects(gp), "upright iPad \(id) stacked: shoulders cover the GamePad screen")
-        check(stacked.0 > 1.5 * 72, "upright iPad \(id) stacked: only moved \(stacked.0)")
+        let u = zl.width / 1.9
+        check(!zl.intersects(gp) || stacked.0 <= 1.5 * u + 1,
+              "upright iPad \(id) stacked: shoulders cover the GamePad screen past the old maximum")
+        check(stacked.0 > 1.5 * 72 - 1, "upright iPad \(id) stacked: only moved \(stacked.0)")
+    }
+}
+
+// MARK: Shoulder drops within the old range are exactly what they always were
+// Up to 1.5 buttons (the slider's old maximum) the GamePad touchscreen and video play no part:
+// the same request gives the same shoulders whether or not those rectangles are known. Only
+// past 1.5 do the shoulders stop in front of a rectangle they started clear of.
+
+for (name, size, insets) in [
+    ("iPad landscape", CGSize(width: 1366, height: 1024), Insets(top: 24, bottom: 20)),
+    ("iPad portrait", CGSize(width: 1024, height: 1366), Insets(top: 24, bottom: 20)),
+    ("iPhone landscape", CGSize(width: 852, height: 393), Insets(left: 59, bottom: 21, right: 59)),
+] {
+    for id in ["zone", "adaptive"] {
+        let plain = LayoutContext(size: size, safeInsets: insets)
+        let homeScheme = SchemeCatalog.make(id) as! ControlScheme
+        homeScheme.layout(plain)
+        guard let homeZL = shoulderRects(homeScheme)[.zl] else { continue }
+        let u = homeZL.width / 1.9
+        func layout(_ ctx: LayoutContext, _ request: CGFloat) -> [PadButton: CGRect] {
+            var c = ctx
+            c.shoulderOffset = request
+            let sc = SchemeCatalog.make(id) as! ControlScheme
+            sc.layout(c)
+            return shoulderRects(sc)
+        }
+        // A picture whose top edge the shoulders reach at about half a button down.
+        let near = CGRect(x: 0, y: homeZL.minY + 1.5 * u, width: size.width, height: size.height)
+        // One they only reach well past 1.5 buttons.
+        let far = CGRect(x: 0, y: homeZL.minY + 3.2 * u, width: size.width, height: size.height)
+        for request: CGFloat in [0.25, 0.5, 1, 1.25, 1.5] {
+            let bare = layout(plain, request)
+            for rect in [near, far] {
+                var withRect = plain
+                withRect.touchscreenRect = rect
+                withRect.videoRects = [rect]
+                let got = layout(withRect, request)
+                for (b, r) in bare {
+                    check(got[b] == r, "\(name) \(id) drop \(request): \(b) moved by the GamePad rectangle")
+                }
+            }
+        }
+        // Past the old maximum: blocked at once by the near picture, further than 1.5 by the far one.
+        var nearCtx = plain
+        nearCtx.touchscreenRect = near
+        let atCap = layout(nearCtx, 1.5)[.zl]!.minY
+        check(abs(layout(nearCtx, 20)[.zl]!.minY - atCap) < 0.01, "\(name) \(id): shoulders went past the old maximum into the picture")
+        var farCtx = plain
+        farCtx.touchscreenRect = far
+        let beyond = layout(farCtx, 20)[.zl]!
+        check(!beyond.intersects(far), "\(name) \(id): shoulders cover the picture past the old maximum")
+        check(beyond.minY >= layout(plain, 1.5)[.zl]!.minY - 0.01, "\(name) \(id): shoulders went back up")
     }
 }
 
