@@ -52,8 +52,9 @@ struct OptimizedControlPanel: View {
     @AppStorage(ControllerLayoutSettings.leftStickOffsetYKey) private var leftStickOffsetY = 0.0
     @AppStorage(ControllerLayoutSettings.stickSpacingKey)
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
-    private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
+    // Landscape and upright are stored apart (the room to move the shoulders in is nothing like
+    // the same), and an iPhone has its own copies; see ShoulderOffsetStorage.
+    private var shoulderStore = ShoulderOffsetStorage()
     // The default must match SettingsView's declaration of the same key.
     @AppStorage(ControllerLayoutSettings.comfortControlsKey)
     private var comfortControls = ControllerLayoutSettings.defaultComfortControls
@@ -123,8 +124,10 @@ struct OptimizedControlPanel: View {
                 x: ControllerGeometry.rightStickAnchorOffset.x + stickShift,
                 y: ControllerGeometry.rightStickAnchorOffset.y)
 
-            // The shoulder slider is iPad only: on iPhone the stored value is never read.
-            let shoulderDrop = ControllerLayoutSettings.effectiveShoulderOffset(shoulderOffset)
+            // Never narrower than the clamp the pad has always applied, so a saved value draws
+            // where it always did; the physical limits inside shoulderShift still stop the buttons.
+            let shoulderDrop = shoulderStore.value(upright: ControllerLayoutSettings.isUpright(proxy.size))
+            let shoulderLimit = ControllerLayoutSettings.shoulderRange(in: proxy.size)
             // How much of this view's top the bar covers, in this view's own coordinates.
             let topReserve = max(0, topInset - proxy.frame(in: .global).minY)
 
@@ -136,6 +139,7 @@ struct OptimizedControlPanel: View {
                     skin: skin,
                     unit: unit,
                     shoulderOffset: shoulderDrop,
+                    shoulderRange: shoulderLimit,
                     topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
@@ -158,6 +162,7 @@ struct OptimizedControlPanel: View {
                         skin: skin,
                         unit: unit,
                         shoulderOffset: shoulderDrop,
+                    shoulderRange: shoulderLimit,
                         topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
@@ -176,6 +181,7 @@ struct OptimizedControlPanel: View {
                     skin: skin,
                     unit: unit,
                     shoulderOffset: shoulderDrop,
+                    shoulderRange: shoulderLimit,
                     topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
@@ -197,6 +203,7 @@ struct OptimizedControlPanel: View {
                         skin: skin,
                         unit: unit,
                         shoulderOffset: shoulderDrop,
+                    shoulderRange: shoulderLimit,
                         topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
@@ -211,6 +218,7 @@ struct OptimizedControlPanel: View {
             // Full opacity while editing, regardless of the opacity setting.
             .opacity(isEditingLayout ? 1.0 : max(padOpacity, 0.15))
         }
+        .reportsPadSize()
         // Release is reported from the pad, not per control, so a re-render cannot drop
         // a press: when the whole pad goes away, release everything.
         .onDisappear { cemu_bridge_release_all_buttons() }
@@ -240,6 +248,8 @@ private struct ControlCluster: View {
     /// How far this cluster's shoulder buttons (if it has any) move down from their
     /// measured place, in units; already zero on iPhone. See ControllerGeometry.shoulderShift.
     let shoulderOffset: Double
+    /// The most that setting may ask for in this container's orientation.
+    var shoulderRange: ClosedRange<Double> = ControllerLayoutSettings.minShoulderOffset...ControllerLayoutSettings.maxShoulderOffset
     /// Height at the top of `container` that the top bar covers, in points. Nothing is
     /// placed above it.
     var topReserve: CGFloat = 0
@@ -288,7 +298,8 @@ private struct ControlCluster: View {
     private var shoulderShift: CGFloat {
         ControllerGeometry.shoulderShift(
             offset: shoulderOffset, centreY: centre.y, containerHeight: container.height,
-            unit: unit, controls: controls, topInset: topReserve) * unit
+            unit: unit, controls: controls, topInset: topReserve,
+            range: shoulderRange) * unit
     }
 
     private func clamped(_ point: CGPoint) -> CGPoint {

@@ -188,7 +188,13 @@ struct TouchLabLayoutPanel: View {
     @AppStorage(ControllerLayoutSettings.scaleKey) private var controlScale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.opacityKey) private var controlOpacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey) private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
+    private var shoulderStore = ShoulderOffsetStorage()
+    @ObservedObject private var windowSize = ControlsWindowSize.shared
+    /// The shoulder setting for the orientation the pad is in now (kept apart per orientation),
+    /// taken from the same size the pad itself uses.
+    private var shoulderBinding: Binding<Double> {
+        shoulderStore.binding(upright: ControllerLayoutSettings.isUpright(windowSize.effectiveSize))
+    }
 
     private var isAdaptive: Bool { scheme == TouchLabSettings.adaptiveStyleID }
 
@@ -231,10 +237,10 @@ struct TouchLabLayoutPanel: View {
         // for it. Only the styles with fixed shoulders have anything to move.
         if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
             PanelSliderRow("Shoulder button height", title: "L/R", leadingIcon: "arrow.up.and.down",
-                           value: $shoulderOffset,
-                           range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true),
+                           value: shoulderBinding,
+                           range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true, in: windowSize.effectiveSize),
                            step: ControllerLayoutSettings.shoulderOffsetStep,
-                           spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(max(0, shoulderOffset)))
+                           spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(max(0, shoulderBinding.wrappedValue)))
         }
 
         if scheme == TouchLabSettings.floatStyleID {
@@ -259,7 +265,7 @@ struct TouchLabLayoutPanel: View {
         controlScale = ControllerLayoutSettings.defaultScale
         controlOpacity = ControllerLayoutSettings.defaultOpacity
         stickSpacing = ControllerLayoutSettings.defaultStickSpacing
-        shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
+        shoulderStore.reset()
         if isAdaptive {
             TouchLabSettings.resetAdaptive(gameID: gameID)
         }
