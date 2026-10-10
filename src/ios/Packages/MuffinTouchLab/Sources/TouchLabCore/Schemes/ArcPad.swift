@@ -7,8 +7,8 @@ import Foundation
 /// sweeps is an arc: a circle around the joint. Every other scheme draws a button grid and
 /// leaves the hand to cope. Arc measures the hand and puts the controls on its arcs.
 ///
-/// Calibration (about five seconds, skippable, `startCalibration()` to run it again):
-/// "Sweep each thumb in a comfortable arc." Each hand's samples are fitted with a
+/// Calibration (guided: left thumb, then right, then Done or Redo; `startCalibration()` runs
+/// it again while unlocked): each hand's sweep is fitted with a
 /// least-squares circle (pivot and radius, see `ArcMath.fitCircle`); the radial spread of
 /// the samples gives the comfortable reach band, and the middle of the sweep is where the
 /// thumb rests.
@@ -47,15 +47,23 @@ public final class ArcPad: ControlScheme {
         case video
         /// Clear of the GamePad touchscreen only; the TV image is covered.
         case gamepad
-        /// Over the video: no margin was big enough.
+        /// Over the video: no margin was big enough, so this is the placement that covers
+        /// the least of it.
         case none
+    }
+
+    public enum CalibrationPhase: Equatable, Sendable {
+        case left, right, review
     }
 
     // MARK: Public state
 
     public private(set) var profiles: [String: ArcProfile]
-    /// Called with the new profiles after a calibration or reset, for persistence.
+    /// Called with the new profiles after any change that should be saved.
     public var onProfiles: (([String: ArcProfile]) -> Void)?
+    /// Called whenever lock, fine-tune or calibration state changes, so a settings UI can
+    /// rebind. Not called for ordinary presses.
+    public var onSettingsChange: (() -> Void)?
     /// The hands as laid out (radius is the one actually used, which may be smaller than
     /// the fitted one when the screen has no room for it).
     public private(set) var hands: [ArcHand] = []
@@ -69,102 +77,143 @@ public final class ArcPad: ControlScheme {
     /// in points. The host sets it before `began`/`moved`; 0 when unknown. A bigger patch
     /// is a more generous radial catchment and a wider chord.
     public var contactRadius: CGFloat = 0
-    public var calibrationPrompt = "Sweep each thumb in a comfortable arc."
 
-    public var isCalibrating: Bool { calibrator != nil }
+    /// Where messages about forced fallbacks go (once per screen situation).
+    public static var logSink: (String) -> Void = { NSLog("%@", $0) }
+    public static var logged = Set<String>()
 
-    // MARK: Private state
+    // MARK: Settings API (lock, fine-tune, calibration)
 
-    struct ArcSet {
-        var hand: ArcHand
-        var phis: [CGFloat]
-        var delta: CGFloat
-        var buttons: [PadButton]
+    /// Whether positions are locked for the current orientation. Off until the first
+    /// calibration completes, then on automatically. While locked, nothing moves: no
+    /// calibration, no fine-tuning, positions are exactly the saved ones.
+    public var isLocked: Bool { profiles[orientation]?.locked ?? false }
+
+    public func setLocked(_ on: Bool) {
+        var p = profiles[orientation] ?? ArcProfile()
+        guard (p.locked ?? false) != on else { return }
+        p.locked = on
+        profiles[orientation] = p
+        if on {
+            tuneTracks.removeAll()
+            tuning = false
+            if calibrator != nil { calibrator = nil }
+        }
+        save()
+        notify()
     }
 
-    private struct ArcTrack {
-        var set: Int
-        var slot: Int
-        var buttons: Set<PadButton>
+    /// True once the current orientation has a saved calibration for either hand.
+    public var hasCalibration: Bool {
+        guard let p = profiles[orientation] else { return false }
+        return p.left != nil || p.right != nil
     }
 
-    private struct Calibrator {
-        var duration: Double
-        var start: Double?
-        var samples: [ArcSide: [CGPoint]] = [.left: [], .right: []]
-        var owner: [TouchID: ArcSide] = [:]
+    public var isFineTuning: Bool { tuning }
+
+    /// Fine-tune mode: drag any control along its arc (angle) or in and out (radius) and
+    /// that hand's layout follows; each hand is tuned on its own and the result is saved
+    /// per orientation. Refused (false) while locked. Presses do nothing in this mode.
+    @discardableResult
+    public func setFineTuning(_ on: Bool) -> Bool {
+        if on {
+            guard !isLocked, calibrator == nil else { return false }
+        }
+        tuning = on
+        tuneTracks.removeAll()
+        notify()
+        return true
     }
 
-    private var arcSets: [ArcSet] = []
-    private var arcTracks: [TouchID: ArcTrack] = [:]
-    private var guides: [CGPoint] = []
-    private var calibrator: Calibrator?
-
-    static let leftPadGroup = 22
-
-    public init(profiles: [String: ArcProfile] = [:]) {
-        self.profiles = profiles
-        super.init(info: Self.schemeInfo)
+    /// Back to the default arc for the current orientation: calibration, fine-tuning and
+    /// the lock are all cleared.
+    public func resetToDefault() {
+        profiles[orientation] = nil
+        tuning = false
+        tuneTracks.removeAll()
+        calibrator = nil
+        save()
+        relayout()
+        notify()
     }
 
-    // MARK: Persistence
-
-    public static func encode(_ profiles: [String: ArcProfile]) -> String {
-        let enc = JSONEncoder()
-        enc.outputFormatting = [.sortedKeys]
-        guard let data = try? enc.encode(profiles) else { return "{}" }
-        return String(decoding: data, as: UTF8.self)
-    }
-
-    public static func decode(_ json: String) -> [String: ArcProfile] {
-        guard let p = try? JSONDecoder().decode([String: ArcProfile].self, from: Data(json.utf8)) else { return [:] }
-        // Anything non-finite or absurd is dropped rather than trusted.
-        return p.filter { $0.value.isSane }
-    }
-
-    public static func orientationKey(_ size: CGSize) -> String {
-        size.width >= size.height ? "landscape" : "portrait"
-    }
+    /// Old name for `resetToDefault`.
+    public func resetCalibration() { resetToDefault() }
 
     // MARK: Calibration
 
-    /// Start the sweep. The window opens at the first touch and closes `duration` seconds
-    /// later; until then every finger on the screen is read as part of the sweep.
-    public func startCalibration(duration: Double = 5) {
+    public var isCalibrating: Bool { calibrator != nil }
+    public var calibrationPhase: CalibrationPhase? { calibrator?.phase }
+    /// Shown under the prompt when the last sweep could not be used.
+    public var calibrationNote: String? { calibrator?.note }
+
+    public var calibrationPrompt: String {
+        switch calibrator?.phase {
+        case .left?: return "Sweep your left thumb in a comfortable arc."
+        case .right?: return "Sweep your right thumb in a comfortable arc."
+        case .review?: return "Happy with these arcs? Tap Done, or Redo."
+        case nil: return ""
+        }
+    }
+
+    /// Begin the guided sweep: left thumb, then right, then a review. Refused (false)
+    /// while positions are locked; unlock first.
+    @discardableResult
+    public func startCalibration() -> Bool {
+        guard !isLocked else { return false }
         arcTracks.removeAll()
         tracks.removeAll()
-        calibrator = Calibrator(duration: max(1, duration))
+        tuneTracks.removeAll()
+        tuning = false
+        calibrator = Calibrator()
+        notify()
+        return true
+    }
+
+    /// Leave the hand being swept as it is (its default or previous arc) and move on.
+    public func skipCalibrationHand() {
+        guard var cal = calibrator else { return }
+        switch cal.phase {
+        case .left: cal.phase = .right
+        case .right: cal.phase = .review
+        case .review: break
+        }
+        cal.note = nil
+        calibrator = cal
+        notify()
+    }
+
+    /// Throw the sweeps away and start again with the left thumb.
+    public func redoCalibration() {
+        guard calibrator != nil else { return }
+        calibrator = Calibrator()
+        notify()
     }
 
     /// Leave calibration without changing anything.
-    public func skipCalibration() {
+    public func cancelCalibration() {
+        guard calibrator != nil else { return }
         calibrator = nil
+        notify()
     }
 
-    /// Close the sweep now and fit whatever was gathered.
-    public func finishCalibration() {
+    /// Old name for `cancelCalibration`.
+    public func skipCalibration() { cancelCalibration() }
+
+    /// Accept the reviewed arcs: save them, and lock positions.
+    public func acceptCalibration() {
         guard let cal = calibrator else { return }
         calibrator = nil
-        let key = Self.orientationKey(context.size)
-        var profile = profiles[key] ?? ArcProfile()
-        var changed = false
-        for side in [ArcSide.left, .right] {
-            guard let fit = Self.makeFit(side: side, samples: cal.samples[side] ?? [], ctx: context) else { continue }
-            if side == .left { profile.left = fit } else { profile.right = fit }
-            changed = true
+        guard !cal.fits.isEmpty else { notify(); return }
+        var p = profiles[orientation] ?? ArcProfile()
+        for (side, fit) in cal.fits {
+            if side == .left { p.left = fit; p.leftTweaks = nil } else { p.right = fit; p.rightTweaks = nil }
         }
-        if changed {
-            profiles[key] = profile
-            onProfiles?(profiles)
-        }
-        layout(context)
-    }
-
-    /// Forget the calibration for the current orientation; the default arc returns.
-    public func resetCalibration() {
-        profiles[Self.orientationKey(context.size)] = nil
-        onProfiles?(profiles)
-        if context.size != .zero { layout(context) }
+        p.locked = true
+        profiles[orientation] = p
+        save()
+        relayout()
+        notify()
     }
 
     /// Turns raw sweep samples into a stored hand, or nil when they do not describe a
@@ -191,6 +240,75 @@ public final class ArcPad: ControlScheme {
                           rest: Double(med), lo: Double(lo), hi: Double(hi))
     }
 
+    // MARK: Private state
+
+    struct ArcSet {
+        var hand: ArcHand
+        var phis: [CGFloat]
+        var delta: CGFloat
+        var buttons: [PadButton]
+    }
+
+    private struct ArcTrack {
+        var set: Int
+        var slot: Int
+        var buttons: Set<PadButton>
+    }
+
+    private struct TuneTrack {
+        var side: ArcSide
+        var key: String
+        var last: CGPoint
+    }
+
+    private struct Calibrator {
+        var phase: CalibrationPhase = .left
+        var samples: [ArcSide: [CGPoint]] = [:]
+        var fits: [ArcSide: ArcHandFit] = [:]
+        var active: TouchID?
+        var note: String?
+        var side: ArcSide { phase == .right ? .right : .left }
+    }
+
+    private var arcSets: [ArcSet] = []
+    private var arcTracks: [TouchID: ArcTrack] = [:]
+    private var tuneTracks: [TouchID: TuneTrack] = [:]
+    private var tuning = false
+    private var guides: [CGPoint] = []
+    private var calibrator: Calibrator?
+
+    static let leftPadGroup = 22
+
+    public init(profiles: [String: ArcProfile] = [:]) {
+        self.profiles = profiles
+        super.init(info: Self.schemeInfo)
+    }
+
+    private var orientation: String { Self.orientationKey(context.size) }
+
+    private func save() { onProfiles?(profiles) }
+    private func notify() { onSettingsChange?() }
+    private func relayout() { if context.size != .zero { layout(context) } }
+
+    // MARK: Persistence
+
+    public static func encode(_ profiles: [String: ArcProfile]) -> String {
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.sortedKeys]
+        guard let data = try? enc.encode(profiles) else { return "{}" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    public static func decode(_ json: String) -> [String: ArcProfile] {
+        guard let p = try? JSONDecoder().decode([String: ArcProfile].self, from: Data(json.utf8)) else { return [:] }
+        // Anything non-finite or absurd is dropped rather than trusted.
+        return p.filter { $0.value.isSane }
+    }
+
+    public static func orientationKey(_ size: CGSize) -> String {
+        size.width >= size.height ? "landscape" : "portrait"
+    }
+
     // MARK: Layout
 
     override public func layout(_ context: LayoutContext) {
@@ -201,12 +319,16 @@ public final class ArcPad: ControlScheme {
     private struct Placement {
         var controls: [PadControl]
         var sets: [ArcSet]
+        var cost: CGFloat = 0
     }
 
     private struct Room {
         let safe: CGRect
         let keep: [CGRect]
         let u: CGFloat
+        let short: CGFloat
+        /// Soft rooms may overlap `keep`; the layout then minimises how much.
+        let soft: Bool
 
         func inside(_ shape: PadShape) -> Bool {
             let b = shape.boundingBox
@@ -218,9 +340,23 @@ public final class ArcPad: ControlScheme {
             return !keep.contains { $0.intersects(b) }
         }
 
-        func fits(_ c: PadControl, _ placed: [PadControl]) -> Bool {
-            guard inside(c.shape), clear(c.shape) else { return false }
+        func fits(_ c: PadControl, _ placed: [PadControl], needClear: Bool) -> Bool {
+            guard inside(c.shape) else { return false }
+            if needClear, !clear(c.shape) { return false }
             return !placed.contains { c.shape.overlaps($0.shape, margin: -0.1 * u) }
+        }
+
+        /// Area of the controls that lies over `keep`, in squared buttons.
+        func cost(_ controls: [PadControl]) -> CGFloat {
+            var total: CGFloat = 0
+            for c in controls where !c.isZone {
+                let b = c.shape.boundingBox
+                for k in keep {
+                    let i = b.intersection(k)
+                    if !i.isNull { total += i.width * i.height }
+                }
+            }
+            return total / (u * u)
         }
     }
 
@@ -240,50 +376,64 @@ public final class ArcPad: ControlScheme {
     }()
 
     /// The valid control nearest to `ideal`: how the shoulder row, the system buttons and
-    /// the stick find a spot when the exact polar one is off the screen or taken.
+    /// the stick find a spot when the exact polar one is off the screen or taken. In a
+    /// soft room it prefers a spot clear of the video and only then settles for one over it.
     private func nearest(_ ideal: CGPoint, room: Room, placed: [PadControl],
                          accept: (PadControl) -> Bool = { _ in true },
                          make: (CGPoint) -> PadControl) -> PadControl? {
-        for off in Self.unitOffsets {
-            let c = make(CGPoint(x: ideal.x + off.x * room.u, y: ideal.y + off.y * room.u))
-            if room.fits(c, placed), accept(c) { return c }
+        for needClear in room.soft ? [true, false] : [true] {
+            for off in Self.unitOffsets {
+                let c = make(CGPoint(x: ideal.x + off.x * room.u, y: ideal.y + off.y * room.u))
+                if room.fits(c, placed, needClear: needClear), accept(c) { return c }
+            }
         }
         return nil
     }
 
-    private func build(hand h: ArcHand, rest: CGFloat, tight: Bool, room: Room, placed: [PadControl]) -> Placement? {
+    private func build(hand h0: ArcHand, rest: CGFloat, tight: Bool, stickScale: CGFloat,
+                       tweaks tw: [String: ArcTweak], room: Room, placed: [PadControl]) -> Placement? {
         let u = room.u
+        func tweak(_ key: String) -> (dphi: CGFloat, dr: CGFloat) {
+            guard let t = tw[key] else { return (0, 0) }
+            return (CGFloat(t.dphi), CGFloat(t.dr) * room.short)
+        }
+        var h = h0
+        h.radius = h0.radius + tweak("arc").dr
         let R = h.radius
         guard R > u else { return nil }
+        let restArc = rest + tweak("arc").dphi
         let minDelta = 1.28 * u / R, maxDelta = 1.9 * u / R
         let delta = tight ? minDelta : h.calibrated ? ArcMath.clamp((h.hi - h.lo) / 3.6, minDelta, maxDelta) : 1.4 * u / R
         let right = h.side == .right
-        let buttons: [PadButton] = right ? [.x, .a, .b, .y] : [.up, .right, .down, .left]
+        // The arc reads from the outer end inward: A, B, X, Y on the right.
+        let buttons: [PadButton] = right ? [.a, .b, .x, .y] : [.up, .right, .down, .left]
         var out: [PadControl] = []
         var phis: [CGFloat] = []
 
-        // The arc itself: exact positions, equal angle apart. These never move.
+        // The arc itself: exact positions, equal angle apart, centred on the rest angle so
+        // no button is harder to reach than another.
         for (k, b) in buttons.enumerated() {
-            let phi = rest + (CGFloat(k) - 1.5) * delta
+            let phi = restArc + (CGFloat(k) - 1.5) * delta
             let c = PadControl(.button(b), shape: .circle(center: h.point(r: R, phi: phi), radius: u / 2),
                                role: right ? .face : .dpad, label: b.description,
                                group: right ? PadParts.Group.face : Self.leftPadGroup,
                                reach: 0.2 * u, chords: true)
-            guard room.fits(c, placed + out) else { return nil }
+            guard room.fits(c, placed + out, needClear: !room.soft) else { return nil }
             out.append(c)
             phis.append(phi)
         }
 
         // Stick on the inner ring, at the rest angle.
-        let rIn = max(R - 3.1 * u, 0.6 * u)
+        let ts = tweak("stick")
+        let rIn = max(h0.radius - 3.1 * u + ts.dr, 0.6 * u)
         let stickSide: PadStick = right ? .right : .left
-        guard let stick = nearest(h.point(r: rIn, phi: rest), room: room, placed: placed + out, make: {
-            PadParts.stick(stickSide, at: $0, u: u, click: right ? .stickR : .stickL)
+        guard let stick = nearest(h.point(r: rIn, phi: rest + ts.dphi), room: room, placed: placed + out, make: {
+            PadParts.stick(stickSide, at: $0, u: u, scale: stickScale, click: right ? .stickR : .stickL)
         }) else { return nil }
         out.append(stick)
 
         // Shoulders and system buttons on the outer ring, toward the top.
-        let rOut = R + 2.5 * u
+        let rOut = h0.radius + 2.5 * u
         // Nothing but the arc's own buttons may sit in the arc's band: a thumb reaching a
         // little far must not land on a shoulder or HOME.
         let sector = (lo: phis[0] - 0.9 * delta - 0.25, hi: phis[3] + 0.9 * delta + 0.25)
@@ -296,50 +446,65 @@ public final class ArcPad: ControlScheme {
         let phi0: CGFloat = 0.16
         let shoulderSize = CGSize(width: 1.5 * u, height: 0.9 * u)
         let group = right ? PadParts.Group.rightShoulders : PadParts.Group.leftShoulders
-        func shoulder(_ b: PadButton, _ slot: CGFloat) -> PadControl? {
-            nearest(h.point(r: rOut, phi: phi0 + slot * step), room: room, placed: placed + out, accept: offBand, make: {
+        func ideal(_ key: String, _ slot: CGFloat) -> CGPoint {
+            let t = tweak(key)
+            return h.point(r: rOut + t.dr, phi: phi0 + slot * step + t.dphi)
+        }
+        func shoulder(_ b: PadButton, _ key: String, _ slot: CGFloat) -> PadControl? {
+            nearest(ideal(key, slot), room: room, placed: placed + out, accept: offBand, make: {
                 PadParts.shoulder(b, CGRect(center: $0, size: shoulderSize), u: u, group: group)
             })
         }
-        func system(_ b: PadButton, _ slot: CGFloat) -> PadControl? {
-            nearest(h.point(r: rOut, phi: phi0 + slot * step), room: room, placed: placed + out, accept: offBand, make: {
+        func system(_ b: PadButton, _ key: String, _ slot: CGFloat) -> PadControl? {
+            nearest(ideal(key, slot), room: room, placed: placed + out, accept: offBand, make: {
                 PadParts.system(b, at: $0, u: u)
             })
         }
-        guard let outer = shoulder(right ? .zr : .zl, 0) else { return nil }
+        guard let outer = shoulder(right ? .zr : .zl, "s0", 0) else { return nil }
         out.append(outer)
-        guard let inner = shoulder(right ? .r : .l, 1) else { return nil }
+        guard let inner = shoulder(right ? .r : .l, "s1", 1) else { return nil }
         out.append(inner)
-        guard let sys = system(right ? .plus : .minus, 2) else { return nil }
+        guard let sys = system(right ? .plus : .minus, "sys", 2) else { return nil }
         out.append(sys)
         if !right {
-            guard let home = system(.home, 3) else { return nil }
+            guard let home = system(.home, "home", 3) else { return nil }
             out.append(home)
         }
-        return Placement(controls: out, sets: [ArcSet(hand: h, phis: phis, delta: delta, buttons: buttons)])
+        return Placement(controls: out, sets: [ArcSet(hand: h, phis: phis, delta: delta, buttons: buttons)],
+                         cost: room.soft ? room.cost(out) : 0)
     }
 
-    private func bestHand(_ h: ArcHand, room: Room, placed: [PadControl]) -> Placement? {
-        let radii: [CGFloat] = h.calibrated ? [1, 0.92, 0.84, 0.76, 0.68] : [1, 0.88, 0.76, 0.64, 0.52]
-        let shifts: [CGFloat] = [0, -0.08, -0.16, -0.24, -0.32, -0.4, -0.48, -0.56, -0.64, -0.72, -0.8, 0.08, 0.16]
-        for rs in radii {
-            var hand = h
-            hand.radius = h.radius * rs
-            for tight in [false, true] {
-                for d in shifts {
-                    if let p = build(hand: hand, rest: h.rest + d, tight: tight, room: room, placed: placed) { return p }
+    private func bestHand(_ h: ArcHand, tweaks: [String: ArcTweak], room: Room, placed: [PadControl]) -> Placement? {
+        let radii: [CGFloat] = h.calibrated ? [1, 0.92, 0.84, 0.76, 0.68, 0.55] : [1, 0.88, 0.76, 0.64, 0.52, 0.4]
+        let shifts: [CGFloat] = [0, -0.08, -0.16, -0.24, -0.32, -0.4, -0.48, -0.56, -0.64, -0.72, -0.8,
+                                 0.08, 0.16, 0.24, 0.32, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        var best: Placement?
+        // A soft room (the video fills the screen) never reaches zero cost, so it searches a
+        // coarser grid than a strict one, which stops at the first fit.
+        for ss in room.soft ? [CGFloat(1)] : [CGFloat(1), 0.82] {
+            for rs in room.soft ? Array(radii.prefix(3)) : radii {
+                var hand = h
+                hand.radius = h.radius * rs
+                for tight in [false, true] {
+                    for d in room.soft ? shifts.enumerated().filter({ $0.offset % 2 == 0 }).map(\.element) : shifts {
+                        guard let p = build(hand: hand, rest: h.rest + d, tight: tight, stickScale: ss,
+                                            tweaks: tweaks, room: room, placed: placed) else { continue }
+                        if !room.soft || p.cost == 0 { return p }
+                        if best == nil || p.cost < best!.cost { best = p }
+                    }
                 }
             }
         }
-        return nil
+        return best
     }
 
-    private func attempt(left: ArcHand, right: ArcHand, room: Room) -> Placement? {
-        guard let r = bestHand(right, room: room, placed: []),
-              let l = bestHand(left, room: room, placed: r.controls) else { return nil }
+    private func attempt(left: ArcHand, right: ArcHand, tweaks: (left: [String: ArcTweak], right: [String: ArcTweak]),
+                         room: Room) -> Placement? {
+        guard let r = bestHand(right, tweaks: tweaks.right, room: room, placed: []),
+              let l = bestHand(left, tweaks: tweaks.left, room: room, placed: r.controls) else { return nil }
         let all = r.controls + l.controls
         guard LayoutCheck.problems(all, in: room.safe).isEmpty else { return nil }
-        return Placement(controls: all, sets: r.sets + l.sets)
+        return Placement(controls: all, sets: r.sets + l.sets, cost: r.cost + l.cost)
     }
 
     override public func makeControls(_ ctx: LayoutContext) -> [PadControl] {
@@ -354,33 +519,63 @@ public final class ArcPad: ControlScheme {
         let profile = profiles[Self.orientationKey(ctx.size)]
         let right = Self.hand(.right, fit: profile?.right, ctx)
         let left = Self.hand(.left, fit: profile?.left, ctx)
+        let tweaks = (left: profile?.leftTweaks ?? [:], right: profile?.rightTweaks ?? [:])
+        let short = min(ctx.size.width, ctx.size.height)
 
         var everything = ctx.videoRects
         if let t = ctx.touchscreenRect { everything.append(t) }
-        var tiers: [(Avoidance, [CGRect])] = [(.video, everything)]
-        if let t = ctx.touchscreenRect, everything.count > 1 { tiers.append((.gamepad, [t])) }
-        tiers.append((.none, []))
+        var strict: [(Avoidance, [CGRect])] = [(.video, everything)]
+        if let t = ctx.touchscreenRect, everything.count > 1 { strict.append((.gamepad, [t])) }
 
-        for (av, keep) in tiers {
-            let floor: CGFloat = av == .none ? 0.4 : 0.5
+        func adopt(_ p: Placement, _ room: Room, _ av: Avoidance) -> [PadControl] {
+            avoidance = av
+            layoutUnit = room.u
+            arcSets = p.sets
+            hands = p.sets.map(\.hand)
+            guides = makeGuides(p.sets, room: room)
+            return p.controls
+        }
+
+        // No margin worth searching (the video fills the screen): go straight to the
+        // least-overlap placement.
+        let hull = everything.reduce(CGRect.null) { $0.union($1) }
+        let freeW = hull.isNull ? s.width : max(hull.minX - s.minX, s.maxX - hull.maxX)
+        let freeH = hull.isNull ? s.height : max(hull.minY - s.minY, s.maxY - hull.maxY)
+        let hopeless = !hull.isNull && max(freeW, freeH) < 1.6 * ctx.unit
+        for (av, keep) in strict where !hopeless {
             var k: CGFloat = 1
-            while k >= floor - 0.001 {
-                let room = Room(safe: s, keep: keep, u: ctx.unit * k)
-                if let p = attempt(left: left, right: right, room: room) {
-                    avoidance = av
-                    layoutUnit = room.u
-                    arcSets = p.sets
-                    hands = p.sets.map(\.hand)
-                    guides = makeGuides(p.sets, room: room)
-                    return p.controls
-                }
+            while k >= 0.4 - 0.001 {
+                let room = Room(safe: s, keep: keep, u: ctx.unit * k, short: short, soft: false)
+                if let p = attempt(left: left, right: right, tweaks: tweaks, room: room) { return adopt(p, room, av) }
                 k *= 0.92
             }
+        }
+
+        // No room beside the video (it fills the screen): hug the edges and cover as
+        // little of it as possible.
+        var best: (Placement, Room)?
+        for k in [CGFloat(1), 0.8, 0.6] {
+            let room = Room(safe: s, keep: everything, u: ctx.unit * k, short: short, soft: true)
+            guard let p = attempt(left: left, right: right, tweaks: tweaks, room: room) else { continue }
+            let score = p.cost + (1 - k) * 2
+            if best == nil || score < best!.0.cost + (1 - best!.1.u / ctx.unit) * 2 { best = (p, room) }
+        }
+        if let (p, room) = best {
+            logOnce("Arc: no room beside the video on \(Int(ctx.size.width))x\(Int(ctx.size.height)); using the placement that covers the least (\(String(format: "%.1f", Double(p.cost))) buttons of overlap)")
+            return adopt(p, room, .none)
         }
         // Nothing fits (a tiny window): the same safe arrangement the other schemes use.
         avoidance = .none
         usingFallback = true
+        logOnce("Arc: \(Int(ctx.size.width))x\(Int(ctx.size.height)) is too small for the arc layout; using the plain arrangement")
         return GamePadArrangement.build(ctx)
+    }
+
+    private func logOnce(_ message: String) {
+        let key = "\(message)|\(context.videoRects)"
+        guard !Self.logged.contains(key) else { return }
+        Self.logged.insert(key)
+        Self.logSink(message)
     }
 
     private func makeGuides(_ sets: [ArcSet], room: Room) -> [CGPoint] {
@@ -392,7 +587,7 @@ public final class ArcPad: ControlScheme {
             let end = set.phis[3] + 1.5 * set.delta
             while phi <= end {
                 let p = h.point(r: h.radius, phi: phi)
-                if room.safe.contains(p), !room.keep.contains(where: { $0.contains(p) }) { out.append(p) }
+                if room.safe.contains(p), room.soft || !room.keep.contains(where: { $0.contains(p) }) { out.append(p) }
                 phi += dphi
             }
         }
@@ -421,15 +616,24 @@ public final class ArcPad: ControlScheme {
 
     override public func claims(_ point: CGPoint) -> Bool {
         if calibrator != nil { return true }
+        if tuning { return tuneTarget(at: point) != nil }
         return arcHit(at: point, expand: 0) != nil || super.claims(point)
     }
 
     override public func began(_ touch: TouchID, at point: CGPoint, time: Double) -> Contribution? {
-        if calibrator != nil {
-            let side: ArcSide = point.x < context.size.width / 2 ? .left : .right
-            calibrator!.owner[touch] = side
-            if calibrator!.start == nil { calibrator!.start = time }
-            calibrator!.samples[side, default: []].append(point)
+        if var cal = calibrator {
+            if cal.phase != .review, cal.active == nil {
+                cal.active = touch
+                cal.samples[cal.side] = [point]
+                cal.note = nil
+                calibrator = cal
+                notify()
+            }
+            return Contribution.none
+        }
+        if tuning {
+            guard let (side, key) = tuneTarget(at: point) else { return nil }
+            tuneTracks[touch] = TuneTrack(side: side, key: key, last: point)
             return Contribution.none
         }
         if let hit = arcHit(at: point, expand: 0), !onOtherControl(point) {
@@ -442,10 +646,20 @@ public final class ArcPad: ControlScheme {
 
     override public func moved(_ touch: TouchID, to point: CGPoint, time: Double) -> Contribution {
         if calibrator != nil {
-            if let side = calibrator!.owner[touch] {
+            if calibrator!.active == touch {
+                let side = calibrator!.side
                 let last = calibrator!.samples[side]?.last
                 if last == nil || last!.distance(to: point) >= 2 { calibrator!.samples[side, default: []].append(point) }
             }
+            return Contribution.none
+        }
+        if tuning {
+            guard var t = tuneTracks[touch], let hand = hands.first(where: { $0.side == t.side }) else { return .none }
+            let a = hand.polar(t.last), b = hand.polar(point)
+            applyTweak(side: t.side, key: t.key, dphi: b.phi - a.phi, dr: b.r - a.r)
+            t.last = point
+            tuneTracks[touch] = t
+            relayout()
             return Contribution.none
         }
         guard var t = arcTracks[touch] else { return super.moved(touch, to: point, time: time) }
@@ -472,24 +686,68 @@ public final class ArcPad: ControlScheme {
     }
 
     override public func ended(_ touch: TouchID, at point: CGPoint, time: Double) {
-        if calibrator != nil {
-            calibrator!.owner[touch] = nil
+        if var cal = calibrator {
+            guard cal.active == touch else { return }
+            cal.active = nil
+            let side = cal.side
+            if !point.x.isNaN,
+               let fit = Self.makeFit(side: side, samples: cal.samples[side] ?? [], ctx: context) {
+                cal.fits[side] = fit
+                cal.phase = cal.phase == .left ? .right : .review
+                cal.note = nil
+            } else {
+                cal.samples[side] = []
+                cal.note = "That sweep was too short or too straight. Try a longer, smoother arc."
+            }
+            calibrator = cal
+            notify()
+            return
+        }
+        if tuneTracks.removeValue(forKey: touch) != nil {
+            if tuneTracks.isEmpty, !point.x.isNaN { save(); notify() }
             return
         }
         if arcTracks.removeValue(forKey: touch) != nil { return }
         super.ended(touch, at: point, time: time)
     }
 
-    override public var needsTicks: Bool { calibrator != nil || super.needsTicks }
+    // MARK: Fine-tune
 
-    override public func tick(time: Double) -> [TouchID: Contribution] {
-        if let cal = calibrator, let start = cal.start, time - start >= cal.duration {
-            finishCalibration()
+    private func tuneTarget(at p: CGPoint) -> (ArcSide, String)? {
+        if let hit = arcHit(at: p, expand: 0.5 * layoutUnit) { return (arcSets[hit.set].hand.side, "arc") }
+        guard let i = resolve(p) else { return nil }
+        let c = controls[i]
+        switch c.kind {
+        case .stick(let s, _, _): return (s == .left ? .left : .right, "stick")
+        case .button(let b):
+            switch b {
+            case .zl: return (.left, "s0")
+            case .l: return (.left, "s1")
+            case .zr: return (.right, "s0")
+            case .r: return (.right, "s1")
+            case .minus: return (.left, "sys")
+            case .plus: return (.right, "sys")
+            case .home: return (.left, "home")
+            default: return (c.group == Self.leftPadGroup ? .left : .right, "arc")
+            }
+        default: return nil
         }
-        return super.tick(time: time)
     }
 
-    /// A stick, shoulder or system button the finger is directly on beats the arc.
+    private func applyTweak(side: ArcSide, key: String, dphi: CGFloat, dr: CGFloat) {
+        let short = min(context.size.width, context.size.height)
+        guard short > 0 else { return }
+        var p = profiles[orientation] ?? ArcProfile()
+        var tw = (side == .left ? p.leftTweaks : p.rightTweaks) ?? [:]
+        var t = tw[key] ?? ArcTweak(dphi: 0, dr: 0)
+        t.dphi = Double(ArcMath.clamp(CGFloat(t.dphi) + dphi, -1.2, 1.2))
+        t.dr = Double(ArcMath.clamp(CGFloat(t.dr) + dr / short, -0.4, 0.4))
+        tw[key] = t
+        if side == .left { p.leftTweaks = tw } else { p.rightTweaks = tw }
+        profiles[orientation] = p
+    }
+
+    /// A shoulder or system button the finger is directly on beats the arc.
     private func onOtherControl(_ p: CGPoint) -> Bool {
         controls.contains { c in
             guard !c.isZone, c.group != PadParts.Group.face, c.group != Self.leftPadGroup else { return false }
@@ -544,19 +802,32 @@ public final class ArcPad: ControlScheme {
 
     override public func render(pressed: Set<PadButton>, sticks: [PadStick: StickValue]) -> [RenderElement] {
         var out: [RenderElement] = []
+        let u = context.unit
+        func banner(_ text: String, row: CGFloat) {
+            let pill = CGRect(center: CGPoint(x: context.size.width / 2, y: context.safeBounds.minY + (1.1 + row * 1.1) * u),
+                              size: CGSize(width: min(context.size.width - 2 * u, 12 * u), height: 0.9 * u))
+            out.append(RenderElement(shape: .roundedRect(pill, cornerRadius: 0.45 * u), role: .system, label: text))
+        }
         if let cal = calibrator {
             // Controls fade back; the sweep draws itself under the thumbs.
             out = super.render(pressed: [], sticks: [:]).map { e in
                 var g = e; g.ghost = true; return g
             }
-            let u = context.unit
-            let pill = CGRect(center: CGPoint(x: context.size.width / 2, y: context.safeBounds.minY + 1.1 * u),
-                              size: CGSize(width: min(context.size.width - 2 * u, 12 * u), height: 0.9 * u))
-            out.append(RenderElement(shape: .roundedRect(pill, cornerRadius: 0.45 * u), role: .system,
-                                     label: calibrationPrompt))
+            banner(calibrationPrompt, row: 0)
+            if let note = cal.note { banner(note, row: 1) }
             for side in [ArcSide.left, .right] {
-                for p in (cal.samples[side] ?? []).suffix(150) {
+                for p in (cal.samples[side] ?? []).suffix(200) {
                     out.append(RenderElement(shape: .circle(center: p, radius: 3), role: .dot, lit: true))
+                }
+            }
+            if cal.phase == .review {
+                for (side, fit) in cal.fits {
+                    let h = Self.hand(side, fit: fit, context)
+                    var phi = h.lo
+                    while phi <= h.hi {
+                        out.append(RenderElement(shape: .circle(center: h.point(r: h.radius, phi: phi), radius: 2), role: .dot))
+                        phi += 0.3 * u / h.radius
+                    }
                 }
             }
             return out
@@ -564,7 +835,8 @@ public final class ArcPad: ControlScheme {
         for g in guides {
             out.append(RenderElement(shape: .circle(center: g, radius: 1.7), role: .dot, ghost: true))
         }
-        out += super.render(pressed: pressed, sticks: sticks)
+        out += super.render(pressed: tuning ? [] : pressed, sticks: sticks)
+        if tuning { banner("Drag a control along its arc, or in and out", row: 0) }
         return out
     }
 }
@@ -616,17 +888,39 @@ public struct ArcHandFit: Codable, Equatable, Sendable {
     }
 }
 
-/// Both hands for one orientation. A hand that was never fitted keeps its default.
+/// A fine-tune offset for one control group: an angle along the arc and a radial move, the
+/// latter as a fraction of the screen's short side.
+public struct ArcTweak: Codable, Equatable, Sendable {
+    public var dphi: Double
+    public var dr: Double
+
+    public init(dphi: Double, dr: Double) {
+        self.dphi = dphi
+        self.dr = dr
+    }
+
+    var isSane: Bool { dphi.isFinite && dr.isFinite && abs(dphi) <= 1.2 && abs(dr) <= 0.4 }
+}
+
+/// Everything saved for one orientation. A hand that was never fitted keeps its default.
 public struct ArcProfile: Codable, Equatable, Sendable {
     public var left: ArcHandFit?
     public var right: ArcHandFit?
+    /// Fine-tune offsets by control group ("arc", "stick", "s0", "s1", "sys", "home").
+    public var leftTweaks: [String: ArcTweak]?
+    public var rightTweaks: [String: ArcTweak]?
+    /// Positions are locked: nothing can move or be recalibrated.
+    public var locked: Bool?
 
     public init(left: ArcHandFit? = nil, right: ArcHandFit? = nil) {
         self.left = left
         self.right = right
     }
 
-    var isSane: Bool { (left?.isSane ?? true) && (right?.isSane ?? true) }
+    var isSane: Bool {
+        (left?.isSane ?? true) && (right?.isSane ?? true)
+            && (leftTweaks?.values.allSatisfy(\.isSane) ?? true) && (rightTweaks?.values.allSatisfy(\.isSane) ?? true)
+    }
 }
 
 public extension TargetDevice {
@@ -641,4 +935,9 @@ public extension TargetDevice {
                                 size: CGSize(width: d.size.height, height: d.size.width), insets: insets)
         }
     }
+}
+
+extension ArcSide {
+    /// +1 / -1 along x toward the middle of the screen, for building sweeps in tests.
+    public var inboardSign: CGFloat { inboard }
 }
