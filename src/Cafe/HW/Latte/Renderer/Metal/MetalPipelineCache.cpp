@@ -776,7 +776,7 @@ void MetalPipelineCache_QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc)
 // built on; files for another build are deleted.
 static constexpr uint32 ARCHIVE_MAX_FILES = 8;
 static constexpr uint64 ARCHIVE_MAX_BYTES = 384ull * 1024 * 1024; // loaded archives plus what a session may add to them
-static constexpr uint64 ARCHIVE_LOAD_BYTES = 256ull * 1024 * 1024; // a title opens at most this much, newest files first; older files are deleted
+static constexpr uint64 ARCHIVE_LOAD_BYTES = 256ull * 1024 * 1024; // a title opens at most this much; files over it stay on disk unopened
 static constexpr uint64 ARCHIVE_ALL_TITLES_BYTES = 1024ull * 1024 * 1024; // all titles together; the oldest files of other titles go first
 static constexpr int ARCHIVE_MAX_AGE_DAYS = 45;
 static constexpr size_t ARCHIVE_MAX_QUEUE = 20000;
@@ -833,12 +833,15 @@ void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
 		const uint64 size = it->is_regular_file(sizeEc) ? (uint64)it->file_size(sizeEc) : 0;
 		const auto time = fs::last_write_time(it->path(), timeEc);
 		const bool isBin = name.size() > 4 && name.compare(name.size() - 4, 4, ".bin") == 0;
-		if (!isBin || name.find(keyOnly) == std::string::npos || (!timeEc && time < ageLimit))
+		const bool isCurrentTitle = name.compare(0, titlePrefix.size(), titlePrefix) == 0;
+		// Archives are written once and only read afterwards, so the write time says when a title was last played only because
+		// the files of the title being opened are touched below. This title's own files are never aged out here.
+		if (!isBin || name.find(keyOnly) == std::string::npos || (!isCurrentTitle && !timeEc && time < ageLimit))
 		{
-			prune(it->path(), size); // another OS build or GPU, a leftover temp file, or not used for weeks
+			prune(it->path(), size); // another OS build or GPU, a leftover temp file, or another title not played for weeks
 			continue;
 		}
-		all.push_back({it->path(), size, timeEc ? fs::file_time_type::min() : time, name.compare(0, titlePrefix.size(), titlePrefix) == 0});
+		all.push_back({it->path(), size, timeEc ? fs::file_time_type::min() : time, isCurrentTitle});
 	}
 	// all titles together stay under a cap: the oldest files of the other titles go first
 	{
@@ -858,7 +861,9 @@ void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
 			it = all.erase(it);
 		}
 	}
-	// this title: newest files first, opened until the budget is used; the older ones are deleted
+	// this title: its files are never deleted for size. They are opened in index order (the first file holds the bulk of the
+	// pipelines, later ones only what it missed) until the budget is used; the rest stay on disk and their indexes stay taken so a
+	// new file never overwrites them. Every file is touched so that its age means "last played".
 	std::vector<fs::path> files;
 	std::vector<bool> used(ARCHIVE_MAX_FILES, false);
 	{
@@ -866,13 +871,17 @@ void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
 		for (auto& f : all)
 			if (f.currentTitle)
 				mine.push_back(f);
-		std::sort(mine.begin(), mine.end(), [](const ArchiveFile& a, const ArchiveFile& b) { return a.time > b.time; });
+		std::sort(mine.begin(), mine.end(), [](const ArchiveFile& a, const ArchiveFile& b) { return a.path.filename().string() < b.path.filename().string(); });
 		uint64 budget = 0;
 		for (auto& f : mine)
 		{
+			std::error_code touchEc;
+			fs::last_write_time(f.path, fs::file_time_type::clock::now(), touchEc);
 			if (!files.empty() && budget + f.size > ARCHIVE_LOAD_BYTES)
 			{
-				prune(f.path, f.size);
+				const size_t skippedIdx = (size_t)strtoul(f.path.filename().string().c_str() + keyPrefix.size(), nullptr, 10);
+				if (skippedIdx < used.size())
+					used[skippedIdx] = true;
 				continue;
 			}
 			budget += f.size;

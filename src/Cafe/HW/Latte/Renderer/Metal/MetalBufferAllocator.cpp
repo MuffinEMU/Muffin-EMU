@@ -188,6 +188,7 @@ MetalSynchronizedRingAllocator::AllocatorReservation_t MetalSynchronizedRingAllo
 		// The device refused a new buffer. The ring keeps idle buffers around for a thousand cleanups; give those
 		// back now and try once more, instead of skipping an upload while memory sits unused in the ring.
 		bufferCountBefore = m_buffers.size();
+		m_consecutiveFailures = 0; // memory was just given back: the pause must not swallow this retry
 		allocateAdditionalUploadBuffer(size);
 	}
 	if (m_buffers.size() == bufferCountBefore)
