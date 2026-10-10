@@ -264,7 +264,6 @@ namespace {
     // being hit is not physical memory, and this names which one (a full map, a map of holes too small to use,
     // or one region type holding most of it). Stack memory and write() only, so it is safe with malloc failing.
     void cemu_vm_report(const char* why, uint64_t wantedBytes) {
-        cemu_crash_open_log();
         struct Top { uint64_t size; uint64_t addr; unsigned tag; };
         Top top[5] = {};
         uint64_t tagBytes[256] = {};
@@ -4250,6 +4249,7 @@ void IOSBridge_VulkanDeviceLost(const char* why) {
 // Called by the Metal allocators when the device refuses a buffer (the first few times only). Writes where the address space and the
 // footprint stand into CemuCrashLog.txt, so the next log says whether the limit hit was physical memory or the address space.
 void IOSBridge_LogAllocationFailure(const char* what, uint64_t wantedBytes) {
+    cemu_crash_open_log();
     cemu_vm_report(what, wantedBytes);
 }
 
