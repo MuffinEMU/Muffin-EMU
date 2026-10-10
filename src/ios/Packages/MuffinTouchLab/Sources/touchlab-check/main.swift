@@ -708,5 +708,33 @@ for (name, size, insets) in [
     }
 }
 
+// MARK: Nearest-button assignment
+
+do {
+    let r: CGFloat = 30
+    let a = HitTarget(id: "A", centre: CGPoint(x: 100, y: 0), halfSize: CGSize(width: r, height: r), isCircle: true)
+    let b = HitTarget(id: "B", centre: CGPoint(x: 171, y: 0), halfSize: CGSize(width: r, height: r), isCircle: true)
+    let both = [a, b]
+    func hit(_ x: CGFloat, _ y: CGFloat = 0, reach: CGFloat = 1.4, contact: CGFloat = 0,
+             bias: CGPoint = .zero, current: String? = nil) -> String? {
+        HitResolver.resolve(CGPoint(x: x, y: y), targets: both, reachFactor: reach,
+                            contactRadius: contact, bias: bias, current: current)
+    }
+    check(hit(100) == "A" && hit(171) == "B", "nearest: a touch on a button's centre gets that button")
+    check(hit(133) == "A", "nearest: a touch in the gap, nearer A, goes to A")
+    check(hit(138) == "B", "nearest: a touch in the gap, nearer B, goes to B")
+    check(hit(60) == "A", "nearest: just outside the drawn edge (within 1.4x) still counts")
+    check(hit(100, 45) == nil, "nearest: a touch outside the reach goes nowhere")
+    check(hit(60, 0, reach: 1.0) == nil, "nearest: with no tolerance an edge miss goes nowhere")
+    check(hit(100, 45, contact: 8) == "A", "nearest: a wide contact area extends the reach")
+    check(hit(60, 0, bias: CGPoint(x: 6, y: 0)) == "A" && hit(133, 0, bias: CGPoint(x: 6, y: 0)) == "B",
+          "nearest: the bias shifts where the touch is read")
+    check(hit(135, current: "A") == "A" && hit(135, current: "B") == "B", "nearest: a finger on the seam keeps the button it holds")
+    check(hit(160, current: "A") == "B", "nearest: sliding well onto B hands over from A")
+    let pill = HitTarget(id: "ZL", centre: CGPoint(x: 0, y: 0), halfSize: CGSize(width: 60, height: 20), isCircle: false)
+    check(HitResolver.resolve(CGPoint(x: 50, y: 24), targets: [pill], reachFactor: 1.4) == "ZL", "nearest: a shoulder's reach follows its shorter side")
+    check(HitResolver.resolve(CGPoint(x: 50, y: 40), targets: [pill], reachFactor: 1.4) == nil, "nearest: and stops there")
+}
+
 print("\(passes) passed, \(failures) failed")
 exit(Int32(min(failures, 125)))

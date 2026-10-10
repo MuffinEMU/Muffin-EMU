@@ -23,6 +23,17 @@ enum ControllerLayoutSettings {
     static let leftOffsetYKey = "muffin.controls.left.dy"
     static let rightOffsetXKey = "muffin.controls.right.dx"
     static let rightOffsetYKey = "muffin.controls.right.dy"
+    /// Per-half size, and how far each half sits from its starting place, in button widths:
+    /// inward toward the middle of the screen, and up. Zero / 1.0 is the measured layout.
+    static let leftScaleKey = "muffin.controls.left.scale"
+    static let rightScaleKey = "muffin.controls.right.scale"
+    static let leftInwardKey = "muffin.controls.left.inward"
+    static let rightInwardKey = "muffin.controls.right.inward"
+    static let leftUpKey = "muffin.controls.left.up"
+    static let rightUpKey = "muffin.controls.right.up"
+    static let minClusterScale = 0.6, maxClusterScale = 1.6
+    static let minClusterInward = -1.0, maxClusterInward = 3.0
+    static let minClusterUp = -2.0, maxClusterUp = 3.0
     /// Whether the analog sticks are shown alongside the d-pad and face buttons. Off by default.
     static let joystickKey = "muffin.controls.joystick"
     /// Whether L/ZL/minus and R/ZR/plus are anchored to the analog sticks instead. Only
@@ -49,6 +60,9 @@ enum ControllerLayoutSettings {
     /// Whether a press fires a light haptic tap. On by default.
     static let hapticsKey = "muffin.pad.haptics"
     static let defaultHaptics = true
+
+    /// How far off a button a touch still counts (TouchTolerance).
+    static let touchToleranceKey = "muffin.controls.touchTolerance"
 
     /// Hide the on-screen pad while a physical controller is connected, and bring it back when the
     /// last one goes. Off by default. Not reset by `reset()`: it is a preference, not a layout.
@@ -189,7 +203,7 @@ enum ControllerLayoutSettings {
     /// that is the control scheme, not the layout.
     static func reset() {
         let defaults = UserDefaults.standard
-        for key in [scaleKey, opacityKey, stickSpacingKey, shoulderOffsetKey, rightStickOffsetXKey, rightStickOffsetYKey,
+        for key in [scaleKey, opacityKey, leftScaleKey, rightScaleKey, leftInwardKey, rightInwardKey, leftUpKey, rightUpKey, stickSpacingKey, shoulderOffsetKey, rightStickOffsetXKey, rightStickOffsetYKey,
                     leftStickOffsetXKey, leftStickOffsetYKey,
                     leftOffsetXKey, leftOffsetYKey,
                     rightOffsetXKey, rightOffsetYKey] {
