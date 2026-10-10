@@ -677,5 +677,64 @@ do {
           "aspectFit pillarboxes in a wide rect, got \(tall)")
 }
 
+// MARK: Shoulder travel uses the whole room, both ways round
+
+for (name, size, insets) in [
+    ("iPad landscape", CGSize(width: 1366, height: 1024), Insets(top: 24, bottom: 20)),
+    ("iPad portrait", CGSize(width: 1024, height: 1366), Insets(top: 24, bottom: 20)),
+    ("iPhone landscape", CGSize(width: 932, height: 430), Insets(left: 59, bottom: 21, right: 59)),
+    ("iPhone portrait", CGSize(width: 430, height: 932), Insets(top: 59, bottom: 34)),
+] {
+    for id in ["zone", "adaptive"] {
+        let ctx = LayoutContext(size: size, safeInsets: insets)
+        let limit = GamePadArrangement.maxShoulderDrop(ctx)
+        var home = ctx
+        home.shoulderOffset = 0
+        let homeScheme = SchemeCatalog.make(id) as! ControlScheme
+        homeScheme.layout(home)
+        var far = ctx
+        far.shoulderOffset = limit
+        let farScheme = SchemeCatalog.make(id) as! ControlScheme
+        farScheme.layout(far)
+        var over = ctx
+        over.shoulderOffset = limit + 0.5
+        let overScheme = SchemeCatalog.make(id) as! ControlScheme
+        overScheme.layout(over)
+        let moved = { (s: ControlScheme) in shoulderRects(s)[.zl]!.minY - shoulderRects(homeScheme)[.zl]!.minY }
+        let u = shoulderRects(farScheme)[.zl]!.width / 1.9
+        check(LayoutCheck.problems(farScheme.controls, in: ctx.safeBounds).isEmpty, "\(name) \(id): max shoulder drop leaves a problem")
+        check(abs(moved(farScheme) - limit * u) < u * 0.1 + 1, "\(name) \(id): the slider maximum \(limit) is not reached (\(moved(farScheme) / u))")
+        check(moved(overScheme) <= moved(farScheme) + 1, "\(name) \(id): the shoulders move past the slider maximum")
+    }
+}
+
+// MARK: Nearest-button assignment
+
+do {
+    let r: CGFloat = 30
+    let a = HitTarget(id: "A", centre: CGPoint(x: 100, y: 0), halfSize: CGSize(width: r, height: r), isCircle: true)
+    let b = HitTarget(id: "B", centre: CGPoint(x: 171, y: 0), halfSize: CGSize(width: r, height: r), isCircle: true)
+    let both = [a, b]
+    func hit(_ x: CGFloat, _ y: CGFloat = 0, reach: CGFloat = 1.4, contact: CGFloat = 0,
+             bias: CGPoint = .zero, current: String? = nil) -> String? {
+        HitResolver.resolve(CGPoint(x: x, y: y), targets: both, reachFactor: reach,
+                            contactRadius: contact, bias: bias, current: current)
+    }
+    check(hit(100) == "A" && hit(171) == "B", "nearest: a touch on a button's centre gets that button")
+    check(hit(133) == "A", "nearest: a touch in the gap, nearer A, goes to A")
+    check(hit(138) == "B", "nearest: a touch in the gap, nearer B, goes to B")
+    check(hit(60) == "A", "nearest: just outside the drawn edge (within 1.4x) still counts")
+    check(hit(100, 45) == nil, "nearest: a touch outside the reach goes nowhere")
+    check(hit(60, 0, reach: 1.0) == nil, "nearest: with no tolerance an edge miss goes nowhere")
+    check(hit(100, 45, contact: 8) == "A", "nearest: a wide contact area extends the reach")
+    check(hit(60, 0, bias: CGPoint(x: 6, y: 0)) == "A" && hit(133, 0, bias: CGPoint(x: 6, y: 0)) == "B",
+          "nearest: the bias shifts where the touch is read")
+    check(hit(135, current: "A") == "A" && hit(135, current: "B") == "B", "nearest: a finger on the seam keeps the button it holds")
+    check(hit(160, current: "A") == "B", "nearest: sliding well onto B hands over from A")
+    let pill = HitTarget(id: "ZL", centre: CGPoint(x: 0, y: 0), halfSize: CGSize(width: 60, height: 20), isCircle: false)
+    check(HitResolver.resolve(CGPoint(x: 50, y: 24), targets: [pill], reachFactor: 1.4) == "ZL", "nearest: a shoulder's reach follows its shorter side")
+    check(HitResolver.resolve(CGPoint(x: 50, y: 40), targets: [pill], reachFactor: 1.4) == nil, "nearest: and stops there")
+}
+
 print("\(passes) passed, \(failures) failed")
 exit(Int32(min(failures, 125)))

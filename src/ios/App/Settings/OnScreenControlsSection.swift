@@ -44,6 +44,8 @@ struct OnScreenControlsSection: View {
     private var useMeloControls = MeloControlsSetting.defaultValue
     @AppStorage(TouchLabSettings.schemeKey)
     private var touchLabScheme = TouchLabSettings.defaultScheme
+    @AppStorage(ControllerLayoutSettings.touchToleranceKey)
+    private var touchTolerance = TouchTolerance.defaultValue.rawValue
     @AppStorage(ControllerLayoutSettings.stickSpacingKey)
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
@@ -136,6 +138,7 @@ struct OnScreenControlsSection: View {
             // iPad only: an iPhone has no spare height to move them in. Applies to MuffinEMU's
             // pad and to the TouchLab styles whose shoulders are fixed.
             if ControllerLayoutSettings.supportsShoulderOffset
+                && ControllerLayoutSettings.hasShoulderRoom(touchLab: usingTouchLab, in: windowSize.size)
                 && (!usingTouchLab || TouchLabSettings.hasMovableShoulders(touchLabScheme)) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
@@ -193,6 +196,18 @@ struct OnScreenControlsSection: View {
                 }
             }
 
+            Picker(selection: $touchTolerance) {
+                ForEach(TouchTolerance.allCases) { Text($0.title).tag($0.rawValue) }
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Touch tolerance")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("How far from a button a press still counts. Go higher if presses miss.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+
             Toggle(isOn: $hapticsEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Haptic feedback")
@@ -219,6 +234,17 @@ struct OnScreenControlsSection: View {
             // How long the bar waits, and how big the handle is: Advanced mode only (see AdvancedSettings).
             if advanced && hideTopBar.wrappedValue {
                 topBarOptions
+            }
+
+            if !usingTouchLab && !useMeloControls {
+                NavigationLink {
+                    ClusterPlacementSettings(
+                        upright: UIDevice.current.userInterfaceIdiom == .phone && ControllerLayoutSettings.isUpright(windowSize.size))
+                        .id(ControllerLayoutSettings.isUpright(windowSize.size))
+                } label: {
+                    Label("Left and right buttons", systemImage: "arrow.left.and.right.square")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                }
             }
 
             NavigationLink {
