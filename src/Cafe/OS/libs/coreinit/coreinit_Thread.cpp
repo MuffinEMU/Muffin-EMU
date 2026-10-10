@@ -104,7 +104,8 @@ namespace coreinit
 		g_idleWakeCv.notify_all();
 	}
 
-	bool g_isMulticoreMode;
+	bool g_isMulticoreMode; // one host thread per emulated core
+	bool g_isTwoThreadMode; // host thread 1 runs core 1, host thread 0 alternates cores 0 and 2
 
 	// see the declaration in coreinit_Thread.h for why this exists
 	std::atomic<bool> g_coreIsBusy[Espresso::CORE_COUNT]{};
@@ -1308,7 +1309,8 @@ namespace coreinit
 	// this is necessary since we can't block in __OSThreadSwitchToNext() (__OSStoreThread + thread switch must happen inside same scheduler lock)
 	void __OSThreadCoreIdle(void* unusedParam)
 	{
-		bool isMainCore = g_isMulticoreMode == false || t_assignedCoreIndex == 1;
+		const bool perCoreHost = g_isMulticoreMode || g_isTwoThreadMode;
+		bool isMainCore = perCoreHost == false || t_assignedCoreIndex == 1;
 		sint32 coreIndex = t_assignedCoreIndex;
 		__OSUnlockScheduler();
 		// Main core only. Used to be a bare spin (about 6 million passes a second, one performance
@@ -1353,7 +1355,7 @@ namespace coreinit
 			}
 			if (ranGuestThread)
 				emptyRunQueueSpins = 0; // not the run-queue counters: OSSchedulerEnd() bumps those without queueing anything
-			else if (isMainCore && ++emptyRunQueueSpins > kIdleSpinBudget)
+			else if ((isMainCore || g_isTwoThreadMode) && ++emptyRunQueueSpins > kIdleSpinBudget)
 			{
 				bool signalled;
 				{
@@ -1374,8 +1376,15 @@ namespace coreinit
 				if (!sSchedulerActive.load(std::memory_order::relaxed))
 					Fiber::Switch(*t_schedulerFiber); // switch back to original thread to exit
 				__OSCheckSystemEvents();
-				if(g_isMulticoreMode == false)
+				if(perCoreHost == false)
 					coreIndex = (coreIndex + 1) % 3;
+			}
+			else if (g_isTwoThreadMode)
+			{
+				// shares cores 0 and 2; a thread queued for either one wakes the wait above
+				if (!sSchedulerActive.load(std::memory_order::relaxed))
+					Fiber::Switch(*t_schedulerFiber);
+				coreIndex = coreIndex == 0 ? 2 : 0;
 			}
 			else
 			{
@@ -1410,8 +1419,19 @@ namespace coreinit
 		static uint32 _coreCounter = 0;
 
 		sint32 coreIndex;
+		static thread_local uint32 s_twoThreadSharedCore = 0;
 		if (g_isMulticoreMode)
 			coreIndex = t_assignedCoreIndex;
+		else if (g_isTwoThreadMode)
+		{
+			if (t_assignedCoreIndex == 1)
+				coreIndex = 1;
+			else
+			{
+				coreIndex = s_twoThreadSharedCore;
+				s_twoThreadSharedCore = s_twoThreadSharedCore == 0 ? 2 : 0;
+			}
+		}
 		else
 		{
 			coreIndex = _coreCounter;
@@ -1419,7 +1439,7 @@ namespace coreinit
 		}
 
 		// if main thread then dont forget to do update checks
-		bool isMainThread = g_isMulticoreMode == false || t_assignedCoreIndex == 1;
+		bool isMainThread = (g_isMulticoreMode == false && g_isTwoThreadMode == false) || t_assignedCoreIndex == 1;
 
 		// find next thread to run
 		// for main thread we force switching to the idle loop since it calls __OSCheckSystemEvents()
@@ -1540,13 +1560,19 @@ namespace coreinit
 		std::unique_lock _lock(sSchedulerStateMtx);
 		if (sSchedulerActive.exchange(true))
 			return;
-		cemu_assert_debug(numCPUEmulationThreads == 1 || numCPUEmulationThreads == 3);
-		g_isMulticoreMode = numCPUEmulationThreads > 1;
+		cemu_assert_debug(numCPUEmulationThreads == 1 || numCPUEmulationThreads == 2 || numCPUEmulationThreads == 3);
+		g_isMulticoreMode = numCPUEmulationThreads == 3;
+		g_isTwoThreadMode = numCPUEmulationThreads == 2;
 		for (auto& busy : g_coreIsBusy)
 			busy.store(false, std::memory_order_release);
 		PerfTelemetry::Get().ppcHostThreads.store((uint32)numCPUEmulationThreads, std::memory_order_relaxed);
 		if (numCPUEmulationThreads == 1)
 			sSchedulerThreads.emplace_back(OSSchedulerCoreEmulationThread, (void*)0);
+		else if (numCPUEmulationThreads == 2)
+		{
+			sSchedulerThreads.emplace_back(OSSchedulerCoreEmulationThread, (void*)1);
+			sSchedulerThreads.emplace_back(OSSchedulerCoreEmulationThread, (void*)0);
+		}
 		else if (numCPUEmulationThreads == 3)
 		{
 			for (size_t i = 0; i < 3; i++)

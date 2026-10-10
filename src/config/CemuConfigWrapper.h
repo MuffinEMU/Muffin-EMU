@@ -49,6 +49,8 @@ typedef NS_ENUM(NSInteger, ObjCCPUMode) {
     ObjCCPUModeDualcoreRecompiler    = 3,
     ObjCCPUModeMulticoreRecompiler   = 4,
     ObjCCPUModeAuto                  = 5,
+    ObjCCPUModeTwocoreRecompiler     = 6,
+    ObjCCPUModeTwocoreInterpreter    = 7,
 };
 
 typedef NS_ENUM(NSInteger, ObjCCafeConsoleLanguage) {

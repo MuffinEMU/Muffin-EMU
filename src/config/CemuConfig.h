@@ -153,8 +153,10 @@ enum class CPUMode
 	MulticoreRecompiler = 3,
 	Auto = 4,
 	MulticoreInterpreter = 5,
+	TwocoreRecompiler = 6, // the three emulated cores on two host threads
+	TwocoreInterpreter = 7,
 };
-ENABLE_ENUM_ITERATORS(CPUMode, CPUMode::SinglecoreInterpreter, CPUMode::MulticoreInterpreter);
+ENABLE_ENUM_ITERATORS(CPUMode, CPUMode::SinglecoreInterpreter, CPUMode::TwocoreInterpreter);
 
 
 enum class CPUModeLegacy
@@ -287,6 +289,8 @@ struct fmt::formatter<CPUMode> : formatter<string_view> {
 		case CPUMode::MulticoreRecompiler: name = "Multi-core recompiler"; break;
 		case CPUMode::Auto: name = "Auto"; break;
 		case CPUMode::MulticoreInterpreter: name = "Multi-core interpreter"; break;
+		case CPUMode::TwocoreRecompiler: name = "Two-core recompiler"; break;
+		case CPUMode::TwocoreInterpreter: name = "Two-core interpreter"; break;
 		default: name = "unknown"; break;
 		}
 		return formatter<string_view>::format(name, ctx);

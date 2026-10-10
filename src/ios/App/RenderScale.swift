@@ -214,7 +214,7 @@ enum PadSurfaceScale {
 /// about three times the power and a part that throttles can end up slower than on one. Three
 /// cores stay available as a labelled experiment, globally and per game.
 enum CoreMode: String, CaseIterable, Identifiable {
-    case auto, single, multi
+    case auto, single, two, multi
 
     var id: String { rawValue }
 
@@ -222,6 +222,7 @@ enum CoreMode: String, CaseIterable, Identifiable {
         switch self {
         case .auto:   return "Auto"
         case .single: return "One core"
+        case .two:    return "Two cores (Experimental)"
         case .multi:  return "Three cores (Experimental)"
         }
     }
@@ -230,6 +231,7 @@ enum CoreMode: String, CaseIterable, Identifiable {
         switch self {
         case .auto:   return "Picks per game and per device. Uses three cores when the game's profile asks for them or this device has the performance cores, memory and cooling headroom, and one core otherwise."
         case .single: return "One core. Cooler, and often faster on devices without spare performance cores."
+        case .two:    return "Two cores. Runs the console's three cores on two host threads: faster than one core, with less heat and fewer performance cores than three."
         case .multi:  return "Three cores. Can be faster on a device with spare performance cores and cooling, but heats up quickly on most iPads and has hung some games."
         }
     }
@@ -240,6 +242,7 @@ enum CoreMode: String, CaseIterable, Identifiable {
         case .auto:   return 0
         case .single: return 1
         case .multi:  return 2
+        case .two:    return 3
         }
     }
 
