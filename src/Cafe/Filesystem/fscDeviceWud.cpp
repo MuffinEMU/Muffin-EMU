@@ -65,6 +65,8 @@ public:
 		uint32 bytesToRead = (std::min)(bytesLeft, (uint32)size);
 		uint32 bytesSuccessfullyRead = m_volume->ReadFile(m_fstFileHandle, m_seek, bytesToRead, buffer);
 		m_seek += bytesSuccessfullyRead;
+		if (bytesSuccessfullyRead < bytesToRead)
+			fscNoteShortRead();
 		return bytesSuccessfullyRead;
 	}
 

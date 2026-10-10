@@ -954,6 +954,10 @@ int cemu_bridge_cache_file_import(unsigned long long titleId, const char* path, 
 /// enough lifetime for any caller here.
 const char* cemu_bridge_cpu_mode_detail(void);
 
+/// How many file reads since launch came back short of what the file still held. The core's file layer returns what it got
+/// instead of crashing; this is how the app learns that a drive stopped answering.
+uint32_t cemu_bridge_storage_read_fault_count(void);
+
 bool cemu_bridge_is_title_running(void);
 void cemu_bridge_pause(void);
 void cemu_bridge_resume(void);

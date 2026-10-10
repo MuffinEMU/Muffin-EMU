@@ -58,6 +58,7 @@
 #include "Cafe/CafeSystem.h"
 #include "Cafe/OS/libs/nn_ac/nn_ac_reachability.h"
 #include "Cafe/Filesystem/FST/KeyCache.h"
+#include "Cafe/Filesystem/fsc.h"
 #include "Cafe/HW/Latte/Core/Latte.h"
 #include "Cafe/HW/Latte/Core/LatteOverlay.h"
 #include "Cafe/HW/Latte/Core/LatteShader.h"
@@ -4014,6 +4015,10 @@ static void ios_timebase_ladder_start() {
     cemuLog_log(LogType::Force,
         "Emulated timebase: automatic clock ladder armed - if the title has not reached GX2Init after "
         "{}s the clock steps down one notch, to a floor of 1/64 real time.", kLadderStepSeconds);
+}
+
+uint32_t cemu_bridge_storage_read_fault_count(void) {
+    return fscShortReadCount();
 }
 
 bool cemu_bridge_is_title_running(void) {

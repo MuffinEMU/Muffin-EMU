@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 #if os(iOS)
 import UIKit
+import LoadKit
 #endif
 
 struct GameMetadata: Codable, Identifiable {
@@ -274,6 +275,7 @@ class GameManager: ObservableObject {
     @Published var launchBlockedMessage: String?
     /// True when the running game stopped because the drive holding it went away.
     @Published private(set) var driveWasLost = false
+    private var storageFaultBaseline: UInt32 = 0
 
     private let romsDirectory = "Roms"
     private var didSweepStaging = false
@@ -1361,6 +1363,7 @@ class GameManager: ObservableObject {
         currentGame = game
         surfaceRegistered = false
         driveWasLost = false
+        storageFaultBaseline = cemu_bridge_storage_read_fault_count()
 
         // A linked game is opened where it is. Access to its location is held until the game stops (stopEmulation), so the
         // core can read the file, and every other file around it, for the whole run.
@@ -1786,12 +1789,12 @@ class GameManager: ObservableObject {
     }
 
     /// The drive holding the running game went away: stop the game the way Back does and say why.
-    private func stopBecauseDriveWasLost() {
+    private func stopBecauseDriveWasLost(fault: StorageFault = .unreachable) {
         let game = currentGame
         stopEmulation()
         guard let game else { return }
         currentGame = game
-        lastStatusMessage = "The drive or folder holding \"\(game.cardName.name)\" was disconnected. Connect it again, then start the game again. Your progress up to your last save is kept."
+        lastStatusMessage = fault.message(game: game.cardName.name)
         driveWasLost = true
         titleEndedByEngine = true
         emulationState = .error
@@ -1840,6 +1843,11 @@ class GameManager: ObservableObject {
                 // in progress is not mistaken for an end.
                 if self.emulationState == .running && !cemu_bridge_is_title_running() {
                     self.stopTitleEndedByEngine()
+                    return
+                }
+                if self.emulationState == .running, self.currentGame?.isExternal == true,
+                   let fault = StorageFault.detect(pathReachable: true, faultCount: Int(cemu_bridge_storage_read_fault_count()), baseline: Int(self.storageFaultBaseline)) {
+                    self.stopBecauseDriveWasLost(fault: fault)
                     return
                 }
                 // A linked game can lose its drive while it runs. Looked for off the main thread, so a slow drive can't stall the UI.
@@ -1895,6 +1903,10 @@ class GameManager: ObservableObject {
         // The engine gives up when its file disappears under it; say what really happened.
         let driveGone = game.map { $0.isExternal && !ExternalLibrary.isReachable(path: $0.romPath) } ?? false
         if driveGone { stopBecauseDriveWasLost(); return }
+        if game?.isExternal == true, let fault = StorageFault.detect(pathReachable: true, faultCount: Int(cemu_bridge_storage_read_fault_count()), baseline: Int(storageFaultBaseline)) {
+            stopBecauseDriveWasLost(fault: fault)
+            return
+        }
         stopEmulation()
         guard let game else { return }
         currentGame = game
