@@ -246,6 +246,42 @@ enum CoreMode: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Host threads the mode needs. Auto and One core need one.
+    var hostThreads: Int {
+        switch self {
+        case .auto, .single: return 1
+        case .two:           return 2
+        case .multi:         return 3
+        }
+    }
+
+    /// Whether this device can run the mode's host threads (DeviceCapabilities.maxHostThreads).
+    var isAvailable: Bool { hostThreads <= DeviceCapabilities.current.maxHostThreads }
+
+    /// Basic lists only what the device can run; Advanced lists every mode.
+    static var listed: [CoreMode] { SettingsMode.isAdvanced ? allCases : allCases.filter(\.isAvailable) }
+
+    /// Whether the device offers anything beyond Auto and One core.
+    static var hasMultiOption: Bool { allCases.filter(\.isAvailable).count > 2 }
+
+    /// Shown when an Advanced user picks a mode the device cannot run.
+    var limitWarning: String {
+        let caps = DeviceCapabilities.current
+        let cores = caps.performanceCores
+        let threads = caps.maxHostThreads
+        return "\(title) probably won't work on this device. It has \(cores) performance core\(cores == 1 ? "" : "s") and can run \(threads) host thread\(threads == 1 ? "" : "s") for the console's cores; this mode needs \(hostThreads). It will be tried anyway, and a game that never starts runs on one core the next time."
+    }
+
+    /// The mode itself. A mode the device cannot run stands only in Advanced; Basic uses Auto (logged), such as
+    /// after switching back from Advanced or restoring a backup from a bigger device.
+    static func resolved(_ mode: CoreMode) -> CoreMode {
+        guard mode.isAvailable || SettingsMode.isAdvanced else {
+            cemu_bridge_log_line("CPU cores: \(mode.title) is not available on this device in Basic settings, using Auto")
+            return .auto
+        }
+        return mode
+    }
+
     static let storageKey = "muffin.cpu.coreMode"
     /// The on/off switch this replaced. Kept readable so an explicit choice made with it survives.
     private static let legacyKey = "muffin.cpu.multicore"
@@ -254,10 +290,10 @@ enum CoreMode: String, CaseIterable, Identifiable {
     static var current: CoreMode {
         let defaults = UserDefaults.standard
         if let raw = defaults.string(forKey: storageKey), let value = CoreMode(rawValue: raw) {
-            return value
+            return resolved(value)
         }
         if let legacy = defaults.object(forKey: legacyKey) as? Bool {
-            return legacy ? .multi : .single
+            return resolved(legacy ? .multi : .single)
         }
         return defaultValue
     }
