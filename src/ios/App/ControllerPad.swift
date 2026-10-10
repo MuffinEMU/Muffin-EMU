@@ -130,7 +130,7 @@ struct OptimizedControlPanel: View {
             // The shoulder slider is iPad only: on iPhone the stored value is never read.
             let shoulderDrop = ControllerLayoutSettings.effectiveShoulderOffset(
                 ControllerLayoutSettings.isUpright(proxy.size) ? shoulderOffsetUpright : shoulderOffset)
-            let shoulderLimit = ControllerLayoutSettings.maxShoulderOffset(in: proxy.size)
+            let shoulderLimit = ControllerLayoutSettings.shoulderRange(in: proxy.size)
             // How much of this view's top the bar covers, in this view's own coordinates.
             let topReserve = max(0, topInset - proxy.frame(in: .global).minY)
 
@@ -142,7 +142,7 @@ struct OptimizedControlPanel: View {
                     skin: skin,
                     unit: unit,
                     shoulderOffset: shoulderDrop,
-                    maxShoulderOffset: shoulderLimit,
+                    shoulderRange: shoulderLimit,
                     topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
@@ -165,7 +165,7 @@ struct OptimizedControlPanel: View {
                         skin: skin,
                         unit: unit,
                         shoulderOffset: shoulderDrop,
-                    maxShoulderOffset: shoulderLimit,
+                    shoulderRange: shoulderLimit,
                         topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
@@ -184,7 +184,7 @@ struct OptimizedControlPanel: View {
                     skin: skin,
                     unit: unit,
                     shoulderOffset: shoulderDrop,
-                    maxShoulderOffset: shoulderLimit,
+                    shoulderRange: shoulderLimit,
                     topReserve: topReserve,
                     container: proxy.size,
                     isEditingLayout: isEditingLayout,
@@ -206,7 +206,7 @@ struct OptimizedControlPanel: View {
                         skin: skin,
                         unit: unit,
                         shoulderOffset: shoulderDrop,
-                    maxShoulderOffset: shoulderLimit,
+                    shoulderRange: shoulderLimit,
                         topReserve: topReserve,
                         container: proxy.size,
                         isEditingLayout: isEditingLayout,
@@ -251,7 +251,7 @@ private struct ControlCluster: View {
     /// measured place, in units; already zero on iPhone. See ControllerGeometry.shoulderShift.
     let shoulderOffset: Double
     /// The most that setting may ask for in this container's orientation.
-    var maxShoulderOffset: Double = ControllerLayoutSettings.maxShoulderOffset
+    var shoulderRange: ClosedRange<Double> = ControllerLayoutSettings.minShoulderOffset...ControllerLayoutSettings.maxShoulderOffset
     /// Height at the top of `container` that the top bar covers, in points. Nothing is
     /// placed above it.
     var topReserve: CGFloat = 0
@@ -301,7 +301,7 @@ private struct ControlCluster: View {
         ControllerGeometry.shoulderShift(
             offset: shoulderOffset, centreY: centre.y, containerHeight: container.height,
             unit: unit, controls: controls, topInset: topReserve,
-            maxOffset: maxShoulderOffset) * unit
+            range: shoulderRange) * unit
     }
 
     private func clamped(_ point: CGPoint) -> CGPoint {

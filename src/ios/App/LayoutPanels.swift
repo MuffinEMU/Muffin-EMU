@@ -272,7 +272,8 @@ struct MuffinPadLayoutPanel: View {
                        value: $controlOpacity, range: 0.2...1.0)
 
         // L, ZL, R and ZR move up or down together. iPad only.
-        if ControllerLayoutSettings.supportsShoulderOffset {
+        if ControllerLayoutSettings.supportsShoulderOffset
+            && ControllerLayoutSettings.hasShoulderRoom(touchLab: false, in: windowSize.size) {
             PanelSliderRow("Shoulder button height", title: "L/R", leadingIcon: "arrow.up.and.down",
                            value: shoulderBinding,
                            range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: false, in: windowSize.size),

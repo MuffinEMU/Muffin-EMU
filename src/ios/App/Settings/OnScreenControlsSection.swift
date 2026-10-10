@@ -136,6 +136,7 @@ struct OnScreenControlsSection: View {
             // iPad only: an iPhone has no spare height to move them in. Applies to MuffinEMU's
             // pad and to the TouchLab styles whose shoulders are fixed.
             if ControllerLayoutSettings.supportsShoulderOffset
+                && ControllerLayoutSettings.hasShoulderRoom(touchLab: usingTouchLab, in: windowSize.size)
                 && (!usingTouchLab || TouchLabSettings.hasMovableShoulders(touchLabScheme)) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {

@@ -677,5 +677,36 @@ do {
           "aspectFit pillarboxes in a wide rect, got \(tall)")
 }
 
+// MARK: Shoulder travel uses the whole room, both ways round
+
+for (name, size, insets) in [
+    ("iPad landscape", CGSize(width: 1366, height: 1024), Insets(top: 24, bottom: 20)),
+    ("iPad portrait", CGSize(width: 1024, height: 1366), Insets(top: 24, bottom: 20)),
+    ("iPhone landscape", CGSize(width: 932, height: 430), Insets(left: 59, bottom: 21, right: 59)),
+    ("iPhone portrait", CGSize(width: 430, height: 932), Insets(top: 59, bottom: 34)),
+] {
+    for id in ["zone", "adaptive"] {
+        let ctx = LayoutContext(size: size, safeInsets: insets)
+        let limit = GamePadArrangement.maxShoulderDrop(ctx)
+        var home = ctx
+        home.shoulderOffset = 0
+        let homeScheme = SchemeCatalog.make(id) as! ControlScheme
+        homeScheme.layout(home)
+        var far = ctx
+        far.shoulderOffset = limit
+        let farScheme = SchemeCatalog.make(id) as! ControlScheme
+        farScheme.layout(far)
+        var over = ctx
+        over.shoulderOffset = limit + 0.5
+        let overScheme = SchemeCatalog.make(id) as! ControlScheme
+        overScheme.layout(over)
+        let moved = { (s: ControlScheme) in shoulderRects(s)[.zl]!.minY - shoulderRects(homeScheme)[.zl]!.minY }
+        let u = shoulderRects(farScheme)[.zl]!.width / 1.9
+        check(LayoutCheck.problems(farScheme.controls, in: ctx.safeBounds).isEmpty, "\(name) \(id): max shoulder drop leaves a problem")
+        check(abs(moved(farScheme) - limit * u) < u * 0.1 + 1, "\(name) \(id): the slider maximum \(limit) is not reached (\(moved(farScheme) / u))")
+        check(moved(overScheme) <= moved(farScheme) + 1, "\(name) \(id): the shoulders move past the slider maximum")
+    }
+}
+
 print("\(passes) passed, \(failures) failed")
 exit(Int32(min(failures, 125)))

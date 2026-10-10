@@ -130,6 +130,22 @@ enum TouchLabSettings {
         id == zoneStyleID || id == adaptiveStyleID
     }
 
+    /// The most the movable styles can drop their shoulders on a window this size, in button
+    /// widths, from the layout itself (safe area, sticks, d-pad and face buttons).
+    static func maxShoulderDrop(in size: CGSize) -> Double {
+        guard size.width > 0, size.height > 0 else { return ControllerLayoutSettings.maxShoulderOffset }
+        let window = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.windows.first { $0.isKeyWindow } }.first
+        let safe = window?.safeAreaInsets ?? .zero
+        let scale = UserDefaults.standard.object(forKey: ControllerLayoutSettings.scaleKey) as? Double
+            ?? ControllerLayoutSettings.defaultScale
+        let ctx = LayoutContext(size: size,
+                                safeInsets: Insets(top: safe.top, left: safe.left, bottom: safe.bottom, right: safe.right),
+                                scale: CGFloat(scale))
+        let step = ControllerLayoutSettings.shoulderOffsetStep
+        let drop = Double(GamePadArrangement.maxShoulderDrop(ctx))
+        return max((drop / step).rounded(.down) * step, 0)
+    }
+
     /// Float's right-hand side options: stored value and label.
     static let cameraOptions: [(value: String, title: String)] = [
         (FloatPad.Camera.stick.rawValue, "Floating stick"),
