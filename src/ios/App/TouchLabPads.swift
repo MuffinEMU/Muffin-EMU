@@ -279,6 +279,7 @@ struct TouchLabPadOverlay: View {
     @AppStorage(ControllerLayoutSettings.scaleKey) private var scale = ControllerLayoutSettings.defaultScale
     @AppStorage(ControllerLayoutSettings.stickSpacingKey) private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     @AppStorage(ControllerLayoutSettings.shoulderOffsetKey) private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetPortraitKey) private var shoulderOffsetUpright = ControllerLayoutSettings.defaultShoulderOffset
     @AppStorage(ControllerLayoutSettings.opacityKey) private var opacity = ControllerLayoutSettings.defaultOpacity
     @AppStorage(ControllerLayoutSettings.hapticsKey) private var haptics = ControllerLayoutSettings.defaultHaptics
     @AppStorage(ControllerLayoutSettings.deadzoneKey) private var deadzone = ControllerLayoutSettings.defaultDeadzone
@@ -291,6 +292,15 @@ struct TouchLabPadOverlay: View {
     @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
 
     var body: some View {
+        // Sized by the pad's own container, so the right orientation's setting is read as the
+        // iPad rotates.
+        GeometryReader { proxy in
+            pad(upright: ControllerLayoutSettings.isUpright(proxy.size))
+        }
+        .ignoresSafeArea()
+    }
+
+    private func pad(upright: Bool) -> some View {
         TouchPad(schemeID: schemeID,
                  output: CemuBridgePadOutput.shared,
                  touchscreenRect: screens.screens.touchscreenRect,
@@ -299,7 +309,7 @@ struct TouchLabPadOverlay: View {
                  stickSpacing: stickSpacing,
                  // iPad only: the stored value is ignored on iPhone. The layouts ignore a
                  // negative value (the shoulders already start at the top edge).
-                 shoulderOffset: CGFloat(ControllerLayoutSettings.effectiveShoulderOffset(shoulderOffset)),
+                 shoulderOffset: CGFloat(ControllerLayoutSettings.effectiveShoulderOffset(upright ? shoulderOffsetUpright : shoulderOffset)),
                  opacity: opacity,
                  haptics: haptics,
                  // Rebuild the scheme only when something that shapes it changes - never on
