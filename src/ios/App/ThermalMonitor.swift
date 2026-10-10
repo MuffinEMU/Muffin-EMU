@@ -165,6 +165,8 @@ final class ThermalMonitor: ObservableObject {
     private func applyAutoThrottleIfNeeded() {
         guard autoThrottleEnabled else {
             // Turning the setting off mid-throttle has to unwind, not freeze in place.
+            cooldownTask?.cancel()
+            cooldownTask = nil
             if isThrottling { unwind(reason: "auto-reduce turned off") }
             return
         }
@@ -185,11 +187,24 @@ final class ThermalMonitor: ObservableObject {
             DisplayRouter.shared.reapplyRenderScale(reason: "thermal state \(description)")
             cemu_bridge_log_line("iOS thermal: reduced render scale to battery saver while hot")
             onNotice?("The device is hot, so MuffinEMU made the picture softer to keep the game running. It goes back when the device cools.")
-        } else if !shouldThrottle && isThrottling {
-            unwind(reason: "cooled to \(description)")
-            onNotice?("The device has cooled down. The picture is back to normal.")
+            cooldownTask?.cancel()
+            cooldownTask = nil
+        } else if shouldThrottle {
+            cooldownTask?.cancel()
+            cooldownTask = nil
+        } else if isThrottling && cooldownTask == nil {
+            cooldownTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                self.cooldownTask = nil
+                guard self.isThrottling else { return }
+                self.unwind(reason: "cooled to \(self.description)")
+                self.onNotice?("The device has cooled down. The picture is back to normal.")
+            }
         }
     }
+
+    private var cooldownTask: Task<Void, Never>?
 
     /// Puts everything back. Shared by every exit path: cooling down, the setting being
     /// switched off, and the title stopping.
@@ -213,6 +228,8 @@ final class ThermalMonitor: ObservableObject {
     /// Called when a title stops (and before a settings reset), so a throttle is never left
     /// holding the user's Render Scale at battery saver.
     func titleStopped() {
+        cooldownTask?.cancel()
+        cooldownTask = nil
         // Cleared unconditionally: the governor is a C++ atomic that outlives any one title.
         cemu_bridge_set_thermal_throttle_micros(0)
         guard isThrottling else { return }

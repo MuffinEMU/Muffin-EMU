@@ -1348,7 +1348,7 @@ namespace {
         const double wallNs = dt * 1e9;
         const double frames = (double)(uint32_t)(b.frames - a.frames);
         const double flips = (double)(uint32_t)(b.flips - a.flips);
-        const double hostPresents = (double)(uint32_t)(b.tvPresents - a.tvPresents);
+        const double hostPresents = std::max<double>((double)(uint32_t)(b.tvPresents - a.tvPresents), (double)(uint32_t)(b.padPresents - a.padPresents));
         const double hostThreads = std::max<double>(1.0, PerfTelemetry::Get().ppcHostThreads.load(std::memory_order_relaxed));
 
         const double hostFps = hostPresents / dt;

@@ -40,7 +40,7 @@ public final class TouchPadView: UIView {
     public var isInputEnabled = true {
         didSet {
             guard isInputEnabled != oldValue else { return }
-            if !isInputEnabled { dropAll() }
+            if !isInputEnabled { dropAll() } else { relayout(force: true) }
             updateAmbient()
             setNeedsDisplay()
         }
@@ -140,6 +140,8 @@ public final class TouchPadView: UIView {
     private func id(_ t: UITouch) -> TouchID { ObjectIdentifier(t).hashValue }
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        // No other finger is down, so anything the engine still holds is a leaked touch whose end never arrived.
+        if let all = event?.allTouches, all.count == touches.count { engine.cancelAll() }
         for t in touches { engine.began(id(t), at: t.location(in: self), time: t.timestamp) }
         changed()
     }

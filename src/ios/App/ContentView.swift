@@ -1001,27 +1001,31 @@ struct GameBrowserView: View {
             }
     }
 
+    private func dismissBinding(_ isPresented: Bool, clear: @escaping () -> Void) -> Binding<Bool> {
+        Binding<Bool>(get: { isPresented }, set: { if !$0 { clear() } })
+    }
+
     private func withAlerts<Content: View>(_ content: Content) -> some View {
         content
             .modifier(AudioRecordingNoticeModifier())
-            .alert("Added", isPresented: .constant(dlcUpdateSuccessMessage != nil), presenting: dlcUpdateSuccessMessage) { _ in
+            .alert("Added", isPresented: dismissBinding(dlcUpdateSuccessMessage != nil, clear: { dlcUpdateSuccessMessage = nil }), presenting: dlcUpdateSuccessMessage) { _ in
                 Button("OK") { dlcUpdateSuccessMessage = nil }
             } message: { message in
                 Text(message)
             }
-            .alert("Couldn't add that game", isPresented: .constant(romImportErrorMessage != nil), presenting: romImportErrorMessage) { _ in
+            .alert("Couldn't add that game", isPresented: dismissBinding(romImportErrorMessage != nil, clear: { romImportErrorMessage = nil }), presenting: romImportErrorMessage) { _ in
                 Button("OK") { romImportErrorMessage = nil }
             } message: { message in
                 Text(message)
             }
-            .alert("Couldn't import", isPresented: .constant(dlcImportErrorMessage != nil), presenting: dlcImportErrorMessage) { _ in
+            .alert("Couldn't import", isPresented: dismissBinding(dlcImportErrorMessage != nil, clear: { dlcImportErrorMessage = nil }), presenting: dlcImportErrorMessage) { _ in
                 Button("OK") { dlcImportErrorMessage = nil }
             } message: { message in
                 Text(message)
             }
             .alert(
                 "No automatic match",
-                isPresented: .constant(pendingManualMatchConfirmation != nil),
+                isPresented: dismissBinding(pendingManualMatchConfirmation != nil, clear: { pendingManualMatchConfirmation = nil }),
                 presenting: pendingManualMatchConfirmation
             ) { pending in
                 Button("Add to \"\(pending.game.title)\"") {
@@ -1034,7 +1038,7 @@ struct GameBrowserView: View {
             }
             .confirmationDialog(
                 "Remove content?",
-                isPresented: .constant(pendingRemoval != nil),
+                isPresented: dismissBinding(pendingRemoval != nil, clear: { pendingRemoval = nil }),
                 titleVisibility: .visible,
                 presenting: pendingRemoval
             ) { pending in
@@ -1063,7 +1067,7 @@ struct GameBrowserView: View {
             }
             .confirmationDialog(
                 pendingGameRemoval?.removeConfirmTitle ?? "Remove this game?",
-                isPresented: .constant(pendingGameRemoval != nil),
+                isPresented: dismissBinding(pendingGameRemoval != nil, clear: { pendingGameRemoval = nil }),
                 titleVisibility: .visible,
                 presenting: pendingGameRemoval
             ) { pending in
@@ -1074,7 +1078,7 @@ struct GameBrowserView: View {
             } message: { pending in
                 Text(pending.removeConfirmMessage)
             }
-            .alert("Connect the drive to play", isPresented: .constant(gameManager.launchBlockedMessage != nil), presenting: gameManager.launchBlockedMessage) { _ in
+            .alert("Connect the drive to play", isPresented: dismissBinding(gameManager.launchBlockedMessage != nil, clear: { gameManager.launchBlockedMessage = nil }), presenting: gameManager.launchBlockedMessage) { _ in
                 Button("Check again") {
                     gameManager.launchBlockedMessage = nil
                     Task { await gameManager.loadGames(showSpinner: false) }
@@ -1085,7 +1089,7 @@ struct GameBrowserView: View {
             }
             .confirmationDialog(
                 "Replace existing file?",
-                isPresented: .constant(pendingOverwriteConfirmation != nil),
+                isPresented: dismissBinding(pendingOverwriteConfirmation != nil, clear: { if let pending = pendingOverwriteConfirmation { pendingOverwriteConfirmation = nil; pending.resume(false) } }),
                 titleVisibility: .visible,
                 presenting: pendingOverwriteConfirmation
             ) { pending in

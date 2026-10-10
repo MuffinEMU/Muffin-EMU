@@ -64,7 +64,15 @@ struct CemuApp: App {
                 .onChange(of: scenePhase) { phase in
                     if phase != .active {
                         ControllerCustomLayout.shared.flushPending()
-                        UserDefaults.standard.synchronize()
+                        var task = UIBackgroundTaskIdentifier.invalid
+                        task = UIApplication.shared.beginBackgroundTask(withName: "Flush preferences") {
+                            UIApplication.shared.endBackgroundTask(task)
+                        }
+                        let flushTask = task
+                        DispatchQueue.global(qos: .userInitiated).async {
+                            UserDefaults.standard.synchronize()
+                            UIApplication.shared.endBackgroundTask(flushTask)
+                        }
                     }
                 }
                 .onAppear {
