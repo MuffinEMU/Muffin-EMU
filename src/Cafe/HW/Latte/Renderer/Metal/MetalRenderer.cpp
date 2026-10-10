@@ -1571,9 +1571,25 @@ const char* MetalRenderer::CopyRawBlocksIntoTranscodedTexture(LatteTexture* src,
     const uint32 latteBlockBytes = Latte::GetFormatBits(dst->format) / 8;
     if (srcInfo.blockTexelSize.x != 1 || srcInfo.blockTexelSize.y != 1 || srcInfo.bytesPerBlock != latteBlockBytes || (latteBlockBytes != 8 && latteBlockBytes != 16))
         return "the source blocks are not the size of the BC blocks";
-    auto planar = [](MTL::Texture* texture) { return texture->textureType() == MTL::TextureType2D || texture->textureType() == MTL::TextureType2DArray; };
+    // Cube maps and their arrays count faces as slices, 6 per array element, which is also how the blit numbers them.
+    auto planar = [](MTL::Texture* texture) {
+        switch (texture->textureType())
+        {
+        case MTL::TextureType2D:
+        case MTL::TextureType2DArray:
+        case MTL::TextureTypeCube:
+        case MTL::TextureTypeCubeArray:
+            return true;
+        default:
+            return false;
+        }
+    };
+    auto sliceCountOf = [](MTL::Texture* texture) -> sint64 {
+        const sint64 layers = (sint64)std::max<NS::UInteger>(1, texture->arrayLength());
+        return (texture->textureType() == MTL::TextureTypeCube || texture->textureType() == MTL::TextureTypeCubeArray) ? layers * 6 : layers;
+    };
     if (!planar(mtlSrc) || !planar(mtlDst))
-        return "only 2D textures are handled";
+        return "only 2D, array and cube textures are handled";
     if (srcMip < 0 || dstMip < 0 || (NS::UInteger)srcMip >= mtlSrc->mipmapLevelCount() || (NS::UInteger)dstMip >= mtlDst->mipmapLevelCount())
         return "a texture has no such mip level";
     if (srcX < 0 || srcY < 0 || dstX < 0 || dstY < 0 || (dstX & 3) || (dstY & 3) || srcSlice < 0 || dstSlice < 0 || sliceCount < 1 || blocksW < 1 || blocksH < 1)
@@ -1590,9 +1606,9 @@ const char* MetalRenderer::CopyRawBlocksIntoTranscodedTexture(LatteTexture* src,
     const sint64 copyBlocksW = std::min<sint64>((texelsW + 3) / 4, srcLevelW - srcX);
     const sint64 copyBlocksH = std::min<sint64>((texelsH + 3) / 4, srcLevelH - srcY);
     // A readback stalls the GPU thread, so only regions of the size these surfaces really have are taken
-    if (copyBlocksW * copyBlocksH > 128 * 128)
+    if (copyBlocksW * copyBlocksH > 256 * 256)
         return "the region is too large to re-encode";
-    const sint64 slices = std::min<sint64>({(sint64)sliceCount, (sint64)std::max<NS::UInteger>(1, mtlSrc->arrayLength()) - srcSlice, (sint64)std::max<NS::UInteger>(1, mtlDst->arrayLength()) - dstSlice});
+    const sint64 slices = std::min<sint64>({(sint64)sliceCount, sliceCountOf(mtlSrc) - srcSlice, sliceCountOf(mtlDst) - dstSlice});
     if (slices < 1)
         return "a slice the copy starts at does not exist";
 
