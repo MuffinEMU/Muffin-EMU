@@ -191,8 +191,23 @@ open class ControlScheme: TouchScheme {
     public func layout(_ context: LayoutContext) {
         self.context = context
         tracks.removeAll()
-        baseControls = makeControls(context)
+        baseControls = makeControls(context).map { applyTolerance($0, context) }
         applyOffsets()
+    }
+
+    /// The player's touch tolerance: a button or pedal reaches at least as far past its drawn
+    /// edge as MuffinEMU's own pad would let a touch miss by. Never less than the scheme's own.
+    private func applyTolerance(_ c: PadControl, _ ctx: LayoutContext) -> PadControl {
+        guard let tolerance = ctx.tolerance else { return c }
+        switch c.kind {
+        case .button, .pedal: break
+        default: return c
+        }
+        let box = c.shape.boundingBox
+        let radius = min(box.width, box.height) / 2
+        var out = c
+        out.reach = max(c.reach, (tolerance.reachFactor - 1) * radius)
+        return out
     }
 
     private func applyOffsets() {
@@ -343,7 +358,7 @@ open class ControlScheme: TouchScheme {
             var track = t
             let decay = CGFloat(exp(-idle / 0.06))
             track.velocity = t.velocity * decay
-            track.stickValue = swipeValue(track.velocity, fullSpeed: fullSpeed)
+            track.stickValue = swipeValue(track.velocity, fullSpeed: fullSpeed, stick: stick)
             tracks[id] = track
             out[id] = Contribution(stick: stick, stickValue: track.stickValue)
         }
@@ -409,10 +424,12 @@ open class ControlScheme: TouchScheme {
             return Contribution(buttons: pressed)
 
         case let .stick(stick, travel, click):
-            return stickContribution(&t, stick: stick, travel: travel, click: click, point: point, follow: false)
+            return stickContribution(&t, stick: stick, travel: travel, click: click, point: point,
+                                     follow: false, fixedBase: true)
 
         case let .floatingStick(stick, travel, _, follow, click):
-            return stickContribution(&t, stick: stick, travel: travel, click: click, point: point, follow: follow)
+            return stickContribution(&t, stick: stick, travel: travel, click: click, point: point,
+                                     follow: follow, fixedBase: false)
 
         case .pedal:
             let members = groupMembers(of: t.control)
@@ -442,9 +459,15 @@ open class ControlScheme: TouchScheme {
                 t.origin.x += offset.x > 0 ? offset.x - follow : offset.x + follow
                 offset = point - t.origin
             }
-            var value = SteerMath.value(offset: offset, spec: spec,
-                                        deadX: context.stick.deadzone, deadY: spec.deadY,
-                                        curve: context.stick.curve)
+            // The player's calibration for this stick: their comfortable throw is full lock, and
+            // their rest wobble is never steered on.
+            let cal = context.calibration[spec.stick].clamped
+            let tuning = context.stick.clamped
+            var calibrated = spec
+            calibrated.lockX = spec.lockX * CGFloat(cal.fullThrow)
+            var value = SteerMath.value(offset: offset, spec: calibrated,
+                                        deadX: max(tuning.deadzone, cal.jitter / cal.fullThrow), deadY: spec.deadY,
+                                        curve: tuning.curve)
             var knobX = min(max(offset.x, -spec.lockX), spec.lockX)
             if let tilt = steerOverrideX {
                 value.x = tilt
@@ -461,13 +484,13 @@ open class ControlScheme: TouchScheme {
             let dt = max(time - t.lastTime, 1.0 / 240)
             let instant = (point - t.last) * CGFloat(1 / dt)
             t.velocity = t.velocity * 0.45 + instant * 0.55
-            t.stickValue = swipeValue(t.velocity, fullSpeed: fullSpeed)
+            t.stickValue = swipeValue(t.velocity, fullSpeed: fullSpeed, stick: stick)
             return Contribution(stick: stick, stickValue: t.stickValue)
         }
     }
 
     private func stickContribution(_ t: inout Track, stick: PadStick, travel: CGFloat, click: PadButton?,
-                                   point: CGPoint, follow: Bool) -> Contribution {
+                                   point: CGPoint, follow: Bool, fixedBase: Bool) -> Contribution {
         var offset = point - t.origin
         let reach = travel + StickMath.overtravel(travel)
         if follow, offset.length > reach {
@@ -475,18 +498,20 @@ open class ControlScheme: TouchScheme {
             offset = point - t.origin
         }
         t.knob = StickMath.knobOffset(offset: offset, travel: travel, gate: context.stick.gate)
-        t.stickValue = StickMath.value(offset: offset, travel: travel, tuning: context.stick)
+        t.stickValue = StickMath.value(offset: offset, travel: travel, tuning: context.stick,
+                                       calibration: context.calibration[stick], fixedBase: fixedBase)
         var buttons: Set<PadButton> = []
         if t.clickHeld, let click { buttons.insert(click) }
         t.buttons = buttons
         return Contribution(buttons: buttons, stick: stick, stickValue: t.stickValue)
     }
 
-    private func swipeValue(_ v: CGPoint, fullSpeed: CGFloat) -> StickValue {
+    private func swipeValue(_ v: CGPoint, fullSpeed: CGFloat, stick: PadStick) -> StickValue {
         var x = Double(v.x / fullSpeed), y = Double(-v.y / fullSpeed)
         let m = (x * x + y * y).squareRoot()
         if m > 1 { x /= m; y /= m }
-        if m < context.stick.deadzone { return .zero }
+        // A swipe has no travel to calibrate, but the player's rest wobble still isn't a swipe.
+        if m < max(context.stick.deadzone, context.calibration[stick].clamped.jitter) { return .zero }
         return StickValue(x: x, y: y)
     }
 
