@@ -987,7 +987,21 @@ void PPCRecompiler_recompileAtAddress(uint32 address)
 
 	std::vector<std::pair<MPTR, uint32>> functionEntryPoints;
 	const uint64 compileStartNs = PerfTelemetry::NowNs();
-	auto func = PPCRecompiler_recompileFunction(range, entryAddresses, functionEntryPoints, funcBoundaries);
+	PPCRecFunction_t* func = nullptr;
+	try
+	{
+		func = PPCRecompiler_recompileFunction(range, entryAddresses, functionEntryPoints, funcBoundaries);
+	}
+	catch (const std::bad_alloc&)
+	{
+		// Out of memory while generating or allocating registers (the crash log showed several workers failing in the same moment).
+		// Nothing has been published for this function yet, so leave it as it is: the entry stays marked visited and the
+		// interpreter keeps running it. An exception escaping a worker thread is std::terminate and ends the app.
+		static std::atomic<uint32> s_outOfMemoryCount{0};
+		if (s_outOfMemoryCount.fetch_add(1) < 3)
+			cemuLog_log(LogType::Force, "Recompiler: out of memory compiling the function at {:08x}; it runs in the interpreter", address);
+		return;
+	}
 
 	if (!func)
 	{
