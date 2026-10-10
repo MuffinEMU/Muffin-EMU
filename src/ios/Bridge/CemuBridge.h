@@ -1078,6 +1078,12 @@ void cemu_bridge_memory_note(const char* tag);
 /// it. Idempotent; safe to call more than once.
 void cemu_bridge_start_memory_watchdog(void);
 
+/// Saves the Metal pipelines compiled so far to the on-disk binary archive and returns
+/// when that is done or after 4 s. Blocks, so call it off the main thread (and under a
+/// background task when the app is leaving the foreground). A no-op without a running
+/// title. Safe to call at any time, from any thread.
+void cemu_bridge_flush_pipeline_cache(void);
+
 /// Absolute path of the file cemu_bridge_log_checkpoint() and the crash handler write
 /// to. Never NULL, but empty if $HOME was unset and the log was never opened. Points to
 /// static storage; copy if you need to keep it.
