@@ -95,6 +95,8 @@ public struct StickCalibrationSession: Equatable, Sendable {
         defer { if phase != .finished { self = StickCalibrationSession(travel: travel, gate: gate) } }
         guard phase == .sweep, reached.count >= Self.minimumSectors else { return nil }
         var throwFraction = reached.values.reduce(0, +) / Double(reached.count)
+        // Never above 1: the pad can't report a push past the ring, so a throw above 1 would stop
+        // the stick ever reaching full output for a thumb that overshoots the ring while sweeping.
         if throwFraction >= Self.snapToFull { throwFraction = 1 }
         var c = CGPoint(x: centre.x / travel, y: centre.y / travel)
         if Double(c.length) < Self.snapToCentre { c = .zero }
