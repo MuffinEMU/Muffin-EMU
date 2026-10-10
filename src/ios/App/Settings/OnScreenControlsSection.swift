@@ -48,6 +48,13 @@ struct OnScreenControlsSection: View {
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
     private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetPortraitKey)
+    private var shoulderOffsetUpright = ControllerLayoutSettings.defaultShoulderOffset
+    @ObservedObject private var windowSize = ControlsWindowSize.shared
+    /// The shoulder setting for the orientation the iPad is in now (kept apart per orientation).
+    private var shoulderBinding: Binding<Double> {
+        ControllerLayoutSettings.isUpright(windowSize.size) ? $shoulderOffsetUpright : $shoulderOffset
+    }
     /// 0 follows the default (on; see TopBarAutoHide.deviceDefault). Read by the in-game top bar.
     @AppStorage(TopBarAutoHide.overrideKey)
     private var topBarAutoHideOverride = TopBarAutoHide.followDevice
@@ -137,7 +144,7 @@ struct OnScreenControlsSection: View {
                         Spacer()
                         // The TouchLab styles can only move them down, so a "higher" left over from
                         // MuffinEMU's pad would describe nothing on screen.
-                        Text(ControllerLayoutSettings.shoulderOffsetLabel(usingTouchLab ? max(0, shoulderOffset) : shoulderOffset))
+                        Text(ControllerLayoutSettings.shoulderOffsetLabel(usingTouchLab ? max(0, shoulderBinding.wrappedValue) : shoulderBinding.wrappedValue))
                             .font(.system(size: 13, design: .monospaced))
                             .foregroundColor(.secondary)
                     }
@@ -145,12 +152,12 @@ struct OnScreenControlsSection: View {
                         Image(systemName: "arrow.up.and.down")
                             .accessibilityHidden(true)
                         Slider(
-                            value: $shoulderOffset,
-                            in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: usingTouchLab),
+                            value: shoulderBinding,
+                            in: ControllerLayoutSettings.shoulderOffsetRange(touchLab: usingTouchLab, in: windowSize.size),
                             step: ControllerLayoutSettings.shoulderOffsetStep
                         )
                         .accessibilityLabel("Shoulder button height")
-                        .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(usingTouchLab ? max(0, shoulderOffset) : shoulderOffset))
+                        .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(usingTouchLab ? max(0, shoulderBinding.wrappedValue) : shoulderBinding.wrappedValue))
                     }
                     Text("Moves the four shoulder buttons up or down together. They stop before they would leave the screen or touch the sticks and buttons.")
                         .font(.system(size: 12))

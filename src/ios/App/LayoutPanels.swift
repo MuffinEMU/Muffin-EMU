@@ -220,6 +220,13 @@ struct MuffinPadLayoutPanel: View {
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     @AppStorage(ControllerLayoutSettings.shoulderOffsetKey)
     private var shoulderOffset = ControllerLayoutSettings.defaultShoulderOffset
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetPortraitKey)
+    private var shoulderOffsetUpright = ControllerLayoutSettings.defaultShoulderOffset
+    @ObservedObject private var windowSize = ControlsWindowSize.shared
+    /// The shoulder setting for the orientation the iPad is in now (kept apart per orientation).
+    private var shoulderBinding: Binding<Double> {
+        ControllerLayoutSettings.isUpright(windowSize.size) ? $shoulderOffsetUpright : $shoulderOffset
+    }
     @AppStorage(ControllerLayoutSettings.joystickKey)
     private var joystickMode = ControllerLayoutSettings.defaultJoystick
     @AppStorage(ControllerLayoutSettings.comfortControlsKey)
@@ -267,10 +274,10 @@ struct MuffinPadLayoutPanel: View {
         // L, ZL, R and ZR move up or down together. iPad only.
         if ControllerLayoutSettings.supportsShoulderOffset {
             PanelSliderRow("Shoulder button height", title: "L/R", leadingIcon: "arrow.up.and.down",
-                           value: $shoulderOffset,
-                           range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: false),
+                           value: shoulderBinding,
+                           range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: false, in: windowSize.size),
                            step: ControllerLayoutSettings.shoulderOffsetStep,
-                           spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(shoulderOffset))
+                           spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(shoulderBinding.wrappedValue))
         }
 
         PanelToggle(title: "Add analog sticks", isOn: $joystickMode)
