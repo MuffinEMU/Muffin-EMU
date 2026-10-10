@@ -17,6 +17,9 @@
 #include "config/ActiveSettings.h"
 
 #include <openssl/sha.h>
+#include <sys/sysctl.h>
+#include <chrono>
+#include <deque>
 
 static bool g_compilePipelineThreadInit{false};
 static std::mutex g_compilePipelineMutex;
@@ -125,6 +128,7 @@ bool IsAsyncPipelineAllowed(const MetalAttachmentsInfo& attachmentsInfo, Vector2
 }
 
 MetalPipelineCache* g_mtlPipelineCache = nullptr;
+static std::mutex g_mtlPipelineCacheLifeMutex; // keeps the cache alive while MetalPipelineCache_FlushArchive uses it
 
 MetalPipelineCache& MetalPipelineCache::GetInstance()
 {
@@ -138,6 +142,7 @@ MetalPipelineCache::MetalPipelineCache(class MetalRenderer* metalRenderer) : m_m
 
 MetalPipelineCache::~MetalPipelineCache()
 {
+    std::lock_guard<std::mutex> lifeLock(g_mtlPipelineCacheLifeMutex);
     EndLoading(); // no-op if loading already ended: stops the background loader threads, which hold this pointer
     Close();      // stops the cache writer thread, which also holds it, and drops what it had not written yet
     for (auto& [key, pipelineObj] : m_pipelineCache)
@@ -322,6 +327,16 @@ uint32 MetalPipelineCache::BeginLoading(uint64 cacheTitleId)
 	g_mtlCacheState.pipelinesQueued = 0;
 	s_pendingRekeys.clear();
 
+	m_loadStart = std::chrono::steady_clock::now();
+	m_loadShaderCompilesAtStart = PerfTelemetry::Get().shaderCompiles.load(std::memory_order_relaxed);
+	m_loadShaderCompileNsAtStart = PerfTelemetry::Get().shaderCompileNs.load(std::memory_order_relaxed);
+	m_loadPipelineCompilesAtStart = PerfTelemetry::Get().pipelineCompiles.load(std::memory_order_relaxed);
+	m_loadPipelineCompileNsAtStart = PerfTelemetry::Get().pipelineCompileNs.load(std::memory_order_relaxed);
+	m_archiveHits = 0;
+	m_archiveMisses = 0;
+	m_pipelinesDeduped = 0;
+	OpenBinaryArchives(cacheTitleId);
+
 	// start async compilation threads
 	m_compilationCount.store(0);
 	m_compilationQueue.clear();
@@ -388,6 +403,14 @@ bool MetalPipelineCache::UpdateLoading(uint32& pipelinesLoadedTotal, uint32& pip
 		return true; // pipelines still compiling
 	}
 	LatteShaderCache_ApplyPipelineRekeys(s_cache, s_pendingRekeys);
+	{
+		const auto wallMs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_loadStart).count();
+		const uint32 pipelineCompiles = PerfTelemetry::Get().pipelineCompiles.load(std::memory_order_relaxed) - m_loadPipelineCompilesAtStart;
+		const uint64 pipelineMs = (PerfTelemetry::Get().pipelineCompileNs.load(std::memory_order_relaxed) - m_loadPipelineCompileNsAtStart) / 1000000;
+		const uint32 shaderCompiles = PerfTelemetry::Get().shaderCompiles.load(std::memory_order_relaxed) - m_loadShaderCompilesAtStart;
+		cemuLog_log(LogType::Force, "Metal pipeline load: {} cache entries, {} pipelines built in {} ms summed ({} ms avg), {} duplicate entries skipped, binary archive {} hits / {} misses from {} file(s), {} shaders compiled on demand, {} ms wall for the pipeline stage",
+			g_mtlCacheState.pipelinesQueued.load(), pipelineCompiles, pipelineMs, pipelineCompiles ? pipelineMs / pipelineCompiles : 0, m_pipelinesDeduped.load(), m_archiveHits.load(), m_archiveMisses.load(), m_archiveFilesLoaded, shaderCompiles, wallMs);
+	}
 	return false; // done
 }
 
@@ -493,7 +516,22 @@ void MetalPipelineCache::LoadPipelineFromCache(std::span<uint8> fileData)
 
 	MetalAttachmentsInfo attachmentsInfo(*lcr, pixelShader);
 
+	uint64 pipelineStateHash = CalculatePipelineHash(vertexShader->compatibleFetchShader, vertexShader, geometryShader, pixelShader, cachedPipeline->lastUsedAttachmentsInfo, attachmentsInfo, *lcr);
 	PipelineObject* pipelineObject = new PipelineObject();
+	m_pipelineCacheLock.lock();
+	const bool claimed = m_pipelineCache.try_emplace(pipelineStateHash, pipelineObject).second;
+	m_pipelineCacheLock.unlock();
+	if (!claimed)
+	{
+		// another entry with the same pipeline hash is already built or being built; the runtime would use that one anyway
+		delete pipelineObject;
+		m_pipelinesDeduped.fetch_add(1, std::memory_order_relaxed);
+		s_spinlockSharedInternal.lock();
+		delete lcr;
+		delete cachedPipeline;
+		s_spinlockSharedInternal.unlock();
+		return;
+	}
 
 	// compile
 	{
@@ -502,12 +540,6 @@ void MetalPipelineCache::LoadPipelineFromCache(std::span<uint8> fileData)
 		pp.Compile(true, true, false);
 		// destroy pp early
 	}
-
-	// Cache the pipeline
-   	uint64 pipelineStateHash = CalculatePipelineHash(vertexShader->compatibleFetchShader, vertexShader, geometryShader, pixelShader, cachedPipeline->lastUsedAttachmentsInfo, attachmentsInfo, *lcr);
-   	m_pipelineCacheLock.lock();
-   	m_pipelineCache[pipelineStateHash] = pipelineObject;
-   	m_pipelineCacheLock.unlock();
 
 	// clean up
 	s_spinlockSharedInternal.lock();
@@ -540,6 +572,7 @@ void MetalPipelineCache::Close()
         delete s_cache;
         s_cache = nullptr;
     }
+    CloseBinaryArchives();
 }
 
 void MetalPipelineCache::AddCurrentStateToCache(uint64 pipelineStateHash, const MetalAttachmentsInfo& lastUsedAttachmentsInfo)
@@ -711,4 +744,296 @@ void MetalPipelineCache::WorkerThread()
 		s_cache->AddFileAsync({ nameA, nameB }, blob.data(), blob.size());
 		delete job;
 	}
+}
+
+bool MetalPipelineCache_FlushArchive(uint32 timeoutMs)
+{
+	std::lock_guard<std::mutex> lifeLock(g_mtlPipelineCacheLifeMutex);
+	return g_mtlPipelineCache ? g_mtlPipelineCache->FlushBinaryArchive(timeoutMs) : true;
+}
+
+NS::Array* MetalPipelineCache_GetBinaryArchives()
+{
+	return g_mtlPipelineCache ? g_mtlPipelineCache->GetBinaryArchives() : nullptr;
+}
+
+void MetalPipelineCache_NoteArchiveLookup(bool hit)
+{
+	if (g_mtlPipelineCache)
+		g_mtlPipelineCache->NoteArchiveLookup(hit);
+}
+
+void MetalPipelineCache_QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc)
+{
+	if (g_mtlPipelineCache)
+		g_mtlPipelineCache->QueueArchiveAdd(desc);
+}
+
+// Compiled pipelines are kept in MTLBinaryArchive files next to the transferable cache, so that a launch after the system has
+// dropped its own compiled-code cache does not have to build every pipeline again. Archives that were loaded from disk are only
+// read during a session. Pipelines that missed are added to a separate archive by one writer thread and saved as one more file,
+// which means no archive is ever read and written at the same time. The file name carries the OS build and GPU the archive was
+// built on; files for another build are deleted.
+static constexpr uint32 ARCHIVE_MAX_FILES = 8;
+static constexpr uint64 ARCHIVE_MAX_BYTES = 768ull * 1024 * 1024;
+static constexpr size_t ARCHIVE_MAX_QUEUE = 20000;
+static constexpr uint32 ARCHIVE_SAVE_EVERY = 2000;
+
+static std::string GetBinaryArchiveKey(MTL::Device* device)
+{
+	char osBuild[64] = {};
+	size_t osBuildLen = sizeof(osBuild) - 1;
+	sysctlbyname("kern.osversion", osBuild, &osBuildLen, nullptr, 0);
+	const std::string id = fmt::format("{}|{}|v1", osBuild, device->name()->utf8String());
+	uint64 h = 1469598103934665603ull;
+	for (unsigned char c : id)
+	{
+		h ^= c;
+		h *= 1099511628211ull;
+	}
+	return fmt::format("{:016x}", h);
+}
+
+void MetalPipelineCache::OpenBinaryArchives(uint64 cacheTitleId)
+{
+	NS_STACK_SCOPED NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
+	CloseBinaryArchives();
+
+	std::error_code ec;
+	const fs::path dir = ActiveSettings::GetCachePath("shaderCache/precompiled");
+	fs::create_directories(dir, ec);
+	const std::string titlePrefix = fmt::format("{:016x}_mtlbin_", cacheTitleId);
+	const std::string keyPrefix = titlePrefix + GetBinaryArchiveKey(m_mtlr->GetDevice()) + "_";
+
+	std::vector<fs::path> files;
+	std::vector<bool> used(ARCHIVE_MAX_FILES, false);
+	for (fs::directory_iterator it(dir, ec), end; !ec && it != end; it.increment(ec))
+	{
+		const std::string name = it->path().filename().string();
+		if (name.compare(0, titlePrefix.size(), titlePrefix) != 0)
+			continue;
+		std::error_code rmEc;
+		if (name.compare(0, keyPrefix.size(), keyPrefix) != 0 || name.size() < 4 || name.compare(name.size() - 4, 4, ".bin") != 0)
+		{
+			fs::remove(it->path(), rmEc); // built on another OS build or GPU, or a leftover temp file
+			continue;
+		}
+		files.push_back(it->path());
+	}
+	std::sort(files.begin(), files.end());
+
+	std::vector<NS::Object*> loaded;
+	uint64 bytes = 0;
+	for (const fs::path& file : files)
+	{
+		std::error_code sizeEc;
+		const uint64 size = fs::file_size(file, sizeEc);
+		NS_STACK_SCOPED MTL::BinaryArchiveDescriptor* desc = MTL::BinaryArchiveDescriptor::alloc()->init();
+		desc->setUrl(ToNSURL(_pathToUtf8(file)));
+		NS::Error* error = nullptr;
+		MTL::BinaryArchive* archive = m_mtlr->GetDevice()->newBinaryArchive(desc, &error);
+		if (!archive)
+		{
+			cemuLog_log(LogType::Force, "Metal binary archive {} could not be loaded ({}), deleting it", _pathToUtf8(file.filename()), error ? error->localizedDescription()->utf8String() : "unknown error");
+			std::error_code rmEc;
+			fs::remove(file, rmEc);
+			continue;
+		}
+		loaded.push_back(archive);
+		if (!sizeEc)
+			bytes += size;
+		const std::string name = file.filename().string();
+		const size_t idxPos = keyPrefix.size();
+		const size_t idx = (size_t)strtoul(name.c_str() + idxPos, nullptr, 10);
+		if (idx < used.size())
+			used[idx] = true;
+	}
+	if (!loaded.empty())
+	{
+		m_binaryArchives = NS::Array::alloc()->init(loaded.data(), loaded.size());
+		for (NS::Object* o : loaded)
+			o->release();
+	}
+	m_archiveFilesLoaded = (uint32)loaded.size();
+	m_archiveBaseBytes = bytes;
+
+	uint32 nextIndex = 0;
+	while (nextIndex < ARCHIVE_MAX_FILES && used[nextIndex])
+		nextIndex++;
+	m_archiveWriteEnabled = nextIndex < ARCHIVE_MAX_FILES && bytes < ARCHIVE_MAX_BYTES;
+	if (m_archiveWriteEnabled)
+		m_archiveWritePath = _pathToUtf8(dir / fmt::format("{}{}.bin", keyPrefix, nextIndex));
+	else
+		cemuLog_log(LogType::Force, "Metal binary archive: not adding more pipelines ({} file(s), {} MB)", loaded.size(), bytes / (1024 * 1024));
+}
+
+bool MetalPipelineCache::FlushBinaryArchive(uint32 timeoutMs)
+{
+	std::unique_lock<std::mutex> lock(m_archiveMutex);
+	if (!m_archiveThreadAlive || m_archiveStop)
+		return true;
+	const uint64_t generation = ++m_archiveFlushGen;
+	m_archiveFlushRequested = true;
+	m_archiveCv.notify_all();
+	return m_archiveFlushCv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [&] { return m_archiveFlushDoneGen >= generation || !m_archiveThreadAlive; });
+}
+
+void MetalPipelineCache::CloseBinaryArchives()
+{
+	FlushBinaryArchive(3000); // saves what is still queued; the writer only saves what it already added when it is stopped
+	if (m_archiveThread)
+	{
+		{
+			std::lock_guard<std::mutex> lock(m_archiveMutex);
+			m_archiveStop = true;
+		}
+		m_archiveCv.notify_all();
+		m_archiveThread->join();
+		delete m_archiveThread;
+		m_archiveThread = nullptr;
+		std::lock_guard<std::mutex> lock(m_archiveMutex);
+		m_archiveThreadAlive = false;
+		m_archiveFlushRequested = false;
+		m_archiveFlushCv.notify_all();
+	}
+	{
+		std::lock_guard<std::mutex> lock(m_archiveMutex);
+		for (auto* desc : m_archiveQueue)
+			desc->release();
+		m_archiveQueue.clear();
+		m_archiveStop = false;
+	}
+	m_archiveWriteEnabled = false;
+	m_archiveFilesLoaded = 0;
+	if (m_binaryArchives)
+	{
+		m_binaryArchives->release();
+		m_binaryArchives = nullptr;
+	}
+}
+
+void MetalPipelineCache::QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc)
+{
+	if (!m_archiveWriteEnabled)
+		return;
+	std::lock_guard<std::mutex> lock(m_archiveMutex);
+	if (m_archiveStop || m_archiveQueue.size() >= ARCHIVE_MAX_QUEUE)
+		return;
+	MTL::RenderPipelineDescriptor* copy = desc->copy();
+	copy->setBinaryArchives(nullptr);
+	m_archiveQueue.push_back(copy);
+	if (!m_archiveThread)
+	{
+		m_archiveThread = new std::thread(&MetalPipelineCache::BinaryArchiveWriterThread, this);
+		m_archiveThreadAlive = true;
+	}
+	m_archiveCv.notify_one();
+}
+
+void MetalPipelineCache::BinaryArchiveWriterThread()
+{
+	SetThreadName("mtlArchive");
+	MTL::BinaryArchive* archive = nullptr;
+	uint32 pending = 0;
+	uint32 added = 0;
+	auto lastSave = std::chrono::steady_clock::now();
+	for (;;)
+	{
+		MTL::RenderPipelineDescriptor* desc = nullptr;
+		bool stopping;
+		bool flushing;
+		uint64_t flushGeneration;
+		bool queueEmpty;
+		{
+			std::unique_lock<std::mutex> lock(m_archiveMutex);
+			if (m_archiveQueue.empty() && !m_archiveStop && !m_archiveFlushRequested)
+			{
+				if (pending == 0)
+					m_archiveCv.wait(lock, [&] { return !m_archiveQueue.empty() || m_archiveStop || m_archiveFlushRequested; });
+				else
+					m_archiveCv.wait_for(lock, std::chrono::seconds(20), [&] { return !m_archiveQueue.empty() || m_archiveStop || m_archiveFlushRequested; });
+			}
+			stopping = m_archiveStop;
+			flushing = m_archiveFlushRequested;
+			flushGeneration = m_archiveFlushGen;
+			if (stopping)
+			{
+				for (auto* d : m_archiveQueue)
+					d->release();
+				m_archiveQueue.clear();
+			}
+			else if (!m_archiveQueue.empty())
+			{
+				desc = m_archiveQueue.front();
+				m_archiveQueue.pop_front();
+			}
+			queueEmpty = m_archiveQueue.empty();
+		}
+		NS_STACK_SCOPED NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
+		if (desc)
+		{
+			if (!archive)
+			{
+				NS_STACK_SCOPED MTL::BinaryArchiveDescriptor* archiveDesc = MTL::BinaryArchiveDescriptor::alloc()->init();
+				NS::Error* error = nullptr;
+				archive = m_mtlr->GetDevice()->newBinaryArchive(archiveDesc, &error);
+				if (!archive)
+					cemuLog_log(LogType::Force, "Metal binary archive could not be created: {}", error ? error->localizedDescription()->utf8String() : "unknown error");
+			}
+			if (archive)
+			{
+				NS::Error* error = nullptr;
+				if (archive->addRenderPipelineFunctions(desc, &error))
+				{
+					pending++;
+					added++;
+				}
+			}
+			desc->release();
+		}
+		if (archive && pending > 0 && (pending >= ARCHIVE_SAVE_EVERY || stopping || (flushing && queueEmpty) || (queueEmpty && std::chrono::steady_clock::now() - lastSave >= std::chrono::seconds(20))))
+		{
+			const auto start = std::chrono::steady_clock::now();
+			const std::string tmpPath = m_archiveWritePath + ".tmp";
+			NS::Error* error = nullptr;
+			bool saved = archive->serializeToURL(ToNSURL(tmpPath), &error);
+			std::error_code ec;
+			if (saved)
+			{
+				fs::rename(fs::path(m_archiveWritePath + ".tmp"), fs::path(m_archiveWritePath), ec);
+				saved = !ec;
+			}
+			if (saved)
+			{
+				const uint64 size = fs::file_size(fs::path(m_archiveWritePath), ec);
+				cemuLog_log(LogType::Force, "Metal binary archive: saved {} pipelines, {} MB, in {} ms", added, ec ? 0 : size / (1024 * 1024), std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
+				if (!ec && m_archiveBaseBytes + size >= ARCHIVE_MAX_BYTES)
+				{
+					std::lock_guard<std::mutex> lock(m_archiveMutex);
+					m_archiveWriteEnabled = false;
+				}
+			}
+			else
+			{
+				cemuLog_log(LogType::Force, "Metal binary archive could not be saved: {}", error ? error->localizedDescription()->utf8String() : "rename failed");
+				fs::remove(fs::path(tmpPath), ec);
+			}
+			pending = 0;
+			lastSave = std::chrono::steady_clock::now();
+		}
+		if (flushing && queueEmpty)
+		{
+			std::lock_guard<std::mutex> lock(m_archiveMutex);
+			if (m_archiveQueue.empty())
+			{
+				m_archiveFlushDoneGen = flushGeneration;
+				m_archiveFlushRequested = m_archiveFlushGen != flushGeneration;
+				m_archiveFlushCv.notify_all();
+			}
+		}
+		if (stopping)
+			break;
+	}
+	if (archive)
+		archive->release();
 }
