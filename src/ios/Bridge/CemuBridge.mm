@@ -4369,3 +4369,9 @@ const char* cemu_bridge_status_text(void) {
         setStatus(cemu_bridge_is_title_running() ? "Title running." : "Core ready (no title running).");
     return getStatus();
 }
+
+void LatteRenderTarget_SetSkipHiddenOutputs(bool tv, bool pad);
+
+void cemu_bridge_set_skip_hidden_screen(bool tv, bool pad) {
+    LatteRenderTarget_SetSkipHiddenOutputs(tv, pad);
+}
