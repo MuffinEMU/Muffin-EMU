@@ -17,7 +17,7 @@ var index = "<!doctype html><meta charset=utf-8><title>TouchLab previews</title>
 
 for info in SchemeCatalog.all {
     index += "<h2>\(info.name)</h2><p>\(info.summary)</p>"
-    for device in TargetDevice.all {
+    for device in TargetDevice.all + (info.id == ArcPad.schemeInfo.id ? TargetDevice.portraitVariants : []) {
         for display in TargetDevice.Display.allCases {
             let ctx = device.context(display)
             let engine = PadEngine(scheme: SchemeCatalog.make(info.id), output: NullOutput(), context: ctx)

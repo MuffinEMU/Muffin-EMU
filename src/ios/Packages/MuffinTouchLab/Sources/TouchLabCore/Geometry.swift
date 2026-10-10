@@ -109,6 +109,10 @@ public struct LayoutContext: Equatable, Sendable {
     public var scale: CGFloat
     /// Stick feel.
     public var stick: StickTuning
+    /// The player's own reach and rest on each stick (see `StickCalibration`).
+    public var calibration: StickCalibrations
+    /// How far off a button a touch still counts. nil = each control's own reach.
+    public var tolerance: PadTolerance?
     /// Moves each stick sideways from where the layout puts it, in button widths: positive
     /// toward its screen edge, negative toward the middle. A hand-size setting. Layouts
     /// with fixed sticks honour as much of it as fits without overlapping anything.
@@ -128,15 +132,28 @@ public struct LayoutContext: Equatable, Sendable {
                 scale: CGFloat = 1,
                 stick: StickTuning = StickTuning(),
                 stickSpacing: CGFloat = 0,
-                shoulderOffset: CGFloat = 0) {
+                shoulderOffset: CGFloat = 0,
+                calibration: StickCalibrations = StickCalibrations(),
+                tolerance: PadTolerance? = nil) {
         self.size = size
         self.safeInsets = safeInsets
         self.videoRects = videoRects
         self.touchscreenRect = touchscreenRect
         self.scale = scale
         self.stick = stick
+        self.calibration = calibration
+        self.tolerance = tolerance
         self.stickSpacing = stickSpacing
         self.shoulderOffset = shoulderOffset
+    }
+
+    /// The context a pad with these settings is laid out in.
+    public init(size: CGSize, safeInsets: Insets = .zero, videoRects: [CGRect] = [],
+                touchscreenRect: CGRect? = nil, settings: PadSettings) {
+        self.init(size: size, safeInsets: safeInsets, videoRects: videoRects, touchscreenRect: touchscreenRect,
+                  scale: settings.scale, stick: settings.stick, stickSpacing: settings.stickSpacing,
+                  shoulderOffset: settings.shoulderOffset, calibration: settings.calibration,
+                  tolerance: settings.tolerance)
     }
 
     public var bounds: CGRect { CGRect(origin: .zero, size: size) }
