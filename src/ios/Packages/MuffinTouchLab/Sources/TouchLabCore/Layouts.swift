@@ -135,6 +135,26 @@ public enum GamePadArrangement {
         return arrangement(ctx, u: u, sticksInboard: true, aScale: aScale)
     }
 
+    /// The largest shoulder drop the layout can honour in this context, in button widths: the
+    /// same arrangement `build` would pick, with the drop walked down until a shoulder would
+    /// leave the safe area, touch another control or cover the GamePad screen. The settings
+    /// slider's maximum, so it ends exactly where the shoulders stop moving.
+    public static func maxShoulderDrop(_ ctx: LayoutContext, aScale: CGFloat = 1) -> CGFloat {
+        var u = ctx.unit
+        for _ in 0..<8 {
+            for inboard in [false, true] {
+                let set = arrangement(ctx, u: u, sticksInboard: inboard, aScale: aScale)
+                if LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty {
+                    let spacing = fittingSpacing(ctx, u: u, sticksInboard: inboard, aScale: aScale)
+                    return fittingShoulderOffset(ctx, u: u, sticksInboard: inboard, stickSpacing: spacing,
+                                                 aScale: aScale, limit: ctx.size.height / max(u, 1))
+                }
+            }
+            u *= 0.92
+        }
+        return 0
+    }
+
     /// As much of the requested stick spacing as fits, stepping back toward none a quarter
     /// of a button at a time. Zero when there is none to apply or none fits.
     static func fittingSpacing(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool, aScale: CGFloat = 1) -> CGFloat {
@@ -156,8 +176,9 @@ public enum GamePadArrangement {
     /// up to the limit rather than stopping a quarter-button short of it. Zero always
     /// fits (the caller has already checked that arrangement), so the search has a floor.
     static func fittingShoulderOffset(_ ctx: LayoutContext, u: CGFloat, sticksInboard: Bool,
-                                      stickSpacing: CGFloat, aScale: CGFloat = 1) -> CGFloat {
-        let requested = max(0, ctx.shoulderOffset)
+                                      stickSpacing: CGFloat, aScale: CGFloat = 1,
+                                      limit: CGFloat? = nil) -> CGFloat {
+        let requested = max(0, limit ?? ctx.shoulderOffset)
         guard requested > 0.001 else { return 0 }
         // The GamePad touchscreen and the video are drawn under the pad. Shoulders already over
         // one at home stay free to be; one they start clear of is not somewhere they are dropped

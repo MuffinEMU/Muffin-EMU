@@ -97,8 +97,8 @@ enum ControllerLayoutSettings {
 
     /// How far the whole shoulder cluster (L, R, ZL, ZR) moves up or down, in button widths
     /// so it follows the size slider: positive is down, negative is up, zero is where the
-    /// layout puts them. A hand-size setting for iPad only - an iPhone has no spare height
-    /// to move them in, so there the stored value is never read (see `effectiveShoulderOffset`).
+    /// layout puts them. A hand-size setting, limited at draw time to the room the
+    /// device has (see `shoulderRange`).
     /// MuffinEMU's own pad and the TouchLab styles with fixed shoulders (Zone, Adaptive) read
     /// the same key. Those TouchLab styles start with the shoulders against the top edge, so
     /// for them only the downward half does anything.
@@ -107,7 +107,7 @@ enum ControllerLayoutSettings {
     static let minShoulderOffset: Double = -4.0
     static let maxShoulderOffset: Double = 1.5
     /// Quarter-button steps, like the stick spacing, so the slider lands back on exactly zero.
-    static let shoulderOffsetStep: Double = 0.25
+    static let shoulderOffsetStep: Double = 0.05
 
     /// The same setting while the pad is taller than it is wide (an iPad held upright). The
     /// landscape value is on `shoulderOffsetKey` unchanged, so what people already set stays
@@ -117,23 +117,45 @@ enum ControllerLayoutSettings {
     /// Whether a container is taller than it is wide.
     static func isUpright(_ size: CGSize) -> Bool { size.height > size.width }
 
-    /// Room a shoulder cluster is left upright, in button widths, once the half-screen of
-    /// sticks, d-pad and face buttons at the bottom is set aside.
-    private static let uprightReserveUnits: Double = 7
+    /// How far the shoulders can move in each direction on this container, in button widths:
+    /// the same limits the pad applies when it draws them (the top edge, and just above the
+    /// d-pad / stick in the same half), taken at the pad's resting place and size. Never
+    /// narrower than the range the slider has always had, so no saved value changes.
+    static func shoulderRange(in size: CGSize) -> ClosedRange<Double> {
+        let fallback = minShoulderOffset...maxShoulderOffset
+        guard size.width > 0, size.height > 0 else { return fallback }
+        let defaults = UserDefaults.standard
+        let scale = defaults.object(forKey: scaleKey) as? Double ?? defaultScale
+        let phoneUpright = UIDevice.current.userInterfaceIdiom == .phone && isUpright(size)
+        let unit = phoneUpright
+            ? ControllerGeometry.Portrait.diameter(in: size, joystick: defaults.bool(forKey: joystickKey)) * CGFloat(min(scale, 1))
+            : ControllerGeometry.automaticDiameter(in: size) * CGFloat(scale)
+        guard unit > 0 else { return fallback }
+        let fromBottom = phoneUpright ? ControllerGeometry.Portrait.centreFromBottom : ControllerGeometry.centreFromBottom
+        let controls = phoneUpright ? ControllerGeometry.Portrait.cluster(ControllerGeometry.leftCluster) : ControllerGeometry.leftCluster
+        let wide = -1000.0...1000.0
+        func reach(_ request: Double) -> Double {
+            Double(ControllerGeometry.shoulderShift(offset: request, centreY: size.height - fromBottom * unit,
+                                                    containerHeight: size.height, unit: unit,
+                                                    controls: controls, range: wide))
+        }
+        let up = (reach(-1000) / shoulderOffsetStep).rounded(.up) * shoulderOffsetStep
+        let down = (reach(1000) / shoulderOffsetStep).rounded(.down) * shoulderOffsetStep
+        return min(up, 0)...max(down, 0)
+    }
 
-    /// The most the shoulder setting can ask for in a container this size. Landscape keeps the
-    /// fixed `maxShoulderOffset`; an iPad held upright has the whole extra height, so its
-    /// limit follows the container. The layouts still stop short of anything in the way.
-    static func maxShoulderOffset(in size: CGSize) -> Double {
-        guard supportsShoulderOffset, isUpright(size), size.width > 0 else { return maxShoulderOffset }
-        let unit = Double(ControllerGeometry.automaticDiameter(in: size))
-        let room = Double(size.height) / unit - uprightReserveUnits
-        return max(maxShoulderOffset, (room / shoulderOffsetStep).rounded(.down) * shoulderOffsetStep)
+    static func maxShoulderOffset(in size: CGSize) -> Double { shoulderRange(in: size).upperBound }
+
+    /// False when the layout leaves the shoulders no room at all (nothing for a slider to do).
+    static func hasShoulderRoom(touchLab: Bool, in size: CGSize) -> Bool {
+        let r = shoulderOffsetRange(touchLab: touchLab, in: size)
+        return r.upperBound - r.lowerBound >= shoulderOffsetStep
     }
 
     /// The slider's range for a container this size.
     static func shoulderOffsetRange(touchLab: Bool, in size: CGSize) -> ClosedRange<Double> {
-        (touchLab ? defaultShoulderOffset : minShoulderOffset)...maxShoulderOffset(in: size)
+        if touchLab { return 0...TouchLabSettings.maxShoulderDrop(in: size) }
+        return shoulderRange(in: size)
     }
 
     /// The slider's range: the TouchLab styles can only move the shoulders down from the
@@ -147,10 +169,8 @@ enum ControllerLayoutSettings {
         abs(value) < 0.01 ? "default" : (value < 0 ? "higher" : "lower")
     }
 
-    /// Whether this device gets the shoulder slider at all: iPad only.
-    static var supportsShoulderOffset: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad
-    }
+    /// Every device gets the shoulder slider.
+    static var supportsShoulderOffset: Bool { true }
 
     /// The stored shoulder offset as the layouts should see it: the stored value on iPad,
     /// always zero on iPhone, so a value that arrives some other way (an iCloud-synced
@@ -467,9 +487,8 @@ enum ControllerGeometry {
     /// the control's view, so its hit area moves with it (see muffin-pad-hit-testing-trap).
     static func shoulderShift(offset: Double, centreY: CGFloat, containerHeight: CGFloat, unit: CGFloat,
                               controls: [Control], topInset: CGFloat = 0,
-                              maxOffset: Double = ControllerLayoutSettings.maxShoulderOffset) -> CGFloat {
-        let requested = CGFloat(min(max(offset, ControllerLayoutSettings.minShoulderOffset),
-                                    max(maxOffset, ControllerLayoutSettings.maxShoulderOffset)))
+                              range: ClosedRange<Double> = ControllerLayoutSettings.minShoulderOffset...ControllerLayoutSettings.maxShoulderOffset) -> CGFloat {
+        let requested = CGFloat(min(max(offset, range.lowerBound), range.upperBound))
         guard requested != 0, unit > 0 else { return 0 }
         let shoulders = controls.filter { $0.style == .shoulder }
         guard !shoulders.isEmpty else { return 0 }

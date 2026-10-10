@@ -236,7 +236,8 @@ struct TouchLabLayoutPanel: View {
 
         // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare height
         // for it. Only the styles with fixed shoulders have anything to move.
-        if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
+        if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme)
+            && ControllerLayoutSettings.hasShoulderRoom(touchLab: true, in: windowSize.size) {
             PanelSliderRow("Shoulder button height", title: "L/R", leadingIcon: "arrow.up.and.down",
                            value: shoulderBinding,
                            range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true, in: windowSize.size),
