@@ -159,16 +159,39 @@ public enum GamePadArrangement {
                                       stickSpacing: CGFloat, aScale: CGFloat = 1) -> CGFloat {
         let requested = max(0, ctx.shoulderOffset)
         guard requested > 0.001 else { return 0 }
+        // The GamePad touchscreen and the video are drawn under the pad. Shoulders already over
+        // one at home stay free to be; one they start clear of is not somewhere they are dropped
+        // into (a portrait iPad stacks the pictures, and a lowered shoulder would cover them).
+        let home = arrangement(ctx, u: u, sticksInboard: sticksInboard, stickSpacing: stickSpacing, aScale: aScale)
+        let homeShoulders = home.filter { $0.role == .shoulder }.map { $0.shape.boundingBox }
+        let avoid = ([ctx.touchscreenRect].compactMap { $0 } + ctx.videoRects)
+            .filter { rect in !homeShoulders.contains { $0.intersects(rect) } }
         func fits(_ drop: CGFloat) -> Bool {
             let set = arrangement(ctx, u: u, sticksInboard: sticksInboard,
                                   stickSpacing: stickSpacing, shoulderOffset: drop, aScale: aScale)
-            return LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty
+            guard LayoutCheck.problems(set, in: ctx.safeBounds).isEmpty else { return false }
+            for c in set where c.role == .shoulder {
+                let box = c.shape.boundingBox
+                if avoid.contains(where: { $0.intersects(box) }) { return false }
+            }
+            return true
         }
-        if fits(requested) { return requested }
-        var low: CGFloat = 0, high = requested
-        for _ in 0..<12 {
-            let mid = (low + high) / 2
-            if fits(mid) { low = mid } else { high = mid }
+        // Walk down a quarter-button at a time to the first drop that does not fit, then find
+        // the exact limit inside that last step. A single test at the full amount could land
+        // past the obstacle instead of stopping in front of it, and upright the request can be
+        // many buttons.
+        var low: CGFloat = 0
+        var drop: CGFloat = 0
+        while drop < requested {
+            let next = min(requested, drop + 0.25)
+            if fits(next) { low = next; drop = next } else {
+                var high = next
+                for _ in 0..<12 {
+                    let mid = (low + high) / 2
+                    if fits(mid) { low = mid } else { high = mid }
+                }
+                return low
+            }
         }
         return low
     }

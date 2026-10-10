@@ -109,6 +109,33 @@ enum ControllerLayoutSettings {
     /// Quarter-button steps, like the stick spacing, so the slider lands back on exactly zero.
     static let shoulderOffsetStep: Double = 0.25
 
+    /// The same setting while the pad is taller than it is wide (an iPad held upright). The
+    /// landscape value is on `shoulderOffsetKey` unchanged, so what people already set stays
+    /// theirs in landscape; upright starts at the default.
+    static let shoulderOffsetPortraitKey = "muffin.controls.shoulderOffset.portrait"
+
+    /// Whether a container is taller than it is wide.
+    static func isUpright(_ size: CGSize) -> Bool { size.height > size.width }
+
+    /// Room a shoulder cluster is left upright, in button widths, once the half-screen of
+    /// sticks, d-pad and face buttons at the bottom is set aside.
+    private static let uprightReserveUnits: Double = 7
+
+    /// The most the shoulder setting can ask for in a container this size. Landscape keeps the
+    /// fixed `maxShoulderOffset`; an iPad held upright has the whole extra height, so its
+    /// limit follows the container. The layouts still stop short of anything in the way.
+    static func maxShoulderOffset(in size: CGSize) -> Double {
+        guard supportsShoulderOffset, isUpright(size), size.width > 0 else { return maxShoulderOffset }
+        let unit = Double(ControllerGeometry.automaticDiameter(in: size))
+        let room = Double(size.height) / unit - uprightReserveUnits
+        return max(maxShoulderOffset, (room / shoulderOffsetStep).rounded(.down) * shoulderOffsetStep)
+    }
+
+    /// The slider's range for a container this size.
+    static func shoulderOffsetRange(touchLab: Bool, in size: CGSize) -> ClosedRange<Double> {
+        (touchLab ? defaultShoulderOffset : minShoulderOffset)...maxShoulderOffset(in: size)
+    }
+
     /// The slider's range: the TouchLab styles can only move the shoulders down from the
     /// top edge, so their slider starts at the default instead of offering a dead half.
     static func shoulderOffsetRange(touchLab: Bool) -> ClosedRange<Double> {
@@ -439,9 +466,10 @@ enum ControllerGeometry {
     /// The shift is applied to where each shoulder is POSITIONED, not by padding or offsetting
     /// the control's view, so its hit area moves with it (see muffin-pad-hit-testing-trap).
     static func shoulderShift(offset: Double, centreY: CGFloat, containerHeight: CGFloat, unit: CGFloat,
-                              controls: [Control], topInset: CGFloat = 0) -> CGFloat {
+                              controls: [Control], topInset: CGFloat = 0,
+                              maxOffset: Double = ControllerLayoutSettings.maxShoulderOffset) -> CGFloat {
         let requested = CGFloat(min(max(offset, ControllerLayoutSettings.minShoulderOffset),
-                                    ControllerLayoutSettings.maxShoulderOffset))
+                                    max(maxOffset, ControllerLayoutSettings.maxShoulderOffset)))
         guard requested != 0, unit > 0 else { return 0 }
         let shoulders = controls.filter { $0.style == .shoulder }
         guard !shoulders.isEmpty else { return 0 }
@@ -542,5 +570,43 @@ enum ControllerGeometry {
         }
 
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+}
+
+/// The size of the window the pad is drawn in, kept current across rotation so the settings
+/// sliders can offer the range for the orientation the iPad is in right now.
+@MainActor
+final class ControlsWindowSize: ObservableObject {
+    static let shared = ControlsWindowSize()
+    @Published private(set) var size: CGSize = ControlsWindowSize.measure()
+
+    private init() {
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        for name in [UIDevice.orientationDidChangeNotification, UIApplication.didBecomeActiveNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                // The window's bounds settle a moment after the notification.
+                for delay in [0.05, 0.5] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self?.refresh() }
+                }
+            }
+        }
+    }
+
+    func refresh() {
+        let now = Self.measure()
+        if now != size { size = now }
+    }
+
+    private static func measure() -> CGSize {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        let window = scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
+        return window?.bounds.size ?? UIScreen.main.bounds.size
+    }
+
+    /// The stored key for the orientation this window is in.
+    var shoulderKey: String {
+        ControllerLayoutSettings.isUpright(size) ? ControllerLayoutSettings.shoulderOffsetPortraitKey
+                                                  : ControllerLayoutSettings.shoulderOffsetKey
     }
 }

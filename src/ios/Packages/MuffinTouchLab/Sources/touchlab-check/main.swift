@@ -286,6 +286,39 @@ for device in TargetDevice.all {
     }
 }
 
+// MARK: Shoulder offset, upright iPad
+// The same iPad held upright (1024 x 1366) has far more room below the shoulders than held
+// sideways, and the slider's upright range follows it: the largest drop is bigger than in
+// landscape, everything stays on screen, and with the pictures stacked the shoulders stop in
+// front of the GamePad touchscreen instead of covering it.
+
+for id in ["zone", "adaptive"] {
+    let insets = Insets(top: 24, bottom: 20)
+    func drop(_ size: CGSize, request: CGFloat, display: TargetDevice.Display?) -> (CGFloat, [String], CGRect?, CGRect?) {
+        let dev = TargetDevice(name: "iPad 1366", size: size, insets: insets)
+        var ctx = display.map { dev.context($0) } ?? LayoutContext(size: size, safeInsets: insets)
+        let home = SchemeCatalog.make(id) as! ControlScheme
+        home.layout(ctx)
+        ctx.shoulderOffset = request
+        let scheme = SchemeCatalog.make(id) as! ControlScheme
+        scheme.layout(ctx)
+        let d = shoulderRects(scheme)[.zl]!.minY - shoulderRects(home)[.zl]!.minY
+        let zl = shoulderRects(scheme)[.zl]
+        return (d, LayoutCheck.problems(scheme.controls, in: ctx.safeBounds), zl, ctx.touchscreenRect)
+    }
+    let landscape = drop(CGSize(width: 1366, height: 1024), request: 20, display: nil)
+    let upright = drop(CGSize(width: 1024, height: 1366), request: 20, display: nil)
+    check(upright.1.isEmpty, "upright iPad \(id): \(upright.1.first ?? "")")
+    check(upright.0 > landscape.0 + 50, "upright iPad \(id): max drop \(upright.0) not larger than landscape \(landscape.0)")
+    // Stacked: the lowered shoulders stay clear of the GamePad touchscreen.
+    let stacked = drop(CGSize(width: 1024, height: 1366), request: 20, display: .stacked)
+    check(stacked.1.isEmpty, "upright iPad \(id) stacked: \(stacked.1.first ?? "")")
+    if let zl = stacked.2, let gp = stacked.3 {
+        check(!zl.intersects(gp), "upright iPad \(id) stacked: shoulders cover the GamePad screen")
+        check(stacked.0 > 1.5 * 72, "upright iPad \(id) stacked: only moved \(stacked.0)")
+    }
+}
+
 // MARK: Behaviour, through the engine, on the A12Z iPad
 
 let ipad = TargetDevice.all.first { $0.name.contains("A12Z") }!
