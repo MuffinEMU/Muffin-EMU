@@ -40,6 +40,12 @@ struct OnScreenControlsSection: View {
     private var autoHideWithController = ControllerLayoutSettings.defaultAutoHideWithController
     @AppStorage(HiddenScreenSettings.hideControlsInHomeMenuKey)
     private var hideControlsInHomeMenu = false
+    @AppStorage(PreviewPadStore.enabledKey)
+    private var previewPadEnabled = PreviewPadStore.defaultEnabled
+    @AppStorage(ControllerLayoutSettings.stickCalibrationLeftKey)
+    private var calibrationLeft = ""
+    @AppStorage(ControllerLayoutSettings.stickCalibrationRightKey)
+    private var calibrationRight = ""
     @AppStorage(MeloControlsSetting.storageKey)
     private var useMeloControls = MeloControlsSetting.defaultValue
     @AppStorage(TouchLabSettings.schemeKey)
@@ -119,7 +125,7 @@ struct OnScreenControlsSection: View {
             // Only while the mode they belong to is on. A deadzone slider
             // under a d-pad is a control with nothing behind it. The TouchLab styles always
             // have sticks, and read the same gate, deadzone and curve.
-            if joystickMode || usingTouchLab {
+            if joystickMode || usingTouchLab || previewPadEnabled {
                 // Gate, deadzone, curve and spacing live on their own page so this section
                 // stays a short list of the things most people change.
                 NavigationLink {
@@ -330,6 +336,27 @@ struct OnScreenControlsSection: View {
 
     // Shown only with sticks on, since these options have nothing to act on otherwise.
     @ViewBuilder private var joystickOptions: some View {
+        // One calibration for every control style: this pad, the new pad (preview) and each TouchLab style.
+        NavigationLink {
+            StickCalibrationView()
+                .navigationBarTitleDisplayMode(.inline)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Label("Calibrate sticks", systemImage: "scope")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text(calibrationLeft.isEmpty && calibrationRight.isEmpty
+                     ? "Rest your thumb, push to every edge, let go. Matches the sticks to your reach, in every control style."
+                     : "Calibrated. Applies to every control style.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        if !(calibrationLeft.isEmpty && calibrationRight.isEmpty) {
+            Button(role: .destructive) { SharedStick.resetCalibration() } label: {
+                DestructiveSettingsLabel(title: "Reset stick calibration", systemImage: "arrow.uturn.backward")
+            }
+        }
+
         if !usingTouchLab {
             Toggle(isOn: $comfortControls) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -437,6 +464,6 @@ struct OnScreenControlsSection: View {
     }
 
     private var fullText: String {
-        "Add analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nStick spacing moves both sticks closer together or further apart, for smaller or bigger hands. On a narrow screen it stops before the sticks would touch.\n\nOn iPad, L, R, ZL and ZR height moves the four shoulder buttons up or down together, stopping before they would leave the screen or touch a stick or button.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nHide the top bar while playing fades the Back and pause bar out a few seconds after you last touch it, so it stops covering the picture. A small handle stays at the top centre of the screen: tap it, or swipe down from it, to bring the bar back. The bar stays up while the game is paused, a menu is open, or VoiceOver is on.\n\nIn Advanced mode, Top bar hides after sets the wait (2, 4 or 8 seconds) and Reveal handle sets the size of the area you tap to bring the bar back. Normal is the default; Large is easier to hit but can take touches meant for the GamePad screen at the top of the picture.\n\nHide on-screen controls when a controller is connected takes the controls off the screen while a controller is paired, and puts them back when it disconnects. It is off by default. The GamePad's screen stays visible and touchable either way.\n\nThese settings apply to every game. Two things are kept per game instead: Adaptive remembers where your thumbs land, and Melo-Controller remembers where you moved its buttons.\n\nTo move a cluster, start a game and tap the move button in the top bar. There you can also switch control style without leaving the game."
+        "Add analog sticks puts both sticks on screen alongside the d-pad and face buttons. Push further for more speed.\n\nGate is the shape the stick can reach. Octagon matches the real GamePad; Round reaches full travel in every direction.\n\nCalibrate sticks has you rest your thumb, push to every edge and let go, then sets where full push is and ignores the wobble of your resting thumb. It applies to every control style.\n\nDeadzone is how far you can move before the game notices. Turn it up only if a resting thumb makes the game drift.\n\nFine control makes small movements gentler: at linear, halfway is half speed; higher values make halfway slower.\n\nStick spacing moves both sticks closer together or further apart, for smaller or bigger hands. On a narrow screen it stops before the sticks would touch.\n\nOn iPad, L, R, ZL and ZR height moves the four shoulder buttons up or down together, stopping before they would leave the screen or touch a stick or button.\n\nButton size and opacity adjust the size MuffinEMU picks for your screen.\n\nHide the top bar while playing fades the Back and pause bar out a few seconds after you last touch it, so it stops covering the picture. A small handle stays at the top centre of the screen: tap it, or swipe down from it, to bring the bar back. The bar stays up while the game is paused, a menu is open, or VoiceOver is on.\n\nIn Advanced mode, Top bar hides after sets the wait (2, 4 or 8 seconds) and Reveal handle sets the size of the area you tap to bring the bar back. Normal is the default; Large is easier to hit but can take touches meant for the GamePad screen at the top of the picture.\n\nHide on-screen controls when a controller is connected takes the controls off the screen while a controller is paired, and puts them back when it disconnects. It is off by default. The GamePad's screen stays visible and touchable either way.\n\nThese settings apply to every game. Two things are kept per game instead: Adaptive remembers where your thumbs land, and Melo-Controller remembers where you moved its buttons.\n\nTo move a cluster, start a game and tap the move button in the top bar. There you can also switch control style without leaving the game."
     }
 }

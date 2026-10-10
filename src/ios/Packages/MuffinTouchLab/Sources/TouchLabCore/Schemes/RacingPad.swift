@@ -200,12 +200,15 @@ public final class RacingPad: ControlScheme {
         var d = angle - centre
         while d > .pi { d -= 2 * .pi }
         while d < -.pi { d += 2 * .pi }
-        let dead = context.stick.deadzone
-        let raw = abs(d) / Self.tiltFullLock
+        // Same deadzone, curve and calibration as the steering stick (the left one) it replaces.
+        let tuning = context.stick.clamped
+        let cal = context.calibration.left.clamped
+        let dead = max(tuning.deadzone, cal.jitter / cal.fullThrow)
+        let raw = abs(d) / (Self.tiltFullLock * cal.fullThrow)
         var v = 0.0
         if raw > dead {
             let live = min((raw - dead) / max(1 - dead, 0.0001), 1)
-            v = pow(live, context.stick.curve)
+            v = pow(live, tuning.curve)
         }
         tiltValue = d < 0 ? -v : v
         steerOverrideX = tiltValue

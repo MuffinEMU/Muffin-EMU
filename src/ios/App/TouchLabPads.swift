@@ -58,6 +58,11 @@ enum TouchLabSettings {
     /// Bumped by "Reset Adaptive layout" so the live pad rebuilds from the cleared data.
     static let adaptiveResetKey = "muffin.touchlab.adaptive.resetCount"
 
+    /// Arc's fitted thumb sweeps (JSON, per orientation), the same for every game.
+    static let arcProfilesKey = "muffin.touchlab.arc.profiles"
+    /// Bumped when Arc's stored profiles are changed from Settings, so a live pad reloads them.
+    static let arcResetKey = "muffin.touchlab.arc.resetCount"
+
     /// Adaptive's learned positions are per game - different games, different grips.
     static func adaptiveKey(gameID: String?) -> String {
         "muffin.touchlab.adaptive." + (gameID ?? "default")
@@ -113,6 +118,8 @@ enum TouchLabSettings {
         styles.first { $0.id == id }?.summary ?? ""
     }
 
+    static let showcaseStyleID = ShowcasePad.schemeInfo.id
+    static let arcStyleID = ArcPad.schemeInfo.id
     static let floatStyleID = FloatPad.schemeInfo.id
     static let adaptiveStyleID = AdaptivePad.schemeInfo.id
     static let zoneStyleID = ZonePad.schemeInfo.id
@@ -151,6 +158,16 @@ enum TouchLabSettings {
         guard rounded.isFinite else { return old }
         return max(rounded, old)
     }
+
+    /// Showcase's colour preset and how it takes the screen (fit around the picture, or native size).
+    static let showcaseColourKey = "muffin.touchlab.showcase.colour"
+    static let defaultShowcaseColour = ShowcaseColourPreset.wiiUWhite.rawValue
+    static let showcaseDisplayKey = "muffin.touchlab.showcase.display"
+    static let defaultShowcaseDisplay = ShowcaseLayout.DisplayMode.fit.rawValue
+    static let showcaseColourOptions: [(value: String, title: String)] =
+        ShowcaseColourPreset.allCases.map { ($0.rawValue, $0.file.name) }
+    static let showcaseDisplayOptions: [(value: String, title: String)] =
+        ShowcaseLayout.DisplayMode.allCases.map { ($0.rawValue, $0.title) }
 
     /// Float's right-hand side options: stored value and label.
     static let cameraOptions: [(value: String, title: String)] = [
@@ -309,11 +326,18 @@ struct TouchLabPadOverlay: View {
     @AppStorage(ControllerLayoutSettings.deadzoneKey) private var deadzone = ControllerLayoutSettings.defaultDeadzone
     @AppStorage(ControllerLayoutSettings.stickCurveKey) private var curve = ControllerLayoutSettings.defaultStickCurve
     @AppStorage(ControllerLayoutSettings.stickGateKey) private var gateRaw = ControllerLayoutSettings.defaultStickGateRaw
+    // Read only so the pad re-renders when a calibration is saved; the values come in via SharedStick.
+    @AppStorage(ControllerLayoutSettings.stickCalibrationLeftKey) private var calibrationLeft = ""
+    @AppStorage(ControllerLayoutSettings.stickCalibrationRightKey) private var calibrationRight = ""
     @AppStorage(TouchLabSettings.floatCameraKey) private var cameraRaw = TouchLabSettings.defaultFloatCamera
     @AppStorage(TouchLabSettings.adaptiveResetKey) private var adaptiveResets = 0
     @AppStorage(TouchLabSettings.racingAutoAccelerateKey) private var racingAuto = false
     @AppStorage(TouchLabSettings.racingTiltKey) private var racingTilt = false
     @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
+    @AppStorage(TouchLabSettings.showcaseColourKey) private var showcaseColour = TouchLabSettings.defaultShowcaseColour
+    @AppStorage(TouchLabSettings.showcaseDisplayKey) private var showcaseDisplay = TouchLabSettings.defaultShowcaseDisplay
+    @AppStorage(TouchLabSettings.arcResetKey) private var arcResets = 0
+    @ObservedObject private var arcLive = ArcLive.shared
 
     var body: some View {
         pad(upright: ControllerLayoutSettings.isUpright(padSize))
@@ -321,26 +345,28 @@ struct TouchLabPadOverlay: View {
     }
 
     private func pad(upright: Bool) -> some View {
-        TouchPad(schemeID: schemeID,
+        var pad = TouchPad(schemeID: schemeID,
                  output: CemuBridgePadOutput.shared,
+                 // Every shared setting, from the same keys MuffinEMU's own pad reads. Each device
+                 // and orientation reads its own stored shoulder value (ShoulderOffsetStorage).
+                 // The layouts ignore a negative value (the shoulders already start at the top edge).
+                 settings: SharedStick.padSettings(scale: scale, opacity: opacity, haptics: haptics,
+                                                   deadzone: deadzone, curve: curve, gateRaw: gateRaw,
+                                                   stickSpacing: stickSpacing,
+                                                   shoulderOffset: shoulderStore.value(upright: upright)),
                  touchscreenRect: screens.screens.touchscreenRect,
                  videoRects: screens.screens.videoRects,
-                 scale: scale,
-                 stickSpacing: stickSpacing,
-                 // Each device and orientation reads its own stored value (ShoulderOffsetStorage).
-                 // The layouts ignore a negative value (the shoulders already start at the top edge).
-                 shoulderOffset: CGFloat(shoulderStore.value(upright: upright)),
-                 opacity: opacity,
-                 haptics: haptics,
                  // Rebuild the scheme only when something that shapes it changes - never on
                  // Adaptive's own learning writes (that would drop every held press).
                  revision: revision,
-                 enabled: enabled,
-                 stickTuning: StickTuning(deadzone: deadzone, curve: curve,
-                                          gate: StickTuning.Gate(rawValue: gateRaw) ?? .octagon),
+                 // Arc's fine-tune drags buttons, so the pad takes touches then even with the layout panel open.
+                 enabled: enabled || arcLive.isFineTuning,
                  rectSpace: .window,
                  extraInsets: Insets(top: topInset),
                  makeScheme: makeScheme)
+        // Settings reach Arc's calibration and fine-tune through the live pad.
+        pad.onView = { ArcLive.shared.view = $0 }
+        return pad
             .ignoresSafeArea()
             .onAppear {
                 TouchLabSettings.migrateLegacyLargeA()
@@ -358,6 +384,9 @@ struct TouchLabPadOverlay: View {
         h.combine(racingAuto)
         h.combine(racingTilt)
         h.combine(aScale)
+        h.combine(showcaseColour)
+        h.combine(showcaseDisplay)
+        h.combine(arcResets)
         return h.finalize()
     }
 
@@ -376,6 +405,20 @@ struct TouchLabPadOverlay: View {
             let pad = AdaptivePad(learned: AdaptivePad.decode(UserDefaults.standard.string(forKey: key) ?? "{}"),
                                 aScale: CGFloat(aScale))
             pad.onLearned = { UserDefaults.standard.set(AdaptivePad.encode($0), forKey: key) }
+            return pad
+        case ArcPad.schemeInfo.id:
+            let key = TouchLabSettings.arcProfilesKey
+            let pad = ArcPad(profiles: ArcPad.decode(UserDefaults.standard.string(forKey: key) ?? "{}"))
+            pad.onProfiles = { UserDefaults.standard.set(ArcPad.encode($0), forKey: key) }
+            pad.onSettingsChange = { ArcLive.shared.changed() }
+            ArcLive.shared.scheme = pad
+            return pad
+        case ShowcasePad.schemeInfo.id:
+            let pad = ShowcasePad()
+            pad.colourPreset = ShowcaseColourPreset(rawValue: showcaseColour) ?? .wiiUWhite
+            pad.displayMode = ShowcaseLayout.DisplayMode(rawValue: showcaseDisplay) ?? .fit
+            // The same measured (or calibrated) points per inch the standard pad is sized from.
+            pad.pointsPerInch = DeviceMetrics.current().pointsPerInch
             return pad
         case ZonePad.schemeInfo.id:
             return ZonePad(aScale: CGFloat(aScale))
@@ -418,5 +461,79 @@ extension View {
             next.screens = TouchLabScreens(frames: frames, imageIsAspectFit: imageIsAspectFit())
             if next != screens.wrappedValue { screens.wrappedValue = next }
         }
+    }
+}
+
+// MARK: - Arc
+
+/// The live Arc pad, for the Settings rows and the layout panel. Both only ever read
+/// state from it and call its own settings API; the profiles are stored by Arc itself under
+/// `TouchLabSettings.arcProfilesKey`.
+final class ArcLive: ObservableObject {
+    static let shared = ArcLive()
+
+    weak var scheme: ArcPad?
+    weak var view: TouchPadView?
+
+    /// The pad is on screen and is Arc: calibration and fine-tuning are possible now.
+    var isLive: Bool { scheme != nil && view != nil && view?.window != nil }
+
+    /// Re-renders anything showing Arc's state.
+    func changed() {
+        DispatchQueue.main.async { self.objectWillChange.send() }
+    }
+
+    var isLocked: Bool {
+        if let scheme, isLive { return scheme.isLocked }
+        let profiles = ArcPad.decode(UserDefaults.standard.string(forKey: TouchLabSettings.arcProfilesKey) ?? "{}")
+        return profiles.values.contains { $0.locked ?? false }
+    }
+
+    var isFineTuning: Bool { isLive && (scheme?.isFineTuning ?? false) }
+
+    func setLocked(_ on: Bool) {
+        if let scheme, isLive {
+            scheme.setLocked(on)
+            changed()
+            return
+        }
+        // No pad on screen: change every stored orientation, and have the next pad reload it.
+        let key = TouchLabSettings.arcProfilesKey
+        var profiles = ArcPad.decode(UserDefaults.standard.string(forKey: key) ?? "{}")
+        for k in profiles.keys { profiles[k]?.locked = on }
+        UserDefaults.standard.set(ArcPad.encode(profiles), forKey: key)
+        bumpReset()
+    }
+
+    @discardableResult
+    func calibrate() -> Bool {
+        guard isLive, !isLocked, let view else { return false }
+        let ok = view.presentArcCalibration { [weak self] _ in self?.changed() }
+        changed()
+        return ok
+    }
+
+    @discardableResult
+    func setFineTuning(_ on: Bool) -> Bool {
+        guard isLive, let scheme else { return false }
+        let ok = scheme.setFineTuning(on)
+        changed()
+        return ok
+    }
+
+    func reset() {
+        if let scheme, isLive {
+            scheme.resetToDefault()
+            changed()
+        } else {
+            UserDefaults.standard.removeObject(forKey: TouchLabSettings.arcProfilesKey)
+            bumpReset()
+        }
+    }
+
+    private func bumpReset() {
+        let d = UserDefaults.standard
+        d.set(d.integer(forKey: TouchLabSettings.arcResetKey) &+ 1, forKey: TouchLabSettings.arcResetKey)
+        changed()
     }
 }

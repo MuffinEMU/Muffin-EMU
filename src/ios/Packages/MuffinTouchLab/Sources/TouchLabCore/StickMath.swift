@@ -18,6 +18,18 @@ public struct StickTuning: Equatable, Sendable {
         self.curve = curve
         self.gate = gate
     }
+
+    /// The ranges MuffinEMU's settings offer.
+    public static let deadzoneRange: ClosedRange<Double> = 0.0...0.30
+    public static let curveRange: ClosedRange<Double> = 1.0...2.5
+
+    /// Both numbers inside their ranges (a stored value can be out of range, or not a number).
+    public var clamped: StickTuning {
+        var t = self
+        t.deadzone = deadzone.isFinite ? min(max(deadzone, Self.deadzoneRange.lowerBound), Self.deadzoneRange.upperBound) : 0.06
+        t.curve = curve.isFinite ? min(max(curve, Self.curveRange.lowerBound), Self.curveRange.upperBound) : 1
+        return t
+    }
 }
 
 public enum StickMath {
@@ -43,18 +55,39 @@ public enum StickMath {
     /// Converts a finger offset from the stick's centre (view points, +y down) into a
     /// console-convention stick value (+y up).
     ///
-    /// The deadzone is radial and RESCALED - output ramps from 0 at the deadzone edge
-    /// instead of jumping to `deadzone` - so a slow push starts slow. The curve is applied
-    /// to the rescaled magnitude, then the gate caps it.
-    public static func value(offset: CGPoint, travel: CGFloat, tuning: StickTuning) -> StickValue {
+    /// This is MuffinEMU's own pad's stick maths, and the only copy: every scheme and the pad
+    /// itself call it, so a deadzone, curve or gate means the same in all of them. The gate caps
+    /// how far the thumb counts, the deadzone is radial and RESCALED (output ramps from 0 at its
+    /// edge instead of jumping), and the curve is applied to the magnitude alone, so the
+    /// direction the thumb holds is never bent.
+    ///
+    /// `calibration` maps the player's own reach and rest onto the same output: the offset is
+    /// taken from where their thumb rests (`fixedBase` sticks only), full output is reached at
+    /// their comfortable throw, and the deadzone is never smaller than their rest wobble. The
+    /// identity calibration changes nothing.
+    public static func value(offset: CGPoint, travel: CGFloat, tuning: StickTuning,
+                             calibration: StickCalibration = .identity, fixedBase: Bool = true) -> StickValue {
         guard travel > 0 else { return .zero }
-        let raw = offset.length / travel
-        guard raw > tuning.deadzone else { return .zero }
-        let angle = offset.screenAngle
-        let limit = gateFraction(tuning.gate, angle: angle)
-        let live = min((Double(raw) - tuning.deadzone) / max(1 - tuning.deadzone, 0.0001), 1)
-        let shaped = min(pow(live, tuning.curve), Double(limit))
-        return StickValue(x: shaped * Double(cos(angle)), y: shaped * Double(sin(angle)))
+        let tuning = tuning.clamped
+        let cal = calibration.clamped
+        var dx = offset.x, dy = offset.y
+        if fixedBase {
+            dx -= cal.centre.x * travel
+            dy -= cal.centre.y * travel
+        }
+        let distance = (dx * dx + dy * dy).squareRoot()
+        let gate = gateFraction(tuning.gate, angle: atan2(dy, dx))
+        let reach = travel * gate
+        let full = CGFloat(cal.fullThrow)
+        let deflection: CGFloat = cal.fullThrow == 1
+            ? min(distance, reach) / travel
+            : min(min(distance, reach) / (travel * full), gate)
+        // The rest wobble is measured in travel; the deflection here is in throws.
+        let dead = CGFloat(max(tuning.deadzone, cal.jitter / cal.fullThrow))
+        guard deflection > dead, distance > 0 else { return .zero }
+        var magnitude = (deflection - dead) / (1 - dead)
+        if tuning.curve != 1 { magnitude = CGFloat(pow(Double(magnitude), tuning.curve)) }
+        return StickValue(x: Double(dx / distance * magnitude), y: Double(-dy / distance * magnitude))
     }
 
     /// Where to draw the knob for a finger offset: along the finger's direction, no farther

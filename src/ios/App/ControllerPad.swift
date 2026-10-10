@@ -825,6 +825,10 @@ private struct JoystickControl: View {
     private var curveSetting = ControllerLayoutSettings.defaultStickCurve
     @AppStorage(ControllerLayoutSettings.stickGateKey)
     private var gateSetting = ControllerLayoutSettings.defaultStickGateRaw
+    @AppStorage(ControllerLayoutSettings.stickCalibrationLeftKey)
+    private var calibrationLeft = ""
+    @AppStorage(ControllerLayoutSettings.stickCalibrationRightKey)
+    private var calibrationRight = ""
 
     /// Where the knob is drawn, in points from the ring's centre, clamped to the gate.
     @State private var knobOffset: CGSize = .zero
@@ -834,15 +838,6 @@ private struct JoystickControl: View {
     /// Whether the stick has been pushed past the click threshold; lights the cap.
     @State private var pushed = false
 
-    /// The settings, clamped to their declared ranges (a stored value can be out of range).
-    private var deadzone: CGFloat {
-        CGFloat(min(max(deadzoneSetting, ControllerLayoutSettings.minDeadzone),
-                    ControllerLayoutSettings.maxDeadzone))
-    }
-    private var curve: CGFloat {
-        CGFloat(min(max(curveSetting, ControllerLayoutSettings.minStickCurve),
-                    ControllerLayoutSettings.maxStickCurve))
-    }
     /// Falls back to the default if the stored string names no gate.
     private var gate: ControllerGeometry.StickGate {
         ControllerGeometry.StickGate(rawValue: gateSetting) ?? ControllerLayoutSettings.defaultStickGate
@@ -908,7 +903,7 @@ private struct JoystickControl: View {
                     if deflection > ControllerGeometry.stickClickThreshold {
                         pushed = true
                     }
-                    report(deflection: deflection, dx: dx, dy: dy, distance: distance)
+                    report(dx: dx, dy: dy)
                 }
                 // Recentre on the lift itself, not only when `touching` is next seen false
                 // at a render: a flick handled entirely between two renders never shows
@@ -930,39 +925,15 @@ private struct JoystickControl: View {
         .onDisappear { recentre() }
     }
 
-    private func report(deflection: CGFloat, dx: CGFloat, dy: CGFloat, distance: CGFloat) {
-        let dead = deadzone
-        // `distance > 0` is not the same test as the deadzone one and does not fold into
-        // it: it is what makes the division below safe, and at a deadzone of zero a
-        // finger exactly on the centre pixel would otherwise reach it.
-        guard deflection > dead, distance > 0 else {
-            onStick(.zero)
-            return
-        }
-
-        // Rescaled across the full range rather than passed through: without this the
-        // deadzone would cost the stick its top end as well as its bottom, and a title
-        // that expects 1.0 at the rim would never see it. `dead < 1` is guaranteed by the
-        // clamp on the setting, so the divisor cannot be zero.
-        var magnitude = (deflection - dead) / (1 - dead)
-
-        // The response curve, applied to the magnitude alone and never to the direction.
-        // Shaping x and y separately would bend the diagonals - a stick pushed exactly
-        // north-east would come back out pointing somewhere else - so the angle the thumb
-        // is holding survives untouched and only how hard it is holding it changes.
-        // pow() is skipped rather than called with 1.0 because linear is the default and
-        // this runs on every touch-move; it is also the exactness the setting promises,
-        // and 0.5 raised to the power of exactly 1 is not guaranteed to be 0.5 back.
-        if curve != 1 {
-            // Through Double rather than relying on a CGFloat overload of pow(). CGFloat
-            // is a different width on a 32-bit slice, and this file otherwise only ever
-            // uses maths the standard library defines on the protocol.
-            magnitude = CGFloat(pow(Double(magnitude), Double(curve)))
-        }
-
-        // y is negated exactly here, once. The screen counts downwards and the console
-        // counts upwards, and the bridge's contract is the console's.
-        onStick(CGPoint(x: dx / distance * magnitude, y: -dy / distance * magnitude))
+    /// Through the same function every control scheme uses (SharedStick.output), so the deadzone
+    /// (rescaled across the full range, so a title that expects 1.0 at the rim still sees it),
+    /// the response curve (on the magnitude alone, never the direction), the gate and the
+    /// player's stick calibration mean the same thing here as in every TouchLab style. y is
+    /// negated inside it, once: the screen counts downwards and the bridge's contract is the console's.
+    private func report(dx: CGFloat, dy: CGFloat) {
+        onStick(SharedStick.output(dx: dx, dy: dy, travel: travel,
+                                   deadzone: deadzoneSetting, curve: curveSetting, gateRaw: gateSetting,
+                                   calibrationRaw: control.id == "stickL" ? calibrationLeft : calibrationRight))
     }
 
     private func recentre() {
