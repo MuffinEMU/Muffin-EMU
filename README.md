@@ -15,7 +15,7 @@
 [![Add to SideStore](https://img.shields.io/badge/add%20to-SideStore%20%7C%20AltStore-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=appstore&logoColor=white)](https://muffinemu.github.io/MuffinEMU/docs/installation.html)
 [![Documentation](https://img.shields.io/badge/docs-muffinemu.github.io-E5652E?style=for-the-badge&labelColor=1d1d1f&logo=readthedocs&logoColor=white)](https://muffinemu.github.io/MuffinEMU/)
 
-**Official website: [MuffinEMU.github.io/MuffinSite-Remastered](https://muffinemu.github.io/MuffinSite-Remastered/)**
+**Official website: [MuffinEMU.github.io/MuffinEMU](https://muffinemu.github.io/MuffinEMU/)**
 
 [Install](https://muffinemu.github.io/MuffinEMU/docs/installation.html) ·
 [Documentation](https://muffinemu.github.io/MuffinEMU/docs/) ·
