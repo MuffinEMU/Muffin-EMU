@@ -73,6 +73,7 @@ final class PadTouchUIView: UIView {
     var reachFactor: CGFloat = 1.4
     var bias: CGPoint = .zero
     var enabled = true { didSet { if !enabled { releaseAll() } } }
+    private static let maxContact: CGFloat = 20
     var onChange: (String, Bool) -> Void = { _, _ in }
 
     private var assigned: [ObjectIdentifier: String] = [:]
@@ -86,11 +87,13 @@ final class PadTouchUIView: UIView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    /// Invariant: hitTest claims a touch only if the same resolver touchesBegan uses (same
+    /// parameters, the touch's own contact when the event has it, else the maximum) yields a button.
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        guard enabled, !isHidden,
-              HitResolver.resolve(point, targets: targets, reachFactor: reachFactor, contactRadius: 6, bias: bias) != nil
-        else { return nil }
-        return self
+        guard enabled, !isHidden else { return nil }
+        let touch = event?.allTouches?.first { $0.phase == .began && $0.view === self && hypot($0.location(in: self).x - point.x, $0.location(in: self).y - point.y) < 0.5 }
+        let contact = touch.map { Self.contact(of: $0) } ?? Self.maxContact
+        return resolve(point, contact: contact, current: nil) != nil ? self : nil
     }
 
     override func didMoveToWindow() {
@@ -98,11 +101,18 @@ final class PadTouchUIView: UIView {
         if window == nil { releaseAll() }
     }
 
+    /// The contact area is half the reported major radius, capped so a palm does not reach.
+    private static func contact(of touch: UITouch) -> CGFloat {
+        touch.majorRadius > 0 ? min(touch.majorRadius, 40) / 2 : 0
+    }
+
+    private func resolve(_ point: CGPoint, contact: CGFloat, current: String?) -> String? {
+        HitResolver.resolve(point, targets: targets, reachFactor: reachFactor,
+                            contactRadius: contact, bias: bias, current: current)
+    }
+
     private func resolve(_ touch: UITouch, current: String?) -> String? {
-        // The contact area is half the reported major radius, capped so a palm does not reach.
-        let contact = touch.majorRadius > 0 ? min(touch.majorRadius, 40) / 2 : 0
-        return HitResolver.resolve(touch.location(in: self), targets: targets, reachFactor: reachFactor,
-                                   contactRadius: contact, bias: bias, current: current)
+        resolve(touch.location(in: self), contact: Self.contact(of: touch), current: current)
     }
 
     private func retain(_ id: String) {
@@ -119,6 +129,7 @@ final class PadTouchUIView: UIView {
         let ids = Array(assigned.values)
         assigned.removeAll()
         for id in ids { release(id) }
+        for id in Array(counts.keys) { counts[id] = nil; onChange(id, false) }
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -172,17 +183,5 @@ struct PadTouchSurface: UIViewRepresentable {
 
     static func dismantleUIView(_ view: PadTouchUIView, coordinator: ()) {
         view.enabled = false
-    }
-}
-
-extension View {
-    /// Keeps the system's edge swipes (home, app switcher, Control Centre) from eating a thumb
-    /// that slides off the pad: the first edge swipe is ignored, the second goes through.
-    @ViewBuilder func deferSystemGestures() -> some View {
-        if #available(iOS 16.0, *) {
-            self.defersSystemGestures(on: .all)
-        } else {
-            self
-        }
     }
 }
