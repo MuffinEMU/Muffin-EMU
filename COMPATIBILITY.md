@@ -3,7 +3,7 @@
   or into the web editor for this file), then paste the resulting
   https://github.com/user-attachments/assets/... URL on its own line where the matching
   "VIDEO:" comment is below. A user-attachments URL on a line by itself embeds as a video player on GitHub.
-  Remove the "<!-- VIDEO: ... -->" wrapper when you paste the URL.
+  Replace that whole VIDEO comment with the URL when you paste it.
 -->
 
 <div align="center">
