@@ -177,6 +177,12 @@ public enum GameSourceValidator {
             break
         }
 
+        let lower = name.lowercased()
+        if ["code", "content", "meta"].contains(lower) {
+            let parent = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent
+            return .failure(.wrongLevel(name, parent: parent.isEmpty ? "the folder that holds code, content and meta" : parent))
+        }
+
         var games = 0
         var firstProblem: SourceIssue?
         var baseKinds: [SourceKind] = []
@@ -221,11 +227,6 @@ public enum GameSourceValidator {
         }
         if let firstProblem { return .failure(firstProblem) }
 
-        let lower = name.lowercased()
-        if ["code", "content", "meta"].contains(lower) {
-            let parent = ((path as NSString).deletingLastPathComponent as NSString).lastPathComponent
-            return .failure(.wrongLevel(name, parent: parent.isEmpty ? "the folder that holds code, content and meta" : parent))
-        }
         if entries.contains(where: { ($0.name as NSString).pathExtension.lowercased() == "zip" }) {
             let zip = entries.first { ($0.name as NSString).pathExtension.lowercased() == "zip" }!
             return .failure(.archiveUnsupported(zip.name))
