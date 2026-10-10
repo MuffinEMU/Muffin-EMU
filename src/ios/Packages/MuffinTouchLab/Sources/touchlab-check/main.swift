@@ -286,6 +286,95 @@ for device in TargetDevice.all {
     }
 }
 
+// MARK: Shoulder offset, upright iPad
+// The same iPad held upright (1024 x 1366) has far more room below the shoulders than held
+// sideways, and the slider's upright range follows it: the largest drop is bigger than in
+// landscape, everything stays on screen, and with the pictures stacked the shoulders stop in
+// front of the GamePad touchscreen instead of covering it.
+
+for id in ["zone", "adaptive"] {
+    let insets = Insets(top: 24, bottom: 20)
+    func drop(_ size: CGSize, request: CGFloat, display: TargetDevice.Display?) -> (CGFloat, [String], CGRect?, CGRect?) {
+        let dev = TargetDevice(name: "iPad 1366", size: size, insets: insets)
+        var ctx = display.map { dev.context($0) } ?? LayoutContext(size: size, safeInsets: insets)
+        let home = SchemeCatalog.make(id) as! ControlScheme
+        home.layout(ctx)
+        ctx.shoulderOffset = request
+        let scheme = SchemeCatalog.make(id) as! ControlScheme
+        scheme.layout(ctx)
+        let d = shoulderRects(scheme)[.zl]!.minY - shoulderRects(home)[.zl]!.minY
+        let zl = shoulderRects(scheme)[.zl]
+        return (d, LayoutCheck.problems(scheme.controls, in: ctx.safeBounds), zl, ctx.touchscreenRect)
+    }
+    let landscape = drop(CGSize(width: 1366, height: 1024), request: 20, display: nil)
+    let upright = drop(CGSize(width: 1024, height: 1366), request: 20, display: nil)
+    check(upright.1.isEmpty, "upright iPad \(id): \(upright.1.first ?? "")")
+    check(upright.0 > landscape.0 + 50, "upright iPad \(id): max drop \(upright.0) not larger than landscape \(landscape.0)")
+    // Stacked: the lowered shoulders stay clear of the GamePad touchscreen.
+    let stacked = drop(CGSize(width: 1024, height: 1366), request: 20, display: .stacked)
+    check(stacked.1.isEmpty, "upright iPad \(id) stacked: \(stacked.1.first ?? "")")
+    // Up to the old 1.5-button maximum the shoulders go exactly where they always did, over the
+    // GamePad screen or not; past it they stop before covering it.
+    if let zl = stacked.2, let gp = stacked.3 {
+        let u = zl.width / 1.9
+        check(!zl.intersects(gp) || stacked.0 <= 1.5 * u + 1,
+              "upright iPad \(id) stacked: shoulders cover the GamePad screen past the old maximum")
+        check(stacked.0 > 1.5 * 72 - 1, "upright iPad \(id) stacked: only moved \(stacked.0)")
+    }
+}
+
+// MARK: Shoulder drops within the old range are exactly what they always were
+// Up to 1.5 buttons (the slider's old maximum) the GamePad touchscreen and video play no part:
+// the same request gives the same shoulders whether or not those rectangles are known. Only
+// past 1.5 do the shoulders stop in front of a rectangle they started clear of.
+
+for (name, size, insets) in [
+    ("iPad landscape", CGSize(width: 1366, height: 1024), Insets(top: 24, bottom: 20)),
+    ("iPad portrait", CGSize(width: 1024, height: 1366), Insets(top: 24, bottom: 20)),
+    ("iPhone landscape", CGSize(width: 852, height: 393), Insets(left: 59, bottom: 21, right: 59)),
+] {
+    for id in ["zone", "adaptive"] {
+        let plain = LayoutContext(size: size, safeInsets: insets)
+        let homeScheme = SchemeCatalog.make(id) as! ControlScheme
+        homeScheme.layout(plain)
+        guard let homeZL = shoulderRects(homeScheme)[.zl] else { continue }
+        let u = homeZL.width / 1.9
+        func layout(_ ctx: LayoutContext, _ request: CGFloat) -> [PadButton: CGRect] {
+            var c = ctx
+            c.shoulderOffset = request
+            let sc = SchemeCatalog.make(id) as! ControlScheme
+            sc.layout(c)
+            return shoulderRects(sc)
+        }
+        // A picture whose top edge the shoulders reach at about half a button down.
+        let near = CGRect(x: 0, y: homeZL.minY + 1.5 * u, width: size.width, height: size.height)
+        // One they only reach well past 1.5 buttons.
+        let far = CGRect(x: 0, y: homeZL.minY + 3.2 * u, width: size.width, height: size.height)
+        for request: CGFloat in [0.25, 0.5, 1, 1.25, 1.5] {
+            let bare = layout(plain, request)
+            for rect in [near, far] {
+                var withRect = plain
+                withRect.touchscreenRect = rect
+                withRect.videoRects = [rect]
+                let got = layout(withRect, request)
+                for (b, r) in bare {
+                    check(got[b] == r, "\(name) \(id) drop \(request): \(b) moved by the GamePad rectangle")
+                }
+            }
+        }
+        // Past the old maximum: blocked at once by the near picture, further than 1.5 by the far one.
+        var nearCtx = plain
+        nearCtx.touchscreenRect = near
+        let atCap = layout(nearCtx, 1.5)[.zl]!.minY
+        check(abs(layout(nearCtx, 20)[.zl]!.minY - atCap) < 0.01, "\(name) \(id): shoulders went past the old maximum into the picture")
+        var farCtx = plain
+        farCtx.touchscreenRect = far
+        let beyond = layout(farCtx, 20)[.zl]!
+        check(!beyond.intersects(far), "\(name) \(id): shoulders cover the picture past the old maximum")
+        check(beyond.minY >= layout(plain, 1.5)[.zl]!.minY - 0.01, "\(name) \(id): shoulders went back up")
+    }
+}
+
 // MARK: Behaviour, through the engine, on the A12Z iPad
 
 let ipad = TargetDevice.all.first { $0.name.contains("A12Z") }!
@@ -642,6 +731,37 @@ do {
     let tall = PadScreenGeometry.aspectFit(16.0 / 9.0, in: CGRect(x: 10, y: 0, width: 1600, height: 450))
     check(abs(tall.height - 450) < 0.01 && abs(tall.width - 800) < 0.01 && abs(tall.midX - 810) < 0.01,
           "aspectFit pillarboxes in a wide rect, got \(tall)")
+}
+
+// MARK: Shoulder travel uses the whole room, both ways round
+
+for (name, size, insets) in [
+    ("iPad landscape", CGSize(width: 1366, height: 1024), Insets(top: 24, bottom: 20)),
+    ("iPad portrait", CGSize(width: 1024, height: 1366), Insets(top: 24, bottom: 20)),
+    ("iPhone landscape", CGSize(width: 932, height: 430), Insets(left: 59, bottom: 21, right: 59)),
+    ("iPhone portrait", CGSize(width: 430, height: 932), Insets(top: 59, bottom: 34)),
+] {
+    for id in ["zone", "adaptive"] {
+        let ctx = LayoutContext(size: size, safeInsets: insets)
+        let limit = GamePadArrangement.maxShoulderDrop(ctx)
+        var home = ctx
+        home.shoulderOffset = 0
+        let homeScheme = SchemeCatalog.make(id) as! ControlScheme
+        homeScheme.layout(home)
+        var far = ctx
+        far.shoulderOffset = limit
+        let farScheme = SchemeCatalog.make(id) as! ControlScheme
+        farScheme.layout(far)
+        var over = ctx
+        over.shoulderOffset = limit + 0.5
+        let overScheme = SchemeCatalog.make(id) as! ControlScheme
+        overScheme.layout(over)
+        let moved = { (s: ControlScheme) in shoulderRects(s)[.zl]!.minY - shoulderRects(homeScheme)[.zl]!.minY }
+        let u = shoulderRects(farScheme)[.zl]!.width / 1.9
+        check(LayoutCheck.problems(farScheme.controls, in: ctx.safeBounds).isEmpty, "\(name) \(id): max shoulder drop leaves a problem")
+        check(abs(moved(farScheme) - limit * u) < u * 0.1 + 1, "\(name) \(id): the slider maximum \(limit) is not reached (\(moved(farScheme) / u))")
+        check(moved(overScheme) <= moved(farScheme) + 1, "\(name) \(id): the shoulders move past the slider maximum")
+    }
 }
 
 print("\(passes) passed, \(failures) failed")
