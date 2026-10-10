@@ -317,6 +317,7 @@ struct TouchLabPadOverlay: View {
                 syncGamepadSize()
             }
             .onChange(of: screens) { _ in syncGamepadSize() }
+            .onChange(of: enabled) { _ in syncGamepadSize() }
     }
 
     private var revision: Int {
@@ -331,7 +332,9 @@ struct TouchLabPadOverlay: View {
     }
 
     private func syncGamepadSize() {
-        CemuBridgePadOutput.shared.gamepadViewSize = screens.screens.touchscreenRect?.size ?? .zero
+        if let size = screens.screens.touchscreenRect?.size, size.width > 0, size.height > 0 {
+            CemuBridgePadOutput.shared.gamepadViewSize = size
+        }
     }
 
     private func makeScheme(_ id: String) -> TouchScheme {
