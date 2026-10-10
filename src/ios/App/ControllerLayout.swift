@@ -97,8 +97,8 @@ enum ControllerLayoutSettings {
 
     /// How far the whole shoulder cluster (L, R, ZL, ZR) moves up or down, in button widths
     /// so it follows the size slider: positive is down, negative is up, zero is where the
-    /// layout puts them. A hand-size setting for iPad only - an iPhone has no spare height
-    /// to move them in, so there the stored value is never read (see `effectiveShoulderOffset`).
+    /// layout puts them. A hand-size setting, limited at draw time to the room the
+    /// device has (see `shoulderRange`).
     /// MuffinEMU's own pad and the TouchLab styles with fixed shoulders (Zone, Adaptive) read
     /// the same key. Those TouchLab styles start with the shoulders against the top edge, so
     /// for them only the downward half does anything.
@@ -106,8 +106,56 @@ enum ControllerLayoutSettings {
     static let defaultShoulderOffset: Double = 0
     static let minShoulderOffset: Double = -4.0
     static let maxShoulderOffset: Double = 1.5
-    /// Quarter-button steps, like the stick spacing, so the slider lands back on exactly zero.
-    static let shoulderOffsetStep: Double = 0.25
+    /// Twentieths of a button, so the slider lands back on exactly zero and every saved quarter-button
+    /// value (the old steps) is on the grid.
+    static let shoulderOffsetStep: Double = 0.05
+
+    /// The same setting while the pad is taller than it is wide (an iPad held upright). The
+    /// landscape value is on `shoulderOffsetKey` unchanged. Until this key has been written,
+    /// upright reads that shared value too, exactly as it did before the two were split.
+    static let shoulderOffsetPortraitKey = "muffin.controls.shoulderOffset.portrait"
+
+    /// Whether a container is taller than it is wide.
+    static func isUpright(_ size: CGSize) -> Bool { size.height > size.width }
+
+    /// How far the shoulders can move in each direction on this container, in button widths:
+    /// the limits the pad applies when it draws them (the top edge, and just above the d-pad /
+    /// stick in the same half), taken at the pad's resting place and size. Never narrower than
+    /// the range the slider and the clamp have always had, so every saved value draws where
+    /// it always did and only values beyond the old limits are new. Falls back to the old range
+    /// whenever anything about the container or the maths is not a usable number.
+    static func shoulderRange(in size: CGSize) -> ClosedRange<Double> {
+        let fallback = minShoulderOffset...maxShoulderOffset
+        guard size.width.isFinite, size.height.isFinite, size.width > 0, size.height > 0 else { return fallback }
+        let defaults = UserDefaults.standard
+        let scale = defaults.object(forKey: scaleKey) as? Double ?? defaultScale
+        guard scale.isFinite else { return fallback }
+        let phoneUpright = UIDevice.current.userInterfaceIdiom == .phone && isUpright(size)
+        let unit = phoneUpright
+            ? ControllerGeometry.Portrait.diameter(in: size, joystick: defaults.bool(forKey: joystickKey)) * CGFloat(min(scale, 1))
+            : ControllerGeometry.automaticDiameter(in: size) * CGFloat(scale)
+        guard unit.isFinite, unit > 0 else { return fallback }
+        let fromBottom = phoneUpright ? ControllerGeometry.Portrait.centreFromBottom : ControllerGeometry.centreFromBottom
+        let controls = phoneUpright ? ControllerGeometry.Portrait.cluster(ControllerGeometry.leftCluster) : ControllerGeometry.leftCluster
+        let wide = -1000.0...1000.0
+        func reach(_ request: Double) -> Double {
+            Double(ControllerGeometry.shoulderShift(offset: request, centreY: size.height - fromBottom * unit,
+                                                    containerHeight: size.height, unit: unit,
+                                                    controls: controls, range: wide))
+        }
+        let upReach = reach(-1000), downReach = reach(1000)
+        guard upReach.isFinite, downReach.isFinite else { return fallback }
+        let up = (upReach / shoulderOffsetStep).rounded(.up) * shoulderOffsetStep
+        let down = (downReach / shoulderOffsetStep).rounded(.down) * shoulderOffsetStep
+        guard up.isFinite, down.isFinite else { return fallback }
+        return min(up, minShoulderOffset)...max(down, maxShoulderOffset)
+    }
+
+    /// The slider's range for a container this size. Always contains the range it had before.
+    static func shoulderOffsetRange(touchLab: Bool, in size: CGSize) -> ClosedRange<Double> {
+        if touchLab { return defaultShoulderOffset...TouchLabSettings.maxShoulderDrop(in: size) }
+        return shoulderRange(in: size)
+    }
 
     /// The slider's range: the TouchLab styles can only move the shoulders down from the
     /// top edge, so their slider starts at the default instead of offering a dead half.
@@ -120,17 +168,15 @@ enum ControllerLayoutSettings {
         abs(value) < 0.01 ? "default" : (value < 0 ? "higher" : "lower")
     }
 
-    /// Whether this device gets the shoulder slider at all: iPad only.
-    static var supportsShoulderOffset: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad
-    }
+    /// Every device gets the shoulder slider.
+    static var supportsShoulderOffset: Bool { true }
 
-    /// The stored shoulder offset as the layouts should see it: the stored value on iPad,
-    /// always zero on iPhone, so a value that arrives some other way (an iCloud-synced
-    /// default, a backup restored from an iPad) can't move an iPhone's shoulders.
-    static func effectiveShoulderOffset(_ stored: Double) -> Double {
-        supportsShoulderOffset ? stored : defaultShoulderOffset
-    }
+    /// An iPhone keeps its own copies of the shoulder setting (below), so a value that arrives
+    /// some other way (an iCloud-synced default, a backup restored from an iPad) still can't
+    /// move an iPhone's shoulders: only a value set on that phone is ever read there.
+    static let shoulderOffsetPhoneKey = "muffin.controls.shoulderOffset.phone"
+    static let shoulderOffsetPhonePortraitKey = "muffin.controls.shoulderOffset.phone.portrait"
+    static var usesPadShoulderKeys: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     /// The key a half's saved move is stored under while the phone is held upright. Separate
     /// from the landscape one: the two layouts have different room, so a drag made in one
@@ -142,7 +188,7 @@ enum ControllerLayoutSettings {
     /// that is the control scheme, not the layout.
     static func reset() {
         let defaults = UserDefaults.standard
-        for key in [scaleKey, opacityKey, stickSpacingKey, shoulderOffsetKey, rightStickOffsetXKey, rightStickOffsetYKey,
+        for key in [scaleKey, opacityKey, stickSpacingKey, shoulderOffsetKey, shoulderOffsetPhoneKey, rightStickOffsetXKey, rightStickOffsetYKey,
                     leftStickOffsetXKey, leftStickOffsetYKey,
                     leftOffsetXKey, leftOffsetYKey,
                     rightOffsetXKey, rightOffsetYKey] {
@@ -439,9 +485,9 @@ enum ControllerGeometry {
     /// The shift is applied to where each shoulder is POSITIONED, not by padding or offsetting
     /// the control's view, so its hit area moves with it (see muffin-pad-hit-testing-trap).
     static func shoulderShift(offset: Double, centreY: CGFloat, containerHeight: CGFloat, unit: CGFloat,
-                              controls: [Control], topInset: CGFloat = 0) -> CGFloat {
-        let requested = CGFloat(min(max(offset, ControllerLayoutSettings.minShoulderOffset),
-                                    ControllerLayoutSettings.maxShoulderOffset))
+                              controls: [Control], topInset: CGFloat = 0,
+                              range: ClosedRange<Double> = ControllerLayoutSettings.minShoulderOffset...ControllerLayoutSettings.maxShoulderOffset) -> CGFloat {
+        let requested = CGFloat(min(max(offset, range.lowerBound), range.upperBound))
         guard requested != 0, unit > 0 else { return 0 }
         let shoulders = controls.filter { $0.style == .shoulder }
         guard !shoulders.isEmpty else { return 0 }
@@ -542,5 +588,104 @@ enum ControllerGeometry {
         }
 
         return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+}
+
+/// The size of the window the pad is drawn in, kept current across rotation so the settings
+/// sliders can offer the range for the orientation the iPad is in right now.
+@MainActor
+final class ControlsWindowSize: ObservableObject {
+    static let shared = ControlsWindowSize()
+    @Published private(set) var size: CGSize = ControlsWindowSize.measure()
+
+    private init() {
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        for name in [UIDevice.orientationDidChangeNotification, UIApplication.didBecomeActiveNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                // The window's bounds settle a moment after the notification.
+                for delay in [0.05, 0.5] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) { self?.refresh() }
+                }
+            }
+        }
+    }
+
+    func refresh() {
+        let now = Self.measure()
+        if now != size { size = now }
+    }
+
+    private static func measure() -> CGSize {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        let window = scene?.windows.first { $0.isKeyWindow } ?? scene?.windows.first
+        return window?.bounds.size ?? UIScreen.main.bounds.size
+    }
+
+    /// The size of the pad itself while one is on screen, reported by the pad. The pad and the
+    /// settings sliders both pick the orientation's stored value from this one size.
+    @Published private(set) var padSize: CGSize?
+
+    func reportPad(_ size: CGSize?) {
+        if padSize != size { padSize = size }
+    }
+
+    /// The size the orientation is taken from: the pad's own, else the window's.
+    var effectiveSize: CGSize { padSize ?? size }
+}
+
+extension View {
+    /// Reports this view's size as the pad's, for as long as it is on screen. A background, so
+    /// it takes no part in the layout.
+    @MainActor
+    func reportsPadSize(_ onSize: @escaping (CGSize) -> Void = { _ in }) -> some View {
+        background(
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { ControlsWindowSize.shared.reportPad(proxy.size); onSize(proxy.size) }
+                    .onChange(of: proxy.size) { newSize in ControlsWindowSize.shared.reportPad(newSize); onSize(newSize) }
+            }
+            .allowsHitTesting(false)
+        )
+        .onDisappear { ControlsWindowSize.shared.reportPad(nil) }
+    }
+}
+
+/// The shoulder-height setting as stored, whichever device and way up.
+///
+/// iPad: landscape is `shoulderOffsetKey`, as it always was. Upright reads the same shared
+/// value until the upright key has been written (the first time the slider is moved upright),
+/// so nobody's shoulders move when the two are split. iPhone: its own keys, never the iPad's.
+struct ShoulderOffsetStorage: DynamicProperty {
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetKey) private var padLandscape = ControllerLayoutSettings.defaultShoulderOffset
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetPortraitKey) private var padPortrait = ControllerLayoutSettings.defaultShoulderOffset
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetPhoneKey) private var phoneLandscape = ControllerLayoutSettings.defaultShoulderOffset
+    @AppStorage(ControllerLayoutSettings.shoulderOffsetPhonePortraitKey) private var phonePortrait = ControllerLayoutSettings.defaultShoulderOffset
+
+    func value(upright: Bool) -> Double {
+        if ControllerLayoutSettings.usesPadShoulderKeys {
+            guard upright else { return padLandscape }
+            let written = UserDefaults.standard.object(forKey: ControllerLayoutSettings.shoulderOffsetPortraitKey) != nil
+            return written ? padPortrait : padLandscape
+        }
+        return upright ? phonePortrait : phoneLandscape
+    }
+
+    func set(_ newValue: Double, upright: Bool) {
+        if ControllerLayoutSettings.usesPadShoulderKeys {
+            if upright { padPortrait = newValue } else { padLandscape = newValue }
+        } else {
+            if upright { phonePortrait = newValue } else { phoneLandscape = newValue }
+        }
+    }
+
+    func binding(upright: Bool) -> Binding<Double> {
+        Binding(get: { value(upright: upright) }, set: { set($0, upright: upright) })
+    }
+
+    func reset() {
+        let zero = ControllerLayoutSettings.defaultShoulderOffset
+        set(zero, upright: false)
+        set(zero, upright: true)
     }
 }
