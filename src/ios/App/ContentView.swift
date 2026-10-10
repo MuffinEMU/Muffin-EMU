@@ -1001,27 +1001,31 @@ struct GameBrowserView: View {
             }
     }
 
+    private func dismissBinding(_ isPresented: Bool, clear: @escaping () -> Void) -> Binding<Bool> {
+        Binding<Bool>(get: { isPresented }, set: { if !$0 { clear() } })
+    }
+
     private func withAlerts<Content: View>(_ content: Content) -> some View {
         content
             .modifier(AudioRecordingNoticeModifier())
-            .alert("Added", isPresented: Binding(get: { dlcUpdateSuccessMessage != nil }, set: { if !$0 { dlcUpdateSuccessMessage = nil } }), presenting: dlcUpdateSuccessMessage) { _ in
+            .alert("Added", isPresented: dismissBinding(dlcUpdateSuccessMessage != nil, clear: { dlcUpdateSuccessMessage = nil }), presenting: dlcUpdateSuccessMessage) { _ in
                 Button("OK") { dlcUpdateSuccessMessage = nil }
             } message: { message in
                 Text(message)
             }
-            .alert("Couldn't add that game", isPresented: Binding(get: { romImportErrorMessage != nil }, set: { if !$0 { romImportErrorMessage = nil } }), presenting: romImportErrorMessage) { _ in
+            .alert("Couldn't add that game", isPresented: dismissBinding(romImportErrorMessage != nil, clear: { romImportErrorMessage = nil }), presenting: romImportErrorMessage) { _ in
                 Button("OK") { romImportErrorMessage = nil }
             } message: { message in
                 Text(message)
             }
-            .alert("Couldn't import", isPresented: Binding(get: { dlcImportErrorMessage != nil }, set: { if !$0 { dlcImportErrorMessage = nil } }), presenting: dlcImportErrorMessage) { _ in
+            .alert("Couldn't import", isPresented: dismissBinding(dlcImportErrorMessage != nil, clear: { dlcImportErrorMessage = nil }), presenting: dlcImportErrorMessage) { _ in
                 Button("OK") { dlcImportErrorMessage = nil }
             } message: { message in
                 Text(message)
             }
             .alert(
                 "No automatic match",
-                isPresented: Binding(get: { pendingManualMatchConfirmation != nil }, set: { if !$0 { pendingManualMatchConfirmation = nil } }),
+                isPresented: dismissBinding(pendingManualMatchConfirmation != nil, clear: { pendingManualMatchConfirmation = nil }),
                 presenting: pendingManualMatchConfirmation
             ) { pending in
                 Button("Add to \"\(pending.game.title)\"") {
@@ -1034,7 +1038,7 @@ struct GameBrowserView: View {
             }
             .confirmationDialog(
                 "Remove content?",
-                isPresented: Binding(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
+                isPresented: dismissBinding(pendingRemoval != nil, clear: { pendingRemoval = nil }),
                 titleVisibility: .visible,
                 presenting: pendingRemoval
             ) { pending in
@@ -1063,7 +1067,7 @@ struct GameBrowserView: View {
             }
             .confirmationDialog(
                 pendingGameRemoval?.removeConfirmTitle ?? "Remove this game?",
-                isPresented: Binding(get: { pendingGameRemoval != nil }, set: { if !$0 { pendingGameRemoval = nil } }),
+                isPresented: dismissBinding(pendingGameRemoval != nil, clear: { pendingGameRemoval = nil }),
                 titleVisibility: .visible,
                 presenting: pendingGameRemoval
             ) { pending in
@@ -1074,7 +1078,7 @@ struct GameBrowserView: View {
             } message: { pending in
                 Text(pending.removeConfirmMessage)
             }
-            .alert("Connect the drive to play", isPresented: Binding(get: { gameManager.launchBlockedMessage != nil }, set: { if !$0 { gameManager.launchBlockedMessage = nil } }), presenting: gameManager.launchBlockedMessage) { _ in
+            .alert("Connect the drive to play", isPresented: dismissBinding(gameManager.launchBlockedMessage != nil, clear: { gameManager.launchBlockedMessage = nil }), presenting: gameManager.launchBlockedMessage) { _ in
                 Button("Check again") {
                     gameManager.launchBlockedMessage = nil
                     Task { await gameManager.loadGames(showSpinner: false) }
@@ -1085,7 +1089,7 @@ struct GameBrowserView: View {
             }
             .confirmationDialog(
                 "Replace existing file?",
-                isPresented: Binding(get: { pendingOverwriteConfirmation != nil }, set: { if !$0, let pending = pendingOverwriteConfirmation { pendingOverwriteConfirmation = nil; pending.resume(false) } }),
+                isPresented: dismissBinding(pendingOverwriteConfirmation != nil, clear: { if let pending = pendingOverwriteConfirmation { pendingOverwriteConfirmation = nil; pending.resume(false) } }),
                 titleVisibility: .visible,
                 presenting: pendingOverwriteConfirmation
             ) { pending in
