@@ -64,6 +64,16 @@ enum TouchLabSettings {
         (RacingPad.ItemPlacement.abovePedals.rawValue, "Above pedals"),
     ]
 
+    /// "Showcase style": the polished look on Zone, Float, Adaptive, Frame, Racing and Arc. Off keeps the
+    /// flat look 9.5 had. Decided once, at first launch of this version: off for a player who had already
+    /// chosen a TouchLab style (so nothing changes under them), on for everyone else.
+    static let showcaseStyleKey = "muffin.touchlab.showcaseStyle"
+    static func registerShowcaseStyleDefault() {
+        let d = UserDefaults.standard
+        guard d.object(forKey: showcaseStyleKey) == nil else { return }
+        d.set(!isTouchLab(d.string(forKey: schemeKey) ?? ""), forKey: showcaseStyleKey)
+    }
+
     /// Showcase's glass look.
     static let showcaseGlassKey = "muffin.touchlab.showcase.glass"
 
@@ -377,6 +387,7 @@ struct TouchLabPadOverlay: View {
     @AppStorage(TouchLabSettings.racingItemPlacementKey) private var racingItemPlacement = TouchLabSettings.defaultRacingItemPlacement
     @AppStorage(TouchLabSettings.racingLargeItemKey) private var racingLargeItem = false
     @AppStorage(TouchLabSettings.showcaseGlassKey) private var showcaseGlass = false
+    @AppStorage(TouchLabSettings.showcaseStyleKey) private var showcaseStyle = true
     @AppStorage(TouchLabSettings.arcOptionsKey) private var arcOptionsRaw = "{}"
     @ObservedObject private var arcLive = ArcLive.shared
 
@@ -396,7 +407,8 @@ struct TouchLabPadOverlay: View {
                                                    stickSpacing: stickSpacing,
                                                    shoulderOffset: shoulderStore.value(in: padSize, touchLab: true),
                                                    followsThumb: stickFollow, relativeCentre: stickRelative,
-                                                   colourPreset: TouchLabSettings.classicColourPreset(classicColour)),
+                                                   colourPreset: TouchLabSettings.classicColourPreset(classicColour),
+                                                   showcaseStyle: showcaseStyle),
                  touchscreenRect: screens.screens.touchscreenRect,
                  videoRects: screens.screens.videoRects,
                  // Rebuild the scheme only when something that shapes it changes - never on

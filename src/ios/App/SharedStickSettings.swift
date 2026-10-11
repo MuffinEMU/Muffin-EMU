@@ -52,7 +52,7 @@ enum SharedStick {
     static func padSettings(scale: Double, opacity: Double, haptics: Bool, deadzone: Double, curve: Double,
                             gateRaw: String, stickSpacing: Double, shoulderOffset: Double,
                             followsThumb: Bool = false, relativeCentre: Bool = false,
-                            colourPreset: ShowcaseColourPreset? = nil,
+                            colourPreset: ShowcaseColourPreset? = nil, showcaseStyle: Bool = true,
                             defaults: UserDefaults = .standard) -> PadSettings {
         var stick = tuning(deadzone: deadzone, curve: curve, gateRaw: gateRaw)
         stick.followsThumb = followsThumb
@@ -62,6 +62,6 @@ enum SharedStick {
                                                    right: calibration(left: false, defaults: defaults)),
                     scale: CGFloat(scale), opacity: CGFloat(opacity), haptics: haptics,
                     stickSpacing: CGFloat(stickSpacing), shoulderOffset: CGFloat(shoulderOffset),
-                    colourPreset: colourPreset)
+                    colourPreset: colourPreset, showcaseStyle: showcaseStyle)
     }
 }

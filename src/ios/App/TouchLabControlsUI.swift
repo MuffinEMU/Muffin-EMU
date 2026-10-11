@@ -39,6 +39,7 @@ struct TouchLabStyleSettingsRows: View {
     @AppStorage(TouchLabSettings.showcaseColourKey) private var showcaseColour = TouchLabSettings.defaultShowcaseColour
     @AppStorage(TouchLabSettings.showcaseDisplayKey) private var showcaseDisplay = TouchLabSettings.defaultShowcaseDisplay
     @AppStorage(TouchLabSettings.showcaseGlassKey) private var showcaseGlass = false
+    @AppStorage(TouchLabSettings.showcaseStyleKey) private var showcaseStyle = true
     @AppStorage(TouchLabSettings.classicColourKey) private var classicColour = TouchLabSettings.defaultClassicColour
     @AppStorage(TouchLabSettings.racingItemPlacementKey) private var racingItemPlacement = TouchLabSettings.defaultRacingItemPlacement
     @AppStorage(TouchLabSettings.racingLargeItemKey) private var racingLargeItem = false
@@ -90,7 +91,20 @@ struct TouchLabStyleSettingsRows: View {
                     .pickerStyle(.segmented)
                 }
 
-                if TouchLabSettings.usesClassicLook(scheme) {
+                if scheme != TouchLabSettings.showcaseStyleID {
+                    Toggle(isOn: $showcaseStyle) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Showcase style")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("The polished look on every control style: hairline outlines, soft shadows, a lit rim and buttons that sink when pressed. Off keeps the flat look.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(MuffinTheme.pixelBlue)
+                }
+
+                if TouchLabSettings.usesClassicLook(scheme) && showcaseStyle {
                     Picker("Colour", selection: $classicColour) {
                         ForEach(TouchLabSettings.classicColourOptions, id: \.value) { option in
                             Text(option.title).tag(option.value)
