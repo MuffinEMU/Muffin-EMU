@@ -380,13 +380,11 @@ struct ArcSettingsRows: View {
     var body: some View {
         let locked = Binding<Bool>(get: { arc.isLocked }, set: { arc.setLocked($0) })
         let swapHands = Binding<Bool>(
-            get: { ArcOptions.decode(optionsRaw).swapHands },
-            set: { var o = ArcOptions.decode(optionsRaw); o.swapHands = $0; optionsRaw = ArcOptions.encode(o) })
+            get: { TouchLabSettings.arcSwapHands(optionsRaw) },
+            set: { optionsRaw = TouchLabSettings.arcOptions(optionsRaw, swapHands: $0) })
         let fadeWhenIdle = Binding<Bool>(
-            get: { ArcOptions.decode(optionsRaw).idleFadeSeconds != nil },
-            set: { var o = ArcOptions.decode(optionsRaw)
-                   o.idleFadeSeconds = $0 ? TouchLabSettings.arcIdleFadeSeconds : nil
-                   optionsRaw = ArcOptions.encode(o) })
+            get: { TouchLabSettings.arcFadesWhenIdle(optionsRaw) },
+            set: { optionsRaw = TouchLabSettings.arcOptions(optionsRaw, fadesWhenIdle: $0) })
 
         Toggle(isOn: locked) {
             VStack(alignment: .leading, spacing: 2) {

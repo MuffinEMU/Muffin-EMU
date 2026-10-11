@@ -79,6 +79,18 @@ enum TouchLabSettings {
 
     /// Arc's own options (ArcOptions JSON): swap hands, idle fade and the rest.
     static let arcOptionsKey = "muffin.touchlab.arc.options"
+    /// Arc's options as the Settings rows edit them, on the stored JSON, so those files need not import the package.
+    static func arcSwapHands(_ raw: String) -> Bool { ArcOptions.decode(raw).swapHands }
+    static func arcFadesWhenIdle(_ raw: String) -> Bool { ArcOptions.decode(raw).idleFadeSeconds != nil }
+    static func arcOptions(_ raw: String, swapHands: Bool) -> String {
+        var o = ArcOptions.decode(raw); o.swapHands = swapHands; return ArcOptions.encode(o)
+    }
+    static func arcOptions(_ raw: String, fadesWhenIdle: Bool) -> String {
+        var o = ArcOptions.decode(raw)
+        o.idleFadeSeconds = fadesWhenIdle ? arcIdleFadeSeconds : nil
+        return ArcOptions.encode(o)
+    }
+
     /// Seconds of no touch before Arc fades, when "Fade when idle" is switched on.
     static let arcIdleFadeSeconds = 8.0
 
