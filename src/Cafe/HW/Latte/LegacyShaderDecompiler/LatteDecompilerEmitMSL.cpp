@@ -3942,7 +3942,16 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 		shaderContext->analyzer.useSSBOForStreamout ||
 		(shaderContext->fetchShader && shaderContext->fetchShader->mtlFetchVertexManually);
 
-	StringBuf* src = new StringBuf(1024*1024*12); // reserve 12MB for generated source (we resize-to-fit at the end)
+	StringBuf* src = new StringBuf(1024*1024*2); // initial reserve for generated source (grows on demand, resized-to-fit at the end)
+	if (src->isOutOfMemory())
+	{
+		// allocation can fail under memory pressure. Fail this shader instead of writing through a null buffer
+		cemuLog_log(LogType::Force, "Metal: out of memory while allocating shader source buffer (shader {:016x})", shaderContext->shaderBaseHash);
+		delete src;
+		shaderContext->shaderSource = nullptr;
+		shader->hasError = true;
+		return;
+	}
 	shaderContext->shaderSource = src;
 
 	// debug info
@@ -4516,6 +4525,14 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 
 	// end of shader main
 	src->add("}" _CRLF);
+	if (src->isOutOfMemory())
+	{
+		cemuLog_log(LogType::Force, "Metal: out of memory while generating shader source (shader {:016x})", shaderContext->shaderBaseHash);
+		delete src;
+		shaderContext->shaderSource = nullptr;
+		shader->hasError = true;
+		return;
+	}
 	src->shrink_to_fit();
 	shader->strBuf_shaderSource = src;
 }
