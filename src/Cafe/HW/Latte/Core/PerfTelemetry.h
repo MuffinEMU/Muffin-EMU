@@ -99,6 +99,15 @@ namespace PerfTelemetry
 		return s_summary;
 	}
 
+	// True while the app is in the background. iOS refuses GPU work from a backgrounded app (the command
+	// buffer fails with "not permitted") and a layer that is not on screen hands out no drawables, so the
+	// renderer neither waits on a drawable nor adds presents while this is set.
+	inline std::atomic<bool>& AppInBackground()
+	{
+		static std::atomic<bool> s_background{false};
+		return s_background;
+	}
+
 	// The per-draw breadcrumb ring in MetalRenderer is forensic data for a GPU fault; this lets the
 	// bridge turn the recording off. On by default.
 	inline std::atomic<bool>& DrawBreadcrumbsEnabled()

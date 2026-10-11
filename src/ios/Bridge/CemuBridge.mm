@@ -1907,11 +1907,13 @@ namespace {
             return;
 
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:nil
-            usingBlock:^(NSNotification*) { g_appIsActive.store(false); }];
+            usingBlock:^(NSNotification*) { g_appIsActive.store(false); PerfTelemetry::AppInBackground().store(true); }];
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil
             usingBlock:^(NSNotification*) { g_appIsActive.store(false); }];
         [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil
-            usingBlock:^(NSNotification*) { g_appIsActive.store(true); }];
+            usingBlock:^(NSNotification*) { g_appIsActive.store(true); PerfTelemetry::AppInBackground().store(false); }];
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillEnterForegroundNotification object:nil queue:nil
+            usingBlock:^(NSNotification*) { PerfTelemetry::AppInBackground().store(false); }];
 
         std::thread([] {
             StallDetect::Detector detector;

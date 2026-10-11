@@ -4088,6 +4088,9 @@ bool MetalRenderer::AcquireDrawable(bool mainWindow)
         return false;
 
 #if BOOST_OS_IOS
+    // Backgrounded: nothing can be shown, and waiting for a drawable only stalls the GPU thread.
+    if (!layer.GetDrawable() && PerfTelemetry::AppInBackground().load(std::memory_order_relaxed))
+        return false;
     const auto outputBit = mainWindow ? 1u : 2u;
     if (!layer.GetDrawable() && !(WindowSystem::GetWindowInfo().visible_outputs.load() & outputBit))
         return false;
