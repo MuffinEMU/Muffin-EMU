@@ -64,8 +64,10 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     // an emulator has no reliable notification for "this range did not really change".
     // memcmp over a range already in a mapped device buffer is far cheaper than the
     // re-upload it avoids.
-    if (snapshot.allocation && snapshot.firstByte <= firstByte && snapshot.endByte >= size &&
-        std::memcmp(snapshot.allocation->memPtr + firstByte, source + firstByte, copySize) == 0)
+    const bool canCompare = snapshot.allocation && snapshot.firstByte <= firstByte && snapshot.endByte >= size;
+    if (canCompare)
+        PerfTelemetry::Get().gpuSnapshotCompareBytes.fetch_add(copySize, std::memory_order_relaxed);
+    if (canCompare && std::memcmp(snapshot.allocation->memPtr + firstByte, source + firstByte, copySize) == 0)
     {
         m_mtlr->GetPerformanceMonitor().m_snapshotReuses++;
         return snapshot.allocation;
@@ -84,6 +86,7 @@ MetalSynchronizedHeapAllocator::AllocatorReservation* MetalMemoryManager::GetCac
     std::memcpy(snapshot.allocation->memPtr + firstByte, source + firstByte, copySize);
     m_snapshotAllocator.FlushReservation(snapshot.allocation);
     m_mtlr->GetPerformanceMonitor().m_snapshotBytes += copySize;
+    PerfTelemetry::Get().gpuSnapshotCopyBytes.fetch_add(copySize, std::memory_order_relaxed);
     return snapshot.allocation;
 }
 

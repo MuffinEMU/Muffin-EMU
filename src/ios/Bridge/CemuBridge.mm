@@ -1272,6 +1272,13 @@ void ios_apply_cpu_mode(bool announce = false)
 
     if (!g_recompilerRequested.load() || !debugged)
     {
+        if (announce)
+        {
+            if (!g_recompilerRequested.load())
+                cemuLog_log(LogType::Force, "Recompiler not used: the recompiler (JIT) setting is off");
+            else
+                cemuLog_log(LogType::Force, "Recompiler not used: the recompiler is on in Settings but no JIT enabler is attached to this process (cs_flags 0x{:08x}, CS_DEBUGGED not set)", csFlags);
+        }
         // Without CS_DEBUGGED the interpreter is the only option, not a preference: the
         // kernel kills the process the moment it runs generated code, and an explicit
         // recompiler mode skips the debugger check the core applies to Auto.
@@ -1450,6 +1457,11 @@ namespace {
         uint64_t textureDecodeNs = 0;
         uint32_t jitBlocks = 0, jitInvalidations = 0, jitArenaReleases = 0, jitArenaAllocFails = 0;
         uint64_t jitCompileNs = 0;
+        // GPU thread breakdown (see PerfTelemetry::Counters)
+        uint32_t gpuDraws = 0, gpuTexHashes = 0;
+        uint64_t gpuBeginNs = 0, gpuTexUpdateNs = 0, gpuTexHashNs = 0, gpuTexHashBytes = 0;
+        uint64_t gpuExecNs = 0, gpuIndexNs = 0, gpuFlushNs = 0, gpuBufferNs = 0, gpuSnapshotCompareBytes = 0, gpuSnapshotCopyBytes = 0;
+        uint64_t gpuPassNs = 0, gpuPipelineNs = 0, gpuBindNs = 0, gpuEndNs = 0;
     };
 
     PerfSnapshot ios_perf_take()
@@ -1479,6 +1491,22 @@ namespace {
         s.jitInvalidations = c.jitInvalidations.load(std::memory_order_relaxed);
         s.jitArenaReleases = c.jitArenaReleases.load(std::memory_order_relaxed);
         s.jitArenaAllocFails = c.jitArenaAllocFails.load(std::memory_order_relaxed);
+        s.gpuDraws = c.gpuDraws.load(std::memory_order_relaxed);
+        s.gpuTexHashes = c.gpuTexHashes.load(std::memory_order_relaxed);
+        s.gpuBeginNs = c.gpuBeginNs.load(std::memory_order_relaxed);
+        s.gpuTexUpdateNs = c.gpuTexUpdateNs.load(std::memory_order_relaxed);
+        s.gpuTexHashNs = c.gpuTexHashNs.load(std::memory_order_relaxed);
+        s.gpuTexHashBytes = c.gpuTexHashBytes.load(std::memory_order_relaxed);
+        s.gpuExecNs = c.gpuExecNs.load(std::memory_order_relaxed);
+        s.gpuIndexNs = c.gpuIndexNs.load(std::memory_order_relaxed);
+        s.gpuFlushNs = c.gpuFlushNs.load(std::memory_order_relaxed);
+        s.gpuBufferNs = c.gpuBufferNs.load(std::memory_order_relaxed);
+        s.gpuSnapshotCompareBytes = c.gpuSnapshotCompareBytes.load(std::memory_order_relaxed);
+        s.gpuSnapshotCopyBytes = c.gpuSnapshotCopyBytes.load(std::memory_order_relaxed);
+        s.gpuPassNs = c.gpuPassNs.load(std::memory_order_relaxed);
+        s.gpuPipelineNs = c.gpuPipelineNs.load(std::memory_order_relaxed);
+        s.gpuBindNs = c.gpuBindNs.load(std::memory_order_relaxed);
+        s.gpuEndNs = c.gpuEndNs.load(std::memory_order_relaxed);
         return s;
     }
 
@@ -1569,6 +1597,12 @@ namespace {
                 cemu_bridge_device_summary(), (uint32_t)hostThreads, GetConfig().async_compile.GetValue() ? "on" : "off",
                 (uint64_t)(PPCRecompiler_getJitArenaSize() / (1024 * 1024)));
         }
+        if (logHeader)
+        {
+            // Said once per title, next to the arena size, so a log that shows "arena 0 MB" also says why
+            std::string cpuDetail = getCpuModeDetail();
+            cemuLog_log(LogType::Force, "perf: cpu path {} | {}", g_cpuMode.load() == kCpuModeRecompiler ? "recompiler" : "interpreter", cpuDetail);
+        }
         cemuLog_log(LogType::Force,
             "perf {:.0f}s: fps host {:.1f} game {:.1f} vsync {:.1f} (speed {:.0f}%) | ppc thread run {:.0f}% wait {:.0f}% | "
             "gpu thread busy {:.0f}% idle {:.0f}% sync {:.0f}% (drawable {:.0f} ms) | metal gpu {:.1f} ms/frame ({:.0f}% busy, {:.1f} cb/frame) | "
@@ -1582,9 +1616,34 @@ namespace {
             (uint64_t)(PPCRecompiler_getJitArenaUsed() / (1024 * 1024)), (uint64_t)(PPCRecompiler_getJitArenaSize() / (1024 * 1024)),
             ios_thermal_name(thermal), PerfTelemetry::BottleneckName(verdict));
 
-        char line[160];
-        snprintf(line, sizeof(line), "host %.1f game %.1f fps | ppc %.0f%% gpu thread %.0f%% metal %.1f ms | %s",
-            hostFps, guestFps, ppcRun * 100.0, gpuThreadBusy * 100.0, mtlMsPerFrame, PerfTelemetry::BottleneckName(verdict));
+        // Where the GPU thread's busy time went, per emulated frame. begin, execute and end/commit are
+        // disjoint; the indented parts are inside execute (textures and hashing inside begin). "other" is
+        // the busy time none of them covers (command decoding, register state, shader lookup outside a draw).
+        {
+            const double perFrame = frames > 0.0 ? 1.0 / (frames * 1e6) : 0.0;
+            auto ms = [&](uint64_t x, uint64_t y) { return (double)(x - y) * perFrame; };
+            const double busyMs = gpuThreadBusy * wallNs * perFrame;
+            const double beginMs = ms(b.gpuBeginNs, a.gpuBeginNs);
+            const double execMs = ms(b.gpuExecNs, a.gpuExecNs);
+            const double endMs = ms(b.gpuEndNs, a.gpuEndNs);
+            const double otherMs = std::max(0.0, busyMs - beginMs - execMs - endMs);
+            const uint32_t draws = b.gpuDraws - a.gpuDraws;
+            const double mbPerFrame = frames > 0.0 ? 1.0 / (frames * 1048576.0) : 0.0;
+            cemuLog_log(LogType::Force,
+                "perf gpu thread ms/frame {:.1f}: draws {:.0f}/frame | begin {:.1f} (textures {:.1f}, hashing {:.1f} = {} textures {:.1f} MB/frame) | "
+                "execute {:.1f} (index {:.1f}, flush queue {:.1f}, buffers {:.1f} [compared {:.1f} MB/frame, copied {:.1f} MB/frame], render pass {:.1f}, pipeline {:.1f}, resource bind {:.1f}) | "
+                "end/commit {:.1f} | other {:.1f}",
+                busyMs, frames > 0.0 ? draws / frames : 0.0, beginMs, ms(b.gpuTexUpdateNs, a.gpuTexUpdateNs), ms(b.gpuTexHashNs, a.gpuTexHashNs),
+                frames > 0.0 ? (uint32_t)((b.gpuTexHashes - a.gpuTexHashes) / frames) : 0u, (double)(b.gpuTexHashBytes - a.gpuTexHashBytes) * mbPerFrame,
+                execMs, ms(b.gpuIndexNs, a.gpuIndexNs), ms(b.gpuFlushNs, a.gpuFlushNs), ms(b.gpuBufferNs, a.gpuBufferNs),
+                (double)(b.gpuSnapshotCompareBytes - a.gpuSnapshotCompareBytes) * mbPerFrame, (double)(b.gpuSnapshotCopyBytes - a.gpuSnapshotCopyBytes) * mbPerFrame,
+                ms(b.gpuPassNs, a.gpuPassNs), ms(b.gpuPipelineNs, a.gpuPipelineNs), ms(b.gpuBindNs, a.gpuBindNs), endMs, otherMs);
+        }
+
+        char line[200];
+        snprintf(line, sizeof(line), "host %.1f game %.1f fps | ppc %.0f%% gpu thread %.0f%% metal %.1f ms | %s%s",
+            hostFps, guestFps, ppcRun * 100.0, gpuThreadBusy * 100.0, mtlMsPerFrame, PerfTelemetry::BottleneckName(verdict),
+            g_cpuMode.load() == kCpuModeRecompiler ? "" : (g_recompilerRequested.load() ? " | interpreter (no JIT enabler)" : " | interpreter (recompiler off)"));
         std::lock_guard<std::mutex> lock(g_perfLineMutex);
         g_perfLine = line;
     }

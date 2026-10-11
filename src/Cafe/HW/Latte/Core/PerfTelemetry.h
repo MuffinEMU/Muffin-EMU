@@ -44,6 +44,25 @@ namespace PerfTelemetry
 		std::atomic<uint32_t> textureDecodes{0};
 		std::atomic<uint64_t> textureDecodeNs{0};
 
+		// Latte (GPU) thread breakdown, wall nanoseconds on that thread. The first three are disjoint
+		// slices of a draw; the rest are parts of those slices (see ios_perf_log_window for the layout).
+		std::atomic<uint32_t> gpuDraws{0};          // draw calls handled
+		std::atomic<uint64_t> gpuBeginNs{0};        // draw_beginSequence: shaders, render target, textures
+		std::atomic<uint64_t> gpuTexUpdateNs{0};    //   of it: LatteTexture_updateTextures
+		std::atomic<uint64_t> gpuTexHashNs{0};      //     of that: texture change hashing
+		std::atomic<uint32_t> gpuTexHashes{0};      //     textures hashed
+		std::atomic<uint64_t> gpuTexHashBytes{0};   //     guest bytes covered by those textures
+		std::atomic<uint64_t> gpuExecNs{0};         // draw_execute, everything
+		std::atomic<uint64_t> gpuIndexNs{0};        //   index decode / conversion
+		std::atomic<uint64_t> gpuFlushNs{0};        //   guest cache-flush queue processing
+		std::atomic<uint64_t> gpuBufferNs{0};       //   vertex + uniform buffer binding and snapshots
+		std::atomic<uint64_t> gpuSnapshotCompareBytes{0}; // bytes memcmp'd against a snapshot
+		std::atomic<uint64_t> gpuSnapshotCopyBytes{0};    // bytes copied into a new snapshot
+		std::atomic<uint64_t> gpuPassNs{0};         //   render encoder / pass setup
+		std::atomic<uint64_t> gpuPipelineNs{0};     //   pipeline state lookup
+		std::atomic<uint64_t> gpuBindNs{0};         //   per-stage uniform, texture and sampler binding
+		std::atomic<uint64_t> gpuEndNs{0};          // draw_endSequence: readback checks, command buffer commit
+
 		// PPC recompiler
 		std::atomic<uint32_t> jitBlocks{0};
 		std::atomic<uint64_t> jitCompileNs{0};
