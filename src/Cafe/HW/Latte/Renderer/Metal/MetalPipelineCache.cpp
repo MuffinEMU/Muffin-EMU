@@ -988,6 +988,8 @@ void MetalPipelineCache::CloseBinaryArchives()
 	}
 }
 
+static const char* GetArchiveSkipReason(MTL::RenderPipelineDescriptor* desc);
+
 void MetalPipelineCache::QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc)
 {
 	if (!m_archiveWriteEnabled)
@@ -1020,7 +1022,7 @@ static const char* GetArchiveSkipReason(MTL::RenderPipelineDescriptor* desc)
 {
 	if (desc->fragmentFunction() == nullptr)
 		return "no fragment function";
-	if (!desc->isRasterizationEnabled())
+	if (!desc->rasterizationEnabled())
 		return "rasterization disabled";
 	return nullptr;
 }
