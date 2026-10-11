@@ -50,6 +50,10 @@ struct OnScreenControlsSection: View {
     private var useMeloControls = MeloControlsSetting.defaultValue
     @AppStorage(TouchLabSettings.schemeKey)
     private var touchLabScheme = TouchLabSettings.defaultScheme
+    @AppStorage(TouchLabSettings.stickFollowKey)
+    private var stickFollowsThumb = false
+    @AppStorage(TouchLabSettings.stickRelativeKey)
+    private var stickRelative = false
     @AppStorage(ControllerLayoutSettings.stickSpacingKey)
     private var stickSpacing = ControllerLayoutSettings.defaultStickSpacing
     private var shoulderStore = ShoulderOffsetStorage()
@@ -358,6 +362,30 @@ struct OnScreenControlsSection: View {
             Button(role: .destructive) { SharedStick.resetCalibration() } label: {
                 DestructiveSettingsLabel(title: "Reset stick calibration", systemImage: "arrow.uturn.backward")
             }
+        }
+
+        if usingTouchLab {
+            Toggle(isOn: $stickFollowsThumb) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Stick follows thumb")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("A thumb that slides past the ring takes the stick's base along, so turning back is as quick as turning out.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .tint(MuffinTheme.pixelBlue)
+
+            Toggle(isOn: $stickRelative) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Relative stick")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    Text("The stick's centre is wherever your thumb lands in its zone, so the first touch is never a push.")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .tint(MuffinTheme.pixelBlue)
         }
 
         if !usingTouchLab {
