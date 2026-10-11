@@ -126,7 +126,7 @@ struct OptimizedControlPanel: View {
 
             // Never narrower than the clamp the pad has always applied, so a saved value draws
             // where it always did; the physical limits inside shoulderShift still stop the buttons.
-            let shoulderDrop = shoulderStore.value(upright: ControllerLayoutSettings.isUpright(proxy.size))
+            let shoulderDrop = shoulderStore.value(in: proxy.size, touchLab: false)
             let shoulderLimit = ControllerLayoutSettings.shoulderRange(in: proxy.size)
             // How much of this view's top the bar covers, in this view's own coordinates.
             let topReserve = max(0, topInset - proxy.frame(in: .global).minY)

@@ -223,7 +223,7 @@ struct MuffinPadLayoutPanel: View {
     /// The shoulder setting for the orientation the pad is in now (kept apart per orientation),
     /// taken from the same size the pad itself uses.
     private var shoulderBinding: Binding<Double> {
-        shoulderStore.binding(upright: ControllerLayoutSettings.isUpright(windowSize.effectiveSize))
+        shoulderStore.binding(in: windowSize.effectiveSize, touchLab: false)
     }
     @AppStorage(ControllerLayoutSettings.joystickKey)
     private var joystickMode = ControllerLayoutSettings.defaultJoystick
@@ -271,11 +271,13 @@ struct MuffinPadLayoutPanel: View {
 
         // L, ZL, R and ZR move up or down together. iPad only.
         if ControllerLayoutSettings.supportsShoulderOffset {
-            PanelSliderRow("Shoulder button height", title: "L/R", leadingIcon: "arrow.up.and.down",
+            PanelSliderRow(shoulderStore.label(in: windowSize.effectiveSize, touchLab: false), title: "L/R", leadingIcon: "arrow.up.and.down",
                            value: shoulderBinding,
                            range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: false, in: windowSize.effectiveSize),
                            step: ControllerLayoutSettings.shoulderOffsetStep,
                            spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(shoulderBinding.wrappedValue))
+            PanelToggle(title: "Same height in portrait and landscape",
+                        isOn: shoulderStore.linkBinding(in: windowSize.effectiveSize, touchLab: false))
         }
 
         PanelToggle(title: "Add analog sticks", isOn: $joystickMode)

@@ -1,0 +1,19 @@
+{
+  "": {
+    "swift-dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/primary.swiftdeps"
+  },
+  "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-check/ArcChecks.swift": {
+    "dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/ArcChecks.d",
+    "object": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/ArcChecks.swift.o",
+    "swiftmodule": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/ArcChecks~partial.swiftmodule",
+    "swift-dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/ArcChecks.swiftdeps",
+    "diagnostics": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/ArcChecks.dia"
+  },
+  "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-check/main.swift": {
+    "dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/main.d",
+    "object": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/main.swift.o",
+    "swiftmodule": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/main~partial.swiftmodule",
+    "swift-dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/main.swiftdeps",
+    "diagnostics": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/main.dia"
+  }
+}

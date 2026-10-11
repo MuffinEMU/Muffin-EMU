@@ -51,11 +51,17 @@ enum SharedStick {
     /// Everything the TouchLab pad needs, from the same keys Gen 1 reads.
     static func padSettings(scale: Double, opacity: Double, haptics: Bool, deadzone: Double, curve: Double,
                             gateRaw: String, stickSpacing: Double, shoulderOffset: Double,
+                            followsThumb: Bool = false, relativeCentre: Bool = false,
+                            colourPreset: ShowcaseColourPreset? = nil, showcaseStyle: Bool = true,
                             defaults: UserDefaults = .standard) -> PadSettings {
-        PadSettings(stick: tuning(deadzone: deadzone, curve: curve, gateRaw: gateRaw),
+        var stick = tuning(deadzone: deadzone, curve: curve, gateRaw: gateRaw)
+        stick.followsThumb = followsThumb
+        stick.relativeCentre = relativeCentre
+        return PadSettings(stick: stick,
                     calibration: StickCalibrations(left: calibration(left: true, defaults: defaults),
                                                    right: calibration(left: false, defaults: defaults)),
                     scale: CGFloat(scale), opacity: CGFloat(opacity), haptics: haptics,
-                    stickSpacing: CGFloat(stickSpacing), shoulderOffset: CGFloat(shoulderOffset))
+                    stickSpacing: CGFloat(stickSpacing), shoulderOffset: CGFloat(shoulderOffset),
+                    colourPreset: colourPreset, showcaseStyle: showcaseStyle)
     }
 }

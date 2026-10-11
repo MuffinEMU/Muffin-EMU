@@ -116,6 +116,11 @@ public struct PadSettings: Equatable, Sendable {
     public var stickSpacing: CGFloat
     /// Shoulder cluster drop, in button widths.
     public var shoulderOffset: CGFloat
+    /// Colour preset for the classic schemes (see `PadStyle`); nil = their own Classic look.
+    public var colourPreset: ShowcaseColourPreset?
+    /// The polished look for every scheme but Showcase (which is always Showcase-styled). Off is
+    /// the flat look the schemes had before it, drawn by the old path unchanged.
+    public var showcaseStyle: Bool
 
     public static let defaultOpacity: CGFloat = 0.85
 
@@ -126,7 +131,11 @@ public struct PadSettings: Equatable, Sendable {
                 opacity: CGFloat = PadSettings.defaultOpacity,
                 haptics: Bool = true,
                 stickSpacing: CGFloat = 0,
-                shoulderOffset: CGFloat = 0) {
+                shoulderOffset: CGFloat = 0,
+                colourPreset: ShowcaseColourPreset? = nil,
+                showcaseStyle: Bool = true) {
+        self.colourPreset = colourPreset
+        self.showcaseStyle = showcaseStyle
         self.stick = stick
         self.calibration = calibration
         self.tolerance = tolerance

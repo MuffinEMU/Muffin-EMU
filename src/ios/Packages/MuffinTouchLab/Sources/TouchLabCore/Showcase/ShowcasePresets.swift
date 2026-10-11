@@ -490,6 +490,9 @@ public enum ShowcaseLayoutPreset: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Size relative to life-size, for the Fit solver (the transplanted presets carry it in their file).
+    var sizeFactor: CGFloat { self == .compact ? 0.7 : 1 }
+
     /// The reference device each non-native preset was captured on. `.native` has none.
     private var reference: (container: CGSize, safeArea: CGRect, pointsPerInch: CGFloat, userScale: CGFloat)? {
         switch self {

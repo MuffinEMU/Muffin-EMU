@@ -41,6 +41,59 @@ enum TouchLabSettings {
     static let racingAutoAccelerateKey = "muffin.touchlab.racing.autoAccelerate"
     static let racingTiltKey = "muffin.touchlab.racing.tilt"
 
+    /// Stick options shared by every TouchLab style (both off = how the sticks always behaved).
+    /// Follow: a thumb that goes past the ring takes the base with it. Relative: a fixed stick's
+    /// centre is wherever the thumb lands.
+    static let stickFollowKey = "muffin.touchlab.stick.follow"
+    static let stickRelativeKey = "muffin.touchlab.stick.relative"
+
+    /// Colour preset for Zone, Float, Adaptive, Frame and Racing: "" is their Classic look,
+    /// otherwise a ShowcaseColourPreset raw value.
+    static let classicColourKey = "muffin.touchlab.classic.colour"
+    static let defaultClassicColour = ""
+    static func classicColourPreset(_ raw: String) -> ShowcaseColourPreset? { ShowcaseColourPreset(rawValue: raw) }
+    static func usesClassicLook(_ id: String) -> Bool { PadStyle.appliesTo(id) }
+
+    /// Racing's item button: where it sits and whether it is bigger.
+    static let racingItemPlacementKey = "muffin.touchlab.racing.itemPlacement"
+    static let defaultRacingItemPlacement = RacingPad.ItemPlacement.centre.rawValue
+    static let racingLargeItemKey = "muffin.touchlab.racing.largeItem"
+    static let racingItemPlacementOptions: [(value: String, title: String)] = [
+        (RacingPad.ItemPlacement.centre.rawValue, "Centre"),
+        (RacingPad.ItemPlacement.aboveSteering.rawValue, "Above steering"),
+        (RacingPad.ItemPlacement.abovePedals.rawValue, "Above pedals"),
+    ]
+
+    /// "Showcase style": the polished look on Zone, Float, Adaptive, Frame, Racing and Arc. Off keeps the
+    /// flat look 9.5 had. Decided once, at first launch of this version: off for a player who had already
+    /// chosen a TouchLab style (so nothing changes under them), on for everyone else.
+    static let showcaseStyleKey = "muffin.touchlab.showcaseStyle"
+    static func registerShowcaseStyleDefault() {
+        let d = UserDefaults.standard
+        guard d.object(forKey: showcaseStyleKey) == nil else { return }
+        d.set(!isTouchLab(d.string(forKey: schemeKey) ?? ""), forKey: showcaseStyleKey)
+    }
+
+    /// Showcase's glass look.
+    static let showcaseGlassKey = "muffin.touchlab.showcase.glass"
+
+    /// Arc's own options (ArcOptions JSON): swap hands, idle fade and the rest.
+    static let arcOptionsKey = "muffin.touchlab.arc.options"
+    /// Arc's options as the Settings rows edit them, on the stored JSON, so those files need not import the package.
+    static func arcSwapHands(_ raw: String) -> Bool { ArcOptions.decode(raw).swapHands }
+    static func arcFadesWhenIdle(_ raw: String) -> Bool { ArcOptions.decode(raw).idleFadeSeconds != nil }
+    static func arcOptions(_ raw: String, swapHands: Bool) -> String {
+        var o = ArcOptions.decode(raw); o.swapHands = swapHands; return ArcOptions.encode(o)
+    }
+    static func arcOptions(_ raw: String, fadesWhenIdle: Bool) -> String {
+        var o = ArcOptions.decode(raw)
+        o.idleFadeSeconds = fadesWhenIdle ? arcIdleFadeSeconds : nil
+        return ArcOptions.encode(o)
+    }
+
+    /// Seconds of no touch before Arc fades, when "Fade when idle" is switched on.
+    static let arcIdleFadeSeconds = 8.0
+
     /// A button size for every style, as a multiple of its usual size.
     static let aScaleKey = "muffin.touchlab.aScale"
     static let defaultAScale = 1.0
@@ -164,8 +217,11 @@ enum TouchLabSettings {
     static let defaultShowcaseColour = ShowcaseColourPreset.wiiUWhite.rawValue
     static let showcaseDisplayKey = "muffin.touchlab.showcase.display"
     static let defaultShowcaseDisplay = ShowcaseLayout.DisplayMode.fit.rawValue
+    /// The same preset names in both pickers; the classic styles add "Classic" in front.
     static let showcaseColourOptions: [(value: String, title: String)] =
         ShowcaseColourPreset.allCases.map { ($0.rawValue, $0.file.name) }
+    static let classicColourOptions: [(value: String, title: String)] =
+        [(defaultClassicColour, PadStyle.name(nil))] + showcaseColourOptions
     static let showcaseDisplayOptions: [(value: String, title: String)] =
         ShowcaseLayout.DisplayMode.allCases.map { ($0.rawValue, $0.title) }
 
@@ -337,6 +393,14 @@ struct TouchLabPadOverlay: View {
     @AppStorage(TouchLabSettings.showcaseColourKey) private var showcaseColour = TouchLabSettings.defaultShowcaseColour
     @AppStorage(TouchLabSettings.showcaseDisplayKey) private var showcaseDisplay = TouchLabSettings.defaultShowcaseDisplay
     @AppStorage(TouchLabSettings.arcResetKey) private var arcResets = 0
+    @AppStorage(TouchLabSettings.stickFollowKey) private var stickFollow = false
+    @AppStorage(TouchLabSettings.stickRelativeKey) private var stickRelative = false
+    @AppStorage(TouchLabSettings.classicColourKey) private var classicColour = TouchLabSettings.defaultClassicColour
+    @AppStorage(TouchLabSettings.racingItemPlacementKey) private var racingItemPlacement = TouchLabSettings.defaultRacingItemPlacement
+    @AppStorage(TouchLabSettings.racingLargeItemKey) private var racingLargeItem = false
+    @AppStorage(TouchLabSettings.showcaseGlassKey) private var showcaseGlass = false
+    @AppStorage(TouchLabSettings.showcaseStyleKey) private var showcaseStyle = true
+    @AppStorage(TouchLabSettings.arcOptionsKey) private var arcOptionsRaw = "{}"
     @ObservedObject private var arcLive = ArcLive.shared
 
     var body: some View {
@@ -353,7 +417,10 @@ struct TouchLabPadOverlay: View {
                  settings: SharedStick.padSettings(scale: scale, opacity: opacity, haptics: haptics,
                                                    deadzone: deadzone, curve: curve, gateRaw: gateRaw,
                                                    stickSpacing: stickSpacing,
-                                                   shoulderOffset: shoulderStore.value(upright: upright)),
+                                                   shoulderOffset: shoulderStore.value(in: padSize, touchLab: true),
+                                                   followsThumb: stickFollow, relativeCentre: stickRelative,
+                                                   colourPreset: TouchLabSettings.classicColourPreset(classicColour),
+                                                   showcaseStyle: showcaseStyle),
                  touchscreenRect: screens.screens.touchscreenRect,
                  videoRects: screens.screens.videoRects,
                  // Rebuild the scheme only when something that shapes it changes - never on
@@ -372,6 +439,11 @@ struct TouchLabPadOverlay: View {
                 TouchLabSettings.migrateLegacyLargeA()
                 syncGamepadSize()
             }
+            // Arc's options change on the live pad, so flipping one never rebuilds it.
+            .onChange(of: arcOptionsRaw) { raw in
+                let next = ArcOptions.decode(raw)
+                if let arc = ArcLive.shared.scheme, arc.options != next { arc.options = next }
+            }
             .onChange(of: screens) { _ in syncGamepadSize() }
             .onChange(of: enabled) { _ in syncGamepadSize() }
     }
@@ -386,6 +458,9 @@ struct TouchLabPadOverlay: View {
         h.combine(aScale)
         h.combine(showcaseColour)
         h.combine(showcaseDisplay)
+        h.combine(showcaseGlass)
+        h.combine(racingItemPlacement)
+        h.combine(racingLargeItem)
         h.combine(arcResets)
         return h.finalize()
     }
@@ -409,6 +484,8 @@ struct TouchLabPadOverlay: View {
         case ArcPad.schemeInfo.id:
             let key = TouchLabSettings.arcProfilesKey
             let pad = ArcPad(profiles: ArcPad.decode(UserDefaults.standard.string(forKey: key) ?? "{}"))
+            pad.options = ArcOptions.decode(UserDefaults.standard.string(forKey: TouchLabSettings.arcOptionsKey) ?? "{}")
+            pad.onOptions = { UserDefaults.standard.set(ArcOptions.encode($0), forKey: TouchLabSettings.arcOptionsKey) }
             pad.onProfiles = { UserDefaults.standard.set(ArcPad.encode($0), forKey: key) }
             pad.onSettingsChange = { ArcLive.shared.changed() }
             ArcLive.shared.scheme = pad
@@ -417,13 +494,16 @@ struct TouchLabPadOverlay: View {
             let pad = ShowcasePad()
             pad.colourPreset = ShowcaseColourPreset(rawValue: showcaseColour) ?? .wiiUWhite
             pad.displayMode = ShowcaseLayout.DisplayMode(rawValue: showcaseDisplay) ?? .fit
+            pad.glass = showcaseGlass
             // The same measured (or calibrated) points per inch the standard pad is sized from.
             pad.pointsPerInch = DeviceMetrics.current().pointsPerInch
             return pad
         case ZonePad.schemeInfo.id:
             return ZonePad(aScale: CGFloat(aScale))
         case RacingPad.schemeInfo.id:
-            return RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto, tilt: racingTilt),
+            return RacingPad(options: RacingPad.Options(autoAccelerate: racingAuto, tilt: racingTilt,
+                                                       itemPlacement: RacingPad.ItemPlacement(rawValue: racingItemPlacement) ?? .centre,
+                                                       largeItem: racingLargeItem),
                              aScale: CGFloat(aScale))
         default:
             return SchemeCatalog.make(id, aScale: CGFloat(aScale))

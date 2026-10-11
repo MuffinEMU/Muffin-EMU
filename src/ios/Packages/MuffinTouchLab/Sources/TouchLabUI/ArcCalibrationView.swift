@@ -3,8 +3,10 @@ import UIKit
 import TouchLabCore
 
 /// The guided calibration for Arc: "Sweep your left thumb in a comfortable arc", then the
-/// right, then a review with Done and Redo. The live trace and the fitted arcs are drawn by
-/// the pad itself (ArcPad.render); this view is only the prompt card and its buttons.
+/// right, then a review with Done and Redo. The animated example sweep, the live trace, the
+/// fitted arc under the thumb and the finished-layout preview are drawn by the pad itself
+/// (ArcPad.render); this view is only the prompt card and its buttons. It works the same in
+/// portrait and landscape: the card hugs the top of the safe area and wraps its text.
 ///
 /// It is transparent to touches everywhere except its buttons, so the sweep reaches the pad
 /// underneath. Add it over the pad with `TouchPadView.presentArcCalibration`, or build one
@@ -15,6 +17,7 @@ public final class ArcCalibrationView: UIView {
     public var onFinished: ((Bool) -> Void)?
 
     private let card = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
+    private let stepLabel = UILabel()
     private let titleLabel = UILabel()
     private let noteLabel = UILabel()
     private let doneButton = UIButton(type: .system)
@@ -30,6 +33,9 @@ public final class ArcCalibrationView: UIView {
         backgroundColor = .clear
         autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
+        stepLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        stepLabel.textColor = UIColor(red: 0.35, green: 0.78, blue: 0.98, alpha: 1)
+        stepLabel.textAlignment = .center
         titleLabel.font = .systemFont(ofSize: 17, weight: .semibold)
         titleLabel.textColor = .white
         titleLabel.textAlignment = .center
@@ -45,6 +51,12 @@ public final class ArcCalibrationView: UIView {
             b.addTarget(self, action: action, for: .touchUpInside)
         }
         style(doneButton, "Done", #selector(done), bold: true)
+        // Done is the one filled pill; the rest are plain text buttons.
+        doneButton.backgroundColor = UIColor(red: 0.35, green: 0.78, blue: 0.98, alpha: 1)
+        doneButton.setTitleColor(UIColor(white: 0.08, alpha: 1), for: .normal)
+        doneButton.contentEdgeInsets = UIEdgeInsets(top: 7, left: 22, bottom: 7, right: 22)
+        doneButton.layer.cornerRadius = 17
+        doneButton.clipsToBounds = true
         style(redoButton, "Redo", #selector(redo))
         style(skipButton, "Skip this hand", #selector(skipHand))
         style(cancelButton, "Cancel", #selector(cancel))
@@ -53,13 +65,17 @@ public final class ArcCalibrationView: UIView {
         buttons.spacing = 20
         buttons.distribution = .equalSpacing
 
-        let stack = UIStackView(arrangedSubviews: [titleLabel, noteLabel, buttons])
+        let stack = UIStackView(arrangedSubviews: [stepLabel, titleLabel, noteLabel, buttons])
         stack.axis = .vertical
         stack.spacing = 8
         stack.alignment = .fill
         stack.translatesAutoresizingMaskIntoConstraints = false
-        card.layer.cornerRadius = 16
+        // Same recipe as the pad's controls: a hairline edge and continuous corners.
+        card.layer.cornerRadius = 22
+        if #available(iOS 13.0, *) { card.layer.cornerCurve = .continuous }
         card.clipsToBounds = true
+        card.layer.borderWidth = 0.5
+        card.layer.borderColor = UIColor(white: 1, alpha: 0.28).cgColor
         card.translatesAutoresizingMaskIntoConstraints = false
         card.contentView.addSubview(stack)
         addSubview(card)
@@ -78,6 +94,8 @@ public final class ArcCalibrationView: UIView {
         card.contentView.layoutMargins = UIEdgeInsets(top: 14, left: 18, bottom: 14, right: 18)
 
         // Chain in front of whatever the host already bound, and put it back when done.
+        // The card shows the prompt and notes, so the pad stops drawing its own.
+        scheme.drawsPrompts = false
         previousHandler = scheme.onSettingsChange
         scheme.onSettingsChange = { [weak self] in
             self?.previousHandler?()
@@ -97,13 +115,18 @@ public final class ArcCalibrationView: UIView {
 
     private func refresh() {
         guard let phase = scheme.calibrationPhase else {
+            scheme.drawsPrompts = true
             scheme.onSettingsChange = previousHandler
             removeFromSuperview()
             return
         }
+        stepLabel.text = scheme.calibrationStep
         titleLabel.text = scheme.calibrationPrompt
         noteLabel.text = scheme.calibrationNote ?? (phase == .review ? nil : "One smooth sweep, then lift.")
         noteLabel.isHidden = noteLabel.text == nil
+        // A note that explains a rejected sweep is amber; the default hint stays quiet.
+        let rejected = scheme.calibrationNote != nil
+        noteLabel.textColor = rejected ? UIColor(red: 1, green: 0.70, blue: 0.25, alpha: 1) : UIColor(white: 1, alpha: 0.7)
         let reviewing = phase == .review
         doneButton.isHidden = !reviewing
         redoButton.isHidden = !reviewing
@@ -125,6 +148,7 @@ public final class ArcCalibrationView: UIView {
     }
 
     private func finish(_ accepted: Bool) {
+        scheme.drawsPrompts = true
         scheme.onSettingsChange = previousHandler
         removeFromSuperview()
         onFinished?(accepted)

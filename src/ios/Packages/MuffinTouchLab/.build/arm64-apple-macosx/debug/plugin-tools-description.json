@@ -1,0 +1,1463 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.TouchLabCore-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "fileList" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/sources",
+      "importPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ArcMath.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ArcOptions.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Catalog.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ControlScheme.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Geometry.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Layouts.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadInput.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadMixer.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadSettings.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadStyle.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/RefinedLook.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/SVGRenderer.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Scheme.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/AdaptivePad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/ArcPad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/FloatPad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/FramePad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/RacingPad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/ZonePad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseColours.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseFit.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseGeometry.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcasePad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcasePresets.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseSVG.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseScene.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/StickCalibrationSession.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/StickMath.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "TouchLabCore",
+      "moduleOutputPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/TouchLabCore.swiftmodule",
+      "objects" : [
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcMath.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcOptions.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Catalog.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ControlScheme.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Geometry.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Layouts.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadEngine.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadInput.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadMixer.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadSettings.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadStyle.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/RefinedLook.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/SVGRenderer.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Scheme.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/AdaptivePad.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcPad.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/FloatPad.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/FramePad.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/RacingPad.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ZonePad.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseColours.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseFit.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseGeometry.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcasePad.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcasePresets.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseSVG.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseScene.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/StickCalibrationSession.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/StickMath.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j8",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/include/TouchLabCore-Swift.h",
+        "-swift-version",
+        "5",
+        "-I",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-L",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "muffintouchlab"
+      ],
+      "outputFileMapPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcMath.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcOptions.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Catalog.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ControlScheme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Geometry.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Layouts.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadInput.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadMixer.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadSettings.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadStyle.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/RefinedLook.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/SVGRenderer.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Scheme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/AdaptivePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcPad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/FloatPad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/FramePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/RacingPad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ZonePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseColours.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseFit.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseGeometry.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcasePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcasePresets.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseSVG.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseScene.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/StickCalibrationSession.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/StickMath.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/TouchLabCore.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ArcMath.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ArcOptions.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Catalog.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ControlScheme.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Geometry.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Layouts.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadEngine.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadInput.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadMixer.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadSettings.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadStyle.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/RefinedLook.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/SVGRenderer.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Scheme.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/AdaptivePad.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/ArcPad.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/FloatPad.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/FramePad.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/RacingPad.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/ZonePad.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseColours.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseFit.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseGeometry.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcasePad.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcasePresets.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseSVG.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseScene.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/StickCalibrationSession.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/StickMath.swift"
+      ],
+      "tempsPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.TouchLabUI-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "fileList" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/sources",
+      "importPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ArcCalibrationView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ScreenFrames.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ShowcaseDrawing.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/TouchPadView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/TouchLabCore.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "TouchLabUI",
+      "moduleOutputPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/TouchLabUI.swiftmodule",
+      "objects" : [
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ArcCalibrationView.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ScreenFrames.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ShowcaseDrawing.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/TouchPadView.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j8",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/include/TouchLabUI-Swift.h",
+        "-swift-version",
+        "5",
+        "-I",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-L",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "muffintouchlab"
+      ],
+      "outputFileMapPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ArcCalibrationView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ScreenFrames.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ShowcaseDrawing.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/TouchPadView.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/TouchLabUI.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ArcCalibrationView.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ScreenFrames.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ShowcaseDrawing.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/TouchPadView.swift"
+      ],
+      "tempsPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.touchlab-check-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "fileList" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/sources",
+      "importPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-check/ArcChecks.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-check/main.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/TouchLabCore.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "touchlab_check",
+      "moduleOutputPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/touchlab_check.swiftmodule",
+      "objects" : [
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/ArcChecks.swift.o",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/main.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j8",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "touchlab_check_main",
+        "-swift-version",
+        "5",
+        "-I",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-L",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "muffintouchlab"
+      ],
+      "outputFileMapPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/ArcChecks.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/main.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/touchlab_check.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-check/ArcChecks.swift",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-check/main.swift"
+      ],
+      "tempsPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.touchlab-render-arm64-apple-macosx-debug.module" : {
+      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "fileList" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_render.build/sources",
+      "importPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-render/main.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/TouchLabCore.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_render.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "touchlab_render",
+      "moduleOutputPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/touchlab_render.swiftmodule",
+      "objects" : [
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_render.build/main.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j8",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "touchlab_render_main",
+        "-swift-version",
+        "5",
+        "-I",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-L",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "muffintouchlab"
+      ],
+      "outputFileMapPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_render.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_render.build/main.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules/touchlab_render.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-render/main.swift"
+      ],
+      "tempsPath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_render.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "TouchLabCore" : [
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "-module-name",
+      "TouchLabCore",
+      "-package-name",
+      "muffintouchlab",
+      "-c",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ArcMath.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ArcOptions.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Catalog.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ControlScheme.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Geometry.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Layouts.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadEngine.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadInput.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadMixer.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadSettings.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadStyle.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/RefinedLook.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/SVGRenderer.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Scheme.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/AdaptivePad.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/ArcPad.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/FloatPad.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/FramePad.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/RacingPad.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/ZonePad.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseColours.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseFit.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseGeometry.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcasePad.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcasePresets.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseSVG.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseScene.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/StickCalibrationSession.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/StickMath.swift",
+      "-I",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j8",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/include/TouchLabCore-Swift.h",
+      "-swift-version",
+      "5",
+      "-I",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-L",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "muffintouchlab",
+      "-driver-use-frontend-path",
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+    ],
+    "TouchLabUI" : [
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "-module-name",
+      "TouchLabUI",
+      "-package-name",
+      "muffintouchlab",
+      "-c",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ArcCalibrationView.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ScreenFrames.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ShowcaseDrawing.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/TouchPadView.swift",
+      "-I",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j8",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/include/TouchLabUI-Swift.h",
+      "-swift-version",
+      "5",
+      "-I",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-L",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "muffintouchlab",
+      "-driver-use-frontend-path",
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+    ],
+    "touchlab_check" : [
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "-module-name",
+      "touchlab_check",
+      "-package-name",
+      "muffintouchlab",
+      "-c",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-check/ArcChecks.swift",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-check/main.swift",
+      "-I",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j8",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "touchlab_check_main",
+      "-swift-version",
+      "5",
+      "-I",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-L",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "muffintouchlab",
+      "-driver-use-frontend-path",
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+    ],
+    "touchlab_render" : [
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "-module-name",
+      "touchlab_render",
+      "-package-name",
+      "muffintouchlab",
+      "-c",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-render/main.swift",
+      "-I",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j8",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "touchlab_render_main",
+      "-swift-version",
+      "5",
+      "-I",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-L",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "muffintouchlab",
+      "-driver-use-frontend-path",
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "TouchLabCore" : [
+
+    ],
+    "TouchLabUI" : [
+      "TouchLabCore"
+    ],
+    "touchlab_check" : [
+      "TouchLabCore"
+    ],
+    "touchlab_render" : [
+      "TouchLabCore"
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ArcMath.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ArcOptions.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Catalog.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/ControlScheme.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Geometry.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Layouts.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadInput.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadMixer.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadSettings.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/PadStyle.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/RefinedLook.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/SVGRenderer.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Scheme.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/AdaptivePad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/ArcPad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/FloatPad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/FramePad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/RacingPad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Schemes/ZonePad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseColours.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseFit.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseGeometry.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcasePad.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcasePresets.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseSVG.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/Showcase/ShowcaseScene.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/StickCalibrationSession.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabCore/StickMath.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/sources"
+    },
+    "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ArcCalibrationView.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ScreenFrames.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ShowcaseDrawing.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/TouchPadView.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/sources"
+    },
+    "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+    },
+    "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab-check-entitlement.plist" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<entitlement-plist>"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<com.apple.security.get-task-allow>"
+        }
+      ],
+      "outputFilePath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab-check-entitlement.plist"
+    },
+    "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab-check.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/AdaptivePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcMath.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcOptions.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcPad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Catalog.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ControlScheme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/FloatPad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/FramePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Geometry.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Layouts.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadInput.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadMixer.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadSettings.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadStyle.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/RacingPad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/RefinedLook.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/SVGRenderer.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Scheme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseColours.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseFit.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseGeometry.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcasePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcasePresets.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseSVG.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseScene.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/StickCalibrationSession.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/StickMath.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ZonePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/ArcChecks.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/main.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab-check.product/Objects.LinkFileList"
+    },
+    "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab-render-entitlement.plist" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<entitlement-plist>"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<com.apple.security.get-task-allow>"
+        }
+      ],
+      "outputFilePath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab-render-entitlement.plist"
+    },
+    "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab-render.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/AdaptivePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcMath.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcOptions.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ArcPad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Catalog.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ControlScheme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/FloatPad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/FramePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Geometry.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Layouts.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadInput.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadMixer.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadSettings.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/PadStyle.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/RacingPad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/RefinedLook.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/SVGRenderer.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/Scheme.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseColours.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseFit.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseGeometry.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcasePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcasePresets.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseSVG.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ShowcaseScene.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/StickCalibrationSession.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/StickMath.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabCore.build/ZonePad.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_render.build/main.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab-render.product/Objects.LinkFileList"
+    },
+    "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-check/ArcChecks.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-check/main.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_check.build/sources"
+    },
+    "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_render.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/touchlab-render/main.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/touchlab_render.build/sources"
+    }
+  }
+}

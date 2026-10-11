@@ -28,7 +28,9 @@ import Foundation
 ///   `pictureRect` - on a phone that is a small picture, the accepted cost of Native.
 /// - Fit: the picture stays where the host put it (`LayoutContext.videoRects`) and the
 ///   pad is fitted around it, shrunk from life size as far as it must (never below
-///   `minimumUnit`). Where the margin is too thin for that - a full-screen picture on a
+///   `minimumUnit`, 44 pt). When the resolver's rigid clusters cannot clear the picture,
+///   `ShowcaseFitSolver` packs the blocks into the free space instead: each side sized on its
+///   own, shoulders stacked or moved, the face diamond flattened. Where the margin is too thin for that - a full-screen picture on a
 ///   phone - it floats over the outer thirds of the picture instead, as the showcase's Fit
 ///   does, and `arrangement` says so. An iPhone held upright is always Native.
 public final class ShowcasePad: ControlScheme {
@@ -57,6 +59,14 @@ public final class ShowcasePad: ControlScheme {
     public var customColours: ShowcaseColourFile?
     public var displayMode: ShowcaseLayout.DisplayMode = .fit { didSet { settingChanged() } }
     public var colours: ShowcaseColourFile { customColours ?? colourPreset.file }
+    /// Optional glass look: bodies a little see-through, a sheen across the top of each button.
+    /// Off by default; works with any colour preset or `.muffinclr`.
+    public var glass: Bool = false
+
+    /// Eases controls into and out of their held look when `scene(...time:)` is given a clock.
+    var pressAnimator = ShowcasePressAnimator()
+    /// True while a control is still easing; the host redraws next frame while it is.
+    public var isAnimatingPress: Bool { pressAnimator.isAnimating }
 
     /// Physical density of the screen, in points per inch. Hosts set this from
     /// `ShowcaseDeviceMetrics.measurement` (hw.machine, native pixels); until they do, an
@@ -64,7 +74,7 @@ public final class ShowcasePad: ControlScheme {
     public var pointsPerInch: CGFloat? { didSet { settingChanged() } }
 
     /// Smallest button size, in points, Fit will shrink to before it floats over the picture.
-    public var minimumUnit: CGFloat = 40
+    public var minimumUnit: CGFloat = 44
 
     // MARK: Layout results
 
@@ -117,11 +127,28 @@ public final class ShowcasePad: ControlScheme {
             while s > 0.25 {
                 let r = resolve(s, .fit)
                 if r.unit < minimumUnit { break }
-                let c = Self.controls(from: r, safe: safe, avoid: videos)
+                let c = Self.controls(from: r, safe: safe, avoid: videos, screen: ctx.size)
                 if LayoutCheck.problems(c, in: safe).isEmpty, clear(c, of: videos) {
                     return adopt(r, c, .clear, picture: nil, ppi: ppi, ctx: ctx)
                 }
                 s *= 0.96
+            }
+        }
+
+        // The resolver could not clear the picture: pack the pad's blocks into what is left.
+        if mode == .fit, !videos.isEmpty {
+            let wanted = ShowcaseHardware.unitMM * ppi / 25.4 * ctx.scale * layoutPreset.sizeFactor
+            if let sol = ShowcaseFitSolver.solve(safe: safe, avoid: videos, wanted: wanted, floor: minimumUnit) {
+                let unit = (sol.leftUnit + sol.rightUnit) / 2
+                var notes = ["packed around the picture"]
+                if abs(sol.leftUnit - sol.rightUnit) > 0.5 {
+                    notes.append(String(format: "left %.0f pt, right %.0f pt buttons", sol.leftUnit, sol.rightUnit))
+                }
+                let r = ShowcaseResolved(video: videos[0], controls: sol.placements, unit: unit, notes: notes, mode: .overlay)
+                let c = Self.controls(from: r, safe: safe, avoid: videos, asPlaced: true, screen: ctx.size)
+                if LayoutCheck.problems(c, in: safe).isEmpty, clear(c, of: videos) {
+                    return adopt(r, c, .clear, picture: nil, ppi: ppi, ctx: ctx)
+                }
             }
         }
 
@@ -130,7 +157,7 @@ public final class ShowcasePad: ControlScheme {
         // A transplanted preset that cannot be made to fit (the fitter never goes below the
         // touch floor, so shrinking does not always help) gives way to this device's own layout.
         var r = resolve(1, mode)
-        var c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [])
+        var c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [], screen: ctx.size)
         func ok() -> Bool {
             LayoutCheck.problems(c, in: safe).isEmpty && (mode == .fit || clear(c, of: [r.video]))
         }
@@ -140,12 +167,12 @@ public final class ShowcasePad: ControlScheme {
                 if ok() { break }
                 s *= 0.94
                 r = resolve(s, mode)
-                c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [])
+                c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [], screen: ctx.size)
             }
             if ok() || preset == .native || attempt == 1 { break }
             preset = .native
             r = resolve(1, mode)
-            c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [])
+            c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [], screen: ctx.size)
         }
         return adopt(r, c, mode == .native ? .native : .overlay, picture: mode == .native ? r.video : nil,
                      ppi: ppi, ctx: ctx)
@@ -161,10 +188,21 @@ public final class ShowcasePad: ControlScheme {
         return controls
     }
 
+    /// How far the + / - pair is moved from where the layout puts it: 2 pt left everywhere, and
+    /// 11 pt up as well on the big iPads (shorter side of the screen at least 1000 pt: the 13-inch and
+    /// 12.9-inch class), by screen size and not by model. HOME stays where it is.
+    public static func systemPairNudge(screen: CGSize) -> CGPoint {
+        let big = min(screen.width, screen.height) >= 1000
+        return CGPoint(x: -2, y: big ? -11 : 0)
+    }
+
     /// The control list for a resolved layout. The showcase leaves HOME in the pause menu
     /// when nothing on the pad clears for it; TouchLab has no pause menu, so HOME is always
     /// found a spot.
-    static func controls(from r: ShowcaseResolved, safe: CGRect, avoid: [CGRect]) -> [PadControl] {
+    /// `asPlaced` takes + and - and HOME exactly where the resolver left them (the Fit solver
+    /// positions them itself) instead of regrouping them.
+    static func controls(from r: ShowcaseResolved, safe: CGRect, avoid: [CGRect], asPlaced: Bool = false,
+                         screen: CGSize = .zero) -> [PadControl] {
         let D = r.unit
         var out: [PadControl] = []
 
@@ -209,9 +247,12 @@ public final class ShowcasePad: ControlScheme {
                                   reach: 0.08 * D, priority: 2))
         }
         // + then - as a pair on one row, + nudged a little left to make room, - on its right.
-        if let (pc, pr) = circle("plus"), let (_, mr) = circle("minus") {
-            let plus = CGPoint(x: pc.x - 0.3 * D, y: pc.y)
-            let minus = CGPoint(x: plus.x + pr + mr + 0.3 * D, y: pc.y)
+        if let (pc, pr) = circle("plus"), let (mc, mr) = circle("minus") {
+            let nudge = systemPairNudge(screen: screen)
+            var plus = asPlaced ? pc : CGPoint(x: pc.x - 0.3 * D, y: pc.y)
+            var minus = asPlaced ? mc : CGPoint(x: plus.x + pr + mr + 0.3 * D, y: pc.y)
+            plus = CGPoint(x: plus.x + nudge.x, y: plus.y + nudge.y)
+            minus = CGPoint(x: minus.x + nudge.x, y: minus.y + nudge.y)
             out.append(PadControl(.button(.plus), shape: .circle(center: plus, radius: pr), role: .system,
                                   label: PadButton.plus.description, reach: 0.25 * D))
             out.append(PadControl(.button(.minus), shape: .circle(center: minus, radius: mr), role: .system,
@@ -219,7 +260,7 @@ public final class ShowcasePad: ControlScheme {
         }
         // HOME keeps its hardware slot unless that is on the picture.
         if let (c, rad) = circle("HOME"),
-           !avoid.contains(where: { $0.insetBy(dx: 1, dy: 1).intersects(PadShape.circle(center: c, radius: rad).boundingBox) }) {
+           asPlaced || !avoid.contains(where: { $0.insetBy(dx: 1, dy: 1).intersects(PadShape.circle(center: c, radius: rad).boundingBox) }) {
             button("HOME", .home, role: .system, reach: 0.25 * D)
         }
 
@@ -279,9 +320,10 @@ public final class ShowcasePad: ControlScheme {
                 }
             case let .stick(_, travel, _):
                 let t = active[i]
-                let base = c.shape.center
+                // The base stays put unless a finger moved it (relative centre, follow).
+                let base = t?.origin ?? c.shape.center
                 let knobR = travel * ShowcaseHardware.stickKnob / ShowcaseHardware.stickBase
-                out.append(RenderElement(shape: c.shape, role: .stickBase, lit: t != nil))
+                out.append(RenderElement(shape: .circle(center: base, radius: travel), role: .stickBase, lit: t != nil))
                 out.append(RenderElement(shape: .circle(center: base + (t?.knob ?? .zero) * Self.knobTravelRatio(travel, knobR), radius: knobR),
                                          role: .stickKnob, label: c.label, lit: false))
             default:
@@ -363,5 +405,45 @@ public enum ShowcaseDemo {
             down(s.shape.center)
             engine.moved(start, to: s.shape.center + CGPoint(x: 0.6 * r, y: -0.5 * r), time: 0.1)
         }
+    }
+}
+
+
+// MARK: - Press animation
+
+/// Per-button easing between up (0) and held (1): about 60 ms down, 150 ms back up, so a tap
+/// reads as a quick dip rather than a flash. With Reduce Motion on, a button just snaps.
+public struct ShowcasePressAnimator {
+    public static let attack: Double = 0.06
+    public static let release: Double = 0.15
+
+    private var raw: [PadButton: Double] = [:]
+    private var targets: [PadButton: Double] = [:]
+    private var last: Double?
+
+    public init() {}
+
+    public mutating func step(pressed: Set<PadButton>, time: Double, reduceMotion: Bool) {
+        // A first frame, or a long gap (the view was off screen), settles at once.
+        let dt = last.map { min(max(time - $0, 0), 0.1) } ?? 1
+        last = time
+        for b in pressed { targets[b] = 1 }
+        for b in targets.keys where !pressed.contains(b) { targets[b] = 0 }
+        for (b, target) in targets {
+            let now = raw[b] ?? 0
+            if reduceMotion || dt >= 1 { raw[b] = target }
+            else if target > now { raw[b] = min(target, now + dt / Self.attack) }
+            else if target < now { raw[b] = max(target, now - dt / Self.release) }
+            if raw[b] == 0, target == 0 { raw[b] = nil; targets[b] = nil }
+        }
+    }
+
+    /// Smoothstepped, so the start and end of an ease are gentle.
+    public var eased: [PadButton: CGFloat] {
+        raw.mapValues { v in CGFloat(v * v * (3 - 2 * v)) }
+    }
+
+    public var isAnimating: Bool {
+        targets.contains { (b, t) in (raw[b] ?? 0) != t }
     }
 }

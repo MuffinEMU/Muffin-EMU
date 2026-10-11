@@ -35,10 +35,27 @@ public final class RacingPad: ControlScheme {
         public var autoAccelerate: Bool
         /// Steers from the device's motion instead of the thumb. The thumb still throws items.
         public var tilt: Bool
-        public init(autoAccelerate: Bool = false, tilt: Bool = false) {
+        /// Where the item button (L) sits. Mario Kart uses items constantly, and the middle of the
+        /// screen is a long way from either thumb.
+        public var itemPlacement: ItemPlacement
+        /// A bigger item button (about 1.4 times), easier to hit without looking.
+        public var largeItem: Bool
+        public init(autoAccelerate: Bool = false, tilt: Bool = false,
+                    itemPlacement: ItemPlacement = .centre, largeItem: Bool = false) {
             self.autoAccelerate = autoAccelerate
             self.tilt = tilt
+            self.itemPlacement = itemPlacement
+            self.largeItem = largeItem
         }
+    }
+
+    public enum ItemPlacement: String, CaseIterable, Sendable {
+        /// Between the steering area and the pedals (the original place).
+        case centre
+        /// Just above the steering area, where the steering thumb can flick to it.
+        case aboveSteering
+        /// Just above the Drift pedal, where the accelerating thumb can reach without leaving A.
+        case abovePedals
     }
 
     public let options: Options
@@ -91,17 +108,20 @@ public final class RacingPad: ControlScheme {
         let bandHeight = landscape ? s.height : min(s.height, max(8.5 * u, 0.46 * s.height))
         let bandTop = s.maxY - bandHeight
         let gap = 0.05 * u            // drawn gap between neighbouring zones; the catchment closes it
+        // The pedals and the steering area stop this far short of the screen edge (rounded display
+        // corners, a thumb's own edge), and reach back out to it, so the edge is still live.
+        let edge = ctx.showcaseStyle ? min(0.12 * u, 8) : 0   // "Showcase style" off keeps the edge-flush layout 9.5 had
 
         // Pedals, bottom right. Widths and heights in units of a thumb-sized button.
         let a = PadParts.clampedAScale(aScale)
         let wA = 2.7 * a * u, wB = 1.8 * u
         let hA = 2.3 * a * u, hC = 1.5 * u, hR = 1.3 * u
-        let xA = s.maxX - wA, xB = xA - wB
-        let yA = s.maxY - hA, yC = yA - hC, yR = yC - hR
+        let xA = s.maxX - edge - wA, xB = xA - wB
+        let yA = s.maxY - edge - hA, yC = yA - hC, yR = yC - hR
         func inset(_ r: CGRect) -> CGRect { r.insetBy(dx: gap / 2, dy: gap / 2) }
         func rect(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect { inset(CGRect(x: x, y: y, width: w, height: h)) }
         let corner = 0.3 * u
-        let reach = gap
+        let reach = gap + edge
 
         func pedal(_ buttons: Set<PadButton>, _ r: CGRect, _ role: RenderElement.Role, _ label: String) -> PadControl {
             PadControl(.pedal(buttons), shape: .roundedRect(r, cornerRadius: corner), role: role, label: label,
@@ -116,13 +136,20 @@ public final class RacingPad: ControlScheme {
 
         // The room between the steering area and the pedals.
         let steerMax = 0.36 * s.width
-        let itemW = 1.7 * u, itemH = 1.25 * u
+        let itemGrow: CGFloat = options.largeItem ? 1.4 : 1
+        let itemW = 1.7 * u * itemGrow, itemH = 1.25 * u * itemGrow
         let margin = 0.6 * u
-        let centreRoom = xB - s.minX - steerMax
+        let centreRoom = xB + edge - s.minX - steerMax
         var steerRight = s.minX + steerMax
         var steerTop = bandTop + (landscape ? 0.25 : 0.08) * bandHeight
         let itemRect: CGRect
-        if centreRoom >= itemW + 2 * margin {
+        if options.itemPlacement == .abovePedals, yR - itemH - 0.3 * u > bandTop + 1.1 * u {
+            // Over the right-hand pedals, flush with their right edge, clear of the top buttons.
+            itemRect = CGRect(x: xA + wA - itemW, y: yR - itemH - 0.3 * u, width: itemW, height: itemH)
+        } else if options.itemPlacement == .aboveSteering, steerTop - itemH - 0.3 * u > bandTop + 1.1 * u {
+            // Over the steering area's top edge, towards its inner side, so a flick from the steering thumb lands on it.
+            itemRect = CGRect(x: steerRight - itemW - 0.3 * u, y: steerTop - itemH - 0.3 * u, width: itemW, height: itemH)
+        } else if centreRoom >= itemW + 2 * margin {
             // In the middle, level with the pedals' upper half: either thumb reaches it, and a
             // thumb sliding off Brake or Drift has to go a long way to find it.
             let cx = (steerRight + xB) / 2
@@ -140,11 +167,11 @@ public final class RacingPad: ControlScheme {
         // Steering: the whole left side from just under the top, down to the bottom edge.
         let lockX = max(1.2 * u, min(0.3 * (steerRight - s.minX), 2.2 * u))
         let lockY = 1.2 * lockX
-        let steer = CGRect(x: s.minX, y: steerTop, width: steerRight - s.minX, height: s.maxY - steerTop)
+        let steer = CGRect(x: s.minX + edge, y: steerTop, width: steerRight - s.minX - edge, height: s.maxY - edge - steerTop)
         guard steer.width >= 2.8 * u, steer.height >= 3 * u || force else { return force ? controls : nil }
         let spec = SteerSpec(stick: .left, lockX: lockX, lockY: lockY, deadY: 0.45, followPast: 1.3, tilt: options.tilt)
         controls.append(PadControl(.steer(spec), shape: .roundedRect(inset(steer), cornerRadius: corner), role: .area,
-                                   label: options.tilt ? "TILT" : "STEER", priority: 0))
+                                   label: options.tilt ? "TILT" : "STEER", reach: edge + gap, priority: 0))
 
         // Small buttons along the top, centred: rear view, pause, HOME (and recentre for tilt).
         let rowY = bandTop + 0.2 * u + 0.4 * u

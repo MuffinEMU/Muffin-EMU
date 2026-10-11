@@ -12,11 +12,21 @@ public struct StickTuning: Equatable, Sendable {
     /// Response exponent: 1 = linear, higher = finer control near centre.
     public var curve: Double
     public var gate: Gate
+    /// Off by default. On, a thumb that goes past the ring takes the stick's base along with
+    /// it, so turning back is as quick as turning out (the slight follow Gen 1 has). Only
+    /// the base moves: the output is the same full deflection either way.
+    public var followsThumb: Bool
+    /// Off by default. On, a fixed stick's centre is wherever the thumb lands inside its
+    /// zone, so the first touch is never a push.
+    public var relativeCentre: Bool
 
-    public init(deadzone: Double = 0.06, curve: Double = 1.0, gate: Gate = .octagon) {
+    public init(deadzone: Double = 0.06, curve: Double = 1.0, gate: Gate = .octagon,
+                followsThumb: Bool = false, relativeCentre: Bool = false) {
         self.deadzone = deadzone
         self.curve = curve
         self.gate = gate
+        self.followsThumb = followsThumb
+        self.relativeCentre = relativeCentre
     }
 
     /// The ranges MuffinEMU's settings offer.

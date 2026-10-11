@@ -38,6 +38,11 @@ struct TouchLabStyleSettingsRows: View {
     @AppStorage(TouchLabSettings.aScaleKey) private var aScale = TouchLabSettings.defaultAScale
     @AppStorage(TouchLabSettings.showcaseColourKey) private var showcaseColour = TouchLabSettings.defaultShowcaseColour
     @AppStorage(TouchLabSettings.showcaseDisplayKey) private var showcaseDisplay = TouchLabSettings.defaultShowcaseDisplay
+    @AppStorage(TouchLabSettings.showcaseGlassKey) private var showcaseGlass = false
+    @AppStorage(TouchLabSettings.showcaseStyleKey) private var showcaseStyle = true
+    @AppStorage(TouchLabSettings.classicColourKey) private var classicColour = TouchLabSettings.defaultClassicColour
+    @AppStorage(TouchLabSettings.racingItemPlacementKey) private var racingItemPlacement = TouchLabSettings.defaultRacingItemPlacement
+    @AppStorage(TouchLabSettings.racingLargeItemKey) private var racingLargeItem = false
     @State private var showingAdaptiveReset = false
     @State private var showingArcReset = false
 
@@ -86,12 +91,43 @@ struct TouchLabStyleSettingsRows: View {
                     .pickerStyle(.segmented)
                 }
 
+                if scheme != TouchLabSettings.showcaseStyleID {
+                    Toggle(isOn: $showcaseStyle) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Showcase style")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("The polished look on every control style: hairline outlines, soft shadows, a lit rim and buttons that sink when pressed. Off keeps the flat look.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(MuffinTheme.pixelBlue)
+                }
+
+                if TouchLabSettings.usesClassicLook(scheme) && showcaseStyle {
+                    Picker("Colour", selection: $classicColour) {
+                        ForEach(TouchLabSettings.classicColourOptions, id: \.value) { option in
+                            Text(option.title).tag(option.value)
+                        }
+                    }
+                }
+
                 if scheme == TouchLabSettings.showcaseStyleID {
                     Picker("Colour", selection: $showcaseColour) {
                         ForEach(TouchLabSettings.showcaseColourOptions, id: \.value) { option in
                             Text(option.title).tag(option.value)
                         }
                     }
+                    Toggle(isOn: $showcaseGlass) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Glass look")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("See-through buttons with a sheen across the top.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(MuffinTheme.pixelBlue)
                     Picker("Display", selection: $showcaseDisplay) {
                         ForEach(TouchLabSettings.showcaseDisplayOptions, id: \.value) { option in
                             Text(option.title).tag(option.value)
@@ -153,6 +189,23 @@ struct TouchLabStyleSettingsRows: View {
                             Text("Tilt steering")
                                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                             Text("Turn the device like a wheel. Tap C at the top to set straight ahead.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(MuffinTheme.pixelBlue)
+
+                    Picker("Item button position", selection: $racingItemPlacement) {
+                        ForEach(TouchLabSettings.racingItemPlacementOptions, id: \.value) { option in
+                            Text(option.title).tag(option.value)
+                        }
+                    }
+
+                    Toggle(isOn: $racingLargeItem) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Larger item button")
+                                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                            Text("Makes the item button bigger, so it is easier to hit without looking.")
                                 .font(.system(size: 12))
                                 .foregroundColor(.secondary)
                         }
@@ -226,7 +279,7 @@ struct TouchLabLayoutPanel: View {
     /// The shoulder setting for the orientation the pad is in now (kept apart per orientation),
     /// taken from the same size the pad itself uses.
     private var shoulderBinding: Binding<Double> {
-        shoulderStore.binding(upright: ControllerLayoutSettings.isUpright(windowSize.effectiveSize))
+        shoulderStore.binding(in: windowSize.effectiveSize, touchLab: true)
     }
 
     private var isAdaptive: Bool { scheme == TouchLabSettings.adaptiveStyleID }
@@ -270,11 +323,13 @@ struct TouchLabLayoutPanel: View {
         // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare height
         // for it. Only the styles with fixed shoulders have anything to move.
         if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
-            PanelSliderRow("Shoulder button height", title: "L/R", leadingIcon: "arrow.up.and.down",
+            PanelSliderRow(shoulderStore.label(in: windowSize.effectiveSize, touchLab: true), title: "L/R", leadingIcon: "arrow.up.and.down",
                            value: shoulderBinding,
                            range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true, in: windowSize.effectiveSize),
                            step: ControllerLayoutSettings.shoulderOffsetStep,
                            spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(max(0, shoulderBinding.wrappedValue)))
+            PanelToggle(title: "Same height in portrait and landscape",
+                        isOn: shoulderStore.linkBinding(in: windowSize.effectiveSize, touchLab: true))
         }
 
         if scheme == TouchLabSettings.floatStyleID {
@@ -320,15 +375,44 @@ struct TouchLabLayoutPanel: View {
 struct ArcSettingsRows: View {
     @ObservedObject private var arc = ArcLive.shared
     @Binding var showResetConfirmation: Bool
+    @AppStorage(TouchLabSettings.arcOptionsKey) private var optionsRaw = "{}"
 
     var body: some View {
         let locked = Binding<Bool>(get: { arc.isLocked }, set: { arc.setLocked($0) })
+        let swapHands = Binding<Bool>(
+            get: { TouchLabSettings.arcSwapHands(optionsRaw) },
+            set: { optionsRaw = TouchLabSettings.arcOptions(optionsRaw, swapHands: $0) })
+        let fadeWhenIdle = Binding<Bool>(
+            get: { TouchLabSettings.arcFadesWhenIdle(optionsRaw) },
+            set: { optionsRaw = TouchLabSettings.arcOptions(optionsRaw, fadesWhenIdle: $0) })
 
         Toggle(isOn: locked) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Lock Arc positions")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
                 Text("Keeps every button exactly where it is. Turns on by itself after your first calibration.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .tint(MuffinTheme.pixelBlue)
+
+        Toggle(isOn: swapHands) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Swap hands")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("Mirrors Arc for left-handed play: the d-pad and left stick move to the right, the face buttons and right stick to the left.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .tint(MuffinTheme.pixelBlue)
+
+        Toggle(isOn: fadeWhenIdle) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Fade when idle")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("The controls fade almost out after a few seconds without a touch, and come straight back under your thumb.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }

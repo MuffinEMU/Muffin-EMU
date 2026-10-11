@@ -1,0 +1,33 @@
+{
+  "": {
+    "swift-dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/primary.swiftdeps"
+  },
+  "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ArcCalibrationView.swift": {
+    "dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ArcCalibrationView.d",
+    "object": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ArcCalibrationView.swift.o",
+    "swiftmodule": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ArcCalibrationView~partial.swiftmodule",
+    "swift-dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ArcCalibrationView.swiftdeps",
+    "diagnostics": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ArcCalibrationView.dia"
+  },
+  "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ScreenFrames.swift": {
+    "dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ScreenFrames.d",
+    "object": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ScreenFrames.swift.o",
+    "swiftmodule": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ScreenFrames~partial.swiftmodule",
+    "swift-dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ScreenFrames.swiftdeps",
+    "diagnostics": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ScreenFrames.dia"
+  },
+  "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/ShowcaseDrawing.swift": {
+    "dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ShowcaseDrawing.d",
+    "object": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ShowcaseDrawing.swift.o",
+    "swiftmodule": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ShowcaseDrawing~partial.swiftmodule",
+    "swift-dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ShowcaseDrawing.swiftdeps",
+    "diagnostics": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/ShowcaseDrawing.dia"
+  },
+  "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/Sources/TouchLabUI/TouchPadView.swift": {
+    "dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/TouchPadView.d",
+    "object": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/TouchPadView.swift.o",
+    "swiftmodule": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/TouchPadView~partial.swiftmodule",
+    "swift-dependencies": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/TouchPadView.swiftdeps",
+    "diagnostics": "/Users/staceylynward/MuffinEMU-work/rv-96/src/ios/Packages/MuffinTouchLab/.build/arm64-apple-macosx/debug/TouchLabUI.build/TouchPadView.dia"
+  }
+}

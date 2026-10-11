@@ -63,7 +63,7 @@ extension ShowcaseRGBA {
     func mixed(_ other: ShowcaseRGBA, _ t: Double) -> ShowcaseRGBA {
         ShowcaseRGBA(r: r + (other.r - r) * t, g: g + (other.g - g) * t, b: b + (other.b - b) * t, a: a + (other.a - a) * t)
     }
-    func withAlpha(_ alpha: Double) -> ShowcaseRGBA { ShowcaseRGBA(r: r, g: g, b: b, a: alpha) }
+    public func withAlpha(_ alpha: Double) -> ShowcaseRGBA { ShowcaseRGBA(r: r, g: g, b: b, a: alpha) }
     static let white = ShowcaseRGBA(r: 1, g: 1, b: 1)
     static let black = ShowcaseRGBA(r: 0, g: 0, b: 0)
 
@@ -74,7 +74,7 @@ extension ShowcaseRGBA {
     }
     var isLight: Bool { luminance > 0.35 }
 
-    static func contrast(_ a: ShowcaseRGBA, _ b: ShowcaseRGBA) -> Double {
+    public static func contrast(_ a: ShowcaseRGBA, _ b: ShowcaseRGBA) -> Double {
         let la = a.luminance, lb = b.luminance
         return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
     }
@@ -99,8 +99,19 @@ extension ShowcaseRGBA {
 
 extension ShowcasePad {
     /// The pad as it should be drawn right now. `pressed` and `sticks` are the mixer's.
-    public func scene(pressed: Set<PadButton>, sticks: [PadStick: StickValue]) -> ShowcaseScene {
-        var b = SceneBuilder(colours: colours)
+    ///
+    /// - `opacity` is the shared opacity setting; the scene's own opacity is derived from it, and
+    ///   the look firms up (shadow, outline, glyph contrast) as it drops, so a faint pad still
+    ///   reads over a bright picture.
+    /// - `time` (a monotonic clock, seconds) turns on the press animation: a control eases to
+    ///   and from its held look over about 0.1 s. nil draws every control fully held or fully up,
+    ///   which is what previews and checks want. `reduceMotion` snaps instead of easing.
+    public func scene(pressed: Set<PadButton>, sticks: [PadStick: StickValue],
+                      opacity: CGFloat = PadSettings.defaultOpacity,
+                      time: Double? = nil, reduceMotion: Bool = false) -> ShowcaseScene {
+        if let time { pressAnimator.step(pressed: pressed, time: time, reduceMotion: reduceMotion) }
+        let amounts = time == nil ? nil : pressAnimator.eased
+        var b = SceneBuilder(colours: colours, glass: glass, opacity: opacity, amounts: amounts, pressed: pressed)
         let active = Dictionary(tracks.values.map { ($0.control, $0) }, uniquingKeysWith: { a, _ in a })
         let gate = context.stick.gate
 
@@ -108,15 +119,15 @@ extension ShowcasePad {
         // row, so nothing's shadow is cut by a neighbour drawn later.
         for (i, c) in controls.enumerated() {
             if case let .stick(stick, travel, _) = c.kind {
-                b.stick(stick, centre: c.shape.center, dish: travel, gate: gate, track: active[i], held: pressed.contains(stick == .left ? .stickL : .stickR))
+                b.stick(stick, centre: active[i]?.origin ?? c.shape.center, dish: travel, gate: gate, track: active[i], held: b.amount(stick == .left ? .stickL : .stickR))
             }
         }
         for c in controls {
             switch c.kind {
             case .dpad:
-                if case let .circle(centre, _) = c.shape { b.dpad(centre: centre, pad: c, pressed: pressed) }
+                if case let .circle(centre, _) = c.shape { b.dpad(centre: centre, pad: c) }
             case .button(let btn):
-                let on = pressed.contains(btn)
+                let on = b.amount(btn)
                 switch c.role {
                 case .face: b.round(id: btn.description, shape: c.shape, pressed: on, glyph: .letter(btn.description))
                 case .shoulder: b.pill(id: btn.description, shape: c.shape, pressed: on, label: btn.description)
@@ -129,55 +140,107 @@ extension ShowcasePad {
             default: break
             }
         }
-        return ShowcaseScene(size: context.size, opacity: 0.94, primitives: b.out)
+        return ShowcaseScene(size: context.size, opacity: b.sceneOpacity, primitives: b.out)
     }
 }
 
 struct SceneBuilder {
     let colours: ShowcaseColourFile
+    let glass: Bool
+    /// The shared opacity setting, and what the scene is drawn at because of it.
+    let opacity: CGFloat
     var out: [ShowcasePrimitive] = []
+    private let amounts: [PadButton: CGFloat]?
+    private let pressed: Set<PadButton>
 
     enum Glyph { case letter(String), plus, minus, home, none }
 
-    init(colours: ShowcaseColourFile) { self.colours = colours }
+    init(colours: ShowcaseColourFile, glass: Bool = false, opacity: CGFloat = PadSettings.defaultOpacity,
+         amounts: [PadButton: CGFloat]? = nil, pressed: Set<PadButton> = []) {
+        self.colours = colours
+        self.glass = glass
+        self.opacity = opacity
+        self.amounts = amounts
+        self.pressed = pressed
+    }
+
+    /// How held a button is, 0...1.
+    func amount(_ b: PadButton) -> CGFloat { amounts?[b] ?? (pressed.contains(b) ? 1 : 0) }
+
+    /// The whole pad's alpha: 0.94 at the default opacity (the shipping pad's 0.88-plus-rim look),
+    /// following the setting from there.
+    var sceneOpacity: Double { Double(min(1, 0.94 * max(opacity, 0) / PadSettings.defaultOpacity)) }
+
+    /// 1 at the default opacity and above; up to 1.8 as the pad fades. Shadow, outline and glyph
+    /// contrast scale with it, since a faded fill alone stops separating from the picture.
+    private var lift: CGFloat { min(1.8, max(1, PadSettings.defaultOpacity / max(opacity, 0.1))) }
 
     // Rim stops: lit from above while up, from below while held.
-    private func rim(_ fill: ShowcaseRGBA, pressed: Bool) -> ShowcasePaint {
+    func rim(_ fill: ShowcaseRGBA, pressed: Bool) -> ShowcasePaint { rim(fill, press: pressed ? 1 : 0) }
+
+    private func rim(_ fill: ShowcaseRGBA, press: CGFloat) -> ShowcasePaint {
         let light = fill.isLight
-        let hi = ShowcaseRGBA.white.withAlpha(light ? 0.85 : 0.30)
+        let glassBoost = glass ? 1.0 : 0.0
+        let hi = ShowcaseRGBA.white.withAlpha(min(1, (light ? 0.85 : 0.30) + 0.15 * glassBoost))
         let lo = ShowcaseRGBA.black.withAlpha(light ? 0.16 : 0.45)
         let clear = ShowcaseRGBA.white.withAlpha(0)
-        return pressed
-            ? .vertical([ShowcaseStop(offset: 0, colour: lo), ShowcaseStop(offset: 0.45, colour: clear.withAlpha(0)),
-                         ShowcaseStop(offset: 1, colour: hi.withAlpha(hi.a * 0.5))])
-            : .vertical([ShowcaseStop(offset: 0, colour: hi), ShowcaseStop(offset: 0.5, colour: clear),
-                         ShowcaseStop(offset: 1, colour: lo)])
+        let heldHi = hi.withAlpha(hi.a * 0.5)
+        let t = Double(min(max(press, 0), 1))
+        func lerp(_ a: Double, _ b: Double) -> Double { a + (b - a) * t }
+        return .vertical([ShowcaseStop(offset: 0, colour: hi.mixed(lo, t)),
+                          ShowcaseStop(offset: lerp(0.5, 0.45), colour: clear),
+                          ShowcaseStop(offset: 1, colour: lo.mixed(heldHi, t))])
     }
 
     /// Body + outline + rim + shadow for any shape; `make(inset)` rebuilds it smaller.
-    mutating func body(_ make: (CGFloat) -> ShowcaseShape, minDim: CGFloat, id: String, pressed: Bool,
+    mutating func body(_ make: (CGFloat) -> ShowcaseShape, minDim: CGFloat, id: String, press: CGFloat,
                        shadow: ShowcaseShadow = ShowcaseShadow(blur: 1.6, dy: 1.2, opacity: 0.30)) {
-        var fill = colours.fill(id).withAlpha(colours.alpha(id, pressed: pressed))
-        if pressed {
-            fill = fill.isLight ? fill.mixed(.black, 0.16) : fill.mixed(.white, 0.18)
+        let t = Double(min(max(press, 0), 1))
+        let base = colours.fill(id)
+        var fill = base.withAlpha(min(1, base.a + colours.pressedAlphaBoost * t))
+        fill = fill.isLight ? fill.mixed(.black, 0.16 * t) : fill.mixed(.white, 0.18 * t)
+        let w = min(max(minDim * 0.03, 1), 1.8) * (glass ? 1.4 : 1)
+        let held = ShowcaseShadow(blur: 0.8, dy: 0.5, opacity: 0.18)
+        let sh = ShowcaseShadow(blur: shadow.blur + (held.blur - shadow.blur) * CGFloat(t),
+                                dy: shadow.dy + (held.dy - shadow.dy) * CGFloat(t),
+                                opacity: min(0.6, (shadow.opacity + (held.opacity - shadow.opacity) * t) * Double(lift)))
+        let paint: ShowcasePaint
+        if glass {
+            // Smoked glass: a little see-through, brighter at the top edge, deeper at the bottom.
+            let a = fill.a * 0.84
+            paint = .vertical([ShowcaseStop(offset: 0, colour: fill.mixed(.white, 0.30).withAlpha(a)),
+                               ShowcaseStop(offset: 0.55, colour: fill.withAlpha(a)),
+                               ShowcaseStop(offset: 1, colour: fill.mixed(.black, 0.10).withAlpha(a))])
+        } else {
+            paint = .solid(fill)
         }
-        let w = min(max(minDim * 0.03, 1), 1.8)
-        out.append(ShowcasePrimitive(shape: make(0), fill: .solid(fill), stroke: nil, shadow: pressed
-            ? ShowcaseShadow(blur: 0.8, dy: 0.5, opacity: 0.18) : shadow))
-        out.append(ShowcasePrimitive(shape: make(0.5), fill: nil, stroke: .solid(colours.outline.withAlpha(0.9)), strokeWidth: 1))
-        out.append(ShowcasePrimitive(shape: make(1 + w / 2), fill: nil, stroke: rim(fill, pressed: pressed), strokeWidth: w))
+        out.append(ShowcasePrimitive(shape: make(0), fill: paint, stroke: nil, shadow: sh))
+        out.append(ShowcasePrimitive(shape: make(0.5), fill: nil,
+                                     stroke: .solid(colours.outline.withAlpha(min(1, colours.outline.a * 0.9 * Double(lift)))),
+                                     strokeWidth: 1 + 0.5 * (lift - 1)))
+        out.append(ShowcasePrimitive(shape: make(1 + w / 2), fill: nil, stroke: rim(fill, press: press), strokeWidth: w))
+    }
+
+    /// The glass look's highlight: a soft sheen across the top of a body.
+    private mutating func gloss(_ rect: CGRect, radius: CGFloat, press: CGFloat) {
+        guard glass, rect.width > 2, rect.height > 2 else { return }
+        let a = 0.5 * Double(1 - 0.6 * min(max(press, 0), 1))
+        out.append(ShowcasePrimitive(shape: .rect(rect, radius),
+                                     fill: .vertical([ShowcaseStop(offset: 0, colour: ShowcaseRGBA.white.withAlpha(a)),
+                                                      ShowcaseStop(offset: 1, colour: ShowcaseRGBA.white.withAlpha(0))])))
     }
 
     private func ink(_ id: String) -> ShowcaseRGBA {
-        colours.glyph(id).legible(on: colours.fill(id).withAlpha(1), minimum: 3)
+        colours.glyph(id).legible(on: colours.fill(id).withAlpha(1), minimum: lift > 1.2 ? 4.5 : 3)
     }
 
-    private func scaled(_ r: CGFloat, pressed: Bool) -> CGFloat { pressed ? r * 0.95 : r }
+    private func scaled(_ r: CGFloat, press: CGFloat) -> CGFloat { r * (1 - 0.05 * min(max(press, 0), 1)) }
 
-    mutating func round(id: String, shape: PadShape, pressed: Bool, glyph: Glyph) {
+    mutating func round(id: String, shape: PadShape, pressed press: CGFloat, glyph: Glyph) {
         guard case let .circle(c, r0) = shape else { return }
-        let r = scaled(r0, pressed: pressed)
-        body({ ShowcaseShape.circle(c, r - $0) }, minDim: 2 * r, id: id, pressed: pressed)
+        let r = scaled(r0, press: press)
+        body({ ShowcaseShape.circle(c, r - $0) }, minDim: 2 * r, id: id, press: press)
+        gloss(CGRect(x: c.x - r * 0.55, y: c.y - r * 0.80, width: r * 1.1, height: r * 0.62), radius: r * 0.31, press: press)
         let colour = ink(id)
         switch glyph {
         case .letter(let s):
@@ -200,22 +263,26 @@ struct SceneBuilder {
         }
     }
 
-    mutating func pill(id: String, shape: PadShape, pressed: Bool, label: String) {
+    mutating func pill(id: String, shape: PadShape, pressed press: CGFloat, label: String) {
         guard case let .roundedRect(rect0, cr0) = shape else { return }
-        let k: CGFloat = pressed ? 0.95 : 1
+        let k = scaled(1, press: press)
         let rect = CGRect(center: rect0.center, size: CGSize(width: rect0.width * k, height: rect0.height * k))
         let cr = cr0 * k
-        body({ ShowcaseShape.rect(rect.insetBy(dx: $0, dy: $0), max(cr - $0, 0)) }, minDim: rect.height, id: id, pressed: pressed)
+        body({ ShowcaseShape.rect(rect.insetBy(dx: $0, dy: $0), max(cr - $0, 0)) }, minDim: rect.height, id: id, press: press)
+        gloss(CGRect(x: rect.minX + cr * 0.5, y: rect.minY + 2, width: rect.width - cr, height: rect.height * 0.4),
+              radius: rect.height * 0.2, press: press)
         out.append(ShowcasePrimitive(shape: .circle(rect0.center, 0), text: label, textSize: Self.textSize(rect0.height),
                                      textColour: ink(id)))
     }
 
     /// The L3/R3 click: a shallow dimple at the middle of its cluster, not a button.
-    mutating func dimple(id: String, shape: PadShape, pressed: Bool) {
+    mutating func dimple(id: String, shape: PadShape, pressed press: CGFloat) {
         guard case let .circle(c, r) = shape else { return }
         let base = colours.fill("dpad").withAlpha(1)
-        let tone = pressed ? (base.isLight ? base.mixed(.black, 0.26) : base.mixed(.white, 0.28))
-                           : (base.isLight ? base.mixed(.black, 0.08) : base.mixed(.white, 0.07))
+        let t = Double(min(max(press, 0), 1))
+        let up = base.isLight ? base.mixed(.black, 0.08) : base.mixed(.white, 0.07)
+        let down = base.isLight ? base.mixed(.black, 0.26) : base.mixed(.white, 0.28)
+        let tone = up.mixed(down, t)
         out.append(ShowcasePrimitive(shape: .circle(c, r), fill: .solid(tone)))
         out.append(ShowcasePrimitive(shape: .circle(c, r - 0.5), fill: nil,
                                      stroke: .vertical([ShowcaseStop(offset: 0, colour: ShowcaseRGBA.black.withAlpha(0.20)),
@@ -224,13 +291,13 @@ struct SceneBuilder {
                                      strokeWidth: 1))
     }
 
-    mutating func dpad(centre c: CGPoint, pad: PadControl, pressed: Set<PadButton>) {
+    mutating func dpad(centre c: CGPoint, pad: PadControl) {
         guard case let .dpad(_, clickRadius, armOffset, armSize) = pad.kind else { return }
         let w = armOffset.x * 2 + armSize, h = armOffset.y * 2 + armSize
         let corner = min(armSize * 0.24, armSize / 2 - 0.5)
-        let down = pressed.intersection([.up, .down, .left, .right])
+        let down = [PadButton.up, .down, .left, .right].filter { amount($0) > 0.001 }
         body({ i in ShowcaseShape.path(Self.cross(c, w - 2 * i, h - 2 * i, armSize - 2 * i, max(corner - i * 0.6, 0.5))) },
-             minDim: armSize, id: "dpad", pressed: false)
+             minDim: armSize, id: "dpad", press: 0)
         // A held direction shades its own arm, so a diagonal reads as two.
         for d in down {
             let a = armSize / 2 - 1
@@ -243,7 +310,7 @@ struct SceneBuilder {
             }
             let base = colours.fill("dpad")
             out.append(ShowcasePrimitive(shape: .rect(r, corner),
-                                         fill: .solid((base.isLight ? ShowcaseRGBA.black : .white).withAlpha(base.isLight ? 0.20 : 0.22))))
+                                         fill: .solid((base.isLight ? ShowcaseRGBA.black : .white).withAlpha((base.isLight ? 0.20 : 0.22) * Double(amount(d))))))
         }
         // Arrowheads, quiet until held.
         let ink = self.ink("dpad")
@@ -256,15 +323,14 @@ struct SceneBuilder {
             let p1 = CGPoint(x: mid.x - CGFloat(dx) * s * 0.55 + nx * s * 1.1, y: mid.y - CGFloat(dy) * s * 0.55 + ny * s * 1.1)
             let p2 = CGPoint(x: mid.x - CGFloat(dx) * s * 0.55 - nx * s * 1.1, y: mid.y - CGFloat(dy) * s * 0.55 - ny * s * 1.1)
             out.append(ShowcasePrimitive(shape: .path([.move(apex), .line(p1), .line(p2), .close]),
-                                         fill: .solid(ink.withAlpha(down.contains(d) ? 0.95 : 0.5))))
+                                         fill: .solid(ink.withAlpha(0.5 + 0.45 * Double(amount(d))))))
         }
         // L3: the dimple in the middle.
-        let held = pressed.contains(.stickL)
-        dimple(id: "L3", shape: .circle(center: c, radius: clickRadius), pressed: held)
+        dimple(id: "L3", shape: .circle(center: c, radius: clickRadius), pressed: amount(.stickL))
     }
 
     mutating func stick(_ s: PadStick, centre c: CGPoint, dish R: CGFloat, gate: StickTuning.Gate, track: ControlScheme.Track?,
-                        held: Bool) {
+                        held: CGFloat) {
         let id = s == .left ? "stickL" : "stickR"
         let fill = colours.fill(id).withAlpha(1)
         let engaged = track != nil
@@ -287,10 +353,11 @@ struct SceneBuilder {
         let kr = R * ShowcaseHardware.stickKnob / ShowcaseHardware.stickBase
         let k = (track?.knob ?? .zero) * ((R - kr) / max(R, 1))
         let kc = CGPoint(x: c.x + k.x, y: c.y + k.y)
-        let pressed = held || engaged
-        body({ ShowcaseShape.circle(kc, (pressed ? kr * 0.97 : kr) - $0) }, minDim: 2 * kr, id: id, pressed: held,
+        let sunk = max(held, engaged ? 1 : 0)
+        body({ ShowcaseShape.circle(kc, kr * (1 - 0.03 * sunk) - $0) }, minDim: 2 * kr, id: id, press: held,
              shadow: ShowcaseShadow(blur: 2.6, dy: 2, opacity: 0.34))
-        if engaged && !held {
+        gloss(CGRect(x: kc.x - kr * 0.55, y: kc.y - kr * 0.80, width: kr * 1.1, height: kr * 0.62), radius: kr * 0.31, press: held)
+        if engaged && held < 0.5 {
             out.append(ShowcasePrimitive(shape: .circle(kc, kr * 0.97 - 1.5), fill: .solid(ShowcaseRGBA.black.withAlpha(fill.isLight ? 0.08 : 0)),
                                          stroke: nil))
         }
