@@ -992,6 +992,13 @@ void MetalPipelineCache::QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc)
 {
 	if (!m_archiveWriteEnabled)
 		return;
+	if (const char* reason = GetArchiveSkipReason(desc))
+	{
+		static std::atomic<uint32> s_skipped{0};
+		if (s_skipped.fetch_add(1) == 0)
+			cemuLog_log(LogType::Force, "Metal binary archive: pipelines with {} are not archived (they would make saving fail)", reason);
+		return;
+	}
 	std::lock_guard<std::mutex> lock(m_archiveMutex);
 	if (m_archiveStop || m_archiveQueue.size() >= ARCHIVE_MAX_QUEUE)
 		return;
@@ -1006,12 +1013,68 @@ void MetalPipelineCache::QueueArchiveAdd(MTL::RenderPipelineDescriptor* desc)
 	m_archiveCv.notify_one();
 }
 
+// A render pipeline without a fragment function (rasterization disabled, depth-only or stream-out style draws) makes
+// MTLBinaryArchive serialization fail for the whole archive ("expecting 'fragment' stage in pipeline no. N"). Such pipelines are
+// cheap to build anyway and are never archived.
+static const char* GetArchiveSkipReason(MTL::RenderPipelineDescriptor* desc)
+{
+	if (desc->fragmentFunction() == nullptr)
+		return "no fragment function";
+	if (!desc->isRasterizationEnabled())
+		return "rasterization disabled";
+	return nullptr;
+}
+
+static MTL::BinaryArchive* BuildArchiveRange(MTL::Device* device, const std::vector<MTL::RenderPipelineDescriptor*>& v, size_t b, size_t e)
+{
+	NS_STACK_SCOPED MTL::BinaryArchiveDescriptor* archiveDesc = MTL::BinaryArchiveDescriptor::alloc()->init();
+	NS::Error* error = nullptr;
+	MTL::BinaryArchive* archive = device->newBinaryArchive(archiveDesc, &error);
+	if (!archive)
+		return nullptr;
+	for (size_t i = b; i < e; i++)
+	{
+		NS::Error* addError = nullptr;
+		archive->addRenderPipelineFunctions(v[i], &addError);
+	}
+	return archive;
+}
+
+// Finds the descriptors that make serialization fail by serializing ranges to a scratch file and bisecting the ranges that fail.
+static void FindUnserializableDescriptors(MTL::Device* device, const std::vector<MTL::RenderPipelineDescriptor*>& v, size_t b, size_t e, const std::string& scratchPath, std::vector<size_t>& bad)
+{
+	if (b >= e)
+		return;
+	NS_STACK_SCOPED NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
+	MTL::BinaryArchive* archive = BuildArchiveRange(device, v, b, e);
+	bool ok = false;
+	if (archive)
+	{
+		NS::Error* error = nullptr;
+		ok = archive->serializeToURL(ToNSURL(scratchPath), &error);
+		archive->release();
+		std::error_code ec;
+		fs::remove(fs::path(scratchPath), ec);
+	}
+	if (ok)
+		return;
+	if (e - b == 1)
+	{
+		bad.push_back(b);
+		return;
+	}
+	const size_t mid = b + (e - b) / 2;
+	FindUnserializableDescriptors(device, v, b, mid, scratchPath, bad);
+	FindUnserializableDescriptors(device, v, mid, e, scratchPath, bad);
+}
+
 void MetalPipelineCache::BinaryArchiveWriterThread()
 {
 	SetThreadName("mtlArchive");
 	MTL::BinaryArchive* archive = nullptr;
 	uint32 pending = 0;
 	uint32 added = 0;
+	std::vector<MTL::RenderPipelineDescriptor*> kept; // every descriptor in the archive, so a failed save can be repaired
 	auto lastSave = std::chrono::steady_clock::now();
 	for (;;)
 	{
@@ -1063,6 +1126,8 @@ void MetalPipelineCache::BinaryArchiveWriterThread()
 				{
 					pending++;
 					added++;
+					desc->retain();
+					try { kept.push_back(desc); } catch (const std::bad_alloc&) { desc->release(); }
 				}
 			}
 			desc->release();
@@ -1093,6 +1158,55 @@ void MetalPipelineCache::BinaryArchiveWriterThread()
 			{
 				cemuLog_log(LogType::Force, "Metal binary archive could not be saved: {}", error ? error->localizedDescription()->utf8String() : "rename failed");
 				fs::remove(fs::path(tmpPath), ec);
+				if (error && !kept.empty())
+				{
+					// one pipeline the archive cannot serialize loses the whole archive: find and drop the offenders, keep the rest
+					std::vector<size_t> bad;
+					const size_t chunk = 128;
+					for (size_t b = 0; b < kept.size(); b += chunk)
+						FindUnserializableDescriptors(m_mtlr->GetDevice(), kept, b, std::min(kept.size(), b + chunk), tmpPath + ".probe", bad);
+					std::sort(bad.begin(), bad.end());
+					for (size_t k = 0; k < bad.size(); k++)
+					{
+						MTL::RenderPipelineDescriptor* d = kept[bad[k]];
+						const char* reason = GetArchiveSkipReason(d);
+						cemuLog_log(LogType::Force, "Metal binary archive: skipped a pipeline the archive cannot serialize ({})", reason ? reason : "unknown reason");
+					}
+					for (size_t k = bad.size(); k-- > 0;)
+					{
+						kept[bad[k]]->release();
+						kept.erase(kept.begin() + bad[k]);
+					}
+					if (archive)
+						archive->release();
+					archive = BuildArchiveRange(m_mtlr->GetDevice(), kept, 0, kept.size());
+					added = (uint32)kept.size();
+					if (archive && !kept.empty())
+					{
+						NS::Error* retryError = nullptr;
+						bool retried = archive->serializeToURL(ToNSURL(tmpPath), &retryError);
+						if (retried)
+						{
+							fs::rename(fs::path(tmpPath), fs::path(m_archiveWritePath), ec);
+							retried = !ec;
+						}
+						if (retried)
+						{
+							const uint64 size = fs::file_size(fs::path(m_archiveWritePath), ec);
+							cemuLog_log(LogType::Force, "Metal binary archive: saved {} pipelines after skipping {}, {} MB", added, bad.size(), ec ? 0 : size / (1024 * 1024));
+							if (!ec && m_archiveBaseBytes + size >= ARCHIVE_MAX_BYTES)
+							{
+								std::lock_guard<std::mutex> lock(m_archiveMutex);
+								m_archiveWriteEnabled = false;
+							}
+						}
+						else
+						{
+							cemuLog_log(LogType::Force, "Metal binary archive could not be saved after skipping {} pipelines: {}", bad.size(), retryError ? retryError->localizedDescription()->utf8String() : "rename failed");
+							fs::remove(fs::path(tmpPath), ec);
+						}
+					}
+				}
 			}
 			pending = 0;
 			lastSave = std::chrono::steady_clock::now();
@@ -1110,6 +1224,8 @@ void MetalPipelineCache::BinaryArchiveWriterThread()
 		if (stopping)
 			break;
 	}
+	for (auto* d : kept)
+		d->release();
 	if (archive)
 		archive->release();
 }
