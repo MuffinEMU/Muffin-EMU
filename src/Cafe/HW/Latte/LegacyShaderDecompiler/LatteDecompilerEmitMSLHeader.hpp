@@ -242,10 +242,16 @@ namespace LatteDecompiler
 	{
 		auto* src = shaderContext->shaderSource;
 
-		src->add("struct VertexOut {" _CRLF);
-		src->add("float4 position [[position]] [[invariant]];" _CRLF);
+		// Emulated RECTS keeps this struct in a device buffer between two compute kernels, and MSL does not accept
+		// [[position]] / [[user]] on the element type of a device buffer, so that variant carries no attributes at all.
+		const bool storable = isRectVertexShader && shaderContext->options->geometryShaderEmulation;
+
+		std::string def;
+		def += "struct VertexOut {" _CRLF;
+		def += storable ? "float4 position;" _CRLF : "float4 position [[position]] [[invariant]];" _CRLF;
 		if (shaderContext->analyzer.outputPointSize)
-		    src->add("float pointSize [[point_size]];" _CRLF);
+		    def += storable ? "float pointSize;" _CRLF : "float pointSize [[point_size]];" _CRLF;
+		uint32 float4FieldCount = 1;
 
 		LatteShaderPSInputTable* psInputTable = LatteSHRC_GetPSInputTable();
 		auto parameterMask = shaderContext->shader->outputParameterMask;
@@ -272,16 +278,17 @@ namespace LatteDecompiler
 
 			psInputsWritten[psInputIndex] = true;
 
-			src->addFmt("float4 passParameterSem{}", psInputTable->import[psInputIndex].semanticId);
+			def += fmt::format("float4 passParameterSem{}", psInputTable->import[psInputIndex].semanticId);
+			float4FieldCount++;
 			if (!isRectVertexShader)
 			{
-     			src->addFmt(" [[user(locn{})]]", psInputIndex);
+     			def += fmt::format(" [[user(locn{})]]", psInputIndex);
      			if (psInputTable->import[psInputIndex].isFlat)
-    				src->add(" [[flat]]");
+    				def += " [[flat]]";
      			if (psInputTable->import[psInputIndex].isNoPerspective)
-    				src->add(" [[center_no_perspective]]");
+    				def += " [[center_no_perspective]]";
 			}
-			src->addFmt(";" _CRLF);
+			def += ";" _CRLF;
 		}
 
 		// TODO: handle this in the fragment shader instead?
@@ -294,10 +301,15 @@ namespace LatteDecompiler
 			if (psInputTable->import[i].semanticId > LATTE_ANALYZER_IMPORT_INDEX_PARAM_MAX)
 				continue;
 
-			src->addFmt("float4 unknown{} [[user(locn{})]];" _CRLF, psInputTable->import[i].semanticId, i);
+			if (storable)
+				def += fmt::format("float4 unknown{};" _CRLF, psInputTable->import[i].semanticId);
+			else
+				def += fmt::format("float4 unknown{} [[user(locn{})]];" _CRLF, psInputTable->import[i].semanticId, i);
+			float4FieldCount++;
 		}
 
-		src->add("};" _CRLF _CRLF);
+		def += "};" _CRLF _CRLF;
+		src->add(def.c_str());
 
 		if (isRectVertexShader)
 		{
@@ -305,6 +317,12 @@ namespace LatteDecompiler
 	                src->add("VertexOut vertexOut[VERTICES_PER_VERTEX_PRIMITIVE];" _CRLF);
 					src->add("uint primitiveID;" _CRLF);
 	                src->add("};" _CRLF _CRLF);
+			if (storable)
+			{
+				// Three vertices, each at most one 16 byte slot per float4 plus one for pointSize's padding, then the id rounded up to 16
+				shaderContext->shader->mtlRectVertexOutDef = def;
+				shaderContext->shader->mtlGsPayloadStride = 3u * (float4FieldCount + 1u) * 16u + 16u;
+			}
 		}
 	}
 
@@ -394,6 +412,12 @@ namespace LatteDecompiler
                 src->add("VertexOut vertexOut[VERTICES_PER_VERTEX_PRIMITIVE];" _CRLF);
 				src->add("uint primitiveID;" _CRLF);
                 src->add("};" _CRLF _CRLF);
+                if (decompilerContext->options->geometryShaderEmulation)
+                {
+                    // VertexOut is nothing but int4s, so it is 16 byte aligned and the trailing uint rounds the payload up to the next 16
+                    const uint32 verticesPerVertexPrimitive = GetVerticesPerPrimitive(decompilerContext->contextRegistersNew->VGT_PRIMITIVE_TYPE.get_PRIMITIVE_MODE());
+                    decompilerContext->shader->mtlGsPayloadStride = ringParameterCountVS2GS != 0 ? verticesPerVertexPrimitive * ringParameterCountVS2GS * 16u + 16u : verticesPerVertexPrimitive + 8u;
+                }
     		}
     		if (decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
     		{
@@ -404,18 +428,64 @@ namespace LatteDecompiler
     			if (((decompilerContext->contextRegisters[mmSQ_GSVS_RING_ITEMSIZE] & 0x7FFF) & 0xF) != 0)
     				debugBreakpoint();
 
+                // Emulated, the geometry stage stores its vertices in a device buffer, and MSL does not accept [[position]] or
+                // [[user]] on the element type of one. GeometryOut is then the plain storable struct and GeometryOutRaster,
+                // with the same fields in the same order, only ever the passthrough vertex function's return type.
+                const bool gsEmulation = decompilerContext->options->geometryShaderEmulation;
                 src->add("struct GeometryOut {" _CRLF);
-                src->add("float4 position [[position]];" _CRLF);
+                src->add(gsEmulation ? "float4 position;" _CRLF : "float4 position [[position]];" _CRLF);
+                if (gsEmulation && decompilerContext->analyzer.outputPointSize)
+                    src->add("float pointSize;" _CRLF);
+                uint32 exportedParamCount = 0;
     			for (sint32 p = 0; p < decompilerContext->parsedGSCopyShader->numParam; p++)
     			{
     				if (decompilerContext->parsedGSCopyShader->paramMapping[p].exportType != 2)
     					continue;
-    				src->addFmt("float4 passParameterSem{} [[user(locn{})]];" _CRLF, (sint32)decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam, decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam & 0x7F);
+                    exportedParamCount++;
+                    if (gsEmulation)
+                        src->addFmt("float4 passParameterSem{};" _CRLF, (sint32)decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam);
+                    else
+        				src->addFmt("float4 passParameterSem{} [[user(locn{})]];" _CRLF, (sint32)decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam, decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam & 0x7F);
     			}
                 src->add("};" _CRLF _CRLF);
 
-				// Define the mesh shader output type
-				src->add("using MeshType = mesh<GeometryOut, void, MTL_MAX_VERTEX_COUNT, MTL_MAX_PRIMITIVE_COUNT, topology::MTL_PRIMITIVE_TYPE>;" _CRLF);
+                if (gsEmulation)
+                {
+                    src->add("struct GeometryOutRaster {" _CRLF);
+                    src->add("float4 position [[position]];" _CRLF);
+                    if (decompilerContext->analyzer.outputPointSize)
+                        src->add("float pointSize [[point_size]];" _CRLF);
+                    for (sint32 p = 0; p < decompilerContext->parsedGSCopyShader->numParam; p++)
+                    {
+                        if (decompilerContext->parsedGSCopyShader->paramMapping[p].exportType != 2)
+                            continue;
+                        src->addFmt("float4 passParameterSem{} [[user(locn{})]];" _CRLF, (sint32)decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam, decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam & 0x7F);
+                    }
+                    src->add("};" _CRLF _CRLF);
+
+                    src->add("static GeometryOutRaster gsToRaster(GeometryOut o) {" _CRLF);
+                    src->add("GeometryOutRaster r;" _CRLF);
+                    src->add("r.position = o.position;" _CRLF);
+                    if (decompilerContext->analyzer.outputPointSize)
+                        src->add("r.pointSize = o.pointSize;" _CRLF);
+                    for (sint32 p = 0; p < decompilerContext->parsedGSCopyShader->numParam; p++)
+                    {
+                        if (decompilerContext->parsedGSCopyShader->paramMapping[p].exportType != 2)
+                            continue;
+                        const sint32 exportParam = (sint32)decompilerContext->parsedGSCopyShader->paramMapping[p].exportParam;
+                        src->addFmt("r.passParameterSem{} = o.passParameterSem{};" _CRLF, exportParam, exportParam);
+                    }
+                    src->add("return r;" _CRLF);
+                    src->add("}" _CRLF _CRLF);
+
+                    // float4 members force 16 byte alignment, so position, the float pointSize (padded) and each parameter take a slot
+                    decompilerContext->shader->mtlGsVertexStride = 16u + (decompilerContext->analyzer.outputPointSize ? 16u : 0u) + exportedParamCount * 16u;
+                }
+                else
+                {
+    				// Define the mesh shader output type
+    				src->add("using MeshType = mesh<GeometryOut, void, MTL_MAX_VERTEX_COUNT, MTL_MAX_PRIMITIVE_COUNT, topology::MTL_PRIMITIVE_TYPE>;" _CRLF);
+                }
 			}
 			}
 		}
@@ -532,7 +602,19 @@ namespace LatteDecompiler
         {
             LattePrimitiveMode vsOutPrimType = decompilerContext->contextRegistersNew->VGT_PRIMITIVE_TYPE.get_PRIMITIVE_MODE();
             src->addFmt("#define VERTICES_PER_VERTEX_PRIMITIVE {}" _CRLF, GetVerticesPerPrimitive(vsOutPrimType));
-            src->add("#define MTL_MAX_VERTEX_COUNT 32" _CRLF);
+            uint32 maxVertexCount = 32;
+            if (decompilerContext->options->geometryShaderEmulation && decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
+            {
+                // The output buffer is sized for the worst case of every invocation, so use the shader's own bound when it has a
+                // static one: no loops or subroutines means every emit instruction runs at most once.
+                if (!decompilerContext->analyzer.hasLoops && decompilerContext->list_subroutines.empty())
+                    maxVertexCount = std::clamp<uint32>(decompilerContext->analyzer.numEmitVertex, 1u, 32u);
+                // A strip needs one primitive's worth of vertices to produce anything; below that GET_PRIMITIVE_COUNT is 0 and the passthrough would divide by it
+                const uint32 outPrimType = decompilerContext->contextRegisters[mmVGT_GS_OUT_PRIM_TYPE];
+                maxVertexCount = std::max<uint32>(maxVertexCount, outPrimType == 1 ? 2u : (outPrimType == 2 ? 3u : 1u));
+                decompilerContext->shader->mtlGsMaxVertices = maxVertexCount;
+            }
+            src->addFmt("#define MTL_MAX_VERTEX_COUNT {}" _CRLF, maxVertexCount);
 
             uint32 gsOutPrimType = decompilerContext->contextRegisters[mmVGT_GS_OUT_PRIM_TYPE];
             if (decompilerContext->shaderType == LatteConst::ShaderType::Geometry)
@@ -556,6 +638,8 @@ namespace LatteDecompiler
                     break;
                 }
                 src->add("#define MTL_MAX_PRIMITIVE_COUNT GET_PRIMITIVE_COUNT(MTL_MAX_VERTEX_COUNT)" _CRLF);
+                if (decompilerContext->options->geometryShaderEmulation)
+                    src->addFmt("#define VERTICES_PER_OUT_PRIMITIVE {}" _CRLF, gsOutPrimType == 0 ? 1 : (gsOutPrimType == 1 ? 2 : 3));
             }
         }
 
@@ -640,7 +724,14 @@ namespace LatteDecompiler
 		switch (decompilerContext->shaderType)
 		{
 		case LatteConst::ShaderType::Vertex:
-		    if (usesGeometryShader)
+		    if (usesGeometryShader && decompilerContext->options->geometryShaderEmulation)
+			{
+                // A compute kernel standing in for the object stage. That stage ran one threadgroup per primitive with one thread
+                // per vertex of it; the flat thread id carries the same information, and the body recovers tig and tid from it.
+                src->add("uint gid [[thread_position_in_grid]]");
+                src->addFmt(", device ObjectPayload* gsPayload [[buffer({})]]", MTL_GS_PAYLOAD_BUFFER);
+			}
+		    else if (usesGeometryShader)
 			{
                 src->add("object_data ObjectPayload& objectPayload [[payload]]");
                 src->add(", mesh_grid_properties meshGridProperties");
@@ -667,8 +758,20 @@ namespace LatteDecompiler
 
             break;
         case LatteConst::ShaderType::Geometry:
-            src->add("MeshType mesh");
-            src->add(", const object_data ObjectPayload& objectPayload [[payload]]");
+            if (decompilerContext->options->geometryShaderEmulation)
+            {
+                // One thread per primitive, matching the mesh stage's one threadgroup per primitive, reading the payload from the
+                // buffer the vertex kernel filled
+                src->add("uint gid [[thread_position_in_grid]]");
+                src->addFmt(", const device ObjectPayload* gsPayloadIn [[buffer({})]]", MTL_GS_PAYLOAD_BUFFER);
+                src->addFmt(", device GeometryOut* gsOut [[buffer({})]]", MTL_GS_OUT_BUFFER);
+                src->addFmt(", device uint* gsPrimCount [[buffer({})]]", MTL_GS_PRIMCOUNT_BUFFER);
+            }
+            else
+            {
+                src->add("MeshType mesh");
+                src->add(", const object_data ObjectPayload& objectPayload [[payload]]");
+            }
             break;
         case LatteConst::ShaderType::Pixel:
             src->add("FragmentIn in [[stage_in]]");

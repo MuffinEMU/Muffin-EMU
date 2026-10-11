@@ -3699,7 +3699,10 @@ void LatteDecompiler_emitClauseCodeMSL(LatteDecompilerShaderContext* shaderConte
 		if (shaderContext->analyzer.outputPointSize && shaderContext->analyzer.writesPointSize == false)
 			src->add("out.pointSize = supportBuffer.pointSize;" _CRLF);
 		src->add("if (vertexIndex < MTL_MAX_VERTEX_COUNT) {" _CRLF);
-		src->add("mesh.set_vertex(vertexIndex, out);" _CRLF);
+		if (shaderContext->options->geometryShaderEmulation)
+			src->add("gsOut[gid * MTL_MAX_VERTEX_COUNT + vertexIndex] = out;" _CRLF);
+		else
+			src->add("mesh.set_vertex(vertexIndex, out);" _CRLF);
 		src->add("}" _CRLF);
 		src->add("vertexIndex++;" _CRLF);
 		if (shaderContext->output->streamoutBufferWriteMask.any())
@@ -4178,7 +4181,12 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 			src->add(inputFetchDefinition.c_str());
 		}
 
-		if (usesGeometryShader)
+		if (usesGeometryShader && shaderContext->options->geometryShaderEmulation)
+		{
+			functionType = "kernel";
+			outputTypeName = "void";
+		}
+		else if (usesGeometryShader)
 		{
 			functionType = "[[object, max_total_threads_per_threadgroup(VERTICES_PER_VERTEX_PRIMITIVE), max_total_threadgroups_per_mesh_grid(1)]]";
 			outputTypeName = "void";
@@ -4193,7 +4201,7 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 		}
 		break;
 	case LatteConst::ShaderType::Geometry:
-        functionType = "[[mesh, max_total_threads_per_threadgroup(1)]]";
+        functionType = shaderContext->options->geometryShaderEmulation ? "kernel" : "[[mesh, max_total_threads_per_threadgroup(1)]]";
         outputTypeName = "void";
         break;
 	case LatteConst::ShaderType::Pixel:
@@ -4211,6 +4219,12 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 			{
 	            if (usesGeometryShader)
 	            {
+                if (shaderContext->options->geometryShaderEmulation)
+                {
+                    // Recover the object stage's threadgroup and thread from the flat compute thread id. The dispatch is sized exactly, so no thread is out of range.
+                    src->add("uint tig = gid / VERTICES_PER_VERTEX_PRIMITIVE;" _CRLF);
+                    src->add("uint tid = gid % VERTICES_PER_VERTEX_PRIMITIVE;" _CRLF);
+                }
                 LattePrimitiveMode vsOutPrimType = shaderContext->contextRegistersNew->VGT_PRIMITIVE_TYPE.get_PRIMITIVE_MODE();
                 if (PrimitiveRequiresConnection(vsOutPrimType))
 					src->add("uint primitivesPerInstance = supportBuffer.verticesPerInstance >= VERTICES_PER_VERTEX_PRIMITIVE ? supportBuffer.verticesPerInstance - VERTICES_PER_VERTEX_PRIMITIVE + 1 : 0;" _CRLF);
@@ -4222,7 +4236,10 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 						src->add("uint vid = primitiveIndex + tid;" _CRLF);
 	                else
 						src->add("uint vid = primitiveIndex * VERTICES_PER_VERTEX_PRIMITIVE + tid;" _CRLF);
-				src->add("if (tid == 0) objectPayload.primitiveID = tig;" _CRLF);
+				if (shaderContext->options->geometryShaderEmulation)
+					src->add("if (tid == 0) gsPayload[tig].primitiveID = tig;" _CRLF);
+				else
+					src->add("if (tid == 0) objectPayload.primitiveID = tig;" _CRLF);
 
           		// Fetch the input
 				if (shaderContext->output->resourceMappingMTL.argumentBufferBindingPoint >= 0)
@@ -4231,7 +4248,10 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 					src->add("VertexIn in = fetchVertex(vid, iid, (const device uchar*)indexBuffer, 0xffffffffu, indexType, supportBuffer.baseVertex, supportBuffer.baseInstance VERTEX_BUFFERS);" _CRLF);
 
           		// Output is defined as object payload
-          		src->add("object_data VertexOut& out = objectPayload.vertexOut[tid];" _CRLF);
+          		if (shaderContext->options->geometryShaderEmulation)
+          			src->add("device VertexOut& out = gsPayload[tig].vertexOut[tid];" _CRLF);
+          		else
+          			src->add("object_data VertexOut& out = objectPayload.vertexOut[tid];" _CRLF);
             }
 			else if (shaderContext->analyzer.useSSBOForStreamout)
 			{
@@ -4248,6 +4268,9 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 		}
 		else if (shader->shaderType == LatteConst::ShaderType::Geometry)
 		{
+		    // Named objectPayload so every reference the body emits is identical to the mesh path's; only where it lives differs
+		    if (shaderContext->options->geometryShaderEmulation)
+		        src->add("const device ObjectPayload& objectPayload = gsPayloadIn[gid];" _CRLF);
 		    src->add("GeometryOut out;" _CRLF);
 			src->add("uint primitiveID = objectPayload.primitiveID;" _CRLF);
 			// The index of the current vertex that is being emitted
@@ -4474,10 +4497,18 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 	{
     	if (shader->shaderType == LatteConst::ShaderType::Vertex)
     	{
-    	    src->add("if (tid == 0) {" _CRLF);
-            src->add("meshGridProperties.set_threadgroups_per_grid(uint3(1, 1, 1));" _CRLF);
-    		src->add("}" _CRLF);
+    	    // Nothing to launch when emulating: the geometry stage is a separate dispatch the host sizes
+    	    if (!shaderContext->options->geometryShaderEmulation)
+    	    {
+    	        src->add("if (tid == 0) {" _CRLF);
+                src->add("meshGridProperties.set_threadgroups_per_grid(uint3(1, 1, 1));" _CRLF);
+    		    src->add("}" _CRLF);
+    	    }
     	}
+        else if (shader->shaderType == LatteConst::ShaderType::Geometry && shaderContext->options->geometryShaderEmulation)
+        {
+            src->add("gsPrimCount[gid] = GET_PRIMITIVE_COUNT(min(vertexIndex, (uint)MTL_MAX_VERTEX_COUNT));" _CRLF);
+        }
         else if (shader->shaderType == LatteConst::ShaderType::Geometry)
         {
             src->add("uint emittedVertexCount = min(vertexIndex, (uint)MTL_MAX_VERTEX_COUNT);" _CRLF);
@@ -4516,6 +4547,36 @@ void LatteDecompiler_emitMSLShader(LatteDecompilerShaderContext* shaderContext, 
 
 	// end of shader main
 	src->add("}" _CRLF);
+
+	// The geometry kernel only fills buffers, nothing has been rasterized yet. This second entry point is what draws: one vertex per
+	// slot of the worst-case expansion, reading back what the kernel wrote. It lives in the same library as main0 because it has to
+	// agree with this shader's GeometryOut exactly.
+	//
+	// The index arithmetic is the mapping the mesh path builds with set_index(), strip-winding quirk included (odd triangles flip
+	// their first two corners). Matching it rather than improving on it is what makes this draw what a mesh-shader GPU draws.
+	if (shader->shaderType == LatteConst::ShaderType::Geometry && shaderContext->options->geometryShaderEmulation)
+	{
+		const uint32 gsOutPrimType = shaderContext->contextRegisters[mmVGT_GS_OUT_PRIM_TYPE];
+		src->add(_CRLF "vertex GeometryOutRaster gsPassthroughVS(uint vid [[vertex_id]], const device GeometryOut* gsOut [[buffer(0)]], const device uint* gsPrimCount [[buffer(1)]]) {" _CRLF);
+		src->add("uint prim = vid / VERTICES_PER_OUT_PRIMITIVE;" _CRLF);
+		src->add("uint corner = vid % VERTICES_PER_OUT_PRIMITIVE;" _CRLF);
+		src->add("uint inv = prim / MTL_MAX_PRIMITIVE_COUNT;" _CRLF);
+		src->add("uint localPrim = prim % MTL_MAX_PRIMITIVE_COUNT;" _CRLF);
+		if (gsOutPrimType == 1)
+			src->add("uint slot = localPrim + corner;" _CRLF);
+		else if (gsOutPrimType == 2)
+			src->add("uint slot = localPrim + ((localPrim & 1) && corner < 2 ? 1 - corner : corner);" _CRLF);
+		else
+			src->add("uint slot = localPrim;" _CRLF);
+		src->add("GeometryOut o = gsOut[inv * MTL_MAX_VERTEX_COUNT + min(slot, (uint)(MTL_MAX_VERTEX_COUNT - 1))];" _CRLF);
+		// Primitives this invocation never emitted are still drawn, because the draw is sized for the worst case and the real count only
+		// exists on the GPU. Outside the clip volume the whole primitive is clipped away, which holds for points, lines and triangles alike;
+		// a zero-area triangle would not be well defined and a line or point would still light a pixel.
+		src->add("if (localPrim >= gsPrimCount[inv]) o.position = float4(2.0, 2.0, 2.0, 1.0);" _CRLF);
+		src->add("return gsToRaster(o);" _CRLF);
+		src->add("}" _CRLF);
+	}
+
 	src->shrink_to_fit();
 	shader->strBuf_shaderSource = src;
 }

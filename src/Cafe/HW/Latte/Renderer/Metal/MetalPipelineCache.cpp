@@ -147,7 +147,8 @@ MetalPipelineCache::~MetalPipelineCache()
     Close();      // stops the cache writer thread, which also holds it, and drops what it had not written yet
     for (auto& [key, pipelineObj] : m_pipelineCache)
     {
-        pipelineObj->m_pipeline->release();
+        if (pipelineObj->m_pipeline)
+            pipelineObj->m_pipeline->release();
         delete pipelineObj;
     }
     if (g_mtlPipelineCache == this)

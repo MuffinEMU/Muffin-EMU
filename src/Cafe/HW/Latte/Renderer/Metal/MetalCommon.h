@@ -68,6 +68,11 @@ namespace MetalArgumentBuffer
 	constexpr uint32 IndexType = IndexBufferSize + 1;
 }
 
+// Buffer slots the emulated geometry-shader kernels use next to the argument buffer at MetalArgumentBuffer::BindingIndex
+#define MTL_GS_PAYLOAD_BUFFER 1
+#define MTL_GS_OUT_BUFFER 2
+#define MTL_GS_PRIMCOUNT_BUFFER 3
+
 constexpr uint32 INVALID_UINT32 = std::numeric_limits<uint32>::max();
 constexpr size_t INVALID_OFFSET = std::numeric_limits<size_t>::max();
 
