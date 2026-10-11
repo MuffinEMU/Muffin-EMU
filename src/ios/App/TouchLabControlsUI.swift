@@ -342,7 +342,8 @@ struct TouchLabLayoutPanel: View {
         }
 
         if scheme == TouchLabSettings.arcStyleID {
-            ArcSettingsRows(showResetConfirmation: $showingArcReset)
+            // Calibrating and fine-tuning happen on the pad, so the panel closes first.
+            ArcSettingsRows(showResetConfirmation: $showingArcReset, beforeStart: onDone)
                 .confirmationDialog("Reset Arc?", isPresented: $showingArcReset, titleVisibility: .visible) {
                     Button("Reset Arc", role: .destructive) { ArcLive.shared.reset() }
                     Button("Cancel", role: .cancel) { }
@@ -375,6 +376,9 @@ struct TouchLabLayoutPanel: View {
 struct ArcSettingsRows: View {
     @ObservedObject private var arc = ArcLive.shared
     @Binding var showResetConfirmation: Bool
+    /// Runs just before calibration or fine-tuning starts, so the in-game panel can close and leave
+    /// the pad free to take the sweep (the panel and the pad would otherwise both be on screen).
+    var beforeStart: (() -> Void)? = nil
     @AppStorage(TouchLabSettings.arcOptionsKey) private var optionsRaw = "{}"
 
     var body: some View {
@@ -420,34 +424,34 @@ struct ArcSettingsRows: View {
         .tint(MuffinTheme.pixelBlue)
 
         Button {
+            guard arc.blocker(for: .calibrate) == nil else { return }
+            beforeStart?()
             arc.calibrate()
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Label("Calibrate Arc", systemImage: "hand.draw")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(arc.isLocked ? "Unlock to recalibrate"
-                     : (arc.isLive ? "Sweep each thumb once and Arc fits every button to your reach."
-                                   : "Open this from a running game to calibrate."))
+                Text(arc.blocker(for: .calibrate) ?? "Sweep each thumb once and Arc fits every button to your reach.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
         }
-        .disabled(arc.isLocked || !arc.isLive)
+        .disabled(arc.blocker(for: .calibrate) != nil)
 
         Button {
+            guard arc.isFineTuning || arc.blocker(for: .fineTune) == nil else { return }
+            if !arc.isFineTuning { beforeStart?() }
             arc.setFineTuning(!arc.isFineTuning)
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Label(arc.isFineTuning ? "Done fine-tuning" : "Fine-tune positions", systemImage: "hand.point.up.left")
                     .font(.system(size: 15, weight: .semibold, design: .rounded))
-                Text(arc.isLocked ? "Unlock to fine-tune"
-                     : (arc.isLive ? "Drag a button along its arc, or in and out. Presses do nothing while you do."
-                                   : "Open this from a running game to fine-tune."))
+                Text(arc.blocker(for: .fineTune) ?? "Drag a button along its arc, or in and out. Presses do nothing while you do.")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
         }
-        .disabled(arc.isLocked || !arc.isLive)
+        .disabled(!arc.isFineTuning && arc.blocker(for: .fineTune) != nil)
 
         Button(role: .destructive) { showResetConfirmation = true } label: {
             DestructiveSettingsLabel(title: "Reset Arc", systemImage: "arrow.uturn.backward")

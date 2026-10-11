@@ -138,7 +138,8 @@ public final class ShowcasePad: ControlScheme {
         // The resolver could not clear the picture: pack the pad's blocks into what is left.
         if mode == .fit, !videos.isEmpty {
             let wanted = ShowcaseHardware.unitMM * ppi / 25.4 * ctx.scale * layoutPreset.sizeFactor
-            if let sol = ShowcaseFitSolver.solve(safe: safe, avoid: videos, wanted: wanted, floor: minimumUnit) {
+            if let sol = ShowcaseFitSolver.solve(safe: safe, avoid: videos, wanted: wanted, floor: minimumUnit),
+               ShowcaseFitSolver.keepsGamePad(sol, wanted: wanted) {
                 let unit = (sol.leftUnit + sol.rightUnit) / 2
                 var notes = ["packed around the picture"]
                 if abs(sol.leftUnit - sol.rightUnit) > 0.5 {
@@ -151,6 +152,9 @@ public final class ShowcasePad: ControlScheme {
                 }
             }
         }
+
+        // Packing that would shrink or flatten the pad into a thin strip is not used: the pad
+        // stays the GamePad and floats over the sides of the picture, as Fit did before packing.
 
         // Otherwise the layout's own arrangement, shrunk only as far as it has to be to be
         // valid (and, in Native, to keep clear of its own picture).
@@ -368,6 +372,19 @@ public extension TargetDevice {
         case "iPad mini": return 163
         default: return 132
         }
+    }
+
+    /// Screens reviewed beyond the five: the 12.9-inch iPad.
+    static var showcaseExtras: [TargetDevice] {
+        [TargetDevice(name: "iPad Pro 12.9", size: CGSize(width: 1366, height: 1024), insets: Insets(top: 24, bottom: 20))]
+    }
+
+    /// A 4:3 picture letterboxed 95 pt under a top bar, centred across; the strip beneath is the
+    /// only margin left. Used by previews and checks.
+    var letterboxed43: LayoutContext {
+        let h = size.height - 95 - 161, w = h * 4 / 3
+        let r = CGRect(x: (size.width - w) / 2, y: 95, width: w, height: h)
+        return LayoutContext(size: size, safeInsets: insets, videoRects: [r], touchscreenRect: r)
     }
 
     /// The five reference devices, each in both orientations, with upright safe areas.
