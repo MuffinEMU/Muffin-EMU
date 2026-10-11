@@ -405,8 +405,8 @@ public final class ArcPad: ControlScheme {
         let minDelta = 1.28 * u / R, maxDelta = 1.9 * u / R
         let delta = tight ? minDelta : h.calibrated ? ArcMath.clamp((h.hi - h.lo) / 3.6, minDelta, maxDelta) : 1.4 * u / R
         let right = h.side == .right
-        // The arc reads from the outer end inward: A, B, X, Y on the right.
-        let buttons: [PadButton] = right ? [.a, .b, .x, .y] : [.up, .right, .down, .left]
+        // The arc reads from the top end down: A, B, X, Y on the right; Up, Down, Left, Right on the left.
+        let buttons: [PadButton] = right ? [.a, .b, .x, .y] : [.up, .down, .left, .right]
         var out: [PadControl] = []
         var phis: [CGFloat] = []
 

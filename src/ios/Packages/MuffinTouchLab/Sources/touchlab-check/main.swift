@@ -1097,7 +1097,7 @@ for device in arcDevices() {
         let arc = ArcPad()
         let eng = PadEngine(scheme: arc, output: out, context: ctx)
         for set in arc.hands {
-            let buttons: [PadButton] = set.side == .right ? [.a, .b, .x, .y] : [.up, .right, .down, .left]
+            let buttons: [PadButton] = set.side == .right ? [.a, .b, .x, .y] : [.up, .down, .left, .right]
             for b in buttons {
                 guard let c = arc.controls.first(where: { $0.button == b }) else { check(false, "arc: no \(b)"); continue }
                 let (r, phi) = set.polar(c.shape.center)
@@ -1129,6 +1129,17 @@ for device in arcDevices() {
     check(out.held.isEmpty, "arc: far off the arc lets go")
     eng.ended(1, at: .zero, time: 2)
     check(out.held.isEmpty, "arc: nothing stuck")
+}
+
+// Reading order along each arc, from the top end down.
+for device in arcDevices() {
+    let arc = ArcPad()
+    arc.layout(device.context(.stacked))
+    for set in arc.hands {
+        let order: [PadButton] = set.side == .right ? [.a, .b, .x, .y] : [.up, .down, .left, .right]
+        let ys = order.compactMap { b in arc.controls.first { $0.button == b }?.shape.center.y }
+        check(ys.count == 4 && zip(ys, ys.dropFirst()).allSatisfy { $0 < $1 }, "arc \(device.name): \(set.side) order along the arc is \(order.map(\.description)), got y \(ys)")
+    }
 }
 
 // Calibration end to end: guided, left thumb then right, review, Done. Then it locks.
