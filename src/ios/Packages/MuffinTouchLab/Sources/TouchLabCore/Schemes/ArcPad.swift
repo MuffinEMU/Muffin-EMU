@@ -1122,7 +1122,7 @@ public final class ArcPad: ControlScheme {
     // MARK: Rendering
 
     /// Over the video with quiet mode on: thinner arc, controls resting dim.
-    private var quiet: Bool { options.quietOverVideo && (avoidance == .none || usingFallback) }
+    private var quiet: Bool { options.quietOverVideo && context.showcaseStyle && (avoidance == .none || usingFallback) }
 
     private var fadesAtRest: Bool { calibrator == nil && !tuning }
 
@@ -1260,7 +1260,7 @@ public final class ArcPad: ControlScheme {
         guard isLocked else { return [] }
         let now = animationTime ?? clock()
         let timed = chipUntil.map { now < $0 } ?? false
-        guard timed || (options.lockBadge && !quiet) else { return [] }
+        guard timed || (options.lockBadge && context.showcaseStyle && !quiet) else { return [] }
         let f: CGFloat = timed ? CGFloat(min(1, max(0, (chipUntil! - now) / 0.6))) : 0.65
         let h = max(0.55 * context.unit, 26), w = max(2.6 * context.unit, 92)
         let rect = CGRect(x: context.size.width / 2 - w / 2, y: context.safeBounds.minY + 4, width: w, height: h)

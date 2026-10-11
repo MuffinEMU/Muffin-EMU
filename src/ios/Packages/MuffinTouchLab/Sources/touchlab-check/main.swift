@@ -2079,11 +2079,20 @@ do {
         for display in TargetDevice.Display.allCases {
             var off = phone.context(display); off.showcaseStyle = false
             let on = phone.context(display)
-            let a = PadEngine(scheme: SchemeCatalog.make(id), output: Recorder(), context: on).render()
+            // Arc's quiet mode (dim controls over the video, a thinner arc) is part of the polished look too, so
+            // the comparison is against the same Arc with it switched off.
+            let onScheme = SchemeCatalog.make(id)
+            if let arc = onScheme as? ArcPad { arc.options.quietOverVideo = false }
+            let a = PadEngine(scheme: onScheme, output: Recorder(), context: on).render()
             let b = PadEngine(scheme: SchemeCatalog.make(id), output: Recorder(), context: off).render()
             let controls = b.filter { $0.role != .guide && $0.role != .handle }
             check(!controls.contains { $0.style == .refined }, "showcase style off: \(id) / \(display.rawValue) draws its controls flat")
-            if id == "racing" { check(a.map(\.shape) == b.map(\.shape), "showcase style off: racing keeps its layout") }
+            // Racing: off keeps the controls flush to the screen edge, as 9.5 had them; on stops them 8 pt short.
+            if id == "racing" {
+                let right = b.filter { $0.role == .pedal }.map { $0.shape.boundingBox.maxX }.max() ?? 0
+                var offCtx = phone.context(display); offCtx.showcaseStyle = false
+                check(right >= offCtx.safeBounds.maxX - 0.1 * offCtx.unit, "showcase style off: racing pedals stay flush to the edge")
+            }
             if id == "arc" {
                 check(a.count == b.count, "showcase style off: arc keeps its elements")
                 check(a.filter { $0.role != .shoulder }.map(\.shape) == b.filter { $0.role != .shoulder }.map(\.shape),

@@ -110,7 +110,7 @@ public final class RacingPad: ControlScheme {
         let gap = 0.05 * u            // drawn gap between neighbouring zones; the catchment closes it
         // The pedals and the steering area stop this far short of the screen edge (rounded display
         // corners, a thumb's own edge), and reach back out to it, so the edge is still live.
-        let edge = min(0.12 * u, 8)
+        let edge = ctx.showcaseStyle ? min(0.12 * u, 8) : 0   // "Showcase style" off keeps the edge-flush layout 9.5 had
 
         // Pedals, bottom right. Widths and heights in units of a thumb-sized button.
         let a = PadParts.clampedAScale(aScale)

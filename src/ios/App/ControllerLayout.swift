@@ -665,8 +665,8 @@ extension View {
 /// Pure maths for "same height in portrait and landscape". The shared position is a fraction of
 /// the travel a screen has: 0 is the resting place, +1 the lowest the range allows, -1 the highest.
 enum ShoulderSync {
-    /// Two fractions this close count as the same position (one slider step is 0.05 of a button).
-    static let tolerance = 0.02
+    /// Two fractions this close count as the same position: float noise only, so linking at migration never moves a saved height.
+    static let tolerance = 0.001
 
     /// A usable range, or `fallback` when either end is not a number or the range is empty.
     static func usable(_ range: ClosedRange<Double>, fallback: ClosedRange<Double>) -> ClosedRange<Double> {
