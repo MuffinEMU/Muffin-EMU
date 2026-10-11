@@ -2230,6 +2230,37 @@ void VulkanRenderer::Shutdown()
 void IOSBridge_VulkanDeviceLost(const char* why);
 #endif
 
+void VulkanRenderer::TraceOp(OpKind kind, uint32 a, uint32 b, uint32 c, uint32 d)
+{
+	const uint64 seq = m_opTraceSeq.fetch_add(1, std::memory_order_relaxed);
+	m_opTrace[seq % kOpTraceSize] = {seq + 1, (uint32)LatteGPUState.frameCounter, (uint8)kind, a, b, c, d};
+}
+
+void VulkanRenderer::DumpOpTrace()
+{
+	static const char* names[] = {"draw", "draw skipped (no pipeline)", "render pass", "texture upload", "readback", "submit"};
+	const uint64 total = m_opTraceSeq.load();
+	const uint64 first = total > kOpTraceSize ? total - kOpTraceSize : 0;
+	cemuLog_log(LogType::Force, "Vulkan: the last {} recorded operations before the device was lost (oldest first):", total - first);
+	for (uint64 i = first; i < total; i++)
+	{
+		const OpTraceEntry e = m_opTrace[i % kOpTraceSize];
+		if (e.seq != i + 1)
+			continue;
+		switch ((OpKind)e.kind)
+		{
+		case OpKind::Draw: case OpKind::DrawSkipped:
+			cemuLog_log(LogType::Force, "  #{} frame {} {}: {} vertices x {} instances, flags {:#x}", e.seq, e.frame, names[e.kind], e.a, e.b, e.c); break;
+		case OpKind::RenderPass:
+			cemuLog_log(LogType::Force, "  #{} frame {} render pass: {} colour target(s), first {}x{} fmt {:04x}, depth fmt {:04x}{}", e.seq, e.frame, e.a, e.b >> 16, e.b & 0xFFFF, e.c, e.d & 0xFFFF, (e.d >> 31) ? " + stencil" : ""); break;
+		case OpKind::TextureUpload:
+			cemuLog_log(LogType::Force, "  #{} frame {} texture upload: {}x{} mip {} fmt {:04x}, {} bytes", e.seq, e.frame, e.a >> 16, e.a & 0xFFFF, e.b, e.c, e.d); break;
+		default:
+			cemuLog_log(LogType::Force, "  #{} frame {} {} {} {} {} {}", e.seq, e.frame, names[e.kind], e.a, e.b, e.c, e.d); break;
+		}
+	}
+}
+
 void VulkanRenderer::HandleDeviceLost(const char* what)
 {
 	if (m_deviceLost.exchange(true))
@@ -2239,6 +2270,7 @@ void VulkanRenderer::HandleDeviceLost(const char* what)
 	w.gpuError.store(true);
 	w.gpuErrorCode.store((int32_t)VK_ERROR_DEVICE_LOST);
 	w.gpuPresumedLost.store(true);
+	DumpOpTrace();
 #if BOOST_OS_IOS
 	IOSBridge_VulkanDeviceLost(what);
 #endif
@@ -2668,6 +2700,7 @@ void VulkanRenderer::SubmitCommandBuffer(VkSemaphore signalSemaphore, VkSemaphor
 {
 	draw_endRenderPass();
 
+	TraceOp(OpKind::Submit, m_recordedDrawcalls);
 	occlusionQuery_notifyEndCommandBuffer();
 
 	vkEndCommandBuffer(m_state.currentCommandBuffer);
@@ -4408,6 +4441,7 @@ void VulkanRenderer::texture_loadSlice(LatteTexture* hostTexture, sint32 width, 
 			cemuLog_logOnce(LogType::Force, "Vulkan: a texture upload had less data than the slice needs ({} of {} bytes, {}x{} mip {}, format {:04x}); the missing part is zero", compressedImageSize, requiredBytes, width, height, mipIndex, (uint32)hostTexture->format);
 	}
 
+	TraceOp(OpKind::TextureUpload, (((uint32)width & 0xFFFF) << 16) | ((uint32)height & 0xFFFF), (uint32)mipIndex, (uint32)hostTexture->format, compressedImageSize);
 	vkImageObj->flagForCurrentCommandBuffer();
 
 	draw_endRenderPass();
