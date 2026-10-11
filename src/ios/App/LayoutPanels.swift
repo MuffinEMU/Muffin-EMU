@@ -52,6 +52,10 @@ struct LayoutPanelCard<Rows: View, Footer: View>: View {
                 VStack(spacing: 10) {
                     ScrollView(.vertical, showsIndicators: true) {
                         VStack(spacing: 10) { rows }
+                            // The card is always dark (black at 0.82), so the rows must resolve
+                            // their adaptive colours (Toggle/Picker labels, .secondary footers,
+                            // segmented text) for dark, or they come out black in light mode.
+                            .environment(\.colorScheme, .dark)
                             .background(
                                 GeometryReader { inner in
                                     Color.clear.preference(key: PanelRowsHeightKey.self, value: inner.size.height)
