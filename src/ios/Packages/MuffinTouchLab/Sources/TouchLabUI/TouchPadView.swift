@@ -22,6 +22,8 @@ public final class TouchPadView: UIView {
     public var controlOpacity: CGFloat = 0.85 { didSet { setNeedsDisplay() } }
     /// Colours for the classic schemes (see `PadStyle`); nil = Classic.
     public var colourPreset: ShowcaseColourPreset? { didSet { setNeedsDisplay() } }
+    /// The polished look (see `PadSettings.showcaseStyle`); off draws the earlier flat look.
+    public var showcaseStyle = true { didSet { if showcaseStyle != oldValue { relayout(); setNeedsDisplay() } } }
     /// Called after every input change, for HUDs and diagnostics.
     public var onChange: (() -> Void)?
     /// Where the GamePad image is, in this view's coordinates; see LayoutContext.
@@ -43,7 +45,8 @@ public final class TouchPadView: UIView {
         get {
             PadSettings(stick: stickTuning, calibration: calibration, tolerance: tolerance, scale: scale,
                         opacity: controlOpacity, haptics: hapticsEnabled, stickSpacing: stickSpacing,
-                        shoulderOffset: shoulderOffset, colourPreset: colourPreset)
+                        shoulderOffset: shoulderOffset, colourPreset: colourPreset,
+                        showcaseStyle: showcaseStyle)
         }
         set {
             if stickTuning != newValue.stick { stickTuning = newValue.stick }
@@ -54,6 +57,7 @@ public final class TouchPadView: UIView {
             if shoulderOffset != newValue.shoulderOffset { shoulderOffset = newValue.shoulderOffset }
             if controlOpacity != newValue.opacity { controlOpacity = newValue.opacity }
             if colourPreset != newValue.colourPreset { colourPreset = newValue.colourPreset }
+            if showcaseStyle != newValue.showcaseStyle { showcaseStyle = newValue.showcaseStyle }
             hapticsEnabled = newValue.haptics
         }
     }
@@ -156,7 +160,8 @@ public final class TouchPadView: UIView {
                                                    bottom: i.bottom + e.bottom, right: i.right + e.right),
                                 videoRects: videoRects.map(toLocal), touchscreenRect: touchscreenRect.map(toLocal),
                                 scale: scale, stick: stickTuning, stickSpacing: stickSpacing,
-                                shoulderOffset: shoulderOffset, calibration: calibration, tolerance: tolerance)
+                                shoulderOffset: shoulderOffset, calibration: calibration, tolerance: tolerance,
+                                showcaseStyle: showcaseStyle)
         if force || ctx != engine.context {
             engine.setContext(ctx)
             if force { engine.scheme.layout(ctx) }
@@ -345,10 +350,10 @@ public final class TouchPadView: UIView {
             if showcase.isAnimatingPress { DispatchQueue.main.async { [weak self] in self?.setNeedsDisplay() } }
             return
         }
-        if PadStyle.appliesTo(engine.scheme.info.id) {
+        if showcaseStyle && PadStyle.appliesTo(engine.scheme.info.id) {
             let scene = PadStyle.scene(elements: engine.render(), size: bounds.size,
                                        look: PadStyle.look(colourPreset), opacity: controlOpacity)
-            ShowcaseDrawing.draw(scene, in: g, opacity: PadSettings.defaultOpacity)
+            ShowcaseDrawing.draw(scene, in: g)
             return
         }
         for e in engine.render() {
@@ -504,6 +509,7 @@ public struct TouchPad: UIViewRepresentable {
     public var calibration = StickCalibrations()
     public var tolerance: PadTolerance?
     public var colourPreset: ShowcaseColourPreset?
+    public var showcaseStyle = true
     public var rectSpace: TouchPadView.RectSpace
     public var extraInsets: Insets
     public var onChange: ((PadEngine) -> Void)?
@@ -548,6 +554,7 @@ public struct TouchPad: UIViewRepresentable {
         self.calibration = settings.calibration
         self.tolerance = settings.tolerance
         self.colourPreset = settings.colourPreset
+        self.showcaseStyle = settings.showcaseStyle
     }
 
     public final class Coordinator {
@@ -579,6 +586,7 @@ public struct TouchPad: UIViewRepresentable {
         if view.calibration != calibration { view.calibration = calibration }
         if view.tolerance != tolerance { view.tolerance = tolerance }
         if view.colourPreset != colourPreset { view.colourPreset = colourPreset }
+        if view.showcaseStyle != showcaseStyle { view.showcaseStyle = showcaseStyle }
         if view.isInputEnabled != enabled { view.isInputEnabled = enabled }
         if view.touchscreenRect != touchscreenRect { view.touchscreenRect = touchscreenRect }
         if view.videoRects != videoRects { view.videoRects = videoRects }

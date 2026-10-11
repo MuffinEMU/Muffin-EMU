@@ -1140,9 +1140,12 @@ public final class ArcPad: ControlScheme {
     private func styled(_ list: [RenderElement], fadeAll: CGFloat? = nil) -> [RenderElement] {
         list.map { e in
             var e = e
-            e.style = .refined
-            if e.role == .shoulder, case .roundedRect(let r, _) = e.shape {
-                e.shape = .roundedRect(r, cornerRadius: min(r.width, r.height) / 2)
+            // "Showcase style" off keeps the flat look the controls had before it.
+            if context.showcaseStyle {
+                e.style = .refined
+                if e.role == .shoulder, case .roundedRect(let r, _) = e.shape {
+                    e.shape = .roundedRect(r, cornerRadius: min(r.width, r.height) / 2)
+                }
             }
             e.fade = fadeAll ?? restFade(screenSide(e.shape.center))
             return e

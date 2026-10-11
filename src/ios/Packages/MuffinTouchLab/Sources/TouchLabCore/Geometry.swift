@@ -124,6 +124,9 @@ public struct LayoutContext: Equatable, Sendable {
     /// themselves honour as much of it as fits without leaving the safe area or touching
     /// a stick, d-pad or face button. A hand-size setting, meant for iPad.
     public var shoulderOffset: CGFloat
+    /// The polished "Showcase style" look (see `PadStyle`, and Arc's own refined look). Off draws the
+    /// flat look the schemes had before it. Drawing only: no layout or input depends on it.
+    public var showcaseStyle: Bool
 
     public init(size: CGSize,
                 safeInsets: Insets = .zero,
@@ -134,7 +137,9 @@ public struct LayoutContext: Equatable, Sendable {
                 stickSpacing: CGFloat = 0,
                 shoulderOffset: CGFloat = 0,
                 calibration: StickCalibrations = StickCalibrations(),
-                tolerance: PadTolerance? = nil) {
+                tolerance: PadTolerance? = nil,
+                showcaseStyle: Bool = true) {
+        self.showcaseStyle = showcaseStyle
         self.size = size
         self.safeInsets = safeInsets
         self.videoRects = videoRects
@@ -153,7 +158,7 @@ public struct LayoutContext: Equatable, Sendable {
         self.init(size: size, safeInsets: safeInsets, videoRects: videoRects, touchscreenRect: touchscreenRect,
                   scale: settings.scale, stick: settings.stick, stickSpacing: settings.stickSpacing,
                   shoulderOffset: settings.shoulderOffset, calibration: settings.calibration,
-                  tolerance: settings.tolerance)
+                  tolerance: settings.tolerance, showcaseStyle: settings.showcaseStyle)
     }
 
     public var bounds: CGRect { CGRect(origin: .zero, size: size) }

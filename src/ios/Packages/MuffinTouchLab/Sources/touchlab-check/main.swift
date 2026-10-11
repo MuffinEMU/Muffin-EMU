@@ -2043,5 +2043,67 @@ do {
 
 runArcPolishChecks()
 
+// MARK: Showcase style off = the flat look from before the polish
+
+do {
+    func fnv(_ s: String) -> String {
+        var h: UInt64 = 0xcbf29ce484222325
+        for b in s.utf8 { h = (h ^ UInt64(b)) &* 0x100000001b3 }
+        return String(h, radix: 16)
+    }
+    // Hashes of the SVG the flat renderer drew for these schemes on iPhone 16, taken from the release
+    // before the polish (963a14b). Their layouts were not touched, so "off" must still match to the byte.
+    let golden: [(String, String, String)] = [
+    ("zone", "stacked", "ce0b28ab7bc612d9"),
+    ("zone", "single", "14b32e2a37e6631b"),
+    ("float", "stacked", "f8ebe6a2274c4704"),
+    ("float", "single", "bab2fc135f93d3a2"),
+    ("adaptive", "stacked", "ce0b28ab7bc612d9"),
+    ("adaptive", "single", "14b32e2a37e6631b"),
+    ("frame", "stacked", "ce0b28ab7bc612d9"),
+    ("frame", "single", "14b32e2a37e6631b"),
+    ]
+    let phone = TargetDevice.all.first { $0.name == "iPhone 16" }!
+    for (id, displayName, expected) in golden {
+        guard let display = TargetDevice.Display.allCases.first(where: { $0.rawValue == displayName }) else { continue }
+        var ctx = phone.context(display)
+        ctx.showcaseStyle = false
+        let e = PadEngine(scheme: SchemeCatalog.make(id), output: Recorder(), context: ctx)
+        let svg = SVGRenderer.svg(size: ctx.size, videoRects: ctx.videoRects, safe: ctx.safeBounds,
+                                  title: "t", elements: e.render())
+        check(fnv(svg) == expected, "showcase style off: \(id) / \(displayName) renders as the flat look did before the polish")
+    }
+    // Racing and Arc had their layouts changed on purpose by the same release, so they can't match the old
+    // bytes. Off must still be the old drawing path: no refined element among the controls, same geometry as on.
+    for id in ["racing", "arc"] {
+        for display in TargetDevice.Display.allCases {
+            var off = phone.context(display); off.showcaseStyle = false
+            let on = phone.context(display)
+            let a = PadEngine(scheme: SchemeCatalog.make(id), output: Recorder(), context: on).render()
+            let b = PadEngine(scheme: SchemeCatalog.make(id), output: Recorder(), context: off).render()
+            let controls = b.filter { $0.role != .guide && $0.role != .handle }
+            check(!controls.contains { $0.style == .refined }, "showcase style off: \(id) / \(display.rawValue) draws its controls flat")
+            if id == "racing" { check(a.map(\.shape) == b.map(\.shape), "showcase style off: racing keeps its layout") }
+            if id == "arc" {
+                check(a.count == b.count, "showcase style off: arc keeps its elements")
+                check(a.filter { $0.role != .shoulder }.map(\.shape) == b.filter { $0.role != .shoulder }.map(\.shape),
+                      "showcase style off: arc keeps its layout")
+            }
+        }
+    }
+    check(PadSettings().showcaseStyle && LayoutContext(size: .zero).showcaseStyle, "showcase style is on by default in the package")
+    var s = PadSettings(); s.showcaseStyle = false
+    check(!LayoutContext(size: CGSize(width: 10, height: 10), settings: s).showcaseStyle, "showcase style reaches the layout context")
+}
+
+// MARK: Showcase: the + / - pair nudge
+
+do {
+    check(ShowcasePad.systemPairNudge(screen: CGSize(width: 1366, height: 1024)) == CGPoint(x: -2, y: -11), "showcase: 13-inch iPad moves + / - 2 pt left, 11 pt up")
+    check(ShowcasePad.systemPairNudge(screen: CGSize(width: 1032, height: 1376)) == CGPoint(x: -2, y: -11), "showcase: the same in portrait")
+    check(ShowcasePad.systemPairNudge(screen: CGSize(width: 1194, height: 834)) == CGPoint(x: -2, y: 0), "showcase: 11-inch iPad moves + / - 2 pt left only")
+    check(ShowcasePad.systemPairNudge(screen: CGSize(width: 852, height: 393)) == CGPoint(x: -2, y: 0), "showcase: iPhone moves + / - 2 pt left only")
+}
+
 print("\(passes) passed, \(failures) failed")
 exit(Int32(min(failures, 125)))

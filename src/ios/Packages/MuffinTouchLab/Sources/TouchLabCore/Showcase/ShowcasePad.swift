@@ -127,7 +127,7 @@ public final class ShowcasePad: ControlScheme {
             while s > 0.25 {
                 let r = resolve(s, .fit)
                 if r.unit < minimumUnit { break }
-                let c = Self.controls(from: r, safe: safe, avoid: videos)
+                let c = Self.controls(from: r, safe: safe, avoid: videos, screen: ctx.size)
                 if LayoutCheck.problems(c, in: safe).isEmpty, clear(c, of: videos) {
                     return adopt(r, c, .clear, picture: nil, ppi: ppi, ctx: ctx)
                 }
@@ -145,7 +145,7 @@ public final class ShowcasePad: ControlScheme {
                     notes.append(String(format: "left %.0f pt, right %.0f pt buttons", sol.leftUnit, sol.rightUnit))
                 }
                 let r = ShowcaseResolved(video: videos[0], controls: sol.placements, unit: unit, notes: notes, mode: .overlay)
-                let c = Self.controls(from: r, safe: safe, avoid: videos, asPlaced: true)
+                let c = Self.controls(from: r, safe: safe, avoid: videos, asPlaced: true, screen: ctx.size)
                 if LayoutCheck.problems(c, in: safe).isEmpty, clear(c, of: videos) {
                     return adopt(r, c, .clear, picture: nil, ppi: ppi, ctx: ctx)
                 }
@@ -157,7 +157,7 @@ public final class ShowcasePad: ControlScheme {
         // A transplanted preset that cannot be made to fit (the fitter never goes below the
         // touch floor, so shrinking does not always help) gives way to this device's own layout.
         var r = resolve(1, mode)
-        var c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [])
+        var c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [], screen: ctx.size)
         func ok() -> Bool {
             LayoutCheck.problems(c, in: safe).isEmpty && (mode == .fit || clear(c, of: [r.video]))
         }
@@ -167,12 +167,12 @@ public final class ShowcasePad: ControlScheme {
                 if ok() { break }
                 s *= 0.94
                 r = resolve(s, mode)
-                c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [])
+                c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [], screen: ctx.size)
             }
             if ok() || preset == .native || attempt == 1 { break }
             preset = .native
             r = resolve(1, mode)
-            c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [])
+            c = Self.controls(from: r, safe: safe, avoid: mode == .native ? [r.video] : [], screen: ctx.size)
         }
         return adopt(r, c, mode == .native ? .native : .overlay, picture: mode == .native ? r.video : nil,
                      ppi: ppi, ctx: ctx)
@@ -188,12 +188,21 @@ public final class ShowcasePad: ControlScheme {
         return controls
     }
 
+    /// How far the + / - pair is moved from where the layout puts it: 2 pt left everywhere, and
+    /// 11 pt up as well on the big iPads (shorter side of the screen at least 1000 pt: the 13-inch and
+    /// 12.9-inch class), by screen size and not by model. HOME stays where it is.
+    public static func systemPairNudge(screen: CGSize) -> CGPoint {
+        let big = min(screen.width, screen.height) >= 1000
+        return CGPoint(x: -2, y: big ? -11 : 0)
+    }
+
     /// The control list for a resolved layout. The showcase leaves HOME in the pause menu
     /// when nothing on the pad clears for it; TouchLab has no pause menu, so HOME is always
     /// found a spot.
     /// `asPlaced` takes + and - and HOME exactly where the resolver left them (the Fit solver
     /// positions them itself) instead of regrouping them.
-    static func controls(from r: ShowcaseResolved, safe: CGRect, avoid: [CGRect], asPlaced: Bool = false) -> [PadControl] {
+    static func controls(from r: ShowcaseResolved, safe: CGRect, avoid: [CGRect], asPlaced: Bool = false,
+                         screen: CGSize = .zero) -> [PadControl] {
         let D = r.unit
         var out: [PadControl] = []
 
@@ -239,8 +248,11 @@ public final class ShowcasePad: ControlScheme {
         }
         // + then - as a pair on one row, + nudged a little left to make room, - on its right.
         if let (pc, pr) = circle("plus"), let (mc, mr) = circle("minus") {
-            let plus = asPlaced ? pc : CGPoint(x: pc.x - 0.3 * D, y: pc.y)
-            let minus = asPlaced ? mc : CGPoint(x: plus.x + pr + mr + 0.3 * D, y: pc.y)
+            let nudge = systemPairNudge(screen: screen)
+            var plus = asPlaced ? pc : CGPoint(x: pc.x - 0.3 * D, y: pc.y)
+            var minus = asPlaced ? mc : CGPoint(x: plus.x + pr + mr + 0.3 * D, y: pc.y)
+            plus = CGPoint(x: plus.x + nudge.x, y: plus.y + nudge.y)
+            minus = CGPoint(x: minus.x + nudge.x, y: minus.y + nudge.y)
             out.append(PadControl(.button(.plus), shape: .circle(center: plus, radius: pr), role: .system,
                                   label: PadButton.plus.description, reach: 0.25 * D))
             out.append(PadControl(.button(.minus), shape: .circle(center: minus, radius: mr), role: .system,
