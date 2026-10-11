@@ -353,7 +353,7 @@ struct TouchLabPadOverlay: View {
                  settings: SharedStick.padSettings(scale: scale, opacity: opacity, haptics: haptics,
                                                    deadzone: deadzone, curve: curve, gateRaw: gateRaw,
                                                    stickSpacing: stickSpacing,
-                                                   shoulderOffset: shoulderStore.value(upright: upright)),
+                                                   shoulderOffset: shoulderStore.value(in: padSize, touchLab: true)),
                  touchscreenRect: screens.screens.touchscreenRect,
                  videoRects: screens.screens.videoRects,
                  // Rebuild the scheme only when something that shapes it changes - never on
