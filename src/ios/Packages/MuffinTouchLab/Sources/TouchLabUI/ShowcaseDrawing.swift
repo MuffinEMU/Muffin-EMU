@@ -5,9 +5,9 @@ import UIKit
 /// Draws a `ShowcaseScene` (the Showcase look as data) with CoreGraphics: shadow, body, rim,
 /// dish and octagonal gate exactly as the scene lists them. A dumb loop over the primitives.
 enum ShowcaseDrawing {
-    static func draw(_ scene: ShowcaseScene, in g: CGContext, opacity: CGFloat) {
-        // The scene's own opacity at the default; the shared opacity setting scales it.
-        let alpha = min(1, CGFloat(scene.opacity) * opacity / PadSettings.defaultOpacity)
+    static func draw(_ scene: ShowcaseScene, in g: CGContext) {
+        // The scene's opacity already follows the shared opacity setting.
+        let alpha = min(1, max(0, CGFloat(scene.opacity)))
         g.saveGState()
         g.setAlpha(alpha)
         g.beginTransparencyLayer(auxiliaryInfo: nil)

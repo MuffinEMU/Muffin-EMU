@@ -62,7 +62,7 @@ public enum ShowcaseSVG {
                 let c = p.shape.centre
                 let col = p.textColour ?? .black
                 body += "<text x=\"\(n(c.x))\" y=\"\(n(c.y + p.textSize * 0.36))\" fill=\"#\(hex(col))\" font-size=\"\(n(p.textSize))\" "
-                    + "font-weight=\"600\" text-anchor=\"middle\">\(escape(text))</text>\n"
+                    + "font-weight=\"600\" text-anchor=\"middle\"\(col.a < 1 ? " fill-opacity=\"\(f(col.a))\"" : "")>\(escape(text))</text>\n"
                 continue
             }
             switch p.shape {

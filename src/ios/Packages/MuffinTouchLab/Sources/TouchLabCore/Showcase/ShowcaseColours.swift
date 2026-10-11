@@ -130,11 +130,76 @@ public enum ShowcaseColourPresets {
         glyphs: ["A": .init("#FFFFFF"), "B": .init("#FFFFFF"), "X": .init("#FFFFFF"), "Y": .init("#FFFFFF"),
                  "default": Sampled.glyphGrey],
         outline: Sampled.outlineGrey)
+
+    // MARK: Hardware variants and tasteful extras
+    //
+    // Same file format as the first three (`.muffinclr`), no new keys. "Approximate" marks colours
+    // matched by eye to photographs, not sampled.
+
+    /// Approximate: the black GamePad of the Wii U Premium set with the gold accents of the
+    /// Zelda limited edition: black plastic, warm gold lettering and outline.
+    public static let zeldaGold = ShowcaseColourFile(
+        name: "Black and Gold",
+        fills: ["default": ShowcaseRGBA("#2E2D2B"), "home": ShowcaseRGBA("#3A3835")],
+        glyphs: ["default": ShowcaseRGBA("#D9B45B")],
+        outline: ShowcaseRGBA("#8C7231"),
+        shell: ShowcaseRGBA("#121110"))
+
+    /// Approximate: the Famicom - a red face, cream d-pad and system row, dark outlines.
+    public static let famicom = ShowcaseColourFile(
+        name: "Famicom",
+        fills: ["face": ShowcaseRGBA("#B3262D"), "dpad": ShowcaseRGBA("#2B2A2A"), "stickL": ShowcaseRGBA("#E9DFC7"),
+                "stickR": ShowcaseRGBA("#E9DFC7"), "default": ShowcaseRGBA("#E9DFC7")],
+        glyphs: ["face": ShowcaseRGBA("#F4E9D2"), "dpad": ShowcaseRGBA("#E9DFC7"), "default": ShowcaseRGBA("#6B2A22")],
+        outline: ShowcaseRGBA("#7B6F5B"),
+        shell: ShowcaseRGBA("#D9CFB8"))
+
+    /// Approximate: the North American SNES - lavender buttons with the purple d-pad and the
+    /// four coloured face buttons (Y green, X blue, B yellow, A red).
+    public static let snesAmerica = ShowcaseColourFile(
+        name: "Super Nintendo",
+        fills: ["A": .init("#C0392F"), "B": .init("#E3B93A"), "X": .init("#3D63B8"), "Y": .init("#3E9A57"),
+                "dpad": .init("#6C6C74"), "default": .init("#B7B1C9")],
+        glyphs: ["A": .init("#FFFFFF"), "B": .init("#3A2E10"), "X": .init("#FFFFFF"), "Y": .init("#FFFFFF"),
+                 "dpad": .init("#F0EEF6"), "default": .init("#4E4A63")],
+        outline: ShowcaseRGBA("#8D88A3"))
+
+    /// Extra: deep navy with soft blue lettering. Pairs well with the glass look.
+    public static let midnight = ShowcaseColourFile(
+        name: "Midnight",
+        fills: ["default": ShowcaseRGBA("#1F2A44"), "home": ShowcaseRGBA("#2B3A5E")],
+        glyphs: ["default": ShowcaseRGBA("#B7C6EA")],
+        outline: ShowcaseRGBA("#0E1424"),
+        shell: ShowcaseRGBA("#0B101D"))
+
+    /// Extra: a cool mint on pale grey-green.
+    public static let mint = ShowcaseColourFile(
+        name: "Mint",
+        fills: ["default": ShowcaseRGBA("#CFEBDD"), "face": ShowcaseRGBA("#E7F6EE"), "dpad": ShowcaseRGBA("#A9D4C0")],
+        glyphs: ["default": ShowcaseRGBA("#2F6B55")],
+        outline: ShowcaseRGBA("#7FB39B"))
+
+    /// Extra: a translucent smoky grey that lets the picture show through; meant for low opacity.
+    public static let smoke = ShowcaseColourFile(
+        name: "Smoke",
+        fills: ["default": ShowcaseRGBA("#4A4D55", 0.78), "home": ShowcaseRGBA("#5A5E68", 0.85)],
+        glyphs: ["default": ShowcaseRGBA("#F2F3F5")],
+        outline: ShowcaseRGBA("#FFFFFF", 0.55),
+        pressedAlphaBoost: 0.14)
+
+    /// Extra: warm rose gold.
+    public static let roseGold = ShowcaseColourFile(
+        name: "Rose Gold",
+        fills: ["default": ShowcaseRGBA("#E9C4B8"), "face": ShowcaseRGBA("#F4DAD0"), "dpad": ShowcaseRGBA("#D3A99B")],
+        glyphs: ["default": ShowcaseRGBA("#7A4A3F")],
+        outline: ShowcaseRGBA("#B98676"))
 }
 
-/// Exactly the three the showcase pad offers.
-public enum ShowcaseColourPreset: String, CaseIterable, Identifiable {
+/// Every preset the showcase pad offers: the Wii U's own colours first, then variants and extras.
+public enum ShowcaseColourPreset: String, CaseIterable, Identifiable, Sendable {
     case wiiUWhite, wiiUBlack, superFamicom
+    case zeldaGold, famicom, snesAmerica
+    case midnight, mint, smoke, roseGold
 
     public var id: String { rawValue }
 
@@ -143,6 +208,13 @@ public enum ShowcaseColourPreset: String, CaseIterable, Identifiable {
         case .wiiUWhite:    return ShowcaseColourPresets.wiiUWhite
         case .wiiUBlack:    return ShowcaseColourPresets.wiiUBlack
         case .superFamicom: return ShowcaseColourPresets.superFamicom
+        case .zeldaGold:    return ShowcaseColourPresets.zeldaGold
+        case .famicom:      return ShowcaseColourPresets.famicom
+        case .snesAmerica:  return ShowcaseColourPresets.snesAmerica
+        case .midnight:     return ShowcaseColourPresets.midnight
+        case .mint:         return ShowcaseColourPresets.mint
+        case .smoke:        return ShowcaseColourPresets.smoke
+        case .roseGold:     return ShowcaseColourPresets.roseGold
         }
     }
 }

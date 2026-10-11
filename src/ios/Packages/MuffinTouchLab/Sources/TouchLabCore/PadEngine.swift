@@ -65,6 +65,10 @@ public final class PadEngine {
     }
 
     public func began(_ touch: TouchID, at point: CGPoint, time: Double) {
+        // UIKit can hand a new finger the identity of one whose end never arrived. Whatever
+        // that stale finger held must go first, or it outlives the new touch (a touch no
+        // control claims would never replace it).
+        if owners[touch] != nil { cancelled(touch, time: time) }
         if let c = scheme.began(touch, at: point, time: time) {
             owners[touch] = .scheme
             mixer.update(touch, c)
@@ -103,6 +107,15 @@ public final class PadEngine {
         if owner == .scheme { scheme.ended(touch, at: CGPoint(x: CGFloat.nan, y: .nan), time: time) }
         mixer.remove(touch)
         settled()
+    }
+
+    /// The fingers the engine is holding something for.
+    public var heldTouches: Set<TouchID> { Set(owners.keys) }
+
+    /// Releases every finger not in `live`: a touch whose end or cancel the view never saw.
+    /// Called with the system's own list of live touches whenever a new finger lands.
+    public func reconcile(live: Set<TouchID>) {
+        for touch in owners.keys where !live.contains(touch) { cancelled(touch, time: 0) }
     }
 
     public func cancelAll() {

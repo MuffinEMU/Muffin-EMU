@@ -163,6 +163,9 @@ open class ControlScheme: TouchScheme {
     }
 
     var tracks: [TouchID: Track] = [:]
+    /// Control indices by slide group, rebuilt whenever the controls are, so a finger moving
+    /// doesn't scan the whole list for its neighbours on every sample.
+    private var groupCache: [Int: [Int]] = [:]
     /// Last short, still tap per control - the first half of a double-tap.
     private var lastTap: [Int: (time: Double, point: CGPoint)] = [:]
 
@@ -211,6 +214,10 @@ open class ControlScheme: TouchScheme {
     }
 
     private func applyOffsets() {
+        defer {
+            groupCache = [:]
+            for (i, c) in controls.enumerated() where c.group != 0 { groupCache[c.group, default: []].append(i) }
+        }
         controls = baseControls.map { c in
             guard c.cluster >= 0, let d = clusterOffsets[c.cluster], d != .zero else { return c }
             var moved = c
@@ -292,7 +299,8 @@ open class ControlScheme: TouchScheme {
         case let .dpad(click, clickRadius, _, _):
             if click != nil, point.distance(to: c.shape.center) <= clickRadius { t.clickHeld = true }
         case .stick(_, _, let click):
-            t.origin = c.shape.center
+            // Relative: the centre is where the thumb landed, so landing is never a push.
+            t.origin = context.stick.relativeCentre ? point : c.shape.center
             t.clickHeld = click != nil && isDoubleTap(index, point, time)
         case let .floatingStick(_, travel, _, _, click):
             t.origin = floatingOrigin(for: point, travel: travel)
@@ -370,7 +378,7 @@ open class ControlScheme: TouchScheme {
     private func groupMembers(of index: Int) -> [Int] {
         let g = controls[index].group
         guard g != 0 else { return [index] }
-        return controls.indices.filter { controls[$0].group == g }
+        return groupCache[g] ?? [index]
     }
 
     private func isDoubleTap(_ index: Int, _ point: CGPoint, _ time: Double) -> Bool {
@@ -425,11 +433,11 @@ open class ControlScheme: TouchScheme {
 
         case let .stick(stick, travel, click):
             return stickContribution(&t, stick: stick, travel: travel, click: click, point: point,
-                                     follow: false, fixedBase: true)
+                                     follow: context.stick.followsThumb, fixedBase: !context.stick.relativeCentre)
 
         case let .floatingStick(stick, travel, _, follow, click):
             return stickContribution(&t, stick: stick, travel: travel, click: click, point: point,
-                                     follow: follow, fixedBase: false)
+                                     follow: follow || context.stick.followsThumb, fixedBase: false)
 
         case .pedal:
             let members = groupMembers(of: t.control)
@@ -542,9 +550,11 @@ open class ControlScheme: TouchScheme {
 
             case let .stick(_, travel, click):
                 let t = active[i]
-                out.append(RenderElement(shape: .circle(center: c.shape.center, radius: travel + knobRadius), role: .stickBase,
+                // The base stays put unless a finger has moved it (relative centre, follow).
+                let base = t?.origin ?? c.shape.center
+                out.append(RenderElement(shape: .circle(center: base, radius: travel + knobRadius), role: .stickBase,
                                          lit: t != nil))
-                out.append(RenderElement(shape: .circle(center: c.shape.center + (t?.knob ?? .zero), radius: knobRadius),
+                out.append(RenderElement(shape: .circle(center: base + (t?.knob ?? .zero), radius: knobRadius),
                                          role: .stickKnob, label: c.label,
                                          lit: click.map { pressed.contains($0) } ?? false))
 

@@ -20,6 +20,8 @@ public final class TouchPadView: UIView {
     public var hapticsEnabled = true
     /// Whole-pad opacity; controls, not the view, so hit testing is unaffected.
     public var controlOpacity: CGFloat = 0.85 { didSet { setNeedsDisplay() } }
+    /// Colours for the classic schemes (see `PadStyle`); nil = Classic.
+    public var colourPreset: ShowcaseColourPreset? { didSet { setNeedsDisplay() } }
     /// Called after every input change, for HUDs and diagnostics.
     public var onChange: (() -> Void)?
     /// Where the GamePad image is, in this view's coordinates; see LayoutContext.
@@ -41,7 +43,7 @@ public final class TouchPadView: UIView {
         get {
             PadSettings(stick: stickTuning, calibration: calibration, tolerance: tolerance, scale: scale,
                         opacity: controlOpacity, haptics: hapticsEnabled, stickSpacing: stickSpacing,
-                        shoulderOffset: shoulderOffset)
+                        shoulderOffset: shoulderOffset, colourPreset: colourPreset)
         }
         set {
             if stickTuning != newValue.stick { stickTuning = newValue.stick }
@@ -51,6 +53,7 @@ public final class TouchPadView: UIView {
             if stickSpacing != newValue.stickSpacing { stickSpacing = newValue.stickSpacing }
             if shoulderOffset != newValue.shoulderOffset { shoulderOffset = newValue.shoulderOffset }
             if controlOpacity != newValue.opacity { controlOpacity = newValue.opacity }
+            if colourPreset != newValue.colourPreset { colourPreset = newValue.colourPreset }
             hapticsEnabled = newValue.haptics
         }
     }
@@ -79,6 +82,7 @@ public final class TouchPadView: UIView {
     private var glowTimer: Timer?
     private let wheel = WheelAngleSource()
     private let impact = UIImpactFeedbackGenerator(style: .light)
+    private let snapFeedback = UISelectionFeedbackGenerator()
     private var lastPressed: Set<PadButton> = []
 
     public init(scheme: TouchScheme, output: PadOutput) {
@@ -92,6 +96,17 @@ public final class TouchPadView: UIView {
                                                name: UIApplication.willResignActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(becameActive),
                                                name: UIApplication.didBecomeActiveNotification, object: nil)
+        // Any other way the app or this window can stop being the one in the player's hand:
+        // backgrounding, the scene going away or inactive (iPad windows, Stage Manager), another
+        // window (a system alert) taking key.
+        for name in [UIApplication.didEnterBackgroundNotification, UIScene.willDeactivateNotification,
+                     UIScene.didDisconnectNotification, UIScene.didEnterBackgroundNotification] {
+            NotificationCenter.default.addObserver(self, selector: #selector(sceneLeft(_:)), name: name, object: nil)
+        }
+        NotificationCenter.default.addObserver(self, selector: #selector(sceneBack(_:)),
+                                               name: UIScene.didActivateNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowLostKey(_:)),
+                                               name: UIWindow.didResignKeyNotification, object: nil)
     }
 
     @available(*, unavailable)
@@ -123,6 +138,7 @@ public final class TouchPadView: UIView {
 
     public override func didMoveToWindow() {
         super.didMoveToWindow()
+        impact.prepare()
         relayout()
         updateAmbient()
     }
@@ -164,7 +180,10 @@ public final class TouchPadView: UIView {
 
     public override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         // No other finger is down, so anything the engine still holds is a leaked touch whose end never arrived.
-        if let all = event?.allTouches, all.count == touches.count { engine.cancelAll() }
+        if let all = event?.allTouches {
+            if all.count == touches.count { engine.cancelAll() }
+            reconcile(with: all)
+        }
         for t in touches {
             (engine.scheme as? ArcPad)?.contactRadius = t.majorRadius
             engine.began(id(t), at: t.location(in: self), time: t.timestamp)
@@ -186,7 +205,14 @@ public final class TouchPadView: UIView {
 
     public override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         for t in touches { engine.ended(id(t), at: t.location(in: self), time: t.timestamp) }
+        if let all = event?.allTouches { reconcile(with: all) }
         changed()
+    }
+
+    /// Anything the engine holds for a finger the system no longer lists as down is released.
+    private func reconcile(with all: Set<UITouch>) {
+        let live = Set(all.filter { $0.phase != .ended && $0.phase != .cancelled }.map(id))
+        engine.reconcile(live: live)
     }
 
     public override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -213,7 +239,34 @@ public final class TouchPadView: UIView {
         changed()
     }
 
-    @objc private func becameActive() { updateAmbient() }
+    @objc private func becameActive() {
+        impact.prepare()
+        updateAmbient()
+    }
+
+    /// A scene or window notification: drop everything, but only when it is ours.
+    @objc private func sceneLeft(_ note: Notification) {
+        if let scene = note.object as? UIScene, scene !== window?.windowScene { return }
+        dropAll()
+    }
+
+    @objc private func sceneBack(_ note: Notification) {
+        guard let scene = note.object as? UIScene, scene === window?.windowScene else { return }
+        becameActive()
+    }
+
+    /// Another window took key (a system alert): fingers go, the game keeps what it was holding for the player.
+    @objc private func windowLostKey(_ note: Notification) {
+        guard let other = note.object as? UIWindow, other === window else { return }
+        engine.cancelAll()
+        changed()
+    }
+
+    // A pad that is hidden or switched off mid-press must not keep what the finger held.
+    public override var isHidden: Bool { didSet { if isHidden { dropAll() } } }
+    public override var isUserInteractionEnabled: Bool {
+        didSet { if !isUserInteractionEnabled { dropAll() } }
+    }
 
     /// Turns what the pad holds for the player on or off with whether the pad is live, and
     /// runs the motion sensor only while the scheme steers from it.
@@ -238,8 +291,12 @@ public final class TouchPadView: UIView {
         let pressed = engine.mixer.pressed
         if hapticsEnabled, !pressed.subtracting(lastPressed).isEmpty {
             impact.impactOccurred(intensity: 0.7)
+            // Warm the engine for the next press, so its haptic isn't late.
+            impact.prepare()
         }
         lastPressed = pressed
+        // Arc's fine-tune snap: one light tick each time a dragged control settles on a guide.
+        if (engine.scheme as? ArcPad)?.takeSnapTick() == true, hapticsEnabled { snapFeedback.selectionChanged() }
         updateDisplayLink()
         if redraw { setNeedsDisplay() }
         scheduleGlowRedraw()
@@ -280,11 +337,25 @@ public final class TouchPadView: UIView {
         guard let g = UIGraphicsGetCurrentContext() else { return }
         // Showcase has its own look (shadow, rim, dish, octagonal gate), as a scene to draw.
         if let showcase = engine.scheme as? ShowcasePad {
-            ShowcaseDrawing.draw(showcase.scene(pressed: engine.litButtons(), sticks: engine.mixer.sticks),
-                                 in: g, opacity: controlOpacity)
+            ShowcaseDrawing.draw(showcase.scene(pressed: engine.litButtons(), sticks: engine.mixer.sticks,
+                                                opacity: controlOpacity, time: CACurrentMediaTime(),
+                                                reduceMotion: UIAccessibility.isReduceMotionEnabled),
+                                 in: g)
+            // A press still easing: draw again next frame.
+            if showcase.isAnimatingPress { DispatchQueue.main.async { [weak self] in self?.setNeedsDisplay() } }
             return
         }
-        for e in engine.render() { PadDrawing.draw(e, in: g, opacity: controlOpacity) }
+        if PadStyle.appliesTo(engine.scheme.info.id) {
+            let scene = PadStyle.scene(elements: engine.render(), size: bounds.size,
+                                       look: PadStyle.look(colourPreset), opacity: controlOpacity)
+            ShowcaseDrawing.draw(scene, in: g, opacity: PadSettings.defaultOpacity)
+            return
+        }
+        for e in engine.render() {
+            if e.role == .guide { PadDrawing.drawGuide(e, in: g, opacity: controlOpacity) }
+            else if e.style == .refined { PadDrawing.drawRefined(e, in: g, opacity: controlOpacity) }
+            else { PadDrawing.draw(e, in: g, opacity: controlOpacity) }
+        }
     }
 }
 
@@ -338,7 +409,75 @@ enum PadDrawing {
         case .area: return (UIColor(red: 0.5, green: 0.66, blue: 1, alpha: 1), UIColor(red: 0.6, green: 0.74, blue: 1, alpha: 1),
                             UIColor(red: 0.77, green: 0.84, blue: 1, alpha: 1))
         case .pedal: return (UIColor(white: 0.85, alpha: 1), .white, UIColor(white: 0.1, alpha: 1))
+        case .guide, .handle: return (UIColor(red: 0.35, green: 0.78, blue: 0.98, alpha: 1), UIColor(red: 0.35, green: 0.78, blue: 0.98, alpha: 1), .white)
         }
+    }
+
+    private static func ui(_ c: LookRGBA, _ alpha: CGFloat = 1) -> UIColor {
+        UIColor(red: c.r, green: c.g, blue: c.b, alpha: CGFloat(c.a) * alpha)
+    }
+
+    /// A line along `e.path`: Arc's arc band, sweep trace, fitted-arc preview and snap ticks.
+    static func drawGuide(_ e: RenderElement, in g: CGContext, opacity: CGFloat) {
+        guard e.path.count > 1 else { return }
+        let scale = opacity / PadSettings.defaultOpacity
+        let base: CGFloat = e.ghost ? 0.28 : (e.lit ? 0.9 : 0.6)
+        let alpha = min(1, base * e.fade * scale)
+        guard alpha > 0.005 else { return }
+        let path = UIBezierPath()
+        path.move(to: e.path[0])
+        for p in e.path.dropFirst() { path.addLine(to: p) }
+        path.lineWidth = max(e.width, 1)
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        if e.dash > 0 { path.setLineDash([e.dash, e.dash * 1.4], count: 2, phase: 0) }
+        ui(RefinedLook.tone(e.tone), alpha).setStroke()
+        path.stroke()
+    }
+
+    /// Arc's look (see `RefinedLook`): a body with a hairline outline and a soft shadow, a rim
+    /// lit from above, a held state that sinks, and a label that stays legible at any size.
+    static func drawRefined(_ e: RenderElement, in g: CGContext, opacity: CGFloat) {
+        let look = RefinedLook.of(e)
+        let alpha = min(1, (e.ghost ? 0.3 : 1) * e.fade * opacity / PadSettings.defaultOpacity)
+        guard alpha > 0.005 else { return }
+        let box = e.shape.boundingBox
+        func outline(inset: CGFloat) -> UIBezierPath {
+            let k = look.scale
+            switch e.shape {
+            case .circle(let c, let r):
+                let rr = max(r * k - inset, 0.5)
+                return UIBezierPath(ovalIn: CGRect(x: c.x - rr, y: c.y - rr, width: 2 * rr, height: 2 * rr))
+            case .roundedRect(let rect, let cr):
+                let w = rect.width * k - 2 * inset, h = rect.height * k - 2 * inset
+                let r = CGRect(x: rect.midX - w / 2, y: rect.midY - h / 2, width: w, height: h)
+                return UIBezierPath(roundedRect: r, cornerRadius: max(min(cr * k, min(w, h) / 2), 0))
+            }
+        }
+        let body = outline(inset: 0)
+        g.saveGState()
+        g.setShadow(offset: CGSize(width: 0, height: look.shadowDY), blur: look.shadowBlur,
+                    color: UIColor.black.withAlphaComponent(CGFloat(look.shadowOpacity) * alpha).cgColor)
+        ui(look.body, alpha).setFill()
+        body.fill()
+        g.restoreGState()
+        ui(look.outline, alpha).setStroke()
+        body.lineWidth = look.outlineWidth
+        body.stroke()
+        if look.rim.a > 0.01 {
+            // Lit from above: the rim fades out over the top half.
+            g.saveGState()
+            g.clip(to: CGRect(x: box.minX - 2, y: box.minY - 2, width: box.width + 4, height: box.height * 0.5 + 2))
+            let rim = outline(inset: 1.4)
+            rim.lineWidth = 1
+            ui(look.rim, alpha).setStroke()
+            rim.stroke()
+            g.restoreGState()
+        }
+        guard !e.label.isEmpty, e.role != .stickBase else { return }
+        let size = RefinedLook.labelSize(for: box)
+        let label = LabelCache.image(e.label, size: size, text: ui(look.text), alpha: alpha)
+        label.draw(at: CGPoint(x: box.midX - label.size.width / 2, y: box.midY - label.size.height / 2))
     }
 }
 
@@ -364,6 +503,7 @@ public struct TouchPad: UIViewRepresentable {
     public var stickTuning: StickTuning
     public var calibration = StickCalibrations()
     public var tolerance: PadTolerance?
+    public var colourPreset: ShowcaseColourPreset?
     public var rectSpace: TouchPadView.RectSpace
     public var extraInsets: Insets
     public var onChange: ((PadEngine) -> Void)?
@@ -407,6 +547,7 @@ public struct TouchPad: UIViewRepresentable {
                   makeScheme: makeScheme, onChange: onChange)
         self.calibration = settings.calibration
         self.tolerance = settings.tolerance
+        self.colourPreset = settings.colourPreset
     }
 
     public final class Coordinator {
@@ -437,6 +578,7 @@ public struct TouchPad: UIViewRepresentable {
         if view.stickTuning != stickTuning { view.stickTuning = stickTuning }
         if view.calibration != calibration { view.calibration = calibration }
         if view.tolerance != tolerance { view.tolerance = tolerance }
+        if view.colourPreset != colourPreset { view.colourPreset = colourPreset }
         if view.isInputEnabled != enabled { view.isInputEnabled = enabled }
         if view.touchscreenRect != touchscreenRect { view.touchscreenRect = touchscreenRect }
         if view.videoRects != videoRects { view.videoRects = videoRects }

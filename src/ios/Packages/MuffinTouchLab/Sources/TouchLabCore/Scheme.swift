@@ -72,7 +72,16 @@ public struct RenderElement: Equatable, Sendable {
         case area          // a catchment that is always drawn, faintly (Racing's steering area)
         case pedal         // a large held zone; drawn lighter than a button so it leaves the game visible
         case touchscreen   // outline of the passthrough area (debug)
+        case guide         // a line along `path`: Arc's arc band, sweep trace, fitted-arc preview, snap ticks
+        case handle        // a drag handle shown while a layout can be moved
     }
+
+    /// `.standard` is the flat look every scheme shares. `.refined` is Arc's: a hairline
+    /// outline, a soft shadow, a lit rim and a pressed state that sinks (see `RefinedLook`).
+    public enum Style: Equatable, Sendable { case standard, refined }
+
+    /// Accent for guides and handles.
+    public enum Tone: Equatable, Sendable { case neutral, accent, good, warn }
 
     public var shape: PadShape
     public var role: Role
@@ -80,12 +89,30 @@ public struct RenderElement: Equatable, Sendable {
     public var lit: Bool
     /// Drawn at reduced opacity: an idle floating stick's resting spot, zone hints.
     public var ghost: Bool
+    public var style: Style
+    public var tone: Tone
+    /// Multiplies the drawn opacity (1 = as is). Lets a scheme rest its controls dim.
+    public var fade: CGFloat
+    /// `.guide` only: the polyline, in view points.
+    public var path: [CGPoint]
+    /// `.guide` only: stroke width in points.
+    public var width: CGFloat
+    /// `.guide` only: dash length in points, 0 = solid.
+    public var dash: CGFloat
 
-    public init(shape: PadShape, role: Role, label: String = "", lit: Bool = false, ghost: Bool = false) {
+    public init(shape: PadShape, role: Role, label: String = "", lit: Bool = false, ghost: Bool = false,
+                style: Style = .standard, tone: Tone = .neutral, fade: CGFloat = 1,
+                path: [CGPoint] = [], width: CGFloat = 0, dash: CGFloat = 0) {
         self.shape = shape
         self.role = role
         self.label = label
         self.lit = lit
         self.ghost = ghost
+        self.style = style
+        self.tone = tone
+        self.fade = fade
+        self.path = path
+        self.width = width
+        self.dash = dash
     }
 }

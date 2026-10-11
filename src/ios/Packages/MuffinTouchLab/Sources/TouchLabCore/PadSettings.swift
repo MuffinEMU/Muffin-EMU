@@ -116,6 +116,8 @@ public struct PadSettings: Equatable, Sendable {
     public var stickSpacing: CGFloat
     /// Shoulder cluster drop, in button widths.
     public var shoulderOffset: CGFloat
+    /// Colour preset for the classic schemes (see `PadStyle`); nil = their own Classic look.
+    public var colourPreset: ShowcaseColourPreset?
 
     public static let defaultOpacity: CGFloat = 0.85
 
@@ -126,7 +128,9 @@ public struct PadSettings: Equatable, Sendable {
                 opacity: CGFloat = PadSettings.defaultOpacity,
                 haptics: Bool = true,
                 stickSpacing: CGFloat = 0,
-                shoulderOffset: CGFloat = 0) {
+                shoulderOffset: CGFloat = 0,
+                colourPreset: ShowcaseColourPreset? = nil) {
+        self.colourPreset = colourPreset
         self.stick = stick
         self.calibration = calibration
         self.tolerance = tolerance

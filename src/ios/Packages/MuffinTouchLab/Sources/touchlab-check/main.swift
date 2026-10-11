@@ -765,6 +765,38 @@ for (name, size, insets) in [
     }
 }
 
+// BEGIN nearest-hit checks
+// MARK: Nearest-button assignment
+
+do {
+    let r: CGFloat = 30
+    let a = HitTarget(id: "A", centre: CGPoint(x: 100, y: 0), halfSize: CGSize(width: r, height: r), isCircle: true)
+    let b = HitTarget(id: "B", centre: CGPoint(x: 171, y: 0), halfSize: CGSize(width: r, height: r), isCircle: true)
+    let both = [a, b]
+    func hit(_ x: CGFloat, _ y: CGFloat = 0, reach: CGFloat = 1.4, contact: CGFloat = 0,
+             bias: CGPoint = .zero, current: String? = nil) -> String? {
+        HitResolver.resolve(CGPoint(x: x, y: y), targets: both, reachFactor: reach,
+                            contactRadius: contact, bias: bias, current: current)
+    }
+    check(hit(100) == "A" && hit(171) == "B", "nearest: a touch on a button's centre gets that button")
+    check(hit(133) == "A", "nearest: a touch in the gap, nearer A, goes to A")
+    check(hit(138) == "B", "nearest: a touch in the gap, nearer B, goes to B")
+    check(hit(60) == "A", "nearest: just outside the drawn edge (within 1.4x) still counts")
+    check(hit(100, 45) == nil, "nearest: a touch outside the reach goes nowhere")
+    check(hit(60, 0, reach: 1.0) == nil, "nearest: with no tolerance an edge miss goes nowhere")
+    check(hit(100, 45, contact: 8) == "A", "nearest: a wide contact area extends the reach")
+    check(hit(60, 0, bias: CGPoint(x: 6, y: 0)) == "A" && hit(133, 0, bias: CGPoint(x: 6, y: 0)) == "B",
+          "nearest: the bias shifts where the touch is read")
+    check(hit(135, current: "A") == "A" && hit(135, current: "B") == "B", "nearest: a finger on the seam keeps the button it holds")
+    check(hit(160, current: "A") == "B", "nearest: sliding well onto B hands over from A")
+    check(hit(100 + 29, 29, reach: 1.15) == "A", "nearest: a round button's frame corner presses it at Normal")
+    check(hit(150, current: "A") == "B" && hit(150, current: "B") == "B", "nearest: a point inside B while holding A switches to B")
+    let pill = HitTarget(id: "ZL", centre: CGPoint(x: 0, y: 0), halfSize: CGSize(width: 60, height: 20), isCircle: false)
+    check(HitResolver.resolve(CGPoint(x: 50, y: 24), targets: [pill], reachFactor: 1.4) == "ZL", "nearest: a shoulder's reach follows its shorter side")
+    check(HitResolver.resolve(CGPoint(x: 50, y: 40), targets: [pill], reachFactor: 1.4) == nil, "nearest: and stops there")
+}
+
+// END nearest-hit checks
 
 // MARK: Shared settings: every scheme gives the same stick output as MuffinEMU's own pad
 
@@ -1409,6 +1441,122 @@ do {
         }
     }
     print("showcase: \(clears) clear, \(overlays) overlay; smallest \(Int(smallest.0 * 100))% of life size (\(smallest.1))")
+    check(clears >= 36, "showcase: Fit clears the picture in \(clears) of 48 cases, expected at least 36")
+    // Fit never shrinks a button under the touch size, however it packs the pad.
+    for device in TargetDevice.showcaseReview {
+        for display in TargetDevice.Display.allCases {
+            for preset in ShowcaseLayoutPreset.allCases {
+                let pad = ShowcasePad(); pad.pointsPerInch = device.showcasePointsPerInch; pad.layoutPreset = preset
+                pad.layout(device.context(display))
+                guard pad.arrangement == .clear else { continue }
+                let where_ = "Showcase \(device.name) \(display.rawValue) \(preset.rawValue)"
+                for c in pad.controls {
+                    switch c.kind {
+                    case .button(let b) where c.role == .face || b == .home || c.role == .system:
+                        let d = c.shape.boundingBox.width
+                        let floor = c.role == .face ? pad.minimumUnit : pad.minimumUnit * (b == .home ? 1.04 : 0.68)
+                        check(d >= floor - 0.5, "\(where_): \(b) is \(d) pt, under \(floor)")
+                    case .dpad:
+                        check(c.shape.boundingBox.width >= 2.28 * pad.minimumUnit - 0.5, "\(where_): d-pad under the touch size")
+                    case .stick(let st, _, _):
+                        // Each stick keeps its own shoulders within reach.
+                        for sh in [PadButton.l, .zl, .r, .zr] where (sh == .l || sh == .zl) == (st == .left) {
+                            let sc = pad.controls.first { $0.button == sh }!.shape.center
+                            check(sc.distance(to: c.shape.center) <= 4.5 * pad.unitPoints, "\(where_): \(sh) strays from its stick")
+                        }
+                    default: break
+                    }
+                }
+            }
+        }
+    }
+    // Cases the old fitter gave up on now clear the picture, with + left of - above HOME.
+    for (name, display, preset) in [("iPhone SE", TargetDevice.Display.stacked, ShowcaseLayoutPreset.compact),
+                                    ("iPad Pro 13", .single, .native), ("iPad mini portrait", .stacked, .native),
+                                    ("iPad Pro 11 (A12Z) portrait", .stacked, .iPadPro2020)] {
+        let d = TargetDevice.showcaseReview.first { $0.name == name }!
+        let pad = ShowcasePad(); pad.pointsPerInch = d.showcasePointsPerInch; pad.layoutPreset = preset
+        pad.layout(d.context(display))
+        check(pad.arrangement == .clear, "showcase: \(name) \(display.rawValue) \(preset.rawValue) should clear the picture, got \(pad.arrangement)")
+        func at(_ b: PadButton) -> CGPoint { pad.controls.first { $0.button == b }!.shape.center }
+        check(at(.plus).x < at(.minus).x && abs(at(.plus).y - at(.minus).y) < 1, "showcase: \(name) + is left of - on one row")
+        check(at(.home).y > at(.plus).y || abs(at(.home).x - at(.plus).x) > 20, "showcase: \(name) HOME sits with the + / - pair")
+    }
+    // Shared settings: scale sizes the pad, opacity fades it and firms the look as it fades.
+    do {
+        let d = TargetDevice.all.first { $0.name.contains("A12Z") }!
+        func unit(_ scale: CGFloat) -> CGFloat {
+            var ctx = d.context(.stacked); ctx.scale = scale
+            let pad = ShowcasePad(); pad.pointsPerInch = 132; pad.layout(ctx); return pad.unitPoints
+        }
+        check(unit(0.8) < unit(1) - 1 && unit(1) <= unit(1.2) + 0.01, "showcase: the shared scale resizes the pad (\(unit(0.8)), \(unit(1)), \(unit(1.2)))")
+        let pad = ShowcasePad(); pad.pointsPerInch = 132; pad.layout(d.context(.stacked))
+        let def = pad.scene(pressed: [], sticks: [:])
+        check(abs(def.opacity - 0.94) < 1e-9 && pad.scene(pressed: [], sticks: [:], opacity: 1).opacity <= 1
+              && abs(pad.scene(pressed: [], sticks: [:], opacity: 0.3).opacity - 0.94 * 0.3 / 0.85) < 1e-9,
+              "showcase: scene opacity follows the shared opacity (\(def.opacity))")
+        let faint = pad.scene(pressed: [], sticks: [:], opacity: 0.3)
+        func maxShadow(_ s: ShowcaseScene) -> Double { s.primitives.compactMap(\.shadow?.opacity).max() ?? 0 }
+        check(maxShadow(faint) > maxShadow(def) + 0.05, "showcase: a faint pad gets a firmer shadow")
+        check(faint.primitives.count == def.primitives.count, "showcase: a faint pad keeps every control")
+    }
+    // Colours: every preset is a valid .muffinclr, readable, and distinct.
+    do {
+        var names = Set<String>()
+        for p in ShowcaseColourPreset.allCases {
+            let f = p.file
+            check(names.insert(f.name).inserted, "showcase: colour preset name \(f.name) is unique")
+            check((try? ShowcaseColourFile.decode(f.encoded())) == f && f.version == 1, "showcase: \(p.rawValue) is a version 1 .muffinclr")
+            // (Drawing nudges any glyph that is too faint for its fill; the presets added since the
+            // first three are expected to be readable as written.)
+            for id in ["A", "B", "X", "Y", "dpad", "plus", "L", "R", "stickL", "HOME"] where ![.wiiUWhite, .wiiUBlack, .superFamicom].contains(p) {
+                let c = ShowcaseRGBA.contrast(f.glyph(id), f.fill(id).withAlpha(1))
+                check(c >= 1.8, "showcase: \(p.rawValue) \(id) glyph contrast \(c)")
+            }
+        }
+        check(ShowcaseColourPreset.allCases.count >= 10, "showcase: colour presets")
+    }
+    // Press animation: eases down in ~60 ms and back in ~150 ms, snaps with Reduce Motion, settles.
+    do {
+        var a = ShowcasePressAnimator()
+        a.step(pressed: [], time: 0, reduceMotion: false)
+        check(!a.isAnimating && a.eased.isEmpty, "showcase: press animator starts idle")
+        a.step(pressed: [.a], time: 1, reduceMotion: false)       // first frame after a gap settles
+        check(a.eased[.a] == 1 && !a.isAnimating, "showcase: first frame is settled")
+        a.step(pressed: [], time: 1.016, reduceMotion: false)
+        let mid = a.eased[.a] ?? 0
+        check(mid > 0.5 && mid < 1 && a.isAnimating, "showcase: release eases (\(mid))")
+        a.step(pressed: [], time: 1.1, reduceMotion: false)
+        a.step(pressed: [], time: 1.2, reduceMotion: false)
+        check(a.eased[.a] == nil && !a.isAnimating, "showcase: release settles")
+        a.step(pressed: [.a], time: 1.216, reduceMotion: false)
+        let down = a.eased[.a] ?? 0
+        check(down > 0 && down < 1 && a.isAnimating, "showcase: press eases in (\(down))")
+        a.step(pressed: [.a], time: 1.3, reduceMotion: false)
+        check(a.eased[.a] == 1 && !a.isAnimating, "showcase: press settles")
+        var r = ShowcasePressAnimator()
+        r.step(pressed: [], time: 0, reduceMotion: true)
+        r.step(pressed: [.b], time: 0.016, reduceMotion: true)
+        check(r.eased[.b] == 1 && !r.isAnimating, "showcase: Reduce Motion snaps")
+        // The scene at an eased amount sits between up and held.
+        let d = TargetDevice.all.first { $0.name.contains("A12Z") }!
+        let pad = ShowcasePad(); pad.pointsPerInch = 132; pad.layout(d.context(.stacked))
+        let up = pad.scene(pressed: [], sticks: [:]), held = pad.scene(pressed: [.a], sticks: [:])
+        _ = pad.scene(pressed: [], sticks: [:], time: 10)
+        let mid2 = pad.scene(pressed: [.a], sticks: [:], time: 10.03)
+        check(pad.isAnimatingPress && mid2 != up && mid2 != held, "showcase: a half-pressed button looks half-pressed")
+        _ = pad.scene(pressed: [.a], sticks: [:], time: 10.5)
+        check(pad.scene(pressed: [.a], sticks: [:], time: 10.6) == held && !pad.isAnimatingPress, "showcase: settled animation equals the held look")
+        _ = pad.scene(pressed: [], sticks: [:], time: 11)
+        _ = pad.scene(pressed: [], sticks: [:], time: 11.5)
+        check(pad.scene(pressed: [], sticks: [:], time: 11.6) == up, "showcase: settled animation equals the up look")
+        // Glass.
+        pad.glass = true
+        let g = pad.scene(pressed: [], sticks: [:])
+        check(g != up && g.primitives.count > up.primitives.count, "showcase: glass changes the look")
+        check(g.primitives.allSatisfy { p in if case .vertical = p.fill { return true }; if case .solid = p.fill { return true }; return p.fill == nil },
+              "showcase: glass scene is plain data")
+    }
     // The GamePad stays a real touchscreen wherever Fit found a margin.
     do {
         let d = TargetDevice.all.first { $0.name.contains("A12Z") }!
@@ -1507,6 +1655,425 @@ do {
         check(held != pad.scene(pressed: [], sticks: [:]), "showcase: a held button looks different")
     }
 }
+
+// MARK: Engine: stuck inputs, press latency, multi-touch, catchment, stick feel
+
+/// Every scheme on every device and display, as a ready engine.
+func forEachEngine(_ body: (SchemeInfo, TargetDevice, TargetDevice.Display, PadEngine, Recorder, ControlScheme) -> Void) {
+    for info in SchemeCatalog.all {
+        for device in TargetDevice.all {
+            for display in TargetDevice.Display.allCases {
+                let r = Recorder()
+                let e = PadEngine(scheme: SchemeCatalog.make(info.id), output: r, context: device.context(display))
+                body(info, device, display, e, r, e.scheme as! ControlScheme)
+            }
+        }
+    }
+}
+func isPress(_ c: PadControl) -> Bool {
+    switch c.kind { case .button, .pedal: return true; default: return false }
+}
+func where_(_ info: SchemeInfo, _ d: TargetDevice, _ x: TargetDevice.Display) -> String { "\(info.id) / \(d.name) / \(x)" }
+/// Every press has exactly one release.
+func balanced(_ log: [String]) -> Bool {
+    var open: [String: Int] = [:]
+    for entry in log {
+        if entry == "releaseAll" { open = [:]; continue }
+        let name = String(entry.dropLast())
+        if entry.hasSuffix("+") { open[name, default: 0] += 1 } else if entry.hasSuffix("-") { open[name, default: 0] -= 1 }
+        if open[name]! < 0 || open[name]! > 1 { return false }
+    }
+    return open.values.allSatisfy { $0 == 0 }
+}
+
+// A press is decided on touch-down: held the moment `began` returns, with no tick, no time passing.
+var pressedOnDown = 0
+forEachEngine { info, device, display, e, r, s in
+    for c in s.controls where c.button != nil && c.priority == 1 && c.role != .dot {
+        e.began(1, at: c.shape.center, time: 0)
+        check(r.held.contains(c.button!), "press on touch-down: \(c.button!) on \(where_(info, device, display))")
+        pressedOnDown += 1
+        e.ended(1, at: c.shape.center, time: 0.001)
+        check(r.held.isEmpty, "release on touch-up: \(c.button!) on \(where_(info, device, display))")
+    }
+    check(balanced(r.log), "every press released exactly once on \(where_(info, device, display)): \(r.log.prefix(8))")
+}
+check(pressedOnDown > 1000, "press-on-touch-down was exercised widely (\(pressedOnDown))")
+
+// Gap-free catchment: between neighbours of one slide group or cluster, every point on the line
+// joining their centres presses something.
+var gapPairs = 0
+forEachEngine { info, device, display, e, r, s in
+    let u = e.context.unit
+    let items = s.controls.filter(isPress)
+    s.clusterOffsets = [:]
+    for (i, a) in items.enumerated() {
+        for b in items[(i + 1)...] where (a.group != 0 && a.group == b.group) || (a.cluster >= 0 && a.cluster == b.cluster) {
+            let ca = a.shape.center, cb = b.shape.center
+            guard max(a.shape.edgeDistance(to: cb), b.shape.edgeDistance(to: ca)) < u else { continue }
+            gapPairs += 1
+            for k in 0...20 {
+                let t = CGFloat(k) / 20
+                let p = CGPoint(x: ca.x + (cb.x - ca.x) * t, y: ca.y + (cb.y - ca.y) * t)
+                s.clusterOffsets = [:]      // Adaptive drifts a cluster toward a press; probe the layout as drawn
+                e.began(1, at: p, time: 0)
+                check(!r.held.isEmpty || e.mixer.contribution(for: 1)?.stick != nil, "no dead gap between \(a.label) and \(b.label) at \(p) on \(where_(info, device, display))")
+                e.ended(1, at: p, time: 0.01)
+            }
+        }
+    }
+}
+check(gapPairs > 300, "gap check covered neighbouring buttons (\(gapPairs) pairs)")
+
+// Bounded: a button's catchment ends within a modest distance of its drawn edge, so it never
+// reaches far into the GamePad touchscreen or the open screen.
+forEachEngine { info, device, display, e, r, s in
+    let u = e.context.unit
+    for c in s.controls where isPress(c) && c.role != .pedal {
+        check(c.reach <= 0.85 * u, "\(c.label) catchment reaches \(c.reach / u)u past its edge on \(where_(info, device, display))")
+    }
+}
+
+// Slide: a finger rolling between buttons of a slide group moves the press, in every scheme.
+var slides = 0
+forEachEngine { info, device, display, e, r, s in
+    var groups: [Int: [PadControl]] = [:]
+    for c in s.controls where c.button != nil && c.group != 0 { groups[c.group, default: []].append(c) }
+    for (_, members) in groups where members.count > 1 {
+        for from in members {
+            for to in members where to.button != from.button {
+                e.began(1, at: from.shape.center, time: 0)
+                e.moved(1, to: to.shape.center, time: 0.05)
+                check(r.held == [to.button!], "slide \(from.label)->\(to.label) leaves only \(to.label) held, got \(r.held) on \(where_(info, device, display))")
+                slides += 1
+                e.ended(1, at: to.shape.center, time: 0.1)
+            }
+        }
+    }
+    check(r.held.isEmpty && balanced(r.log), "slides leave nothing held and every press released once on \(where_(info, device, display))")
+}
+check(slides > 300, "slides were exercised (\(slides))")
+
+// Chords: a thumb on the seam between two chording buttons presses both.
+var chordsTried = 0
+forEachEngine { info, device, display, e, r, s in
+    let ch = s.controls.filter { $0.chords && $0.button != nil }
+    for (i, a) in ch.enumerated() {
+        for b in ch[(i + 1)...] where a.group == b.group {
+            let gap = max(a.shape.edgeDistance(to: b.shape.center), b.shape.edgeDistance(to: a.shape.center))
+            guard gap < 0.9 * e.context.unit, gap > 0 else { continue }
+            let mid = CGPoint(x: (a.shape.center.x + b.shape.center.x) / 2, y: (a.shape.center.y + b.shape.center.y) / 2)
+            if s.controls.contains(where: { $0.priority > 1 && $0.shape.edgeDistance(to: mid) <= $0.reach }) { continue }
+            s.clusterOffsets = [:]
+            e.began(1, at: mid, time: 0)
+            check(r.held == [a.button!, b.button!], "seam between \(a.label) and \(b.label) presses both, got \(r.held) on \(where_(info, device, display))")
+            chordsTried += 1
+            e.ended(1, at: mid, time: 0.1)
+        }
+    }
+}
+check(chordsTried > 100, "chords were exercised (\(chordsTried))")
+
+// Multi-touch: three fingers, two on one button, ended together or cancelled together.
+forEachEngine { info, device, display, e, r, s in
+    let btns = s.controls.filter { $0.button != nil && $0.priority == 1 && $0.role != .dot }
+    guard btns.count >= 3 else { return }
+    let w = where_(info, device, display)
+    // three fingers on three different, well-separated buttons
+    var chosen: [PadControl] = []
+    for c in btns where chosen.allSatisfy({ $0.shape.edgeDistance(to: c.shape.center) > 1.5 * e.context.unit }) { chosen.append(c) }
+    if chosen.count >= 3 {
+        for (i, c) in chosen.prefix(3).enumerated() { e.began(10 + i, at: c.shape.center, time: 0) }
+        check(r.held == Set(chosen.prefix(3).map { $0.button! }), "three fingers hold three buttons on \(w), got \(r.held)")
+        e.ended(11, at: chosen[1].shape.center, time: 0.1)
+        check(r.held == Set([chosen[0].button!, chosen[2].button!]), "lifting the middle finger leaves the others on \(w)")
+        e.cancelled(10, time: 0.1); e.cancelled(12, time: 0.1)
+        check(r.held.isEmpty, "cancelling two fingers in one event releases both on \(w)")
+        e.cancelled(10, time: 0.2); e.ended(12, at: .zero, time: 0.2)
+        check(balanced(r.log) && r.held.isEmpty, "a repeated end or cancel releases nothing twice on \(w): \(r.log)")
+    }
+    // two fingers on the same button: held until both lift
+    let b = btns[0]
+    e.began(20, at: b.shape.center, time: 1)
+    e.began(21, at: b.shape.center, time: 1)
+    e.ended(20, at: b.shape.center, time: 1.1)
+    check(r.held == [b.button!], "button stays held while a second finger is on it on \(w)")
+    e.ended(21, at: b.shape.center, time: 1.2)
+    check(r.held.isEmpty && balanced(r.log), "button released only when both fingers lift on \(w)")
+}
+
+// Everything that can end a press early or late: release once and only once.
+forEachEngine { info, device, display, e, r, s in
+    guard let a = s.controls.first(where: { $0.button == .a }) ?? s.controls.first(where: { $0.button != nil && $0.priority == 1 }) else { return }
+    let w = where_(info, device, display)
+    // scheme switch mid-press
+    e.began(1, at: a.shape.center, time: 0)
+    e.setScheme(SchemeCatalog.make(info.id == "zone" ? "float" : "zone"))
+    check(r.held.isEmpty && balanced(r.log), "switching scheme mid-press releases it on \(w)")
+    e.ended(1, at: a.shape.center, time: 0.1)       // the old finger lifting later is harmless
+    check(r.held.isEmpty && balanced(r.log), "...and the late touch-up is harmless on \(w)")
+    e.setScheme(SchemeCatalog.make(info.id))
+    // rotation / resize mid-press
+    let before = e.context
+    e.began(2, at: e.scheme is ControlScheme ? (e.scheme as! ControlScheme).controls.first(where: { $0.button != nil && $0.priority == 1 })!.shape.center : .zero, time: 1)
+    var rotated = before; rotated.size = CGSize(width: before.size.height, height: before.size.width)
+    e.setContext(rotated)
+    check(r.held.isEmpty && balanced(r.log), "rotating mid-press releases it on \(w)")
+    e.moved(2, to: CGPoint(x: 100, y: 100), time: 1.1); e.ended(2, at: CGPoint(x: 100, y: 100), time: 1.2)
+    check(r.held.isEmpty && balanced(r.log), "...and the old finger moving and lifting does nothing on \(w)")
+    // backgrounding / view leaving the window / scene disconnect all end in cancelAll
+    e.setContext(before)
+    let again = (e.scheme as! ControlScheme).controls.first(where: { $0.button != nil && $0.priority == 1 })!.shape.center
+    e.began(3, at: again, time: 2)
+    e.began(4, at: again, time: 2)
+    e.cancelAll()
+    check(r.held.isEmpty && balanced(r.log) && e.heldTouches.isEmpty, "cancelAll releases every finger on \(w)")
+    e.ended(3, at: again, time: 2.1); e.cancelled(4, time: 2.1)
+    check(r.held.isEmpty && balanced(r.log), "...and the fingers' late ends are harmless on \(w)")
+}
+
+// A new finger that reuses a leaked finger's identity must not inherit or leave behind its press.
+do {
+    let (e, r, s) = engine("zone")
+    e.began(1, at: centre(s, .a), time: 0)
+    check(r.held == [.a], "setup")
+    var dead: CGPoint?
+    outer: for x in stride(from: CGFloat(5), to: e.context.size.width, by: 11) {
+        for y in stride(from: CGFloat(5), to: e.context.size.height, by: 11) where !e.claims(CGPoint(x: x, y: y)) {
+            dead = CGPoint(x: x, y: y); break outer
+        }
+    }
+    check(dead != nil, "found a point nothing claims")
+    e.began(1, at: dead!, time: 1)
+    check(r.held.isEmpty, "a reused finger identity landing on nothing drops the old press, held \(r.held)")
+    check(e.heldTouches.isEmpty, "...and is not held")
+    // a finger the system no longer lists
+    e.began(2, at: centre(s, .b), time: 2)
+    e.began(3, at: centre(s, .a), time: 2)
+    e.reconcile(live: [3])
+    check(r.held == [.a], "reconcile drops a finger the system no longer lists, held \(r.held)")
+    e.reconcile(live: [])
+    check(r.held.isEmpty && balanced(r.log), "reconcile with nothing live releases all")
+}
+
+// A stick keeps its finger across zones; a button finger leaving the pad lets go and re-presses on return.
+do {
+    let (e, r, s) = engine("zone")
+    let stick = stickControl(s, .left)!
+    let start = stick.0.shape.center + CGPoint(x: stick.travel * 0.6, y: 0)
+    e.began(1, at: start, time: 0)
+    e.moved(1, to: centre(s, .a), time: 0.1)
+    check(!r.held.contains(.a), "a finger on the stick sliding over A does not press A")
+    check(e.mixer.contribution(for: 1)?.stick == .left, "the stick keeps its finger")
+    e.ended(1, at: centre(s, .a), time: 0.2)
+    check(r.sticks[.left] == .zero || r.sticks[.left] == nil, "stick centres when its finger lifts")
+
+    e.began(2, at: centre(s, .a), time: 1)
+    e.moved(2, to: CGPoint(x: -400, y: -400), time: 1.1)
+    check(r.held.isEmpty, "a button finger sliding off the pad edge lets go")
+    e.moved(2, to: centre(s, .a), time: 1.2)
+    check(r.held == [.a], "...and presses again when it slides back")
+    e.ended(2, at: centre(s, .a), time: 1.3)
+    check(r.held.isEmpty && balanced(r.log), "...and releases once")
+}
+
+// Stick feel (opt-in): defaults are exactly the old behaviour; follow and relative are off.
+check(!StickTuning().followsThumb && !StickTuning().relativeCentre, "stick follow and relative centre default to off")
+check(StickTuning() == StickTuning(deadzone: 0.06, curve: 1, gate: .octagon), "default tuning is unchanged")
+for id in ["zone", "float", "frame", "showcase"] {
+    func run(_ tuning: StickTuning, _ offsets: [CGFloat]) -> (values: [StickValue], base: [CGPoint]) {
+        var ctx = ipad.context(.stacked); ctx.stick = tuning
+        let r = Recorder()
+        let e = PadEngine(scheme: SchemeCatalog.make(id), output: r, context: ctx)
+        let s = e.scheme as! ControlScheme
+        guard let (c, travel, floating) = stickControl(s, .left) else { return ([], []) }
+        let start = floating ? c.shape.center : c.shape.center + CGPoint(x: travel * 0.5, y: 0)
+        e.began(1, at: start, time: 0)
+        var values = [e.mixer.sticks[.left] ?? .zero]
+        for (i, o) in offsets.enumerated() {
+            e.moved(1, to: start + CGPoint(x: o * travel, y: 0), time: Double(i + 1) * 0.01)
+            values.append(e.mixer.sticks[.left] ?? .zero)
+        }
+        let base = s.render(pressed: [], sticks: e.mixer.sticks).filter { $0.role == .stickBase || $0.role == .dot }
+            .map { $0.shape.center }
+        return (values, base)
+    }
+    let plain = run(StickTuning(), [1, 2, 3, 2])
+    guard plain.values.count == 5 else { continue }
+    // default: behaves as the plain maths says
+    check(plain.values[3].magnitude > 0.99 && plain.values[4].magnitude > 0.99, "\(id): by default a thumb pushed past the ring and back a little stays at full")
+    var follow = StickTuning(); follow.followsThumb = true
+    let f = run(follow, [1, 2, 3, 2])
+    check(f.values[3].magnitude > 0.99, "\(id): follow, pushed past the ring: full output")
+    check(f.values[4].magnitude < 0.4, "\(id): follow, thumb back one travel: the base came along so the stick eases off, got \(f.values[4].magnitude)")
+    check(f.base != plain.base, "\(id): follow moves the drawn base")
+}
+do {
+    var rel = StickTuning(); rel.relativeCentre = true
+    var ctx = ipad.context(.stacked); ctx.stick = rel
+    let r = Recorder()
+    let e = PadEngine(scheme: SchemeCatalog.make("zone"), output: r, context: ctx)
+    let s = e.scheme as! ControlScheme
+    let (c, travel, _) = stickControl(s, .left)!
+    let land = c.shape.center + CGPoint(x: travel * 0.7, y: travel * 0.3)
+    e.began(1, at: land, time: 0)
+    check((r.sticks[.left] ?? .zero) == .zero, "relative stick: landing off-centre is not a push")
+    e.moved(1, to: land + CGPoint(x: travel, y: 0), time: 0.1)
+    check(near(r.sticks[.left]?.x ?? 0, 1, 0.01), "relative stick: full output one travel from where it landed")
+    let drawn = s.render(pressed: [], sticks: e.mixer.sticks).first { $0.role == .stickBase }
+    check(drawn?.shape.center == land, "relative stick: the ring is drawn where the thumb landed")
+    e.ended(1, at: land, time: 0.2)
+    check(s.render(pressed: [], sticks: [:]).first { $0.role == .stickBase }?.shape.center == c.shape.center, "relative stick: the ring returns to its place on release")
+    // the same landing without the option is a push
+    let (e2, r2, s2) = engine("zone")
+    let c2 = stickControl(s2, .left)!
+    e2.began(1, at: c2.0.shape.center + CGPoint(x: c2.travel * 0.7, y: c2.travel * 0.3), time: 0)
+    check((r2.sticks[.left] ?? .zero) != .zero, "default stick: landing off-centre is a push, as before")
+}
+
+
+// MARK: Classic look (PadStyle) and Racing item/edge options
+
+do {
+    let ids = ["zone", "float", "adaptive", "frame", "racing"]
+    for id in ids {
+        check(PadStyle.appliesTo(id), "style: \(id) uses the shared look")
+        for device in TargetDevice.all {
+            for display in TargetDevice.Display.allCases {
+                let ctx = device.context(display)
+                let engine = PadEngine(scheme: SchemeCatalog.make(id), output: Recorder(), context: ctx)
+                let els = engine.render()
+                let base = PadStyle.scene(elements: els, size: ctx.size)
+                check(!base.primitives.isEmpty, "style: \(id) / \(device.name): empty scene")
+                // Every primitive stays finite and on a sane canvas.
+                var finite = true
+                for p in base.primitives {
+                    switch p.shape {
+                    case .circle(let c, let r): finite = finite && c.x.isFinite && c.y.isFinite && r >= 0
+                    case .rect(let r, let cr): finite = finite && r.width >= 0 && r.height >= 0 && cr >= 0
+                    case .path(let cmds): finite = finite && !cmds.isEmpty
+                    }
+                }
+                check(finite, "style: \(id) / \(device.name) / \(display.rawValue): bad primitive")
+                if device.name == "iPhone 16", display == .single {
+                    for preset in ShowcaseColourPreset.allCases {
+                        check(PadStyle.scene(elements: els, size: ctx.size, look: PadStyle.look(preset)) != base,
+                              "style: \(id) preset \(preset.rawValue) changes the look")
+                    }
+                }
+            }
+        }
+    }
+    check(!PadStyle.appliesTo("arc") && !PadStyle.appliesTo("showcase"), "style: Arc and Showcase keep their own looks")
+    check(PadStyle.cornerRadius(width: 200, height: 40) == 40 * 0.26 && PadStyle.cornerRadius(width: 900, height: 900) == 18,
+          "style: one corner rule")
+    // Pressed looks different from idle for every role.
+    let c = CGPoint(x: 50, y: 50)
+    for (role, shape) in [(RenderElement.Role.face, PadShape.circle(center: c, radius: 30)),
+                          (.shoulder, .roundedRect(CGRect(x: 0, y: 0, width: 80, height: 40), cornerRadius: 10)),
+                          (.system, .circle(center: c, radius: 20)), (.dpad, .roundedRect(CGRect(x: 0, y: 0, width: 40, height: 40), cornerRadius: 10)),
+                          (.pedal, .roundedRect(CGRect(x: 0, y: 0, width: 80, height: 90), cornerRadius: 10)),
+                          (.dot, .circle(center: c, radius: 12)), (.stickKnob, .circle(center: c, radius: 30))] {
+        for preset in PadStyle.choices {
+            let off = PadStyle.scene(elements: [RenderElement(shape: shape, role: role, label: "A")], size: CGSize(width: 100, height: 100), look: PadStyle.look(preset))
+            let on = PadStyle.scene(elements: [RenderElement(shape: shape, role: role, label: "A", lit: true)], size: CGSize(width: 100, height: 100), look: PadStyle.look(preset))
+            check(off != on, "style: \(role) held reads differently (\(PadStyle.name(preset)))")
+        }
+    }
+    check(PadSettings().colourPreset == nil, "style: default look is Classic")
+    check(PadStyle.look(nil).lit != nil && PadStyle.look(.wiiUWhite).lit == nil, "style: Classic keeps its yellow, presets use the Showcase press")
+}
+
+for placement in RacingPad.ItemPlacement.allCases {
+    for large in [false, true] {
+        for tilt in [false, true] {
+            let options = RacingPad.Options(tilt: tilt, itemPlacement: placement, largeItem: large)
+            for device in TargetDevice.all {
+                for display in TargetDevice.Display.allCases {
+                    let scheme = RacingPad(options: options)
+                    let ctx = device.context(display)
+                    scheme.layout(ctx)
+                    let where_ = "Racing \(placement)/large=\(large)/tilt=\(tilt) / \(device.name) / \(display.rawValue)"
+                    check(LayoutCheck.problems(scheme.controls, in: ctx.safeBounds).isEmpty,
+                          "\(where_): \(LayoutCheck.problems(scheme.controls, in: ctx.safeBounds).joined(separator: "; "))")
+                    let item = scheme.controls.first { $0.button == .l }
+                    check(item != nil, "\(where_): no item button")
+                    if let item, device.size.width > device.size.height, placement != .centre {
+                        // Off the centre, the item is either above the steering area or above the pedals, never over a pedal.
+                        let box = item.shape.boundingBox
+                        let overPedal = scheme.controls.contains { c in
+                            if case .pedal = c.kind { return c.shape.boundingBox.intersects(box) }
+                            return false
+                        }
+                        check(!overPedal, "\(where_): item over a pedal")
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Racing's controls leave the screen edge clear but still catch a touch right at it.
+do {
+    let ctx = ipad.context(.single)
+    let pad = RacingPad()
+    pad.layout(ctx)
+    let a = pad.controls.first { if case .pedal(let s) = $0.kind { return s == [.a] }; return false }!
+    let box = a.shape.boundingBox
+    check(box.maxX < ctx.safeBounds.maxX && box.maxY < ctx.safeBounds.maxY, "racing: accelerate stops short of the screen edge")
+    check(pad.claims(CGPoint(x: ctx.safeBounds.maxX - 0.5, y: box.midY)), "racing: but the edge itself still presses it")
+    let (_, steer) = steerSpec(pad)
+    check(steer.minX > ctx.safeBounds.minX && pad.claims(CGPoint(x: ctx.safeBounds.minX + 0.5, y: steer.midY)),
+          "racing: steering area clears the edge and still takes a touch at it")
+}
+
+// Glyphs are drawn shapes: + is a horizontal and a vertical stroke, - one horizontal, home a filled house.
+do {
+    func strokes(_ label: String) -> [(CGRect)] {
+        let c = CGPoint(x: 50, y: 50)
+        let sc = PadStyle.scene(elements: [RenderElement(shape: .circle(center: c, radius: 20), role: .system, label: label)],
+                                size: CGSize(width: 100, height: 100))
+        return sc.primitives.compactMap { p in
+            guard case .path(let cmds) = p.shape, p.stroke != nil, p.fill == nil else { return nil }
+            let pts = cmds.compactMap { cmd -> CGPoint? in
+                switch cmd { case .move(let a), .line(let a): return a; default: return nil }
+            }
+            guard let f = pts.first else { return nil }
+            return pts.reduce(CGRect(origin: f, size: .zero)) { $0.union(CGRect(origin: $1, size: .zero)) }
+        }
+    }
+    let plus = strokes("+"), minus = strokes("\u{2212}")
+    check(plus.count == 2, "glyph: + draws two strokes, got \(plus.count)")
+    check(plus.contains { $0.height == 0 && $0.width > 5 } && plus.contains { $0.width == 0 && $0.height > 5 }, "glyph: + has one horizontal and one vertical stroke")
+    check(minus.count == 1 && minus[0].height == 0 && minus[0].width > 5, "glyph: minus is one horizontal stroke")
+    let home = PadStyle.scene(elements: [RenderElement(shape: .circle(center: CGPoint(x: 50, y: 50), radius: 20), role: .system, label: "\u{2302}")],
+                              size: CGSize(width: 100, height: 100))
+    check(home.primitives.contains { if case .path(let c) = $0.shape { return c.count == 12 && $0.fill != nil }; return false }, "glyph: home is a filled house")
+    for (label, n) in [("\u{25B2}", 0), ("\u{25BC}", 1), ("\u{25C0}", 2), ("\u{25B6}", 3)] {
+        let sc = PadStyle.scene(elements: [RenderElement(shape: .roundedRect(CGRect(x: 30, y: 30, width: 40, height: 40), cornerRadius: 8), role: .dpad, label: label)],
+                                size: CGSize(width: 100, height: 100))
+        let tri = sc.primitives.last
+        guard let tri, case .path(let cmds) = tri.shape, case .move(let apex) = cmds[0] else { check(false, "glyph: arrow \(n) missing"); continue }
+        let dx = apex.x - 50, dy = apex.y - 50
+        let ok = [dy < -1 && abs(dx) < 0.01, dy > 1 && abs(dx) < 0.01, dx < -1 && abs(dy) < 0.01, dx > 1 && abs(dy) < 0.01][n]
+        check(ok, "glyph: arrow \(label) points the right way")
+    }
+    // Every scheme, every device: each + and minus on screen is drawn with the right stroke count.
+    for id in ["zone", "float", "adaptive", "frame", "racing"] {
+        for device in TargetDevice.all {
+            let ctx = device.context(.single)
+            let engine = PadEngine(scheme: SchemeCatalog.make(id), output: Recorder(), context: ctx)
+            let els = engine.render()
+            let sc = PadStyle.scene(elements: els, size: ctx.size)
+            let wantStrokes = els.filter { $0.role == .system && $0.label == "+" }.count * 2 + els.filter { $0.role == .system && $0.label == "\u{2212}" }.count
+            let have = sc.primitives.filter { if case .path = $0.shape { return $0.stroke != nil && $0.fill == nil && $0.strokeWidth > 1.5 && $0.text == nil }; return false }.count
+            // d-pad rim strokes are circles/rects, not paths, so every stroked path of this kind is a glyph stroke.
+            check(have == wantStrokes, "glyph: \(id) / \(device.name): \(have) glyph strokes, expected \(wantStrokes)")
+        }
+    }
+}
+
+runArcPolishChecks()
 
 print("\(passes) passed, \(failures) failed")
 exit(Int32(min(failures, 125)))
