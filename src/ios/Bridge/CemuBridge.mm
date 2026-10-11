@@ -4253,6 +4253,33 @@ void IOSBridge_LogAllocationFailure(const char* what, uint64_t wantedBytes) {
     cemu_vm_report(what, wantedBytes);
 }
 
+// Logged at title start: how much address space is still free below the highest mapping, and the largest single hole.
+// A buffer bigger than the largest hole cannot be created however much memory is free, so this is the number to watch.
+void IOSBridge_LogFreeAddressSpace(const char* when) {
+    uint64_t total = 0, largest = 0, largestAt = 0, atLeast256 = 0, prevEnd = 0, highestEnd = 0;
+    vm_address_t addr = 0;
+    natural_t depth = 0;
+    for (int guard = 0; guard < 200000; guard++) {
+        vm_size_t size = 0;
+        vm_region_submap_info_data_64_t info;
+        mach_msg_type_number_t count = VM_REGION_SUBMAP_INFO_COUNT_64;
+        if (vm_region_recurse_64(mach_task_self(), &addr, &size, &depth, (vm_region_recurse_info_t)&info, &count) != KERN_SUCCESS)
+            break;
+        if (info.is_submap) { depth++; continue; }
+        if (prevEnd != 0 && addr > prevEnd) {
+            const uint64_t gap = (uint64_t)addr - prevEnd;
+            total += gap;
+            if (gap >= (256ull << 20)) atLeast256++;
+            if (gap > largest) { largest = gap; largestAt = prevEnd; }
+        }
+        prevEnd = (uint64_t)addr + size;
+        highestEnd = prevEnd;
+        addr += size;
+    }
+    cemuLog_log(LogType::Force, "Address space ({}): largest free hole {} MB at {:#x}, {} hole(s) of 256 MB or more, {} MB free in total below the highest mapping at {:#x}",
+        when ? when : "?", largest >> 20, largestAt, atLeast256, total >> 20, highestEnd);
+}
+
 void IOSBridge_GPUThreadException(const char* type, const char* what) {
     cemu_crash_open_log();
     cemu_bridge_log_checkpoint("\n=== GPU THREAD EXCEPTION ===");

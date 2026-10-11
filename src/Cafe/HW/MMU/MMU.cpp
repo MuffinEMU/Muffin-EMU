@@ -212,10 +212,67 @@ MMURange mmuRange_CORE1_LC				{ 0xFFC40000, 0x00005000, MMU_MEM_AREA_ID::CPU_LC1
 MMURange mmuRange_CORE2_LC				{ 0xFFC80000, 0x00005000, MMU_MEM_AREA_ID::CPU_LC2, "CORE2_LC" }; // locked L2 cache of core 2
 MMURange mmuRange_HIGHMEM				{ 0xFFFFF000, 0x00001000, MMU_MEM_AREA_ID::CPU_PER_CORE, "PER-CORE" }; // per-core memory? Used by coreinit and PPC kernel to store core context specific data (like current thread ptr). We dont use it but Project Zero has a bug where it writes a byte at 0xfffffffe thus this memory range needs to be writable
 
+#if BOOST_OS_IOS
+void IOSBridge_LogFreeAddressSpace(const char* when);
+
+// iOS leaves the app very little address space once the system has taken its share, and the 4 GB guest window is
+// mostly holes: the ranges that exist add up to well under 3 GB. Everything outside them goes back to the system so
+// Metal and malloc can use it. The ranges stay reserved where they were, so base + offset is unchanged, and a
+// guest access to a never-mapped gap faulted before (PROT_NONE) and still faults. Anything mapped later (grown
+// ranges, OSMapMemory) is reserved on demand by memory_commitRange / memory_ensureHostRange.
+static void memory_trimGuestReservation()
+{
+	const size_t pageSize = MemMapper::GetPageSize();
+	const uintptr_t base = reinterpret_cast<uintptr_t>(memory_base);
+	auto adopt = [&](uint64 offset, uint64 size)
+	{
+		s_sparseReservation.Ensure(base, offset, size, pageSize,
+			[](uintptr_t, size_t) { return true; }, [](uintptr_t, size_t) {});
+	};
+	for (auto* range : g_mmuRanges)
+		adopt(range->getBase(), range->getSize());
+	adopt(0x00800000, 0x00800000); // ELF code arena, mapped through memory_commitRange
+	uint64 cursor = 0, returned = 0;
+	constexpr uint64 windowSize = 0x100000000ULL;
+	for (const auto& kept : s_sparseReservation.Ranges())
+	{
+		if (kept.begin > cursor)
+		{
+			memory_releaseSparseRange(base + cursor, kept.begin - cursor);
+			returned += kept.begin - cursor;
+		}
+		cursor = std::max(cursor, kept.end);
+	}
+	if (cursor < windowSize)
+	{
+		memory_releaseSparseRange(base + cursor, windowSize - cursor);
+		returned += windowSize - cursor;
+	}
+	s_usingSparseReservation = true;
+	cemuLog_log(LogType::Force, "Guest memory: kept {} MB of the 4096 MB window reserved, returned {} MB of address space to the system", (windowSize - returned) >> 20, returned >> 20);
+}
+
+// Reserves host address space for a guest range that is about to be mapped directly (OSMapMemory).
+bool memory_ensureHostRange(uint32 offset, uint32 size)
+{
+	if (!s_usingSparseReservation)
+		return true;
+	return memory_reserveSparseRange(reinterpret_cast<uintptr_t>(memory_base), offset, size);
+}
+#else
+bool memory_ensureHostRange(uint32, uint32) { return true; }
+#endif
+
 void memory_init()
 {
 	if (!memory_base)
+	{
 		memory_base = (uint8*)MemMapper::ReserveMemory(nullptr, size_t{0x100000000ULL}, MemMapper::PAGE_PERMISSION::P_RW);
+#if BOOST_OS_IOS
+		if (memory_base)
+			memory_trimGuestReservation();
+#endif
+	}
 #if BOOST_OS_IOS
 	if (!memory_base)
 	{
@@ -314,6 +371,9 @@ void memory_mapForCurrentTitle()
 		if (!itr->isOptional() && !itr->isMappedEarly())
 			itr->mapMem();
 	}
+#if BOOST_OS_IOS
+	IOSBridge_LogFreeAddressSpace("guest memory mapped");
+#endif
 }
 
 void memory_unmapForCurrentTitle()

@@ -21,6 +21,10 @@
 #include <chrono>
 #include <deque>
 
+#if BOOST_OS_IOS
+void IOSBridge_LogFreeAddressSpace(const char* when);
+#endif
+
 static bool g_compilePipelineThreadInit{false};
 static std::mutex g_compilePipelineMutex;
 static std::condition_variable g_compilePipelineCondVar;
@@ -410,6 +414,9 @@ bool MetalPipelineCache::UpdateLoading(uint32& pipelinesLoadedTotal, uint32& pip
 		const uint32 shaderCompiles = PerfTelemetry::Get().shaderCompiles.load(std::memory_order_relaxed) - m_loadShaderCompilesAtStart;
 		cemuLog_log(LogType::Force, "Metal pipeline load: {} cache entries, {} pipelines built in {} ms summed ({} ms avg), {} duplicate entries skipped, binary archive {} hits / {} misses from {} file(s), {} shaders compiled on demand, {} ms wall for the pipeline stage",
 			g_mtlCacheState.pipelinesQueued.load(), pipelineCompiles, pipelineMs, pipelineCompiles ? pipelineMs / pipelineCompiles : 0, m_pipelinesDeduped.load(), m_archiveHits.load(), m_archiveMisses.load(), m_archiveFilesLoaded, shaderCompiles, wallMs);
+#if BOOST_OS_IOS
+		IOSBridge_LogFreeAddressSpace("after the pipeline load");
+#endif
 	}
 	return false; // done
 }
