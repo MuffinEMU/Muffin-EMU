@@ -180,6 +180,13 @@ enum ControllerLayoutSettings {
     /// move an iPhone's shoulders: only a value set on that phone is ever read there.
     static let shoulderOffsetPhoneKey = "muffin.controls.shoulderOffset.phone"
     static let shoulderOffsetPhonePortraitKey = "muffin.controls.shoulderOffset.phone.portrait"
+    /// "Same height in portrait and landscape": 0/absent = not chosen yet (see ShoulderSync.migration),
+    /// 1 = linked, 2 = separate; plus the shared position as a fraction of each orientation's travel.
+    /// An iPhone has its own pair, like the heights above.
+    static let shoulderLinkKey = "muffin.controls.shoulderLinked"
+    static let shoulderFractionKey = "muffin.controls.shoulderFraction"
+    static let shoulderLinkPhoneKey = "muffin.controls.shoulderLinked.phone"
+    static let shoulderFractionPhoneKey = "muffin.controls.shoulderFraction.phone"
     static var usesPadShoulderKeys: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
     /// The key a half's saved move is stored under while the phone is held upright. Separate
@@ -192,7 +199,7 @@ enum ControllerLayoutSettings {
     /// that is the control scheme, not the layout.
     static func reset() {
         let defaults = UserDefaults.standard
-        for key in [scaleKey, opacityKey, stickSpacingKey, shoulderOffsetKey, shoulderOffsetPhoneKey, rightStickOffsetXKey, rightStickOffsetYKey,
+        for key in [scaleKey, opacityKey, stickSpacingKey, shoulderOffsetKey, shoulderOffsetPhoneKey, shoulderLinkKey, shoulderFractionKey, shoulderLinkPhoneKey, shoulderFractionPhoneKey, rightStickOffsetXKey, rightStickOffsetYKey,
                     leftStickOffsetXKey, leftStickOffsetYKey,
                     leftOffsetXKey, leftOffsetYKey,
                     rightOffsetXKey, rightOffsetYKey] {
@@ -655,19 +662,86 @@ extension View {
     }
 }
 
+/// Pure maths for "same height in portrait and landscape". The shared position is a fraction of
+/// the travel a screen has: 0 is the resting place, +1 the lowest the range allows, -1 the highest.
+enum ShoulderSync {
+    /// Two fractions this close count as the same position (one slider step is 0.05 of a button).
+    static let tolerance = 0.02
+
+    /// A usable range, or `fallback` when either end is not a number or the range is empty.
+    static func usable(_ range: ClosedRange<Double>, fallback: ClosedRange<Double>) -> ClosedRange<Double> {
+        range.lowerBound.isFinite && range.upperBound.isFinite && range.lowerBound <= range.upperBound ? range : fallback
+    }
+
+    static func fraction(of value: Double, in range: ClosedRange<Double>) -> Double {
+        guard value.isFinite else { return 0 }
+        if value > 0 { return range.upperBound > 0 ? min(value / range.upperBound, 1) : 0 }
+        if value < 0 { return range.lowerBound < 0 ? -min(value / range.lowerBound, 1) : 0 }
+        return 0
+    }
+
+    static func value(of fraction: Double, in range: ClosedRange<Double>) -> Double {
+        guard fraction.isFinite else { return 0 }
+        let f = min(max(fraction, -1), 1)
+        if f > 0 { return range.upperBound > 0 ? f * range.upperBound : 0 }
+        if f < 0 { return range.lowerBound < 0 ? -f * range.lowerBound : 0 }
+        return 0
+    }
+
+    /// What an install that never chose gets: linked when the two orientations already sit at
+    /// the same fraction (or both rest at zero), so no one's controls move; otherwise unlinked.
+    /// Returns the fraction to start from when linked.
+    static func migration(landscape: Double, portrait: Double,
+                          landscapeRange: ClosedRange<Double>, portraitRange: ClosedRange<Double>) -> (linked: Bool, fraction: Double) {
+        if landscape == 0 && portrait == 0 { return (true, 0) }
+        let l = fraction(of: landscape, in: landscapeRange), p = fraction(of: portrait, in: portraitRange)
+        // A value past its own range would be clamped on draw, so it can't be linked exactly.
+        guard abs(value(of: l, in: landscapeRange) - landscape) < 1e-9,
+              abs(value(of: p, in: portraitRange) - portrait) < 1e-9,
+              abs(l - p) <= tolerance else { return (false, 0) }
+        return (true, l)
+    }
+}
+
 /// The shoulder-height setting as stored, whichever device and way up.
 ///
 /// iPad: landscape is `shoulderOffsetKey`, as it always was. Upright reads the same shared
 /// value until the upright key has been written (the first time the slider is moved upright),
 /// so nobody's shoulders move when the two are split. iPhone: its own keys, never the iPad's.
+///
+/// "Same height in portrait and landscape" (per device class): when linked, one fraction of
+/// each orientation's own travel is stored (`ShoulderSync`) and the per-orientation values are
+/// left alone; unlinked reads exactly the per-orientation values above. A device that has not
+/// chosen yet gets the answer `ShoulderSync.migration` gives, written on the first change.
 struct ShoulderOffsetStorage: DynamicProperty {
     @AppStorage(ControllerLayoutSettings.shoulderOffsetKey) private var padLandscape = ControllerLayoutSettings.defaultShoulderOffset
     @AppStorage(ControllerLayoutSettings.shoulderOffsetPortraitKey) private var padPortrait = ControllerLayoutSettings.defaultShoulderOffset
     @AppStorage(ControllerLayoutSettings.shoulderOffsetPhoneKey) private var phoneLandscape = ControllerLayoutSettings.defaultShoulderOffset
     @AppStorage(ControllerLayoutSettings.shoulderOffsetPhonePortraitKey) private var phonePortrait = ControllerLayoutSettings.defaultShoulderOffset
+    /// 0 = not chosen yet, 1 = linked, 2 = separate.
+    @AppStorage(ControllerLayoutSettings.shoulderLinkKey) private var padLink = 0
+    @AppStorage(ControllerLayoutSettings.shoulderFractionKey) private var padFraction = 0.0
+    @AppStorage(ControllerLayoutSettings.shoulderLinkPhoneKey) private var phoneLink = 0
+    @AppStorage(ControllerLayoutSettings.shoulderFractionPhoneKey) private var phoneFraction = 0.0
 
-    func value(upright: Bool) -> Double {
-        if ControllerLayoutSettings.usesPadShoulderKeys {
+    private var onPad: Bool { ControllerLayoutSettings.usesPadShoulderKeys }
+    private var linkRaw: Int { onPad ? padLink : phoneLink }
+    private var fractionKey: String {
+        onPad ? ControllerLayoutSettings.shoulderFractionKey : ControllerLayoutSettings.shoulderFractionPhoneKey
+    }
+
+    private static func validSize(_ size: CGSize) -> Bool {
+        size.width.isFinite && size.height.isFinite && size.width > 0 && size.height > 0
+    }
+    private static func range(touchLab: Bool, in size: CGSize) -> ClosedRange<Double> {
+        ShoulderSync.usable(ControllerLayoutSettings.shoulderOffsetRange(touchLab: touchLab, in: size),
+                            fallback: ControllerLayoutSettings.shoulderOffsetRange(touchLab: touchLab))
+    }
+    private static func swapped(_ size: CGSize) -> CGSize { CGSize(width: size.height, height: size.width) }
+
+    /// The plain per-orientation values, as before linking existed.
+    func separateValue(upright: Bool) -> Double {
+        if onPad {
             guard upright else { return padLandscape }
             let written = UserDefaults.standard.object(forKey: ControllerLayoutSettings.shoulderOffsetPortraitKey) != nil
             return written ? padPortrait : padLandscape
@@ -675,21 +749,95 @@ struct ShoulderOffsetStorage: DynamicProperty {
         return upright ? phonePortrait : phoneLandscape
     }
 
-    func set(_ newValue: Double, upright: Bool) {
-        if ControllerLayoutSettings.usesPadShoulderKeys {
+    /// Linked or not, and the fraction when linked, for a pad of this size. Never linked on a
+    /// size that isn't a usable number (the old behaviour is the safe one).
+    private func state(size: CGSize, touchLab: Bool) -> (linked: Bool, fraction: Double) {
+        guard Self.validSize(size) else { return (false, 0) }
+        switch linkRaw {
+        case 2: return (false, 0)
+        case 1:
+            let stored = UserDefaults.standard.object(forKey: fractionKey) as? Double ?? 0
+            return (true, stored.isFinite ? stored : 0)
+        default:
+            let upright = ControllerLayoutSettings.isUpright(size)
+            let here = Self.range(touchLab: touchLab, in: size), there = Self.range(touchLab: touchLab, in: Self.swapped(size))
+            let landscape = upright ? there : here, portrait = upright ? here : there
+            let m = ShoulderSync.migration(landscape: separateValue(upright: false), portrait: separateValue(upright: true),
+                                           landscapeRange: landscape, portraitRange: portrait)
+            return (m.linked, m.fraction)
+        }
+    }
+
+    /// The value to draw with, for the pad's real size.
+    func value(in size: CGSize, touchLab: Bool) -> Double {
+        let upright = ControllerLayoutSettings.isUpright(size)
+        let s = state(size: size, touchLab: touchLab)
+        guard s.linked else { return separateValue(upright: upright) }
+        return ShoulderSync.value(of: s.fraction, in: Self.range(touchLab: touchLab, in: size))
+    }
+
+    func isLinked(in size: CGSize, touchLab: Bool) -> Bool { state(size: size, touchLab: touchLab).linked }
+
+    private func setSeparate(_ newValue: Double, upright: Bool) {
+        if onPad {
             if upright { padPortrait = newValue } else { padLandscape = newValue }
         } else {
             if upright { phonePortrait = newValue } else { phoneLandscape = newValue }
         }
     }
 
-    func binding(upright: Bool) -> Binding<Double> {
-        Binding(get: { value(upright: upright) }, set: { set($0, upright: upright) })
+    private func setLinkRaw(_ v: Int) { if onPad { padLink = v } else { phoneLink = v } }
+    private func setFraction(_ f: Double) { if onPad { padFraction = f } else { phoneFraction = f } }
+
+    func set(_ newValue: Double, in size: CGSize, touchLab: Bool) {
+        let upright = ControllerLayoutSettings.isUpright(size)
+        guard state(size: size, touchLab: touchLab).linked else {
+            setSeparate(newValue, upright: upright)
+            setLinkRaw(2)
+            return
+        }
+        setFraction(ShoulderSync.fraction(of: newValue, in: Self.range(touchLab: touchLab, in: size)))
+        setLinkRaw(1)
+    }
+
+    func binding(in size: CGSize, touchLab: Bool) -> Binding<Double> {
+        Binding(get: { value(in: size, touchLab: touchLab) }, set: { set($0, in: size, touchLab: touchLab) })
+    }
+
+    /// Turning the link on keeps where the shoulders are in the orientation being shown; turning
+    /// it off pins each orientation to what it is showing now, so nothing moves either way.
+    func setLinked(_ on: Bool, in size: CGSize, touchLab: Bool) {
+        guard Self.validSize(size) else { return }
+        let upright = ControllerLayoutSettings.isUpright(size)
+        let s = state(size: size, touchLab: touchLab)
+        if on {
+            guard !s.linked || linkRaw != 1 else { return }
+            let here = separateValue(upright: upright)
+            setFraction(s.linked ? s.fraction : ShoulderSync.fraction(of: here, in: Self.range(touchLab: touchLab, in: size)))
+            setLinkRaw(1)
+        } else {
+            if s.linked {
+                let there = ShoulderSync.value(of: s.fraction, in: Self.range(touchLab: touchLab, in: Self.swapped(size)))
+                setSeparate(ShoulderSync.value(of: s.fraction, in: Self.range(touchLab: touchLab, in: size)), upright: upright)
+                setSeparate(there, upright: !upright)
+            }
+            setLinkRaw(2)
+        }
+    }
+
+    func linkBinding(in size: CGSize, touchLab: Bool) -> Binding<Bool> {
+        Binding(get: { isLinked(in: size, touchLab: touchLab) }, set: { setLinked($0, in: size, touchLab: touchLab) })
+    }
+
+    /// The label for the slider: says which orientation(s) it moves.
+    func label(in size: CGSize, touchLab: Bool) -> String {
+        if isLinked(in: size, touchLab: touchLab) { return "Shoulder height (portrait and landscape)" }
+        return ControllerLayoutSettings.isUpright(size) ? "Shoulder height (portrait)" : "Shoulder height (landscape)"
     }
 
     func reset() {
-        let zero = ControllerLayoutSettings.defaultShoulderOffset
-        set(zero, upright: false)
-        set(zero, upright: true)
+        setSeparate(ControllerLayoutSettings.defaultShoulderOffset, upright: false)
+        setSeparate(ControllerLayoutSettings.defaultShoulderOffset, upright: true)
+        setFraction(0)
     }
 }

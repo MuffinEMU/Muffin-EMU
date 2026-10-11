@@ -226,7 +226,7 @@ struct TouchLabLayoutPanel: View {
     /// The shoulder setting for the orientation the pad is in now (kept apart per orientation),
     /// taken from the same size the pad itself uses.
     private var shoulderBinding: Binding<Double> {
-        shoulderStore.binding(upright: ControllerLayoutSettings.isUpright(windowSize.effectiveSize))
+        shoulderStore.binding(in: windowSize.effectiveSize, touchLab: true)
     }
 
     private var isAdaptive: Bool { scheme == TouchLabSettings.adaptiveStyleID }
@@ -270,11 +270,13 @@ struct TouchLabLayoutPanel: View {
         // L, R, ZL and ZR move up or down together. iPad only: an iPhone has no spare height
         // for it. Only the styles with fixed shoulders have anything to move.
         if ControllerLayoutSettings.supportsShoulderOffset && TouchLabSettings.hasMovableShoulders(scheme) {
-            PanelSliderRow("Shoulder button height", title: "L/R", leadingIcon: "arrow.up.and.down",
+            PanelSliderRow(shoulderStore.label(in: windowSize.effectiveSize, touchLab: true), title: "L/R", leadingIcon: "arrow.up.and.down",
                            value: shoulderBinding,
                            range: ControllerLayoutSettings.shoulderOffsetRange(touchLab: true, in: windowSize.effectiveSize),
                            step: ControllerLayoutSettings.shoulderOffsetStep,
                            spokenValue: ControllerLayoutSettings.shoulderOffsetLabel(max(0, shoulderBinding.wrappedValue)))
+            PanelToggle(title: "Same height in portrait and landscape",
+                        isOn: shoulderStore.linkBinding(in: windowSize.effectiveSize, touchLab: true))
         }
 
         if scheme == TouchLabSettings.floatStyleID {

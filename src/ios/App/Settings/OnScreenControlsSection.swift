@@ -57,7 +57,7 @@ struct OnScreenControlsSection: View {
     /// The shoulder setting for the orientation the pad is in now (kept apart per orientation),
     /// taken from the same size the pad itself uses.
     private var shoulderBinding: Binding<Double> {
-        shoulderStore.binding(upright: ControllerLayoutSettings.isUpright(windowSize.effectiveSize))
+        shoulderStore.binding(in: windowSize.effectiveSize, touchLab: usingTouchLab)
     }
     /// 0 follows the default (on; see TopBarAutoHide.deviceDefault). Read by the in-game top bar.
     @AppStorage(TopBarAutoHide.overrideKey)
@@ -143,7 +143,7 @@ struct OnScreenControlsSection: View {
                 && (!usingTouchLab || TouchLabSettings.hasMovableShoulders(touchLabScheme)) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("L, R, ZL and ZR height")
+                        Text(shoulderStore.label(in: windowSize.effectiveSize, touchLab: usingTouchLab))
                             .font(.system(size: 13, weight: .semibold, design: .rounded))
                         Spacer()
                         // The TouchLab styles can only move them down, so a "higher" left over from
@@ -163,6 +163,9 @@ struct OnScreenControlsSection: View {
                         .accessibilityLabel("Shoulder button height")
                         .accessibilityValue(ControllerLayoutSettings.shoulderOffsetLabel(usingTouchLab ? max(0, shoulderBinding.wrappedValue) : shoulderBinding.wrappedValue))
                     }
+                    Toggle("Same height in portrait and landscape",
+                           isOn: shoulderStore.linkBinding(in: windowSize.effectiveSize, touchLab: usingTouchLab))
+                        .font(.system(size: 13, design: .rounded))
                     Text("Moves the four shoulder buttons up or down together. They stop before they would leave the screen or touch the sticks and buttons.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
